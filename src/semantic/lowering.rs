@@ -1265,17 +1265,35 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn check_redeclaration_compatibility(&mut self, name: NameId, new_ty: QualType, span: SourceSpan) {
-        if let Some((existing_ref, _)) = self.symbol_table.lookup_symbol(name) {
+    fn check_redeclaration_compatibility(
+        &mut self,
+        name: NameId,
+        new_ty: QualType,
+        span: SourceSpan,
+        storage: Option<StorageClass>,
+    ) {
+        if let Some((existing_ref, existing_scope)) = self.symbol_table.lookup_symbol(name) {
+            let current_scope = self.symbol_table.current_scope();
             let existing = self.symbol_table.get_symbol(existing_ref);
-            if !self.registry.is_compatible(existing.type_info, new_ty) {
-                let first_def = existing.def_span;
-                self.report_error(SemanticError::ConflictingTypes {
-                    name: name.to_string(),
-                    span,
-                    first_def,
-                });
-            }
+
+            let is_global = current_scope == ScopeId::GLOBAL;
+            let is_func = new_ty.is_function();
+            let new_has_linkage = is_global || storage == Some(StorageClass::Extern) || is_func;
+
+            // Linkage conflict if:
+            // 1. Same scope (always conflict)
+            // 2. Both have linkage (even different scope)
+            let is_conflict = (existing_scope == current_scope) || (new_has_linkage && existing.has_linkage());
+
+            if is_conflict
+                && !self.registry.is_compatible(existing.type_info, new_ty) {
+                    let first_def = existing.def_span;
+                    self.report_error(SemanticError::ConflictingTypes {
+                        name: name.to_string(),
+                        span,
+                        first_def,
+                    });
+                }
         }
     }
 
@@ -1289,7 +1307,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let final_ty = apply_declarator(base_ty, &func_def.declarator, self, span);
         let func_name = extract_name(&func_def.declarator).expect("Function definition must have a name");
 
-        self.check_redeclaration_compatibility(func_name, final_ty, span);
+        self.check_redeclaration_compatibility(func_name, final_ty, span, spec_info.storage);
 
         if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
             self.symbol_table.define_function(func_name, final_ty.ty(), true, span)
@@ -1500,7 +1518,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     body: None,
                     scope_id: self.symbol_table.current_scope(),
                 };
-                self.check_redeclaration_compatibility(name, final_ty, span);
+                self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
 
                 if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
                     self.symbol_table.define_function(name, final_ty.ty(), false, span)
@@ -1534,7 +1552,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     init: init_expr,
                     alignment: spec_info.alignment.map(|a| a as u16),
                 };
-                self.check_redeclaration_compatibility(name, final_ty, span);
+                self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
 
                 if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) = self.symbol_table.define_variable(
                     name,

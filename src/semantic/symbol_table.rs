@@ -51,6 +51,14 @@ impl Symbol {
     pub fn ty(&self) -> TypeRef {
         self.type_info.ty()
     }
+
+    pub fn has_linkage(&self) -> bool {
+        match &self.kind {
+            SymbolKind::Function => true,
+            SymbolKind::Variable { is_global, storage, .. } => *is_global || *storage == Some(StorageClass::Extern),
+            _ => false,
+        }
+    }
 }
 
 /// Defines the kind of symbol.

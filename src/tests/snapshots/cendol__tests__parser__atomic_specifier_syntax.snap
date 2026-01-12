@@ -1,0 +1,10 @@
+---
+source: src/tests/parser.rs
+expression: "&resolved"
+---
+Declaration:
+  specifiers:
+    - "Atomic(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) })"
+  init_declarators:
+    - name: x
+      kind: pointer

@@ -866,13 +866,6 @@ pub(crate) fn lower_decl_specifiers(
                 };
                 info.qualifiers.insert(mask);
             }
-            ParsedDeclSpecifier::FunctionSpecifier(fs) => match fs {
-                FunctionSpecifier::Inline => info.is_inline = true,
-                FunctionSpecifier::Noreturn => info.is_noreturn = true,
-            },
-            ParsedDeclSpecifier::AlignmentSpecifier(_align) => {
-                // TODO: Handle alignment
-            }
             ParsedDeclSpecifier::TypeSpecifier(ts) => {
                 let ty = resolve_type_specifier(ts, ctx, span).unwrap_or_else(|e| {
                     ctx.report_error(e);

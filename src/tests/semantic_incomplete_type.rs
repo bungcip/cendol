@@ -15,3 +15,17 @@ fn rejects_sizeof_on_incomplete_struct() {
     );
     check_diagnostic_message_only(&driver, "Invalid application of 'sizeof' to an incomplete type");
 }
+
+#[test]
+fn rejects_sizeof_on_incomplete_array() {
+    let driver = run_fail(
+        r#"
+        extern int arr[];
+        int main() {
+            int x = sizeof(arr);
+        }
+    "#,
+        CompilePhase::Mir,
+    );
+    check_diagnostic_message_only(&driver, "Invalid application of 'sizeof' to an incomplete type");
+}

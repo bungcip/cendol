@@ -846,7 +846,7 @@ pub(crate) fn apply_declarator(base_type: QualType, declarator: &ParsedDeclarato
         ParsedDeclarator::Identifier(_, qualifiers) => ctx.registry.merge_qualifiers(base_type, *qualifiers),
         ParsedDeclarator::Array(base, size) => {
             let array_size = match size {
-                ParsedArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx), // TODO: resolve_array_size needs ParsedNodeRef support
+                ParsedArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx),
                 ParsedArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
                 ParsedArraySize::Incomplete => ArraySizeType::Incomplete,
                 ParsedArraySize::VlaSpecifier {

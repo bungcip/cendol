@@ -2,6 +2,7 @@ pub mod codegen;
 pub mod compound_assign;
 pub mod lexer;
 pub mod parser;
+pub mod pointer_arithmetic_regression;
 pub mod pp_common;
 pub mod pp_lexer;
 pub mod pp_pasting;

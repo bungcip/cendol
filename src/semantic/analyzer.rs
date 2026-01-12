@@ -419,10 +419,57 @@ impl<'a> SemanticAnalyzer<'a> {
             return None;
         }
 
+        // For compound assignments like +=, we need to check if the underlying arithmetic is valid.
+        let effective_rhs_ty = if op != BinaryOp::Assign {
+            let arithmetic_op = match op {
+                BinaryOp::AssignAdd => BinaryOp::Add,
+                BinaryOp::AssignSub => BinaryOp::Sub,
+                BinaryOp::AssignMul => BinaryOp::Mul,
+                BinaryOp::AssignDiv => BinaryOp::Div,
+                BinaryOp::AssignMod => BinaryOp::Mod,
+                BinaryOp::AssignBitAnd => BinaryOp::BitAnd,
+                BinaryOp::AssignBitOr => BinaryOp::BitOr,
+                BinaryOp::AssignBitXor => BinaryOp::BitXor,
+                BinaryOp::AssignLShift => BinaryOp::LShift,
+                BinaryOp::AssignRShift => BinaryOp::RShift,
+                _ => unreachable!(),
+            };
+
+            // Reuse visit_binary_op logic conceptually, but for compound assignment operands.
+            // For p += 1, LHS is pointer, RHS is integer.
+            let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);
+            let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
+
+            let result_ty = match arithmetic_op {
+                BinaryOp::Add if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => Some(lhs_promoted),
+                BinaryOp::Sub if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => Some(lhs_promoted),
+                _ => {
+                    // For other operations, use usual arithmetic conversions logic
+                    usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted)
+                }
+            };
+
+            match result_ty {
+                Some(ty) => ty,
+                None => {
+                    let lhs_kind = &self.registry.get(lhs_promoted.ty()).kind;
+                    let rhs_kind = &self.registry.get(rhs_promoted.ty()).kind;
+                    self.report_error(SemanticError::InvalidBinaryOperands {
+                        left_ty: lhs_kind.to_string(),
+                        right_ty: rhs_kind.to_string(),
+                        span: full_span,
+                    });
+                    return None;
+                }
+            }
+        } else {
+            rhs_ty
+        };
+
         // Check assignment constraints (C11 6.5.16.1)
-        if !self.check_assignment_constraints(lhs_ty, rhs_ty, rhs_ref) {
+        if !self.check_assignment_constraints(lhs_ty, effective_rhs_ty, rhs_ref) {
             let lhs_kind = &self.registry.get(lhs_ty.ty()).kind;
-            let rhs_kind = &self.registry.get(rhs_ty.ty()).kind;
+            let rhs_kind = &self.registry.get(effective_rhs_ty.ty()).kind;
 
             self.report_error(SemanticError::TypeMismatch {
                 expected: lhs_kind.to_string(),
@@ -432,7 +479,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return None;
         }
 
-        self.record_implicit_conversions(lhs_ty, rhs_ty, rhs_ref);
+        self.record_implicit_conversions(lhs_ty, effective_rhs_ty, rhs_ref);
 
         Some(lhs_ty)
     }

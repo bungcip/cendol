@@ -585,7 +585,7 @@ impl<'a> AstToMirLowerer<'a> {
                 self.lower_binary_op_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
             }
             NodeKind::Assignment(op, left_ref, right_ref) => {
-                self.lower_assignment_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
+                self.lower_assignment_expr(scope_id, expr_ref, op, *left_ref, *right_ref, mir_ty)
             }
             NodeKind::FunctionCall(call_expr) => self.lower_function_call(scope_id, call_expr, mir_ty),
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
@@ -1141,6 +1141,7 @@ impl<'a> AstToMirLowerer<'a> {
     fn lower_assignment_expr(
         &mut self,
         scope_id: ScopeId,
+        node_ref: NodeRef,
         op: &BinaryOp,
         left_ref: NodeRef,
         right_ref: NodeRef,
@@ -1192,8 +1193,8 @@ impl<'a> AstToMirLowerer<'a> {
                 let lhs_converted_for_op = self.apply_conversions(lhs_copy, left_ref, mir_ty);
                 let rhs_converted_for_op = self.apply_conversions(rhs_op, right_ref, mir_ty);
 
-                let lhs_ty = self.get_operand_type(&lhs_converted_for_op);
-                let mir_type_info = self.mir_builder.get_type(lhs_ty);
+                let lhs_ty_for_op = self.get_operand_type(&lhs_converted_for_op);
+                let mir_type_info = self.mir_builder.get_type(lhs_ty_for_op);
 
                 let rval = self.emit_binary_rvalue(
                     &compound_op,
@@ -1201,18 +1202,16 @@ impl<'a> AstToMirLowerer<'a> {
                     rhs_converted_for_op,
                     mir_type_info.is_float(),
                 );
-                self.emit_rvalue_to_operand(rval, mir_ty)
+                let result_of_op = self.emit_rvalue_to_operand(rval, lhs_ty_for_op);
+                self.apply_conversions(result_of_op, node_ref, mir_ty)
             }
         } else {
             // Simple assignment, just use the RHS
-            rhs_op
+            self.apply_conversions(rhs_op, right_ref, mir_ty)
         };
 
-        // Apply final conversions from the (potentially computed) rhs to the lhs type
-        let rhs_converted = self.apply_conversions(final_rhs, right_ref, mir_ty);
-
-        self.emit_assignment(place, rhs_converted.clone());
-        rhs_converted // C assignment expressions evaluate to the assigned value
+        self.emit_assignment(place, final_rhs.clone());
+        final_rhs // C assignment expressions evaluate to the assigned value
     }
 
     fn lower_function_call(&mut self, scope_id: ScopeId, call_expr: &nodes::CallExpr, mir_ty: TypeId) -> Operand {

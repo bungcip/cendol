@@ -63,3 +63,33 @@ fn test_compound_mod_assign() {
     let exit_code = run_c_code("int main() { int x = 10; x %= 3; return x; }");
     assert_eq!(exit_code, 1, "Expected exit code 1 for x %= 3");
 }
+
+#[test]
+fn test_compound_mixed_types() {
+    let exit_code = run_c_code(
+        r#"
+        int main() {
+            short s = 10;
+            long l = 3;
+            s -= l;
+            return s;
+        }
+    "#,
+    );
+    assert_eq!(exit_code, 7, "Expected exit code 7 for short -= long");
+}
+
+#[test]
+fn test_compound_unsigned_mixed_types() {
+    let exit_code = run_c_code(
+        r#"
+        int main() {
+            unsigned char c = 5;
+            int i = 2;
+            c += i;
+            return c;
+        }
+    "#,
+    );
+    assert_eq!(exit_code, 7, "Expected exit code 7 for unsigned char += int");
+}

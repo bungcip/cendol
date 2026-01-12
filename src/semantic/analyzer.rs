@@ -398,6 +398,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_assignment(
         &mut self,
+        node_ref: NodeRef,
         op: BinaryOp,
         lhs_ref: NodeRef,
         rhs_ref: NodeRef,
@@ -420,7 +421,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // For compound assignments like +=, we need to check if the underlying arithmetic is valid.
-        let effective_rhs_ty = if op != BinaryOp::Assign {
+        let (effective_rhs_ty, final_assignment_cast_target) = if op != BinaryOp::Assign {
             let arithmetic_op = match op {
                 BinaryOp::AssignAdd => BinaryOp::Add,
                 BinaryOp::AssignSub => BinaryOp::Sub,
@@ -440,7 +441,7 @@ impl<'a> SemanticAnalyzer<'a> {
             let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);
             let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
 
-            let result_ty = match arithmetic_op {
+            let intermediate_ty = match arithmetic_op {
                 BinaryOp::Add if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => Some(lhs_promoted),
                 BinaryOp::Sub if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => Some(lhs_promoted),
                 _ => {
@@ -449,8 +450,27 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             };
 
-            match result_ty {
-                Some(ty) => ty,
+            match intermediate_ty {
+                Some(common_ty) => {
+                    // Record conversions from promoted operands to the common type.
+                    // This is what the binary operation will actually work with.
+                    if lhs_promoted.ty() != common_ty.ty() {
+                        self.semantic_info.conversions[lhs_ref.index()].push(ImplicitConversion::IntegerCast {
+                            from: lhs_promoted.ty(),
+                            to: common_ty.ty(),
+                        });
+                    }
+                    if rhs_promoted.ty() != common_ty.ty() {
+                        self.semantic_info.conversions[rhs_ref.index()].push(ImplicitConversion::IntegerCast {
+                            from: rhs_promoted.ty(),
+                            to: common_ty.ty(),
+                        });
+                    }
+
+                    // For compound assignment, the result of (lhs op rhs) is converted back to lhs type.
+                    // We record this conversion on the assignment node itself.
+                    (common_ty, Some(lhs_ty))
+                }
                 None => {
                     let lhs_kind = &self.registry.get(lhs_promoted.ty()).kind;
                     let rhs_kind = &self.registry.get(rhs_promoted.ty()).kind;
@@ -463,7 +483,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
         } else {
-            rhs_ty
+            (rhs_ty, None)
         };
 
         // Check assignment constraints (C11 6.5.16.1)
@@ -479,7 +499,18 @@ impl<'a> SemanticAnalyzer<'a> {
             return None;
         }
 
-        self.record_implicit_conversions(lhs_ty, effective_rhs_ty, rhs_ref);
+        // For simple assignment, conversions are recorded on rhs_ref.
+        // For compound assignment, we record the final cast on the assignment node.
+        if let Some(target_ty) = final_assignment_cast_target {
+            if target_ty.ty() != effective_rhs_ty.ty() {
+                self.semantic_info.conversions[node_ref.index()].push(ImplicitConversion::IntegerCast {
+                    from: effective_rhs_ty.ty(),
+                    to: target_ty.ty(),
+                });
+            }
+        } else {
+            self.record_implicit_conversions(lhs_ty, effective_rhs_ty, rhs_ref);
+        }
 
         Some(lhs_ty)
     }
@@ -1010,7 +1041,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::Assignment(op, lhs, rhs) => {
                 let span = self.ast.get_span(node_ref);
-                self.visit_assignment(*op, *lhs, *rhs, span)
+                self.visit_assignment(node_ref, *op, *lhs, *rhs, span)
             }
             NodeKind::FunctionCall(call_expr) => self.visit_function_call(call_expr),
             NodeKind::MemberAccess(obj, field_name, is_arrow) => {

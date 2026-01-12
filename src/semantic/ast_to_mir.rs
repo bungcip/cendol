@@ -563,7 +563,10 @@ impl<'a> AstToMirLowerer<'a> {
             node_kind,
             NodeKind::BinaryOp(..) | NodeKind::UnaryOp(..) | NodeKind::TernaryOp(..)
         ) {
-            let ctx = ConstEvalCtx { ast: self.ast };
+            let ctx = ConstEvalCtx {
+                ast: self.ast,
+                symbol_table: self.symbol_table,
+            };
             if let Some(val) = eval_const_expr(&ctx, expr_ref) {
                 return Operand::Constant(self.create_constant(ConstValue::Int(val)));
             }

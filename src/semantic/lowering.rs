@@ -100,7 +100,10 @@ fn convert_parsed_array_size(size: &ParsedArraySize, ctx: &mut LowerCtx) -> Arra
 fn resolve_array_size(size: Option<ParsedNodeRef>, ctx: &mut LowerCtx) -> ArraySizeType {
     if let Some(parsed_ref) = size {
         let expr_ref = ctx.lower_expression(parsed_ref);
-        let const_ctx = ConstEvalCtx { ast: ctx.ast };
+        let const_ctx = ConstEvalCtx {
+            ast: ctx.ast,
+            symbol_table: ctx.symbol_table,
+        };
         if let Some(val) = const_eval::eval_const_expr(&const_ctx, expr_ref) {
             if val < 0 {
                 ctx.report_error(SemanticError::InvalidArraySize {
@@ -581,15 +584,17 @@ fn resolve_type_specifier(
                     // Get node from PARSED ast
                     let enum_node = ctx.parsed_ast.get_node(enum_ref);
                     if let ParsedNodeKind::EnumConstant(name, value_expr_ref) = &enum_node.kind {
-                        // TODO: Evaluate value_expr_ref
-                        // For now check for literal int if possible or 0
-                        // But value_expr_ref is ParsedNodeRef.
                         let value = if let Some(v_ref) = value_expr_ref {
-                            let val_node = ctx.parsed_ast.get_node(*v_ref);
-                            if let ParsedNodeKind::LiteralInt(val) = val_node.kind {
+                            let expr_ref = ctx.lower_expression(*v_ref);
+                            let const_ctx = ConstEvalCtx {
+                                ast: ctx.ast,
+                                symbol_table: ctx.symbol_table,
+                            };
+                            if let Some(val) = const_eval::eval_const_expr(&const_ctx, expr_ref) {
                                 val
                             } else {
-                                0 // Should ideally evaluate expression
+                                ctx.report_error(SemanticError::NonConstantInitializer { span: enum_node.span });
+                                0
                             }
                         } else {
                             next_value
@@ -1933,7 +1938,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         match self.ast.get_kind(first_designator_ref) {
                             NodeKind::Designator(d) => match d {
                                 crate::ast::Designator::ArrayIndex(expr_ref) => {
-                                    let const_ctx = ConstEvalCtx { ast: self.ast };
+                                    let const_ctx = ConstEvalCtx {
+                                        ast: self.ast,
+                                        symbol_table: self.symbol_table,
+                                    };
                                     if let Some(val) = const_eval::eval_const_expr(&const_ctx, *expr_ref) {
                                         current_index = val;
                                     } else {
@@ -1941,7 +1949,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                     }
                                 }
                                 crate::ast::Designator::GnuArrayRange(start, end) => {
-                                    let const_ctx = ConstEvalCtx { ast: self.ast };
+                                    let const_ctx = ConstEvalCtx {
+                                        ast: self.ast,
+                                        symbol_table: self.symbol_table,
+                                    };
                                     if let (Some(start_val), Some(end_val)) = (
                                         const_eval::eval_const_expr(&const_ctx, *start),
                                         const_eval::eval_const_expr(&const_ctx, *end),

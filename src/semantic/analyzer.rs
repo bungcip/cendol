@@ -819,8 +819,35 @@ impl<'a> SemanticAnalyzer<'a> {
                 let _ = self.registry.ensure_layout(data.ty.ty());
                 if let Some(init_ref) = data.init {
                     if let Some(init_ty) = self.visit_node(init_ref) {
-                        // Check assignment constraints for initialization
-                        if !self.check_assignment_constraints(data.ty, init_ty, init_ref) {
+                        // Special case: character array initialized by string literal (C11 6.7.9p14)
+                        let is_array_string_init = data.ty.is_array() && init_ty.is_array() && {
+                            let init_kind = self.ast.get_kind(init_ref);
+                            matches!(init_kind, NodeKind::LiteralString(_))
+                        };
+
+                        if is_array_string_init {
+                            // Check compatibility: LHS element type must be a character type
+                            let lhs_elem = match &self.registry.get(data.ty.ty()).kind {
+                                TypeKind::Array { element_type, .. } => *element_type,
+                                _ => unreachable!(),
+                            };
+                            let is_char_type = lhs_elem == self.registry.type_char
+                                || lhs_elem == self.registry.type_schar
+                                || lhs_elem == self.registry.type_char_unsigned;
+
+                            if is_char_type {
+                                self.record_implicit_conversions(data.ty, init_ty, init_ref);
+                            } else {
+                                let lhs_kind = &self.registry.get(data.ty.ty()).kind;
+                                let rhs_kind = &self.registry.get(init_ty.ty()).kind;
+                                let span = self.ast.get_span(init_ref);
+                                self.report_error(SemanticError::TypeMismatch {
+                                    expected: lhs_kind.to_string(),
+                                    found: rhs_kind.to_string(),
+                                    span,
+                                });
+                            }
+                        } else if !self.check_assignment_constraints(data.ty, init_ty, init_ref) {
                             let lhs_kind = &self.registry.get(data.ty.ty()).kind;
                             let rhs_kind = &self.registry.get(init_ty.ty()).kind;
                             let span = self.ast.get_span(init_ref);

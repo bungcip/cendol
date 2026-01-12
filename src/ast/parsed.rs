@@ -1,7 +1,5 @@
 use crate::{
-    ast::{
-        BinaryOp, FunctionSpecifier, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp,
-    },
+    ast::{BinaryOp, FunctionSpecifier, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp},
     semantic::TypeQualifiers,
 };
 use std::num::NonZeroU32;

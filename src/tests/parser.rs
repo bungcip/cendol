@@ -1851,61 +1851,141 @@ fn test_void_pointer_param() {
 #[test]
 fn test_static_assert() {
     let resolved = setup_declaration("_Static_assert(1, \"ok\");");
-    insta::assert_yaml_snapshot!(&resolved);
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    StaticAssert:
+      - LiteralInt: 1
+      - ok
+    ");
 }
 
 #[test]
 fn test_compound_literal() {
     let resolved = setup_expr("(int){1}");
-    insta::assert_yaml_snapshot!(&resolved);
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    CompoundLiteral:
+      - parsed_type_1
+      - InitializerList:
+          - LiteralInt: 1
+    ");
 }
 
 #[test]
 fn test_compound_literal_struct() {
     let resolved = setup_expr("(struct Point){.x=1, .y=2}");
-    insta::assert_yaml_snapshot!(&resolved);
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    CompoundLiteral:
+      - parsed_type_1
+      - InitializerList:
+          - LiteralInt: 1
+          - LiteralInt: 2
+    ");
 }
 
 #[test]
 fn test_function_definition() {
     let resolved = setup_translation_unit("int main() { return 0; }");
-    insta::assert_yaml_snapshot!(&resolved);
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    TranslationUnit:
+      - FunctionDef:
+          specifiers:
+            - int
+          declarator:
+            name: main
+            kind: function(void) -> int
+          body:
+            CompoundStatement:
+              - Return:
+                  LiteralInt: 0
+    ");
 }
 
 #[test]
 fn test_translation_unit() {
     let resolved = setup_translation_unit("int x; int main() { return x; }");
-    insta::assert_yaml_snapshot!(&resolved);
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    TranslationUnit:
+      - Declaration:
+          specifiers:
+            - int
+          init_declarators:
+            - name: x
+      - FunctionDef:
+          specifiers:
+            - int
+          declarator:
+            name: main
+            kind: function(void) -> int
+          body:
+            CompoundStatement:
+              - Return:
+                  Ident: x
+    ");
 }
 
 #[test]
 fn test_atomic_specifier_syntax() {
     let resolved = setup_declaration("_Atomic(int) *x;");
-    insta::assert_yaml_snapshot!(&resolved);
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    Declaration:
+      specifiers:
+        - "Atomic(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) })"
+      init_declarators:
+        - name: x
+          kind: pointer
+    "#);
 }
 
 #[test]
 fn test_atomic_qualifier_syntax() {
     let resolved = setup_declaration("_Atomic int *x;");
-    insta::assert_yaml_snapshot!(&resolved);
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Declaration:
+      specifiers:
+        - TypeQualifier(Atomic)
+        - int
+      init_declarators:
+        - name: x
+          kind: pointer
+    ");
 }
 
 #[test]
 fn test_complex_declarator_ret_ptr_to_func() {
     let resolved = setup_declaration("int (*f)(int (*)(int));");
-    insta::assert_yaml_snapshot!(&resolved);
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: f
+          kind: function(int function(int) -> pointer) -> pointer
+    ");
 }
 
 #[test]
 fn test_complex_declarator_arr_of_ptr_to_func() {
     let resolved = setup_declaration("int (*f[])(int);");
-    insta::assert_yaml_snapshot!(&resolved);
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: f
+          kind: function(int) -> pointer to array
+    ");
 }
 
 #[test]
 fn test_const_volatile_pointer() {
     let resolved = setup_declaration("int * const volatile x;");
-    insta::assert_yaml_snapshot!(&resolved);
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: x
+          kind: pointer
+    ");
 }
 
 // Tests moved to end of file via cat command

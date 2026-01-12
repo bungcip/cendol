@@ -4,8 +4,8 @@
 //! declaration specifiers, initializers, and coordination between
 //! different declaration components.
 
-use crate::ast::FunctionSpecifiers;
 use crate::ast::SourceSpan;
+use crate::ast::nodes::FunctionSpecifier;
 use crate::ast::nodes::StorageClass;
 use crate::ast::nodes::TypeQualifier;
 // Import all parsed types to be sure
@@ -91,16 +91,13 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
 
             // Function specifiers
             TokenKind::Inline | TokenKind::Noreturn => {
-                let mut func_specs = FunctionSpecifiers::empty();
-                while let Some(token) = parser.try_current_token() {
-                    match token.kind {
-                        TokenKind::Inline => func_specs.insert(FunctionSpecifiers::INLINE),
-                        TokenKind::Noreturn => func_specs.insert(FunctionSpecifiers::NORETURN),
-                        _ => break,
-                    }
-                    parser.advance();
-                }
-                specifiers.push(ParsedDeclSpecifier::FunctionSpecifiers(func_specs));
+                let func_spec = if token.kind == TokenKind::Inline {
+                    FunctionSpecifier::Inline
+                } else {
+                    FunctionSpecifier::Noreturn
+                };
+                parser.advance();
+                specifiers.push(ParsedDeclSpecifier::FunctionSpecifier(func_spec));
             }
 
             TokenKind::Attribute => {

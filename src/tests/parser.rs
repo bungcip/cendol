@@ -12,7 +12,7 @@ use serde::Serialize;
 
 /// Resolved AST node kind for testing - replaces NodeRef with actual content
 #[derive(Debug, Serialize)]
-enum ResolvedNodeKind {
+pub(crate) enum ResolvedNodeKind {
     LiteralInt(i64),
     LiteralFloat(f64),
     LiteralString(String),
@@ -77,14 +77,14 @@ enum ResolvedNodeKind {
 
 /// Simplified resolved generic association for testing
 #[derive(Debug, Serialize)]
-struct ResolvedGenericAssociation {
+pub(crate) struct ResolvedGenericAssociation {
     type_name: Option<String>, // None for 'default:'
     result_expr: ResolvedNodeKind,
 }
 
 /// Simplified resolved init declarator for testing
 #[derive(Debug, Serialize)]
-struct ResolvedInitDeclarator {
+pub(crate) struct ResolvedInitDeclarator {
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     kind: Option<String>,
@@ -150,7 +150,7 @@ fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpecifier]) -> Ve
             },
             ParsedDeclSpecifier::StorageClass(sc) => format!("{:?}", sc),
             ParsedDeclSpecifier::TypeQualifier(tq) => format!("TypeQualifier({:?})", tq),
-            ParsedDeclSpecifier::FunctionSpecifiers(fs) => format!("{:?}", fs),
+            ParsedDeclSpecifier::FunctionSpecifier(fs) => format!("{:?}", fs),
             ParsedDeclSpecifier::AlignmentSpecifier(aspec) => format!("{:?}", aspec),
             ParsedDeclSpecifier::Attribute => "__attribute__".to_string(),
         })
@@ -508,7 +508,7 @@ fn setup_expr(source: &str) -> ResolvedNodeKind {
     resolve_node(&ast, node_ref)
 }
 
-fn setup_declaration(source: &str) -> ResolvedNodeKind {
+pub(crate) fn setup_declaration(source: &str) -> ResolvedNodeKind {
     let (ast, decl_result) = setup_source(source, declarations::parse_declaration);
 
     match decl_result {

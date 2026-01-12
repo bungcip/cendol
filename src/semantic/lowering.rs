@@ -747,14 +747,10 @@ pub(crate) fn lower_decl_specifiers(
                 };
                 info.qualifiers.insert(mask);
             }
-            ParsedDeclSpecifier::FunctionSpecifiers(fs) => {
-                if fs.contains(FunctionSpecifiers::INLINE) {
-                    info.is_inline = true;
-                }
-                if fs.contains(FunctionSpecifiers::NORETURN) {
-                    info.is_noreturn = true;
-                }
-            }
+            ParsedDeclSpecifier::FunctionSpecifier(fs) => match fs {
+                FunctionSpecifier::Inline => info.is_inline = true,
+                FunctionSpecifier::Noreturn => info.is_noreturn = true,
+            },
             ParsedDeclSpecifier::AlignmentSpecifier(_align) => {
                 // TODO: Handle alignment
             }

@@ -10,6 +10,7 @@ enum ResolvedAstNode {
         name: String,
         ty: String,
         init: Option<Box<ResolvedAstNode>>,
+        alignment: Option<u16>,
     },
     RecordDecl {
         name: String,
@@ -67,6 +68,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             init: data
                 .init
                 .map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))),
+            alignment: data.alignment,
         },
         NodeKind::RecordDecl(data) => {
             let members = data
@@ -189,6 +191,7 @@ fn test_const_pointer_init() {
           name: p
           ty: volatile const const int * *
           init: ~
+          alignment: ~
     ");
 }
 
@@ -318,5 +321,37 @@ fn test_function_call_args_contiguity() {
                           rhs:
                             LiteralInt: 2
                       - LiteralInt: 3
+    "###);
+}
+
+#[test]
+fn test_alignment_specifier() {
+    let (ast, registry, symbol_table) = setup_lowering(
+        r#"
+        _Alignas(8) int x;
+        _Alignas(double) char c;
+        _Alignas(16) _Alignas(8) int y;
+    "#,
+    );
+
+    let root = ast.get_root();
+    let resolved = resolve_node(&ast, &registry, &symbol_table, root);
+    insta::assert_yaml_snapshot!(resolved, @r###"
+    TranslationUnit:
+      - VarDecl:
+          name: x
+          ty: int
+          init: ~
+          alignment: 8
+      - VarDecl:
+          name: c
+          ty: char
+          init: ~
+          alignment: 8
+      - VarDecl:
+          name: y
+          ty: int
+          init: ~
+          alignment: 16
     "###);
 }

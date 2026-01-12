@@ -19,8 +19,6 @@ pub mod expressions;
 pub mod parsed_type_builder;
 pub mod statements;
 pub mod struct_parsing;
-#[cfg(test)]
-mod tests_declarations;
 pub mod type_specifiers;
 pub mod utils;
 

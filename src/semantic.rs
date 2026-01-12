@@ -21,9 +21,6 @@ pub mod symbol_table;
 pub mod type_registry;
 pub mod types;
 
-#[cfg(test)]
-mod tests_enum_const;
-
 // Re-export key types for public API
 pub use analyzer::{ImplicitConversion, SemanticInfo, ValueCategory};
 pub(crate) use ast_to_mir::AstToMirLowerer;

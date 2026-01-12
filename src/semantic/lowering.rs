@@ -613,9 +613,17 @@ fn resolve_type_specifier(
                         enumerators_list.push(enum_constant);
 
                         // Register constant in symbol table
-                        let _ = ctx
+                        if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) = ctx
                             .symbol_table
-                            .define_enum_constant(*name, value, type_ref_to_use, enum_node.span);
+                            .define_enum_constant(*name, value, type_ref_to_use, enum_node.span)
+                        {
+                            let first_def = ctx.symbol_table.get_symbol(existing).def_span;
+                            ctx.report_error(SemanticError::Redefinition {
+                                name: *name,
+                                first_def,
+                                span: enum_node.span,
+                            });
+                        }
                     }
                 }
 

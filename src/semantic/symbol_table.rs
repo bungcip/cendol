@@ -408,6 +408,13 @@ impl SymbolTable {
             is_completed: true,
         };
 
+        if let Some(existing_ref) = self.fetch(name, self.current_scope_id, Namespace::Ordinary) {
+            return Err(SymbolTableError::InvalidRedefinition {
+                name,
+                existing: existing_ref,
+            });
+        }
+
         Ok(self.add_symbol(name, symbol_entry))
     }
 

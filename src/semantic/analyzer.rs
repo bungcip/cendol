@@ -696,11 +696,6 @@ impl<'a> SemanticAnalyzer<'a> {
 
         match func_kind {
             TypeKind::Function { return_type, .. } => Some(QualType::unqualified(return_type)),
-            // The pointer logic was already handled by resolving to actual_func_ty_ref above?
-            // Wait, the original code returned `return_type` if `func_kind` was `Function`,
-            // or checked `pointee` if `func_kind` was `Pointer`.
-            // But I resolved `actual_func_ty_ref` to be the Function type.
-            // So `func_kind` is the Function kind (or something else if invalid).
             _ => None,
         }
     }

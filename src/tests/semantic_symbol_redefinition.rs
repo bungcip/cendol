@@ -31,8 +31,6 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        // We just want to ensure it compiles without panic.
-        // But we can also check the output to be sure.
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = ptr<%t2>

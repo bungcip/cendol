@@ -141,11 +141,6 @@ fn test_typeregistry_array_logic() {
     assert_ne!(a2.base(), int_ty.base());
 
     // int*[5] (Registry - because int* doesn't have an index)
-    // Wait, check logic again.
-    // int* is Inline Pointer (Base=Int, Ptr=1).
-    // array_of checks if elem is Simple (Ptr=0, Arr=0).
-    // int* is NOT Simple.
-    // So int*[5] must be Registry Array.
     let p1 = reg.pointer_to(QualType::unqualified(int_ty)); // int*
     let ap1 = reg.array_of(p1, ArraySizeType::Constant(5));
     assert_eq!(ap1.class(), TypeClass::Array);

@@ -266,7 +266,6 @@ fn test_duplicate_case() {
 
 // H. Initializer Semantics
 #[test]
-#[ignore = "still not implemented"]
 fn test_designated_init_field_not_found() {
     run_fail_with_message(
         r#"
@@ -276,7 +275,7 @@ fn test_designated_init_field_not_found() {
         }
         "#,
         CompilePhase::Mir,
-        "no such member",
+        "no member named",
     );
 }
 

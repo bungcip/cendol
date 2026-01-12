@@ -2,7 +2,8 @@ use crate::{
     ast::{nodes::*, *},
     diagnostic::{DiagnosticEngine, SemanticError},
     semantic::{
-        ArraySizeType, QualType, SymbolKind, SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
+        ArraySizeType, QualType, StructMember, SymbolKind, SymbolTable, TypeKind, TypeQualifiers, TypeRef,
+        TypeRegistry,
         conversions::{integer_promotion, usual_arithmetic_conversions},
     },
 };
@@ -667,6 +668,153 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    fn check_assignment_and_record(&mut self, target_ty: QualType, init_ty: QualType, init_ref: NodeRef) {
+        if !self.check_assignment_constraints(target_ty, init_ty, init_ref) {
+            let lhs_kind = &self.registry.get(target_ty.ty()).kind;
+            let rhs_kind = &self.registry.get(init_ty.ty()).kind;
+            let span = self.ast.get_span(init_ref);
+
+            self.report_error(SemanticError::TypeMismatch {
+                expected: lhs_kind.to_string(),
+                found: rhs_kind.to_string(),
+                span,
+            });
+        } else {
+            self.record_implicit_conversions(target_ty, init_ty, init_ref);
+        }
+    }
+
+    fn check_initializer(&mut self, init_ref: NodeRef, target_ty: QualType) {
+        let node_kind = self.ast.get_kind(init_ref);
+        match node_kind {
+            NodeKind::InitializerList(list) => {
+                self.semantic_info.types[init_ref.index()] = Some(target_ty);
+                let list = list.clone(); // Clone to avoid borrow check issues
+                self.check_initializer_list(&list, target_ty);
+            }
+            NodeKind::LiteralString(_) => {
+                // Visit to resolve type
+                if let Some(init_ty) = self.visit_node(init_ref) {
+                    // Check if array string init
+                    let is_array_string_init = target_ty.is_array() && init_ty.is_array();
+                    if is_array_string_init {
+                        // Check element compatibility
+                        let lhs_elem = match &self.registry.get(target_ty.ty()).kind {
+                            TypeKind::Array { element_type, .. } => *element_type,
+                            _ => unreachable!(),
+                        };
+                        let is_char_type = lhs_elem == self.registry.type_char
+                            || lhs_elem == self.registry.type_schar
+                            || lhs_elem == self.registry.type_char_unsigned;
+
+                        if is_char_type {
+                            self.record_implicit_conversions(target_ty, init_ty, init_ref);
+                        } else {
+                            let lhs_kind = &self.registry.get(target_ty.ty()).kind;
+                            let rhs_kind = &self.registry.get(init_ty.ty()).kind;
+                            let span = self.ast.get_span(init_ref);
+                            self.report_error(SemanticError::TypeMismatch {
+                                expected: lhs_kind.to_string(),
+                                found: rhs_kind.to_string(),
+                                span,
+                            });
+                        }
+                    } else {
+                        // Normal assignment check
+                        self.check_assignment_and_record(target_ty, init_ty, init_ref);
+                    }
+                }
+            }
+            _ => {
+                if let Some(init_ty) = self.visit_node(init_ref) {
+                    self.check_assignment_and_record(target_ty, init_ty, init_ref);
+                }
+            }
+        }
+    }
+
+    fn check_initializer_list(&mut self, list: &InitializerListData, target_ty: QualType) {
+        let target_kind = self.registry.get(target_ty.ty()).kind.clone();
+        match target_kind {
+            TypeKind::Record { members, .. } => {
+                for item_ref in list.init_start.range(list.init_len) {
+                    self.check_initializer_item_record(item_ref, &members, target_ty);
+                }
+            }
+            _ => {
+                // Fallback: just visit children to resolve symbols/types
+                for item_ref in list.init_start.range(list.init_len) {
+                    let kind = self.ast.get_kind(item_ref);
+                    if let NodeKind::InitializerItem(init) = kind {
+                        let init = init.clone();
+                        for designator_ref in init.designator_start.range(init.designator_len) {
+                            if let NodeKind::Designator(d) = self.ast.get_kind(designator_ref) {
+                                match d {
+                                    Designator::ArrayIndex(e) => {
+                                        self.visit_node(*e);
+                                    }
+                                    Designator::GnuArrayRange(s, e) => {
+                                        self.visit_node(*s);
+                                        self.visit_node(*e);
+                                    }
+                                    Designator::FieldName(_) => {}
+                                }
+                            }
+                        }
+                        self.visit_node(init.initializer);
+                    } else {
+                        self.visit_node(item_ref);
+                    }
+                }
+            }
+        }
+    }
+
+    fn check_initializer_item_record(&mut self, item_ref: NodeRef, members: &[StructMember], record_ty: QualType) {
+        let node_kind = self.ast.get_kind(item_ref);
+        if let NodeKind::InitializerItem(init) = node_kind {
+            let init = init.clone();
+            // 1. Validate designators
+            if init.designator_len > 0 {
+                let first_des_ref = init.designator_start;
+                if let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(first_des_ref) {
+                    // Check if member exists
+                    // TODO: recursive search for anonymous members if not found directly
+                    let found = members.iter().any(|m| m.name == Some(*name));
+
+                    if !found {
+                        let ty_str = self.registry.display_type(record_ty.ty());
+                        let span = self.ast.get_span(first_des_ref);
+                        self.report_error(SemanticError::MemberNotFound {
+                            name: *name,
+                            ty: ty_str,
+                            span,
+                        });
+                    }
+                }
+            }
+
+            // 2. Visit children (initializer and designators)
+            for designator_ref in init.designator_start.range(init.designator_len) {
+                if let NodeKind::Designator(d) = self.ast.get_kind(designator_ref) {
+                    match d {
+                        Designator::ArrayIndex(e) => {
+                            self.visit_node(*e);
+                        }
+                        Designator::GnuArrayRange(s, e) => {
+                            self.visit_node(*s);
+                            self.visit_node(*e);
+                        }
+                        Designator::FieldName(_) => {}
+                    }
+                }
+            }
+            // Visit initializer value
+            // Ideally we would recurse with correct member type, but for now just visit
+            self.visit_node(init.initializer);
+        }
+    }
+
     fn visit_function_call(&mut self, call_expr: &crate::ast::nodes::CallExpr) -> Option<QualType> {
         let func_ty = self.visit_node(call_expr.callee)?;
 
@@ -858,44 +1006,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::VarDecl(data) => {
                 let _ = self.registry.ensure_layout(data.ty.ty());
                 if let Some(init_ref) = data.init {
-                    if let Some(init_ty) = self.visit_node(init_ref) {
-                        // Special case: character array initialized by string literal (C11 6.7.9p14)
-                        let is_array_string_init = data.ty.is_array() && init_ty.is_array() && {
-                            let init_kind = self.ast.get_kind(init_ref);
-                            matches!(init_kind, NodeKind::LiteralString(_))
-                        };
-
-                        if is_array_string_init {
-                            // Check compatibility: LHS element type must be a character type
-                            let lhs_elem = match &self.registry.get(data.ty.ty()).kind {
-                                TypeKind::Array { element_type, .. } => *element_type,
-                                _ => unreachable!(),
-                            };
-                            let is_char_type = lhs_elem == self.registry.type_char
-                                || lhs_elem == self.registry.type_schar
-                                || lhs_elem == self.registry.type_char_unsigned;
-
-                            if is_char_type {
-                                self.record_implicit_conversions(data.ty, init_ty, init_ref);
-                            } else {
-                                let lhs_kind = &self.registry.get(data.ty.ty()).kind;
-                                let rhs_kind = &self.registry.get(init_ty.ty()).kind;
-                                let span = self.ast.get_span(init_ref);
-                                self.report_error(SemanticError::TypeMismatch {
-                                    expected: lhs_kind.to_string(),
-                                    found: rhs_kind.to_string(),
-                                    span,
-                                });
-                            }
-                        } else {
-                            let span = self.ast.get_span(init_ref);
-                            self.validate_and_record_assignment(data.ty, init_ty, init_ref, span);
-                        }
-                    } else if let NodeKind::InitializerList(_) = self.ast.get_kind(init_ref) {
-                        // For InitializerList, it doesn't have an inherent type, but in a VarDecl
-                        // we can treat it as having the target type for MIR lowering.
-                        self.semantic_info.types[init_ref.index()] = Some(data.ty);
-                    }
+                    self.check_initializer(init_ref, data.ty);
                 }
                 Some(data.ty)
             }
@@ -1193,7 +1304,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::CompoundLiteral(ty, init) => {
                 let _ = self.registry.ensure_layout(ty.ty());
-                self.visit_node(*init);
+                self.check_initializer(*init, *ty);
                 Some(*ty)
             }
             NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs),

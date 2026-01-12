@@ -309,11 +309,7 @@ impl AstDumper {
                 println!("Assignment({:?}, {}, {})", op, l.get(), r.get())
             }
             ParsedNodeKind::FunctionCall(callee, args) => {
-                let args_str = args
-                    .iter()
-                    .map(|a| a.get().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let args_str = args.iter().map(|a| a.get().to_string()).collect::<Vec<_>>().join(", ");
                 println!("FunctionCall(callee={}, args=[{}])", callee.get(), args_str)
             }
             ParsedNodeKind::MemberAccess(obj, field, arrow) => println!(
@@ -338,11 +334,7 @@ impl AstDumper {
 
             // Statements
             ParsedNodeKind::CompoundStatement(stmts) => {
-                let stmts_str = stmts
-                    .iter()
-                    .map(|s| s.get().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let stmts_str = stmts.iter().map(|s| s.get().to_string()).collect::<Vec<_>>().join(", ");
                 println!("CompoundStatement(stmts=[{}])", stmts_str)
             }
             ParsedNodeKind::If(data) => println!("If({:?})", data),
@@ -353,8 +345,7 @@ impl AstDumper {
             ParsedNodeKind::For(data) => println!("For({:?})", data),
             ParsedNodeKind::Return(expr) => println!(
                 "Return({})",
-                expr.map(|e| e.get().to_string())
-                    .unwrap_or("void".to_string())
+                expr.map(|e| e.get().to_string()).unwrap_or("void".to_string())
             ),
             ParsedNodeKind::Break => println!("Break"),
             ParsedNodeKind::Continue => println!("Continue"),
@@ -364,17 +355,13 @@ impl AstDumper {
                 println!("Switch({}, {})", cond.get(), body.get())
             }
             ParsedNodeKind::Case(val, stmt) => println!("Case({}, {})", val.get(), stmt.get()),
-            ParsedNodeKind::CaseRange(start, end, stmt) => println!(
-                "CaseRange({}, {}, {})",
-                start.get(),
-                end.get(),
-                stmt.get()
-            ),
+            ParsedNodeKind::CaseRange(start, end, stmt) => {
+                println!("CaseRange({}, {}, {})", start.get(), end.get(), stmt.get())
+            }
             ParsedNodeKind::Default(stmt) => println!("Default({})", stmt.get()),
             ParsedNodeKind::ExpressionStatement(expr) => println!(
                 "ExpressionStatement({})",
-                expr.map(|e| e.get().to_string())
-                    .unwrap_or("empty".to_string())
+                expr.map(|e| e.get().to_string()).unwrap_or("empty".to_string())
             ),
             ParsedNodeKind::EmptyStatement => println!("EmptyStatement"),
 
@@ -392,11 +379,7 @@ impl AstDumper {
 
             // Top Level
             ParsedNodeKind::TranslationUnit(decls) => {
-                let decls_str = decls
-                    .iter()
-                    .map(|d| d.get().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let decls_str = decls.iter().map(|d| d.get().to_string()).collect::<Vec<_>>().join(", ");
                 println!("TranslationUnit(decls=[{}])", decls_str)
             }
 

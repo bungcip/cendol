@@ -2079,9 +2079,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let parsed_node = self.parsed_ast.get_node(node);
         match &parsed_node.kind {
             ParsedNodeKind::Label(name, inner) => {
-                let _ = self
-                    .symbol_table
-                    .define_label(*name, self.registry.type_void, parsed_node.span);
+                let _ = self.define_label(*name, parsed_node.span);
                 self.collect_labels(*inner);
             }
             ParsedNodeKind::CompoundStatement(stmts) => {

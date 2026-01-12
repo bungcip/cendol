@@ -355,9 +355,8 @@ impl CompilerDriver {
                         if let Some(registry) = artifact.type_registry {
                             AstDumper::dump_type_registry(&ast, &registry);
                         }
-                    } else if let Some(_parsed_ast) = artifact.parsed_ast {
-                        // TODO: Dump ParsedAst using a new method or adapt AstDumper
-                        println!("ParsedAST dump not fully implemented yet");
+                    } else if let Some(parsed_ast) = artifact.parsed_ast {
+                        AstDumper::dump_parsed_ast(&parsed_ast);
                     } else if let Some(preprocessed) = artifact.preprocessed {
                         self.output_handler.dump_preprocessed_output(
                             &preprocessed,

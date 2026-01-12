@@ -51,10 +51,13 @@ fn apply_parsed_declarator_recursive(
         ParsedDeclaratorNode::Array { size, inner } => {
             // Array
             // Apply Array modifier to the current type
-            // TODO: Ensure current_type is unqualified or handle array of qualified type if supported
+            // Propagate qualifiers from the element type to the array type (C11 6.7.3)
             let array_size = convert_parsed_array_size(&size, ctx);
             let array_type_ref = ctx.registry.array_of(current_type.ty(), array_size);
-            apply_parsed_declarator_recursive(QualType::unqualified(array_type_ref), inner, ctx)
+            let qualified_array = ctx
+                .registry
+                .merge_qualifiers(QualType::unqualified(array_type_ref), current_type.qualifiers());
+            apply_parsed_declarator_recursive(qualified_array, inner, ctx)
         }
         ParsedDeclaratorNode::Function { params, flags, inner } => {
             // Function

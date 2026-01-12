@@ -573,13 +573,9 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::LiteralInt(_)
             | NodeKind::LiteralFloat(_)
             | NodeKind::LiteralChar(_)
-            | NodeKind::LiteralString(_) => self
-                .lower_literal(&node_kind, ty)
-                .expect("Failed to lower literal"),
+            | NodeKind::LiteralString(_) => self.lower_literal(&node_kind, ty).expect("Failed to lower literal"),
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(*symbol_ref),
-            NodeKind::UnaryOp(op, operand_ref) => {
-                self.lower_unary_op_expr(scope_id, op, *operand_ref, mir_ty)
-            }
+            NodeKind::UnaryOp(op, operand_ref) => self.lower_unary_op_expr(scope_id, op, *operand_ref, mir_ty),
             NodeKind::PostIncrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, true, need_value),
             NodeKind::PostDecrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, false, need_value),
             NodeKind::BinaryOp(op, left_ref, right_ref) => {

@@ -211,7 +211,6 @@ fn test_enumerator_outside_enum() {
 
 // F. Array & Type Completeness
 #[test]
-#[ignore = "still not implemented"]
 fn test_array_of_incomplete_type() {
     run_fail_with_message(
         r#"
@@ -221,7 +220,7 @@ fn test_array_of_incomplete_type() {
         }
         "#,
         CompilePhase::Mir,
-        "incomplete element",
+        "incomplete type",
     );
 }
 

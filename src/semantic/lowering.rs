@@ -784,7 +784,7 @@ fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
             base_ty = ctx.registry.merge_qualifiers(base_ty, spec_info.qualifiers);
 
             let final_ty = if let Some(declarator) = &param.declarator {
-                apply_declarator(base_ty, declarator, ctx)
+                apply_declarator(base_ty, declarator, ctx, span)
             } else {
                 base_ty
             };
@@ -832,19 +832,31 @@ fn extract_name(decl: &ParsedDeclarator) -> Option<NameId> {
 }
 
 /// Apply declarator transformations to a base type
-pub(crate) fn apply_declarator(base_type: QualType, declarator: &ParsedDeclarator, ctx: &mut LowerCtx) -> QualType {
+pub(crate) fn apply_declarator(
+    base_type: QualType,
+    declarator: &ParsedDeclarator,
+    ctx: &mut LowerCtx,
+    span: SourceSpan,
+) -> QualType {
     match declarator {
         ParsedDeclarator::Pointer(qualifiers, next) => {
             let ty = ctx.registry.pointer_to(base_type);
             let modified_ty = ctx.registry.merge_qualifiers(QualType::unqualified(ty), *qualifiers);
             if let Some(next_decl) = next {
-                apply_declarator(modified_ty, next_decl, ctx)
+                apply_declarator(modified_ty, next_decl, ctx, span)
             } else {
                 modified_ty
             }
         }
         ParsedDeclarator::Identifier(_, qualifiers) => ctx.registry.merge_qualifiers(base_type, *qualifiers),
         ParsedDeclarator::Array(base, size) => {
+            // C11 6.7.6.2 Array declarators
+            // "The element type shall not be an incomplete or function type."
+            if !ctx.registry.is_complete(base_type.ty()) || base_type.ty().is_function() {
+                let ty_str = ctx.registry.display_type(base_type.ty());
+                ctx.report_error(SemanticError::IncompleteType { ty: ty_str, span });
+            }
+
             let array_size = match size {
                 ParsedArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx), // TODO: resolve_array_size needs ParsedNodeRef support
                 ParsedArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
@@ -858,7 +870,7 @@ pub(crate) fn apply_declarator(base_type: QualType, declarator: &ParsedDeclarato
 
             let ty = ctx.registry.array_of(base_type.ty(), array_size);
             let array_qt = QualType::new(ty, base_type.qualifiers());
-            apply_declarator(array_qt, base, ctx)
+            apply_declarator(array_qt, base, ctx, span)
         }
         ParsedDeclarator::Function {
             inner: base,
@@ -867,7 +879,7 @@ pub(crate) fn apply_declarator(base_type: QualType, declarator: &ParsedDeclarato
         } => {
             let parameters = lower_function_parameters(params, ctx);
             let ty = ctx.registry.function_type(base_type.ty(), parameters, *is_variadic);
-            apply_declarator(QualType::unqualified(ty), base, ctx)
+            apply_declarator(QualType::unqualified(ty), base, ctx, span)
         }
         ParsedDeclarator::AnonymousRecord(is_union, members) => {
             // Use struct_lowering helper
@@ -879,7 +891,7 @@ pub(crate) fn apply_declarator(base_type: QualType, declarator: &ParsedDeclarato
         }
         ParsedDeclarator::BitField(base, _) => {
             // Bitfield logic handled in struct lowering usually. Here just type application.
-            apply_declarator(base_type, base, ctx)
+            apply_declarator(base_type, base, ctx, span)
         }
         ParsedDeclarator::Abstract => base_type,
     }
@@ -1106,7 +1118,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
         base_ty = self.registry.merge_qualifiers(base_ty, spec_info.qualifiers);
 
-        let final_ty = apply_declarator(base_ty, &func_def.declarator, self);
+        let final_ty = apply_declarator(base_ty, &func_def.declarator, self, span);
         let func_name = extract_name(&func_def.declarator).expect("Function definition must have a name");
 
         self.check_redeclaration_compatibility(func_name, final_ty, span);
@@ -1268,7 +1280,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let mut nodes = SmallVec::new();
 
         for (i, init) in decl.init_declarators.iter().enumerate() {
-            let final_ty = apply_declarator(base_ty, &init.declarator, self);
+            let final_ty = apply_declarator(base_ty, &init.declarator, self, init.span);
 
             let name = extract_name(&init.declarator).expect("Declarator must have identifier");
 
@@ -2067,7 +2079,7 @@ pub(crate) fn lower_struct_members(
 
             let member_type = if let Some(base_type_ref) = spec_info.base_type {
                 // Manually re-apply qualifiers from the base type.
-                let ty = apply_declarator(base_type_ref, base_declarator, ctx);
+                let ty = apply_declarator(base_type_ref, base_declarator, ctx, init_declarator.span);
                 ctx.registry.merge_qualifiers(ty, spec_info.qualifiers)
             } else {
                 QualType::unqualified(ctx.registry.type_int)

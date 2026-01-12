@@ -421,6 +421,10 @@ impl CompilerDriver {
         self.diagnostics.diagnostics().to_vec()
     }
 
+    pub fn has_errors(&self) -> bool {
+        self.diagnostics.has_errors()
+    }
+
     /// Print accumulated diagnostics without returning an error
     pub fn print_diagnostics(&self) {
         let formatter = crate::diagnostic::ErrorFormatter::default();

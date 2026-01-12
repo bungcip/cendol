@@ -42,7 +42,7 @@ pub enum ImplicitConversion {
     LValueToRValue,
 
     /// Array/function → pointer
-    PointerDecay,
+    PointerDecay { to: TypeRef },
 
     /// char/short → int (store types as TypeRef)
     IntegerPromotion { from: TypeRef, to: TypeRef },
@@ -138,6 +138,44 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    /// Checks if the node is an LValue and is not const-qualified.
+    /// Reports errors if check fails.
+    fn check_lvalue_and_modifiable(&mut self, node_ref: NodeRef, ty: QualType, span: SourceSpan) -> bool {
+        if !self.is_lvalue(node_ref) {
+            self.report_error(SemanticError::NotAnLvalue { span });
+            false
+        } else if self.registry.is_const_recursive(ty) {
+            self.report_error(SemanticError::AssignmentToReadOnly { span });
+            false
+        } else {
+            true
+        }
+    }
+
+    /// Validates assignment constraints and records implicit conversions.
+    /// Returns true if assignment is valid, false otherwise.
+    fn validate_and_record_assignment(
+        &mut self,
+        lhs_ty: QualType,
+        rhs_ty: QualType,
+        rhs_ref: NodeRef,
+        span: SourceSpan,
+    ) -> bool {
+        if self.check_assignment_constraints(lhs_ty, rhs_ty, rhs_ref) {
+            self.record_implicit_conversions(lhs_ty, rhs_ty, rhs_ref);
+            true
+        } else {
+            let lhs_kind = &self.registry.get(lhs_ty.ty()).kind;
+            let rhs_kind = &self.registry.get(rhs_ty.ty()).kind;
+            self.report_error(SemanticError::TypeMismatch {
+                expected: lhs_kind.to_string(),
+                found: rhs_kind.to_string(),
+                span,
+            });
+            false
+        }
+    }
+
     fn check_scalar_condition(&mut self, condition: NodeRef) {
         if let Some(cond_ty) = self.visit_node(condition)
             && !cond_ty.is_scalar()
@@ -211,15 +249,19 @@ impl<'a> SemanticAnalyzer<'a> {
                     return None;
                 }
                 if operand_ty.is_array() || operand_ty.is_function() {
-                    self.semantic_info.conversions[operand_ref.index()].push(ImplicitConversion::PointerDecay);
-                    return Some(self.registry.decay(operand_ty));
+                    let decayed = self.registry.decay(operand_ty);
+                    self.semantic_info.conversions[operand_ref.index()]
+                        .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
+                    return Some(decayed);
                 }
                 Some(QualType::unqualified(self.registry.pointer_to(operand_ty)))
             }
             UnaryOp::Deref => {
                 let actual_ty = if operand_ty.is_array() || operand_ty.is_function() {
-                    self.semantic_info.conversions[operand_ref.index()].push(ImplicitConversion::PointerDecay);
-                    self.registry.decay(operand_ty)
+                    let decayed = self.registry.decay(operand_ty);
+                    self.semantic_info.conversions[operand_ref.index()]
+                        .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
+                    decayed
                 } else {
                     operand_ty
                 };
@@ -231,11 +273,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
-                if !self.is_lvalue(operand_ref) {
-                    self.report_error(SemanticError::NotAnLvalue { span: full_span });
-                } else if self.registry.is_const_recursive(operand_ty) {
-                    self.report_error(SemanticError::AssignmentToReadOnly { span: full_span });
-                }
+                self.check_lvalue_and_modifiable(operand_ref, operand_ty, full_span);
                 if operand_ty.is_scalar() { Some(operand_ty) } else { None }
             }
             UnaryOp::Plus | UnaryOp::Minus => {
@@ -419,10 +457,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
 
-        if !self.is_lvalue(lhs_ref) {
-            self.report_error(SemanticError::NotAnLvalue { span: full_span });
-        } else if self.registry.is_const_recursive(lhs_ty) {
-            self.report_error(SemanticError::AssignmentToReadOnly { span: full_span });
+        if !self.check_lvalue_and_modifiable(lhs_ref, lhs_ty, full_span) {
             return None;
         }
 
@@ -492,22 +527,21 @@ impl<'a> SemanticAnalyzer<'a> {
             (rhs_ty, None)
         };
 
-        // Check assignment constraints (C11 6.5.16.1)
-        if !self.check_assignment_constraints(lhs_ty, effective_rhs_ty, rhs_ref) {
-            let lhs_kind = &self.registry.get(lhs_ty.ty()).kind;
-            let rhs_kind = &self.registry.get(effective_rhs_ty.ty()).kind;
-
-            self.report_error(SemanticError::TypeMismatch {
-                expected: lhs_kind.to_string(),
-                found: rhs_kind.to_string(),
-                span: full_span,
-            });
-            return None;
-        }
-
-        // For simple assignment, conversions are recorded on rhs_ref.
         // For compound assignment, we record the final cast on the assignment node.
         if let Some(target_ty) = final_assignment_cast_target {
+            // Check assignment constraints (C11 6.5.16.1)
+            if !self.check_assignment_constraints(lhs_ty, effective_rhs_ty, rhs_ref) {
+                let lhs_kind = &self.registry.get(lhs_ty.ty()).kind;
+                let rhs_kind = &self.registry.get(effective_rhs_ty.ty()).kind;
+
+                self.report_error(SemanticError::TypeMismatch {
+                    expected: lhs_kind.to_string(),
+                    found: rhs_kind.to_string(),
+                    span: full_span,
+                });
+                return None;
+            }
+
             if target_ty.ty() != effective_rhs_ty.ty() {
                 self.semantic_info.conversions[node_ref.index()].push(ImplicitConversion::IntegerCast {
                     from: effective_rhs_ty.ty(),
@@ -515,7 +549,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 });
             }
         } else {
-            self.record_implicit_conversions(lhs_ty, effective_rhs_ty, rhs_ref);
+            // Simple assignment
+            if !self.validate_and_record_assignment(lhs_ty, effective_rhs_ty, rhs_ref, full_span) {
+                return None;
+            }
         }
 
         Some(lhs_ty)
@@ -595,7 +632,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // Array-to-pointer decay
         if lhs_ty.is_pointer() && rhs_ty.is_array() {
-            self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay);
+            let decayed = self.registry.decay(rhs_ty);
+            self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay { to: decayed.ty() });
         }
 
         // Qualifier adjustment
@@ -821,8 +859,10 @@ impl<'a> SemanticAnalyzer<'a> {
                     if let Some(mut actual_arg_ty) = arg_ty {
                         // Explicitly handle array/function decay for variadic arguments first
                         if actual_arg_ty.is_array() || actual_arg_ty.is_function() {
-                            self.semantic_info.conversions[arg_node_ref.index()].push(ImplicitConversion::PointerDecay);
-                            actual_arg_ty = self.registry.decay(actual_arg_ty);
+                            let decayed = self.registry.decay(actual_arg_ty);
+                            self.semantic_info.conversions[arg_node_ref.index()]
+                                .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
+                            actual_arg_ty = decayed;
                         }
 
                         let promoted_ty =
@@ -1221,14 +1261,8 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::PostIncrement(expr) | NodeKind::PostDecrement(expr) => {
                 let ty = self.visit_node(*expr);
-                if !self.is_lvalue(*expr) {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::NotAnLvalue { span });
-                } else if let Some(t) = ty
-                    && self.registry.is_const_recursive(t)
-                {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::AssignmentToReadOnly { span });
+                if self.check_lvalue_and_modifiable(*expr, ty.unwrap(), self.ast.get_span(node_ref)) {
+                    // ok
                 }
                 ty
             }

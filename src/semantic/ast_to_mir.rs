@@ -841,30 +841,9 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_unary_deref(&mut self, scope_id: ScopeId, operand_ref: NodeRef) -> Operand {
         let operand = self.lower_expression(scope_id, operand_ref, true);
-
-        // Determine the expected type of the operand after conversions.
-        // For Deref, we expect a pointer.
-        // If operand is Array/Function, it decays to Pointer.
         let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
-        let target_type_id = if operand_ty.is_array() {
-            let element_ty = match &self.registry.get(operand_ty.ty()).kind {
-                TypeKind::Array { element_type, .. } => *element_type,
-                _ => panic!("Expected array"),
-            };
-            let element_mir_ty = self.lower_type(element_ty);
-            self.mir_builder.add_type(MirType::Pointer {
-                pointee: element_mir_ty,
-            })
-        } else if operand_ty.is_function() {
-            // Function decays to pointer to function
-            let func_mir_ty = self.lower_qual_type(operand_ty);
-            self.mir_builder.add_type(MirType::Pointer { pointee: func_mir_ty })
-        } else {
-            // Already pointer (or should be)
-            self.lower_qual_type(operand_ty)
-        };
-
-        let operand_converted = self.apply_conversions(operand, operand_ref, target_type_id);
+        let target_mir_ty = self.lower_qual_type(operand_ty);
+        let operand_converted = self.apply_conversions(operand, operand_ref, target_mir_ty);
 
         let place = Place::Deref(Box::new(operand_converted));
         Operand::Copy(Box::new(place))
@@ -1259,21 +1238,14 @@ impl<'a> AstToMirLowerer<'a> {
                 if i < param_types_vec.len() {
                     param_types_vec[i]
                 } else {
-                    // For variadic arguments, perform default argument promotions
-                    // Array decays to pointer
-                    if let MirType::Array { element, .. } = self.mir_builder.get_type(arg_mir_ty) {
-                        self.mir_builder.add_type(MirType::Pointer { pointee: *element })
-                    } else {
-                        arg_mir_ty
-                    }
-                }
-            } else {
-                // For unprototyped functions, also perform default argument promotions
-                if let MirType::Array { element, .. } = self.mir_builder.get_type(arg_mir_ty) {
-                    self.mir_builder.add_type(MirType::Pointer { pointee: *element })
-                } else {
+                    // Variadic argument: Logic handled by implicit conversions (Promotion/Decay) calculated in analyzer.rs
+                    // We just need a placeholder type, or the promoted type if we could calculate it.
+                    // Since semantic analysis has inserted promoted type casts/conversions, we can start with the argument's own type.
                     arg_mir_ty
                 }
+            } else {
+                // Unprototyped function: Logic handled by implicit conversions
+                arg_mir_ty
             };
 
             let converted_arg = self.apply_conversions(arg_operand, arg_ref, target_mir_ty);
@@ -1730,14 +1702,14 @@ impl<'a> AstToMirLowerer<'a> {
                     void_ptr_mir
                 }
             }
-            ImplicitConversion::PointerDecay => target_type_id,
+            ImplicitConversion::PointerDecay { to } => self.lower_type(*to),
             ImplicitConversion::LValueToRValue => target_type_id,
             ImplicitConversion::QualifierAdjust { .. } => target_type_id,
         };
 
         // Optimization: skip if already same type
         let current_ty = self.get_operand_type(&operand);
-        if current_ty == to_mir_type && !matches!(conv, ImplicitConversion::PointerDecay) {
+        if current_ty == to_mir_type && !matches!(conv, ImplicitConversion::PointerDecay { .. }) {
             return operand;
         }
 
@@ -1749,12 +1721,14 @@ impl<'a> AstToMirLowerer<'a> {
                 to_mir_type,
                 Box::new(Operand::Constant(self.create_constant(ConstValue::Int(0)))),
             ),
-            ImplicitConversion::PointerDecay => {
+            ImplicitConversion::PointerDecay { .. } => {
                 if let Operand::Copy(place) = &operand {
                     let addr_of_array = Operand::AddressOf(place.clone());
-                    Operand::Cast(target_type_id, Box::new(addr_of_array))
+                    Operand::Cast(to_mir_type, Box::new(addr_of_array))
                 } else {
-                    Operand::Cast(target_type_id, Box::new(operand))
+                    // If it's not a place (e.g. String Literal might be lowered to Constant directly?)
+                    // String literals usually LValue, so Copy(Place::Global/Local).
+                    Operand::Cast(to_mir_type, Box::new(operand))
                 }
             }
             _ => Operand::Cast(target_type_id, Box::new(operand)),

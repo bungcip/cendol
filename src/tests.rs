@@ -19,6 +19,7 @@ pub mod semantic_mir;
 pub mod semantic_negative;
 pub mod semantic_sizeof;
 pub mod semantic_symbol_redefinition;
+pub mod semantic_type_specifiers;
 pub mod semantic_types;
 pub mod semantic_validation;
 pub mod source_manager;

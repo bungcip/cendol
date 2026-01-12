@@ -697,6 +697,22 @@ fn merge_base_type(
                             Some(QualType::unqualified(ctx.registry.type_long_long_unsigned))
                         }
 
+                        // Redundant 'int' combined with other specifiers
+                        (BuiltinType::Short, BuiltinType::Int) => Some(existing_ref),
+                        (BuiltinType::Int, BuiltinType::Short) => Some(new_type),
+                        (BuiltinType::UShort, BuiltinType::Int) => Some(existing_ref),
+                        (BuiltinType::Int, BuiltinType::UShort) => Some(new_type),
+
+                        (BuiltinType::Long, BuiltinType::Int) => Some(existing_ref),
+                        (BuiltinType::Int, BuiltinType::Long) => Some(new_type),
+                        (BuiltinType::ULong, BuiltinType::Int) => Some(existing_ref),
+                        (BuiltinType::Int, BuiltinType::ULong) => Some(new_type),
+
+                        (BuiltinType::LongLong, BuiltinType::Int) => Some(existing_ref),
+                        (BuiltinType::Int, BuiltinType::LongLong) => Some(new_type),
+                        (BuiltinType::ULongLong, BuiltinType::Int) => Some(existing_ref),
+                        (BuiltinType::Int, BuiltinType::ULongLong) => Some(new_type),
+
                         // Long + Long -> LongLong
                         (BuiltinType::Long, BuiltinType::Long) => {
                             Some(QualType::unqualified(ctx.registry.type_long_long))
@@ -705,6 +721,26 @@ fn merge_base_type(
                         // Long + LongLong -> LongLong
                         (BuiltinType::Long, BuiltinType::LongLong) => Some(new_type),
                         (BuiltinType::LongLong, BuiltinType::Long) => Some(existing_ref),
+
+                        // ULong + Long -> ULongLong
+                        (BuiltinType::ULong, BuiltinType::Long) => {
+                            Some(QualType::unqualified(ctx.registry.type_long_long_unsigned))
+                        }
+                        (BuiltinType::Long, BuiltinType::ULong) => {
+                            Some(QualType::unqualified(ctx.registry.type_long_long_unsigned))
+                        }
+
+                        // Long + ULongLong -> ULongLong
+                        (BuiltinType::Long, BuiltinType::ULongLong) => Some(new_type),
+                        (BuiltinType::ULongLong, BuiltinType::Long) => Some(existing_ref),
+
+                        // Long + Double -> LongDouble
+                        (BuiltinType::Double, BuiltinType::Long) => {
+                            Some(QualType::unqualified(ctx.registry.type_long_double))
+                        }
+                        (BuiltinType::Long, BuiltinType::Double) => {
+                            Some(QualType::unqualified(ctx.registry.type_long_double))
+                        }
 
                         // Error for other combinations (e.g. double int)
                         _ => {
@@ -738,11 +774,10 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
     // _Thread_local constraints (C11 6.7.1p3)
     if info.is_thread_local {
         // Can only be used alone or with static/extern
-        if let Some(s) = info.storage {
-            if s != StorageClass::Static && s != StorageClass::Extern {
+        if let Some(s) = info.storage
+            && s != StorageClass::Static && s != StorageClass::Extern {
                 ctx.report_error(SemanticError::ConflictingStorageClasses { span });
             }
-        }
     }
 
     // Check for missing required specifiers (type specifier)

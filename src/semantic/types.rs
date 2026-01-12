@@ -98,6 +98,7 @@ pub enum BuiltinType {
     Float = 14,
     Double = 15,
     LongDouble = 16,
+    Signed = 17,
 }
 
 impl BuiltinType {
@@ -119,6 +120,7 @@ impl BuiltinType {
             14 => Some(Self::Float),
             15 => Some(Self::Double),
             16 => Some(Self::LongDouble),
+            17 => Some(Self::Signed),
             _ => None,
         }
     }
@@ -537,6 +539,7 @@ impl Display for TypeKind {
                 BuiltinType::Float => write!(f, "float"),
                 BuiltinType::Double => write!(f, "double"),
                 BuiltinType::LongDouble => write!(f, "long double"),
+                BuiltinType::Signed => write!(f, "signed"),
             },
             TypeKind::Complex { .. } => write!(f, "_Complex"),
             TypeKind::Pointer { .. } => write!(f, "<pointer>"),

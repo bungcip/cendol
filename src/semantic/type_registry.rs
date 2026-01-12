@@ -52,11 +52,13 @@ pub struct TypeRegistry {
     pub type_long_long: TypeRef,
     pub type_long_long_unsigned: TypeRef,
     pub type_char: TypeRef,
+    pub type_schar: TypeRef,
     pub type_char_unsigned: TypeRef,
     pub type_float: TypeRef,
     pub type_double: TypeRef,
     pub type_long_double: TypeRef,
     pub type_void_ptr: TypeRef,
+    pub type_signed: TypeRef,
     pub type_error: TypeRef,
 }
 
@@ -87,6 +89,7 @@ impl TypeRegistry {
             type_long: unsafe { TypeRef::from_raw_unchecked(1) },
             type_long_long: unsafe { TypeRef::from_raw_unchecked(1) },
             type_char: unsafe { TypeRef::from_raw_unchecked(1) },
+            type_schar: unsafe { TypeRef::from_raw_unchecked(1) },
             type_short_unsigned: unsafe { TypeRef::from_raw_unchecked(1) },
             type_char_unsigned: unsafe { TypeRef::from_raw_unchecked(1) },
             type_long_unsigned: unsafe { TypeRef::from_raw_unchecked(1) },
@@ -95,6 +98,7 @@ impl TypeRegistry {
             type_double: unsafe { TypeRef::from_raw_unchecked(1) },
             type_long_double: unsafe { TypeRef::from_raw_unchecked(1) },
             type_void_ptr: unsafe { TypeRef::from_raw_unchecked(1) },
+            type_signed: unsafe { TypeRef::from_raw_unchecked(1) },
             type_error: unsafe { TypeRef::from_raw_unchecked(1) },
         };
 
@@ -121,7 +125,7 @@ impl TypeRegistry {
         self.type_char = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Char));
 
         // 4: SChar (explicit signed char)
-        let _type_schar = self.alloc_builtin(TypeKind::Builtin(BuiltinType::SChar));
+        self.type_schar = self.alloc_builtin(TypeKind::Builtin(BuiltinType::SChar));
 
         // 5: UChar
         self.type_char_unsigned = self.alloc_builtin(TypeKind::Builtin(BuiltinType::UChar));
@@ -159,11 +163,14 @@ impl TypeRegistry {
         // 16: LongDouble
         self.type_long_double = self.alloc_builtin(TypeKind::Builtin(BuiltinType::LongDouble));
 
+        // 17: Signed (marker)
+        self.type_signed = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Signed));
+
         // Pre-calculate void*
         self.type_void_ptr = self.pointer_to(QualType::unqualified(self.type_void));
 
-        // We can assert that the last allocated index was 16
-        debug_assert_eq!(self.types.len() - 1, 16, "Builtin types allocation mismatch");
+        // We can assert that the last allocated index was 17
+        debug_assert_eq!(self.types.len() - 1, 17, "Builtin types allocation mismatch");
     }
 
     fn alloc_builtin(&mut self, kind: TypeKind) -> TypeRef {
@@ -554,6 +561,11 @@ impl TypeRegistry {
                     alignment: 16,
                     kind: LayoutKind::Scalar,
                 },
+                BuiltinType::Signed => TypeLayout {
+                    size: 4,
+                    alignment: 4,
+                    kind: LayoutKind::Scalar,
+                },
             },
 
             TypeKind::Pointer { .. } => {
@@ -792,6 +804,7 @@ impl TypeRegistry {
                 BuiltinType::Float => "float".to_string(),
                 BuiltinType::Double => "double".to_string(),
                 BuiltinType::LongDouble => "long double".to_string(),
+                BuiltinType::Signed => "signed".to_string(),
             },
             TypeKind::Complex { base_type } => format!("_Complex {}", self.display_type(*base_type)),
             TypeKind::Pointer { pointee } => format!("{}*", self.display_qual_type(*pointee)),

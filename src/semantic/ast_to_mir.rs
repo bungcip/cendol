@@ -1629,6 +1629,7 @@ impl<'a> AstToMirLowerer<'a> {
                 BuiltinType::ULong | BuiltinType::ULongLong => MirType::U64,
                 BuiltinType::Float => MirType::F32,
                 BuiltinType::Double | BuiltinType::LongDouble => MirType::F64, // Mapping long double to double (64-bit) is a valid implementation choice
+                BuiltinType::Signed => MirType::I32,
             },
             TypeKind::Pointer { pointee } => MirType::Pointer {
                 pointee: self.lower_type(pointee.ty()),

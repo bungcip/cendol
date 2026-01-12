@@ -536,7 +536,7 @@ fn resolve_type_specifier(
         ParsedTypeSpecifier::LongDouble => Ok(QualType::unqualified(ctx.registry.type_long_double)),
         ParsedTypeSpecifier::Signed => {
             // Signed modifier
-            Ok(QualType::unqualified(ctx.registry.type_int))
+            Ok(QualType::unqualified(ctx.registry.type_signed))
         }
         ParsedTypeSpecifier::Unsigned => {
             // Unsigned modifier - return a special marker type that will be handled in merge_base_type
@@ -661,9 +661,45 @@ fn merge_base_type(
             match (&existing_type.kind, &new_type_info.kind) {
                 (TypeKind::Builtin(existing_builtin), TypeKind::Builtin(new_builtin)) => {
                     match (existing_builtin, new_builtin) {
-                        // Unsigned overrides signed (Int + UInt -> UInt)
+                        // 1. Same types (redundancy)
+                        (a, b) if a == b => {
+                            // C99/C11: int int is NOT allowed, but long long is.
+                            // However, many compilers allow redundant specifiers.
+                            // In Cendol, we'll allow it for now if they are identical,
+                            // EXCEPT for types that already have a combined form (like long long).
+                            if *a == BuiltinType::Long {
+                                Some(QualType::unqualified(ctx.registry.type_long_long))
+                            } else {
+                                Some(existing_ref)
+                            }
+                        }
+
+                        // 2. Handle Signed as a modifier
+                        (BuiltinType::Signed, BuiltinType::Int) => Some(new_type),
+                        (BuiltinType::Int, BuiltinType::Signed) => Some(existing_ref),
+
+                        (BuiltinType::Signed, BuiltinType::Char) => {
+                            Some(QualType::unqualified(ctx.registry.type_schar))
+                        }
+                        (BuiltinType::Char, BuiltinType::Signed) => {
+                            Some(QualType::unqualified(ctx.registry.type_schar))
+                        }
+
+                        (BuiltinType::Signed, BuiltinType::Short) => Some(new_type),
+                        (BuiltinType::Short, BuiltinType::Signed) => Some(existing_ref),
+
+                        (BuiltinType::Signed, BuiltinType::Long) => Some(new_type),
+                        (BuiltinType::Long, BuiltinType::Signed) => Some(existing_ref),
+
+                        (BuiltinType::Signed, BuiltinType::LongLong) => Some(new_type),
+                        (BuiltinType::LongLong, BuiltinType::Signed) => Some(existing_ref),
+
+                        // 3. Unsigned overrides signed/marker
                         (BuiltinType::Int, BuiltinType::UInt) => Some(new_type),
                         (BuiltinType::UInt, BuiltinType::Int) => Some(existing_ref),
+
+                        (BuiltinType::Signed, BuiltinType::UInt) => Some(new_type),
+                        (BuiltinType::UInt, BuiltinType::Signed) => Some(existing_ref),
 
                         // Char + Unsigned -> UChar
                         (BuiltinType::Char, BuiltinType::UInt) => {
@@ -697,7 +733,7 @@ fn merge_base_type(
                             Some(QualType::unqualified(ctx.registry.type_long_long_unsigned))
                         }
 
-                        // Redundant 'int' combined with other specifiers
+                        // 4. Redundant 'int' combined with other specifiers
                         (BuiltinType::Short, BuiltinType::Int) => Some(existing_ref),
                         (BuiltinType::Int, BuiltinType::Short) => Some(new_type),
                         (BuiltinType::UShort, BuiltinType::Int) => Some(existing_ref),
@@ -713,10 +749,8 @@ fn merge_base_type(
                         (BuiltinType::ULongLong, BuiltinType::Int) => Some(existing_ref),
                         (BuiltinType::Int, BuiltinType::ULongLong) => Some(new_type),
 
-                        // Long + Long -> LongLong
-                        (BuiltinType::Long, BuiltinType::Long) => {
-                            Some(QualType::unqualified(ctx.registry.type_long_long))
-                        }
+                        // 5. Long + Long -> LongLong (handled by case 1 above partially, but let's be explicit if needed)
+                        // (BuiltinType::Long, BuiltinType::Long) is already handled in case 1.
 
                         // Long + LongLong -> LongLong
                         (BuiltinType::Long, BuiltinType::LongLong) => Some(new_type),
@@ -842,6 +876,13 @@ pub(crate) fn lower_decl_specifiers(
                 // Ignore attributes for now
             }
         }
+    }
+
+    // Finalize base type: 'signed' without anything else defaults to 'int'
+    if let Some(base) = info.base_type
+        && base.ty() == ctx.registry.type_signed
+    {
+        info.base_type = Some(QualType::unqualified(ctx.registry.type_int));
     }
 
     validate_specifier_combinations(&info, ctx, span);

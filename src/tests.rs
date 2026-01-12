@@ -25,3 +25,4 @@ pub mod semantic_types;
 pub mod semantic_validation;
 pub mod source_manager;
 pub mod test_utils;
+mod type_specifier_regression;

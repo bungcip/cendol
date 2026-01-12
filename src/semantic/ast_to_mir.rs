@@ -842,29 +842,47 @@ impl<'a> AstToMirLowerer<'a> {
     fn lower_unary_deref(&mut self, scope_id: ScopeId, operand_ref: NodeRef) -> Operand {
         let operand = self.lower_expression(scope_id, operand_ref, true);
 
-        // Determine the expected type of the operand after conversions.
-        // For Deref, we expect a pointer.
-        // If operand is Array/Function, it decays to Pointer.
-        let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
-        let target_type_id = if operand_ty.is_array() {
-            let element_ty = match &self.registry.get(operand_ty.ty()).kind {
-                TypeKind::Array { element_type, .. } => *element_type,
-                _ => panic!("Expected array"),
-            };
-            let element_mir_ty = self.lower_type(element_ty);
-            self.mir_builder.add_type(MirType::Pointer {
-                pointee: element_mir_ty,
-            })
-        } else if operand_ty.is_function() {
-            // Function decays to pointer to function
-            let func_mir_ty = self.lower_qual_type(operand_ty);
-            self.mir_builder.add_type(MirType::Pointer { pointee: func_mir_ty })
-        } else {
-            // Already pointer (or should be)
-            self.lower_qual_type(operand_ty)
-        };
+        // Dereference expects a pointer.
+        // Implicit conversions (including pointer decay of array/function operands)
+        // are handled by apply_conversions before the Deref operation if needed.
+        // Here we just determine the type of the result (pointee).
 
-        let operand_converted = self.apply_conversions(operand, operand_ref, target_type_id);
+        let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
+        // If operand is a pointer (after conversion), we get its pointee.
+        // If it's an array/function, it should decay to pointer via conversions.
+        // However, we need to know the *mir type* of the operand to dereference.
+        // The `operand` we got is already lowered.
+
+        // We check the *converted* type logic here implicitly by looking at what `lower_unary_deref` usually does.
+        // But wait, `lower_expression` applies conversions for the *result* of this expression, not the operand inside.
+        // Actually, `lower_unary_deref` calls `lower_expression(operand_ref)`, which lowers the operand.
+        // We need to apply conversions *on the operand* to match expected "pointer" type.
+
+        // Actually, `lower_unary_deref` logic is: Deref(Operand).
+        // The operand must be a pointer.
+        // If the AST node for operand has conversions (like ArrayToPointer), we must apply them.
+
+        // Let's rely on semantic analysis: if it's a valid Deref, the operand (after conversions) IS a pointer.
+        // We just need to apply those conversions.
+
+        // However, the target type for conversions needs to be known.
+        // For Deref, the target type is "pointer to X".
+        // But `PointerDecay` now carries the target type, so we don't strictly *need* to know it upfront if we used `emit_conversion`.
+        // BUT `apply_conversions` still takes `target_type_id`.
+        // Let's see: `emit_conversion` with `PointerDecay` uses the `to` field.
+        // So `target_type_id` passed to `apply_conversions` only matters for other conversion types if any?
+        // Actually `PointerDecay` is usually the one changing the type structure significantly here.
+
+        // Wait, `apply_conversions` signature is `apply_conversions(operand, node_ref, target_type_id)`.
+        // We can pass a dummy target type if we know `PointerDecay` handles it?
+        // or better, we can calculate the expected pointer type.
+
+        // We pass the operand's original type (lowered) as target if we don't have conversions.
+        // If we DO have conversions (PointerDecay), emit_conversion will use the 'to' type.
+        // If we don't, then operand_ty should already be a pointer.
+
+        let target_mir_ty = self.lower_qual_type(operand_ty);
+        let operand_converted = self.apply_conversions(operand, operand_ref, target_mir_ty);
 
         let place = Place::Deref(Box::new(operand_converted));
         Operand::Copy(Box::new(place))
@@ -1259,21 +1277,14 @@ impl<'a> AstToMirLowerer<'a> {
                 if i < param_types_vec.len() {
                     param_types_vec[i]
                 } else {
-                    // For variadic arguments, perform default argument promotions
-                    // Array decays to pointer
-                    if let MirType::Array { element, .. } = self.mir_builder.get_type(arg_mir_ty) {
-                        self.mir_builder.add_type(MirType::Pointer { pointee: *element })
-                    } else {
-                        arg_mir_ty
-                    }
-                }
-            } else {
-                // For unprototyped functions, also perform default argument promotions
-                if let MirType::Array { element, .. } = self.mir_builder.get_type(arg_mir_ty) {
-                    self.mir_builder.add_type(MirType::Pointer { pointee: *element })
-                } else {
+                    // Variadic argument: Logic handled by implicit conversions (Promotion/Decay) calculated in analyzer.rs
+                    // We just need a placeholder type, or the promoted type if we could calculate it.
+                    // Since semantic analysis has inserted promoted type casts/conversions, we can start with the argument's own type.
                     arg_mir_ty
                 }
+            } else {
+                // Unprototyped function: Logic handled by implicit conversions
+                arg_mir_ty
             };
 
             let converted_arg = self.apply_conversions(arg_operand, arg_ref, target_mir_ty);
@@ -1730,14 +1741,14 @@ impl<'a> AstToMirLowerer<'a> {
                     void_ptr_mir
                 }
             }
-            ImplicitConversion::PointerDecay => target_type_id,
+            ImplicitConversion::PointerDecay { to } => self.lower_type(*to),
             ImplicitConversion::LValueToRValue => target_type_id,
             ImplicitConversion::QualifierAdjust { .. } => target_type_id,
         };
 
         // Optimization: skip if already same type
         let current_ty = self.get_operand_type(&operand);
-        if current_ty == to_mir_type && !matches!(conv, ImplicitConversion::PointerDecay) {
+        if current_ty == to_mir_type && !matches!(conv, ImplicitConversion::PointerDecay { .. }) {
             return operand;
         }
 
@@ -1749,12 +1760,14 @@ impl<'a> AstToMirLowerer<'a> {
                 to_mir_type,
                 Box::new(Operand::Constant(self.create_constant(ConstValue::Int(0)))),
             ),
-            ImplicitConversion::PointerDecay => {
+            ImplicitConversion::PointerDecay { .. } => {
                 if let Operand::Copy(place) = &operand {
                     let addr_of_array = Operand::AddressOf(place.clone());
-                    Operand::Cast(target_type_id, Box::new(addr_of_array))
+                    Operand::Cast(to_mir_type, Box::new(addr_of_array))
                 } else {
-                    Operand::Cast(target_type_id, Box::new(operand))
+                    // If it's not a place (e.g. String Literal might be lowered to Constant directly?)
+                    // String literals usually LValue, so Copy(Place::Global/Local).
+                    Operand::Cast(to_mir_type, Box::new(operand))
                 }
             }
             _ => Operand::Cast(target_type_id, Box::new(operand)),

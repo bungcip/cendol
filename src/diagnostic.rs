@@ -287,6 +287,9 @@ pub enum SemanticError {
 
     #[error("comparison of incompatible pointer types '{lhs}' and '{rhs}'")]
     IncompatiblePointerComparison { lhs: String, rhs: String, span: SourceSpan },
+
+    #[error("'case' or 'default' label not in switch statement")]
+    CaseNotInSwitch { span: SourceSpan },
 }
 
 impl SemanticError {
@@ -326,6 +329,7 @@ impl SemanticError {
             SemanticError::AssignmentToReadOnly { span } => *span,
             SemanticError::IncompleteType { span, .. } => *span,
             SemanticError::IncompatiblePointerComparison { span, .. } => *span,
+            SemanticError::CaseNotInSwitch { span } => *span,
         }
     }
 }

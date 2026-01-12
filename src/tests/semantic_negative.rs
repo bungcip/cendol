@@ -239,7 +239,6 @@ fn test_negative_array_size() {
 
 // G. Control Flow Constraints
 #[test]
-#[ignore = "still not implemented"]
 fn test_case_outside_switch() {
     run_fail_with_message(
         r#"

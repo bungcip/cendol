@@ -76,6 +76,7 @@ pub(crate) fn run_semantic_analyzer(
         current_function_ret_type: None,
         current_function_name: None,
         deferred_checks: Vec::new(),
+        switch_depth: 0,
     };
     let root = ast.get_root();
     resolver.visit_node(root);
@@ -96,6 +97,7 @@ struct SemanticAnalyzer<'a> {
     current_function_ret_type: Option<QualType>,
     current_function_name: Option<String>,
     deferred_checks: Vec<DeferredCheck>,
+    switch_depth: usize,
 }
 
 impl<'a> SemanticAnalyzer<'a> {
@@ -815,21 +817,35 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::Switch(cond, body) => {
                 self.visit_node(*cond);
+                self.switch_depth += 1;
                 self.visit_node(*body);
+                self.switch_depth -= 1;
                 None
             }
             NodeKind::Case(expr, stmt) => {
+                if self.switch_depth == 0 {
+                    let span = self.ast.get_span(node_ref);
+                    self.report_error(SemanticError::CaseNotInSwitch { span });
+                }
                 self.visit_node(*expr);
                 self.visit_node(*stmt);
                 None
             }
             NodeKind::CaseRange(start, end, stmt) => {
+                if self.switch_depth == 0 {
+                    let span = self.ast.get_span(node_ref);
+                    self.report_error(SemanticError::CaseNotInSwitch { span });
+                }
                 self.visit_node(*start);
                 self.visit_node(*end);
                 self.visit_node(*stmt);
                 None
             }
             NodeKind::Default(stmt) => {
+                if self.switch_depth == 0 {
+                    let span = self.ast.get_span(node_ref);
+                    self.report_error(SemanticError::CaseNotInSwitch { span });
+                }
                 self.visit_node(*stmt);
                 None
             }

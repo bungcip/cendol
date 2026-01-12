@@ -8,6 +8,7 @@ use crate::{
 };
 
 use smallvec::SmallVec;
+use std::collections::HashSet;
 
 /// Side table containing semantic information for AST nodes.
 /// Parallel vectors indexed by node index (NodeRef.index()).
@@ -77,6 +78,8 @@ pub(crate) fn run_semantic_analyzer(
         current_function_name: None,
         deferred_checks: Vec::new(),
         switch_depth: 0,
+        switch_cases: Vec::new(),
+        switch_default_seen: Vec::new(),
     };
     let root = ast.get_root();
     resolver.visit_node(root);
@@ -98,6 +101,8 @@ struct SemanticAnalyzer<'a> {
     current_function_name: Option<String>,
     deferred_checks: Vec<DeferredCheck>,
     switch_depth: usize,
+    switch_cases: Vec<HashSet<i64>>,
+    switch_default_seen: Vec<bool>,
 }
 
 impl<'a> SemanticAnalyzer<'a> {
@@ -923,7 +928,11 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::Switch(cond, body) => {
                 self.visit_node(*cond);
                 self.switch_depth += 1;
+                self.switch_cases.push(HashSet::new());
+                self.switch_default_seen.push(false);
                 self.visit_node(*body);
+                self.switch_default_seen.pop();
+                self.switch_cases.pop();
                 self.switch_depth -= 1;
                 None
             }
@@ -931,6 +940,26 @@ impl<'a> SemanticAnalyzer<'a> {
                 if self.switch_depth == 0 {
                     let span = self.ast.get_span(node_ref);
                     self.report_error(SemanticError::CaseNotInSwitch { span });
+                } else {
+                    let ctx = crate::semantic::const_eval::ConstEvalCtx {
+                        ast: self.ast,
+                        symbol_table: self.symbol_table,
+                    };
+                    if let Some(val) = crate::semantic::const_eval::eval_const_expr(&ctx, *expr) {
+                        let is_duplicate = if let Some(cases) = self.switch_cases.last_mut() {
+                            !cases.insert(val)
+                        } else {
+                            false
+                        };
+
+                        if is_duplicate {
+                            let span = self.ast.get_span(node_ref);
+                            self.report_error(SemanticError::DuplicateCase {
+                                value: val.to_string(),
+                                span,
+                            });
+                        }
+                    }
                 }
                 self.visit_node(*expr);
                 self.visit_node(*stmt);
@@ -940,6 +969,33 @@ impl<'a> SemanticAnalyzer<'a> {
                 if self.switch_depth == 0 {
                     let span = self.ast.get_span(node_ref);
                     self.report_error(SemanticError::CaseNotInSwitch { span });
+                } else {
+                    let ctx = crate::semantic::const_eval::ConstEvalCtx {
+                        ast: self.ast,
+                        symbol_table: self.symbol_table,
+                    };
+                    if let (Some(start_val), Some(end_val)) = (
+                        crate::semantic::const_eval::eval_const_expr(&ctx, *start),
+                        crate::semantic::const_eval::eval_const_expr(&ctx, *end),
+                    ) {
+                        let mut duplicate_val = None;
+                        if let Some(cases) = self.switch_cases.last_mut() {
+                            for val in start_val..=end_val {
+                                if !cases.insert(val) {
+                                    duplicate_val = Some(val);
+                                    break;
+                                }
+                            }
+                        }
+
+                        if let Some(val) = duplicate_val {
+                            let span = self.ast.get_span(node_ref);
+                            self.report_error(SemanticError::DuplicateCase {
+                                value: val.to_string(),
+                                span,
+                            });
+                        }
+                    }
                 }
                 self.visit_node(*start);
                 self.visit_node(*end);
@@ -950,6 +1006,19 @@ impl<'a> SemanticAnalyzer<'a> {
                 if self.switch_depth == 0 {
                     let span = self.ast.get_span(node_ref);
                     self.report_error(SemanticError::CaseNotInSwitch { span });
+                } else {
+                    let is_duplicate = if let Some(seen) = self.switch_default_seen.last_mut() {
+                        let was_seen = *seen;
+                        *seen = true;
+                        was_seen
+                    } else {
+                        false
+                    };
+
+                    if is_duplicate {
+                        let span = self.ast.get_span(node_ref);
+                        self.report_error(SemanticError::MultipleDefaultLabels { span });
+                    }
                 }
                 self.visit_node(*stmt);
                 None

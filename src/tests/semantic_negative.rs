@@ -249,7 +249,6 @@ fn test_case_outside_switch() {
 }
 
 #[test]
-#[ignore = "still not implemented"]
 fn test_duplicate_case() {
     run_fail_with_message(
         r#"

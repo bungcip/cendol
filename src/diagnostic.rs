@@ -298,6 +298,12 @@ pub enum SemanticError {
     #[error("'case' or 'default' label not in switch statement")]
     CaseNotInSwitch { span: SourceSpan },
 
+    #[error("duplicate case value '{value}'")]
+    DuplicateCase { value: String, span: SourceSpan },
+
+    #[error("multiple default labels in one switch")]
+    MultipleDefaultLabels { span: SourceSpan },
+
     #[error("flexible array member must be the last member of a structure")]
     FlexibleArrayNotLast { span: SourceSpan },
 
@@ -346,6 +352,8 @@ impl SemanticError {
             SemanticError::IncompleteType { span, .. } => *span,
             SemanticError::IncompatiblePointerComparison { span, .. } => *span,
             SemanticError::CaseNotInSwitch { span } => *span,
+            SemanticError::DuplicateCase { span, .. } => *span,
+            SemanticError::MultipleDefaultLabels { span } => *span,
             SemanticError::FlexibleArrayNotLast { span } => *span,
             SemanticError::FlexibleArrayInEmptyStruct { span } => *span,
         }

@@ -739,7 +739,12 @@ impl TypeRegistry {
         match kind {
             TypeKind::Record { is_complete, .. } => *is_complete,
             TypeKind::Enum { is_complete, .. } => *is_complete,
-            TypeKind::Array { element_type, .. } => self.is_complete(*element_type),
+            TypeKind::Array { element_type, size } => {
+                if let ArraySizeType::Incomplete = size {
+                    return false;
+                }
+                self.is_complete(*element_type)
+            }
             TypeKind::Builtin(BuiltinType::Void) => false,
             _ => true, // Scalars are always complete
         }

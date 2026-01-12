@@ -164,7 +164,6 @@ fn test_flexible_array_not_last() {
 }
 
 #[test]
-#[ignore = "still not implemented"]
 fn test_bitfield_invalid_type() {
     run_fail_with_message(
         r#"

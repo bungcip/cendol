@@ -245,6 +245,9 @@ pub enum SemanticError {
     #[error("bit-field width is not a constant expression")]
     NonConstantBitfieldWidth { span: SourceSpan },
 
+    #[error("bit-field type '{ty}' is invalid")]
+    InvalidBitfieldType { ty: String, span: SourceSpan },
+
     // Errors related to declaration specifiers
     #[error("conflicting storage class specifiers")]
     ConflictingStorageClasses { span: SourceSpan },
@@ -314,6 +317,7 @@ impl SemanticError {
             SemanticError::InvalidArraySize { span } => *span,
             SemanticError::InvalidBitfieldWidth { span } => *span,
             SemanticError::NonConstantBitfieldWidth { span } => *span,
+            SemanticError::InvalidBitfieldType { span, .. } => *span,
             SemanticError::ConflictingStorageClasses { span } => *span,
             SemanticError::ConflictingTypeSpecifiers { span, .. } => *span,
             SemanticError::InvalidFunctionSpecifier { span, .. } => *span,

@@ -2185,6 +2185,14 @@ pub(crate) fn lower_struct_members(
                 QualType::unqualified(ctx.registry.type_int)
             };
 
+            // Validate bit-field type
+            if bit_field_size.is_some() && !member_type.is_integer() {
+                ctx.report_error(SemanticError::InvalidBitfieldType {
+                    ty: ctx.registry.display_qual_type(member_type),
+                    span: init_declarator.span,
+                });
+            }
+
             struct_members.push(StructMember {
                 name: member_name,
                 member_type,

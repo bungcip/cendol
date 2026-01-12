@@ -178,7 +178,6 @@ fn test_bitfield_invalid_type() {
 
 // E. Enum Semantics
 #[test]
-#[ignore = "still not implemented"]
 fn test_enum_redefinition_enumerator() {
     run_fail_with_message(
         r#"
@@ -189,7 +188,7 @@ fn test_enum_redefinition_enumerator() {
         };
         "#,
         CompilePhase::Mir,
-        "redeclaration",
+        "redefinition",
     );
 }
 

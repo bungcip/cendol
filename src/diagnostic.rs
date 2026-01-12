@@ -224,7 +224,11 @@ pub enum SemanticError {
     #[error("Invalid use of void type in expression")]
     InvalidUseOfVoid { span: SourceSpan },
     #[error("conflicting types for '{name}'")]
-    ConflictingTypes { name: String, span: SourceSpan, first_def: SourceSpan },
+    ConflictingTypes {
+        name: String,
+        span: SourceSpan,
+        first_def: SourceSpan,
+    },
     #[error("void function '{name}' should not return a value")]
     VoidReturnWithValue { name: String, span: SourceSpan },
     #[error("non-void function '{name}' should return a value")]

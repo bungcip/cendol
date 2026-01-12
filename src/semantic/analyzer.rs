@@ -167,14 +167,17 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_return_statement(&mut self, expr: &Option<NodeRef>, _span: SourceSpan) {
         let ret_ty = self.current_function_ret_type;
         let is_void_func = ret_ty.is_some_and(|ty| ty.is_void());
-        let func_name = self.current_function_name.clone().unwrap_or_else(|| "<unknown>".to_string());
+        let func_name = self
+            .current_function_name
+            .clone()
+            .unwrap_or_else(|| "<unknown>".to_string());
 
         if let Some(expr_ref) = expr {
             if is_void_func {
                 let err_span = self.ast.get_span(*expr_ref);
                 self.report_error(SemanticError::VoidReturnWithValue {
-                     name: func_name.clone(),
-                     span: err_span
+                    name: func_name.clone(),
+                    span: err_span,
                 });
             }
             if let Some(expr_ty) = self.visit_node(*expr_ref)
@@ -185,8 +188,8 @@ impl<'a> SemanticAnalyzer<'a> {
         } else if !is_void_func {
             self.report_error(SemanticError::NonVoidReturnWithoutValue {
                 name: func_name,
-                span: _span
-             });
+                span: _span,
+            });
         }
     }
 

@@ -326,11 +326,13 @@ fn test_function_call_args_contiguity() {
 
 #[test]
 fn test_alignment_specifier() {
-    let (ast, registry, symbol_table) = setup_lowering(r#"
+    let (ast, registry, symbol_table) = setup_lowering(
+        r#"
         _Alignas(8) int x;
         _Alignas(double) char c;
         _Alignas(16) _Alignas(8) int y;
-    "#);
+    "#,
+    );
 
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);

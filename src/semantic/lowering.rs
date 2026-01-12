@@ -873,6 +873,54 @@ pub(crate) fn lower_decl_specifiers(
                 });
                 info.base_type = merge_base_type(info.base_type, ty, ctx, span);
             }
+            ParsedDeclSpecifier::AlignmentSpecifier(align) => {
+                let align_val = match align {
+                    crate::ast::parsed::ParsedAlignmentSpecifier::Type(parsed_ty) => {
+                        let qt = convert_to_qual_type(ctx, *parsed_ty, span)
+                            .unwrap_or(QualType::unqualified(ctx.registry.type_error));
+                        match ctx.registry.ensure_layout(qt.ty()) {
+                            Ok(layout) => layout.alignment as u32,
+                            Err(e) => {
+                                ctx.report_error(e);
+                                0
+                            }
+                        }
+                    }
+                    crate::ast::parsed::ParsedAlignmentSpecifier::Expr(expr_ref) => {
+                        let lowered_expr = ctx.lower_expression(*expr_ref);
+                        let const_ctx = ConstEvalCtx {
+                            ast: ctx.ast,
+                            symbol_table: ctx.symbol_table,
+                        };
+                        if let Some(val) = const_eval::eval_const_expr(&const_ctx, lowered_expr) {
+                            if val < 0 {
+                                ctx.report_error(SemanticError::InvalidAlignment { value: val, span });
+                                0
+                            } else {
+                                val as u32
+                            }
+                        } else {
+                            ctx.report_error(SemanticError::NonConstantAlignment { span });
+                            0
+                        }
+                    }
+                };
+
+                if align_val != 0 {
+                    if !align_val.is_power_of_two() {
+                        ctx.report_error(SemanticError::InvalidAlignment {
+                            value: align_val as i64,
+                            span,
+                        });
+                    } else {
+                        info.alignment = Some(std::cmp::max(info.alignment.unwrap_or(0), align_val));
+                    }
+                }
+            }
+            ParsedDeclSpecifier::FunctionSpecifier(fs) => match fs {
+                FunctionSpecifier::Inline => info.is_inline = true,
+                FunctionSpecifier::Noreturn => info.is_noreturn = true,
+            },
             ParsedDeclSpecifier::Attribute => {
                 // Ignore attributes for now
             }

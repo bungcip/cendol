@@ -192,7 +192,6 @@ fn test_enum_redefinition_enumerator() {
 }
 
 #[test]
-#[ignore = "still not implemented"]
 fn test_enumerator_outside_enum() {
     run_fail_with_message(
         r#"
@@ -202,7 +201,7 @@ fn test_enumerator_outside_enum() {
         }
         "#,
         CompilePhase::Mir,
-        "undeclared",
+        "Undeclared",
     );
 }
 

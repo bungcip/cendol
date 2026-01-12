@@ -316,21 +316,22 @@ impl TypeRef {
 
     #[inline]
     pub fn is_integer(self) -> bool {
-        matches!(
-            self.builtin(),
-            Some(BuiltinType::Bool)
-                | Some(BuiltinType::Char)
-                | Some(BuiltinType::SChar)
-                | Some(BuiltinType::UChar)
-                | Some(BuiltinType::Short)
-                | Some(BuiltinType::UShort)
-                | Some(BuiltinType::Int)
-                | Some(BuiltinType::UInt)
-                | Some(BuiltinType::Long)
-                | Some(BuiltinType::ULong)
-                | Some(BuiltinType::LongLong)
-                | Some(BuiltinType::ULongLong)
-        )
+        self.is_enum()
+            || matches!(
+                self.builtin(),
+                Some(BuiltinType::Bool)
+                    | Some(BuiltinType::Char)
+                    | Some(BuiltinType::SChar)
+                    | Some(BuiltinType::UChar)
+                    | Some(BuiltinType::Short)
+                    | Some(BuiltinType::UShort)
+                    | Some(BuiltinType::Int)
+                    | Some(BuiltinType::UInt)
+                    | Some(BuiltinType::Long)
+                    | Some(BuiltinType::ULong)
+                    | Some(BuiltinType::LongLong)
+                    | Some(BuiltinType::ULongLong)
+            )
     }
 
     #[inline]

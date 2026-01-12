@@ -775,9 +775,11 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
     if info.is_thread_local {
         // Can only be used alone or with static/extern
         if let Some(s) = info.storage
-            && s != StorageClass::Static && s != StorageClass::Extern {
-                ctx.report_error(SemanticError::ConflictingStorageClasses { span });
-            }
+            && s != StorageClass::Static
+            && s != StorageClass::Extern
+        {
+            ctx.report_error(SemanticError::ConflictingStorageClasses { span });
+        }
     }
 
     // Check for missing required specifiers (type specifier)

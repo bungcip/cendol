@@ -216,3 +216,48 @@ fn test_void_assign_variable() {
         "type mismatch",
     );
 }
+
+#[test]
+fn test_assign_enum_to_int() {
+    run_pass(
+        r#"
+        enum E { X };
+        int main() {
+            enum E e = X;
+            int i = e;
+            return i;
+        }
+    "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_assign_int_to_enum() {
+    run_pass(
+        r#"
+        enum E { X };
+        int main() {
+            enum E e;
+            e = 0;
+            return e;
+        }
+    "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_enum_constant_assignment() {
+    run_pass(
+        r#"
+        enum E { X };
+        int main() {
+            enum E e;
+            e = X;
+            return e;
+        }
+    "#,
+        CompilePhase::Mir,
+    );
+}

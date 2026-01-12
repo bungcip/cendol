@@ -5,11 +5,12 @@
 //! static assertions and array sizes.
 
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, UnaryOp};
+use crate::semantic::{SymbolKind, SymbolTable};
 
 /// Context for constant expression evaluation
 pub(crate) struct ConstEvalCtx<'a> {
     pub(crate) ast: &'a Ast,
-    // Add other necessary context here, like symbol table access
+    pub(crate) symbol_table: &'a SymbolTable,
 }
 
 /// Evaluate a constant expression node to an i64 value
@@ -18,6 +19,14 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
     match node_kind {
         NodeKind::LiteralInt(val) => Some(*val),
         NodeKind::LiteralChar(val) => Some(*val as i64),
+        NodeKind::Ident(_, sym_ref) => {
+            let symbol = ctx.symbol_table.get_symbol(*sym_ref);
+            if let SymbolKind::EnumConstant { value } = &symbol.kind {
+                Some(*value)
+            } else {
+                None
+            }
+        }
         NodeKind::BinaryOp(op, left_ref, right_ref) => {
             let left_val = eval_const_expr(ctx, *left_ref)?;
             let right_val = eval_const_expr(ctx, *right_ref)?;

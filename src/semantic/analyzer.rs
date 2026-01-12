@@ -703,7 +703,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 _ => unreachable!(),
             }
         } else {
-            self.registry.get_pointee(arr_ty.ty()).map(|qt| qt)
+            self.registry.get_pointee(arr_ty.ty())
         }
     }
 
@@ -937,11 +937,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 if !self.is_lvalue(*expr) {
                     let span = self.ast.get_span(node_ref);
                     self.report_error(SemanticError::NotAnLvalue { span });
-                } else if let Some(t) = ty {
-                    if self.registry.is_const_recursive(t) {
-                        let span = self.ast.get_span(node_ref);
-                        self.report_error(SemanticError::AssignmentToReadOnly { span });
-                    }
+                } else if let Some(t) = ty
+                    && self.registry.is_const_recursive(t)
+                {
+                    let span = self.ast.get_span(node_ref);
+                    self.report_error(SemanticError::AssignmentToReadOnly { span });
                 }
                 ty
             }
@@ -1080,7 +1080,10 @@ impl<'a> SemanticAnalyzer<'a> {
         let node_kind = self.ast.get_kind(node_ref).clone();
         if let NodeKind::StaticAssert(cond, msg) = node_kind {
             self.visit_node(cond);
-            let ctx = crate::semantic::const_eval::ConstEvalCtx { ast: self.ast };
+            let ctx = crate::semantic::const_eval::ConstEvalCtx {
+                ast: self.ast,
+                symbol_table: self.symbol_table,
+            };
             match crate::semantic::const_eval::eval_const_expr(&ctx, cond) {
                 Some(0) => {
                     self.report_error(SemanticError::StaticAssertFailed {

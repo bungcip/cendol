@@ -248,6 +248,10 @@ pub enum SemanticError {
     // Errors related to declaration specifiers
     #[error("conflicting storage class specifiers")]
     ConflictingStorageClasses { span: SourceSpan },
+    #[error("cannot combine with previous '{prev}' declaration specifier")]
+    ConflictingTypeSpecifiers { prev: String, span: SourceSpan },
+    #[error("'{spec}' function specifier appears on non-function declaration")]
+    InvalidFunctionSpecifier { spec: String, span: SourceSpan },
     #[error("duplicate member '{name}'")]
     DuplicateMember {
         name: NameId,
@@ -308,6 +312,8 @@ impl SemanticError {
             SemanticError::InvalidBitfieldWidth { span } => *span,
             SemanticError::NonConstantBitfieldWidth { span } => *span,
             SemanticError::ConflictingStorageClasses { span } => *span,
+            SemanticError::ConflictingTypeSpecifiers { span, .. } => *span,
+            SemanticError::InvalidFunctionSpecifier { span, .. } => *span,
             SemanticError::DuplicateMember { span, .. } => *span,
             SemanticError::MemberAccessOnNonRecord { span, .. } => *span,
             SemanticError::MemberNotFound { span, .. } => *span,

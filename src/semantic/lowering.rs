@@ -203,6 +203,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DeclSpecInfo {
     pub(crate) storage: Option<StorageClass>,
+    pub(crate) is_thread_local: bool,
     pub(crate) qualifiers: TypeQualifiers,
     pub(crate) base_type: Option<QualType>,
     pub(crate) is_typedef: bool,
@@ -645,7 +646,12 @@ fn resolve_type_specifier(
 }
 
 /// Merge base types according to C type combination rules
-fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut LowerCtx) -> Option<QualType> {
+fn merge_base_type(
+    existing: Option<QualType>,
+    new_type: QualType,
+    ctx: &mut LowerCtx,
+    span: SourceSpan,
+) -> Option<QualType> {
     match existing {
         None => Some(new_type),
         Some(existing_ref) => {
@@ -700,10 +706,23 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
                         (BuiltinType::Long, BuiltinType::LongLong) => Some(new_type),
                         (BuiltinType::LongLong, BuiltinType::Long) => Some(existing_ref),
 
-                        _ => Some(existing_ref),
+                        // Error for other combinations (e.g. double int)
+                        _ => {
+                            ctx.report_error(SemanticError::ConflictingTypeSpecifiers {
+                                prev: ctx.registry.display_qual_type(existing_ref),
+                                span,
+                            });
+                            Some(QualType::unqualified(ctx.registry.type_error))
+                        }
                     }
                 }
-                _ => Some(existing_ref),
+                _ => {
+                    ctx.report_error(SemanticError::ConflictingTypeSpecifiers {
+                        prev: ctx.registry.display_qual_type(existing_ref),
+                        span,
+                    });
+                    Some(QualType::unqualified(ctx.registry.type_error))
+                }
             }
         }
     }
@@ -712,14 +731,26 @@ fn merge_base_type(existing: Option<QualType>, new_type: QualType, ctx: &mut Low
 /// Validate specifier combinations for semantic correctness
 fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span: SourceSpan) {
     // Check typedef with other storage classes
-    if info.is_typedef && info.storage.is_some_and(|s| s != StorageClass::Typedef) {
+    if info.is_typedef
+        && (info.storage.is_some_and(|s| s != StorageClass::Typedef) || info.is_thread_local)
+    {
         ctx.report_error(SemanticError::ConflictingStorageClasses { span });
     }
 
-    // TODO: Add more validation rules
-    // - Check for invalid type combinations
-    // - Check for conflicting specifiers
-    // - Check for missing required specifiers
+    // _Thread_local constraints (C11 6.7.1p3)
+    if info.is_thread_local {
+        // Can only be used alone or with static/extern
+        if let Some(s) = info.storage {
+            if s != StorageClass::Static && s != StorageClass::Extern {
+                ctx.report_error(SemanticError::ConflictingStorageClasses { span });
+            }
+        }
+    }
+
+    // Check for missing required specifiers (type specifier)
+    if info.base_type.is_none() {
+        ctx.report_error(SemanticError::MissingTypeSpecifier { span });
+    }
 }
 
 /// Parse and validate declaration specifiers
@@ -733,13 +764,21 @@ pub(crate) fn lower_decl_specifiers(
     for spec in specs {
         match spec {
             ParsedDeclSpecifier::StorageClass(sc) => {
-                if info.storage.is_some() {
-                    ctx.report_error(SemanticError::ConflictingStorageClasses { span });
+                if *sc == StorageClass::ThreadLocal {
+                    if info.is_thread_local {
+                        // duplicate _Thread_local
+                        ctx.report_error(SemanticError::ConflictingStorageClasses { span });
+                    }
+                    info.is_thread_local = true;
+                } else {
+                    if info.storage.is_some() {
+                        ctx.report_error(SemanticError::ConflictingStorageClasses { span });
+                    }
+                    if *sc == StorageClass::Typedef {
+                        info.is_typedef = true;
+                    }
+                    info.storage = Some(*sc);
                 }
-                if *sc == StorageClass::Typedef {
-                    info.is_typedef = true;
-                }
-                info.storage = Some(*sc);
             }
             ParsedDeclSpecifier::TypeQualifier(tq) => {
                 let mask = match tq {
@@ -762,7 +801,7 @@ pub(crate) fn lower_decl_specifiers(
                     ctx.report_error(e);
                     QualType::unqualified(ctx.registry.type_error)
                 });
-                info.base_type = merge_base_type(info.base_type, ty, ctx);
+                info.base_type = merge_base_type(info.base_type, ty, ctx, span);
             }
             ParsedDeclSpecifier::Attribute => {
                 // Ignore attributes for now
@@ -1311,6 +1350,22 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let init_expr = init.initializer.map(|init_node| self.lower_expression(init_node));
 
             let is_func = final_ty.is_function();
+
+            // Validate function specifiers (inline, _Noreturn)
+            if !is_func {
+                if spec_info.is_inline {
+                    self.report_error(SemanticError::InvalidFunctionSpecifier {
+                        spec: "inline".to_string(),
+                        span,
+                    });
+                }
+                if spec_info.is_noreturn {
+                    self.report_error(SemanticError::InvalidFunctionSpecifier {
+                        spec: "_Noreturn".to_string(),
+                        span,
+                    });
+                }
+            }
 
             if is_func {
                 let func_decl = FunctionDeclData {

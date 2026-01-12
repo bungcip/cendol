@@ -54,11 +54,7 @@ mod tests {
                 .range(cs.stmt_len)
                 .find_map(|idx| {
                     if let crate::ast::NodeKind::VarDecl(v) = &ast.kinds[idx.index()] {
-                        if v.name.to_string() == "arr" {
-                            Some(v)
-                        } else {
-                            None
-                        }
+                        if v.name.to_string() == "arr" { Some(v) } else { None }
                     } else {
                         None
                     }
@@ -77,9 +73,7 @@ mod tests {
             let type_info = registry.get(ty.ty());
             if let TypeKind::Array { size, element_type } = &type_info.kind {
                 assert_eq!(*size, ArraySizeType::Constant(5));
-                assert!(
-                    registry.get(*element_type).kind.to_class() == crate::semantic::types::TypeClass::Builtin
-                );
+                assert!(registry.get(*element_type).kind.to_class() == crate::semantic::types::TypeClass::Builtin);
             // element_type is Int (unqualified TypeRef)
             } else {
                 panic!("Expected Array type, found {:?}", type_info.kind);
@@ -132,11 +126,7 @@ mod tests {
                 .range(cs.stmt_len)
                 .find_map(|idx| {
                     if let crate::ast::NodeKind::VarDecl(v) = &ast.kinds[idx.index()] {
-                        if v.name.to_string() == "arr" {
-                            Some(v)
-                        } else {
-                            None
-                        }
+                        if v.name.to_string() == "arr" { Some(v) } else { None }
                     } else {
                         None
                     }
@@ -170,9 +160,7 @@ mod tests {
                 {
                     assert_eq!(*inner_size, ArraySizeType::Constant(3));
                     // Base is Int
-                    assert!(
-                        registry.get(*base_ref).kind.to_class() == crate::semantic::types::TypeClass::Builtin
-                    );
+                    assert!(registry.get(*base_ref).kind.to_class() == crate::semantic::types::TypeClass::Builtin);
                 } else {
                     panic!("Expected inner array");
                 }

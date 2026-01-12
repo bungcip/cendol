@@ -148,7 +148,6 @@ fn test_duplicate_member() {
 }
 
 #[test]
-#[ignore = "still not implemented"]
 fn test_flexible_array_not_last() {
     run_fail_with_message(
         r#"

@@ -664,9 +664,92 @@ impl TypeRegistry {
         let mut max_align = 1;
         let mut current_size = 0;
         let mut field_layouts = Vec::with_capacity(members.len());
+        // For C11 6.7.2.1p18 flexible array check:
+        // "the last element of a structure with more than one named member may have an incomplete array type"
+        // But incomplete array types are NOT allowed in unions.
+        // We will check validity as we iterate.
+        // Note: The count of members might include anonymous struct/union members which are technically members.
 
-        for member in members {
-            let layout = self.ensure_layout(member.member_type.ty())?;
+        let member_count = members.len();
+
+        for (i, member) in members.iter().enumerate() {
+            let member_ty = member.member_type.ty();
+
+            // Special handling for flexible array member (FAM)
+            // Need to check if it is incomplete array
+            // We can't use is_complete because that recurses. We check TypeKind directly.
+            let is_incomplete_array = if member_ty.is_inline_array() {
+                false // inline array always has len
+            } else {
+                matches!(
+                    self.get(member_ty).kind,
+                    TypeKind::Array {
+                        size: ArraySizeType::Incomplete,
+                        ..
+                    }
+                )
+            };
+
+            if is_incomplete_array {
+                if is_union {
+                    // Incomplete types not allowed in union
+                    return Err(SemanticError::UnsupportedFeature {
+                        feature: "incomplete/VLA array in union".to_string(),
+                        span: member.span,
+                    });
+                }
+
+                // Must be last member
+                if i != member_count - 1 {
+                    return Err(SemanticError::FlexibleArrayNotLast { span: member.span });
+                }
+
+                // Must have at least one other named member.
+                // Or rather, "structure with more than one named member".
+                // If this is the only member, it's invalid.
+                if member_count < 2 {
+                    return Err(SemanticError::FlexibleArrayInEmptyStruct { span: member.span });
+                }
+
+                // If valid FAM:
+                // Size of structure is as if FAM was omitted.
+                // But we must respect its alignment for the struct's alignment.
+                // We need to get the element type to find alignment.
+                let elem_ty = match &self.get(member_ty).kind {
+                    TypeKind::Array { element_type, .. } => *element_type,
+                    _ => unreachable!(),
+                };
+                let elem_layout = self.ensure_layout(elem_ty)?;
+
+                max_align = max_align.max(elem_layout.alignment);
+
+                // FAM has size 0 for layout purposes of the struct size,
+                // but its offset is where it would start.
+                // The standard says: "size of the structure is as if the flexible array member were omitted"
+                // This means current_size stays as is (after padding for alignment of FAM? No, omitted means omitted).
+                // "except that it may have more trailing padding than the omission would imply"
+                // Usually this is interpreted as: sizeof(struct) = max(sizeof(struct_without_fam), offsetof(fam)).
+                // Or simply: layout the FAM, but don't increment current_size by its size (which is unknown/0).
+                // But we might need to add padding to current_size to reach FAM alignment?
+                // "as if the flexible array member were omitted" implies we don't even add padding for it?
+                // BUT "except that it may have more trailing padding".
+                // Most compilers align the end of the struct to the alignment of the FAM.
+
+                // Let's compute offset.
+                let offset = (current_size + elem_layout.alignment - 1) & !(elem_layout.alignment - 1);
+                field_layouts.push(FieldLayout { offset });
+
+                // We do NOT update current_size with FAM size (which is effectively 0 or variable).
+                // But we might update current_size to offset?
+                // GCC: sizeof(struct { int x; int y[]; }) == 4.
+                //      sizeof(struct { char c; int y[]; }) == 4 (aligned to 4).
+                // So we do align current_size.
+                current_size = offset;
+
+                continue;
+            }
+
+            let layout = self.ensure_layout(member_ty)?;
             max_align = max_align.max(layout.alignment);
 
             if is_union {

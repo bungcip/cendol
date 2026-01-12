@@ -4,6 +4,7 @@
 
 use hashbrown::HashSet;
 
+use crate::ast::parsed::{ParsedAst, ParsedNodeKind};
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind};
 use crate::semantic::{ArraySizeType, BuiltinType, SymbolRef, SymbolTable, TypeKind, TypeRef, TypeRegistry};
 
@@ -11,6 +12,17 @@ use crate::semantic::{ArraySizeType, BuiltinType, SymbolRef, SymbolTable, TypeKi
 pub struct AstDumper;
 
 impl AstDumper {
+    /// Dump parsed AST to stdout
+    pub fn dump_parsed_ast(ast: &ParsedAst) {
+        for (i, node) in ast.nodes.iter().enumerate() {
+            if matches!(node.kind, ParsedNodeKind::Dummy) {
+                continue;
+            }
+            print!("{}: ", i + 1);
+            Self::dump_parsed_node_kind(&node.kind, ast);
+        }
+    }
+
     /// Dump parser AST to stdout
     pub fn dump_parser(ast: &Ast, symbol_table: Option<&SymbolTable>) {
         for (i, kind) in ast.kinds.iter().enumerate() {
@@ -269,6 +281,113 @@ impl AstDumper {
 
         result.push_str(&init.initializer.get().to_string());
         result
+    }
+
+    /// Dump a single parsed AST node kind
+    fn dump_parsed_node_kind(kind: &ParsedNodeKind, _ast: &ParsedAst) {
+        match kind {
+            ParsedNodeKind::LiteralInt(i) => println!("LiteralInt({})", i),
+            ParsedNodeKind::LiteralFloat(f) => println!("LiteralFloat({})", f),
+            ParsedNodeKind::LiteralString(s) => println!("LiteralString(\"{}\")", s),
+            ParsedNodeKind::LiteralChar(c) => println!("LiteralChar('{}')", *c as char),
+            ParsedNodeKind::Ident(name) => println!("Ident({})", name),
+
+            // Expressions
+            ParsedNodeKind::UnaryOp(op, node) => println!("UnaryOp({:?}, {})", op, node.get()),
+            ParsedNodeKind::BinaryOp(op, l, r) => {
+                println!("BinaryOp({:?}, {}, {})", op, l.get(), r.get())
+            }
+            ParsedNodeKind::TernaryOp(c, t, e) => {
+                println!("TernaryOp({}, {}, {})", c.get(), t.get(), e.get())
+            }
+            ParsedNodeKind::GnuStatementExpression(stmt, expr) => {
+                println!("GnuStatementExpression({}, {})", stmt.get(), expr.get())
+            }
+            ParsedNodeKind::PostIncrement(node) => println!("PostIncrement({})", node.get()),
+            ParsedNodeKind::PostDecrement(node) => println!("PostDecrement({})", node.get()),
+            ParsedNodeKind::Assignment(op, l, r) => {
+                println!("Assignment({:?}, {}, {})", op, l.get(), r.get())
+            }
+            ParsedNodeKind::FunctionCall(callee, args) => {
+                let args_str = args.iter().map(|a| a.get().to_string()).collect::<Vec<_>>().join(", ");
+                println!("FunctionCall(callee={}, args=[{}])", callee.get(), args_str)
+            }
+            ParsedNodeKind::MemberAccess(obj, field, arrow) => println!(
+                "MemberAccess({}, {}, {})",
+                obj.get(),
+                field,
+                if *arrow { "->" } else { "." }
+            ),
+            ParsedNodeKind::IndexAccess(arr, idx) => {
+                println!("IndexAccess({}, {})", arr.get(), idx.get())
+            }
+            ParsedNodeKind::Cast(ty, expr) => println!("Cast({:?}, {})", ty, expr.get()),
+            ParsedNodeKind::SizeOfExpr(expr) => println!("SizeOfExpr({})", expr.get()),
+            ParsedNodeKind::SizeOfType(ty) => println!("SizeOfType({:?})", ty),
+            ParsedNodeKind::AlignOf(ty) => println!("AlignOf({:?})", ty),
+            ParsedNodeKind::CompoundLiteral(ty, init) => {
+                println!("CompoundLiteral({:?}, {})", ty, init.get())
+            }
+            ParsedNodeKind::GenericSelection(ctrl, assocs) => {
+                println!("GenericSelection({}, {:?})", ctrl.get(), assocs)
+            }
+
+            // Statements
+            ParsedNodeKind::CompoundStatement(stmts) => {
+                let stmts_str = stmts.iter().map(|s| s.get().to_string()).collect::<Vec<_>>().join(", ");
+                println!("CompoundStatement(stmts=[{}])", stmts_str)
+            }
+            ParsedNodeKind::If(data) => println!("If({:?})", data),
+            ParsedNodeKind::While(data) => println!("While({:?})", data),
+            ParsedNodeKind::DoWhile(body, cond) => {
+                println!("DoWhile(body={}, cond={})", body.get(), cond.get())
+            }
+            ParsedNodeKind::For(data) => println!("For({:?})", data),
+            ParsedNodeKind::Return(expr) => println!(
+                "Return({})",
+                expr.map(|e| e.get().to_string()).unwrap_or("void".to_string())
+            ),
+            ParsedNodeKind::Break => println!("Break"),
+            ParsedNodeKind::Continue => println!("Continue"),
+            ParsedNodeKind::Goto(label) => println!("Goto({})", label),
+            ParsedNodeKind::Label(label, stmt) => println!("Label({}, {})", label, stmt.get()),
+            ParsedNodeKind::Switch(cond, body) => {
+                println!("Switch({}, {})", cond.get(), body.get())
+            }
+            ParsedNodeKind::Case(val, stmt) => println!("Case({}, {})", val.get(), stmt.get()),
+            ParsedNodeKind::CaseRange(start, end, stmt) => {
+                println!("CaseRange({}, {}, {})", start.get(), end.get(), stmt.get())
+            }
+            ParsedNodeKind::Default(stmt) => println!("Default({})", stmt.get()),
+            ParsedNodeKind::ExpressionStatement(expr) => println!(
+                "ExpressionStatement({})",
+                expr.map(|e| e.get().to_string()).unwrap_or("empty".to_string())
+            ),
+            ParsedNodeKind::EmptyStatement => println!("EmptyStatement"),
+
+            // Declarations & Definitions
+            ParsedNodeKind::Declaration(data) => println!("Declaration({:?})", data),
+            ParsedNodeKind::FunctionDef(data) => println!("FunctionDef({:?})", data),
+            ParsedNodeKind::EnumConstant(name, val) => println!(
+                "EnumConstant({}, {})",
+                name,
+                val.map(|v| v.get().to_string()).unwrap_or("auto".to_string())
+            ),
+            ParsedNodeKind::StaticAssert(cond, msg) => {
+                println!("StaticAssert({}, \"{}\")", cond.get(), msg)
+            }
+
+            // Top Level
+            ParsedNodeKind::TranslationUnit(decls) => {
+                let decls_str = decls.iter().map(|d| d.get().to_string()).collect::<Vec<_>>().join(", ");
+                println!("TranslationUnit(decls=[{}])", decls_str)
+            }
+
+            // InitializerList
+            ParsedNodeKind::InitializerList(inits) => println!("InitializerList({:?})", inits),
+
+            ParsedNodeKind::Dummy => println!("Dummy"),
+        }
     }
 
     /// Dump a single AST node kind

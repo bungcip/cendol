@@ -421,6 +421,14 @@ pub enum StorageClass {
     ThreadLocal, // C11 _Thread_local
 }
 
+// Function specifiers
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[repr(u8)]
+pub enum FunctionSpecifier {
+    Inline,
+    Noreturn, // C11 _Noreturn
+}
+
 // Unary Operators
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(u8)]

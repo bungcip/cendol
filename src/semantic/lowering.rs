@@ -1285,15 +1285,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // 2. Both have linkage (even different scope)
             let is_conflict = (existing_scope == current_scope) || (new_has_linkage && existing.has_linkage());
 
-            if is_conflict
-                && !self.registry.is_compatible(existing.type_info, new_ty) {
-                    let first_def = existing.def_span;
-                    self.report_error(SemanticError::ConflictingTypes {
-                        name: name.to_string(),
-                        span,
-                        first_def,
-                    });
-                }
+            if is_conflict && !self.registry.is_compatible(existing.type_info, new_ty) {
+                let first_def = existing.def_span;
+                self.report_error(SemanticError::ConflictingTypes {
+                    name: name.to_string(),
+                    span,
+                    first_def,
+                });
+            }
         }
     }
 

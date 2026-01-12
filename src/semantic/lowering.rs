@@ -71,7 +71,8 @@ fn apply_parsed_declarator_recursive(
                 });
 
                 // Apply array-to-pointer decay for function parameters
-                let decayed_param_type = ctx.registry.decay(param_type);
+                let ptr_quals = extract_array_param_qualifiers_from_ref(param.ty.declarator, ctx);
+                let decayed_param_type = ctx.registry.decay(param_type, ptr_quals);
 
                 processed_params.push(FunctionParameter {
                     param_type: decayed_param_type,
@@ -86,6 +87,55 @@ fn apply_parsed_declarator_recursive(
                 .function_type(current_type.ty(), processed_params, flags.is_variadic);
             apply_parsed_declarator_recursive(QualType::unqualified(function_type_ref), inner, ctx)
         }
+    }
+}
+
+fn extract_array_param_qualifiers_from_ref(decl_ref: ParsedDeclRef, ctx: &LowerCtx) -> TypeQualifiers {
+    let decl = ctx.parsed_ast.parsed_types.get_decl(decl_ref);
+    match decl {
+        ParsedDeclaratorNode::Identifier { .. } => TypeQualifiers::empty(),
+        ParsedDeclaratorNode::Pointer { inner, .. } => extract_array_param_qualifiers_from_ref(inner, ctx),
+        ParsedDeclaratorNode::Function { inner, .. } => extract_array_param_qualifiers_from_ref(inner, ctx),
+        ParsedDeclaratorNode::Array { size, inner } => {
+            let inner_quals = extract_array_param_qualifiers_from_ref(inner, ctx);
+            if !inner_quals.is_empty() {
+                return inner_quals;
+            }
+            match size {
+                ParsedArraySize::Expression { qualifiers, .. } => qualifiers,
+                ParsedArraySize::Star { qualifiers } => qualifiers,
+                ParsedArraySize::VlaSpecifier { qualifiers, .. } => qualifiers,
+                ParsedArraySize::Incomplete => TypeQualifiers::empty(),
+            }
+        }
+    }
+}
+
+fn extract_array_param_qualifiers(decl: &ParsedDeclarator) -> TypeQualifiers {
+    match decl {
+        ParsedDeclarator::Identifier(..) | ParsedDeclarator::Abstract => TypeQualifiers::empty(),
+        ParsedDeclarator::Pointer(_, inner) => {
+            if let Some(inner_decl) = inner {
+                extract_array_param_qualifiers(inner_decl)
+            } else {
+                TypeQualifiers::empty()
+            }
+        }
+        ParsedDeclarator::Array(inner, size) => {
+            let inner_quals = extract_array_param_qualifiers(inner);
+            if !inner_quals.is_empty() {
+                return inner_quals;
+            }
+            match size {
+                ParsedArraySize::Expression { qualifiers, .. } => *qualifiers,
+                ParsedArraySize::Star { qualifiers } => *qualifiers,
+                ParsedArraySize::VlaSpecifier { qualifiers, .. } => *qualifiers,
+                ParsedArraySize::Incomplete => TypeQualifiers::empty(),
+            }
+        }
+        ParsedDeclarator::Function { inner, .. } => extract_array_param_qualifiers(inner),
+        ParsedDeclarator::BitField(inner, _) => extract_array_param_qualifiers(inner),
+        ParsedDeclarator::AnonymousRecord(..) => TypeQualifiers::empty(),
     }
 }
 
@@ -958,7 +1008,12 @@ fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
             };
 
             // Apply array-to-pointer decay for function parameters (C11 6.7.6.3)
-            let decayed_ty = ctx.registry.decay(final_ty);
+            let ptr_quals = if let Some(decl) = &param.declarator {
+                extract_array_param_qualifiers(decl)
+            } else {
+                TypeQualifiers::empty()
+            };
+            let decayed_ty = ctx.registry.decay(final_ty, ptr_quals);
 
             let pname = param.declarator.as_ref().and_then(extract_name);
             FunctionParameter {

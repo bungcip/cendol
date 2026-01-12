@@ -249,7 +249,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     return None;
                 }
                 if operand_ty.is_array() || operand_ty.is_function() {
-                    let decayed = self.registry.decay(operand_ty);
+                    let decayed = self.registry.decay(operand_ty, TypeQualifiers::empty());
                     self.semantic_info.conversions[operand_ref.index()]
                         .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
                     return Some(decayed);
@@ -258,7 +258,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             UnaryOp::Deref => {
                 let actual_ty = if operand_ty.is_array() || operand_ty.is_function() {
-                    let decayed = self.registry.decay(operand_ty);
+                    let decayed = self.registry.decay(operand_ty, TypeQualifiers::empty());
                     self.semantic_info.conversions[operand_ref.index()]
                         .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
                     decayed
@@ -632,7 +632,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // Array-to-pointer decay
         if lhs_ty.is_pointer() && rhs_ty.is_array() {
-            let decayed = self.registry.decay(rhs_ty);
+            let decayed = self.registry.decay(rhs_ty, TypeQualifiers::empty());
             self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay { to: decayed.ty() });
         }
 
@@ -859,7 +859,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     if let Some(mut actual_arg_ty) = arg_ty {
                         // Explicitly handle array/function decay for variadic arguments first
                         if actual_arg_ty.is_array() || actual_arg_ty.is_function() {
-                            let decayed = self.registry.decay(actual_arg_ty);
+                            let decayed = self.registry.decay(actual_arg_ty, TypeQualifiers::empty());
                             self.semantic_info.conversions[arg_node_ref.index()]
                                 .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
                             actual_arg_ty = decayed;

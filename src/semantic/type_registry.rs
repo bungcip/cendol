@@ -776,7 +776,7 @@ impl TypeRegistry {
         })
     }
 
-    pub(crate) fn decay(&mut self, qt: QualType) -> QualType {
+    pub(crate) fn decay(&mut self, qt: QualType, ptr_qualifiers: TypeQualifiers) -> QualType {
         let kind = self.get(qt.ty()).kind.clone();
         match kind {
             TypeKind::Array { element_type, .. } => {
@@ -784,11 +784,12 @@ impl TypeRegistry {
                 // Qualifiers on Array apply to the element in the resulting pointer type.
                 let elem_qt = QualType::new(element_type, qt.qualifiers());
                 let ptr = self.pointer_to(elem_qt);
-                QualType::unqualified(ptr)
+                // Apply the extracted pointer qualifiers (e.g. from static/const inside [])
+                QualType::new(ptr, ptr_qualifiers)
             }
             TypeKind::Function { .. } => {
                 let ptr = self.pointer_to(qt);
-                QualType::unqualified(ptr)
+                QualType::new(ptr, ptr_qualifiers)
             }
             _ => qt,
         }
@@ -803,7 +804,81 @@ impl TypeRegistry {
     }
 
     pub(crate) fn is_compatible(&self, a: QualType, b: QualType) -> bool {
-        a == b
+        if a == b {
+            return true;
+        }
+
+        if a.qualifiers() != b.qualifiers() {
+            return false;
+        }
+
+        let ty_a_ref = a.ty();
+        let ty_b_ref = b.ty();
+
+        if ty_a_ref == ty_b_ref {
+            return true;
+        }
+
+        let kind_a = self.get(ty_a_ref).kind.clone();
+        let kind_b = self.get(ty_b_ref).kind.clone();
+
+        match (kind_a, kind_b) {
+            (
+                TypeKind::Array {
+                    element_type: elem_a,
+                    size: size_a,
+                },
+                TypeKind::Array {
+                    element_type: elem_b,
+                    size: size_b,
+                },
+            ) => {
+                if !self.is_compatible(QualType::unqualified(elem_a), QualType::unqualified(elem_b)) {
+                    return false;
+                }
+                match (size_a, size_b) {
+                    (ArraySizeType::Incomplete, _) => true,
+                    (_, ArraySizeType::Incomplete) => true,
+                    (ArraySizeType::Constant(sa), ArraySizeType::Constant(sb)) => sa == sb,
+                    (ArraySizeType::Star, _) => true,
+                    (_, ArraySizeType::Star) => true,
+                    _ => false,
+                }
+            }
+            (
+                TypeKind::Function {
+                    return_type: ret_a,
+                    parameters: params_a,
+                    is_variadic: var_a,
+                },
+                TypeKind::Function {
+                    return_type: ret_b,
+                    parameters: params_b,
+                    is_variadic: var_b,
+                },
+            ) => {
+                if var_a != var_b {
+                    return false;
+                }
+                if !self.is_compatible(QualType::unqualified(ret_a), QualType::unqualified(ret_b)) {
+                    return false;
+                }
+                if params_a.len() != params_b.len() {
+                    return false;
+                }
+                for (p_a, p_b) in params_a.iter().zip(params_b.iter()) {
+                    // Ignore top-level qualifiers on parameters
+                    let type_a = QualType::unqualified(p_a.param_type.ty());
+                    let type_b = QualType::unqualified(p_b.param_type.ty());
+                    if !self.is_compatible(type_a, type_b) {
+                        return false;
+                    }
+                }
+                true
+            }
+            (TypeKind::Pointer { pointee: p_a }, TypeKind::Pointer { pointee: p_b }) => self.is_compatible(p_a, p_b),
+            _ => false,
+        }
     }
 
     pub(crate) fn is_complete(&self, ty: TypeRef) -> bool {

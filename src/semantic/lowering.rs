@@ -863,7 +863,7 @@ pub(crate) fn apply_declarator(
             }
 
             let array_size = match size {
-                ParsedArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx), // TODO: resolve_array_size needs ParsedNodeRef support
+                ParsedArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx),
                 ParsedArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
                 ParsedArraySize::Incomplete => ArraySizeType::Incomplete,
                 ParsedArraySize::VlaSpecifier {

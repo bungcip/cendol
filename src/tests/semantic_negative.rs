@@ -226,7 +226,6 @@ fn test_array_of_incomplete_type() {
 }
 
 #[test]
-#[ignore = "still not implemented"]
 fn test_negative_array_size() {
     run_fail_with_message(
         r#"
@@ -235,7 +234,7 @@ fn test_negative_array_size() {
         }
         "#,
         CompilePhase::Mir,
-        "size must be positive",
+        "size of array has non-positive value",
     );
 }
 

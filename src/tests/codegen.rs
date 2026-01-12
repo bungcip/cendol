@@ -159,24 +159,7 @@ fn test_store_deref_pointer() {
     }
 }
 
-use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils;
-
-/// setup test with output is cranelift ir
-fn setup_cranelift(c_code: &str) -> String {
-    let (driver, pipeline_result) = test_utils::run_pipeline(c_code, CompilePhase::Cranelift);
-    match pipeline_result {
-        Err(_) => {
-            driver.print_diagnostics();
-            panic!("Compilation failed");
-        }
-        Ok(outputs) => {
-            let artifact = outputs.units.values().next().unwrap();
-            let clif_dump = artifact.clif_dump.as_ref().unwrap();
-            clif_dump.to_string()
-        }
-    }
-}
+use crate::tests::semantic_common::setup_cranelift;
 
 #[test]
 fn test_compile_struct_pointer_access() {

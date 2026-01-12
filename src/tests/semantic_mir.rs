@@ -232,8 +232,6 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        // We want to ensure %t0 is i32 and %t1 is struct using %t0
-        // and NOT that %t0 is struct using %t0
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct anonymous { a: %t0, b: %t0, c: %t0 }
@@ -264,8 +262,6 @@ mod tests {
 
     #[test]
     fn test_long_long_comparison_crash() {
-        // Regression test for issue where usual arithmetic conversions
-        // were not correctly applied in MIR lowering for binary operators
         let source = r#"
             int main() {
                 long long x;
@@ -277,8 +273,6 @@ mod tests {
             }
         "#;
         let mir_dump = setup_mir(source);
-        // Verify that the constant 1 is cast to i64 (matching x) before comparison
-        // and that the comparison result is used for the branch
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = i64

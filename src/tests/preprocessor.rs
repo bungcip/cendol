@@ -816,16 +816,11 @@ fn test_unknown_pragma_throws_error() {
 #pragma unknown_pragma
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    // The test harness captures the returned Err as a "Fatal Error: ..." string.
-    assert!(!diags.is_empty(), "Expected error for unknown pragma");
     assert!(
-        diags.iter().any(|d| d.contains("Fatal Error: UnknownPragma")),
-        "Expected 'Fatal Error: UnknownPragma', got: {:?}",
         diags
-    );
-    assert!(
-        diags.iter().any(|d| d.contains("unknown_pragma")),
-        "Expected error to contain the pragma name, got: {:?}",
+            .iter()
+            .any(|d| d.contains("Fatal Error: UnknownPragma") && d.contains("unknown_pragma")),
+        "Expected error 'Fatal Error: UnknownPragma' containing 'unknown_pragma', got: {:?}",
         diags
     );
 }

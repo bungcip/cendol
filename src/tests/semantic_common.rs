@@ -121,3 +121,19 @@ pub fn run_full_pass(source: &str) {
         );
     }
 }
+
+/// setup test with output is cranelift ir
+pub fn setup_cranelift(c_code: &str) -> String {
+    let (driver, pipeline_result) = test_utils::run_pipeline(c_code, CompilePhase::Cranelift);
+    match pipeline_result {
+        Err(_) => {
+            driver.print_diagnostics();
+            panic!("Compilation failed");
+        }
+        Ok(outputs) => {
+            let artifact = outputs.units.values().next().unwrap();
+            let clif_dump = artifact.clif_dump.as_ref().unwrap();
+            clif_dump.to_string()
+        }
+    }
+}

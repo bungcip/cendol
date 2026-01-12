@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::tests::parser::setup_declaration;
+    use crate::tests::parser_utils::setup_declaration;
 
     #[test]
     fn test_parse_noreturn_function_declaration() {

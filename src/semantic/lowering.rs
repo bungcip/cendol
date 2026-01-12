@@ -731,9 +731,7 @@ fn merge_base_type(
 /// Validate specifier combinations for semantic correctness
 fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span: SourceSpan) {
     // Check typedef with other storage classes
-    if info.is_typedef
-        && (info.storage.is_some_and(|s| s != StorageClass::Typedef) || info.is_thread_local)
-    {
+    if info.is_typedef && (info.storage.is_some_and(|s| s != StorageClass::Typedef) || info.is_thread_local) {
         ctx.report_error(SemanticError::ConflictingStorageClasses { span });
     }
 

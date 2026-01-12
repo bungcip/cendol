@@ -570,31 +570,12 @@ impl<'a> AstToMirLowerer<'a> {
         }
 
         match &node_kind {
-            NodeKind::LiteralInt(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val))),
-            NodeKind::LiteralFloat(val) => Operand::Constant(self.create_constant(ConstValue::Float(*val))),
-            NodeKind::LiteralChar(val) => Operand::Constant(self.create_constant(ConstValue::Int(*val as i64))),
-            NodeKind::LiteralString(val) => self.lower_literal_string(val, ty),
+            NodeKind::LiteralInt(_)
+            | NodeKind::LiteralFloat(_)
+            | NodeKind::LiteralChar(_)
+            | NodeKind::LiteralString(_) => self.lower_literal(&node_kind, ty).expect("Failed to lower literal"),
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(*symbol_ref),
-            NodeKind::UnaryOp(op, operand_ref) => match *op {
-                UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.lower_pre_incdec(scope_id, op, *operand_ref),
-                UnaryOp::AddrOf => self.lower_unary_addrof(scope_id, *operand_ref),
-                UnaryOp::Deref => self.lower_unary_deref(scope_id, *operand_ref),
-                UnaryOp::Plus => self.lower_expression(scope_id, *operand_ref, true),
-                _ => {
-                    let operand = self.lower_expression(scope_id, *operand_ref, true);
-                    let operand_ty = self.get_operand_type(&operand);
-                    let mir_type_info = self.mir_builder.get_type(operand_ty);
-
-                    let rval = if mir_type_info.is_float() {
-                        let mir_op = self.map_ast_unary_op_to_mir_float(op);
-                        Rvalue::UnaryFloatOp(mir_op, operand)
-                    } else {
-                        let mir_op = self.map_ast_unary_op_to_mir_int(op);
-                        Rvalue::UnaryIntOp(mir_op, operand)
-                    };
-                    self.emit_rvalue_to_operand(rval, mir_ty)
-                }
-            },
+            NodeKind::UnaryOp(op, operand_ref) => self.lower_unary_op_expr(scope_id, op, *operand_ref, mir_ty),
             NodeKind::PostIncrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, true, need_value),
             NodeKind::PostDecrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, false, need_value),
             NodeKind::BinaryOp(op, left_ref, right_ref) => {
@@ -727,6 +708,16 @@ impl<'a> AstToMirLowerer<'a> {
         Operand::Cast(mir_ty, Box::new(operand))
     }
 
+    fn lower_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
+        match node_kind {
+            NodeKind::LiteralInt(val) => Some(Operand::Constant(self.create_constant(ConstValue::Int(*val)))),
+            NodeKind::LiteralFloat(val) => Some(Operand::Constant(self.create_constant(ConstValue::Float(*val)))),
+            NodeKind::LiteralChar(val) => Some(Operand::Constant(self.create_constant(ConstValue::Int(*val as i64)))),
+            NodeKind::LiteralString(val) => Some(self.lower_literal_string(val, ty)),
+            _ => None,
+        }
+    }
+
     fn lower_compound_literal(&mut self, scope_id: ScopeId, ty: QualType, init_ref: NodeRef) -> Operand {
         let mir_ty = self.lower_qual_type(ty);
 
@@ -797,6 +788,35 @@ impl<'a> AstToMirLowerer<'a> {
 
         let addr_const_val = ConstValue::GlobalAddress(global_id);
         Operand::Constant(self.create_constant(addr_const_val))
+    }
+
+    fn lower_unary_op_expr(
+        &mut self,
+        scope_id: ScopeId,
+        op: &UnaryOp,
+        operand_ref: NodeRef,
+        mir_ty: TypeId,
+    ) -> Operand {
+        match op {
+            UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.lower_pre_incdec(scope_id, op, operand_ref),
+            UnaryOp::AddrOf => self.lower_unary_addrof(scope_id, operand_ref),
+            UnaryOp::Deref => self.lower_unary_deref(scope_id, operand_ref),
+            UnaryOp::Plus => self.lower_expression(scope_id, operand_ref, true),
+            _ => {
+                let operand = self.lower_expression(scope_id, operand_ref, true);
+                let operand_ty = self.get_operand_type(&operand);
+                let mir_type_info = self.mir_builder.get_type(operand_ty);
+
+                let rval = if mir_type_info.is_float() {
+                    let mir_op = self.map_ast_unary_op_to_mir_float(op);
+                    Rvalue::UnaryFloatOp(mir_op, operand)
+                } else {
+                    let mir_op = self.map_ast_unary_op_to_mir_int(op);
+                    Rvalue::UnaryIntOp(mir_op, operand)
+                };
+                self.emit_rvalue_to_operand(rval, mir_ty)
+            }
+        }
     }
 
     fn lower_unary_addrof(&mut self, scope_id: ScopeId, operand_ref: NodeRef) -> Operand {
@@ -972,13 +992,7 @@ impl<'a> AstToMirLowerer<'a> {
             return rhs_final;
         }
 
-        let rval = if lhs_mir.is_float() {
-            let mir_op = self.map_ast_binary_op_to_mir_float(op);
-            Rvalue::BinaryFloatOp(mir_op, lhs_final, rhs_final)
-        } else {
-            let mir_op = self.map_ast_binary_op_to_mir_int(op);
-            Rvalue::BinaryIntOp(mir_op, lhs_final, rhs_final)
-        };
+        let rval = self.emit_binary_rvalue(op, lhs_final, rhs_final, lhs_mir.is_float());
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
@@ -1178,13 +1192,12 @@ impl<'a> AstToMirLowerer<'a> {
                 let lhs_ty = self.get_operand_type(&lhs_converted_for_op);
                 let mir_type_info = self.mir_builder.get_type(lhs_ty);
 
-                let rval = if mir_type_info.is_float() {
-                    let mir_bin_op = self.map_ast_binary_op_to_mir_float(&compound_op);
-                    Rvalue::BinaryFloatOp(mir_bin_op, lhs_converted_for_op, rhs_converted_for_op)
-                } else {
-                    let mir_bin_op = self.map_ast_binary_op_to_mir_int(&compound_op);
-                    Rvalue::BinaryIntOp(mir_bin_op, lhs_converted_for_op, rhs_converted_for_op)
-                };
+                let rval = self.emit_binary_rvalue(
+                    &compound_op,
+                    lhs_converted_for_op,
+                    rhs_converted_for_op,
+                    mir_type_info.is_float(),
+                );
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
         } else {
@@ -1862,6 +1875,16 @@ impl<'a> AstToMirLowerer<'a> {
     fn emit_rvalue_to_operand(&mut self, rvalue: Rvalue, type_id: TypeId) -> Operand {
         let (_, place) = self.create_temp_local_with_assignment(rvalue, type_id);
         Operand::Copy(Box::new(place))
+    }
+
+    fn emit_binary_rvalue(&self, op: &BinaryOp, lhs: Operand, rhs: Operand, is_float: bool) -> Rvalue {
+        if is_float {
+            let mir_op = self.map_ast_binary_op_to_mir_float(op);
+            Rvalue::BinaryFloatOp(mir_op, lhs, rhs)
+        } else {
+            let mir_op = self.map_ast_binary_op_to_mir_int(op);
+            Rvalue::BinaryIntOp(mir_op, lhs, rhs)
+        }
     }
 
     fn operand_to_const_id(&mut self, operand: Operand) -> Option<ConstValueId> {

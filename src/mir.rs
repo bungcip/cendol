@@ -61,7 +61,7 @@ pub struct MirModule {
 }
 
 impl MirModule {
-    pub fn new(id: MirModuleId) -> Self {
+    pub(crate) fn new(id: MirModuleId) -> Self {
         Self {
             id,
             functions: Vec::new(),

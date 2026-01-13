@@ -65,7 +65,7 @@ pub enum TypeClass {
 }
 
 impl TypeClass {
-    pub fn from_u32(v: u32) -> Self {
+    pub(crate) fn from_u32(v: u32) -> Self {
         match v {
             0 => Self::Builtin,
             1 => Self::Pointer,

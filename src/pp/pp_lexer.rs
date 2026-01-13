@@ -88,7 +88,7 @@ pub struct PPToken {
 
 impl PPToken {
     /// Create a PPToken with full control over all fields
-    pub fn new(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc, length: u16) -> Self {
+    pub(crate) fn new(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc, length: u16) -> Self {
         PPToken {
             kind,
             flags,

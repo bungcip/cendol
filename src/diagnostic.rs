@@ -277,6 +277,8 @@ pub enum SemanticError {
     RecursiveType { ty: TypeRef },
     #[error("Invalid application of 'sizeof' to an incomplete type")]
     SizeOfIncompleteType { ty: TypeRef, span: SourceSpan },
+    #[error("Invalid application of 'sizeof' to a function type")]
+    SizeOfFunctionType { span: SourceSpan },
     #[error("controlling expression type does not match any generic association")]
     GenericNoMatch { span: SourceSpan },
 
@@ -345,6 +347,7 @@ impl SemanticError {
                 SourceSpan::dummy()
             }
             SemanticError::SizeOfIncompleteType { span, .. } => *span,
+            SemanticError::SizeOfFunctionType { span } => *span,
             SemanticError::GenericNoMatch { span } => *span,
             SemanticError::InvalidAlignment { span, .. } => *span,
             SemanticError::NonConstantAlignment { span } => *span,

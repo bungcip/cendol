@@ -47,6 +47,7 @@ pub(crate) struct DirectiveKeywordTable {
     error: StringId,
     warning: StringId,
     defined: StringId, // For the defined operator in expressions
+    has_include: StringId,
 }
 
 impl Default for DirectiveKeywordTable {
@@ -72,6 +73,7 @@ impl DirectiveKeywordTable {
             error: StringId::new("error"),
             warning: StringId::new("warning"),
             defined: StringId::new("defined"),
+            has_include: StringId::new("__has_include"),
         }
     }
 
@@ -110,6 +112,11 @@ impl DirectiveKeywordTable {
     /// Get the interned symbol for the "defined" operator
     pub(crate) fn defined_symbol(&self) -> StringId {
         self.defined
+    }
+
+    /// Get the interned symbol for the "__has_include" operator
+    pub(crate) fn has_include_symbol(&self) -> StringId {
+        self.has_include
     }
 }
 
@@ -686,6 +693,49 @@ impl<'src> Preprocessor<'src> {
     /// Get the interned symbol for the "defined" operator
     pub(crate) fn defined_symbol(&self) -> StringId {
         self.directive_keywords.defined_symbol()
+    }
+
+    /// Get the interned symbol for the "__has_include" operator
+    pub(crate) fn has_include_symbol(&self) -> StringId {
+        self.directive_keywords.has_include_symbol()
+    }
+
+    /// Get the text associated with a token
+    pub(crate) fn get_token_text(&self, token: &PPToken) -> &str {
+        let buffer = self.source_manager.get_buffer(token.location.source_id());
+        let start = token.location.offset() as usize;
+        let end = start + token.length as usize;
+        if end <= buffer.len() {
+            unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) }
+        } else {
+            ""
+        }
+    }
+
+    /// Check if a header exists
+    pub(crate) fn check_header_exists(&self, path: &str, is_angled: bool) -> bool {
+        // Get current directory
+        let current_dir = if let Some(lexer) = self.lexer_stack.last() {
+            let current_file_id = lexer.source_id;
+            if let Some(current_file_info) = self.source_manager.get_file_info(current_file_id) {
+                current_file_info.path.parent().unwrap_or(Path::new("."))
+            } else {
+                Path::new(".")
+            }
+        } else {
+            Path::new(".")
+        };
+
+        if is_angled {
+            // Check built-in headers
+            if self.built_in_headers.contains_key(path) {
+                return true;
+            }
+            self.header_search.resolve_path(path, is_angled, current_dir).is_some()
+        } else {
+            self.header_search.resolve_path(path, is_angled, current_dir).is_some()
+                || self.source_manager.get_file_id(path).is_some()
+        }
     }
 
     /// Expect and consume an Eod token or end of file
@@ -2488,6 +2538,27 @@ impl<'src> Preprocessor<'src> {
                             }
                         } else {
                             // defined MACRO
+                            i += 1;
+                        }
+                    }
+                    continue;
+                }
+                PPTokenKind::Identifier(symbol) if symbol == &self.directive_keywords.has_include => {
+                    // Skip '__has_include'
+                    i += 1;
+                    // Skip arguments... handled similarly to defined, but it MUST have parentheses.
+                    // __has_include ( "header" ) or __has_include ( <header> )
+                    // Note: arguments are NOT expanded.
+                    if i < tokens.len() && tokens[i].kind == PPTokenKind::LeftParen {
+                        // Skip until matching RightParen
+                        let mut depth = 1;
+                        i += 1;
+                        while i < tokens.len() && depth > 0 {
+                            match tokens[i].kind {
+                                PPTokenKind::LeftParen => depth += 1,
+                                PPTokenKind::RightParen => depth -= 1,
+                                _ => {}
+                            }
                             i += 1;
                         }
                     }

@@ -7,6 +7,7 @@ pub(crate) enum PPExpr {
     Number(i64),
     Identifier(String),
     Defined(Box<PPExpr>),
+    HasInclude(String, bool), // (path, is_angled)
     Binary(BinaryOp, Box<PPExpr>, Box<PPExpr>),
     Unary(UnaryOp, Box<PPExpr>),
     Conditional(Box<PPExpr>, Box<PPExpr>, Box<PPExpr>),
@@ -24,6 +25,7 @@ impl PPExpr {
                     Err(PPError::InvalidConditionalExpression)
                 }
             }
+            PPExpr::HasInclude(path, is_angled) => Ok(if pp.check_header_exists(path, *is_angled) { 1 } else { 0 }),
             PPExpr::Binary(op, left, right) => {
                 let l = left.evaluate(pp)?;
                 match op {
@@ -316,6 +318,58 @@ impl<'a> Interpreter<'a> {
                 self.parse_primary()?
             };
             Ok(PPExpr::Defined(Box::new(ident)))
+        } else if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_include_symbol()) {
+            self.pos += 1; // consume __has_include
+
+            // Expect LeftParen
+            if self.pos >= self.tokens.len() || self.tokens[self.pos].kind != PPTokenKind::LeftParen {
+                return Err(PPError::InvalidConditionalExpression);
+            }
+            self.pos += 1;
+
+            // Parse argument
+            if self.pos >= self.tokens.len() {
+                return Err(PPError::InvalidConditionalExpression);
+            }
+
+            let (path, is_angled) = match &self.tokens[self.pos].kind {
+                PPTokenKind::StringLiteral(sym) => {
+                    let full_str = sym.as_str();
+                    if full_str.starts_with('"') && full_str.ends_with('"') {
+                        self.pos += 1;
+                        (full_str[1..full_str.len() - 1].to_string(), false)
+                    } else {
+                        return Err(PPError::InvalidConditionalExpression);
+                    }
+                }
+                PPTokenKind::Less => {
+                    // Angled include
+                    self.pos += 1;
+                    let mut path_str = String::new();
+                    loop {
+                        if self.pos >= self.tokens.len() {
+                            return Err(PPError::InvalidConditionalExpression);
+                        }
+                        let token = &self.tokens[self.pos];
+                        if token.kind == PPTokenKind::Greater {
+                            self.pos += 1;
+                            break;
+                        }
+                        path_str.push_str(self.preprocessor.get_token_text(token));
+                        self.pos += 1;
+                    }
+                    (path_str, true)
+                }
+                _ => return Err(PPError::InvalidConditionalExpression),
+            };
+
+            // Expect RightParen
+            if self.pos >= self.tokens.len() || self.tokens[self.pos].kind != PPTokenKind::RightParen {
+                return Err(PPError::InvalidConditionalExpression);
+            }
+            self.pos += 1;
+
+            Ok(PPExpr::HasInclude(path, is_angled))
         } else if matches!(
             token.kind,
             PPTokenKind::Plus | PPTokenKind::Minus | PPTokenKind::Tilde | PPTokenKind::Not

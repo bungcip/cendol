@@ -1,0 +1,21 @@
+{"run_id":"1768291537-23580849","line":19,"new":{"module_name":"cendol__tests__pp_has_include","snapshot_name":"has_include_builtin","metadata":{"source":"src/tests/pp_has_include.rs","assertion_line":19,"expression":"tokens"},"snapshot":"- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: y\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"0\"\n- kind: Semicolon\n  text: ;"},"old":{"module_name":"cendol__tests__pp_has_include","metadata":{},"snapshot":"- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: y\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;"}}
+{"run_id":"1768291590-339838629","line":55,"new":null,"old":null}
+{"run_id":"1768291590-339838629","line":188,"new":null,"old":null}
+{"run_id":"1768291590-339838629","line":163,"new":null,"old":null}
+{"run_id":"1768291590-339838629","line":96,"new":null,"old":null}
+{"run_id":"1768291590-339838629","line":19,"new":{"module_name":"cendol__tests__pp_has_include","snapshot_name":"has_include_builtin","metadata":{"source":"src/tests/pp_has_include.rs","assertion_line":19,"expression":"tokens"},"snapshot":"- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: y\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"0\"\n- kind: Semicolon\n  text: ;"},"old":{"module_name":"cendol__tests__pp_has_include","metadata":{},"snapshot":"- kind: Identifier\n  text: int\n- kind: Identifier\n  text: x\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  text: \"1\"\n- kind: Semicolon\n  text: ;\n- kind: Identifier\n  text: int\n- kind: Identifier\n  text: y\n- kind: Assign\n  text: \"=\"\n- kind: Number\n  // \"stddef.h\" is not found because it is a built-in virtual header\n  // only accessible via angled includes in the current implementation.\n  text: \"0\"\n- kind: Semicolon\n  text: ;"}}
+{"run_id":"1768291619-437726816","line":186,"new":null,"old":null}
+{"run_id":"1768291619-437726816","line":53,"new":null,"old":null}
+{"run_id":"1768291619-437726816","line":161,"new":null,"old":null}
+{"run_id":"1768291619-437726816","line":19,"new":null,"old":null}
+{"run_id":"1768291619-437726816","line":94,"new":null,"old":null}
+{"run_id":"1768291627-130691978","line":186,"new":null,"old":null}
+{"run_id":"1768291627-130691978","line":53,"new":null,"old":null}
+{"run_id":"1768291627-130691978","line":161,"new":null,"old":null}
+{"run_id":"1768291627-130691978","line":19,"new":null,"old":null}
+{"run_id":"1768291627-130691978","line":94,"new":null,"old":null}
+{"run_id":"1768291958-203630343","line":53,"new":null,"old":null}
+{"run_id":"1768291958-203630343","line":19,"new":null,"old":null}
+{"run_id":"1768291958-203630343","line":186,"new":null,"old":null}
+{"run_id":"1768291958-203630343","line":161,"new":null,"old":null}
+{"run_id":"1768291958-203630343","line":94,"new":null,"old":null}

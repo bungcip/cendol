@@ -658,17 +658,17 @@ impl<'a> AstToMirLowerer<'a> {
             .expect("SizeOf operand type missing")
             .ty();
         let size = self.registry.get_layout(operand_ty).size;
-        Operand::Constant(self.create_constant(ConstValue::Int(size as i64)))
+        self.create_int_operand(size as i64)
     }
 
     fn lower_sizeof_type(&mut self, ty: &QualType) -> Operand {
         let size = self.registry.get_layout(ty.ty()).size;
-        Operand::Constant(self.create_constant(ConstValue::Int(size as i64)))
+        self.create_int_operand(size as i64)
     }
 
     fn lower_alignof_type(&mut self, ty: &QualType) -> Operand {
         let align = self.registry.get_layout(ty.ty()).alignment;
-        Operand::Constant(self.create_constant(ConstValue::Int(align as i64)))
+        self.create_int_operand(align as i64)
     }
 
     fn lower_generic_selection(
@@ -713,9 +713,9 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
         match node_kind {
-            NodeKind::LiteralInt(val) => Some(Operand::Constant(self.create_constant(ConstValue::Int(*val)))),
-            NodeKind::LiteralFloat(val) => Some(Operand::Constant(self.create_constant(ConstValue::Float(*val)))),
-            NodeKind::LiteralChar(val) => Some(Operand::Constant(self.create_constant(ConstValue::Int(*val as i64)))),
+            NodeKind::LiteralInt(val) => Some(self.create_int_operand(*val)),
+            NodeKind::LiteralFloat(val) => Some(self.create_float_operand(*val)),
+            NodeKind::LiteralChar(val) => Some(self.create_int_operand(*val as i64)),
             NodeKind::LiteralString(val) => Some(self.lower_literal_string(val, ty)),
             _ => None,
         }
@@ -810,13 +810,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let operand_ty = self.get_operand_type(&operand);
                 let mir_type_info = self.mir_builder.get_type(operand_ty);
 
-                let rval = if mir_type_info.is_float() {
-                    let mir_op = self.map_ast_unary_op_to_mir_float(op);
-                    Rvalue::UnaryFloatOp(mir_op, operand)
-                } else {
-                    let mir_op = self.map_ast_unary_op_to_mir_int(op);
-                    Rvalue::UnaryIntOp(mir_op, operand)
-                };
+                let rval = self.emit_unary_rvalue(op, operand, mir_type_info.is_float());
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
         }
@@ -1117,6 +1111,22 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
+    fn get_underlying_binary_op(&self, op: &BinaryOp) -> Option<BinaryOp> {
+        match op {
+            BinaryOp::AssignAdd => Some(BinaryOp::Add),
+            BinaryOp::AssignSub => Some(BinaryOp::Sub),
+            BinaryOp::AssignMul => Some(BinaryOp::Mul),
+            BinaryOp::AssignDiv => Some(BinaryOp::Div),
+            BinaryOp::AssignMod => Some(BinaryOp::Mod),
+            BinaryOp::AssignBitAnd => Some(BinaryOp::BitAnd),
+            BinaryOp::AssignBitOr => Some(BinaryOp::BitOr),
+            BinaryOp::AssignBitXor => Some(BinaryOp::BitXor),
+            BinaryOp::AssignLShift => Some(BinaryOp::LShift),
+            BinaryOp::AssignRShift => Some(BinaryOp::RShift),
+            _ => None,
+        }
+    }
+
     fn lower_assignment_expr(
         &mut self,
         scope_id: ScopeId,
@@ -1146,23 +1156,10 @@ impl<'a> AstToMirLowerer<'a> {
 
         let rhs_op = self.lower_expression(scope_id, right_ref, true);
 
-        let final_rhs = if *op != BinaryOp::Assign {
+        let final_rhs = if let Some(compound_op) = self.get_underlying_binary_op(op) {
             // This is a compound assignment, e.g., a += b
             // Use the already-evaluated place to read the current value.
             let lhs_copy = Operand::Copy(Box::new(place.clone()));
-            let compound_op = match op {
-                BinaryOp::AssignAdd => BinaryOp::Add,
-                BinaryOp::AssignSub => BinaryOp::Sub,
-                BinaryOp::AssignMul => BinaryOp::Mul,
-                BinaryOp::AssignDiv => BinaryOp::Div,
-                BinaryOp::AssignMod => BinaryOp::Mod,
-                BinaryOp::AssignBitAnd => BinaryOp::BitAnd,
-                BinaryOp::AssignBitOr => BinaryOp::BitOr,
-                BinaryOp::AssignBitXor => BinaryOp::BitXor,
-                BinaryOp::AssignLShift => BinaryOp::LShift,
-                BinaryOp::AssignRShift => BinaryOp::RShift,
-                _ => unreachable!("Unexpected compound assignment operator"),
-            };
 
             if let Some(rval) =
                 self.lower_pointer_arithmetic(&compound_op, lhs_copy.clone(), rhs_op.clone(), left_ref, right_ref)
@@ -1687,6 +1684,14 @@ impl<'a> AstToMirLowerer<'a> {
         self.mir_builder.create_constant(value)
     }
 
+    fn create_int_operand(&mut self, val: i64) -> Operand {
+        Operand::Constant(self.create_constant(ConstValue::Int(val)))
+    }
+
+    fn create_float_operand(&mut self, val: f64) -> Operand {
+        Operand::Constant(self.create_constant(ConstValue::Float(val)))
+    }
+
     fn emit_conversion(&mut self, operand: Operand, conv: &ImplicitConversion, target_type_id: TypeId) -> Operand {
         let to_mir_type = match conv {
             ImplicitConversion::IntegerCast { to, .. }
@@ -1861,6 +1866,16 @@ impl<'a> AstToMirLowerer<'a> {
         } else {
             let mir_op = self.map_ast_binary_op_to_mir_int(op);
             Rvalue::BinaryIntOp(mir_op, lhs, rhs)
+        }
+    }
+
+    fn emit_unary_rvalue(&self, op: &UnaryOp, operand: Operand, is_float: bool) -> Rvalue {
+        if is_float {
+            let mir_op = self.map_ast_unary_op_to_mir_float(op);
+            Rvalue::UnaryFloatOp(mir_op, operand)
+        } else {
+            let mir_op = self.map_ast_unary_op_to_mir_int(op);
+            Rvalue::UnaryIntOp(mir_op, operand)
         }
     }
 

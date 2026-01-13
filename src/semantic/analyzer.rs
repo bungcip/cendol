@@ -1282,12 +1282,17 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::SizeOfExpr(expr) => {
                 if let Some(ty) = self.visit_node(*expr) {
-                    let type_ref = ty.ty();
-                    if !self.registry.is_complete(type_ref) {
+                    if ty.is_function() {
                         let span = self.ast.get_span(node_ref);
-                        self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
+                        self.report_error(SemanticError::SizeOfFunctionType { span });
                     } else {
-                        let _ = self.registry.ensure_layout(type_ref);
+                        let type_ref = ty.ty();
+                        if !self.registry.is_complete(type_ref) {
+                            let span = self.ast.get_span(node_ref);
+                            self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
+                        } else {
+                            let _ = self.registry.ensure_layout(type_ref);
+                        }
                     }
                 }
                 Some(QualType::unqualified(self.registry.type_long_unsigned))

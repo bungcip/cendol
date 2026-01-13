@@ -343,7 +343,6 @@ fn test_modifying_string_literal() {
 }
 
 #[test]
-#[ignore = "still not implemented"]
 fn test_sizeof_function_type() {
     run_fail_with_message(
         r#"
@@ -353,7 +352,7 @@ fn test_sizeof_function_type() {
         }
         "#,
         CompilePhase::Mir,
-        "invalid application of 'sizeof'",
+        "Invalid application of 'sizeof' to a function type",
     );
 }
 

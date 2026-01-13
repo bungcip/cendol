@@ -212,7 +212,7 @@ impl<'a> AstToMirLowerer<'a> {
             let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
                 continue;
             };
-            let init = init.clone();
+            let init = *init;
             let field_idx = if init.designator_len > 0 {
                 let designator_ref = init.designator_start;
                 if let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(designator_ref) {

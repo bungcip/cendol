@@ -515,7 +515,7 @@ pub enum ArraySize {
     }, // for VLA
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct DesignatedInitializer {
     pub designator_start: NodeRef,
     pub designator_len: u16,

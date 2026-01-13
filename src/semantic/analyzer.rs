@@ -689,7 +689,7 @@ impl<'a> SemanticAnalyzer<'a> {
         match node_kind {
             NodeKind::InitializerList(list) => {
                 self.semantic_info.types[init_ref.index()] = Some(target_ty);
-                let list = list.clone(); // Clone to avoid borrow check issues
+                let list = *list; // Clone to avoid borrow check issues
                 self.check_initializer_list(&list, target_ty);
             }
             NodeKind::LiteralString(_) => {
@@ -746,7 +746,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 for item_ref in list.init_start.range(list.init_len) {
                     let kind = self.ast.get_kind(item_ref);
                     if let NodeKind::InitializerItem(init) = kind {
-                        let init = init.clone();
+                        let init = *init;
                         for designator_ref in init.designator_start.range(init.designator_len) {
                             if let NodeKind::Designator(d) = self.ast.get_kind(designator_ref) {
                                 match d {
@@ -773,7 +773,6 @@ impl<'a> SemanticAnalyzer<'a> {
     fn check_initializer_item_record(&mut self, item_ref: NodeRef, members: &[StructMember], record_ty: QualType) {
         let node_kind = self.ast.get_kind(item_ref);
         if let NodeKind::InitializerItem(init) = node_kind {
-            let init = init.clone();
             // 1. Validate designators
             if init.designator_len > 0 {
                 let first_des_ref = init.designator_start;

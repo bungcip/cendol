@@ -68,7 +68,9 @@ int x = 0;
 fn test_has_include_with_files() {
     let files = vec![
         ("header.h", "int z = 3;"),
-        ("main.c", r#"
+        (
+            "main.c",
+            r#"
 #if __has_include("header.h")
 int x = 1;
 #else
@@ -80,7 +82,8 @@ int y = 1;
 #else
 int y = 0;
 #endif
-"#),
+"#,
+        ),
     ];
     // Note: angled search usually doesn't include current dir unless -I. is passed.
     // In our test setup, we rely on behavior of HeaderSearch in tests.

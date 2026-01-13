@@ -25,9 +25,7 @@ impl PPExpr {
                     Err(PPError::InvalidConditionalExpression)
                 }
             }
-            PPExpr::HasInclude(path, is_angled) => {
-                Ok(if pp.check_header_exists(path, *is_angled) { 1 } else { 0 })
-            }
+            PPExpr::HasInclude(path, is_angled) => Ok(if pp.check_header_exists(path, *is_angled) { 1 } else { 0 }),
             PPExpr::Binary(op, left, right) => {
                 let l = left.evaluate(pp)?;
                 match op {

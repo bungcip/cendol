@@ -338,11 +338,14 @@ pub enum SemanticError {
 
     #[error("function declared with '_Noreturn' should not return")]
     NoreturnFunctionShouldNotReturn { name: String, span: SourceSpan },
+    #[error("restrict requires a pointer type")]
+    InvalidRestrict { span: SourceSpan },
 }
 
 impl SemanticError {
     pub fn span(&self) -> SourceSpan {
         match self {
+            SemanticError::InvalidRestrict { span } => *span,
             SemanticError::UndeclaredIdentifier { span, .. } => *span,
             SemanticError::Redefinition { span, .. } => *span,
             SemanticError::TypeMismatch { span, .. } => *span,

@@ -154,10 +154,8 @@ pub struct PPConditionalInfo {
 /// Manages header search paths and include resolution
 #[derive(Clone)]
 pub(crate) struct HeaderSearch {
-    #[allow(unused)]
-    search_path: Vec<SearchPath>,
-    system_path: Vec<SearchPath>,
-    framework_path: Vec<SearchPath>,
+    system_path: Vec<PathBuf>,
+    framework_path: Vec<PathBuf>,
     quoted_includes: Vec<String>,
     angled_includes: Vec<String>,
 }
@@ -165,9 +163,7 @@ pub(crate) struct HeaderSearch {
 impl HeaderSearch {
     /// Add a system include path
     pub(crate) fn add_system_path(&mut self, path: PathBuf) {
-        self.system_path.push(SearchPath {
-            path, /* , is_system: true */
-        });
+        self.system_path.push(path);
     }
 
     /// Add a quoted include path (-iquote)
@@ -182,9 +178,7 @@ impl HeaderSearch {
 
     /// Add a framework path
     pub(crate) fn add_framework_path(&mut self, path: PathBuf) {
-        self.framework_path.push(SearchPath {
-            path, /* , is_system: true */
-        });
+        self.framework_path.push(path);
     }
 
     /// Resolve an include path to an absolute path
@@ -198,13 +192,13 @@ impl HeaderSearch {
                 }
             }
             for search_path in &self.system_path {
-                let candidate = search_path.path.join(include_path);
+                let candidate = search_path.join(include_path);
                 if candidate.exists() {
                     return Some(candidate);
                 }
             }
             for search_path in &self.framework_path {
-                let candidate = search_path.path.join(include_path);
+                let candidate = search_path.join(include_path);
                 if candidate.exists() {
                     return Some(candidate);
                 }
@@ -228,13 +222,13 @@ impl HeaderSearch {
                 }
             }
             for search_path in &self.system_path {
-                let candidate = search_path.path.join(include_path);
+                let candidate = search_path.join(include_path);
                 if candidate.exists() {
                     return Some(candidate);
                 }
             }
             for search_path in &self.framework_path {
-                let candidate = search_path.path.join(include_path);
+                let candidate = search_path.join(include_path);
                 if candidate.exists() {
                     return Some(candidate);
                 }
@@ -242,12 +236,6 @@ impl HeaderSearch {
         }
         None
     }
-}
-
-#[derive(Clone)]
-pub(crate) struct SearchPath {
-    pub(crate) path: PathBuf,
-    // pub is_system: bool,
 }
 
 /// Include stack information
@@ -398,14 +386,6 @@ impl<'src> Preprocessor<'src> {
     /// Create a new preprocessor
     pub fn new(source_manager: &'src mut SourceManager, diag: &'src mut DiagnosticEngine, config: &PPConfig) -> Self {
         let mut header_search = HeaderSearch {
-            search_path: config
-                .system_include_paths
-                .iter()
-                .map(|p| SearchPath {
-                    path: p.clone(),
-                    // is_system: true,
-                })
-                .collect(),
             system_path: Vec::new(),
             framework_path: Vec::new(),
             quoted_includes: Vec::new(),
@@ -431,10 +411,6 @@ impl<'src> Preprocessor<'src> {
         built_in_headers.insert("stdint.h", include_str!("../../custom-include/stdint.h"));
         built_in_headers.insert("stdarg.h", include_str!("../../custom-include/stdarg.h"));
         built_in_headers.insert("stdbool.h", include_str!("../../custom-include/stdbool.h"));
-
-        // built_in_headers.insert("stdlib.h", include_str!("../../custom-include/stdlib.h"));
-        // built_in_headers.insert("wchar.h", include_str!("../../custom-include/wchar.h"));
-        // built_in_headers.insert("stdio.h", include_str!("../../custom-include/stdio.h"));
 
         let mut preprocessor = Preprocessor {
             source_manager,
@@ -756,7 +732,7 @@ impl<'src> Preprocessor<'src> {
         let lexer = PPLexer::new(source_id, buffer.to_vec());
         self.lexer_stack.push(lexer);
 
-        // FIXNE: need to create line_start on the fly instead of computing all at once
+        // FIXME: need to create line_start on the fly instead of computing all at once
         // Set line starts for the source manager so presumed locations work during processing
         let mut line_starts = vec![0];
         for (i, &byte) in buffer.iter().enumerate() {

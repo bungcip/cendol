@@ -353,14 +353,11 @@ fn test_sizeof_function_type() {
 }
 
 #[test]
-#[ignore = "still not implemented"]
 fn test_invalid_restrict() {
     run_fail_with_message(
         r#"
         int main() {
-            int x;
-            int * restrict p = &x;
-            int * restrict q = p;
+            int restrict x;
         }
         "#,
         CompilePhase::Mir,

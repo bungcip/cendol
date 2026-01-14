@@ -734,6 +734,46 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn check_initializer_list(&mut self, list: &InitializerListData, target_ty: QualType) {
+        if target_ty.is_scalar() {
+            if list.init_len > 1 {
+                let second_idx = list.init_start.get() + 1;
+                let second_ref = NodeRef::new(second_idx).unwrap();
+                let span = self.ast.get_span(second_ref);
+                self.report_error(SemanticError::ExcessElements {
+                    kind: "scalar".to_string(),
+                    span,
+                });
+            }
+
+            if list.init_len > 0 {
+                let first_item_ref = list.init_start;
+                let first_item_kind = self.ast.get_kind(first_item_ref);
+
+                if let NodeKind::InitializerItem(item) = first_item_kind {
+                    let expr = item.initializer;
+                    if let Some(init_ty) = self.visit_node(expr) {
+                        self.check_assignment_and_record(target_ty, init_ty, expr);
+                    }
+                } else if let Some(init_ty) = self.visit_node(first_item_ref) {
+                    self.check_assignment_and_record(target_ty, init_ty, first_item_ref);
+                }
+            }
+
+            // Visit remaining elements to resolve symbols
+            if list.init_len > 1 {
+                for i in 1..list.init_len {
+                    let item_ref = NodeRef::new(list.init_start.get() + i as u32).unwrap();
+                    let item_kind = self.ast.get_kind(item_ref);
+                    if let NodeKind::InitializerItem(item) = item_kind {
+                        self.visit_node(item.initializer);
+                    } else {
+                        self.visit_node(item_ref);
+                    }
+                }
+            }
+            return;
+        }
+
         let target_kind = self.registry.get(target_ty.ty()).kind.clone();
         match target_kind {
             TypeKind::Record { members, .. } => {

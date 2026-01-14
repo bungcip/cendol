@@ -166,6 +166,15 @@ impl IntoDiagnostic for SemanticError {
             });
         }
 
+        if let SemanticError::ConflictingLinkage { first_def, .. } = &self {
+            diagnostics.push(Diagnostic {
+                level: DiagnosticLevel::Note,
+                message: "previous declaration is here".to_string(),
+                span: *first_def,
+                ..Default::default()
+            });
+        }
+
         if let SemanticError::DuplicateMember { first_def, .. } = &self {
             diagnostics.push(Diagnostic {
                 level: DiagnosticLevel::Note,
@@ -257,6 +266,12 @@ pub enum SemanticError {
     // Errors related to declaration specifiers
     #[error("conflicting storage class specifiers")]
     ConflictingStorageClasses { span: SourceSpan },
+    #[error("conflicting linkage for '{name}'")]
+    ConflictingLinkage {
+        name: String,
+        span: SourceSpan,
+        first_def: SourceSpan,
+    },
     #[error("cannot combine with previous '{prev}' declaration specifier")]
     ConflictingTypeSpecifiers { prev: String, span: SourceSpan },
     #[error("'{spec}' function specifier appears on non-function declaration")]
@@ -341,6 +356,7 @@ impl SemanticError {
             SemanticError::NonConstantBitfieldWidth { span } => *span,
             SemanticError::InvalidBitfieldType { span, .. } => *span,
             SemanticError::ConflictingStorageClasses { span } => *span,
+            SemanticError::ConflictingLinkage { span, .. } => *span,
             SemanticError::ConflictingTypeSpecifiers { span, .. } => *span,
             SemanticError::InvalidFunctionSpecifier { span, .. } => *span,
             SemanticError::DuplicateMember { span, .. } => *span,

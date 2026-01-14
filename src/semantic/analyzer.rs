@@ -116,7 +116,7 @@ impl<'a> SemanticAnalyzer<'a> {
         match node_kind {
             NodeKind::Ident(_, symbol_ref) => {
                 let symbol = self.symbol_table.get_symbol(*symbol_ref);
-                matches!(symbol.kind, SymbolKind::Variable { .. } | SymbolKind::Function)
+                matches!(symbol.kind, SymbolKind::Variable { .. } | SymbolKind::Function { .. })
             }
             NodeKind::UnaryOp(op, _) => matches!(*op, UnaryOp::Deref),
             NodeKind::IndexAccess(..) => true,

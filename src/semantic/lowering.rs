@@ -1340,13 +1340,33 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // 2. Both have linkage (even different scope)
             let is_conflict = (existing_scope == current_scope) || (new_has_linkage && existing.has_linkage());
 
-            if is_conflict && !self.registry.is_compatible(existing.type_info, new_ty) {
-                let first_def = existing.def_span;
-                self.report_error(SemanticError::ConflictingTypes {
-                    name: name.to_string(),
-                    span,
-                    first_def,
-                });
+            if is_conflict {
+                if !self.registry.is_compatible(existing.type_info, new_ty) {
+                    let first_def = existing.def_span;
+                    self.report_error(SemanticError::ConflictingTypes {
+                        name: name.to_string(),
+                        span,
+                        first_def,
+                    });
+                } else if new_ty.is_function() {
+                    // Check for linkage conflict (static followed by non-static)
+                    if let SymbolKind::Function {
+                        storage: existing_storage,
+                    } = &existing.kind
+                    {
+                        let existing_is_static = *existing_storage == Some(StorageClass::Static);
+                        let new_is_static = storage == Some(StorageClass::Static);
+
+                        if existing_is_static && !new_is_static {
+                            let first_def = existing.def_span;
+                            self.report_error(SemanticError::ConflictingLinkage {
+                                name: name.to_string(),
+                                span,
+                                first_def,
+                            });
+                        }
+                    }
+                }
             }
         }
     }
@@ -1363,8 +1383,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         self.check_redeclaration_compatibility(func_name, final_ty, span, spec_info.storage);
 
-        if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
-            self.symbol_table.define_function(func_name, final_ty.ty(), true, span)
+        if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) = self
+            .symbol_table
+            .define_function(func_name, final_ty.ty(), spec_info.storage, true, span)
         {
             let entry = self.symbol_table.get_symbol(existing);
             if entry.def_state == DefinitionState::Defined {
@@ -1574,8 +1595,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 };
                 self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
 
-                if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
-                    self.symbol_table.define_function(name, final_ty.ty(), false, span)
+                if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) = self
+                    .symbol_table
+                    .define_function(name, final_ty.ty(), spec_info.storage, false, span)
                 {
                     let first_def = self.symbol_table.get_symbol(existing).def_span;
                     self.report_error(SemanticError::Redefinition { name, first_def, span });

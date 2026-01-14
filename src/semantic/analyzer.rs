@@ -992,9 +992,7 @@ impl<'a> SemanticAnalyzer<'a> {
             // Ensure layout is computed for array type
             let _ = self.registry.ensure_layout(arr_ty.ty());
             match &self.registry.get(arr_ty.ty()).kind {
-                TypeKind::Array { element_type, .. } => {
-                    Some(QualType::new(*element_type, arr_ty.qualifiers()))
-                }
+                TypeKind::Array { element_type, .. } => Some(QualType::new(*element_type, arr_ty.qualifiers())),
                 _ => unreachable!(),
             }
         } else {

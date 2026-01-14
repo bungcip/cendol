@@ -1,0 +1,36 @@
+---
+source: src/tests/semantic_mir.rs
+assertion_line: 1478
+expression: mir_dump
+---
+type %t0 = i32
+type %t1 = fn() -> %t0
+
+global @g: i32 = const 0
+
+fn main() -> i32
+{
+  locals {
+    %x: i32
+    %3: i32
+    %4: i32
+  }
+
+  bb2:
+    %3 = call inc_g()
+    %x = cast<i32>(const 42)
+    %4 = %x + @g
+    return %4
+}
+
+fn inc_g() -> i32
+{
+  locals {
+    %1: i32
+  }
+
+  bb1:
+    %1 = @g + cast<i32>(const 1)
+    @g = %1
+    return @g
+}

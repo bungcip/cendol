@@ -1393,3 +1393,87 @@ mod tests {
         ");
     }
 }
+
+#[test]
+fn test_logical_short_circuit() {
+    let source = r#"
+            int foo() { return 0; }
+            int bar() { return 1; }
+
+            int main() {
+                int a = 1;
+                int b = 0;
+
+                // AND short-circuit: if a is false, bar() not called
+                if (a && bar()) {
+                    return 1;
+                }
+
+                // OR short-circuit: if a is true, foo() not called
+                if (a || foo()) {
+                    return 2;
+                }
+
+                return 0;
+            }
+        "#;
+
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump);
+}
+
+#[test]
+fn test_compound_assignment_side_effects() {
+    let source = r#"
+            int main() {
+                int arr[5] = {0};
+                int i = 0;
+
+                // arr[i++] += 10;
+                // Should increment i once, and assign to arr[0]
+                arr[i++] += 10;
+
+                return arr[0] + i; // Should be 10 + 1 = 11
+            }
+        "#;
+
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump);
+}
+
+#[test]
+fn test_bitwise_operators() {
+    let source = r#"
+            int main() {
+                int a = 10;
+                int b = 5;
+
+                int r_and = a & b;
+                int r_or = a | b;
+                int r_xor = a ^ b;
+                int r_not = ~a;
+                int r_shl = a << 1;
+                int r_shr = a >> 1;
+
+                return r_xor;
+            }
+        "#;
+
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump);
+}
+
+#[test]
+fn test_comma_operator() {
+    let source = r#"
+            int g = 0;
+            int inc_g() { g = g + 1; return g; }
+            int main() {
+                int x = (inc_g(), 42);
+                return x + g;
+            }
+        "#;
+
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump);
+}

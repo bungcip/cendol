@@ -1,0 +1,43 @@
+---
+source: src/tests/semantic_mir.rs
+assertion_line: 1463
+expression: mir_dump
+---
+type %t0 = i32
+
+fn main() -> i32
+{
+  locals {
+    %a: i32
+    %b: i32
+    %r_and: i32
+    %4: i32
+    %r_or: i32
+    %6: i32
+    %r_xor: i32
+    %8: i32
+    %r_not: i32
+    %10: i32
+    %r_shl: i32
+    %12: i32
+    %r_shr: i32
+    %14: i32
+  }
+
+  bb1:
+    %a = const 10
+    %b = const 5
+    %4 = %a & %b
+    %r_and = %4
+    %6 = %a | %b
+    %r_or = %6
+    %8 = %a ^ %b
+    %r_xor = %8
+    %10 = ~ %a
+    %r_not = %10
+    %12 = %a << cast<i32>(const 1)
+    %r_shl = %12
+    %14 = %a >> cast<i32>(const 1)
+    %r_shr = %14
+    return %r_xor
+}

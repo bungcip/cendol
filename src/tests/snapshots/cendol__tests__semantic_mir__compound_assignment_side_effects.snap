@@ -1,0 +1,32 @@
+---
+source: src/tests/semantic_mir.rs
+assertion_line: 1441
+expression: mir_dump
+---
+type %t0 = i32
+type %t1 = [5]%t0
+
+fn main() -> i32
+{
+  locals {
+    %arr: [5]i32
+    %2: [5]i32
+    %i: i32
+    %4: i32
+    %5: i32
+    %6: i32
+    %7: i32
+  }
+
+  bb1:
+    %2 = [const 0]
+    %arr = %2
+    %i = const 0
+    %4 = %i
+    %5 = %i + const 1
+    %i = %5
+    %6 = %arr[%4] + const 10
+    %arr[%4] = %6
+    %7 = %arr[const 0] + %i
+    return %7
+}

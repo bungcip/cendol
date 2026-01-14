@@ -60,8 +60,8 @@ fn test_unsigned_long_const_long() {
 
 #[test]
 fn test_restrict_array_of_pointers() {
-    use crate::tests::test_utils;
     use crate::driver::artifact::CompilePhase;
+    use crate::tests::test_utils;
 
     let source = r#"
         int main() {

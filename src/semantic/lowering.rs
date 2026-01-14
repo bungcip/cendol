@@ -45,11 +45,8 @@ fn apply_parsed_declarator_recursive(
             // Apply Pointer modifier to the current type first (Top-Down)
             let pointer_type = ctx.registry.pointer_to(current_type);
             // Pointer type is always compatible with restrict, but we use checked merge anyway for consistency
-            let modified_current = ctx.merge_qualifiers_with_check(
-                QualType::unqualified(pointer_type),
-                qualifiers,
-                span,
-            );
+            let modified_current =
+                ctx.merge_qualifiers_with_check(QualType::unqualified(pointer_type), qualifiers, span);
             apply_parsed_declarator_recursive(modified_current, inner, ctx, span)
         }
         ParsedDeclaratorNode::Array { size, inner } => {

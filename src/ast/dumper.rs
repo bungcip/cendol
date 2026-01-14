@@ -13,7 +13,7 @@ pub struct AstDumper;
 
 impl AstDumper {
     /// Dump parsed AST to stdout
-    pub fn dump_parsed_ast(ast: &ParsedAst) {
+    pub(crate) fn dump_parsed_ast(ast: &ParsedAst) {
         for (i, node) in ast.nodes.iter().enumerate() {
             if matches!(node.kind, ParsedNodeKind::Dummy) {
                 continue;
@@ -24,7 +24,7 @@ impl AstDumper {
     }
 
     /// Dump parser AST to stdout
-    pub fn dump_parser(ast: &Ast, symbol_table: Option<&SymbolTable>) {
+    pub(crate) fn dump_parser(ast: &Ast, symbol_table: Option<&SymbolTable>) {
         for (i, kind) in ast.kinds.iter().enumerate() {
             if matches!(kind, NodeKind::Dummy) {
                 continue;
@@ -35,7 +35,7 @@ impl AstDumper {
     }
 
     /// Dump TypeRegistry information for used TypeRefs in the AST
-    pub fn dump_type_registry(ast: &Ast, registry: &TypeRegistry) {
+    pub(crate) fn dump_type_registry(ast: &Ast, registry: &TypeRegistry) {
         // Collect all TypeRefs used in the AST
         let mut used_type_refs = HashSet::new();
 

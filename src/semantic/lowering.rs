@@ -1383,9 +1383,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         self.check_redeclaration_compatibility(func_name, final_ty, span, spec_info.storage);
 
-        if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
-            self.symbol_table
-                .define_function(func_name, final_ty.ty(), spec_info.storage, true, span)
+        if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) = self
+            .symbol_table
+            .define_function(func_name, final_ty.ty(), spec_info.storage, true, span)
         {
             let entry = self.symbol_table.get_symbol(existing);
             if entry.def_state == DefinitionState::Defined {
@@ -1595,9 +1595,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 };
                 self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
 
-                if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) =
-                    self.symbol_table
-                        .define_function(name, final_ty.ty(), spec_info.storage, false, span)
+                if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) = self
+                    .symbol_table
+                    .define_function(name, final_ty.ty(), spec_info.storage, false, span)
                 {
                     let first_def = self.symbol_table.get_symbol(existing).def_span;
                     self.report_error(SemanticError::Redefinition { name, first_def, span });

@@ -462,21 +462,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // For compound assignments like +=, we need to check if the underlying arithmetic is valid.
-        let (effective_rhs_ty, final_assignment_cast_target) = if op != BinaryOp::Assign {
-            let arithmetic_op = match op {
-                BinaryOp::AssignAdd => BinaryOp::Add,
-                BinaryOp::AssignSub => BinaryOp::Sub,
-                BinaryOp::AssignMul => BinaryOp::Mul,
-                BinaryOp::AssignDiv => BinaryOp::Div,
-                BinaryOp::AssignMod => BinaryOp::Mod,
-                BinaryOp::AssignBitAnd => BinaryOp::BitAnd,
-                BinaryOp::AssignBitOr => BinaryOp::BitOr,
-                BinaryOp::AssignBitXor => BinaryOp::BitXor,
-                BinaryOp::AssignLShift => BinaryOp::LShift,
-                BinaryOp::AssignRShift => BinaryOp::RShift,
-                _ => unreachable!(),
-            };
-
+        let (effective_rhs_ty, final_assignment_cast_target) = if let Some(arithmetic_op) = op.without_assignment() {
             // Reuse visit_binary_op logic conceptually, but for compound assignment operands.
             // For p += 1, LHS is pointer, RHS is integer.
             let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);

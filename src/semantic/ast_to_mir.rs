@@ -1111,22 +1111,6 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn get_underlying_binary_op(&self, op: &BinaryOp) -> Option<BinaryOp> {
-        match op {
-            BinaryOp::AssignAdd => Some(BinaryOp::Add),
-            BinaryOp::AssignSub => Some(BinaryOp::Sub),
-            BinaryOp::AssignMul => Some(BinaryOp::Mul),
-            BinaryOp::AssignDiv => Some(BinaryOp::Div),
-            BinaryOp::AssignMod => Some(BinaryOp::Mod),
-            BinaryOp::AssignBitAnd => Some(BinaryOp::BitAnd),
-            BinaryOp::AssignBitOr => Some(BinaryOp::BitOr),
-            BinaryOp::AssignBitXor => Some(BinaryOp::BitXor),
-            BinaryOp::AssignLShift => Some(BinaryOp::LShift),
-            BinaryOp::AssignRShift => Some(BinaryOp::RShift),
-            _ => None,
-        }
-    }
-
     fn lower_assignment_expr(
         &mut self,
         scope_id: ScopeId,
@@ -1156,7 +1140,7 @@ impl<'a> AstToMirLowerer<'a> {
 
         let rhs_op = self.lower_expression(scope_id, right_ref, true);
 
-        let final_rhs = if let Some(compound_op) = self.get_underlying_binary_op(op) {
+        let final_rhs = if let Some(compound_op) = op.without_assignment() {
             // This is a compound assignment, e.g., a += b
             // Use the already-evaluated place to read the current value.
             let lhs_copy = Operand::Copy(Box::new(place.clone()));
@@ -1907,17 +1891,18 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn map_ast_binary_op_to_mir_int(&self, ast_op: &BinaryOp) -> BinaryIntOp {
-        match ast_op {
-            BinaryOp::Add | BinaryOp::AssignAdd => BinaryIntOp::Add,
-            BinaryOp::Sub | BinaryOp::AssignSub => BinaryIntOp::Sub,
-            BinaryOp::Mul | BinaryOp::AssignMul => BinaryIntOp::Mul,
-            BinaryOp::Div | BinaryOp::AssignDiv => BinaryIntOp::Div,
-            BinaryOp::Mod | BinaryOp::AssignMod => BinaryIntOp::Mod,
-            BinaryOp::BitAnd | BinaryOp::AssignBitAnd => BinaryIntOp::BitAnd,
-            BinaryOp::BitOr | BinaryOp::AssignBitOr => BinaryIntOp::BitOr,
-            BinaryOp::BitXor | BinaryOp::AssignBitXor => BinaryIntOp::BitXor,
-            BinaryOp::LShift | BinaryOp::AssignLShift => BinaryIntOp::LShift,
-            BinaryOp::RShift | BinaryOp::AssignRShift => BinaryIntOp::RShift,
+        let op = ast_op.without_assignment().unwrap_or(*ast_op);
+        match op {
+            BinaryOp::Add => BinaryIntOp::Add,
+            BinaryOp::Sub => BinaryIntOp::Sub,
+            BinaryOp::Mul => BinaryIntOp::Mul,
+            BinaryOp::Div => BinaryIntOp::Div,
+            BinaryOp::Mod => BinaryIntOp::Mod,
+            BinaryOp::BitAnd => BinaryIntOp::BitAnd,
+            BinaryOp::BitOr => BinaryIntOp::BitOr,
+            BinaryOp::BitXor => BinaryIntOp::BitXor,
+            BinaryOp::LShift => BinaryIntOp::LShift,
+            BinaryOp::RShift => BinaryIntOp::RShift,
             BinaryOp::Equal => BinaryIntOp::Eq,
             BinaryOp::NotEqual => BinaryIntOp::Ne,
             BinaryOp::Less => BinaryIntOp::Lt,
@@ -1932,11 +1917,12 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn map_ast_binary_op_to_mir_float(&self, ast_op: &BinaryOp) -> BinaryFloatOp {
-        match ast_op {
-            BinaryOp::Add | BinaryOp::AssignAdd => BinaryFloatOp::Add,
-            BinaryOp::Sub | BinaryOp::AssignSub => BinaryFloatOp::Sub,
-            BinaryOp::Mul | BinaryOp::AssignMul => BinaryFloatOp::Mul,
-            BinaryOp::Div | BinaryOp::AssignDiv => BinaryFloatOp::Div,
+        let op = ast_op.without_assignment().unwrap_or(*ast_op);
+        match op {
+            BinaryOp::Add => BinaryFloatOp::Add,
+            BinaryOp::Sub => BinaryFloatOp::Sub,
+            BinaryOp::Mul => BinaryFloatOp::Mul,
+            BinaryOp::Div => BinaryFloatOp::Div,
             BinaryOp::Equal => BinaryFloatOp::Eq,
             BinaryOp::NotEqual => BinaryFloatOp::Ne,
             BinaryOp::Less => BinaryFloatOp::Lt,

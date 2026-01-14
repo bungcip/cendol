@@ -496,6 +496,22 @@ impl BinaryOp {
                 | BinaryOp::AssignRShift
         )
     }
+
+    pub fn without_assignment(&self) -> Option<BinaryOp> {
+        match self {
+            BinaryOp::AssignAdd => Some(BinaryOp::Add),
+            BinaryOp::AssignSub => Some(BinaryOp::Sub),
+            BinaryOp::AssignMul => Some(BinaryOp::Mul),
+            BinaryOp::AssignDiv => Some(BinaryOp::Div),
+            BinaryOp::AssignMod => Some(BinaryOp::Mod),
+            BinaryOp::AssignBitAnd => Some(BinaryOp::BitAnd),
+            BinaryOp::AssignBitOr => Some(BinaryOp::BitOr),
+            BinaryOp::AssignBitXor => Some(BinaryOp::BitXor),
+            BinaryOp::AssignLShift => Some(BinaryOp::LShift),
+            BinaryOp::AssignRShift => Some(BinaryOp::RShift),
+            _ => None,
+        }
+    }
 }
 // Array sizes
 #[derive(Debug, Clone, Serialize)]

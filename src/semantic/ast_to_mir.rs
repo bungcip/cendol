@@ -129,6 +129,7 @@ impl<'a> AstToMirLowerer<'a> {
                             return_type,
                             parameters,
                             is_variadic,
+                            ..
                         } = &func_type.kind
                         {
                             let return_mir_type = self.lower_type(*return_type);

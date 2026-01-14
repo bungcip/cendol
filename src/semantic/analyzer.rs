@@ -77,6 +77,8 @@ pub(crate) fn run_semantic_analyzer(
         semantic_info: &mut semantic_info,
         current_function_ret_type: None,
         current_function_name: None,
+        current_function_is_noreturn: false,
+        current_function_has_return_stmt: false,
         deferred_checks: Vec::new(),
         switch_depth: 0,
         switch_cases: Vec::new(),
@@ -100,6 +102,8 @@ struct SemanticAnalyzer<'a> {
     semantic_info: &'a mut SemanticInfo,
     current_function_ret_type: Option<QualType>,
     current_function_name: Option<String>,
+    current_function_is_noreturn: bool,
+    current_function_has_return_stmt: bool,
     deferred_checks: Vec<DeferredCheck>,
     switch_depth: usize,
     switch_cases: Vec<HashSet<i64>>,
@@ -124,6 +128,54 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::LiteralString(..) => true,
             NodeKind::CompoundLiteral(..) => true,
             _ => false,
+        }
+    }
+
+    fn can_fall_through(&self, node_ref: NodeRef) -> bool {
+        let node_kind = self.ast.get_kind(node_ref);
+        match node_kind {
+            NodeKind::CompoundStatement(cs) => {
+                if let Some(last_stmt_ref) = cs.stmt_start.range(cs.stmt_len).last() {
+                    self.can_fall_through(last_stmt_ref)
+                } else {
+                    true
+                }
+            }
+            NodeKind::If(stmt) => {
+                if let Some(else_branch) = stmt.else_branch {
+                    self.can_fall_through(stmt.then_branch) || self.can_fall_through(else_branch)
+                } else {
+                    true
+                }
+            }
+            NodeKind::Return(_) => false,
+            NodeKind::Break | NodeKind::Continue | NodeKind::Goto(_, _) => false,
+            NodeKind::While(_) => true, // Conservative
+            NodeKind::For(stmt) => {
+                if stmt.condition.is_none() {
+                    return false; // for(;;)
+                }
+                true
+            }
+            NodeKind::ExpressionStatement(Some(expr_ref)) => {
+                let node_kind = self.ast.get_kind(*expr_ref);
+                if let NodeKind::FunctionCall(call_expr) = node_kind {
+                    let callee_type = self.semantic_info.types[call_expr.callee.index()];
+                    if let Some(callee_type) = callee_type
+                        && callee_type.ty().is_function()
+                    {
+                        let ty_kind = &self.registry.get(callee_type.ty()).kind;
+                        if let TypeKind::Function { is_noreturn, .. } = ty_kind
+                            && *is_noreturn
+                        {
+                            return false;
+                        }
+                    }
+                }
+                true
+            }
+            NodeKind::Label(_, stmt, _) => self.can_fall_through(*stmt),
+            _ => true,
         }
     }
 
@@ -211,6 +263,10 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_return_statement(&mut self, expr: &Option<NodeRef>, _span: SourceSpan) {
+        if self.current_function_is_noreturn && !self.current_function_has_return_stmt {
+            self.report_error(SemanticError::ReturnInNoreturnFunction { span: _span });
+            self.current_function_has_return_stmt = true;
+        }
         let ret_ty = self.current_function_ret_type;
         let is_void_func = ret_ty.is_some_and(|ty| ty.is_void());
         let func_name = self
@@ -1010,9 +1066,20 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::Function(data) => {
                 let func_ty = self.registry.get(data.ty);
-                if let TypeKind::Function { return_type, .. } = func_ty.kind.clone() {
-                    self.current_function_ret_type = Some(QualType::unqualified(return_type));
+                let (is_noreturn, return_type) = if let TypeKind::Function {
+                    is_noreturn,
+                    return_type,
+                    ..
+                } = func_ty.kind.clone()
+                {
+                    (is_noreturn, Some(QualType::unqualified(return_type)))
+                } else {
+                    (false, None)
                 };
+
+                let prev_is_noreturn = self.current_function_is_noreturn;
+                self.current_function_is_noreturn = is_noreturn;
+                let prev_ret_type = self.current_function_ret_type.replace(return_type.unwrap());
 
                 let symbol = self.symbol_table.get_symbol(data.symbol);
                 let prev_func_name = self.current_function_name.take();
@@ -1023,8 +1090,18 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
 
                 self.visit_node(data.body);
-                self.current_function_ret_type = None;
+
+                if self.current_function_is_noreturn && self.can_fall_through(data.body) {
+                    self.report_error(SemanticError::NoreturnFunctionShouldNotReturn {
+                        name: self.current_function_name.clone().unwrap(),
+                        span: self.ast.get_span(_node_ref),
+                    });
+                }
+
+                self.current_function_is_noreturn = prev_is_noreturn;
+                self.current_function_ret_type = prev_ret_type;
                 self.current_function_name = prev_func_name;
+                self.current_function_has_return_stmt = false;
                 None
             }
             NodeKind::Param(_) => None,

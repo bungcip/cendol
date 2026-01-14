@@ -340,11 +340,13 @@ impl TypeRegistry {
         return_type: TypeRef,
         params: Vec<FunctionParameter>,
         is_variadic: bool,
+        is_noreturn: bool,
     ) -> TypeRef {
         let key = FnSigKey {
             return_type,
             params: params.iter().map(|p| p.param_type).collect(),
             is_variadic,
+            is_noreturn,
         };
 
         if let Some(&f) = self.function_cache.get(&key) {
@@ -355,6 +357,7 @@ impl TypeRegistry {
             return_type,
             parameters: params,
             is_variadic,
+            is_noreturn,
         }));
 
         self.function_cache.insert(key, f);
@@ -850,11 +853,13 @@ impl TypeRegistry {
                     return_type: ret_a,
                     parameters: params_a,
                     is_variadic: var_a,
+                    ..
                 },
                 TypeKind::Function {
                     return_type: ret_b,
                     parameters: params_b,
                     is_variadic: var_b,
+                    ..
                 },
             ) => {
                 if var_a != var_b {
@@ -984,6 +989,7 @@ impl TypeRegistry {
                 return_type,
                 parameters,
                 is_variadic,
+                ..
             } => {
                 let ret_str = self.display_type(*return_type);
                 let params_str = parameters
@@ -1023,4 +1029,5 @@ struct FnSigKey {
     return_type: TypeRef,
     params: Vec<QualType>,
     is_variadic: bool,
+    is_noreturn: bool,
 }

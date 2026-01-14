@@ -26,6 +26,9 @@ pub use analyzer::{ImplicitConversion, SemanticInfo, ValueCategory};
 pub(crate) use ast_to_mir::AstToMirLowerer;
 pub use symbol_table::{DefinitionState, Namespace, ScopeId, SymbolKind, SymbolRef, SymbolTable};
 pub use type_registry::TypeRegistry;
+#[cfg(test)]
+mod tests_noreturn;
+
 pub use types::{
     ArraySizeType, BuiltinType, EnumConstant, FunctionParameter, QualType, StructMember, Type, TypeKind, TypeLayout,
     TypeQualifiers, TypeRef,

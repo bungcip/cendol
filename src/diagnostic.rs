@@ -332,6 +332,12 @@ pub enum SemanticError {
 
     #[error("flexible array member in otherwise empty structure")]
     FlexibleArrayInEmptyStruct { span: SourceSpan },
+
+    #[error("return statement in a function declared with '_Noreturn'")]
+    ReturnInNoreturnFunction { span: SourceSpan },
+
+    #[error("function declared with '_Noreturn' should not return")]
+    NoreturnFunctionShouldNotReturn { name: String, span: SourceSpan },
 }
 
 impl SemanticError {
@@ -383,6 +389,8 @@ impl SemanticError {
             SemanticError::MultipleDefaultLabels { span } => *span,
             SemanticError::FlexibleArrayNotLast { span } => *span,
             SemanticError::FlexibleArrayInEmptyStruct { span } => *span,
+            SemanticError::ReturnInNoreturnFunction { span } => *span,
+            SemanticError::NoreturnFunctionShouldNotReturn { span, .. } => *span,
         }
     }
 }

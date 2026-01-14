@@ -110,6 +110,7 @@ impl AstDumper {
                 return_type,
                 parameters,
                 is_variadic,
+                ..
             } => {
                 let return_str = Self::format_type_kind_user_friendly(&registry.get(*return_type).kind, registry);
                 let mut param_strs = Vec::new();

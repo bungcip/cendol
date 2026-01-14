@@ -1030,6 +1030,14 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::Param(_) => None,
             NodeKind::VarDecl(data) => {
                 let _ = self.registry.ensure_layout(data.ty.ty());
+                if data.init.is_some()
+                    && matches!(data.storage, Some(StorageClass::Extern))
+                    && self.current_function_name.is_some()
+                {
+                    let span = self.ast.get_span(_node_ref);
+                    self.report_error(SemanticError::InvalidInitializer { span });
+                }
+
                 if let Some(init_ref) = data.init {
                     self.check_initializer(init_ref, data.ty);
                 }

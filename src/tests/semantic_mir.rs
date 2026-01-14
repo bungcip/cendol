@@ -929,7 +929,8 @@ mod tests {
         type %t1 = ptr<%t2>
         type %t2 = i8
         type %t3 = [5]%t2
-        type %t4 = fn(%t1) -> %t0
+        type %t4 = ptr<%t2>
+        type %t5 = fn(%t1) -> %t0
 
         global @.L.str0: [5]i8 = const "gate"
 
@@ -970,7 +971,6 @@ mod tests {
         type %t2 = i8
         type %t3 = fn(%t1) -> %t0
         type %t4 = [15]%t2
-        type %t5 = ptr<%t2>
 
         global @.L.str0: [15]i8 = const "Hello, World!\n"
 
@@ -1007,8 +1007,7 @@ mod tests {
         type %t2 = i8
         type %t3 = fn(%t1) -> %t0
         type %t4 = [15]%t2
-        type %t5 = ptr<%t2>
-        type %t6 = [5]%t2
+        type %t5 = [5]%t2
 
         global @.L.str0: [15]i8 = const "Value: %d, %s\n"
         global @.L.str1: [5]i8 = const "test"

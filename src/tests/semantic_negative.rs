@@ -323,7 +323,6 @@ fn test_static_redeclared_non_static() {
 
 // J. Advanced / Compiler-grade features
 #[test]
-#[ignore = "still not implemented"]
 fn test_modifying_string_literal() {
     // This assumes checking if we directly modify "string"[0] or similar.
     // If it tracks `p` from `char *p = "hello"`, that is harder.

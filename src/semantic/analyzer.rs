@@ -992,7 +992,7 @@ impl<'a> SemanticAnalyzer<'a> {
             // Ensure layout is computed for array type
             let _ = self.registry.ensure_layout(arr_ty.ty());
             match &self.registry.get(arr_ty.ty()).kind {
-                TypeKind::Array { element_type, .. } => Some(QualType::unqualified(*element_type)),
+                TypeKind::Array { element_type, .. } => Some(QualType::new(*element_type, arr_ty.qualifiers())),
                 _ => unreachable!(),
             }
         } else {
@@ -1227,7 +1227,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let array_size = name.as_str().len() + 1;
                 let array_type = self.registry.array_of(char_type, ArraySizeType::Constant(array_size));
                 let _ = self.registry.ensure_layout(array_type);
-                Some(QualType::unqualified(array_type))
+                Some(QualType::new(array_type, TypeQualifiers::CONST))
             }
             NodeKind::Ident(_, symbol_ref) => {
                 let symbol = self.symbol_table.get_symbol(*symbol_ref);

@@ -221,6 +221,8 @@ pub enum SemanticError {
     InvalidUnaryOperand { ty: String, span: SourceSpan },
     #[error("Initializer element is not a compile-time constant")]
     NonConstantInitializer { span: SourceSpan },
+    #[error("invalid initializer")]
+    InvalidInitializer { span: SourceSpan },
     #[error("Invalid use of void type in expression")]
     InvalidUseOfVoid { span: SourceSpan },
     #[error("conflicting types for '{name}'")]
@@ -327,6 +329,7 @@ impl SemanticError {
             SemanticError::InvalidBinaryOperands { span, .. } => *span,
             SemanticError::InvalidUnaryOperand { span, .. } => *span,
             SemanticError::NonConstantInitializer { span } => *span,
+            SemanticError::InvalidInitializer { span } => *span,
             SemanticError::InvalidUseOfVoid { span } => *span,
             SemanticError::ConflictingTypes { span, .. } => *span,
             SemanticError::VoidReturnWithValue { span, .. } => *span,

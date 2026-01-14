@@ -294,7 +294,6 @@ fn test_scalar_init_brace_list() {
 
 // I. Storage Duration & Linkage
 #[test]
-#[ignore = "still not implemented"]
 fn test_extern_init_block_scope() {
     run_fail_with_message(
         r#"

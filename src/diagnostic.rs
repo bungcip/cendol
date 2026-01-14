@@ -332,11 +332,15 @@ pub enum SemanticError {
 
     #[error("flexible array member in otherwise empty structure")]
     FlexibleArrayInEmptyStruct { span: SourceSpan },
+
+    #[error("restrict requires a pointer type")]
+    InvalidRestrict { span: SourceSpan },
 }
 
 impl SemanticError {
     pub fn span(&self) -> SourceSpan {
         match self {
+            SemanticError::InvalidRestrict { span } => *span,
             SemanticError::UndeclaredIdentifier { span, .. } => *span,
             SemanticError::Redefinition { span, .. } => *span,
             SemanticError::TypeMismatch { span, .. } => *span,

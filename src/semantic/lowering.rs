@@ -34,6 +34,7 @@ fn apply_parsed_declarator_recursive(
     current_type: QualType,
     declarator_ref: ParsedDeclRef,
     ctx: &mut LowerCtx,
+    span: SourceSpan,
 ) -> QualType {
     let declarator_node = ctx.parsed_ast.parsed_types.get_decl(declarator_ref);
 
@@ -43,10 +44,13 @@ fn apply_parsed_declarator_recursive(
             // Pointer
             // Apply Pointer modifier to the current type first (Top-Down)
             let pointer_type = ctx.registry.pointer_to(current_type);
-            let modified_current = ctx
-                .registry
-                .merge_qualifiers(QualType::unqualified(pointer_type), qualifiers);
-            apply_parsed_declarator_recursive(modified_current, inner, ctx)
+            // Pointer type is always compatible with restrict, but we use checked merge anyway for consistency
+            let modified_current = ctx.merge_qualifiers_with_check(
+                QualType::unqualified(pointer_type),
+                qualifiers,
+                span,
+            );
+            apply_parsed_declarator_recursive(modified_current, inner, ctx, span)
         }
         ParsedDeclaratorNode::Array { size, inner } => {
             // Array
@@ -57,7 +61,7 @@ fn apply_parsed_declarator_recursive(
             let qualified_array = ctx
                 .registry
                 .merge_qualifiers(QualType::unqualified(array_type_ref), current_type.qualifiers());
-            apply_parsed_declarator_recursive(qualified_array, inner, ctx)
+            apply_parsed_declarator_recursive(qualified_array, inner, ctx, span)
         }
         ParsedDeclaratorNode::Function { params, flags, inner } => {
             // Function
@@ -85,7 +89,7 @@ fn apply_parsed_declarator_recursive(
             let function_type_ref = ctx
                 .registry
                 .function_type(current_type.ty(), processed_params, flags.is_variadic);
-            apply_parsed_declarator_recursive(QualType::unqualified(function_type_ref), inner, ctx)
+            apply_parsed_declarator_recursive(QualType::unqualified(function_type_ref), inner, ctx, span)
         }
     }
 }
@@ -209,6 +213,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     pub(crate) fn report_error(&mut self, error: SemanticError) {
         self.has_errors = true;
         self.diag.report(error);
+    }
+
+    pub(crate) fn merge_qualifiers_with_check(
+        &mut self,
+        base: QualType,
+        add: TypeQualifiers,
+        span: SourceSpan,
+    ) -> QualType {
+        if add.contains(TypeQualifiers::RESTRICT) && !base.is_pointer() {
+            self.report_error(SemanticError::InvalidRestrict { span });
+        }
+        self.registry.merge_qualifiers(base, add)
     }
 
     fn set_scope(&mut self, _node_ref: NodeRef, _scope_id: ScopeId) {
@@ -396,8 +412,8 @@ fn convert_to_qual_type(
 
     let base_type_ref = convert_parsed_base_type_to_qual_type(ctx, &base_type_node, span)?;
 
-    let final_type = apply_parsed_declarator_recursive(base_type_ref, declarator_ref, ctx);
-    Ok(ctx.registry.merge_qualifiers(final_type, qualifiers))
+    let final_type = apply_parsed_declarator_recursive(base_type_ref, declarator_ref, ctx, span);
+    Ok(ctx.merge_qualifiers_with_check(final_type, qualifiers, span))
 }
 
 /// Helper to resolve struct/union tags (lookup, forward decl, or definition validation)
@@ -1064,14 +1080,15 @@ pub(crate) fn apply_declarator(
     match declarator {
         ParsedDeclarator::Pointer(qualifiers, next) => {
             let ty = ctx.registry.pointer_to(base_type);
-            let modified_ty = ctx.registry.merge_qualifiers(QualType::unqualified(ty), *qualifiers);
+            // Checked merge
+            let modified_ty = ctx.merge_qualifiers_with_check(QualType::unqualified(ty), *qualifiers, span);
             if let Some(next_decl) = next {
                 apply_declarator(modified_ty, next_decl, ctx, span)
             } else {
                 modified_ty
             }
         }
-        ParsedDeclarator::Identifier(_, qualifiers) => ctx.registry.merge_qualifiers(base_type, *qualifiers),
+        ParsedDeclarator::Identifier(_, qualifiers) => ctx.merge_qualifiers_with_check(base_type, *qualifiers, span),
         ParsedDeclarator::Array(base, size) => {
             // C11 6.7.6.2 Array declarators
             // "The element type shall not be an incomplete or function type."
@@ -1376,7 +1393,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let mut base_ty = spec_info
             .base_type
             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
-        base_ty = self.registry.merge_qualifiers(base_ty, spec_info.qualifiers);
+        base_ty = self.merge_qualifiers_with_check(base_ty, spec_info.qualifiers, span);
 
         let final_ty = apply_declarator(base_ty, &func_def.declarator, self, span);
         let func_name = extract_name(&func_def.declarator).expect("Function definition must have a name");
@@ -1455,7 +1472,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let mut base_ty = spec_info
             .base_type
             .unwrap_or(QualType::unqualified(self.registry.type_int));
-        base_ty = self.registry.merge_qualifiers(base_ty, spec_info.qualifiers);
+        base_ty = self.merge_qualifiers_with_check(base_ty, spec_info.qualifiers, span);
 
         if decl.init_declarators.is_empty() {
             if let Some(ty) = spec_info.base_type {
@@ -2313,7 +2330,7 @@ pub(crate) fn lower_struct_members(
             }
 
             if let Some(type_ref) = spec_info.base_type {
-                let type_ref = ctx.registry.merge_qualifiers(type_ref, spec_info.qualifiers);
+                let type_ref = ctx.merge_qualifiers_with_check(type_ref, spec_info.qualifiers, span);
 
                 // Check if it is a Record type (struct or union)
                 if type_ref.is_record() {
@@ -2362,7 +2379,7 @@ pub(crate) fn lower_struct_members(
             let member_type = if let Some(base_type_ref) = spec_info.base_type {
                 // Manually re-apply qualifiers from the base type.
                 let ty = apply_declarator(base_type_ref, base_declarator, ctx, init_declarator.span);
-                ctx.registry.merge_qualifiers(ty, spec_info.qualifiers)
+                ctx.merge_qualifiers_with_check(ty, spec_info.qualifiers, init_declarator.span)
             } else {
                 QualType::unqualified(ctx.registry.type_int)
             };

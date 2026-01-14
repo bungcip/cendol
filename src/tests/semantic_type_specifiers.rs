@@ -57,3 +57,19 @@ fn test_long_const_long() {
 fn test_unsigned_long_const_long() {
     check_type("unsigned long const long x;", "const unsigned long long");
 }
+
+#[test]
+fn test_restrict_array_of_pointers() {
+    use crate::tests::test_utils;
+    use crate::driver::artifact::CompilePhase;
+
+    let source = r#"
+        int main() {
+            int x;
+            int * restrict arr[10];
+            arr[0] = &x;
+        }
+    "#;
+    let (_driver, result) = test_utils::run_pipeline(source, CompilePhase::Mir);
+    assert!(result.is_ok(), "Compilation failed: {:?}", result.err());
+}

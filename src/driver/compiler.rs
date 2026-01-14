@@ -55,7 +55,8 @@ impl CompilerDriver {
         let mut outputs = PipelineOutputs { units: IndexMap::new() };
 
         // Process each input file
-        for input_file in self.config.input_files.clone() {
+        let input_files = std::mem::take(&mut self.config.input_files);
+        for input_file in input_files {
             let source_id = match input_file {
                 PathOrBuffer::Path(path) => match self.source_manager.add_file_from_path(&path, None) {
                     Ok(id) => id,

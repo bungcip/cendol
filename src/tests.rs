@@ -28,6 +28,7 @@ pub mod semantic_sizeof;
 pub mod semantic_string_init;
 pub mod semantic_symbol_redefinition;
 pub mod semantic_type_specifiers;
+pub mod semantic_typedef_redefinition;
 pub mod semantic_validation;
 pub mod source_manager;
 pub mod test_utils;

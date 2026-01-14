@@ -280,7 +280,6 @@ fn test_designated_init_field_not_found() {
 }
 
 #[test]
-#[ignore = "still not implemented"]
 fn test_scalar_init_brace_list() {
     run_fail_with_message(
         r#"

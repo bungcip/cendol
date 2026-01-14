@@ -233,6 +233,10 @@ pub enum SemanticError {
     VoidReturnWithValue { name: String, span: SourceSpan },
     #[error("non-void function '{name}' should return a value")]
     NonVoidReturnWithoutValue { name: String, span: SourceSpan },
+
+    #[error("excess elements in {kind} initializer")]
+    ExcessElements { kind: String, span: SourceSpan },
+
     #[error("Unsupported feature: {feature}")]
     UnsupportedFeature { feature: String, span: SourceSpan },
 
@@ -327,6 +331,7 @@ impl SemanticError {
             SemanticError::ConflictingTypes { span, .. } => *span,
             SemanticError::VoidReturnWithValue { span, .. } => *span,
             SemanticError::NonVoidReturnWithoutValue { span, .. } => *span,
+            SemanticError::ExcessElements { span, .. } => *span,
             SemanticError::UnsupportedFeature { span, .. } => *span,
             SemanticError::InvalidArraySize { span } => *span,
             SemanticError::InvalidBitfieldWidth { span } => *span,

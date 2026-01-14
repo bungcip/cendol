@@ -770,7 +770,10 @@ impl<'src> Preprocessor<'src> {
 
         // Process tokens with string literal concatenation
         while let Some(token) = self.lex_token() {
-            if token.kind == PPTokenKind::Hash && !token.flags.contains(PPTokenFlags::MACRO_EXPANDED) {
+            if token.kind == PPTokenKind::Hash
+                && token.flags.contains(PPTokenFlags::STARTS_PP_LINE)
+                && !token.flags.contains(PPTokenFlags::MACRO_EXPANDED)
+            {
                 // Handle directive - always process directives regardless of skipping
                 self.handle_directive()?;
             } else {

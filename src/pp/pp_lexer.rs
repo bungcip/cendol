@@ -198,6 +198,7 @@ pub(crate) struct PPLexer {
     pub(crate) line_offset: u32,
     // pub filename_override: Option<String>,
     pub(crate) in_directive_line: bool, // Whether we are currently processing tokens on a directive line
+    at_start_of_line: bool,
 }
 
 impl PPLexer {
@@ -213,6 +214,7 @@ impl PPLexer {
             line_offset: 0,
             // filename_override: None,
             in_directive_line: false,
+            at_start_of_line: true,
         }
     }
 
@@ -334,6 +336,25 @@ impl PPLexer {
             b'%' => {
                 if consume_if!(b'=') {
                     token!(PPTokenKind::ModAssign, 2)
+                } else if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBrace, 2)
+                } else if consume_if!(b':') {
+                    // Check for %:%: -> ##
+                    let saved_pos = self.position;
+                    let saved_lines = self.line_starts.clone();
+
+                    if consume_if!(b'%') {
+                        if consume_if!(b':') {
+                            token!(PPTokenKind::HashHash, 4)
+                        } else {
+                            // Backtrack
+                            self.position = saved_pos;
+                            self.line_starts = saved_lines;
+                            token!(PPTokenKind::Hash, 2)
+                        }
+                    } else {
+                        token!(PPTokenKind::Hash, 2)
+                    }
                 } else {
                     token!(PPTokenKind::Percent, 1)
                 }
@@ -361,6 +382,10 @@ impl PPLexer {
                     }
                 } else if consume_if!(b'=') {
                     token!(PPTokenKind::LessEqual, 2)
+                } else if consume_if!(b':') {
+                    token!(PPTokenKind::LeftBracket, 2)
+                } else if consume_if!(b'%') {
+                    token!(PPTokenKind::LeftBrace, 2)
                 } else {
                     token!(PPTokenKind::Less, 1)
                 }
@@ -418,7 +443,13 @@ impl PPLexer {
                 token!(PPTokenKind::Dot, 1)
             }
             b'?' => token!(PPTokenKind::Question, 1),
-            b':' => token!(PPTokenKind::Colon, 1),
+            b':' => {
+                if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBracket, 2)
+                } else {
+                    token!(PPTokenKind::Colon, 1)
+                }
+            }
             b',' => token!(PPTokenKind::Comma, 1),
             b';' => token!(PPTokenKind::Semicolon, 1),
             b'(' => token!(PPTokenKind::LeftParen, 1),
@@ -437,12 +468,13 @@ impl PPLexer {
         }
 
         let saved_position = self.position;
-        self.skip_whitespace_and_comments();
+        let is_at_start_of_line = self.skip_whitespace_and_comments();
         let had_leading_space = self.position > saved_position;
 
         if self.position as usize >= self.buffer.len() {
             if self.in_directive_line {
                 self.in_directive_line = false;
+                self.at_start_of_line = true; // Next call will start from fresh if we had more
                 return Some(PPToken::new(
                     PPTokenKind::Eod,
                     PPTokenFlags::empty(),
@@ -467,6 +499,7 @@ impl PPLexer {
         // Only \n triggers Eod, \r is treated as whitespace (Windows \r\n support)
         if ch == b'\n' && self.in_directive_line {
             self.in_directive_line = false;
+            self.at_start_of_line = true;
             return Some(PPToken::new(
                 PPTokenKind::Eod,
                 flags,
@@ -474,6 +507,9 @@ impl PPLexer {
                 1,
             ));
         }
+
+        // We are consuming a token, so we are no longer at the start of the line
+        self.at_start_of_line = false;
 
         match ch {
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
@@ -495,7 +531,9 @@ impl PPLexer {
             b'\'' => Some(self.lex_char_literal(start_pos, ch, flags)),
             b'#' => {
                 let mut token_flags = flags;
-                token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                if is_at_start_of_line {
+                    token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                }
                 if self.peek_char() == Some(b'#') {
                     self.next_char(); // consume the second #
                     Some(PPToken::new(
@@ -506,7 +544,9 @@ impl PPLexer {
                     ))
                 } else {
                     // Set directive line flag when we encounter a # that starts a preprocessor line
-                    self.in_directive_line = true;
+                    if is_at_start_of_line {
+                        self.in_directive_line = true;
+                    }
                     Some(PPToken::with_flags(
                         PPTokenKind::Hash,
                         token_flags,
@@ -514,8 +554,17 @@ impl PPLexer {
                     ))
                 }
             }
+            // Handle % separately to check for digraphs that act as directives
+            b'%' => {
+                let mut token = self.lex_operator(start_pos, ch, flags);
+                if token.kind == PPTokenKind::Hash && is_at_start_of_line {
+                    token.flags |= PPTokenFlags::STARTS_PP_LINE;
+                    self.in_directive_line = true;
+                }
+                Some(token)
+            }
             // All operators and punctuation are handled by the optimized helper function.
-            b'+' | b'-' | b'*' | b'/' | b'%' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'.' | b'?'
+            b'+' | b'-' | b'*' | b'/' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'.' | b'?'
             | b':' | b',' | b';' | b'(' | b')' | b'[' | b']' | b'{' | b'}' => {
                 Some(self.lex_operator(start_pos, ch, flags))
             }
@@ -528,13 +577,22 @@ impl PPLexer {
         }
     }
 
-    fn skip_whitespace_and_comments(&mut self) {
+    fn skip_whitespace_and_comments(&mut self) -> bool {
         loop {
             // Skip whitespace, handling line splicing
             // But don't skip newlines if we're in a directive line (let them be processed as tokens)
             while let Some(ch) = self.peek_char() {
-                if ch.is_ascii_whitespace() && !(ch == b'\n' && self.in_directive_line) {
-                    self.next_char();
+                if ch.is_ascii_whitespace() {
+                    if ch == b'\n' {
+                        if self.in_directive_line {
+                            // Don't consume newline in directive line
+                            return self.at_start_of_line;
+                        }
+                        self.next_char();
+                        self.at_start_of_line = true;
+                    } else {
+                        self.next_char();
+                    }
                 } else {
                     break;
                 }
@@ -555,6 +613,7 @@ impl PPLexer {
                 // Line comment, skip to end of line
                 while let Some(ch) = self.next_char() {
                     if ch == b'\n' {
+                        self.at_start_of_line = true;
                         break;
                     }
                 }
@@ -575,6 +634,7 @@ impl PPLexer {
                 break;
             }
         }
+        self.at_start_of_line
     }
 
     fn lex_identifier(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {

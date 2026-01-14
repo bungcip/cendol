@@ -109,7 +109,7 @@ impl<'a> AstToMirLowerer<'a> {
                         (
                             symbol.name,
                             symbol.type_info,
-                            matches!(symbol.kind, SymbolKind::Function),
+                            matches!(symbol.kind, SymbolKind::Function { .. }),
                             symbol.def_state == DefinitionState::Defined,
                         )
                     };
@@ -872,7 +872,7 @@ impl<'a> AstToMirLowerer<'a> {
                     Operand::Copy(Box::new(Place::Local(*local_id)))
                 }
             }
-            SymbolKind::Function => {
+            SymbolKind::Function { .. } => {
                 let func_id = self
                     .mir_builder
                     .get_functions()

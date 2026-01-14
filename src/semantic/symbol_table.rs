@@ -54,7 +54,7 @@ impl Symbol {
 
     pub fn has_linkage(&self) -> bool {
         match &self.kind {
-            SymbolKind::Function => true,
+            SymbolKind::Function { .. } => true,
             SymbolKind::Variable { is_global, storage, .. } => *is_global || *storage == Some(StorageClass::Extern),
             _ => false,
         }
@@ -71,7 +71,9 @@ pub enum SymbolKind {
         initializer: Option<NodeRef>,
         alignment: Option<u32>, // Max alignment in bytes
     },
-    Function,
+    Function {
+        storage: Option<StorageClass>,
+    },
     Typedef {
         aliased_type: QualType,
     },
@@ -343,6 +345,7 @@ impl SymbolTable {
         &mut self,
         name: NameId,
         ty: TypeRef,
+        storage: Option<StorageClass>,
         is_definition: bool,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
@@ -355,7 +358,7 @@ impl SymbolTable {
 
         let symbol_entry = Symbol {
             name,
-            kind: SymbolKind::Function,
+            kind: SymbolKind::Function { storage },
             type_info: QualType::unqualified(ty),
             scope_id: self.current_scope_id,
             def_span: span,
@@ -499,7 +502,7 @@ impl SymbolTable {
             // Verify kinds match
             match (&existing.kind, &new_entry.kind) {
                 (SymbolKind::Variable { .. }, SymbolKind::Variable { .. }) => {}
-                (SymbolKind::Function, SymbolKind::Function) => {}
+                (SymbolKind::Function { .. }, SymbolKind::Function { .. }) => {}
                 _ => {
                     // Mismatched kinds
                     debug!("Symbol '{}' redefinition: different kinds", name);

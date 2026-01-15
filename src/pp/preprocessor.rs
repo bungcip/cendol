@@ -145,7 +145,7 @@ pub(crate) struct MacroInfo {
 
 /// Represents conditional compilation state
 #[derive(Debug, Clone)]
-pub struct PPConditionalInfo {
+pub(crate) struct PPConditionalInfo {
     was_skipping: bool,
     found_else: bool,
     found_non_skipping: bool,

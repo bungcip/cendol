@@ -426,8 +426,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return None;
         }
 
-        let (result_ty, common_ty) =
-            self.analyze_binary_operation_types(op, lhs_promoted, rhs_promoted, full_span)?;
+        let (result_ty, common_ty) = self.analyze_binary_operation_types(op, lhs_promoted, rhs_promoted, full_span)?;
 
         // For arithmetic/comparison operations, operands should be converted to a common type.
         let lhs_kind = self.ast.get_kind(lhs_ref);

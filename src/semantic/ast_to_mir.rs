@@ -343,14 +343,13 @@ impl<'a> AstToMirLowerer<'a> {
             target_ty,
             elements,
             |this, elems| {
-                let mut const_elements = Vec::new();
-                for op in elems {
-                    if let Some(const_id) = this.operand_to_const_id(op) {
-                        const_elements.push(const_id);
-                    } else {
-                        panic!("Global array initializer must be a constant expression");
-                    }
-                }
+                let const_elements = elems
+                    .into_iter()
+                    .map(|op| {
+                        this.operand_to_const_id(op)
+                            .expect("Global array initializer must be a constant expression")
+                    })
+                    .collect();
                 ConstValue::ArrayLiteral(const_elements)
             },
             Rvalue::ArrayLiteral,
@@ -657,18 +656,21 @@ impl<'a> AstToMirLowerer<'a> {
             .get_resolved_type(expr)
             .expect("SizeOf operand type missing")
             .ty();
-        let size = self.registry.get_layout(operand_ty).size;
-        self.create_int_operand(size as i64)
+        self.lower_type_query(operand_ty, true)
     }
 
     fn lower_sizeof_type(&mut self, ty: &QualType) -> Operand {
-        let size = self.registry.get_layout(ty.ty()).size;
-        self.create_int_operand(size as i64)
+        self.lower_type_query(ty.ty(), true)
     }
 
     fn lower_alignof_type(&mut self, ty: &QualType) -> Operand {
-        let align = self.registry.get_layout(ty.ty()).alignment;
-        self.create_int_operand(align as i64)
+        self.lower_type_query(ty.ty(), false)
+    }
+
+    fn lower_type_query(&mut self, ty: TypeRef, is_size: bool) -> Operand {
+        let layout = self.registry.get_layout(ty);
+        let val = if is_size { layout.size } else { layout.alignment };
+        self.create_int_operand(val as i64)
     }
 
     fn lower_generic_selection(
@@ -1979,9 +1981,6 @@ impl<'a> AstToMirLowerer<'a> {
         }
 
         if let Operand::Copy(place) = operand.clone() {
-            let one_const = Operand::Constant(self.create_constant(ConstValue::Int(1)));
-            let minus_one_const = Operand::Constant(self.create_constant(ConstValue::Int(-1)));
-
             // If it's post-inc/dec and we need the value, save the old value
             let old_value = if is_post && need_value {
                 let rval = Rvalue::Use(operand.clone());
@@ -1992,18 +1991,7 @@ impl<'a> AstToMirLowerer<'a> {
             };
 
             // Determine MIR operation and Rvalue
-            let rval = if operand_ty.is_pointer() {
-                if is_inc {
-                    Rvalue::PtrAdd(operand.clone(), one_const)
-                } else {
-                    Rvalue::PtrSub(operand.clone(), one_const)
-                }
-            } else {
-                // For Integers: Add(delta) (Note: we use Add with negative delta for decrement
-                // to support proper wrapping arithmetic and fix previous bugs)
-                let rhs = if is_inc { one_const } else { minus_one_const };
-                Rvalue::BinaryIntOp(BinaryIntOp::Add, operand.clone(), rhs)
-            };
+            let rval = self.create_inc_dec_rvalue(operand.clone(), operand_ty, is_inc);
 
             // Perform the assignment
             if is_post && !need_value {
@@ -2034,6 +2022,24 @@ impl<'a> AstToMirLowerer<'a> {
             }
         } else {
             panic!("Inc/Dec operand is not a place");
+        }
+    }
+
+    fn create_inc_dec_rvalue(&mut self, operand: Operand, operand_ty: QualType, is_inc: bool) -> Rvalue {
+        let one_const = Operand::Constant(self.create_constant(ConstValue::Int(1)));
+        let minus_one_const = Operand::Constant(self.create_constant(ConstValue::Int(-1)));
+
+        if operand_ty.is_pointer() {
+            if is_inc {
+                Rvalue::PtrAdd(operand, one_const)
+            } else {
+                Rvalue::PtrSub(operand, one_const)
+            }
+        } else {
+            // For Integers: Add(delta) (Note: we use Add with negative delta for decrement
+            // to support proper wrapping arithmetic and fix previous bugs)
+            let rhs = if is_inc { one_const } else { minus_one_const };
+            Rvalue::BinaryIntOp(BinaryIntOp::Add, operand, rhs)
         }
     }
 
@@ -2077,6 +2083,10 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::While(while_stmt) => self.scan_for_labels(while_stmt.body),
             NodeKind::DoWhile(body, _) => self.scan_for_labels(body),
             NodeKind::For(for_stmt) => self.scan_for_labels(for_stmt.body),
+            NodeKind::Switch(_, body) => self.scan_for_labels(body),
+            NodeKind::Case(_, stmt) => self.scan_for_labels(stmt),
+            NodeKind::CaseRange(_, _, stmt) => self.scan_for_labels(stmt),
+            NodeKind::Default(stmt) => self.scan_for_labels(stmt),
             _ => {
                 // No labels in expressions or simple statements
             }

@@ -1,0 +1,25 @@
+---
+source: src/tests/pp_lexer.rs
+expression: results
+---
+- - "L\"hello \\\"world\\\" \\\\test\""
+  - - kind: StringLiteral
+      text: "L\"hello \\\"world\\\" \\\\test\""
+- - "L\"café's \\\"test\\\" \\\\value\""
+  - - kind: StringLiteral
+      text: "L\"café's \\\"test\\\" \\\\value\""
+- - "L\"hello\\\nworld\""
+  - - kind: StringLiteral
+      text: "L\"helloworld\""
+- - "\""
+  - - kind: StringLiteral
+      text: "\""
+- - "L\"\""
+  - - kind: StringLiteral
+      text: "L\"\""
+- - "u\"\""
+  - - kind: StringLiteral
+      text: "u\"\""
+- - "U\"\""
+  - - kind: StringLiteral
+      text: "U\"\""

@@ -1,0 +1,18 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: CharLiteral(97)
+  text: "L'a'"
+- kind: CharLiteral(98)
+  text: "u'b'"
+  flags:
+    - LEADING_SPACE
+- kind: CharLiteral(99)
+  text: "U'c'"
+  flags:
+    - LEADING_SPACE
+- kind: CharLiteral(0)
+  text: "'\\0'"
+  flags:
+    - LEADING_SPACE

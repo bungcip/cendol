@@ -1,0 +1,49 @@
+---
+source: src/tests/pp_lexer.rs
+expression: results
+---
+- - "hel\\\nlo\nhel\\\nlo\\\nworld\n123\\\n456\n\"hello\\\nworld\"\n"
+  - - kind: Identifier
+      text: hello
+    - kind: Identifier
+      text: helloworld
+      flags:
+        - LEADING_SPACE
+    - kind: Number
+      text: "123456"
+      flags:
+        - LEADING_SPACE
+    - kind: StringLiteral
+      text: "\"helloworld\""
+      flags:
+        - LEADING_SPACE
+- - "hel  \\\n    lo"
+  - - kind: Identifier
+      text: hel
+    - kind: Identifier
+      text: lo
+      flags:
+        - LEADING_SPACE
+- - "hello\nworld"
+  - - kind: Identifier
+      text: hello
+    - kind: Identifier
+      text: world
+      flags:
+        - LEADING_SPACE
+- - "test\\"
+  - - kind: Identifier
+      text: test
+    - kind: Unknown
+      text: "?"
+- - "hel\\\r\nlo"
+  - - kind: Identifier
+      text: hello
+- - "hel\\\rlo"
+  - - kind: Identifier
+      text: hello
+- - "test\\\r"
+  - - kind: Identifier
+      text: test
+    - kind: Unknown
+      text: "?"

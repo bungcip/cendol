@@ -1,0 +1,11 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: Hash
+  text: "#"
+  flags:
+    - LEADING_SPACE
+    - STARTS_PP_LINE
+- kind: Eod
+  text: ""

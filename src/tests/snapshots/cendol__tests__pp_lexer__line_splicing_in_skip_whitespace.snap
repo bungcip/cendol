@@ -1,0 +1,8 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: Identifier
+  text: identifier
+  flags:
+    - LEADING_SPACE

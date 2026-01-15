@@ -1,0 +1,14 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: StringLiteral
+  text: "L\"hello\""
+- kind: StringLiteral
+  text: "u\"world\""
+  flags:
+    - LEADING_SPACE
+- kind: StringLiteral
+  text: "U\"test\""
+  flags:
+    - LEADING_SPACE

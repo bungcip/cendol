@@ -1,0 +1,16 @@
+---
+source: src/tests/pp_lexer.rs
+expression: results
+---
+- - "L\"abc\""
+  - - kind: StringLiteral
+      text: "L\"abc\""
+- - "L\"café\""
+  - - kind: StringLiteral
+      text: "L\"café\""
+- - "L\"你好\""
+  - - kind: StringLiteral
+      text: "L\"你好\""
+- - "L\"café你好\""
+  - - kind: StringLiteral
+      text: "L\"café你好\""

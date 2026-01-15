@@ -1,0 +1,20 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: Hash
+  text: "#"
+  flags:
+    - STARTS_PP_LINE
+- kind: Identifier
+  text: define
+- kind: Identifier
+  text: x
+  flags:
+    - LEADING_SPACE
+- kind: Number
+  text: "1"
+  flags:
+    - LEADING_SPACE
+- kind: Eod
+  text: ""

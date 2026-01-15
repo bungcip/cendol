@@ -1,0 +1,42 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: Less
+  text: "<"
+- kind: Colon
+  text: ":"
+- kind: Colon
+  text: ":"
+  flags:
+    - LEADING_SPACE
+- kind: Greater
+  text: ">"
+- kind: Less
+  text: "<"
+  flags:
+    - LEADING_SPACE
+- kind: Percent
+  text: "%"
+- kind: Percent
+  text: "%"
+  flags:
+    - LEADING_SPACE
+- kind: Greater
+  text: ">"
+- kind: Percent
+  text: "%"
+  flags:
+    - LEADING_SPACE
+- kind: Colon
+  text: ":"
+- kind: Percent
+  text: "%"
+  flags:
+    - LEADING_SPACE
+- kind: Colon
+  text: ":"
+- kind: Percent
+  text: "%"
+- kind: Colon
+  text: ":"

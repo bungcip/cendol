@@ -1,0 +1,139 @@
+---
+source: src/tests/pp_lexer.rs
+expression: results
+---
+- - "#ifdef TEST\n"
+  - - kind: Hash
+      text: "#"
+      flags:
+        - STARTS_PP_LINE
+    - kind: Identifier
+      text: ifdef
+    - kind: Identifier
+      text: TEST
+      flags:
+        - LEADING_SPACE
+    - kind: Eod
+      text: ""
+- - "#ifndef TEST\n"
+  - - kind: Hash
+      text: "#"
+      flags:
+        - STARTS_PP_LINE
+    - kind: Identifier
+      text: ifndef
+    - kind: Identifier
+      text: TEST
+      flags:
+        - LEADING_SPACE
+    - kind: Eod
+      text: ""
+- - "#elif 1\n"
+  - - kind: Hash
+      text: "#"
+      flags:
+        - STARTS_PP_LINE
+    - kind: Identifier
+      text: elif
+    - kind: Number
+      text: "1"
+      flags:
+        - LEADING_SPACE
+    - kind: Eod
+      text: ""
+- - "#else\n"
+  - - kind: Hash
+      text: "#"
+      flags:
+        - STARTS_PP_LINE
+    - kind: Identifier
+      text: else
+    - kind: Eod
+      text: ""
+- - "#endif\n"
+  - - kind: Hash
+      text: "#"
+      flags:
+        - STARTS_PP_LINE
+    - kind: Identifier
+      text: endif
+    - kind: Eod
+      text: ""
+- - "#include \"test.h\"\n"
+  - - kind: Hash
+      text: "#"
+      flags:
+        - STARTS_PP_LINE
+    - kind: Identifier
+      text: include
+    - kind: StringLiteral
+      text: "\"test.h\""
+      flags:
+        - LEADING_SPACE
+    - kind: Eod
+      text: ""
+- - "#undef TEST\n"
+  - - kind: Hash
+      text: "#"
+      flags:
+        - STARTS_PP_LINE
+    - kind: Identifier
+      text: undef
+    - kind: Identifier
+      text: TEST
+      flags:
+        - LEADING_SPACE
+    - kind: Eod
+      text: ""
+- - "#line 100\n"
+  - - kind: Hash
+      text: "#"
+      flags:
+        - STARTS_PP_LINE
+    - kind: Identifier
+      text: line
+    - kind: Number
+      text: "100"
+      flags:
+        - LEADING_SPACE
+    - kind: Eod
+      text: ""
+- - "#pragma once\n"
+  - - kind: Hash
+      text: "#"
+      flags:
+        - STARTS_PP_LINE
+    - kind: Identifier
+      text: pragma
+    - kind: Identifier
+      text: once
+      flags:
+        - LEADING_SPACE
+    - kind: Eod
+      text: ""
+- - "#error message\n"
+  - - kind: Hash
+      text: "#"
+      flags:
+        - STARTS_PP_LINE
+    - kind: Identifier
+      text: error
+    - kind: Identifier
+      text: message
+      flags:
+        - LEADING_SPACE
+    - kind: Eod
+      text: ""
+- - "#warning message\n"
+  - - kind: Hash
+      text: "#"
+      flags:
+        - STARTS_PP_LINE
+    - kind: Identifier
+      text: warning
+    - kind: Identifier
+      text: message
+      flags:
+        - LEADING_SPACE
+    - kind: Eod
+      text: ""

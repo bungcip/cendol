@@ -1,0 +1,18 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: Identifier
+  text: variable
+- kind: StringLiteral
+  text: "\"string\""
+  flags:
+    - LEADING_SPACE
+- kind: CharLiteral(99)
+  text: "'c'"
+  flags:
+    - LEADING_SPACE
+- kind: Number
+  text: "123"
+  flags:
+    - LEADING_SPACE

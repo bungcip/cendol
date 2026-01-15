@@ -1,0 +1,20 @@
+---
+source: src/tests/lexer.rs
+expression: "vec![(\"concatenated\", concatenated_results),\n(\"non_adjacent\", vec![(non_adjacent_input, non_adjacent_result)]),]"
+---
+- - concatenated
+  - - - "\"hello\" \"world\""
+      - - StringLiteral: helloworld
+    - - "\"hello\"   \"world\""
+      - - StringLiteral: helloworld
+    - - "\"a\" \"b\" \"c\""
+      - - StringLiteral: abc
+    - - "\"hello\\n\" \"world\""
+      - - StringLiteral: "hello\nworld"
+    - - "\"start\" \" middle \" \"end\""
+      - - StringLiteral: start middle end
+- - non_adjacent
+  - - - "\"hello\" ; \"world\""
+      - - StringLiteral: hello
+        - Semicolon
+        - StringLiteral: world

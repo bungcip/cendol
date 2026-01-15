@@ -1,0 +1,54 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: Identifier
+  text: if
+- kind: Identifier
+  text: ifdef
+  flags:
+    - LEADING_SPACE
+- kind: Identifier
+  text: ifndef
+  flags:
+    - LEADING_SPACE
+- kind: Identifier
+  text: elif
+  flags:
+    - LEADING_SPACE
+- kind: Identifier
+  text: else
+  flags:
+    - LEADING_SPACE
+- kind: Identifier
+  text: endif
+  flags:
+    - LEADING_SPACE
+- kind: Identifier
+  text: define
+  flags:
+    - LEADING_SPACE
+- kind: Identifier
+  text: undef
+  flags:
+    - LEADING_SPACE
+- kind: Identifier
+  text: include
+  flags:
+    - LEADING_SPACE
+- kind: Identifier
+  text: line
+  flags:
+    - LEADING_SPACE
+- kind: Identifier
+  text: pragma
+  flags:
+    - LEADING_SPACE
+- kind: Identifier
+  text: error
+  flags:
+    - LEADING_SPACE
+- kind: Identifier
+  text: warning
+  flags:
+    - LEADING_SPACE

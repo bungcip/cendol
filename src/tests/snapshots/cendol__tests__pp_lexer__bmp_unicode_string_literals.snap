@@ -1,0 +1,6 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: StringLiteral
+  text: "L\"hello$$你好¢¢世界€€world\""

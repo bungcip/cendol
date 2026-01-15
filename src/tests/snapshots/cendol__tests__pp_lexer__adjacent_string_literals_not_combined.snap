@@ -1,0 +1,10 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: StringLiteral
+  text: "\"hello\""
+- kind: StringLiteral
+  text: "\"world\""
+  flags:
+    - LEADING_SPACE

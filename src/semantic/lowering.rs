@@ -894,11 +894,7 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
 }
 
 /// Parse and validate declaration specifiers
-fn lower_decl_specifiers(
-    specs: &[ParsedDeclSpecifier],
-    ctx: &mut LowerCtx,
-    span: SourceSpan,
-) -> DeclSpecInfo {
+fn lower_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> DeclSpecInfo {
     let mut info = DeclSpecInfo::default();
 
     for spec in specs {

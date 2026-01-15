@@ -334,6 +334,8 @@ impl PPLexer {
             b'%' => {
                 if consume_if!(b'=') {
                     token!(PPTokenKind::ModAssign, 2)
+                } else if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBrace, 2)
                 } else {
                     token!(PPTokenKind::Percent, 1)
                 }
@@ -361,6 +363,10 @@ impl PPLexer {
                     }
                 } else if consume_if!(b'=') {
                     token!(PPTokenKind::LessEqual, 2)
+                } else if consume_if!(b':') {
+                    token!(PPTokenKind::LeftBracket, 2)
+                } else if consume_if!(b'%') {
+                    token!(PPTokenKind::LeftBrace, 2)
                 } else {
                     token!(PPTokenKind::Less, 1)
                 }
@@ -418,7 +424,13 @@ impl PPLexer {
                 token!(PPTokenKind::Dot, 1)
             }
             b'?' => token!(PPTokenKind::Question, 1),
-            b':' => token!(PPTokenKind::Colon, 1),
+            b':' => {
+                if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBracket, 2)
+                } else {
+                    token!(PPTokenKind::Colon, 1)
+                }
+            }
             b',' => token!(PPTokenKind::Comma, 1),
             b';' => token!(PPTokenKind::Semicolon, 1),
             b'(' => token!(PPTokenKind::LeftParen, 1),
@@ -514,11 +526,55 @@ impl PPLexer {
                     ))
                 }
             }
-            // All operators and punctuation are handled by the optimized helper function.
-            b'+' | b'-' | b'*' | b'/' | b'%' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'.' | b'?'
-            | b':' | b',' | b';' | b'(' | b')' | b'[' | b']' | b'{' | b'}' => {
-                Some(self.lex_operator(start_pos, ch, flags))
+            b'%' => {
+                if self.peek_char() == Some(b':') {
+                    self.next_char(); // consume :
+                    // Check for %:%: (##)
+                    let saved_pos = self.position;
+                    let saved_lines = self.line_starts.clone();
+
+                    if self.peek_char() == Some(b'%') {
+                        self.next_char(); // consume %
+                        if self.peek_char() == Some(b':') {
+                            self.next_char(); // consume :
+                            Some(PPToken::new(
+                                PPTokenKind::HashHash,
+                                flags,
+                                SourceLoc::new(self.source_id, start_pos),
+                                4,
+                            ))
+                        } else {
+                            // Backtrack
+                            self.position = saved_pos;
+                            self.line_starts = saved_lines;
+
+                            let mut token_flags = flags;
+                            token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                            self.in_directive_line = true;
+                            Some(PPToken::with_flags(
+                                PPTokenKind::Hash,
+                                token_flags,
+                                SourceLoc::new(self.source_id, start_pos),
+                            ))
+                        }
+                    } else {
+                        // %: -> Hash
+                        let mut token_flags = flags;
+                        token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                        self.in_directive_line = true;
+                        Some(PPToken::with_flags(
+                            PPTokenKind::Hash,
+                            token_flags,
+                            SourceLoc::new(self.source_id, start_pos),
+                        ))
+                    }
+                } else {
+                    Some(self.lex_operator(start_pos, ch, flags))
+                }
             }
+            // All operators and punctuation are handled by the optimized helper function.
+            b'+' | b'-' | b'*' | b'/' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'.' | b'?' | b':'
+            | b',' | b';' | b'(' | b')' | b'[' | b']' | b'{' | b'}' => Some(self.lex_operator(start_pos, ch, flags)),
             _ => Some(PPToken::new(
                 PPTokenKind::Unknown,
                 flags,

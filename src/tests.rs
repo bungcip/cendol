@@ -7,6 +7,7 @@ pub mod parser_declarations;
 pub mod parser_utils;
 pub mod pointer_arithmetic_regression;
 pub mod pp_common;
+pub mod pp_digraphs;
 pub mod pp_has_include;
 pub mod pp_lexer;
 pub mod pp_pasting;

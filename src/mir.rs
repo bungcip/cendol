@@ -43,7 +43,7 @@ pub type TypeId = NonZeroU32;
 pub type ConstValueId = NonZeroU32;
 
 /// Function kind - distinguishes between defined and extern functions
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum MirFunctionKind {
     Defined,
     Extern,
@@ -351,7 +351,7 @@ pub struct MirRecordLayout {
     pub field_offsets: Vec<u16>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct MirArrayLayout {
     pub size: u16,
     pub align: u16,
@@ -377,7 +377,7 @@ pub enum ConstValue {
 }
 
 /// Local - Represents a local variable or parameter
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Local {
     pub id: LocalId,
     pub name: Option<NameId>,
@@ -399,7 +399,7 @@ impl Local {
 }
 
 /// Global - Represents a global variable
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Global {
     pub id: GlobalId,
     pub name: NameId,

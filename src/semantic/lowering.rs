@@ -894,7 +894,7 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
 }
 
 /// Parse and validate declaration specifiers
-pub(crate) fn lower_decl_specifiers(
+fn lower_decl_specifiers(
     specs: &[ParsedDeclSpecifier],
     ctx: &mut LowerCtx,
     span: SourceSpan,
@@ -1068,7 +1068,7 @@ fn extract_name(decl: &ParsedDeclarator) -> Option<NameId> {
 }
 
 /// Apply declarator transformations to a base type
-pub(crate) fn apply_declarator(
+fn apply_declarator(
     base_type: QualType,
     declarator: &ParsedDeclarator,
     ctx: &mut LowerCtx,
@@ -2307,7 +2307,7 @@ fn extract_bit_field_width<'a>(
 
 /// Common logic for lowering struct members, used by both TypeSpecifier::Record lowering
 /// and Declarator::AnonymousRecord handling.
-pub(crate) fn lower_struct_members(
+fn lower_struct_members(
     members: &[ParsedDeclarationData],
     ctx: &mut LowerCtx,
     span: crate::ast::SourceSpan,

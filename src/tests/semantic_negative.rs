@@ -364,3 +364,17 @@ fn test_invalid_restrict() {
         "restrict",
     );
 }
+
+#[test]
+fn test_call_non_function() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            int x = 10;
+            x();
+        }
+        "#,
+        CompilePhase::Mir,
+        "called object type 'int' is not a function or function pointer",
+    );
+}

@@ -2,6 +2,7 @@
 //!
 //! This module contains tests for the `MirToCraneliftLowerer` implementation.
 use crate::ast::NameId;
+use std::rc::Rc;
 
 use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer, emit_const};
 use crate::mir::{ConstValue, MirModuleId, MirRecordLayout, MirStmt, MirType, Operand, Place, Terminator};
@@ -129,13 +130,13 @@ fn test_store_deref_pointer() {
     // p = &x
     builder.add_statement(MirStmt::Assign(
         Place::Local(local_p_id),
-        crate::mir::Rvalue::Use(Operand::AddressOf(Box::new(Place::Local(local_x_id)))),
+        crate::mir::Rvalue::Use(Operand::AddressOf(Rc::new(Place::Local(local_x_id)))),
     ));
 
     // *p = 42
     builder.add_statement(MirStmt::Store(
         Operand::Constant(const_42_id),
-        Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(local_p_id))))),
+        Place::Deref(Rc::new(Operand::Copy(Rc::new(Place::Local(local_p_id))))),
     ));
 
     builder.set_terminator(Terminator::Return(None));
@@ -272,7 +273,7 @@ fn test_alloc_dealloc_codegen() {
     builder.add_statement(MirStmt::Alloc(Place::Local(local_p_id), int_type_id));
 
     // dealloc(p)
-    builder.add_statement(MirStmt::Dealloc(Operand::Copy(Box::new(Place::Local(local_p_id)))));
+    builder.add_statement(MirStmt::Dealloc(Operand::Copy(Rc::new(Place::Local(local_p_id)))));
 
     builder.set_terminator(Terminator::Return(None));
 
@@ -312,6 +313,7 @@ mod tests {
     use crate::ast::NameId;
     use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
     use crate::mir::{CallTarget, ConstValue, LocalId, MirModuleId, MirStmt, MirType, Operand, Place, Terminator};
+    use std::rc::Rc;
 
     #[test]
     fn test_indirect_function_call() {
@@ -349,7 +351,7 @@ mod tests {
         // We do not need to consume and inspect because we are constructing it.
         let param_id = LocalId::new(1).unwrap();
 
-        builder.set_terminator(Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(
+        builder.set_terminator(Terminator::Return(Some(Operand::Copy(Rc::new(Place::Local(
             param_id,
         ))))));
 
@@ -380,12 +382,12 @@ mod tests {
         builder.add_statement(MirStmt::Assign(
             Place::Local(temp_local_id),
             crate::mir::Rvalue::Call(
-                CallTarget::Indirect(Operand::Copy(Box::new(Place::Local(ptr_local_id)))),
+                CallTarget::Indirect(Operand::Copy(Rc::new(Place::Local(ptr_local_id)))),
                 vec![Operand::Constant(arg_const_id)],
             ),
         ));
 
-        builder.set_terminator(Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(
+        builder.set_terminator(Terminator::Return(Some(Operand::Copy(Rc::new(Place::Local(
             temp_local_id,
         ))))));
 

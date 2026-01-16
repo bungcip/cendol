@@ -1,3 +1,5 @@
-## 2024-07-25 - Two-Pass Allocation for Sequential Items
-**Learning:** A common performance anti-pattern in this codebase is processing a peekable iterator in a single pass, where an intermediate collection (like a `String` or `Vec`) is built up, leading to multiple costly reallocations.
-**Action:** For future optimizations involving sequential item processing, I will favor a two-pass approach. First, iterate (or peek ahead) to calculate the final required capacity. Second, perform a single allocation with `with_capacity`. Third, iterate again to populate the collection. This avoids N reallocations, providing a significant performance improvement.
+## 2024-08-16 - Expensive Enum Cloning
+
+**Learning:** Cloning heap-allocated data structures like `Box<Place>` and `Box<Operand>` in MIR enums (`src/mir.rs`) creates significant performance overhead due to repeated allocations, especially during semantic analysis.
+
+**Action:** Replace `Box<T>` with `Rc<T>` for these recursive types. This makes cloning a cheap, atomic reference-counting operation, drastically reducing heap allocations when duplicating expression nodes.

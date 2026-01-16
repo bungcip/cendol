@@ -11,6 +11,7 @@ use hashbrown::HashMap;
 use serde::Serialize;
 use std::fmt;
 use std::num::NonZeroU32;
+use std::rc::Rc;
 
 use crate::ast::NameId;
 
@@ -161,25 +162,71 @@ pub enum Terminator {
 }
 
 /// Place - Represents a storage location (local variable or memory)
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Place {
     Local(LocalId),
-    Deref(Box<Operand>),
+    Deref(Rc<Operand>),
     Global(GlobalId),
     // Aggregate access
-    StructField(Box<Place>, /* struct index */ usize),
-    ArrayIndex(Box<Place>, Box<Operand>),
+    StructField(Rc<Place>, /* struct index */ usize),
+    ArrayIndex(Rc<Place>, Rc<Operand>),
+}
+
+impl Serialize for Place {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeTupleVariant;
+        match self {
+            Place::Local(id) => serializer.serialize_newtype_variant("Place", 0, "Local", id),
+            Place::Deref(op) => serializer.serialize_newtype_variant("Place", 1, "Deref", &**op),
+            Place::Global(id) => serializer.serialize_newtype_variant("Place", 2, "Global", id),
+            Place::StructField(place, idx) => {
+                let mut tv = serializer.serialize_tuple_variant("Place", 3, "StructField", 2)?;
+                tv.serialize_field(&**place)?;
+                tv.serialize_field(idx)?;
+                tv.end()
+            }
+            Place::ArrayIndex(place, op) => {
+                let mut tv = serializer.serialize_tuple_variant("Place", 4, "ArrayIndex", 2)?;
+                tv.serialize_field(&**place)?;
+                tv.serialize_field(&**op)?;
+                tv.end()
+            }
+        }
+    }
 }
 
 /// Operand - Represents values used in MIR operations
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Operand {
-    Copy(Box<Place>),
+    Copy(Rc<Place>),
     Constant(ConstValueId),
     // Address operations
-    AddressOf(Box<Place>),
+    AddressOf(Rc<Place>),
     // Type conversion
-    Cast(TypeId, Box<Operand>),
+    Cast(TypeId, Rc<Operand>),
+}
+
+impl Serialize for Operand {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeTupleVariant;
+        match self {
+            Operand::Copy(place) => serializer.serialize_newtype_variant("Operand", 0, "Copy", &**place),
+            Operand::Constant(id) => serializer.serialize_newtype_variant("Operand", 1, "Constant", id),
+            Operand::AddressOf(place) => serializer.serialize_newtype_variant("Operand", 2, "AddressOf", &**place),
+            Operand::Cast(ty, op) => {
+                let mut tv = serializer.serialize_tuple_variant("Operand", 3, "Cast", 2)?;
+                tv.serialize_field(ty)?;
+                tv.serialize_field(&**op)?;
+                tv.end()
+            }
+        }
+    }
 }
 
 /// Rvalue - Right-hand side values in assignments

@@ -909,9 +909,16 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
         } else {
+            // This is not a function or function pointer, report an error.
+            let ty_str = self.registry.display_type(actual_func_ty_ref);
+            let span = self.ast.get_span(call_expr.callee);
+            self.report_error(SemanticError::CalledNonFunctionType { ty: ty_str, span });
+
+            // Still visit arguments to catch other potential errors within them.
             for arg_node_ref in call_expr.arg_start.range(call_expr.arg_len) {
                 self.visit_node(arg_node_ref);
             }
+            return None; // Return None as the call is invalid
         }
 
         match func_kind {

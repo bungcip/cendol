@@ -112,13 +112,6 @@ impl PPToken {
         PPToken::new(kind, flags, location, 1)
     }
 
-    /// Get the source range (file_id, start_offset, end_offset) for this token
-    pub fn source_range(&self) -> (crate::source_manager::SourceId, u32, u32) {
-        let start = self.location.offset();
-        let end = start + self.length as u32;
-        (self.location.source_id(), start, end)
-    }
-
     /// Get the raw byte slice from the source buffer for this token
     pub fn get_raw_slice<'a>(&self, buffer: &'a [u8]) -> &'a [u8] {
         let start = self.location.offset() as usize;

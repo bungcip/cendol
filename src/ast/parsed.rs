@@ -231,19 +231,7 @@ pub enum ParsedDeclarator {
     BitField(Box<ParsedDeclarator>, ParsedNodeRef /* bit width expression */), // e.g., `x : 8`
 }
 
-impl ParsedDeclarator {
-    /// Recursively extracts the identifier from the declarator, if present.
-    pub fn extract_identifier(&self) -> Option<NameId> {
-        match self {
-            ParsedDeclarator::Identifier(name, _) => Some(*name),
-            ParsedDeclarator::Pointer(_, inner) => inner.as_ref().and_then(|d| d.extract_identifier()),
-            ParsedDeclarator::Array(inner, _) => inner.extract_identifier(),
-            ParsedDeclarator::Function { inner, .. } => inner.extract_identifier(),
-            ParsedDeclarator::BitField(inner, _) => inner.extract_identifier(),
-            _ => None,
-        }
-    }
-}
+impl ParsedDeclarator {}
 
 #[derive(Debug, Clone)]
 pub struct ParsedParamData {

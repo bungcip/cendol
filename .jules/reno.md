@@ -28,3 +28,4 @@ c-testsuite/tests/single-exec/00022.c
 c-testsuite/tests/single-exec/00023.c
 c-testsuite/tests/single-exec/00024.c
 c-testsuite/tests/single-exec/00025.c
+c-testsuite/tests/single-exec/00019.c

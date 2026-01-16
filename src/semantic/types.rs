@@ -268,22 +268,22 @@ impl TypeRef {
     // --- Helpers for inline/registry check ---
 
     #[inline]
-    pub fn is_inline_pointer(self) -> bool {
+    pub(crate) fn is_inline_pointer(self) -> bool {
         self.class() == TypeClass::Pointer && self.pointer_depth() != 0
     }
 
     #[inline]
-    pub fn is_registry_pointer(self) -> bool {
+    pub(crate) fn is_registry_pointer(self) -> bool {
         self.class() == TypeClass::Pointer && self.pointer_depth() == 0
     }
 
     #[inline]
-    pub fn is_inline_array(self) -> bool {
+    pub(crate) fn is_inline_array(self) -> bool {
         self.class() == TypeClass::Array && self.array_len().is_some()
     }
 
     #[inline]
-    pub fn is_registry_array(self) -> bool {
+    pub(crate) fn is_registry_array(self) -> bool {
         self.class() == TypeClass::Array && self.array_len().is_none()
     }
 

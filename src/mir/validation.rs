@@ -264,6 +264,15 @@ impl MirValidator {
                         }
                     }
 
+                    // Allow casts between equivalent pointer types
+                    if let (Some(MirType::Pointer { pointee: from_pointee }), Some(MirType::Pointer { pointee: to_pointee })) =
+                        (sema_output.types.get(&from), sema_output.types.get(&to))
+                    {
+                        if from_pointee == to_pointee {
+                            return;
+                        }
+                    }
+
                     self.errors.push(ValidationError::InvalidCast(from, to));
                 }
             }

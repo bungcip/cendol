@@ -1,0 +1,12 @@
+use crate::tests::pp_common::setup_pp_snapshot;
+
+#[test]
+fn test_gnu_comma_swallowing() {
+    let src = r#"
+#define LOG(fmt, ...) printf(fmt, ##__VA_ARGS__)
+LOG("foo");
+LOG("bar", 1);
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens);
+}

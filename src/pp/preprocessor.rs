@@ -2267,7 +2267,20 @@ impl<'src> Preprocessor<'src> {
                         if left_tokens.is_empty() && !right_tokens.is_empty() {
                             result.extend(right_tokens);
                         } else if !left_tokens.is_empty() && right_tokens.is_empty() {
-                            result.extend(left_tokens);
+                            // Check for GNU comma swallowing extension
+                            // If ## is between a comma and an empty variadic argument, the comma is removed
+                            let is_comma = left_tokens.len() == 1 && left_tokens[0].kind == PPTokenKind::Comma;
+                            let is_variadic_arg = if let PPTokenKind::Identifier(symbol) = right_token.kind {
+                                macro_info.variadic_arg == Some(symbol)
+                            } else {
+                                false
+                            };
+
+                            if is_comma && is_variadic_arg {
+                                // Swallow the comma (don't push left_tokens back)
+                            } else {
+                                result.extend(left_tokens);
+                            }
                         } else if !left_tokens.is_empty() && !right_tokens.is_empty() {
                             // Both sides have tokens, perform the paste
                             let pasted = self.paste_tokens(&left_tokens[0], &right_tokens[0])?;

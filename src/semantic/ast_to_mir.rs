@@ -141,10 +141,7 @@ impl<'a> AstToMirLowerer<'a> {
                 } = &func_type.kind
                 {
                     let return_mir_type = self.lower_type(*return_type);
-                    let param_mir_types = parameters
-                        .iter()
-                        .map(|p| self.lower_qual_type(p.param_type))
-                        .collect();
+                    let param_mir_types = parameters.iter().map(|p| self.lower_qual_type(p.param_type)).collect();
 
                     self.define_or_declare_function(
                         symbol_name,
@@ -156,13 +153,7 @@ impl<'a> AstToMirLowerer<'a> {
                 } else {
                     // This case should ideally not be reached for a SymbolKind::Function
                     let return_mir_type = self.get_int_type();
-                    self.define_or_declare_function(
-                        symbol_name,
-                        vec![],
-                        return_mir_type,
-                        false,
-                        has_definition,
-                    );
+                    self.define_or_declare_function(symbol_name, vec![], return_mir_type, false, has_definition);
                 }
             }
         }

@@ -231,8 +231,7 @@ pub enum ParsedDeclarator {
     BitField(Box<ParsedDeclarator>, ParsedNodeRef /* bit width expression */), // e.g., `x : 8`
 }
 
-impl ParsedDeclarator {
-}
+impl ParsedDeclarator {}
 
 #[derive(Debug, Clone)]
 pub struct ParsedParamData {

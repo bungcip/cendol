@@ -93,77 +93,81 @@ impl<'a> AstToMirLowerer<'a> {
         let node_span = self.ast.get_span(node_ref);
 
         match node_kind {
-            NodeKind::TranslationUnit(tu_data) => {
-                // Ensure all global functions (including declarations) have a MIR representation.
-                // This is done before traversing the AST to ensure that function calls
-                // can be resolved even if the function is defined later in the file or is external.
-                let global_scope = self.symbol_table.get_scope(ScopeId::GLOBAL);
-                let mut global_symbols: Vec<_> = global_scope.symbols.values().copied().collect();
-
-                // Sort by symbol name to ensure deterministic order for snapshot tests
-                global_symbols.sort_by_key(|s| self.symbol_table.get_symbol(*s).name);
-
-                for sym_ref in global_symbols {
-                    let (symbol_name, symbol_type_info, is_function, has_definition) = {
-                        let symbol = self.symbol_table.get_symbol(sym_ref);
-                        (
-                            symbol.name,
-                            symbol.type_info,
-                            matches!(symbol.kind, SymbolKind::Function { .. }),
-                            symbol.def_state == DefinitionState::Defined,
-                        )
-                    };
-
-                    if is_function {
-                        if self
-                            .mir_builder
-                            .get_functions()
-                            .iter()
-                            .any(|(_, f)| f.name == symbol_name)
-                        {
-                            continue;
-                        }
-
-                        let func_type = self.registry.get(symbol_type_info.ty()).clone();
-                        if let TypeKind::Function {
-                            return_type,
-                            parameters,
-                            is_variadic,
-                        } = &func_type.kind
-                        {
-                            let return_mir_type = self.lower_type(*return_type);
-                            let param_mir_types =
-                                parameters.iter().map(|p| self.lower_qual_type(p.param_type)).collect();
-
-                            self.define_or_declare_function(
-                                symbol_name,
-                                param_mir_types,
-                                return_mir_type,
-                                *is_variadic,
-                                has_definition,
-                            );
-                        } else {
-                            // This case should ideally not be reached for a SymbolKind::Function
-                            let return_mir_type = self.get_int_type();
-                            self.define_or_declare_function(
-                                symbol_name,
-                                vec![],
-                                return_mir_type,
-                                false,
-                                has_definition,
-                            );
-                        }
-                    }
-                }
-                for child_ref in tu_data.decl_start.range(tu_data.decl_len) {
-                    self.lower_node_ref(child_ref, ScopeId::GLOBAL);
-                }
-            }
+            NodeKind::TranslationUnit(tu_data) => self.lower_translation_unit(&tu_data),
             NodeKind::Function(function_data) => self.lower_function(node_ref, &function_data),
             NodeKind::VarDecl(var_decl) => self.lower_var_declaration(scope_id, &var_decl, node_span),
             NodeKind::CompoundStatement(cs) => self.lower_compound_statement(node_ref, &cs),
 
             _ => self.try_lower_as_statement(scope_id, node_ref),
+        }
+    }
+
+    fn lower_translation_unit(&mut self, tu_data: &nodes::TranslationUnitData) {
+        // Ensure all global functions (including declarations) have a MIR representation.
+        // This is done before traversing the AST to ensure that function calls
+        // can be resolved even if the function is defined later in the file or is external.
+        let global_scope = self.symbol_table.get_scope(ScopeId::GLOBAL);
+        let mut global_symbols: Vec<_> = global_scope.symbols.values().copied().collect();
+
+        // Sort by symbol name to ensure deterministic order for snapshot tests
+        global_symbols.sort_by_key(|s| self.symbol_table.get_symbol(*s).name);
+
+        for sym_ref in global_symbols {
+            let (symbol_name, symbol_type_info, is_function, has_definition) = {
+                let symbol = self.symbol_table.get_symbol(sym_ref);
+                (
+                    symbol.name,
+                    symbol.type_info,
+                    matches!(symbol.kind, SymbolKind::Function { .. }),
+                    symbol.def_state == DefinitionState::Defined,
+                )
+            };
+
+            if is_function {
+                if self
+                    .mir_builder
+                    .get_functions()
+                    .iter()
+                    .any(|(_, f)| f.name == symbol_name)
+                {
+                    continue;
+                }
+
+                let func_type = self.registry.get(symbol_type_info.ty()).clone();
+                if let TypeKind::Function {
+                    return_type,
+                    parameters,
+                    is_variadic,
+                } = &func_type.kind
+                {
+                    let return_mir_type = self.lower_type(*return_type);
+                    let param_mir_types = parameters
+                        .iter()
+                        .map(|p| self.lower_qual_type(p.param_type))
+                        .collect();
+
+                    self.define_or_declare_function(
+                        symbol_name,
+                        param_mir_types,
+                        return_mir_type,
+                        *is_variadic,
+                        has_definition,
+                    );
+                } else {
+                    // This case should ideally not be reached for a SymbolKind::Function
+                    let return_mir_type = self.get_int_type();
+                    self.define_or_declare_function(
+                        symbol_name,
+                        vec![],
+                        return_mir_type,
+                        false,
+                        has_definition,
+                    );
+                }
+            }
+        }
+        for child_ref in tu_data.decl_start.range(tu_data.decl_len) {
+            self.lower_node_ref(child_ref, ScopeId::GLOBAL);
         }
     }
 
@@ -492,28 +496,20 @@ impl<'a> AstToMirLowerer<'a> {
             self.operand_to_const_id(operand)
         });
 
-        let pre_existing_global = self.global_map.get(&entry_ref).copied();
-
-        if let Some(global_id) = pre_existing_global {
-            if let Some(init_id) = initial_value_id {
-                self.mir_builder.set_global_initializer(global_id, init_id);
-            } else {
-                let symbol = self.symbol_table.get_symbol(entry_ref);
-                if symbol.def_state == DefinitionState::Tentative {
-                    let zero_init = self.create_constant(ConstValue::Zero);
-                    self.mir_builder.set_global_initializer(global_id, zero_init);
-                }
-            }
-        } else {
-            let symbol = self.symbol_table.get_symbol(entry_ref);
-            let final_init = if initial_value_id.is_some() {
-                initial_value_id
-            } else if symbol.def_state == DefinitionState::Tentative {
+        let symbol = self.symbol_table.get_symbol(entry_ref);
+        let final_init = initial_value_id.or_else(|| {
+            if symbol.def_state == DefinitionState::Tentative {
                 Some(self.create_constant(ConstValue::Zero))
             } else {
                 None
-            };
+            }
+        });
 
+        if let Some(global_id) = self.global_map.get(&entry_ref).copied() {
+            if let Some(init_id) = final_init {
+                self.mir_builder.set_global_initializer(global_id, init_id);
+            }
+        } else {
             let global_id = self
                 .mir_builder
                 .create_global_with_init(var_decl.name, mir_type_id, false, final_init);
@@ -759,23 +755,16 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn create_string_array_const(&mut self, val: &NameId, fixed_size: Option<usize>) -> ConstValueId {
         let string_content = val.as_str();
-        let mut char_constants = Vec::new();
         let bytes = string_content.as_bytes();
+        let size = fixed_size.unwrap_or(bytes.len() + 1);
 
-        if let Some(size) = fixed_size {
-            for i in 0..size {
+        let char_constants = (0..size)
+            .map(|i| {
                 let byte_val = if i < bytes.len() { bytes[i] } else { 0 };
                 let char_const = ConstValue::Int(byte_val as i64);
-                char_constants.push(self.create_constant(char_const));
-            }
-        } else {
-            for &byte in bytes {
-                let char_const = ConstValue::Int(byte as i64);
-                char_constants.push(self.create_constant(char_const));
-            }
-            let null_const = ConstValue::Int(0);
-            char_constants.push(self.create_constant(null_const));
-        }
+                self.create_constant(char_const)
+            })
+            .collect();
 
         let array_const = ConstValue::ArrayLiteral(char_constants);
         self.create_constant(array_const)
@@ -1570,90 +1559,20 @@ impl<'a> AstToMirLowerer<'a> {
         let ast_type_kind = ast_type.kind.clone();
 
         let mir_type = match &ast_type_kind {
-            TypeKind::Builtin(b) => match b {
-                BuiltinType::Void => MirType::Void,
-                BuiltinType::Bool => MirType::Bool,
-                BuiltinType::Char | BuiltinType::SChar => MirType::I8,
-                BuiltinType::UChar => MirType::U8,
-                BuiltinType::Short => MirType::I16,
-                BuiltinType::UShort => MirType::U16,
-                BuiltinType::Int => MirType::I32,
-                BuiltinType::UInt => MirType::U32,
-                BuiltinType::Long | BuiltinType::LongLong => MirType::I64,
-                BuiltinType::ULong | BuiltinType::ULongLong => MirType::U64,
-                BuiltinType::Float => MirType::F32,
-                BuiltinType::Double | BuiltinType::LongDouble => MirType::F64, // Mapping long double to double (64-bit) is a valid implementation choice
-                BuiltinType::Signed => MirType::I32,
-            },
-            TypeKind::Pointer { pointee } => MirType::Pointer {
-                pointee: self.lower_type(pointee.ty()),
-            },
-            TypeKind::Array { element_type, size } => {
-                let element = self.lower_type(*element_type);
-                let size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
-
-                let (layout_size, layout_align, element_ref, _) = self.registry.get_array_layout(type_ref);
-                let element_layout = self.registry.get_layout(element_ref);
-
-                MirType::Array {
-                    element,
-                    size,
-                    layout: MirArrayLayout {
-                        size: layout_size,
-                        align: layout_align,
-                        stride: element_layout.size,
-                    },
-                }
-            }
+            TypeKind::Builtin(b) => self.lower_builtin_type(b),
+            TypeKind::Pointer { pointee } => self.lower_pointer_type(*pointee),
+            TypeKind::Array { element_type, size } => self.lower_array_type(type_ref, *element_type, size),
             TypeKind::Function {
                 return_type,
                 parameters,
                 ..
-            } => {
-                let return_type = self.lower_type(*return_type);
-                let mut params = Vec::new();
-                for p in parameters {
-                    params.push(self.lower_qual_type(p.param_type));
-                }
-                MirType::Function { return_type, params }
-            }
+            } => self.lower_function_type(return_type, parameters),
             TypeKind::Record {
                 tag,
                 members,
                 is_union,
                 is_complete,
-            } => {
-                let name = tag.unwrap_or_else(|| NameId::new("anonymous"));
-
-                let (size, alignment, field_offsets, field_names, field_types) = if *is_complete {
-                    let (size, alignment, field_layouts, _) = self.registry.get_record_layout(type_ref);
-                    let field_offsets = field_layouts.iter().map(|f| f.offset).collect();
-
-                    let mut field_names = Vec::new();
-                    let mut field_types = Vec::new();
-
-                    for (idx, m) in members.iter().enumerate() {
-                        let name = m.name.unwrap_or_else(|| NameId::new(format!("__anon_{}", idx)));
-                        field_names.push(name);
-                        field_types.push(self.lower_qual_type(m.member_type));
-                    }
-                    (size, alignment, field_offsets, field_names, field_types)
-                } else {
-                    (0, 1, Vec::new(), Vec::new(), Vec::new())
-                };
-
-                MirType::Record {
-                    name,
-                    field_types,
-                    field_names,
-                    is_union: *is_union,
-                    layout: MirRecordLayout {
-                        size,
-                        alignment,
-                        field_offsets,
-                    },
-                }
-            }
+            } => self.lower_record_type(type_ref, tag, members, *is_union, *is_complete),
             _ => MirType::I32,
         };
 
@@ -1664,6 +1583,101 @@ impl<'a> AstToMirLowerer<'a> {
         self.mir_builder.update_type(placeholder_id, mir_type.clone());
         self.type_cache.insert(type_ref, placeholder_id);
         placeholder_id
+    }
+
+    fn lower_builtin_type(&self, b: &BuiltinType) -> MirType {
+        match b {
+            BuiltinType::Void => MirType::Void,
+            BuiltinType::Bool => MirType::Bool,
+            BuiltinType::Char | BuiltinType::SChar => MirType::I8,
+            BuiltinType::UChar => MirType::U8,
+            BuiltinType::Short => MirType::I16,
+            BuiltinType::UShort => MirType::U16,
+            BuiltinType::Int => MirType::I32,
+            BuiltinType::UInt => MirType::U32,
+            BuiltinType::Long | BuiltinType::LongLong => MirType::I64,
+            BuiltinType::ULong | BuiltinType::ULongLong => MirType::U64,
+            BuiltinType::Float => MirType::F32,
+            BuiltinType::Double | BuiltinType::LongDouble => MirType::F64,
+            BuiltinType::Signed => MirType::I32,
+        }
+    }
+
+    fn lower_pointer_type(&mut self, pointee: QualType) -> MirType {
+        MirType::Pointer {
+            pointee: self.lower_type(pointee.ty()),
+        }
+    }
+
+    fn lower_array_type(&mut self, type_ref: TypeRef, element_type: TypeRef, size: &ArraySizeType) -> MirType {
+        let element = self.lower_type(element_type);
+        let size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
+
+        let (layout_size, layout_align, element_ref, _) = self.registry.get_array_layout(type_ref);
+        let element_layout = self.registry.get_layout(element_ref);
+
+        MirType::Array {
+            element,
+            size,
+            layout: MirArrayLayout {
+                size: layout_size,
+                align: layout_align,
+                stride: element_layout.size,
+            },
+        }
+    }
+
+    fn lower_function_type(
+        &mut self,
+        return_type: &TypeRef,
+        parameters: &[crate::semantic::FunctionParameter],
+    ) -> MirType {
+        let return_type = self.lower_type(*return_type);
+        let mut params = Vec::new();
+        for p in parameters {
+            params.push(self.lower_qual_type(p.param_type));
+        }
+        MirType::Function { return_type, params }
+    }
+
+    fn lower_record_type(
+        &mut self,
+        type_ref: TypeRef,
+        tag: &Option<NameId>,
+        members: &[StructMember],
+        is_union: bool,
+        is_complete: bool,
+    ) -> MirType {
+        let name = tag.unwrap_or_else(|| NameId::new("anonymous"));
+
+        let (size, alignment, field_offsets, field_names, field_types) = if is_complete {
+            let (size, alignment, field_layouts, _) = self.registry.get_record_layout(type_ref);
+            let field_offsets = field_layouts.iter().map(|f| f.offset).collect();
+
+            let mut field_names = Vec::new();
+            let mut field_types = Vec::new();
+
+            for (idx, m) in members.iter().enumerate() {
+                let name = m.name.unwrap_or_else(|| NameId::new(format!("__anon_{}", idx)));
+                field_names.push(name);
+                field_types.push(self.lower_qual_type(m.member_type));
+            }
+            (size, alignment, field_offsets, field_names, field_types)
+        } else {
+            (0, 1, Vec::new(), Vec::new(), Vec::new())
+        };
+
+        MirType::Record {
+            name,
+            field_types,
+            field_names,
+            is_union,
+            layout: MirRecordLayout {
+                size,
+                alignment,
+                field_offsets,
+            },
+        }
     }
 
     fn create_constant(&mut self, value: ConstValue) -> ConstValueId {

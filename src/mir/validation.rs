@@ -264,7 +264,7 @@ impl MirValidator {
                         }
                     }
 
-                    if !self.are_types_compatible(sema_output, from, to) {
+                    if !are_types_compatible(sema_output, from, to) {
                         self.errors.push(ValidationError::InvalidCast(from, to));
                     }
                 }
@@ -274,7 +274,7 @@ impl MirValidator {
                 let place_ty = self.validate_place(sema_output, place);
                 if let (Some(from), Some(to)) = (op_ty, place_ty)
                     && from != to
-                    && !self.are_types_compatible(sema_output, from, to)
+                    && !are_types_compatible(sema_output, from, to)
                 {
                     self.errors.push(ValidationError::InvalidCast(from, to));
                 }
@@ -631,50 +631,50 @@ impl MirValidator {
         }
         None
     }
+}
 
-    fn are_types_compatible(&self, sema_output: &MirProgram, t1: TypeId, t2: TypeId) -> bool {
-        if t1 == t2 {
-            return true;
-        }
-        let ty1 = sema_output.types.get(&t1);
-        let ty2 = sema_output.types.get(&t2);
+fn are_types_compatible(sema_output: &MirProgram, t1: TypeId, t2: TypeId) -> bool {
+    if t1 == t2 {
+        return true;
+    }
+    let ty1 = sema_output.types.get(&t1);
+    let ty2 = sema_output.types.get(&t2);
 
-        if let (Some(type1), Some(type2)) = (ty1, ty2) {
-            match (type1, type2) {
-                (MirType::Pointer { pointee: p1 }, MirType::Pointer { pointee: p2 }) => {
-                    self.are_types_compatible(sema_output, *p1, *p2)
-                }
-                (
-                    MirType::Array {
-                        element: e1, size: s1, ..
-                    },
-                    MirType::Array {
-                        element: e2, size: s2, ..
-                    },
-                ) => s1 == s2 && self.are_types_compatible(sema_output, *e1, *e2),
-                (
-                    MirType::Function {
-                        return_type: r1,
-                        params: pm1,
-                    },
-                    MirType::Function {
-                        return_type: r2,
-                        params: pm2,
-                    },
-                ) => {
-                    if pm1.len() != pm2.len() {
-                        return false;
-                    }
-                    self.are_types_compatible(sema_output, *r1, *r2)
-                        && pm1
-                            .iter()
-                            .zip(pm2.iter())
-                            .all(|(a, b)| self.are_types_compatible(sema_output, *a, *b))
-                }
-                _ => type1 == type2,
+    if let (Some(type1), Some(type2)) = (ty1, ty2) {
+        match (type1, type2) {
+            (MirType::Pointer { pointee: p1 }, MirType::Pointer { pointee: p2 }) => {
+                are_types_compatible(sema_output, *p1, *p2)
             }
-        } else {
-            false
+            (
+                MirType::Array {
+                    element: e1, size: s1, ..
+                },
+                MirType::Array {
+                    element: e2, size: s2, ..
+                },
+            ) => s1 == s2 && are_types_compatible(sema_output, *e1, *e2),
+            (
+                MirType::Function {
+                    return_type: r1,
+                    params: pm1,
+                },
+                MirType::Function {
+                    return_type: r2,
+                    params: pm2,
+                },
+            ) => {
+                if pm1.len() != pm2.len() {
+                    return false;
+                }
+                are_types_compatible(sema_output, *r1, *r2)
+                    && pm1
+                        .iter()
+                        .zip(pm2.iter())
+                        .all(|(a, b)| are_types_compatible(sema_output, *a, *b))
+            }
+            _ => type1 == type2,
         }
+    } else {
+        false
     }
 }

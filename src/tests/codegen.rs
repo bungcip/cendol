@@ -3,7 +3,7 @@
 //! This module contains tests for the `MirToCraneliftLowerer` implementation.
 use crate::ast::NameId;
 
-use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer, emit_const};
+use crate::mir::codegen::{ClifOutput, EmitContext, EmitKind, MirToCraneliftLowerer, emit_const};
 use crate::mir::{ConstValue, MirModuleId, MirRecordLayout, MirStmt, MirType, Operand, Place, Terminator};
 
 #[test]
@@ -38,18 +38,12 @@ fn test_emit_const_struct_literal() {
 
     // 4. Emit Constant
     let mut output = Vec::new();
-    emit_const(
-        struct_const_id,
-        &struct_type,
-        &mut output,
-        &sema_output,
-        None,
-        None,
-        0,
-        &hashbrown::HashMap::new(),
-        &hashbrown::HashMap::new(),
-    )
-    .expect("emit_const failed");
+    let ctx = EmitContext {
+        mir: &sema_output,
+        func_id_map: &hashbrown::HashMap::new(),
+        data_id_map: &hashbrown::HashMap::new(),
+    };
+    emit_const(struct_const_id, &struct_type, &mut output, &ctx, None, None, 0).expect("emit_const failed");
 
     // 5. Verify Output
     let expected = vec![0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22];

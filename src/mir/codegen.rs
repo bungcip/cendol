@@ -81,6 +81,13 @@ pub(crate) fn get_type_layout(mir_type: &MirType, _mir: &MirProgram) -> Result<M
     Ok(mir_type.clone())
 }
 
+/// Context for constant emission
+pub(crate) struct EmitContext<'a> {
+    pub mir: &'a MirProgram,
+    pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
+    pub data_id_map: &'a HashMap<GlobalId, DataId>,
+}
+
 /// Helper to emit integer constants
 fn emit_const_int(val: i64, layout: &MirType, output: &mut Vec<u8>) -> Result<(), String> {
     match layout {
@@ -140,12 +147,10 @@ fn emit_const_struct(
     fields: &[(usize, ConstValueId)],
     layout: &MirType,
     output: &mut Vec<u8>,
-    mir: &MirProgram,
+    ctx: &EmitContext,
     mut module: Option<&mut ObjectModule>,
     mut data_description: Option<&mut DataDescription>,
     base_offset: u32,
-    func_id_map: &HashMap<MirFunctionId, FuncId>,
-    data_id_map: &HashMap<GlobalId, DataId>,
 ) -> Result<(), String> {
     match layout {
         MirType::Record {
@@ -166,19 +171,17 @@ fn emit_const_struct(
                         .get(*field_index)
                         .ok_or_else(|| format!("Field index {} out of bounds", field_index))?;
 
-                    let field_type = mir.get_type(*field_type_id);
+                    let field_type = ctx.mir.get_type(*field_type_id);
 
                     let mut field_bytes = Vec::new();
                     emit_const(
                         *field_const_id,
                         field_type,
                         &mut field_bytes,
-                        mir,
+                        ctx,
                         reborrow_module(&mut module),
                         reborrow_data_description(&mut data_description),
                         base_offset + field_offset as u32,
-                        func_id_map,
-                        data_id_map,
                     )?;
 
                     // Copy the field bytes into the struct buffer
@@ -206,12 +209,10 @@ fn emit_const_array(
     elements: &[ConstValueId],
     layout: &MirType,
     output: &mut Vec<u8>,
-    mir: &MirProgram,
+    ctx: &EmitContext,
     mut module: Option<&mut ObjectModule>,
     mut data_description: Option<&mut DataDescription>,
     base_offset: u32,
-    func_id_map: &HashMap<MirFunctionId, FuncId>,
-    data_id_map: &HashMap<GlobalId, DataId>,
 ) -> Result<(), String> {
     match layout {
         MirType::Array {
@@ -225,8 +226,8 @@ fn emit_const_array(
                     break; // Don't emit more elements than the array size
                 }
 
-                let element_type = mir.get_type(*element);
-                let element_size = mir_type_size(element_type, mir)? as usize;
+                let element_type = ctx.mir.get_type(*element);
+                let element_size = mir_type_size(element_type, ctx.mir)? as usize;
 
                 // Calculate offset for this element
                 let element_offset = (i * array_layout.stride as usize) as u32;
@@ -235,12 +236,10 @@ fn emit_const_array(
                     *element_const_id,
                     element_type,
                     output,
-                    mir,
+                    ctx,
                     reborrow_module(&mut module),
                     reborrow_data_description(&mut data_description),
                     base_offset + element_offset,
-                    func_id_map,
-                    data_id_map,
                 )?;
 
                 // Add padding if needed for stride > element size
@@ -267,14 +266,13 @@ pub(crate) fn emit_const(
     const_id: ConstValueId,
     layout: &MirType,
     output: &mut Vec<u8>,
-    mir: &MirProgram,
+    ctx: &EmitContext,
     mut module: Option<&mut ObjectModule>,
     mut data_description: Option<&mut DataDescription>,
     offset: u32,
-    func_id_map: &HashMap<MirFunctionId, FuncId>,
-    data_id_map: &HashMap<GlobalId, DataId>,
 ) -> Result<(), String> {
-    let const_value = mir
+    let const_value = ctx
+        .mir
         .constants
         .get(&const_id)
         .ok_or_else(|| format!("Constant ID {} not found", const_id.get()))?;
@@ -295,14 +293,14 @@ pub(crate) fn emit_const(
         }
         ConstValue::Zero => {
             // Emit zeros for the entire type size
-            let size = mir_type_size(layout, mir)? as usize;
+            let size = mir_type_size(layout, ctx.mir)? as usize;
             output.extend_from_slice(&vec![0u8; size]);
             Ok(())
         }
         ConstValue::GlobalAddress(global_id) => {
             // Handle Global Relocation
             if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module) {
-                if let Some(&data_id) = data_id_map.get(global_id) {
+                if let Some(&data_id) = ctx.data_id_map.get(global_id) {
                     let global_val = mod_obj.declare_data_in_data(data_id, dd);
                     dd.write_data_addr(offset, global_val, 0);
                 } else {
@@ -321,14 +319,14 @@ pub(crate) fn emit_const(
         ConstValue::FunctionAddress(func_id) => {
             // Handle Function Relocation
             if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module) {
-                if let Some(&clif_func_id) = func_id_map.get(func_id) {
+                if let Some(&clif_func_id) = ctx.func_id_map.get(func_id) {
                     let func_ref = mod_obj.declare_func_in_data(clif_func_id, dd);
                     dd.write_function_addr(offset, func_ref);
                 } else {
                     println!(
                         "Warning: Function ID {} not found in map during relocation. Maps available: {:?}",
                         func_id.get(),
-                        func_id_map.keys()
+                        ctx.func_id_map.keys()
                     );
                 }
             }
@@ -338,47 +336,23 @@ pub(crate) fn emit_const(
             output.extend_from_slice(&addr_bytes);
             Ok(())
         }
-        ConstValue::StructLiteral(fields) => emit_const_struct(
-            fields,
-            layout,
-            output,
-            mir,
-            module,
-            data_description,
-            offset,
-            func_id_map,
-            data_id_map,
-        ),
-        ConstValue::ArrayLiteral(elements) => emit_const_array(
-            elements,
-            layout,
-            output,
-            mir,
-            module,
-            data_description,
-            offset,
-            func_id_map,
-            data_id_map,
-        ),
-        ConstValue::Cast(_type_id, inner_id) => emit_const(
-            *inner_id,
-            layout,
-            output,
-            mir,
-            module,
-            data_description,
-            offset,
-            func_id_map,
-            data_id_map,
-        ),
+        ConstValue::StructLiteral(fields) => {
+            emit_const_struct(fields, layout, output, ctx, module, data_description, offset)
+        }
+        ConstValue::ArrayLiteral(elements) => {
+            emit_const_array(elements, layout, output, ctx, module, data_description, offset)
+        }
+        ConstValue::Cast(_type_id, inner_id) => {
+            emit_const(*inner_id, layout, output, ctx, module, data_description, offset)
+        }
     }
 }
 
-fn reborrow_module<'a, 'b>(m: &'b mut Option<&'a mut ObjectModule>) -> Option<&'b mut ObjectModule> {
+fn reborrow_module<'b>(m: &'b mut Option<&mut ObjectModule>) -> Option<&'b mut ObjectModule> {
     m.as_mut().map(|inner| &mut **inner)
 }
 
-fn reborrow_data_description<'a, 'b>(dd: &'b mut Option<&'a mut DataDescription>) -> Option<&'b mut DataDescription> {
+fn reborrow_data_description<'b>(dd: &'b mut Option<&mut DataDescription>) -> Option<&'b mut DataDescription> {
     dd.as_mut().map(|inner| &mut **inner)
 }
 
@@ -423,7 +397,7 @@ fn prepare_call_signature(
             if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
                 // For structs/arrays, calculate how many I64 slots we need
                 let size = mir_type_size(mir_type, mir).unwrap_or(8);
-                let num_slots = ((size + 7) / 8) as usize; // Round up to nearest 8 bytes
+                let num_slots = size.div_ceil(8) as usize; // Round up to nearest 8 bytes
                 for _ in 0..num_slots {
                     sig.params.push(AbiParam::new(types::I64));
                 }
@@ -500,27 +474,27 @@ fn resolve_variadic_call_arguments(
         let param_type = sig.params[sig_idx].value_type;
 
         // Check if this is a variadic struct argument
-        if arg_idx >= fixed_param_count {
-            if let Ok(type_id) = get_operand_type_id(arg, mir) {
-                let mir_type = mir.get_type(type_id);
-                if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
-                    // Get the struct address
-                    let struct_addr =
-                        resolve_operand_to_value(arg, builder, types::I64, cranelift_stack_slots, mir, module)?;
+        if arg_idx >= fixed_param_count
+            && let Ok(type_id) = get_operand_type_id(arg, mir)
+        {
+            let mir_type = mir.get_type(type_id);
+            if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
+                // Get the struct address
+                let struct_addr =
+                    resolve_operand_to_value(arg, builder, types::I64, cranelift_stack_slots, mir, module)?;
 
-                    // Calculate how many I64 slots this struct needs
-                    let size = mir_type_size(mir_type, mir).unwrap_or(8);
-                    let num_slots = ((size + 7) / 8) as usize;
+                // Calculate how many I64 slots this struct needs
+                let size = mir_type_size(mir_type, mir).unwrap_or(8);
+                let num_slots = size.div_ceil(8) as usize;
 
-                    // Load each I64 chunk from the struct
-                    for slot in 0..num_slots {
-                        let offset = (slot * 8) as i32;
-                        let value = builder.ins().load(types::I64, MemFlags::new(), struct_addr, offset);
-                        arg_values.push(value);
-                        sig_idx += 1;
-                    }
-                    continue;
+                // Load each I64 chunk from the struct
+                for slot in 0..num_slots {
+                    let offset = (slot * 8) as i32;
+                    let value = builder.ins().load(types::I64, MemFlags::new(), struct_addr, offset);
+                    arg_values.push(value);
+                    sig_idx += 1;
                 }
+                continue;
             }
         }
 
@@ -1698,7 +1672,7 @@ fn lower_statement(
 
                     let mir_type = mir.get_type(*type_id);
                     let size = mir_type_size(mir_type, mir)?;
-                    let aligned_size = ((size + 7) / 8) * 8; // Round up to 8 bytes
+                    let aligned_size = size.div_ceil(8) * 8; // Round up to 8 bytes
 
                     // Create a stack slot to hold the result address (for merging paths)
                     let result_slot =
@@ -2239,16 +2213,19 @@ impl MirToCraneliftLowerer {
 
                 let mut initial_value_bytes = Vec::new();
                 // Enable relocations by passing data_description and maps
+                let ctx = EmitContext {
+                    mir: &self.mir,
+                    func_id_map: &self.func_id_map,
+                    data_id_map: &self.data_id_map,
+                };
                 emit_const(
                     const_id,
                     &layout,
                     &mut initial_value_bytes,
-                    &self.mir,
+                    &ctx,
                     Some(&mut self.module),
                     Some(&mut data_description),
                     0,
-                    &self.func_id_map,
-                    &self.data_id_map,
                 )
                 .map_err(|e| format!("Failed to emit constant for global {}: {}", global.name, e))?;
 
@@ -2396,14 +2373,12 @@ impl MirToCraneliftLowerer {
 
                 // Step 3: NOW emit instructions - store fixed params to stack slots
                 let param_values: Vec<Value> = builder.block_params(*clif_block).to_vec();
-                let mut next_param_idx = 0;
 
-                for &param_id in &func.params {
+                for (next_param_idx, &param_id) in func.params.iter().enumerate() {
                     let param_value = param_values[next_param_idx];
                     if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
                         builder.ins().stack_store(param_value, *stack_slot, 0);
                     }
-                    next_param_idx += 1;
                 }
 
                 // Step 4: Handle variadic spill area - save all 16 slots
@@ -2416,9 +2391,12 @@ impl MirToCraneliftLowerer {
                         0,
                     ));
                     let all_param_values = builder.block_params(*clif_block).to_vec();
-                    for i in 0..total_slots.min(all_param_values.len()) {
-                        let val = all_param_values[i];
-                        builder.ins().stack_store(val, spill_slot, (i * 8) as i32);
+                    for (i, val) in all_param_values
+                        .iter()
+                        .enumerate()
+                        .take(total_slots.min(all_param_values.len()))
+                    {
+                        builder.ins().stack_store(*val, spill_slot, (i * 8) as i32);
                     }
                     va_spill_slot = Some(spill_slot);
                 }

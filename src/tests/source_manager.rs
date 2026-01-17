@@ -417,3 +417,11 @@ fn test_virtual_buffer_newlines() {
     assert_eq!(line3, 3);
     assert_eq!(col3, 1);
 }
+
+#[test]
+#[should_panic(expected = "invalid source_id SourceId(999)")]
+fn test_source_manager_get_buffer_invalid_id() {
+    let sm = SourceManager::new();
+    let invalid_id = SourceId::new(999);
+    sm.get_buffer(invalid_id);
+}

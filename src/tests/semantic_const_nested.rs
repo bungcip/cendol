@@ -4,7 +4,6 @@ mod tests {
     use crate::driver::artifact::CompilePhase;
 
     #[test]
-    #[ignore = "still not implemented"]
     fn test_nested_const_pointer() {
         let code = "
             const int x = 10;
@@ -14,11 +13,10 @@ mod tests {
             }
         ";
         // This should fail because *p is const int.
-        run_fail_with_message(code, CompilePhase::Mir, "cannot assign to const int object");
+        run_fail_with_message(code, CompilePhase::Mir, "cannot assign to read-only location");
     }
 
     #[test]
-    #[ignore = "still not implemented"]
     fn test_const_pointer_to_int() {
         let code = "
             int x = 10;
@@ -28,11 +26,10 @@ mod tests {
                 p = 0;   // This should fail
             }
         ";
-        run_fail_with_message(code, CompilePhase::Mir, "cannot assign to int * const object");
+        run_fail_with_message(code, CompilePhase::Mir, "cannot assign to read-only location");
     }
 
     #[test]
-    #[ignore = "still not implemented"]
     fn test_nested_qualifier_preservation() {
         let code = "
             const int x = 10;
@@ -43,6 +40,6 @@ mod tests {
             }
         ";
         // Both will fail, let's just check one diagnostic.
-        run_fail_with_message(code, CompilePhase::Mir, "cannot assign to const int object");
+        run_fail_with_message(code, CompilePhase::Mir, "cannot assign to read-only location");
     }
 }

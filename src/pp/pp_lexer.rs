@@ -784,6 +784,7 @@ impl PPLexer {
         )
     }
 
+    #[allow(dead_code)]
     pub(crate) fn put_back(&mut self, token: PPToken) {
         self.put_back_token = Some(token);
     }

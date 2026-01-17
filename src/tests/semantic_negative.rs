@@ -378,3 +378,14 @@ fn test_call_non_function() {
         "called object type 'int' is not a function or function pointer",
     );
 }
+
+#[test]
+fn test_multiple_storage_class_specifiers() {
+    run_fail_with_message(
+        r#"
+        typedef static int my_int;
+        "#,
+        CompilePhase::SemanticLowering,
+        "conflicting storage class specifiers",
+    );
+}

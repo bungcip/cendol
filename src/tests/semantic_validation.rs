@@ -187,3 +187,18 @@ fn test_const_eval_negative_numbers() {
         CompilePhase::Mir,
     );
 }
+
+#[test]
+fn test_string_literal_pointer_cast_validation() {
+    run_pass(
+        r#"
+        int strlen(char *);
+        int main() {
+            char *p;
+            p = "hello";
+            return 0;
+        }
+        "#,
+        CompilePhase::Cranelift, // NOTE: we test until cranelift to check if validation is correct or not
+    );
+}

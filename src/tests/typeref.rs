@@ -14,7 +14,6 @@ fn test_typeref_encoding_primitive() {
     assert!(!t.is_pointer());
     assert!(!t.is_array());
     assert!(!t.is_inline_pointer());
-    assert!(!t.is_registry_pointer());
 }
 
 #[test]
@@ -26,7 +25,6 @@ fn test_typeref_encoding_inline_ptr() {
     assert_eq!(t.pointer_depth(), 2);
     assert!(t.is_pointer());
     assert!(t.is_inline_pointer());
-    assert!(!t.is_registry_pointer());
 }
 
 #[test]
@@ -38,7 +36,6 @@ fn test_typeref_encoding_registry_ptr() {
     assert_eq!(t.pointer_depth(), 0);
     assert!(t.is_pointer());
     assert!(!t.is_inline_pointer());
-    assert!(t.is_registry_pointer());
 }
 
 #[test]
@@ -50,7 +47,6 @@ fn test_typeref_encoding_inline_array() {
     assert_eq!(t.array_len(), Some(10));
     assert!(t.is_array());
     assert!(t.is_inline_array());
-    assert!(!t.is_registry_array());
 }
 
 #[test]
@@ -62,7 +58,6 @@ fn test_typeref_encoding_registry_array() {
     assert_eq!(t.array_len(), None);
     assert!(t.is_array());
     assert!(!t.is_inline_array());
-    assert!(t.is_registry_array());
 }
 
 #[test]
@@ -109,7 +104,7 @@ fn test_typeregistry_inline_logic() {
     let p4 = reg.pointer_to(QualType::unqualified(p3));
     assert_eq!(p4.class(), TypeClass::Pointer);
     assert_eq!(p4.pointer_depth(), 0); // Registry pointer
-    assert!(p4.is_registry_pointer());
+    assert!(p4.is_inline_pointer() == false);
     // Base of p4 is the index in registry where Type::Pointer{pointee: int***} is stored.
     // We can't easily assert the index value, but it should differ from int_ty.base().
     assert_ne!(p4.base(), int_ty.base());
@@ -137,7 +132,7 @@ fn test_typeregistry_array_logic() {
     let a2 = reg.array_of(int_ty, ArraySizeType::Constant(100));
     assert_eq!(a2.class(), TypeClass::Array);
     assert_eq!(a2.array_len(), None); // Registry array
-    assert!(a2.is_registry_array());
+    assert!(a2.is_inline_array() == false);
     assert_ne!(a2.base(), int_ty.base());
 
     // int*[5] (Registry - because int* doesn't have an index)
@@ -145,7 +140,7 @@ fn test_typeregistry_array_logic() {
     let ap1 = reg.array_of(p1, ArraySizeType::Constant(5));
     assert_eq!(ap1.class(), TypeClass::Array);
     assert_eq!(ap1.array_len(), None); // Registry array
-    assert!(ap1.is_registry_array());
+    assert!(ap1.is_inline_array() == false);
 
     // int[10]* (Registry Pointer)
     // int[10] is Inline Array (Base=Int, Arr=10). Not Simple.
@@ -153,7 +148,7 @@ fn test_typeregistry_array_logic() {
     let pa1 = reg.pointer_to(QualType::unqualified(a1));
     assert_eq!(pa1.class(), TypeClass::Pointer);
     assert_eq!(pa1.pointer_depth(), 0); // Registry pointer
-    assert!(pa1.is_registry_pointer());
+    assert!(pa1.is_inline_pointer() == false);
 }
 
 #[test]

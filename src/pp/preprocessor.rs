@@ -294,6 +294,7 @@ pub struct Preprocessor<'src> {
     include_stack: Vec<IncludeStackInfo>,
     header_search: HeaderSearch,
     built_in_headers: HashMap<&'static str, &'static str>,
+    built_in_file_ids: HashMap<String, SourceId>,
 
     // Token management
     lexer_stack: Vec<PPLexer>,
@@ -423,6 +424,7 @@ impl<'src> Preprocessor<'src> {
             include_stack: Vec::new(),
             header_search,
             built_in_headers,
+            built_in_file_ids: HashMap::new(),
             lexer_stack: Vec::new(),
             pending_tokens: VecDeque::new(),
             include_depth: 0,
@@ -430,6 +432,16 @@ impl<'src> Preprocessor<'src> {
             target: config.target.clone(),
             counter: 0,
         };
+
+        // Initialize built-in headers
+        for (name, content) in &preprocessor.built_in_headers {
+            let source_id = preprocessor.source_manager.add_buffer(
+                content.as_bytes().to_vec(),
+                name,
+                None, // No include location for initialization
+            );
+            preprocessor.built_in_file_ids.insert(name.to_string(), source_id);
+        }
 
         preprocessor.initialize_builtin_macros();
         preprocessor
@@ -1476,9 +1488,8 @@ impl<'src> Preprocessor<'src> {
 
         // Check for built-in headers first for angled includes
         let include_source_id = if is_angled {
-            if let Some(content) = self.built_in_headers.get(path_str.as_str()) {
-                self.source_manager
-                    .add_buffer(content.as_bytes().to_vec(), &path_str, Some(token.location))
+            if let Some(&source_id) = self.built_in_file_ids.get(path_str.as_str()) {
+                source_id
             } else {
                 // Get current directory
                 let current_file_id = self.lexer_stack.last().unwrap().source_id;

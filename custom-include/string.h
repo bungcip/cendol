@@ -1,7 +1,7 @@
 #ifndef _STRING_H
 #define _STRING_H
 
-typedef unsigned long size_t;
+#include <stddef.h>
 
 extern char *strcpy(char *dest, const char *src);
 extern char *strncpy(char *dest, const char *src, size_t n);

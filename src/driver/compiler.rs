@@ -146,8 +146,9 @@ impl CompilerDriver {
         // Preprocessor is dropped here, releasing the borrow on diagnostics
         match preprocessor.process(source_id, &self.config.preprocessor) {
             Ok(t) => Ok(t),
-            Err(_) => {
-                // printing diagnostics is handled in the caller
+            Err(e) => {
+                // Report the specific preprocessor error
+                self.diagnostics.report_diagnostic(e.into());
                 Err(PipelineError::Fatal)
             }
         }

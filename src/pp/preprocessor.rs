@@ -909,9 +909,7 @@ impl<'src> Preprocessor<'src> {
             };
             if token_line != start_line {
                 // Put back the token from the next line
-                if let Some(lexer) = self.lexer_stack.last_mut() {
-                    lexer.put_back(token);
-                }
+                self.pending_tokens.push_front(token);
                 break;
             }
             tokens.push(token);
@@ -1260,9 +1258,7 @@ impl<'src> Preprocessor<'src> {
                         PPTokenKind::RightParen | PPTokenKind::Identifier(_) | PPTokenKind::Ellipsis
                     ) {
                         flags |= MacroFlags::FUNCTION_LIKE;
-                        if let Some(lexer) = self.lexer_stack.last_mut() {
-                            lexer.put_back(fp);
-                        }
+                        self.pending_tokens.push_front(fp);
                         // parse params
                         'param_parsing: loop {
                             let param_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
@@ -1300,9 +1296,7 @@ impl<'src> Preprocessor<'src> {
                                             // Check if this token could signal the end of parameter list
                                             // For object-like macros, any non-identifier token after the macro name
                                             // should be treated as the start of the macro body
-                                            if let Some(lexer) = self.lexer_stack.last_mut() {
-                                                lexer.put_back(param_token);
-                                            }
+                                            self.pending_tokens.push_front(param_token);
                                             // This is an object-like macro, exit parameter parsing
                                             break 'param_parsing;
                                         }
@@ -1342,9 +1336,7 @@ impl<'src> Preprocessor<'src> {
                                         let skip_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                                         match skip_token.kind {
                                             PPTokenKind::Comma | PPTokenKind::RightParen => {
-                                                if let Some(lexer) = self.lexer_stack.last_mut() {
-                                                    lexer.put_back(skip_token);
-                                                }
+                                                self.pending_tokens.push_front(skip_token);
                                                 break;
                                             }
                                             _ => continue,
@@ -1353,15 +1345,15 @@ impl<'src> Preprocessor<'src> {
                                 }
                             }
                         }
-                    } else if let Some(lexer) = self.lexer_stack.last_mut() {
-                        lexer.put_back(fp);
-                        lexer.put_back(token);
+                    } else {
+                        self.pending_tokens.push_front(fp);
+                        self.pending_tokens.push_front(token);
                     }
                 } else {
                     return Err(PPError::UnexpectedEndOfFile);
                 }
-            } else if let Some(lexer) = self.lexer_stack.last_mut() {
-                lexer.put_back(token);
+            } else {
+                self.pending_tokens.push_front(token);
             }
         }
         let mut tokens = Vec::new();
@@ -1950,14 +1942,10 @@ impl<'src> Preprocessor<'src> {
                 let next = self.lex_token();
                 match next {
                     Some(t) if t.kind == PPTokenKind::LeftParen => {
-                        if let Some(lexer) = self.lexer_stack.last_mut() {
-                            lexer.put_back(t);
-                        }
+                        self.pending_tokens.push_front(t);
                     }
                     Some(t) => {
-                        if let Some(lexer) = self.lexer_stack.last_mut() {
-                            lexer.put_back(t);
-                        }
+                        self.pending_tokens.push_front(t);
                         return Ok(None);
                     }
                     None => return Ok(None),
@@ -2153,9 +2141,7 @@ impl<'src> Preprocessor<'src> {
                 _ if token.flags.contains(PPTokenFlags::LEADING_SPACE) => continue,
                 _ => {
                     // Put back non-whitespace token
-                    if let Some(lexer) = self.lexer_stack.last_mut() {
-                        lexer.put_back(token);
-                    }
+                    self.pending_tokens.push_front(token);
                     return Err(PPError::InvalidMacroParameter {
                         span: SourceSpan::new(token.location, token.location),
                     });

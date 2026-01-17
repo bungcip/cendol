@@ -31,6 +31,7 @@ tempfile = "3.10"
 [dev-dependencies]
 insta = { version = "1.40", features = ["yaml", "serde"] }
 serde_yaml = "0.9"
+libc = "0.2"
 
 [features]
 insta = []

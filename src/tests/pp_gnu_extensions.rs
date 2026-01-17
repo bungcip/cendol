@@ -8,5 +8,30 @@ LOG("foo");
 LOG("bar", 1);
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: printf
+    - kind: LeftParen
+      text: (
+    - kind: StringLiteral
+      text: "\"foo\""
+    - kind: RightParen
+      text: )
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: printf
+    - kind: LeftParen
+      text: (
+    - kind: StringLiteral
+      text: "\"bar\""
+    - kind: Comma
+      text: ","
+    - kind: Number
+      text: "1"
+    - kind: RightParen
+      text: )
+    - kind: Semicolon
+      text: ;
+    "#);
 }

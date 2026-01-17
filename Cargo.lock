@@ -164,6 +164,7 @@ dependencies = [
  "indexmap",
  "insta",
  "itertools",
+ "libc",
  "log",
  "serde",
  "serde_yaml",

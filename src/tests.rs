@@ -26,6 +26,7 @@ pub mod semantic_lowering;
 pub mod semantic_lvalue;
 pub mod semantic_mir;
 pub mod semantic_negative;
+pub mod semantic_noreturn;
 pub mod semantic_shadowing;
 pub mod semantic_sizeof;
 pub mod semantic_string_init;

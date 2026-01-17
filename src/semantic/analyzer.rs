@@ -77,6 +77,7 @@ pub(crate) fn run_semantic_analyzer(
         semantic_info: &mut semantic_info,
         current_function_ret_type: None,
         current_function_name: None,
+        current_function_is_noreturn: false,
         deferred_checks: Vec::new(),
         switch_depth: 0,
         switch_cases: Vec::new(),
@@ -100,6 +101,7 @@ struct SemanticAnalyzer<'a> {
     semantic_info: &'a mut SemanticInfo,
     current_function_ret_type: Option<QualType>,
     current_function_name: Option<String>,
+    current_function_is_noreturn: bool,
     deferred_checks: Vec<DeferredCheck>,
     switch_depth: usize,
     switch_cases: Vec<HashSet<i64>>,
@@ -109,6 +111,45 @@ struct SemanticAnalyzer<'a> {
 impl<'a> SemanticAnalyzer<'a> {
     fn report_error(&mut self, error: SemanticError) {
         self.diag.report(error);
+    }
+
+    fn can_fall_through(&self, node_ref: NodeRef) -> bool {
+        match self.ast.get_kind(node_ref) {
+            NodeKind::Return(_) | NodeKind::Break | NodeKind::Continue | NodeKind::Goto(_, _) => false,
+            NodeKind::If(if_stmt) => {
+                let then_ft = self.can_fall_through(if_stmt.then_branch);
+                let else_ft = if_stmt.else_branch.map_or(true, |e| self.can_fall_through(e));
+                then_ft || else_ft
+            }
+            NodeKind::ExpressionStatement(Some(expr_ref)) => {
+                if let NodeKind::FunctionCall(call) = self.ast.get_kind(*expr_ref) {
+                    if let Some(callee_type) = self.semantic_info.types[call.callee.index()] {
+                        if let TypeKind::Function { is_noreturn, .. } = &self.registry.get(callee_type.ty()).kind {
+                            return !*is_noreturn;
+                        }
+                    }
+                }
+                true
+            }
+            NodeKind::While(_) => {
+                // While loop can only be exited via break, so it can fall through.
+                true
+            }
+            NodeKind::For(for_stmt) => {
+                // A for loop without a condition is infinite unless there's a break.
+                for_stmt.condition.is_some()
+            }
+            NodeKind::CompoundStatement(cs) => {
+                if cs.stmt_len > 0 {
+                    let last_item_idx = cs.stmt_start.get() + (cs.stmt_len - 1) as u32;
+                    let last_item_ref = NodeRef::new(last_item_idx).unwrap();
+                    self.can_fall_through(last_item_ref)
+                } else {
+                    true
+                }
+            }
+            _ => true,
+        }
     }
 
     fn is_lvalue(&self, node_ref: NodeRef) -> bool {
@@ -211,6 +252,13 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_return_statement(&mut self, expr: &Option<NodeRef>, _span: SourceSpan) {
+        if self.current_function_is_noreturn {
+            self.report_error(SemanticError::NoreturnFunctionReturns {
+                name: self.current_function_name.clone().unwrap(),
+                span: _span,
+            });
+        }
+
         let ret_ty = self.current_function_ret_type;
         let is_void_func = ret_ty.is_some_and(|ty| ty.is_void());
         let func_name = self
@@ -865,45 +913,47 @@ impl<'a> SemanticAnalyzer<'a> {
         // Get function kind
         let func_kind = self.registry.get(actual_func_ty_ref).kind.clone();
 
-        if let TypeKind::Function {
-            parameters,
-            is_variadic,
-            ..
-        } = &func_kind
-        {
-            let is_variadic = *is_variadic;
-            for (i, arg_node_ref) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
-                // Visit the argument expression directly
-                let arg_ty = self.visit_node(arg_node_ref);
+        if let TypeKind::Function { .. } = &func_kind {
+            if let TypeKind::Function {
+                parameters,
+                is_variadic,
+                ..
+            } = &func_kind
+            {
+                let is_variadic = *is_variadic;
+                for (i, arg_node_ref) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
+                    // Visit the argument expression directly
+                    let arg_ty = self.visit_node(arg_node_ref);
 
-                if i < parameters.len() {
-                    let param_ty = parameters[i].param_type;
-                    if let Some(actual_arg_ty) = arg_ty {
-                        // Record implicit conversion on the argument node
-                        self.record_implicit_conversions(param_ty, actual_arg_ty, arg_node_ref);
-                    }
-                } else if is_variadic {
-                    // C11 6.5.2.2: "If the expression that denotes the called function has a type that
-                    // includes a prototype, the arguments are implicitly converted, as if by assignment,
-                    // to the types of the corresponding parameters... The ellipsis notation in a function
-                    // prototype declarator causes argument type conversion to stop after the last declared
-                    // parameter. The default argument promotions are performed on trailing arguments."
-                    if let Some(mut actual_arg_ty) = arg_ty {
-                        // Explicitly handle array/function decay for variadic arguments first
-                        if actual_arg_ty.is_array() || actual_arg_ty.is_function() {
-                            let decayed = self.registry.decay(actual_arg_ty, TypeQualifiers::empty());
-                            self.semantic_info.conversions[arg_node_ref.index()]
-                                .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
-                            actual_arg_ty = decayed;
+                    if i < parameters.len() {
+                        let param_ty = parameters[i].param_type;
+                        if let Some(actual_arg_ty) = arg_ty {
+                            // Record implicit conversion on the argument node
+                            self.record_implicit_conversions(param_ty, actual_arg_ty, arg_node_ref);
                         }
+                    } else if is_variadic {
+                        // C11 6.5.2.2: "If the expression that denotes the called function has a type that
+                        // includes a prototype, the arguments are implicitly converted, as if by assignment,
+                        // to the types of the corresponding parameters... The ellipsis notation in a function
+                        // prototype declarator causes argument type conversion to stop after the last declared
+                        // parameter. The default argument promotions are performed on trailing arguments."
+                        if let Some(mut actual_arg_ty) = arg_ty {
+                            // Explicitly handle array/function decay for variadic arguments first
+                            if actual_arg_ty.is_array() || actual_arg_ty.is_function() {
+                                let decayed = self.registry.decay(actual_arg_ty, TypeQualifiers::empty());
+                                self.semantic_info.conversions[arg_node_ref.index()]
+                                    .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
+                                actual_arg_ty = decayed;
+                            }
 
-                        let promoted_ty =
-                            crate::semantic::conversions::default_argument_promotions(self.registry, actual_arg_ty);
+                            let promoted_ty =
+                                crate::semantic::conversions::default_argument_promotions(self.registry, actual_arg_ty);
 
-                        // Only record additional conversions if promotion actually changed the type
-                        // (Note: record_implicit_conversions handles IntegerCast/PointerCast etc)
-                        if promoted_ty.ty() != actual_arg_ty.ty() {
-                            self.record_implicit_conversions(promoted_ty, actual_arg_ty, arg_node_ref);
+                            // Only record additional conversions if promotion actually changed the type
+                            // (Note: record_implicit_conversions handles IntegerCast/PointerCast etc)
+                            if promoted_ty.ty() != actual_arg_ty.ty() {
+                                self.record_implicit_conversions(promoted_ty, actual_arg_ty, arg_node_ref);
+                            }
                         }
                     }
                 }
@@ -1023,9 +1073,15 @@ impl<'a> SemanticAnalyzer<'a> {
                 None
             }
             NodeKind::Function(data) => {
-                let func_ty = self.registry.get(data.ty);
-                if let TypeKind::Function { return_type, .. } = func_ty.kind.clone() {
+                let func_ty = self.registry.get(data.ty).kind.clone();
+                if let TypeKind::Function {
+                    return_type,
+                    is_noreturn,
+                    ..
+                } = func_ty
+                {
                     self.current_function_ret_type = Some(QualType::unqualified(return_type));
+                    self.current_function_is_noreturn = is_noreturn;
                 };
 
                 let symbol = self.symbol_table.get_symbol(data.symbol);
@@ -1037,8 +1093,18 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
 
                 self.visit_node(data.body);
+
+                if self.current_function_is_noreturn && self.can_fall_through(data.body) {
+                    let span = self.ast.get_span(_node_ref);
+                    self.report_error(SemanticError::NoreturnFunctionReturns {
+                        name: self.current_function_name.clone().unwrap(),
+                        span,
+                    });
+                }
+
                 self.current_function_ret_type = None;
                 self.current_function_name = prev_func_name;
+                self.current_function_is_noreturn = false;
                 None
             }
             NodeKind::Param(_) => None,

@@ -477,6 +477,7 @@ pub enum TypeKind {
         return_type: TypeRef,
         parameters: Vec<FunctionParameter>,
         is_variadic: bool,
+        is_noreturn: bool,
     },
     Record {
         tag: Option<NameId>,

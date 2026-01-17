@@ -36,11 +36,10 @@ fn test_enum_constant_expression_basic() {
             if let SymbolKind::EnumConstant { value } = entry.kind {
                 b_val = Some(value);
             }
-        } else if name == "C" {
-            if let SymbolKind::EnumConstant { value } = entry.kind {
+        } else if name == "C"
+            && let SymbolKind::EnumConstant { value } = entry.kind {
                 c_val = Some(value);
             }
-        }
     }
 
     assert_eq!(a_val, Some(3), "Enum A should be 3");
@@ -70,11 +69,10 @@ fn test_enum_constant_expression_reference() {
 
     for entry in &symbol_table.entries {
         let name = entry.name.to_string();
-        if name == "B" {
-            if let SymbolKind::EnumConstant { value } = entry.kind {
+        if name == "B"
+            && let SymbolKind::EnumConstant { value } = entry.kind {
                 b_val = Some(value);
             }
-        }
     }
 
     // This is expected to fail or be incorrect with current implementation

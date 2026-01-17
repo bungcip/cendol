@@ -329,7 +329,8 @@ impl<'a> AstToMirLowerer<'a> {
                 let const_fields = ops
                     .into_iter()
                     .map(|(idx, op)| {
-                        let const_id = this.operand_to_const_id_strict(op, "Global initializer is not a constant expression");
+                        let const_id =
+                            this.operand_to_const_id_strict(op, "Global initializer is not a constant expression");
                         (idx, const_id)
                     })
                     .collect();

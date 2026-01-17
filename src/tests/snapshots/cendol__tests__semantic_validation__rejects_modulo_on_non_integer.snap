@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_validation.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: Invalid operands for binary operation: have 'double' and 'double'
+Span: SourceSpan(source_id=SourceId(2), start=90, end=95)

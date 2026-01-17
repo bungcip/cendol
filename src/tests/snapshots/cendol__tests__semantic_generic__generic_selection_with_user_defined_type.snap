@@ -1,0 +1,5 @@
+---
+source: src/tests/semantic_generic.rs
+expression: output
+---
+Diagnostics count: 0

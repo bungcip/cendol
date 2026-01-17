@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: void function 'foo' should not return a value
+Span: SourceSpan(source_id=SourceId(2), start=41, end=42)

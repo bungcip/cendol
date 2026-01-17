@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: flexible array member must be the last member of a structure
+Span: SourceSpan(source_id=SourceId(2), start=55, end=60)

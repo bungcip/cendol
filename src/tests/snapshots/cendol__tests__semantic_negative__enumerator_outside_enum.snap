@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: Undeclared identifier 'C'
+Span: SourceSpan(source_id=SourceId(2), start=67, end=68)

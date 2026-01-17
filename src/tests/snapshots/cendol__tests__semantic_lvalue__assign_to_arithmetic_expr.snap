@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_lvalue.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: Expression is not assignable (not an lvalue)
+Span: SourceSpan(source_id=SourceId(2), start=53, end=62)

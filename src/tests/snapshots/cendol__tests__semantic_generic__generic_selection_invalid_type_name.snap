@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_generic.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: Unexpected token: expected declaration specifiers, found Identifier("NotARealType")
+Span: SourceSpan(source_id=SourceId(2), start=112, end=124)

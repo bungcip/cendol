@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_validation.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: Invalid operand for unary operation: have 'double'
+Span: SourceSpan(source_id=SourceId(2), start=62, end=64)

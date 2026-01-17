@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: Invalid application of 'sizeof' to a function type
+Span: SourceSpan(source_id=SourceId(2), start=64, end=75)

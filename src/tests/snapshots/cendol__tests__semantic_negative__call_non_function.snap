@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: called object type 'int' is not a function or function pointer
+Span: SourceSpan(source_id=SourceId(2), start=58, end=59)

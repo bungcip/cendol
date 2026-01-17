@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_validation.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: static assertion failed: This should fail
+Span: SourceSpan(source_id=SourceId(2), start=9, end=105)

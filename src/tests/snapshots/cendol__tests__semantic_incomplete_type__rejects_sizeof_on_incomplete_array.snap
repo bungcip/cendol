@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_incomplete_type.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: Invalid application of 'sizeof' to an incomplete type
+Span: SourceSpan(source_id=SourceId(2), start=68, end=79)

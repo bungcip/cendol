@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Warning
+Message: comparison of incompatible pointer types 'int*' and 'double*'
+Span: SourceSpan(source_id=SourceId(2), start=132, end=138)

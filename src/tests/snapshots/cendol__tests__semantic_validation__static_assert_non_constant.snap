@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_validation.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: expression in static assertion is not constant
+Span: SourceSpan(source_id=SourceId(2), start=20, end=116)

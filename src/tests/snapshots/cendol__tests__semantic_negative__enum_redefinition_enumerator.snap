@@ -1,0 +1,13 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 2
+
+Level: Error
+Message: redefinition of 'A'
+Span: SourceSpan(source_id=SourceId(2), start=60, end=61)
+
+Level: Note
+Message: previous definition is here
+Span: SourceSpan(source_id=SourceId(2), start=30, end=31)

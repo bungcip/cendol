@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_generic.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: controlling expression type does not match any generic association
+Span: SourceSpan(source_id=SourceId(2), start=58, end=59)

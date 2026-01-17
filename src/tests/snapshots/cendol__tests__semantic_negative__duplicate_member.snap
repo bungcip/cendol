@@ -1,0 +1,13 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 2
+
+Level: Error
+Message: duplicate member 'x'
+Span: SourceSpan(source_id=SourceId(2), start=57, end=58)
+
+Level: Note
+Message: previous declaration is here
+Span: SourceSpan(source_id=SourceId(2), start=36, end=37)

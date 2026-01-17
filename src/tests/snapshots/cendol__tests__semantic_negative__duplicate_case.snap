@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: duplicate case value '1'
+Span: SourceSpan(source_id=SourceId(2), start=45, end=122)

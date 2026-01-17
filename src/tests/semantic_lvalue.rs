@@ -1,110 +1,96 @@
 //! Semantic validation tests for lvalue constraints.
-use super::semantic_common::{check_diagnostic, run_fail};
-use crate::driver::artifact::CompilePhase;
-
-fn run_lvalue_test(source: &str, expected_line: u32, expected_col: u32) {
-    let driver = run_fail(source, CompilePhase::Mir);
-    check_diagnostic(
-        &driver,
-        "Expression is not assignable (not an lvalue)",
-        expected_line,
-        expected_col,
-    );
-}
+use crate::tests::semantic_common::setup_diagnostics_output;
 
 #[test]
-fn rejects_invalid_lvalue_assignments() {
-    // Assignment to a literal
-    run_lvalue_test(
-        r#"
+fn test_assign_to_literal() {
+    let source = r#"
         int main() {
             1 = 2;
         }
-    "#,
-        3,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
+}
 
-    // Assignment to an arithmetic expression
-    run_lvalue_test(
-        r#"
+#[test]
+fn test_assign_to_arithmetic_expr() {
+    let source = r#"
         int main() {
             int x;
             x + 1 = 5;
         }
-    "#,
-        4,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
+}
 
-    // Pre-increment on a literal
-    run_lvalue_test(
-        r#"
+#[test]
+fn test_pre_increment_literal() {
+    let source = r#"
         int main() {
             ++1;
         }
-    "#,
-        3,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
+}
 
-    // Post-increment on a literal
-    run_lvalue_test(
-        r#"
+#[test]
+fn test_post_increment_literal() {
+    let source = r#"
         int main() {
             1++;
         }
-    "#,
-        3,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
+}
 
-    // Pre-decrement on an rvalue
-    run_lvalue_test(
-        r#"
+#[test]
+fn test_pre_decrement_rvalue() {
+    let source = r#"
         int main() {
             int x, y;
             --(x + y);
         }
-    "#,
-        4,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
+}
 
-    // Post-decrement on an rvalue
-    run_lvalue_test(
-        r#"
+#[test]
+fn test_post_decrement_rvalue() {
+    let source = r#"
         int main() {
             int x, y;
             (x + y)--;
         }
-    "#,
-        4,
-        14,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
+}
 
-    // Address-of operator on rvalue
-    run_lvalue_test(
-        r#"
+#[test]
+fn test_address_of_rvalue() {
+    let source = r#"
         int main() {
             int x;
             &(x + 1);
         }
-    "#,
-        4,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
+}
 
-    // Assignment to a member of a struct returned by value (rvalue)
-    run_lvalue_test(
-        r#"
+#[test]
+fn test_assign_to_struct_rvalue_member() {
+    let source = r#"
         struct S { int x; };
         struct S f() { struct S s; return s; }
         int main() {
             f().x = 1;
         }
-    "#,
-        5,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
 }

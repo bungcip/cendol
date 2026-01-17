@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: 'case' or 'default' label not in switch statement
+Span: SourceSpan(source_id=SourceId(2), start=20, end=74)

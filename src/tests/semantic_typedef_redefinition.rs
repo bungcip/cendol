@@ -1,16 +1,11 @@
-use crate::driver::artifact::CompilePhase;
-use crate::tests::semantic_common::run_fail_with_diagnostic;
+use crate::tests::semantic_common::setup_diagnostics_output;
 
 #[test]
 fn rejects_typedef_redefinition_with_different_type() {
-    run_fail_with_diagnostic(
-        r#"
+    let source = r#"
 typedef int T;
 typedef long T;
-        "#,
-        CompilePhase::Mir,
-        "redefinition of 'T'",
-        3,
-        1,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
 }

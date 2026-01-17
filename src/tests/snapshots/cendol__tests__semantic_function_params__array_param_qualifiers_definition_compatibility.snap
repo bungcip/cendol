@@ -1,0 +1,5 @@
+---
+source: src/tests/semantic_function_params.rs
+expression: output
+---
+Diagnostics count: 0

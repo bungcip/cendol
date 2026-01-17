@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_validation.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: Unexpected token: expected Semicolon, found IntegerConstant(1)
+Span: SourceSpan(source_id=SourceId(2), start=72, end=73)

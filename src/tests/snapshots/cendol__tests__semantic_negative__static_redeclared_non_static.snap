@@ -1,0 +1,13 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 2
+
+Level: Error
+Message: conflicting linkage for 'foo'
+Span: SourceSpan(source_id=SourceId(2), start=39, end=86)
+
+Level: Note
+Message: previous declaration is here
+Span: SourceSpan(source_id=SourceId(2), start=9, end=30)

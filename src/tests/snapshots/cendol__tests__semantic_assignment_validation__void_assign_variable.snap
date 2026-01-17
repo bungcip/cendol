@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_assignment_validation.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: type mismatch: expected int, found void
+Span: SourceSpan(source_id=SourceId(2), start=76, end=85)

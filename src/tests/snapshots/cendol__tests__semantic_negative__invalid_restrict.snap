@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: restrict requires a pointer type
+Span: SourceSpan(source_id=SourceId(2), start=34, end=49)

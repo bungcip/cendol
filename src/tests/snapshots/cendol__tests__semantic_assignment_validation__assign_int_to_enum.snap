@@ -1,0 +1,5 @@
+---
+source: src/tests/semantic_assignment_validation.rs
+expression: output
+---
+Diagnostics count: 0

@@ -1,0 +1,13 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 2
+
+Level: Error
+Message: conflicting types for 'foo'
+Span: SourceSpan(source_id=SourceId(2), start=33, end=51)
+
+Level: Note
+Message: previous declaration is here
+Span: SourceSpan(source_id=SourceId(2), start=9, end=24)

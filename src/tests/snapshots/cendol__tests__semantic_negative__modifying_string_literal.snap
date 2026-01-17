@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: cannot assign to read-only location
+Span: SourceSpan(source_id=SourceId(2), start=35, end=52)

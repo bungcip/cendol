@@ -4,13 +4,11 @@
 //! It verifies that the type resolver correctly determines the type of a
 //! _Generic expression based on the type of its controlling expression.
 
-use super::semantic_common::{run_fail_with_message, run_pass};
-use crate::driver::artifact::CompilePhase;
+use super::semantic_common::setup_diagnostics_output;
 
 #[test]
 fn test_generic_selection_correct_type_is_chosen() {
-    run_pass(
-        r#"
+    let source = r#"
     struct A { int a_field; };
     struct B { int b_field; };
     int main() {
@@ -23,61 +21,55 @@ fn test_generic_selection_correct_type_is_chosen() {
         int val = (_Generic(x, int: my_b_instance, long: my_a_instance, default: my_b_instance)).a_field;
         return 0;
     }
-    "#,
-        CompilePhase::Mir,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
 }
 
 #[test]
 fn test_generic_selection_with_user_defined_type() {
-    run_pass(
-        r#"
+    let source = r#"
     struct MyStruct { int x; };
     int main() {
         struct MyStruct s;
         _Generic(s, struct MyStruct: 1, default: 0);
         return 0;
     }
-    "#,
-        CompilePhase::Mir,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
 }
 
 #[test]
 fn test_generic_selection_invalid_type_name() {
-    run_fail_with_message(
-        r#"
+    let source = r#"
     int main() {
         int x = 0;
         // 'NotARealType' is not a valid type.
         _Generic(x, int: 1, NotARealType: 2, default: 3);
         return 0;
     }
-    "#,
-        CompilePhase::Mir,
-        "Unexpected token: expected declaration specifiers",
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
 }
 
 #[test]
 fn test_generic_selection_no_match() {
-    run_fail_with_message(
-        r#"
+    let source = r#"
     int main() {
         float f = 0.0;
         _Generic(f, int: 1, long: 2);
         return 0;
     }
-    "#,
-        CompilePhase::Mir,
-        "controlling expression type does not match any generic association",
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
 }
 
 #[test]
 fn test_generic_selection_strips_qualifiers_and_handles_default_correctly() {
-    run_pass(
-        r#"
+    let source = r#"
     struct A { int a; };
     struct B { int b; };
     int main() {
@@ -87,7 +79,7 @@ fn test_generic_selection_strips_qualifiers_and_handles_default_correctly() {
         int val = (_Generic(x, default: my_b, int: my_a)).a;
         return 0;
     }
-    "#,
-        CompilePhase::Mir,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
 }

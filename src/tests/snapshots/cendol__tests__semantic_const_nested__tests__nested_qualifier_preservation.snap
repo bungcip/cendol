@@ -1,0 +1,13 @@
+---
+source: src/tests/semantic_const_nested.rs
+expression: output
+---
+Diagnostics count: 2
+
+Level: Error
+Message: cannot assign to read-only location
+Span: SourceSpan(source_id=SourceId(2), start=111, end=118)
+
+Level: Error
+Message: cannot assign to read-only location
+Span: SourceSpan(source_id=SourceId(2), start=170, end=175)

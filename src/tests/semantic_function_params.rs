@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::semantic_common::{run_fail_with_message, run_pass};
+use crate::tests::semantic_common::setup_diagnostics_output_with_phase;
 
 #[test]
 fn test_array_param_qualifiers_decay() {
@@ -16,7 +16,8 @@ fn test_array_param_qualifiers_decay() {
         void f(int x[5]);
         void f(int *x); // Compatible
     "#;
-    run_pass(code, CompilePhase::SemanticLowering);
+    let output = setup_diagnostics_output_with_phase(code, CompilePhase::SemanticLowering);
+    insta::assert_snapshot!(output);
 }
 
 #[test]
@@ -27,7 +28,8 @@ fn test_array_param_qualifiers_definition_compatibility() {
             x[0] = 1;
         }
     "#;
-    run_pass(code, CompilePhase::SemanticLowering);
+    let output = setup_diagnostics_output_with_phase(code, CompilePhase::SemanticLowering);
+    insta::assert_snapshot!(output);
 }
 
 #[test]
@@ -36,7 +38,8 @@ fn test_conflicting_types_basic() {
         void foo(int *x);
         void foo(const int *x); // Conflict
     "#;
-    run_fail_with_message(code, CompilePhase::SemanticLowering, "conflicting types");
+    let output = setup_diagnostics_output_with_phase(code, CompilePhase::SemanticLowering);
+    insta::assert_snapshot!(output);
 }
 
 #[test]
@@ -49,5 +52,6 @@ fn test_nested_array_qualifiers() {
         void foo(int x[const 5][10]);
         void foo(int (* const x)[10]);
     "#;
-    run_pass(code, CompilePhase::SemanticLowering);
+    let output = setup_diagnostics_output_with_phase(code, CompilePhase::SemanticLowering);
+    insta::assert_snapshot!(output);
 }

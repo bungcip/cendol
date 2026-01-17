@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: size of array has non-positive value
+Span: SourceSpan(source_id=SourceId(2), start=40, end=42)

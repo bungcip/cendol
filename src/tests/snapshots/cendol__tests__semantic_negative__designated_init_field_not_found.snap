@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_negative.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: no member named 'y' in 'struct A'
+Span: SourceSpan(source_id=SourceId(2), start=76, end=84)

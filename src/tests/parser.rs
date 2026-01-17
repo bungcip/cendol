@@ -1489,24 +1489,26 @@ fn test_enum_with_non_literal_value() {
     let node_ref = expr_result.expect("Failed to parse expression");
     let node = ast.get_node(node_ref);
 
-    // Verify we got a SizeOfType node
-    if let ParsedNodeKind::SizeOfType(type_ref) = &node.kind {
-        // Inspect the underlying base type
+    // Extract the enum constants to verify they were parsed but not folded
+    let constants_info = if let ParsedNodeKind::SizeOfType(type_ref) = &node.kind {
         let base_node = ast.parsed_types.get_base_type(type_ref.base);
         match base_node {
             ParsedBaseTypeNode::Enum { enumerators, .. } => {
                 let range = enumerators.expect("Expected enumerators");
                 let constants = ast.parsed_types.get_enum_constants(range);
-
-                assert_eq!(constants.len(), 1);
-                // We assert that the value is None, because 1 + 1 is not a LiteralInt node
-                // in the parsed AST (it's a BinaryOp). The parser's simple constant folder
-                // in ParsedTypeSpecifier::Enum only handles LiteralInt.
-                assert!(constants[0].value.is_none(), "Enum constant value should be None for non-literal expression");
+                constants
+                    .iter()
+                    .map(|c| (c.name.to_string(), c.value))
+                    .collect::<Vec<_>>()
             }
             _ => panic!("Expected Enum base type"),
         }
     } else {
         panic!("Expected SizeOfType node, got {:?}", node.kind);
-    }
+    };
+
+    insta::assert_yaml_snapshot!(constants_info, @r###"
+    - - A
+      - ~
+    "###);
 }

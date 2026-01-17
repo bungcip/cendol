@@ -266,6 +266,10 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
             );
             parse_sizeof(parser)
         }
+        TokenKind::BuiltinVaArg => parse_builtin_va_arg(parser),
+        TokenKind::BuiltinVaStart => parse_builtin_va_start(parser),
+        TokenKind::BuiltinVaEnd => parse_builtin_va_end(parser),
+        TokenKind::BuiltinVaCopy => parse_builtin_va_copy(parser),
         _ => {
             let expected = "identifier, integer, float, string, char, or '('";
             Err(ParseError::UnexpectedToken {
@@ -653,5 +657,83 @@ pub(crate) fn parse_cast_expression_from_type_and_paren(
     let node = parser.push_node(ParsedNodeKind::Cast(parsed_type, expr_node), span);
 
     debug!("parse_cast_expression: successfully parsed cast expression");
+    Ok(node)
+}
+
+/// Parse __builtin_va_arg(expr, type)
+fn parse_builtin_va_arg(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let token = parser.expect(TokenKind::BuiltinVaArg)?;
+    let start_loc = token.span.start();
+
+    parser.expect(TokenKind::LeftParen)?;
+
+    // Parse expression (ap)
+    let expr = parser.parse_expr_assignment()?;
+
+    parser.expect(TokenKind::Comma)?;
+
+    // Parse type
+    let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+
+    let right_paren = parser.expect(TokenKind::RightParen)?;
+    let end_loc = right_paren.span.end();
+    let span = SourceSpan::new(start_loc, end_loc);
+
+    let node = parser.push_node(ParsedNodeKind::BuiltinVaArg(parsed_type, expr), span);
+    Ok(node)
+}
+
+/// Parse __builtin_va_start(ap, last_param)
+fn parse_builtin_va_start(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let token = parser.expect(TokenKind::BuiltinVaStart)?;
+    let start_loc = token.span.start();
+
+    parser.expect(TokenKind::LeftParen)?;
+
+    let ap = parser.parse_expr_assignment()?;
+    parser.expect(TokenKind::Comma)?;
+    let last = parser.parse_expr_assignment()?;
+
+    let right_paren = parser.expect(TokenKind::RightParen)?;
+    let end_loc = right_paren.span.end();
+    let span = SourceSpan::new(start_loc, end_loc);
+
+    let node = parser.push_node(ParsedNodeKind::BuiltinVaStart(ap, last), span);
+    Ok(node)
+}
+
+/// Parse __builtin_va_end(ap)
+fn parse_builtin_va_end(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let token = parser.expect(TokenKind::BuiltinVaEnd)?;
+    let start_loc = token.span.start();
+
+    parser.expect(TokenKind::LeftParen)?;
+
+    let ap = parser.parse_expr_assignment()?;
+
+    let right_paren = parser.expect(TokenKind::RightParen)?;
+    let end_loc = right_paren.span.end();
+    let span = SourceSpan::new(start_loc, end_loc);
+
+    let node = parser.push_node(ParsedNodeKind::BuiltinVaEnd(ap), span);
+    Ok(node)
+}
+
+/// Parse __builtin_va_copy(dst, src)
+fn parse_builtin_va_copy(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let token = parser.expect(TokenKind::BuiltinVaCopy)?;
+    let start_loc = token.span.start();
+
+    parser.expect(TokenKind::LeftParen)?;
+
+    let dst = parser.parse_expr_assignment()?;
+    parser.expect(TokenKind::Comma)?;
+    let src = parser.parse_expr_assignment()?;
+
+    let right_paren = parser.expect(TokenKind::RightParen)?;
+    let end_loc = right_paren.span.end();
+    let span = SourceSpan::new(start_loc, end_loc);
+
+    let node = parser.push_node(ParsedNodeKind::BuiltinVaCopy(dst, src), span);
     Ok(node)
 }

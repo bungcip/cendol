@@ -48,6 +48,10 @@ pub enum NodeKind {
     IndexAccess(NodeRef /* array */, NodeRef /* index */),
 
     Cast(QualType, NodeRef),
+    BuiltinVaArg(QualType, NodeRef),
+    BuiltinVaStart(NodeRef, NodeRef),
+    BuiltinVaEnd(NodeRef),
+    BuiltinVaCopy(NodeRef, NodeRef),
     SizeOfExpr(NodeRef),
     SizeOfType(QualType),
     AlignOf(QualType), // C11 _Alignof
@@ -134,13 +138,17 @@ impl NodeKind {
             | NodeKind::PostDecrement(child)
             | NodeKind::MemberAccess(child, ..)
             | NodeKind::Cast(_, child)
+            | NodeKind::BuiltinVaArg(_, child)
+            | NodeKind::BuiltinVaEnd(child)
             | NodeKind::SizeOfExpr(child)
             | NodeKind::CompoundLiteral(_, child)
             | NodeKind::Label(_, child, _)
             | NodeKind::Default(child)
             | NodeKind::StaticAssert(child, _) => f(*child),
 
-            NodeKind::BinaryOp(_, lhs, rhs)
+            NodeKind::BuiltinVaStart(lhs, rhs)
+            | NodeKind::BuiltinVaCopy(lhs, rhs)
+            | NodeKind::BinaryOp(_, lhs, rhs)
             | NodeKind::GnuStatementExpression(lhs, rhs)
             | NodeKind::Assignment(_, lhs, rhs)
             | NodeKind::IndexAccess(lhs, rhs)

@@ -2009,6 +2009,34 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 };
                 smallvec![node]
             }
+            ParsedNodeKind::BuiltinVaArg(ty_name, expr) => {
+                let node = self.get_or_push_slot(target_slots, span);
+                let e = self.lower_expression(*expr);
+                let ty = convert_to_qual_type(self, *ty_name, span)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                self.ast.kinds[node.index()] = NodeKind::BuiltinVaArg(ty, e);
+                smallvec![node]
+            }
+            ParsedNodeKind::BuiltinVaStart(ap, last) => {
+                let node = self.get_or_push_slot(target_slots, span);
+                let a = self.lower_expression(*ap);
+                let l = self.lower_expression(*last);
+                self.ast.kinds[node.index()] = NodeKind::BuiltinVaStart(a, l);
+                smallvec![node]
+            }
+            ParsedNodeKind::BuiltinVaEnd(ap) => {
+                let node = self.get_or_push_slot(target_slots, span);
+                let a = self.lower_expression(*ap);
+                self.ast.kinds[node.index()] = NodeKind::BuiltinVaEnd(a);
+                smallvec![node]
+            }
+            ParsedNodeKind::BuiltinVaCopy(dst, src) => {
+                let node = self.get_or_push_slot(target_slots, span);
+                let d = self.lower_expression(*dst);
+                let s = self.lower_expression(*src);
+                self.ast.kinds[node.index()] = NodeKind::BuiltinVaCopy(d, s);
+                smallvec![node]
+            }
             ParsedNodeKind::CompoundLiteral(ty_name, init) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let ty = convert_to_qual_type(self, *ty_name, span)

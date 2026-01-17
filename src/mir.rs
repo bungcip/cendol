@@ -149,6 +149,9 @@ pub enum MirStmt {
     // Memory operations
     Alloc(Place, TypeId),
     Dealloc(Operand),
+    BuiltinVaStart(Operand, Operand),
+    BuiltinVaEnd(Operand),
+    BuiltinVaCopy(Operand, Operand),
 }
 
 /// Terminator - Control flow terminators for basic blocks
@@ -201,6 +204,7 @@ pub enum Rvalue {
     Load(Operand),
     // Function calls that return a value (NON-VOID ONLY)
     Call(CallTarget, Vec<Operand>),
+    BuiltinVaArg(Operand, TypeId),
 }
 
 /// Call target - represents how a function is called
@@ -842,6 +846,9 @@ impl fmt::Display for MirStmt {
             MirStmt::Call(call_target, operands) => write!(f, "Call({:?}, {:?})", call_target, operands),
             MirStmt::Alloc(place, type_id) => write!(f, "Alloc({:?}, {})", place, type_id.get()),
             MirStmt::Dealloc(operand) => write!(f, "Dealloc({:?})", operand),
+            MirStmt::BuiltinVaStart(p1, p2) => write!(f, "BuiltinVaStart({:?}, {:?})", p1, p2),
+            MirStmt::BuiltinVaEnd(p) => write!(f, "BuiltinVaEnd({:?})", p),
+            MirStmt::BuiltinVaCopy(p1, p2) => write!(f, "BuiltinVaCopy({:?}, {:?})", p1, p2),
         }
     }
 }
@@ -898,6 +905,7 @@ impl fmt::Display for Rvalue {
             Rvalue::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),
             Rvalue::Load(operand) => write!(f, "Load({:?})", operand),
             Rvalue::Call(call_target, operands) => write!(f, "Call({:?}, {:?})", call_target, operands),
+            Rvalue::BuiltinVaArg(p, t) => write!(f, "BuiltinVaArg({:?}, {})", p, t.get()),
         }
     }
 }

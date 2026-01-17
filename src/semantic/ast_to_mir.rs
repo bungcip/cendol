@@ -606,6 +606,10 @@ impl<'a> AstToMirLowerer<'a> {
             }
             NodeKind::Cast(_ty, operand_ref) => self.lower_cast(scope_id, *operand_ref, mir_ty),
             NodeKind::CompoundLiteral(ty, init_ref) => self.lower_compound_literal(scope_id, *ty, *init_ref),
+            NodeKind::BuiltinVaArg(ty, expr) => self.lower_builtin_va_arg(scope_id, *ty, *expr),
+            NodeKind::BuiltinVaStart(ap, last) => self.lower_builtin_va_start(scope_id, *ap, *last),
+            NodeKind::BuiltinVaEnd(ap) => self.lower_builtin_va_end(scope_id, *ap),
+            NodeKind::BuiltinVaCopy(dst, src) => self.lower_builtin_va_copy(scope_id, *dst, *src),
             NodeKind::InitializerList(_) | NodeKind::InitializerItem(_) => {
                 // Should be lowered in context of assignment usually.
                 panic!("InitializerList or InitializerItem not implemented");
@@ -2148,5 +2152,32 @@ impl<'a> AstToMirLowerer<'a> {
         } else {
             self.mir_builder.declare_function(name, params, ret, variadic);
         }
+    }
+
+    fn lower_builtin_va_arg(&mut self, scope_id: ScopeId, ty: QualType, expr_ref: NodeRef) -> Operand {
+        let ap = self.lower_expression(scope_id, expr_ref, true);
+        let mir_ty = self.lower_qual_type(ty);
+        let rval = Rvalue::BuiltinVaArg(ap, mir_ty);
+        self.emit_rvalue_to_operand(rval, mir_ty)
+    }
+
+    fn lower_builtin_va_start(&mut self, scope_id: ScopeId, ap_ref: NodeRef, last_ref: NodeRef) -> Operand {
+        let ap = self.lower_expression(scope_id, ap_ref, true);
+        let last = self.lower_expression(scope_id, last_ref, true);
+        self.mir_builder.add_statement(MirStmt::BuiltinVaStart(ap, last));
+        self.create_int_operand(0)
+    }
+
+    fn lower_builtin_va_end(&mut self, scope_id: ScopeId, ap_ref: NodeRef) -> Operand {
+        let ap = self.lower_expression(scope_id, ap_ref, true);
+        self.mir_builder.add_statement(MirStmt::BuiltinVaEnd(ap));
+        self.create_int_operand(0)
+    }
+
+    fn lower_builtin_va_copy(&mut self, scope_id: ScopeId, dst_ref: NodeRef, src_ref: NodeRef) -> Operand {
+        let dst = self.lower_expression(scope_id, dst_ref, true);
+        let src = self.lower_expression(scope_id, src_ref, true);
+        self.mir_builder.add_statement(MirStmt::BuiltinVaCopy(dst, src));
+        self.create_int_operand(0)
     }
 }

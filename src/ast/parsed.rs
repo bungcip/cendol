@@ -80,6 +80,10 @@ pub enum ParsedNodeKind {
     IndexAccess(ParsedNodeRef, ParsedNodeRef),
 
     Cast(ParsedType, ParsedNodeRef),
+    BuiltinVaArg(ParsedType, ParsedNodeRef),
+    BuiltinVaStart(ParsedNodeRef, ParsedNodeRef),
+    BuiltinVaEnd(ParsedNodeRef),
+    BuiltinVaCopy(ParsedNodeRef, ParsedNodeRef),
     SizeOfExpr(ParsedNodeRef),
     SizeOfType(ParsedType),
     AlignOf(ParsedType),

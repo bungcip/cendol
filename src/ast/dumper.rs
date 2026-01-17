@@ -178,6 +178,10 @@ impl AstDumper {
             NodeKind::CompoundLiteral(qual_type, _) => {
                 type_refs.insert(qual_type.ty());
             }
+            NodeKind::BuiltinVaArg(qual_type, _) => {
+                type_refs.insert(qual_type.ty());
+            }
+            NodeKind::BuiltinVaStart(_, _) | NodeKind::BuiltinVaEnd(_) | NodeKind::BuiltinVaCopy(_, _) => {}
             NodeKind::VarDecl(var_decl) => {
                 type_refs.insert(var_decl.ty.ty());
             }
@@ -330,6 +334,18 @@ impl AstDumper {
             ParsedNodeKind::CompoundLiteral(ty, init) => {
                 println!("CompoundLiteral({:?}, {})", ty, init.get())
             }
+            ParsedNodeKind::BuiltinVaArg(ty, expr) => {
+                println!("BuiltinVaArg({:?}, {})", ty, expr.get())
+            }
+            ParsedNodeKind::BuiltinVaStart(ap, last) => {
+                println!("BuiltinVaStart({}, {})", ap.get(), last.get())
+            }
+            ParsedNodeKind::BuiltinVaEnd(ap) => {
+                println!("BuiltinVaEnd({})", ap.get())
+            }
+            ParsedNodeKind::BuiltinVaCopy(dst, src) => {
+                println!("BuiltinVaCopy({}, {})", dst.get(), src.get())
+            }
             ParsedNodeKind::GenericSelection(ctrl, assocs) => {
                 println!("GenericSelection({}, {:?})", ctrl.get(), assocs)
             }
@@ -451,6 +467,18 @@ impl AstDumper {
             NodeKind::AlignOf(ty) => println!("AlignOf({})", ty),
             NodeKind::CompoundLiteral(ty, init) => {
                 println!("CompoundLiteral({}, {})", ty, init.get())
+            }
+            NodeKind::BuiltinVaArg(ty, expr) => {
+                println!("BuiltinVaArg({}, {})", ty, expr.get())
+            }
+            NodeKind::BuiltinVaStart(ap, last) => {
+                println!("BuiltinVaStart({}, {})", ap.get(), last.get())
+            }
+            NodeKind::BuiltinVaEnd(ap) => {
+                println!("BuiltinVaEnd({})", ap.get())
+            }
+            NodeKind::BuiltinVaCopy(dst, src) => {
+                println!("BuiltinVaCopy({}, {})", dst.get(), src.get())
             }
 
             NodeKind::GenericSelection(gs) => {

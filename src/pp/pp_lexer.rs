@@ -788,11 +788,6 @@ impl PPLexer {
         )
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn put_back(&mut self, token: PPToken) {
-        self.put_back_token = Some(token);
-    }
-
     pub(crate) fn get_line(&self, offset: u32) -> u32 {
         self.line_starts.partition_point(|&x| x <= offset) as u32 + self.line_offset
     }

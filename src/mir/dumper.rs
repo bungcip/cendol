@@ -295,6 +295,25 @@ impl<'a> MirDumper<'a> {
                 write!(output, "dealloc ")?;
                 self.dump_operand(output, operand)?;
             }
+            MirStmt::BuiltinVaStart(ap, last) => {
+                write!(
+                    output,
+                    "va_start({}, {})",
+                    self.operand_to_string(ap),
+                    self.operand_to_string(last)
+                )?;
+            }
+            MirStmt::BuiltinVaEnd(ap) => {
+                write!(output, "va_end({})", self.operand_to_string(ap))?;
+            }
+            MirStmt::BuiltinVaCopy(dst, src) => {
+                write!(
+                    output,
+                    "va_copy({}, {})",
+                    self.operand_to_string(dst),
+                    self.operand_to_string(src)
+                )?;
+            }
         }
         Ok(())
     }
@@ -663,6 +682,14 @@ impl<'a> MirDumper<'a> {
                     self.dump_operand(output, operand)?;
                 }
                 write!(output, ")")?;
+            }
+            Rvalue::BuiltinVaArg(ap, ty) => {
+                write!(
+                    output,
+                    "va_arg({}, {})",
+                    self.operand_to_string(ap),
+                    self.type_to_string(*ty)
+                )?;
             }
         }
         Ok(())

@@ -1638,6 +1638,9 @@ fn lower_statement(
             // Call `free` with the pointer
             builder.ins().call(local_free, &[ptr_val]);
         }
+        MirStmt::BuiltinVaStart(_, _) | MirStmt::BuiltinVaEnd(_) | MirStmt::BuiltinVaCopy(_, _) => {
+            // Placeholder: Not implemented in codegen but needed for compilation
+        }
     }
     Ok(())
 }

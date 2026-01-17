@@ -1451,6 +1451,24 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(init.initializer);
                 None
             }
+            NodeKind::BuiltinVaArg(ty, expr) => {
+                self.visit_node(*expr);
+                Some(*ty)
+            }
+            NodeKind::BuiltinVaStart(ap, last) => {
+                self.visit_node(*ap);
+                self.visit_node(*last);
+                Some(QualType::unqualified(self.registry.type_void))
+            }
+            NodeKind::BuiltinVaEnd(ap) => {
+                self.visit_node(*ap);
+                Some(QualType::unqualified(self.registry.type_void))
+            }
+            NodeKind::BuiltinVaCopy(dst, src) => {
+                self.visit_node(*dst);
+                self.visit_node(*src);
+                Some(QualType::unqualified(self.registry.type_void))
+            }
             _ => None,
         }
     }

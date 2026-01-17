@@ -348,6 +348,17 @@ impl MirValidator {
             MirStmt::Dealloc(op) => {
                 self.validate_operand(sema_output, op);
             }
+            MirStmt::BuiltinVaStart(ap, last) => {
+                self.validate_operand(sema_output, ap);
+                self.validate_operand(sema_output, last);
+            }
+            MirStmt::BuiltinVaEnd(ap) => {
+                self.validate_operand(sema_output, ap);
+            }
+            MirStmt::BuiltinVaCopy(dst, src) => {
+                self.validate_operand(sema_output, dst);
+                self.validate_operand(sema_output, src);
+            }
         }
     }
 
@@ -560,6 +571,13 @@ impl MirValidator {
                     self.validate_operand(sema_output, a);
                 }
                 None
+            }
+            Rvalue::BuiltinVaArg(ap, type_id) => {
+                self.validate_operand(sema_output, ap);
+                if !sema_output.types.contains_key(type_id) {
+                    self.errors.push(ValidationError::TypeNotFound(*type_id));
+                }
+                Some(*type_id)
             }
         }
     }

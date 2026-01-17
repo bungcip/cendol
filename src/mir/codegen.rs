@@ -76,11 +76,6 @@ pub(crate) fn mir_type_size(mir_type: &MirType, mir: &MirProgram) -> Result<u32,
     }
 }
 
-/// Helper function to get type layout information for emit_const
-pub(crate) fn get_type_layout(mir_type: &MirType, _mir: &MirProgram) -> Result<MirType, String> {
-    Ok(mir_type.clone())
-}
-
 /// Context for constant emission
 pub(crate) struct EmitContext<'a> {
     pub mir: &'a MirProgram,
@@ -2208,8 +2203,6 @@ impl MirToCraneliftLowerer {
 
                 let mut data_description = DataDescription::new();
                 let global_type = self.mir.get_type(global.type_id);
-                let layout = get_type_layout(global_type, &self.mir)
-                    .map_err(|e| format!("Failed to get layout for global {}: {}", global.name, e))?;
 
                 let mut initial_value_bytes = Vec::new();
                 // Enable relocations by passing data_description and maps
@@ -2220,7 +2213,7 @@ impl MirToCraneliftLowerer {
                 };
                 emit_const(
                     const_id,
-                    &layout,
+                    global_type,
                     &mut initial_value_bytes,
                     &ctx,
                     Some(&mut self.module),
@@ -2275,22 +2268,9 @@ impl MirToCraneliftLowerer {
 
     /// Populate state from MIR module
     fn populate_state(&mut self) {
-        // Populate types from the MIR module
-        for (index, mir_type) in self.mir.module.types.iter().enumerate() {
-            let type_id = TypeId::new((index + 1) as u32).unwrap(); // Types are 1-indexed
-            self.mir.types.insert(type_id, mir_type.clone());
-        }
-
-        // Populate constants from the MIR module
-        for (index, const_value) in self.mir.module.constants.iter().enumerate() {
-            let const_id = ConstValueId::new((index + 1) as u32).unwrap(); // Constants are 1-indexed
-            self.mir.constants.insert(const_id, const_value.clone());
-        }
-
-        // The globals and functions are already populated in the constructor
-        // from the semantic analyzer, but we need to make sure constants are also
-        // accessible through the globals' initial_value field
-        // No additional population needed for globals as they're set in constructor
+        // NOTE: The globals and functions are already populated in the constructor
+        // from the semantic analyzer. Types and constants maps are also populated
+        // by the MirBuilder consumption.
 
         // If no functions were found, create a default main function
         if self.mir.functions.is_empty() {

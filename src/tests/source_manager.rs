@@ -425,3 +425,10 @@ fn test_source_manager_get_buffer_invalid_id() {
     let invalid_id = SourceId::new(999);
     sm.get_buffer(invalid_id);
 }
+
+#[test]
+fn test_add_file_from_path_error() {
+    let mut sm = SourceManager::new();
+    let result = sm.add_file_from_path(std::path::Path::new("non_existent_file_xyz.c"), None);
+    assert!(result.is_err());
+}

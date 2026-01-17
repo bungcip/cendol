@@ -397,3 +397,23 @@ fn test_source_manager_edge_cases() {
     // Should default to line 1, column offset+1
     assert_eq!(sm.get_line_column(loc), Some((1, 6)));
 }
+
+#[test]
+fn test_virtual_buffer_newlines() {
+    let mut sm = SourceManager::new();
+    let content = "line1\nline2\nline3";
+    // Virtual buffers calculate line starts immediately
+    let file_id = sm.add_virtual_buffer(content.as_bytes().to_vec(), "macro", None);
+
+    // Check line 2
+    let loc = SourceLoc::new(file_id, 6); // Start of "line2"
+    let (line, col) = sm.get_line_column(loc).unwrap();
+    assert_eq!(line, 2);
+    assert_eq!(col, 1);
+
+    // Check line 3
+    let loc3 = SourceLoc::new(file_id, 12); // Start of "line3"
+    let (line3, col3) = sm.get_line_column(loc3).unwrap();
+    assert_eq!(line3, 3);
+    assert_eq!(col3, 1);
+}

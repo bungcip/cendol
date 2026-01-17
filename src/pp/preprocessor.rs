@@ -471,11 +471,9 @@ impl<'src> Preprocessor<'src> {
         // Other built-ins
         self.define_builtin_macro(
             "__STDC__",
-            vec![PPToken::new(
+            vec![PPToken::simple(
                 PPTokenKind::Number(StringId::new("1")),
-                PPTokenFlags::empty(),
                 SourceLoc::builtin(),
-                1,
             )],
         );
 
@@ -545,38 +543,30 @@ impl<'src> Preprocessor<'src> {
             );
             self.define_builtin_macro(
                 "__STDC_HOSTED__",
-                vec![PPToken::new(
+                vec![PPToken::simple(
                     PPTokenKind::Number(StringId::new("1")),
-                    PPTokenFlags::empty(),
                     SourceLoc::builtin(),
-                    1,
                 )],
             );
             self.define_builtin_macro(
                 "__STDC_MB_MIGHT_NEQ_WC__",
-                vec![PPToken::new(
+                vec![PPToken::simple(
                     PPTokenKind::Number(StringId::new("1")),
-                    PPTokenFlags::empty(),
                     SourceLoc::builtin(),
-                    1,
                 )],
             );
             self.define_builtin_macro(
                 "__STDC_IEC_559__",
-                vec![PPToken::new(
+                vec![PPToken::simple(
                     PPTokenKind::Number(StringId::new("1")),
-                    PPTokenFlags::empty(),
                     SourceLoc::builtin(),
-                    1,
                 )],
             );
             self.define_builtin_macro(
                 "__STDC_IEC_559_COMPLEX__",
-                vec![PPToken::new(
+                vec![PPToken::simple(
                     PPTokenKind::Number(StringId::new("1")),
-                    PPTokenFlags::empty(),
                     SourceLoc::builtin(),
-                    1,
                 )],
             );
             self.define_builtin_macro(

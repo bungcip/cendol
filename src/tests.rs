@@ -13,6 +13,7 @@ pub mod pp_has_include;
 pub mod pp_lexer;
 pub mod pp_pasting;
 pub mod preprocessor;
+pub mod preprocessor_regression;
 pub mod semantic_array_init_bug;
 pub mod semantic_arrays;
 pub mod semantic_assignment_validation;

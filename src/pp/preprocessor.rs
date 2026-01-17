@@ -826,8 +826,8 @@ impl<'src> Preprocessor<'src> {
                             self.handle_pragma_operator()?;
                         } else {
                             // Check for macro expansion
-                            // Don't expand if already expanded
-                            if token.flags.contains(PPTokenFlags::MACRO_EXPANDED) {
+                            // Don't expand if recursively expanding the same macro
+                            if self.is_recursive_expansion(token.location, sym_str) {
                                 result_tokens.push(token);
                             } else if let Some(expanded) = self.expand_macro(&token)? {
                                 // Push expanded tokens to pending_tokens (in reverse order so they come out in order)
@@ -2039,12 +2039,31 @@ impl<'src> Preprocessor<'src> {
             let token_text = original_token.get_text();
             let token_len = token_text.len() as u16;
 
-            let new_token = PPToken::new(
-                original_token.kind,
-                original_token.flags | PPTokenFlags::MACRO_EXPANDED,
-                SourceLoc::new(virtual_id, offset),
-                token_len,
-            );
+            let mut is_pasted = false;
+            // Check if token came from pasting
+            if let Some(file_info) = self.source_manager.get_file_info(original_token.location.source_id()) {
+                let path = file_info.path.to_string_lossy();
+                if path == "<<pasted-tokens>>" || path == "<pasted-tokens>" {
+                    is_pasted = true;
+                }
+            }
+
+            let new_token = if is_pasted {
+                // Keep original location for pasted tokens so they don't inherit recursion history
+                PPToken::new(
+                    original_token.kind,
+                    original_token.flags | PPTokenFlags::MACRO_EXPANDED,
+                    original_token.location,
+                    token_len,
+                )
+            } else {
+                PPToken::new(
+                    original_token.kind,
+                    original_token.flags | PPTokenFlags::MACRO_EXPANDED,
+                    SourceLoc::new(virtual_id, offset),
+                    token_len,
+                )
+            };
 
             expanded.push(new_token);
             offset += token_len as u32;
@@ -2094,12 +2113,31 @@ impl<'src> Preprocessor<'src> {
             let token_text = original_token.get_text();
             let token_len = token_text.len() as u16;
 
-            let new_token = PPToken::new(
-                original_token.kind,
-                original_token.flags | PPTokenFlags::MACRO_EXPANDED,
-                SourceLoc::new(virtual_id, offset),
-                token_len,
-            );
+            let mut is_pasted = false;
+            // Check if token came from pasting
+            if let Some(file_info) = self.source_manager.get_file_info(original_token.location.source_id()) {
+                let path = file_info.path.to_string_lossy();
+                if path == "<<pasted-tokens>>" || path == "<pasted-tokens>" {
+                    is_pasted = true;
+                }
+            }
+
+            let new_token = if is_pasted {
+                // Keep original location for pasted tokens so they don't inherit recursion history
+                PPToken::new(
+                    original_token.kind,
+                    original_token.flags | PPTokenFlags::MACRO_EXPANDED,
+                    original_token.location,
+                    token_len,
+                )
+            } else {
+                PPToken::new(
+                    original_token.kind,
+                    original_token.flags | PPTokenFlags::MACRO_EXPANDED,
+                    SourceLoc::new(virtual_id, offset),
+                    token_len,
+                )
+            };
 
             expanded.push(new_token);
             offset += token_len as u32;
@@ -2674,12 +2712,32 @@ impl<'src> Preprocessor<'src> {
                         let token_text = original_token.get_text();
                         let token_len = token_text.len() as u16;
 
-                        let new_token = PPToken::new(
-                            original_token.kind,
-                            original_token.flags | PPTokenFlags::MACRO_EXPANDED,
-                            SourceLoc::new(virtual_id, offset),
-                            token_len,
-                        );
+                        let mut is_pasted = false;
+                        // Check if token came from pasting
+                        if let Some(file_info) = self.source_manager.get_file_info(original_token.location.source_id())
+                        {
+                            let path = file_info.path.to_string_lossy();
+                            if path == "<<pasted-tokens>>" || path == "<pasted-tokens>" {
+                                is_pasted = true;
+                            }
+                        }
+
+                        let new_token = if is_pasted {
+                            // Keep original location for pasted tokens so they don't inherit recursion history
+                            PPToken::new(
+                                original_token.kind,
+                                original_token.flags | PPTokenFlags::MACRO_EXPANDED,
+                                original_token.location,
+                                token_len,
+                            )
+                        } else {
+                            PPToken::new(
+                                original_token.kind,
+                                original_token.flags | PPTokenFlags::MACRO_EXPANDED,
+                                SourceLoc::new(virtual_id, offset),
+                                token_len,
+                            )
+                        };
                         remapped_tokens.push(new_token);
                         offset += token_len as u32;
                     }
@@ -2791,5 +2849,43 @@ impl<'src> Preprocessor<'src> {
         } else {
             false
         }
+    }
+
+    /// Check if expanding this macro would be recursive
+    fn is_recursive_expansion(&self, location: SourceLoc, macro_name: &str) -> bool {
+        let mut current_id = location.source_id();
+        let mut depth = 0;
+        const MAX_DEPTH: usize = 100;
+
+        // println!("Checking recursion for {} starting at {:?}", macro_name, current_id);
+
+        while depth < MAX_DEPTH {
+            if let Some(file_info) = self.source_manager.get_file_info(current_id) {
+                // println!("  Depth {}: Path {}", depth, file_info.path.display());
+
+                // Check if this file is a virtual buffer for the macro
+                // Virtual buffers for macros are named "<macro_{name}>"
+                let expected_name = format!("<macro_{}>", macro_name);
+                let path_str = file_info.path.to_string_lossy();
+                if path_str == expected_name {
+                    // println!("  -> FOUND RECURSION");
+                    return true;
+                }
+
+                // Move up the include chain
+                if let Some(include_loc) = file_info.include_loc {
+                    current_id = include_loc.source_id();
+                } else {
+                    // Reached top-level file or built-in
+                    // println!("  -> Top-level reached");
+                    break;
+                }
+            } else {
+                break;
+            }
+            depth += 1;
+        }
+
+        false
     }
 }

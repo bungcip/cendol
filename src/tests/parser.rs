@@ -1471,3 +1471,42 @@ fn test_invalid_struct_decl() {
       init_declarators: []
     "#);
 }
+
+#[test]
+fn test_enum_with_non_literal_value() {
+    use crate::ast::parsed::ParsedNodeKind;
+    use crate::ast::parsed_types::ParsedBaseTypeNode;
+
+    // Use sizeof to force type parsing with an expression that isn't a simple literal
+    // This triggers the code path where the parser attempts to fold the enum value
+    // but falls back to None because it's a binary operation, not a LiteralInt.
+    let source = "sizeof(enum { A = 1 + 1 })";
+
+    let (ast, expr_result) = crate::tests::parser_utils::setup_source(source, |parser| {
+        parser.parse_expression(crate::parser::BindingPower::MIN)
+    });
+
+    let node_ref = expr_result.expect("Failed to parse expression");
+    let node = ast.get_node(node_ref);
+
+    // Verify we got a SizeOfType node
+    if let ParsedNodeKind::SizeOfType(type_ref) = &node.kind {
+        // Inspect the underlying base type
+        let base_node = ast.parsed_types.get_base_type(type_ref.base);
+        match base_node {
+            ParsedBaseTypeNode::Enum { enumerators, .. } => {
+                let range = enumerators.expect("Expected enumerators");
+                let constants = ast.parsed_types.get_enum_constants(range);
+
+                assert_eq!(constants.len(), 1);
+                // We assert that the value is None, because 1 + 1 is not a LiteralInt node
+                // in the parsed AST (it's a BinaryOp). The parser's simple constant folder
+                // in ParsedTypeSpecifier::Enum only handles LiteralInt.
+                assert!(constants[0].value.is_none(), "Enum constant value should be None for non-literal expression");
+            }
+            _ => panic!("Expected Enum base type"),
+        }
+    } else {
+        panic!("Expected SizeOfType node, got {:?}", node.kind);
+    }
+}

@@ -51,8 +51,7 @@ fn convert_type(mir_type: &MirType) -> Option<Type> {
         MirType::F64 => Some(types::F64),
         MirType::Pointer { .. } => Some(types::I64), // Pointers are 64-bit on most modern systems
 
-        MirType::Array { .. } => Some(types::I32), // Arrays - need element type context
-        MirType::Record { .. } => Some(types::I32), // Records - need field context
+        MirType::Array { .. } | MirType::Record { .. } => None,
         MirType::Function { .. } => Some(types::I64), // Function pointers
     }
 }
@@ -390,24 +389,65 @@ fn prepare_call_signature(
     param_types: &[TypeId],
     args: &[Operand],
     mir: &MirProgram,
+    is_variadic: bool,
 ) -> Signature {
     let mut sig = Signature::new(call_conv);
 
     // Return type
-    if let Some(ret_type) = convert_type(mir.get_type(return_type_id)) {
+    let return_mir_type = mir.get_type(return_type_id);
+    let return_type_opt = match convert_type(return_mir_type) {
+        Some(t) => Some(t),
+        None if matches!(return_mir_type, MirType::Record { .. } | MirType::Array { .. }) => Some(types::I64),
+        None => None,
+    };
+    if let Some(ret_type) = return_type_opt {
         sig.returns.push(AbiParam::new(ret_type));
     }
 
     // Fixed parameters
     for &param_type_id in param_types {
-        let param_type = convert_type(mir.get_type(param_type_id)).unwrap();
+        let mir_type = mir.get_type(param_type_id);
+        let param_type = match convert_type(mir_type) {
+            Some(t) => t,
+            None if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) => types::I64,
+            None => types::I32, // Should not happen for valid MIR
+        };
         sig.params.push(AbiParam::new(param_type));
     }
 
-    // Variadic arguments (if any)
+    // Variadic arguments (if any) - structs are expanded to multiple I64 slots
     for arg in args.iter().skip(param_types.len()) {
-        let arg_type = get_operand_cranelift_type(arg, mir).unwrap_or(types::I32);
+        let arg_type_id = get_operand_type_id(arg, mir).ok();
+        if let Some(type_id) = arg_type_id {
+            let mir_type = mir.get_type(type_id);
+            if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
+                // For structs/arrays, calculate how many I64 slots we need
+                let size = mir_type_size(mir_type, mir).unwrap_or(8);
+                let num_slots = ((size + 7) / 8) as usize; // Round up to nearest 8 bytes
+                for _ in 0..num_slots {
+                    sig.params.push(AbiParam::new(types::I64));
+                }
+                continue;
+            }
+        }
+        let mut arg_type = get_operand_cranelift_type(arg, mir).unwrap_or(types::I32);
+        // Normalized Variadic Signature hack: promote variadic GPR args to i64
+        if is_variadic && arg_type.is_int() && arg_type.bits() < 64 {
+            arg_type = types::I64;
+        }
         sig.params.push(AbiParam::new(arg_type));
+    }
+
+    // Normalized Variadic Signature hack: Ensure at least 16 slots for variadic functions
+    // This matches the 16-slot spill area in setup_signature
+    if is_variadic {
+        let current_gpr_count = sig.params.len();
+        let total_variadic_slots = 16;
+        if current_gpr_count < total_variadic_slots {
+            for _ in 0..(total_variadic_slots - current_gpr_count) {
+                sig.params.push(AbiParam::new(types::I64));
+            }
+        }
     }
 
     sig
@@ -423,21 +463,82 @@ fn resolve_call_arguments(
     module: &mut ObjectModule,
 ) -> Result<Vec<Value>, String> {
     let mut arg_values = Vec::new();
-    for (i, arg) in args.iter().enumerate() {
-        if i >= sig.params.len() {
-            return Err(format!(
-                "Argument count mismatch: expected at most {}, got {}",
-                sig.params.len(),
-                args.len()
-            ));
+    for i in 0..sig.params.len() {
+        let param_type = sig.params[i].value_type;
+        if i < args.len() {
+            let arg = &args[i];
+            match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
+                Ok(value) => arg_values.push(value),
+                Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
+            }
+        } else {
+            // Padding for variadic normalized signature (SysV x86_64 hack)
+            arg_values.push(builder.ins().iconst(param_type, 0));
+        }
+    }
+    Ok(arg_values)
+}
+
+/// Helper to resolve variadic call arguments, expanding structs to multiple I64 values
+fn resolve_variadic_call_arguments(
+    args: &[Operand],
+    fixed_param_count: usize,
+    sig: &Signature,
+    builder: &mut FunctionBuilder,
+    cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
+    mir: &MirProgram,
+    module: &mut ObjectModule,
+) -> Result<Vec<Value>, String> {
+    let mut arg_values = Vec::new();
+    let mut sig_idx = 0;
+
+    for (arg_idx, arg) in args.iter().enumerate() {
+        if sig_idx >= sig.params.len() {
+            break;
         }
 
-        let param_type = sig.params[i].value_type;
+        let param_type = sig.params[sig_idx].value_type;
+
+        // Check if this is a variadic struct argument
+        if arg_idx >= fixed_param_count {
+            if let Ok(type_id) = get_operand_type_id(arg, mir) {
+                let mir_type = mir.get_type(type_id);
+                if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
+                    // Get the struct address
+                    let struct_addr =
+                        resolve_operand_to_value(arg, builder, types::I64, cranelift_stack_slots, mir, module)?;
+
+                    // Calculate how many I64 slots this struct needs
+                    let size = mir_type_size(mir_type, mir).unwrap_or(8);
+                    let num_slots = ((size + 7) / 8) as usize;
+
+                    // Load each I64 chunk from the struct
+                    for slot in 0..num_slots {
+                        let offset = (slot * 8) as i32;
+                        let value = builder.ins().load(types::I64, MemFlags::new(), struct_addr, offset);
+                        arg_values.push(value);
+                        sig_idx += 1;
+                    }
+                    continue;
+                }
+            }
+        }
+
+        // Non-struct argument (or fixed param)
         match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
             Ok(value) => arg_values.push(value),
             Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
         }
+        sig_idx += 1;
     }
+
+    // Padding for remaining signature params (variadic slot padding)
+    while sig_idx < sig.params.len() {
+        let param_type = sig.params[sig_idx].value_type;
+        arg_values.push(builder.ins().iconst(param_type, 0));
+        sig_idx += 1;
+    }
+
     Ok(arg_values)
 }
 
@@ -449,11 +550,11 @@ fn emit_function_call_impl(
     mir: &MirProgram,
     cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
     module: &mut ObjectModule,
+    expected_type: Type,
 ) -> Result<Value, String> {
     match call_target {
         CallTarget::Direct(func_id) => {
             let func = mir.get_function(*func_id);
-
             // Collect parameter types
             let param_types: Vec<TypeId> = func.params.iter().map(|&p| mir.get_local(p).type_id).collect();
 
@@ -466,6 +567,7 @@ fn emit_function_call_impl(
                     &param_types,
                     &[], // No extra args for canonical declaration
                     mir,
+                    func.is_variadic,
                 );
 
                 let linkage = match func.kind {
@@ -488,10 +590,18 @@ fn emit_function_call_impl(
                     &param_types,
                     args,
                     mir,
+                    func.is_variadic,
                 );
-
-                // 4. Resolve arguments
-                let arg_values = resolve_call_arguments(args, &call_sig, builder, cranelift_stack_slots, mir, module)?;
+                // 4. Resolve arguments (use variadic version for struct expansion)
+                let arg_values = resolve_variadic_call_arguments(
+                    args,
+                    param_types.len(),
+                    &call_sig,
+                    builder,
+                    cranelift_stack_slots,
+                    mir,
+                    module,
+                )?;
 
                 // 5. Perform indirect call
                 let sig_ref = builder.import_signature(call_sig);
@@ -501,7 +611,7 @@ fn emit_function_call_impl(
                 if !call_results.is_empty() {
                     Ok(call_results[0])
                 } else {
-                    Ok(builder.ins().iconst(types::I32, 0))
+                    Ok(builder.ins().iconst(expected_type, 0))
                 }
             } else {
                 // Regular (non-variadic) function call
@@ -511,6 +621,7 @@ fn emit_function_call_impl(
                     &param_types,
                     args,
                     mir,
+                    func.is_variadic,
                 );
 
                 // Resolve arguments before declaring function to ensure types match?
@@ -533,7 +644,7 @@ fn emit_function_call_impl(
                 if !call_results.is_empty() {
                     Ok(call_results[0])
                 } else {
-                    Ok(builder.ins().iconst(types::I32, 0))
+                    Ok(builder.ins().iconst(expected_type, 0))
                 }
             }
         }
@@ -560,12 +671,24 @@ fn emit_function_call_impl(
             };
 
             // 3. Construct the signature
+            let is_variadic_func = match mir.get_type(func_ptr_type_id) {
+                MirType::Pointer { pointee } => match mir.get_type(*pointee) {
+                    MirType::Function { .. } => {
+                        // For now we don't have is_variadic in MirType::Function
+                        false
+                    }
+                    _ => false,
+                },
+                _ => false,
+            };
+
             let sig = prepare_call_signature(
                 builder.func.signature.call_conv,
                 return_type_id,
                 &param_types,
                 args,
                 mir,
+                is_variadic_func,
             );
 
             // 4. Resolve the function pointer operand to a value
@@ -614,6 +737,30 @@ fn emit_bool_to_int(val: Value, target_type: Type, builder: &mut FunctionBuilder
     let one = builder.ins().iconst(target_type, 1);
     let zero = builder.ins().iconst(target_type, 0);
     builder.ins().select(val, one, zero)
+}
+
+/// Helper function to emit a memcpy call
+fn emit_memcpy(
+    dest: Value,
+    src: Value,
+    size: i64,
+    builder: &mut FunctionBuilder,
+    module: &mut ObjectModule,
+) -> Result<(), String> {
+    let mut sig = Signature::new(builder.func.signature.call_conv);
+    sig.params.push(AbiParam::new(types::I64)); // dest
+    sig.params.push(AbiParam::new(types::I64)); // src
+    sig.params.push(AbiParam::new(types::I64)); // size
+    sig.returns.push(AbiParam::new(types::I64)); // returns dest (ignored)
+
+    let callee = module
+        .declare_function("memcpy", Linkage::Import, &sig)
+        .map_err(|e| format!("Failed to declare memcpy: {:?}", e))?;
+    let local_callee = module.declare_func_in_func(callee, builder.func);
+
+    let size_val = builder.ins().iconst(types::I64, size);
+    builder.ins().call(local_callee, &[dest, src, size_val]);
+    Ok(())
 }
 
 /// Helper function to emit a type conversion in Cranelift
@@ -739,7 +886,12 @@ fn resolve_operand_to_value(
                     // Params
                     for &param_id in &func.params {
                         let param_local = mir.get_local(param_id);
-                        let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
+                        let mir_type = mir.get_type(param_local.type_id);
+                        let param_type = match convert_type(mir_type) {
+                            Some(t) => t,
+                            None if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) => types::I64,
+                            None => types::I32,
+                        };
                         sig.params.push(AbiParam::new(param_type));
                     }
 
@@ -781,6 +933,13 @@ fn resolve_operand_to_value(
             let place_type_id =
                 get_place_type_id(place, mir).map_err(|e| format!("Failed to get place type: {}", e))?;
             let place_type = mir.get_type(place_type_id);
+
+            if matches!(place_type, MirType::Record { .. } | MirType::Array { .. }) {
+                // For aggregate types, resolving the operand value means getting its address
+                let addr = resolve_place_to_addr(place, builder, cranelift_stack_slots, mir, module)?;
+                return Ok(emit_type_conversion(addr, types::I64, expected_type, false, builder));
+            }
+
             let place_cranelift_type =
                 convert_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))?;
 
@@ -911,6 +1070,9 @@ fn get_operand_cranelift_type(operand: &Operand, mir: &MirProgram) -> Result<Typ
                 ConstValue::ArrayLiteral(_) => Ok(types::I32),
                 ConstValue::Cast(type_id, _) => {
                     let mir_type = mir.get_type(*type_id);
+                    if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
+                        return Ok(types::I64);
+                    }
                     Ok(convert_type(mir_type).unwrap_or(types::I32))
                 }
             }
@@ -918,10 +1080,16 @@ fn get_operand_cranelift_type(operand: &Operand, mir: &MirProgram) -> Result<Typ
         Operand::Copy(place) => {
             let place_type_id = get_place_type_id(place, mir)?;
             let place_type = mir.get_type(place_type_id);
+            if matches!(place_type, MirType::Record { .. } | MirType::Array { .. }) {
+                return Ok(types::I64);
+            }
             convert_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))
         }
         Operand::Cast(type_id, _) => {
             let mir_type = mir.get_type(*type_id);
+            if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
+                return Ok(types::I64);
+            }
             Ok(convert_type(mir_type).unwrap_or(types::I32))
         }
         Operand::AddressOf(_) => Ok(types::I64), // AddressOf always returns a pointer
@@ -1171,12 +1339,18 @@ fn lower_statement(
     mir: &MirProgram,
     clif_stack_slots: &HashMap<LocalId, StackSlot>,
     module: &mut ObjectModule,
+    va_spill_slot: Option<StackSlot>,
+    func: &MirFunction,
 ) -> Result<(), String> {
     match stmt {
         MirStmt::Assign(place, rvalue) => {
             let place_type_id = get_place_type_id(place, mir)?;
             let place_mir_type = mir.get_type(place_type_id);
-            let expected_type = convert_type(place_mir_type).ok_or_else(|| "Cannot assign to void type".to_string())?;
+            let expected_type = match convert_type(place_mir_type) {
+                Some(t) => t,
+                None if matches!(place_mir_type, MirType::Record { .. } | MirType::Array { .. }) => types::I64,
+                None => return Err("Cannot assign to void type".to_string()),
+            };
 
             // Process the rvalue to get a Cranelift value first
             let rvalue_result = match rvalue {
@@ -1320,7 +1494,7 @@ fn lower_statement(
                     Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
                 }
                 Rvalue::Call(call_target, args) => {
-                    emit_function_call_impl(call_target, args, builder, mir, clif_stack_slots, module)
+                    emit_function_call_impl(call_target, args, builder, mir, clif_stack_slots, module, expected_type)
                 }
                 Rvalue::BinaryIntOp(op, left_operand, right_operand) => {
                     let left_cranelift_type = get_operand_cranelift_type(left_operand, mir)
@@ -1508,35 +1682,119 @@ fn lower_statement(
                         builder,
                     ))
                 }
+                Rvalue::BuiltinVaArg(ap, type_id) => {
+                    // SysV AMD64 ABI va_list structure:
+                    // struct { gp_offset, fp_offset, overflow_arg_area, reg_save_area }
+                    //
+                    // For GP types: if gp_offset < 48, fetch from reg_save_area + gp_offset
+                    //               else fetch from overflow_arg_area
+
+                    let ap_addr = resolve_place_to_addr(ap, builder, clif_stack_slots, mir, module)?;
+
+                    // Load fields from va_list
+                    let gp_offset = builder.ins().load(types::I32, MemFlags::new(), ap_addr, 0);
+                    let overflow_arg_area = builder.ins().load(types::I64, MemFlags::new(), ap_addr, 8);
+                    let reg_save_area = builder.ins().load(types::I64, MemFlags::new(), ap_addr, 16);
+
+                    let mir_type = mir.get_type(*type_id);
+                    let size = mir_type_size(mir_type, mir)?;
+                    let aligned_size = ((size + 7) / 8) * 8; // Round up to 8 bytes
+
+                    // Create a stack slot to hold the result address (for merging paths)
+                    let result_slot =
+                        builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 0));
+
+                    // Check if arg fits in our spill area (gp_offset < 128 for 16 slots)
+                    let threshold = builder.ins().iconst(types::I32, 128);
+                    let fits_in_regs = builder.ins().icmp(IntCC::UnsignedLessThan, gp_offset, threshold);
+
+                    // Create blocks for the two paths
+                    let reg_block = builder.create_block();
+                    let overflow_block = builder.create_block();
+                    let merge_block = builder.create_block();
+
+                    builder.ins().brif(fits_in_regs, reg_block, &[], overflow_block, &[]);
+
+                    // Reg path: fetch from reg_save_area + gp_offset
+                    builder.switch_to_block(reg_block);
+                    builder.seal_block(reg_block);
+                    let gp_offset_i64 = builder.ins().uextend(types::I64, gp_offset);
+                    let arg_addr_reg = builder.ins().iadd(reg_save_area, gp_offset_i64);
+                    // Store result address
+                    builder.ins().stack_store(arg_addr_reg, result_slot, 0);
+                    // Update gp_offset
+                    let size_i32 = builder.ins().iconst(types::I32, aligned_size as i64);
+                    let new_gp_offset = builder.ins().iadd(gp_offset, size_i32);
+                    builder.ins().store(MemFlags::new(), new_gp_offset, ap_addr, 0);
+                    builder.ins().jump(merge_block, &[]);
+
+                    // Overflow path: fetch from overflow_arg_area
+                    builder.switch_to_block(overflow_block);
+                    builder.seal_block(overflow_block);
+                    // Store result address
+                    builder.ins().stack_store(overflow_arg_area, result_slot, 0);
+                    // Update overflow_arg_area
+                    let aligned_size_i64 = builder.ins().iconst(types::I64, aligned_size as i64);
+                    let new_overflow_area = builder.ins().iadd(overflow_arg_area, aligned_size_i64);
+                    builder.ins().store(MemFlags::new(), new_overflow_area, ap_addr, 8);
+                    builder.ins().jump(merge_block, &[]);
+
+                    // Merge block: load the arg address from stack and get the value
+                    builder.switch_to_block(merge_block);
+                    builder.seal_block(merge_block);
+                    let arg_addr = builder.ins().stack_load(types::I64, result_slot, 0);
+
+                    // Load the value from the address
+                    let value = if let Some(clif_type) = convert_type(mir_type) {
+                        // Simple type (scalar)
+                        builder.ins().load(clif_type, MemFlags::new(), arg_addr, 0)
+                    } else {
+                        // Aggregate type (struct/array) - return the address
+                        // The caller will memcpy from this address
+                        arg_addr
+                    };
+
+                    Ok(value)
+                }
                 _ => Ok(builder.ins().iconst(expected_type, 0)),
             };
 
             // Now, assign the resolved value to the place
             if let Ok(value) = rvalue_result {
-                match place {
-                    Place::Local(local_id) => {
-                        // Check if this local has a stack slot (non-void types)
-                        if let Some(stack_slot) = clif_stack_slots.get(local_id) {
-                            builder.ins().stack_store(value, *stack_slot, 0);
-                        } else {
-                            // This local doesn't have a stack slot (likely a void type)
-                            // Check if it's actually a void type to provide a better warning
-                            if let Some(local) = mir.locals.get(local_id)
-                                && let Some(local_type) = mir.types.get(&local.type_id)
-                                && !matches!(local_type, MirType::Void)
-                            {
-                                eprintln!("Warning: Stack slot not found for local {}", local_id.get());
+                let place_type_id = get_place_type_id(place, mir).unwrap();
+                let mir_type = mir.get_type(place_type_id);
+
+                if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
+                    // For aggregate types, the value is an address (returned by va_arg or similar)
+                    let dest_addr = resolve_place_to_addr(place, builder, clif_stack_slots, mir, module)?;
+                    let size = mir_type_size(mir_type, mir)? as i64;
+                    emit_memcpy(dest_addr, value, size, builder, module)?;
+                } else {
+                    match place {
+                        Place::Local(local_id) => {
+                            // Check if this local has a stack slot (non-void types)
+                            if let Some(stack_slot) = clif_stack_slots.get(local_id) {
+                                builder.ins().stack_store(value, *stack_slot, 0);
+                            } else {
+                                // This local doesn't have a stack slot (likely a void type)
+                                // Check if it's actually a void type to provide a better warning
+                                if let Some(local) = mir.locals.get(local_id)
+                                    && let Some(local_type) = mir.types.get(&local.type_id)
+                                    && !matches!(local_type, MirType::Void)
+                                {
+                                    eprintln!("Warning: Stack slot not found for local {}", local_id.get());
+                                }
                             }
                         }
-                    }
-                    _ => {
-                        // This covers StructField, ArrayIndex, Deref, and Global assignments
-                        match resolve_place_to_addr(place, builder, clif_stack_slots, mir, module) {
-                            Ok(addr) => {
-                                builder.ins().store(MemFlags::new(), value, addr, 0);
-                            }
-                            Err(e) => {
-                                eprintln!("Warning: Failed to resolve place address for assignment: {}", e);
+                        _ => {
+                            // This covers StructField, ArrayIndex, Deref, and Global assignments
+                            match resolve_place_to_addr(place, builder, clif_stack_slots, mir, module) {
+                                Ok(addr) => {
+                                    builder.ins().store(MemFlags::new(), value, addr, 0);
+                                }
+                                Err(e) => {
+                                    eprintln!("Warning: Failed to resolve place address for assignment: {}", e);
+                                }
                             }
                         }
                     }
@@ -1573,7 +1831,7 @@ fn lower_statement(
         MirStmt::Call(call_target, args) => {
             // Handle function calls that don't return values (side-effect only calls)
             // This is used for void function calls or calls where the result is ignored
-            let _ = emit_function_call_impl(call_target, args, builder, mir, clif_stack_slots, module)?; // Ignore return value as this is a side-effect only call
+            let _ = emit_function_call_impl(call_target, args, builder, mir, clif_stack_slots, module, types::I32)?; // Ignore return value as this is a side-effect only call
         }
 
         MirStmt::Alloc(place, type_id) => {
@@ -1638,8 +1896,71 @@ fn lower_statement(
             // Call `free` with the pointer
             builder.ins().call(local_free, &[ptr_val]);
         }
-        MirStmt::BuiltinVaStart(_, _) | MirStmt::BuiltinVaEnd(_) | MirStmt::BuiltinVaCopy(_, _) => {
-            // Placeholder: Not implemented in codegen but needed for compilation
+        MirStmt::BuiltinVaStart(ap, _last) => {
+            // SysV AMD64 ABI va_list structure (24 bytes):
+            // struct {
+            //     unsigned int gp_offset;      // offset 0, 4 bytes
+            //     unsigned int fp_offset;      // offset 4, 4 bytes
+            //     void *overflow_arg_area;     // offset 8, 8 bytes
+            //     void *reg_save_area;         // offset 16, 8 bytes
+            // }
+            //
+            // We use a 16-slot (128-byte) spill area to capture all variadic args.
+            // gp_offset starts after fixed params, and we use 128 as the threshold.
+
+            let ap_addr = resolve_place_to_addr(ap, builder, clif_stack_slots, mir, module)?;
+
+            // Calculate gp_offset: fixed_params * 8 (each GP register is 8 bytes)
+            let fixed_param_count = func.params.len() as i32;
+            let gp_offset = fixed_param_count * 8;
+            let gp_offset_val = builder.ins().iconst(types::I32, gp_offset as i64);
+            builder.ins().store(MemFlags::new(), gp_offset_val, ap_addr, 0);
+
+            // fp_offset: 128 (16 slots * 8 bytes = 128, indicates end of our spill area)
+            // This is the threshold where we'd switch to overflow_arg_area
+            let fp_offset_val = builder.ins().iconst(types::I32, 128);
+            builder.ins().store(MemFlags::new(), fp_offset_val, ap_addr, 4);
+
+            // overflow_arg_area: pointer past the 16-slot spill area
+            // In practice, with 16 slots, we rarely need this
+            let overflow_area = if let Some(spill_slot) = va_spill_slot {
+                // Point past the 16-slot spill area (128 bytes)
+                let base = builder.ins().stack_addr(types::I64, spill_slot, 0);
+                let offset = builder.ins().iconst(types::I64, 128);
+                builder.ins().iadd(base, offset)
+            } else {
+                builder.ins().iconst(types::I64, 0)
+            };
+            builder.ins().store(MemFlags::new(), overflow_area, ap_addr, 8);
+
+            // reg_save_area: pointer to start of register save area (our spill slot)
+            let reg_save_area = if let Some(spill_slot) = va_spill_slot {
+                builder.ins().stack_addr(types::I64, spill_slot, 0)
+            } else {
+                builder.ins().iconst(types::I64, 0)
+            };
+            builder.ins().store(MemFlags::new(), reg_save_area, ap_addr, 16);
+        }
+        MirStmt::BuiltinVaEnd(_) => {
+            // BuiltinVaEnd is a no-op
+        }
+        MirStmt::BuiltinVaCopy(dst, src) => {
+            let dst_addr = resolve_place_to_addr(dst, builder, clif_stack_slots, mir, module)?;
+            let src_addr = resolve_place_to_addr(src, builder, clif_stack_slots, mir, module)?;
+
+            // Copy all 24 bytes of the va_list struct
+            // gp_offset (4 bytes)
+            let gp_offset = builder.ins().load(types::I32, MemFlags::new(), src_addr, 0);
+            builder.ins().store(MemFlags::new(), gp_offset, dst_addr, 0);
+            // fp_offset (4 bytes)
+            let fp_offset = builder.ins().load(types::I32, MemFlags::new(), src_addr, 4);
+            builder.ins().store(MemFlags::new(), fp_offset, dst_addr, 4);
+            // overflow_arg_area (8 bytes)
+            let overflow_area = builder.ins().load(types::I64, MemFlags::new(), src_addr, 8);
+            builder.ins().store(MemFlags::new(), overflow_area, dst_addr, 8);
+            // reg_save_area (8 bytes)
+            let reg_save_area = builder.ins().load(types::I64, MemFlags::new(), src_addr, 16);
+            builder.ins().store(MemFlags::new(), reg_save_area, dst_addr, 16);
         }
     }
     Ok(())
@@ -1718,16 +2039,37 @@ fn setup_signature(
     func_ctx.params.clear();
 
     // Get the return type from MIR and convert to Cranelift type
-    let return_type = mir.get_type(func.return_type);
-    let return_type_opt = convert_type(return_type);
+    let return_mir_type = mir.get_type(func.return_type);
+    let return_type_opt = match convert_type(return_mir_type) {
+        Some(t) => Some(t),
+        None if matches!(return_mir_type, MirType::Record { .. } | MirType::Array { .. }) => Some(types::I64),
+        None => None, // Void
+    };
 
     // Add parameters from MIR function signature
     let mut param_types = Vec::new();
     for &param_id in &func.params {
         let param_local = mir.get_local(param_id);
-        let param_type = convert_type(mir.get_type(param_local.type_id)).unwrap();
+        let mir_type = mir.get_type(param_local.type_id);
+        let param_type = match convert_type(mir_type) {
+            Some(t) => t,
+            None if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) => types::I64,
+            None => return Err(format!("Unsupported parameter type for local {}", param_id.get())),
+        };
         func_ctx.params.push(AbiParam::new(param_type));
         param_types.push(param_type);
+    }
+
+    if func.is_variadic {
+        // Add 16 total I64 parameters to capture variadic arguments (6 GPRs + 10 stack slots)
+        // This allows variadic functions to receive many struct args that expand to multiple I64s
+        let fixed_params_count = func.params.len();
+        let total_variadic_slots = 16; // Support up to 16 I64 slots for variadic args
+        if fixed_params_count < total_variadic_slots {
+            for _ in 0..(total_variadic_slots - fixed_params_count) {
+                func_ctx.params.push(AbiParam::new(types::I64));
+            }
+        }
     }
 
     // Only add return parameter if the function has a non-void return type
@@ -1761,31 +2103,6 @@ fn allocate_stack_slots(
         }
     }
     Ok(())
-}
-
-fn process_entry_block_params(
-    current_block_id: MirBlockId,
-    func: &MirFunction,
-    param_types: &[Type],
-    clif_block: Block,
-    builder: &mut FunctionBuilder,
-    clif_stack_slots: &HashMap<LocalId, StackSlot>,
-) {
-    // If this is the entry block, set up its parameters
-    if Some(current_block_id) == func.entry_block {
-        // Add function parameters as block parameters
-        for &param_type in param_types {
-            builder.append_block_param(clif_block, param_type);
-        }
-
-        // Store incoming parameter values into their stack slots
-        let param_values: Vec<Value> = builder.block_params(clif_block).to_vec();
-        for (&param_id, param_value) in func.params.iter().zip(param_values.into_iter()) {
-            if let Some(stack_slot) = clif_stack_slots.get(&param_id) {
-                builder.ins().stack_store(param_value, *stack_slot, 0);
-            }
-        }
-    }
 }
 
 fn finalize_function_processing(
@@ -1835,6 +2152,9 @@ pub(crate) struct MirToCraneliftLowerer {
     // Mappings for relocations
     func_id_map: HashMap<MirFunctionId, FuncId>,
     data_id_map: HashMap<GlobalId, DataId>,
+
+    // Variadic spill area for the current function
+    va_spill_slot: Option<StackSlot>,
 }
 
 /// NOTE: we use panic!() to ICE because codegen rely on correct MIR, so if we give invalid MIR, then problem is in previous phase
@@ -1864,6 +2184,7 @@ impl MirToCraneliftLowerer {
             emit_kind: EmitKind::Object,
             func_id_map: HashMap::new(),
             data_id_map: HashMap::new(),
+            va_spill_slot: None,
         }
     }
 
@@ -1888,8 +2209,6 @@ impl MirToCraneliftLowerer {
         }
 
         // Pass 2: Declare all functions
-        // We use index loop to match original logic but we need to iterate over all functions?
-        // Actually self.mir.functions includes all functions.
         for (func_id, func) in &self.mir.functions {
             let linkage = match func.kind {
                 MirFunctionKind::Extern => Linkage::Import,
@@ -1898,24 +2217,7 @@ impl MirToCraneliftLowerer {
 
             // Calculate signature for declaration
             let mut sig = self.module.make_signature();
-            // We need to re-create signature setup logic without creates a context if possible,
-            // or just use a temporary context.
-            // Setup signature requires MirFunction and MirProgram.
-            // convert_type helper is available.
-
-            // Re-implement signature creation briefly matching `setup_signature` logic
-            // Return type
-            if let Some(ret_type) = convert_type(self.mir.get_type(func.return_type)) {
-                sig.returns.push(AbiParam::new(ret_type));
-            }
-
-            // Params
-            for &param_id in &func.params {
-                let param_local = self.mir.get_local(param_id);
-                if let Some(param_type) = convert_type(self.mir.get_type(param_local.type_id)) {
-                    sig.params.push(AbiParam::new(param_type));
-                }
-            }
+            setup_signature(func, &self.mir, &mut sig)?;
 
             let clif_func_id = self
                 .module
@@ -2056,6 +2358,7 @@ impl MirToCraneliftLowerer {
         }
 
         // PHASE 2️⃣ — Lower block content (without sealing)
+        let mut va_spill_slot = None;
 
         // Use worklist algorithm for proper traversal
         let mut worklist = vec![func.entry_block.expect("Defined function must have entry block")];
@@ -2072,14 +2375,54 @@ impl MirToCraneliftLowerer {
                 .ok_or_else(|| format!("Block {} not found in mapping", current_block_id.get()))?;
             builder.switch_to_block(*clif_block);
 
-            process_entry_block_params(
-                current_block_id,
-                func,
-                &param_types,
-                *clif_block,
-                &mut builder,
-                &self.clif_stack_slots,
-            );
+            // Setup entry block parameters
+            if Some(current_block_id) == func.entry_block {
+                // Step 1: Add ALL block parameters first (fixed params)
+                for &param_type in &param_types {
+                    builder.append_block_param(*clif_block, param_type);
+                }
+
+                // Step 2: Add variadic block parameters if needed (still before any instructions)
+                if func.is_variadic {
+                    let fixed_param_count = func.params.len();
+                    let total_variadic_slots = 16; // Must match setup_signature
+                    if fixed_param_count < total_variadic_slots {
+                        let extra_count = total_variadic_slots - fixed_param_count;
+                        for _ in 0..extra_count {
+                            builder.append_block_param(*clif_block, types::I64);
+                        }
+                    }
+                }
+
+                // Step 3: NOW emit instructions - store fixed params to stack slots
+                let param_values: Vec<Value> = builder.block_params(*clif_block).to_vec();
+                let mut next_param_idx = 0;
+
+                for &param_id in &func.params {
+                    let param_value = param_values[next_param_idx];
+                    if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
+                        builder.ins().stack_store(param_value, *stack_slot, 0);
+                    }
+                    next_param_idx += 1;
+                }
+
+                // Step 4: Handle variadic spill area - save all 16 slots
+                if func.is_variadic {
+                    let total_slots = 16;
+                    let spill_size = total_slots * 8; // 128 bytes for 16 I64 slots
+                    let spill_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        spill_size as u32,
+                        0,
+                    ));
+                    let all_param_values = builder.block_params(*clif_block).to_vec();
+                    for i in 0..total_slots.min(all_param_values.len()) {
+                        let val = all_param_values[i];
+                        builder.ins().stack_store(val, spill_slot, (i * 8) as i32);
+                    }
+                    va_spill_slot = Some(spill_slot);
+                }
+            }
 
             // Get the MIR block
             let mir_block = self
@@ -2099,7 +2442,15 @@ impl MirToCraneliftLowerer {
 
             // Process statements
             for stmt in &statements_to_process {
-                lower_statement(stmt, &mut builder, &self.mir, &self.clif_stack_slots, &mut self.module)?;
+                lower_statement(
+                    stmt,
+                    &mut builder,
+                    &self.mir,
+                    &self.clif_stack_slots,
+                    &mut self.module,
+                    va_spill_slot,
+                    func,
+                )?;
             }
 
             // ========================================================================
@@ -2125,6 +2476,7 @@ impl MirToCraneliftLowerer {
 
         // Finalize the function
         builder.finalize();
+        self.va_spill_slot = va_spill_slot;
 
         finalize_function_processing(
             func,

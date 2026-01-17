@@ -2155,28 +2155,45 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_builtin_va_arg(&mut self, scope_id: ScopeId, ty: QualType, expr_ref: NodeRef) -> Operand {
-        let ap = self.lower_expression(scope_id, expr_ref, true);
+        let ap_op = self.lower_expression(scope_id, expr_ref, true);
+        let ap_ty = self.ast.get_resolved_type(expr_ref).unwrap();
+        let ap_mir_ty = self.lower_qual_type(ap_ty);
+        let ap = self.ensure_place(ap_op, ap_mir_ty);
         let mir_ty = self.lower_qual_type(ty);
         let rval = Rvalue::BuiltinVaArg(ap, mir_ty);
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
     fn lower_builtin_va_start(&mut self, scope_id: ScopeId, ap_ref: NodeRef, last_ref: NodeRef) -> Operand {
-        let ap = self.lower_expression(scope_id, ap_ref, true);
+        let ap_op = self.lower_expression(scope_id, ap_ref, true);
+        let ap_ty = self.ast.get_resolved_type(ap_ref).unwrap();
+        let ap_mir_ty = self.lower_qual_type(ap_ty);
+        let ap = self.ensure_place(ap_op, ap_mir_ty);
         let last = self.lower_expression(scope_id, last_ref, true);
         self.mir_builder.add_statement(MirStmt::BuiltinVaStart(ap, last));
         self.create_int_operand(0)
     }
 
     fn lower_builtin_va_end(&mut self, scope_id: ScopeId, ap_ref: NodeRef) -> Operand {
-        let ap = self.lower_expression(scope_id, ap_ref, true);
+        let ap_op = self.lower_expression(scope_id, ap_ref, true);
+        let ap_ty = self.ast.get_resolved_type(ap_ref).unwrap();
+        let ap_mir_ty = self.lower_qual_type(ap_ty);
+        let ap = self.ensure_place(ap_op, ap_mir_ty);
         self.mir_builder.add_statement(MirStmt::BuiltinVaEnd(ap));
         self.create_int_operand(0)
     }
 
     fn lower_builtin_va_copy(&mut self, scope_id: ScopeId, dst_ref: NodeRef, src_ref: NodeRef) -> Operand {
-        let dst = self.lower_expression(scope_id, dst_ref, true);
-        let src = self.lower_expression(scope_id, src_ref, true);
+        let dst_op = self.lower_expression(scope_id, dst_ref, true);
+        let dst_ty = self.ast.get_resolved_type(dst_ref).unwrap();
+        let dst_mir_ty = self.lower_qual_type(dst_ty);
+        let dst = self.ensure_place(dst_op, dst_mir_ty);
+
+        let src_op = self.lower_expression(scope_id, src_ref, true);
+        let src_ty = self.ast.get_resolved_type(src_ref).unwrap();
+        let src_mir_ty = self.lower_qual_type(src_ty);
+        let src = self.ensure_place(src_op, src_mir_ty);
+
         self.mir_builder.add_statement(MirStmt::BuiltinVaCopy(dst, src));
         self.create_int_operand(0)
     }

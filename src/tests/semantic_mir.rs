@@ -1023,7 +1023,7 @@ mod tests {
             return %2
         }
 
-        extern fn printf(%param0: ptr<i8>) -> i32
+        extern fn printf(%param0: ptr<i8>, ...) -> i32
         "#);
     }
 

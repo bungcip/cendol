@@ -22,5 +22,6 @@ extern size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
 extern int fgetc(FILE *stream);
 extern int getc(FILE *stream);
 extern char *fgets(char *s, int n, FILE *stream);
+extern int putchar(int c);
 
 #endif

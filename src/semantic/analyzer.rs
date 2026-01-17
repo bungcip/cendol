@@ -1011,10 +1011,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 for member in members {
                     if member.name.is_none() {
                         let member_ty = member.member_type.ty();
-                        if member_ty.is_record()
-                            && let Some(found_ty) = find_member(registry, member_ty, name)
-                        {
-                            return Some(found_ty);
+                        if member_ty.is_record() {
+                            if let Some(found_ty) = find_member(registry, member_ty, name) {
+                                return Some(found_ty);
+                            }
                         }
                     }
                 }

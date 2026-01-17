@@ -10,6 +10,7 @@
 use hashbrown::HashMap;
 use serde::Serialize;
 use std::fmt;
+use std::rc::Rc;
 use std::num::NonZeroU32;
 
 use crate::ast::NameId;
@@ -164,25 +165,25 @@ pub enum Terminator {
 }
 
 /// Place - Represents a storage location (local variable or memory)
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Place {
     Local(LocalId),
-    Deref(Box<Operand>),
+    Deref(Rc<Operand>),
     Global(GlobalId),
     // Aggregate access
-    StructField(Box<Place>, /* struct index */ usize),
-    ArrayIndex(Box<Place>, Box<Operand>),
+    StructField(Rc<Place>, /* struct index */ usize),
+    ArrayIndex(Rc<Place>, Rc<Operand>),
 }
 
 /// Operand - Represents values used in MIR operations
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Operand {
-    Copy(Box<Place>),
+    Copy(Rc<Place>),
     Constant(ConstValueId),
     // Address operations
-    AddressOf(Box<Place>),
+    AddressOf(Rc<Place>),
     // Type conversion
-    Cast(TypeId, Box<Operand>),
+    Cast(TypeId, Rc<Operand>),
 }
 
 /// Rvalue - Right-hand side values in assignments
@@ -795,6 +796,58 @@ impl MirBuilder {
     }
 }
 
+// NOTE: Manual impl of Serialize to handle Rc<T> fields
+// Serde cannot derive Serialize on types containing Rc
+impl serde::Serialize for Place {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeTupleVariant;
+        match self {
+            Place::Local(id) => serializer.serialize_newtype_variant("Place", 0, "Local", id),
+            Place::Deref(op) => serializer.serialize_newtype_variant("Place", 1, "Deref", &**op),
+            Place::Global(id) => serializer.serialize_newtype_variant("Place", 2, "Global", id),
+            Place::StructField(place, idx) => {
+                let mut state = serializer.serialize_tuple_variant("Place", 3, "StructField", 2)?;
+                state.serialize_field(&**place)?;
+                state.serialize_field(idx)?;
+                state.end()
+            }
+            Place::ArrayIndex(place, op) => {
+                let mut state = serializer.serialize_tuple_variant("Place", 4, "ArrayIndex", 2)?;
+                state.serialize_field(&**place)?;
+                state.serialize_field(&**op)?;
+                state.end()
+            }
+        }
+    }
+}
+
+// NOTE: Manual impl of Serialize to handle Rc<T> fields
+// Serde cannot derive Serialize on types containing Rc
+impl serde::Serialize for Operand {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeTupleVariant;
+        match self {
+            Operand::Copy(place) => serializer.serialize_newtype_variant("Operand", 0, "Copy", &**place),
+            Operand::Constant(id) => serializer.serialize_newtype_variant("Operand", 1, "Constant", id),
+            Operand::AddressOf(place) => {
+                serializer.serialize_newtype_variant("Operand", 2, "AddressOf", &**place)
+            }
+            Operand::Cast(ty, op) => {
+                let mut state = serializer.serialize_tuple_variant("Operand", 3, "Cast", 2)?;
+                state.serialize_field(ty)?;
+                state.serialize_field(&**op)?;
+                state.end()
+            }
+        }
+    }
+}
+
 /// Display implementations for debugging
 impl fmt::Display for MirModule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -871,10 +924,10 @@ impl fmt::Display for Place {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Place::Local(local) => write!(f, "Local({})", local.get()),
-            Place::Deref(operand) => write!(f, "Deref({:?})", operand),
+            Place::Deref(operand) => write!(f, "Deref({:?})", &**operand),
             Place::Global(global) => write!(f, "Global({})", global.get()),
-            Place::StructField(place, field_idx) => write!(f, "StructField({:?}, {})", place, field_idx),
-            Place::ArrayIndex(place, index) => write!(f, "ArrayIndex({:?}, {:?})", place, index),
+            Place::StructField(place, field_idx) => write!(f, "StructField({:?}, {})", &**place, field_idx),
+            Place::ArrayIndex(place, index) => write!(f, "ArrayIndex({:?}, {:?})", &**place, &**index),
         }
     }
 }
@@ -882,10 +935,10 @@ impl fmt::Display for Place {
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Operand::Copy(place) => write!(f, "Copy({:?})", place),
+            Operand::Copy(place) => write!(f, "Copy({:?})", &**place),
             Operand::Constant(const_id) => write!(f, "Constant({})", const_id.get()),
-            Operand::AddressOf(place) => write!(f, "AddressOf({:?})", place),
-            Operand::Cast(type_id, operand) => write!(f, "Cast({}, {:?})", type_id.get(), operand),
+            Operand::AddressOf(place) => write!(f, "AddressOf({:?})", &**place),
+            Operand::Cast(type_id, operand) => write!(f, "Cast({}, {:?})", type_id.get(), &**operand),
         }
     }
 }

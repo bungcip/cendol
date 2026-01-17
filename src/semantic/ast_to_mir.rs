@@ -23,6 +23,7 @@ use crate::semantic::{ImplicitConversion, Namespace, ScopeId};
 use crate::source_manager::SourceSpan;
 use hashbrown::{HashMap, HashSet};
 use log::debug;
+use std::rc::Rc;
 
 use crate::mir::GlobalId;
 
@@ -654,7 +655,7 @@ impl<'a> AstToMirLowerer<'a> {
 
         self.mir_builder.set_current_block(exit_block);
 
-        Operand::Copy(Box::new(Place::Local(result_local)))
+        Operand::Copy(Rc::new(Place::Local(result_local)))
     }
 
     fn lower_sizeof_expr(&mut self, expr: NodeRef) -> Operand {
@@ -717,7 +718,7 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_cast(&mut self, scope_id: ScopeId, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
         let operand = self.lower_expression(scope_id, operand_ref, true);
-        Operand::Cast(mir_ty, Box::new(operand))
+        Operand::Cast(mir_ty, Rc::new(operand))
     }
 
     fn lower_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
@@ -750,7 +751,7 @@ impl<'a> AstToMirLowerer<'a> {
                 Some(init_const_id),
             );
 
-            Operand::Copy(Box::new(Place::Global(global_id)))
+            Operand::Copy(Rc::new(Place::Global(global_id)))
         } else {
             // Local compound literal
             let (_, place) = self.create_temp_local(mir_ty);
@@ -759,7 +760,7 @@ impl<'a> AstToMirLowerer<'a> {
             let init_operand = self.lower_initializer(scope_id, init_ref, ty);
             self.emit_assignment(place.clone(), init_operand);
 
-            Operand::Copy(Box::new(place))
+            Operand::Copy(Rc::new(place))
         }
     }
 
@@ -840,8 +841,8 @@ impl<'a> AstToMirLowerer<'a> {
         let target_mir_ty = self.lower_qual_type(operand_ty);
         let operand_converted = self.apply_conversions(operand, operand_ref, target_mir_ty);
 
-        let place = Place::Deref(Box::new(operand_converted));
-        Operand::Copy(Box::new(place))
+        let place = Place::Deref(Rc::new(operand_converted));
+        Operand::Copy(Rc::new(place))
     }
 
     fn lower_ident(&mut self, resolved_ref: SymbolRef) -> Operand {
@@ -867,10 +868,10 @@ impl<'a> AstToMirLowerer<'a> {
                             );
                         }
                     };
-                    Operand::Copy(Box::new(Place::Global(*global_id)))
+                    Operand::Copy(Rc::new(Place::Global(*global_id)))
                 } else {
                     let local_id = self.local_map.get(&resolved_ref).unwrap();
-                    Operand::Copy(Box::new(Place::Local(*local_id)))
+                    Operand::Copy(Rc::new(Place::Local(*local_id)))
                 }
             }
             SymbolKind::Function { .. } => {
@@ -906,14 +907,14 @@ impl<'a> AstToMirLowerer<'a> {
                 let w1 = lhs_mir.width();
                 let w2 = rhs_mir.width();
                 if w1 > w2 {
-                    rhs = Operand::Cast(lhs_mir_ty, Box::new(rhs));
+                    rhs = Operand::Cast(lhs_mir_ty, Rc::new(rhs));
                 } else if w2 > w1 {
-                    lhs = Operand::Cast(rhs_mir_ty, Box::new(lhs));
+                    lhs = Operand::Cast(rhs_mir_ty, Rc::new(lhs));
                 }
             } else if lhs_mir.is_pointer() && rhs_mir.is_int() {
-                rhs = Operand::Cast(lhs_mir_ty, Box::new(rhs));
+                rhs = Operand::Cast(lhs_mir_ty, Rc::new(rhs));
             } else if lhs_mir.is_int() && rhs_mir.is_pointer() {
-                lhs = Operand::Cast(rhs_mir_ty, Box::new(lhs));
+                lhs = Operand::Cast(rhs_mir_ty, Rc::new(lhs));
             }
         }
         (lhs, rhs)
@@ -979,7 +980,7 @@ impl<'a> AstToMirLowerer<'a> {
             Operand::Constant(_) => {
                 if let Some(ty) = self.ast.get_resolved_type(node_ref) {
                     let mir_type_id = self.lower_qual_type(ty);
-                    Operand::Cast(mir_type_id, Box::new(operand))
+                    Operand::Cast(mir_type_id, Rc::new(operand))
                 } else {
                     operand
                 }
@@ -1061,7 +1062,7 @@ impl<'a> AstToMirLowerer<'a> {
         self.mir_builder.set_current_block(merge_block);
         self.current_block = Some(merge_block);
 
-        Operand::Copy(Box::new(res_place))
+        Operand::Copy(Rc::new(res_place))
     }
 
     fn lower_pointer_arithmetic(
@@ -1130,7 +1131,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
 
         let place = if let Operand::Copy(place) = lhs_op {
-            *place
+            (*place).clone()
         } else {
             panic!("LHS of assignment lowered to non-place operand despite being LValue");
         };
@@ -1140,7 +1141,7 @@ impl<'a> AstToMirLowerer<'a> {
         let final_rhs = if let Some(compound_op) = op.without_assignment() {
             // This is a compound assignment, e.g., a += b
             // Use the already-evaluated place to read the current value.
-            let lhs_copy = Operand::Copy(Box::new(place.clone()));
+            let lhs_copy = Operand::Copy(Rc::new(place.clone()));
 
             if let Some(rval) =
                 self.lower_pointer_arithmetic(&compound_op, lhs_copy.clone(), rhs_op.clone(), left_ref, right_ref)
@@ -1315,15 +1316,15 @@ impl<'a> AstToMirLowerer<'a> {
 
             if is_arrow {
                 // Dereference: *ptr
-                let deref_op = Operand::Copy(Box::new(current_place));
-                current_place = Place::Deref(Box::new(deref_op));
+                let deref_op = Operand::Copy(Rc::new(current_place));
+                current_place = Place::Deref(Rc::new(deref_op));
             }
 
             for field_idx in path {
-                current_place = Place::StructField(Box::new(current_place), field_idx);
+                current_place = Place::StructField(Rc::new(current_place), field_idx);
             }
 
-            Operand::Copy(Box::new(current_place))
+            Operand::Copy(Rc::new(current_place))
         } else {
             panic!("Member access on non-record type");
         }
@@ -1342,7 +1343,7 @@ impl<'a> AstToMirLowerer<'a> {
             let mir_type = self.lower_qual_type(arr_ty);
             let arr_place = self.ensure_place(arr_operand, mir_type);
 
-            Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
+            Operand::Copy(Rc::new(Place::ArrayIndex(Rc::new(arr_place), Rc::new(idx_operand))))
         } else if arr_ty.is_pointer() {
             // For pointer indexing, we can use the ArrayIndex place directly
             // since pointer indexing follows the same rules as array indexing
@@ -1352,9 +1353,9 @@ impl<'a> AstToMirLowerer<'a> {
             let mir_type = self.lower_qual_type(arr_ty);
             let pointer_place = self.ensure_place(arr_operand, mir_type);
 
-            Operand::Copy(Box::new(Place::ArrayIndex(
-                Box::new(pointer_place),
-                Box::new(idx_operand),
+            Operand::Copy(Rc::new(Place::ArrayIndex(
+                Rc::new(pointer_place),
+                Rc::new(idx_operand),
             )))
         } else {
             panic!("Index access on non-array, non-pointer type");
@@ -1727,22 +1728,22 @@ impl<'a> AstToMirLowerer<'a> {
         match conv {
             ImplicitConversion::IntegerCast { .. }
             | ImplicitConversion::IntegerPromotion { .. }
-            | ImplicitConversion::PointerCast { .. } => Operand::Cast(to_mir_type, Box::new(operand)),
+            | ImplicitConversion::PointerCast { .. } => Operand::Cast(to_mir_type, Rc::new(operand)),
             ImplicitConversion::NullPointerConstant => Operand::Cast(
                 to_mir_type,
-                Box::new(Operand::Constant(self.create_constant(ConstValue::Int(0)))),
+                Rc::new(Operand::Constant(self.create_constant(ConstValue::Int(0)))),
             ),
             ImplicitConversion::PointerDecay { .. } => {
                 if let Operand::Copy(place) = &operand {
                     let addr_of_array = Operand::AddressOf(place.clone());
-                    Operand::Cast(to_mir_type, Box::new(addr_of_array))
+                    Operand::Cast(to_mir_type, Rc::new(addr_of_array))
                 } else {
                     // If it's not a place (e.g. String Literal might be lowered to Constant directly?)
                     // String literals usually LValue, so Copy(Place::Global/Local).
-                    Operand::Cast(to_mir_type, Box::new(operand))
+                    Operand::Cast(to_mir_type, Rc::new(operand))
                 }
             }
-            _ => Operand::Cast(target_type_id, Box::new(operand)),
+            _ => Operand::Cast(target_type_id, Rc::new(operand)),
         }
     }
 
@@ -1853,7 +1854,7 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn ensure_place(&mut self, operand: Operand, type_id: TypeId) -> Place {
         if let Operand::Copy(place) = operand {
-            *place
+            (*place).clone()
         } else {
             let (_, temp_place) = self.create_temp_local_with_assignment(Rvalue::Use(operand), type_id);
             temp_place
@@ -1862,7 +1863,7 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn emit_rvalue_to_operand(&mut self, rvalue: Rvalue, type_id: TypeId) -> Operand {
         let (_, place) = self.create_temp_local_with_assignment(rvalue, type_id);
-        Operand::Copy(Box::new(place))
+        Operand::Copy(Rc::new(place))
     }
 
     fn emit_binary_rvalue(&self, op: &BinaryOp, lhs: Operand, rhs: Operand, is_float: bool) -> Rvalue {
@@ -1889,7 +1890,7 @@ impl<'a> AstToMirLowerer<'a> {
         match operand {
             Operand::Constant(id) => Some(id),
             Operand::Cast(ty, inner) => {
-                let inner_id = self.operand_to_const_id(*inner)?;
+                let inner_id = self.operand_to_const_id((*inner).clone())?;
                 Some(self.create_constant(ConstValue::Cast(ty, inner_id)))
             }
             Operand::AddressOf(place) => {
@@ -2005,7 +2006,7 @@ impl<'a> AstToMirLowerer<'a> {
             let old_value = if is_post && need_value {
                 let rval = Rvalue::Use(operand.clone());
                 let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                Some(Operand::Copy(Box::new(temp_place)))
+                Some(Operand::Copy(Rc::new(temp_place)))
             } else {
                 None
             };
@@ -2016,16 +2017,16 @@ impl<'a> AstToMirLowerer<'a> {
             // Perform the assignment
             if is_post && !need_value {
                 // Optimization: assign directly to place if old value not needed
-                self.mir_builder.add_statement(MirStmt::Assign(*place.clone(), rval));
+                self.mir_builder.add_statement(MirStmt::Assign((*place).clone(), rval));
             } else {
                 // If we needed old value (is_post), or if it is pre-inc (need new value),
                 // we compute to a temp first to ensure correctness and return the right value.
                 let (_, new_place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                self.emit_assignment(*place.clone(), Operand::Copy(Box::new(new_place.clone())));
+                self.emit_assignment((*place).clone(), Operand::Copy(Rc::new(new_place.clone())));
 
                 if !is_post {
                     // Pre-inc: return the new value
-                    return Operand::Copy(Box::new(new_place));
+                    return Operand::Copy(Rc::new(new_place));
                 }
             }
 

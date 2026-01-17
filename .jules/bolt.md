@@ -1,3 +1,3 @@
-## 2024-07-25 - Two-Pass Allocation for Sequential Items
-**Learning:** A common performance anti-pattern in this codebase is processing a peekable iterator in a single pass, where an intermediate collection (like a `String` or `Vec`) is built up, leading to multiple costly reallocations.
-**Action:** For future optimizations involving sequential item processing, I will favor a two-pass approach. First, iterate (or peek ahead) to calculate the final required capacity. Second, perform a single allocation with `with_capacity`. Third, iterate again to populate the collection. This avoids N reallocations, providing a significant performance improvement.
+## 2024-07-25 - Expensive Cloning in MIR
+**Learning:** The MIR's `Place` and `Operand` enums use `Box<T>` for recursive data structures. Every time these are cloned, it triggers a deep copy and a new heap allocation, which is a significant performance anti-pattern in a compiler's intermediate representation.
+**Action:** Replace `Box<T>` with `std::rc::Rc<T>`. This will change cloning from an expensive deep-copy operation to a cheap reference-counting operation. Given that the MIR is a Directed Acyclic Graph (DAG), there's no risk of reference cycles, making `Rc` a safe and effective optimization.

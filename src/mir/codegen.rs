@@ -492,8 +492,8 @@ fn resolve_variadic_call_arguments(
         let param_type = sig.params[sig_idx].value_type;
 
         // Check if this is a variadic struct argument
-        if arg_idx >= fixed_param_count {
-            if let Ok(type_id) = get_operand_type_id(arg, mir) {
+        if arg_idx >= fixed_param_count
+            && let Ok(type_id) = get_operand_type_id(arg, mir) {
                 let mir_type = mir.get_type(type_id);
                 if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
                     // Get the struct address
@@ -514,7 +514,6 @@ fn resolve_variadic_call_arguments(
                     continue;
                 }
             }
-        }
 
         // Non-struct argument (or fixed param)
         match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
@@ -1770,12 +1769,11 @@ fn lower_statement(
                             } else {
                                 // This local doesn't have a stack slot (likely a void type)
                                 // Check if it's actually a void type to provide a better warning
-                        if let Some(local) = mir.locals.get(local_id) {
-                            if let Some(local_type) = mir.types.get(&local.type_id) {
-                                if !matches!(local_type, MirType::Void) {
-                                    eprintln!("Warning: Stack slot not found for local {}", local_id.get());
-                                }
-                            }
+                        if let Some(local) = mir.locals.get(local_id)
+                            && let Some(local_type) = mir.types.get(&local.type_id)
+                            && !matches!(local_type, MirType::Void)
+                        {
+                            eprintln!("Warning: Stack slot not found for local {}", local_id.get());
                                 }
                             }
                         }

@@ -118,16 +118,15 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::Return(_) | NodeKind::Break | NodeKind::Continue | NodeKind::Goto(_, _) => false,
             NodeKind::If(if_stmt) => {
                 let then_ft = self.can_fall_through(if_stmt.then_branch);
-                let else_ft = if_stmt.else_branch.map_or(true, |e| self.can_fall_through(e));
+                let else_ft = if_stmt.else_branch.is_none_or(|e| self.can_fall_through(e));
                 then_ft || else_ft
             }
             NodeKind::ExpressionStatement(Some(expr_ref)) => {
-                if let NodeKind::FunctionCall(call) = self.ast.get_kind(*expr_ref) {
-                    if let Some(callee_type) = self.semantic_info.types[call.callee.index()] {
-                        if let TypeKind::Function { is_noreturn, .. } = &self.registry.get(callee_type.ty()).kind {
-                            return !*is_noreturn;
-                        }
-                    }
+                if let NodeKind::FunctionCall(call) = self.ast.get_kind(*expr_ref)
+                    && let Some(callee_type) = self.semantic_info.types[call.callee.index()]
+                    && let TypeKind::Function { is_noreturn, .. } = &self.registry.get(callee_type.ty()).kind
+                {
+                    return !*is_noreturn;
                 }
                 true
             }
@@ -1011,10 +1010,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 for member in members {
                     if member.name.is_none() {
                         let member_ty = member.member_type.ty();
-                        if member_ty.is_record() {
-                            if let Some(found_ty) = find_member(registry, member_ty, name) {
-                                return Some(found_ty);
-                            }
+                        if member_ty.is_record()
+                            && let Some(found_ty) = find_member(registry, member_ty, name)
+                        {
+                            return Some(found_ty);
                         }
                     }
                 }

@@ -103,6 +103,13 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_translation_unit(&mut self, tu_data: &nodes::TranslationUnitData) {
+        self.predeclare_global_functions();
+        for child_ref in tu_data.decl_start.range(tu_data.decl_len) {
+            self.lower_node_ref(child_ref, ScopeId::GLOBAL);
+        }
+    }
+
+    fn predeclare_global_functions(&mut self) {
         // Ensure all global functions (including declarations) have a MIR representation.
         // This is done before traversing the AST to ensure that function calls
         // can be resolved even if the function is defined later in the file or is external.
@@ -157,9 +164,10 @@ impl<'a> AstToMirLowerer<'a> {
                 }
             }
         }
-        for child_ref in tu_data.decl_start.range(tu_data.decl_len) {
-            self.lower_node_ref(child_ref, ScopeId::GLOBAL);
-        }
+    }
+
+    fn operand_to_const_id_strict(&mut self, op: Operand, msg: &str) -> ConstValueId {
+        self.operand_to_const_id(op).expect(msg)
     }
 
     fn try_lower_as_statement(&mut self, scope_id: ScopeId, node_ref: NodeRef) {
@@ -321,9 +329,8 @@ impl<'a> AstToMirLowerer<'a> {
                 let const_fields = ops
                     .into_iter()
                     .map(|(idx, op)| {
-                        let const_id = this
-                            .operand_to_const_id(op)
-                            .expect("Global initializer is not a constant expression");
+                        let const_id =
+                            this.operand_to_const_id_strict(op, "Global initializer is not a constant expression");
                         (idx, const_id)
                     })
                     .collect();
@@ -341,8 +348,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let const_elements = elems
                     .into_iter()
                     .map(|op| {
-                        this.operand_to_const_id(op)
-                            .expect("Global array initializer must be a constant expression")
+                        this.operand_to_const_id_strict(op, "Global array initializer must be a constant expression")
                     })
                     .collect();
                 ConstValue::ArrayLiteral(const_elements)
@@ -357,6 +363,16 @@ impl<'a> AstToMirLowerer<'a> {
         let cond_ty = self.ast.get_resolved_type(condition).unwrap();
         let cond_mir_ty = self.lower_qual_type(cond_ty);
         self.apply_conversions(cond_operand, condition, cond_mir_ty)
+    }
+
+    fn lower_initializer_to_const(
+        &mut self,
+        scope_id: ScopeId,
+        init_ref: NodeRef,
+        ty: QualType,
+    ) -> Option<ConstValueId> {
+        let operand = self.lower_initializer(scope_id, init_ref, ty);
+        self.operand_to_const_id(operand)
     }
 
     fn lower_initializer(&mut self, scope_id: ScopeId, init_ref: NodeRef, target_ty: QualType) -> Operand {
@@ -482,10 +498,9 @@ impl<'a> AstToMirLowerer<'a> {
         entry_ref: SymbolRef,
         mir_type_id: TypeId,
     ) {
-        let initial_value_id = var_decl.init.and_then(|init_ref| {
-            let operand = self.lower_initializer(scope_id, init_ref, var_decl.ty);
-            self.operand_to_const_id(operand)
-        });
+        let initial_value_id = var_decl
+            .init
+            .and_then(|init_ref| self.lower_initializer_to_const(scope_id, init_ref, var_decl.ty));
 
         let symbol = self.symbol_table.get_symbol(entry_ref);
         let final_init = initial_value_id.or_else(|| {
@@ -719,9 +734,8 @@ impl<'a> AstToMirLowerer<'a> {
             let global_name = self.mir_builder.get_next_anonymous_global_name();
 
             // Lower initializer (must be constant)
-            let init_operand = self.lower_initializer(scope_id, init_ref, ty);
             let init_const_id = self
-                .operand_to_const_id(init_operand)
+                .lower_initializer_to_const(scope_id, init_ref, ty)
                 .expect("Global compound literal initializer must be constant");
 
             let global_id = self.mir_builder.create_global_with_init(
@@ -960,11 +974,7 @@ impl<'a> AstToMirLowerer<'a> {
             Operand::Constant(_) => {
                 if let Some(ty) = self.ast.get_resolved_type(node_ref) {
                     let mir_type_id = self.lower_qual_type(ty);
-                    if let MirType::I32 = self.mir_builder.get_type(mir_type_id) {
-                        Operand::Cast(mir_type_id, Box::new(operand))
-                    } else {
-                        Operand::Cast(mir_type_id, Box::new(operand))
-                    }
+                    Operand::Cast(mir_type_id, Box::new(operand))
                 } else {
                     operand
                 }

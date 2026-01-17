@@ -6,9 +6,10 @@ mod tests {
     fn find_var_type(ast: &crate::ast::Ast, target_name: &str) -> crate::semantic::types::QualType {
         for kind in &ast.kinds {
             if let crate::ast::NodeKind::VarDecl(v) = kind
-                && v.name.to_string() == target_name {
-                    return v.ty;
-                }
+                && v.name.to_string() == target_name
+            {
+                return v.ty;
+            }
         }
         panic!("Variable '{}' not found in AST", target_name);
     }

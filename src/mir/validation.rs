@@ -631,7 +631,6 @@ impl MirValidator {
         }
         None
     }
-
 }
 
 fn are_types_compatible(sema_output: &MirProgram, t1: TypeId, t2: TypeId) -> bool {

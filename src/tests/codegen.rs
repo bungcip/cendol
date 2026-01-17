@@ -43,16 +43,7 @@ fn test_emit_const_struct_literal() {
         func_id_map: &hashbrown::HashMap::new(),
         data_id_map: &hashbrown::HashMap::new(),
     };
-    emit_const(
-        struct_const_id,
-        &struct_type,
-        &mut output,
-        &ctx,
-        None,
-        None,
-        0,
-    )
-    .expect("emit_const failed");
+    emit_const(struct_const_id, &struct_type, &mut output, &ctx, None, None, 0).expect("emit_const failed");
 
     // 5. Verify Output
     let expected = vec![0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22];

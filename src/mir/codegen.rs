@@ -336,33 +336,15 @@ pub(crate) fn emit_const(
             output.extend_from_slice(&addr_bytes);
             Ok(())
         }
-        ConstValue::StructLiteral(fields) => emit_const_struct(
-            fields,
-            layout,
-            output,
-            ctx,
-            module,
-            data_description,
-            offset,
-        ),
-        ConstValue::ArrayLiteral(elements) => emit_const_array(
-            elements,
-            layout,
-            output,
-            ctx,
-            module,
-            data_description,
-            offset,
-        ),
-        ConstValue::Cast(_type_id, inner_id) => emit_const(
-            *inner_id,
-            layout,
-            output,
-            ctx,
-            module,
-            data_description,
-            offset,
-        ),
+        ConstValue::StructLiteral(fields) => {
+            emit_const_struct(fields, layout, output, ctx, module, data_description, offset)
+        }
+        ConstValue::ArrayLiteral(elements) => {
+            emit_const_array(elements, layout, output, ctx, module, data_description, offset)
+        }
+        ConstValue::Cast(_type_id, inner_id) => {
+            emit_const(*inner_id, layout, output, ctx, module, data_description, offset)
+        }
     }
 }
 
@@ -493,27 +475,28 @@ fn resolve_variadic_call_arguments(
 
         // Check if this is a variadic struct argument
         if arg_idx >= fixed_param_count
-            && let Ok(type_id) = get_operand_type_id(arg, mir) {
-                let mir_type = mir.get_type(type_id);
-                if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
-                    // Get the struct address
-                    let struct_addr =
-                        resolve_operand_to_value(arg, builder, types::I64, cranelift_stack_slots, mir, module)?;
+            && let Ok(type_id) = get_operand_type_id(arg, mir)
+        {
+            let mir_type = mir.get_type(type_id);
+            if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
+                // Get the struct address
+                let struct_addr =
+                    resolve_operand_to_value(arg, builder, types::I64, cranelift_stack_slots, mir, module)?;
 
-                    // Calculate how many I64 slots this struct needs
-                    let size = mir_type_size(mir_type, mir).unwrap_or(8);
-                    let num_slots = size.div_ceil(8) as usize;
+                // Calculate how many I64 slots this struct needs
+                let size = mir_type_size(mir_type, mir).unwrap_or(8);
+                let num_slots = size.div_ceil(8) as usize;
 
-                    // Load each I64 chunk from the struct
-                    for slot in 0..num_slots {
-                        let offset = (slot * 8) as i32;
-                        let value = builder.ins().load(types::I64, MemFlags::new(), struct_addr, offset);
-                        arg_values.push(value);
-                        sig_idx += 1;
-                    }
-                    continue;
+                // Load each I64 chunk from the struct
+                for slot in 0..num_slots {
+                    let offset = (slot * 8) as i32;
+                    let value = builder.ins().load(types::I64, MemFlags::new(), struct_addr, offset);
+                    arg_values.push(value);
+                    sig_idx += 1;
                 }
+                continue;
             }
+        }
 
         // Non-struct argument (or fixed param)
         match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
@@ -1769,11 +1752,11 @@ fn lower_statement(
                             } else {
                                 // This local doesn't have a stack slot (likely a void type)
                                 // Check if it's actually a void type to provide a better warning
-                        if let Some(local) = mir.locals.get(local_id)
-                            && let Some(local_type) = mir.types.get(&local.type_id)
-                            && !matches!(local_type, MirType::Void)
-                        {
-                            eprintln!("Warning: Stack slot not found for local {}", local_id.get());
+                                if let Some(local) = mir.locals.get(local_id)
+                                    && let Some(local_type) = mir.types.get(&local.type_id)
+                                    && !matches!(local_type, MirType::Void)
+                                {
+                                    eprintln!("Warning: Stack slot not found for local {}", local_id.get());
                                 }
                             }
                         }

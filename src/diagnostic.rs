@@ -73,7 +73,7 @@ impl Default for DiagnosticEngine {
 }
 
 impl DiagnosticEngine {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         DiagnosticEngine {
             diagnostics: Vec::new(),
             warnings_as_errors: false,
@@ -81,7 +81,7 @@ impl DiagnosticEngine {
         }
     }
 
-    pub fn from_warnings(warnings: &[String]) -> Self {
+    pub(crate) fn from_warnings(warnings: &[String]) -> Self {
         let warnings_as_errors = warnings.iter().any(|w| w == "error");
         let disable_all_warnings = warnings.iter().any(|w| w == "no-warnings");
         Self {
@@ -114,19 +114,19 @@ impl DiagnosticEngine {
     //     self._report(DiagnosticLevel::Note, message, span);
     // }
 
-    pub fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
+    pub(crate) fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
         self.diagnostics.push(diagnostic);
     }
 
-    pub fn has_errors(&self) -> bool {
+    pub(crate) fn has_errors(&self) -> bool {
         self.diagnostics.iter().any(|d| d.level == DiagnosticLevel::Error)
     }
 
-    pub fn diagnostics(&self) -> &[Diagnostic] {
+    pub(crate) fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
 
-    pub fn report<T: IntoDiagnostic>(&mut self, error: T) {
+    pub(crate) fn report<T: IntoDiagnostic>(&mut self, error: T) {
         for diagnostic in error.into_diagnostic() {
             self.report_diagnostic(diagnostic);
         }

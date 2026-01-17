@@ -8,9 +8,9 @@
 use crate::ast::NameId;
 use crate::mir::MirProgram;
 use crate::mir::{
-    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlock, MirBlockId, MirFunction,
-    MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
-    UnaryIntOp,
+    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, GlobalId, LocalId, MirBlock, MirBlockId,
+    MirFunction, MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    UnaryFloatOp, UnaryIntOp,
 };
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
@@ -18,7 +18,7 @@ use cranelift::prelude::{
     Value, types,
 };
 use cranelift_frontend::FunctionBuilder;
-use cranelift_module::{DataDescription, Linkage, Module};
+use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use hashbrown::HashMap;
 use hashbrown::HashSet;
@@ -142,6 +142,11 @@ fn emit_const_struct(
     layout: &MirType,
     output: &mut Vec<u8>,
     mir: &MirProgram,
+    mut module: Option<&mut ObjectModule>,
+    mut data_description: Option<&mut DataDescription>,
+    base_offset: u32,
+    func_id_map: &HashMap<MirFunctionId, FuncId>,
+    data_id_map: &HashMap<GlobalId, DataId>,
 ) -> Result<(), String> {
     match layout {
         MirType::Record {
@@ -165,10 +170,19 @@ fn emit_const_struct(
                     let field_type = mir.get_type(*field_type_id);
 
                     let mut field_bytes = Vec::new();
-                    emit_const(*field_const_id, field_type, &mut field_bytes, mir)?;
+                    emit_const(
+                        *field_const_id,
+                        field_type,
+                        &mut field_bytes,
+                        mir,
+                        reborrow_module(&mut module),
+                        reborrow_data_description(&mut data_description),
+                        base_offset + field_offset as u32,
+                        func_id_map,
+                        data_id_map,
+                    )?;
 
                     // Copy the field bytes into the struct buffer
-                    // Make sure we don't overflow the struct buffer
                     if field_offset + field_bytes.len() <= struct_size {
                         struct_bytes[field_offset..field_offset + field_bytes.len()].copy_from_slice(&field_bytes);
                     } else {
@@ -194,6 +208,11 @@ fn emit_const_array(
     layout: &MirType,
     output: &mut Vec<u8>,
     mir: &MirProgram,
+    mut module: Option<&mut ObjectModule>,
+    mut data_description: Option<&mut DataDescription>,
+    base_offset: u32,
+    func_id_map: &HashMap<MirFunctionId, FuncId>,
+    data_id_map: &HashMap<GlobalId, DataId>,
 ) -> Result<(), String> {
     match layout {
         MirType::Array {
@@ -208,10 +227,24 @@ fn emit_const_array(
                 }
 
                 let element_type = mir.get_type(*element);
-                emit_const(*element_const_id, element_type, output, mir)?;
+                let element_size = mir_type_size(element_type, mir)? as usize;
+
+                // Calculate offset for this element
+                let element_offset = (i * array_layout.stride as usize) as u32;
+
+                emit_const(
+                    *element_const_id,
+                    element_type,
+                    output,
+                    mir,
+                    reborrow_module(&mut module),
+                    reborrow_data_description(&mut data_description),
+                    base_offset + element_offset,
+                    func_id_map,
+                    data_id_map,
+                )?;
 
                 // Add padding if needed for stride > element size
-                let element_size = mir_type_size(element_type, mir)? as usize;
                 if array_layout.stride as usize > element_size {
                     let padding = array_layout.stride as usize - element_size;
                     output.extend_from_slice(&vec![0u8; padding]);
@@ -236,6 +269,11 @@ pub(crate) fn emit_const(
     layout: &MirType,
     output: &mut Vec<u8>,
     mir: &MirProgram,
+    mut module: Option<&mut ObjectModule>,
+    mut data_description: Option<&mut DataDescription>,
+    offset: u32,
+    func_id_map: &HashMap<MirFunctionId, FuncId>,
+    data_id_map: &HashMap<GlobalId, DataId>,
 ) -> Result<(), String> {
     let const_value = mir
         .constants
@@ -263,21 +301,86 @@ pub(crate) fn emit_const(
             Ok(())
         }
         ConstValue::GlobalAddress(global_id) => {
-            // For global addresses, emit as pointer-sized integer
-            let addr_bytes = (global_id.get() as i64).to_le_bytes();
+            // Handle Global Relocation
+            if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module) {
+                if let Some(&data_id) = data_id_map.get(global_id) {
+                    let global_val = mod_obj.declare_data_in_data(data_id, dd);
+                    dd.write_data_addr(offset, global_val, 0);
+                } else {
+                    return Err(format!(
+                        "Global ID {} not found in map during relocation",
+                        global_id.get()
+                    ));
+                }
+            }
+
+            // Emit zero placeholder
+            let addr_bytes = 0i64.to_le_bytes();
             output.extend_from_slice(&addr_bytes);
             Ok(())
         }
         ConstValue::FunctionAddress(func_id) => {
-            // For function addresses, emit as pointer-sized integer
-            let addr_bytes = (func_id.get() as i64).to_le_bytes();
+            // Handle Function Relocation
+            if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module) {
+                if let Some(&clif_func_id) = func_id_map.get(func_id) {
+                    let func_ref = mod_obj.declare_func_in_data(clif_func_id, dd);
+                    dd.write_function_addr(offset, func_ref);
+                } else {
+                    println!(
+                        "Warning: Function ID {} not found in map during relocation. Maps available: {:?}",
+                        func_id.get(),
+                        func_id_map.keys()
+                    );
+                }
+            }
+
+            // Emit zero placeholder
+            let addr_bytes = 0i64.to_le_bytes();
             output.extend_from_slice(&addr_bytes);
             Ok(())
         }
-        ConstValue::StructLiteral(fields) => emit_const_struct(fields, layout, output, mir),
-        ConstValue::ArrayLiteral(elements) => emit_const_array(elements, layout, output, mir),
-        ConstValue::Cast(_type_id, inner_id) => emit_const(*inner_id, layout, output, mir),
+        ConstValue::StructLiteral(fields) => emit_const_struct(
+            fields,
+            layout,
+            output,
+            mir,
+            module,
+            data_description,
+            offset,
+            func_id_map,
+            data_id_map,
+        ),
+        ConstValue::ArrayLiteral(elements) => emit_const_array(
+            elements,
+            layout,
+            output,
+            mir,
+            module,
+            data_description,
+            offset,
+            func_id_map,
+            data_id_map,
+        ),
+        ConstValue::Cast(_type_id, inner_id) => emit_const(
+            *inner_id,
+            layout,
+            output,
+            mir,
+            module,
+            data_description,
+            offset,
+            func_id_map,
+            data_id_map,
+        ),
     }
+}
+
+fn reborrow_module<'a, 'b>(m: &'b mut Option<&'a mut ObjectModule>) -> Option<&'b mut ObjectModule> {
+    m.as_mut().map(|inner| &mut **inner)
+}
+
+fn reborrow_data_description<'a, 'b>(dd: &'b mut Option<&'a mut DataDescription>) -> Option<&'b mut DataDescription> {
+    dd.as_mut().map(|inner| &mut **inner)
 }
 
 /// Helper to prepare a function signature for a call
@@ -954,8 +1057,14 @@ fn resolve_place_to_addr(
         }
         Place::Global(global_id) => {
             let global = mir.get_global(*global_id);
+            let linkage = if global.initial_value.is_some() {
+                cranelift_module::Linkage::Export
+            } else {
+                cranelift_module::Linkage::Import
+            };
+
             let global_val = module
-                .declare_data(global.name.as_str(), cranelift_module::Linkage::Export, true, false)
+                .declare_data(global.name.as_str(), linkage, true, false)
                 .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
             let local_id = module.declare_data_in_func(global_val, builder.func);
             // Use I64 for addresses
@@ -1719,6 +1828,10 @@ pub(crate) struct MirToCraneliftLowerer {
     compiled_functions: HashMap<String, String>,
 
     emit_kind: EmitKind,
+
+    // Mappings for relocations
+    func_id_map: HashMap<MirFunctionId, FuncId>,
+    data_id_map: HashMap<GlobalId, DataId>,
 }
 
 /// NOTE: we use panic!() to ICE because codegen rely on correct MIR, so if we give invalid MIR, then problem is in previous phase
@@ -1746,6 +1859,8 @@ impl MirToCraneliftLowerer {
             clif_stack_slots: HashMap::new(),
             compiled_functions: HashMap::new(),
             emit_kind: EmitKind::Object,
+            func_id_map: HashMap::new(),
+            data_id_map: HashMap::new(),
         }
     }
 
@@ -1753,8 +1868,8 @@ impl MirToCraneliftLowerer {
         self.emit_kind = emit_kind;
         self.populate_state();
 
-        // Define all global variables in the module
-        for (_global_id, global) in &self.mir.globals {
+        // Pass 1: Declare all global variables
+        for (global_id, global) in &self.mir.globals {
             let linkage = if global.initial_value.is_some() {
                 Linkage::Export
             } else {
@@ -1766,15 +1881,72 @@ impl MirToCraneliftLowerer {
                 .declare_data(global.name.as_str(), linkage, true, false)
                 .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
 
+            self.data_id_map.insert(*global_id, data_id);
+        }
+
+        // Pass 2: Declare all functions
+        // We use index loop to match original logic but we need to iterate over all functions?
+        // Actually self.mir.functions includes all functions.
+        for (func_id, func) in &self.mir.functions {
+            let linkage = match func.kind {
+                MirFunctionKind::Extern => Linkage::Import,
+                MirFunctionKind::Defined => Linkage::Export,
+            };
+
+            // Calculate signature for declaration
+            let mut sig = self.module.make_signature();
+            // We need to re-create signature setup logic without creates a context if possible,
+            // or just use a temporary context.
+            // Setup signature requires MirFunction and MirProgram.
+            // convert_type helper is available.
+
+            // Re-implement signature creation briefly matching `setup_signature` logic
+            // Return type
+            if let Some(ret_type) = convert_type(self.mir.get_type(func.return_type)) {
+                sig.returns.push(AbiParam::new(ret_type));
+            }
+
+            // Params
+            for &param_id in &func.params {
+                let param_local = self.mir.get_local(param_id);
+                if let Some(param_type) = convert_type(self.mir.get_type(param_local.type_id)) {
+                    sig.params.push(AbiParam::new(param_type));
+                }
+            }
+
+            let clif_func_id = self
+                .module
+                .declare_function(func.name.as_str(), linkage, &sig)
+                .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
+
+            self.func_id_map.insert(*func_id, clif_func_id);
+        }
+
+        // Pass 3: Define Global Variables (with relocations)
+        for (global_id, global) in &self.mir.globals {
             if let Some(const_id) = global.initial_value {
+                let data_id = *self.data_id_map.get(global_id).unwrap();
+
                 let mut data_description = DataDescription::new();
                 let global_type = self.mir.get_type(global.type_id);
                 let layout = get_type_layout(global_type, &self.mir)
                     .map_err(|e| format!("Failed to get layout for global {}: {}", global.name, e))?;
 
                 let mut initial_value_bytes = Vec::new();
-                emit_const(const_id, &layout, &mut initial_value_bytes, &self.mir)
-                    .map_err(|e| format!("Failed to emit constant for global {}: {}", global.name, e))?;
+                // Enable relocations by passing data_description and maps
+                emit_const(
+                    const_id,
+                    &layout,
+                    &mut initial_value_bytes,
+                    &self.mir,
+                    Some(&mut self.module),
+                    Some(&mut data_description),
+                    0,
+                    &self.func_id_map,
+                    &self.data_id_map,
+                )
+                .map_err(|e| format!("Failed to emit constant for global {}: {}", global.name, e))?;
+
                 data_description.define(initial_value_bytes.into_boxed_slice());
 
                 self.module
@@ -1783,7 +1955,7 @@ impl MirToCraneliftLowerer {
             }
         }
 
-        // Lower all functions that have definitions (not just declarations)
+        // Pass 4: Define Functions (Lower bodies)
         // We can't iterate on `&self.mir.module.functions` directly because `lower_function`
         // needs a mutable borrow of `self`. Instead, we iterate by index to avoid cloning the
         // function list, which would cause a heap allocation.

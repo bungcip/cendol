@@ -549,6 +549,8 @@ int x = NULL;
       text: "="
     - kind: LeftParen
       text: (
+    - kind: LeftParen
+      text: (
     - kind: Identifier
       text: void
     - kind: Star

@@ -1,7 +1,7 @@
 #ifndef _STDLIB_H
 #define _STDLIB_H
 
-typedef unsigned long size_t;
+#include <stddef.h>
 
 typedef struct {
     int quot;

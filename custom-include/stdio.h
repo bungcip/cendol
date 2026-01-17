@@ -1,10 +1,9 @@
 #ifndef _STDIO_H
 #define _STDIO_H
 
-#define NULL 0
-#define EOF -1
+#include <stddef.h> 
 
-typedef unsigned long size_t;
+#define EOF (-1) 
 
 typedef struct _IO_FILE FILE;
 

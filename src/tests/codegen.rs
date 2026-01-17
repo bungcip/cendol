@@ -38,7 +38,18 @@ fn test_emit_const_struct_literal() {
 
     // 4. Emit Constant
     let mut output = Vec::new();
-    emit_const(struct_const_id, &struct_type, &mut output, &sema_output).expect("emit_const failed");
+    emit_const(
+        struct_const_id,
+        &struct_type,
+        &mut output,
+        &sema_output,
+        None,
+        None,
+        0,
+        &hashbrown::HashMap::new(),
+        &hashbrown::HashMap::new(),
+    )
+    .expect("emit_const failed");
 
     // 5. Verify Output
     let expected = vec![0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22];
@@ -288,8 +299,8 @@ fn test_alloc_dealloc_codegen() {
                 ss0 = explicit_slot 8
                 sig0 = (i64) -> i64 system_v
                 sig1 = (i64) system_v
-                fn0 = u0:0 sig0
-                fn1 = u0:1 sig1
+                fn0 = u0:1 sig0
+                fn1 = u0:2 sig1
 
             block0:
                 v0 = iconst.i64 4
@@ -310,8 +321,10 @@ fn test_alloc_dealloc_codegen() {
 #[cfg(test)]
 mod tests {
     use crate::ast::NameId;
+    use crate::driver::artifact::CompilePhase;
     use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
     use crate::mir::{CallTarget, ConstValue, LocalId, MirModuleId, MirStmt, MirType, Operand, Place, Terminator};
+    use crate::tests::semantic_common::run_pass;
 
     #[test]
     fn test_indirect_function_call() {
@@ -445,6 +458,58 @@ mod tests {
         assert!(
             clif_dump.contains("ireduce.i16"),
             "Expected ireduce.i16 instruction for float->short conversion"
+        );
+    }
+    #[test]
+    fn test_global_function_pointer_init() {
+        let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+
+        // Define function type: fn(i32) -> i32
+        let int_type_id = builder.add_type(MirType::I32);
+        let func_type_id = builder.add_type(MirType::Function {
+            return_type: int_type_id,
+            params: vec![int_type_id],
+        });
+        let func_ptr_type_id = builder.add_type(MirType::Pointer { pointee: func_type_id });
+
+        // Define target function
+        let target_func_id = builder.define_function(NameId::new("target"), vec![int_type_id], int_type_id, false);
+        builder.set_current_function(target_func_id);
+        let block_id = builder.create_block();
+        builder.set_current_block(block_id);
+        builder.set_function_entry_block(target_func_id, block_id);
+
+        let zero_const_id = builder.create_constant(ConstValue::Int(0));
+        builder.set_terminator(Terminator::Return(Some(Operand::Constant(zero_const_id))));
+
+        // Create global variable "ptr" initialized with address of "target"
+        let func_addr_const_id = builder.create_constant(ConstValue::FunctionAddress(target_func_id));
+        let _global_id =
+            builder.create_global_with_init(NameId::new("ptr"), func_ptr_type_id, false, Some(func_addr_const_id));
+
+        // Compile
+        let sema_output = builder.consume();
+        let lowerer = MirToCraneliftLowerer::new(sema_output);
+        let result = lowerer.compile_module(EmitKind::Clif);
+
+        match result {
+            Ok(_) => (), // Success if no panic
+            Err(e) => panic!("Compilation failed: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_string_literal_pointer_cast_() {
+        run_pass(
+            r#"
+        int strlen(char *);
+        int main() {
+            char *p;
+            p = "hello";
+            return 0;
+        }
+        "#,
+            CompilePhase::Cranelift, // NOTE: we test until cranelift to check if validation is correct or not
         );
     }
 }

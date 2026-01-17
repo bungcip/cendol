@@ -1262,7 +1262,7 @@ impl<'src> Preprocessor<'src> {
         let mut variadic = None;
         let next = self.lex_token();
         if let Some(token) = next {
-            if token.kind == PPTokenKind::LeftParen {
+            if token.kind == PPTokenKind::LeftParen && !token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                 let first_param = self.lex_token();
                 if let Some(fp) = first_param {
                     if matches!(
@@ -1488,46 +1488,48 @@ impl<'src> Preprocessor<'src> {
 
         // Check for built-in headers first for angled includes
         let include_source_id = if is_angled {
-            if let Some(&source_id) = self.built_in_file_ids.get(path_str.as_str()) {
+            // Get current directory
+            let current_file_id = self.lexer_stack.last().unwrap().source_id;
+            // It's possible that we are processing a macro expansion or something where source_id might be tricky,
+            // but for include directive, we should be in a file.
+            // Safety: We expect get_file_info to succeed for any file in the stack.
+            let current_file_info = self.source_manager.get_file_info(current_file_id).unwrap();
+            let current_dir = current_file_info.path.parent().unwrap_or(Path::new("."));
+
+            // Resolve the path first using header search (allows overriding built-ins)
+            let resolved_path = self.header_search.resolve_path(&path_str, is_angled, current_dir);
+
+            if let Some(resolved_path) = resolved_path {
+                // Load the file
+                self.source_manager
+                    .add_file_from_path(&resolved_path, Some(token.location))
+                    .map_err(|_| {
+                        // Emit diagnostic for file not found
+                        let diag = Diagnostic {
+                            level: DiagnosticLevel::Error,
+                            message: format!("Include file '{}' not found", path_str),
+                            span: SourceSpan::new(token.location, token.location),
+                            code: Some("include_file_not_found".to_string()),
+                            hints: vec!["Check the include path and ensure the file exists".to_string()],
+                            related: Vec::new(),
+                        };
+                        self.diag.report_diagnostic(diag);
+                        PPError::FileNotFound
+                    })?
+            } else if let Some(&source_id) = self.built_in_file_ids.get(path_str.as_str()) {
                 source_id
             } else {
-                // Get current directory
-                let current_file_id = self.lexer_stack.last().unwrap().source_id;
-                let current_file_info = self.source_manager.get_file_info(current_file_id).unwrap();
-                let current_dir = current_file_info.path.parent().unwrap_or(Path::new("."));
-
-                // Resolve the path
-                let resolved_path = self.header_search.resolve_path(&path_str, is_angled, current_dir);
-                if let Some(resolved_path) = resolved_path {
-                    // Load the file
-                    self.source_manager
-                        .add_file_from_path(&resolved_path, Some(token.location))
-                        .map_err(|_| {
-                            // Emit diagnostic for file not found
-                            let diag = Diagnostic {
-                                level: DiagnosticLevel::Error,
-                                message: format!("Include file '{}' not found", path_str),
-                                span: SourceSpan::new(token.location, token.location),
-                                code: Some("include_file_not_found".to_string()),
-                                hints: vec!["Check the include path and ensure the file exists".to_string()],
-                                related: Vec::new(),
-                            };
-                            self.diag.report_diagnostic(diag);
-                            PPError::FileNotFound
-                        })?
-                } else {
-                    // Emit diagnostic for file not found
-                    let diag = Diagnostic {
-                        level: DiagnosticLevel::Error,
-                        message: format!("Include file '{}' not found", path_str),
-                        span: SourceSpan::new(token.location, token.location),
-                        code: Some("include_file_not_found".to_string()),
-                        hints: vec!["Check the include path and ensure the file exists".to_string()],
-                        related: Vec::new(),
-                    };
-                    self.diag.report_diagnostic(diag);
-                    return Err(PPError::FileNotFound);
-                }
+                // Emit diagnostic for file not found
+                let diag = Diagnostic {
+                    level: DiagnosticLevel::Error,
+                    message: format!("Include file '{}' not found", path_str),
+                    span: SourceSpan::new(token.location, token.location),
+                    code: Some("include_file_not_found".to_string()),
+                    hints: vec!["Check the include path and ensure the file exists".to_string()],
+                    related: Vec::new(),
+                };
+                self.diag.report_diagnostic(diag);
+                return Err(PPError::FileNotFound);
             }
         } else {
             // For quoted includes, resolve as before

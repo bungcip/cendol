@@ -220,24 +220,28 @@ impl PPLexer {
         self.position += 1;
 
         // Handle line splicing: backslash followed by newline or carriage return
-        if result == b'\\' && (self.position as usize) < self.buffer.len() {
-            let next = self.buffer[self.position as usize];
-            if next == b'\n' || next == b'\r' {
-                self.position += 1;
-                if next == b'\r'
-                    && (self.position as usize) < self.buffer.len()
-                    && self.buffer[self.position as usize] == b'\n'
-                {
+        loop {
+            if result == b'\\' && (self.position as usize) < self.buffer.len() {
+                let next = self.buffer[self.position as usize];
+                if next == b'\n' || next == b'\r' {
                     self.position += 1;
-                }
-                // Get the character after the line ending for splicing
-                if (self.position as usize) < self.buffer.len() {
-                    result = self.buffer[self.position as usize];
-                    self.position += 1;
-                } else {
-                    return None;
+                    if next == b'\r'
+                        && (self.position as usize) < self.buffer.len()
+                        && self.buffer[self.position as usize] == b'\n'
+                    {
+                        self.position += 1;
+                    }
+                    // Get the character after the line ending for splicing
+                    if (self.position as usize) < self.buffer.len() {
+                        result = self.buffer[self.position as usize];
+                        self.position += 1;
+                        continue;
+                    } else {
+                        return None;
+                    }
                 }
             }
+            break;
         }
 
         // Update line starts for regular newlines
@@ -784,6 +788,7 @@ impl PPLexer {
         )
     }
 
+    #[allow(dead_code)]
     pub(crate) fn put_back(&mut self, token: PPToken) {
         self.put_back_token = Some(token);
     }

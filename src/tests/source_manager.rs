@@ -396,5 +396,4 @@ fn test_source_manager_edge_cases() {
     let loc = SourceLoc::new(file_id, 5);
     // Should default to line 1, column offset+1
     assert_eq!(sm.get_line_column(loc), Some((1, 6)));
-
 }

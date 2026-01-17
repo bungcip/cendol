@@ -456,3 +456,24 @@ fn test_utf8_sequence_lengths() {
     let mut lexer4 = create_test_pp_lexer(source4);
     test_tokens!(lexer4, (source4, PPTokenKind::StringLiteral(_)));
 }
+
+#[test]
+fn test_consecutive_splices() {
+    // Two backslash-newlines immediately following each other
+    let source = "A\\\n\\\nB";
+    let mut lexer = create_test_pp_lexer(source);
+
+    // Should produce "AB" as one identifier if splices work correctly
+    let token = lexer.next_token().unwrap();
+    assert_eq!(token.get_text(), "AB");
+    assert!(matches!(token.kind, PPTokenKind::Identifier(_)));
+}
+
+#[test]
+fn test_consecutive_splices_with_cr() {
+    let source = "A\\\r\n\\\r\nB";
+    let mut lexer = create_test_pp_lexer(source);
+
+    let token = lexer.next_token().unwrap();
+    assert_eq!(token.get_text(), "AB");
+}

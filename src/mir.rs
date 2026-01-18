@@ -144,8 +144,12 @@ impl MirBlock {
 pub enum MirStmt {
     Assign(Place, Rvalue),
     Store(Operand, Place),
-    // Function calls with side effects only (void calls or calls where result is ignored)
-    Call(CallTarget, Vec<Operand>),
+    // Function calls - dest is None if void or result is ignored
+    Call {
+        target: CallTarget,
+        args: Vec<Operand>,
+        dest: Option<Place>,
+    },
     // Memory operations
     Alloc(Place, TypeId),
     Dealloc(Operand),
@@ -202,8 +206,6 @@ pub enum Rvalue {
     ArrayLiteral(Vec<Operand>),
     // Memory operations
     Load(Operand),
-    // Function calls that return a value (NON-VOID ONLY)
-    Call(CallTarget, Vec<Operand>),
     BuiltinVaArg(Place, TypeId),
 }
 
@@ -319,6 +321,10 @@ impl MirType {
 
     pub fn is_float(&self) -> bool {
         matches!(self, MirType::F32 | MirType::F64)
+    }
+
+    pub fn is_aggregate(&self) -> bool {
+        matches!(self, MirType::Record { .. } | MirType::Array { .. })
     }
 
     pub fn is_int(&self) -> bool {
@@ -850,7 +856,9 @@ impl fmt::Display for MirStmt {
         match self {
             MirStmt::Assign(place, operand) => write!(f, "Assign({:?}, {:?})", place, operand),
             MirStmt::Store(operand, place) => write!(f, "Store({:?}, {:?})", operand, place),
-            MirStmt::Call(call_target, operands) => write!(f, "Call({:?}, {:?})", call_target, operands),
+            MirStmt::Call { target, args, dest } => {
+                write!(f, "Call {{ target: {:?}, args: {:?}, dest: {:?} }}", target, args, dest)
+            }
             MirStmt::Alloc(place, type_id) => write!(f, "Alloc({:?}, {})", place, type_id.get()),
             MirStmt::Dealloc(operand) => write!(f, "Dealloc({:?})", operand),
             MirStmt::BuiltinVaStart(ap, last) => write!(f, "BuiltinVaStart({:?}, {:?})", ap, last),
@@ -911,7 +919,6 @@ impl fmt::Display for Rvalue {
             Rvalue::StructLiteral(fields) => write!(f, "StructLiteral({:?})", fields),
             Rvalue::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),
             Rvalue::Load(operand) => write!(f, "Load({:?})", operand),
-            Rvalue::Call(call_target, operands) => write!(f, "Call({:?}, {:?})", call_target, operands),
             Rvalue::BuiltinVaArg(ap, ty) => write!(f, "BuiltinVaArg({:?}, {})", ap, ty.get()),
         }
     }

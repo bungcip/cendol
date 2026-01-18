@@ -383,13 +383,11 @@ fn test_indirect_function_call() {
     // 2. call(*ptr)(42)
     let temp_local_id = builder.create_local(Some(NameId::new("temp")), int_type_id, false);
 
-    builder.add_statement(MirStmt::Assign(
-        Place::Local(temp_local_id),
-        crate::mir::Rvalue::Call(
-            CallTarget::Indirect(Operand::Copy(Box::new(Place::Local(ptr_local_id)))),
-            vec![Operand::Constant(arg_const_id)],
-        ),
-    ));
+    builder.add_statement(MirStmt::Call {
+        target: CallTarget::Indirect(Operand::Copy(Box::new(Place::Local(ptr_local_id)))),
+        args: vec![Operand::Constant(arg_const_id)],
+        dest: Some(Place::Local(temp_local_id)),
+    });
 
     builder.set_terminator(Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(
         temp_local_id,

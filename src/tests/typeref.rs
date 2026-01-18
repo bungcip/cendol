@@ -188,3 +188,57 @@ fn test_reconstruct_type() {
         panic!("Expected Array kind");
     }
 }
+
+#[test]
+fn test_typeregistry_pointer_canonicalization() {
+    let mut reg = TypeRegistry::new(target_lexicon::Triple::host());
+    let int_ty = reg.type_int;
+
+    // Test 1: Canonicalization of inline pointers
+    let p1 = reg.pointer_to(QualType::unqualified(int_ty));
+    let p2 = reg.pointer_to(QualType::unqualified(int_ty));
+    assert_eq!(p1, p2, "int* should be canonicalized");
+
+    let p3 = reg.pointer_to(QualType::unqualified(p1)); // int**
+    let p4 = reg.pointer_to(QualType::unqualified(p1)); // int**
+    assert_eq!(p3, p4, "int** should be canonicalized");
+
+    // Test 2: Canonicalization of registry pointers with qualified pointees
+    let const_int = QualType::new(int_ty, crate::semantic::types::TypeQualifiers::CONST);
+    let p_const_int1 = reg.pointer_to(const_int);
+    let p_const_int2 = reg.pointer_to(const_int);
+    assert_eq!(p_const_int1, p_const_int2, "const int* should be canonicalized");
+
+    let volatile_int = QualType::new(int_ty, crate::semantic::types::TypeQualifiers::VOLATILE);
+    let p_volatile_int1 = reg.pointer_to(volatile_int);
+    let p_volatile_int2 = reg.pointer_to(volatile_int);
+    assert_eq!(
+        p_volatile_int1, p_volatile_int2,
+        "volatile int* should be canonicalized"
+    );
+
+    let const_volatile_int = QualType::new(
+        int_ty,
+        crate::semantic::types::TypeQualifiers::CONST | crate::semantic::types::TypeQualifiers::VOLATILE,
+    );
+    let p_const_volatile_int1 = reg.pointer_to(const_volatile_int);
+    let p_const_volatile_int2 = reg.pointer_to(const_volatile_int);
+    assert_eq!(
+        p_const_volatile_int1, p_const_volatile_int2,
+        "const volatile int* should be canonicalized"
+    );
+
+    // Test 3: Different qualified pointees should produce different pointers
+    assert_ne!(
+        p_const_int1, p_volatile_int1,
+        "const int* should differ from volatile int*"
+    );
+    assert_ne!(
+        p_const_int1, p_const_volatile_int1,
+        "const int* should differ from const volatile int*"
+    );
+    assert_ne!(
+        p_volatile_int1, p_const_volatile_int1,
+        "volatile int* should differ from const volatile int*"
+    );
+}

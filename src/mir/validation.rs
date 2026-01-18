@@ -10,9 +10,9 @@
 use crate::{
     mir::MirProgram,
     mir::{
-        BinaryFloatOp, BinaryIntOp, CallTarget, GlobalId, LocalId, MirBlockId, MirFunction, MirFunctionId,
-        MirFunctionKind, MirModule, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
-        UnaryIntOp,
+        BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, ConstValueKind, GlobalId, LocalId,
+        MirBlockId, MirFunction, MirFunctionId, MirFunctionKind, MirModule, MirStmt, MirType, Operand, Place, Rvalue,
+        Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
     },
 };
 
@@ -43,6 +43,12 @@ pub enum ValidationError {
         arg_index: usize,
         expected_type: TypeId,
         actual_type: TypeId,
+    },
+    /// Constant value is out of range for its type
+    ConstantValueOutOfRange {
+        const_id: ConstValueId,
+        value: i64,
+        type_id: TypeId,
     },
 }
 
@@ -75,6 +81,19 @@ impl std::fmt::Display for ValidationError {
                     actual_type.get()
                 )
             }
+            ValidationError::ConstantValueOutOfRange {
+                const_id,
+                value,
+                type_id,
+            } => {
+                write!(
+                    f,
+                    "Constant {} value {} is out of range for type {}",
+                    const_id.get(),
+                    value,
+                    type_id.get()
+                )
+            }
         }
     }
 }
@@ -98,6 +117,7 @@ impl MirValidator {
     ///
     /// Returns Ok(()) if validation passes, or Err(Vec<ValidationError>) if errors are found
     pub(crate) fn validate(&mut self, sema_output: &MirProgram) -> Result<(), Vec<ValidationError>> {
+        eprintln!("VALIDATE: Starting validation");
         self.errors.clear();
 
         // Validate the module structure
@@ -141,6 +161,103 @@ impl MirValidator {
         if module.id.get() == 0 {
             self.errors
                 .push(ValidationError::IllegalOperation("Module ID cannot be 0".to_string()));
+        }
+    }
+
+    /// Validate that a constant value can be cast to the target type
+    fn validate_constant_cast(
+        &mut self,
+        sema_output: &MirProgram,
+        const_id: ConstValueId,
+        const_value: &ConstValue,
+        target_type_id: TypeId,
+    ) {
+        eprintln!(
+            "VALIDATING CAST: const {} value {:?} to type {:?}",
+            const_id.get(),
+            const_value,
+            target_type_id.get()
+        );
+        if let Some(target_ty) = sema_output.types.get(&target_type_id) {
+            match (&const_value.kind, target_ty) {
+                (ConstValueKind::Int(value), MirType::I8) => {
+                    if *value < -128 || *value > 127 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(value), MirType::I16) => {
+                    if *value < -32768 || *value > 32767 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(value), MirType::I32) => {
+                    if *value < -2147483648 || *value > 2147483647 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(_value), MirType::I64) => {
+                    // i64 can hold any i64 value
+                }
+                (ConstValueKind::Int(value), MirType::U8) => {
+                    if *value < 0 || *value > 255 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(value), MirType::U16) => {
+                    if *value < 0 || *value > 65535 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(value), MirType::U32) => {
+                    if *value < 0 || *value > 4294967295 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(value), MirType::U64) => {
+                    if *value < 0 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(value), MirType::Bool) => {
+                    if *value != 0 && *value != 1 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                // For other types or kinds, no validation needed
+                _ => {}
+            }
         }
     }
 
@@ -279,10 +396,13 @@ impl MirValidator {
                     self.errors.push(ValidationError::InvalidCast(from, to));
                 }
             }
-            MirStmt::Call(target, args) => {
+            MirStmt::Call { target, args, dest } => {
                 self.validate_call_target(sema_output, target);
                 for a in args {
                     self.validate_operand(sema_output, a);
+                }
+                if let Some(dest_place) = dest {
+                    self.validate_place(sema_output, dest_place);
                 }
                 // Validate argument types against function signature when possible
                 match target {
@@ -310,12 +430,34 @@ impl MirValidator {
                                     }
                                 }
                             }
+                            // Validate return type if dest is present
+                            if let Some(dest_place) = dest {
+                                let dest_ty = self.validate_place(sema_output, dest_place);
+                                if dest_ty.is_some()
+                                    && let Some(func_ret_ty) = sema_output.types.get(&func.return_type)
+                                    && matches!(func_ret_ty, MirType::Void)
+                                {
+                                    self.errors.push(ValidationError::IllegalOperation(format!(
+                                        "Call to void function {} with destination",
+                                        fid.get()
+                                    )));
+                                }
+                            } else {
+                                // If no dest, function should return void
+                                if let Some(func_ret_ty) = sema_output.types.get(&func.return_type)
+                                    && !matches!(func_ret_ty, MirType::Void)
+                                {
+                                    // Allow ignoring non-void returns (common in C)
+                                }
+                            }
                         }
                     }
                     CallTarget::Indirect(op) => {
                         if let Some(op_ty) = self.validate_operand(sema_output, op)
                             && let Some(MirType::Pointer { pointee }) = sema_output.types.get(&op_ty)
-                            && let Some(MirType::Function { params, .. }) = sema_output.types.get(pointee)
+                            && let Some(MirType::Function {
+                                params, return_type, ..
+                            }) = sema_output.types.get(pointee)
                         {
                             if params.len() != args.len() {
                                 self.errors.push(ValidationError::IllegalOperation(
@@ -333,6 +475,18 @@ impl MirValidator {
                                             actual_type: arg_ty,
                                         });
                                     }
+                                }
+                            }
+                            // Validate return type if dest is present
+                            if let Some(dest_place) = dest {
+                                let dest_ty = self.validate_place(sema_output, dest_place);
+                                if dest_ty.is_some()
+                                    && let Some(func_ret_ty) = sema_output.types.get(return_type)
+                                    && matches!(func_ret_ty, MirType::Void)
+                                {
+                                    self.errors.push(ValidationError::IllegalOperation(
+                                        "Call to void function via indirect call with destination".to_string(),
+                                    ));
                                 }
                             }
                         }
@@ -459,6 +613,12 @@ impl MirValidator {
                 if !sema_output.types.contains_key(type_id) {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
+                // Check if casting a constant value that doesn't fit in the target type
+                if let Operand::Constant(const_id) = inner.as_ref()
+                    && let Some(const_value) = sema_output.constants.get(const_id)
+                {
+                    self.validate_constant_cast(sema_output, *const_id, const_value, *type_id);
+                }
                 self.validate_operand(sema_output, inner);
                 Some(*type_id)
             }
@@ -525,7 +685,9 @@ impl MirValidator {
                 let from_ty = self.validate_operand(sema_output, op);
                 if let (Some(from), true) = (from_ty, sema_output.types.contains_key(type_id)) {
                     // basic invalid cast check: disallow casts from record/array/enum/function to non-pointer/scalar types
-                    if let Some(MirType::Record { .. } | MirType::Array { .. }) = sema_output.types.get(&from) {
+                    if let Some(ty) = sema_output.types.get(&from)
+                        && ty.is_aggregate()
+                    {
                         if let Some(MirType::Pointer { .. }) = sema_output.types.get(type_id) {
                             // pointer casts allowed
                             // pointer casts allowed
@@ -565,13 +727,7 @@ impl MirValidator {
                 self.validate_operand(sema_output, op);
                 None
             }
-            Rvalue::Call(target, args) => {
-                self.validate_call_target(sema_output, target);
-                for a in args {
-                    self.validate_operand(sema_output, a);
-                }
-                None
-            }
+
             Rvalue::BuiltinVaArg(ap, type_id) => {
                 self.validate_place(sema_output, ap);
                 if !sema_output.types.contains_key(type_id) {

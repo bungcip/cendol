@@ -775,7 +775,7 @@ fn merge_base_type(
                         (a, b) if a == b => {
                             // C99/C11: int int is NOT allowed, but long long is.
                             // However, many compilers allow redundant specifiers.
-                            // In Cendol, we'll allow it for now if they are identical,
+                            // In Cendol, we'll allow it if they are identical,
                             // EXCEPT for types that already have a combined form (like long long).
                             if *a == BuiltinType::Long {
                                 Some(QualType::unqualified(ctx.registry.type_long_long))

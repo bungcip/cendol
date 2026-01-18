@@ -488,42 +488,6 @@ mod tests {
         ");
     }
 
-    // #[test]
-    // fn test_recursive_struct_access() {
-    //     let source = r#"
-    //         struct S {
-    //             struct S *p;
-    //             int x;
-    //         };
-    //         int main() {
-    //             struct S s;
-    //             return s.p->p->x;
-    //         }
-    //     "#;
-
-    //     let mir_dump = setup_mir(source);
-    //     insta::assert_snapshot!(mir_dump, @r"
-    //     type %t0 = struct S {  }
-    //     type %t1 = ptr<%t0>
-    //     type %t2 = i32
-    //     type %t3 = struct S { p: %t1, x: %t2 }
-
-    //     fn main() -> i32
-    //     {
-    //       locals {
-    //         %s: %t3
-    //         %2: i32
-    //         %3: i32
-    //       }
-
-    //       bb1:
-    //         %2 = * %s.field_0
-    //         %3 = * %2.field_0
-    //         return %3.field_1
-    //     }
-    //     ");
-    // }
-
     #[test]
     fn test_parameter_shadowing() {
         let source = r#"

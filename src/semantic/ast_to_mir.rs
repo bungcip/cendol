@@ -20,7 +20,6 @@ use crate::semantic::ValueCategory;
 use crate::semantic::const_eval::{ConstEvalCtx, eval_const_expr};
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use crate::semantic::{ImplicitConversion, Namespace, ScopeId};
-use crate::source_manager::SourceSpan;
 use hashbrown::{HashMap, HashSet};
 use log::debug;
 
@@ -64,6 +63,13 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
+    // create dummy operand
+    fn create_dummy_operand(&mut self) -> Operand {
+        let ty = self.lower_type(self.registry.type_int);
+        let cv = self.create_constant(ty, ConstValueKind::Int(9999)); // to make it obvious its dummy
+        Operand::Constant(cv)
+    }
+
     pub(crate) fn lower_module_complete(&mut self) -> MirProgram {
         debug!("Starting semantic analysis and MIR construction (complete)");
         let root = self.ast.get_root();
@@ -92,9 +98,7 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_node_ref(&mut self, node_ref: NodeRef) {
         let old_scope = self.current_scope_id;
-
         let node_kind = self.ast.get_kind(node_ref).clone();
-        let node_span = self.ast.get_span(node_ref);
 
         match node_kind {
             NodeKind::TranslationUnit(tu_data) => {
@@ -109,7 +113,7 @@ impl<'a> AstToMirLowerer<'a> {
                 self.current_scope_id = self.ast.scope_of(node_ref);
                 self.lower_for_statement(&for_stmt)
             }
-            NodeKind::VarDecl(var_decl) => self.lower_var_declaration(&var_decl, node_span),
+            NodeKind::VarDecl(var_decl) => self.lower_var(&var_decl),
             NodeKind::CompoundStatement(cs) => {
                 self.current_scope_id = self.ast.scope_of(node_ref);
                 self.lower_compound_statement(&cs)
@@ -486,7 +490,7 @@ impl<'a> AstToMirLowerer<'a> {
         self.current_block = None;
     }
 
-    fn lower_var_declaration(&mut self, var_decl: &VarDeclData, _span: SourceSpan) {
+    fn lower_var(&mut self, var_decl: &VarDeclData) {
         let mir_type_id = self.lower_qual_type(var_decl.ty);
         let (entry_ref, _) = self
             .symbol_table
@@ -496,13 +500,13 @@ impl<'a> AstToMirLowerer<'a> {
         let is_global = self.current_function.is_none();
 
         if is_global {
-            self.lower_global_var_declaration(var_decl, entry_ref, mir_type_id);
+            self.lower_global(var_decl, entry_ref, mir_type_id);
         } else {
-            self.lower_local_var_declaration(var_decl, entry_ref, mir_type_id);
+            self.lower_local(var_decl, entry_ref, mir_type_id);
         }
     }
 
-    fn lower_global_var_declaration(&mut self, var_decl: &VarDeclData, entry_ref: SymbolRef, mir_type_id: TypeId) {
+    fn lower_global(&mut self, var_decl: &VarDeclData, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let initial_value_id = var_decl
             .init
             .and_then(|init_ref| self.lower_initializer_to_const(init_ref, var_decl.ty));
@@ -533,7 +537,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_local_var_declaration(&mut self, var_decl: &VarDeclData, entry_ref: SymbolRef, mir_type_id: TypeId) {
+    fn lower_local(&mut self, var_decl: &VarDeclData, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let local_id = self.mir_builder.create_local(Some(var_decl.name), mir_type_id, false);
 
         if let Some(alignment) = var_decl.alignment {
@@ -593,7 +597,23 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::Assignment(op, left_ref, right_ref) => {
                 self.lower_assignment_expr(expr_ref, op, *left_ref, *right_ref, mir_ty)
             }
-            NodeKind::FunctionCall(call_expr) => self.lower_function_call(call_expr, mir_ty),
+            NodeKind::FunctionCall(call_expr) => {
+                let temp_place = if need_value {
+                    let (_, temp_place) = self.create_temp_local(mir_ty);
+                    Some(temp_place)
+                } else {
+                    None
+                };
+
+                self.lower_function_call(call_expr, temp_place.clone());
+
+                if need_value {
+                    Operand::Copy(Box::new(temp_place.unwrap()))
+                } else {
+                    // dummy
+                    self.create_dummy_operand()
+                }
+            }
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
                 self.lower_member_access(*obj_ref, field_name, *is_arrow)
             }
@@ -1165,7 +1185,7 @@ impl<'a> AstToMirLowerer<'a> {
         final_rhs // C assignment expressions evaluate to the assigned value
     }
 
-    fn lower_function_call(&mut self, call_expr: &nodes::CallExpr, mir_ty: TypeId) -> Operand {
+    fn lower_function_call(&mut self, call_expr: &nodes::CallExpr, dest_place: Option<Place>) {
         let callee = self.lower_expression(call_expr.callee, true);
 
         let mut arg_operands = Vec::new();
@@ -1239,30 +1259,12 @@ impl<'a> AstToMirLowerer<'a> {
             CallTarget::Indirect(callee)
         };
 
-        // For all function calls, use MirStmt::Call
-        // If it's non-void, create a temporary destination place to store the result
-        let dest = if matches!(self.mir_builder.get_type(mir_ty), MirType::Void) {
-            None
-        } else {
-            let (_, temp_place) = self.create_temp_local(mir_ty);
-            Some(temp_place)
-        };
-
         let stmt = MirStmt::Call {
             target: call_target,
             args: arg_operands,
-            dest: dest.clone(),
+            dest: dest_place,
         };
         self.mir_builder.add_statement(stmt);
-
-        // If it's non-void, return the temporary place as an operand
-        if let Some(dest_place) = dest {
-            Operand::Copy(Box::new(dest_place))
-        } else {
-            // Return a dummy operand for void functions
-            let ty_id = self.lower_type(self.registry.type_int);
-            Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(0)))
-        }
     }
 
     fn find_member_path(&self, record_ty: TypeRef, field_name: NameId) -> Option<Vec<usize>> {

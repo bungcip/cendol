@@ -610,35 +610,21 @@ mod tests {
 
         fn main() -> i32
         {
-          locals {
-            %1: i8
-            %2: u8
-            %3: i16
-            %4: u16
-            %5: i32
-            %6: u32
-            %7: i64
-            %8: u64
-            %9: i64
-            %10: u64
-            %11: f32
-            %12: f64
-          }
 
           bb14:
             call fn_void()
-            %1 = call fn_char()
-            %2 = call fn_uchar()
-            %3 = call fn_short()
-            %4 = call fn_ushort()
-            %5 = call fn_int()
-            %6 = call fn_uint()
-            %7 = call fn_long()
-            %8 = call fn_ulong()
-            %9 = call fn_llong()
-            %10 = call fn_ullong()
-            %11 = call fn_float()
-            %12 = call fn_double()
+            call fn_char()
+            call fn_uchar()
+            call fn_short()
+            call fn_ushort()
+            call fn_int()
+            call fn_uint()
+            call fn_long()
+            call fn_ulong()
+            call fn_llong()
+            call fn_ullong()
+            call fn_float()
+            call fn_double()
             return const 0
         }
 

@@ -2389,8 +2389,8 @@ impl<'src> Preprocessor<'src> {
         result.push('"');
 
         for (i, token) in tokens.iter().enumerate() {
-            if i > 0 {
-                // Add space between tokens
+            if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
+                // Add space between tokens only if the token had leading whitespace (C11 6.10.3.2)
                 result.push(' ');
             }
 

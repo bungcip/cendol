@@ -224,6 +224,7 @@ impl<'a> AstToMirLowerer<'a> {
         list_data: &nodes::InitializerListData,
         members: &[StructMember],
         target_ty: QualType,
+        destination: Option<Place>,
     ) -> Operand {
         let mut field_operands = Vec::new();
         let mut current_field_idx = 0;
@@ -284,7 +285,7 @@ impl<'a> AstToMirLowerer<'a> {
 
             let member_ty = members[field_idx].member_type;
 
-            let operand = self.lower_initializer(init.initializer, member_ty);
+            let operand = self.lower_initializer(init.initializer, member_ty, None);
             field_operands.push((field_idx, operand));
             // If subsequent members share the same offset, they are part of a union
             // and should not consume additional initializers. Advance current_field_idx
@@ -299,7 +300,7 @@ impl<'a> AstToMirLowerer<'a> {
             }
         }
 
-        self.finalize_struct_initializer(field_operands, target_ty)
+        self.finalize_struct_initializer(field_operands, target_ty, destination)
     }
 
     fn lower_array_initializer(
@@ -308,17 +309,18 @@ impl<'a> AstToMirLowerer<'a> {
         element_ty: QualType,
         _size: usize,
         target_ty: QualType,
+        destination: Option<Place>,
     ) -> Operand {
         let mut elements = Vec::new();
         for item_ref in list_data.init_start.range(list_data.init_len) {
             let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
                 continue;
             };
-            let operand = self.lower_initializer(init.initializer, element_ty);
+            let operand = self.lower_initializer(init.initializer, element_ty, None);
             elements.push(operand);
         }
 
-        self.finalize_array_initializer(elements, target_ty)
+        self.finalize_array_initializer(elements, target_ty, destination)
     }
 
     fn finalize_initializer_generic<T, C, R>(
@@ -327,6 +329,7 @@ impl<'a> AstToMirLowerer<'a> {
         data: T,
         create_const: C,
         create_rvalue: R,
+        destination: Option<Place>,
     ) -> Operand
     where
         C: FnOnce(&mut Self, T) -> ConstValueKind,
@@ -339,11 +342,23 @@ impl<'a> AstToMirLowerer<'a> {
         } else {
             let rval = create_rvalue(data);
             let mir_ty = self.lower_qual_type(target_ty);
-            self.emit_rvalue_to_operand(rval, mir_ty)
+            if let Some(place) = destination {
+                // Actually emit the literal assignment to the requested place
+                let stmt = MirStmt::Assign(place.clone(), rval);
+                self.mir_builder.add_statement(stmt);
+                Operand::Copy(Box::new(place))
+            } else {
+                self.emit_rvalue_to_operand(rval, mir_ty)
+            }
         }
     }
 
-    fn finalize_struct_initializer(&mut self, field_operands: Vec<(usize, Operand)>, target_ty: QualType) -> Operand {
+    fn finalize_struct_initializer(
+        &mut self,
+        field_operands: Vec<(usize, Operand)>,
+        target_ty: QualType,
+        destination: Option<Place>,
+    ) -> Operand {
         self.finalize_initializer_generic(
             target_ty,
             field_operands,
@@ -359,10 +374,16 @@ impl<'a> AstToMirLowerer<'a> {
                 ConstValueKind::StructLiteral(const_fields)
             },
             Rvalue::StructLiteral,
+            destination,
         )
     }
 
-    fn finalize_array_initializer(&mut self, elements: Vec<Operand>, target_ty: QualType) -> Operand {
+    fn finalize_array_initializer(
+        &mut self,
+        elements: Vec<Operand>,
+        target_ty: QualType,
+        destination: Option<Place>,
+    ) -> Operand {
         self.finalize_initializer_generic(
             target_ty,
             elements,
@@ -376,6 +397,7 @@ impl<'a> AstToMirLowerer<'a> {
                 ConstValueKind::ArrayLiteral(const_elements)
             },
             Rvalue::ArrayLiteral,
+            destination,
         )
     }
 
@@ -388,11 +410,11 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_initializer_to_const(&mut self, init_ref: NodeRef, ty: QualType) -> Option<ConstValueId> {
-        let operand = self.lower_initializer(init_ref, ty);
+        let operand = self.lower_initializer(init_ref, ty, None);
         self.operand_to_const_id(operand)
     }
 
-    fn lower_initializer(&mut self, init_ref: NodeRef, target_ty: QualType) -> Operand {
+    fn lower_initializer(&mut self, init_ref: NodeRef, target_ty: QualType, destination: Option<Place>) -> Operand {
         let init_node_kind = self.ast.get_kind(init_ref).clone();
         let target_type = self.registry.get(target_ty.ty()).clone();
 
@@ -400,12 +422,12 @@ impl<'a> AstToMirLowerer<'a> {
             (NodeKind::InitializerList(list), TypeKind::Record { .. }) => {
                 let mut flat_members = Vec::new();
                 target_type.flatten_members(self.registry, &mut flat_members);
-                self.lower_initializer_list(&list, &flat_members, target_ty)
+                self.lower_initializer_list(&list, &flat_members, target_ty, destination)
             }
             (NodeKind::InitializerList(list), TypeKind::Array { element_type, size }) => {
                 let element_ty = QualType::unqualified(*element_type);
                 let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
-                self.lower_array_initializer(&list, element_ty, array_size, target_ty)
+                self.lower_array_initializer(&list, element_ty, array_size, target_ty, destination)
             }
             (NodeKind::LiteralString(val), TypeKind::Array { element_type, size })
                 if matches!(
@@ -547,7 +569,9 @@ impl<'a> AstToMirLowerer<'a> {
         self.local_map.insert(entry_ref, local_id);
 
         if let Some(initializer) = var_decl.init {
-            let init_operand = self.lower_initializer(initializer, var_decl.ty);
+            let init_operand = self.lower_initializer(initializer, var_decl.ty, Some(Place::Local(local_id)));
+            // If lower_initializer used the destination, it returns Operand::Copy(destination)
+            // emit_assignment will then emit Place::Local(local_id) = Place::Local(local_id), which is fine or can be skipped.
             self.emit_assignment(Place::Local(local_id), init_operand);
         }
     }
@@ -692,7 +716,8 @@ impl<'a> AstToMirLowerer<'a> {
     fn lower_type_query(&mut self, ty: TypeRef, is_size: bool) -> Operand {
         let layout = self.registry.get_layout(ty);
         let val = if is_size { layout.size } else { layout.alignment };
-        self.create_int_operand(val as i64)
+        let mir_ty = self.lower_type(self.registry.type_int);
+        Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Int(val as i64)))
     }
 
     fn lower_generic_selection(&mut self, gs: &nodes::GenericSelectionData, need_value: bool) -> Operand {
@@ -731,10 +756,15 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
+        let mir_ty = self.lower_qual_type(ty);
         match node_kind {
-            NodeKind::LiteralInt(val) => Some(self.create_int_operand(*val)),
+            NodeKind::LiteralInt(val) => Some(Operand::Constant(
+                self.create_constant(mir_ty, ConstValueKind::Int(*val)),
+            )),
             NodeKind::LiteralFloat(val) => Some(self.create_float_operand(*val)),
-            NodeKind::LiteralChar(val) => Some(self.create_int_operand(*val as i64)),
+            NodeKind::LiteralChar(val) => Some(Operand::Constant(
+                self.create_constant(mir_ty, ConstValueKind::Int(*val as i64)),
+            )),
             NodeKind::LiteralString(val) => Some(self.lower_literal_string(val, ty)),
             _ => None,
         }
@@ -766,7 +796,7 @@ impl<'a> AstToMirLowerer<'a> {
             let (_, place) = self.create_temp_local(mir_ty);
 
             // Lower initializer
-            let init_operand = self.lower_initializer(init_ref, ty);
+            let init_operand = self.lower_initializer(init_ref, ty, Some(place.clone()));
             self.emit_assignment(place.clone(), init_operand);
 
             Operand::Copy(Box::new(place))
@@ -1507,6 +1537,14 @@ impl<'a> AstToMirLowerer<'a> {
         if self.mir_builder.current_block_has_terminator() {
             return;
         }
+
+        // Avoid identity assignments like %x = %x
+        if let Operand::Copy(box_place) = &operand {
+            if **box_place == place {
+                return;
+            }
+        }
+
         let rvalue = Rvalue::Use(operand);
         let stmt = MirStmt::Assign(place, rvalue);
         self.mir_builder.add_statement(stmt);

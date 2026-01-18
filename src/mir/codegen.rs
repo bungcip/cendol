@@ -1502,7 +1502,64 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     };
                     Ok(result)
                 }
-                _ => Err(format!("Unsupported rvalue: {:?}", rvalue)),
+                Rvalue::ArrayLiteral(elements) => {
+                    let dest_addr = resolve_place_to_addr(place, ctx)?;
+                    let MirType::Array { element, layout, .. } = place_mir_type else {
+                        return Err("ArrayLiteral with non-array type".to_string());
+                    };
+                    let element_mir_type = ctx.mir.get_type(*element);
+                    let element_clif_type = convert_type(element_mir_type);
+                    let stride = layout.stride as i64;
+
+                    for (i, element_op) in elements.iter().enumerate() {
+                        let offset = i as i64 * stride;
+                        let element_dest_addr = if offset == 0 {
+                            dest_addr
+                        } else {
+                            ctx.builder.ins().iadd_imm(dest_addr, offset)
+                        };
+
+                        if element_mir_type.is_aggregate() {
+                            let src_addr = resolve_operand(element_op, ctx, types::I64)?;
+                            let size = mir_type_size(element_mir_type, ctx.mir)? as i64;
+                            emit_memcpy(element_dest_addr, src_addr, size, ctx.builder, ctx.module)?;
+                        } else {
+                            let val = resolve_operand(element_op, ctx, element_clif_type.unwrap())?;
+                            ctx.builder.ins().store(MemFlags::new(), val, element_dest_addr, 0);
+                        }
+                    }
+                    return Ok(());
+                }
+                Rvalue::StructLiteral(fields) => {
+                    let dest_addr = resolve_place_to_addr(place, ctx)?;
+                    let MirType::Record {
+                        layout, field_types, ..
+                    } = place_mir_type
+                    else {
+                        return Err("StructLiteral with non-record type".to_string());
+                    };
+
+                    for (field_idx, element_op) in fields.iter() {
+                        let offset = layout.field_offsets[*field_idx] as i64;
+                        let field_dest_addr = if offset == 0 {
+                            dest_addr
+                        } else {
+                            ctx.builder.ins().iadd_imm(dest_addr, offset)
+                        };
+
+                        let field_mir_type = ctx.mir.get_type(field_types[*field_idx]);
+                        if field_mir_type.is_aggregate() {
+                            let src_addr = resolve_operand(element_op, ctx, types::I64)?;
+                            let size = mir_type_size(field_mir_type, ctx.mir)? as i64;
+                            emit_memcpy(field_dest_addr, src_addr, size, ctx.builder, ctx.module)?;
+                        } else {
+                            let field_clif_type = convert_type(field_mir_type).unwrap();
+                            let val = resolve_operand(element_op, ctx, field_clif_type)?;
+                            ctx.builder.ins().store(MemFlags::new(), val, field_dest_addr, 0);
+                        }
+                    }
+                    return Ok(());
+                }
             };
 
             // Now, assign the resolved value to the place

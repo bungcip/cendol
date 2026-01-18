@@ -1302,7 +1302,26 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_expression_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
-            NodeKind::LiteralInt(_) => Some(QualType::unqualified(self.registry.type_int)),
+            NodeKind::LiteralInt(val) => {
+                // Determine the correct type for the integer literal based on its value.
+                // According to C11 6.4.4.1, the type of an integer constant is the first of the corresponding
+                // list in which its value can be represented.
+                // For a hexadecimal or octal constant without suffix, the list is:
+                // int, unsigned int, long int, unsigned long int, long long int, unsigned long long int.
+                // For decimal constant without suffix: int, long int, long long int.
+                // Since we don't have the original base or suffix information here, we use a heuristic.
+                // If it fits in signed int, use int.
+                // If it doesn't fit in signed int, but fits in unsigned int, use unsigned int.
+                // Otherwise, use long long.
+                let ty = if *val >= i32::MIN as i64 && *val <= i32::MAX as i64 {
+                    self.registry.type_int
+                } else if *val >= 0 && *val <= u32::MAX as i64 {
+                    self.registry.type_int_unsigned
+                } else {
+                    self.registry.type_long_long
+                };
+                Some(QualType::unqualified(ty))
+            }
             NodeKind::LiteralFloat(_) => Some(QualType::unqualified(self.registry.type_double)),
             NodeKind::LiteralChar(_) => Some(QualType::unqualified(self.registry.type_int)),
             NodeKind::LiteralString(name) => {

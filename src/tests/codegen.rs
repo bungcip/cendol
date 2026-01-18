@@ -505,3 +505,48 @@ fn test_string_literal_pointer_cast_() {
         CompilePhase::Cranelift, // NOTE: we test until cranelift to check if validation is correct or not
     );
 }
+#[test]
+fn test_constant_range_validation() {
+    run_pass(
+        r#"
+        int main() {
+            unsigned int a = 0xffffffff;
+            int b = 0x80010000;
+            if (a != 0xffffffff) return 1;
+            if (b != 0x80010000) return 2;
+            return 0;
+        }
+        "#,
+        CompilePhase::Cranelift,
+    );
+}
+
+#[test]
+fn test_array_literal_codegen() {
+    run_pass(
+        r#"
+        int main() {
+            int a[2] = {1, 2};
+            if (a[0] != 1) return 1;
+            if (a[1] != 2) return 2;
+            return 0;
+        }
+        "#,
+        CompilePhase::Cranelift,
+    );
+}
+
+#[test]
+fn test_struct_literal_codegen() {
+    run_pass(
+        r#"
+        int main() {
+            struct S { int x; int y; } s = {1, 2};
+            if (s.x != 1) return 1;
+            if (s.y != 2) return 2;
+            return 0;
+        }
+        "#,
+        CompilePhase::Cranelift,
+    );
+}

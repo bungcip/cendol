@@ -180,8 +180,9 @@ impl MirValidator {
         // );
         if let Some(target_ty) = sema_output.types.get(&target_type_id) {
             match (&const_value.kind, target_ty) {
-                (ConstValueKind::Int(value), MirType::I8) => {
-                    if *value < -128 || *value > 127 {
+                (ConstValueKind::Int(value), MirType::I8) | (ConstValueKind::Int(value), MirType::U8) => {
+                    // Allow both signed range [-128, 127] and unsigned range [0, 255]
+                    if *value < -128 || *value > 255 {
                         self.errors.push(ValidationError::ConstantValueOutOfRange {
                             const_id,
                             value: *value,
@@ -189,8 +190,9 @@ impl MirValidator {
                         });
                     }
                 }
-                (ConstValueKind::Int(value), MirType::I16) => {
-                    if *value < -32768 || *value > 32767 {
+                (ConstValueKind::Int(value), MirType::I16) | (ConstValueKind::Int(value), MirType::U16) => {
+                    // Allow both signed range [-32768, 32767] and unsigned range [0, 65535]
+                    if *value < -32768 || *value > 65535 {
                         self.errors.push(ValidationError::ConstantValueOutOfRange {
                             const_id,
                             value: *value,
@@ -198,8 +200,9 @@ impl MirValidator {
                         });
                     }
                 }
-                (ConstValueKind::Int(value), MirType::I32) => {
-                    if *value < -2147483648 || *value > 2147483647 {
+                (ConstValueKind::Int(value), MirType::I32) | (ConstValueKind::Int(value), MirType::U32) => {
+                    // Allow both signed range [-2147483648, 2147483647] and unsigned range [0, 4294967295]
+                    if *value < -2147483648 || *value > 4294967295 {
                         self.errors.push(ValidationError::ConstantValueOutOfRange {
                             const_id,
                             value: *value,
@@ -207,44 +210,8 @@ impl MirValidator {
                         });
                     }
                 }
-                (ConstValueKind::Int(_value), MirType::I64) => {
-                    // i64 can hold any i64 value
-                }
-                (ConstValueKind::Int(value), MirType::U8) => {
-                    if *value < 0 || *value > 255 {
-                        self.errors.push(ValidationError::ConstantValueOutOfRange {
-                            const_id,
-                            value: *value,
-                            type_id: target_type_id,
-                        });
-                    }
-                }
-                (ConstValueKind::Int(value), MirType::U16) => {
-                    if *value < 0 || *value > 65535 {
-                        self.errors.push(ValidationError::ConstantValueOutOfRange {
-                            const_id,
-                            value: *value,
-                            type_id: target_type_id,
-                        });
-                    }
-                }
-                (ConstValueKind::Int(value), MirType::U32) => {
-                    if *value < 0 || *value > 4294967295 {
-                        self.errors.push(ValidationError::ConstantValueOutOfRange {
-                            const_id,
-                            value: *value,
-                            type_id: target_type_id,
-                        });
-                    }
-                }
-                (ConstValueKind::Int(value), MirType::U64) => {
-                    if *value < 0 {
-                        self.errors.push(ValidationError::ConstantValueOutOfRange {
-                            const_id,
-                            value: *value,
-                            type_id: target_type_id,
-                        });
-                    }
+                (ConstValueKind::Int(_value), MirType::I64) | (ConstValueKind::Int(_value), MirType::U64) => {
+                    // i64/u64 can hold any i64 value in our representation
                 }
                 (ConstValueKind::Int(value), MirType::Bool) => {
                     if *value != 0 && *value != 1 {

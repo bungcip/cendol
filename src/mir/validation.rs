@@ -10,9 +10,9 @@
 use crate::{
     mir::MirProgram,
     mir::{
-        BinaryFloatOp, BinaryIntOp, CallTarget, GlobalId, LocalId, MirBlockId, MirFunction, MirFunctionId,
-        MirFunctionKind, MirModule, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
-        UnaryIntOp,
+        BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, ConstValueKind, GlobalId, LocalId,
+        MirBlockId, MirFunction, MirFunctionId, MirFunctionKind, MirModule, MirStmt, MirType, Operand, Place, Rvalue,
+        Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
     },
 };
 
@@ -43,6 +43,12 @@ pub enum ValidationError {
         arg_index: usize,
         expected_type: TypeId,
         actual_type: TypeId,
+    },
+    /// Constant value is out of range for its type
+    ConstantValueOutOfRange {
+        const_id: ConstValueId,
+        value: i64,
+        type_id: TypeId,
     },
 }
 
@@ -75,6 +81,19 @@ impl std::fmt::Display for ValidationError {
                     actual_type.get()
                 )
             }
+            ValidationError::ConstantValueOutOfRange {
+                const_id,
+                value,
+                type_id,
+            } => {
+                write!(
+                    f,
+                    "Constant {} value {} is out of range for type {}",
+                    const_id.get(),
+                    value,
+                    type_id.get()
+                )
+            }
         }
     }
 }
@@ -98,6 +117,7 @@ impl MirValidator {
     ///
     /// Returns Ok(()) if validation passes, or Err(Vec<ValidationError>) if errors are found
     pub(crate) fn validate(&mut self, sema_output: &MirProgram) -> Result<(), Vec<ValidationError>> {
+        eprintln!("VALIDATE: Starting validation");
         self.errors.clear();
 
         // Validate the module structure
@@ -141,6 +161,103 @@ impl MirValidator {
         if module.id.get() == 0 {
             self.errors
                 .push(ValidationError::IllegalOperation("Module ID cannot be 0".to_string()));
+        }
+    }
+
+    /// Validate that a constant value can be cast to the target type
+    fn validate_constant_cast(
+        &mut self,
+        sema_output: &MirProgram,
+        const_id: ConstValueId,
+        const_value: &ConstValue,
+        target_type_id: TypeId,
+    ) {
+        eprintln!(
+            "VALIDATING CAST: const {} value {:?} to type {:?}",
+            const_id.get(),
+            const_value,
+            target_type_id.get()
+        );
+        if let Some(target_ty) = sema_output.types.get(&target_type_id) {
+            match (&const_value.kind, target_ty) {
+                (ConstValueKind::Int(value), MirType::I8) => {
+                    if *value < -128 || *value > 127 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(value), MirType::I16) => {
+                    if *value < -32768 || *value > 32767 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(value), MirType::I32) => {
+                    if *value < -2147483648 || *value > 2147483647 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(_value), MirType::I64) => {
+                    // i64 can hold any i64 value
+                }
+                (ConstValueKind::Int(value), MirType::U8) => {
+                    if *value < 0 || *value > 255 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(value), MirType::U16) => {
+                    if *value < 0 || *value > 65535 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(value), MirType::U32) => {
+                    if *value < 0 || *value > 4294967295 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(value), MirType::U64) => {
+                    if *value < 0 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                (ConstValueKind::Int(value), MirType::Bool) => {
+                    if *value != 0 && *value != 1 {
+                        self.errors.push(ValidationError::ConstantValueOutOfRange {
+                            const_id,
+                            value: *value,
+                            type_id: target_type_id,
+                        });
+                    }
+                }
+                // For other types or kinds, no validation needed
+                _ => {}
+            }
         }
     }
 
@@ -458,6 +575,12 @@ impl MirValidator {
             Operand::Cast(type_id, inner) => {
                 if !sema_output.types.contains_key(type_id) {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
+                }
+                // Check if casting a constant value that doesn't fit in the target type
+                if let Operand::Constant(const_id) = inner.as_ref() {
+                    if let Some(const_value) = sema_output.constants.get(const_id) {
+                        self.validate_constant_cast(sema_output, *const_id, const_value, *type_id);
+                    }
                 }
                 self.validate_operand(sema_output, inner);
                 Some(*type_id)

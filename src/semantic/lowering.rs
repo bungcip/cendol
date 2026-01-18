@@ -1604,12 +1604,29 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.set_scope(node, self.symbol_table.current_scope());
 
             if spec_info.is_typedef {
-                if let Err(_e) = self.symbol_table.define_typedef(name, final_ty, span) {
-                    self.report_error(SemanticError::Redefinition {
-                        name,
-                        first_def: span,
-                        span,
-                    });
+                if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
+                    self.symbol_table.define_typedef(name, final_ty, span)
+                {
+                    let existing_symbol = self.symbol_table.get_symbol(existing);
+                    if let SymbolKind::Typedef { aliased_type } = existing_symbol.kind {
+                        if self.registry.is_compatible(aliased_type, final_ty) {
+                            // C11 6.7.8: Compatible redefinition is allowed
+                        } else {
+                            self.report_error(SemanticError::RedefinitionWithDifferentType {
+                                name,
+                                first_def: existing_symbol.def_span,
+                                span,
+                            });
+                        }
+                    } else {
+                        // This case handles variable vs. typedef conflicts, which should
+                        // be caught by a separate check, but we emit a generic error here too.
+                        self.report_error(SemanticError::Redefinition {
+                            name,
+                            first_def: existing_symbol.def_span,
+                            span,
+                        });
+                    }
                 }
                 self.ast.kinds[node.index()] = NodeKind::TypedefDecl(TypedefDeclData { name, ty: final_ty });
                 nodes.push(node);

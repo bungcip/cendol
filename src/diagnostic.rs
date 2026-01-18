@@ -157,7 +157,9 @@ impl IntoDiagnostic for SemanticError {
             ..Default::default()
         }];
 
-        if let SemanticError::Redefinition { first_def, .. } = &self {
+        if let SemanticError::Redefinition { first_def, .. }
+        | SemanticError::RedefinitionWithDifferentType { first_def, .. } = &self
+        {
             diagnostics.push(Diagnostic {
                 level: DiagnosticLevel::Note,
                 message: "previous definition is here".to_string(),
@@ -210,6 +212,12 @@ pub enum SemanticError {
     UndeclaredIdentifier { name: NameId, span: SourceSpan },
     #[error("redefinition of '{name}'")]
     Redefinition {
+        name: NameId,
+        first_def: SourceSpan,
+        span: SourceSpan,
+    },
+    #[error("redefinition of '{name}' with a different type")]
+    RedefinitionWithDifferentType {
         name: NameId,
         first_def: SourceSpan,
         span: SourceSpan,
@@ -350,6 +358,7 @@ impl SemanticError {
             SemanticError::InvalidRestrict { span } => *span,
             SemanticError::UndeclaredIdentifier { span, .. } => *span,
             SemanticError::Redefinition { span, .. } => *span,
+            SemanticError::RedefinitionWithDifferentType { span, .. } => *span,
             SemanticError::TypeMismatch { span, .. } => *span,
             SemanticError::NotAnLvalue { span } => *span,
             SemanticError::InvalidBinaryOperands { span, .. } => *span,

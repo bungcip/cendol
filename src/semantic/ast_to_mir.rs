@@ -389,21 +389,19 @@ impl<'a> AstToMirLowerer<'a> {
                 let array_size = if let ArraySizeType::Constant(s) = size { s } else { 0 };
                 self.lower_array_initializer(scope_id, &list, element_ty, array_size, target_ty)
             }
-            (NodeKind::LiteralString(val), TypeKind::Array { element_type, size }) => {
-                let element_ty_kind = &self.registry.get(element_type).kind;
-                if matches!(element_ty_kind, TypeKind::Builtin(BuiltinType::Char)) {
-                    let fixed_size = if let ArraySizeType::Constant(s) = size {
-                        Some(s)
-                    } else {
-                        None
-                    };
-                    let array_const_id = self.create_string_array_const(&val, fixed_size);
-                    Operand::Constant(array_const_id)
+            (NodeKind::LiteralString(val), TypeKind::Array { element_type, size })
+                if matches!(
+                    self.registry.get(element_type).kind,
+                    TypeKind::Builtin(BuiltinType::Char)
+                ) =>
+            {
+                let fixed_size = if let ArraySizeType::Constant(s) = size {
+                    Some(s)
                 } else {
-                    let operand = self.lower_expression(scope_id, init_ref, true);
-                    let mir_target_ty = self.lower_qual_type(target_ty);
-                    self.apply_conversions(operand, init_ref, mir_target_ty)
-                }
+                    None
+                };
+                let array_const_id = self.create_string_array_const(&val, fixed_size);
+                Operand::Constant(array_const_id)
             }
             _ => {
                 // It's a simple expression initializer.
@@ -548,6 +546,13 @@ impl<'a> AstToMirLowerer<'a> {
             let init_operand = self.lower_initializer(scope_id, initializer, var_decl.ty);
             self.emit_assignment(Place::Local(local_id), init_operand);
         }
+    }
+
+    fn lower_expression_as_place(&mut self, scope_id: ScopeId, expr_ref: NodeRef) -> Place {
+        let op = self.lower_expression(scope_id, expr_ref, true);
+        let ty = self.ast.get_resolved_type(expr_ref).unwrap();
+        let mir_ty = self.lower_qual_type(ty);
+        self.ensure_place(op, mir_ty)
     }
 
     fn lower_expression(&mut self, scope_id: ScopeId, expr_ref: NodeRef, need_value: bool) -> Operand {
@@ -1290,7 +1295,6 @@ impl<'a> AstToMirLowerer<'a> {
         field_name: &NameId,
         is_arrow: bool,
     ) -> Operand {
-        let obj_operand = self.lower_expression(scope_id, obj_ref, true);
         let obj_ty = self.ast.get_resolved_type(obj_ref).unwrap();
         let record_ty = if is_arrow {
             self.registry
@@ -1310,8 +1314,7 @@ impl<'a> AstToMirLowerer<'a> {
             // Apply the chain of field accesses
 
             // Resolve base place
-            let mir_type = self.lower_qual_type(obj_ty);
-            let mut current_place = self.ensure_place(obj_operand, mir_type);
+            let mut current_place = self.lower_expression_as_place(scope_id, obj_ref);
 
             if is_arrow {
                 // Dereference: *ptr
@@ -1330,32 +1333,15 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_index_access(&mut self, scope_id: ScopeId, arr_ref: NodeRef, idx_ref: NodeRef) -> Operand {
-        let arr_operand = self.lower_expression(scope_id, arr_ref, true);
-        let idx_operand = self.lower_expression(scope_id, idx_ref, true);
         let arr_ty = self.ast.get_resolved_type(arr_ref).unwrap();
 
         // Handle both array and pointer types for index access
         // In C, arr[idx] is equivalent to *(arr + idx)
-        if arr_ty.is_array() {
-            // Array indexing - use ArrayIndex place
-            // We can skip the explicit layout check as we trust the type system
-            let mir_type = self.lower_qual_type(arr_ty);
-            let arr_place = self.ensure_place(arr_operand, mir_type);
+        if arr_ty.is_array() || arr_ty.is_pointer() {
+            let arr_place = self.lower_expression_as_place(scope_id, arr_ref);
+            let idx_operand = self.lower_expression(scope_id, idx_ref, true);
 
             Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
-        } else if arr_ty.is_pointer() {
-            // For pointer indexing, we can use the ArrayIndex place directly
-            // since pointer indexing follows the same rules as array indexing
-            // p[idx] is equivalent to *(p + idx) which is what ArrayIndex does
-
-            // Create an ArrayIndex place with the pointer as base and index
-            let mir_type = self.lower_qual_type(arr_ty);
-            let pointer_place = self.ensure_place(arr_operand, mir_type);
-
-            Operand::Copy(Box::new(Place::ArrayIndex(
-                Box::new(pointer_place),
-                Box::new(idx_operand),
-            )))
         } else {
             panic!("Index access on non-array, non-pointer type");
         }
@@ -2155,44 +2141,28 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn lower_builtin_va_arg(&mut self, scope_id: ScopeId, ty: QualType, expr_ref: NodeRef) -> Operand {
-        let ap_op = self.lower_expression(scope_id, expr_ref, true);
-        let ap_ty = self.ast.get_resolved_type(expr_ref).unwrap();
-        let ap_mir_ty = self.lower_qual_type(ap_ty);
-        let ap = self.ensure_place(ap_op, ap_mir_ty);
+        let ap = self.lower_expression_as_place(scope_id, expr_ref);
         let mir_ty = self.lower_qual_type(ty);
         let rval = Rvalue::BuiltinVaArg(ap, mir_ty);
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
     fn lower_builtin_va_start(&mut self, scope_id: ScopeId, ap_ref: NodeRef, last_ref: NodeRef) -> Operand {
-        let ap_op = self.lower_expression(scope_id, ap_ref, true);
-        let ap_ty = self.ast.get_resolved_type(ap_ref).unwrap();
-        let ap_mir_ty = self.lower_qual_type(ap_ty);
-        let ap = self.ensure_place(ap_op, ap_mir_ty);
+        let ap = self.lower_expression_as_place(scope_id, ap_ref);
         let last = self.lower_expression(scope_id, last_ref, true);
         self.mir_builder.add_statement(MirStmt::BuiltinVaStart(ap, last));
         self.create_int_operand(0)
     }
 
     fn lower_builtin_va_end(&mut self, scope_id: ScopeId, ap_ref: NodeRef) -> Operand {
-        let ap_op = self.lower_expression(scope_id, ap_ref, true);
-        let ap_ty = self.ast.get_resolved_type(ap_ref).unwrap();
-        let ap_mir_ty = self.lower_qual_type(ap_ty);
-        let ap = self.ensure_place(ap_op, ap_mir_ty);
+        let ap = self.lower_expression_as_place(scope_id, ap_ref);
         self.mir_builder.add_statement(MirStmt::BuiltinVaEnd(ap));
         self.create_int_operand(0)
     }
 
     fn lower_builtin_va_copy(&mut self, scope_id: ScopeId, dst_ref: NodeRef, src_ref: NodeRef) -> Operand {
-        let dst_op = self.lower_expression(scope_id, dst_ref, true);
-        let dst_ty = self.ast.get_resolved_type(dst_ref).unwrap();
-        let dst_mir_ty = self.lower_qual_type(dst_ty);
-        let dst = self.ensure_place(dst_op, dst_mir_ty);
-
-        let src_op = self.lower_expression(scope_id, src_ref, true);
-        let src_ty = self.ast.get_resolved_type(src_ref).unwrap();
-        let src_mir_ty = self.lower_qual_type(src_ty);
-        let src = self.ensure_place(src_op, src_mir_ty);
+        let dst = self.lower_expression_as_place(scope_id, dst_ref);
+        let src = self.lower_expression_as_place(scope_id, src_ref);
 
         self.mir_builder.add_statement(MirStmt::BuiltinVaCopy(dst, src));
         self.create_int_operand(0)

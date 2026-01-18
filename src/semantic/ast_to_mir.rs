@@ -1077,11 +1077,11 @@ impl<'a> AstToMirLowerer<'a> {
 
         match op {
             BinaryOp::Add => {
-                if lhs_type.is_pointer() {
+                if lhs_type.ty().is_pointer() {
                     let rhs_mir_ty = self.lower_qual_type(rhs_type);
                     let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
                     Some(Rvalue::PtrAdd(lhs, rhs_converted))
-                } else if rhs_type.is_pointer() {
+                } else if rhs_type.ty().is_pointer() {
                     let lhs_mir_ty = self.lower_qual_type(lhs_type);
                     let lhs_converted = self.apply_conversions(lhs, left_ref, lhs_mir_ty);
                     Some(Rvalue::PtrAdd(rhs, lhs_converted))
@@ -1090,10 +1090,10 @@ impl<'a> AstToMirLowerer<'a> {
                 }
             }
             BinaryOp::Sub => {
-                if lhs_type.is_pointer() {
-                    if rhs_type.is_pointer() {
+                if lhs_type.ty().is_pointer() {
+                    if rhs_type.ty().is_pointer() {
                         Some(Rvalue::PtrDiff(lhs, rhs))
-                    } else if rhs_type.is_integer() {
+                    } else if rhs_type.ty().is_integer() {
                         let rhs_mir_ty = self.lower_qual_type(rhs_type);
                         let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
                         Some(Rvalue::PtrSub(lhs, rhs_converted))
@@ -1336,14 +1336,14 @@ impl<'a> AstToMirLowerer<'a> {
 
         // Handle both array and pointer types for index access
         // In C, arr[idx] is equivalent to *(arr + idx)
-        if arr_ty.is_array() {
+        if arr_ty.ty().is_array() {
             // Array indexing - use ArrayIndex place
             // We can skip the explicit layout check as we trust the type system
             let mir_type = self.lower_qual_type(arr_ty);
             let arr_place = self.ensure_place(arr_operand, mir_type);
 
             Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
-        } else if arr_ty.is_pointer() {
+        } else if arr_ty.ty().is_pointer() {
             // For pointer indexing, we can use the ArrayIndex place directly
             // since pointer indexing follows the same rules as array indexing
             // p[idx] is equivalent to *(p + idx) which is what ArrayIndex does
@@ -2049,7 +2049,7 @@ impl<'a> AstToMirLowerer<'a> {
         let one_const = Operand::Constant(self.create_constant(ConstValue::Int(1)));
         let minus_one_const = Operand::Constant(self.create_constant(ConstValue::Int(-1)));
 
-        if operand_ty.is_pointer() {
+        if operand_ty.ty().is_pointer() {
             if is_inc {
                 Rvalue::PtrAdd(operand, one_const)
             } else {

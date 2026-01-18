@@ -218,7 +218,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn check_scalar_condition(&mut self, condition: NodeRef) {
         if let Some(cond_ty) = self.visit_node(condition)
-            && !cond_ty.is_scalar()
+            && !cond_ty.ty().is_scalar()
         {
             // report error
         }
@@ -259,7 +259,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         let ret_ty = self.current_function_ret_type;
-        let is_void_func = ret_ty.is_some_and(|ty| ty.is_void());
+        let is_void_func = ret_ty.is_some_and(|ty| ty.ty().is_void());
         let func_name = self
             .current_function_name
             .clone()
@@ -295,7 +295,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.report_error(SemanticError::NotAnLvalue { span: full_span });
                     return None;
                 }
-                if operand_ty.is_array() || operand_ty.is_function() {
+                if operand_ty.ty().is_array() || operand_ty.ty().is_function() {
                     let decayed = self.registry.decay(operand_ty, TypeQualifiers::empty());
                     self.semantic_info.conversions[operand_ref.index()]
                         .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
@@ -304,7 +304,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.pointer_to(operand_ty)))
             }
             UnaryOp::Deref => {
-                let actual_ty = if operand_ty.is_array() || operand_ty.is_function() {
+                let actual_ty = if operand_ty.ty().is_array() || operand_ty.ty().is_function() {
                     let decayed = self.registry.decay(operand_ty, TypeQualifiers::empty());
                     self.semantic_info.conversions[operand_ref.index()]
                         .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
@@ -313,7 +313,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     operand_ty
                 };
 
-                if actual_ty.is_pointer() {
+                if actual_ty.ty().is_pointer() {
                     self.registry.get_pointee(actual_ty.ty())
                 } else {
                     None
@@ -321,10 +321,10 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
                 self.check_lvalue_and_modifiable(operand_ref, operand_ty, full_span);
-                if operand_ty.is_scalar() { Some(operand_ty) } else { None }
+                if operand_ty.ty().is_scalar() { Some(operand_ty) } else { None }
             }
             UnaryOp::Plus | UnaryOp::Minus => {
-                if operand_ty.is_scalar() {
+                if operand_ty.ty().is_scalar() {
                     // Strip all qualifiers for unary plus/minus operations
                     let stripped = self.registry.strip_all(operand_ty);
                     if stripped.qualifiers() != operand_ty.qualifiers() {
@@ -343,7 +343,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.type_bool))
             }
             UnaryOp::BitNot => {
-                if operand_ty.is_integer() {
+                if operand_ty.ty().is_integer() {
                     Some(self.apply_and_record_integer_promotion(operand_ref, operand_ty))
                 } else {
                     let type_kind = &self.registry.get(operand_ty.ty()).kind;
@@ -378,20 +378,20 @@ impl<'a> SemanticAnalyzer<'a> {
     ) -> Option<(QualType, QualType)> {
         match op {
             // Pointer + integer = pointer
-            BinaryOp::Add if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => {
+            BinaryOp::Add if lhs_promoted.ty().is_pointer() && rhs_promoted.ty().is_integer() => {
                 Some((lhs_promoted, lhs_promoted))
             }
-            BinaryOp::Add if lhs_promoted.is_integer() && rhs_promoted.is_pointer() => {
+            BinaryOp::Add if lhs_promoted.ty().is_integer() && rhs_promoted.ty().is_pointer() => {
                 Some((rhs_promoted, rhs_promoted))
             }
 
             // Pointer - integer = pointer
-            BinaryOp::Sub if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => {
+            BinaryOp::Sub if lhs_promoted.ty().is_pointer() && rhs_promoted.ty().is_integer() => {
                 Some((lhs_promoted, lhs_promoted))
             }
 
             // Pointer - pointer = integer (ptrdiff_t)
-            BinaryOp::Sub if lhs_promoted.is_pointer() && rhs_promoted.is_pointer() => {
+            BinaryOp::Sub if lhs_promoted.ty().is_pointer() && rhs_promoted.ty().is_pointer() => {
                 Some((QualType::unqualified(self.registry.type_int), lhs_promoted))
             }
 
@@ -402,7 +402,7 @@ impl<'a> SemanticAnalyzer<'a> {
             | BinaryOp::LessEqual
             | BinaryOp::Greater
             | BinaryOp::GreaterEqual => {
-                let common = if lhs_promoted.is_pointer() && rhs_promoted.is_pointer() {
+                let common = if lhs_promoted.ty().is_pointer() && rhs_promoted.ty().is_pointer() {
                     let lhs_base = self.registry.get_pointee(lhs_promoted.ty()).unwrap();
                     let rhs_base = self.registry.get_pointee(rhs_promoted.ty()).unwrap();
 
@@ -420,9 +420,9 @@ impl<'a> SemanticAnalyzer<'a> {
                         });
                         lhs_promoted
                     }
-                } else if lhs_promoted.is_pointer() {
+                } else if lhs_promoted.ty().is_pointer() {
                     lhs_promoted
-                } else if rhs_promoted.is_pointer() {
+                } else if rhs_promoted.ty().is_pointer() {
                     rhs_promoted
                 } else {
                     usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted)?
@@ -462,7 +462,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);
         let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
 
-        if op == BinaryOp::Mod && (!lhs_promoted.is_integer() || !rhs_promoted.is_integer()) {
+        if op == BinaryOp::Mod && (!lhs_promoted.ty().is_integer() || !rhs_promoted.ty().is_integer()) {
             let lhs_kind = &self.registry.get(lhs_promoted.ty()).kind;
             let rhs_kind = &self.registry.get(rhs_promoted.ty()).kind;
             self.report_error(SemanticError::InvalidBinaryOperands {
@@ -600,30 +600,30 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn check_assignment_constraints(&self, lhs_ty: QualType, rhs_ty: QualType, rhs_ref: NodeRef) -> bool {
         // 1. Arithmetic types
-        if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
+        if lhs_ty.ty().is_arithmetic() && rhs_ty.ty().is_arithmetic() {
             return true;
         }
 
         // 2. Structure or Union types
-        if lhs_ty.is_record() || rhs_ty.is_record() {
-            return lhs_ty.is_record() && rhs_ty.is_record() && lhs_ty.ty() == rhs_ty.ty();
+        if lhs_ty.ty().is_record() || rhs_ty.ty().is_record() {
+            return lhs_ty.ty().is_record() && rhs_ty.ty().is_record() && lhs_ty.ty() == rhs_ty.ty();
         }
 
         // 3. Pointers
-        if lhs_ty.is_pointer() {
+        if lhs_ty.ty().is_pointer() {
             if self.is_null_pointer_constant(rhs_ref) {
                 return true;
             }
 
             // Resolve implicit decay for RHS to check compatibility
-            let rhs_pointer_base = if rhs_ty.is_array() {
+            let rhs_pointer_base = if rhs_ty.ty().is_array() {
                 match &self.registry.get(rhs_ty.ty()).kind {
                     TypeKind::Array { element_type, .. } => Some(*element_type),
                     _ => None,
                 }
-            } else if rhs_ty.is_function() {
+            } else if rhs_ty.ty().is_function() {
                 Some(rhs_ty.ty()) // Function decays to pointer
-            } else if rhs_ty.is_pointer() {
+            } else if rhs_ty.ty().is_pointer() {
                 self.registry.get_pointee(rhs_ty.ty()).map(|qt| qt.ty())
             } else {
                 None
@@ -645,7 +645,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // 4. _Bool = Pointer
-        if lhs_ty.ty() == self.registry.type_bool && (rhs_ty.is_pointer() || rhs_ty.is_array() || rhs_ty.is_function())
+        if lhs_ty.ty() == self.registry.type_bool && (rhs_ty.ty().is_pointer() || rhs_ty.ty().is_array() || rhs_ty.ty().is_function())
         {
             return true;
         }
@@ -657,7 +657,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let idx = rhs_ref.index();
 
         // Null pointer constant conversion (0 or (void*)0 -> T*)
-        if lhs_ty.is_pointer() && self.is_null_pointer_constant(rhs_ref) {
+        if lhs_ty.ty().is_pointer() && self.is_null_pointer_constant(rhs_ref) {
             self.semantic_info.conversions[idx].push(ImplicitConversion::NullPointerConstant);
             // If it's still not the same type, we might need a PointerCast after NullPointerConstant desugaring?
             // Actually NullPointerConstant desugars to (T*)0 in many cases.
@@ -671,7 +671,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // Array-to-pointer decay
-        if lhs_ty.is_pointer() && rhs_ty.is_array() {
+        if lhs_ty.ty().is_pointer() && rhs_ty.ty().is_array() {
             let decayed = self.registry.decay(rhs_ty, TypeQualifiers::empty());
             self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay { to: decayed.ty() });
         }
@@ -690,16 +690,16 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::LiteralInt(_) | NodeKind::LiteralChar(_) | NodeKind::LiteralFloat(_)
         );
 
-        if ((lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic()) || (lhs_ty.is_pointer() && rhs_ty.is_pointer()))
+        if ((lhs_ty.ty().is_arithmetic() && rhs_ty.ty().is_arithmetic()) || (lhs_ty.ty().is_pointer() && rhs_ty.ty().is_pointer()))
             && (lhs_ty.ty() != rhs_ty.ty() || is_literal)
         {
             // For pointers, it's pointer cast. For arithmetic, integer/float cast.
-            if lhs_ty.is_pointer() && rhs_ty.is_pointer() {
+            if lhs_ty.ty().is_pointer() && rhs_ty.ty().is_pointer() {
                 self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
                     from: rhs_ty.ty(),
                     to: lhs_ty.ty(),
                 });
-            } else if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
+            } else if lhs_ty.ty().is_arithmetic() && rhs_ty.ty().is_arithmetic() {
                 self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
                     from: rhs_ty.ty(),
                     to: lhs_ty.ty(),
@@ -736,7 +736,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 // Visit to resolve type
                 if let Some(init_ty) = self.visit_node(init_ref) {
                     // Check if array string init
-                    let is_array_string_init = target_ty.is_array() && init_ty.is_array();
+                    let is_array_string_init = target_ty.ty().is_array() && init_ty.ty().is_array();
                     if is_array_string_init {
                         // Check element compatibility
                         let lhs_elem = match &self.registry.get(target_ty.ty()).kind {
@@ -774,7 +774,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn check_initializer_list(&mut self, list: &InitializerListData, target_ty: QualType) {
-        if target_ty.is_scalar() {
+        if target_ty.ty().is_scalar() {
             if list.init_len > 1 {
                 let second_idx = list.init_start.get() + 1;
                 let second_ref = NodeRef::new(second_idx).unwrap();
@@ -899,7 +899,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         let func_ty_ref = func_ty.ty();
         // Resolve function type (might be pointer to function)
-        let actual_func_ty_ref = if func_ty.is_pointer() {
+        let actual_func_ty_ref = if func_ty.ty().is_pointer() {
             // Check if it's pointer to function
             self.registry
                 .get_pointee(func_ty_ref)
@@ -938,7 +938,7 @@ impl<'a> SemanticAnalyzer<'a> {
                         // parameter. The default argument promotions are performed on trailing arguments."
                         if let Some(mut actual_arg_ty) = arg_ty {
                             // Explicitly handle array/function decay for variadic arguments first
-                            if actual_arg_ty.is_array() || actual_arg_ty.is_function() {
+                            if actual_arg_ty.ty().is_array() || actual_arg_ty.ty().is_function() {
                                 let decayed = self.registry.decay(actual_arg_ty, TypeQualifiers::empty());
                                 self.semantic_info.conversions[arg_node_ref.index()]
                                     .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
@@ -1051,7 +1051,7 @@ impl<'a> SemanticAnalyzer<'a> {
         self.visit_node(idx_ref);
         let arr_ty = self.visit_node(arr_ref)?;
 
-        if arr_ty.is_array() {
+        if arr_ty.ty().is_array() {
             // Ensure layout is computed for array type
             let _ = self.registry.ensure_layout(arr_ty.ty());
             match &self.registry.get(arr_ty.ty()).kind {
@@ -1330,13 +1330,13 @@ impl<'a> SemanticAnalyzer<'a> {
 
                 if let (Some(t), Some(e)) = (then_ty, else_ty) {
                     let result_ty = match (t, e) {
-                        (t, e) if t.is_arithmetic() && e.is_arithmetic() => {
+                        (t, e) if t.ty().is_arithmetic() && e.ty().is_arithmetic() => {
                             usual_arithmetic_conversions(self.registry, t, e)
                         }
                         (t, e) if t.ty() == e.ty() => Some(t),
-                        (t, _) if t.is_pointer() && self.is_null_pointer_constant(*else_expr) => Some(t),
-                        (_, e) if e.is_pointer() && self.is_null_pointer_constant(*then) => Some(e),
-                        (t, e) if t.is_pointer() && e.is_pointer() => {
+                        (t, _) if t.ty().is_pointer() && self.is_null_pointer_constant(*else_expr) => Some(t),
+                        (_, e) if e.ty().is_pointer() && self.is_null_pointer_constant(*then) => Some(e),
+                        (t, e) if t.ty().is_pointer() && e.ty().is_pointer() => {
                             // C11 6.5.15: pointer to void and pointer to object -> pointer to void
                             if t.ty() == self.registry.type_void_ptr || e.ty() == self.registry.type_void_ptr {
                                 Some(QualType::unqualified(self.registry.type_void_ptr))
@@ -1394,7 +1394,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::SizeOfExpr(expr) => {
                 if let Some(ty) = self.visit_node(*expr) {
-                    if ty.is_function() {
+                    if ty.ty().is_function() {
                         let span = self.ast.get_span(node_ref);
                         self.report_error(SemanticError::SizeOfFunctionType { span });
                     } else {

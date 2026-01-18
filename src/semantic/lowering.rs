@@ -221,7 +221,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         add: TypeQualifiers,
         span: SourceSpan,
     ) -> QualType {
-        if add.contains(TypeQualifiers::RESTRICT) && !base.is_pointer() {
+        if add.contains(TypeQualifiers::RESTRICT) && !base.ty().is_pointer() {
             self.report_error(SemanticError::InvalidRestrict { span });
         }
         self.registry.merge_qualifiers(base, add)
@@ -1348,7 +1348,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let existing = self.symbol_table.get_symbol(existing_ref);
 
             let is_global = current_scope == ScopeId::GLOBAL;
-            let is_func = new_ty.is_function();
+            let is_func = new_ty.ty().is_function();
             let new_has_linkage = is_global || storage == Some(StorageClass::Extern) || is_func;
 
             // Linkage conflict if:
@@ -1364,7 +1364,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         span,
                         first_def,
                     });
-                } else if new_ty.is_function() {
+                } else if new_ty.ty().is_function() {
                     // Check for linkage conflict (static followed by non-static)
                     if let SymbolKind::Function {
                         storage: existing_storage,
@@ -1583,7 +1583,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             let init_expr = init.initializer.map(|init_node| self.lower_expression(init_node));
 
-            let is_func = final_ty.is_function();
+            let is_func = final_ty.ty().is_function();
 
             // Validate function specifiers (inline, _Noreturn)
             if !is_func {
@@ -2360,7 +2360,7 @@ fn lower_struct_members(
                 let type_ref = ctx.merge_qualifiers_with_check(type_ref, spec_info.qualifiers, span);
 
                 // Check if it is a Record type (struct or union)
-                if type_ref.is_record() {
+                if type_ref.ty().is_record() {
                     let ty = ctx.registry.get(type_ref.ty());
                     if let TypeKind::Record { tag, .. } = &ty.kind {
                         // It must have no tag to be an anonymous member
@@ -2412,7 +2412,7 @@ fn lower_struct_members(
             };
 
             // Validate bit-field type
-            if bit_field_size.is_some() && !member_type.is_integer() {
+            if bit_field_size.is_some() && !member_type.ty().is_integer() {
                 ctx.report_error(SemanticError::InvalidBitfieldType {
                     ty: ctx.registry.display_qual_type(member_type),
                     span: init_declarator.span,

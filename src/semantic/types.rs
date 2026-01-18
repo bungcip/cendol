@@ -50,6 +50,19 @@ impl Type {
     pub(crate) fn new(kind: TypeKind) -> Self {
         Type { kind, layout: None }
     }
+
+    pub fn flatten_members(&self, registry: &super::TypeRegistry, flat_members: &mut Vec<StructMember>) {
+        if let TypeKind::Record { members, .. } = &self.kind {
+            for member in members.iter().cloned() {
+                if member.name.is_none() {
+                    let inner_type = registry.get(member.member_type.ty());
+                    inner_type.flatten_members(registry, flat_members);
+                } else {
+                    flat_members.push(member);
+                }
+            }
+        }
+    }
 }
 
 #[repr(u8)]

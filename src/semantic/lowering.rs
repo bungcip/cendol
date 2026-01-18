@@ -534,12 +534,48 @@ fn resolve_enum_tag(
     }
 }
 
+/// Recursively validates that there are no duplicate member names, descending into anonymous records.
+fn validate_record_members(ctx: &mut LowerCtx, members: &[StructMember], seen_names: &mut HashMap<NameId, SourceSpan>) {
+    for member in members {
+        if let Some(name) = member.name {
+            if let Some(&first_def) = seen_names.get(&name) {
+                ctx.report_error(SemanticError::DuplicateMember {
+                    name,
+                    span: member.span,
+                    first_def,
+                });
+            } else {
+                seen_names.insert(name, member.span);
+            }
+        } else {
+            // Anonymous member, recurse
+            let member_ty = member.member_type;
+            if member_ty.is_record() {
+                // To avoid borrow checker issues with `ctx`, we need to clone the inner members.
+                let inner_members = if let TypeKind::Record { members, .. } = &ctx.registry.get(member_ty.ty()).kind {
+                    Some(members.clone())
+                } else {
+                    None
+                };
+
+                if let Some(inner_members) = inner_members {
+                    validate_record_members(ctx, &inner_members, seen_names);
+                }
+            }
+        }
+    }
+}
+
 fn complete_record_symbol(
     ctx: &mut LowerCtx,
     tag: Option<NameId>,
     type_ref: TypeRef,
     members: Vec<StructMember>,
 ) -> Result<(), SemanticError> {
+    // New: Validate for name conflicts across anonymous members
+    let mut seen_names = HashMap::new();
+    validate_record_members(ctx, &members, &mut seen_names);
+
     // Update the type in AST and SymbolTable
     ctx.registry.complete_record(type_ref, members.clone());
     ctx.registry.ensure_layout(type_ref)?;
@@ -2343,7 +2379,6 @@ fn lower_struct_members(
     span: crate::ast::SourceSpan,
 ) -> Vec<StructMember> {
     let mut struct_members = Vec::new();
-    let mut seen_names = HashMap::new();
 
     for decl in members {
         // Handle anonymous struct/union members (C11 6.7.2.1p13)
@@ -2390,18 +2425,6 @@ fn lower_struct_members(
             let (bit_field_size, base_declarator) = extract_bit_field_width(&init_declarator.declarator, ctx);
 
             let member_name = extract_name(base_declarator);
-
-            if let Some(name) = member_name {
-                if let Some(&first_def) = seen_names.get(&name) {
-                    ctx.report_error(SemanticError::DuplicateMember {
-                        name,
-                        span: init_declarator.span,
-                        first_def,
-                    });
-                } else {
-                    seen_names.insert(name, init_declarator.span);
-                }
-            }
 
             let member_type = if let Some(base_type_ref) = spec_info.base_type {
                 // Manually re-apply qualifiers from the base type.

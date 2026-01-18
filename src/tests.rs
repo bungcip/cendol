@@ -17,6 +17,7 @@ pub mod pp_pasting;
 pub mod pp_stringification;
 pub mod preprocessor;
 pub mod preprocessor_regression;
+pub mod semantic_anonymous_struct;
 pub mod semantic_array_init_bug;
 pub mod semantic_arrays;
 pub mod semantic_assignment_validation;

@@ -12,7 +12,7 @@ use crate::mir::{
     MirBlockId, MirFunction, MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator,
     TypeId, UnaryFloatOp, UnaryIntOp,
 };
-use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
+use cranelift::codegen::ir::{Inst, StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
     AbiParam, Block, Configurable, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type,
     Value, types,
@@ -53,6 +53,14 @@ fn convert_type(mir_type: &MirType) -> Option<Type> {
 
         MirType::Array { .. } | MirType::Record { .. } => None,
         MirType::Function { .. } => Some(types::I64), // Function pointers
+    }
+}
+
+/// Helper function to convert MIR function kind to Cranelift linkage
+fn convert_linkage(kind: MirFunctionKind) -> Linkage {
+    match kind {
+        MirFunctionKind::Extern => Linkage::Import,
+        MirFunctionKind::Defined => Linkage::Export,
     }
 }
 
@@ -389,7 +397,7 @@ fn prepare_call_signature(
                 continue;
             }
         }
-        let mut arg_type = get_operand_cranelift_type(arg, mir).unwrap_or(types::I32);
+        let mut arg_type = get_operand_clif_type(arg, mir).unwrap_or(types::I32);
         // Normalized Variadic Signature hack: promote variadic GPR args to i64
         if is_variadic && arg_type.is_int() && arg_type.bits() < 64 {
             arg_type = types::I64;
@@ -412,41 +420,16 @@ fn prepare_call_signature(
     sig
 }
 
-/// Helper to resolve call arguments to values
-fn resolve_call_arguments(
-    args: &[Operand],
-    sig: &Signature,
-    builder: &mut FunctionBuilder,
-    cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
-    mir: &MirProgram,
-    module: &mut ObjectModule,
-) -> Result<Vec<Value>, String> {
-    let mut arg_values = Vec::new();
-    for i in 0..sig.params.len() {
-        let param_type = sig.params[i].value_type;
-        if i < args.len() {
-            let arg = &args[i];
-            match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
-                Ok(value) => arg_values.push(value),
-                Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
-            }
-        } else {
-            // Padding for variadic normalized signature (SysV x86_64 hack)
-            arg_values.push(builder.ins().iconst(param_type, 0));
-        }
-    }
-    Ok(arg_values)
-}
-
-/// Helper to resolve variadic call arguments, expanding structs to multiple I64 values
-fn resolve_variadic_call_arguments(
+/// Helper to resolve arguments for a call, handling variadic struct expansion if needed
+fn resolve_call_args(
     args: &[Operand],
     fixed_param_count: usize,
     sig: &Signature,
     builder: &mut FunctionBuilder,
-    cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
+    stack_slots: &HashMap<LocalId, StackSlot>,
     mir: &MirProgram,
     module: &mut ObjectModule,
+    is_variadic: bool,
 ) -> Result<Vec<Value>, String> {
     let mut arg_values = Vec::new();
     let mut sig_idx = 0;
@@ -458,15 +441,15 @@ fn resolve_variadic_call_arguments(
 
         let param_type = sig.params[sig_idx].value_type;
 
-        // Check if this is a variadic struct argument
-        if arg_idx >= fixed_param_count
+        // Check if this is a variadic struct argument that needs expansion
+        if is_variadic
+            && arg_idx >= fixed_param_count
             && let Ok(type_id) = get_operand_type_id(arg, mir)
         {
             let mir_type = mir.get_type(type_id);
             if mir_type.is_aggregate() {
                 // Get the struct address
-                let struct_addr =
-                    resolve_operand_to_value(arg, builder, types::I64, cranelift_stack_slots, mir, module)?;
+                let struct_addr = resolve_operand(arg, builder, types::I64, stack_slots, mir, module)?;
 
                 // Calculate how many I64 slots this struct needs
                 let size = mir_type_size(mir_type, mir).unwrap_or(8);
@@ -474,24 +457,26 @@ fn resolve_variadic_call_arguments(
 
                 // Load each I64 chunk from the struct
                 for slot in 0..num_slots {
-                    let offset = (slot * 8) as i32;
-                    let value = builder.ins().load(types::I64, MemFlags::new(), struct_addr, offset);
-                    arg_values.push(value);
-                    sig_idx += 1;
+                    if sig_idx < sig.params.len() {
+                        let offset = (slot * 8) as i32;
+                        let value = builder.ins().load(types::I64, MemFlags::new(), struct_addr, offset);
+                        arg_values.push(value);
+                        sig_idx += 1;
+                    }
                 }
                 continue;
             }
         }
 
         // Non-struct argument (or fixed param)
-        match resolve_operand_to_value(arg, builder, param_type, cranelift_stack_slots, mir, module) {
+        match resolve_operand(arg, builder, param_type, stack_slots, mir, module) {
             Ok(value) => arg_values.push(value),
             Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
         }
         sig_idx += 1;
     }
 
-    // Padding for remaining signature params (variadic slot padding)
+    // Padding for remaining signature params (variadic slot padding SysV x86_64 hack)
     while sig_idx < sig.params.len() {
         let param_type = sig.params[sig_idx].value_type;
         arg_values.push(builder.ins().iconst(param_type, 0));
@@ -501,194 +486,125 @@ fn resolve_variadic_call_arguments(
     Ok(arg_values)
 }
 
-/// Standalone function to emit a proper function call that actually invokes the function
+/// Helper to get the result of a call, or a zero constant if it has no return value
+fn get_call_result(builder: &mut FunctionBuilder, call_inst: Inst, expected_type: Type) -> Value {
+    let results = builder.inst_results(call_inst);
+    if results.is_empty() {
+        builder.ins().iconst(expected_type, 0)
+    } else {
+        results[0]
+    }
+}
+
 fn emit_function_call_impl(
     call_target: &CallTarget,
     args: &[Operand],
     builder: &mut FunctionBuilder,
     mir: &MirProgram,
-    cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
+    stack_slots: &HashMap<LocalId, StackSlot>,
     module: &mut ObjectModule,
     expected_type: Type,
 ) -> Result<Value, String> {
-    match call_target {
+    // 1. Determine function properties and callee address if indirect/variadic
+    let (return_type_id, param_types, is_variadic, name_linkage, target_addr) = match call_target {
         CallTarget::Direct(func_id) => {
             let func = mir.get_function(*func_id);
-            // Collect parameter types
             let param_types: Vec<TypeId> = func.params.iter().map(|&p| mir.get_local(p).type_id).collect();
-
-            if func.is_variadic {
-                // 1. Declare the function with its canonical signature (fixed params only)
-                // We pass empty args here so it only creates fixed params signature
-                let canonical_sig = prepare_call_signature(
-                    builder.func.signature.call_conv,
-                    func.return_type,
-                    &param_types,
-                    &[], // No extra args for canonical declaration
-                    mir,
-                    func.is_variadic,
-                );
-
-                let linkage = match func.kind {
-                    MirFunctionKind::Extern => cranelift_module::Linkage::Import,
-                    MirFunctionKind::Defined => cranelift_module::Linkage::Export,
-                };
-
-                let func_decl = module
-                    .declare_function(func.name.as_str(), linkage, &canonical_sig)
-                    .map_err(|e| format!("Failed to declare variadic function {}: {:?}", func.name, e))?;
-
-                // 2. Get the function address
-                let func_ref = module.declare_func_in_func(func_decl, builder.func);
-                let func_addr = builder.ins().func_addr(types::I64, func_ref);
-
-                // 3. Construct the call-site signature with all arguments (fixed + variadic)
-                let call_sig = prepare_call_signature(
-                    builder.func.signature.call_conv,
-                    func.return_type,
-                    &param_types,
-                    args,
-                    mir,
-                    func.is_variadic,
-                );
-                // 4. Resolve arguments (use variadic version for struct expansion)
-                let arg_values = resolve_variadic_call_arguments(
-                    args,
-                    param_types.len(),
-                    &call_sig,
-                    builder,
-                    cranelift_stack_slots,
-                    mir,
-                    module,
-                )?;
-
-                // 5. Perform indirect call
-                let sig_ref = builder.import_signature(call_sig);
-                let call_inst = builder.ins().call_indirect(sig_ref, func_addr, &arg_values);
-
-                let call_results = builder.inst_results(call_inst);
-                if !call_results.is_empty() {
-                    Ok(call_results[0])
-                } else {
-                    Ok(builder.ins().iconst(expected_type, 0))
-                }
-            } else {
-                // Regular (non-variadic) function call
-                let sig = prepare_call_signature(
-                    builder.func.signature.call_conv,
-                    func.return_type,
-                    &param_types,
-                    args,
-                    mir,
-                    func.is_variadic,
-                );
-
-                // Resolve arguments before declaring function to ensure types match?
-                // No, we resolve against the signature.
-                let arg_values = resolve_call_arguments(args, &sig, builder, cranelift_stack_slots, mir, module)?;
-
-                let linkage = match func.kind {
-                    MirFunctionKind::Extern => cranelift_module::Linkage::Import,
-                    MirFunctionKind::Defined => cranelift_module::Linkage::Export,
-                };
-
-                let func_decl = module
-                    .declare_function(func.name.as_str(), linkage, &sig)
-                    .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
-
-                let local_callee = module.declare_func_in_func(func_decl, builder.func);
-                let call_inst = builder.ins().call(local_callee, &arg_values);
-
-                let call_results = builder.inst_results(call_inst);
-                if !call_results.is_empty() {
-                    Ok(call_results[0])
-                } else {
-                    Ok(builder.ins().iconst(expected_type, 0))
-                }
-            }
+            (
+                func.return_type,
+                param_types,
+                func.is_variadic,
+                Some((func.name.as_str(), convert_linkage(func.kind))),
+                None,
+            )
         }
         CallTarget::Indirect(func_operand) => {
-            // 1. Get the type of the function pointer
             let func_ptr_type_id = get_operand_type_id(func_operand, mir)
                 .map_err(|e| format!("Failed to get function pointer type: {}", e))?;
-
             let func_ptr_type = mir.get_type(func_ptr_type_id);
 
-            // 2. It must be a pointer to a function OR a function type (if it was dereferenced)
             let ((return_type_id, param_types), is_function_type) = match func_ptr_type {
                 MirType::Pointer { pointee } => match mir.get_type(*pointee) {
                     MirType::Function { return_type, params } => ((*return_type, params.clone()), false),
-                    _ => {
-                        return Err(format!(
-                            "Indirect call operand points to non-function type: {:?}",
-                            mir.get_type(*pointee)
-                        ));
-                    }
+                    _ => return Err("Indirect call operand points to non-function type".to_string()),
                 },
                 MirType::Function { return_type, params } => ((*return_type, params.clone()), true),
-                _ => return Err(format!("Indirect call operand is not a pointer: {:?}", func_ptr_type)),
+                _ => return Err("Indirect call operand is not a pointer".to_string()),
             };
 
-            // 3. Construct the signature
-            let is_variadic_func = match mir.get_type(func_ptr_type_id) {
-                MirType::Pointer { pointee } => match mir.get_type(*pointee) {
-                    MirType::Function { .. } => {
-                        // For now we don't have is_variadic in MirType::Function
-                        false
-                    }
-                    _ => false,
-                },
-                _ => false,
+            let callee_val = if is_function_type {
+                match func_operand {
+                    Operand::Copy(place) => resolve_place_to_addr(place, builder, stack_slots, mir, module)?,
+                    _ => resolve_operand(func_operand, builder, types::I64, stack_slots, mir, module)?,
+                }
+            } else {
+                resolve_operand(func_operand, builder, types::I64, stack_slots, mir, module)?
             };
 
-            let sig = prepare_call_signature(
+            (return_type_id, param_types, false, None, Some(callee_val))
+        }
+    };
+
+    // 2. Prepare call site signature and resolve arguments
+    let sig = prepare_call_signature(
+        builder.func.signature.call_conv,
+        return_type_id,
+        &param_types,
+        args,
+        mir,
+        is_variadic,
+    );
+
+    let arg_values = resolve_call_args(
+        args,
+        param_types.len(),
+        &sig,
+        builder,
+        stack_slots,
+        mir,
+        module,
+        is_variadic,
+    )?;
+
+    // 3. Emit the call
+    let call_inst = if is_variadic {
+        if let Some((name, linkage)) = name_linkage {
+            // Variadic direct calls must be indirect to use the custom signature
+            let canonical_sig = prepare_call_signature(
                 builder.func.signature.call_conv,
                 return_type_id,
                 &param_types,
-                args,
+                &[],
                 mir,
-                is_variadic_func,
+                is_variadic,
             );
-
-            // 4. Resolve the function pointer operand to a value
-            let callee_val = if is_function_type {
-                // If the operand has Function type, it means it's an l-value representing the function (like *ptr).
-                // We need its address.
-                match func_operand {
-                    Operand::Copy(place) => resolve_place_to_addr(place, builder, cranelift_stack_slots, mir, module)?,
-                    _ => {
-                        resolve_operand_to_value(func_operand, builder, types::I64, cranelift_stack_slots, mir, module)?
-                    }
-                }
-            } else {
-                resolve_operand_to_value(
-                    func_operand,
-                    builder,
-                    types::I64, // Function pointers are I64
-                    cranelift_stack_slots,
-                    mir,
-                    module,
-                )?
-            };
-
-            // 5. Resolve arguments
-            let arg_values = resolve_call_arguments(args, &sig, builder, cranelift_stack_slots, mir, module)?;
-
-            // 6. Import signature
+            let decl = module
+                .declare_function(name, linkage, &canonical_sig)
+                .map_err(|e| format!("Failed to declare variadic function {}: {:?}", name, e))?;
+            let func_ref = module.declare_func_in_func(decl, builder.func);
+            let addr = builder.ins().func_addr(types::I64, func_ref);
             let sig_ref = builder.import_signature(sig);
-
-            // 7. Call indirect
-            let call_inst = builder.ins().call_indirect(sig_ref, callee_val, &arg_values);
-
-            // Extract the return value from the call instruction
-            let call_results = builder.inst_results(call_inst);
-            if !call_results.is_empty() {
-                Ok(call_results[0])
-            } else {
-                Ok(builder.ins().iconst(types::I32, 0))
-            }
+            builder.ins().call_indirect(sig_ref, addr, &arg_values)
+        } else if let Some(addr) = target_addr {
+            let sig_ref = builder.import_signature(sig);
+            builder.ins().call_indirect(sig_ref, addr, &arg_values)
+        } else {
+            return Err("Variadic call without target".to_string());
         }
-    }
+    } else if let Some(addr) = target_addr {
+        let sig_ref = builder.import_signature(sig);
+        builder.ins().call_indirect(sig_ref, addr, &arg_values)
+    } else {
+        // Direct non-variadic call
+        let (name, linkage) = name_linkage.unwrap();
+        let decl = module
+            .declare_function(name, linkage, &sig)
+            .map_err(|e| format!("Failed to declare function {}: {:?}", name, e))?;
+        let func_ref = module.declare_func_in_func(decl, builder.func);
+        builder.ins().call(func_ref, &arg_values)
+    };
+
+    Ok(get_call_result(builder, call_inst, expected_type))
 }
 
 /// Helper function to convert boolean to integer (0 or 1)
@@ -794,11 +710,11 @@ fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, build
 }
 
 /// Helper function to resolve a MIR operand to a Cranelift value
-fn resolve_operand_to_value(
+fn resolve_operand(
     operand: &Operand,
     builder: &mut FunctionBuilder,
     expected_type: Type,
-    cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
+    stack_slots: &HashMap<LocalId, StackSlot>,
     mir: &MirProgram,
     module: &mut ObjectModule,
 ) -> Result<Value, String> {
@@ -854,10 +770,7 @@ fn resolve_operand_to_value(
                         sig.params.push(AbiParam::new(param_type));
                     }
 
-                    let linkage = match func.kind {
-                        MirFunctionKind::Extern => Linkage::Import,
-                        MirFunctionKind::Defined => Linkage::Export,
-                    };
+                    let linkage = convert_linkage(func.kind);
 
                     let func_decl = module
                         .declare_function(func.name.as_str(), linkage, &sig)
@@ -872,32 +785,30 @@ fn resolve_operand_to_value(
         }
         Operand::Copy(place) => {
             // Determine the correct type from the place itself
-            let place_type_id =
-                get_place_type_id(place, mir).map_err(|e| format!("Failed to get place type: {}", e))?;
+            let place_type_id = get_place_type_id(place, mir);
             let place_type = mir.get_type(place_type_id);
 
             if place_type.is_aggregate() {
                 // For aggregate types, resolving the operand value means getting its address
-                let addr = resolve_place_to_addr(place, builder, cranelift_stack_slots, mir, module)?;
+                let addr = resolve_place_to_addr(place, builder, stack_slots, mir, module)?;
                 return Ok(emit_type_conversion(addr, types::I64, expected_type, false, builder));
             }
 
-            let place_cranelift_type =
+            let place_clif_type =
                 convert_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))?;
 
-            let val = resolve_place_to_value(place, builder, place_cranelift_type, cranelift_stack_slots, mir, module)?;
+            let val = resolve_place(place, builder, place_clif_type, stack_slots, mir, module)?;
             Ok(emit_type_conversion(
                 val,
-                place_cranelift_type,
+                place_clif_type,
                 expected_type,
                 place_type.is_signed(),
                 builder,
             ))
         }
         Operand::Cast(type_id, inner_operand) => {
-            let inner_type = get_operand_cranelift_type(inner_operand, mir)?;
-            let inner_val =
-                resolve_operand_to_value(inner_operand, builder, inner_type, cranelift_stack_slots, mir, module)?;
+            let inner_type = get_operand_clif_type(inner_operand, mir)?;
+            let inner_val = resolve_operand(inner_operand, builder, inner_type, stack_slots, mir, module)?;
 
             let mir_type = mir.get_type(*type_id);
             let target_type = convert_type(mir_type).unwrap_or(types::I32);
@@ -919,25 +830,25 @@ fn resolve_operand_to_value(
         }
         Operand::AddressOf(place) => {
             // The value of an AddressOf operand is the address of the place.
-            let addr = resolve_place_to_addr(place, builder, cranelift_stack_slots, mir, module)?;
+            let addr = resolve_place_to_addr(place, builder, stack_slots, mir, module)?;
             Ok(emit_type_conversion(addr, types::I64, expected_type, false, builder))
         }
     }
 }
 
 /// Helper function to resolve a MIR place to a Cranelift value
-fn resolve_place_to_value(
+fn resolve_place(
     place: &Place,
     builder: &mut FunctionBuilder,
     expected_type: Type,
-    cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
+    stack_slots: &HashMap<LocalId, StackSlot>,
     mir: &MirProgram,
     module: &mut ObjectModule,
 ) -> Result<Value, String> {
     match place {
         Place::Local(local_id) => {
             // A local place is resolved by loading from its stack slot
-            if let Some(stack_slot) = cranelift_stack_slots.get(local_id) {
+            if let Some(stack_slot) = stack_slots.get(local_id) {
                 Ok(builder.ins().stack_load(expected_type, *stack_slot, 0))
             } else {
                 Err(format!("Stack slot not found for local {}", local_id.get()))
@@ -948,7 +859,7 @@ fn resolve_place_to_value(
             let addr = resolve_place_to_addr(
                 place, // Pass the current place
                 builder,
-                cranelift_stack_slots,
+                stack_slots,
                 mir,
                 module,
             )?;
@@ -958,11 +869,11 @@ fn resolve_place_to_value(
         }
         Place::Deref(operand) => {
             // The address is the value of the operand, so we load from that value
-            let addr = resolve_operand_to_value(
+            let addr = resolve_operand(
                 operand,
                 builder,
                 types::I64, // Assume pointer size
-                cranelift_stack_slots,
+                stack_slots,
                 mir,
                 module,
             )?;
@@ -973,7 +884,7 @@ fn resolve_place_to_value(
             let addr = resolve_place_to_addr(
                 &Place::StructField(base_place.clone(), *field_index),
                 builder,
-                cranelift_stack_slots,
+                stack_slots,
                 mir,
                 module,
             )?;
@@ -984,7 +895,7 @@ fn resolve_place_to_value(
             let addr = resolve_place_to_addr(
                 &Place::ArrayIndex(base_place.clone(), index_operand.clone()),
                 builder,
-                cranelift_stack_slots,
+                stack_slots,
                 mir,
                 module,
             )?;
@@ -994,7 +905,7 @@ fn resolve_place_to_value(
 }
 
 /// Helper function to get the Cranelift Type of an operand
-fn get_operand_cranelift_type(operand: &Operand, mir: &MirProgram) -> Result<Type, String> {
+fn get_operand_clif_type(operand: &Operand, mir: &MirProgram) -> Result<Type, String> {
     match operand {
         Operand::Constant(const_id) => {
             let const_value = mir.constants.get(const_id).expect("constant id not found");
@@ -1021,7 +932,7 @@ fn get_operand_cranelift_type(operand: &Operand, mir: &MirProgram) -> Result<Typ
             }
         }
         Operand::Copy(place) => {
-            let place_type_id = get_place_type_id(place, mir)?;
+            let place_type_id = get_place_type_id(place, mir);
             let place_type = mir.get_type(place_type_id);
             if place_type.is_aggregate() {
                 return Ok(types::I64);
@@ -1042,21 +953,11 @@ fn get_operand_cranelift_type(operand: &Operand, mir: &MirProgram) -> Result<Typ
 /// Helper function to check if a MIR type is signed
 fn is_operand_signed(operand: &Operand, mir: &MirProgram) -> bool {
     match operand {
-        Operand::Copy(place) => {
-            if let Ok(type_id) = get_place_type_id(place, mir) {
-                return mir.get_type(type_id).is_signed();
-            }
-        }
-        Operand::Cast(type_id, _) => {
-            return mir.get_type(*type_id).is_signed();
-        }
-        Operand::Constant(_const_id) => {
-            // Default to signed for integer constants
-            return true;
-        }
-        _ => {}
+        Operand::Copy(place) => mir.get_type(get_place_type_id(place, mir)).is_signed(),
+        Operand::Cast(type_id, _) => mir.get_type(*type_id).is_signed(),
+        Operand::Constant(_const_id) => true,
+        _ => false,
     }
-    false
 }
 
 /// Helper function to get the TypeId of an operand
@@ -1066,13 +967,13 @@ fn get_operand_type_id(operand: &Operand, mir: &MirProgram) -> Result<TypeId, St
             let const_value = mir.constants.get(const_id).expect("constant id not found");
             Ok(const_value.ty)
         }
-        Operand::Copy(place) => get_place_type_id(place, mir),
+        Operand::Copy(place) => Ok(get_place_type_id(place, mir)),
         Operand::Cast(type_id, _) => Ok(*type_id),
         Operand::AddressOf(place) => {
             // AddressOf returns a pointer to the place's type.
             // We need to find or create this pointer type in MIR.
             // Actually, for PtrAdd scaling, we only care about the base type of the pointer.
-            let place_type_id = get_place_type_id(place, mir)?;
+            let place_type_id = get_place_type_id(place, mir);
             // We need the TypeId for ptr<place_type_id>
             // Let's see if we can find it in the type table.
             for (id, ty) in &mir.types {
@@ -1088,57 +989,43 @@ fn get_operand_type_id(operand: &Operand, mir: &MirProgram) -> Result<TypeId, St
 }
 
 /// Helper function to get the TypeId of a place
-fn get_place_type_id(place: &Place, mir: &MirProgram) -> Result<TypeId, String> {
+fn get_place_type_id(place: &Place, mir: &MirProgram) -> TypeId {
     match place {
-        Place::Local(local_id) => {
-            let tid = mir.get_local(*local_id).type_id;
-
-            Ok(tid)
-        }
-        Place::Global(global_id) => {
-            let tid = mir.get_global(*global_id).type_id;
-
-            Ok(tid)
-        }
+        Place::Local(local_id) => mir.get_local(*local_id).type_id,
+        Place::Global(global_id) => mir.get_global(*global_id).type_id,
         Place::Deref(operand) => {
             // To get the type of a dereference, we need the type of the operand,
             // which should be a pointer. The resulting type is the pointee.
-            let operand_type_id = get_operand_type_id(operand, mir)?;
+            let operand_type_id = get_operand_type_id(operand, mir).unwrap();
             let operand_type = mir.get_type(operand_type_id);
             match operand_type {
-                MirType::Pointer { pointee } => Ok(*pointee),
-                _ => Err("Cannot determine type for deref operand".to_string()),
+                MirType::Pointer { pointee } => *pointee,
+                _ => panic!("Cannot determine type for deref operand"),
             }
         }
         Place::StructField(base_place, field_index) => {
-            let base_type_id = get_place_type_id(base_place, mir)?;
+            let base_type_id = get_place_type_id(base_place, mir);
             let base_type = mir.get_type(base_type_id);
             match base_type {
-                MirType::Record { field_types, .. } => field_types
-                    .get(*field_index)
-                    .copied()
-                    .ok_or_else(|| "Field index out of bounds".to_string()),
+                MirType::Record { field_types, .. } => field_types.get(*field_index).copied().unwrap(),
                 MirType::Pointer { pointee } => {
                     let pointee_type = mir.get_type(*pointee);
                     if let MirType::Record { field_types, .. } = pointee_type {
-                        field_types
-                            .get(*field_index)
-                            .copied()
-                            .ok_or_else(|| "Field index out of bounds".to_string())
+                        field_types.get(*field_index).copied().unwrap()
                     } else {
-                        Err("Base of StructField is not a struct type".to_string())
+                        panic!("Base of StructField is not a struct type")
                     }
                 }
-                _ => Err("Base of StructField is not a struct type".to_string()),
+                _ => panic!("Base of StructField is not a struct type"),
             }
         }
         Place::ArrayIndex(base_place, _) => {
-            let base_type_id = get_place_type_id(base_place, mir)?;
+            let base_type_id = get_place_type_id(base_place, mir);
             let base_type = mir.get_type(base_type_id);
             match base_type {
-                MirType::Array { element, .. } => Ok(*element),
-                MirType::Pointer { pointee } => Ok(*pointee),
-                _ => Err("Base of ArrayIndex is not an array or pointer".to_string()),
+                MirType::Array { element, .. } => *element,
+                MirType::Pointer { pointee } => *pointee,
+                _ => panic!("Base of ArrayIndex is not an array or pointer"),
             }
         }
     }
@@ -1148,13 +1035,13 @@ fn get_place_type_id(place: &Place, mir: &MirProgram) -> Result<TypeId, String> 
 fn resolve_place_to_addr(
     place: &Place,
     builder: &mut FunctionBuilder,
-    cranelift_stack_slots: &HashMap<LocalId, StackSlot>,
+    stack_slots: &HashMap<LocalId, StackSlot>,
     mir: &MirProgram,
     module: &mut ObjectModule,
 ) -> Result<Value, String> {
     match place {
         Place::Local(local_id) => {
-            if let Some(stack_slot) = cranelift_stack_slots.get(local_id) {
+            if let Some(stack_slot) = stack_slots.get(local_id) {
                 Ok(builder.ins().stack_addr(types::I64, *stack_slot, 0))
             } else {
                 Err(format!("Stack slot not found for local {}", local_id.get()))
@@ -1163,9 +1050,9 @@ fn resolve_place_to_addr(
         Place::Global(global_id) => {
             let global = mir.get_global(*global_id);
             let linkage = if global.initial_value.is_some() {
-                cranelift_module::Linkage::Export
+                Linkage::Export
             } else {
-                cranelift_module::Linkage::Import
+                Linkage::Import
             };
 
             let global_val = module
@@ -1177,22 +1064,21 @@ fn resolve_place_to_addr(
         }
         Place::Deref(operand) => {
             // The address is the value of the operand itself (which should be a pointer).
-            resolve_operand_to_value(
+            resolve_operand(
                 operand,
                 builder,
                 types::I64, // Assume pointers are 64-bit
-                cranelift_stack_slots,
+                stack_slots,
                 mir,
                 module,
             )
         }
         Place::StructField(base_place, field_index) => {
             // Get the base address of the struct
-            let base_addr = resolve_place_to_addr(base_place, builder, cranelift_stack_slots, mir, module)?;
+            let base_addr = resolve_place_to_addr(base_place, builder, stack_slots, mir, module)?;
 
             // We need to find the type of the base_place to get the pre-computed field offset
-            let base_place_type_id = get_place_type_id(base_place, mir).map_err(|e| e.to_string())?;
-
+            let base_place_type_id = get_place_type_id(base_place, mir);
             let base_type = mir.get_type(base_place_type_id);
 
             let (field_offset, is_pointer) = match base_type {
@@ -1232,20 +1118,20 @@ fn resolve_place_to_addr(
         }
         Place::ArrayIndex(base_place, index_operand) => {
             // Get the base address of the array/pointer
-            let base_addr = resolve_place_to_addr(base_place, builder, cranelift_stack_slots, mir, module)?;
+            let base_addr = resolve_place_to_addr(base_place, builder, stack_slots, mir, module)?;
 
             // Resolve the index operand to a value
-            let index_val = resolve_operand_to_value(
+            let index_val = resolve_operand(
                 index_operand,
                 builder,
                 types::I64, // Use I64 for index calculations
-                cranelift_stack_slots,
+                stack_slots,
                 mir,
                 module,
             )?;
 
             // Determine the element size using pre-computed layout information
-            let base_place_type_id = get_place_type_id(base_place, mir).map_err(|e| e.to_string())?;
+            let base_place_type_id = get_place_type_id(base_place, mir);
             let base_type = mir.get_type(base_place_type_id);
 
             // If the base is a pointer, we must load the pointer value from the base address
@@ -1274,14 +1160,14 @@ fn lower_statement(
     stmt: &MirStmt,
     builder: &mut FunctionBuilder,
     mir: &MirProgram,
-    clif_stack_slots: &HashMap<LocalId, StackSlot>,
+    stack_slots: &HashMap<LocalId, StackSlot>,
     module: &mut ObjectModule,
     va_spill_slot: Option<StackSlot>,
     func: &MirFunction,
 ) -> Result<(), String> {
     match stmt {
         MirStmt::Assign(place, rvalue) => {
-            let place_type_id = get_place_type_id(place, mir)?;
+            let place_type_id = get_place_type_id(place, mir);
             let place_mir_type = mir.get_type(place_type_id);
             let expected_type = match convert_type(place_mir_type) {
                 Some(t) => t,
@@ -1291,50 +1177,34 @@ fn lower_statement(
 
             // Process the rvalue to get a Cranelift value first
             let rvalue_result = match rvalue {
-                Rvalue::Use(operand) => {
-                    resolve_operand_to_value(operand, builder, expected_type, clif_stack_slots, mir, module)
-                }
+                Rvalue::Use(operand) => resolve_operand(operand, builder, expected_type, stack_slots, mir, module),
                 Rvalue::Cast(type_id, operand) => {
-                    let inner_cranelift_type = get_operand_cranelift_type(operand, mir)?;
-                    let inner_val = resolve_operand_to_value(
-                        operand,
-                        builder,
-                        inner_cranelift_type,
-                        clif_stack_slots,
-                        mir,
-                        module,
-                    )?;
+                    let inner_clif_type = get_operand_clif_type(operand, mir)?;
+                    let inner_val = resolve_operand(operand, builder, inner_clif_type, stack_slots, mir, module)?;
 
                     let target_mir_type = mir.get_type(*type_id);
-                    let target_cranelift_type =
+                    let target_clif_type =
                         convert_type(target_mir_type).ok_or_else(|| "Cannot cast to void type".to_string())?;
 
                     let converted = emit_type_conversion(
                         inner_val,
-                        inner_cranelift_type,
-                        target_cranelift_type,
+                        inner_clif_type,
+                        target_clif_type,
                         is_operand_signed(operand, mir),
                         builder,
                     );
 
                     Ok(emit_type_conversion(
                         converted,
-                        target_cranelift_type,
+                        target_clif_type,
                         expected_type,
                         target_mir_type.is_signed(),
                         builder,
                     ))
                 }
                 Rvalue::UnaryIntOp(op, operand) => {
-                    let operand_cranelift_type = get_operand_cranelift_type(operand, mir)?;
-                    let val = resolve_operand_to_value(
-                        operand,
-                        builder,
-                        operand_cranelift_type,
-                        clif_stack_slots,
-                        mir,
-                        module,
-                    )?;
+                    let operand_clif_type = get_operand_clif_type(operand, mir)?;
+                    let val = resolve_operand(operand, builder, operand_clif_type, stack_slots, mir, module)?;
 
                     match op {
                         UnaryIntOp::Neg => Ok(builder.ins().ineg(val)),
@@ -1346,15 +1216,8 @@ fn lower_statement(
                     }
                 }
                 Rvalue::UnaryFloatOp(op, operand) => {
-                    let operand_cranelift_type = get_operand_cranelift_type(operand, mir)?;
-                    let val = resolve_operand_to_value(
-                        operand,
-                        builder,
-                        operand_cranelift_type,
-                        clif_stack_slots,
-                        mir,
-                        module,
-                    )?;
+                    let operand_clif_type = get_operand_clif_type(operand, mir)?;
+                    let val = resolve_operand(operand, builder, operand_clif_type, stack_slots, mir, module)?;
 
                     match op {
                         UnaryFloatOp::Neg => Ok(builder.ins().fneg(val)),
@@ -1370,9 +1233,8 @@ fn lower_statement(
                         return Err("PtrAdd base is not a pointer type".to_string());
                     };
 
-                    let base_val = resolve_operand_to_value(base, builder, types::I64, clif_stack_slots, mir, module)?;
-                    let offset_val =
-                        resolve_operand_to_value(offset, builder, types::I64, clif_stack_slots, mir, module)?;
+                    let base_val = resolve_operand(base, builder, types::I64, stack_slots, mir, module)?;
+                    let offset_val = resolve_operand(offset, builder, types::I64, stack_slots, mir, module)?;
 
                     let scaled_offset = if pointee_size > 1 {
                         let size_val = builder.ins().iconst(types::I64, pointee_size as i64);
@@ -1392,9 +1254,8 @@ fn lower_statement(
                         return Err("PtrSub base is not a pointer type".to_string());
                     };
 
-                    let base_val = resolve_operand_to_value(base, builder, types::I64, clif_stack_slots, mir, module)?;
-                    let offset_val =
-                        resolve_operand_to_value(offset, builder, types::I64, clif_stack_slots, mir, module)?;
+                    let base_val = resolve_operand(base, builder, types::I64, stack_slots, mir, module)?;
+                    let offset_val = resolve_operand(offset, builder, types::I64, stack_slots, mir, module)?;
 
                     let scaled_offset = if pointee_size > 1 {
                         let size_val = builder.ins().iconst(types::I64, pointee_size as i64);
@@ -1414,9 +1275,8 @@ fn lower_statement(
                         return Err("PtrDiff left operand is not a pointer type".to_string());
                     };
 
-                    let left_val = resolve_operand_to_value(left, builder, types::I64, clif_stack_slots, mir, module)?;
-                    let right_val =
-                        resolve_operand_to_value(right, builder, types::I64, clif_stack_slots, mir, module)?;
+                    let left_val = resolve_operand(left, builder, types::I64, stack_slots, mir, module)?;
+                    let right_val = resolve_operand(right, builder, types::I64, stack_slots, mir, module)?;
 
                     let diff = builder.ins().isub(left_val, right_val);
                     if pointee_size > 1 {
@@ -1427,14 +1287,14 @@ fn lower_statement(
                     }
                 }
                 Rvalue::Load(operand) => {
-                    let addr = resolve_operand_to_value(operand, builder, types::I64, clif_stack_slots, mir, module)?;
+                    let addr = resolve_operand(operand, builder, types::I64, stack_slots, mir, module)?;
                     Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
                 }
 
                 Rvalue::BinaryIntOp(op, left_operand, right_operand) => {
-                    let left_cranelift_type = get_operand_cranelift_type(left_operand, mir)
+                    let left_cranelift_type = get_operand_clif_type(left_operand, mir)
                         .map_err(|e| format!("Failed to get left operand type: {}", e))?;
-                    let right_cranelift_type = get_operand_cranelift_type(right_operand, mir)
+                    let right_cranelift_type = get_operand_clif_type(right_operand, mir)
                         .map_err(|e| format!("Failed to get right operand type: {}", e))?;
 
                     // For Add/Sub operations on Pointers, we treat them as I64
@@ -1453,23 +1313,10 @@ fn lower_statement(
                         _ => (left_cranelift_type, right_cranelift_type),
                     };
 
-                    let left_val = resolve_operand_to_value(
-                        left_operand,
-                        builder,
-                        final_left_type,
-                        clif_stack_slots,
-                        mir,
-                        module,
-                    )?;
+                    let left_val = resolve_operand(left_operand, builder, final_left_type, stack_slots, mir, module)?;
 
-                    let right_val = resolve_operand_to_value(
-                        right_operand,
-                        builder,
-                        final_right_type,
-                        clif_stack_slots,
-                        mir,
-                        module,
-                    )?;
+                    let right_val =
+                        resolve_operand(right_operand, builder, final_right_type, stack_slots, mir, module)?;
 
                     let result_val = match op {
                         BinaryIntOp::Add => builder.ins().iadd(left_val, right_val),
@@ -1545,28 +1392,16 @@ fn lower_statement(
                     ))
                 }
                 Rvalue::BinaryFloatOp(op, left_operand, right_operand) => {
-                    let left_cranelift_type = get_operand_cranelift_type(left_operand, mir)
+                    let left_cranelift_type = get_operand_clif_type(left_operand, mir)
                         .map_err(|e| format!("Failed to get left operand type: {}", e))?;
-                    let right_cranelift_type = get_operand_cranelift_type(right_operand, mir)
+                    let right_cranelift_type = get_operand_clif_type(right_operand, mir)
                         .map_err(|e| format!("Failed to get right operand type: {}", e))?;
 
-                    let left_val = resolve_operand_to_value(
-                        left_operand,
-                        builder,
-                        left_cranelift_type,
-                        clif_stack_slots,
-                        mir,
-                        module,
-                    )?;
+                    let left_val =
+                        resolve_operand(left_operand, builder, left_cranelift_type, stack_slots, mir, module)?;
 
-                    let right_val = resolve_operand_to_value(
-                        right_operand,
-                        builder,
-                        right_cranelift_type,
-                        clif_stack_slots,
-                        mir,
-                        module,
-                    )?;
+                    let right_val =
+                        resolve_operand(right_operand, builder, right_cranelift_type, stack_slots, mir, module)?;
 
                     let result_val = match op {
                         BinaryFloatOp::Add => builder.ins().fadd(left_val, right_val),
@@ -1624,7 +1459,7 @@ fn lower_statement(
                     // For GP types: if gp_offset < 48, fetch from reg_save_area + gp_offset
                     //               else fetch from overflow_arg_area
 
-                    let ap_addr = resolve_place_to_addr(ap, builder, clif_stack_slots, mir, module)?;
+                    let ap_addr = resolve_place_to_addr(ap, builder, stack_slots, mir, module)?;
 
                     // Load fields from va_list
                     let gp_offset = builder.ins().load(types::I32, MemFlags::new(), ap_addr, 0);
@@ -1696,19 +1531,19 @@ fn lower_statement(
 
             // Now, assign the resolved value to the place
             if let Ok(value) = rvalue_result {
-                let place_type_id = get_place_type_id(place, mir).unwrap();
+                let place_type_id = get_place_type_id(place, mir);
                 let mir_type = mir.get_type(place_type_id);
 
                 if mir_type.is_aggregate() {
                     // For aggregate types, the value is an address (returned by va_arg or similar)
-                    let dest_addr = resolve_place_to_addr(place, builder, clif_stack_slots, mir, module)?;
+                    let dest_addr = resolve_place_to_addr(place, builder, stack_slots, mir, module)?;
                     let size = mir_type_size(mir_type, mir)? as i64;
                     emit_memcpy(dest_addr, value, size, builder, module)?;
                 } else {
                     match place {
                         Place::Local(local_id) => {
                             // Check if this local has a stack slot (non-void types)
-                            if let Some(stack_slot) = clif_stack_slots.get(local_id) {
+                            if let Some(stack_slot) = stack_slots.get(local_id) {
                                 builder.ins().stack_store(value, *stack_slot, 0);
                             } else {
                                 // This local doesn't have a stack slot (likely a void type)
@@ -1723,7 +1558,7 @@ fn lower_statement(
                         }
                         _ => {
                             // This covers StructField, ArrayIndex, Deref, and Global assignments
-                            match resolve_place_to_addr(place, builder, clif_stack_slots, mir, module) {
+                            match resolve_place_to_addr(place, builder, stack_slots, mir, module) {
                                 Ok(addr) => {
                                     builder.ins().store(MemFlags::new(), value, addr, 0);
                                 }
@@ -1741,23 +1576,23 @@ fn lower_statement(
 
         MirStmt::Store(operand, place) => {
             // We need to determine the correct type for the operand
-            let place_type_id = get_place_type_id(place, mir)?;
+            let place_type_id = get_place_type_id(place, mir);
             let place_type = mir.get_type(place_type_id);
             let cranelift_type = convert_type(place_type).ok_or_else(|| "Cannot store to a void type".to_string())?;
 
-            let value = resolve_operand_to_value(operand, builder, cranelift_type, clif_stack_slots, mir, module)?;
+            let value = resolve_operand(operand, builder, cranelift_type, stack_slots, mir, module)?;
 
             // Now, store the value into the place
             match place {
                 Place::Local(local_id) => {
-                    let stack_slot = clif_stack_slots
+                    let stack_slot = stack_slots
                         .get(local_id)
                         .ok_or_else(|| format!("Stack slot not found for local {}", local_id.get()))?;
                     builder.ins().stack_store(value, *stack_slot, 0);
                 }
                 _ => {
                     // For other places, resolve to an address and store
-                    let addr = resolve_place_to_addr(place, builder, clif_stack_slots, mir, module)?;
+                    let addr = resolve_place_to_addr(place, builder, stack_slots, mir, module)?;
                     builder.ins().store(MemFlags::new(), value, addr, 0);
                 }
             }
@@ -1766,39 +1601,38 @@ fn lower_statement(
         MirStmt::Call { target, args, dest } => {
             if let Some(dest_place) = dest {
                 // Call with destination - need to store the result
-                let dest_type_id = get_place_type_id(dest_place, mir)?;
+                let dest_type_id = get_place_type_id(dest_place, mir);
                 let dest_mir_type = mir.get_type(dest_type_id);
                 let expected_type = match convert_type(dest_mir_type) {
                     Some(t) => t,
                     None if dest_mir_type.is_aggregate() => types::I64,
                     None => return Err("Cannot assign to void type".to_string()),
                 };
-                let result =
-                    emit_function_call_impl(target, args, builder, mir, clif_stack_slots, module, expected_type)?;
+                let result = emit_function_call_impl(target, args, builder, mir, stack_slots, module, expected_type)?;
 
                 // Store the result in the destination place
                 let dest_mir_type = mir.get_type(dest_type_id);
                 if dest_mir_type.is_aggregate() {
                     // For aggregate types, result is an address, memcpy to dest
-                    let dest_addr = resolve_place_to_addr(dest_place, builder, clif_stack_slots, mir, module)?;
+                    let dest_addr = resolve_place_to_addr(dest_place, builder, stack_slots, mir, module)?;
                     let size = mir_type_size(dest_mir_type, mir)? as i64;
                     emit_memcpy(dest_addr, result, size, builder, module)?;
                 } else {
                     match dest_place {
                         Place::Local(local_id) => {
-                            if let Some(stack_slot) = clif_stack_slots.get(local_id) {
+                            if let Some(stack_slot) = stack_slots.get(local_id) {
                                 builder.ins().stack_store(result, *stack_slot, 0);
                             }
                         }
                         _ => {
-                            let addr = resolve_place_to_addr(dest_place, builder, clif_stack_slots, mir, module)?;
+                            let addr = resolve_place_to_addr(dest_place, builder, stack_slots, mir, module)?;
                             builder.ins().store(MemFlags::new(), result, addr, 0);
                         }
                     }
                 }
             } else {
                 // Call without destination - ignore return value (side-effect only)
-                let _ = emit_function_call_impl(target, args, builder, mir, clif_stack_slots, module, types::I32)?;
+                let _ = emit_function_call_impl(target, args, builder, mir, stack_slots, module, types::I32)?;
             }
         }
 
@@ -1827,14 +1661,14 @@ fn lower_statement(
             // Store the returned pointer into the destination place
             match place {
                 Place::Local(local_id) => {
-                    if let Some(stack_slot) = clif_stack_slots.get(local_id) {
+                    if let Some(stack_slot) = stack_slots.get(local_id) {
                         builder.ins().stack_store(alloc_ptr, *stack_slot, 0);
                     } else {
                         eprintln!("Warning: Stack slot not found for local {}", local_id.get());
                     }
                 }
                 _ => {
-                    let addr = resolve_place_to_addr(place, builder, clif_stack_slots, mir, module)?;
+                    let addr = resolve_place_to_addr(place, builder, stack_slots, mir, module)?;
                     builder.ins().store(MemFlags::new(), alloc_ptr, addr, 0);
                 }
             }
@@ -1842,11 +1676,11 @@ fn lower_statement(
 
         MirStmt::Dealloc(operand) => {
             // Resolve the operand to get the pointer to be freed
-            let ptr_val = resolve_operand_to_value(
+            let ptr_val = resolve_operand(
                 operand,
                 builder,
                 types::I64, // Pointers are i64
-                clif_stack_slots,
+                stack_slots,
                 mir,
                 module,
             )?;
@@ -1876,7 +1710,7 @@ fn lower_statement(
             // We use a 16-slot (128-byte) spill area to capture all variadic args.
             // gp_offset starts after fixed params, and we use 128 as the threshold.
 
-            let ap_addr = resolve_place_to_addr(ap, builder, clif_stack_slots, mir, module)?;
+            let ap_addr = resolve_place_to_addr(ap, builder, stack_slots, mir, module)?;
 
             // Calculate gp_offset: fixed_params * 8 (each GP register is 8 bytes)
             let fixed_param_count = func.params.len() as i32;
@@ -1913,8 +1747,8 @@ fn lower_statement(
             // BuiltinVaEnd is a no-op
         }
         MirStmt::BuiltinVaCopy(dst, src) => {
-            let dst_addr = resolve_place_to_addr(dst, builder, clif_stack_slots, mir, module)?;
-            let src_addr = resolve_place_to_addr(src, builder, clif_stack_slots, mir, module)?;
+            let dst_addr = resolve_place_to_addr(dst, builder, stack_slots, mir, module)?;
+            let src_addr = resolve_place_to_addr(src, builder, stack_slots, mir, module)?;
 
             // Copy all 24 bytes of the va_list struct
             // gp_offset (4 bytes)
@@ -1955,7 +1789,7 @@ fn lower_terminator(
         }
 
         Terminator::If(cond, then_bb, else_bb) => {
-            let cond_val = resolve_operand_to_value(cond, builder, types::I32, clif_stack_slots, mir, module)?;
+            let cond_val = resolve_operand(cond, builder, types::I32, clif_stack_slots, mir, module)?;
 
             let then_cl_block = clif_blocks
                 .get(then_bb)
@@ -1973,8 +1807,7 @@ fn lower_terminator(
         Terminator::Return(opt) => {
             if let Some(operand) = opt {
                 if let Some(ret_type) = return_type_opt {
-                    let return_value =
-                        resolve_operand_to_value(operand, builder, ret_type, clif_stack_slots, mir, module)?;
+                    let return_value = resolve_operand(operand, builder, ret_type, clif_stack_slots, mir, module)?;
                     builder.ins().return_(&[return_value]);
                 } else {
                     return Err("Returning a value from a void function".to_string());
@@ -2081,10 +1914,7 @@ fn finalize_function_processing(
     compiled_functions: &mut HashMap<String, String>,
 ) -> Result<(), String> {
     // Now declare and define the function
-    let linkage = match func.kind {
-        MirFunctionKind::Extern => cranelift_module::Linkage::Import,
-        MirFunctionKind::Defined => cranelift_module::Linkage::Export,
-    };
+    let linkage = convert_linkage(func.kind);
 
     let id = module
         .declare_function(func.name.as_str(), linkage, &func_ctx.func.signature)
@@ -2178,10 +2008,7 @@ impl MirToCraneliftLowerer {
 
         // Pass 2: Declare all functions
         for (func_id, func) in &self.mir.functions {
-            let linkage = match func.kind {
-                MirFunctionKind::Extern => Linkage::Import,
-                MirFunctionKind::Defined => Linkage::Export,
-            };
+            let linkage = convert_linkage(func.kind);
 
             // Calculate signature for declaration
             let mut sig = self.module.make_signature();

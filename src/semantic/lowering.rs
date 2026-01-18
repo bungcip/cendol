@@ -534,11 +534,23 @@ fn resolve_enum_tag(
 }
 
 /// Recursively validates that there are no duplicate member names, descending into anonymous records.
-fn validate_record_members(ctx: &mut LowerCtx, members: &[StructMember], seen_names: &mut HashMap<NameId, SourceSpan>) {
+///
+/// ⚡ Bolt: This function is optimized to avoid heap allocations.
+/// Instead of taking a mutable `LowerCtx` and cloning member lists to satisfy the
+/// borrow checker, it now takes an immutable `&TypeRegistry` and returns a `Vec`
+/// of diagnostics. This avoids expensive `members.clone()` operations, especially
+/// in deeply nested anonymous structs/unions.
+fn validate_record_members(
+    registry: &TypeRegistry,
+    members: &[StructMember],
+    seen_names: &mut HashMap<NameId, SourceSpan>,
+) -> Vec<SemanticError> {
+    let mut errors = Vec::new();
+
     for member in members {
         if let Some(name) = member.name {
             if let Some(&first_def) = seen_names.get(&name) {
-                ctx.report_error(SemanticError::DuplicateMember {
+                errors.push(SemanticError::DuplicateMember {
                     name,
                     span: member.span,
                     first_def,
@@ -550,19 +562,16 @@ fn validate_record_members(ctx: &mut LowerCtx, members: &[StructMember], seen_na
             // Anonymous member, recurse
             let member_ty = member.member_type;
             if member_ty.is_record() {
-                // To avoid borrow checker issues with `ctx`, we need to clone the inner members.
-                let inner_members = if let TypeKind::Record { members, .. } = &ctx.registry.get(member_ty.ty()).kind {
-                    Some(members.clone())
-                } else {
-                    None
-                };
-
-                if let Some(inner_members) = inner_members {
-                    validate_record_members(ctx, &inner_members, seen_names);
+                if let TypeKind::Record {
+                    members: inner_members, ..
+                } = &registry.get(member_ty.ty()).kind
+                {
+                    errors.extend(validate_record_members(registry, inner_members, seen_names));
                 }
             }
         }
     }
+    errors
 }
 
 fn complete_record_symbol(
@@ -573,7 +582,10 @@ fn complete_record_symbol(
 ) -> Result<(), SemanticError> {
     // New: Validate for name conflicts across anonymous members
     let mut seen_names = HashMap::new();
-    validate_record_members(ctx, &members, &mut seen_names);
+    let validation_errors = validate_record_members(ctx.registry, &members, &mut seen_names);
+    for error in validation_errors {
+        ctx.report_error(error);
+    }
 
     // Update the type in AST and SymbolTable
     ctx.registry.complete_record(type_ref, members.clone());

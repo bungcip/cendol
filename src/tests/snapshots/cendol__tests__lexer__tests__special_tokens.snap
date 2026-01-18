@@ -1,0 +1,9 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 192
+expression: "vec![(\"EOF check\", eof_case), (\"Unknown check\", unknown_case)]"
+---
+- - EOF check
+  - - EndOfFile
+- - Unknown check
+  - - Unknown

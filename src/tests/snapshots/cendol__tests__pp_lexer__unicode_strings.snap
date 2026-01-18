@@ -1,0 +1,40 @@
+---
+source: src/tests/pp_lexer.rs
+assertion_line: 229
+expression: results
+---
+- - mixed
+  - - kind:
+        StringLiteral: "L\"hello$$你好¢¢世界€€world\""
+      flags: ""
+      text: "L\"hello$$你好¢¢世界€€world\""
+- - "L\"你好世界\""
+  - - kind:
+        StringLiteral: "L\"你好世界\""
+      flags: ""
+      text: "L\"你好世界\""
+- - "L\"€$¢£¥\""
+  - - kind:
+        StringLiteral: "L\"€$¢£¥\""
+      flags: ""
+      text: "L\"€$¢£¥\""
+- - "L\"hello¢world€test\""
+  - - kind:
+        StringLiteral: "L\"hello¢world€test\""
+      flags: ""
+      text: "L\"hello¢world€test\""
+- - "L\"café naïve résumé\""
+  - - kind:
+        StringLiteral: "L\"café naïve résumé\""
+      flags: ""
+      text: "L\"café naïve résumé\""
+- - "L\"αβγδε\""
+  - - kind:
+        StringLiteral: "L\"αβγδε\""
+      flags: ""
+      text: "L\"αβγδε\""
+- - "L\"привет мир\""
+  - - kind:
+        StringLiteral: "L\"привет мир\""
+      flags: ""
+      text: "L\"привет мир\""

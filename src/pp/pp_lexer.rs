@@ -2,10 +2,11 @@ use crate::{
     intern::StringId,
     source_manager::{SourceId, SourceLoc},
 };
+use serde::Serialize;
 
 // Packed token flags for preprocessor tokens
 bitflags::bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
     pub struct PPTokenFlags: u8 {
         const LEADING_SPACE = 1 << 0;  // Token has leading whitespace
         const STARTS_PP_LINE = 1 << 1; // Token starts a preprocessing line
@@ -15,7 +16,7 @@ bitflags::bitflags! {
 }
 
 /// Token kinds for preprocessor tokens
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub enum PPTokenKind {
     // Punctuation and operators
     Plus,

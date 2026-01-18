@@ -1,0 +1,40 @@
+---
+source: src/tests/pp_lexer.rs
+assertion_line: 252
+expression: results
+---
+- - "L\"hello \\\"world\\\" \\\\test\""
+  - - kind:
+        StringLiteral: "L\"hello \\\"world\\\" \\\\test\""
+      flags: ""
+      text: "L\"hello \\\"world\\\" \\\\test\""
+- - "L\"café's \\\"test\\\" \\\\value\""
+  - - kind:
+        StringLiteral: "L\"café's \\\"test\\\" \\\\value\""
+      flags: ""
+      text: "L\"café's \\\"test\\\" \\\\value\""
+- - "L\"hello\\\nworld\""
+  - - kind:
+        StringLiteral: "L\"helloworld\""
+      flags: ""
+      text: "L\"helloworld\""
+- - "\""
+  - - kind:
+        StringLiteral: "\""
+      flags: ""
+      text: "\""
+- - "L\"\""
+  - - kind:
+        StringLiteral: "L\"\""
+      flags: ""
+      text: "L\"\""
+- - "u\"\""
+  - - kind:
+        StringLiteral: "u\"\""
+      flags: ""
+      text: "u\"\""
+- - "U\"\""
+  - - kind:
+        StringLiteral: "U\"\""
+      flags: ""
+      text: "U\"\""

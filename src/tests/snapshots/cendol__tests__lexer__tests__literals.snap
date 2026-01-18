@@ -1,0 +1,113 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 143
+expression: results
+---
+- - Integer
+  - "42"
+  - - IntegerConstant: 42
+- - Integer
+  - "0x1A"
+  - - IntegerConstant: 26
+- - Integer
+  - "077"
+  - - IntegerConstant: 63
+- - Integer
+  - 1ll
+  - - IntegerConstant: 1
+- - Integer
+  - 42u
+  - - IntegerConstant: 42
+- - Integer
+  - 123l
+  - - IntegerConstant: 123
+- - Integer
+  - 456ul
+  - - IntegerConstant: 456
+- - Integer
+  - 789lu
+  - - IntegerConstant: 789
+- - Integer
+  - 1000ull
+  - - IntegerConstant: 1000
+- - Integer
+  - 2000llu
+  - - IntegerConstant: 2000
+- - Integer
+  - "0x1Au"
+  - - IntegerConstant: 26
+- - Integer
+  - "0xFFll"
+  - - IntegerConstant: 255
+- - Integer
+  - "0x10UL"
+  - - IntegerConstant: 16
+- - Integer
+  - "0x20LU"
+  - - IntegerConstant: 32
+- - Integer
+  - "0x40ULL"
+  - - IntegerConstant: 64
+- - Integer
+  - "0x80LLU"
+  - - IntegerConstant: 128
+- - Integer
+  - 077u
+  - - IntegerConstant: 63
+- - Integer
+  - 0123l
+  - - IntegerConstant: 83
+- - Integer
+  - 0777ul
+  - - IntegerConstant: 511
+- - Integer
+  - 0123lu
+  - - IntegerConstant: 83
+- - Integer
+  - 0777ull
+  - - IntegerConstant: 511
+- - Integer
+  - 0123llu
+  - - IntegerConstant: 83
+- - Integer
+  - 1LL
+  - - IntegerConstant: 1
+- - Integer
+  - 42U
+  - - IntegerConstant: 42
+- - Integer
+  - 123L
+  - - IntegerConstant: 123
+- - Integer
+  - 456UL
+  - - IntegerConstant: 456
+- - Integer
+  - 789LU
+  - - IntegerConstant: 789
+- - Integer
+  - 1000ULL
+  - - IntegerConstant: 1000
+- - Integer
+  - 2000LLU
+  - - IntegerConstant: 2000
+- - Float
+  - "1.5"
+  - - FloatConstant: 1.5
+- - Float
+  - "1.23e-4"
+  - - FloatConstant: 0.000123
+- - Float
+  - "0x1.2p3"
+  - - FloatConstant: 9
+- - Char
+  - "'a'"
+  - - CharacterConstant: 97
+- - Char
+  - "'\\n'"
+  - - CharacterConstant: 10
+- - String
+  - "\"hello\""
+  - - StringLiteral: hello
+- - String
+  - "\"world\\n\""
+  - - StringLiteral: "world\n"

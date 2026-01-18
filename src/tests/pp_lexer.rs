@@ -1,6 +1,7 @@
 use crate::pp::pp_lexer::PPLexer;
 use crate::pp::{PPTokenFlags, PPTokenKind};
 use crate::source_manager::SourceId;
+use serde::Serialize;
 
 /// Helper function to create a PPLexer for testing
 fn create_test_pp_lexer(source: &str) -> PPLexer {
@@ -9,25 +10,31 @@ fn create_test_pp_lexer(source: &str) -> PPLexer {
     PPLexer::new(source_id, buffer)
 }
 
-/// Macro to test multiple token productions in sequence
-macro_rules! test_tokens {
-    ($lexer:expr, $( ($input:expr, $expected:pat) ),* $(,)?) => {
-        $(
-            let token = $lexer.next_token().unwrap();
-            match token.kind {
-                $expected => {
-                    assert_eq!(token.get_text(), $input, "Token text mismatch for {}", stringify!($expected));
-                },
-                _ => panic!("Expected {:?}, got {:?}", stringify!($expected), token.kind),
-            }
-        )*
-    };
+#[derive(Serialize)]
+struct SnapshotPPToken {
+    kind: PPTokenKind,
+    flags: PPTokenFlags,
+    text: String,
 }
+
+fn setup_pp_lexer_snapshot(source: &str) -> Vec<SnapshotPPToken> {
+    let mut lexer = create_test_pp_lexer(source);
+    let mut tokens = Vec::new();
+    while let Some(token) = lexer.next_token() {
+        tokens.push(SnapshotPPToken {
+            kind: token.kind,
+            flags: token.flags,
+            text: token.get_text().to_string(),
+        });
+    }
+    tokens
+}
+
 /// Test comprehensive line splicing scenarios
 #[test]
 fn test_line_splicing_comprehensive() {
     // Basic line splicing
-    let source = "hel\\
+    let source1 = "hel\\
 lo
 hel\\
 lo\\
@@ -37,61 +44,58 @@ world
 \"hello\\
 world\"
 ";
-    let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(
-        lexer,
-        ("hello", PPTokenKind::Identifier(_)),
-        ("helloworld", PPTokenKind::Identifier(_)),
-        ("123456", PPTokenKind::Number(_)),
-        ("\"helloworld\"", PPTokenKind::StringLiteral(_)),
-    );
 
     // Line splicing with whitespace
-    let source = "hel  \\
+    let source2 = "hel  \\
     lo";
-    let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(lexer, ("hel", PPTokenKind::Identifier(_)));
 
     // No line splicing (regular newline)
-    let source = "hello\nworld";
-    let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(
-        lexer,
-        ("hello", PPTokenKind::Identifier(_)),
-        ("world", PPTokenKind::Identifier(_)),
-    );
+    let source3 = "hello\nworld";
 
     // Line splicing at end of buffer
-    let source = "test\\";
-    let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(lexer, ("test", PPTokenKind::Identifier(_)));
+    let source4 = "test\\";
 
     // Line splicing with CRLF
-    let source = "hel\\\r\nlo";
-    let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(lexer, ("hello", PPTokenKind::Identifier(_)));
+    let source5 = "hel\\\r\nlo";
 
     // Line splicing with CR
-    let source = "hel\\\rlo";
-    let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(lexer, ("hello", PPTokenKind::Identifier(_)));
+    let source6 = "hel\\\rlo";
 
     // Line splicing with CR at end
-    let source = "test\\\r";
-    let mut lexer = create_test_pp_lexer(source);
-    test_tokens!(lexer, ("test", PPTokenKind::Identifier(_)));
+    let source7 = "test\\\r";
 
+    // Consecutive splices
+    let source8 = "A\\\n\\\nB";
+
+    // Consecutive splices with CR
+    let source9 = "A\\\r\n\\\r\nB";
+
+    insta::assert_yaml_snapshot!(vec![
+        ("basic", setup_pp_lexer_snapshot(source1)),
+        ("whitespace", setup_pp_lexer_snapshot(source2)),
+        ("regular_newline", setup_pp_lexer_snapshot(source3)),
+        ("end_buffer", setup_pp_lexer_snapshot(source4)),
+        ("crlf", setup_pp_lexer_snapshot(source5)),
+        ("cr", setup_pp_lexer_snapshot(source6)),
+        ("cr_end", setup_pp_lexer_snapshot(source7)),
+        ("consecutive", setup_pp_lexer_snapshot(source8)),
+        ("consecutive_cr", setup_pp_lexer_snapshot(source9)),
+    ]);
+}
+
+#[test]
+fn test_line_splicing_iterators() {
     // Test next_char with line splicing
     let source = "a\\
 b";
     let mut lexer = create_test_pp_lexer(source);
-    assert_eq!(lexer.next_char(), Some(b'a'));
-    assert_eq!(lexer.next_char(), Some(b'b'));
-    assert_eq!(lexer.next_char(), None);
+    let mut chars = Vec::new();
+    while let Some(c) = lexer.next_char() {
+        chars.push(c as char);
+    }
+    assert_eq!(chars, vec!['a', 'b']);
 
     // Test peek_char with line splicing
-    let source = "a\\
-b";
     let mut lexer = create_test_pp_lexer(source);
     assert_eq!(lexer.peek_char(), Some(b'a'));
     assert_eq!(lexer.position, 0);
@@ -105,218 +109,79 @@ b";
 #[test]
 fn test_all_punctuation_tokens() {
     let source = "+ - * / % & | ^ ! ~ < > <= >= == != << >> = += -= *= /= %= &= |= ^= <<= >>= ++ -- -> . ? : , ; ( ) [ ] { } ... && || # ##";
-    let mut lexer = create_test_pp_lexer(source);
-
-    test_tokens!(
-        lexer,
-        ("+", PPTokenKind::Plus),
-        ("-", PPTokenKind::Minus),
-        ("*", PPTokenKind::Star),
-        ("/", PPTokenKind::Slash),
-        ("%", PPTokenKind::Percent),
-        ("&", PPTokenKind::And),
-        ("|", PPTokenKind::Or),
-        ("^", PPTokenKind::Xor),
-        ("!", PPTokenKind::Not),
-        ("~", PPTokenKind::Tilde),
-        ("<", PPTokenKind::Less),
-        (">", PPTokenKind::Greater),
-        ("<=", PPTokenKind::LessEqual),
-        (">=", PPTokenKind::GreaterEqual),
-        ("==", PPTokenKind::Equal),
-        ("!=", PPTokenKind::NotEqual),
-        ("<<", PPTokenKind::LeftShift),
-        (">>", PPTokenKind::RightShift),
-        ("=", PPTokenKind::Assign),
-        ("+=", PPTokenKind::PlusAssign),
-        ("-=", PPTokenKind::MinusAssign),
-        ("*=", PPTokenKind::StarAssign),
-        ("/=", PPTokenKind::DivAssign),
-        ("%=", PPTokenKind::ModAssign),
-        ("&=", PPTokenKind::AndAssign),
-        ("|=", PPTokenKind::OrAssign),
-        ("^=", PPTokenKind::XorAssign),
-        ("<<=", PPTokenKind::LeftShiftAssign),
-        (">>=", PPTokenKind::RightShiftAssign),
-        ("++", PPTokenKind::Increment),
-        ("--", PPTokenKind::Decrement),
-        ("->", PPTokenKind::Arrow),
-        (".", PPTokenKind::Dot),
-        ("?", PPTokenKind::Question),
-        (":", PPTokenKind::Colon),
-        (",", PPTokenKind::Comma),
-        (";", PPTokenKind::Semicolon),
-        ("(", PPTokenKind::LeftParen),
-        (")", PPTokenKind::RightParen),
-        ("[", PPTokenKind::LeftBracket),
-        ("]", PPTokenKind::RightBracket),
-        ("{", PPTokenKind::LeftBrace),
-        ("}", PPTokenKind::RightBrace),
-        ("...", PPTokenKind::Ellipsis),
-        ("&&", PPTokenKind::LogicAnd),
-        ("||", PPTokenKind::LogicOr),
-        ("#", PPTokenKind::Hash),
-        ("##", PPTokenKind::HashHash),
-    );
+    let tokens = setup_pp_lexer_snapshot(source);
+    insta::assert_yaml_snapshot!(tokens);
 }
 
 /// Test that PPLexer can produce all keyword tokens
 #[test]
 fn test_all_keyword_tokens() {
     let source = "if ifdef ifndef elif else endif define undef include line pragma error warning";
-    let mut lexer = create_test_pp_lexer(source);
-
-    test_tokens!(
-        lexer,
-        ("if", PPTokenKind::Identifier(_)),
-        ("ifdef", PPTokenKind::Identifier(_)),
-        ("ifndef", PPTokenKind::Identifier(_)),
-        ("elif", PPTokenKind::Identifier(_)),
-        ("else", PPTokenKind::Identifier(_)),
-        ("endif", PPTokenKind::Identifier(_)),
-        ("define", PPTokenKind::Identifier(_)),
-        ("undef", PPTokenKind::Identifier(_)),
-        ("include", PPTokenKind::Identifier(_)),
-        ("line", PPTokenKind::Identifier(_)),
-        ("pragma", PPTokenKind::Identifier(_)),
-        ("error", PPTokenKind::Identifier(_)),
-        ("warning", PPTokenKind::Identifier(_)),
-    );
+    let tokens = setup_pp_lexer_snapshot(source);
+    insta::assert_yaml_snapshot!(tokens);
 }
 
 /// Test that PPLexer can produce all literal tokens
 #[test]
 fn test_all_literal_tokens() {
     let source = "variable \"string\" 'c' 123";
-    let mut lexer = create_test_pp_lexer(source);
-
-    test_tokens!(
-        lexer,
-        ("variable", PPTokenKind::Identifier(_)),
-        ("\"string\"", PPTokenKind::StringLiteral(_)),
-        ("'c'", PPTokenKind::CharLiteral(_, _)),
-        ("123", PPTokenKind::Number(_)),
-    );
+    let tokens = setup_pp_lexer_snapshot(source);
+    insta::assert_yaml_snapshot!(tokens);
 }
 
 /// Test that adjacent string literals are not combined in preprocessor stage
 #[test]
 fn test_adjacent_string_literals_not_combined() {
     let source = "\"hello\" \"world\"";
-    let mut lexer = create_test_pp_lexer(source);
-
-    test_tokens!(
-        lexer,
-        ("\"hello\"", PPTokenKind::StringLiteral(_)),
-        ("\"world\"", PPTokenKind::StringLiteral(_)),
-    );
+    let tokens = setup_pp_lexer_snapshot(source);
+    insta::assert_yaml_snapshot!(tokens);
 }
 
 /// Test that line splicing is handled correctly in skip_whitespace_and_comments
-/// This prevents regression of the bug where backslash-newline in macro definitions
-/// caused Unknown tokens due to improper splicing in whitespace skipping.
 #[test]
 fn test_line_splicing_in_skip_whitespace() {
-    // This simulates the scenario in macro definitions where backslash-newline
-    // appears after skipping initial whitespace, and ensures no Unknown tokens
     let source = "   \\\n   identifier";
-    let mut lexer = create_test_pp_lexer(source);
-
-    // The lexer should skip the whitespace and handle the splicing,
-    // then lex "identifier" without producing Unknown for the space after splicing
-    test_tokens!(lexer, ("identifier", PPTokenKind::Identifier(_)));
-
-    // Should be no more tokens
-    assert!(lexer.next_token().is_none());
+    let tokens = setup_pp_lexer_snapshot(source);
+    insta::assert_yaml_snapshot!(tokens);
 }
 
-/// Test that single # tokens always have STARTS_PP_LINE flag set
+/// Test flag setting behavior
 #[test]
-fn test_hash_starts_pp_line() {
-    let source = "#";
-    let mut lexer = create_test_pp_lexer(source);
+fn test_flags() {
+    let single_hash = "#";
+    let indented_hash = "  #";
+    let hash_hash = "##";
 
-    let token = lexer.next_token().unwrap();
-    assert_eq!(token.kind, PPTokenKind::Hash);
-    assert!(token.flags.contains(PPTokenFlags::STARTS_PP_LINE));
-}
-
-/// Test that indented # tokens have STARTS_PP_LINE flag set
-#[test]
-fn test_indented_hash_starts_pp_line() {
-    let source = "  #";
-    let mut lexer = create_test_pp_lexer(source);
-
-    let token = lexer.next_token().unwrap();
-    assert_eq!(token.kind, PPTokenKind::Hash);
-    assert!(token.flags.contains(PPTokenFlags::STARTS_PP_LINE));
-}
-
-/// Test that ## tokens do not have STARTS_PP_LINE flag set
-#[test]
-fn test_hashhash_no_starts_pp_line() {
-    let source = "##";
-    let mut lexer = create_test_pp_lexer(source);
-
-    let token = lexer.next_token().unwrap();
-    assert_eq!(token.kind, PPTokenKind::HashHash);
-    assert!(!token.flags.contains(PPTokenFlags::STARTS_PP_LINE));
+    insta::assert_yaml_snapshot!(vec![
+        ("hash", setup_pp_lexer_snapshot(single_hash)),
+        ("indented_hash", setup_pp_lexer_snapshot(indented_hash)),
+        ("hash_hash", setup_pp_lexer_snapshot(hash_hash)),
+    ]);
 }
 
 /// Test wide character literals with L, u, U prefixes
 #[test]
 fn test_wide_character_literals() {
     let source = "L'a' u'b' U'c' '\\0'";
-    let mut lexer = create_test_pp_lexer(source);
-
-    test_tokens!(
-        lexer,
-        ("L'a'", PPTokenKind::CharLiteral(97, _)), // 'a'
-        ("u'b'", PPTokenKind::CharLiteral(98, _)), // 'b'
-        ("U'c'", PPTokenKind::CharLiteral(99, _)), // 'c'
-        ("'\\0'", PPTokenKind::CharLiteral(0, _)),
-    );
+    let tokens = setup_pp_lexer_snapshot(source);
+    insta::assert_yaml_snapshot!(tokens);
 }
 
 /// Test wide string literals with L, u, U prefixes
 #[test]
 fn test_wide_string_literals() {
     let source = "L\"hello\" u\"world\" U\"test\"";
-    let mut lexer = create_test_pp_lexer(source);
-
-    test_tokens!(
-        lexer,
-        ("L\"hello\"", PPTokenKind::StringLiteral(_)),
-        ("u\"world\"", PPTokenKind::StringLiteral(_)),
-        ("U\"test\"", PPTokenKind::StringLiteral(_)),
-    );
-
-    // Should be no more tokens
-    assert!(lexer.next_token().is_none());
+    let tokens = setup_pp_lexer_snapshot(source);
+    insta::assert_yaml_snapshot!(tokens);
 }
 
-/// Test that Eod (End of Directive) tokens are produced at the end of directive lines
+/// Test that Eod (End of Directive) tokens are produced
 #[test]
 fn test_eod_token_production() {
-    // Test simple directive
-    let source = "#define x 1\n";
-    let mut lexer = create_test_pp_lexer(source);
+    let simple = "#define x 1\n";
+    let eof_directive = "#define x 1"; // No newline at end
 
-    test_tokens!(
-        lexer,
-        ("#", PPTokenKind::Hash),
-        ("define", PPTokenKind::Identifier(_)),
-        ("x", PPTokenKind::Identifier(_)),
-        ("1", PPTokenKind::Number(_)),
-        ("", PPTokenKind::Eod),
-    );
-}
-
-/// Test that Eod tokens are produced for various directive types
-#[test]
-fn test_eod_for_various_directives() {
-    // Test various directive types that should all end with Eod
-    let test_cases = vec![
+    let various = vec![
         "#ifdef TEST\n",
         "#ifndef TEST\n",
         "#elif 1\n",
@@ -330,150 +195,77 @@ fn test_eod_for_various_directives() {
         "#warning message\n",
     ];
 
-    for directive in test_cases {
-        let mut lexer = create_test_pp_lexer(directive);
-        let tokens: Vec<_> = std::iter::from_fn(|| lexer.next_token()).collect();
+    let mut results = vec![
+        ("simple", setup_pp_lexer_snapshot(simple)),
+        ("eof_directive", setup_pp_lexer_snapshot(eof_directive)),
+    ];
 
-        // Should have at least Hash token and Eod token
-        assert!(tokens.len() >= 2, "Should have tokens for directive: {}", directive);
-        assert_eq!(
-            tokens[0].kind,
-            PPTokenKind::Hash,
-            "First token should be Hash for: {}",
-            directive
-        );
-        assert_eq!(
-            tokens.last().unwrap().kind,
-            PPTokenKind::Eod,
-            "Should end with Eod for directive: {}",
-            directive
-        );
+    for v in various {
+        results.push((v, setup_pp_lexer_snapshot(v)));
     }
-}
 
-/// Test that Eod is produced at EOF when in directive line (clang compatibility)
-#[test]
-fn test_eod_at_eof_in_directive() {
-    // Directive at end of file without newline
-    let source = "#define x 1";
-    let mut lexer = create_test_pp_lexer(source);
-
-    test_tokens!(
-        lexer,
-        ("#", PPTokenKind::Hash),
-        ("define", PPTokenKind::Identifier(_)),
-        ("x", PPTokenKind::Identifier(_)),
-        ("1", PPTokenKind::Number(_)),
-        ("", PPTokenKind::Eod),
-    );
-
-    // Should be no more tokens
-    assert!(lexer.next_token().is_none());
+    insta::assert_yaml_snapshot!(results);
 }
 
 /// Test string literals with BMP (Basic Multilingual Plane) Unicode characters
 #[test]
-fn test_bmp_unicode_string_literals() {
-    // Test the specific target string with mixed ASCII and BMP characters
-    let source = r#"L"hello$$你好¢¢世界€€world""#;
-    let mut lexer = create_test_pp_lexer(source);
+fn test_unicode_strings() {
+    let mixed = r#"L"hello$$你好¢¢世界€€world""#;
 
-    test_tokens!(lexer, (source, PPTokenKind::StringLiteral(_)));
-}
-
-/// Test various BMP character types in string literals
-#[test]
-fn test_various_bmp_characters() {
-    let test_cases = vec![
-        // Chinese characters (3-byte UTF-8 sequences)
-        (r#"L"你好世界""#, "L\"你好世界\""),
-        // Currency symbols (2-byte and 3-byte UTF-8 sequences)
-        (r#"L"€$¢£¥""#, "L\"€$¢£¥\""),
-        // Mixed ASCII and BMP
-        (r#"L"hello¢world€test""#, "L\"hello¢world€test\""),
-        // Extended Latin characters (2-byte UTF-8 sequences)
-        (r#"L"café naïve résumé""#, "L\"café naïve résumé\""),
-        // Greek characters (2-byte UTF-8 sequences)
-        (r#"L"αβγδε""#, "L\"αβγδε\""),
-        // Cyrillic characters (2-byte UTF-8 sequences)
-        (r#"L"привет мир""#, "L\"привет мир\""),
+    let cases = vec![
+        r#"L"你好世界""#,
+        r#"L"€$¢£¥""#,
+        r#"L"hello¢world€test""#,
+        r#"L"café naïve résumé""#,
+        r#"L"αβγδε""#,
+        r#"L"привет мир""#,
     ];
 
-    for (source, expected) in test_cases {
-        let mut lexer = create_test_pp_lexer(source);
-        test_tokens!(lexer, (expected, PPTokenKind::StringLiteral(_)));
+    let mut results = vec![("mixed", setup_pp_lexer_snapshot(mixed))];
+    for c in cases {
+        results.push((c, setup_pp_lexer_snapshot(c)));
     }
+
+    insta::assert_yaml_snapshot!(results);
 }
 
 /// Test edge cases and special characters in string literals
 #[test]
 fn test_special_characters_in_strings() {
-    // Test with various special characters that might cause issues
-    let test_cases = vec![
-        // Regular ASCII with quotes and backslashes
-        (r#"L"hello \"world\" \\test""#, r#"L"hello \"world\" \\test""#),
-        // Mixed quotes and special chars
-        (r#"L"café's \"test\" \\value""#, r#"L"café's \"test\" \\value""#),
-        // String with newlines (line splicing) - should splice the newline
-        (
-            r#"L"hello\
+    let cases = vec![
+        r#"L"hello \"world\" \\test""#,
+        r#"L"café's \"test\" \\value""#,
+        // String with newlines (line splicing)
+        r#"L"hello\
 world""#,
-            r#"L"helloworld""#,
-        ),
-        // String with all types of quotes
-        (r#"""#, r#"""#),
-        (r#"L"""#, r#"L"""#),
-        (r#"u"""#, r#"u"""#),
-        (r#"U"""#, r#"U"""#),
+        r#"""#,
+        r#"L"""#,
+        r#"u"""#,
+        r#"U"""#,
     ];
 
-    for (source, expected) in test_cases {
-        let mut lexer = create_test_pp_lexer(source);
-        test_tokens!(lexer, (expected, PPTokenKind::StringLiteral(_)));
+    let mut results = Vec::new();
+    for c in cases {
+        results.push((c, setup_pp_lexer_snapshot(c)));
     }
+
+    insta::assert_yaml_snapshot!(results);
 }
 
 /// Test UTF-8 sequences of different lengths
 #[test]
 fn test_utf8_sequence_lengths() {
-    // 1-byte sequence (ASCII)
-    let source1 = r#"L"abc""#;
-    let mut lexer1 = create_test_pp_lexer(source1);
-    test_tokens!(lexer1, (source1, PPTokenKind::StringLiteral(_)));
+    let cases = vec![
+        r#"L"abc""#,
+        r#"L"café""#,
+        r#"L"你好""#,
+        r#"L"café你好""#,
+    ];
 
-    // 2-byte sequence (extended ASCII)
-    let source2 = r#"L"café""#;
-    let mut lexer2 = create_test_pp_lexer(source2);
-    test_tokens!(lexer2, (source2, PPTokenKind::StringLiteral(_)));
+    let mut results = Vec::new();
+    for c in cases {
+        results.push((c, setup_pp_lexer_snapshot(c)));
+    }
 
-    // 3-byte sequence (BMP Chinese)
-    let source3 = r#"L"你好""#;
-    let mut lexer3 = create_test_pp_lexer(source3);
-    test_tokens!(lexer3, (source3, PPTokenKind::StringLiteral(_)));
-
-    // Mixed sequences
-    let source4 = r#"L"café你好""#;
-    let mut lexer4 = create_test_pp_lexer(source4);
-    test_tokens!(lexer4, (source4, PPTokenKind::StringLiteral(_)));
-}
-
-#[test]
-fn test_consecutive_splices() {
-    // Two backslash-newlines immediately following each other
-    let source = "A\\\n\\\nB";
-    let mut lexer = create_test_pp_lexer(source);
-
-    // Should produce "AB" as one identifier if splices work correctly
-    let token = lexer.next_token().unwrap();
-    assert_eq!(token.get_text(), "AB");
-    assert!(matches!(token.kind, PPTokenKind::Identifier(_)));
-}
-
-#[test]
-fn test_consecutive_splices_with_cr() {
-    let source = "A\\\r\n\\\r\nB";
-    let mut lexer = create_test_pp_lexer(source);
-
-    let token = lexer.next_token().unwrap();
-    assert_eq!(token.get_text(), "AB");
+    insta::assert_yaml_snapshot!(results);
 }

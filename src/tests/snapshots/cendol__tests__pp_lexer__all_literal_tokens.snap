@@ -1,0 +1,23 @@
+---
+source: src/tests/pp_lexer.rs
+assertion_line: 129
+expression: tokens
+---
+- kind:
+    Identifier: variable
+  flags: ""
+  text: variable
+- kind:
+    StringLiteral: "\"string\""
+  flags: LEADING_SPACE
+  text: "\"string\""
+- kind:
+    CharLiteral:
+      - 99
+      - "'c'"
+  flags: LEADING_SPACE
+  text: "'c'"
+- kind:
+    Number: "123"
+  flags: LEADING_SPACE
+  text: "123"

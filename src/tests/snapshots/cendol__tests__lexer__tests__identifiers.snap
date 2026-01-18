@@ -1,0 +1,17 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 155
+expression: results
+---
+- - variable
+  - - Identifier: variable
+- - my_var
+  - - Identifier: my_var
+- - _private
+  - - Identifier: _private
+- - var123
+  - - Identifier: var123
+- - a
+  - - Identifier: a
+- - _
+  - - Identifier: _

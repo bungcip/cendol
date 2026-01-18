@@ -1,0 +1,76 @@
+---
+source: src/tests/pp_lexer.rs
+assertion_line: 73
+expression: "vec![(\"basic\", setup_pp_lexer_snapshot(source1)),\n(\"whitespace\", setup_pp_lexer_snapshot(source2)),\n(\"regular_newline\", setup_pp_lexer_snapshot(source3)),\n(\"end_buffer\", setup_pp_lexer_snapshot(source4)),\n(\"crlf\", setup_pp_lexer_snapshot(source5)),\n(\"cr\", setup_pp_lexer_snapshot(source6)),\n(\"cr_end\", setup_pp_lexer_snapshot(source7)),\n(\"consecutive\", setup_pp_lexer_snapshot(source8)),\n(\"consecutive_cr\", setup_pp_lexer_snapshot(source9)),]"
+---
+- - basic
+  - - kind:
+        Identifier: hello
+      flags: ""
+      text: hello
+    - kind:
+        Identifier: helloworld
+      flags: LEADING_SPACE
+      text: helloworld
+    - kind:
+        Number: "123456"
+      flags: LEADING_SPACE
+      text: "123456"
+    - kind:
+        StringLiteral: "\"helloworld\""
+      flags: LEADING_SPACE
+      text: "\"helloworld\""
+- - whitespace
+  - - kind:
+        Identifier: hel
+      flags: ""
+      text: hel
+    - kind:
+        Identifier: lo
+      flags: LEADING_SPACE
+      text: lo
+- - regular_newline
+  - - kind:
+        Identifier: hello
+      flags: ""
+      text: hello
+    - kind:
+        Identifier: world
+      flags: LEADING_SPACE
+      text: world
+- - end_buffer
+  - - kind:
+        Identifier: test
+      flags: ""
+      text: test
+    - kind: Unknown
+      flags: ""
+      text: "?"
+- - crlf
+  - - kind:
+        Identifier: hello
+      flags: ""
+      text: hello
+- - cr
+  - - kind:
+        Identifier: hello
+      flags: ""
+      text: hello
+- - cr_end
+  - - kind:
+        Identifier: test
+      flags: ""
+      text: test
+    - kind: Unknown
+      flags: ""
+      text: "?"
+- - consecutive
+  - - kind:
+        Identifier: AB
+      flags: ""
+      text: AB
+- - consecutive_cr
+  - - kind:
+        Identifier: AB
+      flags: ""
+      text: AB

@@ -1,0 +1,23 @@
+---
+source: src/tests/pp_lexer.rs
+assertion_line: 155
+expression: "vec![(\"hash\", setup_pp_lexer_snapshot(single_hash)),\n(\"indented_hash\", setup_pp_lexer_snapshot(indented_hash)),\n(\"hash_hash\", setup_pp_lexer_snapshot(hash_hash)),]"
+---
+- - hash
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind: Eod
+      flags: ""
+      text: ""
+- - indented_hash
+  - - kind: Hash
+      flags: LEADING_SPACE | STARTS_PP_LINE
+      text: "#"
+    - kind: Eod
+      flags: ""
+      text: ""
+- - hash_hash
+  - - kind: HashHash
+      flags: ""
+      text: "##"

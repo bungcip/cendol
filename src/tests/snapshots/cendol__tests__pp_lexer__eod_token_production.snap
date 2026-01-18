@@ -1,0 +1,200 @@
+---
+source: src/tests/pp_lexer.rs
+assertion_line: 207
+expression: results
+---
+- - simple
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: define
+      flags: ""
+      text: define
+    - kind:
+        Identifier: x
+      flags: LEADING_SPACE
+      text: x
+    - kind:
+        Number: "1"
+      flags: LEADING_SPACE
+      text: "1"
+    - kind: Eod
+      flags: ""
+      text: ""
+- - eof_directive
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: define
+      flags: ""
+      text: define
+    - kind:
+        Identifier: x
+      flags: LEADING_SPACE
+      text: x
+    - kind:
+        Number: "1"
+      flags: LEADING_SPACE
+      text: "1"
+    - kind: Eod
+      flags: ""
+      text: ""
+- - "#ifdef TEST\n"
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: ifdef
+      flags: ""
+      text: ifdef
+    - kind:
+        Identifier: TEST
+      flags: LEADING_SPACE
+      text: TEST
+    - kind: Eod
+      flags: ""
+      text: ""
+- - "#ifndef TEST\n"
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: ifndef
+      flags: ""
+      text: ifndef
+    - kind:
+        Identifier: TEST
+      flags: LEADING_SPACE
+      text: TEST
+    - kind: Eod
+      flags: ""
+      text: ""
+- - "#elif 1\n"
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: elif
+      flags: ""
+      text: elif
+    - kind:
+        Number: "1"
+      flags: LEADING_SPACE
+      text: "1"
+    - kind: Eod
+      flags: ""
+      text: ""
+- - "#else\n"
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: else
+      flags: ""
+      text: else
+    - kind: Eod
+      flags: ""
+      text: ""
+- - "#endif\n"
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: endif
+      flags: ""
+      text: endif
+    - kind: Eod
+      flags: ""
+      text: ""
+- - "#include \"test.h\"\n"
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: include
+      flags: ""
+      text: include
+    - kind:
+        StringLiteral: "\"test.h\""
+      flags: LEADING_SPACE
+      text: "\"test.h\""
+    - kind: Eod
+      flags: ""
+      text: ""
+- - "#undef TEST\n"
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: undef
+      flags: ""
+      text: undef
+    - kind:
+        Identifier: TEST
+      flags: LEADING_SPACE
+      text: TEST
+    - kind: Eod
+      flags: ""
+      text: ""
+- - "#line 100\n"
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: line
+      flags: ""
+      text: line
+    - kind:
+        Number: "100"
+      flags: LEADING_SPACE
+      text: "100"
+    - kind: Eod
+      flags: ""
+      text: ""
+- - "#pragma once\n"
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: pragma
+      flags: ""
+      text: pragma
+    - kind:
+        Identifier: once
+      flags: LEADING_SPACE
+      text: once
+    - kind: Eod
+      flags: ""
+      text: ""
+- - "#error message\n"
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: error
+      flags: ""
+      text: error
+    - kind:
+        Identifier: message
+      flags: LEADING_SPACE
+      text: message
+    - kind: Eod
+      flags: ""
+      text: ""
+- - "#warning message\n"
+  - - kind: Hash
+      flags: STARTS_PP_LINE
+      text: "#"
+    - kind:
+        Identifier: warning
+      flags: ""
+      text: warning
+    - kind:
+        Identifier: message
+      flags: LEADING_SPACE
+      text: message
+    - kind: Eod
+      flags: ""
+      text: ""

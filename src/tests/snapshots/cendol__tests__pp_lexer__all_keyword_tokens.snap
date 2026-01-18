@@ -1,0 +1,57 @@
+---
+source: src/tests/pp_lexer.rs
+assertion_line: 121
+expression: tokens
+---
+- kind:
+    Identifier: if
+  flags: ""
+  text: if
+- kind:
+    Identifier: ifdef
+  flags: LEADING_SPACE
+  text: ifdef
+- kind:
+    Identifier: ifndef
+  flags: LEADING_SPACE
+  text: ifndef
+- kind:
+    Identifier: elif
+  flags: LEADING_SPACE
+  text: elif
+- kind:
+    Identifier: else
+  flags: LEADING_SPACE
+  text: else
+- kind:
+    Identifier: endif
+  flags: LEADING_SPACE
+  text: endif
+- kind:
+    Identifier: define
+  flags: LEADING_SPACE
+  text: define
+- kind:
+    Identifier: undef
+  flags: LEADING_SPACE
+  text: undef
+- kind:
+    Identifier: include
+  flags: LEADING_SPACE
+  text: include
+- kind:
+    Identifier: line
+  flags: LEADING_SPACE
+  text: line
+- kind:
+    Identifier: pragma
+  flags: LEADING_SPACE
+  text: pragma
+- kind:
+    Identifier: error
+  flags: LEADING_SPACE
+  text: error
+- kind:
+    Identifier: warning
+  flags: LEADING_SPACE
+  text: warning

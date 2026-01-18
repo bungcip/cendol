@@ -1,0 +1,13 @@
+---
+source: src/tests/pp_lexer.rs
+assertion_line: 137
+expression: tokens
+---
+- kind:
+    StringLiteral: "\"hello\""
+  flags: ""
+  text: "\"hello\""
+- kind:
+    StringLiteral: "\"world\""
+  flags: LEADING_SPACE
+  text: "\"world\""

@@ -1,0 +1,25 @@
+---
+source: src/tests/pp_lexer.rs
+assertion_line: 270
+expression: results
+---
+- - "L\"abc\""
+  - - kind:
+        StringLiteral: "L\"abc\""
+      flags: ""
+      text: "L\"abc\""
+- - "L\"café\""
+  - - kind:
+        StringLiteral: "L\"café\""
+      flags: ""
+      text: "L\"café\""
+- - "L\"你好\""
+  - - kind:
+        StringLiteral: "L\"你好\""
+      flags: ""
+      text: "L\"你好\""
+- - "L\"café你好\""
+  - - kind:
+        StringLiteral: "L\"café你好\""
+      flags: ""
+      text: "L\"café你好\""

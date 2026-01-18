@@ -1,0 +1,97 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 71
+expression: results
+---
+- - +
+  - - Plus
+- - "-"
+  - - Minus
+- - "*"
+  - - Star
+- - /
+  - - Slash
+- - "%"
+  - - Percent
+- - "&"
+  - - And
+- - "|"
+  - - Or
+- - ^
+  - - Xor
+- - "!"
+  - - Not
+- - "~"
+  - - Tilde
+- - "<"
+  - - Less
+- - ">"
+  - - Greater
+- - "<="
+  - - LessEqual
+- - ">="
+  - - GreaterEqual
+- - "=="
+  - - Equal
+- - "!="
+  - - NotEqual
+- - "<<"
+  - - LeftShift
+- - ">>"
+  - - RightShift
+- - "="
+  - - Assign
+- - +=
+  - - PlusAssign
+- - "-="
+  - - MinusAssign
+- - "*="
+  - - StarAssign
+- - /=
+  - - DivAssign
+- - "%="
+  - - ModAssign
+- - "&="
+  - - AndAssign
+- - "|="
+  - - OrAssign
+- - ^=
+  - - XorAssign
+- - "<<="
+  - - LeftShiftAssign
+- - ">>="
+  - - RightShiftAssign
+- - ++
+  - - Increment
+- - "--"
+  - - Decrement
+- - "->"
+  - - Arrow
+- - "."
+  - - Dot
+- - "?"
+  - - Question
+- - ":"
+  - - Colon
+- - ","
+  - - Comma
+- - ;
+  - - Semicolon
+- - (
+  - - LeftParen
+- - )
+  - - RightParen
+- - "["
+  - - LeftBracket
+- - "]"
+  - - RightBracket
+- - "{"
+  - - LeftBrace
+- - "}"
+  - - RightBrace
+- - "..."
+  - - Ellipsis
+- - "&&"
+  - - LogicAnd
+- - "||"
+  - - LogicOr

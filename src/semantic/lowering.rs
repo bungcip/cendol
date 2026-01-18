@@ -82,7 +82,6 @@ fn apply_parsed_declarator_recursive(
             }
 
             // Apply Function modifier to the current type
-            // TODO: Handle function returning qualified type
             let function_type_ref = ctx.registry.function_type(
                 current_type.ty(),
                 processed_params,

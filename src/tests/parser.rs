@@ -1462,7 +1462,6 @@ fn test_invalid_struct_decl() {
     // C11 6.7p2: "A declaration other than a static_assert declaration shall declare at least a declarator, a tag, or the members of an enumeration."
     // `struct;` declares NONE of these. So it violates constraints.
     // However, many compilers (GCC/Clang) only warn about "declaration does not declare anything".
-    // If cendol accepts it, we'll snapshot that behavior for now and maybe flag it as something to improve later.
     let resolved = setup_declaration("struct;");
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:

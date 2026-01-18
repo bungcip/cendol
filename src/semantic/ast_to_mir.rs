@@ -32,6 +32,7 @@ pub(crate) struct AstToMirLowerer<'a> {
     mir_builder: MirBuilder,
     current_function: Option<MirFunctionId>,
     current_block: Option<MirBlockId>,
+    current_scope_id: ScopeId,
     registry: &'a TypeRegistry,
     local_map: HashMap<SymbolRef, LocalId>,
     global_map: HashMap<SymbolRef, GlobalId>,
@@ -51,6 +52,7 @@ impl<'a> AstToMirLowerer<'a> {
             mir_builder,
             current_function: None,
             current_block: None,
+            current_scope_id: ScopeId::GLOBAL,
             local_map: HashMap::new(),
             global_map: HashMap::new(),
             label_map: HashMap::new(),
@@ -65,7 +67,7 @@ impl<'a> AstToMirLowerer<'a> {
     pub(crate) fn lower_module_complete(&mut self) -> MirProgram {
         debug!("Starting semantic analysis and MIR construction (complete)");
         let root = self.ast.get_root();
-        self.lower_node_ref(root, ScopeId::GLOBAL);
+        self.lower_node_ref(root);
         debug!("Semantic analysis complete");
 
         // Take ownership of the builder to consume it, replacing it with a dummy.
@@ -88,24 +90,41 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_node_ref(&mut self, node_ref: NodeRef, scope_id: ScopeId) {
+    fn lower_node_ref(&mut self, node_ref: NodeRef) {
+        let old_scope = self.current_scope_id;
+
         let node_kind = self.ast.get_kind(node_ref).clone();
         let node_span = self.ast.get_span(node_ref);
 
         match node_kind {
-            NodeKind::TranslationUnit(tu_data) => self.lower_translation_unit(&tu_data),
-            NodeKind::Function(function_data) => self.lower_function(node_ref, &function_data),
-            NodeKind::VarDecl(var_decl) => self.lower_var_declaration(scope_id, &var_decl, node_span),
-            NodeKind::CompoundStatement(cs) => self.lower_compound_statement(node_ref, &cs),
+            NodeKind::TranslationUnit(tu_data) => {
+                self.current_scope_id = self.ast.scope_of(node_ref);
+                self.lower_translation_unit(&tu_data)
+            }
+            NodeKind::Function(function_data) => {
+                self.current_scope_id = self.ast.scope_of(node_ref);
+                self.lower_function(&function_data)
+            }
+            NodeKind::For(for_stmt) => {
+                self.current_scope_id = self.ast.scope_of(node_ref);
+                self.lower_for_statement(&for_stmt)
+            }
+            NodeKind::VarDecl(var_decl) => self.lower_var_declaration(&var_decl, node_span),
+            NodeKind::CompoundStatement(cs) => {
+                self.current_scope_id = self.ast.scope_of(node_ref);
+                self.lower_compound_statement(&cs)
+            }
 
-            _ => self.try_lower_as_statement(scope_id, node_ref),
+            _ => self.try_lower_as_statement(node_ref),
         }
+
+        self.current_scope_id = old_scope;
     }
 
     fn lower_translation_unit(&mut self, tu_data: &nodes::TranslationUnitData) {
         self.predeclare_global_functions();
         for child_ref in tu_data.decl_start.range(tu_data.decl_len) {
-            self.lower_node_ref(child_ref, ScopeId::GLOBAL);
+            self.lower_node_ref(child_ref);
         }
     }
 
@@ -171,17 +190,16 @@ impl<'a> AstToMirLowerer<'a> {
         self.operand_to_const_id(op).expect(msg)
     }
 
-    fn try_lower_as_statement(&mut self, scope_id: ScopeId, node_ref: NodeRef) {
+    fn try_lower_as_statement(&mut self, node_ref: NodeRef) {
         let node_kind = self.ast.get_kind(node_ref);
         match node_kind.clone() {
-            NodeKind::Return(expr) => self.lower_return_statement(scope_id, &expr),
-            NodeKind::If(if_stmt) => self.lower_if_statement(scope_id, &if_stmt),
-            NodeKind::While(while_stmt) => self.lower_while_statement(scope_id, &while_stmt),
-            NodeKind::DoWhile(body, condition) => self.lower_do_while_statement(scope_id, body, condition),
-            NodeKind::For(for_stmt) => self.lower_for_statement(scope_id, &for_stmt),
+            NodeKind::Return(expr) => self.lower_return_statement(&expr),
+            NodeKind::If(if_stmt) => self.lower_if_statement(&if_stmt),
+            NodeKind::While(while_stmt) => self.lower_while_statement(&while_stmt),
+            NodeKind::DoWhile(body, condition) => self.lower_do_while_statement(body, condition),
             NodeKind::ExpressionStatement(Some(expr_ref)) => {
                 // Expression statement: value not needed, only side-effects
-                self.lower_expression(scope_id, expr_ref, false);
+                self.lower_expression(expr_ref, false);
             }
             NodeKind::Break => {
                 let target = self.break_target.unwrap();
@@ -192,14 +210,13 @@ impl<'a> AstToMirLowerer<'a> {
                 self.mir_builder.set_terminator(Terminator::Goto(target));
             }
             NodeKind::Goto(label_name, _) => self.lower_goto_statement(&label_name),
-            NodeKind::Label(label_name, statement, _) => self.lower_label_statement(scope_id, &label_name, statement),
+            NodeKind::Label(label_name, statement, _) => self.lower_label_statement(&label_name, statement),
             _ => {}
         }
     }
 
     fn lower_initializer_list(
         &mut self,
-        scope_id: ScopeId,
         list_data: &nodes::InitializerListData,
         members: &[StructMember],
         target_ty: QualType,
@@ -263,7 +280,7 @@ impl<'a> AstToMirLowerer<'a> {
 
             let member_ty = members[field_idx].member_type;
 
-            let operand = self.lower_initializer(scope_id, init.initializer, member_ty);
+            let operand = self.lower_initializer(init.initializer, member_ty);
             field_operands.push((field_idx, operand));
             // If subsequent members share the same offset, they are part of a union
             // and should not consume additional initializers. Advance current_field_idx
@@ -283,7 +300,6 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_array_initializer(
         &mut self,
-        scope_id: ScopeId,
         list_data: &nodes::InitializerListData,
         element_ty: QualType,
         _size: usize,
@@ -294,7 +310,7 @@ impl<'a> AstToMirLowerer<'a> {
             let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
                 continue;
             };
-            let operand = self.lower_initializer(scope_id, init.initializer, element_ty);
+            let operand = self.lower_initializer(init.initializer, element_ty);
             elements.push(operand);
         }
 
@@ -359,36 +375,31 @@ impl<'a> AstToMirLowerer<'a> {
         )
     }
 
-    fn lower_condition(&mut self, scope_id: ScopeId, condition: NodeRef) -> Operand {
-        let cond_operand = self.lower_expression(scope_id, condition, true);
+    fn lower_condition(&mut self, condition: NodeRef) -> Operand {
+        let cond_operand = self.lower_expression(condition, true);
         // Apply conversions for condition (should be boolean)
         let cond_ty = self.ast.get_resolved_type(condition).unwrap();
         let cond_mir_ty = self.lower_qual_type(cond_ty);
         self.apply_conversions(cond_operand, condition, cond_mir_ty)
     }
 
-    fn lower_initializer_to_const(
-        &mut self,
-        scope_id: ScopeId,
-        init_ref: NodeRef,
-        ty: QualType,
-    ) -> Option<ConstValueId> {
-        let operand = self.lower_initializer(scope_id, init_ref, ty);
+    fn lower_initializer_to_const(&mut self, init_ref: NodeRef, ty: QualType) -> Option<ConstValueId> {
+        let operand = self.lower_initializer(init_ref, ty);
         self.operand_to_const_id(operand)
     }
 
-    fn lower_initializer(&mut self, scope_id: ScopeId, init_ref: NodeRef, target_ty: QualType) -> Operand {
+    fn lower_initializer(&mut self, init_ref: NodeRef, target_ty: QualType) -> Operand {
         let init_node_kind = self.ast.get_kind(init_ref).clone();
         let target_ty_kind = self.registry.get(target_ty.ty()).kind.clone();
 
         match (init_node_kind, target_ty_kind) {
             (NodeKind::InitializerList(list), TypeKind::Record { members, .. }) => {
-                self.lower_initializer_list(scope_id, &list, &members, target_ty)
+                self.lower_initializer_list(&list, &members, target_ty)
             }
             (NodeKind::InitializerList(list), TypeKind::Array { element_type, size }) => {
                 let element_ty = QualType::unqualified(element_type);
                 let array_size = if let ArraySizeType::Constant(s) = size { s } else { 0 };
-                self.lower_array_initializer(scope_id, &list, element_ty, array_size, target_ty)
+                self.lower_array_initializer(&list, element_ty, array_size, target_ty)
             }
             (NodeKind::LiteralString(val), TypeKind::Array { element_type, size })
                 if matches!(
@@ -406,15 +417,14 @@ impl<'a> AstToMirLowerer<'a> {
             }
             _ => {
                 // It's a simple expression initializer.
-                let operand = self.lower_expression(scope_id, init_ref, true);
+                let operand = self.lower_expression(init_ref, true);
                 let mir_target_ty = self.lower_qual_type(target_ty);
                 self.apply_conversions(operand, init_ref, mir_target_ty)
             }
         }
     }
 
-    fn lower_compound_statement(&mut self, node_ref: NodeRef, cs: &nodes::CompoundStmtData) {
-        let scope_id = self.ast.scope_of(node_ref);
+    fn lower_compound_statement(&mut self, cs: &nodes::CompoundStmtData) {
         for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
             let node_kind = self.ast.get_kind(stmt_ref);
             if self.mir_builder.current_block_has_terminator() {
@@ -426,11 +436,11 @@ impl<'a> AstToMirLowerer<'a> {
                     continue;
                 }
             }
-            self.lower_node_ref(stmt_ref, scope_id)
+            self.lower_node_ref(stmt_ref)
         }
     }
 
-    fn lower_function(&mut self, node_ref: NodeRef, function_data: &FunctionData) {
+    fn lower_function(&mut self, function_data: &FunctionData) {
         let symbol_entry = self.symbol_table.get_symbol(function_data.symbol);
         let func_name = symbol_entry.name;
 
@@ -459,7 +469,6 @@ impl<'a> AstToMirLowerer<'a> {
         // Parameter locals are now created in `define_function`. We just need to
         // map the SymbolRef to the LocalId.
         self.local_map.clear();
-        let scope_id = self.ast.scope_of(node_ref);
         let mir_function = self.mir_builder.get_functions().get(&func_id).unwrap().clone();
 
         for (i, param_ref) in function_data.param_start.range(function_data.param_len).enumerate() {
@@ -469,38 +478,32 @@ impl<'a> AstToMirLowerer<'a> {
             }
         }
 
-        self.lower_node_ref(function_data.body, scope_id);
+        self.lower_node_ref(function_data.body);
 
         self.current_function = None;
         self.current_block = None;
     }
 
-    fn lower_var_declaration(&mut self, scope_id: ScopeId, var_decl: &VarDeclData, _span: SourceSpan) {
+    fn lower_var_declaration(&mut self, var_decl: &VarDeclData, _span: SourceSpan) {
         let mir_type_id = self.lower_qual_type(var_decl.ty);
         let (entry_ref, _) = self
             .symbol_table
-            .lookup(var_decl.name, scope_id, Namespace::Ordinary)
+            .lookup(var_decl.name, self.current_scope_id, Namespace::Ordinary)
             .unwrap();
 
         let is_global = self.current_function.is_none();
 
         if is_global {
-            self.lower_global_var_declaration(scope_id, var_decl, entry_ref, mir_type_id);
+            self.lower_global_var_declaration(var_decl, entry_ref, mir_type_id);
         } else {
-            self.lower_local_var_declaration(scope_id, var_decl, entry_ref, mir_type_id);
+            self.lower_local_var_declaration(var_decl, entry_ref, mir_type_id);
         }
     }
 
-    fn lower_global_var_declaration(
-        &mut self,
-        scope_id: ScopeId,
-        var_decl: &VarDeclData,
-        entry_ref: SymbolRef,
-        mir_type_id: TypeId,
-    ) {
+    fn lower_global_var_declaration(&mut self, var_decl: &VarDeclData, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let initial_value_id = var_decl
             .init
-            .and_then(|init_ref| self.lower_initializer_to_const(scope_id, init_ref, var_decl.ty));
+            .and_then(|init_ref| self.lower_initializer_to_const(init_ref, var_decl.ty));
 
         let symbol = self.symbol_table.get_symbol(entry_ref);
         let final_init = initial_value_id.or_else(|| {
@@ -528,13 +531,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_local_var_declaration(
-        &mut self,
-        scope_id: ScopeId,
-        var_decl: &VarDeclData,
-        entry_ref: SymbolRef,
-        mir_type_id: TypeId,
-    ) {
+    fn lower_local_var_declaration(&mut self, var_decl: &VarDeclData, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let local_id = self.mir_builder.create_local(Some(var_decl.name), mir_type_id, false);
 
         if let Some(alignment) = var_decl.alignment {
@@ -544,19 +541,19 @@ impl<'a> AstToMirLowerer<'a> {
         self.local_map.insert(entry_ref, local_id);
 
         if let Some(initializer) = var_decl.init {
-            let init_operand = self.lower_initializer(scope_id, initializer, var_decl.ty);
+            let init_operand = self.lower_initializer(initializer, var_decl.ty);
             self.emit_assignment(Place::Local(local_id), init_operand);
         }
     }
 
-    fn lower_expression_as_place(&mut self, scope_id: ScopeId, expr_ref: NodeRef) -> Place {
-        let op = self.lower_expression(scope_id, expr_ref, true);
+    fn lower_expression_as_place(&mut self, expr_ref: NodeRef) -> Place {
+        let op = self.lower_expression(expr_ref, true);
         let ty = self.ast.get_resolved_type(expr_ref).unwrap();
         let mir_ty = self.lower_qual_type(ty);
         self.ensure_place(op, mir_ty)
     }
 
-    fn lower_expression(&mut self, scope_id: ScopeId, expr_ref: NodeRef, need_value: bool) -> Operand {
+    fn lower_expression(&mut self, expr_ref: NodeRef, need_value: bool) -> Operand {
         let ty = self.ast.get_resolved_type(expr_ref).unwrap_or_else(|| {
             let node_kind = self.ast.get_kind(expr_ref);
             let node_span = self.ast.get_span(expr_ref);
@@ -587,36 +584,32 @@ impl<'a> AstToMirLowerer<'a> {
             | NodeKind::LiteralChar(_)
             | NodeKind::LiteralString(_) => self.lower_literal(&node_kind, ty).expect("Failed to lower literal"),
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(*symbol_ref),
-            NodeKind::UnaryOp(op, operand_ref) => self.lower_unary_op_expr(scope_id, op, *operand_ref, mir_ty),
-            NodeKind::PostIncrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, true, need_value),
-            NodeKind::PostDecrement(operand_ref) => self.lower_post_incdec(scope_id, *operand_ref, false, need_value),
-            NodeKind::BinaryOp(op, left_ref, right_ref) => {
-                self.lower_binary_op_expr(scope_id, op, *left_ref, *right_ref, mir_ty)
-            }
+            NodeKind::UnaryOp(op, operand_ref) => self.lower_unary_op_expr(op, *operand_ref, mir_ty),
+            NodeKind::PostIncrement(operand_ref) => self.lower_post_incdec(*operand_ref, true, need_value),
+            NodeKind::PostDecrement(operand_ref) => self.lower_post_incdec(*operand_ref, false, need_value),
+            NodeKind::BinaryOp(op, left_ref, right_ref) => self.lower_binary_op_expr(op, *left_ref, *right_ref, mir_ty),
             NodeKind::Assignment(op, left_ref, right_ref) => {
-                self.lower_assignment_expr(scope_id, expr_ref, op, *left_ref, *right_ref, mir_ty)
+                self.lower_assignment_expr(expr_ref, op, *left_ref, *right_ref, mir_ty)
             }
-            NodeKind::FunctionCall(call_expr) => self.lower_function_call(scope_id, call_expr, mir_ty),
+            NodeKind::FunctionCall(call_expr) => self.lower_function_call(call_expr, mir_ty),
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
-                self.lower_member_access(scope_id, *obj_ref, field_name, *is_arrow)
+                self.lower_member_access(*obj_ref, field_name, *is_arrow)
             }
-            NodeKind::IndexAccess(arr_ref, idx_ref) => self.lower_index_access(scope_id, *arr_ref, *idx_ref),
-            NodeKind::TernaryOp(cond, then, else_expr) => {
-                self.lower_ternary_op(scope_id, *cond, *then, *else_expr, mir_ty)
-            }
+            NodeKind::IndexAccess(arr_ref, idx_ref) => self.lower_index_access(*arr_ref, *idx_ref),
+            NodeKind::TernaryOp(cond, then, else_expr) => self.lower_ternary_op(*cond, *then, *else_expr, mir_ty),
             NodeKind::SizeOfExpr(expr) => self.lower_sizeof_expr(*expr),
             NodeKind::SizeOfType(ty) => self.lower_sizeof_type(ty),
             NodeKind::AlignOf(ty) => self.lower_alignof_type(ty),
-            NodeKind::GenericSelection(gs) => self.lower_generic_selection(scope_id, gs, need_value),
+            NodeKind::GenericSelection(gs) => self.lower_generic_selection(gs, need_value),
             NodeKind::GnuStatementExpression(_stmt, _) => {
                 panic!("GnuStatementExpression not implemented");
             }
-            NodeKind::Cast(_ty, operand_ref) => self.lower_cast(scope_id, *operand_ref, mir_ty),
-            NodeKind::CompoundLiteral(ty, init_ref) => self.lower_compound_literal(scope_id, *ty, *init_ref),
-            NodeKind::BuiltinVaArg(ty, expr) => self.lower_builtin_va_arg(scope_id, *ty, *expr),
-            NodeKind::BuiltinVaStart(ap, last) => self.lower_builtin_va_start(scope_id, *ap, *last),
-            NodeKind::BuiltinVaEnd(ap) => self.lower_builtin_va_end(scope_id, *ap),
-            NodeKind::BuiltinVaCopy(dst, src) => self.lower_builtin_va_copy(scope_id, *dst, *src),
+            NodeKind::Cast(_ty, operand_ref) => self.lower_cast(*operand_ref, mir_ty),
+            NodeKind::CompoundLiteral(ty, init_ref) => self.lower_compound_literal(*ty, *init_ref),
+            NodeKind::BuiltinVaArg(ty, expr) => self.lower_builtin_va_arg(*ty, *expr),
+            NodeKind::BuiltinVaStart(ap, last) => self.lower_builtin_va_start(*ap, *last),
+            NodeKind::BuiltinVaEnd(ap) => self.lower_builtin_va_end(*ap),
+            NodeKind::BuiltinVaCopy(dst, src) => self.lower_builtin_va_copy(*dst, *src),
             NodeKind::InitializerList(_) | NodeKind::InitializerItem(_) => {
                 // Should be lowered in context of assignment usually.
                 panic!("InitializerList or InitializerItem not implemented");
@@ -625,15 +618,8 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_ternary_op(
-        &mut self,
-        scope_id: ScopeId,
-        cond: NodeRef,
-        then_expr: NodeRef,
-        else_expr: NodeRef,
-        mir_ty: TypeId,
-    ) -> Operand {
-        let cond_op = self.lower_expression(scope_id, cond, true);
+    fn lower_ternary_op(&mut self, cond: NodeRef, then_expr: NodeRef, else_expr: NodeRef, mir_ty: TypeId) -> Operand {
+        let cond_op = self.lower_expression(cond, true);
 
         let then_block = self.mir_builder.create_block();
         let else_block = self.mir_builder.create_block();
@@ -647,14 +633,14 @@ impl<'a> AstToMirLowerer<'a> {
 
         // Then
         self.mir_builder.set_current_block(then_block);
-        let then_val = self.lower_expression(scope_id, then_expr, true);
+        let then_val = self.lower_expression(then_expr, true);
         let then_val_conv = self.apply_conversions(then_val, then_expr, mir_ty);
         self.emit_assignment(Place::Local(result_local), then_val_conv);
         self.mir_builder.set_terminator(Terminator::Goto(exit_block));
 
         // Else
         self.mir_builder.set_current_block(else_block);
-        let else_val = self.lower_expression(scope_id, else_expr, true);
+        let else_val = self.lower_expression(else_expr, true);
         let else_val_conv = self.apply_conversions(else_val, else_expr, mir_ty);
         self.emit_assignment(Place::Local(result_local), else_val_conv);
         self.mir_builder.set_terminator(Terminator::Goto(exit_block));
@@ -687,12 +673,7 @@ impl<'a> AstToMirLowerer<'a> {
         self.create_int_operand(val as i64)
     }
 
-    fn lower_generic_selection(
-        &mut self,
-        scope_id: ScopeId,
-        gs: &nodes::GenericSelectionData,
-        need_value: bool,
-    ) -> Operand {
+    fn lower_generic_selection(&mut self, gs: &nodes::GenericSelectionData, need_value: bool) -> Operand {
         let ctrl_ty = self
             .ast
             .get_resolved_type(gs.control)
@@ -719,11 +700,11 @@ impl<'a> AstToMirLowerer<'a> {
         let expr_to_lower = selected_expr
             .or(default_expr)
             .expect("Generic selection failed (should be caught by Analyzer)");
-        self.lower_expression(scope_id, expr_to_lower, need_value)
+        self.lower_expression(expr_to_lower, need_value)
     }
 
-    fn lower_cast(&mut self, scope_id: ScopeId, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
-        let operand = self.lower_expression(scope_id, operand_ref, true);
+    fn lower_cast(&mut self, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
+        let operand = self.lower_expression(operand_ref, true);
         Operand::Cast(mir_ty, Box::new(operand))
     }
 
@@ -737,7 +718,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_compound_literal(&mut self, scope_id: ScopeId, ty: QualType, init_ref: NodeRef) -> Operand {
+    fn lower_compound_literal(&mut self, ty: QualType, init_ref: NodeRef) -> Operand {
         let mir_ty = self.lower_qual_type(ty);
 
         // Check if we are at global scope
@@ -747,7 +728,7 @@ impl<'a> AstToMirLowerer<'a> {
 
             // Lower initializer (must be constant)
             let init_const_id = self
-                .lower_initializer_to_const(scope_id, init_ref, ty)
+                .lower_initializer_to_const(init_ref, ty)
                 .expect("Global compound literal initializer must be constant");
 
             let global_id = self.mir_builder.create_global_with_init(
@@ -763,7 +744,7 @@ impl<'a> AstToMirLowerer<'a> {
             let (_, place) = self.create_temp_local(mir_ty);
 
             // Lower initializer
-            let init_operand = self.lower_initializer(scope_id, init_ref, ty);
+            let init_operand = self.lower_initializer(init_ref, ty);
             self.emit_assignment(place.clone(), init_operand);
 
             Operand::Copy(Box::new(place))
@@ -812,20 +793,14 @@ impl<'a> AstToMirLowerer<'a> {
         Operand::Constant(self.create_constant(string_type, ConstValueKind::GlobalAddress(global_id)))
     }
 
-    fn lower_unary_op_expr(
-        &mut self,
-        scope_id: ScopeId,
-        op: &UnaryOp,
-        operand_ref: NodeRef,
-        mir_ty: TypeId,
-    ) -> Operand {
+    fn lower_unary_op_expr(&mut self, op: &UnaryOp, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
         match op {
-            UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.lower_pre_incdec(scope_id, op, operand_ref),
-            UnaryOp::AddrOf => self.lower_unary_addrof(scope_id, operand_ref),
-            UnaryOp::Deref => self.lower_unary_deref(scope_id, operand_ref),
-            UnaryOp::Plus => self.lower_expression(scope_id, operand_ref, true),
+            UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.lower_pre_incdec(op, operand_ref),
+            UnaryOp::AddrOf => self.lower_unary_addrof(operand_ref),
+            UnaryOp::Deref => self.lower_unary_deref(operand_ref),
+            UnaryOp::Plus => self.lower_expression(operand_ref, true),
             _ => {
-                let operand = self.lower_expression(scope_id, operand_ref, true);
+                let operand = self.lower_expression(operand_ref, true);
                 let operand_ty = self.get_operand_type(&operand);
                 let mir_type_info = self.mir_builder.get_type(operand_ty);
 
@@ -835,8 +810,8 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_unary_addrof(&mut self, scope_id: ScopeId, operand_ref: NodeRef) -> Operand {
-        let operand = self.lower_expression(scope_id, operand_ref, true);
+    fn lower_unary_addrof(&mut self, operand_ref: NodeRef) -> Operand {
+        let operand = self.lower_expression(operand_ref, true);
         if let Operand::Copy(place) = operand {
             Operand::AddressOf(place)
         } else if let Operand::Constant(const_id) = operand
@@ -855,8 +830,8 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_unary_deref(&mut self, scope_id: ScopeId, operand_ref: NodeRef) -> Operand {
-        let operand = self.lower_expression(scope_id, operand_ref, true);
+    fn lower_unary_deref(&mut self, operand_ref: NodeRef) -> Operand {
+        let operand = self.lower_expression(operand_ref, true);
         let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
         let target_mir_ty = self.lower_qual_type(operand_ty);
         let operand_converted = self.apply_conversions(operand, operand_ref, target_mir_ty);
@@ -945,7 +920,6 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_binary_op_expr(
         &mut self,
-        scope_id: ScopeId,
         op: &BinaryOp,
         left_ref: NodeRef,
         right_ref: NodeRef,
@@ -957,11 +931,11 @@ impl<'a> AstToMirLowerer<'a> {
             op
         );
         if matches!(op, BinaryOp::LogicAnd | BinaryOp::LogicOr) {
-            return self.lower_logical_op(scope_id, op, left_ref, right_ref, mir_ty);
+            return self.lower_logical_op(op, left_ref, right_ref, mir_ty);
         }
 
-        let lhs = self.lower_expression(scope_id, left_ref, true);
-        let rhs = self.lower_expression(scope_id, right_ref, true);
+        let lhs = self.lower_expression(left_ref, true);
+        let rhs = self.lower_expression(right_ref, true);
 
         // Handle pointer arithmetic
 
@@ -1012,14 +986,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_logical_op(
-        &mut self,
-        scope_id: ScopeId,
-        op: &BinaryOp,
-        left_ref: NodeRef,
-        right_ref: NodeRef,
-        mir_ty: TypeId,
-    ) -> Operand {
+    fn lower_logical_op(&mut self, op: &BinaryOp, left_ref: NodeRef, right_ref: NodeRef, mir_ty: TypeId) -> Operand {
         // Short-circuiting logic for && and ||
         // result = lhs ? (op == LogicOr ? 1 : rhs) : (op == LogicOr ? rhs : 0)
 
@@ -1031,7 +998,7 @@ impl<'a> AstToMirLowerer<'a> {
         let short_circuit_block = self.mir_builder.create_block();
 
         // 1. Evaluate LHS
-        let lhs_op = self.lower_condition(scope_id, left_ref);
+        let lhs_op = self.lower_condition(left_ref);
 
         // Pre-create constants to avoid double borrow
         let zero_ty = self.lower_type(self.registry.type_int);
@@ -1059,7 +1026,7 @@ impl<'a> AstToMirLowerer<'a> {
 
         // 2. Evaluate RHS
         self.mir_builder.set_current_block(eval_rhs_block);
-        let rhs_val = self.lower_condition(scope_id, right_ref);
+        let rhs_val = self.lower_condition(right_ref);
 
         // Convert boolean condition result to 0 or 1 integer
         // If rhs_val is true -> 1, else -> 0
@@ -1136,7 +1103,6 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_assignment_expr(
         &mut self,
-        scope_id: ScopeId,
         node_ref: NodeRef,
         op: &BinaryOp,
         left_ref: NodeRef,
@@ -1148,7 +1114,7 @@ impl<'a> AstToMirLowerer<'a> {
             "lower_assignment_expr called with non-assignment operator: {:?}",
             op
         );
-        let lhs_op = self.lower_expression(scope_id, left_ref, true);
+        let lhs_op = self.lower_expression(left_ref, true);
 
         // Ensure the LHS is a place. If not, this is a semantic error.
         if self.ast.get_value_category(left_ref) != Some(ValueCategory::LValue) {
@@ -1161,7 +1127,7 @@ impl<'a> AstToMirLowerer<'a> {
             panic!("LHS of assignment lowered to non-place operand despite being LValue");
         };
 
-        let rhs_op = self.lower_expression(scope_id, right_ref, true);
+        let rhs_op = self.lower_expression(right_ref, true);
 
         let final_rhs = if let Some(compound_op) = op.without_assignment() {
             // This is a compound assignment, e.g., a += b
@@ -1197,8 +1163,8 @@ impl<'a> AstToMirLowerer<'a> {
         final_rhs // C assignment expressions evaluate to the assigned value
     }
 
-    fn lower_function_call(&mut self, scope_id: ScopeId, call_expr: &nodes::CallExpr, mir_ty: TypeId) -> Operand {
-        let callee = self.lower_expression(scope_id, call_expr.callee, true);
+    fn lower_function_call(&mut self, call_expr: &nodes::CallExpr, mir_ty: TypeId) -> Operand {
+        let callee = self.lower_expression(call_expr.callee, true);
 
         let mut arg_operands = Vec::new();
 
@@ -1230,7 +1196,7 @@ impl<'a> AstToMirLowerer<'a> {
         for (i, arg_ref) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
             // Note: lower_expression(CallArg) will just lower the inner expression.
             // But we use arg_ref (the CallArg node) for implicit conversion lookup.
-            let arg_operand = self.lower_expression(scope_id, arg_ref, true);
+            let arg_operand = self.lower_expression(arg_ref, true);
 
             // Apply conversions for function arguments if needed
             // The resolved type of CallArg is same as inner expr.
@@ -1323,13 +1289,7 @@ impl<'a> AstToMirLowerer<'a> {
         None
     }
 
-    fn lower_member_access(
-        &mut self,
-        scope_id: ScopeId,
-        obj_ref: NodeRef,
-        field_name: &NameId,
-        is_arrow: bool,
-    ) -> Operand {
+    fn lower_member_access(&mut self, obj_ref: NodeRef, field_name: &NameId, is_arrow: bool) -> Operand {
         let obj_ty = self.ast.get_resolved_type(obj_ref).unwrap();
         let record_ty = if is_arrow {
             self.registry
@@ -1349,7 +1309,7 @@ impl<'a> AstToMirLowerer<'a> {
             // Apply the chain of field accesses
 
             // Resolve base place
-            let mut current_place = self.lower_expression_as_place(scope_id, obj_ref);
+            let mut current_place = self.lower_expression_as_place(obj_ref);
 
             if is_arrow {
                 // Dereference: *ptr
@@ -1367,14 +1327,14 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_index_access(&mut self, scope_id: ScopeId, arr_ref: NodeRef, idx_ref: NodeRef) -> Operand {
+    fn lower_index_access(&mut self, arr_ref: NodeRef, idx_ref: NodeRef) -> Operand {
         let arr_ty = self.ast.get_resolved_type(arr_ref).unwrap();
 
         // Handle both array and pointer types for index access
         // In C, arr[idx] is equivalent to *(arr + idx)
         if arr_ty.is_array() || arr_ty.is_pointer() {
-            let arr_place = self.lower_expression_as_place(scope_id, arr_ref);
-            let idx_operand = self.lower_expression(scope_id, idx_ref, true);
+            let arr_place = self.lower_expression_as_place(arr_ref);
+            let idx_operand = self.lower_expression(idx_ref, true);
 
             Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
         } else {
@@ -1382,9 +1342,9 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_return_statement(&mut self, scope_id: ScopeId, expr: &Option<NodeRef>) {
+    fn lower_return_statement(&mut self, expr: &Option<NodeRef>) {
         let operand = expr.map(|expr_ref| {
-            let expr_operand = self.lower_expression(scope_id, expr_ref, true);
+            let expr_operand = self.lower_expression(expr_ref, true);
             // Apply conversions for return value if needed
             if let Some(func_id) = self.current_function {
                 let func = self.mir_builder.get_functions().get(&func_id).unwrap();
@@ -1397,24 +1357,24 @@ impl<'a> AstToMirLowerer<'a> {
         self.mir_builder.set_terminator(Terminator::Return(operand));
     }
 
-    fn lower_if_statement(&mut self, scope_id: ScopeId, if_stmt: &IfStmt) {
+    fn lower_if_statement(&mut self, if_stmt: &IfStmt) {
         let then_block = self.mir_builder.create_block();
         let else_block = self.mir_builder.create_block();
         let merge_block = self.mir_builder.create_block();
 
-        let cond_converted = self.lower_condition(scope_id, if_stmt.condition);
+        let cond_converted = self.lower_condition(if_stmt.condition);
         self.mir_builder
             .set_terminator(Terminator::If(cond_converted, then_block, else_block));
 
         self.mir_builder.set_current_block(then_block);
-        self.lower_node_ref(if_stmt.then_branch, scope_id);
+        self.lower_node_ref(if_stmt.then_branch);
         if !self.mir_builder.current_block_has_terminator() {
             self.mir_builder.set_terminator(Terminator::Goto(merge_block));
         }
 
         self.mir_builder.set_current_block(else_block);
         if let Some(else_branch) = &if_stmt.else_branch {
-            self.lower_node_ref(*else_branch, scope_id);
+            self.lower_node_ref(*else_branch);
         }
         if !self.mir_builder.current_block_has_terminator() {
             self.mir_builder.set_terminator(Terminator::Goto(merge_block));
@@ -1495,45 +1455,45 @@ impl<'a> AstToMirLowerer<'a> {
         self.current_block = Some(exit_block);
     }
 
-    fn lower_while_statement(&mut self, scope_id: ScopeId, while_stmt: &WhileStmt) {
+    fn lower_while_statement(&mut self, while_stmt: &WhileStmt) {
         self.lower_loop_generic(
             None::<fn(&mut Self)>,
-            Some(|this: &mut Self| this.lower_condition(scope_id, while_stmt.condition)),
-            |this| this.lower_node_ref(while_stmt.body, scope_id),
+            Some(|this: &mut Self| this.lower_condition(while_stmt.condition)),
+            |this| this.lower_node_ref(while_stmt.body),
             None::<fn(&mut Self)>,
             false,
         );
     }
 
-    fn lower_do_while_statement(&mut self, scope_id: ScopeId, body: NodeRef, condition: NodeRef) {
+    fn lower_do_while_statement(&mut self, body: NodeRef, condition: NodeRef) {
         self.lower_loop_generic(
             None::<fn(&mut Self)>,
-            Some(|this: &mut Self| this.lower_condition(scope_id, condition)),
-            |this| this.lower_node_ref(body, scope_id),
+            Some(|this: &mut Self| this.lower_condition(condition)),
+            |this| this.lower_node_ref(body),
             None::<fn(&mut Self)>,
             true,
         );
     }
 
-    fn lower_for_statement(&mut self, scope_id: ScopeId, for_stmt: &ForStmt) {
+    fn lower_for_statement(&mut self, for_stmt: &ForStmt) {
         let init_fn = for_stmt
             .init
-            .map(|init| move |this: &mut Self| this.lower_node_ref(init, scope_id));
+            .map(|init| move |this: &mut Self| this.lower_node_ref(init));
 
         let cond_fn = for_stmt
             .condition
-            .map(|cond| move |this: &mut Self| this.lower_condition(scope_id, cond));
+            .map(|cond| move |this: &mut Self| this.lower_condition(cond));
 
         let inc_fn = for_stmt.increment.map(|inc| {
             move |this: &mut Self| {
-                this.lower_expression(scope_id, inc, false);
+                this.lower_expression(inc, false);
             }
         });
 
         self.lower_loop_generic(
             init_fn,
             cond_fn,
-            |this| this.lower_node_ref(for_stmt.body, scope_id),
+            |this| this.lower_node_ref(for_stmt.body),
             inc_fn,
             false,
         );
@@ -2002,15 +1962,8 @@ impl<'a> AstToMirLowerer<'a> {
         self.continue_target = old_continue;
     }
 
-    fn lower_inc_dec_common(
-        &mut self,
-        scope_id: ScopeId,
-        operand_ref: NodeRef,
-        is_inc: bool,
-        is_post: bool,
-        need_value: bool,
-    ) -> Operand {
-        let operand = self.lower_expression(scope_id, operand_ref, true);
+    fn lower_inc_dec_common(&mut self, operand_ref: NodeRef, is_inc: bool, is_post: bool, need_value: bool) -> Operand {
+        let operand = self.lower_expression(operand_ref, true);
         let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
         let mir_ty = self.lower_qual_type(operand_ty);
 
@@ -2084,19 +2037,13 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_pre_incdec(&mut self, scope_id: ScopeId, op: &UnaryOp, lhs_ref: NodeRef) -> Operand {
+    fn lower_pre_incdec(&mut self, op: &UnaryOp, lhs_ref: NodeRef) -> Operand {
         let is_inc = matches!(op, UnaryOp::PreIncrement);
-        self.lower_inc_dec_common(scope_id, lhs_ref, is_inc, false, true)
+        self.lower_inc_dec_common(lhs_ref, is_inc, false, true)
     }
 
-    fn lower_post_incdec(
-        &mut self,
-        scope_id: ScopeId,
-        operand_ref: NodeRef,
-        is_inc: bool,
-        need_value: bool,
-    ) -> Operand {
-        self.lower_inc_dec_common(scope_id, operand_ref, is_inc, true, need_value)
+    fn lower_post_incdec(&mut self, operand_ref: NodeRef, is_inc: bool, need_value: bool) -> Operand {
+        self.lower_inc_dec_common(operand_ref, is_inc, true, need_value)
     }
 
     fn scan_for_labels(&mut self, node_ref: NodeRef) {
@@ -2143,7 +2090,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_label_statement(&mut self, scope_id: ScopeId, label_name: &NameId, statement: NodeRef) {
+    fn lower_label_statement(&mut self, label_name: &NameId, statement: NodeRef) {
         if let Some(label_block) = self.label_map.get(label_name).copied() {
             // Make sure the current block is terminated before switching
             if !self.mir_builder.current_block_has_terminator() {
@@ -2154,7 +2101,7 @@ impl<'a> AstToMirLowerer<'a> {
             self.current_block = Some(label_block);
 
             // Now, lower the statement that follows the label
-            self.lower_node_ref(statement, scope_id);
+            self.lower_node_ref(statement);
         } else {
             panic!("Label '{}' was not pre-scanned", label_name.as_str());
         }
@@ -2175,29 +2122,29 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_builtin_va_arg(&mut self, scope_id: ScopeId, ty: QualType, expr_ref: NodeRef) -> Operand {
-        let ap = self.lower_expression_as_place(scope_id, expr_ref);
+    fn lower_builtin_va_arg(&mut self, ty: QualType, expr_ref: NodeRef) -> Operand {
+        let ap = self.lower_expression_as_place(expr_ref);
         let mir_ty = self.lower_qual_type(ty);
         let rval = Rvalue::BuiltinVaArg(ap, mir_ty);
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
-    fn lower_builtin_va_start(&mut self, scope_id: ScopeId, ap_ref: NodeRef, last_ref: NodeRef) -> Operand {
-        let ap = self.lower_expression_as_place(scope_id, ap_ref);
-        let last = self.lower_expression(scope_id, last_ref, true);
+    fn lower_builtin_va_start(&mut self, ap_ref: NodeRef, last_ref: NodeRef) -> Operand {
+        let ap = self.lower_expression_as_place(ap_ref);
+        let last = self.lower_expression(last_ref, true);
         self.mir_builder.add_statement(MirStmt::BuiltinVaStart(ap, last));
         self.create_int_operand(0)
     }
 
-    fn lower_builtin_va_end(&mut self, scope_id: ScopeId, ap_ref: NodeRef) -> Operand {
-        let ap = self.lower_expression_as_place(scope_id, ap_ref);
+    fn lower_builtin_va_end(&mut self, ap_ref: NodeRef) -> Operand {
+        let ap = self.lower_expression_as_place(ap_ref);
         self.mir_builder.add_statement(MirStmt::BuiltinVaEnd(ap));
         self.create_int_operand(0)
     }
 
-    fn lower_builtin_va_copy(&mut self, scope_id: ScopeId, dst_ref: NodeRef, src_ref: NodeRef) -> Operand {
-        let dst = self.lower_expression_as_place(scope_id, dst_ref);
-        let src = self.lower_expression_as_place(scope_id, src_ref);
+    fn lower_builtin_va_copy(&mut self, dst_ref: NodeRef, src_ref: NodeRef) -> Operand {
+        let dst = self.lower_expression_as_place(dst_ref);
+        let src = self.lower_expression_as_place(src_ref);
 
         self.mir_builder.add_statement(MirStmt::BuiltinVaCopy(dst, src));
         self.create_int_operand(0)

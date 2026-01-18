@@ -1346,4 +1346,34 @@ mod tests {
         }
         ");
     }
+
+    #[test]
+    fn test_global_initializer_with_cast() {
+        let source = r#"
+            int x = 5;
+            long y = 6;
+            char c = 7;
+            int main() {
+                return 0;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r"
+        type %t0 = i32
+        type %t1 = i64
+        type %t2 = i8
+
+        global @x: i32 = const 5
+        global @y: i64 = const 6
+        global @c: i8 = const 7
+
+        fn main() -> i32
+        {
+
+          bb1:
+            return const 0
+        }
+        ");
+    }
 }

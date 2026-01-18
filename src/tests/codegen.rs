@@ -5,9 +5,10 @@ use crate::ast::NameId;
 
 use crate::driver::artifact::CompilePhase;
 use crate::mir::codegen::{ClifOutput, EmitContext, EmitKind, MirToCraneliftLowerer, emit_const};
-use crate::mir::{CallTarget, LocalId};
+use crate::mir::{CallTarget, ConstValueKind, LocalId, Rvalue};
 use crate::mir::{MirModuleId, MirRecordLayout, MirStmt, MirType, Operand, Place, Terminator};
 use crate::tests::semantic_common::run_pass;
+use crate::tests::semantic_common::setup_cranelift;
 
 #[test]
 fn test_emit_const_struct_literal() {
@@ -30,10 +31,10 @@ fn test_emit_const_struct_literal() {
     let struct_type_id = builder.add_type(struct_type.clone());
 
     // 2. Setup Constants
-    let const_1_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(0x11111111));
-    let const_2_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(0x22222222));
+    let const_1_id = builder.create_constant(int_type_id, ConstValueKind::Int(0x11111111));
+    let const_2_id = builder.create_constant(int_type_id, ConstValueKind::Int(0x22222222));
 
-    let struct_const_kind = crate::mir::ConstValueKind::StructLiteral(vec![(0, const_1_id), (1, const_2_id)]);
+    let struct_const_kind = ConstValueKind::StructLiteral(vec![(0, const_1_id), (1, const_2_id)]);
     let struct_const_id = builder.create_constant(struct_type_id, struct_const_kind);
 
     // 3. Get MirProgram
@@ -80,7 +81,7 @@ fn test_store_statement_lowering() {
     let local_id = builder.create_local(Some(NameId::new("x")), int_type_id, false);
 
     // 4. Set up Constant
-    let const_val_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(42));
+    let const_val_id = builder.create_constant(int_type_id, ConstValueKind::Int(42));
 
     // 5. Create Statement: store 42 into x
     let store_stmt = MirStmt::Store(Operand::Constant(const_val_id), Place::Local(local_id));
@@ -125,19 +126,19 @@ fn test_store_deref_pointer() {
     let local_x_id = builder.create_local(Some(NameId::new("x")), int_type_id, false);
     let local_p_id = builder.create_local(Some(NameId::new("p")), ptr_type_id, false);
 
-    let const_42_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(42));
-    let const_10_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(10));
+    let const_42_id = builder.create_constant(int_type_id, ConstValueKind::Int(42));
+    let const_10_id = builder.create_constant(int_type_id, ConstValueKind::Int(10));
 
     // x = 10
     builder.add_statement(MirStmt::Assign(
         Place::Local(local_x_id),
-        crate::mir::Rvalue::Use(Operand::Constant(const_10_id)),
+        Rvalue::Use(Operand::Constant(const_10_id)),
     ));
 
     // p = &x
     builder.add_statement(MirStmt::Assign(
         Place::Local(local_p_id),
-        crate::mir::Rvalue::Use(Operand::AddressOf(Box::new(Place::Local(local_x_id)))),
+        Rvalue::Use(Operand::AddressOf(Box::new(Place::Local(local_x_id)))),
     ));
 
     // *p = 42
@@ -166,8 +167,6 @@ fn test_store_deref_pointer() {
         Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
     }
 }
-
-use crate::tests::semantic_common::setup_cranelift;
 
 #[test]
 fn test_compile_struct_pointer_access() {

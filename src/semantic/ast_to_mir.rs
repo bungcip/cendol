@@ -1866,9 +1866,15 @@ impl<'a> AstToMirLowerer<'a> {
     fn operand_to_const_id(&mut self, operand: Operand) -> Option<ConstValueId> {
         match operand {
             Operand::Constant(id) => Some(id),
-            Operand::Cast(_, _) => {
-                // Cast operands cannot be constants
-                None
+            Operand::Cast(ty, inner) => {
+                // Recursively try to get constant from inner operand
+                if let Some(inner_const_id) = self.operand_to_const_id(*inner) {
+                    let inner_const = self.mir_builder.get_constants().get(&inner_const_id).unwrap();
+                    // Create a new constant with the target type but same kind
+                    Some(self.create_constant(ty, inner_const.kind.clone()))
+                } else {
+                    None
+                }
             }
             Operand::AddressOf(place) => {
                 if let Place::Global(global_id) = *place {

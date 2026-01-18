@@ -117,7 +117,7 @@ impl MirValidator {
     ///
     /// Returns Ok(()) if validation passes, or Err(Vec<ValidationError>) if errors are found
     pub(crate) fn validate(&mut self, sema_output: &MirProgram) -> Result<(), Vec<ValidationError>> {
-        eprintln!("VALIDATE: Starting validation");
+        // eprintln!("VALIDATE: Starting validation");
         self.errors.clear();
 
         // Validate the module structure
@@ -172,12 +172,12 @@ impl MirValidator {
         const_value: &ConstValue,
         target_type_id: TypeId,
     ) {
-        eprintln!(
-            "VALIDATING CAST: const {} value {:?} to type {:?}",
-            const_id.get(),
-            const_value,
-            target_type_id.get()
-        );
+        // eprintln!(
+        //     "VALIDATING CAST: const {} value {:?} to type {:?}",
+        //     const_id.get(),
+        //     const_value,
+        //     target_type_id.get()
+        // );
         if let Some(target_ty) = sema_output.types.get(&target_type_id) {
             match (&const_value.kind, target_ty) {
                 (ConstValueKind::Int(value), MirType::I8) => {

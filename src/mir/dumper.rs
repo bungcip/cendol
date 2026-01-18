@@ -279,9 +279,12 @@ impl<'a> MirDumper<'a> {
                 self.dump_operand(output, operand)?;
                 write!(output, ", {}", self.place_to_string(place))?;
             }
-            MirStmt::Call(call_target, operands) => {
-                write!(output, "call {}(", self.call_target_to_string(call_target))?;
-                for (i, operand) in operands.iter().enumerate() {
+            MirStmt::Call { target, args, dest } => {
+                if let Some(place) = dest {
+                    write!(output, "{} = ", self.place_to_string(place))?;
+                }
+                write!(output, "call {}(", self.call_target_to_string(target))?;
+                for (i, operand) in args.iter().enumerate() {
                     if i > 0 {
                         write!(output, ", ")?;
                     }
@@ -672,16 +675,7 @@ impl<'a> MirDumper<'a> {
             Rvalue::Load(operand) => {
                 write!(output, "load {}", self.operand_to_string(operand))?;
             }
-            Rvalue::Call(call_target, operands) => {
-                write!(output, "call {}(", self.call_target_to_string(call_target))?;
-                for (i, operand) in operands.iter().enumerate() {
-                    if i > 0 {
-                        write!(output, ", ")?;
-                    }
-                    self.dump_operand(output, operand)?;
-                }
-                write!(output, ")")?;
-            }
+
             Rvalue::BuiltinVaArg(ap, ty) => {
                 write!(
                     output,

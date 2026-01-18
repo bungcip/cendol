@@ -396,10 +396,13 @@ impl MirValidator {
                     self.errors.push(ValidationError::InvalidCast(from, to));
                 }
             }
-            MirStmt::Call(target, args) => {
+            MirStmt::Call { target, args, dest } => {
                 self.validate_call_target(sema_output, target);
                 for a in args {
                     self.validate_operand(sema_output, a);
+                }
+                if let Some(dest_place) = dest {
+                    self.validate_place(sema_output, dest_place);
                 }
                 // Validate argument types against function signature when possible
                 match target {
@@ -427,12 +430,34 @@ impl MirValidator {
                                     }
                                 }
                             }
+                            // Validate return type if dest is present
+                            if let Some(dest_place) = dest {
+                                let dest_ty = self.validate_place(sema_output, dest_place);
+                                if dest_ty.is_some()
+                                    && let Some(func_ret_ty) = sema_output.types.get(&func.return_type)
+                                    && matches!(func_ret_ty, MirType::Void)
+                                {
+                                    self.errors.push(ValidationError::IllegalOperation(format!(
+                                        "Call to void function {} with destination",
+                                        fid.get()
+                                    )));
+                                }
+                            } else {
+                                // If no dest, function should return void
+                                if let Some(func_ret_ty) = sema_output.types.get(&func.return_type)
+                                    && !matches!(func_ret_ty, MirType::Void)
+                                {
+                                    // Allow ignoring non-void returns (common in C)
+                                }
+                            }
                         }
                     }
                     CallTarget::Indirect(op) => {
                         if let Some(op_ty) = self.validate_operand(sema_output, op)
                             && let Some(MirType::Pointer { pointee }) = sema_output.types.get(&op_ty)
-                            && let Some(MirType::Function { params, .. }) = sema_output.types.get(pointee)
+                            && let Some(MirType::Function {
+                                params, return_type, ..
+                            }) = sema_output.types.get(pointee)
                         {
                             if params.len() != args.len() {
                                 self.errors.push(ValidationError::IllegalOperation(
@@ -450,6 +475,18 @@ impl MirValidator {
                                             actual_type: arg_ty,
                                         });
                                     }
+                                }
+                            }
+                            // Validate return type if dest is present
+                            if let Some(dest_place) = dest {
+                                let dest_ty = self.validate_place(sema_output, dest_place);
+                                if dest_ty.is_some()
+                                    && let Some(func_ret_ty) = sema_output.types.get(return_type)
+                                    && matches!(func_ret_ty, MirType::Void)
+                                {
+                                    self.errors.push(ValidationError::IllegalOperation(
+                                        "Call to void function via indirect call with destination".to_string(),
+                                    ));
                                 }
                             }
                         }
@@ -577,10 +614,10 @@ impl MirValidator {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
                 // Check if casting a constant value that doesn't fit in the target type
-                if let Operand::Constant(const_id) = inner.as_ref() {
-                    if let Some(const_value) = sema_output.constants.get(const_id) {
-                        self.validate_constant_cast(sema_output, *const_id, const_value, *type_id);
-                    }
+                if let Operand::Constant(const_id) = inner.as_ref()
+                    && let Some(const_value) = sema_output.constants.get(const_id)
+                {
+                    self.validate_constant_cast(sema_output, *const_id, const_value, *type_id);
                 }
                 self.validate_operand(sema_output, inner);
                 Some(*type_id)
@@ -648,7 +685,9 @@ impl MirValidator {
                 let from_ty = self.validate_operand(sema_output, op);
                 if let (Some(from), true) = (from_ty, sema_output.types.contains_key(type_id)) {
                     // basic invalid cast check: disallow casts from record/array/enum/function to non-pointer/scalar types
-                    if let Some(MirType::Record { .. } | MirType::Array { .. }) = sema_output.types.get(&from) {
+                    if let Some(ty) = sema_output.types.get(&from)
+                        && ty.is_aggregate()
+                    {
                         if let Some(MirType::Pointer { .. }) = sema_output.types.get(type_id) {
                             // pointer casts allowed
                             // pointer casts allowed
@@ -688,13 +727,7 @@ impl MirValidator {
                 self.validate_operand(sema_output, op);
                 None
             }
-            Rvalue::Call(target, args) => {
-                self.validate_call_target(sema_output, target);
-                for a in args {
-                    self.validate_operand(sema_output, a);
-                }
-                None
-            }
+
             Rvalue::BuiltinVaArg(ap, type_id) => {
                 self.validate_place(sema_output, ap);
                 if !sema_output.types.contains_key(type_id) {

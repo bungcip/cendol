@@ -363,7 +363,7 @@ fn prepare_call_signature(
     let return_mir_type = mir.get_type(return_type_id);
     let return_type_opt = match convert_type(return_mir_type) {
         Some(t) => Some(t),
-        None if matches!(return_mir_type, MirType::Record { .. } | MirType::Array { .. }) => Some(types::I64),
+        None if return_mir_type.is_aggregate() => Some(types::I64),
         None => None,
     };
     if let Some(ret_type) = return_type_opt {
@@ -375,7 +375,7 @@ fn prepare_call_signature(
         let mir_type = mir.get_type(param_type_id);
         let param_type = match convert_type(mir_type) {
             Some(t) => t,
-            None if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) => types::I64,
+            None if mir_type.is_aggregate() => types::I64,
             None => types::I32, // Should not happen for valid MIR
         };
         sig.params.push(AbiParam::new(param_type));
@@ -386,7 +386,7 @@ fn prepare_call_signature(
         let arg_type_id = get_operand_type_id(arg, mir).ok();
         if let Some(type_id) = arg_type_id {
             let mir_type = mir.get_type(type_id);
-            if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
+            if mir_type.is_aggregate() {
                 // For structs/arrays, calculate how many I64 slots we need
                 let size = mir_type_size(mir_type, mir).unwrap_or(8);
                 let num_slots = size.div_ceil(8) as usize; // Round up to nearest 8 bytes
@@ -470,7 +470,7 @@ fn resolve_variadic_call_arguments(
             && let Ok(type_id) = get_operand_type_id(arg, mir)
         {
             let mir_type = mir.get_type(type_id);
-            if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
+            if mir_type.is_aggregate() {
                 // Get the struct address
                 let struct_addr =
                     resolve_operand_to_value(arg, builder, types::I64, cranelift_stack_slots, mir, module)?;
@@ -855,7 +855,7 @@ fn resolve_operand_to_value(
                         let mir_type = mir.get_type(param_local.type_id);
                         let param_type = match convert_type(mir_type) {
                             Some(t) => t,
-                            None if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) => types::I64,
+                            None if mir_type.is_aggregate() => types::I64,
                             None => types::I32,
                         };
                         sig.params.push(AbiParam::new(param_type));
@@ -883,7 +883,7 @@ fn resolve_operand_to_value(
                 get_place_type_id(place, mir).map_err(|e| format!("Failed to get place type: {}", e))?;
             let place_type = mir.get_type(place_type_id);
 
-            if matches!(place_type, MirType::Record { .. } | MirType::Array { .. }) {
+            if place_type.is_aggregate() {
                 // For aggregate types, resolving the operand value means getting its address
                 let addr = resolve_place_to_addr(place, builder, cranelift_stack_slots, mir, module)?;
                 return Ok(emit_type_conversion(addr, types::I64, expected_type, false, builder));
@@ -1030,14 +1030,14 @@ fn get_operand_cranelift_type(operand: &Operand, mir: &MirProgram) -> Result<Typ
         Operand::Copy(place) => {
             let place_type_id = get_place_type_id(place, mir)?;
             let place_type = mir.get_type(place_type_id);
-            if matches!(place_type, MirType::Record { .. } | MirType::Array { .. }) {
+            if place_type.is_aggregate() {
                 return Ok(types::I64);
             }
             convert_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))
         }
         Operand::Cast(type_id, _) => {
             let mir_type = mir.get_type(*type_id);
-            if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
+            if mir_type.is_aggregate() {
                 return Ok(types::I64);
             }
             Ok(convert_type(mir_type).unwrap_or(types::I32))
@@ -1292,7 +1292,7 @@ fn lower_statement(
             let place_mir_type = mir.get_type(place_type_id);
             let expected_type = match convert_type(place_mir_type) {
                 Some(t) => t,
-                None if matches!(place_mir_type, MirType::Record { .. } | MirType::Array { .. }) => types::I64,
+                None if place_mir_type.is_aggregate() => types::I64,
                 None => return Err("Cannot assign to void type".to_string()),
             };
 
@@ -1437,9 +1437,7 @@ fn lower_statement(
                     let addr = resolve_operand_to_value(operand, builder, types::I64, clif_stack_slots, mir, module)?;
                     Ok(builder.ins().load(expected_type, MemFlags::new(), addr, 0))
                 }
-                Rvalue::Call(call_target, args) => {
-                    emit_function_call_impl(call_target, args, builder, mir, clif_stack_slots, module, expected_type)
-                }
+
                 Rvalue::BinaryIntOp(op, left_operand, right_operand) => {
                     let left_cranelift_type = get_operand_cranelift_type(left_operand, mir)
                         .map_err(|e| format!("Failed to get left operand type: {}", e))?;
@@ -1708,7 +1706,7 @@ fn lower_statement(
                 let place_type_id = get_place_type_id(place, mir).unwrap();
                 let mir_type = mir.get_type(place_type_id);
 
-                if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
+                if mir_type.is_aggregate() {
                     // For aggregate types, the value is an address (returned by va_arg or similar)
                     let dest_addr = resolve_place_to_addr(place, builder, clif_stack_slots, mir, module)?;
                     let size = mir_type_size(mir_type, mir)? as i64;
@@ -1772,10 +1770,43 @@ fn lower_statement(
             }
         }
 
-        MirStmt::Call(call_target, args) => {
-            // Handle function calls that don't return values (side-effect only calls)
-            // This is used for void function calls or calls where the result is ignored
-            let _ = emit_function_call_impl(call_target, args, builder, mir, clif_stack_slots, module, types::I32)?; // Ignore return value as this is a side-effect only call
+        MirStmt::Call { target, args, dest } => {
+            if let Some(dest_place) = dest {
+                // Call with destination - need to store the result
+                let dest_type_id = get_place_type_id(dest_place, mir)?;
+                let dest_mir_type = mir.get_type(dest_type_id);
+                let expected_type = match convert_type(dest_mir_type) {
+                    Some(t) => t,
+                    None if dest_mir_type.is_aggregate() => types::I64,
+                    None => return Err("Cannot assign to void type".to_string()),
+                };
+                let result =
+                    emit_function_call_impl(target, args, builder, mir, clif_stack_slots, module, expected_type)?;
+
+                // Store the result in the destination place
+                let dest_mir_type = mir.get_type(dest_type_id);
+                if dest_mir_type.is_aggregate() {
+                    // For aggregate types, result is an address, memcpy to dest
+                    let dest_addr = resolve_place_to_addr(dest_place, builder, clif_stack_slots, mir, module)?;
+                    let size = mir_type_size(dest_mir_type, mir)? as i64;
+                    emit_memcpy(dest_addr, result, size, builder, module)?;
+                } else {
+                    match dest_place {
+                        Place::Local(local_id) => {
+                            if let Some(stack_slot) = clif_stack_slots.get(local_id) {
+                                builder.ins().stack_store(result, *stack_slot, 0);
+                            }
+                        }
+                        _ => {
+                            let addr = resolve_place_to_addr(dest_place, builder, clif_stack_slots, mir, module)?;
+                            builder.ins().store(MemFlags::new(), result, addr, 0);
+                        }
+                    }
+                }
+            } else {
+                // Call without destination - ignore return value (side-effect only)
+                let _ = emit_function_call_impl(target, args, builder, mir, clif_stack_slots, module, types::I32)?;
+            }
         }
 
         MirStmt::Alloc(place, type_id) => {
@@ -1986,7 +2017,7 @@ fn setup_signature(
     let return_mir_type = mir.get_type(func.return_type);
     let return_type_opt = match convert_type(return_mir_type) {
         Some(t) => Some(t),
-        None if matches!(return_mir_type, MirType::Record { .. } | MirType::Array { .. }) => Some(types::I64),
+        None if return_mir_type.is_aggregate() => Some(types::I64),
         None => None, // Void
     };
 
@@ -1997,7 +2028,7 @@ fn setup_signature(
         let mir_type = mir.get_type(param_local.type_id);
         let param_type = match convert_type(mir_type) {
             Some(t) => t,
-            None if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) => types::I64,
+            None if mir_type.is_aggregate() => types::I64,
             None => return Err(format!("Unsupported parameter type for local {}", param_id.get())),
         };
         func_ctx.params.push(AbiParam::new(param_type));

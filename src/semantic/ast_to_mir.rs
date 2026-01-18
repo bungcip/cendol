@@ -1271,21 +1271,30 @@ impl<'a> AstToMirLowerer<'a> {
             CallTarget::Indirect(callee)
         };
 
-        // Check if this is a void function call - if so, we use MirStmt::Call
-        // Otherwise, we use Rvalue::Call and create a temporary local
-        let is_void = matches!(self.mir_builder.get_type(mir_ty), MirType::Void);
-        if is_void {
-            // Void function call - use MirStmt::Call for side effects only
-            let stmt = MirStmt::Call(call_target, arg_operands);
-            self.mir_builder.add_statement(stmt);
+        // For all function calls, use MirStmt::Call
+        // If it's non-void, create a temporary destination place to store the result
+        let dest = if matches!(self.mir_builder.get_type(mir_ty), MirType::Void) {
+            None
+        } else {
+            let (_, temp_place) = self.create_temp_local(mir_ty);
+            Some(temp_place)
+        };
+
+        let stmt = MirStmt::Call {
+            target: call_target,
+            args: arg_operands,
+            dest: dest.clone(),
+        };
+        self.mir_builder.add_statement(stmt);
+
+        // If it's non-void, return the temporary place as an operand
+        if let Some(dest_place) = dest {
+            Operand::Copy(Box::new(dest_place))
+        } else {
             // Return a dummy operand for void functions
             let ty_id = self.lower_type(self.registry.type_int);
-            return Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(0)));
+            Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(0)))
         }
-
-        // Non-void function call - use Rvalue::Call and store result
-        let rval = Rvalue::Call(call_target, arg_operands);
-        self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
     fn find_member_path(&self, record_ty: TypeRef, field_name: NameId) -> Option<Vec<usize>> {

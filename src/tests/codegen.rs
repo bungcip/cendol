@@ -27,14 +27,14 @@ fn test_emit_const_struct_literal() {
             field_offsets: vec![0, 4],
         },
     };
-    let _struct_type_id = builder.add_type(struct_type.clone());
+    let struct_type_id = builder.add_type(struct_type.clone());
 
     // 2. Setup Constants
     let const_1_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(0x11111111));
     let const_2_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(0x22222222));
 
     let struct_const_kind = crate::mir::ConstValueKind::StructLiteral(vec![(0, const_1_id), (1, const_2_id)]);
-    let struct_const_id = builder.create_constant(int_type_id, struct_const_kind);
+    let struct_const_id = builder.create_constant(struct_type_id, struct_const_kind);
 
     // 3. Get MirProgram
     let sema_output = builder.consume();
@@ -46,7 +46,7 @@ fn test_emit_const_struct_literal() {
         func_id_map: &hashbrown::HashMap::new(),
         data_id_map: &hashbrown::HashMap::new(),
     };
-    emit_const(struct_const_id, &struct_type, &mut output, &ctx, None, None, 0).expect("emit_const failed");
+    emit_const(struct_const_id, &mut output, &ctx, None, None, 0).expect("emit_const failed");
 
     // 5. Verify Output
     let expected = vec![0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22];

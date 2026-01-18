@@ -150,7 +150,7 @@ fn emit_const_struct(
     match ty {
         MirType::Record {
             layout: record_layout,
-            field_types,
+            field_types: _,
             ..
         } => {
             // Initialize the entire struct with zeros
@@ -162,16 +162,9 @@ fn emit_const_struct(
                 if *field_index < record_layout.field_offsets.len() {
                     let field_offset = record_layout.field_offsets[*field_index] as usize;
 
-                    let field_type_id = field_types
-                        .get(*field_index)
-                        .ok_or_else(|| format!("Field index {} out of bounds", field_index))?;
-
-                    let field_type = ctx.mir.get_type(*field_type_id);
-
                     let mut field_bytes = Vec::new();
                     emit_const(
                         *field_const_id,
-                        field_type,
                         &mut field_bytes,
                         ctx,
                         reborrow_module(&mut module),
@@ -229,7 +222,6 @@ fn emit_const_array(
 
                 emit_const(
                     *element_const_id,
-                    element_type,
                     output,
                     ctx,
                     reborrow_module(&mut module),
@@ -259,7 +251,6 @@ fn emit_const_array(
 /// Emit a constant value to the output buffer based on its type layout
 pub(crate) fn emit_const(
     const_id: ConstValueId,
-    ty: &MirType,
     output: &mut Vec<u8>,
     ctx: &EmitContext,
     mut module: Option<&mut ObjectModule>,
@@ -271,6 +262,8 @@ pub(crate) fn emit_const(
         .constants
         .get(&const_id)
         .ok_or_else(|| format!("Constant ID {} not found", const_id.get()))?;
+
+    let ty = ctx.mir.get_type(const_value.ty);
 
     match &const_value.kind {
         ConstValueKind::Int(val) => emit_const_int(*val, ty, output),
@@ -2206,10 +2199,7 @@ impl MirToCraneliftLowerer {
         for (global_id, global) in &self.mir.globals {
             if let Some(const_id) = global.initial_value {
                 let data_id = *self.data_id_map.get(global_id).unwrap();
-
                 let mut data_description = DataDescription::new();
-                let global_type = self.mir.get_type(global.type_id);
-
                 let mut initial_value_bytes = Vec::new();
                 // Enable relocations by passing data_description and maps
                 let ctx = EmitContext {
@@ -2219,7 +2209,6 @@ impl MirToCraneliftLowerer {
                 };
                 emit_const(
                     const_id,
-                    global_type,
                     &mut initial_value_bytes,
                     &ctx,
                     Some(&mut self.module),

@@ -5,8 +5,8 @@ use crate::mir::MirArrayLayout;
 use crate::mir::MirProgram;
 use crate::mir::MirRecordLayout;
 use crate::mir::{
-    self, BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, LocalId, MirBlockId, MirBuilder,
-    MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
+    self, BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, ConstValueKind, LocalId, MirBlockId,
+    MirBuilder, MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
@@ -309,12 +309,13 @@ impl<'a> AstToMirLowerer<'a> {
         create_rvalue: R,
     ) -> Operand
     where
-        C: FnOnce(&mut Self, T) -> ConstValue,
+        C: FnOnce(&mut Self, T) -> ConstValueKind,
         R: FnOnce(T) -> Rvalue,
     {
         if self.current_function.is_none() {
-            let const_val = create_const(self, data);
-            Operand::Constant(self.create_constant(const_val))
+            let mir_ty = self.lower_qual_type(target_ty);
+            let const_kind = create_const(self, data);
+            Operand::Constant(self.create_constant(mir_ty, const_kind))
         } else {
             let rval = create_rvalue(data);
             let mir_ty = self.lower_qual_type(target_ty);
@@ -335,7 +336,7 @@ impl<'a> AstToMirLowerer<'a> {
                         (idx, const_id)
                     })
                     .collect();
-                ConstValue::StructLiteral(const_fields)
+                ConstValueKind::StructLiteral(const_fields)
             },
             Rvalue::StructLiteral,
         )
@@ -352,7 +353,7 @@ impl<'a> AstToMirLowerer<'a> {
                         this.operand_to_const_id_strict(op, "Global array initializer must be a constant expression")
                     })
                     .collect();
-                ConstValue::ArrayLiteral(const_elements)
+                ConstValueKind::ArrayLiteral(const_elements)
             },
             Rvalue::ArrayLiteral,
         )
@@ -504,7 +505,7 @@ impl<'a> AstToMirLowerer<'a> {
         let symbol = self.symbol_table.get_symbol(entry_ref);
         let final_init = initial_value_id.or_else(|| {
             if symbol.def_state == DefinitionState::Tentative {
-                Some(self.create_constant(ConstValue::Zero))
+                Some(self.create_constant(mir_type_id, ConstValueKind::Zero))
             } else {
                 None
             }
@@ -575,7 +576,8 @@ impl<'a> AstToMirLowerer<'a> {
                 symbol_table: self.symbol_table,
             };
             if let Some(val) = eval_const_expr(&ctx, expr_ref) {
-                return Operand::Constant(self.create_constant(ConstValue::Int(val)));
+                let ty_id = self.lower_qual_type(ty);
+                return Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val)));
             }
         }
 
@@ -776,13 +778,25 @@ impl<'a> AstToMirLowerer<'a> {
         let char_constants = (0..size)
             .map(|i| {
                 let byte_val = if i < bytes.len() { bytes[i] } else { 0 };
-                let char_const = ConstValue::Int(byte_val as i64);
-                self.create_constant(char_const)
+                let char_ty = self.lower_type(self.registry.type_char);
+                self.create_constant(char_ty, ConstValueKind::Int(byte_val as i64))
             })
             .collect();
 
-        let array_const = ConstValue::ArrayLiteral(char_constants);
-        self.create_constant(array_const)
+        // Create array type: char[size]
+        let char_ty = self.lower_type(self.registry.type_char);
+        let array_ty = self.mir_builder.add_type(MirType::Array {
+            element: char_ty,
+            size,
+            // We'll use dummy layout values for now - they'll be replaced later if needed
+            layout: MirArrayLayout {
+                size: 0,
+                align: 1,
+                stride: 1,
+            },
+        });
+
+        self.create_constant(array_ty, ConstValueKind::ArrayLiteral(char_constants))
     }
 
     fn lower_literal_string(&mut self, val: &NameId, ty: QualType) -> Operand {
@@ -795,8 +809,7 @@ impl<'a> AstToMirLowerer<'a> {
             .mir_builder
             .create_global_with_init(global_name, string_type, true, Some(array_const_id));
 
-        let addr_const_val = ConstValue::GlobalAddress(global_id);
-        Operand::Constant(self.create_constant(addr_const_val))
+        Operand::Constant(self.create_constant(string_type, ConstValueKind::GlobalAddress(global_id)))
     }
 
     fn lower_unary_op_expr(
@@ -830,7 +843,10 @@ impl<'a> AstToMirLowerer<'a> {
             && self.ast.get_value_category(operand_ref) == Some(ValueCategory::LValue)
             && matches!(
                 self.mir_builder.get_constants().get(&const_id),
-                Some(ConstValue::FunctionAddress(_))
+                Some(ConstValue {
+                    kind: ConstValueKind::FunctionAddress(_),
+                    ..
+                })
             )
         {
             Operand::Constant(const_id)
@@ -886,10 +902,13 @@ impl<'a> AstToMirLowerer<'a> {
                     .find(|(_, f)| f.name == entry.name)
                     .map(|(id, _)| *id)
                     .unwrap();
-                let const_val = ConstValue::FunctionAddress(func_id);
-                Operand::Constant(self.create_constant(const_val))
+                let func_type = self.get_function_type(func_id);
+                Operand::Constant(self.create_constant(func_type, ConstValueKind::FunctionAddress(func_id)))
             }
-            SymbolKind::EnumConstant { value } => Operand::Constant(self.create_constant(ConstValue::Int(*value))),
+            SymbolKind::EnumConstant { value } => {
+                let ty_id = self.lower_type(self.registry.type_int);
+                Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(*value)))
+            }
             _ => panic!("Unexpected symbol kind"),
         }
     }
@@ -1015,8 +1034,10 @@ impl<'a> AstToMirLowerer<'a> {
         let lhs_op = self.lower_condition(scope_id, left_ref);
 
         // Pre-create constants to avoid double borrow
-        let zero_const = self.create_constant(ConstValue::Int(0));
-        let one_const = self.create_constant(ConstValue::Int(1));
+        let zero_ty = self.lower_type(self.registry.type_int);
+        let zero_const = self.create_constant(zero_ty, ConstValueKind::Int(0));
+        let one_ty = self.lower_type(self.registry.type_int);
+        let one_const = self.create_constant(one_ty, ConstValueKind::Int(1));
 
         let (short_circuit_val, true_target, false_target) = match op {
             BinaryOp::LogicAnd => (zero_const, eval_rhs_block, short_circuit_block),
@@ -1237,7 +1258,11 @@ impl<'a> AstToMirLowerer<'a> {
         }
 
         let call_target = if let Operand::Constant(const_id) = callee {
-            if let ConstValue::FunctionAddress(func_id) = self.mir_builder.get_constants().get(&const_id).unwrap() {
+            if let ConstValue {
+                kind: ConstValueKind::FunctionAddress(func_id),
+                ..
+            } = self.mir_builder.get_constants().get(&const_id).unwrap()
+            {
                 CallTarget::Direct(*func_id)
             } else {
                 panic!("Expected function address");
@@ -1254,7 +1279,8 @@ impl<'a> AstToMirLowerer<'a> {
             let stmt = MirStmt::Call(call_target, arg_operands);
             self.mir_builder.add_statement(stmt);
             // Return a dummy operand for void functions
-            return Operand::Constant(self.create_constant(ConstValue::Int(0)));
+            let ty_id = self.lower_type(self.registry.type_int);
+            return Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(0)));
         }
 
         // Non-void function call - use Rvalue::Call and store result
@@ -1672,16 +1698,18 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn create_constant(&mut self, value: ConstValue) -> ConstValueId {
-        self.mir_builder.create_constant(value)
+    fn create_constant(&mut self, ty: TypeId, kind: ConstValueKind) -> ConstValueId {
+        self.mir_builder.create_constant(ty, kind)
     }
 
     fn create_int_operand(&mut self, val: i64) -> Operand {
-        Operand::Constant(self.create_constant(ConstValue::Int(val)))
+        let ty_id = self.lower_type(self.registry.type_int);
+        Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val)))
     }
 
     fn create_float_operand(&mut self, val: f64) -> Operand {
-        Operand::Constant(self.create_constant(ConstValue::Float(val)))
+        let ty_id = self.lower_type(self.registry.type_double);
+        Operand::Constant(self.create_constant(ty_id, ConstValueKind::Float(val)))
     }
 
     fn emit_conversion(&mut self, operand: Operand, conv: &ImplicitConversion, target_type_id: TypeId) -> Operand {
@@ -1714,10 +1742,13 @@ impl<'a> AstToMirLowerer<'a> {
             ImplicitConversion::IntegerCast { .. }
             | ImplicitConversion::IntegerPromotion { .. }
             | ImplicitConversion::PointerCast { .. } => Operand::Cast(to_mir_type, Box::new(operand)),
-            ImplicitConversion::NullPointerConstant => Operand::Cast(
-                to_mir_type,
-                Box::new(Operand::Constant(self.create_constant(ConstValue::Int(0)))),
-            ),
+            ImplicitConversion::NullPointerConstant => {
+                let ty_id = self.lower_type(self.registry.type_int);
+                Operand::Cast(
+                    to_mir_type,
+                    Box::new(Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(0)))),
+                )
+            }
             ImplicitConversion::PointerDecay { .. } => {
                 if let Operand::Copy(place) = &operand {
                     let addr_of_array = Operand::AddressOf(place.clone());
@@ -1736,20 +1767,8 @@ impl<'a> AstToMirLowerer<'a> {
         match operand {
             Operand::Copy(place) => self.get_place_type(place),
             Operand::Constant(const_id) => {
-                let const_val = self.mir_builder.get_constants().get(const_id).unwrap().clone();
-                match const_val {
-                    ConstValue::Int(_) => self.lower_type(self.registry.type_int),
-                    ConstValue::Float(_) => self.lower_type(self.registry.type_double),
-                    ConstValue::Bool(_) => self.lower_type(self.registry.type_bool),
-                    ConstValue::Null => self.lower_type(self.registry.type_void_ptr),
-                    ConstValue::Zero => self.lower_type(self.registry.type_void),
-                    ConstValue::Cast(ty, _) => ty,
-                    ConstValue::GlobalAddress(global_id) => self.get_global_type(global_id),
-                    ConstValue::FunctionAddress(func_id) => self.get_function_type(func_id),
-                    ConstValue::StructLiteral(_) | ConstValue::ArrayLiteral(_) => {
-                        panic!("Unexpected aggregate constant in get_operand_type")
-                    }
-                }
+                let const_val = self.mir_builder.get_constants().get(const_id).unwrap();
+                const_val.ty
             }
             Operand::AddressOf(place) => {
                 let pointee = self.get_place_type(place);
@@ -1874,13 +1893,15 @@ impl<'a> AstToMirLowerer<'a> {
     fn operand_to_const_id(&mut self, operand: Operand) -> Option<ConstValueId> {
         match operand {
             Operand::Constant(id) => Some(id),
-            Operand::Cast(ty, inner) => {
-                let inner_id = self.operand_to_const_id(*inner)?;
-                Some(self.create_constant(ConstValue::Cast(ty, inner_id)))
+            Operand::Cast(_, _) => {
+                // Cast operands cannot be constants
+                None
             }
             Operand::AddressOf(place) => {
                 if let Place::Global(global_id) = *place {
-                    Some(self.create_constant(ConstValue::GlobalAddress(global_id)))
+                    let global_type = self.get_global_type(global_id);
+                    let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: global_type });
+                    Some(self.create_constant(ptr_ty, ConstValueKind::GlobalAddress(global_id)))
                 } else {
                     None
                 }
@@ -1890,7 +1911,9 @@ impl<'a> AstToMirLowerer<'a> {
                     // In some contexts, a global might be referred to by copy (like array-to-pointer decay)
                     // but for initializers we usually expect AddressOf or Constant.
                     // However, let's be safe.
-                    Some(self.create_constant(ConstValue::GlobalAddress(global_id)))
+                    let global_type = self.get_global_type(global_id);
+                    let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: global_type });
+                    Some(self.create_constant(ptr_ty, ConstValueKind::GlobalAddress(global_id)))
                 } else {
                     None
                 }
@@ -2019,7 +2042,8 @@ impl<'a> AstToMirLowerer<'a> {
                 if need_value {
                     old_value.unwrap()
                 } else {
-                    Operand::Constant(self.create_constant(ConstValue::Int(0)))
+                    let ty_id = self.lower_type(self.registry.type_int);
+                    Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(0)))
                 }
             } else {
                 // Pre-inc: we already returned inside the block above.
@@ -2032,8 +2056,10 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn create_inc_dec_rvalue(&mut self, operand: Operand, operand_ty: QualType, is_inc: bool) -> Rvalue {
-        let one_const = Operand::Constant(self.create_constant(ConstValue::Int(1)));
-        let minus_one_const = Operand::Constant(self.create_constant(ConstValue::Int(-1)));
+        let one_ty = self.lower_type(self.registry.type_int);
+        let one_const = Operand::Constant(self.create_constant(one_ty, ConstValueKind::Int(1)));
+        let minus_one_ty = self.lower_type(self.registry.type_int);
+        let minus_one_const = Operand::Constant(self.create_constant(minus_one_ty, ConstValueKind::Int(-1)));
 
         if operand_ty.is_pointer() {
             if is_inc {

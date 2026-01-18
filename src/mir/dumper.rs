@@ -11,9 +11,9 @@
 use std::fmt::Write;
 
 use super::{
-    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, Global, GlobalId, LocalId, MirBlock, MirBlockId,
-    MirFunction, MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
-    UnaryFloatOp, UnaryIntOp,
+    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, Global, GlobalId, LocalId, MirBlock,
+    MirBlockId, MirFunction, MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator,
+    TypeId, UnaryFloatOp, UnaryIntOp,
 };
 use crate::mir::MirProgram;
 
@@ -453,14 +453,14 @@ impl<'a> MirDumper<'a> {
         }
 
         if let Some(const_value) = self.sema_output.constants.get(&const_id)
-            && let ConstValue::ArrayLiteral(elements) = const_value
+            && let ConstValueKind::ArrayLiteral(elements) = &const_value.kind
         {
             // Try to convert the array elements to a string
             let mut string_content = String::new();
 
             for &element_id in elements {
                 let element = self.sema_output.constants.get(&element_id).unwrap();
-                if let ConstValue::Int(byte) = element {
+                if let ConstValueKind::Int(byte) = &element.kind {
                     let byte = *byte as u8;
                     if byte == 0 {
                         // Null terminator - end of string
@@ -497,13 +497,13 @@ impl<'a> MirDumper<'a> {
     /// Convert constant ID to string representation
     fn const_to_string(&self, const_id: ConstValueId) -> String {
         if let Some(const_value) = self.sema_output.constants.get(&const_id) {
-            match const_value {
-                ConstValue::Int(val) => format!("const {}", val),
-                ConstValue::Float(val) => format!("const {}", val),
-                ConstValue::Bool(val) => format!("const {}", val),
-                ConstValue::Null => "const null".to_string(),
-                ConstValue::Zero => "const zero".to_string(),
-                ConstValue::StructLiteral(fields) => {
+            match &const_value.kind {
+                ConstValueKind::Int(val) => format!("const {}", val),
+                ConstValueKind::Float(val) => format!("const {}", val),
+                ConstValueKind::Bool(val) => format!("const {}", val),
+                ConstValueKind::Null => "const null".to_string(),
+                ConstValueKind::Zero => "const zero".to_string(),
+                ConstValueKind::StructLiteral(fields) => {
                     // Expand struct literal to show field contents
                     let field_strs: Vec<String> = fields
                         .iter()
@@ -514,7 +514,7 @@ impl<'a> MirDumper<'a> {
                         .collect();
                     format!("const struct_literal {{ {} }}", field_strs.join(", "))
                 }
-                ConstValue::ArrayLiteral(elements) => {
+                ConstValueKind::ArrayLiteral(elements) => {
                     // Expand array literal to show element contents
                     let element_strs: Vec<String> = elements
                         .iter()
@@ -522,18 +522,11 @@ impl<'a> MirDumper<'a> {
                         .collect();
                     format!("const array_literal [{}]", element_strs.join(", "))
                 }
-                ConstValue::GlobalAddress(global_id) => {
+                ConstValueKind::GlobalAddress(global_id) => {
                     format!("const {}", self.global_to_string(*global_id))
                 }
-                &ConstValue::FunctionAddress(func_id) => {
+                &ConstValueKind::FunctionAddress(func_id) => {
                     format!("const {}", self.function_to_string(func_id))
-                }
-                ConstValue::Cast(type_id, inner_id) => {
-                    format!(
-                        "cast<{}>({})",
-                        self.type_to_string(*type_id),
-                        self.const_to_string(*inner_id)
-                    )
                 }
             }
         } else {

@@ -362,9 +362,9 @@ pub struct MirArrayLayout {
     pub stride: u16,
 }
 
-/// Constant Value - Literal values in MIR
+/// Constant Value Kind - discriminant for ConstValue
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum ConstValue {
+pub enum ConstValueKind {
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -376,8 +376,13 @@ pub enum ConstValue {
     // Address constants
     GlobalAddress(GlobalId),
     FunctionAddress(MirFunctionId),
-    // Type conversion
-    Cast(TypeId, ConstValueId),
+}
+
+/// Constant Value - Literal values in MIR
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ConstValue {
+    pub ty: TypeId,
+    pub kind: ConstValueKind,
 }
 
 /// Local - Represents a local variable or parameter
@@ -735,10 +740,11 @@ impl MirBuilder {
     }
 
     /// Create a constant value
-    pub(crate) fn create_constant(&mut self, value: ConstValue) -> ConstValueId {
+    pub(crate) fn create_constant(&mut self, ty: TypeId, kind: ConstValueKind) -> ConstValueId {
         let const_id = ConstValueId::new(self.next_const_id).unwrap();
         self.next_const_id += 1;
 
+        let value = ConstValue { ty, kind };
         self.constants.insert(const_id, value.clone());
         self.module.constants.push(value);
 
@@ -1008,20 +1014,25 @@ impl fmt::Display for MirType {
     }
 }
 
-impl fmt::Display for ConstValue {
+impl fmt::Display for ConstValueKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ConstValue::Int(val) => write!(f, "{}", val),
-            ConstValue::Float(val) => write!(f, "{}", val),
-            ConstValue::Bool(val) => write!(f, "{}", val),
-            ConstValue::Null => write!(f, "null"),
-            ConstValue::Zero => write!(f, "zeroinit"),
-            ConstValue::StructLiteral(fields) => write!(f, "StructLiteral({:?})", fields),
-            ConstValue::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),
-            ConstValue::GlobalAddress(global_id) => write!(f, "GlobalAddress({})", global_id.get()),
-            ConstValue::FunctionAddress(func_id) => write!(f, "FunctionAddress({})", func_id.get()),
-            ConstValue::Cast(type_id, inner_id) => write!(f, "Cast({}, {})", type_id.get(), inner_id.get()),
+            ConstValueKind::Int(val) => write!(f, "{}", val),
+            ConstValueKind::Float(val) => write!(f, "{}", val),
+            ConstValueKind::Bool(val) => write!(f, "{}", val),
+            ConstValueKind::Null => write!(f, "null"),
+            ConstValueKind::Zero => write!(f, "zeroinit"),
+            ConstValueKind::StructLiteral(fields) => write!(f, "StructLiteral({:?})", fields),
+            ConstValueKind::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),
+            ConstValueKind::GlobalAddress(global_id) => write!(f, "GlobalAddress({})", global_id.get()),
+            ConstValueKind::FunctionAddress(func_id) => write!(f, "FunctionAddress({})", func_id.get()),
         }
+    }
+}
+
+impl fmt::Display for ConstValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} (ty: {})", self.kind, self.ty.get())
     }
 }
 

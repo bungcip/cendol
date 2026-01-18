@@ -8,9 +8,9 @@
 use crate::ast::NameId;
 use crate::mir::MirProgram;
 use crate::mir::{
-    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, GlobalId, LocalId, MirBlock, MirBlockId,
-    MirFunction, MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
-    UnaryFloatOp, UnaryIntOp,
+    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, ConstValueKind, GlobalId, LocalId, MirBlock,
+    MirBlockId, MirFunction, MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator,
+    TypeId, UnaryFloatOp, UnaryIntOp,
 };
 use cranelift::codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
@@ -119,8 +119,8 @@ fn emit_const_int(val: i64, layout: &MirType, output: &mut Vec<u8>) -> Result<()
 }
 
 /// Helper to emit float constants
-fn emit_const_float(val: f64, layout: &MirType, output: &mut Vec<u8>) -> Result<(), String> {
-    match layout {
+fn emit_const_float(val: f64, ty: &MirType, output: &mut Vec<u8>) -> Result<(), String> {
+    match ty {
         MirType::F32 => {
             let bytes = (val as f32).to_bits().to_le_bytes();
             output.extend_from_slice(&bytes);
@@ -140,14 +140,14 @@ fn emit_const_float(val: f64, layout: &MirType, output: &mut Vec<u8>) -> Result<
 /// Helper to emit struct constants
 fn emit_const_struct(
     fields: &[(usize, ConstValueId)],
-    layout: &MirType,
+    ty: &MirType,
     output: &mut Vec<u8>,
     ctx: &EmitContext,
     mut module: Option<&mut ObjectModule>,
     mut data_description: Option<&mut DataDescription>,
     base_offset: u32,
 ) -> Result<(), String> {
-    match layout {
+    match ty {
         MirType::Record {
             layout: record_layout,
             field_types,
@@ -202,14 +202,14 @@ fn emit_const_struct(
 /// Helper to emit array constants
 fn emit_const_array(
     elements: &[ConstValueId],
-    layout: &MirType,
+    ty: &MirType,
     output: &mut Vec<u8>,
     ctx: &EmitContext,
     mut module: Option<&mut ObjectModule>,
     mut data_description: Option<&mut DataDescription>,
     base_offset: u32,
 ) -> Result<(), String> {
-    match layout {
+    match ty {
         MirType::Array {
             element,
             size,
@@ -259,7 +259,7 @@ fn emit_const_array(
 /// Emit a constant value to the output buffer based on its type layout
 pub(crate) fn emit_const(
     const_id: ConstValueId,
-    layout: &MirType,
+    ty: &MirType,
     output: &mut Vec<u8>,
     ctx: &EmitContext,
     mut module: Option<&mut ObjectModule>,
@@ -272,27 +272,27 @@ pub(crate) fn emit_const(
         .get(&const_id)
         .ok_or_else(|| format!("Constant ID {} not found", const_id.get()))?;
 
-    match const_value {
-        ConstValue::Int(val) => emit_const_int(*val, layout, output),
-        ConstValue::Float(val) => emit_const_float(*val, layout, output),
-        ConstValue::Bool(val) => {
+    match &const_value.kind {
+        ConstValueKind::Int(val) => emit_const_int(*val, ty, output),
+        ConstValueKind::Float(val) => emit_const_float(*val, ty, output),
+        ConstValueKind::Bool(val) => {
             let byte = if *val { 1u8 } else { 0u8 };
             output.push(byte);
             Ok(())
         }
-        ConstValue::Null => {
+        ConstValueKind::Null => {
             // Emit null as all zeros (pointer-sized)
             let null_bytes = 0i64.to_le_bytes();
             output.extend_from_slice(&null_bytes);
             Ok(())
         }
-        ConstValue::Zero => {
+        ConstValueKind::Zero => {
             // Emit zeros for the entire type size
-            let size = mir_type_size(layout, ctx.mir)? as usize;
+            let size = mir_type_size(ty, ctx.mir)? as usize;
             output.extend_from_slice(&vec![0u8; size]);
             Ok(())
         }
-        ConstValue::GlobalAddress(global_id) => {
+        ConstValueKind::GlobalAddress(global_id) => {
             // Handle Global Relocation
             if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module) {
                 if let Some(&data_id) = ctx.data_id_map.get(global_id) {
@@ -311,7 +311,7 @@ pub(crate) fn emit_const(
             output.extend_from_slice(&addr_bytes);
             Ok(())
         }
-        ConstValue::FunctionAddress(func_id) => {
+        ConstValueKind::FunctionAddress(func_id) => {
             // Handle Function Relocation
             if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module) {
                 if let Some(&clif_func_id) = ctx.func_id_map.get(func_id) {
@@ -331,14 +331,11 @@ pub(crate) fn emit_const(
             output.extend_from_slice(&addr_bytes);
             Ok(())
         }
-        ConstValue::StructLiteral(fields) => {
-            emit_const_struct(fields, layout, output, ctx, module, data_description, offset)
+        ConstValueKind::StructLiteral(fields) => {
+            emit_const_struct(fields, ty, output, ctx, module, data_description, offset)
         }
-        ConstValue::ArrayLiteral(elements) => {
-            emit_const_array(elements, layout, output, ctx, module, data_description, offset)
-        }
-        ConstValue::Cast(_type_id, inner_id) => {
-            emit_const(*inner_id, layout, output, ctx, module, data_description, offset)
+        ConstValueKind::ArrayLiteral(elements) => {
+            emit_const_array(elements, ty, output, ctx, module, data_description, offset)
         }
     }
 }
@@ -815,9 +812,9 @@ fn resolve_operand_to_value(
     match operand {
         Operand::Constant(const_id) => {
             let const_value = mir.constants.get(const_id).expect("constant id not found");
-            match const_value {
-                ConstValue::Int(val) => Ok(builder.ins().iconst(expected_type, *val)),
-                ConstValue::Float(val) => {
+            match &const_value.kind {
+                ConstValueKind::Int(val) => Ok(builder.ins().iconst(expected_type, *val)),
+                ConstValueKind::Float(val) => {
                     // Use the appropriate float constant based on expected type
                     if expected_type == types::F64 {
                         Ok(builder.ins().f64const(*val))
@@ -825,12 +822,12 @@ fn resolve_operand_to_value(
                         Ok(builder.ins().f32const(*val as f32))
                     }
                 }
-                ConstValue::Bool(val) => {
+                ConstValueKind::Bool(val) => {
                     let int_val = if *val { 1 } else { 0 };
                     Ok(builder.ins().iconst(expected_type, int_val))
                 }
-                ConstValue::Null => Ok(builder.ins().iconst(expected_type, 0)),
-                ConstValue::GlobalAddress(global_id) => {
+                ConstValueKind::Null => Ok(builder.ins().iconst(expected_type, 0)),
+                ConstValueKind::GlobalAddress(global_id) => {
                     // Get the global variable and return its address
                     // This handles the array-to-pointer decay for string literals
                     let global = mir.get_global(*global_id);
@@ -842,7 +839,7 @@ fn resolve_operand_to_value(
                     let addr = builder.ins().global_value(types::I64, local_id);
                     Ok(emit_type_conversion(addr, types::I64, expected_type, false, builder))
                 }
-                ConstValue::FunctionAddress(func_id) => {
+                ConstValueKind::FunctionAddress(func_id) => {
                     let func = mir.get_function(*func_id);
 
                     let mut sig = Signature::new(builder.func.signature.call_conv);
@@ -876,23 +873,6 @@ fn resolve_operand_to_value(
                     let func_ref = module.declare_func_in_func(func_decl, builder.func);
                     let addr = builder.ins().func_addr(types::I64, func_ref);
                     Ok(emit_type_conversion(addr, types::I64, expected_type, false, builder))
-                }
-                ConstValue::Cast(type_id, inner_id) => {
-                    let mir_type = mir.get_type(*type_id);
-                    let target_type = convert_type(mir_type).unwrap_or(types::I32);
-
-                    // For constant casts, we still recursively resolve but with the target type
-                    let temp_op = Operand::Constant(*inner_id);
-                    let val =
-                        resolve_operand_to_value(&temp_op, builder, target_type, cranelift_stack_slots, mir, module)?;
-
-                    Ok(emit_type_conversion(
-                        val,
-                        target_type,
-                        expected_type,
-                        is_operand_signed(&temp_op, mir),
-                        builder,
-                    ))
                 }
                 _ => Ok(builder.ins().iconst(expected_type, 0)),
             }
@@ -1025,25 +1005,26 @@ fn get_operand_cranelift_type(operand: &Operand, mir: &MirProgram) -> Result<Typ
     match operand {
         Operand::Constant(const_id) => {
             let const_value = mir.constants.get(const_id).expect("constant id not found");
-            match const_value {
+            let mir_type = mir.get_type(const_value.ty);
+
+            // If we have a specific type for the constant, use that to determine the Cranelift type
+            if let Some(clif_type) = convert_type(mir_type) {
+                return Ok(clif_type);
+            }
+
+            // Fallback to kind-based determination if type is not convertible (e.g., struct/array)
+            match &const_value.kind {
                 // Integer literals in MIR are typically used in integer-sized contexts
                 // Default to I32 so common small integer constants (like `4`) match i32
                 // places instead of being treated as 64-bit immediates.
-                ConstValue::Int(_) => Ok(types::I32),
-                ConstValue::Float(_) => Ok(types::F64),
-                ConstValue::Bool(_) => Ok(types::I32),
+                ConstValueKind::Int(_) => Ok(types::I32),
+                ConstValueKind::Float(_) => Ok(types::F64),
+                ConstValueKind::Bool(_) => Ok(types::I32),
                 // Null/Zero/Global addresses are pointer-sized
-                ConstValue::Null | ConstValue::Zero | ConstValue::GlobalAddress(_) => Ok(types::I64),
-                ConstValue::FunctionAddress(_) => Ok(types::I64),
-                ConstValue::StructLiteral(_) => Ok(types::I32),
-                ConstValue::ArrayLiteral(_) => Ok(types::I32),
-                ConstValue::Cast(type_id, _) => {
-                    let mir_type = mir.get_type(*type_id);
-                    if matches!(mir_type, MirType::Record { .. } | MirType::Array { .. }) {
-                        return Ok(types::I64);
-                    }
-                    Ok(convert_type(mir_type).unwrap_or(types::I32))
-                }
+                ConstValueKind::Null | ConstValueKind::Zero | ConstValueKind::GlobalAddress(_) => Ok(types::I64),
+                ConstValueKind::FunctionAddress(_) => Ok(types::I64),
+                ConstValueKind::StructLiteral(_) => Ok(types::I32),
+                ConstValueKind::ArrayLiteral(_) => Ok(types::I32),
             }
         }
         Operand::Copy(place) => {
@@ -1076,10 +1057,7 @@ fn is_operand_signed(operand: &Operand, mir: &MirProgram) -> bool {
         Operand::Cast(type_id, _) => {
             return mir.get_type(*type_id).is_signed();
         }
-        Operand::Constant(const_id) => {
-            if let Some(ConstValue::Cast(type_id, _)) = mir.constants.get(const_id) {
-                return mir.get_type(*type_id).is_signed();
-            }
+        Operand::Constant(_const_id) => {
             // Default to signed for integer constants
             return true;
         }
@@ -1093,10 +1071,7 @@ fn get_operand_type_id(operand: &Operand, mir: &MirProgram) -> Result<TypeId, St
     match operand {
         Operand::Constant(const_id) => {
             let const_value = mir.constants.get(const_id).expect("constant id not found");
-            match const_value {
-                ConstValue::Cast(type_id, _) => Ok(*type_id),
-                _ => Err("Cannot determine type of raw constant operand".to_string()),
-            }
+            Ok(const_value.ty)
         }
         Operand::Copy(place) => get_place_type_id(place, mir),
         Operand::Cast(type_id, _) => Ok(*type_id),
@@ -2282,7 +2257,13 @@ impl MirToCraneliftLowerer {
 
             // Default to returning 0
             let return_const_id = ConstValueId::new((self.mir.constants.len() + 1) as u32).unwrap();
-            self.mir.constants.insert(return_const_id, ConstValue::Int(0));
+            self.mir.constants.insert(
+                return_const_id,
+                ConstValue {
+                    ty: TypeId::new(1).unwrap(), // Assuming type id 1 is i32
+                    kind: ConstValueKind::Int(0),
+                },
+            );
             let return_operand = Operand::Constant(return_const_id);
             entry_block.terminator = Terminator::Return(Some(return_operand));
 

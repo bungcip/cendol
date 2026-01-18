@@ -3,8 +3,11 @@
 //! This module contains tests for the `MirToCraneliftLowerer` implementation.
 use crate::ast::NameId;
 
+use crate::driver::artifact::CompilePhase;
 use crate::mir::codegen::{ClifOutput, EmitContext, EmitKind, MirToCraneliftLowerer, emit_const};
-use crate::mir::{ConstValue, MirModuleId, MirRecordLayout, MirStmt, MirType, Operand, Place, Terminator};
+use crate::mir::{CallTarget, LocalId};
+use crate::mir::{MirModuleId, MirRecordLayout, MirStmt, MirType, Operand, Place, Terminator};
+use crate::tests::semantic_common::run_pass;
 
 #[test]
 fn test_emit_const_struct_literal() {
@@ -27,11 +30,11 @@ fn test_emit_const_struct_literal() {
     let _struct_type_id = builder.add_type(struct_type.clone());
 
     // 2. Setup Constants
-    let const_1_id = builder.create_constant(ConstValue::Int(0x11111111));
-    let const_2_id = builder.create_constant(ConstValue::Int(0x22222222));
+    let const_1_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(0x11111111));
+    let const_2_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(0x22222222));
 
-    let struct_const = ConstValue::StructLiteral(vec![(0, const_1_id), (1, const_2_id)]);
-    let struct_const_id = builder.create_constant(struct_const);
+    let struct_const_kind = crate::mir::ConstValueKind::StructLiteral(vec![(0, const_1_id), (1, const_2_id)]);
+    let struct_const_id = builder.create_constant(int_type_id, struct_const_kind);
 
     // 3. Get MirProgram
     let sema_output = builder.consume();
@@ -77,7 +80,7 @@ fn test_store_statement_lowering() {
     let local_id = builder.create_local(Some(NameId::new("x")), int_type_id, false);
 
     // 4. Set up Constant
-    let const_val_id = builder.create_constant(ConstValue::Int(42));
+    let const_val_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(42));
 
     // 5. Create Statement: store 42 into x
     let store_stmt = MirStmt::Store(Operand::Constant(const_val_id), Place::Local(local_id));
@@ -122,8 +125,8 @@ fn test_store_deref_pointer() {
     let local_x_id = builder.create_local(Some(NameId::new("x")), int_type_id, false);
     let local_p_id = builder.create_local(Some(NameId::new("p")), ptr_type_id, false);
 
-    let const_42_id = builder.create_constant(ConstValue::Int(42));
-    let const_10_id = builder.create_constant(ConstValue::Int(10));
+    let const_42_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(42));
+    let const_10_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(10));
 
     // x = 10
     builder.add_statement(MirStmt::Assign(
@@ -312,107 +315,103 @@ fn test_alloc_dealloc_codegen() {
         Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
     }
 }
-#[cfg(test)]
-mod tests {
-    use crate::ast::NameId;
-    use crate::driver::artifact::CompilePhase;
-    use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
-    use crate::mir::{CallTarget, ConstValue, LocalId, MirModuleId, MirStmt, MirType, Operand, Place, Terminator};
-    use crate::tests::semantic_common::run_pass;
 
-    #[test]
-    fn test_indirect_function_call() {
-        let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+#[test]
+fn test_indirect_function_call() {
+    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
 
-        // Setup Types
-        let int_type_id = builder.add_type(MirType::I32);
+    // Setup Types
+    let int_type_id = builder.add_type(MirType::I32);
 
-        // fn(i32) -> i32
-        let func_type_id = builder.add_type(MirType::Function {
-            return_type: int_type_id,
-            params: vec![int_type_id],
-        });
+    // fn(i32) -> i32
+    let func_type_id = builder.add_type(MirType::Function {
+        return_type: int_type_id,
+        params: vec![int_type_id],
+    });
 
-        // *fn(i32) -> i32
-        let func_ptr_type_id = builder.add_type(MirType::Pointer { pointee: func_type_id });
+    // *fn(i32) -> i32
+    let func_ptr_type_id = builder.add_type(MirType::Pointer { pointee: func_type_id });
 
-        // Setup Function 1 (Target): fn target(x: i32) -> i32 { return x; }
-        // Use define_function which accepts Vec<TypeId> for params
-        let target_func_id = builder.define_function(
-            NameId::new("target"),
-            vec![int_type_id], // param types
-            int_type_id,       // return type
-            false,             // not variadic
-        );
+    // Setup Function 1 (Target): fn target(x: i32) -> i32 { return x; }
+    // Use define_function which accepts Vec<TypeId> for params
+    let target_func_id = builder.define_function(
+        NameId::new("target"),
+        vec![int_type_id], // param types
+        int_type_id,       // return type
+        false,             // not variadic
+    );
 
-        builder.set_current_function(target_func_id);
-        let target_block_id = builder.create_block();
-        builder.set_current_block(target_block_id);
-        builder.set_function_entry_block(target_func_id, target_block_id);
+    builder.set_current_function(target_func_id);
+    let target_block_id = builder.create_block();
+    builder.set_current_block(target_block_id);
+    builder.set_function_entry_block(target_func_id, target_block_id);
 
-        // Get the param local ID (created by define_function)
-        // Since we are defining it manually via `define_function` which adds one param,
-        // and it's the first function in this builder, we know the LocalId is 1.
-        // We do not need to consume and inspect because we are constructing it.
-        let param_id = LocalId::new(1).unwrap();
+    // Get the param local ID (created by define_function)
+    // Since we are defining it manually via `define_function` which adds one param,
+    // and it's the first function in this builder, we know the LocalId is 1.
+    // We do not need to consume and inspect because we are constructing it.
+    let param_id = LocalId::new(1).unwrap();
 
-        builder.set_terminator(Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(
-            param_id,
-        ))))));
+    builder.set_terminator(Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(
+        param_id,
+    ))))));
 
-        // Setup Function 2 (Main): fn main() -> i32
-        let main_func_id = builder.define_function(NameId::new("main"), vec![], int_type_id, false);
+    // Setup Function 2 (Main): fn main() -> i32
+    let main_func_id = builder.define_function(NameId::new("main"), vec![], int_type_id, false);
 
-        builder.set_current_function(main_func_id);
-        let main_block_id = builder.create_block();
-        builder.set_current_block(main_block_id);
-        builder.set_function_entry_block(main_func_id, main_block_id);
+    builder.set_current_function(main_func_id);
+    let main_block_id = builder.create_block();
+    builder.set_current_block(main_block_id);
+    builder.set_function_entry_block(main_func_id, main_block_id);
 
-        // Local: ptr: *fn(i32) -> i32
-        let ptr_local_id = builder.create_local(Some(NameId::new("ptr")), func_ptr_type_id, false);
+    // Local: ptr: *fn(i32) -> i32
+    let ptr_local_id = builder.create_local(Some(NameId::new("ptr")), func_ptr_type_id, false);
 
-        // Constants
-        let func_addr_const_id = builder.create_constant(ConstValue::FunctionAddress(target_func_id));
-        let arg_const_id = builder.create_constant(ConstValue::Int(42));
+    // Constants
+    let func_addr_const_id = builder.create_constant(
+        func_ptr_type_id,
+        crate::mir::ConstValueKind::FunctionAddress(target_func_id),
+    );
+    let arg_const_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(42));
 
-        // 1. ptr = &target
-        builder.add_statement(MirStmt::Assign(
-            Place::Local(ptr_local_id),
-            crate::mir::Rvalue::Use(Operand::Constant(func_addr_const_id)),
-        ));
+    // 1. ptr = &target
+    builder.add_statement(MirStmt::Assign(
+        Place::Local(ptr_local_id),
+        crate::mir::Rvalue::Use(Operand::Constant(func_addr_const_id)),
+    ));
 
-        // 2. call(*ptr)(42)
-        let temp_local_id = builder.create_local(Some(NameId::new("temp")), int_type_id, false);
+    // 2. call(*ptr)(42)
+    let temp_local_id = builder.create_local(Some(NameId::new("temp")), int_type_id, false);
 
-        builder.add_statement(MirStmt::Assign(
-            Place::Local(temp_local_id),
-            crate::mir::Rvalue::Call(
-                CallTarget::Indirect(Operand::Copy(Box::new(Place::Local(ptr_local_id)))),
-                vec![Operand::Constant(arg_const_id)],
-            ),
-        ));
+    builder.add_statement(MirStmt::Assign(
+        Place::Local(temp_local_id),
+        crate::mir::Rvalue::Call(
+            CallTarget::Indirect(Operand::Copy(Box::new(Place::Local(ptr_local_id)))),
+            vec![Operand::Constant(arg_const_id)],
+        ),
+    ));
 
-        builder.set_terminator(Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(
-            temp_local_id,
-        ))))));
+    builder.set_terminator(Terminator::Return(Some(Operand::Copy(Box::new(Place::Local(
+        temp_local_id,
+    ))))));
 
-        // Compile
-        let sema_output = builder.consume();
-        let lowerer = MirToCraneliftLowerer::new(sema_output);
-        let result = lowerer.compile_module(EmitKind::Clif);
+    // Compile
+    let sema_output = builder.consume();
+    let lowerer = MirToCraneliftLowerer::new(sema_output);
+    let result = lowerer.compile_module(EmitKind::Clif);
 
-        match result {
-            Ok(ClifOutput::ClifDump(clif_ir)) => {
-                println!("{}", clif_ir);
-                assert!(clif_ir.contains("call_indirect"), "Expected call_indirect instruction");
-            }
-            Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
-            Err(e) => panic!("Error: {}", e),
+    match result {
+        Ok(ClifOutput::ClifDump(clif_ir)) => {
+            println!("{}", clif_ir);
+            assert!(clif_ir.contains("call_indirect"), "Expected call_indirect instruction");
         }
+        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
+        Err(e) => panic!("Error: {}", e),
     }
-    #[test]
-    fn test_boolean_logic_lowering() {
-        let source = r#"
+}
+#[test]
+fn test_boolean_logic_lowering() {
+    let source = r#"
             int main() {
                 int x;
                 x = 4;
@@ -421,81 +420,84 @@ mod tests {
                 return 0;
             }
         "#;
-        // Verify it compiles without crashing
-        let clif_dump = super::setup_cranelift(source);
-        println!("{}", clif_dump);
+    // Verify it compiles without crashing
+    let clif_dump = setup_cranelift(source);
+    println!("{}", clif_dump);
 
-        // Check for 'select' instructions which we used to fix the uextend issue
-        assert!(
-            clif_dump.contains("select"),
-            "Expected select instruction for boolean conversion"
-        );
-    }
-    #[test]
-    fn test_float_to_char_conversion() {
-        let source = r#"
+    // Check for 'select' instructions which we used to fix the uextend issue
+    assert!(
+        clif_dump.contains("select"),
+        "Expected select instruction for boolean conversion"
+    );
+}
+#[test]
+fn test_float_to_char_conversion() {
+    let source = r#"
             int main() {
                 char c = 97.0;
                 short s = 98.0;
                 return 0;
             }
         "#;
-        // Verify it compiles without crashing
-        let clif_dump = super::setup_cranelift(source);
-        println!("{}", clif_dump);
+    // Verify it compiles without crashing
+    let clif_dump = setup_cranelift(source);
+    println!("{}", clif_dump);
 
-        // Check for 'ireduce' instructions which we used to fix the crash
-        assert!(
-            clif_dump.contains("ireduce.i8"),
-            "Expected ireduce.i8 instruction for float->char conversion"
-        );
-        assert!(
-            clif_dump.contains("ireduce.i16"),
-            "Expected ireduce.i16 instruction for float->short conversion"
-        );
+    // Check for 'ireduce' instructions which we used to fix the crash
+    assert!(
+        clif_dump.contains("ireduce.i8"),
+        "Expected ireduce.i8 instruction for float->char conversion"
+    );
+    assert!(
+        clif_dump.contains("ireduce.i16"),
+        "Expected ireduce.i16 instruction for float->short conversion"
+    );
+}
+#[test]
+fn test_global_function_pointer_init() {
+    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+
+    // Define function type: fn(i32) -> i32
+    let int_type_id = builder.add_type(MirType::I32);
+    let func_type_id = builder.add_type(MirType::Function {
+        return_type: int_type_id,
+        params: vec![int_type_id],
+    });
+    let func_ptr_type_id = builder.add_type(MirType::Pointer { pointee: func_type_id });
+
+    // Define target function
+    let target_func_id = builder.define_function(NameId::new("target"), vec![int_type_id], int_type_id, false);
+    builder.set_current_function(target_func_id);
+    let block_id = builder.create_block();
+    builder.set_current_block(block_id);
+    builder.set_function_entry_block(target_func_id, block_id);
+
+    let zero_const_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(0));
+    builder.set_terminator(Terminator::Return(Some(Operand::Constant(zero_const_id))));
+
+    // Create global variable "ptr" initialized with address of "target"
+    let func_addr_const_id = builder.create_constant(
+        func_ptr_type_id,
+        crate::mir::ConstValueKind::FunctionAddress(target_func_id),
+    );
+    let _global_id =
+        builder.create_global_with_init(NameId::new("ptr"), func_ptr_type_id, false, Some(func_addr_const_id));
+
+    // Compile
+    let sema_output = builder.consume();
+    let lowerer = MirToCraneliftLowerer::new(sema_output);
+    let result = lowerer.compile_module(EmitKind::Clif);
+
+    match result {
+        Ok(_) => (), // Success if no panic
+        Err(e) => panic!("Compilation failed: {}", e),
     }
-    #[test]
-    fn test_global_function_pointer_init() {
-        let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+}
 
-        // Define function type: fn(i32) -> i32
-        let int_type_id = builder.add_type(MirType::I32);
-        let func_type_id = builder.add_type(MirType::Function {
-            return_type: int_type_id,
-            params: vec![int_type_id],
-        });
-        let func_ptr_type_id = builder.add_type(MirType::Pointer { pointee: func_type_id });
-
-        // Define target function
-        let target_func_id = builder.define_function(NameId::new("target"), vec![int_type_id], int_type_id, false);
-        builder.set_current_function(target_func_id);
-        let block_id = builder.create_block();
-        builder.set_current_block(block_id);
-        builder.set_function_entry_block(target_func_id, block_id);
-
-        let zero_const_id = builder.create_constant(ConstValue::Int(0));
-        builder.set_terminator(Terminator::Return(Some(Operand::Constant(zero_const_id))));
-
-        // Create global variable "ptr" initialized with address of "target"
-        let func_addr_const_id = builder.create_constant(ConstValue::FunctionAddress(target_func_id));
-        let _global_id =
-            builder.create_global_with_init(NameId::new("ptr"), func_ptr_type_id, false, Some(func_addr_const_id));
-
-        // Compile
-        let sema_output = builder.consume();
-        let lowerer = MirToCraneliftLowerer::new(sema_output);
-        let result = lowerer.compile_module(EmitKind::Clif);
-
-        match result {
-            Ok(_) => (), // Success if no panic
-            Err(e) => panic!("Compilation failed: {}", e),
-        }
-    }
-
-    #[test]
-    fn test_string_literal_pointer_cast_() {
-        run_pass(
-            r#"
+#[test]
+fn test_string_literal_pointer_cast_() {
+    run_pass(
+        r#"
         int strlen(char *);
         int main() {
             char *p;
@@ -503,7 +505,6 @@ mod tests {
             return 0;
         }
         "#,
-            CompilePhase::Cranelift, // NOTE: we test until cranelift to check if validation is correct or not
-        );
-    }
+        CompilePhase::Cranelift, // NOTE: we test until cranelift to check if validation is correct or not
+    );
 }

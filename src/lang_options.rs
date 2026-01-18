@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 
 /// supported C standards
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum CStandard {
     C89,
     C99,
@@ -27,41 +27,32 @@ mod tests {
     fn test_lang_flags_c11() {
         let options = LangOptions::c11();
         assert!(options.is_c11());
-        assert!(!options.is_gnu_mode());
-        assert!(!options.is_ms_extensions());
         assert!(!options.is_pedantic());
-        assert!(options.flags.contains(LangFlags::C11));
     }
 
     #[test]
     fn test_lang_flags_default() {
         let options = LangOptions::default();
         assert!(!options.is_c11());
-        assert!(options.is_gnu_mode());
-        assert!(!options.is_ms_extensions());
         assert!(!options.is_pedantic());
     }
 
     #[test]
     fn test_lang_flags_combinations() {
-        let flags = LangFlags::C11 | LangFlags::PEDANTIC;
+        let flags = LangFlags::PEDANTIC;
         let options = LangOptions {
             flags,
-            c_standard: None,
+            c_standard: Some(CStandard::C11),
         };
         assert!(options.is_c11());
         assert!(options.is_pedantic());
-        assert!(!options.is_gnu_mode());
     }
 }
 
 bitflags! {
     #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct LangFlags: u8 {
-        const C11 = 1 << 0;
-        const GNU_MODE = 1 << 1;
-        const MS_EXTENSIONS = 1 << 2;
-        const PEDANTIC = 1 << 3;
+        const PEDANTIC = 1 << 0;
     }
 }
 
@@ -75,24 +66,14 @@ pub struct LangOptions {
 impl LangOptions {
     pub fn c11() -> Self {
         LangOptions {
-            flags: LangFlags::C11,
+            flags: LangFlags::empty(),
             c_standard: Some(CStandard::C11),
         }
     }
 
     /// Check if C11 standard is enabled
     pub fn is_c11(&self) -> bool {
-        self.flags.contains(LangFlags::C11)
-    }
-
-    /// Check if GNU mode is enabled
-    pub fn is_gnu_mode(&self) -> bool {
-        self.flags.contains(LangFlags::GNU_MODE)
-    }
-
-    /// Check if MS extensions are enabled
-    pub fn is_ms_extensions(&self) -> bool {
-        self.flags.contains(LangFlags::MS_EXTENSIONS)
+        matches!(self.c_standard, Some(CStandard::C11))
     }
 
     /// Check if pedantic mode is enabled
@@ -104,7 +85,7 @@ impl LangOptions {
 impl Default for LangOptions {
     fn default() -> Self {
         LangOptions {
-            flags: LangFlags::GNU_MODE,
+            flags: LangFlags::empty(),
             c_standard: None,
         }
     }

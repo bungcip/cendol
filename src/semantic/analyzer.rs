@@ -655,6 +655,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn record_implicit_conversions(&mut self, lhs_ty: QualType, rhs_ty: QualType, rhs_ref: NodeRef) {
         let idx = rhs_ref.index();
+        let mut current_rhs_ty = rhs_ty;
 
         // Null pointer constant conversion (0 or (void*)0 -> T*)
         if lhs_ty.is_pointer() && self.is_null_pointer_constant(rhs_ref) {
@@ -670,16 +671,17 @@ impl<'a> SemanticAnalyzer<'a> {
             return;
         }
 
-        // Array-to-pointer decay
-        if lhs_ty.is_pointer() && rhs_ty.is_array() {
-            let decayed = self.registry.decay(rhs_ty, TypeQualifiers::empty());
+        // Array/Function-to-pointer decay
+        if lhs_ty.is_pointer() && (current_rhs_ty.is_array() || current_rhs_ty.is_function()) {
+            let decayed = self.registry.decay(current_rhs_ty, TypeQualifiers::empty());
             self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay { to: decayed.ty() });
+            current_rhs_ty = decayed; // Update current type for subsequent checks
         }
 
         // Qualifier adjustment
-        if lhs_ty.ty() == rhs_ty.ty() && lhs_ty.qualifiers() != rhs_ty.qualifiers() {
+        if lhs_ty.ty() == current_rhs_ty.ty() && lhs_ty.qualifiers() != current_rhs_ty.qualifiers() {
             self.semantic_info.conversions[idx].push(ImplicitConversion::QualifierAdjust {
-                from: rhs_ty.qualifiers(),
+                from: current_rhs_ty.qualifiers(),
                 to: lhs_ty.qualifiers(),
             });
         }
@@ -690,18 +692,19 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::LiteralInt(_) | NodeKind::LiteralChar(_) | NodeKind::LiteralFloat(_)
         );
 
-        if ((lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic()) || (lhs_ty.is_pointer() && rhs_ty.is_pointer()))
-            && (lhs_ty.ty() != rhs_ty.ty() || is_literal)
+        if ((lhs_ty.is_arithmetic() && current_rhs_ty.is_arithmetic())
+            || (lhs_ty.is_pointer() && current_rhs_ty.is_pointer()))
+            && (lhs_ty.ty() != current_rhs_ty.ty() || is_literal)
         {
             // For pointers, it's pointer cast. For arithmetic, integer/float cast.
-            if lhs_ty.is_pointer() && rhs_ty.is_pointer() {
+            if lhs_ty.is_pointer() && current_rhs_ty.is_pointer() {
                 self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
-                    from: rhs_ty.ty(),
+                    from: current_rhs_ty.ty(),
                     to: lhs_ty.ty(),
                 });
-            } else if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
+            } else if lhs_ty.is_arithmetic() && current_rhs_ty.is_arithmetic() {
                 self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
-                    from: rhs_ty.ty(),
+                    from: current_rhs_ty.ty(),
                     to: lhs_ty.ty(),
                 });
             }

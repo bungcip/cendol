@@ -1567,51 +1567,61 @@ impl<'a> AstToMirLowerer<'a> {
                 .expect("Placeholder must exist for recursive type");
         }
 
-        // Begin conversion: reserve a placeholder TypeId so recursive references can point to it.
-        self.type_conversion_in_progress.insert(type_ref);
-        let placeholder_name = NameId::new(format!("__recursive_placeholder_{}", type_ref.get()));
-        let placeholder_type = MirType::Record {
-            name: placeholder_name,
-            field_types: Vec::new(),
-            field_names: Vec::new(),
-            is_union: false,
-            layout: MirRecordLayout {
-                size: 0,
-                alignment: 0,
-                field_offsets: Vec::new(),
-            },
-        };
-        let placeholder_id = self.mir_builder.add_type(placeholder_type);
-        self.type_cache.insert(type_ref, placeholder_id);
-
         let ast_type = self.registry.get(type_ref).clone();
-        let ast_type_kind = ast_type.kind.clone();
+        let is_record = matches!(ast_type.kind, TypeKind::Record { .. });
 
-        let mir_type = match &ast_type_kind {
-            TypeKind::Builtin(b) => self.lower_builtin_type(b),
-            TypeKind::Pointer { pointee } => self.lower_pointer_type(*pointee),
-            TypeKind::Array { element_type, size } => self.lower_array_type(type_ref, *element_type, size),
-            TypeKind::Function {
-                return_type,
-                parameters,
-                ..
-            } => self.lower_function_type(return_type, parameters),
-            TypeKind::Record {
-                tag,
-                members,
-                is_union,
-                is_complete,
-            } => self.lower_record_type(type_ref, tag, members, *is_union, *is_complete),
-            _ => MirType::I32,
-        };
+        if is_record {
+            // Begin conversion: reserve a placeholder TypeId so recursive references can point to it.
+            self.type_conversion_in_progress.insert(type_ref);
+            let placeholder_name = NameId::new(format!("__recursive_placeholder_{}", type_ref.get()));
+            let placeholder_type = MirType::Record {
+                name: placeholder_name,
+                field_types: Vec::new(),
+                field_names: Vec::new(),
+                is_union: false,
+                layout: MirRecordLayout {
+                    size: 0,
+                    alignment: 0,
+                    field_offsets: Vec::new(),
+                },
+            };
+            let placeholder_id = self.mir_builder.add_type(placeholder_type);
+            self.type_cache.insert(type_ref, placeholder_id);
 
-        // Remove from in-progress set
-        self.type_conversion_in_progress.remove(&type_ref);
+            let mir_type = match &ast_type.kind {
+                TypeKind::Record {
+                    tag,
+                    members,
+                    is_union,
+                    is_complete,
+                } => self.lower_record_type(type_ref, tag, members, *is_union, *is_complete),
+                _ => unreachable!(),
+            };
 
-        // Replace the placeholder entry with the real type
-        self.mir_builder.update_type(placeholder_id, mir_type.clone());
-        self.type_cache.insert(type_ref, placeholder_id);
-        placeholder_id
+            // Remove from in-progress set
+            self.type_conversion_in_progress.remove(&type_ref);
+
+            // Replace the placeholder entry with the real type
+            self.mir_builder.update_type(placeholder_id, mir_type);
+            placeholder_id
+        } else {
+            let mir_type = match &ast_type.kind {
+                TypeKind::Builtin(b) => self.lower_builtin_type(b),
+                TypeKind::Pointer { pointee } => self.lower_pointer_type(*pointee),
+                TypeKind::Array { element_type, size } => self.lower_array_type(type_ref, *element_type, size),
+                TypeKind::Function {
+                    return_type,
+                    parameters,
+                    ..
+                } => self.lower_function_type(return_type, parameters),
+                TypeKind::Record { .. } => unreachable!(),
+                _ => MirType::I32,
+            };
+
+            let type_id = self.mir_builder.add_type(mir_type);
+            self.type_cache.insert(type_ref, type_id);
+            type_id
+        }
     }
 
     fn lower_builtin_type(&self, b: &BuiltinType) -> MirType {

@@ -591,22 +591,18 @@ mod tests {
         type %t7 = i16
         type %t8 = f32
         type %t9 = i64
-        type %t10 = i64
-        type %t11 = u16
-        type %t12 = u64
-        type %t13 = fn() -> %t4
-        type %t14 = fn() -> %t2
-        type %t15 = fn() -> %t5
-        type %t16 = fn() -> %t7
-        type %t17 = fn() -> %t11
-        type %t18 = fn() -> %t0
-        type %t19 = fn() -> %t6
-        type %t20 = fn() -> %t10
-        type %t21 = fn() -> %t3
-        type %t22 = fn() -> %t9
-        type %t23 = fn() -> %t12
-        type %t24 = fn() -> %t8
-        type %t25 = fn() -> %t1
+        type %t10 = u16
+        type %t11 = fn() -> %t4
+        type %t12 = fn() -> %t2
+        type %t13 = fn() -> %t5
+        type %t14 = fn() -> %t7
+        type %t15 = fn() -> %t10
+        type %t16 = fn() -> %t0
+        type %t17 = fn() -> %t6
+        type %t18 = fn() -> %t9
+        type %t19 = fn() -> %t3
+        type %t20 = fn() -> %t8
+        type %t21 = fn() -> %t1
 
         fn main() -> i32
         {
@@ -876,12 +872,11 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r#"
         type %t0 = i32
-        type %t1 = ptr<%t2>
-        type %t2 = i8
-        type %t3 = [5]%t2
-        type %t4 = [5]%t2
-        type %t5 = ptr<%t2>
-        type %t6 = fn(%t1) -> %t0
+        type %t1 = i8
+        type %t2 = ptr<%t1>
+        type %t3 = [5]%t1
+        type %t4 = [5]%t1
+        type %t5 = fn(%t2) -> %t0
 
         global @.L.str0: [5]i8 = const "gate"
 
@@ -918,11 +913,11 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r#"
         type %t0 = i32
-        type %t1 = ptr<%t2>
-        type %t2 = i8
-        type %t3 = fn(%t1) -> %t0
-        type %t4 = [15]%t2
-        type %t5 = [15]%t2
+        type %t1 = i8
+        type %t2 = ptr<%t1>
+        type %t3 = fn(%t2) -> %t0
+        type %t4 = [15]%t1
+        type %t5 = [15]%t1
 
         global @.L.str0: [15]i8 = const "Hello, World!\n"
 
@@ -955,13 +950,13 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r#"
         type %t0 = i32
-        type %t1 = ptr<%t2>
-        type %t2 = i8
-        type %t3 = fn(%t1) -> %t0
-        type %t4 = [15]%t2
-        type %t5 = [15]%t2
-        type %t6 = [5]%t2
-        type %t7 = [5]%t2
+        type %t1 = i8
+        type %t2 = ptr<%t1>
+        type %t3 = fn(%t2) -> %t0
+        type %t4 = [15]%t1
+        type %t5 = [15]%t1
+        type %t6 = [5]%t1
+        type %t7 = [5]%t1
 
         global @.L.str0: [15]i8 = const "Value: %d, %s\n"
         global @.L.str1: [5]i8 = const "test"
@@ -1081,8 +1076,8 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
-        type %t1 = ptr<%t2>
-        type %t2 = void
+        type %t1 = void
+        type %t2 = ptr<%t1>
         type %t3 = ptr<%t0>
 
         fn main() -> i32
@@ -1151,10 +1146,10 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
-        type %t1 = ptr<%t2>
-        type %t2 = struct I {  }
+        type %t1 = struct I {  }
+        type %t2 = ptr<%t1>
 
-        global @p: ptr<%t2>
+        global @p: ptr<%t1>
 
         fn main() -> i32
         {
@@ -1276,8 +1271,8 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
-        type %t1 = ptr<%t2>
-        type %t2 = void
+        type %t1 = void
+        type %t2 = ptr<%t1>
         type %t3 = ptr<%t0>
 
         fn main() -> i32
@@ -1375,5 +1370,44 @@ mod tests {
             return const 0
         }
         ");
+    }
+    #[test]
+    fn test_string_literal_decay() {
+        let source = r#"
+            int strcmp(const char *s1, const char *s2);
+            int main() {
+                char buffer[10] = "hello";
+                strcmp(buffer, "world");
+                return 0;
+            }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump, @r#"
+        type %t0 = i32
+        type %t1 = i8
+        type %t2 = ptr<%t1>
+        type %t3 = [10]%t1
+        type %t4 = [10]%t1
+        type %t5 = fn(%t2, %t2) -> %t0
+        type %t6 = [6]%t1
+        type %t7 = [6]%t1
+
+        global @.L.str0: [6]i8 = const "world"
+
+        fn main() -> i32
+        {
+          locals {
+            %buffer: [10]i8
+          }
+
+          bb1:
+            %buffer = const array_literal [const 104, const 101, const 108, const 108, const 111, const 0, const 0, const 0, const 0, const 0]
+            call strcmp(cast<ptr<i8>>(addr_of(%buffer)), cast<ptr<i8>>(const @.L.str0))
+            return const 0
+        }
+
+        extern fn strcmp(%param0: ptr<i8>, %param1: ptr<i8>) -> i32
+        "#);
     }
 }

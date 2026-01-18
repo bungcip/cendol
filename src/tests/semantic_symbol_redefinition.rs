@@ -33,10 +33,10 @@ mod tests {
         let mir_dump = setup_mir(source);
         insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
-        type %t1 = ptr<%t2>
-        type %t2 = void
-        type %t3 = ptr<%t4>
-        type %t4 = fn() -> %t0
+        type %t1 = void
+        type %t2 = ptr<%t1>
+        type %t3 = fn() -> %t0
+        type %t4 = ptr<%t3>
 
         global @x: i32 = const 3
 

@@ -5,12 +5,11 @@
 //! - No C logic
 //! - Assume MIR is valid
 
-use crate::ast::NameId;
 use crate::mir::MirProgram;
 use crate::mir::{
-    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, ConstValueKind, GlobalId, LocalId, MirBlock,
-    MirBlockId, MirFunction, MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator,
-    TypeId, UnaryFloatOp, UnaryIntOp,
+    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, GlobalId, LocalId, MirBlockId, MirFunction,
+    MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
+    UnaryIntOp,
 };
 use cranelift::codegen::ir::{Inst, StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
@@ -1292,25 +1291,25 @@ fn lower_statement(
                 }
 
                 Rvalue::BinaryIntOp(op, left_operand, right_operand) => {
-                    let left_cranelift_type = get_operand_clif_type(left_operand, mir)
+                    let left_clif_type = get_operand_clif_type(left_operand, mir)
                         .map_err(|e| format!("Failed to get left operand type: {}", e))?;
-                    let right_cranelift_type = get_operand_clif_type(right_operand, mir)
+                    let right_clif_type = get_operand_clif_type(right_operand, mir)
                         .map_err(|e| format!("Failed to get right operand type: {}", e))?;
 
                     // For Add/Sub operations on Pointers, we treat them as I64
                     let (final_left_type, final_right_type) = match op {
                         BinaryIntOp::Add | BinaryIntOp::Sub => {
-                            if left_cranelift_type == types::I64 && right_cranelift_type == types::I32 {
+                            if left_clif_type == types::I64 && right_clif_type == types::I32 {
                                 // Pointer + int constant
                                 (types::I64, types::I64)
-                            } else if left_cranelift_type == types::I32 && right_cranelift_type == types::I64 {
+                            } else if left_clif_type == types::I32 && right_clif_type == types::I64 {
                                 // int constant + pointer
                                 (types::I64, types::I64)
                             } else {
-                                (left_cranelift_type, right_cranelift_type)
+                                (left_clif_type, right_clif_type)
                             }
                         }
-                        _ => (left_cranelift_type, right_cranelift_type),
+                        _ => (left_clif_type, right_clif_type),
                     };
 
                     let left_val = resolve_operand(left_operand, builder, final_left_type, stack_slots, mir, module)?;
@@ -1988,7 +1987,6 @@ impl MirToCraneliftLowerer {
 
     pub(crate) fn compile_module(mut self, emit_kind: EmitKind) -> Result<ClifOutput, String> {
         self.emit_kind = emit_kind;
-        self.populate_state();
 
         // Pass 1: Declare all global variables
         for (global_id, global) in &self.mir.globals {
@@ -2041,8 +2039,7 @@ impl MirToCraneliftLowerer {
                     Some(&mut self.module),
                     Some(&mut data_description),
                     0,
-                )
-                .map_err(|e| format!("Failed to emit constant for global {}: {}", global.name, e))?;
+                )?;
 
                 data_description.define(initial_value_bytes.into_boxed_slice());
 
@@ -2062,8 +2059,7 @@ impl MirToCraneliftLowerer {
             if let Some(func) = self.mir.functions.get(&func_id)
                 && matches!(func.kind, MirFunctionKind::Defined)
             {
-                self.lower_function(func_id)
-                    .map_err(|e| format!("Error lowering function: {}", e))?;
+                self.lower_function(func_id)?;
             }
         }
 
@@ -2085,40 +2081,6 @@ impl MirToCraneliftLowerer {
                 clif_dump.push_str("\n\n");
             }
             Ok(ClifOutput::ClifDump(clif_dump))
-        }
-    }
-
-    /// Populate state from MIR module
-    fn populate_state(&mut self) {
-        // NOTE: The globals and functions are already populated in the constructor
-        // from the semantic analyzer. Types and constants maps are also populated
-        // by the MirBuilder consumption.
-
-        // If no functions were found, create a default main function
-        if self.mir.functions.is_empty() {
-            let func_id = MirFunctionId::new(1).unwrap();
-            let mut func = MirFunction::new_defined(func_id, NameId::new("main"), TypeId::new(1).unwrap());
-
-            let entry_block_id = MirBlockId::new(1).unwrap();
-            let mut entry_block = MirBlock::new(entry_block_id);
-
-            // Default to returning 0
-            let return_const_id = ConstValueId::new((self.mir.constants.len() + 1) as u32).unwrap();
-            self.mir.constants.insert(
-                return_const_id,
-                ConstValue {
-                    ty: TypeId::new(1).unwrap(), // Assuming type id 1 is i32
-                    kind: ConstValueKind::Int(0),
-                },
-            );
-            let return_operand = Operand::Constant(return_const_id);
-            entry_block.terminator = Terminator::Return(Some(return_operand));
-
-            func.entry_block = Some(entry_block_id);
-            func.blocks.push(entry_block_id);
-
-            self.mir.functions.insert(func_id, func);
-            self.mir.blocks.insert(entry_block_id, entry_block);
         }
     }
 

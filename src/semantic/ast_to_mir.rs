@@ -379,25 +379,27 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_initializer(&mut self, scope_id: ScopeId, init_ref: NodeRef, target_ty: QualType) -> Operand {
         let init_node_kind = self.ast.get_kind(init_ref).clone();
-        let target_ty_kind = self.registry.get(target_ty.ty()).kind.clone();
+        let target_type = self.registry.get(target_ty.ty()).clone();
 
-        match (init_node_kind, target_ty_kind) {
-            (NodeKind::InitializerList(list), TypeKind::Record { members, .. }) => {
-                self.lower_initializer_list(scope_id, &list, &members, target_ty)
+        match (init_node_kind, &target_type.kind) {
+            (NodeKind::InitializerList(list), TypeKind::Record { .. }) => {
+                let mut flat_members = Vec::new();
+                target_type.flatten_members(self.registry, &mut flat_members);
+                self.lower_initializer_list(scope_id, &list, &flat_members, target_ty)
             }
             (NodeKind::InitializerList(list), TypeKind::Array { element_type, size }) => {
-                let element_ty = QualType::unqualified(element_type);
-                let array_size = if let ArraySizeType::Constant(s) = size { s } else { 0 };
+                let element_ty = QualType::unqualified(*element_type);
+                let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
                 self.lower_array_initializer(scope_id, &list, element_ty, array_size, target_ty)
             }
             (NodeKind::LiteralString(val), TypeKind::Array { element_type, size })
                 if matches!(
-                    self.registry.get(element_type).kind,
+                    self.registry.get(*element_type).kind,
                     TypeKind::Builtin(BuiltinType::Char)
                 ) =>
             {
                 let fixed_size = if let ArraySizeType::Constant(s) = size {
-                    Some(s)
+                    Some(*s)
                 } else {
                     None
                 };

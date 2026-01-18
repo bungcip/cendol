@@ -814,11 +814,15 @@ impl<'a> SemanticAnalyzer<'a> {
             return;
         }
 
-        let target_kind = self.registry.get(target_ty.ty()).kind.clone();
-        match target_kind {
-            TypeKind::Record { members, .. } => {
+        let target_type = self.registry.get(target_ty.ty()).clone();
+        match target_type.kind {
+            TypeKind::Record { .. } => {
+                // Flatten members for initialization, handling anonymous structs/unions
+                let mut flat_members = Vec::new();
+                target_type.flatten_members(self.registry, &mut flat_members);
+
                 for item_ref in list.init_start.range(list.init_len) {
-                    self.check_initializer_item_record(item_ref, &members, target_ty);
+                    self.check_initializer_item_record(item_ref, &flat_members, target_ty);
                 }
             }
             _ => {
@@ -1011,10 +1015,9 @@ impl<'a> SemanticAnalyzer<'a> {
                     if member.name.is_none() {
                         let member_ty = member.member_type.ty();
                         if member_ty.is_record()
-                            && let Some(found_ty) = find_member(registry, member_ty, name)
-                        {
-                            return Some(found_ty);
-                        }
+                            && let Some(found_ty) = find_member(registry, member_ty, name) {
+                                return Some(found_ty);
+                            }
                     }
                 }
             }

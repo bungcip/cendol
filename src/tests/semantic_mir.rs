@@ -952,7 +952,7 @@ mod tests {
         type %t0 = i32
         type %t1 = i8
         type %t2 = ptr<%t1>
-        type %t3 = fn(%t2) -> %t0
+        type %t3 = fn(%t2, ...) -> %t0
         type %t4 = [15]%t1
         type %t5 = [15]%t1
         type %t6 = [5]%t1

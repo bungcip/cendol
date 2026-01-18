@@ -182,15 +182,22 @@ impl<'a> MirDumper<'a> {
                 let elem_index = self.get_type_index_from_type_id(*element);
                 format!("type {} = [{}]%t{}", type_name, size, elem_index)
             }
-            MirType::Function { return_type, params } => {
+            MirType::Function {
+                return_type,
+                params,
+                is_variadic,
+            } => {
                 let ret_index = self.get_type_index_from_type_id(*return_type);
-                let param_types: Vec<String> = params
+                let mut param_types: Vec<String> = params
                     .iter()
                     .map(|&p| {
                         let param_index = self.get_type_index_from_type_id(p);
                         format!("%t{}", param_index)
                     })
                     .collect();
+                if *is_variadic {
+                    param_types.push("...".to_string());
+                }
                 format!("type {} = fn({}) -> %t{}", type_name, param_types.join(", "), ret_index)
             }
             MirType::Record {
@@ -385,9 +392,16 @@ impl<'a> MirDumper<'a> {
                     let elem_type = self.type_to_string(*element);
                     format!("[{}]{}", size, elem_type)
                 }
-                MirType::Function { return_type, params } => {
+                MirType::Function {
+                    return_type,
+                    params,
+                    is_variadic,
+                } => {
                     let ret_type = self.type_to_string(*return_type);
-                    let param_types: Vec<String> = params.iter().map(|&p| self.type_to_string(p)).collect();
+                    let mut param_types: Vec<String> = params.iter().map(|&p| self.type_to_string(p)).collect();
+                    if *is_variadic {
+                        param_types.push("...".to_string());
+                    }
                     format!("fn({}) -> {}", param_types.join(", "), ret_type)
                 }
                 MirType::Record { .. } => {

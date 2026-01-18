@@ -1539,10 +1539,10 @@ impl<'a> AstToMirLowerer<'a> {
         }
 
         // Avoid identity assignments like %x = %x
-        if let Operand::Copy(box_place) = &operand {
-            if **box_place == place {
-                return;
-            }
+        if let Operand::Copy(box_place) = &operand
+            && **box_place == place
+        {
+            return;
         }
 
         let rvalue = Rvalue::Use(operand);
@@ -1612,8 +1612,9 @@ impl<'a> AstToMirLowerer<'a> {
                 TypeKind::Function {
                     return_type,
                     parameters,
+                    is_variadic,
                     ..
-                } => self.lower_function_type(return_type, parameters),
+                } => self.lower_function_type(return_type, parameters, *is_variadic),
                 TypeKind::Record { .. } => unreachable!(),
                 _ => MirType::I32,
             };
@@ -1670,13 +1671,18 @@ impl<'a> AstToMirLowerer<'a> {
         &mut self,
         return_type: &TypeRef,
         parameters: &[crate::semantic::FunctionParameter],
+        is_variadic: bool,
     ) -> MirType {
         let return_type = self.lower_type(*return_type);
         let mut params = Vec::new();
         for p in parameters {
             params.push(self.lower_qual_type(p.param_type));
         }
-        MirType::Function { return_type, params }
+        MirType::Function {
+            return_type,
+            params,
+            is_variadic,
+        }
     }
 
     fn lower_record_type(
@@ -1842,6 +1848,7 @@ impl<'a> AstToMirLowerer<'a> {
         self.mir_builder.add_type(MirType::Function {
             return_type: ret_ty,
             params: param_types,
+            is_variadic: func.is_variadic,
         })
     }
 

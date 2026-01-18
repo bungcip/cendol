@@ -326,6 +326,7 @@ fn test_indirect_function_call() {
     let func_type_id = builder.add_type(MirType::Function {
         return_type: int_type_id,
         params: vec![int_type_id],
+        is_variadic: false,
     });
 
     // *fn(i32) -> i32
@@ -459,6 +460,7 @@ fn test_global_function_pointer_init() {
     let func_type_id = builder.add_type(MirType::Function {
         return_type: int_type_id,
         params: vec![int_type_id],
+        is_variadic: false,
     });
     let func_ptr_type_id = builder.add_type(MirType::Pointer { pointee: func_type_id });
 
@@ -544,6 +546,25 @@ fn test_struct_literal_codegen() {
             struct S { int x; int y; } s = {1, 2};
             if (s.x != 1) return 1;
             if (s.y != 2) return 2;
+            return 0;
+        }
+        "#,
+        CompilePhase::Cranelift,
+    );
+}
+
+#[test]
+fn test_indirect_variadic_call_validation() {
+    run_pass(
+        r#"
+        int variadic(int count, ...) {
+            return count;
+        }
+
+        int main() {
+            int (*func_ptr)(int, ...) = variadic;
+            // Indirect call with extra arguments
+            func_ptr(1, 2, 3);
             return 0;
         }
         "#,

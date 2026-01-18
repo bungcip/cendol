@@ -423,24 +423,33 @@ impl MirValidator {
                         if let Some(op_ty) = self.validate_operand(sema_output, op)
                             && let Some(MirType::Pointer { pointee }) = sema_output.types.get(&op_ty)
                             && let Some(MirType::Function {
-                                params, return_type, ..
+                                params,
+                                return_type,
+                                is_variadic,
                             }) = sema_output.types.get(pointee)
                         {
-                            if params.len() != args.len() {
+                            if (*is_variadic && args.len() < params.len())
+                                || (!*is_variadic && args.len() != params.len())
+                            {
                                 self.errors.push(ValidationError::IllegalOperation(
                                     "Indirect call argument count mismatch".to_string(),
                                 ));
                             } else {
                                 for (i, arg) in args.iter().enumerate() {
-                                    if let Some(arg_ty) = self.validate_operand(sema_output, arg)
-                                        && arg_ty != params[i]
-                                    {
-                                        self.errors.push(ValidationError::FunctionCallArgTypeMismatch {
-                                            func_name: "indirect function".to_string(),
-                                            arg_index: i,
-                                            expected_type: params[i],
-                                            actual_type: arg_ty,
-                                        });
+                                    if i < params.len() {
+                                        if let Some(arg_ty) = self.validate_operand(sema_output, arg)
+                                            && arg_ty != params[i]
+                                        {
+                                            self.errors.push(ValidationError::FunctionCallArgTypeMismatch {
+                                                func_name: "indirect function".to_string(),
+                                                arg_index: i,
+                                                expected_type: params[i],
+                                                actual_type: arg_ty,
+                                            });
+                                        }
+                                    } else {
+                                        // Variadic arguments, just validate they exist
+                                        self.validate_operand(sema_output, arg);
                                     }
                                 }
                             }
@@ -780,12 +789,17 @@ fn are_types_compatible(sema_output: &MirProgram, t1: TypeId, t2: TypeId) -> boo
                 MirType::Function {
                     return_type: r1,
                     params: pm1,
+                    is_variadic: v1,
                 },
                 MirType::Function {
                     return_type: r2,
                     params: pm2,
+                    is_variadic: v2,
                 },
             ) => {
+                if v1 != v2 {
+                    return false;
+                }
                 if pm1.len() != pm2.len() {
                     return false;
                 }

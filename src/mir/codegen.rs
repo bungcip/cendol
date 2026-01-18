@@ -101,6 +101,7 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub return_type: Option<Type>,
     pub va_spill_slot: Option<StackSlot>,
     pub func: &'a MirFunction,
+    pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
 }
 
 /// Helper to emit integer constants
@@ -529,12 +530,20 @@ fn emit_function_call_impl(
                 .map_err(|e| format!("Failed to get function pointer type: {}", e))?;
             let func_ptr_type = ctx.mir.get_type(func_ptr_type_id);
 
-            let ((return_type_id, param_types), is_function_type) = match func_ptr_type {
+            let ((return_type_id, param_types), is_function_type, is_variadic_call) = match func_ptr_type {
                 MirType::Pointer { pointee } => match ctx.mir.get_type(*pointee) {
-                    MirType::Function { return_type, params } => ((*return_type, params.clone()), false),
+                    MirType::Function {
+                        return_type,
+                        params,
+                        is_variadic,
+                    } => ((*return_type, params.clone()), false, *is_variadic),
                     _ => return Err("Indirect call operand points to non-function type".to_string()),
                 },
-                MirType::Function { return_type, params } => ((*return_type, params.clone()), true),
+                MirType::Function {
+                    return_type,
+                    params,
+                    is_variadic,
+                } => ((*return_type, params.clone()), true, *is_variadic),
                 _ => return Err("Indirect call operand is not a pointer".to_string()),
             };
 
@@ -547,7 +556,7 @@ fn emit_function_call_impl(
                 resolve_operand(func_operand, ctx, types::I64)?
             };
 
-            (return_type_id, param_types, false, None, Some(callee_val))
+            (return_type_id, param_types, is_variadic_call, None, Some(callee_val))
         }
     };
 
@@ -748,43 +757,19 @@ fn resolve_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: 
                     ))
                 }
                 ConstValueKind::FunctionAddress(func_id) => {
-                    let func = ctx.mir.get_function(*func_id);
-
-                    let mut sig = Signature::new(ctx.builder.func.signature.call_conv);
-
-                    // Return type
-                    if let Some(ret_type) = convert_type(ctx.mir.get_type(func.return_type)) {
-                        sig.returns.push(AbiParam::new(ret_type));
+                    if let Some(&clif_func_id) = ctx.func_id_map.get(func_id) {
+                        let func_ref = ctx.module.declare_func_in_func(clif_func_id, ctx.builder.func);
+                        let addr = ctx.builder.ins().func_addr(types::I64, func_ref);
+                        Ok(emit_type_conversion(
+                            addr,
+                            types::I64,
+                            expected_type,
+                            false,
+                            ctx.builder,
+                        ))
+                    } else {
+                        Err(format!("Function ID {} not found in map", func_id.get()))
                     }
-
-                    // Params
-                    for &param_id in &func.params {
-                        let param_local = ctx.mir.get_local(param_id);
-                        let mir_type = ctx.mir.get_type(param_local.type_id);
-                        let param_type = match convert_type(mir_type) {
-                            Some(t) => t,
-                            None if mir_type.is_aggregate() => types::I64,
-                            None => types::I32,
-                        };
-                        sig.params.push(AbiParam::new(param_type));
-                    }
-
-                    let linkage = convert_linkage(func.kind);
-
-                    let func_decl = ctx
-                        .module
-                        .declare_function(func.name.as_str(), linkage, &sig)
-                        .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
-
-                    let func_ref = ctx.module.declare_func_in_func(func_decl, ctx.builder.func);
-                    let addr = ctx.builder.ins().func_addr(types::I64, func_ref);
-                    Ok(emit_type_conversion(
-                        addr,
-                        types::I64,
-                        expected_type,
-                        false,
-                        ctx.builder,
-                    ))
                 }
                 _ => Ok(ctx.builder.ins().iconst(expected_type, 0i64)),
             }
@@ -2210,6 +2195,7 @@ impl MirToCraneliftLowerer {
                 clif_blocks: &clif_blocks,
                 worklist: &mut worklist,
                 return_type: return_type_opt,
+                func_id_map: &self.func_id_map,
             };
 
             // Process statements

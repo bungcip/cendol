@@ -301,6 +301,7 @@ pub enum MirType {
     Function {
         return_type: TypeId,
         params: Vec<TypeId>,
+        is_variadic: bool,
     },
     Record {
         name: NameId,
@@ -1000,7 +1001,17 @@ impl fmt::Display for MirType {
             MirType::F64 => write!(f, "f64"),
             MirType::Pointer { pointee } => write!(f, "*{}", pointee.get()),
             MirType::Array { element, size, .. } => write!(f, "[{}]{}", size, element.get()),
-            MirType::Function { return_type, params } => write!(f, "fn({:?}) -> {}", params, return_type.get()),
+            MirType::Function {
+                return_type,
+                params,
+                is_variadic,
+            } => {
+                if *is_variadic {
+                    write!(f, "fn({:?}, ...) -> {}", params, return_type.get())
+                } else {
+                    write!(f, "fn({:?}) -> {}", params, return_type.get())
+                }
+            }
             MirType::Record {
                 name,
                 field_types,

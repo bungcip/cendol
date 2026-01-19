@@ -269,7 +269,15 @@ impl<'a> AstToMirLowerer<'a> {
             _ => {
                 let operand = self.lower_expression(init_ref, true);
                 let mir_target_ty = self.lower_qual_type(target_ty);
-                self.apply_conversions(operand, init_ref, mir_target_ty)
+                let operand = self.apply_conversions(operand, init_ref, mir_target_ty);
+
+                // Ensure type match by inserting a cast if necessary
+                let current_ty = self.get_operand_type(&operand);
+                if current_ty != mir_target_ty {
+                    Operand::Cast(mir_target_ty, Box::new(operand))
+                } else {
+                    operand
+                }
             }
         }
     }

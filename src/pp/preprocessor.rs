@@ -1880,7 +1880,9 @@ impl<'src> Preprocessor<'src> {
                         message: format!("Unknown pragma '{}'", pragma_name),
                         span: SourceSpan::new(pragma_token.location, pragma_token.location),
                         code: Some("unknown_pragma".to_string()),
-                        hints: vec!["Supported pragmas: once, push_macro, pop_macro, message, warning, error".to_string()],
+                        hints: vec![
+                            "Supported pragmas: once, push_macro, pop_macro, message, warning, error".to_string(),
+                        ],
                         related: Vec::new(),
                     };
                     self.diag.report_diagnostic(diag);

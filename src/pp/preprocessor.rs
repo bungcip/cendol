@@ -356,6 +356,8 @@ pub enum PPError {
     ExpectedEod,
     #[error("Unknown pragma: {0}")]
     UnknownPragma(String),
+    #[error("Pragma error: {0}")]
+    PragmaError(String),
 }
 
 impl PPError {
@@ -371,6 +373,7 @@ impl From<PPError> for Diagnostic {
     fn from(val: PPError) -> Self {
         let level = match &val {
             PPError::ErrorDirective(_) => DiagnosticLevel::Error,
+            PPError::PragmaError(_) => DiagnosticLevel::Error,
             PPError::UnknownPragma(_) => DiagnosticLevel::Error,
             _ => DiagnosticLevel::Error,
         };
@@ -1865,13 +1868,21 @@ impl<'src> Preprocessor<'src> {
                     self.handle_push_macro()?;
                 } else if pragma_name == "pop_macro" {
                     self.handle_pop_macro()?;
+                } else if pragma_name == "message" {
+                    self.handle_pragma_message()?;
+                } else if pragma_name == "warning" {
+                    self.handle_pragma_warning()?;
+                } else if pragma_name == "error" {
+                    self.handle_pragma_error()?;
                 } else {
                     let diag = Diagnostic {
                         level: DiagnosticLevel::Error,
                         message: format!("Unknown pragma '{}'", pragma_name),
                         span: SourceSpan::new(pragma_token.location, pragma_token.location),
                         code: Some("unknown_pragma".to_string()),
-                        hints: vec!["Supported pragmas: once, push_macro, pop_macro".to_string()],
+                        hints: vec![
+                            "Supported pragmas: once, push_macro, pop_macro, message, warning, error".to_string(),
+                        ],
                         related: Vec::new(),
                     };
                     self.diag.report_diagnostic(diag);
@@ -1952,6 +1963,97 @@ impl<'src> Preprocessor<'src> {
         }
 
         Ok(())
+    }
+
+    fn parse_pragma_message_content(&mut self) -> Result<String, PPError> {
+        // Expect '('
+        if self.lex_token().is_none_or(|t| t.kind != PPTokenKind::LeftParen) {
+            return Err(PPError::InvalidDirective);
+        }
+
+        // Collect tokens until matching ')'
+        let mut tokens = Vec::new();
+        let mut paren_depth = 1;
+
+        while let Some(token) = self.lex_token() {
+            if token.kind == PPTokenKind::Eod {
+                return Err(PPError::UnexpectedEndOfFile);
+            }
+
+            match token.kind {
+                PPTokenKind::LeftParen => paren_depth += 1,
+                PPTokenKind::RightParen => {
+                    paren_depth -= 1;
+                    if paren_depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            tokens.push(token);
+        }
+
+        if paren_depth > 0 {
+            return Err(PPError::UnexpectedEndOfFile);
+        }
+
+        // Expand macros
+        self.expand_tokens(&mut tokens)?;
+
+        let mut message = String::new();
+        for token in tokens {
+            if let PPTokenKind::StringLiteral(symbol) = token.kind {
+                let s = symbol.as_str();
+                if s.starts_with('"') && s.ends_with('"') {
+                    message.push_str(&self.destringize(s));
+                } else {
+                    return Err(PPError::InvalidDirective);
+                }
+            } else {
+                return Err(PPError::InvalidDirective);
+            }
+        }
+
+        Ok(message)
+    }
+
+    fn handle_pragma_message(&mut self) -> Result<(), PPError> {
+        let message = self.parse_pragma_message_content()?;
+        let loc = self.get_current_location();
+        let diag = Diagnostic {
+            level: DiagnosticLevel::Note,
+            message,
+            span: SourceSpan::new(loc, loc),
+            ..Default::default()
+        };
+        self.diag.report_diagnostic(diag);
+        Ok(())
+    }
+
+    fn handle_pragma_warning(&mut self) -> Result<(), PPError> {
+        let message = self.parse_pragma_message_content()?;
+        let loc = self.get_current_location();
+        let diag = Diagnostic {
+            level: DiagnosticLevel::Warning,
+            message,
+            span: SourceSpan::new(loc, loc),
+            ..Default::default()
+        };
+        self.diag.report_diagnostic(diag);
+        Ok(())
+    }
+
+    fn handle_pragma_error(&mut self) -> Result<(), PPError> {
+        let message = self.parse_pragma_message_content()?;
+        let loc = self.get_current_location();
+        let diag = Diagnostic {
+            level: DiagnosticLevel::Error,
+            message: message.clone(),
+            span: SourceSpan::new(loc, loc),
+            ..Default::default()
+        };
+        self.diag.report_diagnostic(diag);
+        Err(PPError::PragmaError(message))
     }
 
     fn handle_error(&mut self) -> Result<(), PPError> {

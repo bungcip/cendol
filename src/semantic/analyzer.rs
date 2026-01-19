@@ -1179,9 +1179,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 Some(QualType::unqualified(self.registry.type_int))
             }
-            NodeKind::RecordDecl(_)
-            | NodeKind::EnumDecl(_)
-            | NodeKind::EnumMember(_) => None,
+            NodeKind::RecordDecl(_) | NodeKind::EnumDecl(_) | NodeKind::EnumMember(_) => None,
             NodeKind::FieldDecl(data) => {
                 self.visit_type_expressions(data.ty);
                 None

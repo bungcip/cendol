@@ -658,11 +658,7 @@ impl<'a> AstToMirLowerer<'a> {
                 MirType::Array {
                     element,
                     size: 0,
-                    layout: MirArrayLayout {
-                        size: 0,
-                        align,
-                        stride,
-                    },
+                    layout: MirArrayLayout { size: 0, align, stride },
                 }
             }
         }

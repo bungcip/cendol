@@ -46,3 +46,4 @@ pub mod source_manager;
 pub mod test_utils;
 mod type_specifier_regression;
 pub mod typeref;
+pub mod pp_pragma_operator;

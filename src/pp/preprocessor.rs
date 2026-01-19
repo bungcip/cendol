@@ -1214,28 +1214,52 @@ impl<'src> Preprocessor<'src> {
 
     /// Perform the action of a pragma directive
     fn perform_pragma(&mut self, pragma_content: &str) {
-        // Get the source_id of the file containing the _Pragma operator for context.
-        let pragma_source_id = self.lexer_stack.last().map(|l| l.source_id);
-
-        // --- Process the pragma content without modifying the main lexer stack ---
+        // Create a buffer for the pragma content
         let source_id = self
             .source_manager
             .add_buffer(pragma_content.as_bytes().to_vec(), "<_Pragma>", None);
         let buffer = self.source_manager.get_buffer(source_id);
         let mut temp_lexer = PPLexer::new(source_id, buffer.to_vec());
 
-        // Process all tokens from the pragma's content.
-        while let Some(pragma_token) = temp_lexer.next_token() {
-            if let PPTokenKind::Identifier(symbol) = pragma_token.kind
-                && symbol.as_str() == "once"
-            {
-                if let Some(id) = pragma_source_id {
-                    self.once_included.insert(id);
-                }
-                // After "once", no other tokens matter.
-                break;
+        // Collect all tokens from the pragma content
+        let mut tokens = Vec::new();
+        while let Some(token) = temp_lexer.next_token() {
+            if matches!(token.kind, PPTokenKind::Eod | PPTokenKind::Eof) {
+                continue;
             }
-            // Other pragma directives are tokenized but currently ignored.
+            tokens.push(token);
+        }
+
+        // Determine location for the synthetic EOD
+        let eod_loc = if let Some(last) = tokens.last() {
+            last.location
+        } else {
+            SourceLoc::new(source_id, 0)
+        };
+
+        // Append EOD token to mark end of pragma
+        tokens.push(PPToken::new(
+            PPTokenKind::Eod,
+            PPTokenFlags::empty(),
+            eod_loc,
+            0,
+        ));
+
+        // Push to pending_tokens in reverse order so they come out in correct order
+        for token in tokens.into_iter().rev() {
+            self.pending_tokens.push_front(token);
+        }
+
+        // Execute pragma handler
+        // handle_pragma will consume tokens from pending_tokens
+        if self.handle_pragma().is_err() {
+            // If handle_pragma failed (e.g. unknown pragma), it might not have consumed all tokens.
+            // We must consume the remaining tokens of this pragma until EOD to ensure they don't leak.
+            while let Some(token) = self.lex_token() {
+                if token.kind == PPTokenKind::Eod {
+                    break;
+                }
+            }
         }
     }
 

@@ -425,54 +425,54 @@ fn resolve_record_tag(
 ) -> Result<TypeRef, SemanticError> {
     let existing_entry = tag.and_then(|tag_name| ctx.symbol_table.lookup_tag(tag_name));
 
-    if let Some(tag_name) = tag {
+    if let Some(tag_name) = tag
+        && is_definition
+    {
         // Named struct/union
-        if is_definition {
-            // This is a DEFINITION: struct T { ... }
-            let in_current_scope =
-                existing_entry.is_some_and(|(_, scope_id)| scope_id == ctx.symbol_table.current_scope());
+        // This is a DEFINITION: struct T { ... }
+        let in_current_scope =
+            existing_entry.is_some_and(|(_, scope_id)| scope_id == ctx.symbol_table.current_scope());
 
-            if in_current_scope {
-                let (entry_ref, _) = existing_entry.unwrap();
-                let (is_completed, first_def, ty) = {
-                    let entry = ctx.symbol_table.get_symbol(entry_ref);
-                    (entry.is_completed, entry.def_span, entry.type_info.ty())
-                };
+        if in_current_scope {
+            let (entry_ref, _) = existing_entry.unwrap();
+            let (is_completed, first_def, ty) = {
+                let entry = ctx.symbol_table.get_symbol(entry_ref);
+                (entry.is_completed, entry.def_span, entry.type_info.ty())
+            };
 
-                if is_completed {
-                    // Redeclaration error
-                    ctx.report_error(SemanticError::Redefinition {
-                        name: tag_name,
-                        first_def,
-                        span,
-                    });
-                    Ok(ty)
-                } else {
-                    // Completing a forward declaration in current scope
-                    Ok(ty)
-                }
+            if is_completed {
+                // Redeclaration error
+                ctx.report_error(SemanticError::Redefinition {
+                    name: tag_name,
+                    first_def,
+                    span,
+                });
+                Ok(ty)
             } else {
-                // Not in current scope (either not found or shadowing outer)
-                // Create a new record type
-                let new_type_ref = ctx.registry.declare_record(Some(tag_name), is_union);
-
-                // Add it to the symbol table in the current scope
-                ctx.symbol_table.define_record(tag_name, new_type_ref, false, span);
-                Ok(new_type_ref)
+                // Completing a forward declaration in current scope
+                Ok(ty)
             }
         } else {
-            // This is a USAGE or FORWARD DECL: struct T; or struct T s;
-            if let Some((entry_ref, _)) = existing_entry {
-                // Found existing (either in current or outer scope)
-                let entry = ctx.symbol_table.get_symbol(entry_ref);
-                Ok(entry.type_info.ty())
-            } else {
-                // Not found anywhere, create an implicit forward declaration in current scope
-                let forward_ref = ctx.registry.declare_record(Some(tag_name), is_union);
+            // Not in current scope (either not found or shadowing outer)
+            // Create a new record type
+            let new_type_ref = ctx.registry.declare_record(Some(tag_name), is_union);
 
-                ctx.symbol_table.define_record(tag_name, forward_ref, false, span);
-                Ok(forward_ref)
-            }
+            // Add it to the symbol table in the current scope
+            ctx.symbol_table.define_record(tag_name, new_type_ref, false, span);
+            Ok(new_type_ref)
+        }
+    } else if let Some(tag_name) = tag {
+        // This is a USAGE or FORWARD DECL: struct T; or struct T s;
+        if let Some((entry_ref, _)) = existing_entry {
+            // Found existing (either in current or outer scope)
+            let entry = ctx.symbol_table.get_symbol(entry_ref);
+            Ok(entry.type_info.ty())
+        } else {
+            // Not found anywhere, create an implicit forward declaration in current scope
+            let forward_ref = ctx.registry.declare_record(Some(tag_name), is_union);
+
+            ctx.symbol_table.define_record(tag_name, forward_ref, false, span);
+            Ok(forward_ref)
         }
     } else {
         // Anonymous struct/union definition
@@ -489,43 +489,43 @@ fn resolve_enum_tag(
 ) -> Result<TypeRef, SemanticError> {
     let existing_entry = tag.and_then(|tag_name| ctx.symbol_table.lookup_tag(tag_name));
 
-    if let Some(tag_name) = tag {
-        if is_definition {
-            // This is a DEFINITION: enum T { ... };
-            if let Some((entry_ref, scope_id)) = existing_entry
-                && scope_id == ctx.symbol_table.current_scope()
-            {
-                // Found in current scope, check if completed
-                let (is_completed, first_def, type_info) = {
-                    let entry = ctx.symbol_table.get_symbol(entry_ref);
-                    (entry.is_completed, entry.def_span, entry.type_info)
-                };
-                if is_completed {
-                    ctx.report_error(SemanticError::Redefinition {
-                        name: tag_name,
-                        first_def,
-                        span,
-                    });
-                }
-                Ok(type_info.ty())
-            } else {
-                // Not found in current scope, create new entry
-                let new_type_ref = ctx.registry.declare_enum(Some(tag_name), ctx.registry.type_int);
-                ctx.symbol_table.define_enum(tag_name, new_type_ref, span);
-                Ok(new_type_ref)
-            }
-        } else {
-            // This is a USAGE or FORWARD DECL: enum T; or enum T e;
-            if let Some((entry_ref, _)) = existing_entry {
+    if let Some(tag_name) = tag
+        && is_definition
+    {
+        // This is a DEFINITION: enum T { ... };
+        if let Some((entry_ref, scope_id)) = existing_entry
+            && scope_id == ctx.symbol_table.current_scope()
+        {
+            // Found in current scope, check if completed
+            let (is_completed, first_def, type_info) = {
                 let entry = ctx.symbol_table.get_symbol(entry_ref);
-                Ok(entry.type_info.ty())
-            } else {
-                // Implicit forward declaration
-                let forward_ref = ctx.registry.declare_enum(Some(tag_name), ctx.registry.type_int);
-
-                ctx.symbol_table.define_enum(tag_name, forward_ref, span);
-                Ok(forward_ref)
+                (entry.is_completed, entry.def_span, entry.type_info)
+            };
+            if is_completed {
+                ctx.report_error(SemanticError::Redefinition {
+                    name: tag_name,
+                    first_def,
+                    span,
+                });
             }
+            Ok(type_info.ty())
+        } else {
+            // Not found in current scope, create new entry
+            let new_type_ref = ctx.registry.declare_enum(Some(tag_name), ctx.registry.type_int);
+            ctx.symbol_table.define_enum(tag_name, new_type_ref, span);
+            Ok(new_type_ref)
+        }
+    } else if let Some(tag_name) = tag {
+        // This is a USAGE or FORWARD DECL: enum T; or enum T e;
+        if let Some((entry_ref, _)) = existing_entry {
+            let entry = ctx.symbol_table.get_symbol(entry_ref);
+            Ok(entry.type_info.ty())
+        } else {
+            // Implicit forward declaration
+            let forward_ref = ctx.registry.declare_enum(Some(tag_name), ctx.registry.type_int);
+
+            ctx.symbol_table.define_enum(tag_name, forward_ref, span);
+            Ok(forward_ref)
         }
     } else {
         // Anonymous enum definition
@@ -561,13 +561,12 @@ fn validate_record_members(
         } else {
             // Anonymous member, recurse
             let member_ty = member.member_type;
-            if member_ty.is_record() {
-                if let TypeKind::Record {
+            if member_ty.is_record()
+                && let TypeKind::Record {
                     members: inner_members, ..
                 } = &registry.get(member_ty.ty()).kind
-                {
-                    errors.extend(validate_record_members(registry, inner_members, seen_names));
-                }
+            {
+                errors.extend(validate_record_members(registry, inner_members, seen_names));
             }
         }
     }

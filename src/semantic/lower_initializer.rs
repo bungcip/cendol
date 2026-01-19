@@ -81,20 +81,73 @@ impl<'a> AstToMirLowerer<'a> {
         &mut self,
         list_data: &ast::nodes::InitializerListData,
         element_ty: QualType,
-        _size: usize,
+        size: usize,
         target_ty: QualType,
         destination: Option<Place>,
     ) -> Operand {
-        let mut elements = Vec::new();
+        let mut elements: Vec<Option<Operand>> = vec![None; size];
+        let mut current_idx = 0;
+
         for item_ref in list_data.init_start.range(list_data.init_len) {
             let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
                 continue;
             };
+
+            // Handle designator
+            if init.designator_len > 0 {
+                let designator_ref = init.designator_start;
+                // We only look at the first designator for the array index.
+                // Nested designators would need to be handled by constructing
+                // partial initializers, but for now we assume 1D array or first level.
+                match self.ast.get_kind(designator_ref) {
+                    NodeKind::Designator(Designator::ArrayIndex(idx_expr)) => {
+                        let idx_operand = self.lower_expression(*idx_expr, true);
+                        if let Some(const_id) = self.operand_to_const_id(idx_operand) {
+                            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
+                            if let ConstValueKind::Int(val) = const_val.kind {
+                                current_idx = val as usize;
+                            } else {
+                                panic!("Array designator must be an integer constant");
+                            }
+                        } else {
+                            panic!("Array designator must be a constant expression");
+                        }
+                    }
+                    // Struct field designators are invalid for arrays
+                    NodeKind::Designator(Designator::FieldName(_)) => {
+                        panic!("Field designator for array initializer");
+                    }
+                    _ => {
+                        // Other designators (e.g. ranges) not supported yet
+                        panic!("Unsupported designator for array initializer");
+                    }
+                }
+            }
+
+            // Ensure elements vector is large enough
+            if current_idx >= elements.len() {
+                elements.resize(current_idx + 1, None);
+            }
+
             let operand = self.lower_initializer(init.initializer, element_ty, None);
-            elements.push(operand);
+            elements[current_idx] = Some(operand);
+
+            // Advance index for next positional initializer
+            current_idx += 1;
         }
 
-        self.finalize_array_initializer(elements, target_ty, destination)
+        // Fill gaps with zero
+        let final_elements = elements
+            .into_iter()
+            .map(|op| {
+                op.unwrap_or_else(|| {
+                    let mir_ty = self.lower_qual_type(element_ty);
+                    Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Zero))
+                })
+            })
+            .collect();
+
+        self.finalize_array_initializer(final_elements, target_ty, destination)
     }
 
     pub(crate) fn finalize_initializer_generic<T, C, R>(

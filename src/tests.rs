@@ -14,6 +14,7 @@ pub mod pp_gnu_extensions;
 pub mod pp_has_include;
 pub mod pp_lexer;
 pub mod pp_pasting;
+pub mod pp_pragma_push_pop_macro;
 pub mod pp_stringification;
 pub mod preprocessor;
 pub mod preprocessor_regression;

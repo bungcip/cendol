@@ -1,0 +1,26 @@
+---
+source: src/tests/pp_pragma_push_pop_macro.rs
+assertion_line: 33
+expression: "(tokens, diags)"
+---
+- - kind: Identifier
+    text: int
+  - kind: Identifier
+    text: a
+  - kind: Assign
+    text: "="
+  - kind: Number
+    text: "1"
+  - kind: Semicolon
+    text: ;
+  - kind: Identifier
+    text: int
+  - kind: Identifier
+    text: b
+  - kind: Assign
+    text: "="
+  - kind: Number
+    text: "0"
+  - kind: Semicolon
+    text: ;
+- []

@@ -1238,12 +1238,7 @@ impl<'src> Preprocessor<'src> {
         };
 
         // Append EOD token to mark end of pragma
-        tokens.push(PPToken::new(
-            PPTokenKind::Eod,
-            PPTokenFlags::empty(),
-            eod_loc,
-            0,
-        ));
+        tokens.push(PPToken::new(PPTokenKind::Eod, PPTokenFlags::empty(), eod_loc, 0));
 
         // Push to pending_tokens in reverse order so they come out in correct order
         for token in tokens.into_iter().rev() {

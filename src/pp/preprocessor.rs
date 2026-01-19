@@ -1922,13 +1922,13 @@ impl<'src> Preprocessor<'src> {
     fn handle_pop_macro(&mut self) -> Result<(), PPError> {
         let name = self.parse_pragma_macro_name()?;
 
-        if let Some(stack) = self.macro_stack.get_mut(&name) {
-            if let Some(info_opt) = stack.pop() {
-                if let Some(info) = info_opt {
-                    self.macros.insert(name, info);
-                } else {
-                    self.macros.remove(&name);
-                }
+        if let Some(stack) = self.macro_stack.get_mut(&name)
+            && let Some(info_opt) = stack.pop()
+        {
+            if let Some(info) = info_opt {
+                self.macros.insert(name, info);
+            } else {
+                self.macros.remove(&name);
             }
         }
 

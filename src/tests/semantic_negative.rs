@@ -389,3 +389,16 @@ fn test_multiple_storage_class_specifiers() {
         "conflicting storage class specifiers",
     );
 }
+
+#[test]
+fn test_recursive_struct_definition() {
+    run_fail_with_message(
+        r#"
+        struct A {
+            struct A x;
+        };
+        "#,
+        CompilePhase::SemanticLowering,
+        "recursive type definition",
+    );
+}

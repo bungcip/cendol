@@ -1501,6 +1501,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.ast.kinds[node.index()] = NodeKind::Function(FunctionData {
             symbol: func_sym_ref,
             ty: final_ty.ty(),
+            is_noreturn: spec_info.is_noreturn,
             param_start,
             param_len,
             body: body_node,

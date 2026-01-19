@@ -1080,14 +1080,9 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::Function(data) => {
                 let func_ty = self.registry.get(data.ty).kind.clone();
-                if let TypeKind::Function {
-                    return_type,
-                    is_noreturn,
-                    ..
-                } = func_ty
-                {
+                if let TypeKind::Function { return_type, .. } = func_ty {
                     self.current_function_ret_type = Some(QualType::unqualified(return_type));
-                    self.current_function_is_noreturn = is_noreturn;
+                    self.current_function_is_noreturn = data.is_noreturn;
                 };
 
                 let symbol = self.symbol_table.get_symbol(data.symbol);

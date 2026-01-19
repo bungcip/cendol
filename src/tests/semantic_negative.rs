@@ -402,3 +402,16 @@ fn test_recursive_struct_definition() {
         "recursive type definition",
     );
 }
+
+#[test]
+fn test_noreturn_function_returns() {
+    run_fail_with_message(
+        r#"
+        _Noreturn void foo() {
+            return;
+        }
+        "#,
+        CompilePhase::Mir,
+        "function 'foo' declared '_Noreturn' should not return",
+    );
+}

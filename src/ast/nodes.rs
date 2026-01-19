@@ -334,6 +334,7 @@ pub struct InitializerListData {
 pub struct FunctionData {
     pub symbol: SymbolRef,
     pub ty: TypeRef, // function type, not the return type
+    pub is_noreturn: bool,
     pub param_start: NodeRef,
     pub param_len: u16,
     pub body: NodeRef, // compound statement

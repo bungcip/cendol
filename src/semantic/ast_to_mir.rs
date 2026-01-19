@@ -5,8 +5,8 @@ use crate::mir::MirArrayLayout;
 use crate::mir::MirProgram;
 use crate::mir::MirRecordLayout;
 use crate::mir::{
-    self, CallTarget, ConstValue, ConstValueId, ConstValueKind, LocalId, MirBlockId,
-    BinaryFloatOp, BinaryIntOp, MirBuilder, MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
+    self, BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, ConstValueKind, LocalId, MirBlockId,
+    MirBuilder, MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
@@ -16,7 +16,6 @@ use crate::semantic::SymbolKind;
 use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
 use crate::semantic::TypeKind;
-
 
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use crate::semantic::{ImplicitConversion, Namespace, ScopeId};

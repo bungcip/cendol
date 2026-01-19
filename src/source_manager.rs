@@ -429,7 +429,7 @@ impl SourceManager {
 
     /// Calculate line starts for a given source ID (for testing)
     #[cfg(test)]
-    pub fn calculate_line_starts_for_test(&mut self, source_id: SourceId) {
+    pub(crate) fn calculate_line_starts_for_test(&mut self, source_id: SourceId) {
         if let Some(file_info) = self.file_infos.get_mut(&source_id) {
             let buffer = &self.buffers[file_info.buffer_index];
             let mut line_starts = vec![0]; // First line starts at offset 0

@@ -479,7 +479,7 @@ impl ErrorFormatter {
     }
 
     /// Format a single diagnostic with rich source code context
-    pub fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
+    fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
         let renderer = if self.use_colors {
             Renderer::styled().decor_style(DecorStyle::Unicode)
         } else {

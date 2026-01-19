@@ -51,7 +51,7 @@ impl Type {
         Type { kind, layout: None }
     }
 
-    pub fn flatten_members(&self, registry: &super::TypeRegistry, flat_members: &mut Vec<StructMember>) {
+    pub(crate) fn flatten_members(&self, registry: &super::TypeRegistry, flat_members: &mut Vec<StructMember>) {
         if let TypeKind::Record { members, .. } = &self.kind {
             for member in members.iter().cloned() {
                 if member.name.is_none() {
@@ -249,7 +249,7 @@ impl TypeRef {
     }
 
     #[inline]
-    pub fn is_builtin(self) -> bool {
+    pub(crate) fn is_builtin(self) -> bool {
         self.class() == TypeClass::Builtin
     }
 

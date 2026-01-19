@@ -102,6 +102,28 @@ fn test_source_manager_get_line_column_end_of_file() {
 }
 
 #[test]
+fn test_source_manager_get_line_column_before_start() {
+    let mut sm = SourceManager::new();
+    let content = "content";
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
+
+    // Manually set line starts to start at offset 5
+    // This simulates a scenario where we have some prefix that is not part of the lines
+    // or simply an invalid state we want to ensure doesn't crash
+    sm.set_line_starts(file_id, vec![5]);
+
+    // Query location at offset 2 (before the first line start)
+    let loc = SourceLoc::new(file_id, 2);
+    let (line, col) = sm.get_line_column(loc).unwrap();
+
+    // Expecting line 0 (invalid/before start) and column 1
+    // This exercises the else branch in get_line_column where line becomes u32::MAX
+    // and is handled by returning line 0 and column 0+1 = 1.
+    assert_eq!(line, 0);
+    assert_eq!(col, 1);
+}
+
+#[test]
 fn test_source_manager_multiple_files() {
     let mut sm = SourceManager::new();
     let file1_id = sm.add_buffer("content1".as_bytes().to_vec(), "file1.c", None);

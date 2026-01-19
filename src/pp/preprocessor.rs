@@ -283,6 +283,7 @@ pub struct Preprocessor<'src> {
 
     // Macro management
     macros: HashMap<StringId, MacroInfo>,
+    macro_stack: HashMap<StringId, Vec<Option<MacroInfo>>>,
 
     // Include management
     once_included: HashSet<SourceId>,
@@ -419,6 +420,7 @@ impl<'src> Preprocessor<'src> {
             lang_opts: config.lang_options,
             directive_keywords: DirectiveKeywordTable::new(),
             macros: HashMap::new(),
+            macro_stack: HashMap::new(),
             once_included: HashSet::new(),
             conditional_stack: Vec::new(),
             include_stack: Vec::new(),
@@ -1840,13 +1842,17 @@ impl<'src> Preprocessor<'src> {
                     if let Some(lexer) = self.lexer_stack.last() {
                         self.once_included.insert(lexer.source_id);
                     }
+                } else if pragma_name == "push_macro" {
+                    self.handle_push_macro()?;
+                } else if pragma_name == "pop_macro" {
+                    self.handle_pop_macro()?;
                 } else {
                     let diag = Diagnostic {
                         level: DiagnosticLevel::Error,
                         message: format!("Unknown pragma '{}'", pragma_name),
                         span: SourceSpan::new(pragma_token.location, pragma_token.location),
                         code: Some("unknown_pragma".to_string()),
-                        hints: vec!["Only '#pragma once' is supported".to_string()],
+                        hints: vec!["Supported pragmas: once, push_macro, pop_macro".to_string()],
                         related: Vec::new(),
                     };
                     self.diag.report_diagnostic(diag);
@@ -1872,6 +1878,60 @@ impl<'src> Preprocessor<'src> {
                 break;
             }
         }
+        Ok(())
+    }
+
+    fn parse_pragma_macro_name(&mut self) -> Result<StringId, PPError> {
+        // Expect '('
+        if self.lex_token().is_none_or(|t| t.kind != PPTokenKind::LeftParen) {
+            return Err(PPError::InvalidDirective);
+        }
+
+        // Expect string literal
+        let string_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
+        let name_str = if let PPTokenKind::StringLiteral(symbol) = string_token.kind {
+            // Remove quotes
+            let full_str = symbol.as_str();
+            if full_str.starts_with('"') && full_str.ends_with('"') {
+                full_str[1..full_str.len() - 1].to_string()
+            } else {
+                return Err(PPError::InvalidDirective);
+            }
+        } else {
+            return Err(PPError::InvalidDirective);
+        };
+
+        // Expect ')'
+        if self.lex_token().is_none_or(|t| t.kind != PPTokenKind::RightParen) {
+            return Err(PPError::InvalidDirective);
+        }
+
+        Ok(StringId::new(&name_str))
+    }
+
+    fn handle_push_macro(&mut self) -> Result<(), PPError> {
+        let name = self.parse_pragma_macro_name()?;
+
+        let info = self.macros.get(&name).cloned();
+
+        self.macro_stack.entry(name).or_default().push(info);
+
+        Ok(())
+    }
+
+    fn handle_pop_macro(&mut self) -> Result<(), PPError> {
+        let name = self.parse_pragma_macro_name()?;
+
+        if let Some(stack) = self.macro_stack.get_mut(&name) {
+            if let Some(info_opt) = stack.pop() {
+                if let Some(info) = info_opt {
+                    self.macros.insert(name, info);
+                } else {
+                    self.macros.remove(&name);
+                }
+            }
+        }
+
         Ok(())
     }
 

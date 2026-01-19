@@ -1,7 +1,6 @@
 use crate::ast::{BinaryOp, NodeKind, NodeRef, UnaryOp};
 use crate::mir::{
-    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueKind, MirStmt, Operand, Place, Rvalue, Terminator,
-    TypeId, UnaryFloatOp, UnaryIntOp,
+    BinaryIntOp, CallTarget, ConstValue, ConstValueKind, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::ast_to_mir::AstToMirLowerer;
 use crate::semantic::const_eval::{ConstEvalCtx, eval_const_expr};

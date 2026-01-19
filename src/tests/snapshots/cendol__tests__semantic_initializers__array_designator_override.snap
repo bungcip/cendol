@@ -1,0 +1,15 @@
+---
+source: src/tests/semantic_initializers.rs
+expression: mir
+---
+type %t0 = i32
+type %t1 = [3]%t0
+
+global @a: [3]i32 = const array_literal [const zero, const 20, const zero]
+
+fn main() -> i32
+{
+
+  bb1:
+    return const 0
+}

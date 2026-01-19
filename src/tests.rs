@@ -44,3 +44,4 @@ pub mod source_manager;
 pub mod test_utils;
 mod type_specifier_regression;
 pub mod typeref;
+pub mod semantic_initializers;

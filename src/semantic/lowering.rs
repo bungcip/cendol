@@ -561,13 +561,12 @@ fn validate_record_members(
         } else {
             // Anonymous member, recurse
             let member_ty = member.member_type;
-            if member_ty.is_record() {
-                if let TypeKind::Record {
+            if member_ty.is_record()
+                && let TypeKind::Record {
                     members: inner_members, ..
                 } = &registry.get(member_ty.ty()).kind
-                {
-                    errors.extend(validate_record_members(registry, inner_members, seen_names));
-                }
+            {
+                errors.extend(validate_record_members(registry, inner_members, seen_names));
             }
         }
     }

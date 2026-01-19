@@ -43,6 +43,7 @@ pub mod semantic_type_specifiers;
 pub mod semantic_typedef_redefinition;
 mod semantic_typedef_variable_conflict;
 pub mod semantic_validation;
+pub mod semantic_vla;
 pub mod source_manager;
 pub mod test_utils;
 mod type_specifier_regression;

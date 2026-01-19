@@ -82,6 +82,7 @@ pub(crate) fn run_semantic_analyzer(
         switch_depth: 0,
         switch_cases: Vec::new(),
         switch_default_seen: Vec::new(),
+        checked_types: HashSet::new(),
     };
     let root = ast.get_root();
     resolver.visit_node(root);
@@ -106,11 +107,55 @@ struct SemanticAnalyzer<'a> {
     switch_depth: usize,
     switch_cases: Vec<HashSet<i64>>,
     switch_default_seen: Vec<bool>,
+    checked_types: HashSet<TypeRef>,
 }
 
 impl<'a> SemanticAnalyzer<'a> {
     fn report_error(&mut self, error: SemanticError) {
         self.diag.report(error);
+    }
+
+    /// Recursively visit type to find any expressions (e.g. VLA sizes) and resolve them.
+    fn visit_type_expressions(&mut self, qt: QualType) {
+        let ty = qt.ty();
+        if self.checked_types.contains(&ty) {
+            return;
+        }
+        self.checked_types.insert(ty);
+
+        // To avoid infinite recursion on recursive types (e.g. struct A { struct A *next; }),
+        // we rely on checked_types.
+        // Note: We need to clone the kind to avoid borrowing self.registry while calling self methods
+        let kind = self.registry.get(ty).kind.clone();
+
+        match kind {
+            TypeKind::Array { element_type, size } => {
+                if let ArraySizeType::Variable(expr) = size {
+                    self.visit_node(expr);
+                }
+                self.visit_type_expressions(QualType::unqualified(element_type));
+            }
+            TypeKind::Pointer { pointee } => {
+                self.visit_type_expressions(pointee);
+            }
+            TypeKind::Function {
+                return_type,
+                parameters,
+                ..
+            } => {
+                self.visit_type_expressions(QualType::unqualified(return_type));
+                for param in parameters {
+                    self.visit_type_expressions(param.param_type);
+                }
+            }
+            TypeKind::Complex { base_type } => {
+                self.visit_type_expressions(QualType::unqualified(base_type));
+            }
+            // For Records and Enums, we don't need to traverse members because
+            // they cannot contain VLAs (C11 6.7.2.1).
+            // Even if they did, the members would be visited during their declaration processing.
+            _ => {}
+        }
     }
 
     fn can_fall_through(&self, node_ref: NodeRef) -> bool {
@@ -1108,8 +1153,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.current_function_is_noreturn = false;
                 None
             }
-            NodeKind::Param(_) => None,
+            NodeKind::Param(data) => {
+                self.visit_type_expressions(data.ty);
+                Some(data.ty)
+            }
             NodeKind::VarDecl(data) => {
+                self.visit_type_expressions(data.ty);
                 let _ = self.registry.ensure_layout(data.ty.ty());
                 if data.init.is_some()
                     && matches!(data.storage, Some(StorageClass::Extern))
@@ -1130,12 +1179,17 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 Some(QualType::unqualified(self.registry.type_int))
             }
-            NodeKind::RecordDecl(_)
-            | NodeKind::FieldDecl(_)
-            | NodeKind::EnumDecl(_)
-            | NodeKind::EnumMember(_)
-            | NodeKind::TypedefDecl(_) => None,
+            NodeKind::RecordDecl(_) | NodeKind::EnumDecl(_) | NodeKind::EnumMember(_) => None,
+            NodeKind::FieldDecl(data) => {
+                self.visit_type_expressions(data.ty);
+                None
+            }
+            NodeKind::TypedefDecl(data) => {
+                self.visit_type_expressions(data.ty);
+                None
+            }
             NodeKind::FunctionDecl(data) => {
+                self.visit_type_expressions(QualType::unqualified(data.ty));
                 let func_type = self.registry.get(data.ty).kind.clone();
                 if let TypeKind::Function { parameters, .. } = func_type {
                     for param in parameters {
@@ -1410,6 +1464,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
             NodeKind::Cast(ty, expr) => {
+                self.visit_type_expressions(*ty);
                 self.visit_node(*expr);
                 Some(*ty)
             }
@@ -1431,6 +1486,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
             }
             NodeKind::SizeOfType(ty) | NodeKind::AlignOf(ty) => {
+                self.visit_type_expressions(*ty);
                 let type_ref = ty.ty();
                 if !self.registry.is_complete(type_ref) {
                     let span = self.ast.get_span(node_ref);
@@ -1441,12 +1497,18 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
             }
             NodeKind::CompoundLiteral(ty, init) => {
+                self.visit_type_expressions(*ty);
                 let _ = self.registry.ensure_layout(ty.ty());
                 self.check_initializer(*init, *ty);
                 Some(*ty)
             }
             NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs),
-            NodeKind::GenericAssociation(ga) => self.visit_node(ga.result_expr),
+            NodeKind::GenericAssociation(ga) => {
+                if let Some(ty) = ga.ty {
+                    self.visit_type_expressions(ty);
+                }
+                self.visit_node(ga.result_expr)
+            }
             NodeKind::InitializerList(list) => {
                 for item_ref in list.init_start.range(list.init_len) {
                     self.visit_node(item_ref);
@@ -1472,6 +1534,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 None
             }
             NodeKind::BuiltinVaArg(ty, expr) => {
+                self.visit_type_expressions(*ty);
                 self.visit_node(*expr);
                 Some(*ty)
             }

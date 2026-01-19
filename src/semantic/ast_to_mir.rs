@@ -625,19 +625,42 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_array_type(&mut self, type_ref: TypeRef, element_type: TypeRef, size: &ArraySizeType) -> MirType {
         let element = self.lower_type(element_type);
-        let size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
 
-        let (layout_size, layout_align, element_ref, _) = self.registry.get_array_layout(type_ref);
-        let element_layout = self.registry.get_layout(element_ref);
+        match size {
+            ArraySizeType::Constant(s) => {
+                let (layout_size, layout_align, element_ref, _) = self.registry.get_array_layout(type_ref);
+                let element_layout = self.registry.get_layout(element_ref);
 
-        MirType::Array {
-            element,
-            size,
-            layout: MirArrayLayout {
-                size: layout_size,
-                align: layout_align,
-                stride: element_layout.size,
-            },
+                MirType::Array {
+                    element,
+                    size: *s,
+                    layout: MirArrayLayout {
+                        size: layout_size,
+                        align: layout_align,
+                        stride: element_layout.size,
+                    },
+                }
+            }
+            _ => {
+                // For VLA or incomplete array, layout is not computed in registry.
+                // We use dummy layout (size 0) but try to preserve alignment/stride from element type.
+                let (align, stride) = if element_type.is_inline_array() || element_type.is_inline_pointer() {
+                    let layout = self.registry.get_layout(element_type);
+                    (layout.alignment, layout.size)
+                } else if self.registry.types[element_type.index()].layout.is_some() {
+                    let layout = self.registry.get_layout(element_type);
+                    (layout.alignment, layout.size)
+                } else {
+                    // Element layout also unknown (e.g. nested VLA or incomplete)
+                    (1, 0)
+                };
+
+                MirType::Array {
+                    element,
+                    size: 0,
+                    layout: MirArrayLayout { size: 0, align, stride },
+                }
+            }
         }
     }
 

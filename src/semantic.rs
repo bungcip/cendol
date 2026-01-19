@@ -30,3 +30,5 @@ pub use types::{
     ArraySizeType, BuiltinType, EnumConstant, FunctionParameter, QualType, StructMember, Type, TypeKind, TypeLayout,
     TypeQualifiers, TypeRef,
 };
+pub(crate) mod lower_expression;
+pub(crate) mod lower_initializer;

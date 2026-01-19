@@ -26,3 +26,4 @@ c-testsuite/tests/single-exec/00018.c
 c-testsuite/tests/single-exec/00021.c
 c-testsuite/tests/single-exec/00019.c
 c-testsuite/tests/single-exec/00020.c
+c-testsuite/tests/single-exec/00024.c

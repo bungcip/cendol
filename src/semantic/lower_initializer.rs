@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use crate::ast;
 use crate::ast::{Designator, NameId, NodeKind, NodeRef};
 use crate::mir::{ConstValueId, ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue};
@@ -172,7 +173,7 @@ impl<'a> AstToMirLowerer<'a> {
             if let Some(place) = destination {
                 let stmt = crate::mir::MirStmt::Assign(place.clone(), rval);
                 self.mir_builder.add_statement(stmt);
-                Operand::Copy(Box::new(place))
+                Operand::Copy(Rc::new(place))
             } else {
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
@@ -274,7 +275,7 @@ impl<'a> AstToMirLowerer<'a> {
                 // Ensure type match by inserting a cast if necessary
                 let current_ty = self.get_operand_type(&operand);
                 if current_ty != mir_target_ty {
-                    Operand::Cast(mir_target_ty, Box::new(operand))
+                    Operand::Cast(mir_target_ty, Rc::new(operand))
                 } else {
                     operand
                 }
@@ -334,12 +335,12 @@ impl<'a> AstToMirLowerer<'a> {
                 .mir_builder
                 .create_global_with_init(global_name, mir_ty, false, Some(init_const_id));
 
-            Operand::Copy(Box::new(Place::Global(global_id)))
+            Operand::Copy(Rc::new(Place::Global(global_id)))
         } else {
             let (_, place) = self.create_temp_local(mir_ty);
             let init_operand = self.lower_initializer(init_ref, ty, Some(place.clone()));
             self.emit_assignment(place.clone(), init_operand);
-            Operand::Copy(Box::new(place))
+            Operand::Copy(Rc::new(place))
         }
     }
 }

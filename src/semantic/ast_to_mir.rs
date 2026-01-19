@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use crate::ast::BinaryOp;
 use crate::ast::nodes;
 use crate::ast::*;
@@ -514,7 +515,7 @@ impl<'a> AstToMirLowerer<'a> {
 
         // Avoid identity assignments like %x = %x
         if let Operand::Copy(box_place) = &operand
-            && **box_place == place
+            && *box_place.as_ref() == place
         {
             return;
         }
@@ -765,25 +766,25 @@ impl<'a> AstToMirLowerer<'a> {
         match conv {
             ImplicitConversion::IntegerCast { .. }
             | ImplicitConversion::IntegerPromotion { .. }
-            | ImplicitConversion::PointerCast { .. } => Operand::Cast(to_mir_type, Box::new(operand)),
+            | ImplicitConversion::PointerCast { .. } => Operand::Cast(to_mir_type, Rc::new(operand)),
             ImplicitConversion::NullPointerConstant => {
                 let ty_id = self.lower_type(self.registry.type_int);
                 Operand::Cast(
                     to_mir_type,
-                    Box::new(Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(0)))),
+                    Rc::new(Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(0)))),
                 )
             }
             ImplicitConversion::PointerDecay { .. } => {
                 if let Operand::Copy(place) = &operand {
                     let addr_of_array = Operand::AddressOf(place.clone());
-                    Operand::Cast(to_mir_type, Box::new(addr_of_array))
+                    Operand::Cast(to_mir_type, Rc::new(addr_of_array))
                 } else {
                     // If it's not a place (e.g. String Literal might be lowered to Constant directly?)
                     // String literals usually LValue, so Copy(Place::Global/Local).
-                    Operand::Cast(to_mir_type, Box::new(operand))
+                    Operand::Cast(to_mir_type, Rc::new(operand))
                 }
             }
-            _ => Operand::Cast(target_type_id, Box::new(operand)),
+            _ => Operand::Cast(target_type_id, Rc::new(operand)),
         }
     }
 
@@ -883,7 +884,7 @@ impl<'a> AstToMirLowerer<'a> {
 
     pub(crate) fn ensure_place(&mut self, operand: Operand, type_id: TypeId) -> Place {
         if let Operand::Copy(place) = operand {
-            *place
+            place.as_ref().clone()
         } else {
             let (_, temp_place) = self.create_temp_local_with_assignment(Rvalue::Use(operand), type_id);
             temp_place
@@ -892,7 +893,7 @@ impl<'a> AstToMirLowerer<'a> {
 
     pub(crate) fn emit_rvalue_to_operand(&mut self, rvalue: Rvalue, type_id: TypeId) -> Operand {
         let (_, place) = self.create_temp_local_with_assignment(rvalue, type_id);
-        Operand::Copy(Box::new(place))
+        Operand::Copy(Rc::new(place))
     }
 
     pub(crate) fn emit_binary_rvalue(&self, op: &BinaryOp, lhs: Operand, rhs: Operand, is_float: bool) -> Rvalue {
@@ -920,7 +921,7 @@ impl<'a> AstToMirLowerer<'a> {
             Operand::Constant(id) => Some(id),
             Operand::Cast(ty, inner) => {
                 // Recursively try to get constant from inner operand
-                if let Some(inner_const_id) = self.operand_to_const_id(*inner) {
+                if let Some(inner_const_id) = self.operand_to_const_id(inner.as_ref().clone()) {
                     let inner_const = self.mir_builder.get_constants().get(&inner_const_id).unwrap();
                     // Create a new constant with the target type but same kind
                     Some(self.create_constant(ty, inner_const.kind.clone()))

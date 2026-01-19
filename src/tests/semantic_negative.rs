@@ -294,6 +294,18 @@ fn test_scalar_init_brace_list() {
 
 // I. Storage Duration & Linkage
 #[test]
+fn test_global_variable_redefinition() {
+    run_fail_with_message(
+        r#"
+        int x = 5;
+        int x = 10;
+        "#,
+        CompilePhase::SemanticLowering,
+        "redefinition of",
+    );
+}
+
+#[test]
 fn test_extern_init_block_scope() {
     run_fail_with_message(
         r#"

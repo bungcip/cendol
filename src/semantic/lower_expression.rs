@@ -1,8 +1,11 @@
 use crate::ast::{BinaryOp, NodeKind, NodeRef, UnaryOp};
-use crate::mir::{BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueKind, MirStmt, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp};
+use crate::mir::{
+    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueKind, MirStmt, Operand, Place, Rvalue, Terminator,
+    TypeId, UnaryFloatOp, UnaryIntOp,
+};
 use crate::semantic::ast_to_mir::AstToMirLowerer;
-use crate::semantic::{QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
 use crate::semantic::const_eval::{ConstEvalCtx, eval_const_expr};
+use crate::semantic::{QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
 use crate::{ast, semantic};
 
 impl<'a> AstToMirLowerer<'a> {
@@ -94,7 +97,13 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    pub(crate) fn lower_ternary_op(&mut self, cond: NodeRef, then_expr: NodeRef, else_expr: NodeRef, mir_ty: TypeId) -> Operand {
+    pub(crate) fn lower_ternary_op(
+        &mut self,
+        cond: NodeRef,
+        then_expr: NodeRef,
+        else_expr: NodeRef,
+        mir_ty: TypeId,
+    ) -> Operand {
         let cond_op = self.lower_expression(cond, true);
 
         let then_block = self.mir_builder.create_block();
@@ -150,7 +159,11 @@ impl<'a> AstToMirLowerer<'a> {
         Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Int(val as i64)))
     }
 
-    pub(crate) fn lower_generic_selection(&mut self, gs: &ast::nodes::GenericSelectionData, need_value: bool) -> Operand {
+    pub(crate) fn lower_generic_selection(
+        &mut self,
+        gs: &ast::nodes::GenericSelectionData,
+        need_value: bool,
+    ) -> Operand {
         let ctrl_ty = self
             .ast
             .get_resolved_type(gs.control)
@@ -381,7 +394,13 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    pub(crate) fn lower_logical_op(&mut self, op: &BinaryOp, left_ref: NodeRef, right_ref: NodeRef, mir_ty: TypeId) -> Operand {
+    pub(crate) fn lower_logical_op(
+        &mut self,
+        op: &BinaryOp,
+        left_ref: NodeRef,
+        right_ref: NodeRef,
+        mir_ty: TypeId,
+    ) -> Operand {
         // Short-circuiting logic for && and ||
         let (_res_local, res_place) = self.create_temp_local(mir_ty);
 
@@ -661,7 +680,12 @@ impl<'a> AstToMirLowerer<'a> {
         None
     }
 
-    pub(crate) fn lower_member_access(&mut self, obj_ref: NodeRef, field_name: &ast::NameId, is_arrow: bool) -> Operand {
+    pub(crate) fn lower_member_access(
+        &mut self,
+        obj_ref: NodeRef,
+        field_name: &ast::NameId,
+        is_arrow: bool,
+    ) -> Operand {
         let obj_ty = self.ast.get_resolved_type(obj_ref).unwrap();
         let record_ty = if is_arrow {
             self.registry
@@ -714,7 +738,13 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    pub(crate) fn lower_inc_dec_common(&mut self, operand_ref: NodeRef, is_inc: bool, is_post: bool, need_value: bool) -> Operand {
+    pub(crate) fn lower_inc_dec_common(
+        &mut self,
+        operand_ref: NodeRef,
+        is_inc: bool,
+        is_post: bool,
+        need_value: bool,
+    ) -> Operand {
         let operand = self.lower_expression(operand_ref, true);
         let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
         let mir_ty = self.lower_qual_type(operand_ty);

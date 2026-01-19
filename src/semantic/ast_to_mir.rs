@@ -227,7 +227,6 @@ impl<'a> AstToMirLowerer<'a> {
         self.apply_conversions(cond_operand, condition, cond_mir_ty)
     }
 
-
     fn lower_compound_statement(&mut self, cs: &nodes::CompoundStmtData) {
         for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
             let node_kind = self.ast.get_kind(stmt_ref);

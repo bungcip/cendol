@@ -174,11 +174,7 @@ impl<'a> AstToMirLowerer<'a> {
         )
     }
 
-    pub(crate) fn lower_initializer_to_const(
-        &mut self,
-        init_ref: NodeRef,
-        ty: QualType,
-    ) -> Option<ConstValueId> {
+    pub(crate) fn lower_initializer_to_const(&mut self, init_ref: NodeRef, ty: QualType) -> Option<ConstValueId> {
         let operand = self.lower_initializer(init_ref, ty, None);
         self.operand_to_const_id(operand)
     }
@@ -225,11 +221,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    pub(crate) fn create_string_array_const(
-        &mut self,
-        val: &NameId,
-        fixed_size: Option<usize>,
-    ) -> ConstValueId {
+    pub(crate) fn create_string_array_const(&mut self, val: &NameId, fixed_size: Option<usize>) -> ConstValueId {
         let string_content = val.as_str();
         let bytes = string_content.as_bytes();
         let size = fixed_size.unwrap_or(bytes.len() + 1);
@@ -277,12 +269,9 @@ impl<'a> AstToMirLowerer<'a> {
                 .lower_initializer_to_const(init_ref, ty)
                 .expect("Global compound literal initializer must be constant");
 
-            let global_id = self.mir_builder.create_global_with_init(
-                global_name,
-                mir_ty,
-                false,
-                Some(init_const_id),
-            );
+            let global_id = self
+                .mir_builder
+                .create_global_with_init(global_name, mir_ty, false, Some(init_const_id));
 
             Operand::Copy(Box::new(Place::Global(global_id)))
         } else {

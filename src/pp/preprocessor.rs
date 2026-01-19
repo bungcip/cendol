@@ -2216,8 +2216,6 @@ impl<'src> Preprocessor<'src> {
         let mut args = Vec::new();
         let mut current_arg = Vec::new();
         let mut paren_depth = 0;
-        let mut brace_depth = 0;
-        let mut bracket_depth = 0;
 
         while let Some(token) = self.lex_token() {
             match token.kind {
@@ -2236,23 +2234,7 @@ impl<'src> Preprocessor<'src> {
                     paren_depth -= 1;
                     current_arg.push(token);
                 }
-                PPTokenKind::LeftBrace => {
-                    brace_depth += 1;
-                    current_arg.push(token);
-                }
-                PPTokenKind::RightBrace => {
-                    brace_depth -= 1;
-                    current_arg.push(token);
-                }
-                PPTokenKind::LeftBracket => {
-                    bracket_depth += 1;
-                    current_arg.push(token);
-                }
-                PPTokenKind::RightBracket => {
-                    bracket_depth -= 1;
-                    current_arg.push(token);
-                }
-                PPTokenKind::Comma if paren_depth == 0 && brace_depth == 0 && bracket_depth == 0 => {
+                PPTokenKind::Comma if paren_depth == 0 => {
                     // Argument separator
                     args.push(current_arg);
                     current_arg = Vec::new();

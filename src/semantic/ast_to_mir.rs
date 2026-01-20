@@ -64,9 +64,7 @@ impl<'a> AstToMirLowerer<'a> {
 
     // create dummy operand
     pub(crate) fn create_dummy_operand(&mut self) -> Operand {
-        let ty = self.lower_type(self.registry.type_int);
-        let cv = self.create_constant(ty, ConstValueKind::Int(9999)); // to make it obvious its dummy
-        Operand::Constant(cv)
+        self.create_int_operand(9999)
     }
 
     pub(crate) fn lower_module_complete(&mut self) -> MirProgram {
@@ -727,7 +725,7 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     pub(crate) fn create_int_operand(&mut self, val: i64) -> Operand {
-        let ty_id = self.lower_type(self.registry.type_int);
+        let ty_id = self.get_int_type();
         Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val)))
     }
 
@@ -864,8 +862,12 @@ impl<'a> AstToMirLowerer<'a> {
         operand
     }
 
-    fn get_int_type(&mut self) -> TypeId {
-        self.mir_builder.add_type(MirType::I32)
+    pub(crate) fn get_int_type(&mut self) -> TypeId {
+        self.lower_type(self.registry.type_int)
+    }
+
+    pub(crate) fn get_char_type(&mut self) -> TypeId {
+        self.lower_type(self.registry.type_char)
     }
 
     pub(crate) fn create_temp_local(&mut self, type_id: TypeId) -> (LocalId, Place) {

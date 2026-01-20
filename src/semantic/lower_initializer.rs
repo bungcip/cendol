@@ -287,15 +287,15 @@ impl<'a> AstToMirLowerer<'a> {
         let bytes = string_content.as_bytes();
         let size = fixed_size.unwrap_or(bytes.len() + 1);
 
+        let char_ty = self.get_char_type();
+
         let char_constants = (0..size)
             .map(|i| {
                 let byte_val = if i < bytes.len() { bytes[i] } else { 0 };
-                let char_ty = self.lower_type(self.registry.type_char);
                 self.create_constant(char_ty, ConstValueKind::Int(byte_val as i64))
             })
             .collect();
 
-        let char_ty = self.lower_type(self.registry.type_char);
         let array_ty = self.mir_builder.add_type(MirType::Array {
             element: char_ty,
             size,

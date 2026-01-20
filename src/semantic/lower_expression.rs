@@ -154,8 +154,7 @@ impl<'a> AstToMirLowerer<'a> {
     pub(crate) fn lower_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
         let layout = self.registry.get_layout(ty);
         let val = if is_size { layout.size } else { layout.alignment };
-        let mir_ty = self.lower_type(self.registry.type_int);
-        Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Int(val as i64)))
+        self.create_int_operand(val as i64)
     }
 
     pub(crate) fn lower_generic_selection(
@@ -293,10 +292,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let func_type = self.get_function_type(func_id);
                 Operand::Constant(self.create_constant(func_type, ConstValueKind::FunctionAddress(func_id)))
             }
-            SymbolKind::EnumConstant { value } => {
-                let ty_id = self.lower_type(self.registry.type_int);
-                Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(*value)))
-            }
+            SymbolKind::EnumConstant { value } => self.create_int_operand(*value),
             _ => panic!("Unexpected symbol kind"),
         }
     }
@@ -411,14 +407,12 @@ impl<'a> AstToMirLowerer<'a> {
         let lhs_op = self.lower_condition(left_ref);
 
         // Pre-create constants to avoid double borrow
-        let zero_ty = self.lower_type(self.registry.type_int);
-        let zero_const = self.create_constant(zero_ty, ConstValueKind::Int(0));
-        let one_ty = self.lower_type(self.registry.type_int);
-        let one_const = self.create_constant(one_ty, ConstValueKind::Int(1));
+        let zero_op = self.create_int_operand(0);
+        let one_op = self.create_int_operand(1);
 
         let (short_circuit_val, true_target, false_target) = match op {
-            BinaryOp::LogicAnd => (zero_const, eval_rhs_block, short_circuit_block),
-            BinaryOp::LogicOr => (one_const, short_circuit_block, eval_rhs_block),
+            BinaryOp::LogicAnd => (zero_op.clone(), eval_rhs_block, short_circuit_block),
+            BinaryOp::LogicOr => (one_op.clone(), short_circuit_block, eval_rhs_block),
             _ => unreachable!(),
         };
 
@@ -428,10 +422,8 @@ impl<'a> AstToMirLowerer<'a> {
 
         // Short circuit case
         self.mir_builder.set_current_block(short_circuit_block);
-        self.mir_builder.add_statement(MirStmt::Assign(
-            res_place.clone(),
-            Rvalue::Use(Operand::Constant(short_circuit_val)),
-        ));
+        self.mir_builder
+            .add_statement(MirStmt::Assign(res_place.clone(), Rvalue::Use(short_circuit_val)));
         self.mir_builder.set_terminator(Terminator::Goto(merge_block));
 
         // 2. Evaluate RHS
@@ -445,17 +437,13 @@ impl<'a> AstToMirLowerer<'a> {
             .set_terminator(Terminator::If(rhs_val, rhs_true_block, rhs_false_block));
 
         self.mir_builder.set_current_block(rhs_true_block);
-        self.mir_builder.add_statement(MirStmt::Assign(
-            res_place.clone(),
-            Rvalue::Use(Operand::Constant(one_const)),
-        ));
+        self.mir_builder
+            .add_statement(MirStmt::Assign(res_place.clone(), Rvalue::Use(one_op)));
         self.mir_builder.set_terminator(Terminator::Goto(merge_block));
 
         self.mir_builder.set_current_block(rhs_false_block);
-        self.mir_builder.add_statement(MirStmt::Assign(
-            res_place.clone(),
-            Rvalue::Use(Operand::Constant(zero_const)),
-        ));
+        self.mir_builder
+            .add_statement(MirStmt::Assign(res_place.clone(), Rvalue::Use(zero_op)));
         self.mir_builder.set_terminator(Terminator::Goto(merge_block));
 
         // Merge
@@ -785,8 +773,7 @@ impl<'a> AstToMirLowerer<'a> {
                 if need_value {
                     old_value.unwrap()
                 } else {
-                    let ty_id = self.lower_type(self.registry.type_int);
-                    Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(0)))
+                    self.create_int_operand(0)
                 }
             } else {
                 // Pre-inc: we already returned inside the block above.
@@ -799,10 +786,8 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     pub(crate) fn create_inc_dec_rvalue(&mut self, operand: Operand, operand_ty: QualType, is_inc: bool) -> Rvalue {
-        let one_ty = self.lower_type(self.registry.type_int);
-        let one_const = Operand::Constant(self.create_constant(one_ty, ConstValueKind::Int(1)));
-        let minus_one_ty = self.lower_type(self.registry.type_int);
-        let minus_one_const = Operand::Constant(self.create_constant(minus_one_ty, ConstValueKind::Int(-1)));
+        let one_const = self.create_int_operand(1);
+        let minus_one_const = self.create_int_operand(-1);
 
         if operand_ty.is_pointer() {
             if is_inc {

@@ -202,12 +202,4 @@ impl Ast {
         self.semantic_info.as_ref()?.conversions.get(node_ref.index())
     }
 
-    /// Check if a node has only pointer decay conversion (optimization opportunity)
-    pub fn has_only_pointer_decay(&self, node_ref: NodeRef) -> bool {
-        if let Some(conversions) = self.get_conversions(node_ref) {
-            conversions.len() == 1 && matches!(conversions[0], ImplicitConversion::PointerDecay { .. })
-        } else {
-            false
-        }
-    }
 }

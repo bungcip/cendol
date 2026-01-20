@@ -27,9 +27,6 @@ mod tests {
     fn test_lang_flags_c11() {
         let options = LangOptions::c11();
         assert!(options.is_c11());
-        assert!(!options.is_gnu_mode());
-        assert!(!options.is_ms_extensions());
-        assert!(!options.is_pedantic());
         assert!(options.flags.contains(LangFlags::C11));
     }
 
@@ -37,9 +34,6 @@ mod tests {
     fn test_lang_flags_default() {
         let options = LangOptions::default();
         assert!(!options.is_c11());
-        assert!(options.is_gnu_mode());
-        assert!(!options.is_ms_extensions());
-        assert!(!options.is_pedantic());
     }
 
     #[test]
@@ -50,8 +44,6 @@ mod tests {
             c_standard: None,
         };
         assert!(options.is_c11());
-        assert!(options.is_pedantic());
-        assert!(!options.is_gnu_mode());
     }
 }
 
@@ -85,20 +77,6 @@ impl LangOptions {
         self.flags.contains(LangFlags::C11)
     }
 
-    /// Check if GNU mode is enabled
-    pub fn is_gnu_mode(&self) -> bool {
-        self.flags.contains(LangFlags::GNU_MODE)
-    }
-
-    /// Check if MS extensions are enabled
-    pub fn is_ms_extensions(&self) -> bool {
-        self.flags.contains(LangFlags::MS_EXTENSIONS)
-    }
-
-    /// Check if pedantic mode is enabled
-    pub fn is_pedantic(&self) -> bool {
-        self.flags.contains(LangFlags::PEDANTIC)
-    }
 }
 
 impl Default for LangOptions {

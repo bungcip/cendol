@@ -427,3 +427,25 @@ fn test_noreturn_function_returns() {
         "function 'foo' declared '_Noreturn' should not return",
     );
 }
+
+#[test]
+fn test_invalid_alignas_zero() {
+    run_fail_with_message(
+        r#"
+        _Alignas(0) int x;
+        "#,
+        CompilePhase::SemanticLowering,
+        "requested alignment is not a positive power of 2",
+    );
+}
+
+#[test]
+fn test_invalid_alignas_non_power_of_two() {
+    run_fail_with_message(
+        r#"
+        _Alignas(3) int x;
+        "#,
+        CompilePhase::SemanticLowering,
+        "requested alignment is not a positive power of 2",
+    );
+}

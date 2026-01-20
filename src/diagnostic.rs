@@ -313,7 +313,7 @@ pub enum SemanticError {
     #[error("controlling expression type does not match any generic association")]
     GenericNoMatch { span: SourceSpan },
 
-    #[error("requested alignment {value} is not a power of 2")]
+    #[error("requested alignment is not a positive power of 2")]
     InvalidAlignment { value: i64, span: SourceSpan },
 
     #[error("requested alignment is not a constant expression")]

@@ -982,15 +982,15 @@ fn lower_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                 info.base_type = merge_base_type(info.base_type, ty, ctx, span);
             }
             ParsedDeclSpecifier::AlignmentSpecifier(align) => {
-                let align_val = match align {
+                let align_val: Option<u32> = match align {
                     crate::ast::parsed::ParsedAlignmentSpecifier::Type(parsed_ty) => {
                         let qt = convert_to_qual_type(ctx, *parsed_ty, span)
                             .unwrap_or(QualType::unqualified(ctx.registry.type_error));
                         match ctx.registry.ensure_layout(qt.ty()) {
-                            Ok(layout) => layout.alignment as u32,
+                            Ok(layout) => Some(layout.alignment as u32),
                             Err(e) => {
                                 ctx.report_error(e);
-                                0
+                                None
                             }
                         }
                     }
@@ -1001,28 +1001,21 @@ fn lower_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                             symbol_table: ctx.symbol_table,
                         };
                         if let Some(val) = const_eval::eval_const_expr(&const_ctx, lowered_expr) {
-                            if val < 0 {
-                                ctx.report_error(SemanticError::InvalidAlignment { value: val, span });
-                                0
+                            if val > 0 && (val as u64).is_power_of_two() {
+                                Some(val as u32)
                             } else {
-                                val as u32
+                                ctx.report_error(SemanticError::InvalidAlignment { value: val, span });
+                                None
                             }
                         } else {
                             ctx.report_error(SemanticError::NonConstantAlignment { span });
-                            0
+                            None
                         }
                     }
                 };
 
-                if align_val != 0 {
-                    if !align_val.is_power_of_two() {
-                        ctx.report_error(SemanticError::InvalidAlignment {
-                            value: align_val as i64,
-                            span,
-                        });
-                    } else {
-                        info.alignment = Some(std::cmp::max(info.alignment.unwrap_or(0), align_val));
-                    }
+                if let Some(val) = align_val {
+                    info.alignment = Some(std::cmp::max(info.alignment.unwrap_or(0), val));
                 }
             }
             ParsedDeclSpecifier::FunctionSpecifier(fs) => match fs {

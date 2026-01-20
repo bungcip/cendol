@@ -212,44 +212,71 @@ impl PPLexer {
     /// Get the next character, handling line splicing transparently
     /// Line splicing: backslash followed by newline removes both characters
     pub(crate) fn next_char(&mut self) -> Option<u8> {
-        if self.position as usize >= self.buffer.len() {
-            return None;
-        }
-
-        let mut result = self.buffer[self.position as usize];
-        self.position += 1;
-
-        // Handle line splicing: backslash followed by newline or carriage return
         loop {
-            if result == b'\\' && (self.position as usize) < self.buffer.len() {
-                let next = self.buffer[self.position as usize];
-                if next == b'\n' || next == b'\r' {
-                    self.position += 1;
-                    if next == b'\r'
-                        && (self.position as usize) < self.buffer.len()
-                        && self.buffer[self.position as usize] == b'\n'
-                    {
-                        self.position += 1;
+            if self.position as usize >= self.buffer.len() {
+                return None;
+            }
+
+            let mut current_char = self.buffer[self.position as usize];
+            let mut advance_count = 1;
+
+            // Phase 1: Trigraphs
+            if current_char == b'?'
+                && (self.position as usize + 2) < self.buffer.len()
+                && self.buffer[self.position as usize + 1] == b'?'
+            {
+                let replacement = match self.buffer[self.position as usize + 2] {
+                    b'=' => Some(b'#'),
+                    b'/' => Some(b'\\'),
+                    b'\'' => Some(b'^'),
+                    b'(' => Some(b'['),
+                    b')' => Some(b']'),
+                    b'!' => Some(b'|'),
+                    b'<' => Some(b'{'),
+                    b'>' => Some(b'}'),
+                    b'-' => Some(b'~'),
+                    _ => None,
+                };
+
+                if let Some(r) = replacement {
+                    current_char = r;
+                    advance_count = 3;
+                }
+            }
+
+            // Phase 2: Line splicing
+            if current_char == b'\\' {
+                let next_idx = self.position as usize + advance_count;
+                if next_idx < self.buffer.len() {
+                    let next_char = self.buffer[next_idx];
+                    let mut splice_len = 0;
+
+                    if next_char == b'\n' {
+                        splice_len = 1;
+                    } else if next_char == b'\r' {
+                        splice_len = 1;
+                        if next_idx + 1 < self.buffer.len() && self.buffer[next_idx + 1] == b'\n' {
+                            splice_len = 2;
+                        }
                     }
-                    // Get the character after the line ending for splicing
-                    if (self.position as usize) < self.buffer.len() {
-                        result = self.buffer[self.position as usize];
-                        self.position += 1;
+
+                    if splice_len > 0 {
+                        self.position += (advance_count + splice_len) as u32;
+                        // Spliced, so loop to get the next character
                         continue;
-                    } else {
-                        return None;
                     }
                 }
             }
-            break;
-        }
 
-        // Update line starts for regular newlines
-        if result == b'\n' {
-            self.line_starts.push(self.position);
-        }
+            self.position += advance_count as u32;
 
-        Some(result)
+            // Update line starts for regular newlines
+            if current_char == b'\n' {
+                self.line_starts.push(self.position);
+            }
+
+            return Some(current_char);
+        }
     }
 
     /// Peek at the next character without consuming it, handling line splicing

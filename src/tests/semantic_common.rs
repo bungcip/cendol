@@ -71,10 +71,18 @@ pub fn setup_diagnostics_output(source: &str) -> String {
         diagnostics.len(),
         diagnostics
             .iter()
-            .map(|diag| format!(
-                "Level: {:?}\nMessage: {}\nSpan: {}",
-                diag.level, diag.message, diag.span
-            ))
+            .map(|diag| {
+                let loc = driver.source_manager.get_line_column(diag.span.start());
+                let loc_str = if let Some((line, col)) = loc {
+                    format!("{}:{}", line, col)
+                } else {
+                    format!("{:?}", diag.span)
+                };
+                format!(
+                    "Level: {:?}\nMessage: {}\nLocation: {}",
+                    diag.level, diag.message, loc_str
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n\n")
     )

@@ -1,0 +1,5 @@
+---
+source: src/tests/lexer.rs
+expression: tokens
+---
+- StringLiteral: "\n \t \r \b \f \u000b \u0007 \\ ' \" ? A A"

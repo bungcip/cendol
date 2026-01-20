@@ -1,0 +1,39 @@
+---
+source: src/tests/lexer.rs
+expression: tokens
+---
+- IntegerConstant: 42
+- IntegerConstant: 26
+- IntegerConstant: 63
+- IntegerConstant: 1
+- IntegerConstant: 42
+- IntegerConstant: 123
+- IntegerConstant: 456
+- IntegerConstant: 789
+- IntegerConstant: 1000
+- IntegerConstant: 2000
+- IntegerConstant: 26
+- IntegerConstant: 255
+- IntegerConstant: 16
+- IntegerConstant: 32
+- IntegerConstant: 64
+- IntegerConstant: 128
+- IntegerConstant: 63
+- IntegerConstant: 83
+- IntegerConstant: 511
+- IntegerConstant: 83
+- IntegerConstant: 511
+- IntegerConstant: 83
+- IntegerConstant: 1
+- IntegerConstant: 42
+- IntegerConstant: 123
+- IntegerConstant: 456
+- IntegerConstant: 789
+- IntegerConstant: 1000
+- IntegerConstant: 2000
+- FloatConstant: 1.5
+- FloatConstant: 0.000123
+- FloatConstant: 9
+- CharacterConstant: 97
+- CharacterConstant: 10
+- StringLiteral: "helloworld\n"

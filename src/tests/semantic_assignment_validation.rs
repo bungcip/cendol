@@ -1,9 +1,9 @@
-use super::semantic_common::{run_fail_with_diagnostic, run_fail_with_message, run_pass};
+use super::semantic_common::{setup_diagnostics_output, run_pass};
 use crate::driver::artifact::CompilePhase;
 
 #[test]
 fn test_assign_struct_to_int() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         struct A { int x; };
         int main() {
@@ -12,15 +12,19 @@ fn test_assign_struct_to_int() {
             i = a;
             return 0;
         }
-    "#,
-        CompilePhase::Mir,
-        "type mismatch",
-    );
+    "#);
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: type mismatch: expected int, found struct A
+    Location: 6:13
+    "###);
 }
 
 #[test]
 fn test_assign_int_to_struct() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         struct A { int x; };
         int main() {
@@ -28,15 +32,19 @@ fn test_assign_int_to_struct() {
             a = 10;
             return 0;
         }
-    "#,
-        CompilePhase::Mir,
-        "type mismatch",
-    );
+    "#);
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: type mismatch: expected struct A, found int
+    Location: 5:13
+    "###);
 }
 
 #[test]
 fn test_assign_incompatible_struct() {
-    run_fail_with_diagnostic(
+    let output = setup_diagnostics_output(
         r#"
         struct A { int x; };
         struct B { int x; };
@@ -47,17 +55,19 @@ fn test_assign_incompatible_struct() {
             a = b; 
             return 0;
         }
-    "#,
-        CompilePhase::Mir,
-        "type mismatch: expected struct A, found struct B",
-        8,
-        13,
-    );
+    "#);
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: type mismatch: expected struct A, found struct B
+    Location: 8:13
+    "###);
 }
 
 #[test]
 fn test_assign_incompatible_pointers() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             int a = 10;
@@ -66,30 +76,38 @@ fn test_assign_incompatible_pointers() {
             f = p;
             return 0;
         }
-    "#,
-        CompilePhase::Mir,
-        "type mismatch", // pointers to different types are incompatible
-    );
+    "#);
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: type mismatch: expected <pointer>, found <pointer>
+    Location: 6:13
+    "###);
 }
 
 #[test]
 fn test_assign_int_to_pointer() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             int *p;
             p = 5; // Invalid (except 0)
             return 0;
         }
-    "#,
-        CompilePhase::Mir,
-        "type mismatch",
-    );
+    "#);
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: type mismatch: expected <pointer>, found int
+    Location: 4:13
+    "###);
 }
 
 #[test]
 fn test_assign_pointer_to_int() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             int i;
@@ -97,15 +115,19 @@ fn test_assign_pointer_to_int() {
             i = p; // Invalid without cast
             return 0;
         }
-    "#,
-        CompilePhase::Mir,
-        "type mismatch",
-    );
+    "#);
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: type mismatch: expected int, found <pointer>
+    Location: 5:13
+    "###);
 }
 
 #[test]
 fn test_assign_struct_mismatch() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         struct A { int x; };
         struct B { int x; };
@@ -115,10 +137,14 @@ fn test_assign_struct_mismatch() {
             a = b;
             return 0;
         }
-    "#,
-        CompilePhase::Mir,
-        "type mismatch",
-    );
+    "#);
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: type mismatch: expected struct A, found struct B
+    Location: 7:13
+    "###);
 }
 
 #[test]
@@ -186,7 +212,7 @@ fn test_assign_valid_arithmetic() {
 
 #[test]
 fn test_void_init_variable() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         void foo() {}
 
@@ -194,15 +220,19 @@ fn test_void_init_variable() {
             int x = foo();
             return 0;
         }
-    "#,
-        CompilePhase::Mir,
-        "type mismatch", // or "initializing 'int' with an expression of incompatible type 'void'"
-    );
+    "#);
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: type mismatch: expected int, found void
+    Location: 5:21
+    "###);
 }
 
 #[test]
 fn test_void_assign_variable() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         void foo() {}
 
@@ -211,10 +241,14 @@ fn test_void_assign_variable() {
             x = foo();
             return 0;
         }
-    "#,
-        CompilePhase::Mir,
-        "type mismatch",
-    );
+    "#);
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: type mismatch: expected int, found void
+    Location: 6:13
+    "###);
 }
 
 #[test]

@@ -1,10 +1,8 @@
-use super::semantic_common::run_fail_with_message;
-use crate::driver::artifact::CompilePhase;
+use super::semantic_common::{setup_diagnostics_output};
 
-// A. Lvalue & Assignment Constraints
 #[test]
 fn test_assignment_to_const() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             int x = 1;
@@ -12,14 +10,19 @@ fn test_assignment_to_const() {
             y = x;
         }
         "#,
-        CompilePhase::Mir,
-        "read-only",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: cannot assign to read-only location
+    Location: 5:13
+    "###);
 }
 
 #[test]
 fn test_assignment_to_deref_const_ptr() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             int x = 1;
@@ -27,70 +30,96 @@ fn test_assignment_to_deref_const_ptr() {
             *p = 2;
         }
         "#,
-        CompilePhase::Mir,
-        "read-only",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: cannot assign to read-only location
+    Location: 5:13
+    "###);
 }
 
 #[test]
 fn test_increment_const() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             const int x = 1;
             x++;
         }
         "#,
-        CompilePhase::Mir,
-        "read-only",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: cannot assign to read-only location
+    Location: 4:13
+    "###);
 }
 
-// B. Function Semantics
 #[test]
 fn test_void_function_return_value() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         void foo() {
             return 1;
         }
         "#,
-        CompilePhase::Mir,
-        "void function",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: void function 'foo' should not return a value
+    Location: 3:20
+    "###);
 }
 
-// B3. Conflicting function declarations
 #[test]
 fn test_conflicting_function_decl() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int foo(int x);
         int foo(double x);
         int main() { return 0; }
         "#,
-        CompilePhase::Mir,
-        "conflicting types",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 2
+
+    Level: Error
+    Message: conflicting types for 'foo'
+    Location: 3:9
+
+    Level: Note
+    Message: previous declaration is here
+    Location: 2:9
+    "###);
 }
 
-// C. Pointer & Address Semantics
 #[test]
 fn test_addrof_rvalue() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             int *p = &(1 + 2);
         }
         "#,
-        CompilePhase::Mir,
-        "lvalue",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: Expression is not assignable (not an lvalue)
+    Location: 3:22
+    "###);
 }
 
 #[test]
 fn test_deref_incomplete_type() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         struct A;
         int main() {
@@ -98,15 +127,20 @@ fn test_deref_incomplete_type() {
             p->x = 1;
         }
         "#,
-        CompilePhase::Mir,
-        "incomplete type",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: incomplete type 'struct A'
+    Location: 5:13
+    "###);
 }
 
 #[test]
 fn test_pointer_comparison_incompatible() {
-    // Should warn but proceed
-    let source = r#"
+    let output = setup_diagnostics_output(
+        r#"
         int main() {
             int x;
             double y;
@@ -114,42 +148,43 @@ fn test_pointer_comparison_incompatible() {
             double *q = &y;
             if (p == q) {}
         }
-    "#;
-    use crate::tests::semantic_common::check_diagnostic;
-    use crate::tests::test_utils;
-
-    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::Mir);
-    assert!(result.is_ok(), "Compilation should succeed with warning");
-
-    assert!(result.is_ok(), "Compilation should succeed with warning");
-
-    // Check for improved message
-    check_diagnostic(
-        &driver,
-        "comparison of incompatible pointer types 'int*' and 'double*'",
-        7,
-        17,
+        "#,
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Warning
+    Message: comparison of incompatible pointer types 'int*' and 'double*'
+    Location: 7:17
+    "###);
 }
 
-// D. Struct / Union Rules
 #[test]
 fn test_duplicate_member() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         struct A {
             int x;
             float x;
         };
         "#,
-        CompilePhase::Mir,
-        "duplicate member",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 2
+
+    Level: Error
+    Message: duplicate member 'x'
+    Location: 4:19
+
+    Level: Note
+    Message: previous declaration is here
+    Location: 3:17
+    "###);
 }
 
 #[test]
 fn test_flexible_array_not_last() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         struct A {
             int x;
@@ -157,28 +192,37 @@ fn test_flexible_array_not_last() {
             int y;
         };
         "#,
-        CompilePhase::Mir,
-        "flexible array",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: flexible array member must be the last member of a structure
+    Location: 4:17
+    "###);
 }
 
 #[test]
 fn test_bitfield_invalid_type() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         struct A {
             float x : 3;
         };
         "#,
-        CompilePhase::Mir,
-        "bit-field",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: bit-field type 'float' is invalid
+    Location: 3:19
+    "###);
 }
 
-// E. Enum Semantics
 #[test]
 fn test_enum_redefinition_enumerator() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         enum E {
             A,
@@ -186,71 +230,98 @@ fn test_enum_redefinition_enumerator() {
             A
         };
         "#,
-        CompilePhase::Mir,
-        "redefinition",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 2
+
+    Level: Error
+    Message: redefinition of 'A'
+    Location: 5:13
+
+    Level: Note
+    Message: previous definition is here
+    Location: 3:13
+    "###);
 }
 
 #[test]
 fn test_enumerator_outside_enum() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         enum E { A, B };
         int main() {
             int x = C;
         }
         "#,
-        CompilePhase::Mir,
-        "Undeclared",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: Undeclared identifier 'C'
+    Location: 4:21
+    "###);
 }
 
-// F. Array & Type Completeness
 #[test]
 fn test_array_of_incomplete_type() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         struct A;
         int main() {
             struct A arr[10];
         }
         "#,
-        CompilePhase::Mir,
-        "incomplete type",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: incomplete type 'struct A'
+    Location: 4:22
+    "###);
 }
 
 #[test]
 fn test_negative_array_size() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             int a[-1];
         }
         "#,
-        CompilePhase::Mir,
-        "size of array has non-positive value",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: size of array has non-positive value
+    Location: 3:19
+    "###);
 }
 
-// G. Control Flow Constraints
 #[test]
 fn test_case_outside_switch() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             case 1:
                 break;
         }
         "#,
-        CompilePhase::Mir,
-        "not in switch",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: 'case' or 'default' label not in switch statement
+    Location: 2:20
+    "###);
 }
 
 #[test]
 fn test_duplicate_case() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             switch (1) {
@@ -259,171 +330,241 @@ fn test_duplicate_case() {
             }
         }
         "#,
-        CompilePhase::Mir,
-        "duplicate case",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: duplicate case value '1'
+    Location: 3:24
+    "###);
 }
 
-// H. Initializer Semantics
 #[test]
 fn test_designated_init_field_not_found() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         struct A { int x; };
         int main() {
             struct A a = {.y = 1};
         }
         "#,
-        CompilePhase::Mir,
-        "no member named",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: no member named 'y' in 'struct A'
+    Location: 4:26
+    "###);
 }
 
 #[test]
 fn test_scalar_init_brace_list() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             int x = {1, 2};
         }
         "#,
-        CompilePhase::Mir,
-        "excess elements",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: excess elements in scalar initializer
+    Location: 3:21
+    "###);
 }
 
-// I. Storage Duration & Linkage
 #[test]
 fn test_global_variable_redefinition() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int x = 5;
         int x = 10;
         "#,
-        CompilePhase::SemanticLowering,
-        "redefinition of",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 2
+
+    Level: Error
+    Message: redefinition of 'x'
+    Location: 3:9
+
+    Level: Note
+    Message: previous definition is here
+    Location: 2:9
+    "###);
 }
 
 #[test]
 fn test_extern_init_block_scope() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             extern int x = 10;
         }
         "#,
-        CompilePhase::Mir,
-        "invalid initializer",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: invalid initializer
+    Location: 2:20
+    "###);
 }
 
 #[test]
 fn test_static_redeclared_non_static() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         static int foo(void);
         int foo(void) {
             return 0;
         }
         "#,
-        CompilePhase::Mir,
-        "conflicting linkage",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 2
+
+    Level: Error
+    Message: conflicting linkage for 'foo'
+    Location: 3:9
+
+    Level: Note
+    Message: previous declaration is here
+    Location: 2:9
+    "###);
 }
 
-// J. Advanced / Compiler-grade features
 #[test]
 fn test_modifying_string_literal() {
-    // This assumes checking if we directly modify "string"[0] or similar.
-    // If it tracks `p` from `char *p = "hello"`, that is harder.
-    // The user example was: char *p = "hello"; p[0] = 'H';
-    // We will try that.
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             ("hello")[0] = 'H';
         }
         "#,
-        CompilePhase::Mir,
-        "read-only",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: cannot assign to read-only location
+    Location: 3:14
+    "###);
 }
 
 #[test]
 fn test_sizeof_function_type() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int foo(int);
         int main() {
             int x = sizeof(foo);
         }
         "#,
-        CompilePhase::Mir,
-        "Invalid application of 'sizeof' to a function type",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: Invalid application of 'sizeof' to a function type
+    Location: 4:21
+    "###);
 }
 
 #[test]
 fn test_invalid_restrict() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             int restrict x;
         }
         "#,
-        CompilePhase::Mir,
-        "restrict",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: restrict requires a pointer type
+    Location: 3:13
+    "###);
 }
 
 #[test]
 fn test_call_non_function() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         int main() {
             int x = 10;
             x();
         }
         "#,
-        CompilePhase::Mir,
-        "called object type 'int' is not a function or function pointer",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: called object type 'int' is not a function or function pointer
+    Location: 4:13
+    "###);
 }
 
 #[test]
 fn test_multiple_storage_class_specifiers() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         typedef static int my_int;
         "#,
-        CompilePhase::SemanticLowering,
-        "conflicting storage class specifiers",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 2
+
+    Level: Error
+    Message: conflicting storage class specifiers
+    Location: 2:9
+
+    Level: Error
+    Message: conflicting storage class specifiers
+    Location: 2:9
+    "###);
 }
 
 #[test]
 fn test_recursive_struct_definition() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         struct A {
             struct A x;
         };
         "#,
-        CompilePhase::SemanticLowering,
-        "recursive type definition",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: recursive type definition
+    Location: SourceSpan(1099511627776)
+    "###);
 }
 
 #[test]
 fn test_noreturn_function_returns() {
-    run_fail_with_message(
+    let output = setup_diagnostics_output(
         r#"
         _Noreturn void foo() {
             return;
         }
         "#,
-        CompilePhase::Mir,
-        "function 'foo' declared '_Noreturn' should not return",
     );
+    insta::assert_snapshot!(output, @r###"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: function 'foo' declared '_Noreturn' should not return
+    Location: 2:30
+    "###);
 }

@@ -482,14 +482,14 @@ impl SourceManager {
             }
         }
 
-        let line = (left - 1) as u32;
+        let line = (left.wrapping_sub(1)) as u32;
         let column = if line < line_starts.len() as u32 {
             offset - line_starts[line as usize]
         } else {
             0
         };
 
-        Some((line + 1, column + 1)) // 1-based indexing
+        Some((line.wrapping_add(1), column + 1)) // 1-based indexing
     }
 
     /// Get the presumed location (logical line and file) for a source location

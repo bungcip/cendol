@@ -2092,21 +2092,50 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn consume_rest_of_line_as_string(&mut self) -> String {
-        let mut message_parts = Vec::new();
+        // Optimization: Avoid multiple small allocations by calculating final string size first.
+        // This follows the two-pass approach:
+        // 1. Collect tokens for the line.
+        // 2. Calculate the total length required for the string.
+        // 3. Allocate a single string with the required capacity.
+        // 4. Populate the string in a second pass over the tokens.
+        let mut tokens = Vec::new();
         while let Some(token) = self.lex_token() {
             if token.kind == PPTokenKind::Eod {
                 break;
             }
-            // Get token text
+            tokens.push(token);
+        }
+
+        if tokens.is_empty() {
+            return String::new();
+        }
+
+        // Calculate total length
+        let mut total_len = 0;
+        for (i, token) in tokens.iter().enumerate() {
+            total_len += token.length as usize;
+            if i > 0 {
+                total_len += 1; // For the space separator
+            }
+        }
+
+        // Allocate and build the string
+        let mut result = String::with_capacity(total_len);
+        for (i, token) in tokens.iter().enumerate() {
+            if i > 0 {
+                result.push(' ');
+            }
             let buffer = self.source_manager.get_buffer(token.location.source_id());
             let start = token.location.offset() as usize;
             let end = start + token.length as usize;
             if end <= buffer.len() {
+                // This is safe because the lexer guarantees tokens are valid UTF-8.
                 let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
-                message_parts.push(text.to_string());
+                result.push_str(text);
             }
         }
-        message_parts.join(" ")
+
+        result
     }
 
     /// Expand a macro if it exists

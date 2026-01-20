@@ -39,6 +39,7 @@ pub(crate) struct AstToMirLowerer<'a> {
     pub(crate) type_conversion_in_progress: HashSet<TypeRef>,
     pub(crate) break_target: Option<MirBlockId>,
     pub(crate) continue_target: Option<MirBlockId>,
+    pub(crate) switch_case_map: HashMap<NodeRef, MirBlockId>,
 }
 
 impl<'a> AstToMirLowerer<'a> {
@@ -59,6 +60,7 @@ impl<'a> AstToMirLowerer<'a> {
             type_conversion_in_progress: HashSet::new(),
             break_target: None,
             continue_target: None,
+            switch_case_map: HashMap::new(),
         }
     }
 
@@ -214,6 +216,9 @@ impl<'a> AstToMirLowerer<'a> {
             }
             NodeKind::Goto(label_name, _) => self.lower_goto_statement(&label_name),
             NodeKind::Label(label_name, statement, _) => self.lower_label_statement(&label_name, statement),
+            NodeKind::Switch(cond, body) => self.lower_switch_statement(cond, body),
+            NodeKind::Case(_, stmt) => self.lower_case_default_statement(node_ref, stmt),
+            NodeKind::Default(stmt) => self.lower_case_default_statement(node_ref, stmt),
             _ => {}
         }
     }
@@ -507,6 +512,155 @@ impl<'a> AstToMirLowerer<'a> {
         );
     }
 
+    fn lower_switch_statement(&mut self, cond: NodeRef, body: NodeRef) {
+        let cond_op = self.lower_expression(cond, true);
+
+        // Integer promotions on controlling expression are handled by lower_expression if sema did it?
+        // Semantic analysis should have inserted implicit conversions.
+        // But we might need to cast case values to this type.
+        let cond_ty_id = self.get_operand_type(&cond_op);
+
+        let merge_block = self.mir_builder.create_block();
+
+        let saved_break = self.break_target;
+        self.break_target = Some(merge_block);
+
+        // Collect cases
+        let cases = self.collect_switch_cases(body);
+
+        // Create blocks for cases
+        let mut case_blocks = Vec::new();
+        let mut default_block = None;
+
+        for (node, val_opt) in cases {
+            let block = self.mir_builder.create_block();
+            self.switch_case_map.insert(node, block);
+
+            if let Some(val) = val_opt {
+                case_blocks.push((val, block));
+            } else {
+                default_block = Some(block);
+            }
+        }
+
+        // Generate dispatch
+        let fallback_block = default_block.unwrap_or(merge_block);
+
+        for (val_id, target_block) in case_blocks {
+            let next_test_block = self.mir_builder.create_block();
+            let val_const = self.mir_builder.get_constants().get(&val_id).unwrap().clone();
+
+            // Re-create constant with the same type as condition to ensure safe comparison
+            // This assumes the values are compatible (integral).
+            // Sema should ensure they are compatible.
+            // We just cast the constant value to the condition type for the comparison operand.
+            // Note: `val_const` is already lowered to some type.
+
+            let val_op = Operand::Constant(val_id);
+            let cast_val_op = if val_const.ty != cond_ty_id {
+                Operand::Cast(cond_ty_id, Box::new(val_op))
+            } else {
+                val_op
+            };
+
+            // Use Eq comparison
+            // If condition is float (illegal in C switch), we panic?
+            // Switch only works on integers.
+            let cmp_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Eq, cond_op.clone(), cast_val_op);
+            let bool_type_id = self.lower_type(self.registry.type_bool);
+            let (_cmp_local, cmp_place) = self.create_temp_local_with_assignment(cmp_rvalue, bool_type_id);
+            let cmp_op = Operand::Copy(Box::new(cmp_place));
+
+            self.mir_builder
+                .set_terminator(Terminator::If(cmp_op, target_block, next_test_block));
+
+            self.mir_builder.set_current_block(next_test_block);
+            self.current_block = Some(next_test_block);
+        }
+
+        // Final jump to default or merge
+        self.mir_builder.set_terminator(Terminator::Goto(fallback_block));
+
+        // Lower body
+        // Start a dummy unreachable block for the body entry (to catch unreachable statements)
+        let body_entry_dummy = self.mir_builder.create_block();
+        // Do not jump to it. It is unreachable.
+
+        self.mir_builder.set_current_block(body_entry_dummy);
+        self.current_block = Some(body_entry_dummy);
+
+        self.lower_node_ref(body);
+
+        // If body falls through, go to merge
+        if self.mir_builder.current_block_has_terminator() == false {
+            // Check if terminator is Unreachable (default) - if so, we can replace it or just leave it?
+            // `current_block_has_terminator` returns false if it is Unreachable.
+            // But if we are in body_entry_dummy and it's empty, we shouldn't jump to merge.
+            // Actually, if execution falls through the body, it should hit merge.
+            // But valid C code falling through end of switch goes to next stmt (merge).
+            self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+        }
+
+        self.break_target = saved_break;
+        self.mir_builder.set_current_block(merge_block);
+        self.current_block = Some(merge_block);
+    }
+
+    fn lower_case_default_statement(&mut self, node: NodeRef, stmt: NodeRef) {
+        let target_block = *self.switch_case_map.get(&node).expect("Case/Default not mapped");
+
+        // Fallthrough from previous block
+        if !self.mir_builder.current_block_has_terminator() {
+            self.mir_builder.set_terminator(Terminator::Goto(target_block));
+        }
+
+        self.mir_builder.set_current_block(target_block);
+        self.current_block = Some(target_block);
+
+        self.lower_node_ref(stmt);
+    }
+
+    fn collect_switch_cases(&mut self, node: NodeRef) -> Vec<(NodeRef, Option<ConstValueId>)> {
+        let mut cases = Vec::new();
+        self.collect_switch_cases_recursive(node, &mut cases);
+        cases
+    }
+
+    fn collect_switch_cases_recursive(&mut self, node: NodeRef, cases: &mut Vec<(NodeRef, Option<ConstValueId>)>) {
+        let kind = self.ast.get_kind(node).clone();
+        match kind {
+            NodeKind::Case(expr, stmt) => {
+                let op = self.lower_expression(expr, true);
+                let val = self.operand_to_const_id_strict(op, "Case label must be constant");
+                cases.push((node, Some(val)));
+                self.collect_switch_cases_recursive(stmt, cases);
+            }
+            NodeKind::Default(stmt) => {
+                cases.push((node, None));
+                self.collect_switch_cases_recursive(stmt, cases);
+            }
+            NodeKind::Switch(..) => {
+                // Do not recurse into nested switch
+            }
+            NodeKind::CompoundStatement(cs) => {
+                for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
+                    self.collect_switch_cases_recursive(stmt_ref, cases);
+                }
+            }
+            NodeKind::If(if_stmt) => {
+                self.collect_switch_cases_recursive(if_stmt.then_branch, cases);
+                if let Some(else_branch) = if_stmt.else_branch {
+                    self.collect_switch_cases_recursive(else_branch, cases);
+                }
+            }
+            NodeKind::While(w) => self.collect_switch_cases_recursive(w.body, cases),
+            NodeKind::DoWhile(b, _) => self.collect_switch_cases_recursive(b, cases),
+            NodeKind::For(f) => self.collect_switch_cases_recursive(f.body, cases),
+            NodeKind::Label(_, stmt, _) => self.collect_switch_cases_recursive(stmt, cases),
+            _ => {}
+        }
+    }
+
     pub(crate) fn emit_assignment(&mut self, place: Place, operand: Operand) {
         if self.mir_builder.current_block_has_terminator() {
             return;
@@ -644,10 +798,10 @@ impl<'a> AstToMirLowerer<'a> {
             _ => {
                 // For VLA or incomplete array, layout is not computed in registry.
                 // We use dummy layout (size 0) but try to preserve alignment/stride from element type.
-                let (align, stride) = if element_type.is_inline_array() || element_type.is_inline_pointer() {
-                    let layout = self.registry.get_layout(element_type);
-                    (layout.alignment, layout.size)
-                } else if self.registry.types[element_type.index()].layout.is_some() {
+                let (align, stride) = if element_type.is_inline_array()
+                    || element_type.is_inline_pointer()
+                    || self.registry.types[element_type.index()].layout.is_some()
+                {
                     let layout = self.registry.get_layout(element_type);
                     (layout.alignment, layout.size)
                 } else {

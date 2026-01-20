@@ -292,9 +292,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let func_type = self.get_function_type(func_id);
                 Operand::Constant(self.create_constant(func_type, ConstValueKind::FunctionAddress(func_id)))
             }
-            SymbolKind::EnumConstant { value } => {
-                self.create_int_operand(*value)
-            }
+            SymbolKind::EnumConstant { value } => self.create_int_operand(*value),
             _ => panic!("Unexpected symbol kind"),
         }
     }
@@ -424,10 +422,8 @@ impl<'a> AstToMirLowerer<'a> {
 
         // Short circuit case
         self.mir_builder.set_current_block(short_circuit_block);
-        self.mir_builder.add_statement(MirStmt::Assign(
-            res_place.clone(),
-            Rvalue::Use(short_circuit_val),
-        ));
+        self.mir_builder
+            .add_statement(MirStmt::Assign(res_place.clone(), Rvalue::Use(short_circuit_val)));
         self.mir_builder.set_terminator(Terminator::Goto(merge_block));
 
         // 2. Evaluate RHS
@@ -441,17 +437,13 @@ impl<'a> AstToMirLowerer<'a> {
             .set_terminator(Terminator::If(rhs_val, rhs_true_block, rhs_false_block));
 
         self.mir_builder.set_current_block(rhs_true_block);
-        self.mir_builder.add_statement(MirStmt::Assign(
-            res_place.clone(),
-            Rvalue::Use(one_op),
-        ));
+        self.mir_builder
+            .add_statement(MirStmt::Assign(res_place.clone(), Rvalue::Use(one_op)));
         self.mir_builder.set_terminator(Terminator::Goto(merge_block));
 
         self.mir_builder.set_current_block(rhs_false_block);
-        self.mir_builder.add_statement(MirStmt::Assign(
-            res_place.clone(),
-            Rvalue::Use(zero_op),
-        ));
+        self.mir_builder
+            .add_statement(MirStmt::Assign(res_place.clone(), Rvalue::Use(zero_op)));
         self.mir_builder.set_terminator(Terminator::Goto(merge_block));
 
         // Merge

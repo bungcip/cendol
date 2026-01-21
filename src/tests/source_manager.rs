@@ -412,6 +412,11 @@ fn test_source_manager_edge_cases() {
     assert_eq!(sm.get_line_column(loc), None);
     assert_eq!(sm.get_presumed_location(loc), None);
 
+    // Test helper methods with invalid ID (should not panic)
+    sm.set_line_starts(invalid_id, vec![0, 10]);
+    sm.calculate_line_starts_for_test(invalid_id);
+    assert!(sm.get_line_map_mut(invalid_id).is_none());
+
     // 2. Empty line_starts (file added but not analyzed/calculated)
     let file_id = sm.add_buffer(b"content".to_vec(), "test.c", None);
     // Note: add_buffer initializes line_starts as empty

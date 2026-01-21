@@ -1196,12 +1196,49 @@ impl<'src> Preprocessor<'src> {
     fn destringize(&self, full_str: &str) -> String {
         let inner_content = &full_str[1..full_str.len() - 1];
         let mut content = String::with_capacity(inner_content.len());
-        let mut chars = inner_content.chars();
+        let mut chars = inner_content.chars().peekable();
         while let Some(c) = chars.next() {
             if c == '\\' {
                 match chars.next() {
+                    Some('\'') => content.push('\''),
                     Some('"') => content.push('"'),
+                    Some('?') => content.push('?'),
                     Some('\\') => content.push('\\'),
+                    Some('a') => content.push('\x07'),
+                    Some('b') => content.push('\x08'),
+                    Some('f') => content.push('\x0c'),
+                    Some('n') => content.push('\n'),
+                    Some('r') => content.push('\r'),
+                    Some('t') => content.push('\t'),
+                    Some('v') => content.push('\x0b'),
+                    Some(first_digit @ '0'..='7') => {
+                        let mut octal_str = String::new();
+                        octal_str.push(first_digit);
+                        for _ in 0..2 {
+                            if let Some(digit @ '0'..='7') = chars.peek() {
+                                octal_str.push(*digit);
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                        let val = u8::from_str_radix(&octal_str, 8).unwrap_or(0);
+                        content.push(val as char);
+                    }
+                    Some('x') => {
+                        let mut hex_str = String::new();
+                        while let Some(digit) = chars.peek() {
+                            if digit.is_ascii_hexdigit() {
+                                hex_str.push(chars.next().unwrap());
+                            } else {
+                                break;
+                            }
+                        }
+                        if !hex_str.is_empty() {
+                            let val = u8::from_str_radix(&hex_str, 16).unwrap_or(0);
+                            content.push(val as char);
+                        }
+                    }
                     Some(other) => {
                         content.push('\\');
                         content.push(other);
@@ -3054,5 +3091,48 @@ impl<'src> Preprocessor<'src> {
         }
 
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diagnostic::DiagnosticEngine;
+    use crate::source_manager::SourceManager;
+
+    fn create_dummy_preprocessor<'a>(sm: &'a mut SourceManager, diag: &'a mut DiagnosticEngine) -> Preprocessor<'a> {
+        let config = PPConfig::default();
+        Preprocessor::new(sm, diag, &config)
+    }
+
+    #[test]
+    fn test_destringize() {
+        let mut sm = SourceManager::new();
+        let mut diag = DiagnosticEngine::new();
+        let pp = create_dummy_preprocessor(&mut sm, &mut diag);
+
+        // Test case 1: No escape sequences
+        assert_eq!(pp.destringize("\"hello\""), "hello");
+
+        // Test case 2: Simple escape sequences
+        assert_eq!(pp.destringize("\"a\\nb\\tc\\r\\\\d\\\'e\\\"f\""), "a\nb\tc\r\\d\'e\"f");
+
+        // Test case 3: Octal escapes
+        assert_eq!(pp.destringize("\"\\123\""), "S");
+        assert_eq!(pp.destringize("\"\\0\""), "\0");
+        assert_eq!(pp.destringize("\"\\7\""), "\x07");
+        assert_eq!(pp.destringize("\"a\\123b\""), "aSb");
+
+        // Test case 4: Hexadecimal escapes
+        assert_eq!(pp.destringize("\"\\x41\""), "A");
+        assert_eq!(pp.destringize("\"\\x1b\""), "\x1b");
+        assert_eq!(pp.destringize("\"a\\x41b\""), "aAb");
+        assert_eq!(pp.destringize("\"\\x0a\""), "\n");
+
+        // Test case 5: Mixed and complex cases
+        assert_eq!(pp.destringize("\"a\\\\\\\"b\\tc\\123d\\x41e\""), "a\\\"b\tcSdAe");
+
+        // Test case 6: Empty string
+        assert_eq!(pp.destringize("\"\""), "");
     }
 }

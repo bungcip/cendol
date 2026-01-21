@@ -1,0 +1,6 @@
+---
+source: src/tests/lexer.rs
+expression: string_tokens
+---
+- - StringLiteral: hello
+- - StringLiteral: "world\n"

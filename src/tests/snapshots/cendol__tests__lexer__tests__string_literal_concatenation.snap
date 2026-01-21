@@ -1,0 +1,9 @@
+---
+source: src/tests/lexer.rs
+expression: tokens
+---
+- - StringLiteral: helloworld
+- - StringLiteral: helloworld
+- - StringLiteral: abc
+- - StringLiteral: "hello\nworld"
+- - StringLiteral: start middle end

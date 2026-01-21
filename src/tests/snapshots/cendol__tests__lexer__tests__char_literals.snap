@@ -1,0 +1,6 @@
+---
+source: src/tests/lexer.rs
+expression: char_tokens
+---
+- - CharacterConstant: 97
+- - CharacterConstant: 10

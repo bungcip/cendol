@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_assignment_validation.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: type mismatch: expected int, found struct A
+Span: SourceSpan(source_id=SourceId(2), start=106, end=111)

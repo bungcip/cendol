@@ -1,0 +1,10 @@
+---
+source: src/tests/lexer.rs
+expression: ident_tokens
+---
+- - Identifier: variable
+- - Identifier: my_var
+- - Identifier: _private
+- - Identifier: var123
+- - Identifier: a
+- - Identifier: _

@@ -1,0 +1,7 @@
+---
+source: src/tests/lexer.rs
+expression: non_adjacent
+---
+- StringLiteral: hello
+- Semicolon
+- StringLiteral: world

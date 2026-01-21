@@ -440,6 +440,17 @@ fn test_invalid_alignas_zero() {
 }
 
 #[test]
+fn test_variable_of_void_type() {
+    run_fail_with_message(
+        r#"
+        void x;
+        "#,
+        CompilePhase::Mir,
+        "variable has incomplete type 'void'",
+    );
+}
+
+#[test]
 fn test_invalid_alignas_non_power_of_two() {
     run_fail_with_message(
         r#"

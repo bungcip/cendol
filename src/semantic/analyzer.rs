@@ -1158,6 +1158,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(data.ty)
             }
             NodeKind::VarDecl(data) => {
+                if data.ty.ty() == self.registry.type_void {
+                    let span = self.ast.get_span(_node_ref);
+                    self.report_error(SemanticError::VariableOfVoidType { span });
+                }
                 self.visit_type_expressions(data.ty);
                 let _ = self.registry.ensure_layout(data.ty.ty());
                 if data.init.is_some()

@@ -175,22 +175,17 @@ impl TypeRegistry {
 
     fn alloc_builtin(&mut self, kind: TypeKind) -> TypeRef {
         let ty = Type::new(kind);
-        self.alloc_internal(ty)
+        self.alloc(ty)
     }
 
-    /// Internal allocation without checks
-    fn alloc_internal(&mut self, ty: Type) -> TypeRef {
+    /// Allocate a new canonical type and return its TypeRef.
+    fn alloc(&mut self, ty: Type) -> TypeRef {
         let idx = self.types.len() as u32;
         self.types.push(ty);
         let kind_ref = &self.types[idx as usize].kind;
         let class = kind_ref.to_class();
 
         TypeRef::new(idx, class, 0, 0).expect("TypeRef alloc failed")
-    }
-
-    /// Allocate a new canonical type and return its TypeRef.
-    fn alloc(&mut self, ty: Type) -> TypeRef {
-        self.alloc_internal(ty)
     }
 
     /// Resolve a TypeRef to a Type.

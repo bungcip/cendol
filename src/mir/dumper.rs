@@ -223,16 +223,8 @@ impl<'a> MirDumper<'a> {
 
     /// Helper function to get type index from TypeId
     fn get_type_index_from_type_id(&self, type_id: TypeId) -> usize {
-        // Find the index of this type in the module.types vector
-        for (index, _mir_type) in self.sema_output.module.types.iter().enumerate() {
-            // Create a temporary TypeId for comparison
-            let temp_type_id = TypeId::new((index + 1) as u32).unwrap();
-            if temp_type_id == type_id {
-                return index;
-            }
-        }
         // Fallback: assume sequential mapping
-        type_id.get() as usize - 1
+        (type_id.get() - 1) as usize
     }
 
     /// Dump a global variable

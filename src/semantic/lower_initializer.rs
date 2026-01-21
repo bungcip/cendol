@@ -1,5 +1,5 @@
 use crate::ast;
-use crate::ast::{Designator, NameId, NodeKind, NodeRef};
+use crate::ast::{Designator, NameId, NodeKind, NodeRef, literal};
 use crate::mir::{ConstValueId, ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue};
 use crate::semantic::ast_to_mir::AstToMirLowerer;
 use crate::semantic::{ArraySizeType, BuiltinType, QualType, StructMember, TypeKind};
@@ -244,7 +244,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
                 self.lower_array_initializer(&list, element_ty, array_size, target_ty, destination)
             }
-            (NodeKind::LiteralString(val), TypeKind::Array { element_type, size })
+            (NodeKind::Literal(literal::Literal::String(val)), TypeKind::Array { element_type, size })
                 if matches!(
                     self.registry.get(*element_type).kind,
                     TypeKind::Builtin(BuiltinType::Char)

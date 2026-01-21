@@ -31,7 +31,7 @@ pub(crate) struct AstToMirLowerer<'a> {
     pub(crate) current_function: Option<MirFunctionId>,
     pub(crate) current_block: Option<MirBlockId>,
     pub(crate) current_scope_id: ScopeId,
-    pub(crate) registry: &'a TypeRegistry,
+    pub(crate) registry: &'a mut TypeRegistry,
     pub(crate) local_map: HashMap<SymbolRef, LocalId>,
     pub(crate) global_map: HashMap<SymbolRef, GlobalId>,
     pub(crate) label_map: HashMap<NameId, MirBlockId>,
@@ -43,7 +43,7 @@ pub(crate) struct AstToMirLowerer<'a> {
 }
 
 impl<'a> AstToMirLowerer<'a> {
-    pub(crate) fn new(ast: &'a Ast, symbol_table: &'a SymbolTable, registry: &'a TypeRegistry) -> Self {
+    pub(crate) fn new(ast: &'a Ast, symbol_table: &'a SymbolTable, registry: &'a mut TypeRegistry) -> Self {
         let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap(), 8);
         Self {
             ast,
@@ -162,13 +162,13 @@ impl<'a> AstToMirLowerer<'a> {
                     continue;
                 }
 
-                let func_type = self.registry.get(symbol_type_info.ty()).clone();
+                let func_type_kind = self.registry.get(symbol_type_info.ty()).kind.clone();
                 if let TypeKind::Function {
                     return_type,
                     parameters,
                     is_variadic,
                     ..
-                } = &func_type.kind
+                } = &func_type_kind
                 {
                     let return_mir_type = self.lower_type(*return_type);
                     let param_mir_types = parameters.iter().map(|p| self.lower_qual_type(p.param_type)).collect();
@@ -680,10 +680,9 @@ impl<'a> AstToMirLowerer<'a> {
                 .expect("Placeholder must exist for recursive type");
         }
 
-        let ast_type = self.registry.get(type_ref).clone();
-        let is_record = matches!(ast_type.kind, TypeKind::Record { .. });
+        let ast_type_kind = self.registry.get(type_ref).kind.clone();
 
-        if is_record {
+        if let TypeKind::Record { .. } = &ast_type_kind {
             // Begin conversion: reserve a placeholder TypeId so recursive references can point to it.
             self.type_conversion_in_progress.insert(type_ref);
             let placeholder_name = NameId::new(format!("__recursive_placeholder_{}", type_ref.get()));
@@ -701,14 +700,16 @@ impl<'a> AstToMirLowerer<'a> {
             let placeholder_id = self.mir_builder.add_type(placeholder_type);
             self.type_cache.insert(type_ref, placeholder_id);
 
-            let mir_type = match &ast_type.kind {
-                TypeKind::Record {
-                    tag,
-                    members,
-                    is_union,
-                    is_complete,
-                } => self.lower_record_type(type_ref, tag, members, *is_union, *is_complete),
-                _ => unreachable!(),
+            let mir_type = if let TypeKind::Record {
+                tag,
+                members,
+                is_union,
+                is_complete,
+            } = &ast_type_kind
+            {
+                self.lower_record_type(type_ref, tag, members, *is_union, *is_complete)
+            } else {
+                unreachable!()
             };
 
             // Remove from in-progress set
@@ -718,7 +719,7 @@ impl<'a> AstToMirLowerer<'a> {
             self.mir_builder.update_type(placeholder_id, mir_type);
             placeholder_id
         } else {
-            let mir_type = match &ast_type.kind {
+            let mir_type = match &ast_type_kind {
                 TypeKind::Builtin(b) => self.lower_builtin_type(b),
                 TypeKind::Pointer { pointee } => self.lower_pointer_type(*pointee),
                 TypeKind::Array { element_type, size } => self.lower_array_type(type_ref, *element_type, size),

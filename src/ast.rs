@@ -32,6 +32,7 @@ pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 // Submodules
 // Submodules
 pub mod dumper;
+pub mod literal;
 pub mod nodes;
 pub mod parsed;
 pub mod parsed_types;

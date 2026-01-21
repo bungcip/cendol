@@ -15,13 +15,12 @@ use crate::{
 /// The core enum defining all possible AST node types for C11.
 /// Variants use NodeIndex for child references, enabling flattened storage.
 /// Maintained original structure for compatibility, but moved to this module.
+use crate::ast::literal::Literal;
+
 #[derive(Debug, Clone, Serialize)]
 pub enum NodeKind {
     // --- Literals (Inline storage for common types) ---
-    LiteralInt(i64), // Parsed integer literal value
-    LiteralFloat(f64),
-    LiteralString(NameId),
-    LiteralChar(u8),
+    Literal(Literal),
 
     // --- Expressions ---
     // Ident now includes a resolved SymbolRef after semantic analysis
@@ -117,10 +116,7 @@ pub enum NodeKind {
 impl NodeKind {
     pub fn visit_children<F: FnMut(NodeRef)>(&self, mut f: F) {
         match self {
-            NodeKind::LiteralInt(_)
-            | NodeKind::LiteralFloat(_)
-            | NodeKind::LiteralString(_)
-            | NodeKind::LiteralChar(_)
+            NodeKind::Literal(_)
             | NodeKind::Ident(..)
             | NodeKind::SizeOfType(_)
             | NodeKind::AlignOf(_)

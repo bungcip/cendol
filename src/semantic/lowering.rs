@@ -1895,43 +1895,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.ast.kinds[node.index()] = NodeKind::UnaryOp(*op, o);
                 smallvec![node]
             }
-            ParsedNodeKind::LiteralInt(val) => {
+            ParsedNodeKind::Literal(literal) => {
                 let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    self.ast.kinds[target.index()] = NodeKind::LiteralInt(*val);
+                    self.ast.kinds[target.index()] = NodeKind::Literal(literal.clone());
                     self.ast.spans[target.index()] = span;
                     *target
                 } else {
-                    self.ast.push_node(NodeKind::LiteralInt(*val), span)
-                };
-                smallvec![node]
-            }
-            ParsedNodeKind::LiteralFloat(val) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    self.ast.kinds[target.index()] = NodeKind::LiteralFloat(*val);
-                    self.ast.spans[target.index()] = span;
-                    *target
-                } else {
-                    self.ast.push_node(NodeKind::LiteralFloat(*val), span)
-                };
-                smallvec![node]
-            }
-            ParsedNodeKind::LiteralChar(val) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    self.ast.kinds[target.index()] = NodeKind::LiteralChar(*val);
-                    self.ast.spans[target.index()] = span;
-                    *target
-                } else {
-                    self.ast.push_node(NodeKind::LiteralChar(*val), span)
-                };
-                smallvec![node]
-            }
-            ParsedNodeKind::LiteralString(val) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    self.ast.kinds[target.index()] = NodeKind::LiteralString(*val);
-                    self.ast.spans[target.index()] = span;
-                    *target
-                } else {
-                    self.ast.push_node(NodeKind::LiteralString(*val), span)
+                    self.ast.push_node(NodeKind::Literal(literal.clone()), span)
                 };
                 smallvec![node]
             }
@@ -2358,7 +2328,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     Some(0)
                 }
             }
-            NodeKind::LiteralString(name_id) => {
+            NodeKind::Literal(literal::Literal::String(name_id)) => {
                 let s = name_id.to_string();
                 Some(s.len() + 1)
             }
@@ -2373,7 +2343,7 @@ fn extract_bit_field_width<'a>(
 ) -> (Option<NonZeroU16>, &'a ParsedDeclarator) {
     if let ParsedDeclarator::BitField(base, expr_ref) = declarator {
         let node = ctx.parsed_ast.get_node(*expr_ref);
-        let width = if let ParsedNodeKind::LiteralInt(val) = node.kind {
+        let width = if let ParsedNodeKind::Literal(literal::Literal::Int { val, .. }) = node.kind {
             if val > 0 && val <= 64 {
                 // Bitfield width can be up to type width (e.g. 64)
                 NonZeroU16::new(val as u16)

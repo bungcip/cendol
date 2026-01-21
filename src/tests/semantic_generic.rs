@@ -91,3 +91,15 @@ fn test_generic_selection_strips_qualifiers_and_handles_default_correctly() {
         CompilePhase::Mir,
     );
 }
+
+#[test]
+fn test_generic_string_literal_decay() {
+    run_pass(
+        r#"
+        int main() {
+            return _Generic("hello", const char *: 0, default: 1);
+        }
+    "#,
+        CompilePhase::Mir,
+    );
+}

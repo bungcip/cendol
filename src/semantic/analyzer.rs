@@ -206,7 +206,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::UnaryOp(op, _) => matches!(*op, UnaryOp::Deref),
             NodeKind::IndexAccess(..) => true,
             NodeKind::MemberAccess(obj_ref, _, is_arrow) => *is_arrow || self.is_lvalue(*obj_ref),
-            NodeKind::LiteralString(..) => true,
+            NodeKind::Literal(literal::Literal::String(_)) => true,
             NodeKind::CompoundLiteral(..) => true,
             _ => false,
         }
@@ -215,7 +215,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn is_null_pointer_constant(&self, node_ref: NodeRef) -> bool {
         let node_kind = self.ast.get_kind(node_ref);
         match node_kind {
-            NodeKind::LiteralInt(0) => true,
+            NodeKind::Literal(literal::Literal::Int { val: 0, .. }) => true,
             NodeKind::Cast(ty, inner) if ty.ty() == self.registry.type_void_ptr => {
                 self.is_null_pointer_constant(*inner)
             }
@@ -527,7 +527,9 @@ impl<'a> SemanticAnalyzer<'a> {
         let is_literal = |kind: &NodeKind| {
             matches!(
                 kind,
-                NodeKind::LiteralInt(_) | NodeKind::LiteralChar(_) | NodeKind::LiteralFloat(_)
+                NodeKind::Literal(literal::Literal::Int { .. })
+                    | NodeKind::Literal(literal::Literal::Char(_))
+                    | NodeKind::Literal(literal::Literal::Float(_))
             )
         };
 
@@ -734,7 +736,9 @@ impl<'a> SemanticAnalyzer<'a> {
         // Integer casts
         let is_literal = matches!(
             self.ast.get_kind(rhs_ref),
-            NodeKind::LiteralInt(_) | NodeKind::LiteralChar(_) | NodeKind::LiteralFloat(_)
+            NodeKind::Literal(literal::Literal::Int { .. })
+                | NodeKind::Literal(literal::Literal::Char(_))
+                | NodeKind::Literal(literal::Literal::Float(_))
         );
 
         if ((lhs_ty.is_arithmetic() && current_rhs_ty.is_arithmetic())
@@ -780,7 +784,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let list = *list; // Clone to avoid borrow check issues
                 self.check_initializer_list(&list, target_ty);
             }
-            NodeKind::LiteralString(_) => {
+            NodeKind::Literal(literal::Literal::String(_)) => {
                 // Visit to resolve type
                 if let Some(init_ty) = self.visit_node(init_ref) {
                     // Check if array string init
@@ -1358,35 +1362,38 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_expression_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
-            NodeKind::LiteralInt(val) => {
-                // Determine the correct type for the integer literal based on its value.
-                // According to C11 6.4.4.1, the type of an integer constant is the first of the corresponding
-                // list in which its value can be represented.
-                // For a hexadecimal or octal constant without suffix, the list is:
-                // int, unsigned int, long int, unsigned long int, long long int, unsigned long long int.
-                // For decimal constant without suffix: int, long int, long long int.
-                // Since we don't have the original base or suffix information here, we use a heuristic.
-                // If it fits in signed int, use int.
-                // If it doesn't fit in signed int, but fits in unsigned int, use unsigned int.
-                // Otherwise, use long long.
-                let ty = if *val >= i32::MIN as i64 && *val <= i32::MAX as i64 {
-                    self.registry.type_int
-                } else if *val >= 0 && *val <= u32::MAX as i64 {
-                    self.registry.type_int_unsigned
-                } else {
-                    self.registry.type_long_long
-                };
-                Some(QualType::unqualified(ty))
-            }
-            NodeKind::LiteralFloat(_) => Some(QualType::unqualified(self.registry.type_double)),
-            NodeKind::LiteralChar(_) => Some(QualType::unqualified(self.registry.type_int)),
-            NodeKind::LiteralString(name) => {
-                let char_type = self.registry.type_char;
-                let array_size = name.as_str().len() + 1;
-                let array_type = self.registry.array_of(char_type, ArraySizeType::Constant(array_size));
-                let _ = self.registry.ensure_layout(array_type);
-                Some(QualType::new(array_type, TypeQualifiers::CONST))
-            }
+            NodeKind::Literal(literal) => match literal {
+                literal::Literal::Int { val, suffix } => {
+                    // C11 6.4.4.1: Determine type based on value and suffix.
+                    // This is a simplified heuristic. A full implementation would check hex/octal.
+                    let ty = match suffix {
+                        Some(literal::IntegerSuffix::L) => self.registry.type_long,
+                        Some(literal::IntegerSuffix::LL) => self.registry.type_long_long,
+                        Some(literal::IntegerSuffix::U) => self.registry.type_int_unsigned,
+                        Some(literal::IntegerSuffix::UL) => self.registry.type_long_unsigned,
+                        Some(literal::IntegerSuffix::ULL) => self.registry.type_long_long_unsigned,
+                        None => {
+                            if *val >= i32::MIN as i64 && *val <= i32::MAX as i64 {
+                                self.registry.type_int
+                            } else if *val >= 0 && *val <= u32::MAX as i64 {
+                                self.registry.type_int_unsigned
+                            } else {
+                                self.registry.type_long
+                            }
+                        }
+                    };
+                    Some(QualType::unqualified(ty))
+                }
+                literal::Literal::Float(_) => Some(QualType::unqualified(self.registry.type_double)),
+                literal::Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
+                literal::Literal::String(name) => {
+                    let char_type = self.registry.type_char;
+                    let array_size = name.as_str().len() + 1;
+                    let array_type = self.registry.array_of(char_type, ArraySizeType::Constant(array_size));
+                    let _ = self.registry.ensure_layout(array_type);
+                    Some(QualType::new(array_type, TypeQualifiers::CONST))
+                }
+            },
             NodeKind::Ident(_, symbol_ref) => {
                 let symbol = self.symbol_table.get_symbol(*symbol_ref);
                 match &symbol.kind {
@@ -1650,9 +1657,17 @@ impl<'a> SemanticAnalyzer<'a> {
         let ctrl_ty = self.visit_node(gs.control)?;
 
         // C11 6.5.1.1p3: The controlling expression of a generic selection is not evaluated.
-        // C11 6.5.1.1p2: The type name in a generic association specifies a type compatible with the
-        // controlling expression's type, after removing any top-level qualifiers.
-        let unqualified_ctrl_ty = self.registry.strip_all(ctrl_ty);
+        // C11 6.5.1.1p2: The type of the controlling expression is compared with the type name of each generic
+        // association. Before comparison, array and function types decay to pointers.
+        let decayed_ctrl_ty = if ctrl_ty.is_array() || ctrl_ty.is_function() {
+            // Qualifiers on the array/function type itself are discarded during decay.
+            self.registry.decay(ctrl_ty, TypeQualifiers::empty())
+        } else {
+            ctrl_ty
+        };
+
+        // After decay, top-level qualifiers are removed for the compatibility check.
+        let unqualified_ctrl_ty = self.registry.strip_all(decayed_ctrl_ty);
 
         // It's crucial to visit *all* result expressions to ensure they are
         // fully type-checked, even if they are not the selected branch.
@@ -1665,8 +1680,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(assoc_node_ref);
 
                 if let Some(assoc_ty) = ga.ty {
-                    // This is a type association.
-                    if self.registry.is_compatible(unqualified_ctrl_ty, assoc_ty) {
+                    // C11 6.5.1.1p2: For the purpose of this comparison, qualifiers are stripped from both the
+                    // controlling expression's type and the generic association's type.
+                    let unqualified_assoc_ty = self.registry.strip_all(assoc_ty);
+                    if self.registry.is_compatible(unqualified_ctrl_ty, unqualified_assoc_ty) {
                         selected_expr_ref = Some(ga.result_expr);
                     }
                 } else {

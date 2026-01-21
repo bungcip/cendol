@@ -41,10 +41,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
 
         match &node_kind {
-            NodeKind::LiteralInt(_)
-            | NodeKind::LiteralFloat(_)
-            | NodeKind::LiteralChar(_)
-            | NodeKind::LiteralString(_) => self.lower_literal(&node_kind, ty).expect("Failed to lower literal"),
+            NodeKind::Literal(_) => self.lower_literal(&node_kind, ty).expect("Failed to lower literal"),
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(*symbol_ref),
             NodeKind::UnaryOp(op, operand_ref) => self.lower_unary_op_expr(op, *operand_ref, mir_ty),
             NodeKind::PostIncrement(operand_ref) => self.lower_post_incdec(*operand_ref, true, need_value),
@@ -167,7 +164,15 @@ impl<'a> AstToMirLowerer<'a> {
             .get_resolved_type(gs.control)
             .expect("Controlling expr type missing")
             .ty();
-        let unqualified_ctrl = self.registry.strip_all(QualType::unqualified(ctrl_ty));
+        // Apply decay to array/function types before matching.
+        let decayed_ctrl_ty = if ctrl_ty.is_array() || ctrl_ty.is_function() {
+            self.registry
+                .decay(QualType::unqualified(ctrl_ty), Default::default())
+                .ty()
+        } else {
+            ctrl_ty
+        };
+        let unqualified_ctrl = self.registry.strip_all(QualType::unqualified(decayed_ctrl_ty));
 
         let mut selected_expr = None;
         let mut default_expr = None;
@@ -199,14 +204,16 @@ impl<'a> AstToMirLowerer<'a> {
     pub(crate) fn lower_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
         let mir_ty = self.lower_qual_type(ty);
         match node_kind {
-            NodeKind::LiteralInt(val) => Some(Operand::Constant(
-                self.create_constant(mir_ty, ConstValueKind::Int(*val)),
-            )),
-            NodeKind::LiteralFloat(val) => Some(self.create_float_operand(*val)),
-            NodeKind::LiteralChar(val) => Some(Operand::Constant(
-                self.create_constant(mir_ty, ConstValueKind::Int(*val as i64)),
-            )),
-            NodeKind::LiteralString(val) => Some(self.lower_literal_string(val, ty)),
+            NodeKind::Literal(literal) => match literal {
+                crate::ast::literal::Literal::Int { val, .. } => Some(Operand::Constant(
+                    self.create_constant(mir_ty, ConstValueKind::Int(*val)),
+                )),
+                crate::ast::literal::Literal::Float(val) => Some(self.create_float_operand(*val)),
+                crate::ast::literal::Literal::Char(val) => Some(Operand::Constant(
+                    self.create_constant(mir_ty, ConstValueKind::Int(*val as i64)),
+                )),
+                crate::ast::literal::Literal::String(val) => Some(self.lower_literal_string(val, ty)),
+            },
             _ => None,
         }
     }
@@ -566,16 +573,16 @@ impl<'a> AstToMirLowerer<'a> {
 
         // Get the function type to determine parameter types for conversions
         let func_node_kind = self.ast.get_kind(call_expr.callee);
-        let func_type = if let NodeKind::Ident(_, symbol_ref) = func_node_kind {
+        let func_type_kind = if let NodeKind::Ident(_, symbol_ref) = func_node_kind {
             let resolved_symbol = *symbol_ref;
             let func_entry = self.symbol_table.get_symbol(resolved_symbol);
-            Some(self.registry.get(func_entry.type_info.ty()))
+            Some(self.registry.get(func_entry.type_info.ty()).kind.clone())
         } else {
             None
         };
 
-        let param_types = if let Some(func_type) = func_type {
-            if let TypeKind::Function { parameters, .. } = &func_type.kind {
+        let param_types = if let Some(func_type_kind) = func_type_kind {
+            if let TypeKind::Function { parameters, .. } = &func_type_kind {
                 Some(
                     parameters
                         .iter()

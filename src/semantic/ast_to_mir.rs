@@ -1169,11 +1169,11 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn scan_for_labels(&mut self, node_ref: NodeRef) {
         let node_kind = self.ast.get_kind(node_ref).clone();
-        if let NodeKind::Label(name, _, _) = node_kind {
-            if !self.label_map.contains_key(&name) {
-                let block_id = self.mir_builder.create_block();
-                self.label_map.insert(name, block_id);
-            }
+        if let NodeKind::Label(name, _, _) = node_kind
+            && !self.label_map.contains_key(&name)
+        {
+            let block_id = self.mir_builder.create_block();
+            self.label_map.insert(name, block_id);
         }
         node_kind.visit_children(|child| self.scan_for_labels(child));
     }

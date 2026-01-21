@@ -640,22 +640,9 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::Switch(..) => {
                 // Do not recurse into nested switch
             }
-            NodeKind::CompoundStatement(cs) => {
-                for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
-                    self.collect_switch_cases_recursive(stmt_ref, cases);
-                }
+            _ => {
+                kind.visit_children(|child| self.collect_switch_cases_recursive(child, cases));
             }
-            NodeKind::If(if_stmt) => {
-                self.collect_switch_cases_recursive(if_stmt.then_branch, cases);
-                if let Some(else_branch) = if_stmt.else_branch {
-                    self.collect_switch_cases_recursive(else_branch, cases);
-                }
-            }
-            NodeKind::While(w) => self.collect_switch_cases_recursive(w.body, cases),
-            NodeKind::DoWhile(b, _) => self.collect_switch_cases_recursive(b, cases),
-            NodeKind::For(f) => self.collect_switch_cases_recursive(f.body, cases),
-            NodeKind::Label(_, stmt, _) => self.collect_switch_cases_recursive(stmt, cases),
-            _ => {}
         }
     }
 
@@ -1182,37 +1169,13 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn scan_for_labels(&mut self, node_ref: NodeRef) {
         let node_kind = self.ast.get_kind(node_ref).clone();
-        match node_kind {
-            NodeKind::Label(name, inner_stmt, _) => {
-                if !self.label_map.contains_key(&name) {
-                    let block_id = self.mir_builder.create_block();
-                    self.label_map.insert(name, block_id);
-                }
-                self.scan_for_labels(inner_stmt);
-            }
-            NodeKind::CompoundStatement(cs) => {
-                for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
-                    self.scan_for_labels(stmt_ref);
-                }
-            }
-            // Add other statement types that can contain labels, like loops and conditionals
-            NodeKind::If(if_stmt) => {
-                self.scan_for_labels(if_stmt.then_branch);
-                if let Some(else_branch) = if_stmt.else_branch {
-                    self.scan_for_labels(else_branch);
-                }
-            }
-            NodeKind::While(while_stmt) => self.scan_for_labels(while_stmt.body),
-            NodeKind::DoWhile(body, _) => self.scan_for_labels(body),
-            NodeKind::For(for_stmt) => self.scan_for_labels(for_stmt.body),
-            NodeKind::Switch(_, body) => self.scan_for_labels(body),
-            NodeKind::Case(_, stmt) => self.scan_for_labels(stmt),
-            NodeKind::CaseRange(_, _, stmt) => self.scan_for_labels(stmt),
-            NodeKind::Default(stmt) => self.scan_for_labels(stmt),
-            _ => {
-                // No labels in expressions or simple statements
+        if let NodeKind::Label(name, _, _) = node_kind {
+            if !self.label_map.contains_key(&name) {
+                let block_id = self.mir_builder.create_block();
+                self.label_map.insert(name, block_id);
             }
         }
+        node_kind.visit_children(|child| self.scan_for_labels(child));
     }
 
     fn lower_goto_statement(&mut self, label_name: &NameId) {

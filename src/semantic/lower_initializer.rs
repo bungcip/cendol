@@ -29,34 +29,26 @@ impl<'a> AstToMirLowerer<'a> {
                     panic!("Array designator for struct initializer");
                 }
             } else {
-                let mut idx = current_field_idx;
+                let idx = current_field_idx;
                 let init_node_kind = self.ast.get_kind(init.initializer);
                 if let NodeKind::InitializerList(_) = init_node_kind {
-                    if idx < members.len() {
-                        let mut found = None;
-                        for (j, item) in members.iter().enumerate().skip(idx) {
-                            let mty = item.member_type;
-                            if let TypeKind::Record { .. } = &self.registry.get(mty.ty()).kind {
-                                found = Some(j);
-                                break;
-                            }
-                        }
-                        if let Some(j) = found {
-                            idx = j;
-                            current_field_idx = j + 1;
-                            idx
+                    // Search for the next record field to initialize with a list
+                    if let Some(found_idx) = members.iter().enumerate().skip(idx).find_map(|(j, item)| {
+                        if matches!(self.registry.get(item.member_type.ty()).kind, TypeKind::Record { .. }) {
+                            Some(j)
                         } else {
-                            current_field_idx += 1;
-                            idx
+                            None
                         }
+                    }) {
+                        current_field_idx = found_idx + 1;
+                        found_idx
                     } else {
                         current_field_idx += 1;
                         idx
                     }
                 } else {
-                    let tmp = idx;
                     current_field_idx += 1;
-                    tmp
+                    idx
                 }
             };
 

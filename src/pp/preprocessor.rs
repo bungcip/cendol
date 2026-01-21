@@ -1507,8 +1507,16 @@ impl<'src> Preprocessor<'src> {
                         _ => path_parts.push(part_token),
                     }
                 }
-                // Concatenate the path parts
-                let mut path = String::new();
+                // Bolt ⚡: Use a two-pass approach to build the path string efficiently.
+                // This avoids multiple reallocations from push_str in a loop, a known
+                // performance anti-pattern in this codebase.
+                // 1. Calculate the total length of the path.
+                let total_len = path_parts.iter().map(|part| part.length as usize).sum();
+
+                // 2. Allocate the string with the exact capacity.
+                let mut path = String::with_capacity(total_len);
+
+                // 3. Populate the string.
                 for part in path_parts.iter() {
                     let buffer = self.source_manager.get_buffer(part.location.source_id());
                     let start = part.location.offset() as usize;

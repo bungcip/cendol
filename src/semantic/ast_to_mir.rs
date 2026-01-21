@@ -64,11 +64,6 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    // create dummy operand
-    pub(crate) fn create_dummy_operand(&mut self) -> Operand {
-        self.create_int_operand(9999)
-    }
-
     pub(crate) fn lower_module_complete(&mut self) -> MirProgram {
         debug!("Starting semantic analysis and MIR construction (complete)");
         let root = self.ast.get_root();

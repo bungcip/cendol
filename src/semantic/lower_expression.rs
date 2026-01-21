@@ -67,7 +67,7 @@ impl<'a> AstToMirLowerer<'a> {
                     Operand::Copy(Box::new(temp_place.unwrap()))
                 } else {
                     // dummy
-                    self.create_dummy_operand()
+                    self.create_int_operand(0)
                 }
             }
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {

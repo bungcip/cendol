@@ -17,7 +17,7 @@ impl PPExpr {
     pub(crate) fn evaluate(&self, pp: &Preprocessor) -> Result<i64, PPError> {
         match self {
             PPExpr::Number(n) => Ok(*n),
-            PPExpr::Identifier(s) => Ok(if pp.is_macro_defined(&StringId::new(s)) { 1 } else { 0 }),
+            PPExpr::Identifier(_s) => Ok(0), // C11 6.10.1p4: All remaining identifiers are replaced with 0
             PPExpr::Defined(ident) => {
                 if let PPExpr::Identifier(s) = &**ident {
                     Ok(if pp.is_macro_defined(&StringId::new(s)) { 1 } else { 0 })

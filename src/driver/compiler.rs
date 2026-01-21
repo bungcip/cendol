@@ -268,7 +268,7 @@ impl CompilerDriver {
             }
         }
 
-        let mut sema = AstToMirLowerer::new(&ast, &symbol_table, &registry);
+        let mut sema = AstToMirLowerer::new(&ast, &symbol_table, &mut registry);
         let sema_output = sema.lower_module_complete();
         self.check_diagnostics_and_return_if_error()?;
 

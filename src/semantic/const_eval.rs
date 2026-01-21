@@ -4,7 +4,7 @@
 //! at compile time, as required by the C11 standard for contexts like
 //! static assertions and array sizes.
 
-use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, UnaryOp};
+use crate::ast::{literal, Ast, BinaryOp, NodeKind, NodeRef, UnaryOp};
 use crate::semantic::{SymbolKind, SymbolTable};
 
 /// Context for constant expression evaluation
@@ -17,8 +17,8 @@ pub(crate) struct ConstEvalCtx<'a> {
 pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Option<i64> {
     let node_kind = ctx.ast.get_kind(expr_node_ref);
     match node_kind {
-        NodeKind::LiteralInt(val) => Some(*val),
-        NodeKind::LiteralChar(val) => Some(*val as i64),
+        NodeKind::Literal(literal::Literal::Int { val, .. }) => Some(*val),
+        NodeKind::Literal(literal::Literal::Char(val)) => Some(*val as i64),
         NodeKind::Ident(_, sym_ref) => {
             let symbol = ctx.symbol_table.get_symbol(*sym_ref);
             if let SymbolKind::EnumConstant { value } = &symbol.kind {

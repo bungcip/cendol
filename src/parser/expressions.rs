@@ -197,24 +197,27 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
             let node = parser.push_node(ParsedNodeKind::Ident(symbol), token.span);
             Ok(node)
         }
-        TokenKind::IntegerConstant(value) => {
+        TokenKind::IntegerConstant(val) => {
             parser.advance();
-            let node = parser.push_node(ParsedNodeKind::LiteralInt(value), token.span);
+            let node = parser.push_node(
+                ParsedNodeKind::Literal(literal::Literal::Int { val, suffix: None }),
+                token.span,
+            );
             Ok(node)
         }
-        TokenKind::FloatConstant(value) => {
+        TokenKind::FloatConstant(val) => {
             parser.advance();
-            let node = parser.push_node(ParsedNodeKind::LiteralFloat(value), token.span);
+            let node = parser.push_node(ParsedNodeKind::Literal(literal::Literal::Float(val)), token.span);
             Ok(node)
         }
-        TokenKind::StringLiteral(symbol) => {
+        TokenKind::StringLiteral(s) => {
             parser.advance();
-            let node = parser.push_node(ParsedNodeKind::LiteralString(symbol), token.span);
+            let node = parser.push_node(ParsedNodeKind::Literal(literal::Literal::String(s)), token.span);
             Ok(node)
         }
-        TokenKind::CharacterConstant(codepoint) => {
+        TokenKind::CharacterConstant(c) => {
             parser.advance();
-            let node = parser.push_node(ParsedNodeKind::LiteralChar(codepoint), token.span);
+            let node = parser.push_node(ParsedNodeKind::Literal(literal::Literal::Char(c)), token.span);
             Ok(node)
         }
         TokenKind::LeftParen => {

@@ -198,10 +198,7 @@ impl AstDumper {
             }
 
             // Literal nodes - don't contain TypeRefs
-            NodeKind::LiteralInt(_)
-            | NodeKind::LiteralFloat(_)
-            | NodeKind::LiteralString(_)
-            | NodeKind::LiteralChar(_)
+            NodeKind::Literal(_)
             | NodeKind::Ident(_, _) => {
                 // These don't contain TypeRefs
             }
@@ -292,10 +289,14 @@ impl AstDumper {
     /// Dump a single parsed AST node kind
     fn dump_parsed_node_kind(kind: &ParsedNodeKind, _ast: &ParsedAst) {
         match kind {
-            ParsedNodeKind::LiteralInt(i) => println!("LiteralInt({})", i),
-            ParsedNodeKind::LiteralFloat(f) => println!("LiteralFloat({})", f),
-            ParsedNodeKind::LiteralString(s) => println!("LiteralString(\"{}\")", s),
-            ParsedNodeKind::LiteralChar(c) => println!("LiteralChar('{}')", *c as char),
+            ParsedNodeKind::Literal(literal) => match literal {
+                crate::ast::literal::Literal::Int { val, suffix } => {
+                    println!("LiteralInt({:?}, {:?})", val, suffix)
+                }
+                crate::ast::literal::Literal::Float(f) => println!("LiteralFloat({})", f),
+                crate::ast::literal::Literal::String(s) => println!("LiteralString(\"{}\")", s),
+                crate::ast::literal::Literal::Char(c) => println!("LiteralChar('{}')", *c as char),
+            },
             ParsedNodeKind::Ident(name) => println!("Ident({})", name),
 
             // Expressions
@@ -420,10 +421,14 @@ impl AstDumper {
                     println!("TranslationUnit(decls=[]) (parser kind)");
                 }
             }
-            NodeKind::LiteralInt(i) => println!("LiteralInt({})", i),
-            NodeKind::LiteralFloat(f) => println!("LiteralFloat({})", f),
-            NodeKind::LiteralString(s) => println!("LiteralString({})", s),
-            NodeKind::LiteralChar(c) => println!("LiteralChar('{}')", *c as char),
+            NodeKind::Literal(literal) => match literal {
+                crate::ast::literal::Literal::Int { val, suffix } => {
+                    println!("LiteralInt({:?}, {:?})", val, suffix)
+                }
+                crate::ast::literal::Literal::Float(f) => println!("LiteralFloat({})", f),
+                crate::ast::literal::Literal::String(s) => println!("LiteralString({})", s),
+                crate::ast::literal::Literal::Char(c) => println!("LiteralChar('{}')", *c as char),
+            },
             NodeKind::Ident(sym, _) => println!("Ident({})", sym),
             NodeKind::UnaryOp(op, operand) => println!("UnaryOp({:?}, {})", op, operand.get()),
             NodeKind::BinaryOp(op, left, right) => {

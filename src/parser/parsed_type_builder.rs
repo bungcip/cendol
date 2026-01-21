@@ -189,7 +189,9 @@ fn parse_type_specifier_to_parsed_base(
                             name: *name,
                             value: value_expr_ref.as_ref().and_then(|expr_ref| {
                                 // Try to evaluate constant expression
-                                if let ParsedNodeKind::LiteralInt(val) = parser.ast.get_node(*expr_ref).kind {
+                                if let ParsedNodeKind::Literal(literal::Literal::Int { val, .. }) =
+                                    parser.ast.get_node(*expr_ref).kind
+                                {
                                     Some(val)
                                 } else {
                                     None

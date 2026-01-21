@@ -59,10 +59,7 @@ impl ParsedNode {
 #[derive(Debug, Clone)]
 pub enum ParsedNodeKind {
     // --- Literals ---
-    LiteralInt(i64),
-    LiteralFloat(f64),
-    LiteralString(NameId),
-    LiteralChar(u8),
+    Literal(crate::ast::literal::Literal),
 
     // --- Expressions ---
     Ident(NameId), // No symbol ref yet

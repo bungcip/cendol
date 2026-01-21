@@ -160,10 +160,12 @@ fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpecifier]) -> Ve
 pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> ResolvedNodeKind {
     let node = ast.get_node(node_ref);
     match &node.kind {
-        ParsedNodeKind::LiteralInt(value) => ResolvedNodeKind::LiteralInt(*value),
-        ParsedNodeKind::LiteralFloat(value) => ResolvedNodeKind::LiteralFloat(*value),
-        ParsedNodeKind::LiteralString(symbol) => ResolvedNodeKind::LiteralString(symbol.to_string()),
-        ParsedNodeKind::LiteralChar(value) => ResolvedNodeKind::LiteralChar(*value),
+        ParsedNodeKind::Literal(literal) => match literal {
+            crate::ast::literal::Literal::Int { val, .. } => ResolvedNodeKind::LiteralInt(*val),
+            crate::ast::literal::Literal::Float(val) => ResolvedNodeKind::LiteralFloat(*val),
+            crate::ast::literal::Literal::String(s) => ResolvedNodeKind::LiteralString(s.to_string()),
+            crate::ast::literal::Literal::Char(c) => ResolvedNodeKind::LiteralChar(*c),
+        },
         ParsedNodeKind::Ident(symbol) => ResolvedNodeKind::Ident(symbol.to_string()),
         ParsedNodeKind::UnaryOp(op, operand) => ResolvedNodeKind::UnaryOp(*op, Box::new(resolve_node(ast, *operand))),
         ParsedNodeKind::BinaryOp(op, left, right) => ResolvedNodeKind::BinaryOp(

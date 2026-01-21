@@ -143,7 +143,10 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
         NodeKind::Return(expr) => {
             ResolvedAstNode::Return(expr.map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))))
         }
-        NodeKind::LiteralInt(val) => ResolvedAstNode::LiteralInt(*val),
+        NodeKind::Literal(literal) => match literal {
+            crate::ast::literal::Literal::Int { val, .. } => ResolvedAstNode::LiteralInt(*val),
+            _ => panic!("Not implemented for this literal type"),
+        },
         NodeKind::Ident(name, _) => ResolvedAstNode::Ident(name.as_str().to_string()),
         _ => ResolvedAstNode::Other(format!("{:?}", kind)),
     }

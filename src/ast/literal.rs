@@ -12,10 +12,7 @@ pub enum IntegerSuffix {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Literal {
-    Int {
-        val: i64,
-        suffix: Option<IntegerSuffix>,
-    },
+    Int { val: i64, suffix: Option<IntegerSuffix> },
     Float(f64),
     Char(u8),
     String(NameId),

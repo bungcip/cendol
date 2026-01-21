@@ -1,5 +1,5 @@
 use crate::ast;
-use crate::ast::{literal, Designator, NameId, NodeKind, NodeRef};
+use crate::ast::{Designator, NameId, NodeKind, NodeRef, literal};
 use crate::mir::{ConstValueId, ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue};
 use crate::semantic::ast_to_mir::AstToMirLowerer;
 use crate::semantic::{ArraySizeType, BuiltinType, QualType, StructMember, TypeKind};

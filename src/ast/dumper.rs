@@ -198,8 +198,7 @@ impl AstDumper {
             }
 
             // Literal nodes - don't contain TypeRefs
-            NodeKind::Literal(_)
-            | NodeKind::Ident(_, _) => {
+            NodeKind::Literal(_) | NodeKind::Ident(_, _) => {
                 // These don't contain TypeRefs
             }
 

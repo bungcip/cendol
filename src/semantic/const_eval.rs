@@ -4,7 +4,7 @@
 //! at compile time, as required by the C11 standard for contexts like
 //! static assertions and array sizes.
 
-use crate::ast::{literal, Ast, BinaryOp, NodeKind, NodeRef, UnaryOp};
+use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, UnaryOp, literal};
 use crate::semantic::{SymbolKind, SymbolTable};
 
 /// Context for constant expression evaluation

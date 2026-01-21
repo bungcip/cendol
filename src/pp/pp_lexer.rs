@@ -630,18 +630,32 @@ impl PPLexer {
         }
     }
 
-    fn lex_identifier(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
-        // Use next_char() for consistency with line splicing
+    /// Consumes characters based on a predicate, building a string.
+    ///
+    /// The predicate receives the current state and the character.
+    /// It should return `true` to consume the character, or `false` to stop.
+    /// The closure can modify state (e.g., tracking scientific notation 'e').
+    fn consume_while<F, S>(&mut self, mut state: S, first_ch: u8, mut pred: F) -> String
+    where
+        F: FnMut(&mut S, u8) -> bool,
+    {
         let mut chars = vec![first_ch];
         while let Some(ch) = self.peek_char() {
-            if ch.is_ascii_alphanumeric() || ch == b'_' {
+            if pred(&mut state, ch) {
                 chars.push(self.next_char().unwrap());
             } else {
                 break;
             }
         }
+        // Safety: We assume the caller only consumes valid UTF-8 characters (identifiers/numbers)
+        // or we handle validation later. For identifiers/numbers constructed from ascii, this is safe.
+        // Actually, identifiers can contain unicode in some extensions, but here we assume standard handling.
+        // PPLexer usually deals with bytes, but text tokens are generally UTF-8 compatible.
+        String::from_utf8(chars).unwrap()
+    }
 
-        let text = String::from_utf8(chars).unwrap();
+    fn lex_identifier(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
+        let text = self.consume_while((), first_ch, |_, ch| ch.is_ascii_alphanumeric() || ch == b'_');
 
         let symbol = StringId::new(&text);
         let kind = PPTokenKind::Identifier(symbol);
@@ -650,25 +664,21 @@ impl PPLexer {
     }
 
     fn lex_number(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
-        // Use next_char() for consistency with line splicing
-        let mut chars = vec![first_ch];
-        let mut seen_e = false;
-        while let Some(ch) = self.peek_char() {
+        let text = self.consume_while(false, first_ch, |seen_e, ch| {
             if ch.is_ascii_digit() || ch == b'.' || ch.is_ascii_alphabetic() || ch == b'_' {
-                chars.push(self.next_char().unwrap());
                 if ch == b'e' || ch == b'E' {
-                    seen_e = true;
+                    *seen_e = true;
                 }
-            } else if (ch == b'+' || ch == b'-') && seen_e {
+                true
+            } else if (ch == b'+' || ch == b'-') && *seen_e {
                 // Allow + or - after e/E for scientific notation
-                chars.push(self.next_char().unwrap());
-                seen_e = false; // Reset so we don't allow multiple +/- after e
+                *seen_e = false; // Reset so we don't allow multiple +/- immediately
+                true
             } else {
-                break;
+                false
             }
-        }
+        });
 
-        let text = String::from_utf8(chars).unwrap();
         let symbol = StringId::new(&text);
 
         PPToken::text(

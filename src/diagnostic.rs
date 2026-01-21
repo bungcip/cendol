@@ -206,6 +206,8 @@ impl IntoDiagnostic for SemanticError {
 /// Semantic errors
 #[derive(Debug, thiserror::Error)]
 pub enum SemanticError {
+    #[error("variable has incomplete type 'void'")]
+    VariableOfVoidType { span: SourceSpan },
     #[error("called object type '{ty}' is not a function or function pointer")]
     CalledNonFunctionType { ty: String, span: SourceSpan },
     #[error("Undeclared identifier '{name}'")]
@@ -354,6 +356,7 @@ pub enum SemanticError {
 impl SemanticError {
     pub fn span(&self) -> SourceSpan {
         match self {
+            SemanticError::VariableOfVoidType { span } => *span,
             SemanticError::CalledNonFunctionType { span, .. } => *span,
             SemanticError::InvalidRestrict { span } => *span,
             SemanticError::UndeclaredIdentifier { span, .. } => *span,

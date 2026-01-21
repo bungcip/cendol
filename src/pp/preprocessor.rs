@@ -2753,6 +2753,13 @@ impl<'src> Preprocessor<'src> {
                     continue;
                 }
             };
+
+            // Check for recursion before expanding
+            if self.is_recursive_expansion(tokens[i].location, symbol.as_str()) {
+                i += 1;
+                continue;
+            }
+
             if let Some(macro_info) = self.macros.get(&symbol).cloned()
                 && macro_info.flags.contains(MacroFlags::FUNCTION_LIKE)
                 && !macro_info.flags.contains(MacroFlags::DISABLED)
@@ -2898,18 +2905,10 @@ impl<'src> Preprocessor<'src> {
                     if let Some(m) = self.macros.get_mut(&symbol) {
                         m.flags |= MacroFlags::USED;
                     }
-                    // Temporarily disable
-                    if let Some(m) = self.macros.get_mut(&symbol) {
-                        m.flags |= MacroFlags::DISABLED;
-                    }
-                    // Recurse
-                    if self.expand_tokens(tokens).is_err() {
-                        // For conditional expressions, continue even if recursion fails
-                    }
-                    // Re-enable
-                    if let Some(m) = self.macros.get_mut(&symbol) {
-                        m.flags.remove(MacroFlags::DISABLED);
-                    }
+
+                    // We do not recurse on the whole vector here. Instead, we let the loop continue.
+                    // The loop will rescan the substituted tokens starting at `i`.
+                    // Recursion protection is handled by `is_recursive_expansion` check at the top of the loop.
                     continue;
                 }
             }

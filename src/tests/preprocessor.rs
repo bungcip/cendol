@@ -926,3 +926,54 @@ int UNIQUE(var);
       text: ;
     "#);
 }
+
+#[test]
+fn test_if_undefined_identifier() {
+    let src = r#"
+#if UNDEFINED_MACRO
+WRONG
+#else
+CORRECT
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: CORRECT
+    "#);
+}
+
+#[test]
+fn test_if_recursive_macro() {
+    let src = r#"
+#define RECURSE RECURSE
+#if RECURSE
+WRONG
+#else
+CORRECT
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: CORRECT
+    "#);
+}
+
+#[test]
+fn test_if_recursive_macro_complex() {
+    let src = r#"
+#define A B
+#define B A
+#if A
+WRONG
+#else
+CORRECT
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: CORRECT
+    "#);
+}

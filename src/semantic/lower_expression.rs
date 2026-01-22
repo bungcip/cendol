@@ -6,6 +6,7 @@ use crate::semantic::ast_to_mir::AstToMirLowerer;
 use crate::semantic::const_eval::{ConstEvalCtx, eval_const_expr};
 use crate::semantic::{QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
 use crate::{ast, semantic};
+use crate::semantic::mir_ops;
 
 impl<'a> AstToMirLowerer<'a> {
     pub(crate) fn lower_expression_as_place(&mut self, expr_ref: NodeRef) -> Place {
@@ -229,7 +230,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let operand_ty = self.get_operand_type(&operand);
                 let mir_type_info = self.mir_builder.get_type(operand_ty);
 
-                let rval = self.emit_unary_rvalue(op, operand, mir_type_info.is_float());
+                let rval = mir_ops::emit_unary_rvalue(op, operand, mir_type_info.is_float());
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
         }
@@ -378,7 +379,7 @@ impl<'a> AstToMirLowerer<'a> {
             return rhs_final;
         }
 
-        let rval = self.emit_binary_rvalue(op, lhs_final, rhs_final, lhs_mir.is_float());
+        let rval = mir_ops::emit_binary_rvalue(op, lhs_final, rhs_final, lhs_mir.is_float());
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
@@ -548,7 +549,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let lhs_ty_for_op = self.get_operand_type(&lhs_converted_for_op);
                 let mir_type_info = self.mir_builder.get_type(lhs_ty_for_op);
 
-                let rval = self.emit_binary_rvalue(
+                let rval = mir_ops::emit_binary_rvalue(
                     &compound_op,
                     lhs_converted_for_op,
                     rhs_converted_for_op,

@@ -3134,11 +3134,17 @@ mod tests {
         // Test case 4: Hexadecimal escapes
         assert_eq!(pp.destringize("\"\\x41\""), "A");
         assert_eq!(pp.destringize("\"\\x1b\""), "\x1b");
-        assert_eq!(pp.destringize("\"a\\x41b\""), "aAb");
+        // Note: \x consumes as many hex digits as possible. \x41b is 0x41b which overflows u8.
+        // If we want 'A' then 'b', we need to stop hex parsing. 'b' is a hex digit.
+        // Changing test case to use 'g' which is not a hex digit to test termination.
+        assert_eq!(pp.destringize("\"a\\x41g\""), "aAg");
         assert_eq!(pp.destringize("\"\\x0a\""), "\n");
 
         // Test case 5: Mixed and complex cases
-        assert_eq!(pp.destringize("\"a\\\\\\\"b\\tc\\123d\\x41e\""), "a\\\"b\tcSdAe");
+        // \x41e -> e is hex digit (14). 0x41e is 1054. Overflows.
+        // Expected "Ae" -> A(0x41) e. But e is hex.
+        // Changing e to z.
+        assert_eq!(pp.destringize("\"a\\\\\\\"b\\tc\\123d\\x41z\""), "a\\\"b\tcSdAz");
 
         // Test case 6: Empty string
         assert_eq!(pp.destringize("\"\""), "");

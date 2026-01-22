@@ -654,38 +654,57 @@ impl PPLexer {
         String::from_utf8(chars).unwrap()
     }
 
-    fn lex_identifier(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
-        let text = self.consume_while((), first_ch, |_, ch| ch.is_ascii_alphanumeric() || ch == b'_');
-
+    fn lex_textual_token<F, S, K>(
+        &mut self,
+        start_pos: u32,
+        first_ch: u8,
+        flags: PPTokenFlags,
+        state: S,
+        predicate: F,
+        kind_ctor: K,
+    ) -> PPToken
+    where
+        F: FnMut(&mut S, u8) -> bool,
+        K: FnOnce(StringId) -> PPTokenKind,
+    {
+        let text = self.consume_while(state, first_ch, predicate);
         let symbol = StringId::new(&text);
-        let kind = PPTokenKind::Identifier(symbol);
-
+        let kind = kind_ctor(symbol);
         PPToken::text(kind, flags, SourceLoc::new(self.source_id, start_pos), &text)
     }
 
-    fn lex_number(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
-        let text = self.consume_while(false, first_ch, |seen_e, ch| {
-            if ch.is_ascii_digit() || ch == b'.' || ch.is_ascii_alphabetic() || ch == b'_' {
-                if ch == b'e' || ch == b'E' {
-                    *seen_e = true;
-                }
-                true
-            } else if (ch == b'+' || ch == b'-') && *seen_e {
-                // Allow + or - after e/E for scientific notation
-                *seen_e = false; // Reset so we don't allow multiple +/- immediately
-                true
-            } else {
-                false
-            }
-        });
-
-        let symbol = StringId::new(&text);
-
-        PPToken::text(
-            PPTokenKind::Number(symbol),
+    fn lex_identifier(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
+        self.lex_textual_token(
+            start_pos,
+            first_ch,
             flags,
-            SourceLoc::new(self.source_id, start_pos),
-            &text,
+            (),
+            |_, ch| ch.is_ascii_alphanumeric() || ch == b'_',
+            PPTokenKind::Identifier,
+        )
+    }
+
+    fn lex_number(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
+        self.lex_textual_token(
+            start_pos,
+            first_ch,
+            flags,
+            false,
+            |seen_e, ch| {
+                if ch.is_ascii_digit() || ch == b'.' || ch.is_ascii_alphabetic() || ch == b'_' {
+                    if ch == b'e' || ch == b'E' {
+                        *seen_e = true;
+                    }
+                    true
+                } else if (ch == b'+' || ch == b'-') && *seen_e {
+                    // Allow + or - after e/E for scientific notation
+                    *seen_e = false; // Reset so we don't allow multiple +/- immediately
+                    true
+                } else {
+                    false
+                }
+            },
+            PPTokenKind::Number,
         )
     }
 

@@ -459,3 +459,11 @@ fn test_add_file_from_path_error() {
     let result = sm.add_file_from_path(std::path::Path::new("non_existent_file_xyz.c"), None);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_default_implementation() {
+    let mut sm = SourceManager::default();
+    let id = sm.add_buffer(vec![b'a'], "test.c", None);
+    // SourceManager::new() starts at 2.
+    assert_eq!(id.to_u32(), 2);
+}

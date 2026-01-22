@@ -1212,31 +1212,40 @@ impl<'src> Preprocessor<'src> {
                     Some('t') => content.push('\t'),
                     Some('v') => content.push('\x0b'),
                     Some(first_digit @ '0'..='7') => {
-                        let mut octal_str = String::new();
-                        octal_str.push(first_digit);
+                        // Bolt ⚡: Optimized octal escape parsing.
+                        // Instead of creating a temporary string for the octal digits, this
+                        // parses the digits directly into a numeric value. This avoids a heap
+                        // allocation for the string, improving performance.
+                        let mut octal_val = first_digit.to_digit(8).unwrap() as u8;
                         for _ in 0..2 {
                             if let Some(digit @ '0'..='7') = chars.peek() {
-                                octal_str.push(*digit);
+                                let digit_val = digit.to_digit(8).unwrap() as u8;
+                                octal_val = octal_val.saturating_mul(8).saturating_add(digit_val);
                                 chars.next();
                             } else {
                                 break;
                             }
                         }
-                        let val = u8::from_str_radix(&octal_str, 8).unwrap_or(0);
-                        content.push(val as char);
+                        content.push(octal_val as char);
                     }
                     Some('x') => {
-                        let mut hex_str = String::new();
+                        // Bolt ⚡: Optimized hexadecimal escape parsing.
+                        // This avoids allocating a temporary string by parsing hex digits
+                        // directly into a numeric value. This is more efficient as it
+                        // prevents a heap allocation inside the loop.
+                        let mut hex_val: u8 = 0;
+                        let mut has_digits = false;
                         while let Some(digit) = chars.peek() {
-                            if digit.is_ascii_hexdigit() {
-                                hex_str.push(chars.next().unwrap());
+                            if let Some(digit_val) = digit.to_digit(16) {
+                                hex_val = hex_val.saturating_mul(16).saturating_add(digit_val as u8);
+                                chars.next(); // consume the digit
+                                has_digits = true;
                             } else {
                                 break;
                             }
                         }
-                        if !hex_str.is_empty() {
-                            let val = u8::from_str_radix(&hex_str, 16).unwrap_or(0);
-                            content.push(val as char);
+                        if has_digits {
+                            content.push(hex_val as char);
                         }
                     }
                     Some(other) => {

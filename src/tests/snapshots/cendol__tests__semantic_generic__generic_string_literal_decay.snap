@@ -1,0 +1,12 @@
+---
+source: src/tests/semantic_generic.rs
+expression: mir
+---
+type %t0 = i32
+
+fn main() -> i32
+{
+
+  bb1:
+    return const 1
+}

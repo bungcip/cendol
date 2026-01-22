@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::super::semantic_common::run_fail_with_message;
-    use crate::driver::artifact::CompilePhase;
+    use crate::tests::semantic_common::setup_diagnostics_output;
 
     #[test]
     fn test_nested_const_pointer() {
@@ -13,7 +12,8 @@ mod tests {
             }
         ";
         // This should fail because *p is const int.
-        run_fail_with_message(code, CompilePhase::Mir, "cannot assign to read-only location");
+        let output = setup_diagnostics_output(code);
+        insta::assert_snapshot!(output);
     }
 
     #[test]
@@ -26,7 +26,8 @@ mod tests {
                 p = 0;   // This should fail
             }
         ";
-        run_fail_with_message(code, CompilePhase::Mir, "cannot assign to read-only location");
+        let output = setup_diagnostics_output(code);
+        insta::assert_snapshot!(output);
     }
 
     #[test]
@@ -39,7 +40,8 @@ mod tests {
                 p = 0;   // Should fail (pointer is const)
             }
         ";
-        // Both will fail, let's just check one diagnostic.
-        run_fail_with_message(code, CompilePhase::Mir, "cannot assign to read-only location");
+        // Both will fail
+        let output = setup_diagnostics_output(code);
+        insta::assert_snapshot!(output);
     }
 }

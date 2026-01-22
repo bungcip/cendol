@@ -1,0 +1,6 @@
+---
+source: src/tests/lexer.rs
+expression: "vec![eof, unknown]"
+---
+- - EndOfFile
+- - Unknown

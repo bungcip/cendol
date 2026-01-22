@@ -1,0 +1,7 @@
+---
+source: src/tests/lexer.rs
+expression: tokens
+---
+- CharacterConstant: 97
+- CharacterConstant: 10
+- StringLiteral: "helloworld\n"

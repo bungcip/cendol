@@ -9,7 +9,7 @@ use target_lexicon::Triple;
 
 use crate::{
     driver::artifact::CompilePhase,
-    lang_options::{CStandard, LangFlags, LangOptions},
+    lang_options::{CStandard, LangOptions},
 };
 
 /// CLI interface using clap
@@ -196,10 +196,8 @@ impl Cli {
         }
 
         // Build language options
-        let flags = LangFlags::empty();
 
         let lang_options = LangOptions {
-            flags,
             c_standard: self.c_standard,
         };
 

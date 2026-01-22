@@ -2796,9 +2796,7 @@ impl<'src> Preprocessor<'src> {
                     }
                     continue;
                 }
-                PPTokenKind::Identifier(symbol)
-                    if in_conditional && symbol == &self.directive_keywords.has_include =>
-                {
+                PPTokenKind::Identifier(symbol) if in_conditional && symbol == &self.directive_keywords.has_include => {
                     // Skip '__has_include'
                     i += 1;
                     // Skip arguments... handled similarly to defined, but it MUST have parentheses.

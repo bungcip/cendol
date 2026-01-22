@@ -72,10 +72,6 @@ pub struct Cli {
     #[clap(short = 'W', action = clap::ArgAction::Append)]
     pub warnings: Vec<String>,
 
-    /// Enable pedantic mode (strict standards compliance)
-    #[clap(long = "pedantic")]
-    pub pedantic: bool,
-
     /// Enable all warnings
     #[clap(long = "Wall")]
     pub wall: bool,
@@ -200,10 +196,7 @@ impl Cli {
         }
 
         // Build language options
-        let mut flags = LangFlags::empty();
-        if self.pedantic {
-            flags |= LangFlags::PEDANTIC;
-        }
+        let flags = LangFlags::empty();
 
         let lang_options = LangOptions {
             flags,

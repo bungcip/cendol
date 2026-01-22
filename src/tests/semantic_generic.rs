@@ -29,6 +29,19 @@ fn test_generic_selection_correct_type_is_chosen() {
 }
 
 #[test]
+fn test_generic_function_decay() {
+    run_pass(
+        r#"
+        void my_func() {}
+        int main() {
+            return _Generic(my_func, void (*)(void): 0, default: 1);
+        }
+    "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
 fn test_generic_selection_with_user_defined_type() {
     run_pass(
         r#"

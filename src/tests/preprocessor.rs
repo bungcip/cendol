@@ -977,3 +977,50 @@ CORRECT
       text: CORRECT
     "#);
 }
+
+#[test]
+fn test_defined_in_macro_expansion() {
+    let src = r#"
+#define VAL 123
+#define M(x) x
+int res = M(defined VAL);
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: res
+    - kind: Assign
+      text: "="
+    - kind: Identifier
+      text: defined
+    - kind: Number
+      text: "123"
+    - kind: Semicolon
+      text: ;
+    "#);
+}
+
+#[test]
+fn test_defined_in_complex_conditional() {
+    let src = r#"
+#define VAL 123
+#if defined(VAL) || 0
+int if_defined_complex = 1;
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: if_defined_complex
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
+}

@@ -969,7 +969,7 @@ impl<'src> Preprocessor<'src> {
 
         // First, expand macros in the expression
         let mut expanded_tokens = tokens.to_vec();
-        match self.expand_tokens(&mut expanded_tokens) {
+        match self.expand_tokens(&mut expanded_tokens, true) {
             Ok(_) => {}
             Err(_e) => {
                 // If macro expansion fails, emit diagnostic and treat as false
@@ -1839,7 +1839,7 @@ impl<'src> Preprocessor<'src> {
         }
 
         // Expand macros in tokens
-        self.expand_tokens(&mut tokens)?;
+        self.expand_tokens(&mut tokens, false)?;
 
         if tokens.is_empty() {
             return Err(PPError::InvalidLineDirective);
@@ -2043,7 +2043,7 @@ impl<'src> Preprocessor<'src> {
         }
 
         // Expand macros
-        self.expand_tokens(&mut tokens)?;
+        self.expand_tokens(&mut tokens, false)?;
 
         let mut message = String::new();
         for token in tokens {
@@ -2303,7 +2303,7 @@ impl<'src> Preprocessor<'src> {
         }
 
         // Recursively expand any macros in the replacement
-        self.expand_tokens(&mut expanded)?;
+        self.expand_tokens(&mut expanded, false)?;
 
         Ok(expanded)
     }
@@ -2322,7 +2322,7 @@ impl<'src> Preprocessor<'src> {
         let mut expanded_args = Vec::with_capacity(args.len());
         for arg in &args {
             let mut arg_clone = arg.clone();
-            self.expand_tokens(&mut arg_clone)?;
+            self.expand_tokens(&mut arg_clone, false)?;
             expanded_args.push(arg_clone);
         }
 
@@ -2377,7 +2377,7 @@ impl<'src> Preprocessor<'src> {
         }
 
         // Recursively expand any macros in the replacement
-        self.expand_tokens(&mut expanded)?;
+        self.expand_tokens(&mut expanded, false)?;
 
         Ok(expanded)
     }
@@ -2707,7 +2707,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expand tokens by rescanning for further macro expansion
-    fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>) -> Result<(), PPError> {
+    fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>, in_conditional: bool) -> Result<(), PPError> {
         let mut i = 0;
         let max_expansions = 10000; // Safety limit to prevent infinite recursion
 
@@ -2771,7 +2771,7 @@ impl<'src> Preprocessor<'src> {
                     i += 1;
                     continue;
                 }
-                PPTokenKind::Identifier(symbol) if symbol == &self.directive_keywords.defined => {
+                PPTokenKind::Identifier(symbol) if in_conditional && symbol == &self.directive_keywords.defined => {
                     // Skip 'defined'
                     i += 1;
                     // Skip the next token(s) which is the macro name, possibly in parens
@@ -2796,7 +2796,9 @@ impl<'src> Preprocessor<'src> {
                     }
                     continue;
                 }
-                PPTokenKind::Identifier(symbol) if symbol == &self.directive_keywords.has_include => {
+                PPTokenKind::Identifier(symbol)
+                    if in_conditional && symbol == &self.directive_keywords.has_include =>
+                {
                     // Skip '__has_include'
                     i += 1;
                     // Skip arguments... handled similarly to defined, but it MUST have parentheses.
@@ -2899,7 +2901,7 @@ impl<'src> Preprocessor<'src> {
                     for arg in &args {
                         let mut arg_clone = arg.clone();
                         // Handle potential error in argument expansion
-                        match self.expand_tokens(&mut arg_clone) {
+                        match self.expand_tokens(&mut arg_clone, in_conditional) {
                             Ok(_) => expanded_args.push(arg_clone),
                             Err(_) => expanded_args.push(arg.clone()), // Fallback to unexpanded
                         }
@@ -3134,11 +3136,11 @@ mod tests {
         // Test case 4: Hexadecimal escapes
         assert_eq!(pp.destringize("\"\\x41\""), "A");
         assert_eq!(pp.destringize("\"\\x1b\""), "\x1b");
-        assert_eq!(pp.destringize("\"a\\x41b\""), "aAb");
+        assert_eq!(pp.destringize("\"a\\x41g\""), "aAg");
         assert_eq!(pp.destringize("\"\\x0a\""), "\n");
 
         // Test case 5: Mixed and complex cases
-        assert_eq!(pp.destringize("\"a\\\\\\\"b\\tc\\123d\\x41e\""), "a\\\"b\tcSdAe");
+        assert_eq!(pp.destringize("\"a\\\\\\\"b\\tc\\123d\\x41g\""), "a\\\"b\tcSdAg");
 
         // Test case 6: Empty string
         assert_eq!(pp.destringize("\"\""), "");

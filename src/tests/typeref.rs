@@ -242,3 +242,20 @@ fn test_typeregistry_pointer_canonicalization() {
         "volatile int* should differ from const volatile int*"
     );
 }
+
+#[test]
+fn test_complex_type_canonicalization() {
+    let mut reg = TypeRegistry::new(target_lexicon::Triple::host());
+    let int_ty = reg.type_int;
+
+    // Test: Create a complex type
+    let c1 = reg.complex_type(int_ty);
+
+    // Test: Create the same complex type again (should be canonicalized)
+    let c2 = reg.complex_type(int_ty);
+    assert_eq!(c1, c2, "_Complex int should be canonicalized");
+
+    // Verify Display output
+    let output = reg.display_type(c1);
+    assert_eq!(output, "_Complex int");
+}

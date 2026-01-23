@@ -1,12 +1,11 @@
-use crate::ast::BinaryOp;
 use crate::ast::nodes;
 use crate::ast::*;
 use crate::mir::MirArrayLayout;
 use crate::mir::MirProgram;
 use crate::mir::MirRecordLayout;
 use crate::mir::{
-    self, BinaryFloatOp, BinaryIntOp, ConstValueId, ConstValueKind, LocalId, MirBlockId, MirBuilder, MirFunctionId,
-    MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
+    self, BinaryIntOp, ConstValueId, ConstValueKind, LocalId, MirBlockId, MirBuilder, MirFunctionId, MirStmt, MirType,
+    Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
@@ -1039,26 +1038,6 @@ impl<'a> AstToMirLowerer<'a> {
         Operand::Copy(Box::new(place))
     }
 
-    pub(crate) fn emit_binary_rvalue(&self, op: &BinaryOp, lhs: Operand, rhs: Operand, is_float: bool) -> Rvalue {
-        if is_float {
-            let mir_op = self.map_ast_binary_op_to_mir_float(op);
-            Rvalue::BinaryFloatOp(mir_op, lhs, rhs)
-        } else {
-            let mir_op = self.map_ast_binary_op_to_mir_int(op);
-            Rvalue::BinaryIntOp(mir_op, lhs, rhs)
-        }
-    }
-
-    pub(crate) fn emit_unary_rvalue(&self, op: &UnaryOp, operand: Operand, is_float: bool) -> Rvalue {
-        if is_float {
-            let mir_op = self.map_ast_unary_op_to_mir_float(op);
-            Rvalue::UnaryFloatOp(mir_op, operand)
-        } else {
-            let mir_op = self.map_ast_unary_op_to_mir_int(op);
-            Rvalue::UnaryIntOp(mir_op, operand)
-        }
-    }
-
     pub(crate) fn operand_to_const_id(&mut self, operand: Operand) -> Option<ConstValueId> {
         match operand {
             Operand::Constant(id) => Some(id),
@@ -1093,65 +1072,6 @@ impl<'a> AstToMirLowerer<'a> {
                     None
                 }
             }
-        }
-    }
-
-    fn map_ast_binary_op_to_mir_int(&self, ast_op: &BinaryOp) -> BinaryIntOp {
-        let op = ast_op.without_assignment().unwrap_or(*ast_op);
-        match op {
-            BinaryOp::Add => BinaryIntOp::Add,
-            BinaryOp::Sub => BinaryIntOp::Sub,
-            BinaryOp::Mul => BinaryIntOp::Mul,
-            BinaryOp::Div => BinaryIntOp::Div,
-            BinaryOp::Mod => BinaryIntOp::Mod,
-            BinaryOp::BitAnd => BinaryIntOp::BitAnd,
-            BinaryOp::BitOr => BinaryIntOp::BitOr,
-            BinaryOp::BitXor => BinaryIntOp::BitXor,
-            BinaryOp::LShift => BinaryIntOp::LShift,
-            BinaryOp::RShift => BinaryIntOp::RShift,
-            BinaryOp::Equal => BinaryIntOp::Eq,
-            BinaryOp::NotEqual => BinaryIntOp::Ne,
-            BinaryOp::Less => BinaryIntOp::Lt,
-            BinaryOp::LessEqual => BinaryIntOp::Le,
-            BinaryOp::Greater => BinaryIntOp::Gt,
-            BinaryOp::GreaterEqual => BinaryIntOp::Ge,
-            // Logic ops are handled separately (short-circuit)
-            BinaryOp::LogicAnd | BinaryOp::LogicOr => panic!("Logic ops should be handled separately"),
-            BinaryOp::Comma => panic!("Comma op should be handled separately"), // Comma usually handled in expression lowering
-            _ => panic!("Unsupported integer binary operator: {:?}", ast_op),
-        }
-    }
-
-    fn map_ast_binary_op_to_mir_float(&self, ast_op: &BinaryOp) -> BinaryFloatOp {
-        let op = ast_op.without_assignment().unwrap_or(*ast_op);
-        match op {
-            BinaryOp::Add => BinaryFloatOp::Add,
-            BinaryOp::Sub => BinaryFloatOp::Sub,
-            BinaryOp::Mul => BinaryFloatOp::Mul,
-            BinaryOp::Div => BinaryFloatOp::Div,
-            BinaryOp::Equal => BinaryFloatOp::Eq,
-            BinaryOp::NotEqual => BinaryFloatOp::Ne,
-            BinaryOp::Less => BinaryFloatOp::Lt,
-            BinaryOp::LessEqual => BinaryFloatOp::Le,
-            BinaryOp::Greater => BinaryFloatOp::Gt,
-            BinaryOp::GreaterEqual => BinaryFloatOp::Ge,
-            _ => panic!("Unsupported float binary operator: {:?}", ast_op),
-        }
-    }
-
-    fn map_ast_unary_op_to_mir_int(&self, ast_op: &UnaryOp) -> UnaryIntOp {
-        match ast_op {
-            UnaryOp::Minus => UnaryIntOp::Neg,
-            UnaryOp::BitNot => UnaryIntOp::BitwiseNot,
-            UnaryOp::LogicNot => UnaryIntOp::LogicalNot,
-            _ => panic!("Unsupported integer unary operator: {:?}", ast_op),
-        }
-    }
-
-    fn map_ast_unary_op_to_mir_float(&self, ast_op: &UnaryOp) -> UnaryFloatOp {
-        match ast_op {
-            UnaryOp::Minus => UnaryFloatOp::Neg,
-            _ => panic!("Unsupported float unary operator: {:?}", ast_op),
         }
     }
 

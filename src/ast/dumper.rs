@@ -9,7 +9,7 @@ use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind};
 use crate::semantic::{ArraySizeType, BuiltinType, SymbolRef, SymbolTable, TypeKind, TypeRef, TypeRegistry};
 
 /// Dumper for AST
-pub struct AstDumper;
+pub(crate) struct AstDumper;
 
 impl AstDumper {
     /// Dump parsed AST to stdout

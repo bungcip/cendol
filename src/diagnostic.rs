@@ -544,7 +544,7 @@ impl ErrorFormatter {
     }
 
     /// Print all diagnostics to stderr
-    pub fn print_diagnostics(&self, diagnostics: &[Diagnostic], source_manager: &SourceManager) {
+    pub(crate) fn print_diagnostics(&self, diagnostics: &[Diagnostic], source_manager: &SourceManager) {
         for diag in diagnostics {
             let formatted = self.format_diagnostic(diag, source_manager);
             eprintln!("{}", formatted);

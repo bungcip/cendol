@@ -327,6 +327,9 @@ pub enum SemanticError {
     #[error("incomplete type '{ty}'")]
     IncompleteType { ty: String, span: SourceSpan },
 
+    #[error("function has incomplete return type")]
+    IncompleteReturnType { span: SourceSpan },
+
     #[error("comparison of incompatible pointer types '{lhs}' and '{rhs}'")]
     IncompatiblePointerComparison { lhs: String, rhs: String, span: SourceSpan },
 
@@ -401,6 +404,7 @@ impl SemanticError {
             SemanticError::AssignmentToReadOnly { span } => *span,
             SemanticError::IncompleteType { span, .. } => *span,
             SemanticError::IncompatiblePointerComparison { span, .. } => *span,
+            SemanticError::IncompleteReturnType { span } => *span,
             SemanticError::CaseNotInSwitch { span } => *span,
             SemanticError::DuplicateCase { span, .. } => *span,
             SemanticError::MultipleDefaultLabels { span } => *span,

@@ -1199,7 +1199,17 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::FunctionDecl(data) => {
                 self.visit_type_expressions(QualType::unqualified(data.ty));
                 let func_type = self.registry.get(data.ty).kind.clone();
-                if let TypeKind::Function { parameters, .. } = func_type {
+                if let TypeKind::Function {
+                    return_type,
+                    parameters,
+                    ..
+                } = func_type
+                {
+                    if !self.registry.is_complete(return_type) && return_type != self.registry.type_void {
+                        let span = self.ast.get_span(_node_ref);
+                        self.report_error(SemanticError::IncompleteReturnType { span });
+                    }
+
                     for param in parameters {
                         let _ = self.registry.ensure_layout(param.param_type.ty());
                     }

@@ -19,14 +19,13 @@
 //! - **Type System**: Canonical types distinct from syntactic type specifiers
 //!
 
-use smallvec::SmallVec;
 use std::num::NonZeroU32;
 
 /// Represents an interned string using symbol_table crate.
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type NameId = symbol_table::GlobalSymbol;
 
-use crate::semantic::{ImplicitConversion, QualType, ScopeId, SemanticInfo, SymbolRef, TypeRef, ValueCategory};
+use crate::semantic::{QualType, ScopeId, SemanticInfo, SymbolRef, TypeRef, ValueCategory};
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 
 // Submodules
@@ -198,17 +197,4 @@ impl Ast {
             .copied()
     }
 
-    /// Get the conversions for a node (reads from attached semantic_info)
-    pub fn get_conversions(&self, node_ref: NodeRef) -> Option<&SmallVec<[ImplicitConversion; 1]>> {
-        self.semantic_info.as_ref()?.conversions.get(node_ref.index())
-    }
-
-    /// Check if a node has only pointer decay conversion (optimization opportunity)
-    pub fn has_only_pointer_decay(&self, node_ref: NodeRef) -> bool {
-        if let Some(conversions) = self.get_conversions(node_ref) {
-            conversions.len() == 1 && matches!(conversions[0], ImplicitConversion::PointerDecay { .. })
-        } else {
-            false
-        }
-    }
 }

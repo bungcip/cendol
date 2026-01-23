@@ -431,24 +431,12 @@ impl QualType {
         self.ty().is_record()
     }
     #[inline]
-    pub fn is_enum(self) -> bool {
-        self.ty().is_enum()
-    }
-    #[inline]
-    pub fn is_builtin(self) -> bool {
-        self.ty().is_builtin()
-    }
-    #[inline]
     pub fn is_void(self) -> bool {
         self.ty().is_void()
     }
     #[inline]
     pub fn is_integer(self) -> bool {
         self.ty().is_integer()
-    }
-    #[inline]
-    pub fn is_floating(self) -> bool {
-        self.ty().is_floating()
     }
     #[inline]
     pub fn is_arithmetic(self) -> bool {

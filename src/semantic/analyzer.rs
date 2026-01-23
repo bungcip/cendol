@@ -1257,6 +1257,8 @@ impl<'a> SemanticAnalyzer<'a> {
                     let ctx = crate::semantic::const_eval::ConstEvalCtx {
                         ast: self.ast,
                         symbol_table: self.symbol_table,
+                        type_registry: self.registry,
+                        semantic_info: Some(self.semantic_info),
                     };
                     if let Some(val) = crate::semantic::const_eval::eval_const_expr(&ctx, *expr) {
                         let is_duplicate = if let Some(cases) = self.switch_cases.last_mut() {
@@ -1286,6 +1288,8 @@ impl<'a> SemanticAnalyzer<'a> {
                     let ctx = crate::semantic::const_eval::ConstEvalCtx {
                         ast: self.ast,
                         symbol_table: self.symbol_table,
+                        type_registry: self.registry,
+                        semantic_info: Some(self.semantic_info),
                     };
                     if let (Some(start_val), Some(end_val)) = (
                         crate::semantic::const_eval::eval_const_expr(&ctx, *start),
@@ -1634,6 +1638,8 @@ impl<'a> SemanticAnalyzer<'a> {
             let ctx = crate::semantic::const_eval::ConstEvalCtx {
                 ast: self.ast,
                 symbol_table: self.symbol_table,
+                type_registry: self.registry,
+                semantic_info: Some(self.semantic_info),
             };
             match crate::semantic::const_eval::eval_const_expr(&ctx, cond) {
                 Some(0) => {

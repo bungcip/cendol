@@ -5,12 +5,14 @@
 //! static assertions and array sizes.
 
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, UnaryOp, literal};
-use crate::semantic::{SymbolKind, SymbolTable};
+use crate::semantic::{SemanticInfo, SymbolKind, SymbolTable, TypeRegistry};
 
 /// Context for constant expression evaluation
 pub(crate) struct ConstEvalCtx<'a> {
     pub(crate) ast: &'a Ast,
     pub(crate) symbol_table: &'a SymbolTable,
+    pub(crate) type_registry: &'a TypeRegistry,
+    pub(crate) semantic_info: Option<&'a SemanticInfo>,
 }
 
 /// Evaluate a constant expression node to an i64 value
@@ -61,6 +63,23 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
                 UnaryOp::BitNot => Some(!operand_val),
                 _ => None,
             }
+        }
+        NodeKind::SizeOfExpr(expr) => {
+            let ty = ctx
+                .semantic_info
+                .and_then(|si| si.types[expr.index()])
+                .or_else(|| ctx.ast.get_resolved_type(*expr))
+                .unwrap();
+            let layout = ctx.type_registry.get_layout(ty.ty());
+            Some(layout.size as i64)
+        }
+        NodeKind::SizeOfType(ty) => {
+            let layout = ctx.type_registry.get_layout(ty.ty());
+            Some(layout.size as i64)
+        }
+        NodeKind::AlignOf(ty) => {
+            let layout = ctx.type_registry.get_layout(ty.ty());
+            Some(layout.alignment as i64)
         }
         _ => None,
     }

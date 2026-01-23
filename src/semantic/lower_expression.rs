@@ -33,6 +33,8 @@ impl<'a> AstToMirLowerer<'a> {
             let ctx = ConstEvalCtx {
                 ast: self.ast,
                 symbol_table: self.symbol_table,
+                type_registry: self.registry,
+                semantic_info: None,
             };
             if let Some(val) = eval_const_expr(&ctx, expr_ref) {
                 let ty_id = self.lower_qual_type(ty);
@@ -581,17 +583,13 @@ impl<'a> AstToMirLowerer<'a> {
             None
         };
 
-        let param_types = if let Some(func_type_kind) = func_type_kind {
-            if let TypeKind::Function { parameters, .. } = &func_type_kind {
-                Some(
-                    parameters
-                        .iter()
-                        .map(|param| self.lower_qual_type(param.param_type))
-                        .collect::<Vec<_>>(),
-                )
-            } else {
-                None
-            }
+        let param_types = if let Some(TypeKind::Function { parameters, .. }) = func_type_kind.as_ref() {
+            Some(
+                parameters
+                    .iter()
+                    .map(|param| self.lower_qual_type(param.param_type))
+                    .collect::<Vec<_>>(),
+            )
         } else {
             None
         };

@@ -26,6 +26,7 @@ pub mod semantic_array_init_bug;
 pub mod semantic_arrays;
 pub mod semantic_assignment_validation;
 pub mod semantic_common;
+pub mod semantic_const_eval;
 pub mod semantic_const_nested;
 pub mod semantic_function_params;
 pub mod semantic_generic;

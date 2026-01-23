@@ -196,5 +196,4 @@ impl Ast {
             .get(node_ref.index())
             .copied()
     }
-
 }

@@ -1,5 +1,5 @@
 //! Semantic validation tests for incomplete types.
-use super::semantic_common::{check_diagnostic_message_only, run_fail};
+use super::semantic_common::{check_diagnostic_message_only, run_fail, run_fail_with_diagnostic};
 use crate::driver::artifact::CompilePhase;
 
 #[test]
@@ -14,6 +14,20 @@ fn rejects_sizeof_on_incomplete_struct() {
         CompilePhase::Mir,
     );
     check_diagnostic_message_only(&driver, "Invalid application of 'sizeof' to an incomplete type");
+}
+
+#[test]
+fn rejects_function_returning_incomplete_type() {
+    run_fail_with_diagnostic(
+        r#"
+        struct S;
+        struct S foo();
+    "#,
+        CompilePhase::Mir,
+        "function has incomplete return type",
+        2,
+        9,
+    );
 }
 
 #[test]

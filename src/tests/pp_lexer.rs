@@ -477,3 +477,17 @@ fn test_consecutive_splices_with_cr() {
     let token = lexer.next_token().unwrap();
     assert_eq!(token.get_text(), "AB");
 }
+
+/// Test C11 hexadecimal floating-point literals (e.g., 0x1p+1)
+#[test]
+fn test_hex_float_literal() {
+    let source = "0x1p+1 0x1.fp-2 0x1P+1";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(
+        lexer,
+        ("0x1p+1", PPTokenKind::Number(_)),
+        ("0x1.fp-2", PPTokenKind::Number(_)),
+        ("0x1P+1", PPTokenKind::Number(_)),
+    );
+}

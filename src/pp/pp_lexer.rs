@@ -666,7 +666,7 @@ impl PPLexer {
     fn lex_number(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
         let text = self.consume_while(false, first_ch, |seen_e, ch| {
             if ch.is_ascii_digit() || ch == b'.' || ch.is_ascii_alphabetic() || ch == b'_' {
-                if ch == b'e' || ch == b'E' {
+                if ch == b'e' || ch == b'E' || ch == b'p' || ch == b'P' {
                     *seen_e = true;
                 }
                 true

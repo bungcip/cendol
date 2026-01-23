@@ -1,0 +1,76 @@
+---
+source: src/tests/lexer.rs
+expression: snapshot_lexer_cases(cases)
+---
+- - "42"
+  - - IntegerConstant: 42
+- - "0x1A"
+  - - IntegerConstant: 26
+- - "077"
+  - - IntegerConstant: 63
+- - 1ll
+  - - IntegerConstant: 1
+- - 42u
+  - - IntegerConstant: 42
+- - 123l
+  - - IntegerConstant: 123
+- - 456ul
+  - - IntegerConstant: 456
+- - 789lu
+  - - IntegerConstant: 789
+- - 1000ull
+  - - IntegerConstant: 1000
+- - 2000llu
+  - - IntegerConstant: 2000
+- - "0x1Au"
+  - - IntegerConstant: 26
+- - "0xFFll"
+  - - IntegerConstant: 255
+- - "0x10UL"
+  - - IntegerConstant: 16
+- - "0x20LU"
+  - - IntegerConstant: 32
+- - "0x40ULL"
+  - - IntegerConstant: 64
+- - "0x80LLU"
+  - - IntegerConstant: 128
+- - 077u
+  - - IntegerConstant: 63
+- - 0123l
+  - - IntegerConstant: 83
+- - 0777ul
+  - - IntegerConstant: 511
+- - 0123lu
+  - - IntegerConstant: 83
+- - 0777ull
+  - - IntegerConstant: 511
+- - 0123llu
+  - - IntegerConstant: 83
+- - 1LL
+  - - IntegerConstant: 1
+- - 42U
+  - - IntegerConstant: 42
+- - 123L
+  - - IntegerConstant: 123
+- - 456UL
+  - - IntegerConstant: 456
+- - 789LU
+  - - IntegerConstant: 789
+- - 1000ULL
+  - - IntegerConstant: 1000
+- - 2000LLU
+  - - IntegerConstant: 2000
+- - "1.5"
+  - - FloatConstant: 1.5
+- - "1.23e-4"
+  - - FloatConstant: 0.000123
+- - "0x1.2p3"
+  - - FloatConstant: 9
+- - "'a'"
+  - - CharacterConstant: 97
+- - "'\\n'"
+  - - CharacterConstant: 10
+- - "\"hello\""
+  - - StringLiteral: hello
+- - "\"world\\n\""
+  - - StringLiteral: "world\n"

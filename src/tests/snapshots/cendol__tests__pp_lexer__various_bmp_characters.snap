@@ -1,0 +1,22 @@
+---
+source: src/tests/pp_lexer.rs
+expression: results
+---
+- - kind: "StringLiteral(\"L\\\"你好世界\\\"\")"
+    text: "L\"你好世界\""
+    flags: []
+- - kind: "StringLiteral(\"L\\\"€$¢£¥\\\"\")"
+    text: "L\"€$¢£¥\""
+    flags: []
+- - kind: "StringLiteral(\"L\\\"hello¢world€test\\\"\")"
+    text: "L\"hello¢world€test\""
+    flags: []
+- - kind: "StringLiteral(\"L\\\"café naïve résumé\\\"\")"
+    text: "L\"café naïve résumé\""
+    flags: []
+- - kind: "StringLiteral(\"L\\\"αβγδε\\\"\")"
+    text: "L\"αβγδε\""
+    flags: []
+- - kind: "StringLiteral(\"L\\\"привет мир\\\"\")"
+    text: "L\"привет мир\""
+    flags: []

@@ -1,0 +1,19 @@
+---
+source: src/tests/pp_lexer.rs
+expression: snapshot_pp_lexer(source)
+---
+- kind: "CharLiteral(97, \"L'a'\")"
+  text: "L'a'"
+  flags: []
+- kind: "CharLiteral(98, \"u'b'\")"
+  text: "u'b'"
+  flags:
+    - LEADING_SPACE
+- kind: "CharLiteral(99, \"U'c'\")"
+  text: "U'c'"
+  flags:
+    - LEADING_SPACE
+- kind: "CharLiteral(0, \"'\\\\0'\")"
+  text: "'\\0'"
+  flags:
+    - LEADING_SPACE

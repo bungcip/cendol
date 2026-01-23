@@ -1,0 +1,19 @@
+---
+source: src/tests/pp_lexer.rs
+expression: snapshot_pp_lexer(source)
+---
+- kind: "Identifier(\"variable\")"
+  text: variable
+  flags: []
+- kind: "StringLiteral(\"\\\"string\\\"\")"
+  text: "\"string\""
+  flags:
+    - LEADING_SPACE
+- kind: "CharLiteral(99, \"'c'\")"
+  text: "'c'"
+  flags:
+    - LEADING_SPACE
+- kind: "Number(\"123\")"
+  text: "123"
+  flags:
+    - LEADING_SPACE

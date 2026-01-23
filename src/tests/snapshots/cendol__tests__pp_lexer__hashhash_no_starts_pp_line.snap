@@ -1,0 +1,7 @@
+---
+source: src/tests/pp_lexer.rs
+expression: snapshot_pp_lexer(source)
+---
+- kind: HashHash
+  text: "##"
+  flags: []

@@ -1,0 +1,16 @@
+---
+source: src/tests/pp_lexer.rs
+expression: "vec![snapshot_pp_lexer(source1), snapshot_pp_lexer(source2),\nsnapshot_pp_lexer(source3), snapshot_pp_lexer(source4)]"
+---
+- - kind: "StringLiteral(\"L\\\"abc\\\"\")"
+    text: "L\"abc\""
+    flags: []
+- - kind: "StringLiteral(\"L\\\"café\\\"\")"
+    text: "L\"café\""
+    flags: []
+- - kind: "StringLiteral(\"L\\\"你好\\\"\")"
+    text: "L\"你好\""
+    flags: []
+- - kind: "StringLiteral(\"L\\\"café你好\\\"\")"
+    text: "L\"café你好\""
+    flags: []

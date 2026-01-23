@@ -1,0 +1,199 @@
+---
+source: src/tests/pp_lexer.rs
+expression: snapshot_pp_lexer(source)
+---
+- kind: Plus
+  text: +
+  flags: []
+- kind: Minus
+  text: "-"
+  flags:
+    - LEADING_SPACE
+- kind: Star
+  text: "*"
+  flags:
+    - LEADING_SPACE
+- kind: Slash
+  text: /
+  flags:
+    - LEADING_SPACE
+- kind: Percent
+  text: "%"
+  flags:
+    - LEADING_SPACE
+- kind: And
+  text: "&"
+  flags:
+    - LEADING_SPACE
+- kind: Or
+  text: "|"
+  flags:
+    - LEADING_SPACE
+- kind: Xor
+  text: ^
+  flags:
+    - LEADING_SPACE
+- kind: Not
+  text: "!"
+  flags:
+    - LEADING_SPACE
+- kind: Tilde
+  text: "~"
+  flags:
+    - LEADING_SPACE
+- kind: Less
+  text: "<"
+  flags:
+    - LEADING_SPACE
+- kind: Greater
+  text: ">"
+  flags:
+    - LEADING_SPACE
+- kind: LessEqual
+  text: "<="
+  flags:
+    - LEADING_SPACE
+- kind: GreaterEqual
+  text: ">="
+  flags:
+    - LEADING_SPACE
+- kind: Equal
+  text: "=="
+  flags:
+    - LEADING_SPACE
+- kind: NotEqual
+  text: "!="
+  flags:
+    - LEADING_SPACE
+- kind: LeftShift
+  text: "<<"
+  flags:
+    - LEADING_SPACE
+- kind: RightShift
+  text: ">>"
+  flags:
+    - LEADING_SPACE
+- kind: Assign
+  text: "="
+  flags:
+    - LEADING_SPACE
+- kind: PlusAssign
+  text: +=
+  flags:
+    - LEADING_SPACE
+- kind: MinusAssign
+  text: "-="
+  flags:
+    - LEADING_SPACE
+- kind: StarAssign
+  text: "*="
+  flags:
+    - LEADING_SPACE
+- kind: DivAssign
+  text: /=
+  flags:
+    - LEADING_SPACE
+- kind: ModAssign
+  text: "%="
+  flags:
+    - LEADING_SPACE
+- kind: AndAssign
+  text: "&="
+  flags:
+    - LEADING_SPACE
+- kind: OrAssign
+  text: "|="
+  flags:
+    - LEADING_SPACE
+- kind: XorAssign
+  text: ^=
+  flags:
+    - LEADING_SPACE
+- kind: LeftShiftAssign
+  text: "<<="
+  flags:
+    - LEADING_SPACE
+- kind: RightShiftAssign
+  text: ">>="
+  flags:
+    - LEADING_SPACE
+- kind: Increment
+  text: ++
+  flags:
+    - LEADING_SPACE
+- kind: Decrement
+  text: "--"
+  flags:
+    - LEADING_SPACE
+- kind: Arrow
+  text: "->"
+  flags:
+    - LEADING_SPACE
+- kind: Dot
+  text: "."
+  flags:
+    - LEADING_SPACE
+- kind: Question
+  text: "?"
+  flags:
+    - LEADING_SPACE
+- kind: Colon
+  text: ":"
+  flags:
+    - LEADING_SPACE
+- kind: Comma
+  text: ","
+  flags:
+    - LEADING_SPACE
+- kind: Semicolon
+  text: ;
+  flags:
+    - LEADING_SPACE
+- kind: LeftParen
+  text: (
+  flags:
+    - LEADING_SPACE
+- kind: RightParen
+  text: )
+  flags:
+    - LEADING_SPACE
+- kind: LeftBracket
+  text: "["
+  flags:
+    - LEADING_SPACE
+- kind: RightBracket
+  text: "]"
+  flags:
+    - LEADING_SPACE
+- kind: LeftBrace
+  text: "{"
+  flags:
+    - LEADING_SPACE
+- kind: RightBrace
+  text: "}"
+  flags:
+    - LEADING_SPACE
+- kind: Ellipsis
+  text: "..."
+  flags:
+    - LEADING_SPACE
+- kind: LogicAnd
+  text: "&&"
+  flags:
+    - LEADING_SPACE
+- kind: LogicOr
+  text: "||"
+  flags:
+    - LEADING_SPACE
+- kind: Hash
+  text: "#"
+  flags:
+    - LEADING_SPACE
+    - STARTS_PP_LINE
+- kind: HashHash
+  text: "##"
+  flags:
+    - LEADING_SPACE
+- kind: Eod
+  text: ""
+  flags: []

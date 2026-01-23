@@ -1,0 +1,90 @@
+---
+source: src/tests/lexer.rs
+expression: snapshot_lexer_cases(keywords)
+---
+- - auto
+  - - Auto
+- - break
+  - - Break
+- - case
+  - - Case
+- - char
+  - - Char
+- - const
+  - - Const
+- - continue
+  - - Continue
+- - default
+  - - Default
+- - do
+  - - Do
+- - double
+  - - Double
+- - else
+  - - Else
+- - enum
+  - - Enum
+- - extern
+  - - Extern
+- - float
+  - - Float
+- - for
+  - - For
+- - goto
+  - - Goto
+- - if
+  - - If
+- - inline
+  - - Inline
+- - int
+  - - Int
+- - long
+  - - Long
+- - register
+  - - Register
+- - restrict
+  - - Restrict
+- - return
+  - - Return
+- - short
+  - - Short
+- - signed
+  - - Signed
+- - sizeof
+  - - Sizeof
+- - static
+  - - Static
+- - struct
+  - - Struct
+- - switch
+  - - Switch
+- - typedef
+  - - Typedef
+- - union
+  - - Union
+- - unsigned
+  - - Unsigned
+- - void
+  - - Void
+- - volatile
+  - - Volatile
+- - while
+  - - While
+- - _Alignas
+  - - Alignas
+- - _Alignof
+  - - Alignof
+- - _Atomic
+  - - Atomic
+- - _Bool
+  - - Bool
+- - _Complex
+  - - Complex
+- - _Generic
+  - - Generic
+- - _Noreturn
+  - - Noreturn
+- - _Static_assert
+  - - StaticAssert
+- - _Thread_local
+  - - ThreadLocal

@@ -1,0 +1,150 @@
+---
+source: src/tests/pp_lexer.rs
+expression: results
+---
+- - kind: Hash
+    text: "#"
+    flags:
+      - STARTS_PP_LINE
+  - kind: "Identifier(\"ifdef\")"
+    text: ifdef
+    flags: []
+  - kind: "Identifier(\"TEST\")"
+    text: TEST
+    flags:
+      - LEADING_SPACE
+  - kind: Eod
+    text: ""
+    flags: []
+- - kind: Hash
+    text: "#"
+    flags:
+      - STARTS_PP_LINE
+  - kind: "Identifier(\"ifndef\")"
+    text: ifndef
+    flags: []
+  - kind: "Identifier(\"TEST\")"
+    text: TEST
+    flags:
+      - LEADING_SPACE
+  - kind: Eod
+    text: ""
+    flags: []
+- - kind: Hash
+    text: "#"
+    flags:
+      - STARTS_PP_LINE
+  - kind: "Identifier(\"elif\")"
+    text: elif
+    flags: []
+  - kind: "Number(\"1\")"
+    text: "1"
+    flags:
+      - LEADING_SPACE
+  - kind: Eod
+    text: ""
+    flags: []
+- - kind: Hash
+    text: "#"
+    flags:
+      - STARTS_PP_LINE
+  - kind: "Identifier(\"else\")"
+    text: else
+    flags: []
+  - kind: Eod
+    text: ""
+    flags: []
+- - kind: Hash
+    text: "#"
+    flags:
+      - STARTS_PP_LINE
+  - kind: "Identifier(\"endif\")"
+    text: endif
+    flags: []
+  - kind: Eod
+    text: ""
+    flags: []
+- - kind: Hash
+    text: "#"
+    flags:
+      - STARTS_PP_LINE
+  - kind: "Identifier(\"include\")"
+    text: include
+    flags: []
+  - kind: "StringLiteral(\"\\\"test.h\\\"\")"
+    text: "\"test.h\""
+    flags:
+      - LEADING_SPACE
+  - kind: Eod
+    text: ""
+    flags: []
+- - kind: Hash
+    text: "#"
+    flags:
+      - STARTS_PP_LINE
+  - kind: "Identifier(\"undef\")"
+    text: undef
+    flags: []
+  - kind: "Identifier(\"TEST\")"
+    text: TEST
+    flags:
+      - LEADING_SPACE
+  - kind: Eod
+    text: ""
+    flags: []
+- - kind: Hash
+    text: "#"
+    flags:
+      - STARTS_PP_LINE
+  - kind: "Identifier(\"line\")"
+    text: line
+    flags: []
+  - kind: "Number(\"100\")"
+    text: "100"
+    flags:
+      - LEADING_SPACE
+  - kind: Eod
+    text: ""
+    flags: []
+- - kind: Hash
+    text: "#"
+    flags:
+      - STARTS_PP_LINE
+  - kind: "Identifier(\"pragma\")"
+    text: pragma
+    flags: []
+  - kind: "Identifier(\"once\")"
+    text: once
+    flags:
+      - LEADING_SPACE
+  - kind: Eod
+    text: ""
+    flags: []
+- - kind: Hash
+    text: "#"
+    flags:
+      - STARTS_PP_LINE
+  - kind: "Identifier(\"error\")"
+    text: error
+    flags: []
+  - kind: "Identifier(\"message\")"
+    text: message
+    flags:
+      - LEADING_SPACE
+  - kind: Eod
+    text: ""
+    flags: []
+- - kind: Hash
+    text: "#"
+    flags:
+      - STARTS_PP_LINE
+  - kind: "Identifier(\"warning\")"
+    text: warning
+    flags: []
+  - kind: "Identifier(\"message\")"
+    text: message
+    flags:
+      - LEADING_SPACE
+  - kind: Eod
+    text: ""
+    flags: []

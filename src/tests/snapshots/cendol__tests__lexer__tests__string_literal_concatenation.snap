@@ -1,0 +1,18 @@
+---
+source: src/tests/lexer.rs
+expression: snapshot_lexer_cases(test_cases)
+---
+- - "\"hello\" \"world\""
+  - - StringLiteral: helloworld
+- - "\"hello\"   \"world\""
+  - - StringLiteral: helloworld
+- - "\"a\" \"b\" \"c\""
+  - - StringLiteral: abc
+- - "\"hello\\n\" \"world\""
+  - - StringLiteral: "hello\nworld"
+- - "\"start\" \" middle \" \"end\""
+  - - StringLiteral: start middle end
+- - "\"hello\" ; \"world\""
+  - - StringLiteral: hello
+    - Semicolon
+    - StringLiteral: world

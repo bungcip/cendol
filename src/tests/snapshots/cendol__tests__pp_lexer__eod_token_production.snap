@@ -1,0 +1,22 @@
+---
+source: src/tests/pp_lexer.rs
+expression: snapshot_pp_lexer(source)
+---
+- kind: Hash
+  text: "#"
+  flags:
+    - STARTS_PP_LINE
+- kind: "Identifier(\"define\")"
+  text: define
+  flags: []
+- kind: "Identifier(\"x\")"
+  text: x
+  flags:
+    - LEADING_SPACE
+- kind: "Number(\"1\")"
+  text: "1"
+  flags:
+    - LEADING_SPACE
+- kind: Eod
+  text: ""
+  flags: []

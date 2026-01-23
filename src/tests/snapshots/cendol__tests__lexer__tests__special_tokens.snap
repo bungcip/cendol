@@ -1,0 +1,6 @@
+---
+source: src/tests/lexer.rs
+expression: "(eof, unknown)"
+---
+- - EndOfFile
+- - Unknown

@@ -1,0 +1,51 @@
+---
+source: src/tests/pp_lexer.rs
+expression: "vec![snapshot_pp_lexer(source1), snapshot_pp_lexer(source2),\nsnapshot_pp_lexer(source3), snapshot_pp_lexer(source4),\nsnapshot_pp_lexer(source5), snapshot_pp_lexer(source6),\nsnapshot_pp_lexer(source7),]"
+---
+- - kind: "Identifier(\"hello\")"
+    text: hello
+    flags: []
+  - kind: "Identifier(\"helloworld\")"
+    text: helloworld
+    flags:
+      - LEADING_SPACE
+  - kind: "Number(\"123456\")"
+    text: "123456"
+    flags:
+      - LEADING_SPACE
+  - kind: "StringLiteral(\"\\\"helloworld\\\"\")"
+    text: "\"helloworld\""
+    flags:
+      - LEADING_SPACE
+- - kind: "Identifier(\"hel\")"
+    text: hel
+    flags: []
+  - kind: "Identifier(\"lo\")"
+    text: lo
+    flags:
+      - LEADING_SPACE
+- - kind: "Identifier(\"hello\")"
+    text: hello
+    flags: []
+  - kind: "Identifier(\"world\")"
+    text: world
+    flags:
+      - LEADING_SPACE
+- - kind: "Identifier(\"test\")"
+    text: test
+    flags: []
+  - kind: Unknown
+    text: "?"
+    flags: []
+- - kind: "Identifier(\"hello\")"
+    text: hello
+    flags: []
+- - kind: "Identifier(\"hello\")"
+    text: hello
+    flags: []
+- - kind: "Identifier(\"test\")"
+    text: test
+    flags: []
+  - kind: Unknown
+    text: "?"
+    flags: []

@@ -1,0 +1,12 @@
+---
+source: src/tests/pp_lexer.rs
+expression: snapshot_pp_lexer(source)
+---
+- kind: Hash
+  text: "#"
+  flags:
+    - LEADING_SPACE
+    - STARTS_PP_LINE
+- kind: Eod
+  text: ""
+  flags: []

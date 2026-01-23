@@ -1,0 +1,55 @@
+---
+source: src/tests/pp_lexer.rs
+expression: snapshot_pp_lexer(source)
+---
+- kind: "Identifier(\"if\")"
+  text: if
+  flags: []
+- kind: "Identifier(\"ifdef\")"
+  text: ifdef
+  flags:
+    - LEADING_SPACE
+- kind: "Identifier(\"ifndef\")"
+  text: ifndef
+  flags:
+    - LEADING_SPACE
+- kind: "Identifier(\"elif\")"
+  text: elif
+  flags:
+    - LEADING_SPACE
+- kind: "Identifier(\"else\")"
+  text: else
+  flags:
+    - LEADING_SPACE
+- kind: "Identifier(\"endif\")"
+  text: endif
+  flags:
+    - LEADING_SPACE
+- kind: "Identifier(\"define\")"
+  text: define
+  flags:
+    - LEADING_SPACE
+- kind: "Identifier(\"undef\")"
+  text: undef
+  flags:
+    - LEADING_SPACE
+- kind: "Identifier(\"include\")"
+  text: include
+  flags:
+    - LEADING_SPACE
+- kind: "Identifier(\"line\")"
+  text: line
+  flags:
+    - LEADING_SPACE
+- kind: "Identifier(\"pragma\")"
+  text: pragma
+  flags:
+    - LEADING_SPACE
+- kind: "Identifier(\"error\")"
+  text: error
+  flags:
+    - LEADING_SPACE
+- kind: "Identifier(\"warning\")"
+  text: warning
+  flags:
+    - LEADING_SPACE

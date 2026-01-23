@@ -1,0 +1,11 @@
+---
+source: src/tests/pp_lexer.rs
+expression: snapshot_pp_lexer(source)
+---
+- kind: "StringLiteral(\"\\\"hello\\\"\")"
+  text: "\"hello\""
+  flags: []
+- kind: "StringLiteral(\"\\\"world\\\"\")"
+  text: "\"world\""
+  flags:
+    - LEADING_SPACE

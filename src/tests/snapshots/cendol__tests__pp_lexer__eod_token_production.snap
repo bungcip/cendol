@@ -1,0 +1,173 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+"#define x 1":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: define
+    flags: PPTokenFlags(0x0)
+  - kind: Identifier
+    text: x
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Number
+    text: "1"
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#define x 1\n":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: define
+    flags: PPTokenFlags(0x0)
+  - kind: Identifier
+    text: x
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Number
+    text: "1"
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#elif 1\n":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: elif
+    flags: PPTokenFlags(0x0)
+  - kind: Number
+    text: "1"
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#else\n":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: else
+    flags: PPTokenFlags(0x0)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#endif\n":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: endif
+    flags: PPTokenFlags(0x0)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#error message\n":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: error
+    flags: PPTokenFlags(0x0)
+  - kind: Identifier
+    text: message
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#ifdef TEST\n":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: ifdef
+    flags: PPTokenFlags(0x0)
+  - kind: Identifier
+    text: TEST
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#ifndef TEST\n":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: ifndef
+    flags: PPTokenFlags(0x0)
+  - kind: Identifier
+    text: TEST
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#include \"test.h\"\n":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: include
+    flags: PPTokenFlags(0x0)
+  - kind: StringLiteral
+    text: "\"test.h\""
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#line 100\n":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: line
+    flags: PPTokenFlags(0x0)
+  - kind: Number
+    text: "100"
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#pragma once\n":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: pragma
+    flags: PPTokenFlags(0x0)
+  - kind: Identifier
+    text: once
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#undef TEST\n":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: undef
+    flags: PPTokenFlags(0x0)
+  - kind: Identifier
+    text: TEST
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#warning message\n":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Identifier
+    text: warning
+    flags: PPTokenFlags(0x0)
+  - kind: Identifier
+    text: message
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)

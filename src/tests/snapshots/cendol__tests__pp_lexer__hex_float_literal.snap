@@ -1,0 +1,13 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: Number
+  text: "0x1p+1"
+  flags: PPTokenFlags(0x0)
+- kind: Number
+  text: "0x1.fp-2"
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Number
+  text: "0x1P+1"
+  flags: PPTokenFlags(LEADING_SPACE)

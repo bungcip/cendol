@@ -1,0 +1,28 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+"L\"café naïve résumé\"":
+  - kind: StringLiteral
+    text: "L\"café naïve résumé\""
+    flags: PPTokenFlags(0x0)
+"L\"hello¢world€test\"":
+  - kind: StringLiteral
+    text: "L\"hello¢world€test\""
+    flags: PPTokenFlags(0x0)
+"L\"αβγδε\"":
+  - kind: StringLiteral
+    text: "L\"αβγδε\""
+    flags: PPTokenFlags(0x0)
+"L\"привет мир\"":
+  - kind: StringLiteral
+    text: "L\"привет мир\""
+    flags: PPTokenFlags(0x0)
+"L\"€$¢£¥\"":
+  - kind: StringLiteral
+    text: "L\"€$¢£¥\""
+    flags: PPTokenFlags(0x0)
+"L\"你好世界\"":
+  - kind: StringLiteral
+    text: "L\"你好世界\""
+    flags: PPTokenFlags(0x0)

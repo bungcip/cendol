@@ -1,0 +1,32 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+"\"":
+  - kind: StringLiteral
+    text: "\""
+    flags: PPTokenFlags(0x0)
+"L\"\"":
+  - kind: StringLiteral
+    text: "L\"\""
+    flags: PPTokenFlags(0x0)
+"L\"café's \\\"test\\\" \\\\value\"":
+  - kind: StringLiteral
+    text: "L\"café's \\\"test\\\" \\\\value\""
+    flags: PPTokenFlags(0x0)
+"L\"hello \\\"world\\\" \\\\test\"":
+  - kind: StringLiteral
+    text: "L\"hello \\\"world\\\" \\\\test\""
+    flags: PPTokenFlags(0x0)
+"L\"hello\\\nworld\"":
+  - kind: StringLiteral
+    text: "L\"helloworld\""
+    flags: PPTokenFlags(0x0)
+"U\"\"":
+  - kind: StringLiteral
+    text: "U\"\""
+    flags: PPTokenFlags(0x0)
+"u\"\"":
+  - kind: StringLiteral
+    text: "u\"\""
+    flags: PPTokenFlags(0x0)

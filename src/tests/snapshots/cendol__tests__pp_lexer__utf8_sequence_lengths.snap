@@ -1,0 +1,20 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+"L\"abc\"":
+  - kind: StringLiteral
+    text: "L\"abc\""
+    flags: PPTokenFlags(0x0)
+"L\"café\"":
+  - kind: StringLiteral
+    text: "L\"café\""
+    flags: PPTokenFlags(0x0)
+"L\"café你好\"":
+  - kind: StringLiteral
+    text: "L\"café你好\""
+    flags: PPTokenFlags(0x0)
+"L\"你好\"":
+  - kind: StringLiteral
+    text: "L\"你好\""
+    flags: PPTokenFlags(0x0)

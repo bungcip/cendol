@@ -1,0 +1,56 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+"\"hello\\\nworld\"":
+  - kind: StringLiteral
+    text: "\"helloworld\""
+    flags: PPTokenFlags(0x0)
+"123\\\n456":
+  - kind: Number
+    text: "123456"
+    flags: PPTokenFlags(0x0)
+"hel  \\\n    lo":
+  - kind: Identifier
+    text: hel
+    flags: PPTokenFlags(0x0)
+  - kind: Identifier
+    text: lo
+    flags: PPTokenFlags(LEADING_SPACE)
+"hel\\\nlo":
+  - kind: Identifier
+    text: hello
+    flags: PPTokenFlags(0x0)
+"hel\\\nlo\\\nworld":
+  - kind: Identifier
+    text: helloworld
+    flags: PPTokenFlags(0x0)
+"hel\\\r\nlo":
+  - kind: Identifier
+    text: hello
+    flags: PPTokenFlags(0x0)
+"hel\\\rlo":
+  - kind: Identifier
+    text: hello
+    flags: PPTokenFlags(0x0)
+"hello\nworld":
+  - kind: Identifier
+    text: hello
+    flags: PPTokenFlags(0x0)
+  - kind: Identifier
+    text: world
+    flags: PPTokenFlags(LEADING_SPACE)
+"test\\":
+  - kind: Identifier
+    text: test
+    flags: PPTokenFlags(0x0)
+  - kind: Unknown
+    text: "?"
+    flags: PPTokenFlags(0x0)
+"test\\\r":
+  - kind: Identifier
+    text: test
+    flags: PPTokenFlags(0x0)
+  - kind: Unknown
+    text: "?"
+    flags: PPTokenFlags(0x0)

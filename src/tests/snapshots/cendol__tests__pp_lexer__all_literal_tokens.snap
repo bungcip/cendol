@@ -1,0 +1,16 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: Identifier
+  text: variable
+  flags: PPTokenFlags(0x0)
+- kind: StringLiteral
+  text: "\"string\""
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: CharLiteral
+  text: "'c'"
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Number
+  text: "123"
+  flags: PPTokenFlags(LEADING_SPACE)

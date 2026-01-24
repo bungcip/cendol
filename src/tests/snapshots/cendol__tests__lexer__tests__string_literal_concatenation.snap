@@ -1,0 +1,18 @@
+---
+source: src/tests/lexer.rs
+expression: tokens
+---
+"\"a\" \"b\" \"c\"":
+  - StringLiteral: abc
+"\"hello\"   \"world\"":
+  - StringLiteral: helloworld
+"\"hello\" \"world\"":
+  - StringLiteral: helloworld
+"\"hello\" ; \"world\"":
+  - StringLiteral: hello
+  - Semicolon
+  - StringLiteral: world
+"\"hello\\n\" \"world\"":
+  - StringLiteral: "hello\nworld"
+"\"start\" \" middle \" \"end\"":
+  - StringLiteral: start middle end

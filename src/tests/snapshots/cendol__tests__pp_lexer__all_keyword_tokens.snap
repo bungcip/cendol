@@ -1,0 +1,43 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: Identifier
+  text: if
+  flags: PPTokenFlags(0x0)
+- kind: Identifier
+  text: ifdef
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Identifier
+  text: ifndef
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Identifier
+  text: elif
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Identifier
+  text: else
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Identifier
+  text: endif
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Identifier
+  text: define
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Identifier
+  text: undef
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Identifier
+  text: include
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Identifier
+  text: line
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Identifier
+  text: pragma
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Identifier
+  text: error
+  flags: PPTokenFlags(LEADING_SPACE)
+- kind: Identifier
+  text: warning
+  flags: PPTokenFlags(LEADING_SPACE)

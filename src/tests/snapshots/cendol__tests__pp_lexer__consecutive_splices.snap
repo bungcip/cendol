@@ -1,0 +1,12 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+"A\\\n\\\nB":
+  - kind: Identifier
+    text: AB
+    flags: PPTokenFlags(0x0)
+"A\\\r\n\\\r\nB":
+  - kind: Identifier
+    text: AB
+    flags: PPTokenFlags(0x0)

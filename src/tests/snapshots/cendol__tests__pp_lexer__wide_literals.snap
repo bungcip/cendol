@@ -1,0 +1,27 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+"L\"hello\" u\"world\" U\"test\"":
+  - kind: StringLiteral
+    text: "L\"hello\""
+    flags: PPTokenFlags(0x0)
+  - kind: StringLiteral
+    text: "u\"world\""
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: StringLiteral
+    text: "U\"test\""
+    flags: PPTokenFlags(LEADING_SPACE)
+"L'a' u'b' U'c' '\\0'":
+  - kind: CharLiteral
+    text: "L'a'"
+    flags: PPTokenFlags(0x0)
+  - kind: CharLiteral
+    text: "u'b'"
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: CharLiteral
+    text: "U'c'"
+    flags: PPTokenFlags(LEADING_SPACE)
+  - kind: CharLiteral
+    text: "'\\0'"
+    flags: PPTokenFlags(LEADING_SPACE)

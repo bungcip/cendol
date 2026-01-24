@@ -1,0 +1,10 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+- kind: StringLiteral
+  text: "\"hello\""
+  flags: PPTokenFlags(0x0)
+- kind: StringLiteral
+  text: "\"world\""
+  flags: PPTokenFlags(LEADING_SPACE)

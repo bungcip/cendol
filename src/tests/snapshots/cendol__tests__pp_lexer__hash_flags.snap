@@ -1,0 +1,22 @@
+---
+source: src/tests/pp_lexer.rs
+expression: tokens
+---
+"  #":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(LEADING_SPACE | STARTS_PP_LINE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"#":
+  - kind: Hash
+    text: "#"
+    flags: PPTokenFlags(STARTS_PP_LINE)
+  - kind: Eod
+    text: ""
+    flags: PPTokenFlags(0x0)
+"##":
+  - kind: HashHash
+    text: "##"
+    flags: PPTokenFlags(0x0)

@@ -214,7 +214,6 @@ impl<'a> AstToMirLowerer<'a> {
         self.operand_to_const_id(op).expect(msg)
     }
 
-
     pub(crate) fn lower_condition(&mut self, condition: NodeRef) -> Operand {
         let cond_operand = self.lower_expression(condition, true);
         // Apply conversions for condition (should be boolean)

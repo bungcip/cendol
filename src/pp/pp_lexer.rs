@@ -209,47 +209,89 @@ impl PPLexer {
         }
     }
 
-    /// Get the next character, handling line splicing transparently
-    /// Line splicing: backslash followed by newline removes both characters
-    pub(crate) fn next_char(&mut self) -> Option<u8> {
+    /// Get the next character, handling Phase 1 (trigraphs)
+    fn next_char_phase1(&mut self) -> Option<u8> {
         if self.position as usize >= self.buffer.len() {
             return None;
         }
 
-        let mut result = self.buffer[self.position as usize];
-        self.position += 1;
+        let ch = self.buffer[self.position as usize];
 
-        // Handle line splicing: backslash followed by newline or carriage return
-        loop {
-            if result == b'\\' && (self.position as usize) < self.buffer.len() {
-                let next = self.buffer[self.position as usize];
-                if next == b'\n' || next == b'\r' {
-                    self.position += 1;
-                    if next == b'\r'
-                        && (self.position as usize) < self.buffer.len()
-                        && self.buffer[self.position as usize] == b'\n'
-                    {
-                        self.position += 1;
-                    }
-                    // Get the character after the line ending for splicing
-                    if (self.position as usize) < self.buffer.len() {
-                        result = self.buffer[self.position as usize];
-                        self.position += 1;
-                        continue;
-                    } else {
-                        return None;
-                    }
+        // Check for trigraph start '?'
+        if ch == b'?' {
+            let pos = self.position as usize;
+            if pos + 2 < self.buffer.len() && self.buffer[pos + 1] == b'?' {
+                let third = self.buffer[pos + 2];
+                let replacement = match third {
+                    b'=' => Some(b'#'),
+                    b'/' => Some(b'\\'),
+                    b'\'' => Some(b'^'),
+                    b'(' => Some(b'['),
+                    b')' => Some(b']'),
+                    b'!' => Some(b'|'),
+                    b'<' => Some(b'{'),
+                    b'>' => Some(b'}'),
+                    b'-' => Some(b'~'),
+                    _ => None,
+                };
+
+                if let Some(rep) = replacement {
+                    self.position += 3;
+                    return Some(rep);
                 }
             }
-            break;
         }
 
-        // Update line starts for regular newlines
-        if result == b'\n' {
-            self.line_starts.push(self.position);
-        }
+        self.position += 1;
+        Some(ch)
+    }
 
-        Some(result)
+    /// Get the next character, handling line splicing transparently
+    /// Line splicing: backslash followed by newline removes both characters
+    pub(crate) fn next_char(&mut self) -> Option<u8> {
+        loop {
+            // Phase 1: Trigraphs
+            let result = self.next_char_phase1()?;
+
+            // Phase 2: Line splicing
+            if result == b'\\' {
+                let saved_pos = self.position;
+                if let Some(next) = self.next_char_phase1() {
+                    if next == b'\n' {
+                        // Splicing \ \n
+                        self.line_starts.push(self.position);
+                        continue;
+                    } else if next == b'\r' {
+                        // Handle \r or \r\n
+                        let saved_pos2 = self.position;
+                        if let Some(after_r) = self.next_char_phase1() {
+                            if after_r == b'\n' {
+                                // \ \r \n
+                                self.line_starts.push(self.position);
+                                continue;
+                            }
+                            // \ \r followed by something else.
+                            self.position = saved_pos2;
+                            self.line_starts.push(self.position);
+                            continue;
+                        } else {
+                            // \ \r followed by EOF.
+                            self.line_starts.push(self.position);
+                            continue;
+                        }
+                    }
+                }
+                // Not a splice. Backtrack.
+                self.position = saved_pos;
+                return Some(b'\\');
+            }
+
+            if result == b'\n' {
+                self.line_starts.push(self.position);
+            }
+
+            return Some(result);
+        }
     }
 
     /// Peek at the next character without consuming it, handling line splicing

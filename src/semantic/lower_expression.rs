@@ -72,9 +72,16 @@ impl<'a> AstToMirLowerer<'a> {
             }
             NodeKind::IndexAccess(arr_ref, idx_ref) => self.lower_index_access(*arr_ref, *idx_ref),
             NodeKind::TernaryOp(cond, then, else_expr) => self.lower_ternary_op(*cond, *then, *else_expr, mir_ty),
-            NodeKind::SizeOfExpr(expr) => self.lower_sizeof_expr(*expr),
-            NodeKind::SizeOfType(ty) => self.lower_sizeof_type(ty),
-            NodeKind::AlignOf(ty) => self.lower_alignof_type(ty),
+            NodeKind::SizeOfExpr(expr) => {
+                let ty = self
+                    .ast
+                    .get_resolved_type(*expr)
+                    .expect("SizeOf operand type missing")
+                    .ty();
+                self.lower_type_query(ty, true)
+            }
+            NodeKind::SizeOfType(ty) => self.lower_type_query(ty.ty(), true),
+            NodeKind::AlignOf(ty) => self.lower_type_query(ty.ty(), false),
             NodeKind::GenericSelection(gs) => self.lower_generic_selection(gs, need_value),
             NodeKind::GnuStatementExpression(_stmt, _) => {
                 panic!("GnuStatementExpression not implemented");
@@ -82,9 +89,9 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::Cast(_ty, operand_ref) => self.lower_cast(*operand_ref, mir_ty),
             NodeKind::CompoundLiteral(ty, init_ref) => self.lower_compound_literal(*ty, *init_ref),
             NodeKind::BuiltinVaArg(ty, expr) => self.lower_builtin_va_arg(*ty, *expr),
-            NodeKind::BuiltinVaStart(ap, last) => self.lower_builtin_va_start(*ap, *last),
-            NodeKind::BuiltinVaEnd(ap) => self.lower_builtin_va_end(*ap),
-            NodeKind::BuiltinVaCopy(dst, src) => self.lower_builtin_va_copy(*dst, *src),
+            NodeKind::BuiltinVaStart(..) | NodeKind::BuiltinVaEnd(..) | NodeKind::BuiltinVaCopy(..) => {
+                self.lower_builtin_void(&node_kind)
+            }
             NodeKind::InitializerList(_) | NodeKind::InitializerItem(_) => {
                 // Should be lowered in context of assignment usually.
                 panic!("InitializerList or InitializerItem not implemented");
@@ -129,23 +136,6 @@ impl<'a> AstToMirLowerer<'a> {
         self.mir_builder.set_current_block(exit_block);
 
         Operand::Copy(Box::new(Place::Local(result_local)))
-    }
-
-    pub(crate) fn lower_sizeof_expr(&mut self, expr: NodeRef) -> Operand {
-        let operand_ty = self
-            .ast
-            .get_resolved_type(expr)
-            .expect("SizeOf operand type missing")
-            .ty();
-        self.lower_type_query(operand_ty, true)
-    }
-
-    pub(crate) fn lower_sizeof_type(&mut self, ty: &QualType) -> Operand {
-        self.lower_type_query(ty.ty(), true)
-    }
-
-    pub(crate) fn lower_alignof_type(&mut self, ty: &QualType) -> Operand {
-        self.lower_type_query(ty.ty(), false)
     }
 
     pub(crate) fn lower_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
@@ -826,24 +816,25 @@ impl<'a> AstToMirLowerer<'a> {
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
-    pub(crate) fn lower_builtin_va_start(&mut self, ap_ref: NodeRef, last_ref: NodeRef) -> Operand {
-        let ap = self.lower_expression_as_place(ap_ref);
-        let last = self.lower_expression(last_ref, true);
-        self.mir_builder.add_statement(MirStmt::BuiltinVaStart(ap, last));
-        self.create_int_operand(0)
-    }
-
-    pub(crate) fn lower_builtin_va_end(&mut self, ap_ref: NodeRef) -> Operand {
-        let ap = self.lower_expression_as_place(ap_ref);
-        self.mir_builder.add_statement(MirStmt::BuiltinVaEnd(ap));
-        self.create_int_operand(0)
-    }
-
-    pub(crate) fn lower_builtin_va_copy(&mut self, dst_ref: NodeRef, src_ref: NodeRef) -> Operand {
-        let dst = self.lower_expression_as_place(dst_ref);
-        let src = self.lower_expression_as_place(src_ref);
-
-        self.mir_builder.add_statement(MirStmt::BuiltinVaCopy(dst, src));
+    pub(crate) fn lower_builtin_void(&mut self, kind: &NodeKind) -> Operand {
+        let stmt = match kind {
+            NodeKind::BuiltinVaStart(ap_ref, last_ref) => {
+                let ap = self.lower_expression_as_place(*ap_ref);
+                let last = self.lower_expression(*last_ref, true);
+                MirStmt::BuiltinVaStart(ap, last)
+            }
+            NodeKind::BuiltinVaEnd(ap_ref) => {
+                let ap = self.lower_expression_as_place(*ap_ref);
+                MirStmt::BuiltinVaEnd(ap)
+            }
+            NodeKind::BuiltinVaCopy(dst_ref, src_ref) => {
+                let dst = self.lower_expression_as_place(*dst_ref);
+                let src = self.lower_expression_as_place(*src_ref);
+                MirStmt::BuiltinVaCopy(dst, src)
+            }
+            _ => unreachable!(),
+        };
+        self.mir_builder.add_statement(stmt);
         self.create_int_operand(0)
     }
 }

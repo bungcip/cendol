@@ -111,13 +111,35 @@ impl<'a> AstToMirLowerer<'a> {
                 self.current_scope_id = self.ast.scope_of(node_ref);
                 self.lower_for_statement(&for_stmt)
             }
-            NodeKind::VarDecl(var_decl) => self.lower_var(&var_decl),
             NodeKind::CompoundStatement(cs) => {
                 self.current_scope_id = self.ast.scope_of(node_ref);
                 self.lower_compound_statement(&cs)
             }
+            NodeKind::VarDecl(var_decl) => self.lower_var(&var_decl),
 
-            _ => self.try_lower_as_statement(node_ref),
+            NodeKind::Return(expr) => self.lower_return_statement(&expr),
+            NodeKind::If(if_stmt) => self.lower_if_statement(&if_stmt),
+            NodeKind::While(while_stmt) => self.lower_while_statement(&while_stmt),
+            NodeKind::DoWhile(body, condition) => self.lower_do_while_statement(body, condition),
+            NodeKind::ExpressionStatement(Some(expr_ref)) => {
+                // Expression statement: value not needed, only side-effects
+                self.lower_expression(expr_ref, false);
+            }
+            NodeKind::Break => {
+                let target = self.break_target.unwrap();
+                self.mir_builder.set_terminator(Terminator::Goto(target));
+            }
+            NodeKind::Continue => {
+                let target = self.continue_target.unwrap();
+                self.mir_builder.set_terminator(Terminator::Goto(target));
+            }
+            NodeKind::Goto(label_name, _) => self.lower_goto_statement(&label_name),
+            NodeKind::Label(label_name, statement, _) => self.lower_label_statement(&label_name, statement),
+            NodeKind::Switch(cond, body) => self.lower_switch_statement(cond, body),
+            NodeKind::Case(_, stmt) => self.lower_case_default_statement(node_ref, stmt),
+            NodeKind::Default(stmt) => self.lower_case_default_statement(node_ref, stmt),
+
+            _ => {}
         }
 
         self.current_scope_id = old_scope;
@@ -190,34 +212,6 @@ impl<'a> AstToMirLowerer<'a> {
 
     pub(crate) fn operand_to_const_id_strict(&mut self, op: Operand, msg: &str) -> ConstValueId {
         self.operand_to_const_id(op).expect(msg)
-    }
-
-    fn try_lower_as_statement(&mut self, node_ref: NodeRef) {
-        let node_kind = self.ast.get_kind(node_ref);
-        match node_kind.clone() {
-            NodeKind::Return(expr) => self.lower_return_statement(&expr),
-            NodeKind::If(if_stmt) => self.lower_if_statement(&if_stmt),
-            NodeKind::While(while_stmt) => self.lower_while_statement(&while_stmt),
-            NodeKind::DoWhile(body, condition) => self.lower_do_while_statement(body, condition),
-            NodeKind::ExpressionStatement(Some(expr_ref)) => {
-                // Expression statement: value not needed, only side-effects
-                self.lower_expression(expr_ref, false);
-            }
-            NodeKind::Break => {
-                let target = self.break_target.unwrap();
-                self.mir_builder.set_terminator(Terminator::Goto(target));
-            }
-            NodeKind::Continue => {
-                let target = self.continue_target.unwrap();
-                self.mir_builder.set_terminator(Terminator::Goto(target));
-            }
-            NodeKind::Goto(label_name, _) => self.lower_goto_statement(&label_name),
-            NodeKind::Label(label_name, statement, _) => self.lower_label_statement(&label_name, statement),
-            NodeKind::Switch(cond, body) => self.lower_switch_statement(cond, body),
-            NodeKind::Case(_, stmt) => self.lower_case_default_statement(node_ref, stmt),
-            NodeKind::Default(stmt) => self.lower_case_default_statement(node_ref, stmt),
-            _ => {}
-        }
     }
 
     pub(crate) fn lower_condition(&mut self, condition: NodeRef) -> Operand {

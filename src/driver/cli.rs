@@ -56,10 +56,6 @@ pub struct Cli {
     #[clap(short = 'P')]
     pub suppress_line_markers: bool,
 
-    /// Retain comments in preprocessor output
-    #[clap(short = 'C', long = "retain-comments")]
-    pub retain_comments: bool,
-
     /// Include search paths
     #[clap(short = 'I', long = "include-path", value_name = "DIR", action = clap::ArgAction::Append)]
     pub include_paths: Vec<PathBuf>,

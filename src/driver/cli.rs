@@ -210,6 +210,9 @@ impl Cli {
         }
 
         // Add default system include paths
+        if std::path::Path::new("custom-include").exists() {
+            system_include_paths.push(PathBuf::from("custom-include"));
+        }
         system_include_paths.push(PathBuf::from("/usr/include"));
 
         // Add architecture-specific include paths

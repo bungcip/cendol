@@ -114,7 +114,7 @@ pub enum NodeKind {
 }
 
 impl NodeKind {
-    pub fn visit_children<F: FnMut(NodeRef)>(&self, mut f: F) {
+    pub(crate) fn visit_children<F: FnMut(NodeRef)>(&self, mut f: F) {
         match self {
             NodeKind::Literal(_)
             | NodeKind::Ident(..)
@@ -502,7 +502,7 @@ impl BinaryOp {
         )
     }
 
-    pub fn without_assignment(&self) -> Option<BinaryOp> {
+    pub(crate) fn without_assignment(&self) -> Option<BinaryOp> {
         match self {
             BinaryOp::AssignAdd => Some(BinaryOp::Add),
             BinaryOp::AssignSub => Some(BinaryOp::Sub),

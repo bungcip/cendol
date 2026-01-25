@@ -179,11 +179,6 @@ impl SourceSpan {
         self.source_id().to_u32() == 1
     }
 
-    pub fn is_empty(&self) -> bool {
-        // Length is bits 24-39
-        ((self.0 >> Self::LENGTH_SHIFT) & Self::LENGTH_MASK) == 0
-    }
-
     /// Merge two source spans into a single span covering both
     pub fn merge(self, other: SourceSpan) -> SourceSpan {
         let id1 = self.source_id();

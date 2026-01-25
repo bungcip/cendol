@@ -424,7 +424,7 @@ fn test_noreturn_function_returns() {
         }
         "#,
         CompilePhase::Mir,
-        "function 'foo' declared '_Noreturn' should not return",
+        "function 'foo' declared '_Noreturn' contains a return statement",
     );
 }
 

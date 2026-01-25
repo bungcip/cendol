@@ -350,8 +350,10 @@ pub enum SemanticError {
 
     #[error("restrict requires a pointer type")]
     InvalidRestrict { span: SourceSpan },
-    #[error("function '{name}' declared '_Noreturn' should not return")]
-    NoreturnFunctionReturns { name: String, span: SourceSpan },
+    #[error("function '{name}' declared '_Noreturn' contains a return statement")]
+    NoreturnFunctionHasReturn { name: String, span: SourceSpan },
+    #[error("function '{name}' declared '_Noreturn' can fall off the end")]
+    NoreturnFunctionFallsOff { name: String, span: SourceSpan },
     #[error("unreachable code")]
     UnreachableCode { span: SourceSpan },
 }
@@ -410,7 +412,8 @@ impl SemanticError {
             SemanticError::MultipleDefaultLabels { span } => *span,
             SemanticError::FlexibleArrayNotLast { span } => *span,
             SemanticError::FlexibleArrayInEmptyStruct { span } => *span,
-            SemanticError::NoreturnFunctionReturns { span, .. } => *span,
+            SemanticError::NoreturnFunctionHasReturn { span, .. } => *span,
+            SemanticError::NoreturnFunctionFallsOff { span, .. } => *span,
             SemanticError::UnreachableCode { span } => *span,
         }
     }

@@ -12,6 +12,6 @@ fn test_noreturn_function_returns_error() {
     run_fail_with_message(
         a,
         CompilePhase::Mir,
-        "function 'foo' declared '_Noreturn' should not return",
+        "function 'foo' declared '_Noreturn' contains a return statement",
     );
 }

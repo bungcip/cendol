@@ -1384,42 +1384,69 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     ) {
         if let Some((existing_ref, existing_scope)) = self.symbol_table.lookup_symbol(name) {
             let current_scope = self.symbol_table.current_scope();
-            let existing = self.symbol_table.get_symbol(existing_ref);
+
+            let (existing_type_info, existing_def_span, existing_has_linkage, existing_storage_if_func) = {
+                let existing = self.symbol_table.get_symbol(existing_ref);
+                let storage = if let SymbolKind::Function { storage } = existing.kind {
+                    Some(storage)
+                } else {
+                    None
+                };
+                (existing.type_info, existing.def_span, existing.has_linkage(), storage)
+            };
 
             let is_global = current_scope == ScopeId::GLOBAL;
             let is_func = new_ty.is_function();
             let new_has_linkage = is_global || storage == Some(StorageClass::Extern) || is_func;
 
-            // Linkage conflict if:
-            // 1. Same scope (always conflict)
-            // 2. Both have linkage (even different scope)
-            let is_conflict = (existing_scope == current_scope) || (new_has_linkage && existing.has_linkage());
+            let is_conflict = (existing_scope == current_scope) || (new_has_linkage && existing_has_linkage);
 
             if is_conflict {
-                if !self.registry.is_compatible(existing.type_info, new_ty) {
-                    let first_def = existing.def_span;
+                let is_compatible = self.registry.is_compatible(existing_type_info, new_ty);
+
+                if !is_compatible {
                     self.report_error(SemanticError::ConflictingTypes {
                         name: name.to_string(),
                         span,
-                        first_def,
+                        first_def: existing_def_span,
                     });
                 } else if new_ty.is_function() {
                     // Check for linkage conflict (static followed by non-static)
-                    if let SymbolKind::Function {
-                        storage: existing_storage,
-                    } = &existing.kind
-                    {
-                        let existing_is_static = *existing_storage == Some(StorageClass::Static);
+                    if let Some(existing_storage) = existing_storage_if_func {
+                        let existing_is_static = existing_storage == Some(StorageClass::Static);
                         let new_is_static = storage == Some(StorageClass::Static);
 
                         if existing_is_static && !new_is_static {
-                            let first_def = existing.def_span;
                             self.report_error(SemanticError::ConflictingLinkage {
                                 name: name.to_string(),
                                 span,
-                                first_def,
+                                first_def: existing_def_span,
                             });
                         }
+                    }
+
+                    // Check for _Noreturn mismatch
+                    let existing_is_noreturn = if let TypeKind::Function { is_noreturn, .. } =
+                        &self.registry.get(existing_type_info.ty()).kind
+                    {
+                        *is_noreturn
+                    } else {
+                        false
+                    };
+
+                    let new_is_noreturn =
+                        if let TypeKind::Function { is_noreturn, .. } = &self.registry.get(new_ty.ty()).kind {
+                            *is_noreturn
+                        } else {
+                            false
+                        };
+
+                    if existing_is_noreturn != new_is_noreturn {
+                        self.report_error(SemanticError::ConflictingTypes {
+                            name: name.to_string(),
+                            span,
+                            first_def: existing_def_span,
+                        });
                     }
                 }
             }
@@ -1437,6 +1464,20 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let func_name = extract_name(&func_def.declarator).expect("Function definition must have a name");
 
         self.check_redeclaration_compatibility(func_name, final_ty, span, spec_info.storage);
+
+        // Check for _Noreturn on existing declarations
+        let existing_symbol_is_noreturn = if let Some((existing_ref, _)) = self.symbol_table.lookup_symbol(func_name) {
+            let existing = self.symbol_table.get_symbol(existing_ref);
+            if let TypeKind::Function { is_noreturn, .. } = &self.registry.get(existing.type_info.ty()).kind {
+                *is_noreturn
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        let final_is_noreturn = spec_info.is_noreturn || existing_symbol_is_noreturn;
 
         if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) = self
             .symbol_table
@@ -1493,7 +1534,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.ast.kinds[node.index()] = NodeKind::Function(FunctionData {
             symbol: func_sym_ref,
             ty: final_ty.ty(),
-            is_noreturn: spec_info.is_noreturn,
+            is_noreturn: final_is_noreturn,
             param_start,
             param_len,
             body: body_node,

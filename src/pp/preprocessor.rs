@@ -2631,22 +2631,45 @@ impl<'src> Preprocessor<'src> {
 
     /// Stringify tokens for # operator
     fn stringify_tokens(&self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPError> {
-        let mut result = String::new();
-        result.push('"');
-
+        // Bolt ⚡: Use a two-pass approach to build the stringified token efficiently.
+        // This avoids multiple reallocations from push/push_str in a loop.
+        // 1. Calculate the final length of the string, accounting for escaped characters.
+        let mut total_len = 2; // For the opening and closing quotes
         for (i, token) in tokens.iter().enumerate() {
             if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
-                // Add space between tokens only if the token had leading whitespace (C11 6.10.3.2)
-                result.push(' ');
+                total_len += 1; // For the space
             }
-
-            // Get token text from source manager
             let buffer = self.source_manager.get_buffer(token.location.source_id());
             let start = token.location.offset() as usize;
             let end = start + token.length as usize;
+            if end > buffer.len() {
+                return Err(PPError::InvalidStringification);
+            }
+            let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
+            for ch in text.chars() {
+                match ch {
+                    '"' | '\\' => total_len += 2, // These will be escaped
+                    _ => total_len += 1,
+                }
+            }
+        }
+
+        // 2. Allocate the string with the exact capacity.
+        let mut result = String::with_capacity(total_len);
+        result.push('"');
+
+        // 3. Populate the string.
+        for (i, token) in tokens.iter().enumerate() {
+            if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
+                result.push(' ');
+            }
+
+            let buffer = self.source_manager.get_buffer(token.location.source_id());
+            let start = token.location.offset() as usize;
+            let end = start + token.length as usize;
+            // This check is already done above, but for safety we keep it.
             if end <= buffer.len() {
                 let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
-                // Escape quotes and backslashes in the text
                 for ch in text.chars() {
                     match ch {
                         '"' => result.push_str("\\\""),
@@ -2654,8 +2677,6 @@ impl<'src> Preprocessor<'src> {
                         _ => result.push(ch),
                     }
                 }
-            } else {
-                return Err(PPError::InvalidStringification);
             }
         }
 

@@ -179,7 +179,6 @@ impl SourceSpan {
         self.source_id().to_u32() == 1
     }
 
-
     /// Merge two source spans into a single span covering both
     pub fn merge(self, other: SourceSpan) -> SourceSpan {
         let id1 = self.source_id();

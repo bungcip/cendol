@@ -105,7 +105,6 @@ pub struct CompileConfig {
     pub verbose: bool,
     pub preprocessor: crate::pp::PPConfig,
     pub suppress_line_markers: bool,
-    pub include_paths: Vec<PathBuf>,
     pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
     pub warnings: Vec<String>,
     pub lang_options: LangOptions,
@@ -121,7 +120,6 @@ impl Default for CompileConfig {
             verbose: false,
             preprocessor: crate::pp::PPConfig::default(),
             suppress_line_markers: false,
-            include_paths: Vec::new(),
             defines: Vec::new(),
             warnings: Vec::new(),
             lang_options: LangOptions::default(),
@@ -258,7 +256,6 @@ impl Cli {
                 ..Default::default()
             },
             suppress_line_markers: self.suppress_line_markers,
-            include_paths: self.include_paths,
             defines,
             warnings,
             lang_options,

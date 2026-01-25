@@ -118,10 +118,13 @@ impl<'a> SemanticAnalyzer<'a> {
     /// Recursively visit type to find any expressions (e.g. VLA sizes) and resolve them.
     fn visit_type_expressions(&mut self, qt: QualType) {
         let ty = qt.ty();
-        if self.checked_types.contains(&ty) {
+        // ⚡ Bolt: Optimized duplicate check.
+        // `HashSet::insert` returns `false` if the value was already present.
+        // This is faster than calling `contains` and then `insert`, as it
+        // performs a single lookup instead of two.
+        if !self.checked_types.insert(ty) {
             return;
         }
-        self.checked_types.insert(ty);
 
         // To avoid infinite recursion on recursive types (e.g. struct A { struct A *next; }),
         // we rely on checked_types.

@@ -459,3 +459,30 @@ fn test_add_file_from_path_error() {
     let result = sm.add_file_from_path(std::path::Path::new("non_existent_file_xyz.c"), None);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_source_span_coverage_gaps() {
+    // 1. Test is_empty()
+    let empty_span = SourceSpan::empty();
+    assert!(empty_span.is_empty());
+
+    let source_id = SourceId::new(2);
+    let start = SourceLoc::new(source_id, 10);
+    let end = SourceLoc::new(source_id, 20);
+    let non_empty_span = SourceSpan::new(start, end);
+    assert!(!non_empty_span.is_empty());
+
+    // 2. Test is_source_id_builtin()
+    assert!(empty_span.is_source_id_builtin());
+    assert!(!non_empty_span.is_source_id_builtin());
+
+    // 3. Test merge with different SourceIDs (uncovered path)
+    let span1 = SourceSpan::new(SourceLoc::new(SourceId::new(2), 0), SourceLoc::new(SourceId::new(2), 10));
+    let span2 = SourceSpan::new(SourceLoc::new(SourceId::new(3), 0), SourceLoc::new(SourceId::new(3), 10));
+
+    // Should return self (span1) when IDs differ
+    let merged = span1.merge(span2);
+    assert_eq!(merged.source_id(), span1.source_id());
+    assert_eq!(merged.start().offset(), span1.start().offset());
+    assert_eq!(merged.end().offset(), span1.end().offset());
+}

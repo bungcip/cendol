@@ -681,38 +681,62 @@ impl PPLexer {
         String::from_utf8(chars).unwrap()
     }
 
-    fn lex_identifier(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
-        let text = self.consume_while((), first_ch, |_, ch| ch.is_ascii_alphanumeric() || ch == b'_');
-
+    /// Generic helper for lexing textual tokens (identifiers, numbers)
+    fn lex_textual_token<S, F, K>(
+        &mut self,
+        start_pos: u32,
+        first_ch: u8,
+        flags: PPTokenFlags,
+        state: S,
+        pred: F,
+        kind_ctor: K,
+    ) -> PPToken
+    where
+        F: FnMut(&mut S, u8) -> bool,
+        K: FnOnce(StringId) -> PPTokenKind,
+    {
+        let text = self.consume_while(state, first_ch, pred);
         let symbol = StringId::new(&text);
-        let kind = PPTokenKind::Identifier(symbol);
-
-        PPToken::text(kind, flags, SourceLoc::new(self.source_id, start_pos), &text)
-    }
-
-    fn lex_number(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
-        let text = self.consume_while(false, first_ch, |seen_e, ch| {
-            if ch.is_ascii_digit() || ch == b'.' || ch.is_ascii_alphabetic() || ch == b'_' {
-                if ch == b'e' || ch == b'E' || ch == b'p' || ch == b'P' {
-                    *seen_e = true;
-                }
-                true
-            } else if (ch == b'+' || ch == b'-') && *seen_e {
-                // Allow + or - after e/E for scientific notation
-                *seen_e = false; // Reset so we don't allow multiple +/- immediately
-                true
-            } else {
-                false
-            }
-        });
-
-        let symbol = StringId::new(&text);
-
         PPToken::text(
-            PPTokenKind::Number(symbol),
+            kind_ctor(symbol),
             flags,
             SourceLoc::new(self.source_id, start_pos),
             &text,
+        )
+    }
+
+    fn lex_identifier(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
+        self.lex_textual_token(
+            start_pos,
+            first_ch,
+            flags,
+            (),
+            |_, ch| ch.is_ascii_alphanumeric() || ch == b'_',
+            PPTokenKind::Identifier,
+        )
+    }
+
+    fn lex_number(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
+        self.lex_textual_token(
+            start_pos,
+            first_ch,
+            flags,
+            false,
+            |seen_e, ch| {
+                if ch.is_ascii_digit() || ch == b'.' || ch.is_ascii_alphabetic() || ch == b'_' {
+                    if ch == b'e' || ch == b'E' || ch == b'p' || ch == b'P' {
+                        *seen_e = true;
+                    }
+                    true
+                } else if (ch == b'+' || ch == b'-') && *seen_e {
+                    // Allow + or - after e/E for scientific notation
+                    *seen_e = false; // Reset so we don't allow multiple +/- immediately
+                    true
+                } else {
+                    false
+                }
+            },
+            PPTokenKind::Number,
         )
     }
 
@@ -746,20 +770,30 @@ impl PPLexer {
         }
     }
 
-    fn lex_string_literal(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
+    /// Shared logic for lexing quoted literals (strings and chars)
+    fn lex_quoted_literal(
+        &mut self,
+        first_ch: u8,
+        delimiter: u8,
+    ) -> (String, StringId) {
         let has_prefix = first_ch == b'L' || first_ch == b'u' || first_ch == b'U';
         let mut chars = vec![first_ch];
 
         if has_prefix {
-            // consume the "
+            // consume the quote
             let quote = self.next_char().unwrap();
             chars.push(quote);
         }
 
-        self.lex_common_literal_body(b'"', &mut chars);
+        self.lex_common_literal_body(delimiter, &mut chars);
 
         let text = String::from_utf8(chars).unwrap();
         let symbol = StringId::new(&text);
+        (text, symbol)
+    }
+
+    fn lex_string_literal(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
+        let (text, symbol) = self.lex_quoted_literal(first_ch, b'"');
 
         PPToken::text(
             PPTokenKind::StringLiteral(symbol),
@@ -780,18 +814,11 @@ impl PPLexer {
     }
 
     fn lex_char_literal(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
-        let has_prefix = first_ch == b'L' || first_ch == b'u' || first_ch == b'U';
-        let mut chars = vec![first_ch];
-
-        if has_prefix {
-            // consume the '
-            let quote = self.next_char().unwrap();
-            chars.push(quote);
-        }
-
-        self.lex_common_literal_body(b'\'', &mut chars);
+        let (text, symbol) = self.lex_quoted_literal(first_ch, b'\'');
+        let chars = text.as_bytes();
 
         // Parse character literal content
+        let has_prefix = first_ch == b'L' || first_ch == b'u' || first_ch == b'U';
         let quote_start = if has_prefix { 1 } else { 0 };
         let content_start = quote_start + 1;
         let content_len = chars.len() - content_start - 1; // exclude closing '
@@ -813,9 +840,6 @@ impl PPLexer {
         } else {
             0 // placeholder for complex cases (multibyte chars, etc.)
         };
-
-        let text = String::from_utf8(chars).unwrap();
-        let symbol = StringId::new(&text);
 
         PPToken::new(
             PPTokenKind::CharLiteral(codepoint, symbol),

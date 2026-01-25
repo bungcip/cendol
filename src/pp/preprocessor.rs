@@ -1321,100 +1321,18 @@ impl<'src> Preprocessor<'src> {
         let next = self.lex_token();
         if let Some(token) = next {
             if token.kind == PPTokenKind::LeftParen && !token.flags.contains(PPTokenFlags::LEADING_SPACE) {
+                // Peek next token to see if it's potentially a function-like macro start
                 let first_param = self.lex_token();
                 if let Some(fp) = first_param {
                     if matches!(
                         fp.kind,
                         PPTokenKind::RightParen | PPTokenKind::Identifier(_) | PPTokenKind::Ellipsis
                     ) {
-                        flags |= MacroFlags::FUNCTION_LIKE;
                         self.pending_tokens.push_front(fp);
-                        // parse params
-                        'param_parsing: loop {
-                            let param_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
-                            match param_token.kind {
-                                PPTokenKind::RightParen => break,
-                                PPTokenKind::Identifier(sym) => {
-                                    if params.contains(&sym) {
-                                        return Err(PPError::InvalidMacroParameter {
-                                            span: SourceSpan::new(
-                                                self.get_current_location(),
-                                                self.get_current_location(),
-                                            ),
-                                        });
-                                    }
-                                    params.push(sym);
-                                    let sep = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
-                                    match sep.kind {
-                                        PPTokenKind::Comma => continue,
-                                        PPTokenKind::RightParen => break,
-                                        PPTokenKind::Ellipsis => {
-                                            variadic = Some(sym);
-                                            flags |= MacroFlags::C99_VARARGS;
-                                            let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
-                                            if rparen.kind != PPTokenKind::RightParen {
-                                                return Err(PPError::InvalidMacroParameter {
-                                                    span: SourceSpan::new(
-                                                        self.get_current_location(),
-                                                        self.get_current_location(),
-                                                    ),
-                                                });
-                                            }
-                                            break;
-                                        }
-                                        _ => {
-                                            // Check if this token could signal the end of parameter list
-                                            // For object-like macros, any non-identifier token after the macro name
-                                            // should be treated as the start of the macro body
-                                            self.pending_tokens.push_front(param_token);
-                                            // This is an object-like macro, exit parameter parsing
-                                            break 'param_parsing;
-                                        }
-                                    }
-                                }
-                                PPTokenKind::Ellipsis => {
-                                    flags |= MacroFlags::GNU_VARARGS;
-                                    variadic = Some(StringId::new("__VA_ARGS__"));
-                                    let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
-                                    if rparen.kind != PPTokenKind::RightParen {
-                                        return Err(PPError::InvalidMacroParameter {
-                                            span: SourceSpan::new(
-                                                self.get_current_location(),
-                                                self.get_current_location(),
-                                            ),
-                                        });
-                                    }
-                                    break;
-                                }
-                                _ => {
-                                    // For problematic parameter tokens, emit a warning and continue
-                                    let diag = Diagnostic {
-                                        level: DiagnosticLevel::Warning,
-                                        message: format!(
-                                            "Invalid macro parameter token in #define '{}'",
-                                            name.as_str()
-                                        ),
-                                        span: SourceSpan::new(param_token.location, param_token.location),
-                                        code: Some("invalid_macro_parameter".to_string()),
-                                        hints: vec!["Macro parameters must be identifiers".to_string()],
-                                        related: Vec::new(),
-                                    };
-                                    self.diag.report_diagnostic(diag);
-
-                                    // Skip to the next comma or right paren
-                                    loop {
-                                        let skip_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
-                                        match skip_token.kind {
-                                            PPTokenKind::Comma | PPTokenKind::RightParen => {
-                                                self.pending_tokens.push_front(skip_token);
-                                                break;
-                                            }
-                                            _ => continue,
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        let (f, p, v) = self.parse_macro_definition_params(name.as_str())?;
+                        flags |= f;
+                        params = p;
+                        variadic = v;
                     } else {
                         self.pending_tokens.push_front(fp);
                         self.pending_tokens.push_front(token);
@@ -2265,51 +2183,11 @@ impl<'src> Preprocessor<'src> {
         token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
         // For Level B: Create a virtual buffer containing the replacement text
-        let replacement_text = self.tokens_to_string(&macro_info.tokens);
-        let virtual_buffer = replacement_text.into_bytes();
-        let virtual_id = self.source_manager.add_virtual_buffer(
-            virtual_buffer,
-            &format!("macro_{}", symbol.as_str()),
-            Some(token.location),
+        let mut expanded = self.create_virtual_buffer_tokens(
+            &macro_info.tokens,
+            symbol.as_str(),
+            token.location,
         );
-
-        // Create tokens with locations in the virtual buffer
-        let mut expanded = Vec::new();
-        let mut offset = 0u32;
-
-        for original_token in &macro_info.tokens {
-            let token_text = original_token.get_text();
-            let token_len = token_text.len() as u16;
-
-            let mut is_pasted = false;
-            // Check if token came from pasting
-            if let Some(file_info) = self.source_manager.get_file_info(original_token.location.source_id()) {
-                let path = file_info.path.to_string_lossy();
-                if path == "<<pasted-tokens>>" || path == "<pasted-tokens>" {
-                    is_pasted = true;
-                }
-            }
-
-            let new_token = if is_pasted {
-                // Keep original location for pasted tokens so they don't inherit recursion history
-                PPToken::new(
-                    original_token.kind,
-                    original_token.flags | PPTokenFlags::MACRO_EXPANDED,
-                    original_token.location,
-                    token_len,
-                )
-            } else {
-                PPToken::new(
-                    original_token.kind,
-                    original_token.flags | PPTokenFlags::MACRO_EXPANDED,
-                    SourceLoc::new(virtual_id, offset),
-                    token_len,
-                )
-            };
-
-            expanded.push(new_token);
-            offset += token_len as u32;
-        }
 
         // Recursively expand any macros in the replacement
         self.expand_tokens(&mut expanded, false)?;
@@ -2339,51 +2217,11 @@ impl<'src> Preprocessor<'src> {
         let substituted = self.substitute_macro(macro_info, &args, &expanded_args)?;
 
         // For Level B: Create a virtual buffer containing the substituted text
-        let replacement_text = self.tokens_to_string(&substituted);
-        let virtual_buffer = replacement_text.into_bytes();
-        let virtual_id = self.source_manager.add_virtual_buffer(
-            virtual_buffer,
-            &format!("macro_{}", symbol.as_str()),
-            Some(token.location),
+        let mut expanded = self.create_virtual_buffer_tokens(
+            &substituted,
+            symbol.as_str(),
+            token.location,
         );
-
-        // Create tokens with locations in the virtual buffer
-        let mut expanded = Vec::new();
-        let mut offset = 0u32;
-
-        for original_token in &substituted {
-            let token_text = original_token.get_text();
-            let token_len = token_text.len() as u16;
-
-            let mut is_pasted = false;
-            // Check if token came from pasting
-            if let Some(file_info) = self.source_manager.get_file_info(original_token.location.source_id()) {
-                let path = file_info.path.to_string_lossy();
-                if path == "<<pasted-tokens>>" || path == "<pasted-tokens>" {
-                    is_pasted = true;
-                }
-            }
-
-            let new_token = if is_pasted {
-                // Keep original location for pasted tokens so they don't inherit recursion history
-                PPToken::new(
-                    original_token.kind,
-                    original_token.flags | PPTokenFlags::MACRO_EXPANDED,
-                    original_token.location,
-                    token_len,
-                )
-            } else {
-                PPToken::new(
-                    original_token.kind,
-                    original_token.flags | PPTokenFlags::MACRO_EXPANDED,
-                    SourceLoc::new(virtual_id, offset),
-                    token_len,
-                )
-            };
-
-            expanded.push(new_token);
-            offset += token_len as u32;
-        }
 
         // Recursively expand any macros in the replacement
         self.expand_tokens(&mut expanded, false)?;
@@ -2947,53 +2785,11 @@ impl<'src> Preprocessor<'src> {
 
                     // Fix: Map substituted tokens to a virtual buffer to prevent leakage of internal locations
                     // (e.g. <pasted-tokens>) into the output stream.
-                    let replacement_text = self.tokens_to_string(&substituted);
-                    let virtual_buffer = replacement_text.into_bytes();
-                    let virtual_id = self.source_manager.add_virtual_buffer(
-                        virtual_buffer,
-                        &format!("macro_{}", symbol.as_str()),
-                        Some(token.location),
+                    let substituted = self.create_virtual_buffer_tokens(
+                        &substituted,
+                        symbol.as_str(),
+                        token.location,
                     );
-
-                    let mut remapped_tokens = Vec::with_capacity(substituted.len());
-                    let mut offset = 0u32;
-
-                    for original_token in &substituted {
-                        let token_text = original_token.get_text();
-                        let token_len = token_text.len() as u16;
-
-                        let mut is_pasted = false;
-                        // Check if token came from pasting
-                        if let Some(file_info) = self.source_manager.get_file_info(original_token.location.source_id())
-                        {
-                            let path = file_info.path.to_string_lossy();
-                            if path == "<<pasted-tokens>>" || path == "<pasted-tokens>" {
-                                is_pasted = true;
-                            }
-                        }
-
-                        let new_token = if is_pasted {
-                            // Keep original location for pasted tokens so they don't inherit recursion history
-                            PPToken::new(
-                                original_token.kind,
-                                original_token.flags | PPTokenFlags::MACRO_EXPANDED,
-                                original_token.location,
-                                token_len,
-                            )
-                        } else {
-                            PPToken::new(
-                                original_token.kind,
-                                original_token.flags | PPTokenFlags::MACRO_EXPANDED,
-                                SourceLoc::new(virtual_id, offset),
-                                token_len,
-                            )
-                        };
-                        remapped_tokens.push(new_token);
-                        offset += token_len as u32;
-                    }
-
-                    // Use remapped tokens for subsequent processing
-                    let substituted = remapped_tokens;
 
                     // Safety check for excessive expansions
                     let expansion_count = substituted.len();
@@ -3129,6 +2925,168 @@ impl<'src> Preprocessor<'src> {
         }
 
         false
+    }
+
+    /// Create tokens in a virtual buffer from a list of tokens
+    fn create_virtual_buffer_tokens(
+        &mut self,
+        tokens: &[PPToken],
+        macro_name: &str,
+        trigger_location: SourceLoc,
+    ) -> Vec<PPToken> {
+        let replacement_text = self.tokens_to_string(tokens);
+        let virtual_buffer = replacement_text.into_bytes();
+        let virtual_id = self.source_manager.add_virtual_buffer(
+            virtual_buffer,
+            &format!("macro_{}", macro_name),
+            Some(trigger_location),
+        );
+
+        let mut expanded = Vec::with_capacity(tokens.len());
+        let mut offset = 0u32;
+
+        for original_token in tokens {
+            let token_text = original_token.get_text();
+            let token_len = token_text.len() as u16;
+
+            let mut is_pasted = false;
+            // Check if token came from pasting
+            if let Some(file_info) = self.source_manager.get_file_info(original_token.location.source_id()) {
+                let path = file_info.path.to_string_lossy();
+                if path == "<<pasted-tokens>>" || path == "<pasted-tokens>" {
+                    is_pasted = true;
+                }
+            }
+
+            let new_token = if is_pasted {
+                // Keep original location for pasted tokens so they don't inherit recursion history
+                PPToken::new(
+                    original_token.kind,
+                    original_token.flags | PPTokenFlags::MACRO_EXPANDED,
+                    original_token.location,
+                    token_len,
+                )
+            } else {
+                PPToken::new(
+                    original_token.kind,
+                    original_token.flags | PPTokenFlags::MACRO_EXPANDED,
+                    SourceLoc::new(virtual_id, offset),
+                    token_len,
+                )
+            };
+
+            expanded.push(new_token);
+            offset += token_len as u32;
+        }
+
+        expanded
+    }
+
+    /// Helper to report diagnostics
+    fn report_diagnostic(
+        &mut self,
+        level: DiagnosticLevel,
+        message: impl Into<String>,
+        span: SourceSpan,
+        code: Option<String>,
+        hints: Vec<String>,
+        related: Vec<SourceSpan>,
+    ) {
+        let diag = Diagnostic {
+            level,
+            message: message.into(),
+            span,
+            code,
+            hints,
+            related,
+        };
+        self.diag.report_diagnostic(diag);
+    }
+
+    fn parse_macro_definition_params(
+        &mut self,
+        macro_name: &str,
+    ) -> Result<(MacroFlags, Vec<StringId>, Option<StringId>), PPError> {
+        let mut flags = MacroFlags::empty();
+        let mut params = Vec::new();
+        let mut variadic = None;
+
+        flags |= MacroFlags::FUNCTION_LIKE;
+
+        'param_parsing: loop {
+            let param_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
+            match param_token.kind {
+                PPTokenKind::RightParen => break,
+                PPTokenKind::Identifier(sym) => {
+                    if params.contains(&sym) {
+                        return Err(PPError::InvalidMacroParameter {
+                            span: SourceSpan::new(self.get_current_location(), self.get_current_location()),
+                        });
+                    }
+                    params.push(sym);
+                    let sep = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
+                    match sep.kind {
+                        PPTokenKind::Comma => continue,
+                        PPTokenKind::RightParen => break,
+                        PPTokenKind::Ellipsis => {
+                            variadic = Some(sym);
+                            flags |= MacroFlags::C99_VARARGS;
+                            let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
+                            if rparen.kind != PPTokenKind::RightParen {
+                                return Err(PPError::InvalidMacroParameter {
+                                    span: SourceSpan::new(self.get_current_location(), self.get_current_location()),
+                                });
+                            }
+                            break;
+                        }
+                        _ => {
+                            // Check if this token could signal the end of parameter list
+                            // For object-like macros, any non-identifier token after the macro name
+                            // should be treated as the start of the macro body
+                            self.pending_tokens.push_front(param_token);
+                            // This is an object-like macro, exit parameter parsing
+                            break 'param_parsing;
+                        }
+                    }
+                }
+                PPTokenKind::Ellipsis => {
+                    flags |= MacroFlags::GNU_VARARGS;
+                    variadic = Some(StringId::new("__VA_ARGS__"));
+                    let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
+                    if rparen.kind != PPTokenKind::RightParen {
+                        return Err(PPError::InvalidMacroParameter {
+                            span: SourceSpan::new(self.get_current_location(), self.get_current_location()),
+                        });
+                    }
+                    break;
+                }
+                _ => {
+                    // For problematic parameter tokens, emit a warning and continue
+                    self.report_diagnostic(
+                        DiagnosticLevel::Warning,
+                        format!("Invalid macro parameter token in #define '{}'", macro_name),
+                        SourceSpan::new(param_token.location, param_token.location),
+                        Some("invalid_macro_parameter".to_string()),
+                        vec!["Macro parameters must be identifiers".to_string()],
+                        Vec::new(),
+                    );
+
+                    // Skip to the next comma or right paren
+                    loop {
+                        let skip_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
+                        match skip_token.kind {
+                            PPTokenKind::Comma | PPTokenKind::RightParen => {
+                                self.pending_tokens.push_front(skip_token);
+                                break;
+                            }
+                            _ => continue,
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok((flags, params, variadic))
     }
 }
 

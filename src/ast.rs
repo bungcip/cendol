@@ -163,25 +163,6 @@ impl Iterator for NodeRefRange {
 
 impl ExactSizeIterator for NodeRefRange {}
 
-/// The primary AST node structure.
-/// Stored in the flattened Vec<Node>, with index-based references.
-/// Designed to be small and cache-friendly.
-#[derive(Debug, Clone)]
-pub struct Node {
-    pub kind: NodeKind,
-    pub span: SourceSpan,
-}
-
-impl Node {
-    /// Create a new node with the given kind and source span
-    pub fn new(kind: NodeKind, span: SourceSpan) -> Self {
-        Node { kind, span }
-    }
-
-    // Note: Node no longer stores resolved type directly; resolved types & conversions
-    // are stored in semantic_info side table after type resolution completes.
-}
-
 impl Ast {
     /// Get the resolved type for a node (reads from attached semantic_info)
     pub fn get_resolved_type(&self, node_ref: NodeRef) -> Option<QualType> {

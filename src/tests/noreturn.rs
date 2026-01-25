@@ -40,11 +40,5 @@ fn test_noreturn_declaration_mismatch() {
     void foo() {
     }
     "#;
-    run_fail_with_diagnostic(
-        src,
-        CompilePhase::SemanticLowering,
-        "conflicting types for 'foo'",
-        3,
-        5,
-    );
+    run_fail_with_diagnostic(src, CompilePhase::SemanticLowering, "conflicting types for 'foo'", 3, 5);
 }

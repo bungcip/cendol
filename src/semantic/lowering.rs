@@ -1392,12 +1392,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 } else {
                     None
                 };
-                (
-                    existing.type_info,
-                    existing.def_span,
-                    existing.has_linkage(),
-                    storage,
-                )
+                (existing.type_info, existing.def_span, existing.has_linkage(), storage)
             };
 
             let is_global = current_scope == ScopeId::GLOBAL;
@@ -1431,14 +1426,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
 
                     // Check for _Noreturn mismatch
-                    let existing_is_noreturn =
-                        if let TypeKind::Function { is_noreturn, .. } =
-                            &self.registry.get(existing_type_info.ty()).kind
-                        {
-                            *is_noreturn
-                        } else {
-                            false
-                        };
+                    let existing_is_noreturn = if let TypeKind::Function { is_noreturn, .. } =
+                        &self.registry.get(existing_type_info.ty()).kind
+                    {
+                        *is_noreturn
+                    } else {
+                        false
+                    };
 
                     let new_is_noreturn =
                         if let TypeKind::Function { is_noreturn, .. } = &self.registry.get(new_ty.ty()).kind {

@@ -212,44 +212,71 @@ impl PPLexer {
     /// Get the next character, handling line splicing transparently
     /// Line splicing: backslash followed by newline removes both characters
     pub(crate) fn next_char(&mut self) -> Option<u8> {
-        if self.position as usize >= self.buffer.len() {
-            return None;
-        }
-
-        let mut result = self.buffer[self.position as usize];
-        self.position += 1;
-
-        // Handle line splicing: backslash followed by newline or carriage return
         loop {
-            if result == b'\\' && (self.position as usize) < self.buffer.len() {
-                let next = self.buffer[self.position as usize];
-                if next == b'\n' || next == b'\r' {
-                    self.position += 1;
-                    if next == b'\r'
-                        && (self.position as usize) < self.buffer.len()
-                        && self.buffer[self.position as usize] == b'\n'
-                    {
-                        self.position += 1;
-                    }
-                    // Get the character after the line ending for splicing
-                    if (self.position as usize) < self.buffer.len() {
-                        result = self.buffer[self.position as usize];
-                        self.position += 1;
+            if self.position as usize >= self.buffer.len() {
+                return None;
+            }
+
+            let mut ch = self.buffer[self.position as usize];
+            let mut consumed_len = 1;
+
+            // Phase 1: Trigraphs
+            if ch == b'?'
+                && (self.position as usize) + 2 < self.buffer.len()
+                && self.buffer[self.position as usize + 1] == b'?'
+            {
+                let replacement = match self.buffer[self.position as usize + 2] {
+                    b'=' => Some(b'#'),
+                    b'(' => Some(b'['),
+                    b'/' => Some(b'\\'),
+                    b')' => Some(b']'),
+                    b'\'' => Some(b'^'),
+                    b'<' => Some(b'{'),
+                    b'!' => Some(b'|'),
+                    b'>' => Some(b'}'),
+                    b'-' => Some(b'~'),
+                    _ => None,
+                };
+
+                if let Some(r) = replacement {
+                    ch = r;
+                    consumed_len = 3;
+                }
+            }
+
+            // Phase 2: Line Splicing
+            if ch == b'\\' {
+                let next_pos = (self.position as usize) + consumed_len;
+                if next_pos < self.buffer.len() {
+                    let next_ch = self.buffer[next_pos];
+                    if next_ch == b'\n' {
+                        // Splicing: \ \n
+                        self.position = (next_pos + 1) as u32;
+                        self.line_starts.push(self.position);
                         continue;
-                    } else {
-                        return None;
+                    } else if next_ch == b'\r' {
+                        // Splicing: \ \r or \ \r \n
+                        let after_next = next_pos + 1;
+                        if after_next < self.buffer.len() && self.buffer[after_next] == b'\n' {
+                            self.position = (after_next + 1) as u32;
+                        } else {
+                            self.position = (next_pos + 1) as u32;
+                        }
+                        self.line_starts.push(self.position);
+                        continue;
                     }
                 }
             }
-            break;
-        }
 
-        // Update line starts for regular newlines
-        if result == b'\n' {
-            self.line_starts.push(self.position);
-        }
+            self.position += consumed_len as u32;
 
-        Some(result)
+            // Update line starts for regular newlines
+            if ch == b'\n' {
+                self.line_starts.push(self.position);
+            }
+
+            return Some(ch);
+        }
     }
 
     /// Peek at the next character without consuming it, handling line splicing

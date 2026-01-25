@@ -297,7 +297,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_return_statement(&mut self, expr: &Option<NodeRef>, _span: SourceSpan) {
         if self.current_function_is_noreturn {
-            self.report_error(SemanticError::NoreturnFunctionReturns {
+            self.report_error(SemanticError::NoreturnFunctionHasReturn {
                 name: self.current_function_name.clone().unwrap(),
                 span: _span,
             });
@@ -1146,7 +1146,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
                 if self.current_function_is_noreturn && self.can_fall_through(data.body) {
                     let span = self.ast.get_span(_node_ref);
-                    self.report_error(SemanticError::NoreturnFunctionReturns {
+                    self.report_error(SemanticError::NoreturnFunctionFallsOff {
                         name: self.current_function_name.clone().unwrap(),
                         span,
                     });

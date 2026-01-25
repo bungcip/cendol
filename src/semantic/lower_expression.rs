@@ -571,17 +571,13 @@ impl<'a> AstToMirLowerer<'a> {
             None
         };
 
-        let param_types = if let Some(func_type_kind) = func_type_kind {
-            if let TypeKind::Function { parameters, .. } = &func_type_kind {
-                Some(
-                    parameters
-                        .iter()
-                        .map(|param| self.lower_qual_type(param.param_type))
-                        .collect::<Vec<_>>(),
-                )
-            } else {
-                None
-            }
+        let param_types = if let Some(TypeKind::Function { parameters, .. }) = func_type_kind.as_ref() {
+            Some(
+                parameters
+                    .iter()
+                    .map(|param| self.lower_qual_type(param.param_type))
+                    .collect::<Vec<_>>(),
+            )
         } else {
             None
         };

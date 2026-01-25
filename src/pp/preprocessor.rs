@@ -2183,11 +2183,7 @@ impl<'src> Preprocessor<'src> {
         token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
         // For Level B: Create a virtual buffer containing the replacement text
-        let mut expanded = self.create_virtual_buffer_tokens(
-            &macro_info.tokens,
-            symbol.as_str(),
-            token.location,
-        );
+        let mut expanded = self.create_virtual_buffer_tokens(&macro_info.tokens, symbol.as_str(), token.location);
 
         // Recursively expand any macros in the replacement
         self.expand_tokens(&mut expanded, false)?;
@@ -2217,11 +2213,7 @@ impl<'src> Preprocessor<'src> {
         let substituted = self.substitute_macro(macro_info, &args, &expanded_args)?;
 
         // For Level B: Create a virtual buffer containing the substituted text
-        let mut expanded = self.create_virtual_buffer_tokens(
-            &substituted,
-            symbol.as_str(),
-            token.location,
-        );
+        let mut expanded = self.create_virtual_buffer_tokens(&substituted, symbol.as_str(), token.location);
 
         // Recursively expand any macros in the replacement
         self.expand_tokens(&mut expanded, false)?;
@@ -2785,11 +2777,7 @@ impl<'src> Preprocessor<'src> {
 
                     // Fix: Map substituted tokens to a virtual buffer to prevent leakage of internal locations
                     // (e.g. <pasted-tokens>) into the output stream.
-                    let substituted = self.create_virtual_buffer_tokens(
-                        &substituted,
-                        symbol.as_str(),
-                        token.location,
-                    );
+                    let substituted = self.create_virtual_buffer_tokens(&substituted, symbol.as_str(), token.location);
 
                     // Safety check for excessive expansions
                     let expansion_count = substituted.len();

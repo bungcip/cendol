@@ -771,11 +771,7 @@ impl PPLexer {
     }
 
     /// Shared logic for lexing quoted literals (strings and chars)
-    fn lex_quoted_literal(
-        &mut self,
-        first_ch: u8,
-        delimiter: u8,
-    ) -> (String, StringId) {
+    fn lex_quoted_literal(&mut self, first_ch: u8, delimiter: u8) -> (String, StringId) {
         let has_prefix = first_ch == b'L' || first_ch == b'u' || first_ch == b'U';
         let mut chars = vec![first_ch];
 

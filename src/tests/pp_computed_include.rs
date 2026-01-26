@@ -95,14 +95,12 @@ fn test_computed_include_extra_tokens_quoted() {
 
 #[test]
 fn test_computed_include_extra_tokens_angled() {
-    let files = vec![
-        (
-            "main.c",
-            r#"#define STDINT <stdint.h>
+    let files = vec![(
+        "main.c",
+        r#"#define STDINT <stdint.h>
 #include STDINT extra
 "#,
-        ),
-    ];
+    )];
     let (tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
     insta::assert_yaml_snapshot!((tokens, diags));
 }

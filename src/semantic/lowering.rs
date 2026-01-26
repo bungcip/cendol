@@ -2041,11 +2041,27 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.ast.kinds[node.index()] = NodeKind::TernaryOp(c, t, e);
                 smallvec![node]
             }
-            ParsedNodeKind::GnuStatementExpression(stmt, expr) => {
+            ParsedNodeKind::GnuStatementExpression(stmt, _expr) => {
                 let node = self.get_or_push_slot(target_slots, span);
-                let s = self.lower_expression(*stmt);
-                let e = self.lower_expression(*expr);
-                self.ast.kinds[node.index()] = NodeKind::GnuStatementExpression(s, e);
+                let s = self.lower_single_statement(*stmt);
+
+                let result_expr = if let NodeKind::CompoundStatement(data) = self.ast.get_kind(s) {
+                    if data.stmt_len > 0 {
+                        let last_stmt_idx = data.stmt_start.index() + (data.stmt_len as usize) - 1;
+                        let last_stmt_ref = NodeRef::new((last_stmt_idx + 1) as u32).expect("NodeRef overflow");
+                        if let NodeKind::ExpressionStatement(Some(e)) = self.ast.get_kind(last_stmt_ref) {
+                            *e
+                        } else {
+                            self.push_dummy(span)
+                        }
+                    } else {
+                        self.push_dummy(span)
+                    }
+                } else {
+                    self.push_dummy(span)
+                };
+
+                self.ast.kinds[node.index()] = NodeKind::GnuStatementExpression(s, result_expr);
                 smallvec![node]
             }
             ParsedNodeKind::SizeOfExpr(expr) => {
@@ -2282,25 +2298,143 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
             }
             ParsedNodeKind::If(stmt) => {
+                self.collect_labels(stmt.condition);
                 self.collect_labels(stmt.then_branch);
                 if let Some(eb) = stmt.else_branch {
                     self.collect_labels(eb);
                 }
             }
             ParsedNodeKind::While(stmt) => {
+                self.collect_labels(stmt.condition);
                 self.collect_labels(stmt.body);
             }
-            ParsedNodeKind::DoWhile(body, _) => {
+            ParsedNodeKind::DoWhile(body, cond) => {
                 self.collect_labels(*body);
+                self.collect_labels(*cond);
             }
             ParsedNodeKind::For(stmt) => {
+                if let Some(init) = stmt.init {
+                    self.collect_labels(init);
+                }
+                if let Some(cond) = stmt.condition {
+                    self.collect_labels(cond);
+                }
+                if let Some(inc) = stmt.increment {
+                    self.collect_labels(inc);
+                }
                 self.collect_labels(stmt.body);
             }
-            ParsedNodeKind::Switch(_, body) => {
+            ParsedNodeKind::Switch(cond, body) => {
+                self.collect_labels(*cond);
                 self.collect_labels(*body);
             }
-            ParsedNodeKind::Case(_, stmt) | ParsedNodeKind::CaseRange(_, _, stmt) | ParsedNodeKind::Default(stmt) => {
+            ParsedNodeKind::Case(expr, stmt) => {
+                self.collect_labels(*expr);
                 self.collect_labels(*stmt);
+            }
+            ParsedNodeKind::CaseRange(start, end, stmt) => {
+                self.collect_labels(*start);
+                self.collect_labels(*end);
+                self.collect_labels(*stmt);
+            }
+            ParsedNodeKind::Default(stmt) => {
+                self.collect_labels(*stmt);
+            }
+            ParsedNodeKind::ExpressionStatement(expr) => {
+                if let Some(e) = expr {
+                    self.collect_labels(*e);
+                }
+            }
+            ParsedNodeKind::Return(expr) => {
+                if let Some(e) = expr {
+                    self.collect_labels(*e);
+                }
+            }
+            ParsedNodeKind::GnuStatementExpression(stmt, _) => {
+                self.collect_labels(*stmt);
+            }
+            ParsedNodeKind::BinaryOp(_, lhs, rhs) => {
+                self.collect_labels(*lhs);
+                self.collect_labels(*rhs);
+            }
+            ParsedNodeKind::UnaryOp(_, operand) => {
+                self.collect_labels(*operand);
+            }
+            ParsedNodeKind::FunctionCall(callee, args) => {
+                self.collect_labels(*callee);
+                for arg in args {
+                    self.collect_labels(*arg);
+                }
+            }
+            ParsedNodeKind::TernaryOp(cond, then_branch, else_branch) => {
+                self.collect_labels(*cond);
+                self.collect_labels(*then_branch);
+                self.collect_labels(*else_branch);
+            }
+            ParsedNodeKind::Assignment(_, lhs, rhs) => {
+                self.collect_labels(*lhs);
+                self.collect_labels(*rhs);
+            }
+            ParsedNodeKind::Cast(_, expr) => {
+                self.collect_labels(*expr);
+            }
+            ParsedNodeKind::IndexAccess(base, index) => {
+                self.collect_labels(*base);
+                self.collect_labels(*index);
+            }
+            ParsedNodeKind::MemberAccess(base, _, _) => {
+                self.collect_labels(*base);
+            }
+            ParsedNodeKind::PostIncrement(operand) | ParsedNodeKind::PostDecrement(operand) => {
+                self.collect_labels(*operand);
+            }
+            ParsedNodeKind::SizeOfExpr(expr) => {
+                self.collect_labels(*expr);
+            }
+            ParsedNodeKind::Declaration(decl) => {
+                for init in &decl.init_declarators {
+                    if let Some(e) = init.initializer {
+                        self.collect_labels(e);
+                    }
+                }
+            }
+            ParsedNodeKind::CompoundLiteral(_, init) => {
+                self.collect_labels(*init);
+            }
+            ParsedNodeKind::InitializerList(inits) => {
+                for init in inits {
+                    self.collect_labels(init.initializer);
+                    for d in &init.designation {
+                        match d {
+                            ParsedDesignator::ArrayIndex(idx) => self.collect_labels(*idx),
+                            ParsedDesignator::GnuArrayRange(s, e) => {
+                                self.collect_labels(*s);
+                                self.collect_labels(*e);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            ParsedNodeKind::GenericSelection(control, assocs) => {
+                self.collect_labels(*control);
+                for a in assocs {
+                    self.collect_labels(a.result_expr);
+                }
+            }
+            ParsedNodeKind::BuiltinVaArg(_, expr) => {
+                self.collect_labels(*expr);
+            }
+            ParsedNodeKind::BuiltinVaStart(ap, last) => {
+                self.collect_labels(*ap);
+                self.collect_labels(*last);
+            }
+            ParsedNodeKind::BuiltinVaEnd(ap) => {
+                self.collect_labels(*ap);
+            }
+            ParsedNodeKind::BuiltinVaCopy(dst, src) => {
+                self.collect_labels(*dst);
+                self.collect_labels(*src);
             }
             _ => {}
         }

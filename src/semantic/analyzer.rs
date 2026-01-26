@@ -1433,6 +1433,8 @@ impl<'a> SemanticAnalyzer<'a> {
                             usual_arithmetic_conversions(self.registry, t, e)
                         }
                         (t, e) if t.ty() == e.ty() => Some(t),
+                        (t, _) if t.ty() == self.registry.type_void => Some(t),
+                        (_, e) if e.ty() == self.registry.type_void => Some(e),
                         (t, _) if t.is_pointer() && self.is_null_pointer_constant(*else_expr) => Some(t),
                         (_, e) if e.is_pointer() && self.is_null_pointer_constant(*then) => Some(e),
                         (t, e) if t.is_pointer() && e.is_pointer() => {
@@ -1448,8 +1450,11 @@ impl<'a> SemanticAnalyzer<'a> {
                     };
 
                     if let Some(res) = result_ty {
-                        self.record_implicit_conversions(res, t, *then);
-                        self.record_implicit_conversions(res, e, *else_expr);
+                        // Don't record conversions for void types
+                        if !res.is_void() {
+                            self.record_implicit_conversions(res, t, *then);
+                            self.record_implicit_conversions(res, e, *else_expr);
+                        }
                         return Some(res);
                     }
                     None
@@ -1457,18 +1462,14 @@ impl<'a> SemanticAnalyzer<'a> {
                     None
                 }
             }
-            NodeKind::GnuStatementExpression(stmt, _) => {
-                if let NodeKind::CompoundStatement(cs) = self.ast.get_kind(*stmt) {
-                    self.visit_node(*stmt);
-                    if cs.stmt_len > 0 {
-                        let last_item_idx = cs.stmt_start.get() + (cs.stmt_len - 1) as u32;
-                        let last_item_ref = NodeRef::new(last_item_idx).unwrap();
-                        if let NodeKind::ExpressionStatement(Some(expr)) = self.ast.get_kind(last_item_ref).clone() {
-                            return self.visit_node(expr);
-                        }
-                    }
+            NodeKind::GnuStatementExpression(stmt, result_expr) => {
+                self.visit_node(*stmt);
+
+                if let NodeKind::Dummy = self.ast.get_kind(*result_expr) {
+                    Some(QualType::unqualified(self.registry.type_void))
+                } else {
+                    self.visit_node(*result_expr)
                 }
-                None
             }
             NodeKind::PostIncrement(expr) | NodeKind::PostDecrement(expr) => {
                 let ty = self.visit_node(*expr);

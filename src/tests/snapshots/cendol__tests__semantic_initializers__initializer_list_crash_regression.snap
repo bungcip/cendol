@@ -7,10 +7,9 @@ type %t0 = i32
 type %t1 = struct contains_empty { a: %t2, empty: %t3, b: %t2 }
 type %t2 = u8
 type %t3 = struct anonymous {  }
-type %t4 = ptr<%t3>
 
 global @.L.str0: %t3 = const struct_literal {  }
-global @ce: %t1 = const struct_literal { 0: const 1, 1: const @.L.str0, 2: const 18 }
+global @ce: %t1 = const struct_literal { 0: const 1, 1: const struct_literal {  }, 2: const 18 }
 
 fn main() -> i32
 {

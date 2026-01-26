@@ -210,11 +210,7 @@ impl Cli {
         system_include_paths.push(PathBuf::from("/usr/include"));
 
         // Add architecture-specific include paths
-        let arch_paths = [
-            "/usr/include/x86_64-linux-gnu",
-            "/usr/include/x86_64-linux-gnu/c++/13",
-            "/usr/include/c++/13",
-        ];
+        let arch_paths = ["/usr/include/x86_64-linux-gnu"];
 
         for arch_path in &arch_paths {
             let path = PathBuf::from(arch_path);

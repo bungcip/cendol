@@ -386,16 +386,12 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
 pub struct Lexer<'src> {
     // Current position in token stream
     tokens: &'src [PPToken],
-    // current_index: usize,
 }
 
 impl<'src> Lexer<'src> {
     /// Create a new lexer with the given preprocessor token stream
     pub fn new(tokens: &'src [PPToken]) -> Self {
-        Lexer {
-            tokens,
-            // current_index: 0,
-        }
+        Lexer { tokens }
     }
 
     /// Parse C11 integer literal syntax

@@ -283,20 +283,20 @@ impl<'a> AstToMirLowerer<'a> {
                     if list.init_len == 0 {
                         // Return 0 constant
                         let mir_ty = self.lower_qual_type(target_ty);
-                         Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Zero))
+                        Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Zero))
                     } else {
-                         // Excess elements for scalar?
-                         // int x = { 1, 2 };
-                         // We should use the first one and warn/ignore the rest?
-                         // GCC warns: "excess elements in scalar initializer"
-                         // So we should take the first one.
+                        // Excess elements for scalar?
+                        // int x = { 1, 2 };
+                        // We should use the first one and warn/ignore the rest?
+                        // GCC warns: "excess elements in scalar initializer"
+                        // So we should take the first one.
 
-                         let first_item_ref = list.init_start;
-                         if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item_ref) {
+                        let first_item_ref = list.init_start;
+                        if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item_ref) {
                             self.lower_initializer(item.initializer, target_ty, destination)
-                         } else {
+                        } else {
                             unreachable!();
-                         }
+                        }
                     }
                 }
             }

@@ -31,7 +31,7 @@ fn rejects_function_returning_incomplete_type() {
 
     Level: Error
     Message: function has incomplete return type
-    Span: SourceSpan(source_id=SourceId(2), start=9, end=47)
+    Span: SourceSpan(source_id=SourceId(2), start=27, end=42)
     ");
 }
 

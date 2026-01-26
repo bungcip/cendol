@@ -194,16 +194,11 @@ fn emit_const_struct(
                     )?;
 
                     // Copy the field bytes into the struct buffer
-                    if field_offset + field_bytes.len() <= struct_size {
-                        struct_bytes[field_offset..field_offset + field_bytes.len()].copy_from_slice(&field_bytes);
-                    } else {
-                        return Err(format!(
-                            "Field emission overflow: offset {} + size {} > struct size {}",
-                            field_offset,
-                            field_bytes.len(),
-                            struct_size
-                        ));
+                    let required_size = field_offset + field_bytes.len();
+                    if required_size > struct_bytes.len() {
+                        struct_bytes.resize(required_size, 0);
                     }
+                    struct_bytes[field_offset..field_offset + field_bytes.len()].copy_from_slice(&field_bytes);
                 }
             }
             output.extend_from_slice(&struct_bytes);

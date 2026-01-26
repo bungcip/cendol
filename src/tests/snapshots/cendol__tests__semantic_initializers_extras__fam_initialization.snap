@@ -1,0 +1,17 @@
+---
+source: src/tests/semantic_initializers_extras.rs
+assertion_line: 11
+expression: mir
+---
+type %t0 = i32
+type %t1 = struct S { x: %t0, y: %t2 }
+type %t2 = [0]%t0
+
+global @s: %t1 = const struct_literal { 0: const 1, 1: const array_literal [const 2, const 3] }
+
+fn main() -> i32
+{
+
+  bb1:
+    return const 0
+}

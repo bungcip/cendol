@@ -52,7 +52,17 @@ impl<'a> AstToMirLowerer<'a> {
                 } else {
                     let base_offset = field_layouts[field_idx].offset;
                     let member_ty = members[field_idx].member_type;
-                    let member_size = self.registry.get_layout(member_ty.ty()).size;
+                    let member_ty_ref = member_ty.ty();
+                    let member_kind = &self.registry.get(member_ty_ref).kind;
+                    let member_size = if let TypeKind::Array {
+                        size: ArraySizeType::Incomplete,
+                        ..
+                    } = member_kind
+                    {
+                        0
+                    } else {
+                        self.registry.get_layout(member_ty_ref).size
+                    };
                     let is_bitfield = members[field_idx].bit_field_size.is_some();
 
                     let mut next_idx = field_idx + 1;
@@ -90,6 +100,9 @@ impl<'a> AstToMirLowerer<'a> {
                 continue;
             };
 
+            let mut range_start = current_idx;
+            let mut range_end = current_idx;
+
             // Handle designator
             if init.designator_len > 0 {
                 let designator_ref = init.designator_start;
@@ -102,7 +115,8 @@ impl<'a> AstToMirLowerer<'a> {
                         if let Some(const_id) = self.operand_to_const_id(idx_operand) {
                             let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
                             if let ConstValueKind::Int(val) = const_val.kind {
-                                current_idx = val as usize;
+                                range_start = val as usize;
+                                range_end = range_start;
                             } else {
                                 panic!("Array designator must be an integer constant");
                             }
@@ -110,27 +124,59 @@ impl<'a> AstToMirLowerer<'a> {
                             panic!("Array designator must be a constant expression");
                         }
                     }
+                    NodeKind::Designator(Designator::GnuArrayRange(start_expr, end_expr)) => {
+                        // Start
+                        let start_operand = self.lower_expression(*start_expr, true);
+                        if let Some(const_id) = self.operand_to_const_id(start_operand) {
+                            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
+                            if let ConstValueKind::Int(val) = const_val.kind {
+                                range_start = val as usize;
+                            } else {
+                                panic!("Array range start must be an integer constant");
+                            }
+                        } else {
+                            panic!("Array range start must be a constant expression");
+                        }
+
+                        // End
+                        let end_operand = self.lower_expression(*end_expr, true);
+                        if let Some(const_id) = self.operand_to_const_id(end_operand) {
+                            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
+                            if let ConstValueKind::Int(val) = const_val.kind {
+                                range_end = val as usize;
+                            } else {
+                                panic!("Array range end must be an integer constant");
+                            }
+                        } else {
+                            panic!("Array range end must be a constant expression");
+                        }
+
+                        if range_end < range_start {
+                            panic!("Array range end must be >= start");
+                        }
+                    }
                     // Struct field designators are invalid for arrays
                     NodeKind::Designator(Designator::FieldName(_)) => {
                         panic!("Field designator for array initializer");
                     }
                     _ => {
-                        // Other designators (e.g. ranges) not supported yet
                         panic!("Unsupported designator for array initializer");
                     }
                 }
             }
 
-            // Ensure elements vector is large enough
-            if current_idx >= elements.len() {
-                elements.resize(current_idx + 1, None);
+            let operand = self.lower_initializer(init.initializer, element_ty, None);
+
+            for i in range_start..=range_end {
+                // Ensure elements vector is large enough
+                if i >= elements.len() {
+                    elements.resize(i + 1, None);
+                }
+                elements[i] = Some(operand.clone());
             }
 
-            let operand = self.lower_initializer(init.initializer, element_ty, None);
-            elements[current_idx] = Some(operand);
-
             // Advance index for next positional initializer
-            current_idx += 1;
+            current_idx = range_end + 1;
         }
 
         // Fill gaps with zero
@@ -303,6 +349,66 @@ impl<'a> AstToMirLowerer<'a> {
             _ => {
                 let operand = self.lower_expression(init_ref, true);
                 let mir_target_ty = self.lower_qual_type(target_ty);
+
+                // Check for scalar -> aggregate initialization (brace elision)
+                let target_kind = self.registry.get(target_ty.ty()).kind.clone();
+                match target_kind {
+                    TypeKind::Array { element_type, size } => {
+                        // Initialize first element with operand, rest with 0
+                        let element_qt = QualType::unqualified(element_type);
+                        let mir_elem_ty = self.lower_qual_type(element_qt);
+                        // Apply conversions to element type
+                        let operand = self.apply_conversions(operand, init_ref, mir_elem_ty);
+                        let operand = if self.get_operand_type(&operand) != mir_elem_ty {
+                            Operand::Cast(mir_elem_ty, Box::new(operand))
+                        } else {
+                            operand
+                        };
+
+                        let array_len = if let ArraySizeType::Constant(len) = size {
+                            len
+                        } else {
+                            1
+                        };
+
+                        let mut elements = vec![Some(operand)];
+                        if array_len > 1 {
+                            elements.resize(array_len, None);
+                        }
+
+                        // Fill gaps with zero
+                        let final_elements = elements
+                            .into_iter()
+                            .map(|op| {
+                                op.unwrap_or_else(|| {
+                                    Operand::Constant(self.create_constant(mir_elem_ty, ConstValueKind::Zero))
+                                })
+                            })
+                            .collect();
+
+                        return self.finalize_array_initializer(final_elements, target_ty, destination);
+                    }
+                    TypeKind::Record { members, .. } => {
+                        // Initialize first field with operand, rest with 0
+                        if let Some(first_member) = members.first() {
+                            let member_qt = first_member.member_type;
+                            let mir_member_ty = self.lower_qual_type(member_qt);
+                            // Apply conversions
+                            let operand = self.apply_conversions(operand, init_ref, mir_member_ty);
+                            let operand = if self.get_operand_type(&operand) != mir_member_ty {
+                                Operand::Cast(mir_member_ty, Box::new(operand))
+                            } else {
+                                operand
+                            };
+
+                            // We only have the first operand.
+                            let field_operands = vec![(0, operand)];
+                            return self.finalize_struct_initializer(field_operands, target_ty, destination);
+                        }
+                    }
+                    _ => {}
+                }
+
                 let operand = self.apply_conversions(operand, init_ref, mir_target_ty);
 
                 // Ensure type match by inserting a cast if necessary

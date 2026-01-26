@@ -1096,12 +1096,10 @@ impl<'a> AstToMirLowerer<'a> {
             }
             Operand::Copy(place) => {
                 if let Place::Global(global_id) = *place {
-                    // In some contexts, a global might be referred to by copy (like array-to-pointer decay)
-                    // but for initializers we usually expect AddressOf or Constant.
-                    // However, let's be safe.
-                    let global_type = self.get_global_type(global_id);
-                    let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: global_type });
-                    Some(self.create_constant(ptr_ty, ConstValueKind::GlobalAddress(global_id)))
+                    // If we are copying a global, and it has a constant initializer, return that value.
+                    // This handles compound literals which are lowered to globals.
+                    let global = self.mir_builder.get_globals().get(&global_id).unwrap();
+                    global.initial_value
                 } else {
                     None
                 }

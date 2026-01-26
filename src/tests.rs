@@ -39,6 +39,7 @@ pub mod semantic_function_params;
 pub mod semantic_generic;
 pub mod semantic_incomplete_type;
 pub mod semantic_initializers;
+pub mod semantic_initializers_extras;
 pub mod semantic_local_init;
 pub mod semantic_lowering;
 pub mod semantic_lvalue;

@@ -386,7 +386,6 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
 pub struct Lexer<'src> {
     // Current position in token stream
     tokens: &'src [PPToken],
-    // current_index: usize,
 }
 
 impl<'src> Lexer<'src> {
@@ -394,7 +393,6 @@ impl<'src> Lexer<'src> {
     pub fn new(tokens: &'src [PPToken]) -> Self {
         Lexer {
             tokens,
-            // current_index: 0,
         }
     }
 

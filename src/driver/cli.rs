@@ -212,8 +212,6 @@ impl Cli {
         // Add architecture-specific include paths
         let arch_paths = [
             "/usr/include/x86_64-linux-gnu",
-            "/usr/include/x86_64-linux-gnu/c++/13",
-            "/usr/include/c++/13",
         ];
 
         for arch_path in &arch_paths {

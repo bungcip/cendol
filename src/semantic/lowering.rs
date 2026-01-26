@@ -763,6 +763,7 @@ fn resolve_type_specifier(
                 Ok(QualType::unqualified(ctx.registry.declare_record(Some(*name), false)))
             }
         }
+        ParsedTypeSpecifier::VaList => Ok(QualType::unqualified(ctx.registry.type_valist)),
     }
 }
 

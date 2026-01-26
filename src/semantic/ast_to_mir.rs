@@ -713,7 +713,13 @@ impl<'a> AstToMirLowerer<'a> {
             placeholder_id
         } else {
             let mir_type = match &ast_type_kind {
-                TypeKind::Builtin(b) => self.lower_builtin_type(b),
+                TypeKind::Builtin(b) => {
+                    if matches!(b, BuiltinType::VaList) {
+                        self.lower_valist_type()
+                    } else {
+                        self.lower_builtin_type(b)
+                    }
+                }
                 TypeKind::Pointer { pointee } => self.lower_pointer_type(*pointee),
                 TypeKind::Array { element_type, size } => self.lower_array_type(type_ref, *element_type, size),
                 TypeKind::Function {
@@ -732,6 +738,39 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
+    fn lower_valist_type(&mut self) -> MirType {
+        let u32_id = self.lower_type(self.registry.type_int_unsigned);
+        let u64_id = self.lower_type(self.registry.type_long_long_unsigned);
+
+        let record_layout = MirRecordLayout {
+            size: 24,
+            alignment: 8,
+            field_offsets: vec![0, 4, 8, 16],
+        };
+
+        let record_type = MirType::Record {
+            name: NameId::new("__va_list_tag".to_string()),
+            field_types: vec![u32_id, u32_id, u64_id, u64_id],
+            field_names: Vec::new(),
+            is_union: false,
+            layout: record_layout,
+        };
+
+        let record_id = self.mir_builder.add_type(record_type);
+
+        let array_layout = MirArrayLayout {
+            size: 24,
+            align: 8,
+            stride: 24,
+        };
+
+        MirType::Array {
+            element: record_id,
+            size: 1,
+            layout: array_layout,
+        }
+    }
+
     fn lower_builtin_type(&self, b: &BuiltinType) -> MirType {
         match b {
             BuiltinType::Void => MirType::Void,
@@ -747,6 +786,7 @@ impl<'a> AstToMirLowerer<'a> {
             BuiltinType::Float => MirType::F32,
             BuiltinType::Double | BuiltinType::LongDouble => MirType::F64,
             BuiltinType::Signed => MirType::I32,
+            BuiltinType::VaList => MirType::U64, // Opaque handle
         }
     }
 

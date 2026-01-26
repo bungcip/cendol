@@ -215,6 +215,10 @@ fn parse_type_specifier_to_parsed_base(
             .ast
             .parsed_types
             .alloc_base_type(ParsedBaseTypeNode::Typedef(*name))),
+        ParsedTypeSpecifier::VaList => Ok(parser
+            .ast
+            .parsed_types
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::VaList))),
     }
 }
 

@@ -110,6 +110,10 @@ fn parse_type_specifier_with_context(
             parser.advance();
             Ok(ParsedTypeSpecifier::TypedefName(symbol))
         }
+        TokenKind::BuiltinVaList => {
+            parser.advance();
+            Ok(ParsedTypeSpecifier::VaList)
+        }
         _ => {
             let expected = "void, char, short, int, long, float, double, signed, unsigned, bool, complex, atomic, struct, union, enum, or identifier";
             Err(ParseError::UnexpectedToken {

@@ -85,6 +85,7 @@ impl AstDumper {
                 BuiltinType::Double => "double".to_string(),
                 BuiltinType::LongDouble => "long double".to_string(),
                 BuiltinType::Signed => "signed".to_string(),
+                BuiltinType::VaList => "__builtin_va_list".to_string(),
             },
             TypeKind::Complex { .. } => "_Complex".to_string(),
             TypeKind::Error => "<error>".to_string(),

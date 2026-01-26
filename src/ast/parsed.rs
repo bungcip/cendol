@@ -205,6 +205,7 @@ pub enum ParsedTypeSpecifier {
         Option<Vec<ParsedNodeRef>>, /* enumerators */
     ),
     TypedefName(NameId),
+    VaList,
 }
 
 // Alignment specifiers

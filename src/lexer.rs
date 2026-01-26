@@ -73,6 +73,7 @@ pub enum TokenKind {
     Typedef,
     Attribute,
     BuiltinVaArg,
+    BuiltinVaList,
     BuiltinVaStart,
     BuiltinVaEnd,
     BuiltinVaCopy,
@@ -181,6 +182,7 @@ impl TokenKind {
                 | TokenKind::Struct
                 | TokenKind::Union
                 | TokenKind::Enum
+                | TokenKind::BuiltinVaList
         )
     }
 
@@ -376,6 +378,7 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__attribute__"), TokenKind::Attribute);
         m.insert(StringId::new("__attribute"), TokenKind::Attribute);
         m.insert(StringId::new("__builtin_va_arg"), TokenKind::BuiltinVaArg);
+        m.insert(StringId::new("__builtin_va_list"), TokenKind::BuiltinVaList);
         m.insert(StringId::new("__builtin_va_start"), TokenKind::BuiltinVaStart);
         m.insert(StringId::new("__builtin_va_end"), TokenKind::BuiltinVaEnd);
         m.insert(StringId::new("__builtin_va_copy"), TokenKind::BuiltinVaCopy);

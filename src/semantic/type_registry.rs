@@ -59,6 +59,7 @@ pub struct TypeRegistry {
     pub type_long_double: TypeRef,
     pub type_void_ptr: TypeRef,
     pub type_signed: TypeRef,
+    pub type_valist: TypeRef,
     pub type_error: TypeRef,
 }
 
@@ -99,6 +100,7 @@ impl TypeRegistry {
             type_long_double: unsafe { TypeRef::from_raw_unchecked(1) },
             type_void_ptr: unsafe { TypeRef::from_raw_unchecked(1) },
             type_signed: unsafe { TypeRef::from_raw_unchecked(1) },
+            type_valist: unsafe { TypeRef::from_raw_unchecked(1) },
             type_error: unsafe { TypeRef::from_raw_unchecked(1) },
         };
 
@@ -166,11 +168,14 @@ impl TypeRegistry {
         // 17: Signed (marker)
         self.type_signed = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Signed));
 
+        // 18: VaList
+        self.type_valist = self.alloc_builtin(TypeKind::Builtin(BuiltinType::VaList));
+
         // Pre-calculate void*
         self.type_void_ptr = self.pointer_to(QualType::unqualified(self.type_void));
 
-        // We can assert that the last allocated index was 17
-        debug_assert_eq!(self.types.len() - 1, 17, "Builtin types allocation mismatch");
+        // We can assert that the last allocated index was 18
+        debug_assert_eq!(self.types.len() - 1, 18, "Builtin types allocation mismatch");
     }
 
     fn alloc_builtin(&mut self, kind: TypeKind) -> TypeRef {
@@ -563,6 +568,19 @@ impl TypeRegistry {
                     size: 4,
                     alignment: 4,
                     kind: LayoutKind::Scalar,
+                },
+                BuiltinType::VaList => TypeLayout {
+                    size: 24,
+                    alignment: 8,
+                    kind: LayoutKind::Record {
+                        fields: vec![
+                            FieldLayout { offset: 0 },
+                            FieldLayout { offset: 4 },
+                            FieldLayout { offset: 8 },
+                            FieldLayout { offset: 16 },
+                        ],
+                        is_union: false,
+                    },
                 },
             },
 
@@ -968,6 +986,7 @@ impl TypeRegistry {
                 BuiltinType::Double => "double".to_string(),
                 BuiltinType::LongDouble => "long double".to_string(),
                 BuiltinType::Signed => "signed".to_string(),
+                BuiltinType::VaList => "__builtin_va_list".to_string(),
             },
             TypeKind::Complex { base_type } => format!("_Complex {}", self.display_type(*base_type)),
             TypeKind::Pointer { pointee } => format!("{}*", self.display_qual_type(*pointee)),

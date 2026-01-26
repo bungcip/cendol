@@ -452,6 +452,60 @@ impl<'src> Preprocessor<'src> {
         preprocessor
     }
 
+    /// Try to expand a magic macro (e.g. __LINE__, __FILE__, __COUNTER__)
+    fn try_expand_magic_macro(&mut self, token: &PPToken) -> Option<PPToken> {
+        if let PPTokenKind::Identifier(symbol) = token.kind {
+            let sym_str = symbol.as_str();
+            if sym_str == "__LINE__" {
+                let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
+                    presumed.0
+                } else {
+                    1
+                };
+                let line_str = line.to_string();
+                let line_symbol = StringId::new(&line_str);
+                return Some(PPToken::new(
+                    PPTokenKind::Number(line_symbol),
+                    PPTokenFlags::empty(),
+                    token.location,
+                    line_str.len() as u16,
+                ));
+            } else if sym_str == "__FILE__" {
+                let filename = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
+                    if let Some(name) = presumed.2 {
+                        format!("\"{}\"", name)
+                    } else if let Some(file_info) = self.source_manager.get_file_info(token.location.source_id()) {
+                        format!("\"{}\"", file_info.path.display())
+                    } else {
+                        "\"<unknown>\"".to_string()
+                    }
+                } else if let Some(file_info) = self.source_manager.get_file_info(token.location.source_id()) {
+                    format!("\"{}\"", file_info.path.display())
+                } else {
+                    "\"<unknown>\"".to_string()
+                };
+                let file_symbol = StringId::new(&filename);
+                return Some(PPToken::new(
+                    PPTokenKind::StringLiteral(file_symbol),
+                    PPTokenFlags::empty(),
+                    token.location,
+                    filename.len() as u16,
+                ));
+            } else if sym_str == "__COUNTER__" {
+                let val = self.get_next_counter();
+                let val_str = val.to_string();
+                let val_symbol = StringId::new(&val_str);
+                return Some(PPToken::new(
+                    PPTokenKind::Number(val_symbol),
+                    PPTokenFlags::empty(),
+                    token.location,
+                    val_str.len() as u16,
+                ));
+            }
+        }
+        None
+    }
+
     /// Get the next value for __COUNTER__
     fn get_next_counter(&mut self) -> u32 {
         let val = self.counter;
@@ -766,57 +820,8 @@ impl<'src> Preprocessor<'src> {
                     PPTokenKind::Eod => continue,
                     PPTokenKind::Identifier(symbol) => {
                         let sym_str = symbol.as_str();
-                        if sym_str == "__LINE__" {
-                            let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location)
-                            {
-                                presumed.0
-                            } else {
-                                1
-                            };
-                            let line_str = line.to_string();
-                            let line_symbol = StringId::new(&line_str);
-                            result_tokens.push(PPToken::new(
-                                PPTokenKind::Number(line_symbol),
-                                PPTokenFlags::empty(),
-                                token.location,
-                                line_str.len() as u16,
-                            ));
-                        } else if sym_str == "__FILE__" {
-                            let filename =
-                                if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
-                                    if let Some(name) = presumed.2 {
-                                        format!("\"{}\"", name)
-                                    } else if let Some(file_info) =
-                                        self.source_manager.get_file_info(token.location.source_id())
-                                    {
-                                        format!("\"{}\"", file_info.path.display())
-                                    } else {
-                                        "\"<unknown>\"".to_string()
-                                    }
-                                } else if let Some(file_info) =
-                                    self.source_manager.get_file_info(token.location.source_id())
-                                {
-                                    format!("\"{}\"", file_info.path.display())
-                                } else {
-                                    "\"<unknown>\"".to_string()
-                                };
-                            let file_symbol = StringId::new(&filename);
-                            result_tokens.push(PPToken::new(
-                                PPTokenKind::StringLiteral(file_symbol),
-                                PPTokenFlags::empty(),
-                                token.location,
-                                filename.len() as u16,
-                            ));
-                        } else if sym_str == "__COUNTER__" {
-                            let val = self.get_next_counter();
-                            let val_str = val.to_string();
-                            let val_symbol = StringId::new(&val_str);
-                            result_tokens.push(PPToken::new(
-                                PPTokenKind::Number(val_symbol),
-                                PPTokenFlags::empty(),
-                                token.location,
-                                val_str.len() as u16,
-                            ));
+                        if let Some(magic) = self.try_expand_magic_macro(&token) {
+                            result_tokens.push(magic);
                         } else if sym_str == "_Pragma" {
                             self.handle_pragma_operator()?;
                         } else {
@@ -2573,64 +2578,14 @@ impl<'src> Preprocessor<'src> {
 
         while i < tokens.len() {
             let token = &tokens[i];
+
+            if let Some(magic) = self.try_expand_magic_macro(token) {
+                tokens[i] = magic;
+                i += 1;
+                continue;
+            }
+
             match &token.kind {
-                PPTokenKind::Identifier(symbol) if symbol.as_str() == "__LINE__" => {
-                    let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
-                        presumed.0
-                    } else {
-                        1
-                    };
-                    let line_str = line.to_string();
-                    let line_symbol = StringId::new(&line_str);
-                    let number_token = PPToken::new(
-                        PPTokenKind::Number(line_symbol),
-                        PPTokenFlags::empty(),
-                        token.location,
-                        line_str.len() as u16,
-                    );
-                    tokens[i] = number_token;
-                    i += 1;
-                    continue;
-                }
-                PPTokenKind::Identifier(symbol) if symbol.as_str() == "__COUNTER__" => {
-                    let val = self.get_next_counter();
-                    let val_str = val.to_string();
-                    let val_symbol = StringId::new(&val_str);
-                    let number_token = PPToken::new(
-                        PPTokenKind::Number(val_symbol),
-                        PPTokenFlags::empty(),
-                        token.location,
-                        val_str.len() as u16,
-                    );
-                    tokens[i] = number_token;
-                    i += 1;
-                    continue;
-                }
-                PPTokenKind::Identifier(symbol) if symbol.as_str() == "__FILE__" => {
-                    let filename = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
-                        if let Some(name) = presumed.2 {
-                            format!("\"{}\"", name)
-                        } else if let Some(file_info) = self.source_manager.get_file_info(token.location.source_id()) {
-                            format!("\"{}\"", file_info.path.display())
-                        } else {
-                            "\"<unknown>\"".to_string()
-                        }
-                    } else if let Some(file_info) = self.source_manager.get_file_info(token.location.source_id()) {
-                        format!("\"{}\"", file_info.path.display())
-                    } else {
-                        "\"<unknown>\"".to_string()
-                    };
-                    let file_symbol = StringId::new(&filename);
-                    let string_token = PPToken::new(
-                        PPTokenKind::StringLiteral(file_symbol),
-                        PPTokenFlags::empty(),
-                        token.location,
-                        filename.len() as u16,
-                    );
-                    tokens[i] = string_token;
-                    i += 1;
-                    continue;
-                }
                 PPTokenKind::Identifier(symbol) if in_conditional && symbol == &self.directive_keywords.defined => {
                     // Skip 'defined'
                     i += 1;

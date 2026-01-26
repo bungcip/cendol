@@ -66,16 +66,23 @@ The code generation uses:
 - `Terminator::If` maps to Cranelift conditional branch
 - `Terminator::Return` maps to Cranelift return
 
-### Memory Operations
-- `Place` operations map to Cranelift memory instructions
-- `Operand::AddressOf` maps to address calculation
-- `Rvalue::Load` maps to Cranelift load
-- `MirStmt::Store` maps to Cranelift store
-
 ### Function Calls
 - `CallTarget::Direct` maps to direct Cranelift calls
 - `CallTarget::Indirect` maps to indirect Cranelift calls
 - Parameter passing and return value handling
+- **Variadic Support**: Special handling for x86_64 SysV variadic calls (reg save area, spill slots)
+
+### Memory Operations
+- `Place` operations map to Cranelift memory instructions
+- `MirStmt::Alloc` lowers to `malloc` calls
+- `MirStmt::Dealloc` lowers to `free` calls
+- `MirStmt::Store` maps to Cranelift store
+
+### Context Management
+- `MirToCraneliftLowerer`: Main driver for compilation
+- `BodyEmitContext`: Context for lowering function bodies
+- `EmitContext`: Context for constant emission
+
 
 ## Output Generation
 

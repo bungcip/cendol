@@ -86,15 +86,25 @@ pub enum Terminator {
 
 ### Operations and Values
 
+### Operations and Values
+
 `MirStmt` represents side-effect operations:
 
 ```rust
 pub enum MirStmt {
     Assign(Place, Rvalue),
     Store(Operand, Place),
-    Call(CallTarget, Vec<Operand>),
+    Call {
+        target: CallTarget,
+        args: Vec<Operand>,
+        dest: Option<Place>,
+    },
     Alloc(Place, TypeId),
     Dealloc(Operand),
+    // Builtin variadic operations
+    BuiltinVaStart(Place, Operand),
+    BuiltinVaEnd(Place),
+    BuiltinVaCopy(Place, Place),
 }
 ```
 
@@ -126,8 +136,10 @@ pub enum Operand {
 ```rust
 pub enum Rvalue {
     Use(Operand),
-    BinaryOp(BinaryOp, Operand, Operand),
-    UnaryOp(UnaryOp, Operand),
+    BinaryIntOp(BinaryIntOp, Operand, Operand),
+    BinaryFloatOp(BinaryFloatOp, Operand, Operand),
+    UnaryIntOp(UnaryIntOp, Operand),
+    UnaryFloatOp(UnaryFloatOp, Operand),
     Cast(TypeId, Operand),
     PtrAdd(Operand, Operand),
     PtrSub(Operand, Operand),
@@ -135,25 +147,21 @@ pub enum Rvalue {
     StructLiteral(Vec<(usize, Operand)>),
     ArrayLiteral(Vec<Operand>),
     Load(Operand),
-    Call(CallTarget, Vec<Operand>),
+    BuiltinVaArg(Place, TypeId),
 }
 ```
 
 ## Type System
 
-The MIR type system is explicit and comprehensive:
+The MIR type system uses explicit variants for primitives:
 
 ```rust
 pub enum MirType {
     Void,
     Bool,
-    Int {
-        is_signed: bool,
-        width: u8,
-    },
-    Float {
-        width: u8,
-    },
+    I8, I16, I32, I64,
+    U8, U16, U32, U64,
+    F32, F64,
     Pointer {
         pointee: TypeId,
     },
@@ -165,26 +173,29 @@ pub enum MirType {
     Function {
         return_type: TypeId,
         params: Vec<TypeId>,
+        is_variadic: bool,
     },
     Record {
         name: NameId,
-        fields: Vec<(NameId, TypeId)>,
+        field_types: Vec<TypeId>,
+        field_names: Vec<NameId>,
         is_union: bool,
         layout: MirRecordLayout,
-    },
-    Enum {
-        name: NameId,
-        variants: Vec<(NameId, i64)>,
     },
 }
 ```
 
 ## Constants
 
-Constant values are explicitly represented:
+Constant values are represented with a struct separation:
 
 ```rust
-pub enum ConstValue {
+pub struct ConstValue {
+    pub ty: TypeId,
+    pub kind: ConstValueKind,
+}
+
+pub enum ConstValueKind {
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -194,7 +205,6 @@ pub enum ConstValue {
     ArrayLiteral(Vec<ConstValueId>),
     GlobalAddress(GlobalId),
     FunctionAddress(MirFunctionId),
-    Cast(TypeId, ConstValueId),
 }
 ```
 

@@ -41,6 +41,12 @@ The lexer produces various token types including:
 ### Keywords (Other)
 - `Alignas`, `Alignof`, `Generic`, `Inline`, `Noreturn`, `Pragma`, `Sizeof`, `StaticAssert`, `Typedef`, `Attribute`
 
+### Keywords (Builtin)
+- `BuiltinVaArg`, `BuiltinVaStart`, `BuiltinVaEnd`, `BuiltinVaCopy`
+
+### Special Tokens
+- `EndOfFile`, `Unknown`
+
 ### Operators (Arithmetic)
 - `Plus`, `Minus`, `Star`, `Slash`, `Percent`, `Increment`, `Decrement`
 

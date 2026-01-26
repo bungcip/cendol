@@ -13,37 +13,22 @@ The current semantic analysis consists of four phases:
 3. **Type Resolution**: Sets resolved types on AST nodes
 4. **Type Checking**: Validates type compatibility and safety
 
-## Proposed Integration
+## Architecture
 
-The semantic lowering phase will be inserted **after symbol collection** and **before name resolution**:
-
-```
-Parser AST (Grammar-Oriented)
-        ↓
-Symbol Collection (Current Phase 1)
-        ↓
-Semantic Lowering (NEW PHASE)
-        ↓
-Name Resolution (Current Phase 2)
-        ↓
-Type Resolution (Current Phase 3)
-        ↓
-Type Checking (Current Phase 4)
-        ↓
-Semantic AST / HIR (Type-Resolved, Codegen-Ready)
-```
+The semantic lowering phase bridges the gap between the grammar-oriented parser AST and the type-resolved semantic AST (HIR). It handles all C-style declaration forms.
 
 ## Core Components
 
 ### 1. Lowering Context (`LowerCtx`)
 
 ```rust
-pub struct LowerCtx<'a, 'src> {
-    pub ast: &'a mut Ast,
-    pub diag: &'src mut DiagnosticEngine,
-    pub symbol_table: &'a mut SymbolTable,
-    pub current_scope: ScopeId,
-    pub errors: ErrorCollection,
+pub(crate) struct LowerCtx<'a, 'src> {
+    pub(crate) parsed_ast: &'a ParsedAst,
+    pub(crate) ast: &'a mut Ast,
+    pub(crate) diag: &'src mut DiagnosticEngine,
+    pub(crate) symbol_table: &'a mut SymbolTable,
+    pub(crate) has_errors: bool,
+    pub(crate) registry: &'a mut TypeRegistry,
 }
 ```
 

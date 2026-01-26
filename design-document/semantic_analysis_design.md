@@ -17,27 +17,22 @@ Semantic analysis is a multi-phase process that checks the syntactically correct
 
 The semantic analysis process involves multiple distinct phases:
 
-### 1. Symbol Resolver Phase
-- Performs initial symbol collection and scope establishment
-- Transforms parser-specific nodes to semantic nodes
-- Generates scope mapping for each AST node
-- Creates initial symbol table entries
+### 1. Semantic Lowering Phase
+- Converts `ParsedAst` (parse tree) to `Ast` (semantic tree)
+- Performs declaration lowering and symbol table construction
+- Handles scope construction and symbol definition
+- Resolves identifiers to symbol table entries
+- Stores scope information directly on AST nodes
 
-### 2. Name Resolution Phase
-- Resolves identifier names to their corresponding symbol table entries
-- Handles C's complex scoping rules (block scope, function scope, etc.)
-- Resolves function, variable, and type names
-- Validates name uniqueness within scopes
-
-### 3. Semantic Analysis Phase
-- Performs comprehensive type checking and validation
+### 2. Semantic Analysis Phase
+- Performs comprehensive type checking on the `Ast`
 - Resolves expression types and validates compatibility
 - Analyzes implicit conversions and value categories
 - Validates all C constructs semantically
-- Generates semantic information side table
+- Generates `SemanticInfo` side table
 
-### 4. MIR Generation Phase
-- Converts the fully annotated AST to typed MIR
+### 3. MIR Generation Phase
+- Converts the fully annotated `Ast` (with `SemanticInfo`) to typed MIR
 - Creates explicit control flow and memory operations
 - Preserves comprehensive type information
 - Validates MIR correctness before code generation

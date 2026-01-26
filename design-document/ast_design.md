@@ -2,114 +2,97 @@
 
 ## Overview
 
-The AST design for Cendol follows a flattened storage approach optimized for cache performance and memory efficiency. All AST nodes are stored in contiguous vectors with index-based references instead of pointers. The AST serves as an intermediate representation between parsing and semantic analysis, with semantic information attached after type resolution.
+The AST design for Cendol follows a two-stage approach:
+1.  **Syntactic AST (`ParsedAst`)**: A direct representation of the source code produced by the parser.
+2.  **Semantic AST (`Ast`)**: A lowered, type-resolved representation used for analysis and code generation.
+
+Both trees utilize a flattened storage approach optimized for cache performance and memory efficiency, using index-based references.
 
 ## Key Design Principles
 
-1. **Flattened Storage**: All nodes stored in `Vec<Node>` for cache-friendly access
-2. **Index-based References**: Use `NodeRef` (NonZeroU32) instead of pointers
-3. **Packed Data Structures**: Minimize memory footprint with compact representations
-4. **Interior Mutability**: Use `Cell` for symbol resolution without mutable access
-5. **Semantic Side Tables**: Separate semantic information stored in parallel vectors
-6. **Parser-to-Semantic Transition**: AST nodes transform from parser-specific to semantic nodes
+1.  **Two-Stage Representation**: Separation of concerns between parsing (syntax) and analysis (semantics).
+2.  **Flattened Storage**: All nodes stored in contiguous vectors (`Vec<NodeKind>`, `Vec<ParsedNodeKind>`) for cache-friendly access.
+3.  **Index-based References**: Use `NodeRef` / `ParsedNodeRef` (NonZeroU32) instead of pointers.
+4.  **Packed Data Structures**: Minimize memory footprint with compact representations.
+5.  **Semantic Side Tables**: Semantic information (types, value categories) stored in `SemanticInfo` for the `Ast`.
 
 ## AST Structure
 
-The AST is composed of:
+### Syntactic AST (`ParsedAst`)
 
-- `Ast` struct: Main container with flattened storage
-- `Node` struct: Individual AST node with `NodeKind` and source span
-- `NodeKind` enum: All possible AST node types
-- `NodeRef` type: Index-based reference to nodes
-- `ParsedTypeArena`: Storage for syntactic type representations
-- `SemanticInfo`: Side table with resolved types, conversions, and value categories
+Holds the raw output of the parser.
+-   `ParsedAst` struct: Container with `nodes` and `parsed_types`.
+-   `ParsedNodeKind` enum: Variants representing syntactic constructs (e.g., `Declaration`, `FunctionDef`).
+-   `ParsedTypeArena`: Storage for syntactic type representations (`ParsedType`).
+
+### Semantic AST (`Ast`)
+
+Holds the analyzed and resolved program structure.
+-   `Ast` struct: Container with `kinds` (nodes), `spans`, and optional `semantic_info`.
+-   `NodeKind` enum: Variants representing semantic constructs (e.g., `VarDecl`, `BinaryOp` with resolved behavior).
+-   `SemanticInfo`: Side table containing resolved `QualType`s, implicit conversions, and value categories.
 
 ## Node Design
 
-Each node is stored as a `Node` struct containing:
-- `kind`: The `NodeKind` enum variant
-- `span`: Source location information
+### `NodeKind` (Semantic Nodes)
 
-The `NodeKind` enum contains all possible AST node types including:
+The `NodeKind` enum in `Ast` represents the semantically valid constructs. Key variants include:
 
-### Literals
-- `LiteralInt(i64)`: Parsed integer literal value
-- `LiteralFloat(f64)`: Parsed float literal value
-- `LiteralString(NameId)`: Interned string literal
-- `LiteralChar(u8)`: Character constant value
+#### Literals
+-   `Literal(Literal)`: Wraps a `Literal` enum (Integer, Float, String, Char).
 
-### Expressions
-- `Ident(NameId, Cell<Option<SymbolRef>>)`: Identifier with resolved symbol
-- `UnaryOp(UnaryOp, NodeRef)`: Unary operation
-- `BinaryOp(BinaryOp, NodeRef, NodeRef)`: Binary operation
-- `TernaryOp(NodeRef, NodeRef, NodeRef)`: Conditional expression
-- `FunctionCall(NodeRef, Vec<NodeRef>)`: Function call with arguments
-- `MemberAccess(NodeRef, NameId, bool)`: Member access with arrow flag
-- `IndexAccess(NodeRef, NodeRef)`: Array indexing
-- `Cast(QualType, NodeRef)`: Type cast with resolved type
-- `SizeOfExpr(NodeRef)`: sizeof with expression
-- `SizeOfType(QualType)`: sizeof with type
-- `AlignOf(QualType)`: _Alignof with resolved type
+#### Expressions
+-   `Ident(NameId, SymbolRef)`: Identifier with resolved symbol reference.
+-   `UnaryOp(UnaryOp, NodeRef)`: Unary operation.
+-   `BinaryOp(BinaryOp, NodeRef, NodeRef)`: Binary operation.
+-   `TernaryOp(NodeRef, NodeRef, NodeRef)`: Conditional expression.
+-   `FunctionCall(CallExpr)`: Function call with arguments.
+-   `MemberAccess(NodeRef, NameId, bool)`: Member access.
+-   `IndexAccess(NodeRef, NodeRef)`: Array indexing.
+-   `Cast(QualType, NodeRef)`: Explicit cast with resolved type.
+-   `SizeOfExpr(NodeRef)`: `sizeof` expression.
+-   `SizeOfType(QualType)`: `sizeof` type.
+-   `AlignOf(QualType)`: `_Alignof` type.
+-   `GnuStatementExpression(NodeRef, NodeRef)`: GNU statement expression.
 
-### Parser-specific Nodes (Transformed by Symbol Resolver)
-- `ParsedCast(ParsedType, NodeRef)`: Parser cast node
-- `ParsedSizeOfType(ParsedType)`: Parser sizeof type node
-- `ParsedCompoundLiteral(ParsedType, NodeRef)`: Parser compound literal
-- `ParsedAlignOf(ParsedType)`: Parser alignof node
-- `ParsedGenericSelection(...)`: Parser generic selection
+#### Statements
+-   `CompoundStatement(CompoundStmtData)`: Block with scope.
+-   `If(IfStmt)`: If statement.
+-   `While(WhileStmt)`: While loop.
+-   `DoWhile(NodeRef, NodeRef)`: Do-while loop.
+-   `For(ForStmt)`: For loop with scope.
+-   `Return(Option<NodeRef>)`: Return statement.
+-   `Goto(NameId, SymbolRef)`: Goto with resolved symbol.
+-   `Label(NameId, NodeRef, SymbolRef)`: Label with resolved symbol.
+-   `Switch(NodeRef, NodeRef)`: Switch statement.
+-   `Case`, `Default`, `CaseRange`: Switch cases.
 
-### Statements
-- `CompoundStatement(Vec<NodeRef>)`: Block of statements
-- `If(IfStmt)`: If statement with condition and branches
-- `While(WhileStmt)`: While loop
-- `For(ForStmt)`: For loop with init, condition, increment
-- `Return(Option<NodeRef>)`: Return statement
-- `Goto(NameId, Cell<Option<SymbolRef>>)`: Goto with resolved label
-- `Label(NameId, NodeRef, Cell<Option<SymbolRef>>)`: Label with resolved symbol
-- `Switch(...)`: Switch statement
-- `ExpressionStatement(Option<NodeRef>)`: Expression as statement
+#### Declarations (Semantic)
+The semantic AST uses specific declaration nodes instead of generic `Declaration` nodes:
+-   `VarDecl(VarDeclData)`: Variable declaration.
+-   `FunctionDecl(FunctionDeclData)`: Function declaration.
+-   `TypedefDecl(TypedefDeclData)`: Typedef definition.
+-   `RecordDecl(RecordDeclData)`: Struct/Union definition.
+-   `EnumDecl(EnumDeclData)`: Enum definition.
+-   `Function(FunctionData)`: Complete function definition including body.
 
-### Declarations and Definitions
-- `Declaration(DeclarationData)`: Variable declaration
-- `FunctionDef(FunctionDefData)`: Function definition
-- `VarDecl(VarDeclData)`: Variable declaration with resolved type
-- `FunctionDecl(FunctionDeclData)`: Function declaration
-- `TypedefDecl(TypedefDeclData)`: Typedef declaration
-- `RecordDecl(RecordDeclData)`: Struct/union declaration
-- `EnumDecl(EnumDeclData)`: Enum declaration
+### `ParsedNodeKind` (Syntactic Nodes)
+
+The `ParsedNodeKind` usually mirrors `NodeKind` but uses `ParsedNodeRef` and `ParsedType`. Differences include:
+-   `Ident(NameId)`: No `SymbolRef`.
+-   `Declaration(ParsedDeclarationData)`: Raw declaration specifiers and declarators.
+-   `FunctionDef(ParsedFunctionDefData)`: Raw function definition.
+-   `Cast(ParsedType, ParsedNodeRef)`: Cast with syntactic type.
 
 ## Type System Integration
 
-The AST integrates with the semantic type system through:
-
-### Parsed Types vs Semantic Types
-- `ParsedType`: Syntactic type representation during parsing
-- `QualType`: Semantic type with qualifiers after resolution
-- `ParsedTypeArena`: Storage for syntactic type representations
-
-### Semantic Information Side Table
-- `SemanticInfo` struct: Parallel vectors indexed by node index
-- `types`: Resolved types for each node (Vec<Option<QualType>>)
-- `conversions`: Implicit conversions for each node
-- `value_categories`: LValue/RValue categorization
-
-### Symbol Resolution
-- `Ident` nodes contain `Cell<Option<SymbolRef>>` for resolved symbols
-- `Goto` and `Label` nodes have resolved symbol references
-- Symbol resolution occurs during semantic analysis phases
-
-## AST Lifecycle
-
-1. **Parsing Phase**: AST populated with parser-specific nodes and `ParsedType`
-2. **Symbol Resolution**: Parser-specific nodes transformed to semantic nodes
-3. **Name Resolution**: Identifiers resolved to symbol table entries
-4. **Semantic Analysis**: Types resolved and semantic information attached
-5. **MIR Generation**: AST converted to typed MIR representation
+-   **Parsed Types**: `ParsedType` represents what the user wrote (e.g., `int *`). Stored in `ParsedTypeArena`.
+-   **Semantic Types**: `QualType` represents the canonical type (e.g., `pointer to integer`).
+-   **Resolution**: During lowering from `ParsedAst` to `Ast`, `ParsedType`s are resolved to `QualType`s.
+-   **Side Tables**: `Ast` stores `type` and `value_category` for every node in `SemanticInfo`, indexed by `NodeRef`.
 
 ## Memory Layout
 
-The flattened storage provides:
-- Cache-friendly sequential access to AST nodes
-- Reduced memory fragmentation
-- Efficient iteration over all nodes
-- Compact representation with index-based references
+-   Nodes are strictly ordered in `Vec`.
+-   `NodeRef` and `ParsedNodeRef` are `NonZeroU32` indices.
+-   Large data variants are boxed or stored in auxiliary structs (e.g., `FunctionData`, `IfStmt`) to keep `NodeKind` size uniform and small.

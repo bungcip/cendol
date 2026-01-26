@@ -2126,6 +2126,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.ast.kinds[node.index()] = NodeKind::BuiltinVaCopy(d, s);
                 smallvec![node]
             }
+            ParsedNodeKind::BuiltinExpect(exp, c) => {
+                let node = self.get_or_push_slot(target_slots, span);
+                let e = self.lower_expression(*exp);
+                let expected = self.lower_expression(*c);
+                self.ast.kinds[node.index()] = NodeKind::BuiltinExpect(e, expected);
+                smallvec![node]
+            }
             ParsedNodeKind::CompoundLiteral(ty_name, init) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let ty = convert_to_qual_type(self, *ty_name, span)

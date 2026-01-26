@@ -181,7 +181,10 @@ impl AstDumper {
             NodeKind::BuiltinVaArg(qual_type, _) => {
                 type_refs.insert(qual_type.ty());
             }
-            NodeKind::BuiltinVaStart(_, _) | NodeKind::BuiltinVaEnd(_) | NodeKind::BuiltinVaCopy(_, _) => {}
+            NodeKind::BuiltinVaStart(_, _)
+            | NodeKind::BuiltinVaEnd(_)
+            | NodeKind::BuiltinVaCopy(_, _)
+            | NodeKind::BuiltinExpect(_, _) => {}
             NodeKind::VarDecl(var_decl) => {
                 type_refs.insert(var_decl.ty.ty());
             }
@@ -346,6 +349,9 @@ impl AstDumper {
             ParsedNodeKind::BuiltinVaCopy(dst, src) => {
                 println!("BuiltinVaCopy({}, {})", dst.get(), src.get())
             }
+            ParsedNodeKind::BuiltinExpect(exp, c) => {
+                println!("BuiltinExpect({}, {})", exp.get(), c.get())
+            }
             ParsedNodeKind::GenericSelection(ctrl, assocs) => {
                 println!("GenericSelection({}, {:?})", ctrl.get(), assocs)
             }
@@ -483,6 +489,9 @@ impl AstDumper {
             }
             NodeKind::BuiltinVaCopy(dst, src) => {
                 println!("BuiltinVaCopy({}, {})", dst.get(), src.get())
+            }
+            NodeKind::BuiltinExpect(exp, c) => {
+                println!("BuiltinExpect({}, {})", exp.get(), c.get())
             }
 
             NodeKind::GenericSelection(gs) => {

@@ -1,4 +1,5 @@
 pub mod ast_dumper;
+pub mod builtin_expect;
 pub mod codegen;
 pub mod compound_assign;
 pub mod enum_const;

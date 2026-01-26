@@ -391,9 +391,7 @@ pub struct Lexer<'src> {
 impl<'src> Lexer<'src> {
     /// Create a new lexer with the given preprocessor token stream
     pub fn new(tokens: &'src [PPToken]) -> Self {
-        Lexer {
-            tokens,
-        }
+        Lexer { tokens }
     }
 
     /// Parse C11 integer literal syntax

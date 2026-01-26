@@ -1,6 +1,10 @@
 use hashbrown::HashMap;
 use serde::Serialize;
-use std::{cmp::Ordering, num::NonZeroU32, path::PathBuf};
+use std::{
+    cmp::Ordering,
+    num::NonZeroU32,
+    path::{Path, PathBuf},
+};
 
 /// Source ID for identifying source files
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
@@ -303,6 +307,7 @@ pub struct FileInfo {
 pub struct SourceManager {
     buffers: Vec<Vec<u8>>, // Use Rust Vec<u8>
     file_infos: HashMap<SourceId, FileInfo>,
+    path_to_id: HashMap<PathBuf, SourceId>,
     next_file_id: u32,
 }
 
@@ -311,6 +316,7 @@ impl SourceManager {
         SourceManager {
             buffers: Vec::new(),
             file_infos: HashMap::new(),
+            path_to_id: HashMap::new(),
             next_file_id: 2, // Start from 2, reserve 1 for built-ins
         }
     }
@@ -336,9 +342,10 @@ impl SourceManager {
         let buffer_index = self.buffers.len();
         self.buffers.push(buffer);
 
+        let path_buf = PathBuf::from(path);
         let file_info = FileInfo {
             file_id,
-            path: PathBuf::from(path),
+            path: path_buf.clone(),
             size,
             buffer_index,
             line_starts: Vec::new(),
@@ -347,6 +354,7 @@ impl SourceManager {
         };
 
         self.file_infos.insert(file_id, file_info);
+        self.path_to_id.insert(path_buf, file_id);
 
         file_id
     }
@@ -401,13 +409,8 @@ impl SourceManager {
     }
 
     /// Get file info for a given source ID
-    pub fn get_file_id(&self, path: &str) -> Option<SourceId> {
-        for (id, info) in self.file_infos.iter() {
-            if info.path == std::path::Path::new(path) {
-                return Some(*id);
-            }
-        }
-        None
+    pub(crate) fn get_file_id(&self, path: &str) -> Option<SourceId> {
+        self.path_to_id.get(Path::new(path)).copied()
     }
 
     /// Get mutable access to the LineMap for a given source ID

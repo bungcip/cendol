@@ -637,6 +637,8 @@ impl<'src> Preprocessor<'src> {
                     7,
                 )],
             );
+            self.define_builtin_macro_simple("__STDC_UTF_16__", "1");
+            self.define_builtin_macro_simple("__STDC_UTF_32__", "1");
         }
 
         // Variadic argument macros
@@ -1044,6 +1046,17 @@ impl<'src> Preprocessor<'src> {
         loop {
             if let Some(lexer) = self.lexer_stack.last_mut() {
                 if let Some(token) = lexer.next_token() {
+                    if token.flags.contains(PPTokenFlags::HAS_INVALID_UCN) {
+                        let diag = Diagnostic {
+                            level: DiagnosticLevel::Error,
+                            message: "Invalid universal character name in literal".to_string(),
+                            span: SourceSpan::new(token.location, token.location),
+                            code: Some("invalid_ucn".to_string()),
+                            hints: Vec::new(),
+                            related: Vec::new(),
+                        };
+                        self.diag.report_diagnostic(diag);
+                    }
                     return Some(token);
                 } else {
                     // EOF reached, pop the lexer

@@ -242,6 +242,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn get_or_push_slot(&mut self, target_slots: Option<&[NodeRef]>, span: SourceSpan) -> NodeRef {
         if let Some(target) = target_slots.and_then(|t| t.first()) {
             self.set_scope(*target, self.symbol_table.current_scope());
+            self.ast.spans[target.index()] = span;
             *target
         } else {
             self.push_dummy(span)
@@ -1369,6 +1370,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 {
                     let lowered_expr = self.lower_expression(*expr);
                     self.ast.kinds[target.index()] = NodeKind::StaticAssert(lowered_expr, *msg);
+                    self.ast.spans[target.index()] = span;
                     self.set_scope(*target, self.symbol_table.current_scope());
                 }
             }
@@ -1540,6 +1542,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             body: body_node,
             scope_id,
         });
+        self.ast.spans[node.index()] = span;
     }
 
     fn lower_declaration(
@@ -1571,6 +1574,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     } else {
                         self.push_dummy(span)
                     };
+                    self.ast.spans[node.index()] = span;
 
                     match data {
                         TypeData::Record(tag, members, is_union) => {
@@ -1647,6 +1651,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             } else {
                 self.push_dummy(span)
             };
+            self.ast.spans[node.index()] = span;
             self.set_scope(node, self.symbol_table.current_scope());
 
             if spec_info.is_typedef {

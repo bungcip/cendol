@@ -28,5 +28,9 @@ fn test_switch_unreachable_cases() {
     // There should be 3 calls (one for each case).
     // If cases are skipped, there will be fewer calls.
     let call_count = clif_ir.matches("call_indirect").count();
-    assert_eq!(call_count, 3, "Expected 3 calls to printf, found {}. Missing cases?", call_count);
+    assert_eq!(
+        call_count, 3,
+        "Expected 3 calls to printf, found {}. Missing cases?",
+        call_count
+    );
 }

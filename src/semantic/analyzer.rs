@@ -1416,7 +1416,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     let array_size = name.as_str().len() + 1;
                     let array_type = self.registry.array_of(char_type, ArraySizeType::Constant(array_size));
                     let _ = self.registry.ensure_layout(array_type);
-                    Some(QualType::new(array_type, TypeQualifiers::CONST))
+                    Some(QualType::new(array_type, TypeQualifiers::empty()))
                 }
             },
             NodeKind::Ident(_, symbol_ref) => {
@@ -1714,6 +1714,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     // C11 6.5.1.1p2: For the purpose of this comparison, qualifiers are stripped from both the
                     // controlling expression's type and the generic association's type.
                     let unqualified_assoc_ty = self.registry.strip_all(assoc_ty);
+
                     if self.registry.is_compatible(unqualified_ctrl_ty, unqualified_assoc_ty) {
                         selected_expr_ref = Some(ga.result_expr);
                     }

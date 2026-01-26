@@ -414,9 +414,10 @@ fn convert_to_qual_type(
     let qualifiers = parsed_type.qualifiers;
 
     let base_type_ref = convert_parsed_base_type_to_qual_type(ctx, &base_type_node, span)?;
+    let qualified_base = ctx.merge_qualifiers_with_check(base_type_ref, qualifiers, span);
 
-    let final_type = apply_parsed_declarator_recursive(base_type_ref, declarator_ref, ctx, span);
-    Ok(ctx.merge_qualifiers_with_check(final_type, qualifiers, span))
+    let final_type = apply_parsed_declarator_recursive(qualified_base, declarator_ref, ctx, span);
+    Ok(final_type)
 }
 
 /// Helper to resolve struct/union tags (lookup, forward decl, or definition validation)

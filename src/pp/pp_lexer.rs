@@ -245,25 +245,42 @@ impl PPLexer {
 
             // Phase 2: Line Splicing
             if ch == b'\\' {
-                let next_pos = (self.position as usize) + consumed_len;
-                if next_pos < self.buffer.len() {
-                    let next_ch = self.buffer[next_pos];
-                    if next_ch == b'\n' {
-                        // Splicing: \ \n
-                        self.position = (next_pos + 1) as u32;
-                        self.line_starts.push(self.position);
-                        continue;
-                    } else if next_ch == b'\r' {
-                        // Splicing: \ \r or \ \r \n
-                        let after_next = next_pos + 1;
-                        if after_next < self.buffer.len() && self.buffer[after_next] == b'\n' {
-                            self.position = (after_next + 1) as u32;
+                let mut check_pos = (self.position as usize) + consumed_len;
+                let mut found_splice = false;
+                let mut new_pos = check_pos;
+
+                // Look ahead for whitespace followed by newline
+                while check_pos < self.buffer.len() {
+                    let c = self.buffer[check_pos];
+                    if c == b' ' || c == b'\t' {
+                        check_pos += 1;
+                    } else if c == b'\n' {
+                        // Splicing: \ [ws] \n
+                        new_pos = check_pos + 1;
+                        found_splice = true;
+                        break;
+                    } else if c == b'\r' {
+                        // Splicing: \ [ws] \r or \ [ws] \r \n
+                        let after_cr = check_pos + 1;
+                        if after_cr < self.buffer.len() && self.buffer[after_cr] == b'\n' {
+                            new_pos = after_cr + 1;
                         } else {
-                            self.position = (next_pos + 1) as u32;
+                            new_pos = check_pos + 1;
                         }
-                        self.line_starts.push(self.position);
-                        continue;
+                        found_splice = true;
+                        break;
+                    } else {
+                        // Not a splice
+                        break;
                     }
+                }
+
+                if found_splice {
+                    self.position = new_pos as u32;
+                    self.line_starts.push(self.position);
+                    continue;
+                } else {
+                    // Not a splice
                 }
             }
 
@@ -1090,10 +1107,6 @@ impl PPLexer {
             SourceLoc::new(self.source_id, start_pos),
             text.len() as u16,
         )
-    }
-
-    pub(crate) fn get_line(&self, offset: u32) -> u32 {
-        self.line_starts.partition_point(|&x| x <= offset) as u32 + self.line_offset
     }
 
     pub(crate) fn get_current_line(&self) -> u32 {

@@ -907,21 +907,8 @@ impl<'src> Preprocessor<'src> {
     /// Parse a conditional expression for #if and #elif
     fn parse_conditional_expression(&mut self) -> Result<Vec<PPToken>, PPError> {
         let mut tokens = Vec::new();
-        let start_line = if let Some(lexer) = self.lexer_stack.last() {
-            lexer.get_current_line()
-        } else {
-            0
-        };
-
         while let Some(token) = self.lex_token() {
-            let token_line = if let Some(lexer) = self.lexer_stack.last() {
-                lexer.get_line(token.location.offset())
-            } else {
-                0
-            };
-            if token_line != start_line {
-                // Put back the token from the next line
-                self.pending_tokens.push_front(token);
+            if token.kind == PPTokenKind::Eod {
                 break;
             }
             tokens.push(token);

@@ -30,6 +30,7 @@ pub use types::{
     ArraySizeType, BuiltinType, EnumConstant, FunctionParameter, QualType, StructMember, Type, TypeKind, TypeLayout,
     TypeQualifiers, TypeRef,
 };
+pub(crate) mod literal_utils;
 pub(crate) mod lower_expression;
 pub(crate) mod lower_initializer;
 pub(crate) mod mir_ops;

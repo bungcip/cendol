@@ -2,7 +2,7 @@ use crate::{
     ast::{nodes::*, *},
     diagnostic::{DiagnosticEngine, SemanticError},
     semantic::{
-        ArraySizeType, QualType, StructMember, SymbolKind, SymbolTable, TypeKind, TypeQualifiers, TypeRef,
+        ArraySizeType, BuiltinType, QualType, StructMember, SymbolKind, SymbolTable, TypeKind, TypeQualifiers, TypeRef,
         TypeRegistry,
         conversions::{integer_promotion, usual_arithmetic_conversions},
     },
@@ -798,11 +798,27 @@ impl<'a> SemanticAnalyzer<'a> {
                             TypeKind::Array { element_type, .. } => *element_type,
                             _ => unreachable!(),
                         };
-                        let is_char_type = lhs_elem == self.registry.type_char
+
+                        let rhs_elem = match &self.registry.get(init_ty.ty()).kind {
+                            TypeKind::Array { element_type, .. } => *element_type,
+                            _ => unreachable!(),
+                        };
+
+                        let is_rhs_char = rhs_elem == self.registry.type_char;
+                        let is_lhs_char_type = lhs_elem == self.registry.type_char
                             || lhs_elem == self.registry.type_schar
                             || lhs_elem == self.registry.type_char_unsigned;
 
-                        if is_char_type {
+                        // Allow initializing any char array with char string (signed/unsigned mismatch allowed)
+                        // For wide strings, types must be compatible (e.g. wchar_t[] = L"...")
+                        let compatible = if is_rhs_char {
+                            is_lhs_char_type
+                        } else {
+                            self.registry
+                                .is_compatible(QualType::unqualified(lhs_elem), QualType::unqualified(rhs_elem))
+                        };
+
+                        if compatible {
                             self.record_implicit_conversions(target_ty, init_ty, init_ref);
                         } else {
                             let lhs_kind = &self.registry.get(target_ty.ty()).kind;
@@ -1412,9 +1428,18 @@ impl<'a> SemanticAnalyzer<'a> {
                 literal::Literal::Float(_) => Some(QualType::unqualified(self.registry.type_double)),
                 literal::Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
                 literal::Literal::String(name) => {
-                    let char_type = self.registry.type_char;
-                    let array_size = name.as_str().len() + 1;
-                    let array_type = self.registry.array_of(char_type, ArraySizeType::Constant(array_size));
+                    let parsed = crate::semantic::literal_utils::parse_string_literal(*name);
+                    let element_type = match parsed.builtin_type {
+                        BuiltinType::Char => self.registry.type_char,
+                        BuiltinType::Int => self.registry.type_int, // wchar_t
+                        BuiltinType::UShort => self.registry.type_short_unsigned, // char16_t
+                        BuiltinType::UInt => self.registry.type_int_unsigned, // char32_t
+                        _ => self.registry.type_char,
+                    };
+
+                    let array_type = self
+                        .registry
+                        .array_of(element_type, ArraySizeType::Constant(parsed.size));
                     let _ = self.registry.ensure_layout(array_type);
                     Some(QualType::new(array_type, TypeQualifiers::empty()))
                 }

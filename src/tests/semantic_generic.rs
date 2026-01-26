@@ -110,7 +110,36 @@ fn test_generic_string_literal_decay() {
     run_pass(
         r#"
         int main() {
-            return _Generic("hello", const char *: 0, default: 1);
+            // String literal decays to 'char *' (not 'const char *' in C)
+            return _Generic("hello", char *: 0, default: 1);
+        }
+    "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_generic_selection_pointer_qualifiers() {
+    run_pass(
+        r#"
+        int main() {
+            const char *ti;
+            // Should match const char *
+            return _Generic(ti, const char *: 0, default: 1);
+        }
+    "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_generic_selection_pointer_to_const_vs_const_pointer() {
+    run_pass(
+        r#"
+        int main() {
+            char * const ptr;
+            // Should match char * (because top-level const is stripped)
+            return _Generic(ptr, char *: 0, default: 1);
         }
     "#,
         CompilePhase::Mir,

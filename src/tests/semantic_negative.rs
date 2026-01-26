@@ -334,23 +334,6 @@ fn test_static_redeclared_non_static() {
 
 // J. Advanced / Compiler-grade features
 #[test]
-fn test_modifying_string_literal() {
-    // This assumes checking if we directly modify "string"[0] or similar.
-    // If it tracks `p` from `char *p = "hello"`, that is harder.
-    // The user example was: char *p = "hello"; p[0] = 'H';
-    // We will try that.
-    run_fail_with_message(
-        r#"
-        int main() {
-            ("hello")[0] = 'H';
-        }
-        "#,
-        CompilePhase::Mir,
-        "read-only",
-    );
-}
-
-#[test]
 fn test_sizeof_function_type() {
     run_fail_with_message(
         r#"

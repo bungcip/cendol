@@ -65,3 +65,32 @@ fn test_mixed_array_struct_designators() {
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir);
 }
+
+#[test]
+fn test_initializer_list_crash_regression() {
+    let source = r#"
+        typedef unsigned char u8;
+        typedef struct {} empty_s;
+        struct contains_empty {
+            u8 a;
+            empty_s empty;
+            u8 b;
+        };
+        struct contains_empty ce = { { (1) }, (empty_s){}, 022, };
+        int main() { return 0; }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir);
+}
+
+#[test]
+fn test_scalar_braced_init() {
+    let source = r#"
+        int a = { 1 };
+        // int b = { 1, 2 }; // Excess ignored but causes error in Analyzer
+        int c = { }; // Zero init (GNU/C23)
+        int main() { return 0; }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir);
+}

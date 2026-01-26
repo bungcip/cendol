@@ -30,39 +30,44 @@ impl<'a> AstToMirLowerer<'a> {
                 }
             } else {
                 let idx = current_field_idx;
-                let init_node_kind = self.ast.get_kind(init.initializer);
-                if let NodeKind::InitializerList(_) = init_node_kind {
-                    // Search for the next record field to initialize with a list
-                    if let Some(found_idx) = members.iter().enumerate().skip(idx).find_map(|(j, item)| {
-                        if matches!(self.registry.get(item.member_type.ty()).kind, TypeKind::Record { .. }) {
-                            Some(j)
-                        } else {
-                            None
-                        }
-                    }) {
-                        current_field_idx = found_idx + 1;
-                        found_idx
-                    } else {
-                        current_field_idx += 1;
-                        idx
-                    }
-                } else {
-                    current_field_idx += 1;
-                    idx
-                }
+                current_field_idx += 1;
+                idx
             };
+
+            if field_idx >= members.len() {
+                // Ignore excess initializers
+                continue;
+            }
 
             let member_ty = members[field_idx].member_type;
 
             let operand = self.lower_initializer(init.initializer, member_ty, None);
             field_operands.push((field_idx, operand));
             if field_idx < field_layouts.len() {
-                let base_offset = field_layouts[field_idx].offset;
-                let mut next_idx = field_idx + 1;
-                while next_idx < field_layouts.len() && field_layouts[next_idx].offset == base_offset {
-                    next_idx += 1;
+                let target_kind = &self.registry.get(target_ty.ty()).kind;
+                let is_union_container = matches!(target_kind, TypeKind::Record { is_union: true, .. });
+
+                if is_union_container {
+                    current_field_idx = members.len();
+                } else {
+                    let base_offset = field_layouts[field_idx].offset;
+                    let member_ty = members[field_idx].member_type;
+                    let member_size = self.registry.get_layout(member_ty.ty()).size;
+                    let is_bitfield = members[field_idx].bit_field_size.is_some();
+
+                    let mut next_idx = field_idx + 1;
+
+                    // Only skip overlapping fields if current field is NOT empty struct and NOT bitfield.
+                    // This is heuristic for Anonymous Union members inside a Struct.
+                    let should_skip = !is_bitfield && member_size > 0;
+
+                    if should_skip {
+                        while next_idx < field_layouts.len() && field_layouts[next_idx].offset == base_offset {
+                            next_idx += 1;
+                        }
+                    }
+                    current_field_idx = next_idx;
                 }
-                current_field_idx = next_idx;
             }
         }
 
@@ -257,6 +262,43 @@ impl<'a> AstToMirLowerer<'a> {
                 };
                 let array_const_id = self.create_string_array_const(&val, fixed_size);
                 Operand::Constant(array_const_id)
+            }
+            (NodeKind::InitializerList(list), _) => {
+                // Handle scalar initialization with braces: int x = { 1 };
+                if list.init_len == 1 {
+                    let first_item_ref = list.init_start;
+                    if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item_ref) {
+                        if item.designator_len > 0 {
+                            // C11 6.7.9p11: The initializer for a scalar shall be a single expression, optionally enclosed in braces.
+                            // GCC warns about designators here, but we can perhaps support it or error.
+                            // For now, assume positional.
+                            panic!("Designators in scalar initializer not supported");
+                        }
+                        self.lower_initializer(item.initializer, target_ty, destination)
+                    } else {
+                        unreachable!("Initializer list contains non-InitializerItem");
+                    }
+                } else {
+                    // Check if it's an empty list {} which is allowed in GCC/C23 as zero-init
+                    if list.init_len == 0 {
+                        // Return 0 constant
+                        let mir_ty = self.lower_qual_type(target_ty);
+                        Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Zero))
+                    } else {
+                        // Excess elements for scalar?
+                        // int x = { 1, 2 };
+                        // We should use the first one and warn/ignore the rest?
+                        // GCC warns: "excess elements in scalar initializer"
+                        // So we should take the first one.
+
+                        let first_item_ref = list.init_start;
+                        if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item_ref) {
+                            self.lower_initializer(item.initializer, target_ty, destination)
+                        } else {
+                            unreachable!();
+                        }
+                    }
+                }
             }
             _ => {
                 let operand = self.lower_expression(init_ref, true);

@@ -1,6 +1,10 @@
 use hashbrown::HashMap;
 use serde::Serialize;
-use std::{cmp::Ordering, num::NonZeroU32, path::{Path, PathBuf}};
+use std::{
+    cmp::Ordering,
+    num::NonZeroU32,
+    path::{Path, PathBuf},
+};
 
 /// Source ID for identifying source files
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]

@@ -794,12 +794,7 @@ impl PPLexer {
 
         // 3. Basic Source Character Set
         // 0000-009F excluding $, @, `
-        if !allow_basic_charset
-            && code_point < 0xA0
-            && code_point != 0x24
-            && code_point != 0x40
-            && code_point != 0x60
-        {
+        if !allow_basic_charset && code_point < 0xA0 && code_point != 0x24 && code_point != 0x40 && code_point != 0x60 {
             return Some(Err(raw_string));
         }
 
@@ -961,12 +956,7 @@ impl PPLexer {
         )
     }
 
-    fn lex_common_literal_body(
-        &mut self,
-        delimiter: u8,
-        chars: &mut Vec<u8>,
-        has_invalid_ucn: &mut bool,
-    ) {
+    fn lex_common_literal_body(&mut self, delimiter: u8, chars: &mut Vec<u8>, has_invalid_ucn: &mut bool) {
         while let Some(ch) = self.next_char() {
             chars.push(ch);
             if ch == delimiter {

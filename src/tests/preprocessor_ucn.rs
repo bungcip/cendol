@@ -1,6 +1,6 @@
-use crate::tests::pp_common::setup_preprocessor_test_with_diagnostics;
-use crate::pp::PPConfig;
 use crate::lang_options::LangOptions;
+use crate::pp::PPConfig;
+use crate::tests::pp_common::setup_preprocessor_test_with_diagnostics;
 
 #[test]
 fn test_ucn_identifier() {
@@ -55,7 +55,12 @@ fn test_invalid_ucn_in_string() {
 char *s = "\uD800"; // Surrogate, invalid
 "#;
     let (_, diags) = setup_preprocessor_test_with_diagnostics(src, None).unwrap();
-    assert!(diags.iter().any(|d| d.message.contains("Invalid universal character name")), "Expected invalid UCN diagnostic");
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.message.contains("Invalid universal character name")),
+        "Expected invalid UCN diagnostic"
+    );
 }
 
 #[test]

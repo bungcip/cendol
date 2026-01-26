@@ -5,7 +5,7 @@
 //! arrays, and functions.
 
 use crate::diagnostic::ParseError;
-use crate::lexer::TokenKind;
+use crate::lexer::{Token, TokenKind};
 use crate::parser::declaration_core::parse_declaration_specifiers;
 use crate::{ast::*, semantic::TypeQualifiers};
 use log::debug;
@@ -17,6 +17,45 @@ use super::Parser;
 #[derive(Debug)]
 enum DeclaratorComponent {
     Pointer(TypeQualifiers),
+}
+
+/// Look ahead past a GCC-style `__attribute__((...))` construct without consuming tokens.
+/// Returns the token immediately following the attribute if the structure is valid, or None.
+///
+/// Expects: Attribute (( ... ))
+fn peek_past_attribute(parser: &Parser, mut start_offset: u32) -> Option<Token> {
+    // start_offset points to Attribute token
+    // Attribute should be followed by ((...))
+    start_offset += 1;
+
+    // Expect ((
+    let t1 = parser.peek_token(start_offset)?;
+    if t1.kind != TokenKind::LeftParen {
+        return None;
+    }
+    start_offset += 1;
+
+    let t2 = parser.peek_token(start_offset)?;
+    if t2.kind != TokenKind::LeftParen {
+        return None;
+    }
+    start_offset += 1;
+
+    // Skip balanced parens
+    let mut depth = 2; // We saw two LeftParens
+
+    while depth > 0 {
+        let t = parser.peek_token(start_offset)?;
+        match t.kind {
+            TokenKind::LeftParen => depth += 1,
+            TokenKind::RightParen => depth -= 1,
+            _ => {}
+        }
+        start_offset += 1;
+    }
+
+    // Now we are past the attribute
+    parser.peek_token(start_offset).cloned()
 }
 
 /// Validate declarator combinations
@@ -518,7 +557,22 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDec
                 // instead of consuming the paren as a parenthesized declarator.
                 // We also check for `()` which is an empty parameter list.
                 let is_param_list_start = if let Some(next_token) = parser.peek_token(0) {
-                    parser.is_type_name_start_token(next_token) || next_token.kind == TokenKind::RightParen
+                    if next_token.kind == TokenKind::Attribute {
+                        // Disambiguate between `(ATTR *)` (parenthesized declarator) and `(ATTR int)` (param list).
+                        // If Attribute is followed by *, it's likely a parenthesized declarator.
+                        if let Some(after_attr) = peek_past_attribute(parser, 0) {
+                            if after_attr.kind == TokenKind::Star {
+                                false
+                            } else {
+                                true
+                            }
+                        } else {
+                            // Fallback if attribute syntax is weird
+                            true
+                        }
+                    } else {
+                        parser.is_type_name_start_token(next_token) || next_token.kind == TokenKind::RightParen
+                    }
                 } else {
                     false
                 };

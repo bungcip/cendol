@@ -1,0 +1,11 @@
+---
+source: src/tests/parser_attribute_ambiguity.rs
+assertion_line: 16
+expression: resolved
+---
+Declaration:
+  specifiers:
+    - void
+  init_declarators:
+    - name: foo
+      kind: function(function(int) -> int) -> int

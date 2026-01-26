@@ -11,6 +11,7 @@ pub mod parser_utils;
 pub mod pointer_arithmetic_regression;
 pub mod pp_comma_separator;
 pub mod pp_common;
+pub mod pp_computed_include;
 pub mod pp_digraphs;
 pub mod pp_gnu_extensions;
 pub mod pp_has_include;

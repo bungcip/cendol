@@ -1,0 +1,16 @@
+---
+source: src/tests/pp_computed_include.rs
+assertion_line: 54
+expression: "(tokens, diags)"
+---
+- - kind: Identifier
+    text: int
+  - kind: Identifier
+    text: nested
+  - kind: Assign
+    text: "="
+  - kind: Number
+    text: "1"
+  - kind: Semicolon
+    text: ;
+- []

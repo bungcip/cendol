@@ -48,6 +48,7 @@ pub mod semantic_negative;
 pub mod semantic_noreturn;
 pub mod semantic_shadowing;
 pub mod semantic_sizeof;
+pub mod semantic_struct_copy;
 pub mod semantic_string_init;
 pub mod semantic_symbol_redefinition;
 pub mod semantic_type_specifiers;

@@ -350,6 +350,14 @@ impl<'a> AstToMirLowerer<'a> {
                 let operand = self.lower_expression(init_ref, true);
                 let mir_target_ty = self.lower_qual_type(target_ty);
 
+                // If the operand is already of the target type (e.g. struct copy),
+                // use it directly instead of attempting brace elision.
+                // This handles cases like `struct S s = (struct S){...};`
+                let current_ty = self.get_operand_type(&operand);
+                if current_ty == mir_target_ty {
+                    return operand;
+                }
+
                 // Check for scalar -> aggregate initialization (brace elision)
                 let target_kind = self.registry.get(target_ty.ty()).kind.clone();
                 match target_kind {

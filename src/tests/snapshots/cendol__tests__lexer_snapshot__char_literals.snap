@@ -1,0 +1,15 @@
+---
+source: src/tests/lexer_snapshot.rs
+assertion_line: 84
+expression: tokens
+---
+- CharacterConstant: 97
+- CharacterConstant: 10
+- CharacterConstant: 9
+- CharacterConstant: 39
+- CharacterConstant: 34
+- CharacterConstant: 63
+- CharacterConstant: 92
+- CharacterConstant: 0
+- CharacterConstant: 0
+- CharacterConstant: 0

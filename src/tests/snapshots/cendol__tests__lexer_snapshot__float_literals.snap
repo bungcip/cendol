@@ -1,0 +1,17 @@
+---
+source: src/tests/lexer_snapshot.rs
+assertion_line: 77
+expression: tokens
+---
+- FloatConstant: 0
+- FloatConstant: 1
+- Simple: Dot
+- IntegerConstant: 5
+- FloatConstant: 1.5
+- FloatConstant: 15000000000
+- FloatConstant: 0.00000000015
+- FloatConstant: 1.5
+- FloatConstant: 1.5
+- FloatConstant: 9
+- FloatConstant: 0.140625
+- FloatConstant: 8

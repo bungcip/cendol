@@ -1,0 +1,9 @@
+---
+source: src/tests/lexer_snapshot.rs
+assertion_line: 112
+expression: tokens
+---
+- Identifier: foo
+- Identifier: bar
+- Identifier: _baz
+- Identifier: foo123

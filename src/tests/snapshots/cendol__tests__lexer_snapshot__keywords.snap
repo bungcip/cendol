@@ -1,0 +1,50 @@
+---
+source: src/tests/lexer_snapshot.rs
+assertion_line: 49
+expression: tokens
+---
+- Simple: Auto
+- Simple: Break
+- Simple: Case
+- Simple: Char
+- Simple: Const
+- Simple: Continue
+- Simple: Default
+- Simple: Do
+- Simple: Double
+- Simple: Else
+- Simple: Enum
+- Simple: Extern
+- Simple: Float
+- Simple: For
+- Simple: Goto
+- Simple: If
+- Simple: Inline
+- Simple: Int
+- Simple: Long
+- Simple: Register
+- Simple: Restrict
+- Simple: Return
+- Simple: Short
+- Simple: Signed
+- Simple: Sizeof
+- Simple: Static
+- Simple: Struct
+- Simple: Switch
+- Simple: Typedef
+- Simple: Union
+- Simple: Unsigned
+- Simple: Void
+- Simple: Volatile
+- Simple: While
+- Simple: Alignas
+- Simple: Alignof
+- Simple: Atomic
+- Simple: Bool
+- Simple: Complex
+- Simple: Generic
+- Simple: Noreturn
+- Simple: StaticAssert
+- Simple: ThreadLocal
+- Simple: Attribute
+- Simple: BuiltinVaArg

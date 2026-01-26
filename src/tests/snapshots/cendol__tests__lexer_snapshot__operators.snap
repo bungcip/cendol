@@ -1,0 +1,45 @@
+---
+source: src/tests/lexer_snapshot.rs
+assertion_line: 56
+expression: tokens
+---
+- Simple: Plus
+- Simple: Minus
+- Simple: Star
+- Simple: Slash
+- Simple: Percent
+- Simple: Increment
+- Simple: Decrement
+- Simple: Tilde
+- Simple: Not
+- Simple: And
+- Simple: Or
+- Simple: Xor
+- Simple: LeftShift
+- Simple: RightShift
+- Simple: LogicAnd
+- Simple: LogicOr
+- Simple: Less
+- Simple: Greater
+- Simple: LessEqual
+- Simple: GreaterEqual
+- Simple: Equal
+- Simple: NotEqual
+- Simple: Assign
+- Simple: PlusAssign
+- Simple: MinusAssign
+- Simple: StarAssign
+- Simple: DivAssign
+- Simple: ModAssign
+- Simple: AndAssign
+- Simple: OrAssign
+- Simple: XorAssign
+- Simple: LeftShiftAssign
+- Simple: RightShiftAssign
+- Simple: Dot
+- Simple: Arrow
+- Simple: Question
+- Simple: Colon
+- Simple: Comma
+- Simple: Semicolon
+- Simple: Ellipsis

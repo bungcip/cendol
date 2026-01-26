@@ -1,0 +1,11 @@
+---
+source: src/tests/lexer_snapshot.rs
+assertion_line: 63
+expression: tokens
+---
+- Simple: LeftBracket
+- Simple: RightBracket
+- Simple: LeftParen
+- Simple: RightParen
+- Simple: LeftBrace
+- Simple: RightBrace

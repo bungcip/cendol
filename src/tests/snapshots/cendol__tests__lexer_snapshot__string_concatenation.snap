@@ -1,0 +1,6 @@
+---
+source: src/tests/lexer_snapshot.rs
+assertion_line: 98
+expression: tokens
+---
+- StringLiteral: hello world

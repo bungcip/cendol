@@ -1,0 +1,8 @@
+---
+source: src/tests/lexer_snapshot.rs
+assertion_line: 126
+expression: tokens
+---
+- Simple: Unknown
+- Simple: Unknown
+- Simple: Unknown

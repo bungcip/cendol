@@ -1,0 +1,23 @@
+---
+source: src/tests/lexer_snapshot.rs
+assertion_line: 70
+expression: tokens
+---
+- IntegerConstant: 0
+- IntegerConstant: 123
+- IntegerConstant: 291
+- IntegerConstant: 63
+- IntegerConstant: 1
+- IntegerConstant: 1
+- IntegerConstant: 1
+- IntegerConstant: 1
+- IntegerConstant: 1
+- IntegerConstant: 1
+- IntegerConstant: 1
+- IntegerConstant: 1
+- IntegerConstant: 1
+- IntegerConstant: 1
+- IntegerConstant: 1
+- IntegerConstant: 1
+- IntegerConstant: 1
+- IntegerConstant: 1

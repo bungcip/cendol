@@ -1,0 +1,6 @@
+---
+source: src/tests/lexer_snapshot.rs
+assertion_line: 91
+expression: tokens
+---
+- StringLiteral: "hellohello\nworld\"quoted\""

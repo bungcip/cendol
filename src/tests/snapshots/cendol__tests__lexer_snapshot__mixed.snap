@@ -1,0 +1,14 @@
+---
+source: src/tests/lexer_snapshot.rs
+assertion_line: 119
+expression: tokens
+---
+- Simple: Int
+- Identifier: main
+- Simple: LeftParen
+- Simple: RightParen
+- Simple: LeftBrace
+- Simple: Return
+- IntegerConstant: 0
+- Simple: Semicolon
+- Simple: RightBrace

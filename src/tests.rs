@@ -2,7 +2,7 @@ pub mod ast_dumper;
 pub mod codegen;
 pub mod compound_assign;
 pub mod enum_const;
-pub mod lexer;
+pub mod lexer_snapshot;
 pub mod noreturn;
 pub mod output;
 pub mod parser;

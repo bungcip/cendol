@@ -6,6 +6,7 @@ pub mod lexer;
 pub mod noreturn;
 pub mod output;
 pub mod parser;
+pub mod parser_attribute_ambiguity;
 pub mod parser_declarations;
 pub mod parser_function_params_regression;
 pub mod parser_utils;

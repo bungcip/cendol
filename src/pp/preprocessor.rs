@@ -1057,9 +1057,11 @@ impl<'src> Preprocessor<'src> {
                         self.include_depth -= 1;
                     }
 
-                    // Set the line_starts from the lexer to the source manager
+                    // ⚡ Bolt: Use `take_line_starts` to move the line_starts vector
+                    // instead of cloning it. This is a performance optimization that
+                    // avoids a potentially large allocation when a file is finished lexing.
                     self.source_manager
-                        .set_line_starts(popped_lexer.source_id, popped_lexer.get_line_starts().clone());
+                        .set_line_starts(popped_lexer.source_id, popped_lexer.take_line_starts());
                     if self.lexer_stack.is_empty() {
                         return None;
                     }

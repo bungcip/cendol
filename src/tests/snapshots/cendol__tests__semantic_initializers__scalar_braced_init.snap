@@ -1,0 +1,16 @@
+---
+source: src/tests/semantic_initializers.rs
+assertion_line: 95
+expression: mir
+---
+type %t0 = i32
+
+global @a: i32 = const 1
+global @c: i32 = const zero
+
+fn main() -> i32
+{
+
+  bb1:
+    return const 0
+}

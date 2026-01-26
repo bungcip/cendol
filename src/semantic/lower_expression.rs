@@ -315,9 +315,7 @@ impl<'a> AstToMirLowerer<'a> {
         let entry = self.symbol_table.get_symbol(resolved_ref);
 
         match &entry.kind {
-            SymbolKind::Variable {
-                is_global, storage, ..
-            } => {
+            SymbolKind::Variable { is_global, storage, .. } => {
                 let is_static_local = *storage == Some(crate::ast::StorageClass::Static);
                 if *is_global || is_static_local {
                     // Global variables should have been lowered already if we are visiting in order.

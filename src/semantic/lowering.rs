@@ -1533,14 +1533,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // We define it in the current scope (function body).
             // Note: If the user declares __func__ explicitly, it will be caught as a redefinition
             // by the standard variable declaration logic because this one is inserted first.
-            let _ = self.symbol_table.define_variable(
-                func_id,
-                qt,
-                storage,
-                Some(init_node),
-                None,
-                span,
-            );
+            let _ = self
+                .symbol_table
+                .define_variable(func_id, qt, storage, Some(init_node), None, span);
         }
 
         // Pre-scan labels for forward goto support

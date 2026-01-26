@@ -352,6 +352,9 @@ fn convert_parsed_base_type_to_qual_type(
                         name: parsed_enum.name,
                         value,
                         span: parsed_enum.span,
+                        // We don't have the expression here as ParsedEnumConstant only stores the value.
+                        // This path is used for nested enum definitions where resolution differs.
+                        init_expr: None,
                     };
                     enumerators_list.push(enum_constant);
 
@@ -701,20 +704,20 @@ fn resolve_type_specifier(
                     // Get node from PARSED ast
                     let enum_node = ctx.parsed_ast.get_node(enum_ref);
                     if let ParsedNodeKind::EnumConstant(name, value_expr_ref) = &enum_node.kind {
-                        let value = if let Some(v_ref) = value_expr_ref {
+                        let (value, init_expr) = if let Some(v_ref) = value_expr_ref {
                             let expr_ref = ctx.lower_expression(*v_ref);
                             let const_ctx = ConstEvalCtx {
                                 ast: ctx.ast,
                                 symbol_table: ctx.symbol_table,
                             };
                             if let Some(val) = const_eval::eval_const_expr(&const_ctx, expr_ref) {
-                                val
+                                (val, Some(expr_ref))
                             } else {
                                 ctx.report_error(SemanticError::NonConstantInitializer { span: enum_node.span });
-                                0
+                                (0, Some(expr_ref))
                             }
                         } else {
-                            next_value
+                            (next_value, None)
                         };
                         next_value = value + 1;
 
@@ -722,6 +725,7 @@ fn resolve_type_specifier(
                             name: *name,
                             value,
                             span: enum_node.span,
+                            init_expr,
                         };
                         enumerators_list.push(enum_constant);
 
@@ -1612,6 +1616,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                     NodeKind::EnumMember(EnumMemberData {
                                         name: e.name,
                                         value: e.value,
+                                        init_expr: e.init_expr,
                                     }),
                                     e.span,
                                 );

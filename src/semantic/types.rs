@@ -616,4 +616,5 @@ pub struct EnumConstant {
     pub name: NameId,
     pub value: i64,
     pub span: SourceSpan,
+    pub init_expr: Option<NodeRef>,
 }

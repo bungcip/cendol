@@ -406,6 +406,7 @@ pub struct EnumDeclData {
 pub struct EnumMemberData {
     pub name: NameId,
     pub value: i64,
+    pub init_expr: Option<NodeRef>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]

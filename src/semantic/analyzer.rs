@@ -1190,7 +1190,19 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 Some(QualType::unqualified(self.registry.type_int))
             }
-            NodeKind::RecordDecl(_) | NodeKind::EnumDecl(_) | NodeKind::EnumMember(_) => None,
+            NodeKind::EnumDecl(data) => {
+                for member_ref in data.member_start.range(data.member_len) {
+                    self.visit_node(member_ref);
+                }
+                None
+            }
+            NodeKind::EnumMember(data) => {
+                if let Some(expr) = data.init_expr {
+                    self.visit_node(expr);
+                }
+                Some(QualType::unqualified(self.registry.type_int))
+            }
+            NodeKind::RecordDecl(_) => None,
             NodeKind::FieldDecl(data) => {
                 self.visit_type_expressions(data.ty);
                 None

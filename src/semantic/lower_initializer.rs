@@ -295,18 +295,14 @@ impl<'a> AstToMirLowerer<'a> {
                 let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
                 self.lower_array_initializer(&list, element_ty, array_size, target_ty, destination)
             }
-            (NodeKind::Literal(literal::Literal::String(val)), TypeKind::Array { element_type, size })
-                if matches!(
-                    self.registry.get(*element_type).kind,
-                    TypeKind::Builtin(BuiltinType::Char)
-                ) =>
-            {
+            (NodeKind::Literal(literal::Literal::String(val)), TypeKind::Array { element_type, size }) => {
                 let fixed_size = if let ArraySizeType::Constant(s) = size {
                     Some(*s)
                 } else {
                     None
                 };
-                let array_const_id = self.create_string_array_const(&val, fixed_size);
+                let array_const_id =
+                    self.create_array_const_from_string(&val, fixed_size, Some(QualType::unqualified(*element_type)));
                 Operand::Constant(array_const_id)
             }
             (NodeKind::InitializerList(list), _) => {
@@ -430,36 +426,70 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    pub(crate) fn create_string_array_const(&mut self, val: &NameId, fixed_size: Option<usize>) -> ConstValueId {
-        let string_content = val.as_str();
-        let bytes = string_content.as_bytes();
-        let size = fixed_size.unwrap_or(bytes.len() + 1);
+    pub(crate) fn create_array_const_from_string(
+        &mut self,
+        val: &NameId,
+        fixed_size: Option<usize>,
+        elem_ty: Option<QualType>,
+    ) -> ConstValueId {
+        let parsed = crate::semantic::literal_utils::parse_string_literal(*val);
 
-        let char_ty = self.get_char_type();
+        let size = fixed_size.unwrap_or(parsed.size);
 
-        let char_constants = (0..size)
-            .map(|i| {
-                let byte_val = if i < bytes.len() { bytes[i] } else { 0 };
-                self.create_constant(char_ty, ConstValueKind::Int(byte_val as i64))
-            })
-            .collect();
+        // Determine MIR type for elements and layout
+        let (mir_elem_ty, elem_layout) = if let Some(qt) = elem_ty {
+            let layout = self.registry.get_layout(qt.ty()).into_owned();
+            (self.lower_qual_type(qt), layout)
+        } else {
+            // Fallback based on parsed type
+            let ty_ref = match parsed.builtin_type {
+                BuiltinType::Char => self.registry.type_char,
+                BuiltinType::Int => self.registry.type_int,
+                BuiltinType::UShort => self.registry.type_short_unsigned,
+                BuiltinType::UInt => self.registry.type_int_unsigned,
+                _ => self.registry.type_char,
+            };
+            let layout = self.registry.get_layout(ty_ref).into_owned();
+            (self.lower_qual_type(QualType::unqualified(ty_ref)), layout)
+        };
+
+        let mut constants = Vec::with_capacity(size);
+        for i in 0..size {
+            let val = if i < parsed.values.len() {
+                parsed.values[i]
+            } else {
+                0
+            };
+            constants.push(self.create_constant(mir_elem_ty, ConstValueKind::Int(val)));
+        }
+
+        let align = elem_layout.alignment;
+        let stride = elem_layout.size as u16;
+        // let total_size = (stride as usize * size) as u16;
 
         let array_ty = self.mir_builder.add_type(MirType::Array {
-            element: char_ty,
+            element: mir_elem_ty,
             size,
             layout: MirArrayLayout {
-                size: 0,
-                align: 1,
-                stride: 1,
+                size: 0, // Mimic old behavior
+                align,
+                stride,
             },
         });
 
-        self.create_constant(array_ty, ConstValueKind::ArrayLiteral(char_constants))
+        self.create_constant(array_ty, ConstValueKind::ArrayLiteral(constants))
     }
 
     pub(crate) fn lower_literal_string(&mut self, val: &NameId, ty: QualType) -> Operand {
         let string_type = self.lower_qual_type(ty);
-        let array_const_id = self.create_string_array_const(val, None);
+        // Extract element type from ty to ensure correct constant type
+        let element_type = match &self.registry.get(ty.ty()).kind {
+            TypeKind::Array { element_type, .. } => *element_type,
+            _ => self.registry.type_char, // Should not happen for string literal
+        };
+
+        let array_const_id =
+            self.create_array_const_from_string(val, None, Some(QualType::unqualified(element_type)));
 
         let global_name = self.mir_builder.get_next_anonymous_global_name();
         let global_id = self

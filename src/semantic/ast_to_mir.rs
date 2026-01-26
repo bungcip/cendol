@@ -1041,9 +1041,6 @@ impl<'a> AstToMirLowerer<'a> {
         self.lower_type(self.registry.type_int)
     }
 
-    pub(crate) fn get_char_type(&mut self) -> TypeId {
-        self.lower_type(self.registry.type_char)
-    }
 
     pub(crate) fn create_temp_local(&mut self, type_id: TypeId) -> (LocalId, Place) {
         let local_id = self.mir_builder.create_local(None, type_id, false);

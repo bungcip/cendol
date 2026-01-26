@@ -23,6 +23,20 @@ fn test_string_literal_array_init() {
 }
 
 #[test]
+fn test_wide_string_init() {
+    run_full_pass(
+        r#"
+        typedef int wchar_t;
+        wchar_t s[] = L"hello";
+        int main() {
+            if (sizeof(s) != 24) return 1; // 6 * 4
+            return 0;
+        }
+    "#,
+    );
+}
+
+#[test]
 fn test_string_literal_concatenated_init() {
     run_full_pass(
         r#"

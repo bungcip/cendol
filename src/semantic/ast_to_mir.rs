@@ -254,8 +254,11 @@ impl<'a> AstToMirLowerer<'a> {
         for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
             let node_kind = self.ast.get_kind(stmt_ref);
             if self.mir_builder.current_block_has_terminator() {
-                if let NodeKind::Label(..) = node_kind {
-                    // This is a label, which is a valid entry point.
+                if matches!(
+                    node_kind,
+                    NodeKind::Label(..) | NodeKind::Case(..) | NodeKind::Default(..)
+                ) {
+                    // This is a label or case, which is a valid entry point.
                     // Let lower_node_ref handle it, it will switch to a new block.
                 } else {
                     // This statement is unreachable. Skip it.

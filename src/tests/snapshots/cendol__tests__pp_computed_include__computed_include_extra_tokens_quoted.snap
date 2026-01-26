@@ -1,0 +1,7 @@
+---
+source: src/tests/pp_computed_include.rs
+assertion_line: 93
+expression: "(tokens, diags)"
+---
+- []
+- - "Fatal Error: ExpectedEod"

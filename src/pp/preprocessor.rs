@@ -1418,13 +1418,14 @@ impl<'src> Preprocessor<'src> {
     fn handle_include(&mut self) -> Result<(), PPError> {
         // Parse the include path
         let token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
-        let is_angled = matches!(token.kind, PPTokenKind::Less);
-        let path_str = match token.kind {
+        let mut eod_consumed = false;
+
+        let (path_str, is_angled) = match token.kind {
             PPTokenKind::StringLiteral(symbol) => {
                 // Remove quotes from string literal
                 let full_str = symbol.as_str();
                 if full_str.starts_with('"') && full_str.ends_with('"') {
-                    full_str[1..full_str.len() - 1].to_string()
+                    (full_str[1..full_str.len() - 1].to_string(), false)
                 } else {
                     return Err(PPError::InvalidIncludePath);
                 }
@@ -1458,9 +1459,103 @@ impl<'src> Preprocessor<'src> {
                         path.push_str(text);
                     }
                 }
-                path
+                (path, true)
             }
-            _ => return Err(PPError::InvalidIncludePath),
+            _ => {
+                // Computed include: C11 6.10.2p4
+                // Expand the tokens and see if they match one of the two forms.
+                let mut tokens = vec![token];
+                while let Some(t) = self.lex_token() {
+                    if t.kind == PPTokenKind::Eod {
+                        break;
+                    }
+                    tokens.push(t);
+                }
+                eod_consumed = true;
+
+                self.expand_tokens(&mut tokens, false)?;
+
+                if tokens.is_empty() {
+                    return Err(PPError::InvalidIncludePath);
+                }
+
+                // Check the first token
+                let first = &tokens[0];
+                match first.kind {
+                    PPTokenKind::StringLiteral(symbol) => {
+                        // Check for extra tokens
+                        if tokens.len() > 1 {
+                            let diag = Diagnostic {
+                                level: DiagnosticLevel::Error,
+                                message: "Extra tokens at end of #include directive".to_string(),
+                                span: SourceSpan::new(tokens[1].location, tokens.last().unwrap().location),
+                                code: Some("extra_tokens_directive".to_string()),
+                                hints: vec![],
+                                related: vec![],
+                            };
+                            self.diag.report_diagnostic(diag);
+                            return Err(PPError::ExpectedEod);
+                        }
+
+                        let full_str = symbol.as_str();
+                        if full_str.starts_with('"') && full_str.ends_with('"') {
+                            (full_str[1..full_str.len() - 1].to_string(), false)
+                        } else {
+                            return Err(PPError::InvalidIncludePath);
+                        }
+                    }
+                    PPTokenKind::Less => {
+                        // Find Greater
+                        let mut path_parts = Vec::new();
+                        let mut found_greater = false;
+                        let mut greater_index = 0;
+                        for (i, t) in tokens.iter().enumerate().skip(1) {
+                            if t.kind == PPTokenKind::Greater {
+                                found_greater = true;
+                                greater_index = i;
+                                break;
+                            }
+                            path_parts.push(t);
+                        }
+
+                        if !found_greater {
+                            return Err(PPError::InvalidIncludePath);
+                        }
+
+                        // Check for extra tokens
+                        if greater_index + 1 < tokens.len() {
+                            let diag = Diagnostic {
+                                level: DiagnosticLevel::Error,
+                                message: "Extra tokens at end of #include directive".to_string(),
+                                span: SourceSpan::new(
+                                    tokens[greater_index + 1].location,
+                                    tokens.last().unwrap().location,
+                                ),
+                                code: Some("extra_tokens_directive".to_string()),
+                                hints: vec![],
+                                related: vec![],
+                            };
+                            self.diag.report_diagnostic(diag);
+                            return Err(PPError::ExpectedEod);
+                        }
+
+                        // Build string
+                        let total_len: usize = path_parts.iter().map(|part| part.length as usize).sum();
+                        let mut path = String::with_capacity(total_len);
+                        for part in path_parts {
+                            let buffer = self.source_manager.get_buffer(part.location.source_id());
+                            let start = part.location.offset() as usize;
+                            let end = start + part.length as usize;
+                            if end <= buffer.len() {
+                                let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
+                                path.push_str(text);
+                            }
+                        }
+                        (path, true)
+                    }
+                    _ => return Err(PPError::InvalidIncludePath),
+                }
+            }
         };
 
         // Check include depth
@@ -1570,7 +1665,9 @@ impl<'src> Preprocessor<'src> {
             // location: token.location,
         });
 
-        self.expect_eod()?;
+        if !eod_consumed {
+            self.expect_eod()?;
+        }
 
         // Create lexer for the included file
         let buffer = self.source_manager.get_buffer(include_source_id);

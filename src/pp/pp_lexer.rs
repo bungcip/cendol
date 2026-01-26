@@ -851,7 +851,10 @@ impl PPLexer {
         self.line_starts.len() as u32 + self.line_offset
     }
 
-    pub(crate) fn get_line_starts(&self) -> &Vec<u32> {
-        &self.line_starts
+    /// ⚡ Bolt: Moves the `line_starts` vector out of the lexer.
+    /// This avoids a clone when the lexer is destroyed and its line information
+    /// is transferred to the SourceManager, which is a performance optimization.
+    pub(crate) fn take_line_starts(self) -> Vec<u32> {
+        self.line_starts
     }
 }

@@ -1577,6 +1577,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*src);
                 Some(QualType::unqualified(self.registry.type_void))
             }
+            NodeKind::BuiltinExpect(exp, c) => {
+                let ty = self.visit_node(*exp);
+                self.visit_node(*c);
+                ty
+            }
             _ => None,
         }
     }

@@ -76,6 +76,7 @@ pub enum TokenKind {
     BuiltinVaStart,
     BuiltinVaEnd,
     BuiltinVaCopy,
+    BuiltinExpect,
 
     // === OPERATORS ===
     // Arithmetic operators
@@ -378,6 +379,7 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__builtin_va_start"), TokenKind::BuiltinVaStart);
         m.insert(StringId::new("__builtin_va_end"), TokenKind::BuiltinVaEnd);
         m.insert(StringId::new("__builtin_va_copy"), TokenKind::BuiltinVaCopy);
+        m.insert(StringId::new("__builtin_expect"), TokenKind::BuiltinExpect);
         m
     })
 }

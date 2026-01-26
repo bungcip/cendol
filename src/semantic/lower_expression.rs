@@ -127,6 +127,10 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::Cast(_ty, operand_ref) => self.lower_cast(*operand_ref, mir_ty),
             NodeKind::CompoundLiteral(ty, init_ref) => self.lower_compound_literal(*ty, *init_ref),
             NodeKind::BuiltinVaArg(ty, expr) => self.lower_builtin_va_arg(*ty, *expr),
+            NodeKind::BuiltinExpect(exp, c) => {
+                let _ = self.lower_expression(*c, true); // lower 'c' for side effects or just to process it
+                self.lower_expression(*exp, need_value)
+            }
             NodeKind::BuiltinVaStart(..) | NodeKind::BuiltinVaEnd(..) | NodeKind::BuiltinVaCopy(..) => {
                 self.lower_builtin_void(&node_kind)
             }

@@ -51,6 +51,7 @@ pub enum NodeKind {
     BuiltinVaStart(NodeRef, NodeRef),
     BuiltinVaEnd(NodeRef),
     BuiltinVaCopy(NodeRef, NodeRef),
+    BuiltinExpect(NodeRef, NodeRef),
     SizeOfExpr(NodeRef),
     SizeOfType(QualType),
     AlignOf(QualType), // C11 _Alignof
@@ -144,6 +145,7 @@ impl NodeKind {
 
             NodeKind::BuiltinVaStart(lhs, rhs)
             | NodeKind::BuiltinVaCopy(lhs, rhs)
+            | NodeKind::BuiltinExpect(lhs, rhs)
             | NodeKind::BinaryOp(_, lhs, rhs)
             | NodeKind::GnuStatementExpression(lhs, rhs)
             | NodeKind::Assignment(_, lhs, rhs)

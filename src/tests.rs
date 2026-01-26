@@ -7,6 +7,7 @@ pub mod noreturn;
 pub mod output;
 pub mod parser;
 pub mod parser_declarations;
+pub mod parser_function_params_regression;
 pub mod parser_utils;
 pub mod pointer_arithmetic_regression;
 pub mod pp_comma_separator;

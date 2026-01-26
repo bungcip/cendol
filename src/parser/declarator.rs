@@ -511,48 +511,67 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDec
                 }
             }
             TokenKind::LeftParen => {
-                debug!("parse_abstract_declarator: found LeftParen, parsing parenthesized");
-                parser.advance(); // Consume '('
-                if parser.accept(TokenKind::RightParen).is_some() {
-                    // Empty parameter list: ()
-                    ParsedDeclarator::Function {
-                        inner: Box::new(ParsedDeclarator::Abstract),
-                        params: ThinVec::new(),
-                        is_variadic: false,
-                    }
+                debug!("parse_abstract_declarator: found LeftParen");
+
+                // Check if this is likely a function parameter list start, e.g. `(int...)` or `(char...)`
+                // If so, we treat it as a function declarator applied to an empty abstract declarator,
+                // instead of consuming the paren as a parenthesized declarator.
+                // We also check for `()` which is an empty parameter list.
+                let is_param_list_start = if let Some(next_token) = parser.peek_token(0) {
+                    parser.is_type_name_start_token(next_token) || next_token.kind == TokenKind::RightParen
                 } else {
-                    let start_idx = parser.current_idx;
-                    let inner_declarator = parse_abstract_declarator(parser)?;
-                    debug!(
-                        "parse_abstract_declarator: inner declarator parsed, current token: {:?}",
-                        parser.current_token_kind()
-                    );
+                    false
+                };
+
+                if is_param_list_start {
+                    // It's a suffix, e.g. `(int)` in `int (int)`.
+                    // We return Abstract so the trailing declarator parser picks it up as a function declarator.
+                    ParsedDeclarator::Abstract
+                } else {
+                    parser.advance(); // Consume '('
                     if parser.accept(TokenKind::RightParen).is_some() {
-                        inner_declarator
+                        // This case is actually covered by is_param_list_start above,
+                        // but if we somehow got here (maybe peek failed?), handle it.
+                        // Although if peek failed, we probably hit EOF soon.
+                        ParsedDeclarator::Function {
+                            inner: Box::new(ParsedDeclarator::Abstract),
+                            params: ThinVec::new(),
+                            is_variadic: false,
+                        }
                     } else {
-                        // Check if we're dealing with a function parameter syntax like "int (int)"
-                        // In this case, the closing paren might be part of the parameter list context
+                        let start_idx = parser.current_idx;
+                        let inner_declarator = parse_abstract_declarator(parser)?;
                         debug!(
-                            "parse_abstract_declarator: expected RightParen but found {:?}, position: {}",
-                            parser.current_token_kind(),
-                            parser.current_idx
+                            "parse_abstract_declarator: inner declarator parsed, current token: {:?}",
+                            parser.current_token_kind()
                         );
-                        // Try to parse as function declarator if we see another LeftParen
-                        if parser.accept(TokenKind::LeftParen).is_some() {
-                            debug!(
-                                "parse_abstract_declarator: found another LeftParen, treating as function declarator"
-                            );
-                            let (parameters, is_variadic) = parse_function_parameters(parser)?;
-                            parser.expect(TokenKind::RightParen)?; // Consume ')'
-                            ParsedDeclarator::Function {
-                                inner: Box::new(inner_declarator),
-                                params: parameters,
-                                is_variadic,
-                            }
+                        if parser.accept(TokenKind::RightParen).is_some() {
+                            inner_declarator
                         } else {
-                            // Roll back and try a different approach
-                            parser.current_idx = start_idx;
-                            ParsedDeclarator::Abstract
+                            // Check if we're dealing with a function parameter syntax like "int (int)"
+                            // In this case, the closing paren might be part of the parameter list context
+                            debug!(
+                                "parse_abstract_declarator: expected RightParen but found {:?}, position: {}",
+                                parser.current_token_kind(),
+                                parser.current_idx
+                            );
+                            // Try to parse as function declarator if we see another LeftParen
+                            if parser.accept(TokenKind::LeftParen).is_some() {
+                                debug!(
+                                    "parse_abstract_declarator: found another LeftParen, treating as function declarator"
+                                );
+                                let (parameters, is_variadic) = parse_function_parameters(parser)?;
+                                parser.expect(TokenKind::RightParen)?; // Consume ')'
+                                ParsedDeclarator::Function {
+                                    inner: Box::new(inner_declarator),
+                                    params: parameters,
+                                    is_variadic,
+                                }
+                            } else {
+                                // Roll back and try a different approach
+                                parser.current_idx = start_idx;
+                                ParsedDeclarator::Abstract
+                            }
                         }
                     }
                 }

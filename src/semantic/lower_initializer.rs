@@ -54,12 +54,15 @@ impl<'a> AstToMirLowerer<'a> {
                     let member_ty = members[field_idx].member_type;
                     let member_ty_ref = member_ty.ty();
                     let member_kind = &self.registry.get(member_ty_ref).kind;
-                    let member_size =
-                        if let TypeKind::Array { size: ArraySizeType::Incomplete, .. } = member_kind {
-                            0
-                        } else {
-                            self.registry.get_layout(member_ty_ref).size
-                        };
+                    let member_size = if let TypeKind::Array {
+                        size: ArraySizeType::Incomplete,
+                        ..
+                    } = member_kind
+                    {
+                        0
+                    } else {
+                        self.registry.get_layout(member_ty_ref).size
+                    };
                     let is_bitfield = members[field_idx].bit_field_size.is_some();
 
                     let mut next_idx = field_idx + 1;

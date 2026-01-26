@@ -455,11 +455,7 @@ impl<'a> AstToMirLowerer<'a> {
 
         let mut constants = Vec::with_capacity(size);
         for i in 0..size {
-            let val = if i < parsed.values.len() {
-                parsed.values[i]
-            } else {
-                0
-            };
+            let val = if i < parsed.values.len() { parsed.values[i] } else { 0 };
             constants.push(self.create_constant(mir_elem_ty, ConstValueKind::Int(val)));
         }
 
@@ -488,8 +484,7 @@ impl<'a> AstToMirLowerer<'a> {
             _ => self.registry.type_char, // Should not happen for string literal
         };
 
-        let array_const_id =
-            self.create_array_const_from_string(val, None, Some(QualType::unqualified(element_type)));
+        let array_const_id = self.create_array_const_from_string(val, None, Some(QualType::unqualified(element_type)));
 
         let global_name = self.mir_builder.get_next_anonymous_global_name();
         let global_id = self

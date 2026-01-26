@@ -814,7 +814,8 @@ impl<'a> SemanticAnalyzer<'a> {
                         let compatible = if is_rhs_char {
                             is_lhs_char_type
                         } else {
-                            self.registry.is_compatible(QualType::unqualified(lhs_elem), QualType::unqualified(rhs_elem))
+                            self.registry
+                                .is_compatible(QualType::unqualified(lhs_elem), QualType::unqualified(rhs_elem))
                         };
 
                         if compatible {
@@ -1436,7 +1437,9 @@ impl<'a> SemanticAnalyzer<'a> {
                         _ => self.registry.type_char,
                     };
 
-                    let array_type = self.registry.array_of(element_type, ArraySizeType::Constant(parsed.size));
+                    let array_type = self
+                        .registry
+                        .array_of(element_type, ArraySizeType::Constant(parsed.size));
                     let _ = self.registry.ensure_layout(array_type);
                     Some(QualType::new(array_type, TypeQualifiers::empty()))
                 }

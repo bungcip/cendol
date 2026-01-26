@@ -139,6 +139,34 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::Case(_, stmt) => self.lower_case_default_statement(node_ref, stmt),
             NodeKind::Default(stmt) => self.lower_case_default_statement(node_ref, stmt),
 
+            // Expressions used as statements (without ExpressionStatement wrapper)
+            // This happens in For loop initializers/increments and potentially GnuStatementExpression results.
+            NodeKind::Literal(_)
+            | NodeKind::Ident(..)
+            | NodeKind::UnaryOp(..)
+            | NodeKind::BinaryOp(..)
+            | NodeKind::TernaryOp(..)
+            | NodeKind::PostIncrement(..)
+            | NodeKind::PostDecrement(..)
+            | NodeKind::Assignment(..)
+            | NodeKind::FunctionCall(..)
+            | NodeKind::MemberAccess(..)
+            | NodeKind::IndexAccess(..)
+            | NodeKind::Cast(..)
+            | NodeKind::SizeOfExpr(..)
+            | NodeKind::SizeOfType(..)
+            | NodeKind::AlignOf(..)
+            | NodeKind::CompoundLiteral(..)
+            | NodeKind::BuiltinVaArg(..)
+            | NodeKind::BuiltinExpect(..)
+            | NodeKind::BuiltinVaStart(..)
+            | NodeKind::BuiltinVaEnd(..)
+            | NodeKind::BuiltinVaCopy(..)
+            | NodeKind::GenericSelection(..)
+            | NodeKind::GnuStatementExpression(..) => {
+                self.lower_expression(node_ref, false);
+            }
+
             _ => {}
         }
 

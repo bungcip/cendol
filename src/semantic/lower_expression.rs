@@ -83,8 +83,46 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::SizeOfType(ty) => self.lower_type_query(ty.ty(), true),
             NodeKind::AlignOf(ty) => self.lower_type_query(ty.ty(), false),
             NodeKind::GenericSelection(gs) => self.lower_generic_selection(gs, need_value),
-            NodeKind::GnuStatementExpression(_stmt, _) => {
-                panic!("GnuStatementExpression not implemented");
+            NodeKind::GnuStatementExpression(stmt, result_expr) => {
+                let stmt_kind = self.ast.get_kind(*stmt);
+                if let NodeKind::CompoundStatement(cs) = stmt_kind {
+                    let old_scope = self.current_scope_id;
+                    self.current_scope_id = cs.scope_id;
+
+                    for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
+                        let is_last_stmt_expr =
+                            if let NodeKind::ExpressionStatement(Some(e)) = self.ast.get_kind(stmt_ref) {
+                                *e == *result_expr
+                            } else {
+                                false
+                            };
+
+                        if is_last_stmt_expr {
+                            continue;
+                        }
+
+                        let node_kind = self.ast.get_kind(stmt_ref);
+                        if self.mir_builder.current_block_has_terminator() {
+                            if let NodeKind::Label(..) = node_kind {
+                                // OK
+                            } else {
+                                continue;
+                            }
+                        }
+                        self.lower_node_ref(stmt_ref);
+                    }
+
+                    let op = if let NodeKind::Dummy = self.ast.get_kind(*result_expr) {
+                        self.create_dummy_operand()
+                    } else {
+                        self.lower_expression(*result_expr, need_value)
+                    };
+
+                    self.current_scope_id = old_scope;
+                    op
+                } else {
+                    panic!("GnuStatementExpression stmt is not CompoundStatement");
+                }
             }
             NodeKind::Cast(_ty, operand_ref) => self.lower_cast(*operand_ref, mir_ty),
             NodeKind::CompoundLiteral(ty, init_ref) => self.lower_compound_literal(*ty, *init_ref),
@@ -107,6 +145,8 @@ impl<'a> AstToMirLowerer<'a> {
         else_expr: NodeRef,
         mir_ty: TypeId,
     ) -> Operand {
+        let is_void = matches!(self.mir_builder.get_type(mir_ty), crate::mir::MirType::Void);
+
         let cond_op = self.lower_expression(cond, true);
 
         let then_block = self.mir_builder.create_block();
@@ -117,25 +157,37 @@ impl<'a> AstToMirLowerer<'a> {
             .set_terminator(Terminator::If(cond_op, then_block, else_block));
 
         // Result local
-        let result_local = self.mir_builder.create_local(None, mir_ty, false);
+        let result_local = if !is_void {
+            Some(self.mir_builder.create_local(None, mir_ty, false))
+        } else {
+            None
+        };
 
         // Then
         self.mir_builder.set_current_block(then_block);
-        let then_val = self.lower_expression(then_expr, true);
-        let then_val_conv = self.apply_conversions(then_val, then_expr, mir_ty);
-        self.emit_assignment(Place::Local(result_local), then_val_conv);
+        let then_val = self.lower_expression(then_expr, !is_void);
+        if let Some(local) = result_local {
+            let then_val_conv = self.apply_conversions(then_val, then_expr, mir_ty);
+            self.emit_assignment(Place::Local(local), then_val_conv);
+        }
         self.mir_builder.set_terminator(Terminator::Goto(exit_block));
 
         // Else
         self.mir_builder.set_current_block(else_block);
-        let else_val = self.lower_expression(else_expr, true);
-        let else_val_conv = self.apply_conversions(else_val, else_expr, mir_ty);
-        self.emit_assignment(Place::Local(result_local), else_val_conv);
+        let else_val = self.lower_expression(else_expr, !is_void);
+        if let Some(local) = result_local {
+            let else_val_conv = self.apply_conversions(else_val, else_expr, mir_ty);
+            self.emit_assignment(Place::Local(local), else_val_conv);
+        }
         self.mir_builder.set_terminator(Terminator::Goto(exit_block));
 
         self.mir_builder.set_current_block(exit_block);
 
-        Operand::Copy(Box::new(Place::Local(result_local)))
+        if let Some(local) = result_local {
+            Operand::Copy(Box::new(Place::Local(local)))
+        } else {
+            self.create_dummy_operand()
+        }
     }
 
     pub(crate) fn lower_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {

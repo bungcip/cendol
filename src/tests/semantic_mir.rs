@@ -1410,4 +1410,33 @@ mod tests {
         extern fn strcmp(%param0: ptr<i8>, %param1: ptr<i8>) -> i32
         "#);
     }
+
+    #[test]
+    fn test_gnu_statement_expression_labels_and_void() {
+        let source = r#"
+            extern int printf (const char *, ...);
+            static void kb_wait_1(void)
+            {
+              unsigned long timeout = 2;
+              do {
+                  (1 ?
+                   printf("timeout=%ld\n", timeout) :
+                   ({
+                    int i = 1;
+                    while (1)
+                      while (i--)
+                        some_label:
+                          printf("error\n");
+                    goto some_label;
+                    })
+                  );
+                  timeout--;
+              } while (timeout);
+            }
+            int main() { return 0; }
+        "#;
+
+        let mir_dump = setup_mir(source);
+        insta::assert_snapshot!(mir_dump);
+    }
 }

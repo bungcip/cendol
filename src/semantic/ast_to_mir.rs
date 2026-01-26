@@ -94,7 +94,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_node_ref(&mut self, node_ref: NodeRef) {
+    pub(crate) fn lower_node_ref(&mut self, node_ref: NodeRef) {
         let old_scope = self.current_scope_id;
         let node_kind = self.ast.get_kind(node_ref).clone();
 

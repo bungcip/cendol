@@ -14,3 +14,17 @@ int T;
         1,
     );
 }
+
+#[test]
+fn rejects_extern_variable_declaration_conflicting_with_typedef() {
+    run_fail_with_diagnostic(
+        r#"
+typedef int T;
+extern int T;
+        "#,
+        CompilePhase::Mir,
+        "redefinition of 'T'",
+        3,
+        1,
+    );
+}

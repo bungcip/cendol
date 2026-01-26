@@ -273,6 +273,22 @@ impl<'a> AstToMirLowerer<'a> {
         let symbol_entry = self.symbol_table.get_symbol(function_data.symbol);
         let func_name = symbol_entry.name;
 
+        // Pre-lower __func__ if present
+        if let Some(scope) = self
+            .symbol_table
+            .get_scope(function_data.scope_id)
+            .symbols
+            .get(&crate::intern::StringId::new("__func__"))
+        {
+            let sym_ref = *scope;
+            let symbol = self.symbol_table.get_symbol(sym_ref);
+            if let SymbolKind::Variable { .. } = symbol.kind {
+                let ty = symbol.type_info;
+                let mir_type_id = self.lower_qual_type(ty);
+                self.lower_variable_symbol(sym_ref, mir_type_id);
+            }
+        }
+
         // Find the existing function in the MIR builder. It should have been created by the pre-pass.
         let func_id = self
             .mir_builder
@@ -320,21 +336,40 @@ impl<'a> AstToMirLowerer<'a> {
             .lookup(var_decl.name, self.current_scope_id, Namespace::Ordinary)
             .unwrap();
 
-        let is_global = self.current_function.is_none();
+        self.lower_variable_symbol(entry_ref, mir_type_id);
+    }
+
+    fn lower_variable_symbol(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
+        let symbol = self.symbol_table.get_symbol(entry_ref);
+        let (is_global_sym, storage) = if let SymbolKind::Variable { is_global, storage, .. } = symbol.kind {
+            (is_global, storage)
+        } else {
+            panic!("lower_variable_symbol called on non-variable");
+        };
+
+        // Treat static locals as globals for MIR generation purposes (lifetime/storage)
+        let is_global = self.current_function.is_none() || is_global_sym || storage == Some(StorageClass::Static);
 
         if is_global {
-            self.lower_global(var_decl, entry_ref, mir_type_id);
+            self.lower_global(entry_ref, mir_type_id);
         } else {
-            self.lower_local(var_decl, entry_ref, mir_type_id);
+            self.lower_local(entry_ref, mir_type_id);
         }
     }
 
-    fn lower_global(&mut self, var_decl: &VarDeclData, entry_ref: SymbolRef, mir_type_id: TypeId) {
-        let initial_value_id = var_decl
-            .init
-            .and_then(|init_ref| self.lower_initializer_to_const(init_ref, var_decl.ty));
-
+    fn lower_global(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(entry_ref);
+        let (init, alignment, name, ty) = if let SymbolKind::Variable {
+            initializer, alignment, ..
+        } = &symbol.kind
+        {
+            (*initializer, *alignment, symbol.name, symbol.type_info)
+        } else {
+            unreachable!()
+        };
+
+        let initial_value_id = init.and_then(|init_ref| self.lower_initializer_to_const(init_ref, ty));
+
         let final_init = initial_value_id.or_else(|| {
             if symbol.def_state == DefinitionState::Tentative {
                 Some(self.create_constant(mir_type_id, ConstValueKind::Zero))
@@ -348,29 +383,46 @@ impl<'a> AstToMirLowerer<'a> {
                 self.mir_builder.set_global_initializer(global_id, init_id);
             }
         } else {
+            let global_name = if symbol.scope_id == ScopeId::GLOBAL {
+                name
+            } else {
+                // Mangle name for static local to avoid collision
+                crate::ast::NameId::new(format!("{}.{}", name, entry_ref.get()))
+            };
+
             let global_id = self
                 .mir_builder
-                .create_global_with_init(var_decl.name, mir_type_id, false, final_init);
+                .create_global_with_init(global_name, mir_type_id, false, final_init);
 
-            if let Some(alignment) = var_decl.alignment {
-                self.mir_builder.set_global_alignment(global_id, alignment as u32);
+            if let Some(align) = alignment {
+                self.mir_builder.set_global_alignment(global_id, align as u32);
             }
 
             self.global_map.insert(entry_ref, global_id);
         }
     }
 
-    fn lower_local(&mut self, var_decl: &VarDeclData, entry_ref: SymbolRef, mir_type_id: TypeId) {
-        let local_id = self.mir_builder.create_local(Some(var_decl.name), mir_type_id, false);
+    fn lower_local(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
+        let symbol = self.symbol_table.get_symbol(entry_ref);
+        let (init, alignment, name, ty) = if let SymbolKind::Variable {
+            initializer, alignment, ..
+        } = &symbol.kind
+        {
+            (*initializer, *alignment, symbol.name, symbol.type_info)
+        } else {
+            unreachable!()
+        };
 
-        if let Some(alignment) = var_decl.alignment {
-            self.mir_builder.set_local_alignment(local_id, alignment as u32);
+        let local_id = self.mir_builder.create_local(Some(name), mir_type_id, false);
+
+        if let Some(align) = alignment {
+            self.mir_builder.set_local_alignment(local_id, align as u32);
         }
 
         self.local_map.insert(entry_ref, local_id);
 
-        if let Some(initializer) = var_decl.init {
-            let init_operand = self.lower_initializer(initializer, var_decl.ty, Some(Place::Local(local_id)));
+        if let Some(initializer) = init {
+            let init_operand = self.lower_initializer(initializer, ty, Some(Place::Local(local_id)));
             // If lower_initializer used the destination, it returns Operand::Copy(destination)
             // emit_assignment will then emit Place::Local(local_id) = Place::Local(local_id), which is fine or can be skipped.
             self.emit_assignment(Place::Local(local_id), init_operand);

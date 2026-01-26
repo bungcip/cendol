@@ -15,6 +15,7 @@ use hashbrown::HashMap;
 use smallvec::{SmallVec, smallvec};
 use std::num::NonZeroU16;
 
+use crate::ast::literal;
 use crate::ast::parsed::{
     ParsedDeclarationData, ParsedDeclarator, ParsedFunctionDefData, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpecifier,
 };
@@ -1504,6 +1505,38 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let func_sym_ref = self.symbol_table.lookup_symbol(func_name).map(|(s, _)| s).unwrap();
 
         let scope_id = self.symbol_table.push_scope();
+
+        // Implement __func__ (C11 6.4.2.2)
+        {
+            let func_name_str = func_name.to_string();
+            let name_len = func_name_str.len();
+
+            // Create string literal for initializer
+            let func_name_id = crate::intern::StringId::new(&func_name_str);
+            let init_literal = literal::Literal::String(func_name_id);
+            let init_node = self.push_dummy(span);
+            self.ast.kinds[init_node.index()] = NodeKind::Literal(init_literal);
+            self.set_scope(init_node, self.symbol_table.current_scope());
+
+            // Create type: const char[N]
+            let char_type = self.registry.type_char;
+            let array_size = ArraySizeType::Constant(name_len + 1);
+            let array_type = self.registry.array_of(char_type, array_size);
+
+            let qt = QualType::new(array_type, TypeQualifiers::CONST);
+            let _ = self.registry.ensure_layout(array_type);
+
+            // Define __func__
+            let func_id = crate::intern::StringId::new("__func__");
+            let storage = Some(StorageClass::Static);
+
+            // We define it in the current scope (function body).
+            // Note: If the user declares __func__ explicitly, it will be caught as a redefinition
+            // by the standard variable declaration logic because this one is inserted first.
+            let _ = self
+                .symbol_table
+                .define_variable(func_id, qt, storage, Some(init_node), None, span);
+        }
 
         // Pre-scan labels for forward goto support
         self.collect_labels(func_def.body);

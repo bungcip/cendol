@@ -459,3 +459,19 @@ fn test_add_file_from_path_error() {
     let result = sm.add_file_from_path(std::path::Path::new("non_existent_file_xyz.c"), None);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_source_manager_get_file_id() {
+    let mut sm = SourceManager::new();
+    let content = "some content";
+    let path = "test_path.c";
+    let file_id = sm.add_buffer(content.as_bytes().to_vec(), path, None);
+
+    // Test finding existing file
+    let found_id = sm.get_file_id(path);
+    assert_eq!(found_id, Some(file_id));
+
+    // Test non-existent file
+    let not_found = sm.get_file_id("non_existent.c");
+    assert_eq!(not_found, None);
+}

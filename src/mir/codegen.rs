@@ -561,7 +561,14 @@ fn emit_function_call_impl(
 
             // Assuming function pointers point to internal functions requiring the hack.
             // TODO: Distinguish between internal and external function pointers if possible.
-            (return_type_id, param_types, is_variadic_call, None, Some(callee_val), true)
+            (
+                return_type_id,
+                param_types,
+                is_variadic_call,
+                None,
+                Some(callee_val),
+                true,
+            )
         }
     };
 

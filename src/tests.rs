@@ -45,6 +45,7 @@ pub mod semantic_incomplete_type;
 pub mod semantic_initializers;
 pub mod semantic_initializers_extras;
 pub mod semantic_local_init;
+pub mod semantic_logic_ops;
 pub mod semantic_loop_init_regression;
 pub mod semantic_lowering;
 pub mod semantic_lvalue;

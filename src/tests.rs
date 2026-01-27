@@ -13,6 +13,7 @@ pub mod parser_declarations;
 pub mod parser_function_params_regression;
 pub mod parser_utils;
 pub mod pointer_arithmetic_regression;
+pub mod pp_builtins;
 pub mod pp_comma_separator;
 pub mod pp_common;
 pub mod pp_computed_include;

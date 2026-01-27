@@ -1368,7 +1368,18 @@ impl<'src> Preprocessor<'src> {
 
         // Check for macro redefinition
         if let Some(existing) = self.macros.get(&name) {
-            let is_builtin = existing.flags.contains(MacroFlags::BUILTIN);
+            if existing.flags.contains(MacroFlags::BUILTIN) {
+                let diag = Diagnostic {
+                    level: DiagnosticLevel::Warning,
+                    message: format!("Redefinition of built-in macro '{}'", name.as_str()),
+                    span: SourceSpan::new(name_token.location, name_token.location),
+                    code: Some("builtin_macro_redefinition".to_string()),
+                    hints: Vec::new(),
+                    related: Vec::new(),
+                };
+                self.diag.report_diagnostic(diag);
+                return Ok(());
+            }
 
             // Check if definition is different
             // Two macro definitions are distinct if they have different parameter lists,
@@ -1384,7 +1395,7 @@ impl<'src> Preprocessor<'src> {
                     .zip(macro_info.tokens.iter())
                     .any(|(a, b)| a.kind != b.kind || a.flags != b.flags);
 
-            if !is_builtin && is_different {
+            if is_different {
                 // Emit warning for redefinition
                 let diag = Diagnostic {
                     level: DiagnosticLevel::Warning,
@@ -1408,6 +1419,23 @@ impl<'src> Preprocessor<'src> {
             PPTokenKind::Identifier(sym) => sym,
             _ => return Err(PPError::ExpectedIdentifier),
         };
+
+        if let Some(existing) = self.macros.get(&name)
+            && existing.flags.contains(MacroFlags::BUILTIN)
+        {
+            let diag = Diagnostic {
+                level: DiagnosticLevel::Warning,
+                message: format!("Undefining built-in macro '{}'", name.as_str()),
+                span: SourceSpan::new(name_token.location, name_token.location),
+                code: Some("undef_builtin_macro".to_string()),
+                hints: Vec::new(),
+                related: Vec::new(),
+            };
+            self.diag.report_diagnostic(diag);
+            self.expect_eod()?;
+            return Ok(());
+        }
+
         // Remove the macro from the table if it exists
         self.macros.remove(&name);
 

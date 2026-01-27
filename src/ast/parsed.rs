@@ -277,16 +277,13 @@ pub struct ParsedRecordDefData {
 
 #[derive(Debug, Clone)]
 pub struct ParsedDesignatedInitializer {
-    pub designation: Vec<ParsedDesignatedInitializerDesignator>,
+    pub designation: Vec<ParsedDesignator>,
     pub initializer: ParsedNodeRef,
 }
 
 #[derive(Debug, Clone)]
-pub enum ParsedDesignatedInitializerDesignator {
+pub enum ParsedDesignator {
     FieldName(NameId),
     ArrayIndex(ParsedNodeRef),
     GnuArrayRange(ParsedNodeRef, ParsedNodeRef),
 }
-
-// Renaming alias for compatibility while refactoring
-pub type ParsedDesignator = ParsedDesignatedInitializerDesignator;

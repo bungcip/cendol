@@ -561,11 +561,7 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDec
                         // Disambiguate between `(ATTR *)` (parenthesized declarator) and `(ATTR int)` (param list).
                         // If Attribute is followed by *, it's likely a parenthesized declarator.
                         if let Some(after_attr) = peek_past_attribute(parser, 0) {
-                            if after_attr.kind == TokenKind::Star {
-                                false
-                            } else {
-                                true
-                            }
+                            after_attr.kind != TokenKind::Star
                         } else {
                             // Fallback if attribute syntax is weird
                             true

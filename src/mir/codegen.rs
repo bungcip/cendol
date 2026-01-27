@@ -1624,10 +1624,9 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                             // Check if this local has a stack slot (non-void types)
                             if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
                                 ctx.builder.ins().stack_store(value, *stack_slot, 0);
-                            } else {
-                                // This local doesn't have a stack slot (likely a void type)
-                                // or it's optimized out. In MIR, we assume it's valid to ignore.
                             }
+                            // Else: This local doesn't have a stack slot (likely a void type)
+                            // or it's optimized out. In MIR, we assume it's valid to ignore.
                         }
                         _ => {
                             // This covers StructField, ArrayIndex, Deref, and Global assignments
@@ -1738,7 +1737,6 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                 Place::Local(local_id) => {
                     if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
                         ctx.builder.ins().stack_store(alloc_ptr, *stack_slot, 0);
-                    } else {
                     }
                 }
                 _ => {

@@ -901,32 +901,30 @@ impl PPLexer {
 
             // Check for UTF-8
             if let Some(ch) = self.peek_char() {
-                if ch >= 0x80 {
-                    if self.is_valid_utf8_start(ch) {
-                        let saved_pos = self.position;
-                        let saved_lines = self.line_starts.clone();
+                if ch >= 0x80 && self.is_valid_utf8_start(ch) {
+                    let saved_pos = self.position;
+                    let saved_lines = self.line_starts.clone();
 
-                        self.next_char(); // consume first
-                        let mut bytes = vec![ch];
-                        while let Some(cont) = self.peek_char() {
-                            if (0x80..0xC0).contains(&cont) {
-                                bytes.push(self.next_char().unwrap());
-                            } else {
-                                break;
-                            }
-                        }
-
-                        if let Ok(s) = String::from_utf8(bytes) {
-                            text.push_str(&s);
-                            length += s.len() as u16;
+                    self.next_char(); // consume first
+                    let mut bytes = vec![ch];
+                    while let Some(cont) = self.peek_char() {
+                        if (0x80..0xC0).contains(&cont) {
+                            bytes.push(self.next_char().unwrap());
                         } else {
-                            // Invalid UTF-8, backtrack
-                            self.position = saved_pos;
-                            self.line_starts = saved_lines;
                             break;
                         }
-                        continue;
                     }
+
+                    if let Ok(s) = String::from_utf8(bytes) {
+                        text.push_str(&s);
+                        length += s.len() as u16;
+                    } else {
+                        // Invalid UTF-8, backtrack
+                        self.position = saved_pos;
+                        self.line_starts = saved_lines;
+                        break;
+                    }
+                    continue;
                 }
 
                 if ch.is_ascii_alphanumeric() || ch == b'_' {
@@ -987,13 +985,13 @@ impl PPLexer {
                         // Valid UCN. Append raw bytes.
                         // \ is already pushed. raw contains \u...
                         // So append raw[1..]
-                        chars.extend_from_slice(raw[1..].as_bytes());
+                        chars.extend_from_slice(&raw.as_bytes()[1..]);
                         continue;
                     }
                     Some(Err(raw)) => {
                         // Invalid UCN.
                         *has_invalid_ucn = true;
-                        chars.extend_from_slice(raw[1..].as_bytes());
+                        chars.extend_from_slice(&raw.as_bytes()[1..]);
                         continue;
                     }
                     None => {

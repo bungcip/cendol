@@ -1081,25 +1081,83 @@ impl PPLexer {
         let has_prefix = first_ch == b'L' || first_ch == b'u' || first_ch == b'U';
         let quote_start = if has_prefix { 1 } else { 0 };
         let content_start = quote_start + 1;
-        let content_len = chars.len() - content_start - 1; // exclude closing '
 
-        let codepoint = if content_len == 1 {
-            chars[content_start]
-        } else if content_len == 2 && chars[content_start] == b'\\' {
-            // Handle escape sequences
-            match chars[content_start + 1] {
-                b'0' => 0,                     // null
-                b'n' => 10,                    // newline
-                b't' => 9,                     // tab
-                b'r' => 13,                    // carriage return
-                b'\\' => 92,                   // backslash
-                b'\'' => 39,                   // single quote
-                b'"' => 34,                    // double quote
-                _ => chars[content_start + 1], // fallback to the escaped char
-            }
+        let content_end = if chars.last() == Some(&b'\'') && chars.len() > content_start {
+            chars.len() - 1
         } else {
-            0 // placeholder for complex cases (multibyte chars, etc.)
+            chars.len()
         };
+
+        let content = &chars[content_start..content_end];
+        let mut codepoint = 0u8;
+
+        if !content.is_empty() {
+            if content[0] == b'\\' {
+                // Escape sequence
+                if content.len() > 1 {
+                    match content[1] {
+                        b'0'..=b'7' => {
+                            // Octal escape
+                            let mut val = 0u32;
+                            let mut idx = 1;
+                            for _ in 0..3 {
+                                if idx < content.len() {
+                                    let digit = content[idx];
+                                    if (b'0'..=b'7').contains(&digit) {
+                                        val = (val << 3) + (digit - b'0') as u32;
+                                        idx += 1;
+                                    } else {
+                                        break;
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+                            codepoint = val as u8;
+                        }
+                        b'x' => {
+                            // Hex escape
+                            if content.len() > 2 {
+                                let mut val = 0u32;
+                                let mut idx = 2;
+                                while idx < content.len() {
+                                    let digit = content[idx];
+                                    if let Some(d) = (digit as char).to_digit(16) {
+                                        val = val.wrapping_mul(16).wrapping_add(d);
+                                        idx += 1;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                codepoint = val as u8;
+                            } else {
+                                // \x but no digits? implementation defined.
+                                codepoint = 0;
+                            }
+                        }
+                        // Standard escapes
+                        b'n' => codepoint = 10,
+                        b't' => codepoint = 9,
+                        b'r' => codepoint = 13,
+                        b'b' => codepoint = 8,
+                        b'f' => codepoint = 12,
+                        b'v' => codepoint = 11,
+                        b'a' => codepoint = 7,
+                        b'\\' => codepoint = 92,
+                        b'\'' => codepoint = 39,
+                        b'"' => codepoint = 34,
+                        b'?' => codepoint = 63,
+                        c => codepoint = c, // Unknown escape, use the character itself
+                    }
+                } else {
+                    // Just a backslash at end?
+                    codepoint = b'\\';
+                }
+            } else {
+                // Regular character
+                codepoint = content[0];
+            }
+        }
 
         PPToken::new(
             PPTokenKind::CharLiteral(codepoint, symbol),

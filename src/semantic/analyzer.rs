@@ -387,8 +387,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             UnaryOp::LogicNot => {
-                // Logical NOT always returns bool type
-                Some(QualType::unqualified(self.registry.type_bool))
+                // Logical NOT always returns int type (C11 6.5.3.3)
+                Some(QualType::unqualified(self.registry.type_int))
             }
             UnaryOp::BitNot => {
                 if operand_ty.is_integer() {
@@ -480,7 +480,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
             // Logical operations
             BinaryOp::LogicAnd | BinaryOp::LogicOr => {
-                Some((QualType::unqualified(self.registry.type_bool), lhs_promoted))
+                // Result has type int (C11 6.5.13/6.5.14)
+                Some((QualType::unqualified(self.registry.type_int), lhs_promoted))
             }
 
             // For other operations, use usual arithmetic conversions

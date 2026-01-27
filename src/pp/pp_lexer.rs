@@ -906,26 +906,26 @@ impl PPLexer {
                     let saved_lines = self.line_starts.clone();
 
                     self.next_char(); // consume first
-                        let mut bytes = vec![ch];
-                        while let Some(cont) = self.peek_char() {
-                            if (0x80..0xC0).contains(&cont) {
-                                bytes.push(self.next_char().unwrap());
-                            } else {
-                                break;
-                            }
-                        }
-
-                        if let Ok(s) = String::from_utf8(bytes) {
-                            text.push_str(&s);
-                            length += s.len() as u16;
+                    let mut bytes = vec![ch];
+                    while let Some(cont) = self.peek_char() {
+                        if (0x80..0xC0).contains(&cont) {
+                            bytes.push(self.next_char().unwrap());
                         } else {
-                            // Invalid UTF-8, backtrack
-                            self.position = saved_pos;
-                            self.line_starts = saved_lines;
                             break;
                         }
-                        continue;
                     }
+
+                    if let Ok(s) = String::from_utf8(bytes) {
+                        text.push_str(&s);
+                        length += s.len() as u16;
+                    } else {
+                        // Invalid UTF-8, backtrack
+                        self.position = saved_pos;
+                        self.line_starts = saved_lines;
+                        break;
+                    }
+                    continue;
+                }
 
                 if ch.is_ascii_alphanumeric() || ch == b'_' {
                     self.next_char();

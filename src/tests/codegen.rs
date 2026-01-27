@@ -590,3 +590,34 @@ fn test_extern_variadic_printf_float() {
         clif_dump
     );
 }
+
+#[test]
+fn test_variadic_al_setup() {
+    let source = r#"
+        int printf(const char *fmt, ...);
+        int main() {
+            double d = 1.0;
+            printf("val: %f\n", d);
+            return 0;
+        }
+    "#;
+    let clif_dump = setup_cranelift(source);
+
+    // Check for the helper function signature: (i64, i64) -> i64, i64
+    assert!(
+        clif_dump.contains("(i64, i64) -> i64, i64 system_v"),
+        "Missing or incorrect __cendol_set_al signature in CLIF"
+    );
+
+    // Check for the helper call. It should have two results (vX, vY = call fnZ(vA, vB)).
+    assert!(clif_dump.contains("= call"), "Missing call to __cendol_set_al");
+
+    // Check for call_indirect which uses the address returned by the helper.
+    assert!(
+        clif_dump.contains("call_indirect"),
+        "Missing call_indirect for variadic printf"
+    );
+
+    // Check for FP argument count (v4 = iconst.i64 1 in our case, but let's be more general)
+    assert!(clif_dump.contains("iconst.i64 1"), "Missing FP argument count constant");
+}

@@ -102,6 +102,8 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub va_spill_slot: Option<StackSlot>,
     pub func: &'a MirFunction,
     pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
+    pub triple: &'a Triple,
+    pub set_al_func: &'a mut Option<FuncId>,
 }
 
 /// Helper to emit integer constants
@@ -368,6 +370,7 @@ fn prepare_call_signature(
     use_variadic_hack: bool,
 ) -> Signature {
     let mut sig = Signature::new(call_conv);
+    // sig.set_is_variadic(is_variadic); // Try if this method exists
 
     // Return type
     let return_mir_type = mir.get_type(return_type_id);
@@ -519,13 +522,15 @@ fn emit_function_call_impl(
         CallTarget::Direct(func_id) => {
             let func = ctx.mir.get_function(*func_id);
             let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
+            let name_linkage = Some((func.name.as_str(), convert_linkage(func.kind)));
+            let is_defined = matches!(func.kind, MirFunctionKind::Defined);
             (
                 func.return_type,
                 param_types,
                 func.is_variadic,
-                Some((func.name.as_str(), convert_linkage(func.kind))),
+                name_linkage,
                 None,
-                matches!(func.kind, MirFunctionKind::Defined),
+                is_defined,
             )
         }
         CallTarget::Indirect(func_operand) => {
@@ -605,9 +610,13 @@ fn emit_function_call_impl(
             let func_ref = ctx.module.declare_func_in_func(decl, ctx.builder.func);
             let addr = ctx.builder.ins().func_addr(types::I64, func_ref);
             let sig_ref = ctx.builder.import_signature(sig);
+
+            let addr = emit_al_count_and_pass_addr(args, &param_types, addr, ctx)?;
+
             ctx.builder.ins().call_indirect(sig_ref, addr, &arg_values)
         } else if let Some(addr) = target_addr {
             let sig_ref = ctx.builder.import_signature(sig);
+            let addr = emit_al_count_and_pass_addr(args, &param_types, addr, ctx)?;
             ctx.builder.ins().call_indirect(sig_ref, addr, &arg_values)
         } else {
             return Err("Variadic call without target".to_string());
@@ -630,6 +639,45 @@ fn emit_function_call_impl(
 }
 
 /// Helper function to convert boolean to integer (0 or 1)
+fn emit_al_count_and_pass_addr(
+    args: &[Operand],
+    param_types: &[TypeId],
+    addr: Value,
+    ctx: &mut BodyEmitContext,
+) -> Result<Value, String> {
+    // x86_64 SysV ABI requires AL to be set to the number of floating point arguments for variadic calls.
+    if ctx.triple.architecture == target_lexicon::Architecture::X86_64
+        && ctx.builder.func.signature.call_conv == cranelift::codegen::isa::CallConv::SystemV
+    {
+        let mut fp_arg_count = 0;
+        for (i, arg) in args.iter().enumerate() {
+            // Only count arguments that are NOT fixed parameters
+            if i >= param_types.len() {
+                let arg_mir_type = ctx.mir.get_type(get_operand_type_id(arg, ctx.mir).unwrap());
+                if matches!(arg_mir_type, MirType::F32 | MirType::F64) {
+                    fp_arg_count += 1;
+                }
+            }
+        }
+
+        // Ensure fp_arg_count doesn't exceed 8 (number of XMM registers used for args)
+        let fp_arg_count = fp_arg_count.min(8);
+
+        // Define __cendol_set_al if not already defined
+        if ctx.set_al_func.is_none() {
+            *ctx.set_al_func = Some(emit_cendol_set_al(ctx.module)?);
+        }
+
+        let set_al_func = ctx.set_al_func.unwrap();
+        let local_set_al = ctx.module.declare_func_in_func(set_al_func, ctx.builder.func);
+        let count_val = ctx.builder.ins().iconst(types::I64, fp_arg_count as i64);
+        let call_inst = ctx.builder.ins().call(local_set_al, &[count_val, addr]);
+        Ok(ctx.builder.inst_results(call_inst)[1]) // Return the address (RDX)
+    } else {
+        Ok(addr)
+    }
+}
+
 fn emit_bool_to_int(val: Value, target_type: Type, builder: &mut FunctionBuilder) -> Value {
     let one = builder.ins().iconst(target_type, 1);
     let zero = builder.ins().iconst(target_type, 0i64);
@@ -1691,7 +1739,6 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
                         ctx.builder.ins().stack_store(alloc_ptr, *stack_slot, 0);
                     } else {
-                        eprintln!("Warning: Stack slot not found for local {}", local_id.get());
                     }
                 }
                 _ => {
@@ -1963,6 +2010,9 @@ pub(crate) struct MirToCraneliftLowerer {
 
     // Variadic spill area for the current function
     va_spill_slot: Option<StackSlot>,
+
+    triple: Triple,
+    set_al_func: Option<FuncId>,
 }
 
 /// NOTE: we use panic!() to ICE because codegen rely on correct MIR, so if we give invalid MIR, then problem is in previous phase
@@ -1972,7 +2022,7 @@ impl MirToCraneliftLowerer {
         let mut flag_builder = cranelift::prelude::settings::builder();
         flag_builder.set("is_pic", "true").unwrap();
         let builder = ObjectBuilder::new(
-            cranelift::prelude::isa::lookup(triple)
+            cranelift::prelude::isa::lookup(triple.clone())
                 .unwrap()
                 .finish(cranelift::prelude::settings::Flags::new(flag_builder))
                 .unwrap(),
@@ -1993,6 +2043,8 @@ impl MirToCraneliftLowerer {
             func_id_map: HashMap::new(),
             data_id_map: HashMap::new(),
             va_spill_slot: None,
+            triple,
+            set_al_func: None,
         }
     }
 
@@ -2210,6 +2262,8 @@ impl MirToCraneliftLowerer {
                 worklist: &mut worklist,
                 return_type: return_type_opt,
                 func_id_map: &self.func_id_map,
+                triple: &self.triple,
+                set_al_func: &mut self.set_al_func,
             };
 
             // Process statements
@@ -2245,4 +2299,40 @@ impl MirToCraneliftLowerer {
 
         Ok(())
     }
+}
+
+/// Internal helper for variadic calls on x86_64 SysV
+fn emit_cendol_set_al(module: &mut ObjectModule) -> Result<FuncId, String> {
+    let mut sig = Signature::new(cranelift::codegen::isa::CallConv::SystemV);
+    sig.params.push(AbiParam::new(types::I64)); // count
+    sig.params.push(AbiParam::new(types::I64)); // addr
+    sig.returns.push(AbiParam::new(types::I64)); // count (RAX)
+    sig.returns.push(AbiParam::new(types::I64)); // addr (RDX)
+
+    let func_id = module
+        .declare_function("__cendol_set_al", Linkage::Export, &sig)
+        .map_err(|e| format!("Failed to declare __cendol_set_al: {:?}", e))?;
+
+    let mut ctx = cranelift::codegen::Context::new();
+    ctx.func.signature = sig;
+
+    let mut func_ctx = FunctionBuilderContext::new();
+    let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+
+    let block = builder.create_block();
+    builder.append_block_params_for_function_params(block);
+    builder.switch_to_block(block);
+    builder.seal_block(block);
+
+    let count = builder.block_params(block)[0];
+    let addr = builder.block_params(block)[1];
+    builder.ins().return_(&[count, addr]);
+
+    builder.finalize();
+
+    module
+        .define_function(func_id, &mut ctx)
+        .map_err(|e| format!("Failed to define __cendol_set_al: {:?}", e))?;
+
+    Ok(func_id)
 }

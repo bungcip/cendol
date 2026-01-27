@@ -571,3 +571,22 @@ fn test_indirect_variadic_call_validation() {
         CompilePhase::Cranelift,
     );
 }
+
+#[test]
+fn test_extern_variadic_printf_float() {
+    let source = r#"
+        int printf(const char *fmt, ...);
+        int main() {
+            printf("%f", 1.0);
+            return 0;
+        }
+    "#;
+    let clif_dump = setup_cranelift(source);
+    // Ensure the signature matches SystemV ABI (i64, f64) and not the 16-slot padded version.
+    // We expect the external function declaration to reflect this.
+    assert!(
+        clif_dump.contains("(i64, f64) -> i32 system_v"),
+        "printf signature mismatch in CLIF:\n{}",
+        clif_dump
+    );
+}

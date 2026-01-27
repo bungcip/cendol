@@ -423,6 +423,19 @@ fn test_invalid_alignas_zero() {
 }
 
 #[test]
+fn test_incomplete_array_in_union() {
+    run_fail_with_message(
+        r#"
+        union U {
+            int x[];
+        };
+        "#,
+        CompilePhase::Mir,
+        "incomplete/VLA array in union",
+    );
+}
+
+#[test]
 fn test_variable_of_void_type() {
     run_fail_with_message(
         r#"

@@ -1,0 +1,14 @@
+---
+source: src/tests/lexer.rs
+expression: tokens
+---
+- Int
+- Identifier: x
+- Assign
+- IntegerConstant: 1
+- Semicolon
+- Int
+- Identifier: y
+- Assign
+- IntegerConstant: 2
+- Semicolon

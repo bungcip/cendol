@@ -491,3 +491,29 @@ fn test_hex_float_literal() {
         ("0x1P+1", PPTokenKind::Number(_)),
     );
 }
+
+/// Test character literals with escape sequences
+#[test]
+fn test_char_literal_escapes() {
+    let source = r"'\1' '\10' '\100' '\x01' '\x0e' '\x10' '\x40'";
+    let mut lexer = create_test_pp_lexer(source);
+
+    // '\1' is octal 1 -> 1
+    // '\10' is octal 10 -> 8
+    // '\100' is octal 100 -> 64
+    // '\x01' is hex 1 -> 1
+    // '\x0e' is hex E -> 14
+    // '\x10' is hex 10 -> 16
+    // '\x40' is hex 40 -> 64
+
+    test_tokens!(
+        lexer,
+        (r"'\1'", PPTokenKind::CharLiteral(1, _)),
+        (r"'\10'", PPTokenKind::CharLiteral(8, _)),
+        (r"'\100'", PPTokenKind::CharLiteral(64, _)),
+        (r"'\x01'", PPTokenKind::CharLiteral(1, _)),
+        (r"'\x0e'", PPTokenKind::CharLiteral(14, _)),
+        (r"'\x10'", PPTokenKind::CharLiteral(16, _)),
+        (r"'\x40'", PPTokenKind::CharLiteral(64, _)),
+    );
+}

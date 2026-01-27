@@ -365,6 +365,7 @@ fn prepare_call_signature(
     args: &[Operand],
     mir: &MirProgram,
     is_variadic: bool,
+    use_variadic_hack: bool,
 ) -> Signature {
     let mut sig = Signature::new(call_conv);
 
@@ -406,21 +407,27 @@ fn prepare_call_signature(
             }
         }
         let mut arg_type = get_operand_clif_type(arg, mir).unwrap_or(types::I32);
-        // Normalized Variadic Signature hack: promote variadic GPR args to i64
-        if is_variadic && arg_type.is_int() && arg_type.bits() < 64 {
-            arg_type = types::I64;
+
+        if use_variadic_hack {
+            // Normalized Variadic Signature hack: promote variadic GPR args to i64
+            if is_variadic && arg_type.is_int() && arg_type.bits() < 64 {
+                arg_type = types::I64;
+            }
         }
+
         sig.params.push(AbiParam::new(arg_type));
     }
 
-    // Normalized Variadic Signature hack: Ensure at least 16 slots for variadic functions
-    // This matches the 16-slot spill area in setup_signature
-    if is_variadic {
-        let current_gpr_count = sig.params.len();
-        let total_variadic_slots = 16;
-        if current_gpr_count < total_variadic_slots {
-            for _ in 0..(total_variadic_slots - current_gpr_count) {
-                sig.params.push(AbiParam::new(types::I64));
+    if use_variadic_hack {
+        // Normalized Variadic Signature hack: Ensure at least 16 slots for variadic functions
+        // This matches the 16-slot spill area in setup_signature
+        if is_variadic {
+            let current_gpr_count = sig.params.len();
+            let total_variadic_slots = 16;
+            if current_gpr_count < total_variadic_slots {
+                for _ in 0..(total_variadic_slots - current_gpr_count) {
+                    sig.params.push(AbiParam::new(types::I64));
+                }
             }
         }
     }
@@ -508,7 +515,7 @@ fn emit_function_call_impl(
     ctx: &mut BodyEmitContext,
 ) -> Result<Value, String> {
     // 1. Determine function properties and callee address if indirect/variadic
-    let (return_type_id, param_types, is_variadic, name_linkage, target_addr) = match call_target {
+    let (return_type_id, param_types, is_variadic, name_linkage, target_addr, use_variadic_hack) = match call_target {
         CallTarget::Direct(func_id) => {
             let func = ctx.mir.get_function(*func_id);
             let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
@@ -518,6 +525,7 @@ fn emit_function_call_impl(
                 func.is_variadic,
                 Some((func.name.as_str(), convert_linkage(func.kind))),
                 None,
+                matches!(func.kind, MirFunctionKind::Defined),
             )
         }
         CallTarget::Indirect(func_operand) => {
@@ -551,7 +559,9 @@ fn emit_function_call_impl(
                 resolve_operand(func_operand, ctx, types::I64)?
             };
 
-            (return_type_id, param_types, is_variadic_call, None, Some(callee_val))
+            // Assuming function pointers point to internal functions requiring the hack.
+            // TODO: Distinguish between internal and external function pointers if possible.
+            (return_type_id, param_types, is_variadic_call, None, Some(callee_val), true)
         }
     };
 
@@ -563,6 +573,7 @@ fn emit_function_call_impl(
         args,
         ctx.mir,
         is_variadic,
+        use_variadic_hack,
     );
 
     let arg_values = resolve_call_args(args, param_types.len(), &sig, ctx, is_variadic)?;
@@ -578,6 +589,7 @@ fn emit_function_call_impl(
                 &[],
                 ctx.mir,
                 is_variadic,
+                use_variadic_hack,
             );
             let decl = ctx
                 .module
@@ -1852,7 +1864,7 @@ fn setup_signature(
         param_types.push(param_type);
     }
 
-    if func.is_variadic {
+    if func.is_variadic && matches!(func.kind, MirFunctionKind::Defined) {
         // Add 16 total I64 parameters to capture variadic arguments (6 GPRs + 10 stack slots)
         // This allows variadic functions to receive many struct args that expand to multiple I64s
         let fixed_params_count = func.params.len();

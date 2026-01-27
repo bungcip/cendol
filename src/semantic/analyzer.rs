@@ -484,6 +484,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some((QualType::unqualified(self.registry.type_int), lhs_promoted))
             }
 
+            // Shift operations
+            BinaryOp::LShift | BinaryOp::RShift => {
+                // C11 6.5.7: result is type of promoted left operand
+                Some((lhs_promoted, lhs_promoted))
+            }
+
             // For other operations, use usual arithmetic conversions
             _ => {
                 let ty = usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted)?;

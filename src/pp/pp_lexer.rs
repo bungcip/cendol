@@ -298,13 +298,17 @@ impl PPLexer {
     /// Peek at the next character without consuming it, handling line splicing
     pub(crate) fn peek_char(&mut self) -> Option<u8> {
         let saved_position = self.position;
-        let saved_line_starts = self.line_starts.clone();
+        // ⚡ Bolt: Avoid cloning `line_starts` by saving its length.
+        // `next_char` only ever appends to this vector, so we can restore its
+        // state by truncating it to its original length. This is a significant
+        // performance win as `peek_char` is called frequently.
+        let saved_line_starts_len = self.line_starts.len();
 
         let result = self.next_char();
 
         // Restore state
         self.position = saved_position;
-        self.line_starts = saved_line_starts;
+        self.line_starts.truncate(saved_line_starts_len);
 
         result
     }

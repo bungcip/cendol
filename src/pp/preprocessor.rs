@@ -185,53 +185,28 @@ impl HeaderSearch {
     pub(crate) fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
         if is_angled {
             // Angled includes: search angled_includes, then system_path, then framework_path
-            for include_path_str in &self.angled_includes {
-                let candidate = Path::new(include_path_str).join(include_path);
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-            for search_path in &self.system_path {
-                let candidate = search_path.join(include_path);
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-            for search_path in &self.framework_path {
-                let candidate = search_path.join(include_path);
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
+            self.check_paths(&self.angled_includes, include_path)
+                .or_else(|| self.check_paths(&self.system_path, include_path))
+                .or_else(|| self.check_paths(&self.framework_path, include_path))
         } else {
             // Quoted includes: search current_dir, then quoted_includes, then angled_includes, then system_path, then framework_path
             let candidate = current_dir.join(include_path);
             if candidate.exists() {
                 return Some(candidate);
             }
-            for include_path_str in &self.quoted_includes {
-                let candidate = Path::new(include_path_str).join(include_path);
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-            for include_path_str in &self.angled_includes {
-                let candidate = Path::new(include_path_str).join(include_path);
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-            for search_path in &self.system_path {
-                let candidate = search_path.join(include_path);
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-            for search_path in &self.framework_path {
-                let candidate = search_path.join(include_path);
-                if candidate.exists() {
-                    return Some(candidate);
-                }
+            self.check_paths(&self.quoted_includes, include_path)
+                .or_else(|| self.check_paths(&self.angled_includes, include_path))
+                .or_else(|| self.check_paths(&self.system_path, include_path))
+                .or_else(|| self.check_paths(&self.framework_path, include_path))
+        }
+    }
+
+    /// Helper to check a list of paths for an include file
+    fn check_paths<P: AsRef<Path>>(&self, paths: &[P], include_path: &str) -> Option<PathBuf> {
+        for path in paths {
+            let candidate = path.as_ref().join(include_path);
+            if candidate.exists() {
+                return Some(candidate);
             }
         }
         None
@@ -749,6 +724,30 @@ impl<'src> Preprocessor<'src> {
         } else {
             ""
         }
+    }
+
+    /// Convert a list of tokens to a path string
+    fn tokens_to_path_string(&self, tokens: &[PPToken]) -> String {
+        // Bolt ⚡: Use a two-pass approach to build the path string efficiently.
+        // This avoids multiple reallocations from push_str in a loop, a known
+        // performance anti-pattern in this codebase.
+        // 1. Calculate the total length of the path.
+        let total_len = tokens.iter().map(|part| part.length as usize).sum();
+
+        // 2. Allocate the string with the exact capacity.
+        let mut path = String::with_capacity(total_len);
+
+        // 3. Populate the string.
+        for part in tokens.iter() {
+            let buffer = self.source_manager.get_buffer(part.location.source_id());
+            let start = part.location.offset() as usize;
+            let end = start + part.length as usize;
+            if end <= buffer.len() {
+                let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
+                path.push_str(text);
+            }
+        }
+        path
     }
 
     /// Check if a header exists
@@ -1442,25 +1441,7 @@ impl<'src> Preprocessor<'src> {
                         _ => path_parts.push(part_token),
                     }
                 }
-                // Bolt ⚡: Use a two-pass approach to build the path string efficiently.
-                // This avoids multiple reallocations from push_str in a loop, a known
-                // performance anti-pattern in this codebase.
-                // 1. Calculate the total length of the path.
-                let total_len = path_parts.iter().map(|part| part.length as usize).sum();
-
-                // 2. Allocate the string with the exact capacity.
-                let mut path = String::with_capacity(total_len);
-
-                // 3. Populate the string.
-                for part in path_parts.iter() {
-                    let buffer = self.source_manager.get_buffer(part.location.source_id());
-                    let start = part.location.offset() as usize;
-                    let end = start + part.length as usize;
-                    if end <= buffer.len() {
-                        let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
-                        path.push_str(text);
-                    }
-                }
+                let path = self.tokens_to_path_string(&path_parts);
                 (path, true)
             }
             _ => {
@@ -1517,7 +1498,7 @@ impl<'src> Preprocessor<'src> {
                                 greater_index = i;
                                 break;
                             }
-                            path_parts.push(t);
+                            path_parts.push(*t);
                         }
 
                         if !found_greater {
@@ -1542,17 +1523,7 @@ impl<'src> Preprocessor<'src> {
                         }
 
                         // Build string
-                        let total_len: usize = path_parts.iter().map(|part| part.length as usize).sum();
-                        let mut path = String::with_capacity(total_len);
-                        for part in path_parts {
-                            let buffer = self.source_manager.get_buffer(part.location.source_id());
-                            let start = part.location.offset() as usize;
-                            let end = start + part.length as usize;
-                            if end <= buffer.len() {
-                                let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
-                                path.push_str(text);
-                            }
-                        }
+                        let path = self.tokens_to_path_string(&path_parts);
                         (path, true)
                     }
                     _ => return Err(PPError::InvalidIncludePath),

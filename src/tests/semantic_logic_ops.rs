@@ -9,8 +9,16 @@ fn test_sizeof_logic_not_is_int_size() {
     }
     "#;
     let mir = setup_mir(src);
-    assert!(mir.contains("const 4"), "MIR should contain constant 4 (sizeof int). Dump:\n{}", mir);
-    assert!(!mir.contains("const 1"), "MIR should NOT contain constant 1 (sizeof bool). Dump:\n{}", mir);
+    assert!(
+        mir.contains("const 4"),
+        "MIR should contain constant 4 (sizeof int). Dump:\n{}",
+        mir
+    );
+    assert!(
+        !mir.contains("const 1"),
+        "MIR should NOT contain constant 1 (sizeof bool). Dump:\n{}",
+        mir
+    );
 }
 
 #[test]
@@ -23,7 +31,11 @@ fn test_sizeof_logic_and_is_int_size() {
     "#;
     let mir = setup_mir(src);
     assert!(mir.contains("const 4"), "MIR should contain constant 4. Dump:\n{}", mir);
-    assert!(!mir.contains("const 1"), "MIR should NOT contain constant 1. Dump:\n{}", mir);
+    assert!(
+        !mir.contains("const 1"),
+        "MIR should NOT contain constant 1. Dump:\n{}",
+        mir
+    );
 }
 
 #[test]
@@ -36,5 +48,9 @@ fn test_sizeof_logic_or_is_int_size() {
     "#;
     let mir = setup_mir(src);
     assert!(mir.contains("const 4"), "MIR should contain constant 4. Dump:\n{}", mir);
-    assert!(!mir.contains("const 1"), "MIR should NOT contain constant 1. Dump:\n{}", mir);
+    assert!(
+        !mir.contains("const 1"),
+        "MIR should NOT contain constant 1. Dump:\n{}",
+        mir
+    );
 }

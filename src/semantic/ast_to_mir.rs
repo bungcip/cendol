@@ -399,7 +399,7 @@ impl<'a> AstToMirLowerer<'a> {
                 .create_global_with_init(global_name, mir_type_id, false, final_init);
 
             if let Some(align) = alignment {
-                self.mir_builder.set_global_alignment(global_id, align as u32);
+                self.mir_builder.set_global_alignment(global_id, align);
             }
 
             self.global_map.insert(entry_ref, global_id);
@@ -420,7 +420,7 @@ impl<'a> AstToMirLowerer<'a> {
         let local_id = self.mir_builder.create_local(Some(name), mir_type_id, false);
 
         if let Some(align) = alignment {
-            self.mir_builder.set_local_alignment(local_id, align as u32);
+            self.mir_builder.set_local_alignment(local_id, align);
         }
 
         self.local_map.insert(entry_ref, local_id);
@@ -836,7 +836,7 @@ impl<'a> AstToMirLowerer<'a> {
         };
 
         let record_type = MirType::Record {
-            name: NameId::new("__va_list_tag".to_string()),
+            name: NameId::new("__va_list_tag"),
             field_types: vec![u32_id, u32_id, u64_id, u64_id],
             field_names: Vec::new(),
             is_union: false,

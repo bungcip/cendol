@@ -901,12 +901,11 @@ impl PPLexer {
 
             // Check for UTF-8
             if let Some(ch) = self.peek_char() {
-                if ch >= 0x80 {
-                    if self.is_valid_utf8_start(ch) {
-                        let saved_pos = self.position;
-                        let saved_lines = self.line_starts.clone();
+                if ch >= 0x80 && self.is_valid_utf8_start(ch) {
+                    let saved_pos = self.position;
+                    let saved_lines = self.line_starts.clone();
 
-                        self.next_char(); // consume first
+                    self.next_char(); // consume first
                         let mut bytes = vec![ch];
                         while let Some(cont) = self.peek_char() {
                             if (0x80..0xC0).contains(&cont) {
@@ -927,7 +926,6 @@ impl PPLexer {
                         }
                         continue;
                     }
-                }
 
                 if ch.is_ascii_alphanumeric() || ch == b'_' {
                     self.next_char();
@@ -987,13 +985,13 @@ impl PPLexer {
                         // Valid UCN. Append raw bytes.
                         // \ is already pushed. raw contains \u...
                         // So append raw[1..]
-                        chars.extend_from_slice(raw[1..].as_bytes());
+                        chars.extend_from_slice(&raw.as_bytes()[1..]);
                         continue;
                     }
                     Some(Err(raw)) => {
                         // Invalid UCN.
                         *has_invalid_ucn = true;
-                        chars.extend_from_slice(raw[1..].as_bytes());
+                        chars.extend_from_slice(&raw.as_bytes()[1..]);
                         continue;
                     }
                     None => {

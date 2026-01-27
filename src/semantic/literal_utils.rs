@@ -52,11 +52,7 @@ pub fn parse_string_literal(name: NameId) -> ParsedStringLiteral {
 
 fn parse_prefixed(content_raw: &str, kind: StringLiteralKind, builtin_type: BuiltinType) -> ParsedStringLiteral {
     // Remove trailing quote
-    let content_raw = if content_raw.ends_with('"') {
-        &content_raw[..content_raw.len() - 1]
-    } else {
-        content_raw
-    };
+    let content_raw = content_raw.strip_suffix('"').unwrap_or(content_raw);
 
     let content = Lexer::unescape_string(content_raw);
     let mut values = Vec::new();

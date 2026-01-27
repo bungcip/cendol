@@ -224,6 +224,13 @@ impl TypeRef {
         unsafe { TypeRef(NonZeroU32::new_unchecked(n)) }
     }
 
+    /// Create a dummy TypeRef (value 1) for initialization placeholders.
+    /// This is safe because 1 is a valid NonZeroU32, though the TypeRef might not be valid in the registry yet.
+    #[inline]
+    pub(crate) fn dummy() -> Self {
+        unsafe { Self::from_raw_unchecked(1) }
+    }
+
     #[inline]
     pub fn get(self) -> u32 {
         self.raw()

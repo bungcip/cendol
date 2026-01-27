@@ -2387,15 +2387,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::Default(stmt) => {
                 self.collect_labels(*stmt);
             }
-            ParsedNodeKind::ExpressionStatement(expr) => {
-                if let Some(e) = expr {
-                    self.collect_labels(*e);
-                }
+            ParsedNodeKind::ExpressionStatement(Some(e)) => {
+                self.collect_labels(*e);
             }
-            ParsedNodeKind::Return(expr) => {
-                if let Some(e) = expr {
-                    self.collect_labels(*e);
-                }
+            ParsedNodeKind::Return(Some(e)) => {
+                self.collect_labels(*e);
             }
             ParsedNodeKind::GnuStatementExpression(stmt, _) => {
                 self.collect_labels(*stmt);

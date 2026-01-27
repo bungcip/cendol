@@ -460,7 +460,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
 
         let align = elem_layout.alignment;
-        let stride = elem_layout.size as u16;
+        let stride = elem_layout.size;
         // let total_size = (stride as usize * size) as u16;
 
         let array_ty = self.mir_builder.add_type(MirType::Array {

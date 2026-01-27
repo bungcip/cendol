@@ -318,12 +318,18 @@ impl<'a> AstToMirLowerer<'a> {
             SymbolKind::Variable { is_global, storage, .. } => {
                 let is_static_local = *storage == Some(crate::ast::StorageClass::Static);
                 if *is_global || is_static_local {
-                    // Global variables should have been lowered already if we are visiting in order.
+                    // Lazy lowering for globals/statics (e.g. __func__) that might not be lowered yet
+                    if !self.global_map.contains_key(&resolved_ref) {
+                        let ty_info = entry.type_info;
+                        let mir_type_id = self.lower_qual_type(ty_info);
+                        self.lower_variable_symbol(resolved_ref, mir_type_id);
+                    }
+
                     let global_id = match self.global_map.get(&resolved_ref) {
                         Some(id) => id,
                         None => {
                             panic!(
-                                "Global variable '{}' not found in MIR map. Visited? {:?}",
+                                "Global variable '{}' not found in MIR map even after lazy lowering attempt. Visited? {:?}",
                                 entry.name,
                                 self.global_map.keys()
                             );

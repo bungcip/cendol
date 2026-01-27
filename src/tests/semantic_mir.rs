@@ -43,7 +43,7 @@ mod tests {
             return const 2
 
           bb4:
-            unreachable
+            return const 0
         }
         ");
     }

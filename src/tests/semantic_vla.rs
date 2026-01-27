@@ -91,7 +91,7 @@ mod tests {
           bb1:
             %n = const 10
             %m = const 5
-            unreachable
+            return
         }
         ");
     }

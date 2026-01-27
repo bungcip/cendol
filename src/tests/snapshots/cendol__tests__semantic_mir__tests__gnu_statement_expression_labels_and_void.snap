@@ -1,6 +1,5 @@
 ---
 source: src/tests/semantic_mir.rs
-assertion_line: 1440
 expression: mir_dump
 ---
 type %t0 = i32
@@ -50,7 +49,7 @@ fn kb_wait_1() -> void
     cond_br const 1, bb6, bb7
 
   bb5:
-    unreachable
+    return
 
   bb6:
     call printf(cast<ptr<i8>>(const @.L.str0), %timeout)

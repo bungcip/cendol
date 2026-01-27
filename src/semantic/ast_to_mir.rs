@@ -273,22 +273,6 @@ impl<'a> AstToMirLowerer<'a> {
         let symbol_entry = self.symbol_table.get_symbol(function_data.symbol);
         let func_name = symbol_entry.name;
 
-        // Pre-lower __func__ if present
-        if let Some(scope) = self
-            .symbol_table
-            .get_scope(function_data.scope_id)
-            .symbols
-            .get(&crate::intern::StringId::new("__func__"))
-        {
-            let sym_ref = *scope;
-            let symbol = self.symbol_table.get_symbol(sym_ref);
-            if let SymbolKind::Variable { .. } = symbol.kind {
-                let ty = symbol.type_info;
-                let mir_type_id = self.lower_qual_type(ty);
-                self.lower_variable_symbol(sym_ref, mir_type_id);
-            }
-        }
-
         // Find the existing function in the MIR builder. It should have been created by the pre-pass.
         let func_id = self
             .mir_builder
@@ -325,6 +309,26 @@ impl<'a> AstToMirLowerer<'a> {
 
         self.lower_node_ref(function_data.body);
 
+        // Handle implicit return if control falls off the end
+        if !self.mir_builder.current_block_has_terminator() {
+            let func_def = self.mir_builder.get_functions().get(&func_id).unwrap();
+            let ret_ty_id = func_def.return_type;
+            let ret_ty = self.mir_builder.get_type(ret_ty_id);
+
+            if matches!(ret_ty, crate::mir::MirType::Void) {
+                self.mir_builder.set_terminator(crate::mir::Terminator::Return(None));
+            } else if func_name.to_string() == "main" && ret_ty.is_int() {
+                // main() implicitly returns 0
+                let zero = self.create_int_operand(0);
+                self.mir_builder
+                    .set_terminator(crate::mir::Terminator::Return(Some(zero)));
+            } else {
+                // Falling off the end of a non-void function is undefined behavior.
+                // We leave it as Unreachable (default) or explicitly set it.
+                self.mir_builder.set_terminator(crate::mir::Terminator::Unreachable);
+            }
+        }
+
         self.current_function = None;
         self.current_block = None;
     }
@@ -339,7 +343,7 @@ impl<'a> AstToMirLowerer<'a> {
         self.lower_variable_symbol(entry_ref, mir_type_id);
     }
 
-    fn lower_variable_symbol(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
+    pub(crate) fn lower_variable_symbol(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(entry_ref);
         let (is_global_sym, storage) = if let SymbolKind::Variable { is_global, storage, .. } = symbol.kind {
             (is_global, storage)

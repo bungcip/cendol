@@ -1,6 +1,5 @@
 ---
 source: src/tests/semantic_struct_copy.rs
-assertion_line: 18
 expression: mir
 ---
 type %t0 = i32
@@ -26,5 +25,5 @@ fn inc_global() -> void
 
   bb1:
     @global = @global + const 1
-    unreachable
+    return
 }

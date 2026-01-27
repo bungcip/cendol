@@ -1,6 +1,5 @@
 ---
 source: src/tests/parser_attribute_ambiguity.rs
-assertion_line: 16
 expression: resolved
 ---
 Declaration:

@@ -2927,18 +2927,13 @@ impl<'src> Preprocessor<'src> {
         let mut depth = 0;
         const MAX_DEPTH: usize = 100;
 
-        // println!("Checking recursion for {} starting at {:?}", macro_name, current_id);
-
         while depth < MAX_DEPTH {
             if let Some(file_info) = self.source_manager.get_file_info(current_id) {
-                // println!("  Depth {}: Path {}", depth, file_info.path.display());
-
                 // Check if this file is a virtual buffer for the macro
                 // Virtual buffers for macros are named "<macro_{name}>"
                 let expected_name = format!("<macro_{}>", macro_name);
                 let path_str = file_info.path.to_string_lossy();
                 if path_str == expected_name {
-                    // println!("  -> FOUND RECURSION");
                     return true;
                 }
 
@@ -2947,7 +2942,6 @@ impl<'src> Preprocessor<'src> {
                     current_id = include_loc.source_id();
                 } else {
                     // Reached top-level file or built-in
-                    // println!("  -> Top-level reached");
                     break;
                 }
             } else {

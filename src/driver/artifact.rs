@@ -29,7 +29,7 @@ pub struct CompileArtifact {
     pub lexed: Option<Vec<Token>>,
     pub parsed_ast: Option<ParsedAst>,
     pub ast: Option<Ast>,
-    pub sema_output: Option<MirProgram>,
+    pub mir_program: Option<MirProgram>,
     pub clif_dump: Option<String>,
     pub object_file: Option<Vec<u8>>,
     pub type_registry: Option<TypeRegistry>,

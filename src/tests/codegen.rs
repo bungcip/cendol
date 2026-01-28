@@ -38,12 +38,12 @@ fn test_emit_const_struct_literal() {
     let struct_const_id = builder.create_constant(struct_type_id, struct_const_kind);
 
     // 3. Get MirProgram
-    let sema_output = builder.consume();
+    let mir = builder.consume();
 
     // 4. Emit Constant
     let mut output = Vec::new();
     let ctx = EmitContext {
-        mir: &sema_output,
+        mir: &mir,
         func_id_map: &hashbrown::HashMap::new(),
         data_id_map: &hashbrown::HashMap::new(),
     };
@@ -90,8 +90,8 @@ fn test_store_statement_lowering() {
     builder.set_terminator(Terminator::Return(None));
 
     // 6. Compile
-    let sema_output = builder.consume();
-    let lowerer = MirToCraneliftLowerer::new(sema_output);
+    let mir = builder.consume();
+    let lowerer = MirToCraneliftLowerer::new(mir);
     let result = lowerer.compile_module(EmitKind::Clif);
 
     // 7. Assert
@@ -149,8 +149,8 @@ fn test_store_deref_pointer() {
 
     builder.set_terminator(Terminator::Return(None));
 
-    let sema_output = builder.consume();
-    let lowerer = MirToCraneliftLowerer::new(sema_output);
+    let mir = builder.consume();
+    let lowerer = MirToCraneliftLowerer::new(mir);
     let result = lowerer.compile_module(EmitKind::Clif);
 
     match result {
@@ -283,8 +283,8 @@ fn test_alloc_dealloc_codegen() {
 
     builder.set_terminator(Terminator::Return(None));
 
-    let sema_output = builder.consume();
-    let lowerer = MirToCraneliftLowerer::new(sema_output);
+    let mir = builder.consume();
+    let lowerer = MirToCraneliftLowerer::new(mir);
     let result = lowerer.compile_module(EmitKind::Clif);
 
     match result {
@@ -394,8 +394,8 @@ fn test_indirect_function_call() {
     ))))));
 
     // Compile
-    let sema_output = builder.consume();
-    let lowerer = MirToCraneliftLowerer::new(sema_output);
+    let mir = builder.consume();
+    let lowerer = MirToCraneliftLowerer::new(mir);
     let result = lowerer.compile_module(EmitKind::Clif);
 
     match result {
@@ -483,8 +483,8 @@ fn test_global_function_pointer_init() {
         builder.create_global_with_init(NameId::new("ptr"), func_ptr_type_id, false, Some(func_addr_const_id));
 
     // Compile
-    let sema_output = builder.consume();
-    let lowerer = MirToCraneliftLowerer::new(sema_output);
+    let mir = builder.consume();
+    let lowerer = MirToCraneliftLowerer::new(mir);
     let result = lowerer.compile_module(EmitKind::Clif);
 
     match result {

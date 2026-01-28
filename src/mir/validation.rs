@@ -102,48 +102,51 @@ impl std::fmt::Display for ValidationError {
 ///
 /// This pass validates that MIR is well-formed and ready for code generation.
 /// It performs comprehensive checks but does not modify the MIR.
-#[derive(Default)]
-pub struct MirValidator {
+pub struct MirValidator<'a> {
+    mir: &'a MirProgram,
     errors: Vec<ValidationError>,
 }
 
-impl MirValidator {
+impl<'a> MirValidator<'a> {
     /// Create a new MIR validator
-    pub(crate) fn new() -> Self {
-        Self { errors: Vec::new() }
+    pub(crate) fn new(mir_program: &'a MirProgram) -> Self {
+        Self {
+            mir: mir_program,
+            errors: Vec::new(),
+        }
     }
 
     /// Validate a MIR module
     ///
     /// Returns Ok(()) if validation passes, or Err(Vec<ValidationError>) if errors are found
-    pub(crate) fn validate(&mut self, sema_output: &MirProgram) -> Result<(), Vec<ValidationError>> {
+    pub(crate) fn validate(&mut self) -> Result<(), Vec<ValidationError>> {
         // eprintln!("VALIDATE: Starting validation");
         self.errors.clear();
 
         // Validate the module structure
-        self.validate_module(&sema_output.module);
+        self.validate_module(&self.mir.module);
 
         // Validate each function
-        for func_id in &sema_output.module.functions {
-            if let Some(func) = sema_output.functions.get(func_id) {
-                self.validate_function(sema_output, func);
+        for func_id in &self.mir.module.functions {
+            if let Some(func) = self.mir.functions.get(func_id) {
+                self.validate_function(func);
             } else {
                 self.errors.push(ValidationError::FunctionNotFound(*func_id));
             }
         }
 
         // Validate each global
-        for global_id in &sema_output.module.globals {
-            if sema_output.globals.get(global_id).is_none() {
+        for global_id in &self.mir.module.globals {
+            if self.mir.globals.get(global_id).is_none() {
                 self.errors.push(ValidationError::GlobalNotFound(*global_id));
             }
         }
 
         // Validate each type - module.types is a Vec<Type>, not HashMap<TypeId, Type>
         // So we validate that each type in the module is accessible via the types HashMap
-        for (index, _) in sema_output.module.types.iter().enumerate() {
+        for (index, _) in self.mir.module.types.iter().enumerate() {
             let type_id = TypeId::new((index + 1) as u32).unwrap(); // Types are 1-indexed
-            if !sema_output.types.contains_key(&type_id) {
+            if !self.mir.types.contains_key(&type_id) {
                 self.errors.push(ValidationError::TypeNotFound(type_id));
             }
         }
@@ -165,71 +168,33 @@ impl MirValidator {
     }
 
     /// Validate that a constant value can be cast to the target type
-    fn validate_constant_cast(
-        &mut self,
-        sema_output: &MirProgram,
-        const_id: ConstValueId,
-        const_value: &ConstValue,
-        target_type_id: TypeId,
-    ) {
-        // eprintln!(
-        //     "VALIDATING CAST: const {} value {:?} to type {:?}",
-        //     const_id.get(),
-        //     const_value,
-        //     target_type_id.get()
-        // );
-        if let Some(target_ty) = sema_output.types.get(&target_type_id) {
-            match (&const_value.kind, target_ty) {
-                (ConstValueKind::Int(value), MirType::I8) | (ConstValueKind::Int(value), MirType::U8) => {
-                    // Allow both signed range [-128, 127] and unsigned range [0, 255]
-                    if *value < -128 || *value > 255 {
-                        self.errors.push(ValidationError::ConstantValueOutOfRange {
-                            const_id,
-                            value: *value,
-                            type_id: target_type_id,
-                        });
-                    }
-                }
-                (ConstValueKind::Int(value), MirType::I16) | (ConstValueKind::Int(value), MirType::U16) => {
-                    // Allow both signed range [-32768, 32767] and unsigned range [0, 65535]
-                    if *value < -32768 || *value > 65535 {
-                        self.errors.push(ValidationError::ConstantValueOutOfRange {
-                            const_id,
-                            value: *value,
-                            type_id: target_type_id,
-                        });
-                    }
-                }
-                (ConstValueKind::Int(value), MirType::I32) | (ConstValueKind::Int(value), MirType::U32) => {
-                    // Allow both signed range [-2147483648, 2147483647] and unsigned range [0, 4294967295]
-                    if *value < -2147483648 || *value > 4294967295 {
-                        self.errors.push(ValidationError::ConstantValueOutOfRange {
-                            const_id,
-                            value: *value,
-                            type_id: target_type_id,
-                        });
-                    }
-                }
-                (ConstValueKind::Int(_value), MirType::I64) | (ConstValueKind::Int(_value), MirType::U64) => {
-                    // i64/u64 can hold any i64 value in our representation
-                }
-                (ConstValueKind::Int(value), MirType::Bool) => {
-                    if *value != 0 && *value != 1 {
-                        self.errors.push(ValidationError::ConstantValueOutOfRange {
-                            const_id,
-                            value: *value,
-                            type_id: target_type_id,
-                        });
-                    }
-                }
-                // For other types or kinds, no validation needed
-                _ => {}
-            }
+    fn validate_constant_cast(&mut self, const_id: ConstValueId, const_value: &ConstValue, target_type_id: TypeId) {
+        let Some(target_ty) = self.mir.types.get(&target_type_id) else {
+            return;
+        };
+        let ConstValueKind::Int(value) = const_value.kind else {
+            return;
+        };
+
+        let (min, max) = match target_ty {
+            MirType::I8 | MirType::U8 => (-128, 255),
+            MirType::I16 | MirType::U16 => (-32_768, 65_535),
+            MirType::I32 | MirType::U32 => (-2_147_483_648, 4_294_967_295),
+            MirType::Bool => (0, 1),
+            _ => return, // No validation for other types
+        };
+
+        if value < min || value > max {
+            self.errors.push(ValidationError::ConstantValueOutOfRange {
+                const_id,
+                value,
+                type_id: target_type_id,
+            });
         }
     }
 
     /// Validate a function
-    fn validate_function(&mut self, sema_output: &MirProgram, func: &MirFunction) {
+    fn validate_function(&mut self, func: &MirFunction) {
         // Function must have a valid ID
         if func.id.get() == 0 {
             self.errors
@@ -248,34 +213,34 @@ impl MirValidator {
             self.errors.push(ValidationError::IllegalOperation(
                 "Function return type cannot be 0".to_string(),
             ));
-        } else if !sema_output.types.contains_key(&func.return_type) {
+        } else if !self.mir.types.contains_key(&func.return_type) {
             self.errors.push(ValidationError::TypeNotFound(func.return_type));
         }
 
         // Validate all parameters
         for param_id in &func.params {
-            if !sema_output.locals.contains_key(param_id) {
+            if !self.mir.locals.contains_key(param_id) {
                 self.errors.push(ValidationError::LocalNotFound(*param_id));
             }
         }
 
         // Validate all locals
         for local_id in &func.locals {
-            if !sema_output.locals.contains_key(local_id) {
+            if !self.mir.locals.contains_key(local_id) {
                 self.errors.push(ValidationError::LocalNotFound(*local_id));
             }
         }
 
         // Validate all blocks
         for block_id in &func.blocks {
-            if !sema_output.blocks.contains_key(block_id) {
+            if !self.mir.blocks.contains_key(block_id) {
                 self.errors.push(ValidationError::BlockNotFound(*block_id));
             }
         }
 
         // Entry block must exist for defined functions
         if let Some(entry_block) = func.entry_block
-            && !sema_output.blocks.contains_key(&entry_block)
+            && !self.mir.blocks.contains_key(&entry_block)
         {
             self.errors.push(ValidationError::BlockNotFound(entry_block));
         }
@@ -283,10 +248,10 @@ impl MirValidator {
         // Validate statements within blocks for defined functions
         if func.kind == MirFunctionKind::Defined {
             for block_id in &func.blocks {
-                if let Some(block) = sema_output.blocks.get(block_id) {
+                if let Some(block) = self.mir.blocks.get(block_id) {
                     for stmt_id in &block.statements {
-                        if let Some(stmt) = sema_output.statements.get(stmt_id) {
-                            self.validate_statement(sema_output, stmt);
+                        if let Some(stmt) = self.mir.statements.get(stmt_id) {
+                            self.validate_statement(stmt);
                         } else {
                             self.errors.push(ValidationError::IllegalOperation(format!(
                                 "Statement {} not found",
@@ -294,212 +259,188 @@ impl MirValidator {
                             )));
                         }
                     }
-                    self.validate_terminator(sema_output, &block.terminator);
+                    self.validate_terminator(&block.terminator);
                 }
             }
         }
     }
 
-    fn validate_statement(&mut self, sema_output: &MirProgram, stmt: &MirStmt) {
+    fn validate_statement(&mut self, stmt: &MirStmt) {
         match stmt {
             MirStmt::Assign(place, rvalue) => {
-                let place_ty = self.validate_place(sema_output, place);
-                let rval_ty = self.validate_rvalue(sema_output, rvalue);
+                let place_ty = self.validate_place(place);
+                let rval_ty = self.validate_rvalue(rvalue);
                 if let (Some(from), Some(to)) = (rval_ty, place_ty)
                     && from != to
+                    && !self.is_flexible_assignment(rvalue, from, to)
+                    && !are_types_compatible(self.mir, from, to)
                 {
-                    // Special case for operations that can return multiple types (bool or int)
-                    let is_flexible = match rvalue {
-                        Rvalue::UnaryIntOp(UnaryIntOp::LogicalNot, _) => true,
-                        Rvalue::BinaryIntOp(bin, _, _) => matches!(
-                            bin,
-                            BinaryIntOp::Eq
-                                | BinaryIntOp::Ne
-                                | BinaryIntOp::Lt
-                                | BinaryIntOp::Le
-                                | BinaryIntOp::Gt
-                                | BinaryIntOp::Ge
-                        ),
-                        Rvalue::BinaryFloatOp(bin, _, _) => matches!(
-                            bin,
-                            BinaryFloatOp::Eq
-                                | BinaryFloatOp::Ne
-                                | BinaryFloatOp::Lt
-                                | BinaryFloatOp::Le
-                                | BinaryFloatOp::Gt
-                                | BinaryFloatOp::Ge
-                        ),
-                        _ => false,
-                    };
-
-                    if is_flexible {
-                        let _bool_ty = self.find_bool_type(sema_output);
-                        let is_bool_or_int = |tid: TypeId| {
-                            if let Some(ty) = sema_output.types.get(&tid) {
-                                ty.is_int()
-                            } else {
-                                false
-                            }
-                        };
-
-                        if is_bool_or_int(from) && is_bool_or_int(to) {
-                            // Allowed for these flexible operations
-                            return;
-                        }
-                    }
-
-                    if !are_types_compatible(sema_output, from, to) {
-                        self.errors.push(ValidationError::InvalidCast(from, to));
-                    }
+                    self.errors.push(ValidationError::InvalidCast(from, to));
                 }
             }
             MirStmt::Store(op, place) => {
-                let op_ty = self.validate_operand(sema_output, op);
-                let place_ty = self.validate_place(sema_output, place);
+                let op_ty = self.validate_operand(op);
+                let place_ty = self.validate_place(place);
                 if let (Some(from), Some(to)) = (op_ty, place_ty)
                     && from != to
-                    && !are_types_compatible(sema_output, from, to)
+                    && !are_types_compatible(self.mir, from, to)
                 {
                     self.errors.push(ValidationError::InvalidCast(from, to));
                 }
             }
             MirStmt::Call { target, args, dest } => {
-                self.validate_call_target(sema_output, target);
-                for a in args {
-                    self.validate_operand(sema_output, a);
-                }
-                if let Some(dest_place) = dest {
-                    self.validate_place(sema_output, dest_place);
-                }
-                // Validate argument types against function signature when possible
-                match target {
-                    CallTarget::Direct(fid) => {
-                        if let Some(func) = sema_output.functions.get(fid) {
-                            // use param locals to get their types
-                            if func.params.len() != args.len() && !func.is_variadic {
-                                self.errors.push(ValidationError::IllegalOperation(format!(
-                                    "Call to function {} arg count mismatch",
-                                    fid.get()
-                                )));
-                            } else {
-                                for (i, arg) in args.iter().enumerate().take(func.params.len()) {
-                                    let param_id = func.params[i];
-                                    if let Some(param) = sema_output.locals.get(&param_id)
-                                        && let Some(arg_ty) = self.validate_operand(sema_output, arg)
-                                        && arg_ty != param.type_id
-                                    {
-                                        self.errors.push(ValidationError::FunctionCallArgTypeMismatch {
-                                            func_name: func.name.to_string(),
-                                            arg_index: i,
-                                            expected_type: param.type_id,
-                                            actual_type: arg_ty,
-                                        });
-                                    }
-                                }
-                            }
-                            // Validate return type if dest is present
-                            if let Some(dest_place) = dest {
-                                let dest_ty = self.validate_place(sema_output, dest_place);
-                                if dest_ty.is_some()
-                                    && let Some(func_ret_ty) = sema_output.types.get(&func.return_type)
-                                    && matches!(func_ret_ty, MirType::Void)
-                                {
-                                    self.errors.push(ValidationError::IllegalOperation(format!(
-                                        "Call to void function {} with destination",
-                                        fid.get()
-                                    )));
-                                }
-                            } else {
-                                // If no dest, function should return void
-                                if let Some(func_ret_ty) = sema_output.types.get(&func.return_type)
-                                    && !matches!(func_ret_ty, MirType::Void)
-                                {
-                                    // Allow ignoring non-void returns (common in C)
-                                }
-                            }
-                        }
-                    }
-                    CallTarget::Indirect(op) => {
-                        if let Some(op_ty) = self.validate_operand(sema_output, op)
-                            && let Some(MirType::Pointer { pointee }) = sema_output.types.get(&op_ty)
-                            && let Some(MirType::Function {
-                                params,
-                                return_type,
-                                is_variadic,
-                            }) = sema_output.types.get(pointee)
-                        {
-                            if (*is_variadic && args.len() < params.len())
-                                || (!*is_variadic && args.len() != params.len())
-                            {
-                                self.errors.push(ValidationError::IllegalOperation(
-                                    "Indirect call argument count mismatch".to_string(),
-                                ));
-                            } else {
-                                for (i, arg) in args.iter().enumerate() {
-                                    if i < params.len() {
-                                        if let Some(arg_ty) = self.validate_operand(sema_output, arg)
-                                            && arg_ty != params[i]
-                                        {
-                                            self.errors.push(ValidationError::FunctionCallArgTypeMismatch {
-                                                func_name: "indirect function".to_string(),
-                                                arg_index: i,
-                                                expected_type: params[i],
-                                                actual_type: arg_ty,
-                                            });
-                                        }
-                                    } else {
-                                        // Variadic arguments, just validate they exist
-                                        self.validate_operand(sema_output, arg);
-                                    }
-                                }
-                            }
-                            // Validate return type if dest is present
-                            if let Some(dest_place) = dest {
-                                let dest_ty = self.validate_place(sema_output, dest_place);
-                                if dest_ty.is_some()
-                                    && let Some(func_ret_ty) = sema_output.types.get(return_type)
-                                    && matches!(func_ret_ty, MirType::Void)
-                                {
-                                    self.errors.push(ValidationError::IllegalOperation(
-                                        "Call to void function via indirect call with destination".to_string(),
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
+                self.validate_call(target, args, dest);
             }
             MirStmt::Alloc(place, type_id) => {
-                self.validate_place(sema_output, place);
-                if !sema_output.types.contains_key(type_id) {
+                self.validate_place(place);
+                if !self.mir.types.contains_key(type_id) {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
             }
             MirStmt::Dealloc(op) => {
-                self.validate_operand(sema_output, op);
+                self.validate_operand(op);
             }
             MirStmt::BuiltinVaStart(ap, last) => {
-                self.validate_place(sema_output, ap);
-                self.validate_operand(sema_output, last);
+                self.validate_place(ap);
+                self.validate_operand(last);
             }
             MirStmt::BuiltinVaEnd(ap) => {
-                self.validate_place(sema_output, ap);
+                self.validate_place(ap);
             }
             MirStmt::BuiltinVaCopy(dst, src) => {
-                self.validate_place(sema_output, dst);
-                self.validate_place(sema_output, src);
+                self.validate_place(dst);
+                self.validate_place(src);
             }
             MirStmt::AtomicStore(ptr, val, _) => {
-                self.validate_operand(sema_output, ptr);
-                self.validate_operand(sema_output, val);
+                self.validate_operand(ptr);
+                self.validate_operand(val);
             }
         }
     }
 
-    fn validate_place(&mut self, sema_output: &MirProgram, place: &Place) -> Option<TypeId> {
+    fn is_flexible_assignment(&self, rvalue: &Rvalue, from: TypeId, to: TypeId) -> bool {
+        let is_flexible_op = match rvalue {
+            Rvalue::UnaryIntOp(UnaryIntOp::LogicalNot, _) => true,
+            Rvalue::BinaryIntOp(bin, ..) => matches!(
+                bin,
+                BinaryIntOp::Eq
+                    | BinaryIntOp::Ne
+                    | BinaryIntOp::Lt
+                    | BinaryIntOp::Le
+                    | BinaryIntOp::Gt
+                    | BinaryIntOp::Ge
+            ),
+            Rvalue::BinaryFloatOp(bin, ..) => matches!(
+                bin,
+                BinaryFloatOp::Eq
+                    | BinaryFloatOp::Ne
+                    | BinaryFloatOp::Lt
+                    | BinaryFloatOp::Le
+                    | BinaryFloatOp::Gt
+                    | BinaryFloatOp::Ge
+            ),
+            _ => false,
+        };
+
+        is_flexible_op && self.mir.get_type(from).is_int() && self.mir.get_type(to).is_int()
+    }
+
+    fn validate_call(&mut self, target: &CallTarget, args: &[Operand], dest: &Option<Place>) {
+        self.validate_call_target(target);
+        for a in args {
+            self.validate_operand(a);
+        }
+        if let Some(dest_place) = dest {
+            self.validate_place(dest_place);
+        }
+
+        match target {
+            CallTarget::Direct(fid) => {
+                if let Some(func) = self.mir.functions.get(fid) {
+                    let param_types: Vec<TypeId> = func
+                        .params
+                        .iter()
+                        .map(|p| self.mir.locals.get(p).unwrap().type_id)
+                        .collect();
+                    self.check_call_signature(
+                        func.name.to_string(),
+                        &param_types,
+                        func.is_variadic,
+                        func.return_type,
+                        args,
+                        dest,
+                    );
+                }
+            }
+            CallTarget::Indirect(op) => {
+                if let Some(op_ty) = self.operand_type(op)
+                    && let Some(MirType::Pointer { pointee }) = self.mir.types.get(&op_ty)
+                    && let Some(MirType::Function {
+                        params,
+                        return_type,
+                        is_variadic,
+                    }) = self.mir.types.get(pointee)
+                {
+                    self.check_call_signature(
+                        "indirect function".to_string(),
+                        params,
+                        *is_variadic,
+                        *return_type,
+                        args,
+                        dest,
+                    );
+                }
+            }
+        }
+    }
+
+    fn check_call_signature(
+        &mut self,
+        name: String,
+        params: &[TypeId],
+        is_variadic: bool,
+        return_type: TypeId,
+        args: &[Operand],
+        dest: &Option<Place>,
+    ) {
+        if (!is_variadic && args.len() != params.len()) || (is_variadic && args.len() < params.len()) {
+            self.errors.push(ValidationError::IllegalOperation(format!(
+                "Call to function {} arg count mismatch",
+                name
+            )));
+            return;
+        }
+
+        for (i, arg) in args.iter().enumerate() {
+            if i < params.len() {
+                if let Some(arg_ty) = self.validate_operand(arg)
+                    && arg_ty != params[i]
+                {
+                    self.errors.push(ValidationError::FunctionCallArgTypeMismatch {
+                        func_name: name.clone(),
+                        arg_index: i,
+                        expected_type: params[i],
+                        actual_type: arg_ty,
+                    });
+                }
+            }
+        }
+
+        if let Some(dest_place) = dest {
+            let _dest_ty = self.validate_place(dest_place);
+            if let Some(MirType::Void) = self.mir.types.get(&return_type) {
+                self.errors.push(ValidationError::IllegalOperation(format!(
+                    "Call to void function {} with destination",
+                    name
+                )));
+            }
+        }
+    }
+
+    fn validate_place(&mut self, place: &Place) -> Option<TypeId> {
         match place {
             Place::Local(local_id) => {
-                if let Some(local) = sema_output.locals.get(local_id) {
+                if let Some(local) = self.mir.locals.get(local_id) {
                     Some(local.type_id)
                 } else {
                     self.errors.push(ValidationError::LocalNotFound(*local_id));
@@ -507,10 +448,10 @@ impl MirValidator {
                 }
             }
             Place::Deref(op) => {
-                self.validate_operand(sema_output, op);
+                self.validate_operand(op);
                 // try to infer pointer pointee type
-                if let Some(op_ty) = self.operand_type(sema_output, op) {
-                    if let Some(MirType::Pointer { pointee }) = sema_output.types.get(&op_ty) {
+                if let Some(op_ty) = self.operand_type(op) {
+                    if let Some(MirType::Pointer { pointee }) = self.mir.types.get(&op_ty) {
                         Some(*pointee)
                     } else {
                         // Not a pointer - deref of non-pointer
@@ -524,7 +465,7 @@ impl MirValidator {
                 }
             }
             Place::Global(gid) => {
-                if let Some(g) = sema_output.globals.get(gid) {
+                if let Some(g) = self.mir.globals.get(gid) {
                     Some(g.type_id)
                 } else {
                     self.errors.push(ValidationError::GlobalNotFound(*gid));
@@ -532,8 +473,8 @@ impl MirValidator {
                 }
             }
             Place::StructField(base, idx) => {
-                if let Some(base_ty) = self.validate_place(sema_output, base) {
-                    if let Some(MirType::Record { field_types, .. }) = sema_output.types.get(&base_ty) {
+                if let Some(base_ty) = self.validate_place(base) {
+                    if let Some(MirType::Record { field_types, .. }) = self.mir.types.get(&base_ty) {
                         if *idx < field_types.len() {
                             Some(field_types[*idx])
                         } else {
@@ -555,18 +496,18 @@ impl MirValidator {
             }
             Place::ArrayIndex(base, _idx_op) => {
                 // validate base place and index operand
-                let _ = self.validate_place(sema_output, base);
+                let _ = self.validate_place(base);
                 // index operand may be complex; index operand validation is handled where used
                 None
             }
         }
     }
 
-    fn validate_operand(&mut self, sema_output: &MirProgram, op: &Operand) -> Option<TypeId> {
+    fn validate_operand(&mut self, op: &Operand) -> Option<TypeId> {
         match op {
-            Operand::Copy(place) => self.validate_place(sema_output, place),
+            Operand::Copy(place) => self.validate_place(place),
             Operand::Constant(cid) => {
-                if sema_output.constants.get(cid).is_none() {
+                if self.mir.constants.get(cid).is_none() {
                     self.errors.push(ValidationError::IllegalOperation(format!(
                         "Constant {} not found",
                         cid.get()
@@ -575,9 +516,9 @@ impl MirValidator {
                 None
             }
             Operand::AddressOf(place) => {
-                if let Some(base_ty) = self.validate_place(sema_output, place) {
+                if let Some(base_ty) = self.validate_place(place) {
                     // create or lookup a pointer type for base_ty is non-trivial; try to find existing pointer type
-                    for (tid, ty) in &sema_output.types {
+                    for (tid, ty) in &self.mir.types {
                         if let MirType::Pointer { pointee } = ty
                             && *pointee == base_ty
                         {
@@ -590,27 +531,27 @@ impl MirValidator {
                 }
             }
             Operand::Cast(type_id, inner) => {
-                if !sema_output.types.contains_key(type_id) {
+                if !self.mir.types.contains_key(type_id) {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
                 // Check if casting a constant value that doesn't fit in the target type
                 if let Operand::Constant(const_id) = inner.as_ref()
-                    && let Some(const_value) = sema_output.constants.get(const_id)
+                    && let Some(const_value) = self.mir.constants.get(const_id)
                 {
-                    self.validate_constant_cast(sema_output, *const_id, const_value, *type_id);
+                    self.validate_constant_cast(*const_id, const_value, *type_id);
                 }
-                self.validate_operand(sema_output, inner);
+                self.validate_operand(inner);
                 Some(*type_id)
             }
         }
     }
 
-    fn validate_rvalue(&mut self, sema_output: &MirProgram, r: &Rvalue) -> Option<TypeId> {
+    fn validate_rvalue(&mut self, r: &Rvalue) -> Option<TypeId> {
         match r {
-            Rvalue::Use(op) => self.validate_operand(sema_output, op),
+            Rvalue::Use(op) => self.validate_operand(op),
             Rvalue::BinaryIntOp(bin, a, b) => {
-                let ta = self.validate_operand(sema_output, a);
-                let tb = self.validate_operand(sema_output, b);
+                let ta = self.validate_operand(a);
+                let tb = self.validate_operand(b);
 
                 match bin {
                     BinaryIntOp::Eq
@@ -618,7 +559,7 @@ impl MirValidator {
                     | BinaryIntOp::Lt
                     | BinaryIntOp::Le
                     | BinaryIntOp::Gt
-                    | BinaryIntOp::Ge => self.find_bool_type(sema_output),
+                    | BinaryIntOp::Ge => self.find_bool_type(),
                     _ => {
                         if let (Some(ta), Some(tb)) = (ta, tb)
                             && ta != tb
@@ -631,8 +572,8 @@ impl MirValidator {
                 }
             }
             Rvalue::BinaryFloatOp(bin, a, b) => {
-                let ta = self.validate_operand(sema_output, a);
-                let _tb = self.validate_operand(sema_output, b);
+                let ta = self.validate_operand(a);
+                let _tb = self.validate_operand(b);
 
                 match bin {
                     BinaryFloatOp::Eq
@@ -640,39 +581,39 @@ impl MirValidator {
                     | BinaryFloatOp::Lt
                     | BinaryFloatOp::Le
                     | BinaryFloatOp::Gt
-                    | BinaryFloatOp::Ge => self.find_bool_type(sema_output),
+                    | BinaryFloatOp::Ge => self.find_bool_type(),
                     _ => ta,
                 }
             }
             Rvalue::UnaryIntOp(u, a) => {
-                let ta = self.validate_operand(sema_output, a);
+                let ta = self.validate_operand(a);
                 match u {
                     UnaryIntOp::Neg => ta,
                     UnaryIntOp::BitwiseNot => ta,
-                    UnaryIntOp::LogicalNot => self.find_bool_type(sema_output),
+                    UnaryIntOp::LogicalNot => self.find_bool_type(),
                 }
             }
             Rvalue::UnaryFloatOp(u, a) => {
-                let ta = self.validate_operand(sema_output, a);
+                let ta = self.validate_operand(a);
                 match u {
                     UnaryFloatOp::Neg => ta,
                 }
             }
             Rvalue::Cast(type_id, op) => {
-                if !sema_output.types.contains_key(type_id) {
+                if !self.mir.types.contains_key(type_id) {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
-                let from_ty = self.validate_operand(sema_output, op);
-                if let (Some(from), true) = (from_ty, sema_output.types.contains_key(type_id)) {
+                let from_ty = self.validate_operand(op);
+                if let (Some(from), true) = (from_ty, self.mir.types.contains_key(type_id)) {
                     // basic invalid cast check: disallow casts from record/array/enum/function to non-pointer/scalar types
-                    if let Some(ty) = sema_output.types.get(&from)
+                    if let Some(ty) = self.mir.types.get(&from)
                         && ty.is_aggregate()
                     {
-                        if let Some(MirType::Pointer { .. }) = sema_output.types.get(type_id) {
+                        if let Some(MirType::Pointer { .. }) = self.mir.types.get(type_id) {
                             // pointer casts allowed
                             // pointer casts allowed
                         } else {
-                            let type_obj = sema_output.types.get(type_id).unwrap();
+                            let type_obj = self.mir.types.get(type_id).unwrap();
                             if type_obj.is_int() || type_obj.is_float() {
                                 self.errors.push(ValidationError::InvalidCast(from, *type_id));
                             }
@@ -682,105 +623,105 @@ impl MirValidator {
                 Some(*type_id)
             }
             Rvalue::PtrAdd(a, b) | Rvalue::PtrSub(a, b) => {
-                self.validate_operand(sema_output, a);
-                self.validate_operand(sema_output, b);
+                self.validate_operand(a);
+                self.validate_operand(b);
                 None
             }
             Rvalue::PtrDiff(a, b) => {
-                self.validate_operand(sema_output, a);
-                self.validate_operand(sema_output, b);
+                self.validate_operand(a);
+                self.validate_operand(b);
                 None
             }
             Rvalue::StructLiteral(fields) => {
                 for (_idx, op) in fields {
-                    self.validate_operand(sema_output, op);
+                    self.validate_operand(op);
                 }
                 None
             }
             Rvalue::ArrayLiteral(elems) => {
                 for e in elems {
-                    self.validate_operand(sema_output, e);
+                    self.validate_operand(e);
                 }
                 None
             }
             Rvalue::Load(op) => {
-                self.validate_operand(sema_output, op);
+                self.validate_operand(op);
                 None
             }
 
             Rvalue::BuiltinVaArg(ap, type_id) => {
-                self.validate_place(sema_output, ap);
-                if !sema_output.types.contains_key(type_id) {
+                self.validate_place(ap);
+                if !self.mir.types.contains_key(type_id) {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
                 Some(*type_id)
             }
             Rvalue::AtomicLoad(ptr, _) => {
-                self.validate_operand(sema_output, ptr);
+                self.validate_operand(ptr);
                 None
             }
             Rvalue::AtomicExchange(ptr, val, _) => {
-                self.validate_operand(sema_output, ptr);
-                self.validate_operand(sema_output, val);
+                self.validate_operand(ptr);
+                self.validate_operand(val);
                 None
             }
             Rvalue::AtomicCompareExchange(ptr, expected, desired, _, _, _) => {
-                self.validate_operand(sema_output, ptr);
-                self.validate_operand(sema_output, expected);
-                self.validate_operand(sema_output, desired);
+                self.validate_operand(ptr);
+                self.validate_operand(expected);
+                self.validate_operand(desired);
                 None
             }
             Rvalue::AtomicFetchOp(_, ptr, val, _) => {
-                self.validate_operand(sema_output, ptr);
-                self.validate_operand(sema_output, val);
+                self.validate_operand(ptr);
+                self.validate_operand(val);
                 None
             }
         }
     }
 
-    fn validate_call_target(&mut self, sema_output: &MirProgram, target: &CallTarget) {
+    fn validate_call_target(&mut self, target: &CallTarget) {
         match target {
             CallTarget::Direct(fid) => {
-                if sema_output.functions.get(fid).is_none() {
+                if self.mir.functions.get(fid).is_none() {
                     self.errors.push(ValidationError::FunctionNotFound(*fid));
                 }
             }
             CallTarget::Indirect(op) => {
-                self.validate_operand(sema_output, op);
+                self.validate_operand(op);
             }
         }
     }
 
-    fn operand_type(&mut self, sema_output: &MirProgram, op: &Operand) -> Option<TypeId> {
-        self.validate_operand(sema_output, op)
+    fn operand_type(&mut self, op: &Operand) -> Option<TypeId> {
+        self.validate_operand(op)
     }
-    fn validate_terminator(&mut self, sema_output: &MirProgram, term: &Terminator) {
+    fn validate_terminator(&mut self, term: &Terminator) {
         match term {
             Terminator::Goto(bid) => {
-                if !sema_output.blocks.contains_key(bid) {
+                if !self.mir.blocks.contains_key(bid) {
                     self.errors.push(ValidationError::BlockNotFound(*bid));
                 }
             }
             Terminator::If(cond, then_bb, else_bb) => {
-                self.validate_operand(sema_output, cond);
-                if !sema_output.blocks.contains_key(then_bb) {
+                self.validate_operand(cond);
+                if !self.mir.blocks.contains_key(then_bb) {
                     self.errors.push(ValidationError::BlockNotFound(*then_bb));
                 }
-                if !sema_output.blocks.contains_key(else_bb) {
+                if !self.mir.blocks.contains_key(else_bb) {
                     self.errors.push(ValidationError::BlockNotFound(*else_bb));
                 }
             }
             Terminator::Return(op) => {
                 if let Some(op) = op {
-                    self.validate_operand(sema_output, op);
+                    self.validate_operand(op);
                 }
             }
             Terminator::Unreachable => {}
         }
     }
 
-    fn find_bool_type(&self, sema_output: &MirProgram) -> Option<TypeId> {
-        for (id, ty) in &sema_output.types {
+    fn find_bool_type(&self) -> Option<TypeId> {
+        for (id, ty) in &self.mir.types {
             if matches!(ty, MirType::Bool) {
                 return Some(*id);
             }

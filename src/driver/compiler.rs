@@ -110,9 +110,9 @@ impl CompilerDriver {
         }
 
         // semantic analyzer & MIR generation phase
-        let sema_output = self.run_semantic_analyzer(ast, symbol_table, registry)?;
+        let mir_program = self.run_semantic_analyzer(ast, symbol_table, registry)?;
         if stop_after == CompilePhase::Mir {
-            out.sema_output = Some(sema_output);
+            out.mir_program = Some(mir_program);
             return Ok(out);
         }
 
@@ -122,7 +122,7 @@ impl CompilerDriver {
         } else {
             EmitKind::Object
         };
-        let cl_output = self.run_codegen(sema_output, emit_kind)?;
+        let cl_output = self.run_codegen(mir_program, emit_kind)?;
 
         match cl_output {
             ClifOutput::ClifDump(dump) => {
@@ -269,22 +269,22 @@ impl CompilerDriver {
         }
 
         let mut sema = AstToMirLowerer::new(&ast, &symbol_table, &mut registry);
-        let sema_output = sema.lower_module_complete();
+        let mir_program = sema.lower_module_complete();
         self.check_diagnostics_and_return_if_error()?;
 
-        Ok(sema_output)
+        Ok(mir_program)
     }
 
-    fn run_codegen(&mut self, sema_output: MirProgram, emit_kind: EmitKind) -> Result<ClifOutput, PipelineError> {
+    fn run_codegen(&mut self, mir_program: MirProgram, emit_kind: EmitKind) -> Result<ClifOutput, PipelineError> {
         // Validate MIR before code generation
         log::debug!("Running MIR validation");
-        let mut validator = MirValidator::new();
-        if let Err(errors) = validator.validate(&sema_output) {
+        let mut validator = MirValidator::new(&mir_program);
+        if let Err(errors) = validator.validate() {
             panic!("MIR validation failed: {:?}", errors);
         }
 
         // Use MIR codegen instead of AST codegen
-        let mir_codegen = MirToCraneliftLowerer::new(sema_output);
+        let mir_codegen = MirToCraneliftLowerer::new(mir_program);
         match mir_codegen.compile_module(emit_kind) {
             Ok(output) => Ok(output),
             Err(e) => {
@@ -338,11 +338,11 @@ impl CompilerDriver {
                     } else if let Some(clif_dump) = artifact.clif_dump {
                         // Output Cranelift IR dump to console
                         println!("{}", clif_dump);
-                    } else if let Some(sema_output) = artifact.sema_output {
+                    } else if let Some(mir_program) = artifact.mir_program {
                         // Output MIR dump to console
                         let dump_config = MirDumpConfig { include_header: true };
 
-                        let dumper = MirDumper::new(&sema_output, &dump_config);
+                        let dumper = MirDumper::new(&mir_program, &dump_config);
                         match dumper.generate_mir_dump() {
                             Ok(mir_dump) => {
                                 println!("{}", mir_dump);

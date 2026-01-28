@@ -304,7 +304,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Extract the declared name from a declarator, if any
-    fn get_declarator_name(&self, declarator: &crate::ast::parsed::ParsedDeclarator) -> Option<NameId> {
+    fn get_declarator_name(&self, declarator: &ParsedDeclarator) -> Option<NameId> {
         declarator::get_declarator_name(declarator)
     }
 

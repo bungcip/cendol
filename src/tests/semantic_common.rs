@@ -39,10 +39,10 @@ pub fn setup_mir(source: &str) -> String {
     let first = out.units.values_mut().next().expect("No units in output");
     let artifact = first;
 
-    let sema_output = artifact.sema_output.as_ref().expect("No semantic output available");
+    let mir = artifact.mir_program.as_ref().expect("No semantic output available");
 
     let dump_config = MirDumpConfig { include_header: false };
-    let dumper = MirDumper::new(sema_output, &dump_config);
+    let dumper = MirDumper::new(mir, &dump_config);
 
     dumper.generate_mir_dump().expect("Failed to generate MIR dump")
 }

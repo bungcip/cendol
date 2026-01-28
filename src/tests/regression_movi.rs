@@ -25,7 +25,7 @@ fn test_movi_unsigned_constant_codegen() {
 
 #[test]
 fn test_long_double_size() {
-    // Check that long double is treated as 16 bytes (size of F128)
+    // Check that long double size matches architecture (8 on x86_64, 16 otherwise)
     let source = r#"
         int main() {
             long double ld;
@@ -33,10 +33,17 @@ fn test_long_double_size() {
         }
     "#;
     let clif_dump = setup_cranelift(source);
-    // We expect a stack slot of size 16
+
+    let expected_size = if target_lexicon::Triple::host().architecture == target_lexicon::Architecture::X86_64 {
+        8
+    } else {
+        16
+    };
+
     assert!(
-        clif_dump.contains("explicit_slot 16"),
-        "Expected explicit_slot 16 for long double, found:\n{}",
+        clif_dump.contains(&format!("explicit_slot {}", expected_size)),
+        "Expected explicit_slot {} for long double, found:\n{}",
+        expected_size,
         clif_dump
     );
 }

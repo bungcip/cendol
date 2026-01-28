@@ -694,21 +694,21 @@ impl TypeRegistry {
             // Special handling for flexible array member (FAM)
             // Need to check if it is incomplete array
             // We can't use is_complete because that recurses. We check TypeKind directly.
-            let is_incomplete_array = if member_ty.is_inline_array() {
+            let is_incomplete_or_vla_array = if member_ty.is_inline_array() {
                 false // inline array always has len
             } else {
                 matches!(
                     self.get(member_ty).kind,
                     TypeKind::Array {
-                        size: ArraySizeType::Incomplete,
+                        size: ArraySizeType::Incomplete | ArraySizeType::Variable(_),
                         ..
                     }
                 )
             };
 
-            if is_incomplete_array {
+            if is_incomplete_or_vla_array {
                 if is_union {
-                    // Incomplete types not allowed in union
+                    // Incomplete or VLA types not allowed in union
                     return Err(SemanticError::UnsupportedFeature {
                         feature: "incomplete/VLA array in union".to_string(),
                         span: member.span,

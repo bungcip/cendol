@@ -617,41 +617,6 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro_simple("__STDC_UTF_16__", "1");
             self.define_builtin_macro_simple("__STDC_UTF_32__", "1");
         }
-
-        // Variadic argument macros
-        // Define va_start as function-like macro expanding to va_start
-        self.define_builtin_function_macro(
-            "va_start",
-            vec![StringId::new("ap"), StringId::new("param")],
-            vec![PPToken::new(
-                PPTokenKind::Identifier(StringId::new("va_start")),
-                PPTokenFlags::empty(),
-                SourceLoc::builtin(),
-                7,
-            )],
-        );
-        // Define va_end as function-like macro expanding to va_end
-        self.define_builtin_function_macro(
-            "va_end",
-            vec![StringId::new("ap")],
-            vec![PPToken::new(
-                PPTokenKind::Identifier(StringId::new("va_end")),
-                PPTokenFlags::empty(),
-                SourceLoc::builtin(),
-                6,
-            )],
-        );
-        // Define va_arg as function-like macro expanding to va_arg so the parser can detect it
-        self.define_builtin_function_macro(
-            "va_arg",
-            vec![StringId::new("ap"), StringId::new("type")],
-            vec![PPToken::new(
-                PPTokenKind::Identifier(StringId::new("va_arg")),
-                PPTokenFlags::empty(),
-                SourceLoc::builtin(),
-                6,
-            )],
-        );
     }
 
     /// Helper to define a simple macro with a value
@@ -673,19 +638,6 @@ impl<'src> Preprocessor<'src> {
             flags: MacroFlags::BUILTIN,
             tokens,
             parameter_list: Vec::new(),
-            variadic_arg: None,
-        };
-        self.macros.insert(symbol, macro_info);
-    }
-
-    /// Define a built-in function-like macro
-    fn define_builtin_function_macro(&mut self, name: &str, params: Vec<StringId>, tokens: Vec<PPToken>) {
-        let symbol = StringId::new(name);
-        let macro_info = MacroInfo {
-            location: SourceLoc::builtin(),
-            flags: MacroFlags::BUILTIN | MacroFlags::FUNCTION_LIKE,
-            tokens,
-            parameter_list: params,
             variadic_arg: None,
         };
         self.macros.insert(symbol, macro_info);

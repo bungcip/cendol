@@ -15,6 +15,9 @@ typedef void (*sighandler_t)(int);
 #define SIGINT 2
 #define SIGSEGV 11
 #define SIGTERM 15
+#define SIGWINCH 28
+
+extern sighandler_t signal(int signum, sighandler_t handler);
 
 extern int raise(int sig);
 

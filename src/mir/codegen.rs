@@ -100,6 +100,7 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub worklist: &'a mut Vec<MirBlockId>,
     pub return_type: Option<Type>,
     pub va_spill_slot: Option<StackSlot>,
+    #[allow(dead_code)]
     pub func: &'a MirFunction,
     pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
     pub triple: &'a Triple,
@@ -1808,37 +1809,32 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
             ctx.builder.ins().call(local_free, &[ptr_val]);
             Ok(())
         }
+        MirStmt::BuiltinVaStart(place, operand) => {
+            let ap_addr = resolve_place_to_addr(place, ctx)?;
 
-        MirStmt::BuiltinVaStart(ap, _) => {
-            // X86_64 SysV va_start implementation
-            // Initialize va_list { gp_offset, fp_offset, overflow_arg_area, reg_save_area }
-            // We use a 16-slot (128-byte) spill area to capture all variadic args.
-            // gp_offset starts after fixed params, and we use 128 as the threshold.
-
-            let ap_addr = resolve_place_to_addr(ap, ctx)?;
-
-            // Calculate gp_offset: fixed_params * 8 (each GP register is 8 bytes)
-            let fixed_param_count = ctx.func.params.len() as i32;
-            let gp_offset_val = ctx.builder.ins().iconst(types::I32, (fixed_param_count * 8) as i64);
+            // 1. gp_offset = 48 (Assume registers are exhausted to force stack usage for simplicity/safety)
+            let gp_offset_val = ctx.builder.ins().iconst(types::I32, 48);
             ctx.builder.ins().store(MemFlags::new(), gp_offset_val, ap_addr, 0);
 
-            // fp_offset: starts after GP regs (6 regs * 8 = 48 bytes)
-            // But SysV X86_64 uses 48-176 for floating point regs.
-            // Since we don't distinguish GPR/FPR in simplify, let's just set it to 48.
-            let fp_offset_val = ctx.builder.ins().iconst(types::I32, 48i64);
+            // 2. fp_offset = 176 (Assume FP registers exhausted)
+            let fp_offset_val = ctx.builder.ins().iconst(types::I32, 176);
             ctx.builder.ins().store(MemFlags::new(), fp_offset_val, ap_addr, 4);
 
-            // overflow_arg_area: points to the stack after the 16 spill slots
-            // But currently we don't support stack-passed args in simplify.
-            // Let's just point it to the end of the spill area.
-            if let Some(spill_slot) = ctx.va_spill_slot {
-                let spill_addr = ctx.builder.ins().stack_addr(types::I64, spill_slot, 0);
-                let overflow_addr = ctx.builder.ins().iadd_imm(spill_addr, 128);
-                ctx.builder.ins().store(MemFlags::new(), overflow_addr, ap_addr, 8);
+            // 3. overflow_arg_area
+            let last_arg_addr = match operand {
+                Operand::Copy(place) | Operand::AddressOf(place) => resolve_place_to_addr(place, ctx)?,
+                _ => return Err("va_start expects a place as second argument".to_string()),
+            };
 
-                // reg_save_area: points to the start of the spill area
-                ctx.builder.ins().store(MemFlags::new(), spill_addr, ap_addr, 16);
-            }
+            // Get size of the last argument to skip over it.
+            let size_of_slot = ctx.builder.ins().iconst(types::I64, 8);
+            let next_arg_addr = ctx.builder.ins().iadd(last_arg_addr, size_of_slot);
+
+            ctx.builder.ins().store(MemFlags::new(), next_arg_addr, ap_addr, 8);
+
+            // 4. reg_save_area = NULL
+            let null_ptr = ctx.builder.ins().iconst(types::I64, 0);
+            ctx.builder.ins().store(MemFlags::new(), null_ptr, ap_addr, 16);
 
             Ok(())
         }
@@ -1850,28 +1846,15 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
             ctx.builder.ins().atomic_store(MemFlags::new(), val_op, ptr_val);
             Ok(())
         }
-        MirStmt::BuiltinVaEnd(_ap) => {
-            // BuiltinVaEnd is a no-op
+        MirStmt::BuiltinVaEnd(_place) => {
+            // No-op for x86_64
             Ok(())
         }
-        MirStmt::BuiltinVaCopy(dst, src) => {
-            let dst_addr = resolve_place_to_addr(dst, ctx)?;
+        MirStmt::BuiltinVaCopy(dest, src) => {
+            let dest_addr = resolve_place_to_addr(dest, ctx)?;
             let src_addr = resolve_place_to_addr(src, ctx)?;
-
-            // Copy all 24 bytes of the va_list struct
-            // gp_offset (4 bytes)
-            let gp = ctx.builder.ins().load(types::I32, MemFlags::new(), src_addr, 0);
-            ctx.builder.ins().store(MemFlags::new(), gp, dst_addr, 0);
-            // fp_offset (4 bytes)
-            let fp = ctx.builder.ins().load(types::I32, MemFlags::new(), src_addr, 4);
-            ctx.builder.ins().store(MemFlags::new(), fp, dst_addr, 4);
-            // overflow_arg_area (8 bytes)
-            let overflow = ctx.builder.ins().load(types::I64, MemFlags::new(), src_addr, 8);
-            ctx.builder.ins().store(MemFlags::new(), overflow, dst_addr, 8);
-            // reg_save_area (8 bytes)
-            let reg = ctx.builder.ins().load(types::I64, MemFlags::new(), src_addr, 16);
-            ctx.builder.ins().store(MemFlags::new(), reg, dst_addr, 16);
-
+            // va_list is 24 bytes on x86_64
+            emit_memcpy(dest_addr, src_addr, 24, ctx.builder, ctx.module)?;
             Ok(())
         }
     }

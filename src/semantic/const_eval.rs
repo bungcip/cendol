@@ -49,6 +49,14 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
                 BinaryOp::GreaterEqual => Some((left_val >= right_val) as i64),
                 BinaryOp::LogicAnd => Some(((left_val != 0) && (right_val != 0)) as i64),
                 BinaryOp::LogicOr => Some(((left_val != 0) || (right_val != 0)) as i64),
+                BinaryOp::BitOr => Some(left_val | right_val),
+                BinaryOp::BitAnd => Some(left_val & right_val),
+                BinaryOp::BitXor => Some(left_val ^ right_val),
+                BinaryOp::LShift => {
+                    // Safe shift, handle overflow or large shift count by wrapping or masking
+                    Some(left_val.wrapping_shl(right_val as u32))
+                }
+                BinaryOp::RShift => Some(left_val.wrapping_shr(right_val as u32)),
                 _ => None,
             }
         }

@@ -513,9 +513,24 @@ impl<'a> SemanticAnalyzer<'a> {
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
 
+        // Perform array/function decay first
+        let mut lhs_decayed = lhs_ty;
+        if lhs_ty.is_array() || lhs_ty.is_function() {
+            let decayed = self.registry.decay(lhs_ty, TypeQualifiers::empty());
+            self.semantic_info.conversions[lhs_ref.index()].push(ImplicitConversion::PointerDecay { to: decayed.ty() });
+            lhs_decayed = decayed;
+        }
+
+        let mut rhs_decayed = rhs_ty;
+        if rhs_ty.is_array() || rhs_ty.is_function() {
+            let decayed = self.registry.decay(rhs_ty, TypeQualifiers::empty());
+            self.semantic_info.conversions[rhs_ref.index()].push(ImplicitConversion::PointerDecay { to: decayed.ty() });
+            rhs_decayed = decayed;
+        }
+
         // Perform integer promotions and record them
-        let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);
-        let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
+        let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_decayed);
+        let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_decayed);
 
         if op == BinaryOp::Mod && (!lhs_promoted.is_integer() || !rhs_promoted.is_integer()) {
             let lhs_kind = &self.registry.get(lhs_promoted.ty()).kind;

@@ -39,6 +39,7 @@ pub(crate) struct AstToMirLowerer<'a> {
     pub(crate) break_target: Option<MirBlockId>,
     pub(crate) continue_target: Option<MirBlockId>,
     pub(crate) switch_case_map: HashMap<NodeRef, MirBlockId>,
+    pub(crate) valist_mir_id: Option<TypeId>,
 }
 
 impl<'a> AstToMirLowerer<'a> {
@@ -60,6 +61,7 @@ impl<'a> AstToMirLowerer<'a> {
             break_target: None,
             continue_target: None,
             switch_case_map: HashMap::new(),
+            valist_mir_id: None,
         }
     }
 
@@ -239,7 +241,11 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     pub(crate) fn operand_to_const_id_strict(&mut self, op: Operand, msg: &str) -> ConstValueId {
-        self.operand_to_const_id(op).expect(msg)
+        if let Some(id) = self.operand_to_const_id(op.clone()) {
+            id
+        } else {
+            panic!("{} - Operand: {:?}", msg, op);
+        }
     }
 
     pub(crate) fn lower_condition(&mut self, condition: NodeRef) -> Operand {
@@ -825,15 +831,21 @@ impl<'a> AstToMirLowerer<'a> {
             field_offsets: vec![0, 4, 8, 16],
         };
 
-        let record_type = MirType::Record {
-            name: NameId::new("__va_list_tag"),
-            field_types: vec![u32_id, u32_id, u64_id, u64_id],
-            field_names: Vec::new(),
-            is_union: false,
-            layout: record_layout,
+        // Cache the __va_list_tag record type to ensure canonical type usage
+        let record_id = if let Some(id) = self.valist_mir_id {
+            id
+        } else {
+            let record_type = MirType::Record {
+                name: NameId::new("__va_list_tag"),
+                field_types: vec![u32_id, u32_id, u64_id, u64_id],
+                field_names: Vec::new(),
+                is_union: false,
+                layout: record_layout,
+            };
+            let id = self.mir_builder.add_type(record_type);
+            self.valist_mir_id = Some(id);
+            id
         };
-
-        let record_id = self.mir_builder.add_type(record_type);
 
         let array_layout = MirArrayLayout {
             size: 24,
@@ -923,7 +935,17 @@ impl<'a> AstToMirLowerer<'a> {
         let return_type = self.lower_type(*return_type);
         let mut params = Vec::new();
         for p in parameters {
-            params.push(self.lower_qual_type(p.param_type));
+            let param_ty_id = self.lower_qual_type(p.param_type);
+            // Adjust array parameters to pointers (C standard).
+            // This is especially important for VaList which treats itself as an array but is passed as a pointer.
+            // Sema handles explicit arrays, but BuiltinType::VaList is lowered to Array here.
+            let param_ty = self.mir_builder.get_type(param_ty_id);
+            let adjusted_ty_id = if let MirType::Array { element, .. } = param_ty {
+                self.mir_builder.add_type(MirType::Pointer { pointee: *element })
+            } else {
+                param_ty_id
+            };
+            params.push(adjusted_ty_id);
         }
         MirType::Function {
             return_type,
@@ -1169,6 +1191,14 @@ impl<'a> AstToMirLowerer<'a> {
             }
             Operand::Copy(place) => {
                 if let Place::Global(global_id) = *place {
+                    // If it is an array, using it in an expression decays to a pointer (GlobalAddress)
+                    let global_ty_id = self.get_global_type(global_id);
+                    let global_mir_ty = self.mir_builder.get_type(global_ty_id);
+                    if matches!(global_mir_ty, MirType::Array { .. }) {
+                        let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: global_ty_id });
+                        return Some(self.create_constant(ptr_ty, ConstValueKind::GlobalAddress(global_id)));
+                    }
+
                     // If we are copying a global, and it has a constant initializer, return that value.
                     // This handles compound literals which are lowered to globals.
                     let global = self.mir_builder.get_globals().get(&global_id).unwrap();

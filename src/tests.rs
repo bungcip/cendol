@@ -1,3 +1,4 @@
+pub mod abi_compat;
 pub mod ast_dumper;
 pub mod atomic_builtins;
 pub mod builtin_expect;
@@ -70,4 +71,3 @@ pub mod test_utils;
 mod type_specifier_regression;
 pub mod typeref;
 pub mod variadic_printf_regression;
-pub mod abi_compat;

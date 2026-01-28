@@ -481,19 +481,15 @@ fn resolve_call_args(
                         let remaining_bytes = size as usize - current_offset;
 
                         let value = if remaining_bytes >= 8 {
-                            ctx.builder
-                                .ins()
-                                .load(types::I64, MemFlags::new(), struct_addr, offset)
+                            ctx.builder.ins().load(types::I64, MemFlags::new(), struct_addr, offset)
                         } else {
                             // Partial load byte-by-byte to avoid OOB read
                             let mut current_val = ctx.builder.ins().iconst(types::I64, 0);
                             for i in 0..remaining_bytes {
-                                let byte_val = ctx.builder.ins().load(
-                                    types::I8,
-                                    MemFlags::new(),
-                                    struct_addr,
-                                    offset + i as i32,
-                                );
+                                let byte_val =
+                                    ctx.builder
+                                        .ins()
+                                        .load(types::I8, MemFlags::new(), struct_addr, offset + i as i32);
                                 let byte_ext = ctx.builder.ins().uextend(types::I64, byte_val);
                                 let shift_amt = ctx.builder.ins().iconst(types::I64, (i * 8) as i64);
                                 let shifted = ctx.builder.ins().ishl(byte_ext, shift_amt);

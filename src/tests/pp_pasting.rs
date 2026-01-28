@@ -50,3 +50,13 @@ x PASTE(+, =) 2;
       text: ;
     "#);
 }
+
+#[test]
+fn test_paste_va_args() {
+    let src = r#"
+#define PASTE(...) prefix ## __VA_ARGS__
+PASTE(a, b)
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens);
+}

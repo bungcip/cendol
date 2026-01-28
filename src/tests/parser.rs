@@ -1298,11 +1298,11 @@ fn test_void_pointer_param() {
 #[test]
 fn test_static_assert() {
     let resolved = setup_declaration("_Static_assert(1, \"ok\");");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @r#"
     StaticAssert:
       - LiteralInt: 1
-      - ok
-    ");
+      - "3"
+    "#);
 }
 
 #[test]

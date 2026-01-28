@@ -4,6 +4,7 @@
 
 use hashbrown::HashSet;
 
+use crate::ast::literal;
 use crate::ast::parsed::{ParsedAst, ParsedNodeKind};
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind};
 use crate::semantic::{ArraySizeType, BuiltinType, SymbolRef, SymbolTable, TypeKind, TypeRef, TypeRegistry};
@@ -404,7 +405,12 @@ impl AstDumper {
                 val.map(|v| v.get().to_string()).unwrap_or("auto".to_string())
             ),
             ParsedNodeKind::StaticAssert(cond, msg) => {
-                println!("StaticAssert({}, \"{}\")", cond.get(), msg)
+                let message_str = if let ParsedNodeKind::Literal(literal::Literal::String(s)) = &_ast.get_node(*msg).kind {
+                    s.to_string()
+                } else {
+                    "<invalid>".to_string()
+                };
+                println!("StaticAssert({}, \"{}\")", cond.get(), message_str)
             }
 
             // Top Level
@@ -627,7 +633,12 @@ impl AstDumper {
                 value.map(|r| r.get().to_string()).unwrap_or("auto".to_string())
             ),
             NodeKind::StaticAssert(cond, msg) => {
-                println!("StaticAssert(condition={}, message={})", cond.get(), msg)
+                let message_str = if let NodeKind::Literal(literal::Literal::String(s)) = ast.get_kind(*msg) {
+                    s.to_string()
+                } else {
+                    "<invalid>".to_string()
+                };
+                println!("StaticAssert(condition={}, message=\"{}\")", cond.get(), message_str)
             }
             NodeKind::VarDecl(var_decl) => {
                 println!(

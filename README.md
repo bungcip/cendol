@@ -1,6 +1,6 @@
 # Cendol
 
-Cendol is a C11 compiler frontend implemented in Rust. It is a learning project to understand the process of building a compiler from scratch, focusing on high-performance compiler architecture and comprehensive C11 standard compliance.
+Cendol is a C11 compiler implemented in Rust. It is a learning project to understand the process of building a compiler from scratch, focusing on high-performance compiler architecture and comprehensive C11 standard compliance.
 
 ## Features
 
@@ -8,8 +8,9 @@ Cendol is a C11 compiler frontend implemented in Rust. It is a learning project 
 * **Lexer**: Tokenization of C11 source code with proper handling of literals, keywords, and operators
 * **Parser**: Comprehensive C11 syntax parsing using Pratt parsing for expressions and recursive descent for statements
 * **Semantic Analysis**: Type checking, symbol resolution, and semantic validation
-* **AST Dumper**: Interactive HTML visualization of the compiler's internal state for debugging and analysis
-* **Rich Diagnostics**: error reporting with source location tracking
+* **Code Generation**: Compiles to native object code using Cranelift backend
+* **Linker Integration**: Automatic invocation of system linker (clang) to produce executables
+* **Rich Diagnostics**: Error reporting with source location tracking
 
 ## Architecture
 
@@ -19,7 +20,9 @@ Cendol follows a traditional multi-phase compiler architecture optimized for per
 2. **Lexing Phase**: Converts preprocessed tokens to lexical tokens
 3. **Parsing Phase**: Builds a flattened Abstract Syntax Tree (AST)
 4. **Semantic Analysis Phase**: Performs type checking and symbol resolution
-5. **AST Dumping Phase**: Generates interactive HTML output for debugging
+5. **MIR Generation**: Lowers AST to Mid-level Intermediate Representation
+6. **Code Generation**: Generates native machine code via Cranelift
+7. **Linking**: Links object files to create the final executable
 
 ## Getting Started
 
@@ -27,6 +30,7 @@ Cendol follows a traditional multi-phase compiler architecture optimized for per
 
 * Rust 2024 edition or later
 * Cargo
+* Clang (used as the system linker)
 
 ### Building
 
@@ -44,16 +48,15 @@ cargo build --release
 
 ### Usage
 
-Cendol currently operates as a compiler frontend with analysis and debugging capabilities. To analyze a C file:
+To compile a C file to an executable:
 
 ```bash
-cargo run -- <input_file> [options]
+cargo run -- -o <output_file> <input_file>
 ```
 
-#### Options
 
-* `--dump-ast`: Generate interactive HTML AST dump (default: `ast_dump.html`)
-* `--dump-parser`: Dump internal parser AST representation to stdout
+#### Other Options
+
 * `-E`: Preprocess only, output preprocessed source to stdout
 * `-P`: Suppress line markers in preprocessor output
 * `-C`: Retain comments in preprocessor output
@@ -65,17 +68,13 @@ cargo run -- <input_file> [options]
 
 Preprocess a file:
 ```bash
-cargo run -- test.c -E
+cargo run -- -E test.c
 ```
 
-Generate HTML AST visualization:
-```bash
-cargo run -- test.c --dump-ast
-```
 
 Define macros and include paths:
 ```bash
-cargo run -- test.c -D DEBUG=1 -I /usr/include
+cargo run -- -D DEBUG=1 -I /usr/include test.c
 ```
 
 ## Design Documents
@@ -88,15 +87,6 @@ Comprehensive design documentation is available in the [`design-document/`](desi
 * [Parser Design](design-document/parser_design.md) - AST construction
 * [Semantic Analysis](design-document/semantic_analysis_design.md) - Type checking and validation
 * [AST Dumper](design-document/ast_dumper_design.md) - HTML visualization system
-
-## Project Status
-
-Cendol is currently in development with a focus on frontend phases. Future plans include:
-
-* Code generation backend (potentially using Cranelift)
-* Optimization passes
-* Linker integration
-* Extended C11 feature support
 
 ## Contributing
 

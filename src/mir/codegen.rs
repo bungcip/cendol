@@ -11,7 +11,7 @@ use crate::mir::{
     MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
     UnaryIntOp,
 };
-use cranelift::codegen::ir::{AtomicRmwOp, BlockArg, Inst, StackSlot, StackSlotData, StackSlotKind};
+use cranelift::codegen::ir::{AtomicRmwOp, Inst, StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
     AbiParam, Block, Configurable, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type,
     Value, types,
@@ -1479,8 +1479,8 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
 
                     // Load fields from va_list
                     let gp_offset = ctx.builder.ins().load(types::I32, MemFlags::new(), ap_addr, 0);
-                    let fp_offset = ctx.builder.ins().load(types::I32, MemFlags::new(), ap_addr, 4);
-                    let overflow_area = ctx.builder.ins().load(types::I64, MemFlags::new(), ap_addr, 8);
+                    let _fp_offset = ctx.builder.ins().load(types::I32, MemFlags::new(), ap_addr, 4);
+                    let _overflow_area = ctx.builder.ins().load(types::I64, MemFlags::new(), ap_addr, 8);
                     let reg_save_area = ctx.builder.ins().load(types::I64, MemFlags::new(), ap_addr, 16);
 
                     let mir_type = ctx.mir.get_type(*type_id);

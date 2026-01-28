@@ -405,11 +405,12 @@ impl AstDumper {
                 val.map(|v| v.get().to_string()).unwrap_or("auto".to_string())
             ),
             ParsedNodeKind::StaticAssert(cond, msg) => {
-                let message_str = if let ParsedNodeKind::Literal(literal::Literal::String(s)) = &_ast.get_node(*msg).kind {
-                    s.to_string()
-                } else {
-                    "<invalid>".to_string()
-                };
+                let message_str =
+                    if let ParsedNodeKind::Literal(literal::Literal::String(s)) = &_ast.get_node(*msg).kind {
+                        s.to_string()
+                    } else {
+                        "<invalid>".to_string()
+                    };
                 println!("StaticAssert({}, \"{}\")", cond.get(), message_str)
             }
 

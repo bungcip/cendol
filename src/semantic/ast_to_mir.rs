@@ -252,19 +252,9 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_compound_statement(&mut self, cs: &nodes::CompoundStmtData) {
         for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
-            let node_kind = self.ast.get_kind(stmt_ref);
-            if self.mir_builder.current_block_has_terminator() {
-                if matches!(
-                    node_kind,
-                    NodeKind::Label(..) | NodeKind::Case(..) | NodeKind::Default(..)
-                ) {
-                    // This is a label or case, which is a valid entry point.
-                    // Let lower_node_ref handle it, it will switch to a new block.
-                } else {
-                    // This statement is unreachable. Skip it.
-                    continue;
-                }
-            }
+            // We visit all statements regardless of whether the current block is terminated.
+            // MirBuilder will suppress statement addition to terminated blocks, but we need
+            // to traverse to find nested labels/cases which start new reachable blocks.
             self.lower_node_ref(stmt_ref)
         }
     }

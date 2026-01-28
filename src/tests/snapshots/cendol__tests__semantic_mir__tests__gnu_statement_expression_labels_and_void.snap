@@ -1,5 +1,6 @@
 ---
 source: src/tests/semantic_mir.rs
+assertion_line: 1440
 expression: mir_dump
 ---
 type %t0 = i32
@@ -70,7 +71,7 @@ fn kb_wait_1() -> void
     br bb12
 
   bb11:
-    br bb8
+    br bb2
 
   bb12:
     %4 = %i

@@ -2,6 +2,7 @@ pub mod ast_dumper;
 pub mod builtin_expect;
 pub mod codegen;
 pub mod compound_assign;
+pub mod control_flow_goto;
 pub mod enum_const;
 pub mod func_identifier;
 pub mod lexer;

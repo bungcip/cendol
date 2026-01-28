@@ -32,11 +32,21 @@ pub fn setup_pp_snapshot(src: &str) -> Vec<DebugToken> {
 }
 
 pub fn setup_pp_snapshot_with_diags(src: &str) -> (Vec<DebugToken>, Vec<String>) {
+    setup_pp_snapshot_with_diags_and_config(src, None)
+}
+
+pub fn setup_pp_snapshot_with_diags_and_config(
+    src: &str,
+    config: Option<PPConfig>,
+) -> (Vec<DebugToken>, Vec<String>) {
     // Return a Result-like structure for the snapshot
-    match setup_preprocessor_test_with_diagnostics(src, None) {
+    match setup_preprocessor_test_with_diagnostics(src, config) {
         Ok((tokens, diags)) => {
             let debug_tokens = tokens.iter().map(DebugToken::from).collect();
-            let debug_diags = diags.iter().map(|d| format!("{:?}: {}", d.level, d.message)).collect();
+            let debug_diags = diags
+                .iter()
+                .map(|d| format!("{:?}: {}", d.level, d.message))
+                .collect();
             (debug_tokens, debug_diags)
         }
         Err(e) => (vec![], vec![format!("Fatal Error: {:?}", e)]),

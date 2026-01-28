@@ -230,6 +230,7 @@ pub struct PPConfig {
     pub framework_paths: Vec<PathBuf>,
     pub lang_options: LangOptions,
     pub target: Triple,
+    pub current_time: Option<DateTime<Utc>>,
 }
 
 impl Default for PPConfig {
@@ -242,6 +243,7 @@ impl Default for PPConfig {
             framework_paths: Vec::new(),
             lang_options: LangOptions::default(),
             target: Triple::host(),
+            current_time: None,
         }
     }
 }
@@ -423,7 +425,7 @@ impl<'src> Preprocessor<'src> {
             preprocessor.built_in_file_ids.insert(name.to_string(), source_id);
         }
 
-        preprocessor.initialize_builtin_macros();
+        preprocessor.initialize_builtin_macros(config.current_time);
         preprocessor
     }
 
@@ -489,8 +491,8 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Initialize built-in macros
-    fn initialize_builtin_macros(&mut self) {
-        let now: DateTime<Utc> = Utc::now();
+    fn initialize_builtin_macros(&mut self, current_time: Option<DateTime<Utc>>) {
+        let now: DateTime<Utc> = current_time.unwrap_or_else(Utc::now);
 
         // __DATE__
         let date_str = format!("\"{:02} {:02} {}\"", now.format("%b"), now.day(), now.year());

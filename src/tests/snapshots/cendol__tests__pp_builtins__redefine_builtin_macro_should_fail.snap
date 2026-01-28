@@ -1,5 +1,6 @@
 ---
 source: src/tests/pp_builtins.rs
+assertion_line: 20
 expression: "(tokens, diags)"
 ---
 - - kind: Identifier
@@ -13,7 +14,7 @@ expression: "(tokens, diags)"
   - kind: Assign
     text: "="
   - kind: StringLiteral
-    text: "\"Jan 27 2026\""
+    text: "\"Jan 28 2026\""
   - kind: Semicolon
     text: ;
 - - "Warning: Redefinition of built-in macro '__DATE__'"

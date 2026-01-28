@@ -297,7 +297,6 @@ X;
     "#);
 }
 
-
 #[test]
 fn test_file_macro() {
     let src = r#"

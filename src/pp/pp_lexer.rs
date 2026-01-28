@@ -89,7 +89,7 @@ pub struct PPToken {
 
 impl PPToken {
     /// Create a PPToken with full control over all fields
-    pub fn new(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc, length: u16) -> Self {
+    pub(crate) fn new(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc, length: u16) -> Self {
         PPToken {
             kind,
             flags,
@@ -99,29 +99,29 @@ impl PPToken {
     }
 
     /// Create a simple PPToken with empty flags and length 1 (most common case)
-    pub fn simple(kind: PPTokenKind, location: SourceLoc) -> Self {
+    pub(crate) fn simple(kind: PPTokenKind, location: SourceLoc) -> Self {
         PPToken::new(kind, PPTokenFlags::empty(), location, 1)
     }
 
     /// Create a PPToken with text-based length
-    pub fn text(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc, text: &str) -> Self {
+    pub(crate) fn text(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc, text: &str) -> Self {
         PPToken::new(kind, flags, location, text.len() as u16)
     }
 
     /// Create a PPToken with custom flags and length 1
-    pub fn with_flags(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc) -> Self {
+    pub(crate) fn with_flags(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc) -> Self {
         PPToken::new(kind, flags, location, 1)
     }
 
     /// Get the raw byte slice from the source buffer for this token
-    pub fn get_raw_slice<'a>(&self, buffer: &'a [u8]) -> &'a [u8] {
+    pub(crate) fn get_raw_slice<'a>(&self, buffer: &'a [u8]) -> &'a [u8] {
         let start = self.location.offset() as usize;
         let end = start + self.length as usize;
         &buffer[start..end]
     }
 
     /// Get the text representation of the token
-    pub fn get_text(&self) -> &str {
+    pub(crate) fn get_text(&self) -> &str {
         match &self.kind {
             PPTokenKind::Identifier(sym) => sym.as_str(),
             PPTokenKind::Number(sym) => sym.as_str(),

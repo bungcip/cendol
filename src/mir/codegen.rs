@@ -11,7 +11,7 @@ use crate::mir::{
     MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
     UnaryIntOp,
 };
-use cranelift::codegen::ir::{BlockArg, Inst, StackSlot, StackSlotData, StackSlotKind};
+use cranelift::codegen::ir::{AtomicRmwOp, BlockArg, Inst, StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
     AbiParam, Block, Configurable, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type,
     Value, types,
@@ -1607,6 +1607,45 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     }
                     return Ok(());
                 }
+                Rvalue::AtomicLoad(ptr, _order) => {
+                    let ptr_val = resolve_operand(ptr, ctx, types::I64)?;
+                    Ok(ctx.builder.ins().atomic_load(expected_type, MemFlags::new(), ptr_val))
+                }
+                Rvalue::AtomicExchange(ptr, val, _order) => {
+                    let ptr_val = resolve_operand(ptr, ctx, types::I64)?;
+                    let val_type = get_operand_clif_type(val, ctx.mir)?;
+                    let val_op = resolve_operand(val, ctx, val_type)?;
+                    Ok(ctx.builder.ins().atomic_rmw(
+                        expected_type,
+                        MemFlags::new(),
+                        AtomicRmwOp::Xchg,
+                        ptr_val,
+                        val_op,
+                    ))
+                }
+                Rvalue::AtomicCompareExchange(ptr, expected, desired, _, _, _) => {
+                    let ptr_val = resolve_operand(ptr, ctx, types::I64)?;
+                    let expected_val = resolve_operand(expected, ctx, expected_type)?;
+                    let desired_val = resolve_operand(desired, ctx, expected_type)?;
+
+                    Ok(ctx.builder.ins().atomic_cas(MemFlags::new(), ptr_val, expected_val, desired_val))
+                }
+                Rvalue::AtomicFetchOp(op, ptr, val, _order) => {
+                    let ptr_val = resolve_operand(ptr, ctx, types::I64)?;
+                    let val_type = get_operand_clif_type(val, ctx.mir)?;
+                    let val_op = resolve_operand(val, ctx, val_type)?;
+
+                    let rmw_op = match op {
+                        BinaryIntOp::Add => AtomicRmwOp::Add,
+                        BinaryIntOp::Sub => AtomicRmwOp::Sub,
+                        BinaryIntOp::BitAnd => AtomicRmwOp::And,
+                        BinaryIntOp::BitOr => AtomicRmwOp::Or,
+                        BinaryIntOp::BitXor => AtomicRmwOp::Xor,
+                        _ => return Err(format!("Unsupported atomic fetch op: {:?}", op)),
+                    };
+
+                    Ok(ctx.builder.ins().atomic_rmw(expected_type, MemFlags::new(), rmw_op, ptr_val, val_op))
+                }
             };
 
             // Now, assign the resolved value to the place
@@ -1800,6 +1839,14 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
 
             Ok(())
         }
+            MirStmt::AtomicStore(ptr, val, _order) => {
+                let ptr_val = resolve_operand(ptr, ctx, types::I64)?;
+                let val_type = get_operand_clif_type(val, ctx.mir)?;
+                let val_op = resolve_operand(val, ctx, val_type)?;
+
+                ctx.builder.ins().atomic_store(MemFlags::new(), val_op, ptr_val);
+                Ok(())
+            }
         MirStmt::BuiltinVaEnd(_ap) => {
             // BuiltinVaEnd is a no-op
             Ok(())

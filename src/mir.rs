@@ -156,6 +156,17 @@ pub enum MirStmt {
     BuiltinVaStart(Place, Operand),
     BuiltinVaEnd(Place),
     BuiltinVaCopy(Place, Place),
+    AtomicStore(Operand, Operand, AtomicMemOrder),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum AtomicMemOrder {
+    Relaxed,
+    Consume,
+    Acquire,
+    Release,
+    AcqRel,
+    SeqCst,
 }
 
 /// Terminator - Control flow terminators for basic blocks
@@ -207,6 +218,10 @@ pub enum Rvalue {
     // Memory operations
     Load(Operand),
     BuiltinVaArg(Place, TypeId),
+    AtomicLoad(Operand, AtomicMemOrder),
+    AtomicExchange(Operand, Operand, AtomicMemOrder),
+    AtomicCompareExchange(Operand, Operand, Operand, bool, AtomicMemOrder, AtomicMemOrder),
+    AtomicFetchOp(BinaryIntOp, Operand, Operand, AtomicMemOrder),
 }
 
 /// Call target - represents how a function is called
@@ -873,6 +888,7 @@ impl fmt::Display for MirStmt {
             MirStmt::BuiltinVaStart(ap, last) => write!(f, "BuiltinVaStart({:?}, {:?})", ap, last),
             MirStmt::BuiltinVaEnd(ap) => write!(f, "BuiltinVaEnd({:?})", ap),
             MirStmt::BuiltinVaCopy(dst, src) => write!(f, "BuiltinVaCopy({:?}, {:?})", dst, src),
+            MirStmt::AtomicStore(ptr, val, order) => write!(f, "AtomicStore({:?}, {:?}, {:?})", ptr, val, order),
         }
     }
 }
@@ -929,6 +945,16 @@ impl fmt::Display for Rvalue {
             Rvalue::ArrayLiteral(elements) => write!(f, "ArrayLiteral({:?})", elements),
             Rvalue::Load(operand) => write!(f, "Load({:?})", operand),
             Rvalue::BuiltinVaArg(ap, ty) => write!(f, "BuiltinVaArg({:?}, {})", ap, ty.get()),
+            Rvalue::AtomicLoad(ptr, order) => write!(f, "AtomicLoad({:?}, {:?})", ptr, order),
+            Rvalue::AtomicExchange(ptr, val, order) => write!(f, "AtomicExchange({:?}, {:?}, {:?})", ptr, val, order),
+            Rvalue::AtomicCompareExchange(ptr, expected, desired, weak, success, failure) => write!(
+                f,
+                "AtomicCompareExchange({:?}, {:?}, {:?}, {}, {:?}, {:?})",
+                ptr, expected, desired, weak, success, failure
+            ),
+            Rvalue::AtomicFetchOp(op, ptr, val, order) => {
+                write!(f, "AtomicFetchOp({:?}, {:?}, {:?}, {:?})", op, ptr, val, order)
+            }
         }
     }
 }

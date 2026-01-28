@@ -1626,7 +1626,190 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*c);
                 ty
             }
+            NodeKind::AtomicOp(op, args_start, args_len) => {
+                let span = self.ast.get_span(node_ref);
+                self.visit_atomic_op(*op, *args_start, *args_len, span)
+            }
             _ => None,
+        }
+    }
+
+    fn visit_atomic_op(
+        &mut self,
+        op: AtomicOp,
+        args_start: NodeRef,
+        args_len: u16,
+        span: SourceSpan,
+    ) -> Option<QualType> {
+        let args: Vec<NodeRef> = args_start.range(args_len).collect();
+        let arg_tys: Vec<Option<QualType>> = args.iter().map(|&arg| self.visit_node(arg)).collect();
+
+        if arg_tys.iter().any(|ty| ty.is_none()) {
+            return None;
+        }
+        let arg_tys: Vec<QualType> = arg_tys.into_iter().map(|ty| ty.unwrap()).collect();
+
+        match op {
+            AtomicOp::LoadN => {
+                if args.len() != 2 {
+                    self.report_error(SemanticError::InvalidNumberOfArguments {
+                        expected: 2,
+                        found: args.len(),
+                        span,
+                    });
+                    return None;
+                }
+                let ptr_ty = arg_tys[0];
+                let memorder_ty = arg_tys[1];
+
+                if !memorder_ty.is_integer() {
+                    let ty_str = self.registry.display_qual_type(memorder_ty);
+                    self.report_error(SemanticError::InvalidAtomicArgument {
+                        ty: ty_str,
+                        span: self.ast.get_span(args[1]),
+                    });
+                }
+
+                if let Some(pointee) = self.registry.get_pointee(ptr_ty.ty()) {
+                    Some(pointee)
+                } else {
+                    let ty_str = self.registry.display_qual_type(ptr_ty);
+                    self.report_error(SemanticError::InvalidAtomicArgument {
+                        ty: ty_str,
+                        span: self.ast.get_span(args[0]),
+                    });
+                    None
+                }
+            }
+            AtomicOp::StoreN => {
+                if args.len() != 3 {
+                    self.report_error(SemanticError::InvalidNumberOfArguments {
+                        expected: 3,
+                        found: args.len(),
+                        span,
+                    });
+                    return None;
+                }
+                let ptr_ty = arg_tys[0];
+                let val_ty = arg_tys[1];
+                let memorder_ty = arg_tys[2];
+
+                if !memorder_ty.is_integer() {
+                    let ty_str = self.registry.display_qual_type(memorder_ty);
+                    self.report_error(SemanticError::InvalidAtomicArgument {
+                        ty: ty_str,
+                        span: self.ast.get_span(args[2]),
+                    });
+                }
+
+                if let Some(pointee) = self.registry.get_pointee(ptr_ty.ty()) {
+                    if !self.check_assignment_constraints(pointee, val_ty, args[1]) {
+                        let ty_str = self.registry.display_qual_type(val_ty);
+                        self.report_error(SemanticError::InvalidAtomicArgument {
+                            ty: ty_str,
+                            span: self.ast.get_span(args[1]),
+                        });
+                    } else {
+                        self.record_implicit_conversions(pointee, val_ty, args[1]);
+                    }
+                } else {
+                    let ty_str = self.registry.display_qual_type(ptr_ty);
+                    self.report_error(SemanticError::InvalidAtomicArgument {
+                        ty: ty_str,
+                        span: self.ast.get_span(args[0]),
+                    });
+                }
+                Some(QualType::unqualified(self.registry.type_void))
+            }
+            AtomicOp::ExchangeN => {
+                if args.len() != 3 {
+                    self.report_error(SemanticError::InvalidNumberOfArguments {
+                        expected: 3,
+                        found: args.len(),
+                        span,
+                    });
+                    return None;
+                }
+                let ptr_ty = arg_tys[0];
+                let val_ty = arg_tys[1];
+
+                if let Some(pointee) = self.registry.get_pointee(ptr_ty.ty()) {
+                    self.record_implicit_conversions(pointee, val_ty, args[1]);
+                    Some(pointee)
+                } else {
+                    None
+                }
+            }
+            AtomicOp::CompareExchangeN => {
+                if args.len() != 6 {
+                    self.report_error(SemanticError::InvalidNumberOfArguments {
+                        expected: 6,
+                        found: args.len(),
+                        span,
+                    });
+                    return None;
+                }
+                let ptr_ty = arg_tys[0];
+                let expected_ptr_ty = arg_tys[1];
+                let desired_ty = arg_tys[2];
+
+                if let Some(pointee) = self.registry.get_pointee(ptr_ty.ty()) {
+                    if let Some(expected_pointee) = self.registry.get_pointee(expected_ptr_ty.ty()) {
+                        if !self
+                            .registry
+                            .is_compatible(QualType::unqualified(pointee.ty()), expected_pointee)
+                        {
+                            let expected_str = self.registry.display_qual_type(expected_pointee);
+                            self.report_error(SemanticError::InvalidAtomicArgument {
+                                ty: expected_str,
+                                span: self.ast.get_span(args[1]),
+                            });
+                        }
+                    } else {
+                        let ty_str = self.registry.display_qual_type(expected_ptr_ty);
+                        self.report_error(SemanticError::InvalidAtomicArgument {
+                            ty: ty_str,
+                            span: self.ast.get_span(args[1]),
+                        });
+                    }
+                    self.record_implicit_conversions(pointee, desired_ty, args[2]);
+                } else {
+                    let ty_str = self.registry.display_qual_type(ptr_ty);
+                    self.report_error(SemanticError::InvalidAtomicArgument {
+                        ty: ty_str,
+                        span: self.ast.get_span(args[0]),
+                    });
+                }
+                Some(QualType::unqualified(self.registry.type_bool))
+            }
+            AtomicOp::FetchAdd | AtomicOp::FetchSub | AtomicOp::FetchAnd | AtomicOp::FetchOr | AtomicOp::FetchXor => {
+                if args.len() != 3 {
+                    self.report_error(SemanticError::InvalidNumberOfArguments {
+                        expected: 3,
+                        found: args.len(),
+                        span,
+                    });
+                    return None;
+                }
+                let ptr_ty = arg_tys[0];
+                let val_ty = arg_tys[1];
+
+                if let Some(pointee) = self.registry.get_pointee(ptr_ty.ty()) {
+                    if (op == AtomicOp::FetchAnd || op == AtomicOp::FetchOr || op == AtomicOp::FetchXor)
+                        && !pointee.is_integer()
+                    {
+                        // error: bitwise atomic only on integers
+                    }
+
+                    if pointee.is_integer() {
+                        self.record_implicit_conversions(pointee, val_ty, args[1]);
+                    }
+
+                    Some(pointee)
+                } else {
+                    None
+                }
+            }
         }
     }
 

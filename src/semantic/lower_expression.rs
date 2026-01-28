@@ -1,6 +1,8 @@
+use crate::ast::nodes::AtomicOp;
 use crate::ast::{BinaryOp, NodeKind, NodeRef, UnaryOp};
 use crate::mir::{
-    BinaryIntOp, CallTarget, ConstValue, ConstValueKind, MirStmt, Operand, Place, Rvalue, Terminator, TypeId,
+    AtomicMemOrder, BinaryIntOp, CallTarget, ConstValue, ConstValueKind, MirStmt, Operand, Place, Rvalue, Terminator,
+    TypeId,
 };
 use crate::semantic::ast_to_mir::AstToMirLowerer;
 use crate::semantic::const_eval::{ConstEvalCtx, eval_const_expr};
@@ -92,6 +94,9 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::BuiltinExpect(exp, c) => {
                 let _ = self.lower_expression(*c, true); // lower 'c' for side effects or just to process it
                 self.lower_expression(*exp, need_value)
+            }
+            NodeKind::AtomicOp(op, args_start, args_len) => {
+                self.lower_atomic_op(*op, *args_start, *args_len, mir_ty)
             }
             NodeKind::BuiltinVaStart(..) | NodeKind::BuiltinVaEnd(..) | NodeKind::BuiltinVaCopy(..) => {
                 self.lower_builtin_void(&node_kind)
@@ -929,5 +934,117 @@ impl<'a> AstToMirLowerer<'a> {
         };
         self.mir_builder.add_statement(stmt);
         self.create_int_operand(0)
+    }
+
+    pub(crate) fn lower_atomic_op(
+        &mut self,
+        op: AtomicOp,
+        args_start: NodeRef,
+        args_len: u16,
+        mir_ty: TypeId,
+    ) -> Operand {
+        let args: Vec<NodeRef> = args_start.range(args_len).collect();
+        let order = AtomicMemOrder::SeqCst; // Default to SeqCst for now
+
+        match op {
+            AtomicOp::LoadN => {
+                let ptr = self.lower_expression(args[0], true);
+                let _ = self.lower_expression(args[1], true); // ignore memorder
+                let rval = Rvalue::AtomicLoad(ptr, order);
+                self.emit_rvalue_to_operand(rval, mir_ty)
+            }
+            AtomicOp::StoreN => {
+                let ptr = self.lower_expression(args[0], true);
+                let val = self.lower_expression(args[1], true);
+                let _ = self.lower_expression(args[2], true); // ignore memorder
+                self.mir_builder
+                    .add_statement(MirStmt::AtomicStore(ptr, val, order));
+                self.create_dummy_operand()
+            }
+            AtomicOp::ExchangeN => {
+                let ptr = self.lower_expression(args[0], true);
+                let val = self.lower_expression(args[1], true);
+                let _ = self.lower_expression(args[2], true); // ignore memorder
+                let rval = Rvalue::AtomicExchange(ptr, val, order);
+                self.emit_rvalue_to_operand(rval, mir_ty)
+            }
+            AtomicOp::CompareExchangeN => {
+                let ptr = self.lower_expression(args[0], true);
+                let expected_ptr = self.lower_expression(args[1], true);
+                let desired = self.lower_expression(args[2], true);
+                let _ = self.lower_expression(args[3], true); // weak (side effects)
+                let _ = self.lower_expression(args[4], true); // success (side effects)
+                let _ = self.lower_expression(args[5], true); // failure (side effects)
+
+                let expected_place = match expected_ptr {
+                    Operand::Copy(p) => Place::Deref(Box::new(Operand::Copy(p))),
+                    _ => Place::Deref(Box::new(expected_ptr)),
+                };
+                let expected_val_op = Operand::Copy(Box::new(expected_place.clone()));
+
+                let weak = false;
+                let cas_rval = Rvalue::AtomicCompareExchange(
+                    ptr,
+                    expected_val_op.clone(),
+                    desired.clone(),
+                    weak,
+                    order,
+                    order,
+                );
+
+                let val_ty = self.get_operand_type(&desired);
+                let (_, old_val_place) = self.create_temp_local_with_assignment(cas_rval, val_ty);
+                let old_val = Operand::Copy(Box::new(old_val_place));
+
+                let mir_type_info = self.mir_builder.get_type(val_ty);
+                let cmp_rval = if mir_type_info.is_float() {
+                    Rvalue::BinaryFloatOp(
+                        crate::mir::BinaryFloatOp::Eq,
+                        old_val.clone(),
+                        expected_val_op,
+                    )
+                } else {
+                    Rvalue::BinaryIntOp(BinaryIntOp::Eq, old_val.clone(), expected_val_op)
+                };
+
+                let (_, success_place) = self.create_temp_local_with_assignment(cmp_rval, mir_ty);
+                let success_op = Operand::Copy(Box::new(success_place));
+
+                let update_block = self.mir_builder.create_block();
+                let end_block = self.mir_builder.create_block();
+
+                self.mir_builder
+                    .set_terminator(Terminator::If(success_op.clone(), end_block, update_block));
+
+                self.mir_builder.set_current_block(update_block);
+                self.mir_builder
+                    .add_statement(MirStmt::Assign(expected_place, Rvalue::Use(old_val)));
+                self.mir_builder.set_terminator(Terminator::Goto(end_block));
+
+                self.mir_builder.set_current_block(end_block);
+                success_op
+            }
+            AtomicOp::FetchAdd
+            | AtomicOp::FetchSub
+            | AtomicOp::FetchAnd
+            | AtomicOp::FetchOr
+            | AtomicOp::FetchXor => {
+                let ptr = self.lower_expression(args[0], true);
+                let val = self.lower_expression(args[1], true);
+                let _ = self.lower_expression(args[2], true); // ignore memorder
+
+                let bin_op = match op {
+                    AtomicOp::FetchAdd => BinaryIntOp::Add,
+                    AtomicOp::FetchSub => BinaryIntOp::Sub,
+                    AtomicOp::FetchAnd => BinaryIntOp::BitAnd,
+                    AtomicOp::FetchOr => BinaryIntOp::BitOr,
+                    AtomicOp::FetchXor => BinaryIntOp::BitXor,
+                    _ => unreachable!(),
+                };
+
+                let rval = Rvalue::AtomicFetchOp(bin_op, ptr, val, order);
+                self.emit_rvalue_to_operand(rval, mir_ty)
+            }
+        }
     }
 }

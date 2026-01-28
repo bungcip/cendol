@@ -489,6 +489,10 @@ impl MirValidator {
                 self.validate_place(sema_output, dst);
                 self.validate_place(sema_output, src);
             }
+            MirStmt::AtomicStore(ptr, val, _) => {
+                self.validate_operand(sema_output, ptr);
+                self.validate_operand(sema_output, val);
+            }
         }
     }
 
@@ -710,6 +714,26 @@ impl MirValidator {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
                 Some(*type_id)
+            }
+            Rvalue::AtomicLoad(ptr, _) => {
+                self.validate_operand(sema_output, ptr);
+                None
+            }
+            Rvalue::AtomicExchange(ptr, val, _) => {
+                self.validate_operand(sema_output, ptr);
+                self.validate_operand(sema_output, val);
+                None
+            }
+            Rvalue::AtomicCompareExchange(ptr, expected, desired, _, _, _) => {
+                self.validate_operand(sema_output, ptr);
+                self.validate_operand(sema_output, expected);
+                self.validate_operand(sema_output, desired);
+                None
+            }
+            Rvalue::AtomicFetchOp(_, ptr, val, _) => {
+                self.validate_operand(sema_output, ptr);
+                self.validate_operand(sema_output, val);
+                None
             }
         }
     }

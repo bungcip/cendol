@@ -274,6 +274,15 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinVaEnd => parse_builtin_va_end(parser),
         TokenKind::BuiltinVaCopy => parse_builtin_va_copy(parser),
         TokenKind::BuiltinExpect => parse_builtin_expect(parser),
+        TokenKind::BuiltinAtomicLoadN => parse_atomic_op(parser, AtomicOp::LoadN),
+        TokenKind::BuiltinAtomicStoreN => parse_atomic_op(parser, AtomicOp::StoreN),
+        TokenKind::BuiltinAtomicExchangeN => parse_atomic_op(parser, AtomicOp::ExchangeN),
+        TokenKind::BuiltinAtomicCompareExchangeN => parse_atomic_op(parser, AtomicOp::CompareExchangeN),
+        TokenKind::BuiltinAtomicFetchAdd => parse_atomic_op(parser, AtomicOp::FetchAdd),
+        TokenKind::BuiltinAtomicFetchSub => parse_atomic_op(parser, AtomicOp::FetchSub),
+        TokenKind::BuiltinAtomicFetchAnd => parse_atomic_op(parser, AtomicOp::FetchAnd),
+        TokenKind::BuiltinAtomicFetchOr => parse_atomic_op(parser, AtomicOp::FetchOr),
+        TokenKind::BuiltinAtomicFetchXor => parse_atomic_op(parser, AtomicOp::FetchXor),
         _ => {
             let expected = "identifier, integer, float, string, char, or '('";
             Err(ParseError::UnexpectedToken {
@@ -758,5 +767,22 @@ fn parse_builtin_expect(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError
     let span = SourceSpan::new(start_loc, end_loc);
 
     let node = parser.push_node(ParsedNodeKind::BuiltinExpect(exp, c), span);
+    Ok(node)
+}
+
+/// Parse atomic builtins
+fn parse_atomic_op(parser: &mut Parser, op: AtomicOp) -> Result<ParsedNodeRef, ParseError> {
+    let token = parser.advance(); // Consume the builtin token
+    let start_loc = token.expect("atomic op token").span.start();
+
+    parser.expect(TokenKind::LeftParen)?;
+
+    let args = super::utils::expr_patterns::parse_expr_list(parser, BindingPower::ASSIGNMENT)?;
+
+    let right_paren = parser.expect(TokenKind::RightParen)?;
+    let end_loc = right_paren.span.end();
+    let span = SourceSpan::new(start_loc, end_loc);
+
+    let node = parser.push_node(ParsedNodeKind::AtomicOp(op, args), span);
     Ok(node)
 }

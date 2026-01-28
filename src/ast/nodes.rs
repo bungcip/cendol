@@ -52,6 +52,7 @@ pub enum NodeKind {
     BuiltinVaEnd(NodeRef),
     BuiltinVaCopy(NodeRef, NodeRef),
     BuiltinExpect(NodeRef, NodeRef),
+    AtomicOp(AtomicOp, NodeRef /* args start */, u16 /* arg count */),
     SizeOfExpr(NodeRef),
     SizeOfType(QualType),
     AlignOf(QualType), // C11 _Alignof
@@ -166,6 +167,12 @@ impl NodeKind {
             NodeKind::FunctionCall(call) => {
                 f(call.callee);
                 for child in call.arg_start.range(call.arg_len) {
+                    f(child);
+                }
+            }
+
+            NodeKind::AtomicOp(_, args_start, args_len) => {
+                for child in args_start.range(*args_len) {
                     f(child);
                 }
             }
@@ -452,6 +459,19 @@ pub enum UnaryOp {
 }
 
 // Binary Operators (includes assignment types)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum AtomicOp {
+    LoadN,
+    StoreN,
+    ExchangeN,
+    CompareExchangeN,
+    FetchAdd,
+    FetchSub,
+    FetchAnd,
+    FetchOr,
+    FetchXor,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(u8)]
 pub enum BinaryOp {

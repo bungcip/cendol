@@ -131,54 +131,30 @@ mod tests {
             ("123l", TokenKind::IntegerConstant(123, Some(IntegerSuffix::L))),
             ("456ul", TokenKind::IntegerConstant(456, Some(IntegerSuffix::UL))),
             ("789lu", TokenKind::IntegerConstant(789, Some(IntegerSuffix::UL))),
-            (
-                "1000ull",
-                TokenKind::IntegerConstant(1000, Some(IntegerSuffix::ULL)),
-            ),
-            (
-                "2000llu",
-                TokenKind::IntegerConstant(2000, Some(IntegerSuffix::ULL)),
-            ),
+            ("1000ull", TokenKind::IntegerConstant(1000, Some(IntegerSuffix::ULL))),
+            ("2000llu", TokenKind::IntegerConstant(2000, Some(IntegerSuffix::ULL))),
             // C11 integer suffixes - hexadecimal
             ("0x1Au", TokenKind::IntegerConstant(26, Some(IntegerSuffix::U))),
             ("0xFFll", TokenKind::IntegerConstant(255, Some(IntegerSuffix::LL))),
             ("0x10UL", TokenKind::IntegerConstant(16, Some(IntegerSuffix::UL))),
             ("0x20LU", TokenKind::IntegerConstant(32, Some(IntegerSuffix::UL))),
-            (
-                "0x40ULL",
-                TokenKind::IntegerConstant(64, Some(IntegerSuffix::ULL)),
-            ),
-            (
-                "0x80LLU",
-                TokenKind::IntegerConstant(128, Some(IntegerSuffix::ULL)),
-            ),
+            ("0x40ULL", TokenKind::IntegerConstant(64, Some(IntegerSuffix::ULL))),
+            ("0x80LLU", TokenKind::IntegerConstant(128, Some(IntegerSuffix::ULL))),
             // C11 integer suffixes - octal
             ("077u", TokenKind::IntegerConstant(63, Some(IntegerSuffix::U))),
             ("0123l", TokenKind::IntegerConstant(83, Some(IntegerSuffix::L))),
             ("0777ul", TokenKind::IntegerConstant(511, Some(IntegerSuffix::UL))),
             ("0123lu", TokenKind::IntegerConstant(83, Some(IntegerSuffix::UL))),
-            (
-                "0777ull",
-                TokenKind::IntegerConstant(511, Some(IntegerSuffix::ULL)),
-            ),
-            (
-                "0123llu",
-                TokenKind::IntegerConstant(83, Some(IntegerSuffix::ULL)),
-            ),
+            ("0777ull", TokenKind::IntegerConstant(511, Some(IntegerSuffix::ULL))),
+            ("0123llu", TokenKind::IntegerConstant(83, Some(IntegerSuffix::ULL))),
             // Case insensitive suffixes
             ("1LL", TokenKind::IntegerConstant(1, Some(IntegerSuffix::LL))),
             ("42U", TokenKind::IntegerConstant(42, Some(IntegerSuffix::U))),
             ("123L", TokenKind::IntegerConstant(123, Some(IntegerSuffix::L))),
             ("456UL", TokenKind::IntegerConstant(456, Some(IntegerSuffix::UL))),
             ("789LU", TokenKind::IntegerConstant(789, Some(IntegerSuffix::UL))),
-            (
-                "1000ULL",
-                TokenKind::IntegerConstant(1000, Some(IntegerSuffix::ULL)),
-            ),
-            (
-                "2000LLU",
-                TokenKind::IntegerConstant(2000, Some(IntegerSuffix::ULL)),
-            ),
+            ("1000ULL", TokenKind::IntegerConstant(1000, Some(IntegerSuffix::ULL))),
+            ("2000LLU", TokenKind::IntegerConstant(2000, Some(IntegerSuffix::ULL))),
         ];
 
         for (text, expected_kind) in int_literals {

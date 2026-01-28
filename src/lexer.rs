@@ -9,9 +9,9 @@ use serde::Serialize;
 pub enum TokenKind {
     // === LITERALS ===
     IntegerConstant(i64, Option<IntegerSuffix>), // Parsed integer literal value
-    FloatConstant(f64),      // Parsed float literal value
-    CharacterConstant(u8),   // Byte value of character constant
-    StringLiteral(StringId), // Interned string literal
+    FloatConstant(f64),                          // Parsed float literal value
+    CharacterConstant(u8),                       // Byte value of character constant
+    StringLiteral(StringId),                     // Interned string literal
 
     // === IDENTIFIERS ===
     Identifier(StringId), // Interned identifier

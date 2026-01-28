@@ -38,6 +38,8 @@ extern ldiv_t ldiv(long numer, long denom);
 extern lldiv_t lldiv(long long numer, long long denom);
 extern int rand(void);
 extern void srand(unsigned int seed);
+extern double strtod(const char *nptr, char **endptr);
+extern double atof(const char *nptr);
 
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1

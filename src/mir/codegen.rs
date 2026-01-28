@@ -1546,7 +1546,7 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         8 // Scalars take 8 bytes in va_list (promoted)
                     };
 
-                    let needed_slots = (size + 7) / 8;
+                    let needed_slots = size.div_ceil(8);
                     let needed_gp = needed_slots * 8;
 
                     // Address is always reg_save_area + gp_offset

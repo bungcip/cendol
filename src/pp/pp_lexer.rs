@@ -653,9 +653,18 @@ impl PPLexer {
                     Some(self.lex_operator(start_pos, ch, flags))
                 }
             }
+            b'.' => {
+                if let Some(next_ch) = self.peek_char()
+                    && next_ch.is_ascii_digit()
+                {
+                    Some(self.lex_number(start_pos, ch, flags))
+                } else {
+                    Some(self.lex_operator(start_pos, ch, flags))
+                }
+            }
             // All operators and punctuation are handled by the optimized helper function.
-            b'+' | b'-' | b'*' | b'/' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'.' | b'?' | b':'
-            | b',' | b';' | b'(' | b')' | b'[' | b']' | b'{' | b'}' => Some(self.lex_operator(start_pos, ch, flags)),
+            b'+' | b'-' | b'*' | b'/' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'?' | b':' | b','
+            | b';' | b'(' | b')' | b'[' | b']' | b'{' | b'}' => Some(self.lex_operator(start_pos, ch, flags)),
             _ => Some(PPToken::new(
                 PPTokenKind::Unknown,
                 flags,

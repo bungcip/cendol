@@ -401,64 +401,59 @@ impl<'a> MirValidator<'a> {
     fn validate_place(&mut self, place: &Place) -> Option<TypeId> {
         match place {
             Place::Local(local_id) => {
-                if let Some(local) = self.mir.locals.get(local_id) {
-                    Some(local.type_id)
-                } else {
+                let local = self.mir.locals.get(local_id).or_else(|| {
                     self.errors.push(ValidationError::LocalNotFound(*local_id));
                     None
-                }
+                })?;
+                Some(local.type_id)
             }
             Place::Deref(op) => {
                 self.validate_operand(op);
-                // try to infer pointer pointee type
-                if let Some(op_ty) = self.operand_type(op) {
-                    if let Some(MirType::Pointer { pointee }) = self.mir.types.get(&op_ty) {
-                        Some(*pointee)
-                    } else {
-                        // Not a pointer - deref of non-pointer
-                        self.errors.push(ValidationError::IllegalOperation(
-                            "Deref of non-pointer operand".to_string(),
-                        ));
-                        None
-                    }
-                } else {
-                    None
-                }
+                let op_ty = self.operand_type(op)?;
+                let Some(ty) = self.mir.types.get(&op_ty) else {
+                    self.errors.push(ValidationError::TypeNotFound(op_ty));
+                    return None;
+                };
+
+                let MirType::Pointer { pointee } = ty else {
+                    self.errors.push(ValidationError::IllegalOperation(
+                        "Deref of non-pointer operand".to_string(),
+                    ));
+                    return None;
+                };
+                Some(*pointee)
             }
             Place::Global(gid) => {
-                if let Some(g) = self.mir.globals.get(gid) {
-                    Some(g.type_id)
-                } else {
+                let global = self.mir.globals.get(gid).or_else(|| {
                     self.errors.push(ValidationError::GlobalNotFound(*gid));
                     None
-                }
+                })?;
+                Some(global.type_id)
             }
             Place::StructField(base, idx) => {
-                if let Some(base_ty) = self.validate_place(base) {
-                    if let Some(MirType::Record { field_types, .. }) = self.mir.types.get(&base_ty) {
-                        if *idx < field_types.len() {
-                            Some(field_types[*idx])
-                        } else {
-                            self.errors.push(ValidationError::IllegalOperation(format!(
-                                "Struct field index {} out of bounds",
-                                idx
-                            )));
-                            None
-                        }
-                    } else {
-                        self.errors.push(ValidationError::IllegalOperation(
-                            "Struct field access on non-record type".to_string(),
-                        ));
-                        None
-                    }
-                } else {
+                let base_ty = self.validate_place(base)?;
+                let Some(ty) = self.mir.types.get(&base_ty) else {
+                    self.errors.push(ValidationError::TypeNotFound(base_ty));
+                    return None;
+                };
+
+                let MirType::Record { field_types, .. } = ty else {
+                    self.errors.push(ValidationError::IllegalOperation(
+                        "Struct field access on non-record type".to_string(),
+                    ));
+                    return None;
+                };
+
+                field_types.get(*idx).copied().or_else(|| {
+                    self.errors.push(ValidationError::IllegalOperation(format!(
+                        "Struct field index {} out of bounds",
+                        idx
+                    )));
                     None
-                }
+                })
             }
             Place::ArrayIndex(base, _idx_op) => {
-                // validate base place and index operand
-                let _ = self.validate_place(base);
-                // index operand may be complex; index operand validation is handled where used
+                self.validate_place(base);
                 None
             }
         }

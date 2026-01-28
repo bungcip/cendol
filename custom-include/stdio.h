@@ -29,6 +29,7 @@ extern int getc(FILE *stream);
 extern char *fgets(char *s, int n, FILE *stream);
 extern ssize_t getline(char **lineptr, size_t *n, FILE *stream);
 extern int putchar(int c);
+extern int fflush(FILE *stream);
 extern void perror(const char *s);
 
 #endif

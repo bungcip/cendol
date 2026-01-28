@@ -1,0 +1,10 @@
+---
+source: src/tests/pp_pasting.rs
+expression: tokens
+---
+- kind: Identifier
+  text: prefixa
+- kind: Comma
+  text: ","
+- kind: Identifier
+  text: b

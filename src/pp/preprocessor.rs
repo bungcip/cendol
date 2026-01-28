@@ -2355,6 +2355,47 @@ impl<'src> Preprocessor<'src> {
         Ok(args)
     }
 
+    /// Helper to collect variadic arguments with commas inserted
+    fn collect_variadic_args_with_commas(
+        &mut self,
+        args: &[Vec<PPToken>],
+        start_index: usize,
+        trigger_loc: SourceLoc,
+    ) -> Vec<PPToken> {
+        let mut result = Vec::new();
+        let mut first = true;
+
+        // We need a source for the comma token.
+        // We create a virtual buffer for it to ensure stringification works correctly.
+        // We only create it if we actually need a comma.
+        let comma_source_id = if args.len() > start_index + 1 {
+            Some(
+                self.source_manager
+                    .add_virtual_buffer(b",".to_vec(), "<comma>", Some(trigger_loc)),
+            )
+        } else {
+            None
+        };
+
+        for arg in args.iter().skip(start_index) {
+            // Allow collapsible_if because let_chains are unstable
+            #[allow(clippy::collapsible_if)]
+            if !first {
+                if let Some(sid) = comma_source_id {
+                    result.push(PPToken::new(
+                        PPTokenKind::Comma,
+                        PPTokenFlags::empty(),
+                        SourceLoc::new(sid, 0),
+                        1,
+                    ));
+                }
+            }
+            result.extend(arg.clone());
+            first = false;
+        }
+        result
+    }
+
     /// Substitute parameters in macro body
     fn substitute_macro(
         &mut self,
@@ -2386,7 +2427,7 @@ impl<'src> Preprocessor<'src> {
                                 // Handle variadic argument
                                 let start_index = macro_info.parameter_list.len();
                                 let variadic_args =
-                                    args.iter().skip(start_index).flatten().cloned().collect::<Vec<_>>();
+                                    self.collect_variadic_args_with_commas(args, start_index, token.location);
                                 let stringified = self.stringify_tokens(&variadic_args, token.location)?;
                                 result.push(stringified);
                                 i += 2;
@@ -2415,7 +2456,7 @@ impl<'src> Preprocessor<'src> {
                                 args[param_index].clone()
                             } else if macro_info.variadic_arg == Some(symbol) {
                                 let start_index = macro_info.parameter_list.len();
-                                args.iter().skip(start_index).flatten().cloned().collect()
+                                self.collect_variadic_args_with_commas(args, start_index, right_token.location)
                             } else {
                                 vec![*right_token]
                             }

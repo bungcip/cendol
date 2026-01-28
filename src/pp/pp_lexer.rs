@@ -548,20 +548,20 @@ impl PPLexer {
             }
             b'\\' => {
                 let saved_pos = self.position;
-                let saved_lines = self.line_starts.clone();
+                let saved_lines_len = self.line_starts.len();
 
                 match self.lex_ucn(false) {
                     Some(Ok(_)) => {
                         // Valid UCN start. Backtrack to just after `\` so lex_identifier can re-parse it.
                         self.position = saved_pos;
-                        self.line_starts = saved_lines;
+                        self.line_starts.truncate(saved_lines_len);
                         Some(self.lex_identifier(start_pos, ch, flags))
                     }
                     _ => {
                         // Not a UCN or invalid.
                         // Backtrack to just after `\` (saved_pos).
                         self.position = saved_pos;
-                        self.line_starts = saved_lines;
+                        self.line_starts.truncate(saved_lines_len);
                         Some(PPToken::new(
                             PPTokenKind::Unknown,
                             flags,
@@ -612,7 +612,7 @@ impl PPLexer {
                     self.next_char(); // consume :
                     // Check for %:%: (##)
                     let saved_pos = self.position;
-                    let saved_lines = self.line_starts.clone();
+                    let saved_lines_len = self.line_starts.len();
 
                     if self.peek_char() == Some(b'%') {
                         self.next_char(); // consume %
@@ -627,7 +627,7 @@ impl PPLexer {
                         } else {
                             // Backtrack
                             self.position = saved_pos;
-                            self.line_starts = saved_lines;
+                            self.line_starts.truncate(saved_lines_len);
 
                             let mut token_flags = flags;
                             token_flags |= PPTokenFlags::STARTS_PP_LINE;
@@ -692,7 +692,7 @@ impl PPLexer {
 
             // Check for comments by temporarily consuming
             let saved_position = self.position;
-            let saved_line_starts = self.line_starts.clone();
+            let saved_line_starts_len = self.line_starts.len();
 
             let ch1 = self.next_char();
             let ch2 = self.next_char();
@@ -717,7 +717,7 @@ impl PPLexer {
             } else {
                 // Not a comment, restore position
                 self.position = saved_position;
-                self.line_starts = saved_line_starts;
+                self.line_starts.truncate(saved_line_starts_len);
                 break;
             }
         }
@@ -893,7 +893,7 @@ impl PPLexer {
             // Check for UCN
             if let Some(b'\\') = self.peek_char() {
                 let saved_pos = self.position;
-                let saved_lines = self.line_starts.clone();
+                let saved_lines_len = self.line_starts.len();
                 self.next_char(); // consume \
 
                 match self.lex_ucn(false) {
@@ -905,7 +905,7 @@ impl PPLexer {
                         // Not a valid UCN or not a UCN.
                         // Backtrack and stop identifier
                         self.position = saved_pos;
-                        self.line_starts = saved_lines;
+                        self.line_starts.truncate(saved_lines_len);
                         break;
                     }
                 }
@@ -916,7 +916,7 @@ impl PPLexer {
             if let Some(ch) = self.peek_char() {
                 if ch >= 0x80 && self.is_valid_utf8_start(ch) {
                     let saved_pos = self.position;
-                    let saved_lines = self.line_starts.clone();
+                    let saved_lines_len = self.line_starts.len();
 
                     self.next_char(); // consume first
                     let mut bytes = vec![ch];
@@ -934,7 +934,7 @@ impl PPLexer {
                     } else {
                         // Invalid UTF-8, backtrack
                         self.position = saved_pos;
-                        self.line_starts = saved_lines;
+                        self.line_starts.truncate(saved_lines_len);
                         break;
                     }
                     continue;

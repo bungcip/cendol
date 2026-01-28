@@ -2,7 +2,8 @@ use crate::{
     ast::{nodes::*, *},
     diagnostic::{DiagnosticEngine, SemanticError},
     semantic::{
-        ArraySizeType, BuiltinType, QualType, SymbolKind, SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
+        ArraySizeType, BuiltinType, QualType, StructMember, SymbolKind, SymbolTable, TypeKind, TypeQualifiers, TypeRef,
+        TypeRegistry,
         conversions::{integer_promotion, usual_arithmetic_conversions},
     },
 };
@@ -909,8 +910,12 @@ impl<'a> SemanticAnalyzer<'a> {
         let target_type = self.registry.get(target_ty.ty()).clone();
         match target_type.kind {
             TypeKind::Record { .. } => {
+                // Flatten members for initialization, handling anonymous structs/unions
+                let mut flat_members = Vec::new();
+                target_type.flatten_members(self.registry, &mut flat_members);
+
                 for item_ref in list.init_start.range(list.init_len) {
-                    self.check_initializer_item_record(item_ref, target_ty);
+                    self.check_initializer_item_record(item_ref, &flat_members, target_ty);
                 }
             }
             _ => {
@@ -942,7 +947,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn check_initializer_item_record(&mut self, item_ref: NodeRef, record_ty: QualType) {
+    fn check_initializer_item_record(&mut self, item_ref: NodeRef, members: &[StructMember], record_ty: QualType) {
         let node_kind = self.ast.get_kind(item_ref);
         if let NodeKind::InitializerItem(init) = node_kind {
             // 1. Validate designators
@@ -950,9 +955,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 let first_des_ref = init.designator_start;
                 if let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(first_des_ref) {
                     // Check if member exists
-                    let found_ty = self.find_member(record_ty.ty(), *name);
+                    // TODO: recursive search for anonymous members if not found directly
+                    let found = members.iter().any(|m| m.name == Some(*name));
 
-                    if found_ty.is_none() {
+                    if !found {
                         let ty_str = self.registry.display_type(record_ty.ty());
                         let span = self.ast.get_span(first_des_ref);
                         self.report_error(SemanticError::MemberNotFound {
@@ -1067,33 +1073,6 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    // Recursive helper to find member (handling anonymous structs/unions)
-    fn find_member(&self, record_ty: TypeRef, name: NameId) -> Option<QualType> {
-        if !record_ty.is_record() {
-            return None;
-        }
-
-        if let TypeKind::Record { members, .. } = &self.registry.get(record_ty).kind {
-            // 1. Check direct members
-            if let Some(member) = members.iter().find(|m| m.name == Some(name)) {
-                return Some(member.member_type);
-            }
-
-            // 2. Check anonymous members
-            for member in members {
-                if member.name.is_none() {
-                    let member_ty = member.member_type.ty();
-                    if member_ty.is_record()
-                        && let Some(found_ty) = self.find_member(member_ty, name)
-                    {
-                        return Some(found_ty);
-                    }
-                }
-            }
-        }
-        None
-    }
-
     fn visit_member_access(
         &mut self,
         obj_ref: NodeRef,
@@ -1112,6 +1091,33 @@ impl<'a> SemanticAnalyzer<'a> {
         // Ensure layout is computed for the record type
         let _ = self.registry.ensure_layout(record_ty_ref);
 
+        // Recursive helper to find member (handling anonymous structs/unions)
+        fn find_member(registry: &TypeRegistry, record_ty: crate::semantic::TypeRef, name: NameId) -> Option<QualType> {
+            if !record_ty.is_record() {
+                return None;
+            }
+
+            if let TypeKind::Record { members, .. } = &registry.get(record_ty).kind {
+                // 1. Check direct members
+                if let Some(member) = members.iter().find(|m| m.name == Some(name)) {
+                    return Some(member.member_type);
+                }
+
+                // 2. Check anonymous members
+                for member in members {
+                    if member.name.is_none() {
+                        let member_ty = member.member_type.ty();
+                        if member_ty.is_record()
+                            && let Some(found_ty) = find_member(registry, member_ty, name)
+                        {
+                            return Some(found_ty);
+                        }
+                    }
+                }
+            }
+            None
+        }
+
         if !record_ty_ref.is_record() {
             let ty_str = self.registry.get(record_ty_ref).kind.to_string();
             self.report_error(SemanticError::MemberAccessOnNonRecord { ty: ty_str, span });
@@ -1125,7 +1131,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return None;
         }
 
-        if let Some(ty) = self.find_member(record_ty_ref, field_name) {
+        if let Some(ty) = find_member(self.registry, record_ty_ref, field_name) {
             return Some(ty);
         }
 

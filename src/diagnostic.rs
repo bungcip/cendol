@@ -257,6 +257,16 @@ pub enum SemanticError {
     #[error("non-void function '{name}' should return a value")]
     NonVoidReturnWithoutValue { name: String, span: SourceSpan },
 
+    #[error("invalid number of arguments: expected {expected}, found {found}")]
+    InvalidNumberOfArguments {
+        expected: usize,
+        found: usize,
+        span: SourceSpan,
+    },
+
+    #[error("invalid argument type for atomic builtin: {ty}")]
+    InvalidAtomicArgument { ty: String, span: SourceSpan },
+
     #[error("excess elements in {kind} initializer")]
     ExcessElements { kind: String, span: SourceSpan },
 
@@ -377,6 +387,8 @@ impl SemanticError {
             SemanticError::ConflictingTypes { span, .. } => *span,
             SemanticError::VoidReturnWithValue { span, .. } => *span,
             SemanticError::NonVoidReturnWithoutValue { span, .. } => *span,
+            SemanticError::InvalidNumberOfArguments { span, .. } => *span,
+            SemanticError::InvalidAtomicArgument { span, .. } => *span,
             SemanticError::ExcessElements { span, .. } => *span,
             SemanticError::UnsupportedFeature { span, .. } => *span,
             SemanticError::InvalidArraySize { span } => *span,

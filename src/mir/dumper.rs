@@ -322,6 +322,15 @@ impl<'a> MirDumper<'a> {
                     self.place_to_string(src)
                 )?;
             }
+            MirStmt::AtomicStore(ptr, val, order) => {
+                write!(
+                    output,
+                    "atomic_store({}, {}, {:?})",
+                    self.operand_to_string(ptr),
+                    self.operand_to_string(val),
+                    order
+                )?;
+            }
         }
         Ok(())
     }
@@ -688,6 +697,40 @@ impl<'a> MirDumper<'a> {
                     "va_arg({}, {})",
                     self.place_to_string(ap),
                     self.type_to_string(*ty)
+                )?;
+            }
+            Rvalue::AtomicLoad(ptr, order) => {
+                write!(output, "atomic_load({}, {:?})", self.operand_to_string(ptr), order)?;
+            }
+            Rvalue::AtomicExchange(ptr, val, order) => {
+                write!(
+                    output,
+                    "atomic_xchg({}, {}, {:?})",
+                    self.operand_to_string(ptr),
+                    self.operand_to_string(val),
+                    order
+                )?;
+            }
+            Rvalue::AtomicCompareExchange(ptr, expected, desired, weak, success, failure) => {
+                write!(
+                    output,
+                    "atomic_cmpxchg({}, {}, {}, {}, {:?}, {:?})",
+                    self.operand_to_string(ptr),
+                    self.operand_to_string(expected),
+                    self.operand_to_string(desired),
+                    weak,
+                    success,
+                    failure
+                )?;
+            }
+            Rvalue::AtomicFetchOp(op, ptr, val, order) => {
+                write!(
+                    output,
+                    "atomic_fetch_{}({}, {}, {:?})",
+                    self.binary_int_op_to_string(op),
+                    self.operand_to_string(ptr),
+                    self.operand_to_string(val),
+                    order
                 )?;
             }
         }

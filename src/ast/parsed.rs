@@ -1,5 +1,7 @@
 use crate::{
-    ast::{BinaryOp, FunctionSpecifier, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp},
+    ast::{
+        AtomicOp, BinaryOp, FunctionSpecifier, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp,
+    },
     semantic::TypeQualifiers,
 };
 use std::num::NonZeroU32;
@@ -82,6 +84,7 @@ pub enum ParsedNodeKind {
     BuiltinVaEnd(ParsedNodeRef),
     BuiltinVaCopy(ParsedNodeRef, ParsedNodeRef),
     BuiltinExpect(ParsedNodeRef, ParsedNodeRef),
+    AtomicOp(AtomicOp, Vec<ParsedNodeRef>),
     SizeOfExpr(ParsedNodeRef),
     SizeOfType(ParsedType),
     AlignOf(ParsedType),

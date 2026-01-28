@@ -185,7 +185,8 @@ impl AstDumper {
             NodeKind::BuiltinVaStart(_, _)
             | NodeKind::BuiltinVaEnd(_)
             | NodeKind::BuiltinVaCopy(_, _)
-            | NodeKind::BuiltinExpect(_, _) => {}
+            | NodeKind::BuiltinExpect(_, _)
+            | NodeKind::AtomicOp(..) => {}
             NodeKind::VarDecl(var_decl) => {
                 type_refs.insert(var_decl.ty.ty());
             }
@@ -353,6 +354,10 @@ impl AstDumper {
             ParsedNodeKind::BuiltinExpect(exp, c) => {
                 println!("BuiltinExpect({}, {})", exp.get(), c.get())
             }
+            ParsedNodeKind::AtomicOp(op, args) => {
+                let args_str = args.iter().map(|a| a.get().to_string()).collect::<Vec<_>>().join(", ");
+                println!("AtomicOp({:?}, args=[{}])", op, args_str)
+            }
             ParsedNodeKind::GenericSelection(ctrl, assocs) => {
                 println!("GenericSelection({}, {:?})", ctrl.get(), assocs)
             }
@@ -493,6 +498,15 @@ impl AstDumper {
             }
             NodeKind::BuiltinExpect(exp, c) => {
                 println!("BuiltinExpect({}, {})", exp.get(), c.get())
+            }
+            NodeKind::AtomicOp(op, args_start, args_len) => {
+                let start = args_start.get();
+                if *args_len > 0 {
+                    let last = start + *args_len as u32 - 1;
+                    println!("AtomicOp({:?}, args={}..{})", op, start, last);
+                } else {
+                    println!("AtomicOp({:?}, args=[])", op);
+                }
             }
 
             NodeKind::GenericSelection(gs) => {

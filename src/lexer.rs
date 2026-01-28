@@ -79,6 +79,17 @@ pub enum TokenKind {
     BuiltinVaCopy,
     BuiltinExpect,
 
+    // Atomic builtins
+    BuiltinAtomicLoadN,
+    BuiltinAtomicStoreN,
+    BuiltinAtomicExchangeN,
+    BuiltinAtomicCompareExchangeN,
+    BuiltinAtomicFetchAdd,
+    BuiltinAtomicFetchSub,
+    BuiltinAtomicFetchAnd,
+    BuiltinAtomicFetchOr,
+    BuiltinAtomicFetchXor,
+
     // === OPERATORS ===
     // Arithmetic operators
     Plus,
@@ -383,6 +394,18 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__builtin_va_end"), TokenKind::BuiltinVaEnd);
         m.insert(StringId::new("__builtin_va_copy"), TokenKind::BuiltinVaCopy);
         m.insert(StringId::new("__builtin_expect"), TokenKind::BuiltinExpect);
+        m.insert(StringId::new("__atomic_load_n"), TokenKind::BuiltinAtomicLoadN);
+        m.insert(StringId::new("__atomic_store_n"), TokenKind::BuiltinAtomicStoreN);
+        m.insert(StringId::new("__atomic_exchange_n"), TokenKind::BuiltinAtomicExchangeN);
+        m.insert(
+            StringId::new("__atomic_compare_exchange_n"),
+            TokenKind::BuiltinAtomicCompareExchangeN,
+        );
+        m.insert(StringId::new("__atomic_fetch_add"), TokenKind::BuiltinAtomicFetchAdd);
+        m.insert(StringId::new("__atomic_fetch_sub"), TokenKind::BuiltinAtomicFetchSub);
+        m.insert(StringId::new("__atomic_fetch_and"), TokenKind::BuiltinAtomicFetchAnd);
+        m.insert(StringId::new("__atomic_fetch_or"), TokenKind::BuiltinAtomicFetchOr);
+        m.insert(StringId::new("__atomic_fetch_xor"), TokenKind::BuiltinAtomicFetchXor);
         m
     })
 }

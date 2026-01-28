@@ -2173,6 +2173,30 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.ast.kinds[node.index()] = NodeKind::BuiltinExpect(e, expected);
                 smallvec![node]
             }
+            ParsedNodeKind::AtomicOp(op, args) => {
+                let node = self.get_or_push_slot(target_slots, span);
+
+                // Reserve slots for args to ensure contiguity
+                let mut arg_dummies = Vec::with_capacity(args.len());
+                for _ in 0..args.len() {
+                    arg_dummies.push(self.push_dummy(span));
+                }
+
+                // Lower arguments into reserved slots
+                for (i, &arg_parsed_ref) in args.iter().enumerate() {
+                    self.lower_expression_into(arg_parsed_ref, arg_dummies[i]);
+                }
+
+                let arg_start = if !arg_dummies.is_empty() {
+                    arg_dummies[0]
+                } else {
+                    NodeRef::ROOT
+                };
+                let arg_len = arg_dummies.len() as u16;
+
+                self.ast.kinds[node.index()] = NodeKind::AtomicOp(*op, arg_start, arg_len);
+                smallvec![node]
+            }
             ParsedNodeKind::CompoundLiteral(ty_name, init) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let ty = convert_to_qual_type(self, *ty_name, span)
@@ -2478,6 +2502,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::BuiltinVaCopy(dst, src) => {
                 self.collect_labels(*dst);
                 self.collect_labels(*src);
+            }
+            ParsedNodeKind::AtomicOp(_, args) => {
+                for arg in args {
+                    self.collect_labels(*arg);
+                }
             }
             _ => {}
         }

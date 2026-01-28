@@ -20,6 +20,7 @@ use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use crate::semantic::{ImplicitConversion, Namespace, ScopeId};
 use hashbrown::{HashMap, HashSet};
 use log::debug;
+use target_lexicon::Architecture;
 
 use crate::mir::GlobalId;
 
@@ -874,7 +875,13 @@ impl<'a> AstToMirLowerer<'a> {
             BuiltinType::ULong | BuiltinType::ULongLong => MirType::U64,
             BuiltinType::Float => MirType::F32,
             BuiltinType::Double => MirType::F64,
-            BuiltinType::LongDouble => MirType::F128,
+            BuiltinType::LongDouble => {
+                if self.registry.target_triple.architecture == Architecture::X86_64 {
+                    MirType::F64
+                } else {
+                    MirType::F128
+                }
+            }
             BuiltinType::Signed => MirType::I32,
             BuiltinType::VaList => MirType::U64, // Opaque handle
         }

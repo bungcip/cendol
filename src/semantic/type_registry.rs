@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use crate::source_manager::SourceSpan;
 use crate::{ast::NameId, diagnostic::SemanticError, semantic::QualType};
 use hashbrown::{HashMap, HashSet};
-use target_lexicon::{PointerWidth, Triple};
+use target_lexicon::{Architecture, PointerWidth, Triple};
 
 use super::types::TypeClass;
 use super::types::{FieldLayout, LayoutKind};
@@ -559,11 +559,18 @@ impl TypeRegistry {
                     alignment: 8,
                     kind: LayoutKind::Scalar,
                 },
-                BuiltinType::LongDouble => TypeLayout {
-                    size: 16,
-                    alignment: 16,
-                    kind: LayoutKind::Scalar,
-                },
+                BuiltinType::LongDouble => {
+                    let size = if self.target_triple.architecture == Architecture::X86_64 {
+                        8
+                    } else {
+                        16
+                    };
+                    TypeLayout {
+                        size,
+                        alignment: size,
+                        kind: LayoutKind::Scalar,
+                    }
+                }
                 BuiltinType::Signed => TypeLayout {
                     size: 4,
                     alignment: 4,

@@ -2378,17 +2378,13 @@ impl<'src> Preprocessor<'src> {
         };
 
         for arg in args.iter().skip(start_index) {
-            // Allow collapsible_if because let_chains are unstable
-            #[allow(clippy::collapsible_if)]
-            if !first {
-                if let Some(sid) = comma_source_id {
-                    result.push(PPToken::new(
-                        PPTokenKind::Comma,
-                        PPTokenFlags::empty(),
-                        SourceLoc::new(sid, 0),
-                        1,
-                    ));
-                }
+            if !first && let Some(sid) = comma_source_id {
+                result.push(PPToken::new(
+                    PPTokenKind::Comma,
+                    PPTokenFlags::empty(),
+                    SourceLoc::new(sid, 0),
+                    1,
+                ));
             }
             result.extend(arg.clone());
             first = false;

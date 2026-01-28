@@ -1,0 +1,24 @@
+---
+source: src/tests/pp_expressions.rs
+expression: tokens
+---
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: undefined_is_zero
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "1"
+- kind: Semicolon
+  text: ;
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: undefined_is_false
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "1"
+- kind: Semicolon
+  text: ;

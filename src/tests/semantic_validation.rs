@@ -87,7 +87,7 @@ fn rejects_variable_as_typedef_in_cast() {
         }
     "#,
         CompilePhase::Mir,
-        "Unexpected token: expected Semicolon, found IntegerConstant(1)",
+        "Unexpected token: expected Semicolon, found IntegerConstant(1, None)",
     );
 }
 

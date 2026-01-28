@@ -197,10 +197,10 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
             let node = parser.push_node(ParsedNodeKind::Ident(symbol), token.span);
             Ok(node)
         }
-        TokenKind::IntegerConstant(val) => {
+        TokenKind::IntegerConstant(val, suffix) => {
             parser.advance();
             let node = parser.push_node(
-                ParsedNodeKind::Literal(literal::Literal::Int { val, suffix: None }),
+                ParsedNodeKind::Literal(literal::Literal::Int { val, suffix }),
                 token.span,
             );
             Ok(node)

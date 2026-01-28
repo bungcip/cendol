@@ -1430,12 +1430,32 @@ impl<'a> SemanticAnalyzer<'a> {
                         Some(literal::IntegerSuffix::UL) => self.registry.type_long_unsigned,
                         Some(literal::IntegerSuffix::ULL) => self.registry.type_long_long_unsigned,
                         None => {
-                            if *val >= i32::MIN as i64 && *val <= i32::MAX as i64 {
-                                self.registry.type_int
-                            } else if *val >= 0 && *val <= u32::MAX as i64 {
-                                self.registry.type_int_unsigned
+                            // Ensure layouts are computed for size checks
+                            let _ = self.registry.ensure_layout(self.registry.type_int);
+                            let _ = self.registry.ensure_layout(self.registry.type_long);
+
+                            let int_size = self.registry.get_layout(self.registry.type_int).size as u32;
+                            let int_max = if int_size >= 8 {
+                                i64::MAX
                             } else {
+                                (1i64 << (int_size * 8 - 1)) - 1
+                            };
+
+                            let long_size = self.registry.get_layout(self.registry.type_long).size as u32;
+                            let long_max = if long_size >= 8 {
+                                i64::MAX
+                            } else {
+                                (1i64 << (long_size * 8 - 1)) - 1
+                            };
+
+                            if *val >= 0 && *val <= int_max {
+                                self.registry.type_int
+                            } else if *val >= 0 && *val <= long_max {
                                 self.registry.type_long
+                            } else {
+                                // Default to long long (or unsigned long long if it doesn't fit, handled by implicit typing)
+                                // Ideally we should distinguish decimal vs hex here.
+                                self.registry.type_long_long
                             }
                         }
                     };

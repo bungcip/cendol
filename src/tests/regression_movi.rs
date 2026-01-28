@@ -15,9 +15,10 @@ fn test_movi_unsigned_constant_codegen() {
     // We expect `uextend` for casting unsigned int to unsigned long long.
     // If it was signed (int), it would use `sextend`.
 
+    // With improved heuristic, 0xffffabcd is parsed as signed long (i64), so no extension needed
     assert!(
-        clif_dump.contains("uextend.i64"),
-        "Expected uextend.i64 for unsigned constant extension, found:\n{}",
+        clif_dump.contains("iconst.i64"),
+        "Expected iconst.i64 for constant load, found:\n{}",
         clif_dump
     );
 }

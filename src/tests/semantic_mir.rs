@@ -642,7 +642,7 @@ mod tests {
         {
 
           bb9:
-            return cast<u64>(const 200000)
+            return const 200000
         }
 
         fn fn_void() -> void
@@ -691,14 +691,14 @@ mod tests {
         {
 
           bb10:
-            return cast<i64>(const -3000000000)
+            return const -3000000000
         }
 
         fn fn_long() -> i64
         {
 
           bb8:
-            return cast<i64>(const 100000)
+            return const 100000
         }
 
         fn fn_ushort() -> u16
@@ -712,7 +712,7 @@ mod tests {
         {
 
           bb11:
-            return cast<u64>(const 4000000000)
+            return const 4000000000
         }
         ");
     }

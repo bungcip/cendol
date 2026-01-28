@@ -1,3 +1,4 @@
+use crate::ast::literal::IntegerSuffix;
 use crate::intern::StringId;
 use crate::pp::{PPToken, PPTokenKind};
 use crate::source_manager::SourceSpan;
@@ -7,7 +8,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum TokenKind {
     // === LITERALS ===
-    IntegerConstant(i64),    // Parsed integer literal value
+    IntegerConstant(i64, Option<IntegerSuffix>), // Parsed integer literal value
     FloatConstant(f64),      // Parsed float literal value
     CharacterConstant(u8),   // Byte value of character constant
     StringLiteral(StringId), // Interned string literal
@@ -431,15 +432,15 @@ impl<'src> Lexer<'src> {
     /// general-purpose parsing functions) with a single, direct parsing loop.
     /// This avoids intermediate allocations and improves performance by using
     /// checked arithmetic directly on the string's characters.
-    fn parse_c11_integer_literal(&self, text: StringId) -> Result<i64, ()> {
+    fn parse_c11_integer_literal(&self, text: StringId) -> Result<(i64, Option<IntegerSuffix>), ()> {
         let text_str = text.as_str();
 
         // Use the existing, optimized suffix stripper to get the numeric part.
-        let number_part = Self::strip_integer_suffix(text_str);
+        let (number_part, suffix) = Self::strip_integer_suffix(text_str);
 
         // Handle the case where the number is just "0" after stripping suffix.
         if number_part == "0" {
-            return Ok(0);
+            return Ok((0, suffix));
         }
 
         let mut base = 10;
@@ -471,11 +472,11 @@ impl<'src> Lexer<'src> {
             result = result.checked_add(digit as u64).ok_or(())?;
         }
 
-        Ok(result as i64)
+        Ok((result as i64, suffix))
     }
 
     /// Strip integer literal suffix (u, l, ll, ul, ull, etc.)
-    fn strip_integer_suffix(text: &str) -> &str {
+    fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
         // ⚡ Bolt: Optimized suffix stripping.
         // This implementation is faster than the previous version, which used multiple
         // string slices and `eq_ignore_ascii_case` calls. By working with bytes directly
@@ -486,7 +487,7 @@ impl<'src> Lexer<'src> {
         let len = bytes.len();
 
         if len == 0 {
-            return text;
+            return (text, None);
         }
 
         // Check for the longest suffixes first (3 characters: "ull", "llu").
@@ -497,28 +498,32 @@ impl<'src> Lexer<'src> {
                 bytes[len - 1].to_ascii_lowercase(),
             );
             if matches!(last3, (b'u', b'l', b'l') | (b'l', b'l', b'u')) {
-                return &text[..len - 3];
+                return (&text[..len - 3], Some(IntegerSuffix::ULL));
             }
         }
 
         // Check for 2-character suffixes ("ul", "lu", "ll").
         if len >= 2 {
             let last2 = (bytes[len - 2].to_ascii_lowercase(), bytes[len - 1].to_ascii_lowercase());
-            if matches!(last2, (b'u', b'l') | (b'l', b'u') | (b'l', b'l')) {
-                return &text[..len - 2];
+            if matches!(last2, (b'u', b'l') | (b'l', b'u')) {
+                return (&text[..len - 2], Some(IntegerSuffix::UL));
+            } else if matches!(last2, (b'l', b'l')) {
+                return (&text[..len - 2], Some(IntegerSuffix::LL));
             }
         }
 
         // Check for 1-character suffixes ("u", "l").
         if len >= 1 {
             let last1 = bytes[len - 1].to_ascii_lowercase();
-            if matches!(last1, b'u' | b'l') {
-                return &text[..len - 1];
+            if matches!(last1, b'u') {
+                return (&text[..len - 1], Some(IntegerSuffix::U));
+            } else if matches!(last1, b'l') {
+                return (&text[..len - 1], Some(IntegerSuffix::L));
             }
         }
 
         // No suffix found.
-        text
+        (text, None)
     }
 
     /// Classify a preprocessor token into a lexical token
@@ -540,8 +545,8 @@ impl<'src> Lexer<'src> {
             PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint),
             PPTokenKind::Number(value) => {
                 // Try to parse as integer first, then float, then unknown
-                if let Ok(int_val) = self.parse_c11_integer_literal(value) {
-                    TokenKind::IntegerConstant(int_val)
+                if let Ok((int_val, suffix)) = self.parse_c11_integer_literal(value) {
+                    TokenKind::IntegerConstant(int_val, suffix)
                 } else if let Ok(float_val) = self.parse_c11_float_literal(value) {
                     TokenKind::FloatConstant(float_val)
                 } else {

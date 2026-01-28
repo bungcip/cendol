@@ -117,7 +117,7 @@ pub enum ParsedNodeKind {
     Declaration(ParsedDeclarationData),
     FunctionDef(ParsedFunctionDefData),
     EnumConstant(NameId, Option<ParsedNodeRef>),
-    StaticAssert(ParsedNodeRef, NameId),
+    StaticAssert(ParsedNodeRef, ParsedNodeRef),
 
     // --- Top Level ---
     TranslationUnit(Vec<ParsedNodeRef>),

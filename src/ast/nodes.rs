@@ -89,7 +89,7 @@ pub enum NodeKind {
     // Removed Parser-only Declaration and FunctionDef variants.
     // They are now lowered to semantic nodes immediately or exist only in ParsedAst.
     EnumConstant(NameId, Option<NodeRef> /* value expr */),
-    StaticAssert(NodeRef /* condition */, NameId /* message */),
+    StaticAssert(NodeRef /* condition */, NodeRef /* message */),
 
     // --- Semantic Nodes (Type-Resolved) ---
     // declarations of VarDecl/FunctionDecl/TypedefDecl/RecordDecl

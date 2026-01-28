@@ -1376,7 +1376,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     && let Some(target) = target_slots.first()
                 {
                     let lowered_expr = self.lower_expression(*expr);
-                    self.ast.kinds[target.index()] = NodeKind::StaticAssert(lowered_expr, *msg);
+                    let lowered_msg = self.lower_expression(*msg);
+                    self.ast.kinds[target.index()] = NodeKind::StaticAssert(lowered_expr, lowered_msg);
                     self.ast.spans[target.index()] = span;
                     self.set_scope(*target, self.symbol_table.current_scope());
                 }
@@ -1831,7 +1832,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::StaticAssert(expr, msg) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let lowered_expr = self.lower_expression(*expr);
-                self.ast.kinds[node.index()] = NodeKind::StaticAssert(lowered_expr, *msg);
+                let lowered_msg = self.lower_expression(*msg);
+                self.ast.kinds[node.index()] = NodeKind::StaticAssert(lowered_expr, lowered_msg);
                 smallvec![node]
             }
             ParsedNodeKind::If(stmt) => {

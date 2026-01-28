@@ -366,8 +366,13 @@ fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<Parsed
     parser.expect(TokenKind::Comma)?;
 
     let token = parser.current_token()?;
-    let message = match token.kind {
-        TokenKind::StringLiteral(symbol) => symbol,
+    let message_node = match token.kind {
+        TokenKind::StringLiteral(symbol) => {
+            let literal = crate::ast::literal::Literal::String(symbol);
+            let node = parser.push_node(ParsedNodeKind::Literal(literal), token.span);
+            parser.advance();
+            node
+        }
         _ => {
             return Err(ParseError::UnexpectedToken {
                 expected_tokens: "string literal".to_string(),
@@ -377,11 +382,10 @@ fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<Parsed
         }
     };
 
-    parser.advance();
     parser.expect(TokenKind::RightParen)?;
     let semicolon_token = parser.expect(TokenKind::Semicolon)?;
     let end_loc = semicolon_token.span.end();
     let span = SourceSpan::new(start_loc, end_loc);
-    let node = parser.push_node(ParsedNodeKind::StaticAssert(condition, message), span);
+    let node = parser.push_node(ParsedNodeKind::StaticAssert(condition, message_node), span);
     Ok(node)
 }

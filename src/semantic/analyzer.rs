@@ -1929,16 +1929,24 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_static_assert(&mut self, node_ref: NodeRef) {
         let node_kind = self.ast.get_kind(node_ref).clone();
-        if let NodeKind::StaticAssert(cond, msg) = node_kind {
+        if let NodeKind::StaticAssert(cond, msg_ref) = node_kind {
             self.visit_node(cond);
             let ctx = crate::semantic::const_eval::ConstEvalCtx {
                 ast: self.ast,
                 symbol_table: self.symbol_table,
             };
+            let msg_kind = self.ast.get_kind(msg_ref);
+            let message = if let NodeKind::Literal(literal::Literal::String(s)) = msg_kind {
+                s.as_str().to_string()
+            } else {
+                // This should not happen if parser is correct
+                "".to_string()
+            };
+
             match crate::semantic::const_eval::eval_const_expr(&ctx, cond) {
                 Some(0) => {
                     self.report_error(SemanticError::StaticAssertFailed {
-                        message: msg.as_str().to_string(),
+                        message,
                         span: self.ast.get_span(node_ref),
                     });
                 }

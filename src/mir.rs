@@ -590,7 +590,10 @@ impl MirBuilder {
         if let Some(block_id) = self.current_block
             && let Some(block) = self.blocks.get_mut(&block_id)
         {
-            block.statements.push(stmt_id);
+            // Only add statement if the block is not yet terminated
+            if matches!(block.terminator, Terminator::Unreachable) {
+                block.statements.push(stmt_id);
+            }
         }
 
         stmt_id
@@ -601,7 +604,12 @@ impl MirBuilder {
         if let Some(block_id) = self.current_block
             && let Some(block) = self.blocks.get_mut(&block_id)
         {
-            block.terminator = terminator;
+            // Only overwrite if the current terminator is Unreachable (default)
+            // This preserves existing control flow (e.g. from goto) and prevents
+            // overwriting it with subsequent unreachable terminators.
+            if matches!(block.terminator, Terminator::Unreachable) {
+                block.terminator = terminator;
+            }
         }
     }
 

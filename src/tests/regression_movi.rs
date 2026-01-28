@@ -15,7 +15,11 @@ fn test_movi_unsigned_constant_codegen() {
     // We expect `uextend` for casting unsigned int to unsigned long long.
     // If it was signed (int), it would use `sextend`.
 
-    assert!(clif_dump.contains("uextend.i64"), "Expected uextend.i64 for unsigned constant extension, found:\n{}", clif_dump);
+    assert!(
+        clif_dump.contains("uextend.i64"),
+        "Expected uextend.i64 for unsigned constant extension, found:\n{}",
+        clif_dump
+    );
 }
 
 #[test]
@@ -29,5 +33,9 @@ fn test_long_double_size() {
     "#;
     let clif_dump = setup_cranelift(source);
     // We expect a stack slot of size 16
-    assert!(clif_dump.contains("explicit_slot 16"), "Expected explicit_slot 16 for long double, found:\n{}", clif_dump);
+    assert!(
+        clif_dump.contains("explicit_slot 16"),
+        "Expected explicit_slot 16 for long double, found:\n{}",
+        clif_dump
+    );
 }

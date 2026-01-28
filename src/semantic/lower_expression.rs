@@ -116,12 +116,11 @@ impl<'a> AstToMirLowerer<'a> {
             self.current_scope_id = cs.scope_id;
 
             for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
-                let is_last_stmt_expr =
-                    if let NodeKind::ExpressionStatement(Some(e)) = self.ast.get_kind(stmt_ref) {
-                        *e == result_expr
-                    } else {
-                        false
-                    };
+                let is_last_stmt_expr = if let NodeKind::ExpressionStatement(Some(e)) = self.ast.get_kind(stmt_ref) {
+                    *e == result_expr
+                } else {
+                    false
+                };
 
                 if is_last_stmt_expr {
                     continue;

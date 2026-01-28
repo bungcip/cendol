@@ -873,7 +873,8 @@ impl<'a> AstToMirLowerer<'a> {
             BuiltinType::Long | BuiltinType::LongLong => MirType::I64,
             BuiltinType::ULong | BuiltinType::ULongLong => MirType::U64,
             BuiltinType::Float => MirType::F32,
-            BuiltinType::Double | BuiltinType::LongDouble => MirType::F64,
+            BuiltinType::Double => MirType::F64,
+            BuiltinType::LongDouble => MirType::F128,
             BuiltinType::Signed => MirType::I32,
             BuiltinType::VaList => MirType::U64, // Opaque handle
         }

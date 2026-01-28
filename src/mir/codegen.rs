@@ -48,6 +48,7 @@ fn convert_type(mir_type: &MirType) -> Option<Type> {
         MirType::I64 | MirType::U64 => Some(types::I64),
         MirType::F32 => Some(types::F32),
         MirType::F64 => Some(types::F64),
+        MirType::F128 => Some(types::F128),
         MirType::Pointer { .. } => Some(types::I64), // Pointers are 64-bit on most modern systems
 
         MirType::Array { .. } | MirType::Record { .. } => None,
@@ -72,6 +73,7 @@ pub(crate) fn mir_type_size(mir_type: &MirType, mir: &MirProgram) -> Result<u32,
         MirType::I64 | MirType::U64 => Ok(8),
         MirType::F32 => Ok(4),
         MirType::F64 => Ok(8),
+        MirType::F128 => Ok(16),
 
         MirType::Pointer { .. } => Ok(mir.pointer_width as u32),
         MirType::Array { layout, .. } => Ok(layout.size as u32),
@@ -142,6 +144,47 @@ fn emit_const_int(val: i64, layout: &MirType, output: &mut Vec<u8>) -> Result<()
     Ok(())
 }
 
+fn f64_to_f128_bytes(val: f64) -> [u8; 16] {
+    let bits = val.to_bits();
+    let sign = (bits >> 63) & 1;
+    let exp = (bits >> 52) & 0x7FF;
+    let mant = bits & 0xFFFFFFFFFFFFF;
+
+    let (new_exp, new_mant) = if exp == 0 {
+        if mant == 0 {
+            // Zero
+            (0, 0)
+        } else {
+            // Subnormal f64 -> Normal f128
+            // mant is 0.bbbb... (52 bits)
+            let lz = mant.leading_zeros() - (64 - 52);
+            let shift = lz + 1;
+            let normalized_mant = mant << shift;
+            let payload = normalized_mant & 0xFFFFFFFFFFFFF; // 52 bits
+
+            let unbiased_exp = -1022 - (shift as i32);
+            let biased_exp = unbiased_exp + 16383;
+
+            (biased_exp as u64, (payload as u128) << (112 - 52))
+        }
+    } else if exp == 0x7FF {
+        // Inf or NaN
+        (0x7FFF, (mant as u128) << (112 - 52))
+    } else {
+        // Normal
+        let unbiased_exp = (exp as i32) - 1023;
+        let biased_exp = unbiased_exp + 16383;
+        (biased_exp as u64, (mant as u128) << (112 - 52))
+    };
+
+    let sign_bit = (sign as u128) << 127;
+    let exp_bits = (new_exp as u128) << 112;
+    let mant_bits = new_mant;
+
+    let result = sign_bit | exp_bits | mant_bits;
+    result.to_le_bytes()
+}
+
 /// Helper to emit float constants
 fn emit_const_float(val: f64, ty: &MirType, output: &mut Vec<u8>) -> Result<(), String> {
     match ty {
@@ -151,6 +194,10 @@ fn emit_const_float(val: f64, ty: &MirType, output: &mut Vec<u8>) -> Result<(), 
         }
         MirType::F64 => {
             let bytes = val.to_bits().to_le_bytes();
+            output.extend_from_slice(&bytes);
+        }
+        MirType::F128 => {
+            let bytes = f64_to_f128_bytes(val);
             output.extend_from_slice(&bytes);
         }
         _ => {
@@ -1011,7 +1058,10 @@ fn is_operand_signed(operand: &Operand, mir: &MirProgram) -> bool {
     match operand {
         Operand::Copy(place) => mir.get_type(get_place_type_id(place, mir)).is_signed(),
         Operand::Cast(type_id, _) => mir.get_type(*type_id).is_signed(),
-        Operand::Constant(_const_id) => true,
+        Operand::Constant(const_id) => {
+            let const_val = mir.constants.get(const_id).expect("constant id not found");
+            mir.get_type(const_val.ty).is_signed()
+        }
         _ => false,
     }
 }

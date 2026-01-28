@@ -174,6 +174,7 @@ impl<'a> MirDumper<'a> {
             MirType::U64 => format!("type {} = u64", type_name),
             MirType::F32 => format!("type {} = f32", type_name),
             MirType::F64 => format!("type {} = f64", type_name),
+            MirType::F128 => format!("type {} = f128", type_name),
             MirType::Pointer { pointee } => {
                 let pointee_index = self.get_type_index_from_type_id(*pointee);
                 format!("type {} = ptr<%t{}>", type_name, pointee_index)
@@ -385,6 +386,7 @@ impl<'a> MirDumper<'a> {
                 MirType::U64 => "u64".to_string(),
                 MirType::F32 => "f32".to_string(),
                 MirType::F64 => "f64".to_string(),
+                MirType::F128 => "f128".to_string(),
                 MirType::Pointer { pointee } => {
                     let pointee_type = self.type_to_string(*pointee);
                     format!("ptr<{}>", pointee_type)

@@ -297,58 +297,6 @@ X;
     "#);
 }
 
-#[test]
-fn test_complex_arithmetic_expressions() {
-    let src = r#"
-// Test various arithmetic operations in preprocessor conditionals
-#if (-2) != -2
-#error fail
-#endif
-
-#if (0 || 0) != 0
-#error fail
-#endif
-
-#if (1 || 0) != 1
-#error fail
-#endif
-
-#if (0xf0 | 1) != 0xf1
-#error fail
-#endif
-
-#if (1 << 1) != 2
-#error fail
-#endif
-
-#if (2 + 1) != 3
-#error fail
-#endif
-
-#if (2+2*3+2) != 10
-#error fail
-#endif
-
-#if ((2+2)*(3+2)) != 20
-#error fail
-#endif
-
-int result = 42;
-"#;
-    let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: int
-    - kind: Identifier
-      text: result
-    - kind: Assign
-      text: "="
-    - kind: Number
-      text: "42"
-    - kind: Semicolon
-      text: ;
-    "#);
-}
 
 #[test]
 fn test_file_macro() {

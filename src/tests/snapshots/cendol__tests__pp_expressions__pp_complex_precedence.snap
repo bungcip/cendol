@@ -1,0 +1,44 @@
+---
+source: src/tests/pp_expressions.rs
+expression: tokens
+---
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: not_binds_tight
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "1"
+- kind: Semicolon
+  text: ;
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: and_binds_tighter_than_or
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "1"
+- kind: Semicolon
+  text: ;
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: mul_binds_tighter_than_add
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "1"
+- kind: Semicolon
+  text: ;
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: eq_binds_tighter_than_and
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "1"
+- kind: Semicolon
+  text: ;

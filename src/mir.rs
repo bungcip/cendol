@@ -253,6 +253,12 @@ pub enum BinaryIntOp {
     Ge,
 }
 
+impl BinaryIntOp {
+    pub fn is_comparison(&self) -> bool {
+        matches!(self, Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge)
+    }
+}
+
 /// Floating-point binary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(u8)]
@@ -267,6 +273,12 @@ pub enum BinaryFloatOp {
     Le,
     Gt,
     Ge,
+}
+
+impl BinaryFloatOp {
+    pub fn is_comparison(&self) -> bool {
+        matches!(self, Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge)
+    }
 }
 
 /// Integer unary operations

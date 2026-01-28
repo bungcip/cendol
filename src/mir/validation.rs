@@ -8,11 +8,11 @@
 //! - MIR is Cranelift-safe
 
 use crate::{
-    mir::MirProgram,
+    ast::NameId,
     mir::{
         BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, ConstValueKind, GlobalId, LocalId,
-        MirBlockId, MirFunction, MirFunctionId, MirFunctionKind, MirModule, MirStmt, MirType, Operand, Place, Rvalue,
-        Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
+        MirBlockId, MirFunction, MirFunctionId, MirFunctionKind, MirProgram, MirStmt, MirStmtId, MirType, Operand,
+        Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
     },
 };
 
@@ -33,13 +33,15 @@ pub enum ValidationError {
     FunctionNotFound(MirFunctionId),
     /// Block not found in block table
     BlockNotFound(MirBlockId),
+    /// Statement not found in statement table
+    StatementNotFound(MirStmtId),
     /// Invalid pointer arithmetic operation
     InvalidPointerArithmetic,
     /// Invalid cast operation
     InvalidCast(TypeId, TypeId),
     /// Function call argument type mismatch
     FunctionCallArgTypeMismatch {
-        func_name: String,
+        func_name: NameId,
         arg_index: usize,
         expected_type: TypeId,
         actual_type: TypeId,
@@ -62,6 +64,7 @@ impl std::fmt::Display for ValidationError {
             ValidationError::GlobalNotFound(global_id) => write!(f, "Global {} not found", global_id.get()),
             ValidationError::FunctionNotFound(func_id) => write!(f, "Function {} not found", func_id.get()),
             ValidationError::BlockNotFound(block_id) => write!(f, "Block {} not found", block_id.get()),
+            ValidationError::StatementNotFound(stmt_id) => write!(f, "Statement {} not found", stmt_id.get()),
             ValidationError::InvalidPointerArithmetic => write!(f, "Invalid pointer arithmetic operation"),
             ValidationError::InvalidCast(from, to) => {
                 write!(f, "Invalid cast from type {} to type {}", from.get(), to.get())
@@ -119,12 +122,9 @@ impl<'a> MirValidator<'a> {
     /// Validate a MIR module
     ///
     /// Returns Ok(()) if validation passes, or Err(Vec<ValidationError>) if errors are found
-    pub(crate) fn validate(&mut self) -> Result<(), Vec<ValidationError>> {
+    pub(crate) fn validate(mut self) -> Result<(), Vec<ValidationError>> {
         // eprintln!("VALIDATE: Starting validation");
         self.errors.clear();
-
-        // Validate the module structure
-        self.validate_module(&self.mir.module);
 
         // Validate each function
         for func_id in &self.mir.module.functions {
@@ -142,7 +142,7 @@ impl<'a> MirValidator<'a> {
             }
         }
 
-        // Validate each type - module.types is a Vec<Type>, not HashMap<TypeId, Type>
+        // Validate each type - module.types is a Vec<MirType>, not HashMap<TypeId, MirType>
         // So we validate that each type in the module is accessible via the types HashMap
         for (index, _) in self.mir.module.types.iter().enumerate() {
             let type_id = TypeId::new((index + 1) as u32).unwrap(); // Types are 1-indexed
@@ -154,16 +154,7 @@ impl<'a> MirValidator<'a> {
         if self.errors.is_empty() {
             Ok(())
         } else {
-            Err(self.errors.clone())
-        }
-    }
-
-    /// Validate module structure
-    fn validate_module(&mut self, module: &MirModule) {
-        // Module must have a valid ID
-        if module.id.get() == 0 {
-            self.errors
-                .push(ValidationError::IllegalOperation("Module ID cannot be 0".to_string()));
+            Err(self.errors)
         }
     }
 
@@ -195,72 +186,47 @@ impl<'a> MirValidator<'a> {
 
     /// Validate a function
     fn validate_function(&mut self, func: &MirFunction) {
-        // Function must have a valid ID
-        if func.id.get() == 0 {
-            self.errors
-                .push(ValidationError::IllegalOperation("Function ID cannot be 0".to_string()));
-        }
-
-        // Function must have a name
         if func.name.as_str().is_empty() {
             self.errors.push(ValidationError::IllegalOperation(
                 "Function name cannot be empty".to_string(),
             ));
         }
 
-        // Function must have a valid return type
-        if func.return_type.get() == 0 {
-            self.errors.push(ValidationError::IllegalOperation(
-                "Function return type cannot be 0".to_string(),
-            ));
-        } else if !self.mir.types.contains_key(&func.return_type) {
+        if !self.mir.types.contains_key(&func.return_type) {
             self.errors.push(ValidationError::TypeNotFound(func.return_type));
         }
 
-        // Validate all parameters
-        for param_id in &func.params {
-            if !self.mir.locals.contains_key(param_id) {
-                self.errors.push(ValidationError::LocalNotFound(*param_id));
-            }
-        }
-
-        // Validate all locals
-        for local_id in &func.locals {
+        // Validate presence of locals (params + locals)
+        for local_id in func.params.iter().chain(&func.locals) {
             if !self.mir.locals.contains_key(local_id) {
                 self.errors.push(ValidationError::LocalNotFound(*local_id));
             }
         }
 
-        // Validate all blocks
-        for block_id in &func.blocks {
+        // Validate presence of blocks (body + entry)
+        for block_id in func.blocks.iter().chain(func.entry_block.as_ref()) {
             if !self.mir.blocks.contains_key(block_id) {
                 self.errors.push(ValidationError::BlockNotFound(*block_id));
             }
         }
 
-        // Entry block must exist for defined functions
-        if let Some(entry_block) = func.entry_block
-            && !self.mir.blocks.contains_key(&entry_block)
-        {
-            self.errors.push(ValidationError::BlockNotFound(entry_block));
-        }
-        // Extern functions don't need entry blocks
-        // Validate statements within blocks for defined functions
+        // Validate items within blocks for defined functions
         if func.kind == MirFunctionKind::Defined {
             for block_id in &func.blocks {
-                if let Some(block) = self.mir.blocks.get(block_id) {
-                    for stmt_id in &block.statements {
-                        if let Some(stmt) = self.mir.statements.get(stmt_id) {
-                            self.validate_statement(stmt);
-                        } else {
-                            self.errors.push(ValidationError::IllegalOperation(format!(
-                                "Statement {} not found",
-                                stmt_id.get()
-                            )));
-                        }
-                    }
-                    self.validate_terminator(&block.terminator);
+                let Some(block) = self.mir.blocks.get(block_id) else {
+                    continue;
+                };
+
+                for stmt_id in &block.statements {
+                    let Some(stmt) = self.mir.statements.get(stmt_id) else {
+                        self.errors.push(ValidationError::StatementNotFound(*stmt_id));
+                        continue;
+                    };
+
+                    self.validate_statement(stmt);
                 }
+
+                self.validate_terminator(&block.terminator);
             }
         }
     }
@@ -273,7 +239,7 @@ impl<'a> MirValidator<'a> {
                 if let (Some(from), Some(to)) = (rval_ty, place_ty)
                     && from != to
                     && !self.is_flexible_assignment(rvalue, from, to)
-                    && !are_types_compatible(self.mir, from, to)
+                    && !self.are_types_compatible(from, to)
                 {
                     self.errors.push(ValidationError::InvalidCast(from, to));
                 }
@@ -283,7 +249,7 @@ impl<'a> MirValidator<'a> {
                 let place_ty = self.validate_place(place);
                 if let (Some(from), Some(to)) = (op_ty, place_ty)
                     && from != to
-                    && !are_types_compatible(self.mir, from, to)
+                    && !self.are_types_compatible(from, to)
                 {
                     self.errors.push(ValidationError::InvalidCast(from, to));
                 }
@@ -363,7 +329,7 @@ impl<'a> MirValidator<'a> {
                         .map(|p| self.mir.locals.get(p).unwrap().type_id)
                         .collect();
                     self.check_call_signature(
-                        func.name.to_string(),
+                        Some(func.name),
                         &param_types,
                         func.is_variadic,
                         func.return_type,
@@ -381,14 +347,7 @@ impl<'a> MirValidator<'a> {
                         is_variadic,
                     }) = self.mir.types.get(pointee)
                 {
-                    self.check_call_signature(
-                        "indirect function".to_string(),
-                        params,
-                        *is_variadic,
-                        *return_type,
-                        args,
-                        dest,
-                    );
+                    self.check_call_signature(None, params, *is_variadic, *return_type, args, dest);
                 }
             }
         }
@@ -396,14 +355,16 @@ impl<'a> MirValidator<'a> {
 
     fn check_call_signature(
         &mut self,
-        name: String,
+        name: Option<NameId>,
         params: &[TypeId],
         is_variadic: bool,
         return_type: TypeId,
         args: &[Operand],
         dest: &Option<Place>,
     ) {
-        if (!is_variadic && args.len() != params.len()) || (is_variadic && args.len() < params.len()) {
+        let name = name.unwrap_or_else(|| "<indirect function>".into());
+
+        if (is_variadic && args.len() < params.len()) || (!is_variadic && args.len() != params.len()) {
             self.errors.push(ValidationError::IllegalOperation(format!(
                 "Call to function {} arg count mismatch",
                 name
@@ -412,23 +373,23 @@ impl<'a> MirValidator<'a> {
         }
 
         for (i, arg) in args.iter().enumerate() {
-            if i < params.len() {
-                if let Some(arg_ty) = self.validate_operand(arg)
-                    && arg_ty != params[i]
-                {
-                    self.errors.push(ValidationError::FunctionCallArgTypeMismatch {
-                        func_name: name.clone(),
-                        arg_index: i,
-                        expected_type: params[i],
-                        actual_type: arg_ty,
-                    });
-                }
+            let actual = self.validate_operand(arg);
+            if let Some(&expected) = params.get(i)
+                && let Some(actual) = actual
+                && actual != expected
+            {
+                self.errors.push(ValidationError::FunctionCallArgTypeMismatch {
+                    func_name: name,
+                    arg_index: i,
+                    expected_type: expected,
+                    actual_type: actual,
+                });
             }
         }
 
         if let Some(dest_place) = dest {
-            let _dest_ty = self.validate_place(dest_place);
-            if let Some(MirType::Void) = self.mir.types.get(&return_type) {
+            self.validate_place(dest_place);
+            if matches!(self.mir.types.get(&return_type), Some(MirType::Void)) {
                 self.errors.push(ValidationError::IllegalOperation(format!(
                     "Call to void function {} with destination",
                     name
@@ -551,39 +512,13 @@ impl<'a> MirValidator<'a> {
             Rvalue::Use(op) => self.validate_operand(op),
             Rvalue::BinaryIntOp(bin, a, b) => {
                 let ta = self.validate_operand(a);
-                let tb = self.validate_operand(b);
-
-                match bin {
-                    BinaryIntOp::Eq
-                    | BinaryIntOp::Ne
-                    | BinaryIntOp::Lt
-                    | BinaryIntOp::Le
-                    | BinaryIntOp::Gt
-                    | BinaryIntOp::Ge => self.find_bool_type(),
-                    _ => {
-                        if let (Some(ta), Some(tb)) = (ta, tb)
-                            && ta != tb
-                        {
-                            // We could emit a warning or handle implicit promotions here if MIR allowed it,
-                            // but MIR should be explicit. For now just return ta.
-                        }
-                        ta
-                    }
-                }
+                let _tb = self.validate_operand(b);
+                if bin.is_comparison() { self.find_bool_type() } else { ta }
             }
             Rvalue::BinaryFloatOp(bin, a, b) => {
                 let ta = self.validate_operand(a);
                 let _tb = self.validate_operand(b);
-
-                match bin {
-                    BinaryFloatOp::Eq
-                    | BinaryFloatOp::Ne
-                    | BinaryFloatOp::Lt
-                    | BinaryFloatOp::Le
-                    | BinaryFloatOp::Gt
-                    | BinaryFloatOp::Ge => self.find_bool_type(),
-                    _ => ta,
-                }
+                if bin.is_comparison() { self.find_bool_type() } else { ta }
             }
             Rvalue::UnaryIntOp(u, a) => {
                 let ta = self.validate_operand(a);
@@ -600,25 +535,20 @@ impl<'a> MirValidator<'a> {
                 }
             }
             Rvalue::Cast(type_id, op) => {
-                if !self.mir.types.contains_key(type_id) {
+                let from_ty_id = self.validate_operand(op);
+                let to_ty = self.mir.types.get(type_id);
+
+                if to_ty.is_none() {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
-                let from_ty = self.validate_operand(op);
-                if let (Some(from), true) = (from_ty, self.mir.types.contains_key(type_id)) {
-                    // basic invalid cast check: disallow casts from record/array/enum/function to non-pointer/scalar types
-                    if let Some(ty) = self.mir.types.get(&from)
-                        && ty.is_aggregate()
-                    {
-                        if let Some(MirType::Pointer { .. }) = self.mir.types.get(type_id) {
-                            // pointer casts allowed
-                            // pointer casts allowed
-                        } else {
-                            let type_obj = self.mir.types.get(type_id).unwrap();
-                            if type_obj.is_int() || type_obj.is_float() {
-                                self.errors.push(ValidationError::InvalidCast(from, *type_id));
-                            }
-                        }
-                    }
+
+                if let (Some(from_id), Some(to_ty)) = (from_ty_id, to_ty)
+                    && let Some(from_ty) = self.mir.types.get(&from_id)
+                    && from_ty.is_aggregate()
+                    && !to_ty.is_pointer()
+                    && (to_ty.is_int() || to_ty.is_float())
+                {
+                    self.errors.push(ValidationError::InvalidCast(from_id, *type_id));
                 }
                 Some(*type_id)
             }
@@ -728,20 +658,18 @@ impl<'a> MirValidator<'a> {
         }
         None
     }
-}
 
-fn are_types_compatible(sema_output: &MirProgram, t1: TypeId, t2: TypeId) -> bool {
-    if t1 == t2 {
-        return true;
-    }
-    let ty1 = sema_output.types.get(&t1);
-    let ty2 = sema_output.types.get(&t2);
+    fn are_types_compatible(&self, t1: TypeId, t2: TypeId) -> bool {
+        if t1 == t2 {
+            return true;
+        }
 
-    if let (Some(type1), Some(type2)) = (ty1, ty2) {
-        match (type1, type2) {
-            (MirType::Pointer { pointee: p1 }, MirType::Pointer { pointee: p2 }) => {
-                are_types_compatible(sema_output, *p1, *p2)
-            }
+        let (Some(ty1), Some(ty2)) = (self.mir.types.get(&t1), self.mir.types.get(&t2)) else {
+            return false;
+        };
+
+        match (ty1, ty2) {
+            (MirType::Pointer { pointee: p1 }, MirType::Pointer { pointee: p2 }) => self.are_types_compatible(*p1, *p2),
             (
                 MirType::Array {
                     element: e1, size: s1, ..
@@ -749,34 +677,25 @@ fn are_types_compatible(sema_output: &MirProgram, t1: TypeId, t2: TypeId) -> boo
                 MirType::Array {
                     element: e2, size: s2, ..
                 },
-            ) => s1 == s2 && are_types_compatible(sema_output, *e1, *e2),
+            ) => s1 == s2 && self.are_types_compatible(*e1, *e2),
             (
                 MirType::Function {
                     return_type: r1,
-                    params: pm1,
+                    params: p1,
                     is_variadic: v1,
                 },
                 MirType::Function {
                     return_type: r2,
-                    params: pm2,
+                    params: p2,
                     is_variadic: v2,
                 },
             ) => {
-                if v1 != v2 {
-                    return false;
-                }
-                if pm1.len() != pm2.len() {
-                    return false;
-                }
-                are_types_compatible(sema_output, *r1, *r2)
-                    && pm1
-                        .iter()
-                        .zip(pm2.iter())
-                        .all(|(a, b)| are_types_compatible(sema_output, *a, *b))
+                v1 == v2
+                    && p1.len() == p2.len()
+                    && self.are_types_compatible(*r1, *r2)
+                    && p1.iter().zip(p2).all(|(&a, &b)| self.are_types_compatible(a, b))
             }
-            _ => type1 == type2,
+            _ => ty1 == ty2,
         }
-    } else {
-        false
     }
 }

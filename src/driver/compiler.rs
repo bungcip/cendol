@@ -368,8 +368,8 @@ impl CompilerDriver {
                     }
                 }
 
-                // Link if we have object files
-                if !object_files_to_link.is_empty() {
+                // Link if we have object files and NOT compile_only
+                if !object_files_to_link.is_empty() && !self.config.compile_only {
                     // Determine the output path
                     let output_path = if let Some(output_path) = &self.config.output_path {
                         output_path.clone()
@@ -379,9 +379,40 @@ impl CompilerDriver {
                     };
 
                     // Link the object file into an executable using clang
-                    let status = std::process::Command::new("clang")
-                        .args(&object_files_to_link)
-                        .arg("-lm")
+                    let mut clang_cmd = std::process::Command::new("clang");
+                    clang_cmd.args(&object_files_to_link);
+
+                    // Add library paths
+                    for path in &self.config.library_paths {
+                        clang_cmd.arg("-L").arg(path);
+                    }
+
+                    // Add libraries
+                    for lib in &self.config.libraries {
+                        clang_cmd.arg(format!("-l{}", lib));
+                    }
+
+                    // Add optimization flags if present
+                    if let Some(opt) = &self.config.optimization {
+                        clang_cmd.arg(format!("-O{}", opt));
+                    }
+
+                    // Add debug info if requested
+                    if self.config.debug_info {
+                        clang_cmd.arg("-g");
+                    }
+
+                    // Default to linking math library for now as it was before,
+                    // but we might want to let the user specify it via -lm
+                    if !self.config.libraries.contains(&"m".to_string()) {
+                        clang_cmd.arg("-lm");
+                    }
+
+                    if self.config.verbose {
+                        println!("Executing linker: {:?}", clang_cmd);
+                    }
+
+                    let status = clang_cmd
                         .arg("-o")
                         .arg(&output_path)
                         .status()

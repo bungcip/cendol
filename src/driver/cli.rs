@@ -14,7 +14,7 @@ use crate::{
 
 /// CLI interface using clap
 #[derive(CliParser, Debug)]
-#[clap(name = "cendol", about = "C11 Compiler written in Rust", allow_hyphen_values = true)]
+#[clap(name = "cendol", about = "C11 Compiler written in Rust")]
 pub struct Cli {
     /// Input C source files
     #[clap(value_parser, required = true)]
@@ -64,13 +64,9 @@ pub struct Cli {
     #[clap(short = 'D', long = "define", value_name = "NAME[=VALUE]", action = clap::ArgAction::Append)]
     pub defines: Vec<String>,
 
-    /// Compiler warnings
+    /// Compiler warnings (e.g., -Wall, -Wshadow)
     #[clap(short = 'W', action = clap::ArgAction::Append)]
     pub warnings: Vec<String>,
-
-    /// Enable all warnings
-    #[clap(long = "Wall")]
-    pub wall: bool,
 
     /// Set C language standard (e.g., c99, c11)
     #[clap(long = "std", value_name = "STANDARD")]
@@ -79,6 +75,26 @@ pub struct Cli {
     /// Target triple (e.g. x86_64-unknown-linux-gnu)
     #[clap(long = "target", value_name = "TRIPLE")]
     pub target: Option<String>,
+
+    /// Optimization level (e.g., -O0, -O1, -O2, -O3, -Os, -Oz)
+    #[clap(short = 'O', action = clap::ArgAction::Set)]
+    pub optimization: Option<String>,
+
+    /// Linked libraries (e.g., -lm)
+    #[clap(short = 'l', action = clap::ArgAction::Append)]
+    pub libraries: Vec<String>,
+
+    /// Library search paths (e.g., -L/usr/local/lib)
+    #[clap(short = 'L', action = clap::ArgAction::Append)]
+    pub library_paths: Vec<PathBuf>,
+
+    /// Compile only, do not link
+    #[clap(short = 'c')]
+    pub compile_only: bool,
+
+    /// Generate debug information
+    #[clap(short = 'g')]
+    pub debug_info: bool,
 }
 
 #[derive(Args, Debug)]
@@ -109,6 +125,12 @@ pub struct CompileConfig {
     pub warnings: Vec<String>,
     pub lang_options: LangOptions,
     pub target: Triple,
+
+    pub optimization: Option<String>,
+    pub libraries: Vec<String>,
+    pub library_paths: Vec<PathBuf>,
+    pub compile_only: bool,
+    pub debug_info: bool,
 }
 
 impl Default for CompileConfig {
@@ -124,6 +146,11 @@ impl Default for CompileConfig {
             warnings: Vec::new(),
             lang_options: LangOptions::default(),
             target: Triple::host(),
+            optimization: None,
+            libraries: Vec::new(),
+            library_paths: Vec::new(),
+            compile_only: false,
+            debug_info: false,
         }
     }
 }
@@ -150,7 +177,15 @@ impl Cli {
     fn validate_input_files(&self) -> Result<(), String> {
         for input_file in &self.input_files {
             let file_name = input_file.to_string_lossy();
-            if file_name.starts_with('-') {
+            // Allow files starting with '-' if they exist, or if they have an extension that looks like a C file
+            if file_name.starts_with('-') && !input_file.exists() {
+                // If it starts with - and doesn't exist, it might be an unrecognized flag
+                // but clap should have handled it if it was a valid flag.
+                // However, some flags like -O2 or -Wshadow might not be explicitly defined in clap yet.
+                // So we should only error if it's definitely NOT meant to be a flag.
+
+                // For now, let's keep it but maybe we should allow it if we want to ignore unknown flags?
+                // Actually, the user wants us to support these flags.
                 return Err(format!("File '{}' not found: No such file or directory", file_name)
                     + "\n"
                     + "If this is meant to be a command-line option, place it before the filename.\n"
@@ -184,10 +219,8 @@ impl Cli {
             .collect();
 
         // Handle -Wall flag by adding "all" to warnings if -Wall is specified
-        let mut warnings = self.warnings;
-        if self.wall {
-            warnings.push("all".to_string());
-        }
+        // Actually, with short='W' and append, -Wall will result in "all" in warnings.
+        let warnings = self.warnings;
 
         // Build language options
 
@@ -256,6 +289,11 @@ impl Cli {
             warnings,
             lang_options,
             target: target_triple,
+            optimization: self.optimization,
+            libraries: self.libraries,
+            library_paths: self.library_paths,
+            compile_only: self.compile_only,
+            debug_info: self.debug_info,
         })
     }
 }

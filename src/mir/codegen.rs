@@ -1615,20 +1615,20 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     let ptr_val = resolve_operand(ptr, ctx, types::I64)?;
                     let val_type = get_operand_clif_type(val, ctx.mir)?;
                     let val_op = resolve_operand(val, ctx, val_type)?;
-                    Ok(ctx.builder.ins().atomic_rmw(
-                        expected_type,
-                        MemFlags::new(),
-                        AtomicRmwOp::Xchg,
-                        ptr_val,
-                        val_op,
-                    ))
+                    Ok(ctx
+                        .builder
+                        .ins()
+                        .atomic_rmw(expected_type, MemFlags::new(), AtomicRmwOp::Xchg, ptr_val, val_op))
                 }
                 Rvalue::AtomicCompareExchange(ptr, expected, desired, _, _, _) => {
                     let ptr_val = resolve_operand(ptr, ctx, types::I64)?;
                     let expected_val = resolve_operand(expected, ctx, expected_type)?;
                     let desired_val = resolve_operand(desired, ctx, expected_type)?;
 
-                    Ok(ctx.builder.ins().atomic_cas(MemFlags::new(), ptr_val, expected_val, desired_val))
+                    Ok(ctx
+                        .builder
+                        .ins()
+                        .atomic_cas(MemFlags::new(), ptr_val, expected_val, desired_val))
                 }
                 Rvalue::AtomicFetchOp(op, ptr, val, _order) => {
                     let ptr_val = resolve_operand(ptr, ctx, types::I64)?;
@@ -1644,7 +1644,10 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         _ => return Err(format!("Unsupported atomic fetch op: {:?}", op)),
                     };
 
-                    Ok(ctx.builder.ins().atomic_rmw(expected_type, MemFlags::new(), rmw_op, ptr_val, val_op))
+                    Ok(ctx
+                        .builder
+                        .ins()
+                        .atomic_rmw(expected_type, MemFlags::new(), rmw_op, ptr_val, val_op))
                 }
             };
 
@@ -1839,14 +1842,14 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
 
             Ok(())
         }
-            MirStmt::AtomicStore(ptr, val, _order) => {
-                let ptr_val = resolve_operand(ptr, ctx, types::I64)?;
-                let val_type = get_operand_clif_type(val, ctx.mir)?;
-                let val_op = resolve_operand(val, ctx, val_type)?;
+        MirStmt::AtomicStore(ptr, val, _order) => {
+            let ptr_val = resolve_operand(ptr, ctx, types::I64)?;
+            let val_type = get_operand_clif_type(val, ctx.mir)?;
+            let val_op = resolve_operand(val, ctx, val_type)?;
 
-                ctx.builder.ins().atomic_store(MemFlags::new(), val_op, ptr_val);
-                Ok(())
-            }
+            ctx.builder.ins().atomic_store(MemFlags::new(), val_op, ptr_val);
+            Ok(())
+        }
         MirStmt::BuiltinVaEnd(_ap) => {
             // BuiltinVaEnd is a no-op
             Ok(())

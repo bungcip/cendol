@@ -397,7 +397,10 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__atomic_load_n"), TokenKind::BuiltinAtomicLoadN);
         m.insert(StringId::new("__atomic_store_n"), TokenKind::BuiltinAtomicStoreN);
         m.insert(StringId::new("__atomic_exchange_n"), TokenKind::BuiltinAtomicExchangeN);
-        m.insert(StringId::new("__atomic_compare_exchange_n"), TokenKind::BuiltinAtomicCompareExchangeN);
+        m.insert(
+            StringId::new("__atomic_compare_exchange_n"),
+            TokenKind::BuiltinAtomicCompareExchangeN,
+        );
         m.insert(StringId::new("__atomic_fetch_add"), TokenKind::BuiltinAtomicFetchAdd);
         m.insert(StringId::new("__atomic_fetch_sub"), TokenKind::BuiltinAtomicFetchSub);
         m.insert(StringId::new("__atomic_fetch_and"), TokenKind::BuiltinAtomicFetchAnd);

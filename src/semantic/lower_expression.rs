@@ -95,9 +95,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let _ = self.lower_expression(*c, true); // lower 'c' for side effects or just to process it
                 self.lower_expression(*exp, need_value)
             }
-            NodeKind::AtomicOp(op, args_start, args_len) => {
-                self.lower_atomic_op(*op, *args_start, *args_len, mir_ty)
-            }
+            NodeKind::AtomicOp(op, args_start, args_len) => self.lower_atomic_op(*op, *args_start, *args_len, mir_ty),
             NodeKind::BuiltinVaStart(..) | NodeKind::BuiltinVaEnd(..) | NodeKind::BuiltinVaCopy(..) => {
                 self.lower_builtin_void(&node_kind)
             }
@@ -957,8 +955,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let ptr = self.lower_expression(args[0], true);
                 let val = self.lower_expression(args[1], true);
                 let _ = self.lower_expression(args[2], true); // ignore memorder
-                self.mir_builder
-                    .add_statement(MirStmt::AtomicStore(ptr, val, order));
+                self.mir_builder.add_statement(MirStmt::AtomicStore(ptr, val, order));
                 self.create_dummy_operand()
             }
             AtomicOp::ExchangeN => {
@@ -983,14 +980,8 @@ impl<'a> AstToMirLowerer<'a> {
                 let expected_val_op = Operand::Copy(Box::new(expected_place.clone()));
 
                 let weak = false;
-                let cas_rval = Rvalue::AtomicCompareExchange(
-                    ptr,
-                    expected_val_op.clone(),
-                    desired.clone(),
-                    weak,
-                    order,
-                    order,
-                );
+                let cas_rval =
+                    Rvalue::AtomicCompareExchange(ptr, expected_val_op.clone(), desired.clone(), weak, order, order);
 
                 let val_ty = self.get_operand_type(&desired);
                 let (_, old_val_place) = self.create_temp_local_with_assignment(cas_rval, val_ty);
@@ -998,11 +989,7 @@ impl<'a> AstToMirLowerer<'a> {
 
                 let mir_type_info = self.mir_builder.get_type(val_ty);
                 let cmp_rval = if mir_type_info.is_float() {
-                    Rvalue::BinaryFloatOp(
-                        crate::mir::BinaryFloatOp::Eq,
-                        old_val.clone(),
-                        expected_val_op,
-                    )
+                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Eq, old_val.clone(), expected_val_op)
                 } else {
                     Rvalue::BinaryIntOp(BinaryIntOp::Eq, old_val.clone(), expected_val_op)
                 };
@@ -1024,11 +1011,7 @@ impl<'a> AstToMirLowerer<'a> {
                 self.mir_builder.set_current_block(end_block);
                 success_op
             }
-            AtomicOp::FetchAdd
-            | AtomicOp::FetchSub
-            | AtomicOp::FetchAnd
-            | AtomicOp::FetchOr
-            | AtomicOp::FetchXor => {
+            AtomicOp::FetchAdd | AtomicOp::FetchSub | AtomicOp::FetchAnd | AtomicOp::FetchOr | AtomicOp::FetchXor => {
                 let ptr = self.lower_expression(args[0], true);
                 let val = self.lower_expression(args[1], true);
                 let _ = self.lower_expression(args[2], true); // ignore memorder

@@ -700,12 +700,7 @@ impl<'a> MirDumper<'a> {
                 )?;
             }
             Rvalue::AtomicLoad(ptr, order) => {
-                write!(
-                    output,
-                    "atomic_load({}, {:?})",
-                    self.operand_to_string(ptr),
-                    order
-                )?;
+                write!(output, "atomic_load({}, {:?})", self.operand_to_string(ptr), order)?;
             }
             Rvalue::AtomicExchange(ptr, val, order) => {
                 write!(

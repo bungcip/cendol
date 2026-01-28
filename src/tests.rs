@@ -36,6 +36,7 @@ pub mod preprocessor;
 pub mod preprocessor_regression;
 pub mod preprocessor_ucn;
 pub mod regression_enum_init;
+pub mod regression_movi;
 pub mod semantic_anonymous_struct;
 pub mod semantic_array_init_bug;
 pub mod semantic_arrays;

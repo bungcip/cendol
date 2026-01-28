@@ -21,6 +21,53 @@ fn test_atomic_builtins_compilation() {
 }
 
 #[test]
+fn test_atomic_semantic_errors() {
+    use crate::tests::semantic_common::run_fail_with_diagnostic;
+
+    // Invalid memory order type
+    let source_memorder = r#"
+        void test(int *ptr) {
+            __atomic_load_n(ptr, "invalid");
+        }
+    "#;
+    run_fail_with_diagnostic(
+        source_memorder,
+        CompilePhase::Mir,
+        "invalid argument type for atomic builtin: char[8]",
+        3,
+        34,
+    );
+
+    // Invalid pointer type
+    let source_ptr = r#"
+        void test(int val) {
+            __atomic_load_n(val, 0);
+        }
+    "#;
+    run_fail_with_diagnostic(
+        source_ptr,
+        CompilePhase::Mir,
+        "invalid argument type for atomic builtin: int",
+        3,
+        29,
+    );
+
+    // Invalid bitwise operation on float
+    let source_bitwise = r#"
+        void test(float *ptr, float val) {
+            __atomic_fetch_and(ptr, val, 0);
+        }
+    "#;
+    run_fail_with_diagnostic(
+        source_bitwise,
+        CompilePhase::Mir,
+        "invalid argument type for atomic builtin: float",
+        3,
+        32,
+    );
+}
+
+#[test]
 fn test_atomic_compare_exchange_loop() {
     let source = r#"
         #include <stdbool.h>

@@ -1732,6 +1732,15 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 let ptr_ty = arg_tys[0];
                 let val_ty = arg_tys[1];
+                let memorder_ty = arg_tys[2];
+
+                if !memorder_ty.is_integer() {
+                    let ty_str = self.registry.display_qual_type(memorder_ty);
+                    self.report_error(SemanticError::InvalidAtomicArgument {
+                        ty: ty_str,
+                        span: self.ast.get_span(args[2]),
+                    });
+                }
 
                 if let Some(pointee) = self.registry.get_pointee(ptr_ty.ty()) {
                     self.record_implicit_conversions(pointee, val_ty, args[1]);
@@ -1752,6 +1761,23 @@ impl<'a> SemanticAnalyzer<'a> {
                 let ptr_ty = arg_tys[0];
                 let expected_ptr_ty = arg_tys[1];
                 let desired_ty = arg_tys[2];
+                let success_ty = arg_tys[4];
+                let failure_ty = arg_tys[5];
+
+                if !success_ty.is_integer() {
+                    let ty_str = self.registry.display_qual_type(success_ty);
+                    self.report_error(SemanticError::InvalidAtomicArgument {
+                        ty: ty_str,
+                        span: self.ast.get_span(args[4]),
+                    });
+                }
+                if !failure_ty.is_integer() {
+                    let ty_str = self.registry.display_qual_type(failure_ty);
+                    self.report_error(SemanticError::InvalidAtomicArgument {
+                        ty: ty_str,
+                        span: self.ast.get_span(args[5]),
+                    });
+                }
 
                 if let Some(pointee) = self.registry.get_pointee(ptr_ty.ty()) {
                     if let Some(expected_pointee) = self.registry.get_pointee(expected_ptr_ty.ty()) {
@@ -1793,12 +1819,25 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 let ptr_ty = arg_tys[0];
                 let val_ty = arg_tys[1];
+                let memorder_ty = arg_tys[2];
+
+                if !memorder_ty.is_integer() {
+                    let ty_str = self.registry.display_qual_type(memorder_ty);
+                    self.report_error(SemanticError::InvalidAtomicArgument {
+                        ty: ty_str,
+                        span: self.ast.get_span(args[2]),
+                    });
+                }
 
                 if let Some(pointee) = self.registry.get_pointee(ptr_ty.ty()) {
                     if (op == AtomicOp::FetchAnd || op == AtomicOp::FetchOr || op == AtomicOp::FetchXor)
                         && !pointee.is_integer()
                     {
-                        // error: bitwise atomic only on integers
+                        let ty_str = self.registry.display_qual_type(pointee);
+                        self.report_error(SemanticError::InvalidAtomicArgument {
+                            ty: ty_str,
+                            span: self.ast.get_span(args[0]),
+                        });
                     }
 
                     if pointee.is_integer() {

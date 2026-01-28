@@ -84,45 +84,7 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::AlignOf(ty) => self.lower_type_query(ty.ty(), false),
             NodeKind::GenericSelection(gs) => self.lower_generic_selection(gs, need_value),
             NodeKind::GnuStatementExpression(stmt, result_expr) => {
-                let stmt_kind = self.ast.get_kind(*stmt);
-                if let NodeKind::CompoundStatement(cs) = stmt_kind {
-                    let old_scope = self.current_scope_id;
-                    self.current_scope_id = cs.scope_id;
-
-                    for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
-                        let is_last_stmt_expr =
-                            if let NodeKind::ExpressionStatement(Some(e)) = self.ast.get_kind(stmt_ref) {
-                                *e == *result_expr
-                            } else {
-                                false
-                            };
-
-                        if is_last_stmt_expr {
-                            continue;
-                        }
-
-                        let node_kind = self.ast.get_kind(stmt_ref);
-                        if self.mir_builder.current_block_has_terminator() {
-                            if let NodeKind::Label(..) = node_kind {
-                                // OK
-                            } else {
-                                continue;
-                            }
-                        }
-                        self.lower_node_ref(stmt_ref);
-                    }
-
-                    let op = if let NodeKind::Dummy = self.ast.get_kind(*result_expr) {
-                        self.create_dummy_operand()
-                    } else {
-                        self.lower_expression(*result_expr, need_value)
-                    };
-
-                    self.current_scope_id = old_scope;
-                    op
-                } else {
-                    panic!("GnuStatementExpression stmt is not CompoundStatement");
-                }
+                self.lower_gnu_statement_expression(*stmt, *result_expr, need_value)
             }
             NodeKind::Cast(_ty, operand_ref) => self.lower_cast(*operand_ref, mir_ty),
             NodeKind::CompoundLiteral(ty, init_ref) => self.lower_compound_literal(*ty, *init_ref),
@@ -139,6 +101,52 @@ impl<'a> AstToMirLowerer<'a> {
                 panic!("InitializerList or InitializerItem not implemented");
             }
             _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn lower_gnu_statement_expression(
+        &mut self,
+        stmt: NodeRef,
+        result_expr: NodeRef,
+        need_value: bool,
+    ) -> Operand {
+        let stmt_kind = self.ast.get_kind(stmt);
+        if let NodeKind::CompoundStatement(cs) = stmt_kind {
+            let old_scope = self.current_scope_id;
+            self.current_scope_id = cs.scope_id;
+
+            for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
+                let is_last_stmt_expr = if let NodeKind::ExpressionStatement(Some(e)) = self.ast.get_kind(stmt_ref) {
+                    *e == result_expr
+                } else {
+                    false
+                };
+
+                if is_last_stmt_expr {
+                    continue;
+                }
+
+                let node_kind = self.ast.get_kind(stmt_ref);
+                if self.mir_builder.current_block_has_terminator() {
+                    if let NodeKind::Label(..) = node_kind {
+                        // OK
+                    } else {
+                        continue;
+                    }
+                }
+                self.lower_node_ref(stmt_ref);
+            }
+
+            let op = if let NodeKind::Dummy = self.ast.get_kind(result_expr) {
+                self.create_dummy_operand()
+            } else {
+                self.lower_expression(result_expr, need_value)
+            };
+
+            self.current_scope_id = old_scope;
+            op
+        } else {
+            panic!("GnuStatementExpression stmt is not CompoundStatement");
         }
     }
 
@@ -167,23 +175,15 @@ impl<'a> AstToMirLowerer<'a> {
             None
         };
 
-        // Then
-        self.mir_builder.set_current_block(then_block);
-        let then_val = self.lower_expression(then_expr, !is_void);
-        if let Some(local) = result_local {
-            let then_val_conv = self.apply_conversions(then_val, then_expr, mir_ty);
-            self.emit_assignment(Place::Local(local), then_val_conv);
+        for (target_block, expr_ref) in [(then_block, then_expr), (else_block, else_expr)] {
+            self.mir_builder.set_current_block(target_block);
+            let val = self.lower_expression(expr_ref, !is_void);
+            if let Some(local) = result_local {
+                let val_conv = self.apply_conversions(val, expr_ref, mir_ty);
+                self.emit_assignment(Place::Local(local), val_conv);
+            }
+            self.mir_builder.set_terminator(Terminator::Goto(exit_block));
         }
-        self.mir_builder.set_terminator(Terminator::Goto(exit_block));
-
-        // Else
-        self.mir_builder.set_current_block(else_block);
-        let else_val = self.lower_expression(else_expr, !is_void);
-        if let Some(local) = result_local {
-            let else_val_conv = self.apply_conversions(else_val, else_expr, mir_ty);
-            self.emit_assignment(Place::Local(local), else_val_conv);
-        }
-        self.mir_builder.set_terminator(Terminator::Goto(exit_block));
 
         self.mir_builder.set_current_block(exit_block);
 
@@ -449,6 +449,31 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
+    pub(crate) fn emit_bool_normalization(
+        &mut self,
+        value_op: Operand,
+        result_place: Place,
+        merge_block: crate::mir::MirBlockId,
+    ) {
+        let true_block = self.mir_builder.create_block();
+        let false_block = self.mir_builder.create_block();
+
+        self.mir_builder
+            .set_terminator(Terminator::If(value_op, true_block, false_block));
+
+        self.mir_builder.set_current_block(true_block);
+        let one_op = self.create_int_operand(1);
+        self.mir_builder
+            .add_statement(MirStmt::Assign(result_place.clone(), Rvalue::Use(one_op)));
+        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+
+        self.mir_builder.set_current_block(false_block);
+        let zero_op = self.create_int_operand(0);
+        self.mir_builder
+            .add_statement(MirStmt::Assign(result_place.clone(), Rvalue::Use(zero_op)));
+        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+    }
+
     pub(crate) fn lower_logical_op(
         &mut self,
         op: &BinaryOp,
@@ -490,21 +515,7 @@ impl<'a> AstToMirLowerer<'a> {
         self.mir_builder.set_current_block(eval_rhs_block);
         let rhs_val = self.lower_condition(right_ref);
 
-        let rhs_true_block = self.mir_builder.create_block();
-        let rhs_false_block = self.mir_builder.create_block();
-
-        self.mir_builder
-            .set_terminator(Terminator::If(rhs_val, rhs_true_block, rhs_false_block));
-
-        self.mir_builder.set_current_block(rhs_true_block);
-        self.mir_builder
-            .add_statement(MirStmt::Assign(res_place.clone(), Rvalue::Use(one_op)));
-        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
-
-        self.mir_builder.set_current_block(rhs_false_block);
-        self.mir_builder
-            .add_statement(MirStmt::Assign(res_place.clone(), Rvalue::Use(zero_op)));
-        self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+        self.emit_bool_normalization(rhs_val, res_place.clone(), merge_block);
 
         // Merge
         self.mir_builder.set_current_block(merge_block);
@@ -586,30 +597,15 @@ impl<'a> AstToMirLowerer<'a> {
         let rhs_op = self.lower_expression(right_ref, true);
 
         let final_rhs = if let Some(compound_op) = op.without_assignment() {
-            // This is a compound assignment, e.g., a += b
-            // Use the already-evaluated place to read the current value.
-            let lhs_copy = Operand::Copy(Box::new(place.clone()));
-
-            if let Some(rval) =
-                self.lower_pointer_arithmetic(&compound_op, lhs_copy.clone(), rhs_op.clone(), left_ref, right_ref)
-            {
-                self.emit_rvalue_to_operand(rval, mir_ty)
-            } else {
-                let lhs_converted_for_op = self.apply_conversions(lhs_copy, left_ref, mir_ty);
-                let rhs_converted_for_op = self.apply_conversions(rhs_op, right_ref, mir_ty);
-
-                let lhs_ty_for_op = self.get_operand_type(&lhs_converted_for_op);
-                let mir_type_info = self.mir_builder.get_type(lhs_ty_for_op);
-
-                let rval = mir_ops::emit_binary_rvalue(
-                    &compound_op,
-                    lhs_converted_for_op,
-                    rhs_converted_for_op,
-                    mir_type_info.is_float(),
-                );
-                let result_of_op = self.emit_rvalue_to_operand(rval, lhs_ty_for_op);
-                self.apply_conversions(result_of_op, node_ref, mir_ty)
-            }
+            self.lower_compound_assignment(
+                node_ref,
+                compound_op,
+                place.clone(),
+                rhs_op,
+                left_ref,
+                right_ref,
+                mir_ty,
+            )
         } else {
             // Simple assignment, just use the RHS
             self.apply_conversions(rhs_op, right_ref, mir_ty)
@@ -617,6 +613,42 @@ impl<'a> AstToMirLowerer<'a> {
 
         self.emit_assignment(place, final_rhs.clone());
         final_rhs // C assignment expressions evaluate to the assigned value
+    }
+
+    pub(crate) fn lower_compound_assignment(
+        &mut self,
+        node_ref: NodeRef,
+        compound_op: BinaryOp,
+        place: Place,
+        rhs_op: Operand,
+        left_ref: NodeRef,
+        right_ref: NodeRef,
+        mir_ty: TypeId,
+    ) -> Operand {
+        // This is a compound assignment, e.g., a += b
+        // Use the already-evaluated place to read the current value.
+        let lhs_copy = Operand::Copy(Box::new(place));
+
+        if let Some(rval) =
+            self.lower_pointer_arithmetic(&compound_op, lhs_copy.clone(), rhs_op.clone(), left_ref, right_ref)
+        {
+            self.emit_rvalue_to_operand(rval, mir_ty)
+        } else {
+            let lhs_converted_for_op = self.apply_conversions(lhs_copy, left_ref, mir_ty);
+            let rhs_converted_for_op = self.apply_conversions(rhs_op, right_ref, mir_ty);
+
+            let lhs_ty_for_op = self.get_operand_type(&lhs_converted_for_op);
+            let mir_type_info = self.mir_builder.get_type(lhs_ty_for_op);
+
+            let rval = mir_ops::emit_binary_rvalue(
+                &compound_op,
+                lhs_converted_for_op,
+                rhs_converted_for_op,
+                mir_type_info.is_float(),
+            );
+            let result_of_op = self.emit_rvalue_to_operand(rval, lhs_ty_for_op);
+            self.apply_conversions(result_of_op, node_ref, mir_ty)
+        }
     }
 
     pub(crate) fn lower_function_call(&mut self, call_expr: &ast::nodes::CallExpr, dest_place: Option<Place>) {
@@ -796,48 +828,50 @@ impl<'a> AstToMirLowerer<'a> {
             panic!("Inc/Dec operand must be an lvalue");
         }
 
-        if let Operand::Copy(place) = operand.clone() {
-            // If it's post-inc/dec and we need the value, save the old value
-            let old_value = if is_post && need_value {
-                let rval = Rvalue::Use(operand.clone());
-                let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                Some(Operand::Copy(Box::new(temp_place)))
-            } else {
-                None
-            };
-
-            // Determine MIR operation and Rvalue
-            let rval = self.create_inc_dec_rvalue(operand.clone(), operand_ty, is_inc);
-
-            // Perform the assignment
-            if is_post && !need_value {
-                // Optimization: assign directly to place if old value not needed
-                self.mir_builder.add_statement(MirStmt::Assign(*place.clone(), rval));
-            } else {
-                // If we needed old value (is_post), or if it is pre-inc (need new value),
-                // we compute to a temp first to ensure correctness and return the right value.
-                let (_, new_place) = self.create_temp_local_with_assignment(rval, mir_ty);
-                self.emit_assignment(*place.clone(), Operand::Copy(Box::new(new_place.clone())));
-
-                if !is_post {
-                    // Pre-inc: return the new value
-                    return Operand::Copy(Box::new(new_place));
-                }
-            }
-
-            if is_post {
-                if need_value {
-                    old_value.unwrap()
-                } else {
-                    self.create_int_operand(0)
-                }
-            } else {
-                // Pre-inc: we already returned inside the block above.
-                // RE-FETCH from place as a fallback (should not be reached)
-                Operand::Copy(place)
-            }
+        let place = if let Operand::Copy(place) = operand.clone() {
+            place
         } else {
             panic!("Inc/Dec operand is not a place");
+        };
+
+        // If it's post-inc/dec and we need the value, save the old value
+        let old_value = if is_post && need_value {
+            let rval = Rvalue::Use(operand.clone());
+            let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
+            Some(Operand::Copy(Box::new(temp_place)))
+        } else {
+            None
+        };
+
+        // Determine MIR operation and Rvalue
+        let rval = self.create_inc_dec_rvalue(operand.clone(), operand_ty, is_inc);
+
+        // Perform the assignment
+        if is_post && !need_value {
+            // Optimization: assign directly to place if old value not needed
+            self.mir_builder.add_statement(MirStmt::Assign(*place.clone(), rval));
+        } else {
+            // If we needed old value (is_post), or if it is pre-inc (need new value),
+            // we compute to a temp first to ensure correctness and return the right value.
+            let (_, new_place) = self.create_temp_local_with_assignment(rval, mir_ty);
+            self.emit_assignment(*place.clone(), Operand::Copy(Box::new(new_place.clone())));
+
+            if !is_post {
+                // Pre-inc: return the new value
+                return Operand::Copy(Box::new(new_place));
+            }
+        }
+
+        if is_post {
+            if need_value {
+                old_value.unwrap()
+            } else {
+                self.create_int_operand(0)
+            }
+        } else {
+            // Pre-inc: we already returned inside the block above.
+            // RE-FETCH from place as a fallback (should not be reached)
+            Operand::Copy(place)
         }
     }
 

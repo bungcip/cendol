@@ -1,3 +1,4 @@
+pub mod abi_compat;
 pub mod ast_dumper;
 pub mod atomic_builtins;
 pub mod builtin_expect;

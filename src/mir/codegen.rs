@@ -423,11 +423,11 @@ fn prepare_call_signature(
     }
 
     if use_variadic_hack {
-        // Normalized Variadic Signature hack: Ensure at least 16 slots for variadic functions
-        // This matches the 16-slot spill area in setup_signature
+        // Normalized Variadic Signature hack: Ensure at least 32 slots for variadic functions
+        // This matches the 32-slot spill area in setup_signature
         if is_variadic {
             let current_gpr_count = sig.params.len();
-            let total_variadic_slots = 16;
+            let total_variadic_slots = 32;
             if current_gpr_count < total_variadic_slots {
                 for _ in 0..(total_variadic_slots - current_gpr_count) {
                     sig.params.push(AbiParam::new(types::I64));
@@ -475,7 +475,29 @@ fn resolve_call_args(
                 for slot in 0..num_slots {
                     if sig_idx < sig.params.len() {
                         let offset = (slot * 8) as i32;
-                        let value = ctx.builder.ins().load(types::I64, MemFlags::new(), struct_addr, offset);
+
+                        // Check if this is the last slot and if we need partial load
+                        let current_offset = slot * 8;
+                        let remaining_bytes = size as usize - current_offset;
+
+                        let value = if remaining_bytes >= 8 {
+                            ctx.builder.ins().load(types::I64, MemFlags::new(), struct_addr, offset)
+                        } else {
+                            // Partial load byte-by-byte to avoid OOB read
+                            let mut current_val = ctx.builder.ins().iconst(types::I64, 0);
+                            for i in 0..remaining_bytes {
+                                let byte_val =
+                                    ctx.builder
+                                        .ins()
+                                        .load(types::I8, MemFlags::new(), struct_addr, offset + i as i32);
+                                let byte_ext = ctx.builder.ins().uextend(types::I64, byte_val);
+                                let shift_amt = ctx.builder.ins().iconst(types::I64, (i * 8) as i64);
+                                let shifted = ctx.builder.ins().ishl(byte_ext, shift_amt);
+                                current_val = ctx.builder.ins().bor(current_val, shifted);
+                            }
+                            current_val
+                        };
+
                         arg_values.push(value);
                         sig_idx += 1;
                     }
@@ -1464,90 +1486,39 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     let mir_type = ctx.mir.get_type(*type_id);
                     let cl_type = convert_type(mir_type).unwrap_or(types::I64);
 
-                    let is_float = mir_type.is_float();
+                    // Unified va_arg implementation for "Cendol" ABI (all args in spill_slot/reg_save_area)
+                    // We ignore is_float and standard SystemV ABI register separation because our
+                    // implementation flattens everything into a sequential spill slot pointed to by reg_save_area.
 
-                    let result = if !is_float {
-                        // Integer/Pointer argument
-                        let can_use_reg = ctx.builder.ins().icmp_imm(IntCC::SignedLessThan, gp_offset, 48);
-                        let overflow_block = ctx.builder.create_block();
-                        let reg_block = ctx.builder.create_block();
-                        let join_block = ctx.builder.create_block();
-
-                        // Add block parameters to join_block for the result and updated va_list
-                        ctx.builder.append_block_param(join_block, cl_type);
-                        ctx.builder.append_block_param(join_block, types::I32); // updated gp_offset
-
-                        ctx.builder.ins().brif(can_use_reg, reg_block, &[], overflow_block, &[]);
-
-                        // Reg path
-                        ctx.builder.switch_to_block(reg_block);
-                        ctx.builder.seal_block(reg_block);
-                        let offset_64 = ctx.builder.ins().uextend(types::I64, gp_offset);
-                        let addr = ctx.builder.ins().iadd(reg_save_area, offset_64);
-                        let val = ctx.builder.ins().load(cl_type, MemFlags::new(), addr, 0);
-                        let next_gp = ctx.builder.ins().iadd_imm(gp_offset, 8);
-                        ctx.builder
-                            .ins()
-                            .jump(join_block, &[BlockArg::Value(val), BlockArg::Value(next_gp)]);
-
-                        // Overflow path
-                        ctx.builder.switch_to_block(overflow_block);
-                        ctx.builder.seal_block(overflow_block);
-                        let val = ctx.builder.ins().load(cl_type, MemFlags::new(), overflow_area, 0);
-                        let next_overflow = ctx.builder.ins().iadd_imm(overflow_area, 8);
-                        ctx.builder.ins().store(MemFlags::new(), next_overflow, ap_addr, 8);
-                        ctx.builder
-                            .ins()
-                            .jump(join_block, &[BlockArg::Value(val), BlockArg::Value(gp_offset)]); // gp_offset unchanged
-
-                        // Join path
-                        ctx.builder.switch_to_block(join_block);
-                        ctx.builder.seal_block(join_block);
-                        let final_val = ctx.builder.block_params(join_block)[0];
-                        let final_gp = ctx.builder.block_params(join_block)[1];
-                        ctx.builder.ins().store(MemFlags::new(), final_gp, ap_addr, 0);
-                        final_val
+                    let size = if mir_type.is_aggregate() {
+                        mir_type_size(mir_type, ctx.mir)? as u32
                     } else {
-                        // Floating point argument
-                        let can_use_reg = ctx.builder.ins().icmp_imm(IntCC::SignedLessThan, fp_offset, 176);
-                        let overflow_block = ctx.builder.create_block();
-                        let reg_block = ctx.builder.create_block();
-                        let join_block = ctx.builder.create_block();
-
-                        ctx.builder.append_block_param(join_block, cl_type);
-                        ctx.builder.append_block_param(join_block, types::I32); // updated fp_offset
-
-                        ctx.builder.ins().brif(can_use_reg, reg_block, &[], overflow_block, &[]);
-
-                        // Reg path
-                        ctx.builder.switch_to_block(reg_block);
-                        ctx.builder.seal_block(reg_block);
-                        let offset_64 = ctx.builder.ins().uextend(types::I64, fp_offset);
-                        let addr = ctx.builder.ins().iadd(reg_save_area, offset_64);
-                        let val = ctx.builder.ins().load(cl_type, MemFlags::new(), addr, 0);
-                        let next_fp = ctx.builder.ins().iadd_imm(fp_offset, 16);
-                        ctx.builder
-                            .ins()
-                            .jump(join_block, &[BlockArg::Value(val), BlockArg::Value(next_fp)]);
-
-                        // Overflow path
-                        ctx.builder.switch_to_block(overflow_block);
-                        ctx.builder.seal_block(overflow_block);
-                        let val = ctx.builder.ins().load(cl_type, MemFlags::new(), overflow_area, 0);
-                        let next_overflow = ctx.builder.ins().iadd_imm(overflow_area, 8);
-                        ctx.builder.ins().store(MemFlags::new(), next_overflow, ap_addr, 8);
-                        ctx.builder
-                            .ins()
-                            .jump(join_block, &[BlockArg::Value(val), BlockArg::Value(fp_offset)]);
-
-                        // Join path
-                        ctx.builder.switch_to_block(join_block);
-                        ctx.builder.seal_block(join_block);
-                        let final_val = ctx.builder.block_params(join_block)[0];
-                        let final_fp = ctx.builder.block_params(join_block)[1];
-                        ctx.builder.ins().store(MemFlags::new(), final_fp, ap_addr, 4);
-                        final_val
+                        8 // Scalars take 8 bytes in va_list (promoted)
                     };
+
+                    let needed_slots = (size + 7) / 8;
+                    let needed_gp = needed_slots * 8;
+
+                    // Address is always reg_save_area + gp_offset
+                    let offset_64 = ctx.builder.ins().uextend(types::I64, gp_offset);
+                    let addr = ctx.builder.ins().iadd(reg_save_area, offset_64);
+
+                    let result = if mir_type.is_aggregate() {
+                        addr // Return address for aggregates
+                    } else {
+                        ctx.builder.ins().load(cl_type, MemFlags::new(), addr, 0)
+                    };
+
+                    // Increment gp_offset
+                    let next_gp_increment = ctx.builder.ins().iconst(types::I32, needed_gp as i64);
+                    let next_gp = ctx.builder.ins().iadd(gp_offset, next_gp_increment);
+                    ctx.builder.ins().store(MemFlags::new(), next_gp, ap_addr, 0);
+
+                    // Sync overflow_area to point to the next slot (needed if we pass ap to standard functions like vprintf)
+                    // overflow_area = reg_save_area + next_gp
+                    let next_gp_64 = ctx.builder.ins().uextend(types::I64, next_gp);
+                    let next_overflow = ctx.builder.ins().iadd(reg_save_area, next_gp_64);
+                    ctx.builder.ins().store(MemFlags::new(), next_overflow, ap_addr, 8);
                     Ok(result)
                 }
                 Rvalue::ArrayLiteral(elements) => {
@@ -1809,32 +1780,42 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
             ctx.builder.ins().call(local_free, &[ptr_val]);
             Ok(())
         }
-        MirStmt::BuiltinVaStart(place, operand) => {
+        MirStmt::BuiltinVaStart(place, _operand) => {
             let ap_addr = resolve_place_to_addr(place, ctx)?;
 
-            // 1. gp_offset = 48 (Assume registers are exhausted to force stack usage for simplicity/safety)
-            let gp_offset_val = ctx.builder.ins().iconst(types::I32, 48);
-            ctx.builder.ins().store(MemFlags::new(), gp_offset_val, ap_addr, 0);
+            if let Some(spill_slot) = ctx.va_spill_slot {
+                let spill_addr = ctx.builder.ins().stack_addr(types::I64, spill_slot, 0);
 
-            // 2. fp_offset = 176 (Assume FP registers exhausted)
-            let fp_offset_val = ctx.builder.ins().iconst(types::I32, 176);
-            ctx.builder.ins().store(MemFlags::new(), fp_offset_val, ap_addr, 4);
+                // 1. gp_offset
+                // Calculate how many bytes are consumed by fixed parameters
+                let fixed_count = ctx.func.params.len();
+                let gp_val = fixed_count * 8;
 
-            // 3. overflow_arg_area
-            let last_arg_addr = match operand {
-                Operand::Copy(place) | Operand::AddressOf(place) => resolve_place_to_addr(place, ctx)?,
-                _ => return Err("va_start expects a place as second argument".to_string()),
-            };
+                // Clamp to 48 (max GPR registers)
+                let effective_gp = std::cmp::min(gp_val, 48);
+                let gp_const = ctx.builder.ins().iconst(types::I32, effective_gp as i64);
+                ctx.builder.ins().store(MemFlags::new(), gp_const, ap_addr, 0);
 
-            // Get size of the last argument to skip over it.
-            let size_of_slot = ctx.builder.ins().iconst(types::I64, 8);
-            let next_arg_addr = ctx.builder.ins().iadd(last_arg_addr, size_of_slot);
+                // 2. fp_offset = 176 (unused as we map everything to I64 GPRs in current hack)
+                let fp_val = ctx.builder.ins().iconst(types::I32, 176);
+                ctx.builder.ins().store(MemFlags::new(), fp_val, ap_addr, 4);
 
-            ctx.builder.ins().store(MemFlags::new(), next_arg_addr, ap_addr, 8);
+                // 3. overflow_arg_area
+                // If gp < 48, overflow starts at 48.
+                // If gp >= 48, overflow starts at gp.
+                let overflow_offset = std::cmp::max(gp_val, 48) as i64;
+                let overflow_ptr = ctx.builder.ins().iadd_imm(spill_addr, overflow_offset);
+                ctx.builder.ins().store(MemFlags::new(), overflow_ptr, ap_addr, 8);
 
-            // 4. reg_save_area = NULL
-            let null_ptr = ctx.builder.ins().iconst(types::I64, 0);
-            ctx.builder.ins().store(MemFlags::new(), null_ptr, ap_addr, 16);
+                // 4. reg_save_area
+                // Points to the start of spill slot where we saved all params
+                ctx.builder.ins().store(MemFlags::new(), spill_addr, ap_addr, 16);
+            } else {
+                // Fallback (should not happen for variadic functions)
+                let zero = ctx.builder.ins().iconst(types::I64, 0);
+                ctx.builder.ins().store(MemFlags::new(), zero, ap_addr, 8); // overflow
+                ctx.builder.ins().store(MemFlags::new(), zero, ap_addr, 16); // reg_save
+            }
 
             Ok(())
         }
@@ -1950,10 +1931,10 @@ fn setup_signature(
     }
 
     if func.is_variadic && matches!(func.kind, MirFunctionKind::Defined) {
-        // Add 16 total I64 parameters to capture variadic arguments (6 GPRs + 10 stack slots)
+        // Add 32 total I64 parameters to capture variadic arguments (6 GPRs + 26 stack slots)
         // This allows variadic functions to receive many struct args that expand to multiple I64s
         let fixed_params_count = func.params.len();
-        let total_variadic_slots = 16; // Support up to 16 I64 slots for variadic args
+        let total_variadic_slots = 32; // Support up to 32 I64 slots for variadic args
         if fixed_params_count < total_variadic_slots {
             for _ in 0..(total_variadic_slots - fixed_params_count) {
                 func_ctx.params.push(AbiParam::new(types::I64));
@@ -2226,7 +2207,7 @@ impl MirToCraneliftLowerer {
                 // Step 2: Add variadic block parameters if needed (still before any instructions)
                 if func.is_variadic {
                     let fixed_param_count = func.params.len();
-                    let total_variadic_slots = 16; // Must match setup_signature
+                    let total_variadic_slots = 32; // Must match setup_signature
                     if fixed_param_count < total_variadic_slots {
                         let extra_count = total_variadic_slots - fixed_param_count;
                         for _ in 0..extra_count {
@@ -2241,14 +2222,23 @@ impl MirToCraneliftLowerer {
                 for (next_param_idx, &param_id) in func.params.iter().enumerate() {
                     let param_value = param_values[next_param_idx];
                     if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
-                        builder.ins().stack_store(param_value, *stack_slot, 0);
+                        let local = self.mir.get_local(param_id);
+                        let mir_type = self.mir.get_type(local.type_id);
+                        if mir_type.is_aggregate() {
+                            // Passed by pointer (I64), copy to stack slot
+                            let dest_addr = builder.ins().stack_addr(types::I64, *stack_slot, 0);
+                            let size = mir_type_size(mir_type, &self.mir)? as i64;
+                            emit_memcpy(dest_addr, param_value, size, &mut builder, &mut self.module)?;
+                        } else {
+                            builder.ins().stack_store(param_value, *stack_slot, 0);
+                        }
                     }
                 }
 
-                // Step 4: Handle variadic spill area - save all 16 slots
+                // Step 4: Handle variadic spill area - save all 32 slots
                 if func.is_variadic {
-                    let total_slots = 16;
-                    let spill_size = total_slots * 8; // 128 bytes for 16 I64 slots
+                    let total_slots = 32;
+                    let spill_size = total_slots * 8; // 256 bytes for 32 I64 slots
                     let spill_slot = builder.create_sized_stack_slot(StackSlotData::new(
                         StackSlotKind::ExplicitSlot,
                         spill_size as u32,

@@ -1,5 +1,16 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::semantic_common::run_fail_with_diagnostic;
+use crate::tests::semantic_common::{run_fail_with_diagnostic, run_pass};
+
+#[test]
+fn allows_function_parameter_to_shadow_typedef() {
+    run_pass(
+        r#"
+typedef int T;
+void foo(T T) {}
+        "#,
+        CompilePhase::Mir,
+    );
+}
 
 #[test]
 fn rejects_variable_declaration_conflicting_with_typedef() {

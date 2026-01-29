@@ -1463,12 +1463,12 @@ fn test_invalid_struct_decl() {
     // `struct;` declares NONE of these. So it violates constraints.
     // However, many compilers (GCC/Clang) only warn about "declaration does not declare anything".
     let resolved = setup_declaration("struct;");
-    insta::assert_yaml_snapshot!(&resolved, @r#"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     Declaration:
       specifiers:
         - struct
       init_declarators: []
-    "#);
+    ");
 }
 
 #[test]
@@ -1506,8 +1506,8 @@ fn test_enum_with_non_literal_value() {
         panic!("Expected SizeOfType node, got {:?}", node.kind);
     };
 
-    insta::assert_yaml_snapshot!(constants_info, @r###"
+    insta::assert_yaml_snapshot!(constants_info, @r"
     - - A
       - ~
-    "###);
+    ");
 }

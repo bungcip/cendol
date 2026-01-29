@@ -1,6 +1,5 @@
 ---
 source: src/tests/semantic_loop_init_regression.rs
-assertion_line: 16
 expression: mir_dump
 ---
 type %t0 = i32

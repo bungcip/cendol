@@ -3,53 +3,68 @@
 //! This module handles AST dumping for debugging and visualization.
 
 use hashbrown::HashSet;
+use std::fmt;
 
 use crate::ast::literal;
 use crate::ast::parsed::{ParsedAst, ParsedNodeKind};
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind};
 use crate::semantic::{ArraySizeType, BuiltinType, SymbolRef, SymbolTable, TypeKind, TypeRef, TypeRegistry};
 
-/// Dumper for AST
-pub(crate) struct AstDumper;
+pub struct ParsedAstDisplay<'a>(pub &'a ParsedAst);
 
-impl AstDumper {
-    /// Dump parsed AST to stdout
-    pub(crate) fn dump_parsed_ast(ast: &ParsedAst) {
+impl<'a> fmt::Display for ParsedAstDisplay<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let ast = self.0;
         for (i, node) in ast.nodes.iter().enumerate() {
             if matches!(node.kind, ParsedNodeKind::Dummy) {
                 continue;
             }
-            print!("{}: ", i + 1);
-            Self::dump_parsed_node_kind(&node.kind, ast);
+            write!(f, "{}: ", i + 1)?;
+            AstDumper::dump_parsed_node_kind(f, &node.kind, ast)?;
         }
+        Ok(())
     }
+}
 
-    /// Dump parser AST to stdout
-    pub(crate) fn dump_parser(ast: &Ast, symbol_table: Option<&SymbolTable>) {
+pub struct ParserAstDisplay<'a> {
+    pub ast: &'a Ast,
+    pub symbol_table: Option<&'a SymbolTable>,
+}
+
+impl<'a> fmt::Display for ParserAstDisplay<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let ast = self.ast;
         for (i, kind) in ast.kinds.iter().enumerate() {
             if matches!(kind, NodeKind::Dummy) {
                 continue;
             }
-            print!("{}: ", i + 1);
-            Self::dump_parser_kind(kind, ast, symbol_table);
+            write!(f, "{}: ", i + 1)?;
+            AstDumper::dump_parser_kind(f, kind, ast, self.symbol_table)?;
         }
+        Ok(())
     }
+}
 
-    /// Dump TypeRegistry information for used TypeRefs in the AST
-    pub(crate) fn dump_type_registry(ast: &Ast, registry: &TypeRegistry) {
+pub struct TypeRegistryDisplay<'a> {
+    pub ast: &'a Ast,
+    pub registry: &'a TypeRegistry,
+}
+
+impl<'a> fmt::Display for TypeRegistryDisplay<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Collect all TypeRefs used in the AST
         let mut used_type_refs = HashSet::new();
 
-        for kind in &ast.kinds {
-            Self::collect_type_refs_from_node(kind, &mut used_type_refs);
+        for kind in &self.ast.kinds {
+            AstDumper::collect_type_refs_from_node(kind, &mut used_type_refs);
         }
 
         if used_type_refs.is_empty() {
-            return;
+            return Ok(());
         }
 
         // Print header
-        println!("\n=== TypeRegistry (Used TypeRefs) ===");
+        writeln!(f, "\n=== TypeRegistry (Used TypeRefs) ===")?;
 
         // Sort TypeRefs for consistent output
         let mut sorted_type_refs: Vec<_> = used_type_refs.into_iter().collect();
@@ -57,10 +72,31 @@ impl AstDumper {
 
         // Dump each used TypeRef with user-friendly formatting
         for ty_ref in sorted_type_refs {
-            let ty = registry.get(ty_ref);
-            let formatted_type = Self::format_type_kind_user_friendly(&ty.kind, registry);
-            println!("TypeRef({}): {}", ty_ref.base(), formatted_type);
+            let ty = self.registry.get(ty_ref);
+            let formatted_type = AstDumper::format_type_kind_user_friendly(&ty.kind, self.registry);
+            writeln!(f, "TypeRef({}): {}", ty_ref.base(), formatted_type)?;
         }
+        Ok(())
+    }
+}
+
+/// Dumper for AST
+pub(crate) struct AstDumper;
+
+impl AstDumper {
+    /// Dump parsed AST to stdout
+    pub(crate) fn dump_parsed_ast(ast: &ParsedAst) -> ParsedAstDisplay<'_> {
+        ParsedAstDisplay(ast)
+    }
+
+    /// Dump parser AST to stdout
+    pub(crate) fn dump_parser<'a>(ast: &'a Ast, symbol_table: Option<&'a SymbolTable>) -> ParserAstDisplay<'a> {
+        ParserAstDisplay { ast, symbol_table }
+    }
+
+    /// Dump TypeRegistry information for used TypeRefs in the AST
+    pub(crate) fn dump_type_registry<'a>(ast: &'a Ast, registry: &'a TypeRegistry) -> TypeRegistryDisplay<'a> {
+        TypeRegistryDisplay { ast, registry }
     }
 
     /// Format TypeKind in a user-friendly way for TypeRegistry dump
@@ -291,115 +327,119 @@ impl AstDumper {
         result
     }
 
-    /// Dump a single parsed AST node kind
-    fn dump_parsed_node_kind(kind: &ParsedNodeKind, _ast: &ParsedAst) {
+    /// Dump a single parsed parsed node kind
+    fn dump_parsed_node_kind(f: &mut fmt::Formatter<'_>, kind: &ParsedNodeKind, _ast: &ParsedAst) -> fmt::Result {
         match kind {
             ParsedNodeKind::Literal(literal) => match literal {
                 crate::ast::literal::Literal::Int { val, suffix } => {
-                    println!("LiteralInt({:?}, {:?})", val, suffix)
+                    writeln!(f, "LiteralInt({:?}, {:?})", val, suffix)
                 }
-                crate::ast::literal::Literal::Float(f) => println!("LiteralFloat({})", f),
-                crate::ast::literal::Literal::String(s) => println!("LiteralString(\"{}\")", s),
-                crate::ast::literal::Literal::Char(c) => println!("LiteralChar('{}')", *c as char),
+                crate::ast::literal::Literal::Float(f_val) => writeln!(f, "LiteralFloat({})", f_val),
+                crate::ast::literal::Literal::String(s) => writeln!(f, "LiteralString(\"{}\")", s),
+                crate::ast::literal::Literal::Char(c) => writeln!(f, "LiteralChar('{}')", *c as char),
             },
-            ParsedNodeKind::Ident(name) => println!("Ident({})", name),
+            ParsedNodeKind::Ident(name) => writeln!(f, "Ident({})", name),
 
             // Expressions
-            ParsedNodeKind::UnaryOp(op, node) => println!("UnaryOp({:?}, {})", op, node.get()),
+            ParsedNodeKind::UnaryOp(op, node) => writeln!(f, "UnaryOp({:?}, {})", op, node.get()),
             ParsedNodeKind::BinaryOp(op, l, r) => {
-                println!("BinaryOp({:?}, {}, {})", op, l.get(), r.get())
+                writeln!(f, "BinaryOp({:?}, {}, {})", op, l.get(), r.get())
             }
             ParsedNodeKind::TernaryOp(c, t, e) => {
-                println!("TernaryOp({}, {}, {})", c.get(), t.get(), e.get())
+                writeln!(f, "TernaryOp({}, {}, {})", c.get(), t.get(), e.get())
             }
             ParsedNodeKind::GnuStatementExpression(stmt, expr) => {
-                println!("GnuStatementExpression({}, {})", stmt.get(), expr.get())
+                writeln!(f, "GnuStatementExpression({}, {})", stmt.get(), expr.get())
             }
-            ParsedNodeKind::PostIncrement(node) => println!("PostIncrement({})", node.get()),
-            ParsedNodeKind::PostDecrement(node) => println!("PostDecrement({})", node.get()),
+            ParsedNodeKind::PostIncrement(node) => writeln!(f, "PostIncrement({})", node.get()),
+            ParsedNodeKind::PostDecrement(node) => writeln!(f, "PostDecrement({})", node.get()),
             ParsedNodeKind::Assignment(op, l, r) => {
-                println!("Assignment({:?}, {}, {})", op, l.get(), r.get())
+                writeln!(f, "Assignment({:?}, {}, {})", op, l.get(), r.get())
             }
             ParsedNodeKind::FunctionCall(callee, args) => {
                 let args_str = args.iter().map(|a| a.get().to_string()).collect::<Vec<_>>().join(", ");
-                println!("FunctionCall(callee={}, args=[{}])", callee.get(), args_str)
+                writeln!(f, "FunctionCall(callee={}, args=[{}])", callee.get(), args_str)
             }
-            ParsedNodeKind::MemberAccess(obj, field, arrow) => println!(
+            ParsedNodeKind::MemberAccess(obj, field, arrow) => writeln!(
+                f,
                 "MemberAccess({}, {}, {})",
                 obj.get(),
                 field,
                 if *arrow { "->" } else { "." }
             ),
             ParsedNodeKind::IndexAccess(arr, idx) => {
-                println!("IndexAccess({}, {})", arr.get(), idx.get())
+                writeln!(f, "IndexAccess({}, {})", arr.get(), idx.get())
             }
-            ParsedNodeKind::Cast(ty, expr) => println!("Cast({:?}, {})", ty, expr.get()),
-            ParsedNodeKind::SizeOfExpr(expr) => println!("SizeOfExpr({})", expr.get()),
-            ParsedNodeKind::SizeOfType(ty) => println!("SizeOfType({:?})", ty),
-            ParsedNodeKind::AlignOf(ty) => println!("AlignOf({:?})", ty),
+            ParsedNodeKind::Cast(ty, expr) => writeln!(f, "Cast({:?}, {})", ty, expr.get()),
+            ParsedNodeKind::SizeOfExpr(expr) => writeln!(f, "SizeOfExpr({})", expr.get()),
+            ParsedNodeKind::SizeOfType(ty) => writeln!(f, "SizeOfType({:?})", ty),
+            ParsedNodeKind::AlignOf(ty) => writeln!(f, "AlignOf({:?})", ty),
             ParsedNodeKind::CompoundLiteral(ty, init) => {
-                println!("CompoundLiteral({:?}, {})", ty, init.get())
+                writeln!(f, "CompoundLiteral({:?}, {})", ty, init.get())
             }
             ParsedNodeKind::BuiltinVaArg(ty, expr) => {
-                println!("BuiltinVaArg({:?}, {})", ty, expr.get())
+                writeln!(f, "BuiltinVaArg({:?}, {})", ty, expr.get())
             }
             ParsedNodeKind::BuiltinVaStart(ap, last) => {
-                println!("BuiltinVaStart({}, {})", ap.get(), last.get())
+                writeln!(f, "BuiltinVaStart({}, {})", ap.get(), last.get())
             }
             ParsedNodeKind::BuiltinVaEnd(ap) => {
-                println!("BuiltinVaEnd({})", ap.get())
+                writeln!(f, "BuiltinVaEnd({})", ap.get())
             }
             ParsedNodeKind::BuiltinVaCopy(dst, src) => {
-                println!("BuiltinVaCopy({}, {})", dst.get(), src.get())
+                writeln!(f, "BuiltinVaCopy({}, {})", dst.get(), src.get())
             }
             ParsedNodeKind::BuiltinExpect(exp, c) => {
-                println!("BuiltinExpect({}, {})", exp.get(), c.get())
+                writeln!(f, "BuiltinExpect({}, {})", exp.get(), c.get())
             }
             ParsedNodeKind::AtomicOp(op, args) => {
                 let args_str = args.iter().map(|a| a.get().to_string()).collect::<Vec<_>>().join(", ");
-                println!("AtomicOp({:?}, args=[{}])", op, args_str)
+                writeln!(f, "AtomicOp({:?}, args=[{}])", op, args_str)
             }
             ParsedNodeKind::GenericSelection(ctrl, assocs) => {
-                println!("GenericSelection({}, {:?})", ctrl.get(), assocs)
+                writeln!(f, "GenericSelection({}, {:?})", ctrl.get(), assocs)
             }
 
             // Statements
             ParsedNodeKind::CompoundStatement(stmts) => {
                 let stmts_str = stmts.iter().map(|s| s.get().to_string()).collect::<Vec<_>>().join(", ");
-                println!("CompoundStatement(stmts=[{}])", stmts_str)
+                writeln!(f, "CompoundStatement(stmts=[{}])", stmts_str)
             }
-            ParsedNodeKind::If(data) => println!("If({:?})", data),
-            ParsedNodeKind::While(data) => println!("While({:?})", data),
+            ParsedNodeKind::If(data) => writeln!(f, "If({:?})", data),
+            ParsedNodeKind::While(data) => writeln!(f, "While({:?})", data),
             ParsedNodeKind::DoWhile(body, cond) => {
-                println!("DoWhile(body={}, cond={})", body.get(), cond.get())
+                writeln!(f, "DoWhile(body={}, cond={})", body.get(), cond.get())
             }
-            ParsedNodeKind::For(data) => println!("For({:?})", data),
-            ParsedNodeKind::Return(expr) => println!(
+            ParsedNodeKind::For(data) => writeln!(f, "For({:?})", data),
+            ParsedNodeKind::Return(expr) => writeln!(
+                f,
                 "Return({})",
                 expr.map(|e| e.get().to_string()).unwrap_or("void".to_string())
             ),
-            ParsedNodeKind::Break => println!("Break"),
-            ParsedNodeKind::Continue => println!("Continue"),
-            ParsedNodeKind::Goto(label) => println!("Goto({})", label),
-            ParsedNodeKind::Label(label, stmt) => println!("Label({}, {})", label, stmt.get()),
+            ParsedNodeKind::Break => writeln!(f, "Break"),
+            ParsedNodeKind::Continue => writeln!(f, "Continue"),
+            ParsedNodeKind::Goto(label) => writeln!(f, "Goto({})", label),
+            ParsedNodeKind::Label(label, stmt) => writeln!(f, "Label({}, {})", label, stmt.get()),
             ParsedNodeKind::Switch(cond, body) => {
-                println!("Switch({}, {})", cond.get(), body.get())
+                writeln!(f, "Switch({}, {})", cond.get(), body.get())
             }
-            ParsedNodeKind::Case(val, stmt) => println!("Case({}, {})", val.get(), stmt.get()),
+            ParsedNodeKind::Case(val, stmt) => writeln!(f, "Case({}, {})", val.get(), stmt.get()),
             ParsedNodeKind::CaseRange(start, end, stmt) => {
-                println!("CaseRange({}, {}, {})", start.get(), end.get(), stmt.get())
+                writeln!(f, "CaseRange({}, {}, {})", start.get(), end.get(), stmt.get())
             }
-            ParsedNodeKind::Default(stmt) => println!("Default({})", stmt.get()),
-            ParsedNodeKind::ExpressionStatement(expr) => println!(
+            ParsedNodeKind::Default(stmt) => writeln!(f, "Default({})", stmt.get()),
+            ParsedNodeKind::ExpressionStatement(expr) => writeln!(
+                f,
                 "ExpressionStatement({})",
                 expr.map(|e| e.get().to_string()).unwrap_or("empty".to_string())
             ),
-            ParsedNodeKind::EmptyStatement => println!("EmptyStatement"),
+            ParsedNodeKind::EmptyStatement => writeln!(f, "EmptyStatement"),
 
             // Declarations & Definitions
-            ParsedNodeKind::Declaration(data) => println!("Declaration({:?})", data),
-            ParsedNodeKind::FunctionDef(data) => println!("FunctionDef({:?})", data),
-            ParsedNodeKind::EnumConstant(name, val) => println!(
+            ParsedNodeKind::Declaration(data) => writeln!(f, "Declaration({:?})", data),
+            ParsedNodeKind::FunctionDef(data) => writeln!(f, "FunctionDef({:?})", data),
+            ParsedNodeKind::EnumConstant(name, val) => writeln!(
+                f,
                 "EnumConstant({}, {})",
                 name,
                 val.map(|v| v.get().to_string()).unwrap_or("auto".to_string())
@@ -411,108 +451,115 @@ impl AstDumper {
                     } else {
                         "<invalid>".to_string()
                     };
-                println!("StaticAssert({}, \"{}\")", cond.get(), message_str)
+                writeln!(f, "StaticAssert({}, \"{}\")", cond.get(), message_str)
             }
 
             // Top Level
             ParsedNodeKind::TranslationUnit(decls) => {
                 let decls_str = decls.iter().map(|d| d.get().to_string()).collect::<Vec<_>>().join(", ");
-                println!("TranslationUnit(decls=[{}])", decls_str)
+                writeln!(f, "TranslationUnit(decls=[{}])", decls_str)
             }
 
             // InitializerList
-            ParsedNodeKind::InitializerList(inits) => println!("InitializerList({:?})", inits),
+            ParsedNodeKind::InitializerList(inits) => writeln!(f, "InitializerList({:?})", inits),
 
-            ParsedNodeKind::Dummy => println!("Dummy"),
+            ParsedNodeKind::Dummy => writeln!(f, "Dummy"),
         }
     }
 
     /// Dump a single AST node kind
-    fn dump_parser_kind(kind: &NodeKind, ast: &Ast, symbol_table: Option<&SymbolTable>) {
+    fn dump_parser_kind(
+        f: &mut fmt::Formatter<'_>,
+        kind: &NodeKind,
+        ast: &Ast,
+        symbol_table: Option<&SymbolTable>,
+    ) -> fmt::Result {
         match kind {
             NodeKind::TranslationUnit(tu_data) => {
                 let start = tu_data.decl_start.get();
                 if tu_data.decl_len > 0 {
                     let last = start + tu_data.decl_len as u32 - 1;
-                    println!("TranslationUnit(decls={}..{}) (parser kind)", start, last);
+                    writeln!(f, "TranslationUnit(decls={}..{}) (parser kind)", start, last)
                 } else {
-                    println!("TranslationUnit(decls=[]) (parser kind)");
+                    writeln!(f, "TranslationUnit(decls=[]) (parser kind)")
                 }
             }
             NodeKind::Literal(literal) => match literal {
                 crate::ast::literal::Literal::Int { val, suffix } => {
-                    println!("LiteralInt({:?}, {:?})", val, suffix)
+                    writeln!(f, "LiteralInt({:?}, {:?})", val, suffix)
                 }
-                crate::ast::literal::Literal::Float(f) => println!("LiteralFloat({})", f),
-                crate::ast::literal::Literal::String(s) => println!("LiteralString({})", s),
-                crate::ast::literal::Literal::Char(c) => println!("LiteralChar('{}')", *c as char),
+                crate::ast::literal::Literal::Float(f_val) => writeln!(f, "LiteralFloat({})", f_val),
+                crate::ast::literal::Literal::String(s) => writeln!(f, "LiteralString({})", s),
+                crate::ast::literal::Literal::Char(c) => writeln!(f, "LiteralChar('{}')", *c as char),
             },
-            NodeKind::Ident(sym, _) => println!("Ident({})", sym),
-            NodeKind::UnaryOp(op, operand) => println!("UnaryOp({:?}, {})", op, operand.get()),
+            NodeKind::Ident(sym, _) => writeln!(f, "Ident({})", sym),
+            NodeKind::UnaryOp(op, operand) => writeln!(f, "UnaryOp({:?}, {})", op, operand.get()),
             NodeKind::BinaryOp(op, left, right) => {
-                println!("BinaryOp({:?}, {}, {})", op, left.get(), right.get())
+                writeln!(f, "BinaryOp({:?}, {}, {})", op, left.get(), right.get())
             }
             NodeKind::TernaryOp(cond, then, else_) => {
-                println!("TernaryOp({}, {}, {})", cond.get(), then.get(), else_.get())
+                writeln!(f, "TernaryOp({}, {}, {})", cond.get(), then.get(), else_.get())
             }
-            NodeKind::PostIncrement(expr) => println!("PostIncrement({})", expr.get()),
-            NodeKind::PostDecrement(expr) => println!("PostDecrement({})", expr.get()),
+            NodeKind::PostIncrement(expr) => writeln!(f, "PostIncrement({})", expr.get()),
+            NodeKind::PostDecrement(expr) => writeln!(f, "PostDecrement({})", expr.get()),
             NodeKind::Assignment(op, lhs, rhs) => {
-                println!("Assignment({:?}, {}, {})", op, lhs.get(), rhs.get())
+                writeln!(f, "Assignment({:?}, {}, {})", op, lhs.get(), rhs.get())
             }
             NodeKind::FunctionCall(call_expr) => {
                 let start = call_expr.arg_start.get();
                 if call_expr.arg_len > 0 {
                     let last = start + call_expr.arg_len as u32 - 1;
-                    println!(
+                    writeln!(
+                        f,
                         "FunctionCall(callee={}, args={}..{})",
                         call_expr.callee.get(),
                         start,
                         last
-                    );
+                    )
                 } else {
-                    println!("FunctionCall(callee={}, args=[])", call_expr.callee.get());
+                    writeln!(f, "FunctionCall(callee={}, args=[])", call_expr.callee.get())
                 }
             }
 
-            NodeKind::MemberAccess(obj, field, is_arrow) => println!(
+            NodeKind::MemberAccess(obj, field, is_arrow) => writeln!(
+                f,
                 "MemberAccess({}, {}, {})",
                 obj.get(),
                 field,
                 if *is_arrow { "->" } else { "." }
             ),
             NodeKind::IndexAccess(array, index) => {
-                println!("IndexAccess({}, {})", array.get(), index.get())
+                writeln!(f, "IndexAccess({}, {})", array.get(), index.get())
             }
-            NodeKind::Cast(ty, expr) => println!("Cast({}, {})", ty, expr.get()),
-            NodeKind::SizeOfExpr(expr) => println!("SizeOfExpr({})", expr.get()),
-            NodeKind::SizeOfType(ty) => println!("SizeOfType({})", ty),
-            NodeKind::AlignOf(ty) => println!("AlignOf({})", ty),
+            NodeKind::Cast(ty, expr) => writeln!(f, "Cast({}, {})", ty, expr.get()),
+            NodeKind::SizeOfExpr(expr) => writeln!(f, "SizeOfExpr({})", expr.get()),
+            NodeKind::SizeOfType(ty) => writeln!(f, "SizeOfType({})", ty),
+            NodeKind::AlignOf(ty) => writeln!(f, "AlignOf({})", ty),
             NodeKind::CompoundLiteral(ty, init) => {
-                println!("CompoundLiteral({}, {})", ty, init.get())
+                writeln!(f, "CompoundLiteral({}, {})", ty, init.get())
             }
             NodeKind::BuiltinVaArg(ty, expr) => {
-                println!("BuiltinVaArg({}, {})", ty, expr.get())
+                writeln!(f, "BuiltinVaArg({}, {})", ty, expr.get())
             }
             NodeKind::BuiltinVaStart(ap, last) => {
-                println!("BuiltinVaStart({}, {})", ap.get(), last.get())
+                writeln!(f, "BuiltinVaStart({}, {})", ap.get(), last.get())
             }
             NodeKind::BuiltinVaEnd(ap) => {
-                println!("BuiltinVaEnd({})", ap.get())
+                writeln!(f, "BuiltinVaEnd({})", ap.get())
             }
             NodeKind::BuiltinVaCopy(dst, src) => {
-                println!("BuiltinVaCopy({}, {})", dst.get(), src.get())
+                writeln!(f, "BuiltinVaCopy({}, {})", dst.get(), src.get())
             }
             NodeKind::BuiltinExpect(exp, c) => {
-                println!("BuiltinExpect({}, {})", exp.get(), c.get())
+                writeln!(f, "BuiltinExpect({}, {})", exp.get(), c.get())
             }
             NodeKind::AtomicOp(op, args_start, args_len) => {
                 let start = args_start.get();
                 if *args_len > 0 {
                     let last = start + *args_len as u32 - 1;
-                    println!("AtomicOp({:?}, args={}..{})", op, start, last);
+                    writeln!(f, "AtomicOp({:?}, args={}..{})", op, start, last)
                 } else {
-                    println!("AtomicOp({:?}, args=[])", op);
+                    writeln!(f, "AtomicOp({:?}, args=[])", op)
                 }
             }
 
@@ -520,36 +567,44 @@ impl AstDumper {
                 let start = gs.assoc_start.get();
                 if gs.assoc_len > 0 {
                     let last = start + gs.assoc_len as u32 - 1;
-                    println!(
+                    writeln!(
+                        f,
                         "GenericSelection(control={}, associations={}..{})",
                         gs.control.get(),
                         start,
                         last
-                    );
+                    )
                 } else {
-                    println!("GenericSelection(control={}, associations=[])", gs.control.get());
+                    writeln!(f, "GenericSelection(control={}, associations=[])", gs.control.get())
                 }
             }
             NodeKind::GenericAssociation(ga) => {
-                println!(
+                writeln!(
+                    f,
                     "GenericAssociation(ty={:?}, result_expr={})",
                     ga.ty,
                     ga.result_expr.get()
                 )
             }
             NodeKind::GnuStatementExpression(compound_stmt, result_expr) => {
-                println!("GnuStatementExpression({}, {})", compound_stmt.get(), result_expr.get())
+                writeln!(
+                    f,
+                    "GnuStatementExpression({}, {})",
+                    compound_stmt.get(),
+                    result_expr.get()
+                )
             }
             NodeKind::CompoundStatement(cs) => {
                 let start = cs.stmt_start.get();
                 if cs.stmt_len > 0 {
                     let last = start + cs.stmt_len as u32 - 1;
-                    println!("CompoundStatement(stmts={}..{})", start, last);
+                    writeln!(f, "CompoundStatement(stmts={}..{})", start, last)
                 } else {
-                    println!("CompoundStatement(stmts=[])");
+                    writeln!(f, "CompoundStatement(stmts=[])")
                 }
             }
-            NodeKind::If(if_stmt) => println!(
+            NodeKind::If(if_stmt) => writeln!(
+                f,
                 "If(condition={}, then={}, else={})",
                 if_stmt.condition.get(),
                 if_stmt.then_branch.get(),
@@ -558,15 +613,17 @@ impl AstDumper {
                     .map(|r| r.get().to_string())
                     .unwrap_or("none".to_string())
             ),
-            NodeKind::While(while_stmt) => println!(
+            NodeKind::While(while_stmt) => writeln!(
+                f,
                 "While(condition={}, body={})",
                 while_stmt.condition.get(),
                 while_stmt.body.get()
             ),
             NodeKind::DoWhile(body, cond) => {
-                println!("DoWhile(body={}, condition={})", body.get(), cond.get())
+                writeln!(f, "DoWhile(body={}, condition={})", body.get(), cond.get())
             }
-            NodeKind::For(for_stmt) => println!(
+            NodeKind::For(for_stmt) => writeln!(
+                f,
                 "For(init={}, condition={}, increment={}, body={})",
                 for_stmt.init.map(|r| r.get().to_string()).unwrap_or("none".to_string()),
                 for_stmt
@@ -579,23 +636,25 @@ impl AstDumper {
                     .unwrap_or("none".to_string()),
                 for_stmt.body.get()
             ),
-            NodeKind::Return(expr) => println!(
+            NodeKind::Return(expr) => writeln!(
+                f,
                 "Return({})",
                 expr.map(|r| r.get().to_string()).unwrap_or("void".to_string())
             ),
-            NodeKind::Break => println!("Break"),
-            NodeKind::Continue => println!("Continue"),
-            NodeKind::Goto(label, _) => println!("Goto({})", label),
-            NodeKind::Label(label, stmt, _) => println!("Label({}, {})", label, stmt.get()),
+            NodeKind::Break => writeln!(f, "Break"),
+            NodeKind::Continue => writeln!(f, "Continue"),
+            NodeKind::Goto(label, _) => writeln!(f, "Goto({})", label),
+            NodeKind::Label(label, stmt, _) => writeln!(f, "Label({}, {})", label, stmt.get()),
             NodeKind::Switch(cond, body) => {
-                println!("Switch(condition={}, body={})", cond.get(), body.get())
+                writeln!(f, "Switch(condition={}, body={})", cond.get(), body.get())
             }
-            NodeKind::Case(expr, stmt) => println!("Case({}, {})", expr.get(), stmt.get()),
+            NodeKind::Case(expr, stmt) => writeln!(f, "Case({}, {})", expr.get(), stmt.get()),
             NodeKind::CaseRange(start, end, stmt) => {
-                println!("CaseRange({}, {}, {})", start.get(), end.get(), stmt.get())
+                writeln!(f, "CaseRange({}, {}, {})", start.get(), end.get(), stmt.get())
             }
-            NodeKind::Default(stmt) => println!("Default({})", stmt.get()),
-            NodeKind::ExpressionStatement(expr) => println!(
+            NodeKind::Default(stmt) => writeln!(f, "Default({})", stmt.get()),
+            NodeKind::ExpressionStatement(expr) => writeln!(
+                f,
                 "ExpressionStatement({})",
                 expr.map(|r| r.get().to_string()).unwrap_or("none".to_string())
             ),
@@ -606,7 +665,8 @@ impl AstDumper {
                 let start = data.param_start.get();
                 if data.param_len > 0 {
                     let last = start + data.param_len as u32 - 1;
-                    println!(
+                    writeln!(
+                        f,
                         "Function(name={}, symbol={:?}, ty={}, params={}..{}, body={})",
                         func_name,
                         data.symbol,
@@ -614,21 +674,23 @@ impl AstDumper {
                         start,
                         last,
                         data.body.get()
-                    );
+                    )
                 } else {
-                    println!(
+                    writeln!(
+                        f,
                         "Function(name={}, symbol={:?}, ty={}, params=[], body={})",
                         func_name,
                         data.symbol,
                         data.ty,
                         data.body.get()
-                    );
+                    )
                 }
             }
             NodeKind::Param(data) => {
-                println!("Param(symbol={:?}, ty={:?})", data.symbol, data.ty)
+                writeln!(f, "Param(symbol={:?}, ty={:?})", data.symbol, data.ty)
             }
-            NodeKind::EnumConstant(name, value) => println!(
+            NodeKind::EnumConstant(name, value) => writeln!(
+                f,
                 "EnumConstant({}, {})",
                 name,
                 value.map(|r| r.get().to_string()).unwrap_or("auto".to_string())
@@ -639,16 +701,18 @@ impl AstDumper {
                 } else {
                     "<invalid>".to_string()
                 };
-                println!("StaticAssert(condition={}, message=\"{}\")", cond.get(), message_str)
+                writeln!(f, "StaticAssert(condition={}, message=\"{}\")", cond.get(), message_str)
             }
             NodeKind::VarDecl(var_decl) => {
-                println!(
+                writeln!(
+                    f,
                     "VarDecl(name={}, ty={}, storage={:?})",
                     var_decl.name, var_decl.ty, var_decl.storage
                 )
             }
             NodeKind::FunctionDecl(func_decl) => {
-                println!(
+                writeln!(
+                    f,
                     "FunctionDecl(name={}, ty={}, storage={:?})",
                     func_decl.name,
                     func_decl.ty.get(),
@@ -656,72 +720,76 @@ impl AstDumper {
                 )
             }
             NodeKind::TypedefDecl(typedef_decl) => {
-                println!("TypedefDecl(name={}, ty={})", typedef_decl.name, typedef_decl.ty)
+                writeln!(f, "TypedefDecl(name={}, ty={})", typedef_decl.name, typedef_decl.ty)
             }
             NodeKind::RecordDecl(record_decl) => {
                 let start = record_decl.member_start.get();
                 if record_decl.member_len > 0 {
                     let last = start + record_decl.member_len as u32 - 1;
-                    println!(
+                    writeln!(
+                        f,
                         "RecordDecl(name={:?}, ty={}, is_union={}, members={}..{})",
                         record_decl.name,
                         record_decl.ty.get(),
                         record_decl.is_union,
                         start,
                         last
-                    );
+                    )
                 } else {
-                    println!(
+                    writeln!(
+                        f,
                         "RecordDecl(name={:?}, ty={}, is_union={}, members=[])",
                         record_decl.name,
                         record_decl.ty.get(),
                         record_decl.is_union
-                    );
+                    )
                 }
             }
             NodeKind::FieldDecl(field_decl) => {
-                println!("FieldDecl(name={:?}, ty={})", field_decl.name, field_decl.ty)
+                writeln!(f, "FieldDecl(name={:?}, ty={})", field_decl.name, field_decl.ty)
             }
             NodeKind::EnumDecl(enum_decl) => {
                 let start = enum_decl.member_start.get();
                 if enum_decl.member_len > 0 {
                     let last = start + enum_decl.member_len as u32 - 1;
-                    println!(
+                    writeln!(
+                        f,
                         "EnumDecl(name={:?}, ty={}, members={}..{})",
                         enum_decl.name,
                         enum_decl.ty.get(),
                         start,
                         last
-                    );
+                    )
                 } else {
-                    println!(
+                    writeln!(
+                        f,
                         "EnumDecl(name={:?}, ty={}, members=[])",
                         enum_decl.name,
                         enum_decl.ty.get()
-                    );
+                    )
                 }
             }
             NodeKind::EnumMember(enum_member) => {
-                println!("EnumMember(name={}, value={})", enum_member.name, enum_member.value)
+                writeln!(f, "EnumMember(name={}, value={})", enum_member.name, enum_member.value)
             }
             NodeKind::InitializerList(list) => {
                 let start = list.init_start.get();
                 if list.init_len > 0 {
                     let last = start + list.init_len as u32 - 1;
-                    println!("InitializerList(inits={}..{})", start, last);
+                    writeln!(f, "InitializerList(inits={}..{})", start, last)
                 } else {
-                    println!("InitializerList(inits=[])");
+                    writeln!(f, "InitializerList(inits=[])")
                 }
             }
             NodeKind::InitializerItem(init) => {
-                println!("InitializerItem({})", Self::format_designated_initializer(init, ast))
+                writeln!(f, "InitializerItem({})", Self::format_designated_initializer(init, ast))
             }
             NodeKind::Designator(d) => match d {
-                Designator::FieldName(name) => println!("Designator(.{})", name),
-                Designator::ArrayIndex(idx) => println!("Designator([{}])", idx.get()),
-                Designator::GnuArrayRange(start, end) => println!("Designator([{} ... {}])", start.get(), end.get()),
+                Designator::FieldName(name) => writeln!(f, "Designator(.{})", name),
+                Designator::ArrayIndex(idx) => writeln!(f, "Designator([{}])", idx.get()),
+                Designator::GnuArrayRange(start, end) => writeln!(f, "Designator([{} ... {}])", start.get(), end.get()),
             },
-            NodeKind::Dummy => println!("DUMMY"),
+            NodeKind::Dummy => writeln!(f, "DUMMY"),
         }
     }
 }

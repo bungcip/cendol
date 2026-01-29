@@ -1,6 +1,5 @@
 ---
 source: src/tests/pp_unsigned_arithmetic.rs
-assertion_line: 52
 expression: tokens
 ---
 - kind: Identifier

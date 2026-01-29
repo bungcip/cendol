@@ -1,6 +1,5 @@
 ---
 source: src/tests/pp_computed_include.rs
-assertion_line: 54
 expression: "(tokens, diags)"
 ---
 - - kind: Identifier

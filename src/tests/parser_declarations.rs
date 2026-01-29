@@ -5,7 +5,7 @@ mod tests {
     #[test]
     fn test_parse_noreturn_function_declaration() {
         let resolved = setup_declaration("_Noreturn void foo();");
-        insta::assert_yaml_snapshot!(&resolved, @"
+        insta::assert_yaml_snapshot!(&resolved, @r"
         Declaration:
           specifiers:
             - Noreturn

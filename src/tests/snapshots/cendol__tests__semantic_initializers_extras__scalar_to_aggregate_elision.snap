@@ -1,6 +1,5 @@
 ---
 source: src/tests/semantic_initializers_extras.rs
-assertion_line: 34
 expression: mir
 ---
 type %t0 = i32

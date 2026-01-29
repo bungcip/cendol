@@ -6,7 +6,7 @@ mod tests {
     fn test_cast_attribute_pointer() {
         // This reproduces the issue: int b = ( (int(ATTR *)(void)) function_pointer)();
         let resolved = setup_declaration("int x = (int (__attribute__((unused)) *) (void)) 0;");
-        insta::assert_yaml_snapshot!(resolved, @"
+        insta::assert_yaml_snapshot!(resolved, @r"
         Declaration:
           specifiers:
             - int
@@ -23,7 +23,7 @@ mod tests {
     fn test_param_attribute_int() {
         // Verify that (ATTR int) is still parsed as a parameter list.
         let resolved = setup_declaration("void foo(int (__attribute__((unused)) int));");
-        insta::assert_yaml_snapshot!(resolved, @"
+        insta::assert_yaml_snapshot!(resolved, @r"
         Declaration:
           specifiers:
             - void

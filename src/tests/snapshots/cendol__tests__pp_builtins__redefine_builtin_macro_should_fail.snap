@@ -1,6 +1,5 @@
 ---
 source: src/tests/pp_builtins.rs
-assertion_line: 20
 expression: "(tokens, diags)"
 ---
 - - kind: Identifier

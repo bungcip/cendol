@@ -858,7 +858,7 @@ int UNIQUE(var);
 int UNIQUE(var);
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: int
     - kind: Identifier
@@ -871,7 +871,7 @@ int UNIQUE(var);
       text: var1
     - kind: Semicolon
       text: ;
-    "#);
+    ");
 }
 
 #[test]
@@ -884,10 +884,10 @@ CORRECT
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: CORRECT
-    "#);
+    ");
 }
 
 #[test]
@@ -901,10 +901,10 @@ CORRECT
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: CORRECT
-    "#);
+    ");
 }
 
 #[test]
@@ -919,10 +919,10 @@ CORRECT
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: CORRECT
-    "#);
+    ");
 }
 
 #[test]

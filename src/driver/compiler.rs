@@ -353,12 +353,12 @@ impl CompilerDriver {
                             }
                         }
                     } else if let Some(ast) = artifact.ast {
-                        AstDumper::dump_parser(&ast, artifact.symbol_table.as_ref());
+                        print!("{}", AstDumper::dump_parser(&ast, artifact.symbol_table.as_ref()));
                         if let Some(registry) = artifact.type_registry {
-                            AstDumper::dump_type_registry(&ast, &registry);
+                            print!("{}", AstDumper::dump_type_registry(&ast, &registry));
                         }
                     } else if let Some(parsed_ast) = artifact.parsed_ast {
-                        AstDumper::dump_parsed_ast(&parsed_ast);
+                        print!("{}", AstDumper::dump_parsed_ast(&parsed_ast));
                     } else if let Some(preprocessed) = artifact.preprocessed {
                         self.output_handler.dump_preprocessed_output(
                             &preprocessed,

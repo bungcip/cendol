@@ -1,6 +1,5 @@
 ---
 source: src/tests/control_flow_goto.rs
-assertion_line: 20
 expression: mir
 ---
 type %t0 = void

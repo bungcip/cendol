@@ -755,7 +755,7 @@ mod tests {
         "#;
 
         let output = setup_diagnostics_output(source);
-        insta::assert_snapshot!(output, @"
+        insta::assert_snapshot!(output, @r"
         Diagnostics count: 2
 
         Level: Error

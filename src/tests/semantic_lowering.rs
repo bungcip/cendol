@@ -210,7 +210,7 @@ fn test_record_decl_members_populated() {
     );
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @r###"
+    insta::assert_yaml_snapshot!(resolved, @r"
     TranslationUnit:
       - RecordDecl:
           name: Point
@@ -221,7 +221,7 @@ fn test_record_decl_members_populated() {
             - FieldDecl:
                 name: y
                 ty: int
-    "###);
+    ");
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn test_enum_decl_members_populated() {
 
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @r###"
+    insta::assert_yaml_snapshot!(resolved, @r"
     TranslationUnit:
       - EnumDecl:
           name: Color
@@ -252,7 +252,7 @@ fn test_enum_decl_members_populated() {
             - EnumMember:
                 name: BLUE
                 value: 2
-    "###);
+    ");
 }
 
 #[test]
@@ -268,7 +268,7 @@ fn test_struct_member_qualifiers_preserved() {
 
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @r###"
+    insta::assert_yaml_snapshot!(resolved, @r"
     TranslationUnit:
       - RecordDecl:
           name: S
@@ -279,7 +279,7 @@ fn test_struct_member_qualifiers_preserved() {
             - FieldDecl:
                 name: y
                 ty: volatile int *
-    "###);
+    ");
 }
 
 #[test]
@@ -295,7 +295,7 @@ fn test_function_call_args_contiguity() {
 
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @r###"
+    insta::assert_yaml_snapshot!(resolved, @r"
     TranslationUnit:
       - Function:
           name: add
@@ -324,7 +324,7 @@ fn test_function_call_args_contiguity() {
                           rhs:
                             LiteralInt: 2
                       - LiteralInt: 3
-    "###);
+    ");
 }
 
 #[test]
@@ -339,7 +339,7 @@ fn test_alignment_specifier() {
 
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @r###"
+    insta::assert_yaml_snapshot!(resolved, @r"
     TranslationUnit:
       - VarDecl:
           name: x
@@ -356,5 +356,5 @@ fn test_alignment_specifier() {
           ty: int
           init: ~
           alignment: 16
-    "###);
+    ");
 }

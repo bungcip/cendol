@@ -4,3 +4,4 @@ c-testsuite
 coverage_report/
 a.out
 *.o
+*.pending-snap

@@ -22,7 +22,7 @@ impl SourceId {
         SourceId(NonZeroU32::new(id).expect("SourceId must be non-zero"))
     }
 
-    pub(crate) fn to_u32(&self) -> u32 {
+    pub(crate) fn to_u32(self) -> u32 {
         self.0.get()
     }
 }

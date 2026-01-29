@@ -612,18 +612,20 @@ fn resolve_call_args(
             && let Some(type_id) = arg_type_id
             && matches!(ctx.mir.get_type(type_id), MirType::F80 | MirType::F128)
         {
-             let val = resolve_operand(arg, ctx, types::F128)?;
-             // Split val into lo, hi by storing to stack and reloading
-             let slot = ctx.builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 16, 0));
-             ctx.builder.ins().stack_store(val, slot, 0);
-             let lo = ctx.builder.ins().stack_load(types::I64, slot, 0);
-             let hi = ctx.builder.ins().stack_load(types::I64, slot, 8);
+            let val = resolve_operand(arg, ctx, types::F128)?;
+            // Split val into lo, hi by storing to stack and reloading
+            let slot = ctx
+                .builder
+                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 16, 0));
+            ctx.builder.ins().stack_store(val, slot, 0);
+            let lo = ctx.builder.ins().stack_load(types::I64, slot, 0);
+            let hi = ctx.builder.ins().stack_load(types::I64, slot, 8);
 
-             arg_values.push(lo);
-             arg_values.push(hi);
+            arg_values.push(lo);
+            arg_values.push(hi);
 
-             sig_idx += 2;
-             continue;
+            sig_idx += 2;
+            continue;
         }
 
         // Check if this is a variadic struct argument that needs expansion

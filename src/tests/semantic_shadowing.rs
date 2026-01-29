@@ -21,3 +21,20 @@ fn test_nested_scope_shadowing() {
         "#,
     );
 }
+
+#[test]
+fn allows_parameter_to_shadow_typedef() {
+    run_full_pass(
+        r#"
+typedef int T;
+void f(int T) {
+    T = 1;
+}
+
+int main() {
+    f(0);
+    return 0;
+}
+        "#,
+    );
+}

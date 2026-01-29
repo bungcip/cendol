@@ -308,20 +308,10 @@ mod tests {
 
         for (input, expected) in test_cases {
             let token_kinds = setup_lexer(input);
-            assert_eq!(
-                token_kinds.len(),
-                1,
-                "Expected 1 token for input: {}",
-                input
-            );
+            assert_eq!(token_kinds.len(), 1, "Expected 1 token for input: {}", input);
 
             if let TokenKind::StringLiteral(sid) = token_kinds[0] {
-                assert_eq!(
-                    sid.as_str(),
-                    expected,
-                    "Failed for input: {}",
-                    input
-                );
+                assert_eq!(sid.as_str(), expected, "Failed for input: {}", input);
             } else {
                 panic!("Expected StringLiteral for input: {}", input);
             }

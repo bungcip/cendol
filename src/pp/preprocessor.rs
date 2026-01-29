@@ -953,7 +953,7 @@ impl<'src> Preprocessor<'src> {
         let result = interpreter.evaluate();
 
         match result {
-            Ok(val) => Ok(val != 0),
+            Ok(val) => Ok(val.is_truthy()),
             Err(_) => {
                 // For complex expressions that can't be parsed, emit a warning and treat as false
                 let span = if !tokens.is_empty() {

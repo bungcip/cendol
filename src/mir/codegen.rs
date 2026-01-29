@@ -48,7 +48,7 @@ fn convert_type(mir_type: &MirType) -> Option<Type> {
         MirType::I64 | MirType::U64 => Some(types::I64),
         MirType::F32 => Some(types::F32),
         MirType::F64 => Some(types::F64),
-        MirType::F128 => Some(types::F128),
+        MirType::F80 | MirType::F128 => Some(types::F128),
         MirType::Pointer { .. } => Some(types::I64), // Pointers are 64-bit on most modern systems
 
         MirType::Array { .. } | MirType::Record { .. } => None,
@@ -73,7 +73,7 @@ pub(crate) fn mir_type_size(mir_type: &MirType, mir: &MirProgram) -> Result<u32,
         MirType::I64 | MirType::U64 => Ok(8),
         MirType::F32 => Ok(4),
         MirType::F64 => Ok(8),
-        MirType::F128 => Ok(16),
+        MirType::F80 | MirType::F128 => Ok(16),
 
         MirType::Pointer { .. } => Ok(mir.pointer_width as u32),
         MirType::Array { layout, .. } => Ok(layout.size as u32),
@@ -90,7 +90,6 @@ pub(crate) struct EmitContext<'a> {
     pub mir: &'a MirProgram,
     pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
     pub data_id_map: &'a HashMap<GlobalId, DataId>,
-    pub triple: &'a Triple,
 }
 
 /// Context for emitting function bodies
@@ -266,7 +265,7 @@ fn f64_to_x87_bytes(val: f64) -> [u8; 16] {
 }
 
 /// Helper to emit float constants
-fn emit_const_float(val: f64, ty: &MirType, output: &mut Vec<u8>, triple: &Triple) -> Result<(), String> {
+fn emit_const_float(val: f64, ty: &MirType, output: &mut Vec<u8>) -> Result<(), String> {
     match ty {
         MirType::F32 => {
             let bytes = (val as f32).to_bits().to_le_bytes();
@@ -276,12 +275,12 @@ fn emit_const_float(val: f64, ty: &MirType, output: &mut Vec<u8>, triple: &Tripl
             let bytes = val.to_bits().to_le_bytes();
             output.extend_from_slice(&bytes);
         }
+        MirType::F80 => {
+            let bytes = f64_to_x87_bytes(val);
+            output.extend_from_slice(&bytes);
+        }
         MirType::F128 => {
-            let bytes = if triple.architecture == target_lexicon::Architecture::X86_64 {
-                f64_to_x87_bytes(val)
-            } else {
-                f64_to_f128_bytes(val)
-            };
+            let bytes = f64_to_f128_bytes(val);
             output.extend_from_slice(&bytes);
         }
         _ => {
@@ -417,7 +416,7 @@ pub(crate) fn emit_const(
 
     match &const_value.kind {
         ConstValueKind::Int(val) => emit_const_int(*val, ty, output),
-        ConstValueKind::Float(val) => emit_const_float(*val, ty, output, ctx.triple),
+        ConstValueKind::Float(val) => emit_const_float(*val, ty, output),
         ConstValueKind::Bool(val) => {
             let byte = if *val { 1u8 } else { 0u8 };
             output.push(byte);
@@ -522,7 +521,7 @@ fn prepare_call_signature(
     for &param_type_id in param_types {
         let mir_type = mir.get_type(param_type_id);
 
-        if split_f128 && matches!(mir_type, MirType::F128) {
+        if split_f128 && matches!(mir_type, MirType::F80 | MirType::F128) {
             sig.params.push(AbiParam::new(types::I64));
             sig.params.push(AbiParam::new(types::I64));
             continue;
@@ -551,7 +550,7 @@ fn prepare_call_signature(
                 continue;
             }
 
-            if split_f128 && matches!(mir_type, MirType::F128) {
+            if split_f128 && matches!(mir_type, MirType::F80 | MirType::F128) {
                 sig.params.push(AbiParam::new(types::I64));
                 sig.params.push(AbiParam::new(types::I64));
                 continue;
@@ -611,7 +610,7 @@ fn resolve_call_args(
         // Check if F128 splitting is needed
         if split_f128
             && let Some(type_id) = arg_type_id
-            && matches!(ctx.mir.get_type(type_id), MirType::F128)
+            && matches!(ctx.mir.get_type(type_id), MirType::F80 | MirType::F128)
         {
              let val = resolve_operand(arg, ctx, types::F128)?;
              // Split val into lo, hi by storing to stack and reloading
@@ -2093,8 +2092,8 @@ fn setup_signature(
         let param_local = mir.get_local(param_id);
         let mir_type = mir.get_type(param_local.type_id);
 
-        if matches!(mir_type, MirType::F128) {
-            // Split F128 into 2 I64s for internal ABI
+        if matches!(mir_type, MirType::F80 | MirType::F128) {
+            // Split F128/F80 into 2 I64s for internal ABI
             func_ctx.params.push(AbiParam::new(types::I64));
             func_ctx.params.push(AbiParam::new(types::I64));
             // Track them as F128 in param_types for lower_function to know,
@@ -2294,7 +2293,6 @@ impl MirToCraneliftLowerer {
                     mir: &self.mir,
                     func_id_map: &self.func_id_map,
                     data_id_map: &self.data_id_map,
-                    triple: &self.triple,
                 };
                 emit_const(
                     const_id,
@@ -2413,7 +2411,7 @@ impl MirToCraneliftLowerer {
                     let local = self.mir.get_local(param_id);
                     let mir_type = self.mir.get_type(local.type_id);
 
-                    if matches!(mir_type, MirType::F128) {
+                    if matches!(mir_type, MirType::F80 | MirType::F128) {
                         // Consumes 2 slots
                         let lo = param_iter.next().unwrap();
                         let hi = param_iter.next().unwrap();

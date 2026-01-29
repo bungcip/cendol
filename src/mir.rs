@@ -129,13 +129,7 @@ pub struct MirBlock {
 }
 
 impl MirBlock {
-    pub fn new(id: MirBlockId) -> Self {
-        Self {
-            id,
-            statements: Vec::new(),
-            terminator: Terminator::Unreachable,
-        }
-    }
+
 }
 
 /// MIR Statement - Individual operations within a block
@@ -598,7 +592,11 @@ impl MirBuilder {
         let block_id = MirBlockId::new(self.next_block_id).unwrap();
         self.next_block_id += 1;
 
-        let block = MirBlock::new(block_id);
+        let block = MirBlock {
+            id: block_id,
+            statements: Vec::new(),
+            terminator: Terminator::Unreachable,
+        };
         self.blocks.insert(block_id, block);
 
         if let Some(func) = self.functions.get_mut(&func_id) {

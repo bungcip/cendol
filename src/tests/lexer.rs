@@ -290,4 +290,31 @@ mod tests {
             "Unrecognized character should produce Unknown"
         );
     }
+
+    #[test]
+    fn test_string_escapes_edge_cases() {
+        // Test edge cases in string literal unescaping
+        let test_cases = vec![
+            // \x with no digits - should keep the x
+            ("\"\\xg\"", "\\xg"),
+            // \x with invalid unicode value (overflow) - should use replacement character
+            // \x110000 is > 0x10FFFF
+            ("\"\\x110000\"", "\u{FFFD}"),
+            // \? escape
+            ("\"\\?\"", "?"),
+            // Unknown escape sequence (e.g. \q) - should keep the character
+            ("\"\\q\"", "q"),
+        ];
+
+        for (input, expected) in test_cases {
+            let token_kinds = setup_lexer(input);
+            assert_eq!(token_kinds.len(), 1, "Expected 1 token for input: {}", input);
+
+            if let TokenKind::StringLiteral(sid) = token_kinds[0] {
+                assert_eq!(sid.as_str(), expected, "Failed for input: {}", input);
+            } else {
+                panic!("Expected StringLiteral for input: {}", input);
+            }
+        }
+    }
 }

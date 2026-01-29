@@ -1,0 +1,11 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 134
+expression: results
+---
+"0x1.2p3":
+  - FloatConstant: 9
+"1.23e-4":
+  - FloatConstant: 0.000123
+"1.5":
+  - FloatConstant: 1.5

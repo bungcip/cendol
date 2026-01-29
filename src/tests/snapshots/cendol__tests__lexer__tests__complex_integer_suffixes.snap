@@ -1,0 +1,29 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 301
+expression: results
+---
+1LLu:
+  - IntegerConstant:
+      - 1
+      - ULL
+1Lu:
+  - IntegerConstant:
+      - 1
+      - UL
+1UlL:
+  - IntegerConstant:
+      - 1
+      - ULL
+1llU:
+  - IntegerConstant:
+      - 1
+      - ULL
+1uL:
+  - IntegerConstant:
+      - 1
+      - UL
+1uLl:
+  - IntegerConstant:
+      - 1
+      - ULL

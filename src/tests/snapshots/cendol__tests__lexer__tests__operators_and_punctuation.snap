@@ -1,0 +1,97 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 73
+expression: results
+---
+"!":
+  - Not
+"!=":
+  - NotEqual
+"%":
+  - Percent
+"%=":
+  - ModAssign
+"&":
+  - And
+"&&":
+  - LogicAnd
+"&=":
+  - AndAssign
+(:
+  - LeftParen
+):
+  - RightParen
+"*":
+  - Star
+"*=":
+  - StarAssign
++:
+  - Plus
+++:
+  - Increment
++=:
+  - PlusAssign
+",":
+  - Comma
+"-":
+  - Minus
+"--":
+  - Decrement
+"-=":
+  - MinusAssign
+"->":
+  - Arrow
+".":
+  - Dot
+"...":
+  - Ellipsis
+/:
+  - Slash
+/=:
+  - DivAssign
+":":
+  - Colon
+;:
+  - Semicolon
+"<":
+  - Less
+"<<":
+  - LeftShift
+"<<=":
+  - LeftShiftAssign
+"<=":
+  - LessEqual
+"=":
+  - Assign
+"==":
+  - Equal
+">":
+  - Greater
+">=":
+  - GreaterEqual
+">>":
+  - RightShift
+">>=":
+  - RightShiftAssign
+"?":
+  - Question
+"[":
+  - LeftBracket
+"]":
+  - RightBracket
+^:
+  - Xor
+^=:
+  - XorAssign
+"{":
+  - LeftBrace
+"|":
+  - Or
+"|=":
+  - OrAssign
+"||":
+  - LogicOr
+"}":
+  - RightBrace
+"~":
+  - Tilde

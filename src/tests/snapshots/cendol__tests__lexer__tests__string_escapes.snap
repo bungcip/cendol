@@ -1,0 +1,21 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 322
+expression: results
+---
+"\"\\\"\"":
+  - StringLiteral: "\""
+"\"\\'\"":
+  - StringLiteral: "'"
+"\"\\101\"":
+  - StringLiteral: A
+"\"\\777\"":
+  - StringLiteral: ǿ
+"\"\\?\"":
+  - StringLiteral: "?"
+"\"\\a\\b\\f\\n\\r\\t\\v\"":
+  - StringLiteral: "\u0007\b\f\n\r\t\u000b"
+"\"\\x\"":
+  - StringLiteral: x
+"\"\\x41\"":
+  - StringLiteral: A

@@ -2,6 +2,7 @@
 //!
 //! This module contains tests for the `MirToCraneliftLowerer` implementation.
 use crate::ast::NameId;
+use target_lexicon::Triple;
 
 use crate::driver::artifact::CompilePhase;
 use crate::mir::codegen::{ClifOutput, EmitContext, EmitKind, MirToCraneliftLowerer, emit_const};
@@ -42,10 +43,12 @@ fn test_emit_const_struct_literal() {
 
     // 4. Emit Constant
     let mut output = Vec::new();
+    let triple = Triple::host();
     let ctx = EmitContext {
         mir: &mir,
         func_id_map: &hashbrown::HashMap::new(),
         data_id_map: &hashbrown::HashMap::new(),
+        triple: &triple,
     };
     emit_const(struct_const_id, &mut output, &ctx, None, None, 0).expect("emit_const failed");
 

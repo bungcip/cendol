@@ -8,6 +8,7 @@ pub mod control_flow_goto;
 pub mod enum_const;
 pub mod func_identifier;
 pub mod lexer;
+pub mod long_double_abi;
 pub mod noreturn;
 pub mod output;
 pub mod parser;

@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use crate::source_manager::SourceSpan;
 use crate::{ast::NameId, diagnostic::SemanticError, semantic::QualType};
 use hashbrown::{HashMap, HashSet};
-use target_lexicon::{Architecture, PointerWidth, Triple};
+use target_lexicon::{PointerWidth, Triple};
 
 use super::types::TypeClass;
 use super::types::{FieldLayout, LayoutKind};
@@ -560,11 +560,9 @@ impl TypeRegistry {
                     kind: LayoutKind::Scalar,
                 },
                 BuiltinType::LongDouble => {
-                    let size = if self.target_triple.architecture == Architecture::X86_64 {
-                        8
-                    } else {
-                        16
-                    };
+                    // On x86_64, long double is typically 80-bit (10 bytes) but padded to 16 bytes for alignment.
+                    // We use 16 bytes to match the System V ABI size.
+                    let size = 16;
                     TypeLayout {
                         size,
                         alignment: size,

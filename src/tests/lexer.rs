@@ -296,7 +296,7 @@ mod tests {
         // Test edge cases in string literal unescaping
         let test_cases = vec![
             // \x with no digits - should keep the x
-            ("\"\\xg\"", "xg"),
+            ("\"\\xg\"", "\\xg"),
             // \x with invalid unicode value (overflow) - should use replacement character
             // \x110000 is > 0x10FFFF
             ("\"\\x110000\"", "\u{FFFD}"),

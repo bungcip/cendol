@@ -902,6 +902,7 @@ impl<'src> Lexer<'src> {
                         } else {
                             // \x with no digits is technically undefined/error.
                             // Keep \x
+                            result.push('\\');
                             result.push('x');
                         }
                     }

@@ -22,7 +22,7 @@ impl SourceId {
         SourceId(NonZeroU32::new(id).expect("SourceId must be non-zero"))
     }
 
-    pub fn to_u32(&self) -> u32 {
+    pub(crate) fn to_u32(&self) -> u32 {
         self.0.get()
     }
 }
@@ -54,7 +54,7 @@ impl SourceLoc {
         self.source_id
     }
 
-    pub fn offset(&self) -> u32 {
+    pub(crate) fn offset(&self) -> u32 {
         self.offset
     }
 }
@@ -174,7 +174,7 @@ impl SourceSpan {
         }
     }
 
-    pub fn source_id(&self) -> SourceId {
+    pub(crate) fn source_id(&self) -> SourceId {
         let id = ((self.0 >> Self::SOURCE_ID_SHIFT) & Self::SOURCE_ID_MASK) as u32;
         SourceId::new(id)
     }

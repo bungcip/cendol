@@ -622,7 +622,7 @@ impl<'src> Lexer<'src> {
                 // --- Phase 2: Allocate and append ---
                 let mut content = String::with_capacity(total_size);
                 if let Some(s_content) = Self::extract_string_content(&symbol) {
-                    content.push_str(&Self::unescape_string(s_content));
+                    Self::unescape_string_into(s_content, &mut content);
                 }
 
                 for _ in 0..adjacent_literals {
@@ -630,7 +630,7 @@ impl<'src> Lexer<'src> {
                     if let PPTokenKind::StringLiteral(next_symbol) = consumed_pptoken.kind
                         && let Some(s_content) = Self::extract_string_content(&next_symbol)
                     {
-                        content.push_str(&Self::unescape_string(s_content));
+                        Self::unescape_string_into(s_content, &mut content);
                     }
                 }
 
@@ -821,6 +821,19 @@ impl<'src> Lexer<'src> {
         }
 
         let mut result = String::with_capacity(s.len());
+        Self::unescape_string_into(s, &mut result);
+        result
+    }
+
+    /// Unescape C11 string literal content into a buffer
+    ///
+    /// ⚡ Bolt: Optimized to reduce allocations.
+    /// This private helper avoids intermediate allocations by writing the unescaped
+    /// string directly into a provided buffer. This is significantly more efficient
+    /// when concatenating multiple string literals, as it allows us to unescape
+    /// all of them into a single, final string without creating temporary strings
+    /// for each part.
+    fn unescape_string_into(s: &str, result: &mut String) {
         let mut chars = s.chars().peekable();
 
         while let Some(c) = chars.next() {
@@ -943,6 +956,5 @@ impl<'src> Lexer<'src> {
                 result.push(c);
             }
         }
-        result
     }
 }

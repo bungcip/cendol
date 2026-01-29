@@ -2,9 +2,32 @@ use crate::ast::{BinaryOp, UnaryOp};
 use crate::intern::StringId;
 use crate::pp::{PPError, PPToken, PPTokenKind, Preprocessor};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ExprValue {
+    pub value: u64,
+    pub is_unsigned: bool,
+}
+
+impl ExprValue {
+    pub(crate) fn new(value: u64, is_unsigned: bool) -> Self {
+        ExprValue { value, is_unsigned }
+    }
+
+    fn from_bool(b: bool) -> Self {
+        ExprValue {
+            value: if b { 1 } else { 0 },
+            is_unsigned: false, // Logical results are signed int (0 or 1)
+        }
+    }
+
+    pub(crate) fn is_truthy(&self) -> bool {
+        self.value != 0
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum PPExpr {
-    Number(i64),
+    Number(ExprValue),
     Identifier(String),
     Defined(Box<PPExpr>),
     HasInclude(String, bool), // (path, is_angled)
@@ -14,66 +37,144 @@ pub(crate) enum PPExpr {
 }
 
 impl PPExpr {
-    pub(crate) fn evaluate(&self, pp: &Preprocessor) -> Result<i64, PPError> {
+    pub(crate) fn evaluate(&self, pp: &Preprocessor) -> Result<ExprValue, PPError> {
         match self {
             PPExpr::Number(n) => Ok(*n),
-            PPExpr::Identifier(_s) => Ok(0), // C11 6.10.1p4: All remaining identifiers are replaced with 0
+            PPExpr::Identifier(_s) => Ok(ExprValue::new(0, false)), // C11 6.10.1p4: All remaining identifiers are replaced with 0
             PPExpr::Defined(ident) => {
                 if let PPExpr::Identifier(s) = &**ident {
-                    Ok(if pp.is_macro_defined(&StringId::new(s)) { 1 } else { 0 })
+                    let defined = pp.is_macro_defined(&StringId::new(s));
+                    Ok(ExprValue::from_bool(defined))
                 } else {
                     Err(PPError::InvalidConditionalExpression)
                 }
             }
-            PPExpr::HasInclude(path, is_angled) => Ok(if pp.check_header_exists(path, *is_angled) { 1 } else { 0 }),
+            PPExpr::HasInclude(path, is_angled) => {
+                let exists = pp.check_header_exists(path, *is_angled);
+                Ok(ExprValue::from_bool(exists))
+            }
             PPExpr::Binary(op, left, right) => {
                 let l = left.evaluate(pp)?;
                 match op {
                     BinaryOp::LogicAnd => {
-                        if l == 0 {
-                            Ok(0)
+                        if !l.is_truthy() {
+                            Ok(ExprValue::from_bool(false))
                         } else {
                             let r = right.evaluate(pp)?;
-                            Ok(if l != 0 && r != 0 { 1 } else { 0 })
+                            Ok(ExprValue::from_bool(r.is_truthy()))
                         }
                     }
                     BinaryOp::LogicOr => {
-                        if l != 0 {
-                            Ok(1)
+                        if l.is_truthy() {
+                            Ok(ExprValue::from_bool(true))
                         } else {
                             let r = right.evaluate(pp)?;
-                            Ok(if l != 0 || r != 0 { 1 } else { 0 })
+                            Ok(ExprValue::from_bool(r.is_truthy()))
                         }
                     }
                     _ => {
                         let r = right.evaluate(pp)?;
+                        // Usual arithmetic conversions
+                        let is_unsigned = l.is_unsigned || r.is_unsigned;
+                        let l_val = l.value;
+                        let r_val = r.value;
+
                         match op {
-                            BinaryOp::BitOr => Ok(l | r),
-                            BinaryOp::BitXor => Ok(l ^ r),
-                            BinaryOp::BitAnd => Ok(l & r),
-                            BinaryOp::Equal => Ok(if l == r { 1 } else { 0 }),
-                            BinaryOp::NotEqual => Ok(if l != r { 1 } else { 0 }),
-                            BinaryOp::Less => Ok(if l < r { 1 } else { 0 }),
-                            BinaryOp::LessEqual => Ok(if l <= r { 1 } else { 0 }),
-                            BinaryOp::Greater => Ok(if l > r { 1 } else { 0 }),
-                            BinaryOp::GreaterEqual => Ok(if l >= r { 1 } else { 0 }),
-                            BinaryOp::LShift => Ok(l << r),
-                            BinaryOp::RShift => Ok(((l as u64) >> r) as i64),
-                            BinaryOp::Add => Ok(l + r),
-                            BinaryOp::Sub => Ok(l - r),
-                            BinaryOp::Mul => Ok(l * r),
-                            BinaryOp::Div => {
-                                if r == 0 {
-                                    Err(PPError::InvalidConditionalExpression)
+                            BinaryOp::BitOr => Ok(ExprValue::new(l_val | r_val, is_unsigned)),
+                            BinaryOp::BitXor => Ok(ExprValue::new(l_val ^ r_val, is_unsigned)),
+                            BinaryOp::BitAnd => Ok(ExprValue::new(l_val & r_val, is_unsigned)),
+                            BinaryOp::Equal => Ok(ExprValue::from_bool(l_val == r_val)),
+                            BinaryOp::NotEqual => Ok(ExprValue::from_bool(l_val != r_val)),
+                            BinaryOp::Less => {
+                                if is_unsigned {
+                                    Ok(ExprValue::from_bool(l_val < r_val))
                                 } else {
-                                    Ok(l / r)
+                                    Ok(ExprValue::from_bool((l_val as i64) < (r_val as i64)))
+                                }
+                            }
+                            BinaryOp::LessEqual => {
+                                if is_unsigned {
+                                    Ok(ExprValue::from_bool(l_val <= r_val))
+                                } else {
+                                    Ok(ExprValue::from_bool((l_val as i64) <= (r_val as i64)))
+                                }
+                            }
+                            BinaryOp::Greater => {
+                                if is_unsigned {
+                                    Ok(ExprValue::from_bool(l_val > r_val))
+                                } else {
+                                    Ok(ExprValue::from_bool((l_val as i64) > (r_val as i64)))
+                                }
+                            }
+                            BinaryOp::GreaterEqual => {
+                                if is_unsigned {
+                                    Ok(ExprValue::from_bool(l_val >= r_val))
+                                } else {
+                                    Ok(ExprValue::from_bool((l_val as i64) >= (r_val as i64)))
+                                }
+                            }
+                            BinaryOp::LShift => {
+                                // Shift count is not subject to usual arithmetic conversions for type
+                                // But the result type is that of the promoted LHS.
+                                // We'll just use the promoted LHS type (integer promotion, but here we are already 64-bit).
+                                // C11: "The result has the type of the left operand."
+                                // So we preserve l.is_unsigned.
+                                let shift_amount = r_val as u32;
+                                // Handle shift >= 64 behavior (UB in C, wrap in Rust)
+                                if shift_amount >= 64 {
+                                    // UB, but zeroing is a common safe behavior or wrapping.
+                                    // Rust panics in debug on overflow, wrapping_shl masks.
+                                    Ok(ExprValue::new(l_val.wrapping_shl(shift_amount), l.is_unsigned))
+                                } else {
+                                    Ok(ExprValue::new(l_val << shift_amount, l.is_unsigned))
+                                }
+                            }
+                            BinaryOp::RShift => {
+                                let shift_amount = r_val as u32;
+                                if shift_amount >= 64 {
+                                    // UB
+                                    Ok(ExprValue::new(l_val.wrapping_shr(shift_amount), l.is_unsigned))
+                                } else if l.is_unsigned {
+                                    // Logical shift
+                                    Ok(ExprValue::new(l_val >> shift_amount, true))
+                                } else {
+                                    // Arithmetic shift
+                                    Ok(ExprValue::new(((l_val as i64) >> shift_amount) as u64, false))
+                                }
+                            }
+                            BinaryOp::Add => Ok(ExprValue::new(l_val.wrapping_add(r_val), is_unsigned)),
+                            BinaryOp::Sub => Ok(ExprValue::new(l_val.wrapping_sub(r_val), is_unsigned)),
+                            BinaryOp::Mul => Ok(ExprValue::new(l_val.wrapping_mul(r_val), is_unsigned)),
+                            BinaryOp::Div => {
+                                if r_val == 0 {
+                                    Err(PPError::InvalidConditionalExpression)
+                                } else if is_unsigned {
+                                    Ok(ExprValue::new(l_val / r_val, true))
+                                } else {
+                                    // Signed division
+                                    // Check for overflow: MIN / -1
+                                    let l_signed = l_val as i64;
+                                    let r_signed = r_val as i64;
+                                    if l_signed == i64::MIN && r_signed == -1 {
+                                        Ok(ExprValue::new(l_signed as u64, false)) // or overflow behavior
+                                    } else {
+                                        Ok(ExprValue::new((l_signed / r_signed) as u64, false))
+                                    }
                                 }
                             }
                             BinaryOp::Mod => {
-                                if r == 0 {
+                                if r_val == 0 {
                                     Err(PPError::InvalidConditionalExpression)
+                                } else if is_unsigned {
+                                    Ok(ExprValue::new(l_val % r_val, true))
                                 } else {
-                                    Ok(l % r)
+                                    let l_signed = l_val as i64;
+                                    let r_signed = r_val as i64;
+                                    if l_signed == i64::MIN && r_signed == -1 {
+                                        Ok(ExprValue::new(0, false))
+                                    } else {
+                                        Ok(ExprValue::new((l_signed % r_signed) as u64, false))
+                                    }
                                 }
                             }
                             _ => unreachable!(),
@@ -85,18 +186,45 @@ impl PPExpr {
                 let o = operand.evaluate(pp)?;
                 match op {
                     UnaryOp::Plus => Ok(o),
-                    UnaryOp::Minus => Ok(-o),
-                    UnaryOp::BitNot => Ok(!o),
-                    UnaryOp::LogicNot => Ok(if o != 0 { 0 } else { 1 }),
+                    UnaryOp::Minus => {
+                        // Unsigned negation is 2's complement (wrapping_neg)
+                        Ok(ExprValue::new(o.value.wrapping_neg(), o.is_unsigned))
+                    }
+                    UnaryOp::BitNot => Ok(ExprValue::new(!o.value, o.is_unsigned)),
+                    UnaryOp::LogicNot => Ok(ExprValue::from_bool(!o.is_truthy())),
                     _ => unreachable!("Unsupported unary operator in preprocessor"),
                 }
             }
             PPExpr::Conditional(cond, true_e, false_e) => {
                 let c = cond.evaluate(pp)?;
-                if c != 0 {
-                    true_e.evaluate(pp)
+                let t = true_e.evaluate(pp)?;
+                let f = false_e.evaluate(pp)?;
+
+                if c.is_truthy() {
+                    // Result type depends on both operands usual arithmetic conversions
+                    // But we only return the evaluated one.
+                    // However, C11 says "the other operand is evaluated ... The result has the type..."
+                    // In an interpreter, we just return the value.
+                    // But if we wanted to be pedantic about type of the expression (e.g. for `sizeof`),
+                    // we would need to merge types.
+                    // But here we just return the value.
+                    // Wait, if I have `1 ? -1 : 0U`. Result should be unsigned.
+                    // `-1` converted to unsigned is MAX.
+                    // If we return `-1` as signed, and later compare it...
+                    // "The second and third operands are converted ... to the common type."
+                    let is_unsigned = t.is_unsigned || f.is_unsigned;
+                    if is_unsigned {
+                        Ok(ExprValue::new(t.value, true))
+                    } else {
+                        Ok(t)
+                    }
                 } else {
-                    false_e.evaluate(pp)
+                    let is_unsigned = t.is_unsigned || f.is_unsigned;
+                    if is_unsigned {
+                        Ok(ExprValue::new(f.value, true))
+                    } else {
+                        Ok(f)
+                    }
                 }
             }
         }
@@ -119,7 +247,7 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    pub(crate) fn evaluate(&mut self) -> Result<i64, PPError> {
+    pub(crate) fn evaluate(&mut self) -> Result<ExprValue, PPError> {
         let expr = self.parse_conditional()?;
         expr.evaluate(self.preprocessor)
     }
@@ -399,27 +527,60 @@ impl<'a> Interpreter<'a> {
             PPTokenKind::Number(sym) => {
                 let text = sym.as_str();
                 // Strip suffixes: u U l L ll LL (case insensitive)
-                let mut num_text = text;
-                let lower = text.to_lowercase();
-                if lower.ends_with("ull") || lower.ends_with("llu") {
-                    num_text = &text[..text.len() - 3];
-                } else if lower.ends_with("ul") || lower.ends_with("lu") || lower.ends_with("ll") {
-                    num_text = &text[..text.len() - 2];
-                } else if lower.ends_with("u") || lower.ends_with("l") {
-                    num_text = &text[..text.len() - 1];
+                let mut end = text.len();
+                let mut is_unsigned = false;
+
+                // Parse suffixes manually
+                loop {
+                    if end > 0 {
+                        let c = text.as_bytes()[end - 1];
+                        if c == b'u' || c == b'U' {
+                            if !is_unsigned {
+                                is_unsigned = true;
+                                end -= 1;
+                                continue;
+                            }
+                        } else if c == b'l' || c == b'L' {
+                            end -= 1;
+                            continue;
+                        }
+                    }
+                    break;
                 }
-                // Parse as i64, handle hex, octal, decimal
-                let num = if num_text.starts_with("0x") || num_text.starts_with("0X") {
-                    i64::from_str_radix(&num_text[2..], 16)
+
+                let num_text = &text[..end];
+
+                // Determine base
+                let val_res = if num_text.starts_with("0x") || num_text.starts_with("0X") {
+                    u64::from_str_radix(&num_text[2..], 16)
                 } else if num_text.starts_with("0") && num_text.len() > 1 {
-                    i64::from_str_radix(num_text, 8)
+                    u64::from_str_radix(num_text, 8)
                 } else {
-                    num_text.parse::<i64>()
+                    num_text.parse::<u64>()
+                };
+
+                match val_res {
+                    Ok(val) => {
+                        // C11 6.3.1.1: If it fits in signed i64, it's signed (unless U suffix).
+                        // If it doesn't fit in i64, it depends on base.
+                        // Hex/Octal: can be unsigned if doesn't fit in signed.
+                        // Decimal: technically should be signed long long, but if it overflows, it's UB or implementation defined.
+                        // We treat large decimals as unsigned too to support `u64` range fully.
+
+                        let fits_i64 = val <= i64::MAX as u64;
+
+                        if !is_unsigned && !fits_i64 {
+                            // Promoted to unsigned if hex/octal or too big
+                            // For decimal, ideally we warn, but here we just accept as unsigned to match typical behavior for u64 support
+                            is_unsigned = true;
+                        }
+
+                        Ok(PPExpr::Number(ExprValue::new(val, is_unsigned)))
+                    }
+                    Err(_) => Err(PPError::InvalidConditionalExpression),
                 }
-                .map_err(|_| PPError::InvalidConditionalExpression)?;
-                Ok(PPExpr::Number(num))
             }
-            PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(*codepoint as i64)),
+            PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(ExprValue::new(*codepoint as u64, false))),
             PPTokenKind::Identifier(sym) => {
                 // Identifiers are 0 if not defined, but since we expanded macros, should be numbers
                 Ok(PPExpr::Identifier(sym.as_str().to_string()))

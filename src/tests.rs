@@ -32,6 +32,7 @@ pub mod pp_pragma_operator;
 pub mod pp_pragma_push_pop_macro;
 pub mod pp_stringification;
 pub mod pp_trigraphs;
+pub mod pp_unsigned_arithmetic;
 pub mod preprocessor;
 pub mod preprocessor_regression;
 pub mod preprocessor_ucn;

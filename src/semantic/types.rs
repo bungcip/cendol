@@ -160,10 +160,7 @@ impl BuiltinType {
     }
 
     pub fn is_floating(self) -> bool {
-        matches!(
-            self,
-            Self::Float | Self::Double | Self::LongDouble
-        )
+        matches!(self, Self::Float | Self::Double | Self::LongDouble)
     }
 
     pub fn is_signed(self) -> bool {

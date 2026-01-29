@@ -24,7 +24,58 @@ int rem = 1;
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: add_mul
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: add_mul_grouped
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: sub
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: div
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: rem
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
 }
 
 #[test]
@@ -55,7 +106,68 @@ int rshift = 1;
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: bit_and
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: bit_or
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: bit_xor
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: bit_not
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: lshift
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: rshift
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
 }
 
 #[test]
@@ -92,7 +204,68 @@ int logic_not_false_else = 1;
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: logic_and_true
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: logic_and_false_else
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: logic_or_true
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: logic_or_false_else
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: logic_not_true
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: logic_not_false_else
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
 }
 
 #[test]
@@ -123,7 +296,68 @@ int not_equal = 1;
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: less
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: less_equal
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: greater
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: greater_equal
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: equal
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: not_equal
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
 }
 
 #[test]
@@ -140,7 +374,28 @@ int undefined_is_false = 1;
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: undefined_is_zero
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: undefined_is_false
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
 }
 
 #[test]
@@ -161,7 +416,38 @@ int is_not_defined = 1;
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: is_defined
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: is_defined_no_paren
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: is_not_defined
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
 }
 
 #[test]
@@ -172,7 +458,7 @@ int div_zero = 1;
 #endif
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Warning: Invalid conditional expression in preprocessor directive""#);
 }
 
 #[test]
@@ -199,5 +485,46 @@ int eq_binds_tighter_than_and = 1;
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: not_binds_tight
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: and_binds_tighter_than_or
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: mul_binds_tighter_than_add
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: eq_binds_tighter_than_and
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
 }

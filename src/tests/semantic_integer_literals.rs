@@ -17,6 +17,24 @@ mod tests {
             }
         "#;
         let mir = setup_mir(source);
-        insta::assert_snapshot!(mir);
+        insta::assert_snapshot!(mir, @r"
+        type %t0 = i32
+        type %t1 = i64
+
+        fn main() -> i32
+        {
+          locals {
+            %a: i64
+            %b: i64
+            %c: i64
+          }
+
+          bb1:
+            %a = const -2147483648
+            %b = const 2147483648
+            %c = const 2147483648
+            return const 0
+        }
+        ");
     }
 }

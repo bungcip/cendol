@@ -13,7 +13,19 @@ fn test_computed_include_quoted() {
     ];
 
     let (tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!((tokens, diags));
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - - kind: Identifier
+        text: int
+      - kind: Identifier
+        text: quoted
+      - kind: Assign
+        text: "="
+      - kind: Number
+        text: "1"
+      - kind: Semicolon
+        text: ;
+    - []
+    "#);
 }
 
 #[test]
@@ -51,7 +63,19 @@ fn test_computed_include_nested_macros() {
     ];
 
     let (tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!((tokens, diags));
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - - kind: Identifier
+        text: int
+      - kind: Identifier
+        text: nested
+      - kind: Assign
+        text: "="
+      - kind: Number
+        text: "1"
+      - kind: Semicolon
+        text: ;
+    - []
+    "#);
 }
 
 #[test]
@@ -63,7 +87,10 @@ fn test_computed_include_invalid_expansion() {
 "#,
     )];
     let (tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!((tokens, diags));
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - []
+    - - "Fatal Error: InvalidIncludePath"
+    "#);
 }
 
 #[test]
@@ -75,7 +102,10 @@ fn test_computed_include_empty() {
 "#,
     )];
     let (tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!((tokens, diags));
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - []
+    - - "Fatal Error: InvalidIncludePath"
+    "#);
 }
 
 #[test]
@@ -90,7 +120,10 @@ fn test_computed_include_extra_tokens_quoted() {
         ),
     ];
     let (tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!((tokens, diags));
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - []
+    - - "Fatal Error: ExpectedEod"
+    "#);
 }
 
 #[test]
@@ -102,5 +135,8 @@ fn test_computed_include_extra_tokens_angled() {
 "#,
     )];
     let (tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!((tokens, diags));
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - []
+    - - "Fatal Error: ExpectedEod"
+    "#);
 }

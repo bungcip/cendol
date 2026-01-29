@@ -58,5 +58,12 @@ fn test_paste_va_args() {
 PASTE(a, b)
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: prefixa
+    - kind: Comma
+      text: ","
+    - kind: Identifier
+      text: b
+    "#);
 }

@@ -1,5 +1,0 @@
----
-source: src/tests/pp_expressions.rs
-expression: diags
----
-- "Warning: Invalid conditional expression in preprocessor directive"

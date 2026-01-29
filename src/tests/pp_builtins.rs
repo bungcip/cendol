@@ -17,7 +17,23 @@ const char* s = __DATE__;
     // Currently, this probably succeeds and changes __DATE__.
     // We expect it to FAIL or warn and NOT change __DATE__.
     // For now, let's just snapshot what happens.
-    insta::assert_yaml_snapshot!((tokens, diags));
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - - kind: Identifier
+        text: const
+      - kind: Identifier
+        text: char
+      - kind: Star
+        text: "*"
+      - kind: Identifier
+        text: s
+      - kind: Assign
+        text: "="
+      - kind: StringLiteral
+        text: "\"Jan 28 2026\""
+      - kind: Semicolon
+        text: ;
+    - - "Warning: Redefinition of built-in macro '__DATE__'"
+    "#);
 }
 
 #[test]
@@ -31,5 +47,17 @@ int x = 0;
 #endif
 "#;
     let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags));
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - - kind: Identifier
+        text: int
+      - kind: Identifier
+        text: x
+      - kind: Assign
+        text: "="
+      - kind: Number
+        text: "1"
+      - kind: Semicolon
+        text: ;
+    - - "Warning: Undefining built-in macro '__DATE__'"
+    "#);
 }

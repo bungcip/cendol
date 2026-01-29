@@ -49,5 +49,76 @@ int ul_suffix = 1;
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: u64_max_gt_0
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: minus_one_lt_zero_u
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "0"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: u64_overflow_is_zero
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: signed_mul
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: u_suffix
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: U_suffix
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: ul_suffix
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Semicolon
+      text: ;
+    "#);
 }

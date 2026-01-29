@@ -569,10 +569,10 @@ impl<'a> Interpreter<'a> {
 
                         let fits_i64 = val <= i64::MAX as u64;
 
-                         if !is_unsigned && !fits_i64 {
-                             // Promoted to unsigned if hex/octal or too big
-                             // For decimal, ideally we warn, but here we just accept as unsigned to match typical behavior for u64 support
-                             is_unsigned = true;
+                        if !is_unsigned && !fits_i64 {
+                            // Promoted to unsigned if hex/octal or too big
+                            // For decimal, ideally we warn, but here we just accept as unsigned to match typical behavior for u64 support
+                            is_unsigned = true;
                         }
 
                         Ok(PPExpr::Number(ExprValue::new(val, is_unsigned)))

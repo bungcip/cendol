@@ -139,6 +139,60 @@ impl BuiltinType {
             _ => None,
         }
     }
+
+    pub fn is_integer(self) -> bool {
+        matches!(
+            self,
+            Self::Bool
+                | Self::Char
+                | Self::SChar
+                | Self::UChar
+                | Self::Short
+                | Self::UShort
+                | Self::Int
+                | Self::UInt
+                | Self::Long
+                | Self::ULong
+                | Self::LongLong
+                | Self::ULongLong
+                | Self::Signed // signed int
+        )
+    }
+
+    pub fn is_floating(self) -> bool {
+        matches!(self, Self::Float | Self::Double | Self::LongDouble)
+    }
+
+    pub fn is_signed(self) -> bool {
+        match self {
+            Self::Bool => false,
+            Self::Char => true, // Assuming char is signed
+            Self::SChar => true,
+            Self::UChar => false,
+            Self::Short => true,
+            Self::UShort => false,
+            Self::Int => true,
+            Self::UInt => false,
+            Self::Long => true,
+            Self::ULong => false,
+            Self::LongLong => true,
+            Self::ULongLong => false,
+            Self::Signed => true,
+            _ => false,
+        }
+    }
+
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::Bool => 1,
+            Self::Char | Self::SChar | Self::UChar => 2,
+            Self::Short | Self::UShort => 3,
+            Self::Int | Self::UInt | Self::Signed => 4,
+            Self::Long | Self::ULong => 5,
+            Self::LongLong | Self::ULongLong => 6,
+            _ => 0,
+        }
+    }
 }
 
 /// Opaque reference to a canonical type.
@@ -329,30 +383,12 @@ impl TypeRef {
 
     #[inline]
     pub fn is_integer(self) -> bool {
-        self.is_enum()
-            || matches!(
-                self.builtin(),
-                Some(BuiltinType::Bool)
-                    | Some(BuiltinType::Char)
-                    | Some(BuiltinType::SChar)
-                    | Some(BuiltinType::UChar)
-                    | Some(BuiltinType::Short)
-                    | Some(BuiltinType::UShort)
-                    | Some(BuiltinType::Int)
-                    | Some(BuiltinType::UInt)
-                    | Some(BuiltinType::Long)
-                    | Some(BuiltinType::ULong)
-                    | Some(BuiltinType::LongLong)
-                    | Some(BuiltinType::ULongLong)
-            )
+        self.is_enum() || self.builtin().is_some_and(|b| b.is_integer())
     }
 
     #[inline]
     pub fn is_floating(self) -> bool {
-        matches!(
-            self.builtin(),
-            Some(BuiltinType::Float) | Some(BuiltinType::Double) | Some(BuiltinType::LongDouble)
-        )
+        self.builtin().is_some_and(|b| b.is_floating())
     }
 
     #[inline]

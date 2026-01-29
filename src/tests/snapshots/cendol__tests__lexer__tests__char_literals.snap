@@ -1,0 +1,9 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 147
+expression: results
+---
+"'\\n'":
+  - CharacterConstant: 10
+"'a'":
+  - CharacterConstant: 97

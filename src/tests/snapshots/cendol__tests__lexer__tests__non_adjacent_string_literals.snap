@@ -1,0 +1,8 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 203
+expression: tokens
+---
+- StringLiteral: hello
+- Semicolon
+- StringLiteral: world

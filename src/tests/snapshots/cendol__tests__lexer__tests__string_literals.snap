@@ -1,0 +1,9 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 160
+expression: results
+---
+"\"hello\"":
+  - StringLiteral: hello
+"\"world\\n\"":
+  - StringLiteral: "world\n"

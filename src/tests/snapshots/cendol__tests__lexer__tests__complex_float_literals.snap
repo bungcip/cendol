@@ -1,0 +1,21 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 280
+expression: results
+---
+".5f":
+  - FloatConstant: 0.5
+"0x.8p0":
+  - FloatConstant: 0.5
+"0x.p0":
+  - FloatConstant: 0
+"0x1.fp-2":
+  - FloatConstant: 0.484375
+"0x1P-1L":
+  - FloatConstant: 0.5
+"0x1p+5":
+  - FloatConstant: 32
+1.f:
+  - FloatConstant: 1
+1e5f:
+  - FloatConstant: 100000

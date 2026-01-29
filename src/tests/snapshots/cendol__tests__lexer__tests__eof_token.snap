@@ -1,0 +1,6 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 210
+expression: eof_tokens
+---
+- EndOfFile

@@ -160,6 +160,7 @@ fn resolve_array_size(size: Option<ParsedNodeRef>, ctx: &mut LowerCtx) -> ArrayS
         let const_ctx = ConstEvalCtx {
             ast: ctx.ast,
             symbol_table: ctx.symbol_table,
+            registry: ctx.registry,
         };
         if let Some(val) = const_eval::eval_const_expr(&const_ctx, expr_ref) {
             if val < 0 {
@@ -711,6 +712,7 @@ fn resolve_type_specifier(
                             let const_ctx = ConstEvalCtx {
                                 ast: ctx.ast,
                                 symbol_table: ctx.symbol_table,
+                                registry: ctx.registry,
                             };
                             if let Some(val) = const_eval::eval_const_expr(&const_ctx, expr_ref) {
                                 (val, Some(expr_ref))
@@ -1007,6 +1009,7 @@ fn lower_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                         let const_ctx = ConstEvalCtx {
                             ast: ctx.ast,
                             symbol_table: ctx.symbol_table,
+                            registry: ctx.registry,
                         };
                         if let Some(val) = const_eval::eval_const_expr(&const_ctx, lowered_expr) {
                             if val > 0 && (val as u64).is_power_of_two() {
@@ -2537,6 +2540,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                     let const_ctx = ConstEvalCtx {
                                         ast: self.ast,
                                         symbol_table: self.symbol_table,
+                                        registry: self.registry,
                                     };
                                     if let Some(val) = const_eval::eval_const_expr(&const_ctx, *expr_ref) {
                                         current_index = val;
@@ -2548,6 +2552,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                     let const_ctx = ConstEvalCtx {
                                         ast: self.ast,
                                         symbol_table: self.symbol_table,
+                                        registry: self.registry,
                                     };
                                     if let (Some(start_val), Some(end_val)) = (
                                         const_eval::eval_const_expr(&const_ctx, *start),

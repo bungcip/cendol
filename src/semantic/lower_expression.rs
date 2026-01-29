@@ -35,6 +35,7 @@ impl<'a> AstToMirLowerer<'a> {
             let ctx = ConstEvalCtx {
                 ast: self.ast,
                 symbol_table: self.symbol_table,
+                registry: self.registry,
             };
             if let Some(val) = eval_const_expr(&ctx, expr_ref) {
                 let ty_id = self.lower_qual_type(ty);

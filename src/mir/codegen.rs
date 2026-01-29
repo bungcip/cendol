@@ -48,7 +48,7 @@ fn convert_type(mir_type: &MirType) -> Option<Type> {
         MirType::I64 | MirType::U64 => Some(types::I64),
         MirType::F32 => Some(types::F32),
         MirType::F64 => Some(types::F64),
-        MirType::F128 => Some(types::F128),
+        MirType::F80 | MirType::F128 => Some(types::F128),
         MirType::Pointer { .. } => Some(types::I64), // Pointers are 64-bit on most modern systems
 
         MirType::Array { .. } | MirType::Record { .. } => None,
@@ -73,7 +73,7 @@ pub(crate) fn mir_type_size(mir_type: &MirType, mir: &MirProgram) -> Result<u32,
         MirType::I64 | MirType::U64 => Ok(8),
         MirType::F32 => Ok(4),
         MirType::F64 => Ok(8),
-        MirType::F128 => Ok(16),
+        MirType::F80 | MirType::F128 => Ok(16),
 
         MirType::Pointer { .. } => Ok(mir.pointer_width as u32),
         MirType::Array { layout, .. } => Ok(layout.size as u32),
@@ -185,6 +185,85 @@ fn f64_to_f128_bytes(val: f64) -> [u8; 16] {
     result.to_le_bytes()
 }
 
+fn f64_to_x87_bytes(val: f64) -> [u8; 16] {
+    let bits = val.to_bits();
+    let sign = (bits >> 63) & 1;
+    let exp = (bits >> 52) & 0x7FF;
+    let mant = bits & 0xFFFFFFFFFFFFF;
+
+    let mut out = [0u8; 16];
+
+    if exp == 0 {
+        if mant == 0 {
+            // Zero
+            if sign == 1 {
+                out[9] = 0x80;
+            }
+            return out;
+        }
+
+        // Subnormal f64
+        // Calculate leading zeros in the 52-bit mantissa
+        // 12 zeros because u64 has 64 bits but mant only 52
+        let lz = mant.leading_zeros() - 12;
+
+        // Shift to make MSB 1 (integer bit for x87)
+        // We want to put the first '1' at bit 63.
+        // Currently it is at (51 - lz).
+        // Shift left by 63 - (51 - lz) = 12 + lz.
+        let new_mant = mant << (12 + lz);
+
+        // Exponent calculation
+        // Real exponent of f64 subnormal is -1022.
+        // We effectively shifted left by (lz + 1) to normalize (because we moved 0.1... to 1.0...)
+        // So we must subtract (lz + 1) from exponent.
+        let real_exp = -1022 - (lz as i32 + 1);
+
+        // x87 bias 16383
+        let new_exp_biased = (real_exp + 16383) as u16;
+
+        out[0..8].copy_from_slice(&new_mant.to_le_bytes());
+        out[8..10].copy_from_slice(&new_exp_biased.to_le_bytes());
+        if sign == 1 {
+            out[9] |= 0x80;
+        }
+        return out;
+    } else if exp == 0x7FF {
+        // Inf or NaN
+        out[8] = 0xFF;
+        out[9] = 0x7F | ((sign as u8) << 7);
+
+        if mant == 0 {
+            // Infinity: Integer bit 1, mantissa 0
+            out[7] = 0x80;
+        } else {
+            // NaN: Set integer bit 1
+            // f64 mantissa is 52 bits. x87 is 63 bits.
+            // Shift left by 11.
+            let new_mant = (1u64 << 63) | (mant << 11);
+            out[0..8].copy_from_slice(&new_mant.to_le_bytes());
+        }
+        return out;
+    }
+
+    // Normal f64
+    let unbiased_exp = (exp as i32) - 1023;
+    let new_exp = (unbiased_exp + 16383) as u16;
+
+    // Explicit integer bit 1 for Normal numbers in x87
+    let new_mant = (1u64 << 63) | (mant << 11);
+
+    out[0..8].copy_from_slice(&new_mant.to_le_bytes());
+    out[8..10].copy_from_slice(&new_exp.to_le_bytes());
+
+    // Sign bit in byte 9, bit 7
+    if sign == 1 {
+        out[9] |= 0x80;
+    }
+
+    out
+}
+
 /// Helper to emit float constants
 fn emit_const_float(val: f64, ty: &MirType, output: &mut Vec<u8>) -> Result<(), String> {
     match ty {
@@ -194,6 +273,10 @@ fn emit_const_float(val: f64, ty: &MirType, output: &mut Vec<u8>) -> Result<(), 
         }
         MirType::F64 => {
             let bytes = val.to_bits().to_le_bytes();
+            output.extend_from_slice(&bytes);
+        }
+        MirType::F80 => {
+            let bytes = f64_to_x87_bytes(val);
             output.extend_from_slice(&bytes);
         }
         MirType::F128 => {
@@ -431,9 +514,19 @@ fn prepare_call_signature(
         sig.returns.push(AbiParam::new(ret_type));
     }
 
+    // Use split ABI for internal functions (defined or indirect calls)
+    let split_f128 = use_variadic_hack;
+
     // Fixed parameters
     for &param_type_id in param_types {
         let mir_type = mir.get_type(param_type_id);
+
+        if split_f128 && matches!(mir_type, MirType::F80 | MirType::F128) {
+            sig.params.push(AbiParam::new(types::I64));
+            sig.params.push(AbiParam::new(types::I64));
+            continue;
+        }
+
         let param_type = match convert_type(mir_type) {
             Some(t) => t,
             None if mir_type.is_aggregate() => types::I64,
@@ -454,6 +547,12 @@ fn prepare_call_signature(
                 for _ in 0..num_slots {
                     sig.params.push(AbiParam::new(types::I64));
                 }
+                continue;
+            }
+
+            if split_f128 && matches!(mir_type, MirType::F80 | MirType::F128) {
+                sig.params.push(AbiParam::new(types::I64));
+                sig.params.push(AbiParam::new(types::I64));
                 continue;
             }
         }
@@ -493,6 +592,7 @@ fn resolve_call_args(
     sig: &Signature,
     ctx: &mut BodyEmitContext,
     is_variadic: bool,
+    split_f128: bool,
 ) -> Result<Vec<Value>, String> {
     let mut arg_values = Vec::new();
     let mut sig_idx = 0;
@@ -504,10 +604,34 @@ fn resolve_call_args(
 
         let param_type = sig.params[sig_idx].value_type;
 
+        // Check operand type
+        let arg_type_id = get_operand_type_id(arg, ctx.mir).ok();
+
+        // Check if F128 splitting is needed
+        if split_f128
+            && let Some(type_id) = arg_type_id
+            && matches!(ctx.mir.get_type(type_id), MirType::F80 | MirType::F128)
+        {
+            let val = resolve_operand(arg, ctx, types::F128)?;
+            // Split val into lo, hi by storing to stack and reloading
+            let slot = ctx
+                .builder
+                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 16, 0));
+            ctx.builder.ins().stack_store(val, slot, 0);
+            let lo = ctx.builder.ins().stack_load(types::I64, slot, 0);
+            let hi = ctx.builder.ins().stack_load(types::I64, slot, 8);
+
+            arg_values.push(lo);
+            arg_values.push(hi);
+
+            sig_idx += 2;
+            continue;
+        }
+
         // Check if this is a variadic struct argument that needs expansion
         if is_variadic
             && arg_idx >= fixed_param_count
-            && let Ok(type_id) = get_operand_type_id(arg, ctx.mir)
+            && let Some(type_id) = arg_type_id
         {
             let mir_type = ctx.mir.get_type(type_id);
             if mir_type.is_aggregate() {
@@ -658,7 +782,8 @@ fn emit_function_call_impl(
         use_variadic_hack,
     );
 
-    let arg_values = resolve_call_args(args, param_types.len(), &sig, ctx, is_variadic)?;
+    let split_f128 = use_variadic_hack;
+    let arg_values = resolve_call_args(args, param_types.len(), &sig, ctx, is_variadic, split_f128)?;
 
     // 3. Emit the call
     let call_inst = if is_variadic {
@@ -1540,11 +1665,8 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     // We ignore is_float and standard SystemV ABI register separation because our
                     // implementation flattens everything into a sequential spill slot pointed to by reg_save_area.
 
-                    let size = if mir_type.is_aggregate() {
-                        mir_type_size(mir_type, ctx.mir)? as u32
-                    } else {
-                        8 // Scalars take 8 bytes in va_list (promoted)
-                    };
+                    let size = mir_type_size(mir_type, ctx.mir)? as u32;
+                    let size = size.max(8);
 
                     let needed_slots = size.div_ceil(8);
                     let needed_gp = needed_slots * 8;
@@ -1971,6 +2093,23 @@ fn setup_signature(
     for &param_id in &func.params {
         let param_local = mir.get_local(param_id);
         let mir_type = mir.get_type(param_local.type_id);
+
+        if matches!(mir_type, MirType::F80 | MirType::F128) {
+            // Split F128/F80 into 2 I64s for internal ABI
+            func_ctx.params.push(AbiParam::new(types::I64));
+            func_ctx.params.push(AbiParam::new(types::I64));
+            // Track them as F128 in param_types for lower_function to know,
+            // OR track split types? lower_function iterates MIR params.
+            // It needs to know it consumes 2 slots.
+            // We push F128 to param_types so lower_function knows the logic type.
+            // BUT setup_signature return type `Vec<Type>` is used by lower_function
+            // to append_block_param.
+            // So we must push I64, I64 to param_types.
+            param_types.push(types::I64);
+            param_types.push(types::I64);
+            continue;
+        }
+
         let param_type = match convert_type(mir_type) {
             Some(t) => t,
             None if mir_type.is_aggregate() => types::I64,
@@ -2268,12 +2407,26 @@ impl MirToCraneliftLowerer {
 
                 // Step 3: NOW emit instructions - store fixed params to stack slots
                 let param_values: Vec<Value> = builder.block_params(*clif_block).to_vec();
+                let mut param_iter = param_values.iter().copied();
 
-                for (next_param_idx, &param_id) in func.params.iter().enumerate() {
-                    let param_value = param_values[next_param_idx];
+                for &param_id in &func.params {
+                    let local = self.mir.get_local(param_id);
+                    let mir_type = self.mir.get_type(local.type_id);
+
+                    if matches!(mir_type, MirType::F80 | MirType::F128) {
+                        // Consumes 2 slots
+                        let lo = param_iter.next().unwrap();
+                        let hi = param_iter.next().unwrap();
+
+                        if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
+                            builder.ins().stack_store(lo, *stack_slot, 0);
+                            builder.ins().stack_store(hi, *stack_slot, 8);
+                        }
+                        continue;
+                    }
+
+                    let param_value = param_iter.next().unwrap();
                     if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
-                        let local = self.mir.get_local(param_id);
-                        let mir_type = self.mir.get_type(local.type_id);
                         if mir_type.is_aggregate() {
                             // Passed by pointer (I64), copy to stack slot
                             let dest_addr = builder.ins().stack_addr(types::I64, *stack_slot, 0);

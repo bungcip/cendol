@@ -877,7 +877,7 @@ impl<'a> AstToMirLowerer<'a> {
             BuiltinType::Double => MirType::F64,
             BuiltinType::LongDouble => {
                 if self.registry.target_triple.architecture == Architecture::X86_64 {
-                    MirType::F64
+                    MirType::F80
                 } else {
                     MirType::F128
                 }

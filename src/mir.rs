@@ -317,6 +317,7 @@ pub enum MirType {
     U64,
     F32,
     F64,
+    F80, // x87 extended precision (padded to 128 bits)
     F128,
     Pointer {
         pointee: TypeId,
@@ -349,7 +350,7 @@ impl MirType {
     }
 
     pub fn is_float(&self) -> bool {
-        matches!(self, MirType::F32 | MirType::F64 | MirType::F128)
+        matches!(self, MirType::F32 | MirType::F64 | MirType::F80 | MirType::F128)
     }
 
     pub fn is_aggregate(&self) -> bool {
@@ -377,7 +378,7 @@ impl MirType {
             MirType::I16 | MirType::U16 => 16,
             MirType::I32 | MirType::U32 | MirType::F32 => 32,
             MirType::I64 | MirType::U64 | MirType::F64 => 64,
-            MirType::F128 => 128,
+            MirType::F80 | MirType::F128 => 128,
             MirType::Pointer { .. } => 64, // Assume 64-bit pointers
             _ => 0,                        // Others have no intrinsic "width" in this context
         }
@@ -1047,6 +1048,7 @@ impl fmt::Display for MirType {
             MirType::U64 => write!(f, "u64"),
             MirType::F32 => write!(f, "f32"),
             MirType::F64 => write!(f, "f64"),
+            MirType::F80 => write!(f, "f80"),
             MirType::F128 => write!(f, "f128"),
             MirType::Pointer { pointee } => write!(f, "*{}", pointee.get()),
             MirType::Array { element, size, .. } => write!(f, "[{}]{}", size, element.get()),

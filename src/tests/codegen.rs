@@ -657,7 +657,10 @@ fn test_f128_constant_promotion() {
             println!("{}", clif_ir);
             // Verify load from memory is used instead of fpromote
             assert!(clif_ir.contains("load.f128"), "Expected load.f128 instruction");
-            assert!(clif_ir.contains("global_value") || clif_ir.contains("symbol_value"), "Expected global_value or symbol_value instruction");
+            assert!(
+                clif_ir.contains("global_value") || clif_ir.contains("symbol_value"),
+                "Expected global_value or symbol_value instruction"
+            );
         }
         Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
         Err(e) => panic!("Error: {}", e),

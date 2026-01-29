@@ -955,7 +955,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 let first_des_ref = init.designator_start;
                 if let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(first_des_ref) {
                     // Check if member exists
-                    // TODO: recursive search for anonymous members if not found directly
                     let found = members.iter().any(|m| m.name == Some(*name));
 
                     if !found {

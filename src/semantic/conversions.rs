@@ -24,8 +24,16 @@ pub(crate) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rh
         return Some(lhs_promoted);
     }
 
-    let (lhs_signed, lhs_rank) = get_int_type_details(lhs_promoted.ty().builtin());
-    let (rhs_signed, rhs_rank) = get_int_type_details(rhs_promoted.ty().builtin());
+    let (lhs_signed, lhs_rank) = if let Some(b) = lhs_promoted.ty().builtin() {
+        (b.is_signed(), b.rank())
+    } else {
+        (false, 0)
+    };
+    let (rhs_signed, rhs_rank) = if let Some(b) = rhs_promoted.ty().builtin() {
+        (b.is_signed(), b.rank())
+    } else {
+        (false, 0)
+    };
 
     if lhs_signed == rhs_signed {
         return Some(if lhs_rank >= rhs_rank {
@@ -79,25 +87,5 @@ pub(crate) fn default_argument_promotions(ctx: &TypeRegistry, ty: QualType) -> Q
         }
     } else {
         ty
-    }
-}
-
-fn get_int_type_details(builtin: Option<BuiltinType>) -> (bool, u8) {
-    // (is_signed, rank)
-    // Rank: Bool=1, Char=2, Short=3, Int=4, Long=5, LongLong=6
-    match builtin {
-        Some(BuiltinType::Bool) => (false, 1), // _Bool is unsigned
-        Some(BuiltinType::Char) => (true, 2),  // Assuming char is signed
-        Some(BuiltinType::SChar) => (true, 2),
-        Some(BuiltinType::UChar) => (false, 2),
-        Some(BuiltinType::Short) => (true, 3),
-        Some(BuiltinType::UShort) => (false, 3),
-        Some(BuiltinType::Int) => (true, 4),
-        Some(BuiltinType::UInt) => (false, 4),
-        Some(BuiltinType::Long) => (true, 5),
-        Some(BuiltinType::ULong) => (false, 5),
-        Some(BuiltinType::LongLong) => (true, 6),
-        Some(BuiltinType::ULongLong) => (false, 6),
-        _ => (false, 0),
     }
 }

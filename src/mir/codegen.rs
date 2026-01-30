@@ -102,7 +102,6 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub worklist: &'a mut Vec<MirBlockId>,
     pub return_type: Option<Type>,
     pub va_spill_slot: Option<StackSlot>,
-    #[allow(dead_code)]
     pub func: &'a MirFunction,
     pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
     pub triple: &'a Triple,

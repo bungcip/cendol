@@ -2760,7 +2760,9 @@ impl<'src> Preprocessor<'src> {
                                             // If args[0] is '<' or string literal, we stop immediately.
                                             // Note: We check j==0 because we only care if the *result* starts with header.
                                             if j == 0 && !args.is_empty() {
-                                                if args[0].kind == PPTokenKind::Less || matches!(args[0].kind, PPTokenKind::StringLiteral(_)) {
+                                                if args[0].kind == PPTokenKind::Less
+                                                    || matches!(args[0].kind, PPTokenKind::StringLiteral(_))
+                                                {
                                                     break;
                                                 }
                                             }

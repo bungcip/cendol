@@ -1,0 +1,6 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 301
+expression: token_kinds
+---
+- StringLiteral: "Standard: ' \" ? \\ \u0007 \b \f \n \r \t \u000b"

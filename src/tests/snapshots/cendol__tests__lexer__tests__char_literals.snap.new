@@ -1,0 +1,7 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 146
+expression: token_kinds
+---
+- CharacterConstant: 97
+- CharacterConstant: 10

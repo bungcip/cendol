@@ -1,0 +1,5 @@
+---
+source: src/tests/lexer.rs
+expression: token_kinds
+---
+- StringLiteral: "Hex: \u0001 \u0012 ģ"

@@ -1,0 +1,88 @@
+---
+source: src/tests/lexer.rs
+expression: token_kinds
+---
+- IntegerConstant:
+    - 1
+    - U
+- IntegerConstant:
+    - 1
+    - U
+- IntegerConstant:
+    - 1
+    - L
+- IntegerConstant:
+    - 1
+    - L
+- IntegerConstant:
+    - 1
+    - LL
+- IntegerConstant:
+    - 1
+    - LL
+- IntegerConstant:
+    - 1
+    - UL
+- IntegerConstant:
+    - 1
+    - UL
+- IntegerConstant:
+    - 1
+    - UL
+- IntegerConstant:
+    - 1
+    - UL
+- IntegerConstant:
+    - 1
+    - UL
+- IntegerConstant:
+    - 1
+    - UL
+- IntegerConstant:
+    - 1
+    - UL
+- IntegerConstant:
+    - 1
+    - UL
+- IntegerConstant:
+    - 1
+    - ULL
+- IntegerConstant:
+    - 1
+    - ULL
+- IntegerConstant:
+    - 1
+    - ULL
+- IntegerConstant:
+    - 1
+    - ULL
+- IntegerConstant:
+    - 1
+    - ULL
+- IntegerConstant:
+    - 1
+    - ULL
+- IntegerConstant:
+    - 1
+    - ULL
+- IntegerConstant:
+    - 1
+    - ULL
+- IntegerConstant:
+    - 1
+    - U
+- IntegerConstant:
+    - 1
+    - L
+- IntegerConstant:
+    - 1
+    - ULL
+- IntegerConstant:
+    - 1
+    - U
+- IntegerConstant:
+    - 1
+    - L
+- IntegerConstant:
+    - 1
+    - ULL

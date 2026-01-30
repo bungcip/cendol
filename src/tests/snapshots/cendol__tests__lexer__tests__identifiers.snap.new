@@ -1,0 +1,11 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 168
+expression: token_kinds
+---
+- Identifier: variable
+- Identifier: my_var
+- Identifier: _private
+- Identifier: var123
+- Identifier: a
+- Identifier: _

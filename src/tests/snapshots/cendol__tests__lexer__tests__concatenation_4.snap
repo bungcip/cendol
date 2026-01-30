@@ -1,0 +1,5 @@
+---
+source: src/tests/lexer.rs
+expression: token_kinds
+---
+- StringLiteral: start middle end

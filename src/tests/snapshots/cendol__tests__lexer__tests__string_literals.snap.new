@@ -1,0 +1,8 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 159
+expression: token_kinds
+---
+- StringLiteral: hello
+- Semicolon
+- StringLiteral: "world\n"

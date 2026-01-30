@@ -1,0 +1,18 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 259
+expression: token_kinds
+---
+- FloatConstant: 2
+- FloatConstant: 0.484375
+- FloatConstant: 2
+- FloatConstant: 0.5
+- FloatConstant: 1
+- FloatConstant: 1
+- FloatConstant: 1
+- FloatConstant: 1
+- FloatConstant: 2
+- FloatConstant: 2
+- FloatConstant: 1
+- FloatConstant: 0.5
+- FloatConstant: 100

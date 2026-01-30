@@ -1,5 +1,4 @@
 use crate::driver::artifact::CompilePhase;
-use crate::intern::StringId;
 use crate::lexer::*;
 use crate::tests::test_utils;
 
@@ -48,174 +47,124 @@ mod tests {
             "_Noreturn", "_Static_assert", "_Thread_local",
         ];
 
-        for keyword in keywords {
-            let symbol = StringId::new(keyword);
-            let expected_kind =
-                crate::lexer::is_keyword(symbol).unwrap_or_else(|| panic!("{} should be a keyword", keyword));
+        // Create a single string with all keywords separated by spaces
+        let input = keywords.join(" ");
+        let token_kinds = setup_lexer(&input);
 
-            let token_kinds = setup_lexer(keyword);
-            assert_eq!(token_kinds.len(), 1, "Expected 1 token for keyword: {}", keyword);
-            assert_eq!(token_kinds[0], expected_kind, "Failed for keyword: {}", keyword);
-        }
+        insta::assert_yaml_snapshot!(token_kinds);
     }
 
     #[test]
     fn test_operators_and_punctuation() {
         let operators = vec![
-            ("+", TokenKind::Plus),
-            ("-", TokenKind::Minus),
-            ("*", TokenKind::Star),
-            ("/", TokenKind::Slash),
-            ("%", TokenKind::Percent),
-            ("&", TokenKind::And),
-            ("|", TokenKind::Or),
-            ("^", TokenKind::Xor),
-            ("!", TokenKind::Not),
-            ("~", TokenKind::Tilde),
-            ("<", TokenKind::Less),
-            (">", TokenKind::Greater),
-            ("<=", TokenKind::LessEqual),
-            (">=", TokenKind::GreaterEqual),
-            ("==", TokenKind::Equal),
-            ("!=", TokenKind::NotEqual),
-            ("<<", TokenKind::LeftShift),
-            (">>", TokenKind::RightShift),
-            ("=", TokenKind::Assign),
-            ("+=", TokenKind::PlusAssign),
-            ("-=", TokenKind::MinusAssign),
-            ("*=", TokenKind::StarAssign),
-            ("/=", TokenKind::DivAssign),
-            ("%=", TokenKind::ModAssign),
-            ("&=", TokenKind::AndAssign),
-            ("|=", TokenKind::OrAssign),
-            ("^=", TokenKind::XorAssign),
-            ("<<=", TokenKind::LeftShiftAssign),
-            (">>=", TokenKind::RightShiftAssign),
-            ("++", TokenKind::Increment),
-            ("--", TokenKind::Decrement),
-            ("->", TokenKind::Arrow),
-            (".", TokenKind::Dot),
-            ("?", TokenKind::Question),
-            (":", TokenKind::Colon),
-            (",", TokenKind::Comma),
-            (";", TokenKind::Semicolon),
-            ("(", TokenKind::LeftParen),
-            (")", TokenKind::RightParen),
-            ("[", TokenKind::LeftBracket),
-            ("]", TokenKind::RightBracket),
-            ("{", TokenKind::LeftBrace),
-            ("}", TokenKind::RightBrace),
-            ("...", TokenKind::Ellipsis),
-            ("&&", TokenKind::LogicAnd),
-            ("||", TokenKind::LogicOr),
+            "+", "-", "*", "/", "%", "&", "|", "^", "!", "~",
+            "<", ">", "<=", ">=", "==", "!=",
+            "<<", ">>",
+            "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=",
+            "++", "--",
+            "->", ".",
+            "?", ":",
+            ",", ";",
+            "(", ")", "[", "]", "{", "}",
+            "...",
+            "&&", "||",
         ];
 
-        for (text, expected_kind) in operators {
-            let token_kinds = setup_lexer(text);
-            assert_eq!(token_kinds.len(), 1, "Expected 1 token for operator: {}", text);
-            assert_eq!(token_kinds[0], expected_kind, "Failed for operator: {}", text);
-        }
+        // Join with spaces to avoid accidental merging (e.g. + + becoming ++)
+        let input = operators.join(" ");
+        let token_kinds = setup_lexer(&input);
+
+        insta::assert_yaml_snapshot!(token_kinds);
     }
 
     #[test]
-    fn test_literals() {
-        use crate::ast::literal::IntegerSuffix;
-        // Integer constants
+    fn test_integer_literals() {
         let int_literals = vec![
-            ("42", TokenKind::IntegerConstant(42, None)),
-            ("0x1A", TokenKind::IntegerConstant(26, None)),
-            ("077", TokenKind::IntegerConstant(63, None)),
+            "42",
+            "0x1A",
+            "077",
             // C11 integer suffixes - decimal
-            ("1ll", TokenKind::IntegerConstant(1, Some(IntegerSuffix::LL))),
-            ("42u", TokenKind::IntegerConstant(42, Some(IntegerSuffix::U))),
-            ("123l", TokenKind::IntegerConstant(123, Some(IntegerSuffix::L))),
-            ("456ul", TokenKind::IntegerConstant(456, Some(IntegerSuffix::UL))),
-            ("789lu", TokenKind::IntegerConstant(789, Some(IntegerSuffix::UL))),
-            ("1000ull", TokenKind::IntegerConstant(1000, Some(IntegerSuffix::ULL))),
-            ("2000llu", TokenKind::IntegerConstant(2000, Some(IntegerSuffix::ULL))),
+            "1ll",
+            "42u",
+            "123l",
+            "456ul",
+            "789lu",
+            "1000ull",
+            "2000llu",
             // C11 integer suffixes - hexadecimal
-            ("0x1Au", TokenKind::IntegerConstant(26, Some(IntegerSuffix::U))),
-            ("0xFFll", TokenKind::IntegerConstant(255, Some(IntegerSuffix::LL))),
-            ("0x10UL", TokenKind::IntegerConstant(16, Some(IntegerSuffix::UL))),
-            ("0x20LU", TokenKind::IntegerConstant(32, Some(IntegerSuffix::UL))),
-            ("0x40ULL", TokenKind::IntegerConstant(64, Some(IntegerSuffix::ULL))),
-            ("0x80LLU", TokenKind::IntegerConstant(128, Some(IntegerSuffix::ULL))),
+            "0x1Au",
+            "0xFFll",
+            "0x10UL",
+            "0x20LU",
+            "0x40ULL",
+            "0x80LLU",
             // C11 integer suffixes - octal
-            ("077u", TokenKind::IntegerConstant(63, Some(IntegerSuffix::U))),
-            ("0123l", TokenKind::IntegerConstant(83, Some(IntegerSuffix::L))),
-            ("0777ul", TokenKind::IntegerConstant(511, Some(IntegerSuffix::UL))),
-            ("0123lu", TokenKind::IntegerConstant(83, Some(IntegerSuffix::UL))),
-            ("0777ull", TokenKind::IntegerConstant(511, Some(IntegerSuffix::ULL))),
-            ("0123llu", TokenKind::IntegerConstant(83, Some(IntegerSuffix::ULL))),
+            "077u",
+            "0123l",
+            "0777ul",
+            "0123lu",
+            "0777ull",
+            "0123llu",
             // Case insensitive suffixes
-            ("1LL", TokenKind::IntegerConstant(1, Some(IntegerSuffix::LL))),
-            ("42U", TokenKind::IntegerConstant(42, Some(IntegerSuffix::U))),
-            ("123L", TokenKind::IntegerConstant(123, Some(IntegerSuffix::L))),
-            ("456UL", TokenKind::IntegerConstant(456, Some(IntegerSuffix::UL))),
-            ("789LU", TokenKind::IntegerConstant(789, Some(IntegerSuffix::UL))),
-            ("1000ULL", TokenKind::IntegerConstant(1000, Some(IntegerSuffix::ULL))),
-            ("2000LLU", TokenKind::IntegerConstant(2000, Some(IntegerSuffix::ULL))),
+            "1LL",
+            "42U",
+            "123L",
+            "456UL",
+            "789LU",
+            "1000ULL",
+            "2000LLU",
         ];
 
-        for (text, expected_kind) in int_literals {
-            let token_kinds = setup_lexer(text);
-            assert_eq!(token_kinds.len(), 1, "Expected 1 token for integer literal: {}", text);
-            assert_eq!(token_kinds[0], expected_kind, "Failed for integer literal: {}", text);
-        }
+        let input = int_literals.join(" ");
+        let token_kinds = setup_lexer(&input);
+        insta::assert_yaml_snapshot!(token_kinds);
+    }
 
-        // Float constants
+    #[test]
+    fn test_float_literals() {
         let float_literals = vec![
-            ("1.5", TokenKind::FloatConstant(1.5)),
-            ("1.23e-4", TokenKind::FloatConstant(1.23e-4)),
-            ("0x1.2p3", TokenKind::FloatConstant(9.0)),
+            "1.5",
+            "1.23e-4",
+            "0x1.2p3",
         ];
 
-        for (text, expected_kind) in float_literals {
-            let token_kinds = setup_lexer(text);
-            assert_eq!(token_kinds.len(), 1, "Expected 1 token for float literal: {}", text);
-            assert_eq!(token_kinds[0], expected_kind, "Failed for float literal: {}", text);
-        }
+        let input = float_literals.join(" ");
+        let token_kinds = setup_lexer(&input);
+        insta::assert_yaml_snapshot!(token_kinds);
+    }
 
-        // Character constants
+    #[test]
+    fn test_char_literals() {
         let char_literals = vec![
-            ("'a'", TokenKind::CharacterConstant(97)),   // 'a' = 97
-            ("'\\n'", TokenKind::CharacterConstant(10)), // '\n' = 10
+            "'a'",
+            "'\\n'",
         ];
 
-        for (text, expected_kind) in char_literals {
-            let token_kinds = setup_lexer(text);
-            assert_eq!(token_kinds.len(), 1, "Expected 1 token for character literal: {}", text);
-            assert_eq!(token_kinds[0], expected_kind, "Failed for character literal: {}", text);
-        }
+        let input = char_literals.join(" ");
+        let token_kinds = setup_lexer(&input);
+        insta::assert_yaml_snapshot!(token_kinds);
+    }
 
-        // String literals
+    #[test]
+    fn test_string_literals() {
         let string_literals = vec![
-            ("\"hello\"", TokenKind::StringLiteral(StringId::new("hello"))),
-            ("\"world\\n\"", TokenKind::StringLiteral(StringId::new("world\n"))),
+            "\"hello\"",
+            "\"world\\n\"",
         ];
 
-        for (text, expected_kind) in string_literals {
-            let token_kinds = setup_lexer(text);
-            assert_eq!(token_kinds.len(), 1, "Expected 1 token for string literal: {}", text);
-            assert_eq!(token_kinds[0], expected_kind, "Failed for string literal: {}", text);
-        }
+        // Join with semicolon to prevent string concatenation
+        let input = string_literals.join("; ");
+        let token_kinds = setup_lexer(&input);
+        insta::assert_yaml_snapshot!(token_kinds);
     }
 
     #[test]
     fn test_identifiers() {
         let identifiers = vec!["variable", "my_var", "_private", "var123", "a", "_"];
 
-        for ident in identifiers {
-            let symbol = StringId::new(ident);
-            let token_kinds = setup_lexer(ident);
-            assert_eq!(token_kinds.len(), 1, "Expected 1 token for identifier: {}", ident);
-            assert_eq!(
-                token_kinds[0],
-                TokenKind::Identifier(symbol),
-                "Failed for identifier: {}",
-                ident
-            );
-        }
+        let input = identifiers.join(" ");
+        let token_kinds = setup_lexer(&input);
+        insta::assert_yaml_snapshot!(token_kinds);
     }
 
     #[test]
@@ -223,72 +172,39 @@ mod tests {
         // Test adjacent string literal concatenation (C11 6.4.5)
         let test_cases = vec![
             // Basic concatenation
-            ("\"hello\" \"world\"", "helloworld"),
+            "\"hello\" \"world\"",
             // With whitespace between
-            ("\"hello\"   \"world\"", "helloworld"),
+            "\"hello\"   \"world\"",
             // Multiple concatenations
-            ("\"a\" \"b\" \"c\"", "abc"),
+            "\"a\" \"b\" \"c\"",
             // With escape sequences
-            ("\"hello\\n\" \"world\"", "hello\nworld"),
+            "\"hello\\n\" \"world\"",
             // Mixed quotes and content
-            ("\"start\" \" middle \" \"end\"", "start middle end"),
+            "\"start\" \" middle \" \"end\"",
         ];
 
-        for (input, expected_content) in test_cases {
+        // For concatenation tests, we test each case individually to verify
+        // they merge into a single token.
+        for (i, input) in test_cases.iter().enumerate() {
             let token_kinds = setup_lexer(input);
-            assert_eq!(
-                token_kinds.len(),
-                1,
-                "Expected 1 token for concatenated string: {}",
-                input
-            );
-
-            match &token_kinds[0] {
-                TokenKind::StringLiteral(symbol) => {
-                    let actual_content = symbol.as_str();
-                    assert_eq!(
-                        actual_content, expected_content,
-                        "String concatenation failed for input: {}",
-                        input
-                    );
-                }
-                _ => panic!("Expected StringLiteral token for input: {}", input),
-            }
+            insta::assert_yaml_snapshot!(format!("concatenation_{}", i), token_kinds);
         }
 
         // Test that non-adjacent strings are not concatenated
-        let token_kinds = setup_lexer("\"hello\" ; \"world\"");
-        assert_eq!(token_kinds.len(), 3, "Expected 3 tokens for non-adjacent strings");
-        assert!(
-            matches!(token_kinds[0], TokenKind::StringLiteral(_)),
-            "First token should be string literal"
-        );
-        assert_eq!(token_kinds[1], TokenKind::Semicolon, "Second token should be semicolon");
-        assert!(
-            matches!(token_kinds[2], TokenKind::StringLiteral(_)),
-            "Third token should be string literal"
-        );
+        let input = "\"hello\" ; \"world\"";
+        let token_kinds = setup_lexer(input);
+        insta::assert_yaml_snapshot!("non_adjacent", token_kinds);
     }
 
     #[test]
     fn test_special_tokens() {
         // EndOfFile - empty string should produce EndOfFile when included
-        let token_kinds = setup_lexer_with_eof("", true);
-        assert_eq!(token_kinds.len(), 1, "Expected 1 token for empty string");
-        assert_eq!(
-            token_kinds[0],
-            TokenKind::EndOfFile,
-            "Empty string should produce EndOfFile"
-        );
+        let token_kinds_eof = setup_lexer_with_eof("", true);
+        insta::assert_yaml_snapshot!("eof", token_kinds_eof);
 
         // Unknown - unrecognized character should produce Unknown
-        let token_kinds = setup_lexer("@");
-        assert_eq!(token_kinds.len(), 1, "Expected 1 token for unknown character");
-        assert_eq!(
-            token_kinds[0],
-            TokenKind::Unknown,
-            "Unrecognized character should produce Unknown"
-        );
+        let token_kinds_unknown = setup_lexer("@");
+        insta::assert_yaml_snapshot!("unknown", token_kinds_unknown);
     }
 
     #[test]
@@ -296,25 +212,92 @@ mod tests {
         // Test edge cases in string literal unescaping
         let test_cases = vec![
             // \x with no digits - should keep the x
-            ("\"\\xg\"", "\\xg"),
+            "\"\\xg\"",
             // \x with invalid unicode value (overflow) - should use replacement character
             // \x110000 is > 0x10FFFF
-            ("\"\\x110000\"", "\u{FFFD}"),
+            "\"\\x110000\"",
             // \? escape
-            ("\"\\?\"", "?"),
+            "\"\\?\"",
             // Unknown escape sequence (e.g. \q) - should keep the character
-            ("\"\\q\"", "q"),
+            "\"\\q\"",
         ];
 
-        for (input, expected) in test_cases {
+        for (i, input) in test_cases.iter().enumerate() {
             let token_kinds = setup_lexer(input);
-            assert_eq!(token_kinds.len(), 1, "Expected 1 token for input: {}", input);
+            insta::assert_yaml_snapshot!(format!("escape_{}", i), token_kinds);
+        }
+    }
 
-            if let TokenKind::StringLiteral(sid) = token_kinds[0] {
-                assert_eq!(sid.as_str(), expected, "Failed for input: {}", input);
-            } else {
-                panic!("Expected StringLiteral for input: {}", input);
-            }
+    // === NEW TESTS ===
+
+    #[test]
+    fn test_complex_float_literals() {
+        let test_cases = vec![
+            // Hexadecimal floats (C11)
+            "0x1p+1",
+            "0x1.fp-2",
+            "0x1P+1",
+            "0x.8p0",
+
+            // Suffixes
+            "1.0f",
+            "1.0F",
+            "1.0l",
+            "1.0L",
+            "0x1p1f",
+            "0x1p1L",
+
+            // Edge cases
+            "1.",  // Valid
+            ".5",  // Valid (but note existing memory says this might be misparsed?)
+            "1.e2", // Valid
+        ];
+
+        let input = test_cases.join(" ");
+        let token_kinds = setup_lexer(&input);
+        insta::assert_yaml_snapshot!(token_kinds);
+    }
+
+    #[test]
+    fn test_complex_integer_suffixes() {
+        let test_cases = vec![
+            // Unsigned
+            "1u", "1U",
+            // Long
+            "1l", "1L",
+            // Long Long
+            "1ll", "1LL",
+            // Unsigned Long
+            "1ul", "1uL", "1Ul", "1UL",
+            "1lu", "1lU", "1Lu", "1LU",
+            // Unsigned Long Long
+            "1ull", "1uLL", "1Ull", "1ULL",
+            "1llu", "1llU", "1LLu", "1LLU",
+
+            // Hex
+            "0x1u", "0x1L", "0x1llU",
+
+            // Octal
+            "01u", "01L", "01llU",
+        ];
+
+        let input = test_cases.join(" ");
+        let token_kinds = setup_lexer(&input);
+        insta::assert_yaml_snapshot!(token_kinds);
+    }
+
+    #[test]
+    fn test_string_escapes() {
+        let test_cases = vec![
+            "\"Standard: \\' \\\" \\? \\\\ \\a \\b \\f \\n \\r \\t \\v\"",
+            "\"Octal: \\1 \\12 \\123\"",
+            "\"Hex: \\x1 \\x12 \\x123\"", // Note: hex escape consumes all following hex digits
+            "\"Universal: \\u0041 \\U00000041\"", // A
+        ];
+
+        for (i, input) in test_cases.iter().enumerate() {
+            let token_kinds = setup_lexer(input);
+            insta::assert_yaml_snapshot!(format!("string_escapes_{}", i), token_kinds);
         }
     }
 }

@@ -489,6 +489,14 @@ fn reborrow_data_description<'b>(dd: &'b mut Option<&mut DataDescription>) -> Op
     dd.as_mut().map(|inner| &mut **inner)
 }
 
+/// Helper to determine if a type consumes an XMM register (float/vector)
+fn is_xmm_argument(mir_type: &MirType) -> bool {
+    matches!(
+        mir_type,
+        MirType::F32 | MirType::F64 | MirType::F80 | MirType::F128
+    )
+}
+
 /// Helper to prepare a function signature for a call
 fn prepare_call_signature(
     call_conv: cranelift::codegen::isa::CallConv,
@@ -498,6 +506,7 @@ fn prepare_call_signature(
     mir: &MirProgram,
     is_variadic: bool,
     use_variadic_hack: bool,
+    triple: &Triple,
 ) -> Signature {
     let mut sig = Signature::new(call_conv);
     // sig.set_is_variadic(is_variadic); // Try if this method exists
@@ -516,9 +525,16 @@ fn prepare_call_signature(
     // Use split ABI for internal functions (defined or indirect calls)
     let split_f128 = use_variadic_hack;
 
+    // Track used XMM registers for SystemV ABI hack
+    let mut xmm_used = 0;
+
     // Fixed parameters
     for &param_type_id in param_types {
         let mir_type = mir.get_type(param_type_id);
+
+        if is_xmm_argument(mir_type) {
+            xmm_used += 1;
+        }
 
         if split_f128 && matches!(mir_type, MirType::F80 | MirType::F128) {
             sig.params.push(AbiParam::new(types::I64));
@@ -553,6 +569,24 @@ fn prepare_call_signature(
                 sig.params.push(AbiParam::new(types::I64));
                 sig.params.push(AbiParam::new(types::I64));
                 continue;
+            }
+
+            // HACK: For x86_64 SystemV extern calls, force long double (F80/F128) to stack
+            // by exhausting XMM registers if they are not already full.
+            if !split_f128
+                && triple.architecture == target_lexicon::Architecture::X86_64
+                && matches!(mir_type, MirType::F80 | MirType::F128)
+            {
+                let needed_padding = 8usize.saturating_sub(xmm_used);
+                for _ in 0..needed_padding {
+                    sig.params.push(AbiParam::new(types::F64));
+                }
+                // We've effectively filled the registers
+                xmm_used = 8;
+            }
+
+            if is_xmm_argument(mir_type) {
+                xmm_used += 1;
             }
         }
         let mut arg_type = get_operand_clif_type(arg, mir).unwrap_or(types::I32);
@@ -592,16 +626,32 @@ fn resolve_call_args(
     ctx: &mut BodyEmitContext,
     is_variadic: bool,
     split_f128: bool,
+    triple: &Triple,
 ) -> Result<Vec<Value>, String> {
     let mut arg_values = Vec::new();
     let mut sig_idx = 0;
+    let mut xmm_used = 0;
+
+    // Count XMM usage from fixed parameters first (checking signatures from ctx.mir logic if needed)
+    // But here we iterate all args. We need to distinguish fixed params.
+    // We can assume first `fixed_param_count` args match `sig`'s first params,
+    // but `sig` might have split params.
+    // Simpler: iterate fixed_param_count args and check types.
+    for i in 0..fixed_param_count {
+        if let Some(arg) = args.get(i) {
+            if let Ok(type_id) = get_operand_type_id(arg, ctx.mir) {
+                let mir_type = ctx.mir.get_type(type_id);
+                if is_xmm_argument(mir_type) {
+                    xmm_used += 1;
+                }
+            }
+        }
+    }
 
     for (arg_idx, arg) in args.iter().enumerate() {
         if sig_idx >= sig.params.len() {
             break;
         }
-
-        let param_type = sig.params[sig_idx].value_type;
 
         // Check operand type
         let arg_type_id = get_operand_type_id(arg, ctx.mir).ok();
@@ -674,7 +724,32 @@ fn resolve_call_args(
                 }
                 continue;
             }
+
+            // HACK: Apply padding to force stack usage for long double
+            if !split_f128
+                && triple.architecture == target_lexicon::Architecture::X86_64
+                && matches!(mir_type, MirType::F80 | MirType::F128)
+            {
+                let needed_padding = 8usize.saturating_sub(xmm_used);
+                for _ in 0..needed_padding {
+                    if sig_idx < sig.params.len() {
+                        arg_values.push(ctx.builder.ins().f64const(0.0));
+                        sig_idx += 1;
+                    }
+                }
+                xmm_used = 8;
+            }
+
+            if is_xmm_argument(mir_type) {
+                xmm_used += 1;
+            }
         }
+
+        // Update param_type as sig_idx might have changed due to padding
+        if sig_idx >= sig.params.len() {
+            break;
+        }
+        let param_type = sig.params[sig_idx].value_type;
 
         // Non-struct argument (or fixed param)
         match resolve_operand(arg, ctx, param_type) {
@@ -779,10 +854,19 @@ fn emit_function_call_impl(
         ctx.mir,
         is_variadic,
         use_variadic_hack,
+        ctx.triple,
     );
 
     let split_f128 = use_variadic_hack;
-    let arg_values = resolve_call_args(args, param_types.len(), &sig, ctx, is_variadic, split_f128)?;
+    let arg_values = resolve_call_args(
+        args,
+        param_types.len(),
+        &sig,
+        ctx,
+        is_variadic,
+        split_f128,
+        ctx.triple,
+    )?;
 
     // 3. Emit the call
     let call_inst = if is_variadic {
@@ -796,6 +880,7 @@ fn emit_function_call_impl(
                 ctx.mir,
                 is_variadic,
                 use_variadic_hack,
+                ctx.triple,
             );
             let decl = ctx
                 .module

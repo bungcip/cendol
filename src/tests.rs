@@ -77,4 +77,5 @@ pub mod source_manager;
 pub mod test_utils;
 mod type_specifier_regression;
 pub mod typeref;
+pub mod variadic_long_double;
 pub mod variadic_printf_regression;

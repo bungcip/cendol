@@ -258,7 +258,9 @@ impl<'a> AstToMirLowerer<'a> {
                 crate::ast::literal::Literal::Int { val, .. } => Some(Operand::Constant(
                     self.create_constant(mir_ty, ConstValueKind::Int(*val)),
                 )),
-                crate::ast::literal::Literal::Float(val) => Some(self.create_float_operand(*val)),
+                crate::ast::literal::Literal::Float { val, .. } => Some(Operand::Constant(
+                    self.create_constant(mir_ty, ConstValueKind::Float(*val)),
+                )),
                 crate::ast::literal::Literal::Char(val) => Some(Operand::Constant(
                     self.create_constant(mir_ty, ConstValueKind::Int(*val as i64)),
                 )),

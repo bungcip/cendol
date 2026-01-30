@@ -165,9 +165,9 @@ mod tests {
 
         // Float constants
         let float_literals = vec![
-            ("1.5", TokenKind::FloatConstant(1.5)),
-            ("1.23e-4", TokenKind::FloatConstant(1.23e-4)),
-            ("0x1.2p3", TokenKind::FloatConstant(9.0)),
+            ("1.5", TokenKind::FloatConstant(1.5, None)),
+            ("1.23e-4", TokenKind::FloatConstant(1.23e-4, None)),
+            ("0x1.2p3", TokenKind::FloatConstant(9.0, None)),
         ];
 
         for (text, expected_kind) in float_literals {

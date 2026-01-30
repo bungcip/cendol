@@ -205,9 +205,12 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
             );
             Ok(node)
         }
-        TokenKind::FloatConstant(val) => {
+        TokenKind::FloatConstant(val, suffix) => {
             parser.advance();
-            let node = parser.push_node(ParsedNodeKind::Literal(literal::Literal::Float(val)), token.span);
+            let node = parser.push_node(
+                ParsedNodeKind::Literal(literal::Literal::Float { val, suffix }),
+                token.span,
+            );
             Ok(node)
         }
         TokenKind::StringLiteral(s) => {

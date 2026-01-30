@@ -1,4 +1,4 @@
-use crate::ast::literal::IntegerSuffix;
+use crate::ast::literal::{FloatSuffix, IntegerSuffix};
 use crate::ast::literal_parsing;
 use crate::intern::StringId;
 use crate::pp::{PPToken, PPTokenKind};
@@ -10,7 +10,7 @@ use serde::Serialize;
 pub enum TokenKind {
     // === LITERALS ===
     IntegerConstant(i64, Option<IntegerSuffix>), // Parsed integer literal value
-    FloatConstant(f64),                          // Parsed float literal value
+    FloatConstant(f64, Option<FloatSuffix>),     // Parsed float literal value
     CharacterConstant(u8),                       // Byte value of character constant
     StringLiteral(StringId),                     // Interned string literal
 
@@ -445,8 +445,8 @@ impl<'src> Lexer<'src> {
                 // Try to parse as integer first, then float, then unknown
                 if let Ok((int_val, suffix)) = literal_parsing::parse_c11_integer_literal(value.as_str()) {
                     TokenKind::IntegerConstant(int_val as i64, suffix)
-                } else if let Ok(float_val) = literal_parsing::parse_c11_float_literal(value.as_str()) {
-                    TokenKind::FloatConstant(float_val)
+                } else if let Ok((float_val, suffix)) = literal_parsing::parse_c11_float_literal(value.as_str()) {
+                    TokenKind::FloatConstant(float_val, suffix)
                 } else {
                     TokenKind::Unknown // Could not parse as integer or float
                 }

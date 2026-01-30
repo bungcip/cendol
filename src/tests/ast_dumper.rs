@@ -105,9 +105,9 @@ fn test_dump_parsed_ast_with_floats() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2, 4])
     2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Float)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("pi", TypeQualifiers(0x0)), initializer: Some(3), span: SourceSpan(2199224582150) }] })
-    3: LiteralFloat(3.14159)
+    3: LiteralFloat(3.14159, None)
     4: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Double)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("e", TypeQualifiers(0x0)), initializer: Some(5), span: SourceSpan(2199207804955) }] })
-    5: LiteralFloat(2.71828)
+    5: LiteralFloat(2.71828, None)
     "#);
 }
 

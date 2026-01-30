@@ -580,7 +580,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
         type %t1 = f64
         type %t2 = i8
@@ -684,7 +684,7 @@ mod tests {
         {
 
           bb12:
-            return cast<f32>(const 3.14)
+            return const 3.14
         }
 
         fn fn_llong() -> i64

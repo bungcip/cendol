@@ -1011,11 +1011,6 @@ impl<'a> AstToMirLowerer<'a> {
         Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val)))
     }
 
-    pub(crate) fn create_float_operand(&mut self, val: f64) -> Operand {
-        let ty_id = self.lower_type(self.registry.type_double);
-        Operand::Constant(self.create_constant(ty_id, ConstValueKind::Float(val)))
-    }
-
     fn emit_conversion(&mut self, operand: Operand, conv: &ImplicitConversion, target_type_id: TypeId) -> Operand {
         let to_mir_type = match conv {
             ImplicitConversion::IntegerCast { to, .. }

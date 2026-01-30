@@ -2225,7 +2225,15 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to convert tokens to their string representation
     fn tokens_to_string(&self, tokens: &[PPToken]) -> String {
-        let mut result = String::new();
+        // Bolt ⚡: Use a two-pass approach to build the string efficiently.
+        // This avoids multiple reallocations from push_str in a loop.
+        // 1. Calculate the total length of the string.
+        let total_len: usize = tokens.iter().map(|t| t.get_text().len()).sum();
+
+        // 2. Allocate the string with the exact capacity.
+        let mut result = String::with_capacity(total_len);
+
+        // 3. Populate the string.
         for token in tokens {
             result.push_str(token.get_text());
         }

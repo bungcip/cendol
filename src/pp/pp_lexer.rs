@@ -213,19 +213,30 @@ impl PPLexer {
     /// Line splicing: backslash followed by newline removes both characters
     pub(crate) fn next_char(&mut self) -> Option<u8> {
         loop {
-            if self.position as usize >= self.buffer.len() {
+            let pos = self.position as usize;
+            if pos >= self.buffer.len() {
                 return None;
             }
 
-            let mut ch = self.buffer[self.position as usize];
+            let mut ch = self.buffer[pos];
+
+            // ⚡ Bolt: Fast path for common characters.
+            // If the character is not the start of a trigraph ('?') or a line splice ('\'),
+            // we can consume it immediately and skip the complex logic below.
+            // This significantly improves performance as most characters fall into this case.
+            if ch != b'?' && ch != b'\\' {
+                self.position += 1;
+                if ch == b'\n' {
+                    self.line_starts.push(self.position);
+                }
+                return Some(ch);
+            }
+
             let mut consumed_len = 1;
 
             // Phase 1: Trigraphs
-            if ch == b'?'
-                && (self.position as usize) + 2 < self.buffer.len()
-                && self.buffer[self.position as usize + 1] == b'?'
-            {
-                let replacement = match self.buffer[self.position as usize + 2] {
+            if ch == b'?' && pos + 2 < self.buffer.len() && self.buffer[pos + 1] == b'?' {
+                let replacement = match self.buffer[pos + 2] {
                     b'=' => Some(b'#'),
                     b'(' => Some(b'['),
                     b'/' => Some(b'\\'),
@@ -246,7 +257,7 @@ impl PPLexer {
 
             // Phase 2: Line Splicing
             if ch == b'\\' {
-                let mut check_pos = (self.position as usize) + consumed_len;
+                let mut check_pos = pos + consumed_len;
                 let mut found_splice = false;
                 let mut new_pos = check_pos;
 
@@ -298,6 +309,18 @@ impl PPLexer {
 
     /// Peek at the next character without consuming it, handling line splicing
     pub(crate) fn peek_char(&mut self) -> Option<u8> {
+        let pos = self.position as usize;
+
+        // ⚡ Bolt: Fast path for peeking common characters.
+        // If the next character is not the start of a trigraph or line splice,
+        // we can return it directly without the overhead of saving/restoring state.
+        if pos < self.buffer.len() {
+            let ch = self.buffer[pos];
+            if ch != b'?' && ch != b'\\' {
+                return Some(ch);
+            }
+        }
+
         let saved_position = self.position;
         // ⚡ Bolt: Avoid cloning `line_starts` by saving its length.
         // `next_char` only ever appends to this vector, so we can restore its

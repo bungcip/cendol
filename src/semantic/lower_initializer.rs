@@ -84,6 +84,47 @@ impl<'a> AstToMirLowerer<'a> {
         self.finalize_struct_initializer(field_operands, target_ty, destination)
     }
 
+    pub(crate) fn evaluate_constant_usize(&mut self, expr: NodeRef, error_msg: &str) -> usize {
+        let operand = self.lower_expression(expr, true);
+        if let Some(const_id) = self.operand_to_const_id(operand) {
+            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
+            if let ConstValueKind::Int(val) = const_val.kind {
+                val as usize
+            } else {
+                panic!("{}", error_msg);
+            }
+        } else {
+            panic!("{}", error_msg);
+        }
+    }
+
+    pub(crate) fn resolve_designator_range(&mut self, designator_ref: NodeRef) -> (usize, usize) {
+        match self.ast.get_kind(designator_ref) {
+            NodeKind::Designator(Designator::ArrayIndex(idx_expr)) => {
+                let idx =
+                    self.evaluate_constant_usize(*idx_expr, "Array designator must be an integer constant expression");
+                (idx, idx)
+            }
+            NodeKind::Designator(Designator::GnuArrayRange(start_expr, end_expr)) => {
+                let start = self
+                    .evaluate_constant_usize(*start_expr, "Array range start must be an integer constant expression");
+                let end =
+                    self.evaluate_constant_usize(*end_expr, "Array range end must be an integer constant expression");
+
+                if end < start {
+                    panic!("Array range end must be >= start");
+                }
+                (start, end)
+            }
+            NodeKind::Designator(Designator::FieldName(_)) => {
+                panic!("Field designator for array initializer");
+            }
+            _ => {
+                panic!("Unsupported designator for array initializer");
+            }
+        }
+    }
+
     pub(crate) fn lower_array_initializer(
         &mut self,
         list_data: &ast::nodes::InitializerListData,
@@ -100,70 +141,14 @@ impl<'a> AstToMirLowerer<'a> {
                 continue;
             };
 
-            let mut range_start = current_idx;
-            let mut range_end = current_idx;
-
-            // Handle designator
-            if init.designator_len > 0 {
-                let designator_ref = init.designator_start;
+            let (range_start, range_end) = if init.designator_len > 0 {
                 // We only look at the first designator for the array index.
                 // Nested designators would need to be handled by constructing
                 // partial initializers, but for now we assume 1D array or first level.
-                match self.ast.get_kind(designator_ref) {
-                    NodeKind::Designator(Designator::ArrayIndex(idx_expr)) => {
-                        let idx_operand = self.lower_expression(*idx_expr, true);
-                        if let Some(const_id) = self.operand_to_const_id(idx_operand) {
-                            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
-                            if let ConstValueKind::Int(val) = const_val.kind {
-                                range_start = val as usize;
-                                range_end = range_start;
-                            } else {
-                                panic!("Array designator must be an integer constant");
-                            }
-                        } else {
-                            panic!("Array designator must be a constant expression");
-                        }
-                    }
-                    NodeKind::Designator(Designator::GnuArrayRange(start_expr, end_expr)) => {
-                        // Start
-                        let start_operand = self.lower_expression(*start_expr, true);
-                        if let Some(const_id) = self.operand_to_const_id(start_operand) {
-                            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
-                            if let ConstValueKind::Int(val) = const_val.kind {
-                                range_start = val as usize;
-                            } else {
-                                panic!("Array range start must be an integer constant");
-                            }
-                        } else {
-                            panic!("Array range start must be a constant expression");
-                        }
-
-                        // End
-                        let end_operand = self.lower_expression(*end_expr, true);
-                        if let Some(const_id) = self.operand_to_const_id(end_operand) {
-                            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
-                            if let ConstValueKind::Int(val) = const_val.kind {
-                                range_end = val as usize;
-                            } else {
-                                panic!("Array range end must be an integer constant");
-                            }
-                        } else {
-                            panic!("Array range end must be a constant expression");
-                        }
-
-                        if range_end < range_start {
-                            panic!("Array range end must be >= start");
-                        }
-                    }
-                    // Struct field designators are invalid for arrays
-                    NodeKind::Designator(Designator::FieldName(_)) => {
-                        panic!("Field designator for array initializer");
-                    }
-                    _ => {
-                        panic!("Unsupported designator for array initializer");
-                    }
-                }
-            }
+                self.resolve_designator_range(init.designator_start)
+            } else {
+                (current_idx, current_idx)
+            };
 
             let operand = self.lower_initializer(init.initializer, element_ty, None);
 

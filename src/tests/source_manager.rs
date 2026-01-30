@@ -482,3 +482,45 @@ fn test_source_manager_default() {
     let file_id = sm.add_buffer(b"content".to_vec(), "test.c", None);
     assert!(sm.get_file_info(file_id).is_some());
 }
+
+#[test]
+fn test_source_span_merge() {
+    let id1 = SourceId::new(1);
+    let id2 = SourceId::new(2);
+
+    // Case 1: Merge overlapping spans from same file
+    let start1 = SourceLoc::new(id1, 10);
+    let end1 = SourceLoc::new(id1, 20);
+    let span1 = SourceSpan::new(start1, end1);
+
+    let start2 = SourceLoc::new(id1, 15);
+    let end2 = SourceLoc::new(id1, 25);
+    let span2 = SourceSpan::new(start2, end2);
+
+    let merged = span1.merge(span2);
+    assert_eq!(merged.source_id(), id1);
+    assert_eq!(merged.start().offset(), 10);
+    assert_eq!(merged.end().offset(), 25);
+
+    // Case 2: Merge disjoint spans from same file
+    // span1 is 10-20. span3 is 30-40.
+    let start3 = SourceLoc::new(id1, 30);
+    let end3 = SourceLoc::new(id1, 40);
+    let span3 = SourceSpan::new(start3, end3);
+
+    let merged_disjoint = span1.merge(span3);
+    assert_eq!(merged_disjoint.source_id(), id1);
+    assert_eq!(merged_disjoint.start().offset(), 10);
+    assert_eq!(merged_disjoint.end().offset(), 40);
+
+    // Case 3: Merge spans from different files (should return self)
+    let start4 = SourceLoc::new(id2, 10);
+    let end4 = SourceLoc::new(id2, 20);
+    let span4 = SourceSpan::new(start4, end4);
+
+    let merged_diff_file = span1.merge(span4);
+    assert_eq!(merged_diff_file.source_id(), id1);
+    assert_eq!(merged_diff_file.start().offset(), 10);
+    assert_eq!(merged_diff_file.end().offset(), 20);
+    assert_eq!(merged_diff_file, span1);
+}

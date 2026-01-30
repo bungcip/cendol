@@ -2705,17 +2705,96 @@ impl<'src> Preprocessor<'src> {
                     i += 1;
                     // Skip arguments... handled similarly to defined, but it MUST have parentheses.
                     // __has_include ( "header" ) or __has_include ( <header> )
-                    // Note: arguments are NOT expanded.
                     if i < tokens.len() && tokens[i].kind == PPTokenKind::LeftParen {
-                        // Skip until matching RightParen
-                        let mut depth = 1;
-                        i += 1;
-                        while i < tokens.len() && depth > 0 {
-                            match tokens[i].kind {
-                                PPTokenKind::LeftParen => depth += 1,
-                                PPTokenKind::RightParen => depth -= 1,
-                                _ => {}
+                        let paren_start = i;
+                        let arg_start = i + 1;
+
+                        if arg_start < tokens.len() {
+                            match tokens[arg_start].kind {
+                                PPTokenKind::Less | PPTokenKind::StringLiteral(_) => {
+                                    // Standard form: skip until matching RightParen
+                                    let mut depth = 1;
+                                    i += 1;
+                                    while i < tokens.len() && depth > 0 {
+                                        match tokens[i].kind {
+                                            PPTokenKind::LeftParen => depth += 1,
+                                            PPTokenKind::RightParen => depth -= 1,
+                                            _ => {}
+                                        }
+                                        i += 1;
+                                    }
+                                }
+                                _ => {
+                                    // Computed form: Allow expansion
+                                    // 1. Identify argument range
+                                    let mut depth = 1;
+                                    let mut end = arg_start;
+                                    while end < tokens.len() && depth > 0 {
+                                        match tokens[end].kind {
+                                            PPTokenKind::LeftParen => depth += 1,
+                                            PPTokenKind::RightParen => depth -= 1,
+                                            _ => {}
+                                        }
+                                        if depth > 0 {
+                                            end += 1;
+                                        }
+                                    }
+
+                                    // If we found the end
+                                    if depth == 0 {
+                                        let arg_end = end; // Points to RightParen
+
+                                        // 2. Extract arguments
+                                        let mut args: Vec<PPToken> = tokens[arg_start..arg_end].to_vec();
+
+                                        // 3. Expand arguments
+                                        // We use a custom loop here instead of expand_tokens to handle the "header name" rule.
+                                        // If the expansion results in tokens starting with '<' or '"', we must STOP expanding
+                                        // to avoid expanding macros inside the header name (e.g., 'stddef' in '<stddef.h>').
+                                        let mut j = 0;
+                                        let mut expansions = 0;
+                                        const MAX_EXPANSIONS: usize = 1000;
+
+                                        while j < args.len() && expansions < MAX_EXPANSIONS {
+                                            // Check if we are at the start (ignoring processed tokens) and it looks like a header
+                                            // If args[0] is '<' or string literal, we stop immediately.
+                                            // Note: We check j==0 because we only care if the *result* starts with header.
+                                            if j == 0 && !args.is_empty() {
+                                                if args[0].kind == PPTokenKind::Less || matches!(args[0].kind, PPTokenKind::StringLiteral(_)) {
+                                                    break;
+                                                }
+                                            }
+
+                                            // Try expand args[j]
+                                            // We manually expand one step
+                                            let expanded_opt = match self.expand_macro(&args[j]) {
+                                                Ok(e) => e,
+                                                Err(_) => None,
+                                            };
+
+                                            if let Some(expanded) = expanded_opt {
+                                                // Splice
+                                                args.splice(j..j + 1, expanded);
+                                                // Don't increment j, check the new token at j (which is now at 0 if j was 0)
+                                                expansions += 1;
+                                                continue;
+                                            }
+
+                                            j += 1;
+                                        }
+
+                                        // 4. Splice back
+                                        tokens.splice(arg_start..arg_end, args.clone());
+
+                                        // 5. Update i to point AFTER the closing paren
+                                        // i should be paren_start + 1 + args.len() + 1
+                                        i = paren_start + args.len() + 2;
+                                    } else {
+                                        i = end;
+                                    }
+                                }
                             }
+                        } else {
                             i += 1;
                         }
                     }

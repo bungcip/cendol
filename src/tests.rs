@@ -25,6 +25,7 @@ pub mod pp_digraphs;
 pub mod pp_expressions;
 pub mod pp_gnu_extensions;
 pub mod pp_has_include;
+pub mod pp_has_include_macro;
 pub mod pp_lexer;
 pub mod pp_line_splicing;
 pub mod pp_pasting;

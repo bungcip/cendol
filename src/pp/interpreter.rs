@@ -1,3 +1,5 @@
+use crate::ast::literal::IntegerSuffix;
+use crate::ast::literal_parsing;
 use crate::ast::{BinaryOp, UnaryOp};
 use crate::intern::StringId;
 use crate::pp::{PPError, PPToken, PPTokenKind, Preprocessor};
@@ -526,58 +528,28 @@ impl<'a> Interpreter<'a> {
         match &token.kind {
             PPTokenKind::Number(sym) => {
                 let text = sym.as_str();
-                // Strip suffixes: u U l L ll LL (case insensitive)
-                let mut end = text.len();
-                let mut is_unsigned = false;
+                if let Ok((val, suffix)) = literal_parsing::parse_c11_integer_literal(text) {
+                    let mut is_unsigned = matches!(
+                        suffix,
+                        Some(IntegerSuffix::U | IntegerSuffix::UL | IntegerSuffix::ULL)
+                    );
 
-                // Parse suffixes manually
-                loop {
-                    if end > 0 {
-                        let c = text.as_bytes()[end - 1];
-                        if c == b'u' || c == b'U' {
-                            if !is_unsigned {
-                                is_unsigned = true;
-                                end -= 1;
-                                continue;
-                            }
-                        } else if c == b'l' || c == b'L' {
-                            end -= 1;
-                            continue;
-                        }
+                    // C11 6.3.1.1: If it fits in signed i64, it's signed (unless U suffix).
+                    // If it doesn't fit in i64, it depends on base.
+                    // Hex/Octal: can be unsigned if doesn't fit in signed.
+                    // Decimal: technically should be signed long long, but if it overflows, it's UB or implementation defined.
+                    // We treat large decimals as unsigned too to support `u64` range fully.
+                    let fits_i64 = val <= i64::MAX as u64;
+
+                    if !is_unsigned && !fits_i64 {
+                        // Promoted to unsigned if hex/octal or too big
+                        // For decimal, ideally we warn, but here we just accept as unsigned to match typical behavior for u64 support
+                        is_unsigned = true;
                     }
-                    break;
-                }
 
-                let num_text = &text[..end];
-
-                // Determine base
-                let val_res = if num_text.starts_with("0x") || num_text.starts_with("0X") {
-                    u64::from_str_radix(&num_text[2..], 16)
-                } else if num_text.starts_with("0") && num_text.len() > 1 {
-                    u64::from_str_radix(num_text, 8)
+                    Ok(PPExpr::Number(ExprValue::new(val, is_unsigned)))
                 } else {
-                    num_text.parse::<u64>()
-                };
-
-                match val_res {
-                    Ok(val) => {
-                        // C11 6.3.1.1: If it fits in signed i64, it's signed (unless U suffix).
-                        // If it doesn't fit in i64, it depends on base.
-                        // Hex/Octal: can be unsigned if doesn't fit in signed.
-                        // Decimal: technically should be signed long long, but if it overflows, it's UB or implementation defined.
-                        // We treat large decimals as unsigned too to support `u64` range fully.
-
-                        let fits_i64 = val <= i64::MAX as u64;
-
-                        if !is_unsigned && !fits_i64 {
-                            // Promoted to unsigned if hex/octal or too big
-                            // For decimal, ideally we warn, but here we just accept as unsigned to match typical behavior for u64 support
-                            is_unsigned = true;
-                        }
-
-                        Ok(PPExpr::Number(ExprValue::new(val, is_unsigned)))
-                    }
-                    Err(_) => Err(PPError::InvalidConditionalExpression),
+                    Err(PPError::InvalidConditionalExpression)
                 }
             }
             PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(ExprValue::new(*codepoint as u64, false))),

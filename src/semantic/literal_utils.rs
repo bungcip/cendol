@@ -1,5 +1,5 @@
+use crate::ast::literal_parsing;
 use crate::ast::NameId;
-use crate::lexer::Lexer;
 use crate::semantic::BuiltinType;
 
 pub enum StringLiteralKind {
@@ -54,7 +54,7 @@ fn parse_prefixed(content_raw: &str, kind: StringLiteralKind, builtin_type: Buil
     // Remove trailing quote
     let content_raw = content_raw.strip_suffix('"').unwrap_or(content_raw);
 
-    let content = Lexer::unescape_string(content_raw);
+    let content = literal_parsing::unescape_string(content_raw);
     let mut values = Vec::new();
 
     match kind {

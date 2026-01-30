@@ -1,4 +1,5 @@
 use crate::ast::literal::IntegerSuffix;
+use crate::ast::literal_parsing;
 use crate::intern::StringId;
 use crate::pp::{PPToken, PPTokenKind};
 use crate::source_manager::SourceSpan;
@@ -423,109 +424,6 @@ impl<'src> Lexer<'src> {
         Lexer { tokens }
     }
 
-    /// Parse C11 integer literal syntax
-    ///
-    /// ⚡ Bolt: Optimized integer parsing.
-    /// This implementation is faster than the previous version. It first uses the
-    /// existing optimized `strip_integer_suffix` function, then replaces the multi-step
-    /// `extract_digits_and_base` and `parse_integer_value` (which used slower
-    /// general-purpose parsing functions) with a single, direct parsing loop.
-    /// This avoids intermediate allocations and improves performance by using
-    /// checked arithmetic directly on the string's characters.
-    fn parse_c11_integer_literal(&self, text: StringId) -> Result<(i64, Option<IntegerSuffix>), ()> {
-        let text_str = text.as_str();
-
-        // Use the existing, optimized suffix stripper to get the numeric part.
-        let (number_part, suffix) = Self::strip_integer_suffix(text_str);
-
-        // Handle the case where the number is just "0" after stripping suffix.
-        if number_part == "0" {
-            return Ok((0, suffix));
-        }
-
-        let mut base = 10;
-        let mut digits_to_parse = number_part;
-
-        // Determine base and strip prefix from the numeric part.
-        if number_part.starts_with("0x") || number_part.starts_with("0X") {
-            base = 16;
-            digits_to_parse = &number_part[2..];
-        } else if let Some(stripped) = number_part.strip_prefix('0') {
-            base = 8;
-            digits_to_parse = stripped;
-        }
-        // else base is 10 and we parse the whole `number_part`.
-
-        // If after stripping prefixes the string is empty, it's an error.
-        if digits_to_parse.is_empty() {
-            return Err(());
-        }
-
-        let mut result: u64 = 0;
-        for c in digits_to_parse.chars() {
-            // `to_digit` will return None for invalid characters in the given base
-            // (e.g., '9' in octal), which correctly propagates the error.
-            let digit = c.to_digit(base).ok_or(())?;
-
-            // Use checked arithmetic to prevent overflow, replicating .parse() behavior.
-            result = result.checked_mul(base as u64).ok_or(())?;
-            result = result.checked_add(digit as u64).ok_or(())?;
-        }
-
-        Ok((result as i64, suffix))
-    }
-
-    /// Strip integer literal suffix (u, l, ll, ul, ull, etc.)
-    fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
-        // ⚡ Bolt: Optimized suffix stripping.
-        // This implementation is faster than the previous version, which used multiple
-        // string slices and `eq_ignore_ascii_case` calls. By working with bytes directly
-        // and using `matches!` for character comparisons, we avoid the overhead of
-        // slicing and function calls in the common cases, resulting in a small but
-        // measurable performance improvement for parsing integer literals.
-        let bytes = text.as_bytes();
-        let len = bytes.len();
-
-        if len == 0 {
-            return (text, None);
-        }
-
-        // Check for the longest suffixes first (3 characters: "ull", "llu").
-        if len >= 3 {
-            let last3 = (
-                bytes[len - 3].to_ascii_lowercase(),
-                bytes[len - 2].to_ascii_lowercase(),
-                bytes[len - 1].to_ascii_lowercase(),
-            );
-            if matches!(last3, (b'u', b'l', b'l') | (b'l', b'l', b'u')) {
-                return (&text[..len - 3], Some(IntegerSuffix::ULL));
-            }
-        }
-
-        // Check for 2-character suffixes ("ul", "lu", "ll").
-        if len >= 2 {
-            let last2 = (bytes[len - 2].to_ascii_lowercase(), bytes[len - 1].to_ascii_lowercase());
-            if matches!(last2, (b'u', b'l') | (b'l', b'u')) {
-                return (&text[..len - 2], Some(IntegerSuffix::UL));
-            } else if matches!(last2, (b'l', b'l')) {
-                return (&text[..len - 2], Some(IntegerSuffix::LL));
-            }
-        }
-
-        // Check for 1-character suffixes ("u", "l").
-        if len >= 1 {
-            let last1 = bytes[len - 1].to_ascii_lowercase();
-            if matches!(last1, b'u') {
-                return (&text[..len - 1], Some(IntegerSuffix::U));
-            } else if matches!(last1, b'l') {
-                return (&text[..len - 1], Some(IntegerSuffix::L));
-            }
-        }
-
-        // No suffix found.
-        (text, None)
-    }
-
     /// Classify a preprocessor token into a lexical token
     fn classify_token(&self, pptoken: &PPToken) -> TokenKind {
         match pptoken.kind {
@@ -536,7 +434,7 @@ impl<'src> Lexer<'src> {
             PPTokenKind::StringLiteral(symbol) => {
                 // Strip quotes from string literal
                 if let Some(content) = Self::extract_string_content(&symbol) {
-                    let unescaped = Self::unescape_string(content);
+                    let unescaped = literal_parsing::unescape_string(content);
                     TokenKind::StringLiteral(StringId::new(unescaped))
                 } else {
                     TokenKind::StringLiteral(symbol)
@@ -545,9 +443,9 @@ impl<'src> Lexer<'src> {
             PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint),
             PPTokenKind::Number(value) => {
                 // Try to parse as integer first, then float, then unknown
-                if let Ok((int_val, suffix)) = self.parse_c11_integer_literal(value) {
-                    TokenKind::IntegerConstant(int_val, suffix)
-                } else if let Ok(float_val) = self.parse_c11_float_literal(value) {
+                if let Ok((int_val, suffix)) = literal_parsing::parse_c11_integer_literal(value.as_str()) {
+                    TokenKind::IntegerConstant(int_val as i64, suffix)
+                } else if let Ok(float_val) = literal_parsing::parse_c11_float_literal(value.as_str()) {
                     TokenKind::FloatConstant(float_val)
                 } else {
                     TokenKind::Unknown // Could not parse as integer or float
@@ -622,7 +520,7 @@ impl<'src> Lexer<'src> {
                 // --- Phase 2: Allocate and append ---
                 let mut content = String::with_capacity(total_size);
                 if let Some(s_content) = Self::extract_string_content(&symbol) {
-                    Self::unescape_string_into(s_content, &mut content);
+                    literal_parsing::unescape_string_into(s_content, &mut content);
                 }
 
                 for _ in 0..adjacent_literals {
@@ -630,7 +528,7 @@ impl<'src> Lexer<'src> {
                     if let PPTokenKind::StringLiteral(next_symbol) = consumed_pptoken.kind
                         && let Some(s_content) = Self::extract_string_content(&next_symbol)
                     {
-                        Self::unescape_string_into(s_content, &mut content);
+                        literal_parsing::unescape_string_into(s_content, &mut content);
                     }
                 }
 
@@ -659,145 +557,6 @@ impl<'src> Lexer<'src> {
         }
 
         tokens
-    }
-
-    /// Parse C11 floating-point literal syntax
-    fn parse_c11_float_literal(&self, text: StringId) -> Result<f64, ()> {
-        let text_str = text.as_str();
-
-        // C11 floating-point literal format:
-        // [digits][.digits][e|E[+|-]digits][f|F|l|L]
-        // or [digits][e|E[+|-]digits][f|F|l|L]
-        // or 0[xX][hexdigits][.hexdigits][p|P[+|-]digits][f|F|l|L]
-
-        // ⚡ Bolt: Optimized suffix stripping.
-        // This is faster than chaining `ends_with` calls. By checking the last byte
-        // directly, we avoid multiple string traversals and improve performance for
-        // parsing floating-point literals.
-        let text_without_suffix = if !text_str.is_empty() {
-            match text_str.as_bytes()[text_str.len() - 1] {
-                b'f' | b'F' | b'l' | b'L' => &text_str[..text_str.len() - 1],
-                _ => text_str,
-            }
-        } else {
-            text_str
-        };
-
-        // Handle hexadecimal floating-point literals (C99/C11)
-        if text_str.starts_with("0x") || text_str.starts_with("0X") {
-            self.parse_hex_float_literal(text_without_suffix)
-        } else {
-            // Use Rust's built-in parsing for decimal floats
-            match text_without_suffix.parse::<f64>() {
-                Ok(val) => Ok(val),
-                Err(_) => {
-                    // Invalid float, treat as unknown
-                    Err(())
-                }
-            }
-        }
-    }
-
-    /// Parse hexadecimal floating-point literal (C99/C11)
-    fn parse_hex_float_literal(&self, text: &str) -> Result<f64, ()> {
-        // Format: 0[xX][hexdigits][.hexdigits][pP[+|-]digits][fFlL]
-        // Example: 0x1.2p3, 0x1p-5f, 0x.8p10L
-
-        let mut chars = text.chars().peekable();
-        let mut result = 0.0f64;
-        let mut exponent = 0i32;
-        let mut seen_dot = false;
-        let mut fraction_digits = 0;
-
-        // Skip "0x" or "0X"
-        chars.next(); // '0'
-        chars.next(); // 'x' or 'X'
-
-        // Parse hexadecimal digits before decimal point
-        while let Some(&c) = chars.peek() {
-            if c.is_ascii_hexdigit() {
-                let digit = c.to_digit(16).unwrap() as f64;
-                result = result * 16.0 + digit;
-                chars.next();
-            } else if c == '.' && !seen_dot {
-                seen_dot = true;
-                chars.next();
-                break;
-            } else if c == 'p' || c == 'P' {
-                break;
-            } else {
-                return Err(());
-            }
-        }
-
-        // Parse hexadecimal digits after decimal point
-        if seen_dot {
-            while let Some(&c) = chars.peek() {
-                if c.is_ascii_hexdigit() {
-                    let digit = c.to_digit(16).unwrap() as f64;
-                    result = result * 16.0 + digit;
-                    fraction_digits += 1;
-                    chars.next();
-                } else if c == 'p' || c == 'P' {
-                    break;
-                } else {
-                    return Err(());
-                }
-            }
-        }
-
-        // Parse binary exponent
-        if let Some(&c) = chars.peek()
-            && (c == 'p' || c == 'P')
-        {
-            chars.next(); // consume 'p' or 'P'
-
-            // Parse optional sign
-            let mut exp_negative = false;
-            if let Some(&sign) = chars.peek() {
-                if sign == '+' {
-                    chars.next();
-                } else if sign == '-' {
-                    exp_negative = true;
-                    chars.next();
-                }
-            }
-
-            // Parse exponent digits safely without string allocation
-            let mut exp_val = 0i32;
-            let mut exp_digits = 0;
-            while let Some(&c) = chars.peek() {
-                if let Some(digit) = c.to_digit(10) {
-                    // Use checked arithmetic to prevent overflow, replicating .parse() behavior.
-                    exp_val = match exp_val.checked_mul(10).and_then(|v| v.checked_add(digit as i32)) {
-                        Some(val) => val,
-                        None => return Err(()), // Overflow
-                    };
-                    exp_digits += 1;
-                    chars.next();
-                } else {
-                    break;
-                }
-            }
-
-            if exp_digits == 0 {
-                return Err(());
-            }
-
-            exponent = if exp_negative { -exp_val } else { exp_val };
-        }
-
-        // Apply fractional adjustment
-        if fraction_digits > 0 {
-            result /= 16.0f64.powi(fraction_digits);
-        }
-
-        // Apply binary exponent
-        if exponent != 0 {
-            result *= 2.0f64.powi(exponent);
-        }
-
-        Ok(result)
     }
 
     /// Extract content from a string literal symbol, removing quotes

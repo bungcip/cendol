@@ -621,3 +621,48 @@ fn test_variadic_al_setup() {
     // Check for FP argument count (v4 = iconst.i64 1 in our case, but let's be more general)
     assert!(clif_dump.contains("iconst.i64 1"), "Missing FP argument count constant");
 }
+
+#[test]
+fn test_f128_constant_promotion() {
+    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+
+    // Setup Type F128
+    let f128_type_id = builder.add_type(MirType::F128);
+    let void_type_id = builder.add_type(MirType::Void);
+
+    // Function
+    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false);
+    builder.set_current_function(func_id);
+    let block_id = builder.create_block();
+    builder.set_current_block(block_id);
+    builder.set_function_entry_block(func_id, block_id);
+
+    // Create F128 constant from f64 value
+    let const_id = builder.create_constant(f128_type_id, ConstValueKind::Float(34.1));
+
+    // Create a local to hold it
+    let local_id = builder.create_local(None, f128_type_id, false);
+
+    // Store it
+    builder.add_statement(MirStmt::Store(Operand::Constant(const_id), Place::Local(local_id)));
+
+    builder.set_terminator(Terminator::Return(None));
+
+    let mir = builder.consume();
+    let lowerer = MirToCraneliftLowerer::new(mir);
+    let result = lowerer.compile_module(EmitKind::Clif);
+
+    match result {
+        Ok(ClifOutput::ClifDump(clif_ir)) => {
+            println!("{}", clif_ir);
+            // Verify load from memory is used instead of fpromote
+            assert!(clif_ir.contains("load.f128"), "Expected load.f128 instruction");
+            assert!(
+                clif_ir.contains("global_value") || clif_ir.contains("symbol_value"),
+                "Expected global_value or symbol_value instruction"
+            );
+        }
+        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
+        Err(e) => panic!("Error: {}", e),
+    }
+}

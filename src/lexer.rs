@@ -568,4 +568,152 @@ impl<'src> Lexer<'src> {
             None
         }
     }
+
+    /// Unescape C11 string literal content
+    pub(crate) fn unescape_string(s: &str) -> String {
+        // ⚡ Bolt: Fast path for strings with no escape sequences.
+        // This avoids allocating a new string and iterating over it when no
+        // unescaping is necessary. It makes the common case of simple strings
+        // much faster.
+        if !s.contains('\\') {
+            return s.to_string();
+        }
+
+        let mut result = String::with_capacity(s.len());
+        Self::unescape_string_into(s, &mut result);
+        result
+    }
+
+    /// Unescape C11 string literal content into a buffer
+    ///
+    /// ⚡ Bolt: Optimized to reduce allocations.
+    /// This private helper avoids intermediate allocations by writing the unescaped
+    /// string directly into a provided buffer. This is significantly more efficient
+    /// when concatenating multiple string literals, as it allows us to unescape
+    /// all of them into a single, final string without creating temporary strings
+    /// for each part.
+    fn unescape_string_into(s: &str, result: &mut String) {
+        let mut chars = s.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                match chars.peek() {
+                    Some('n') => {
+                        chars.next();
+                        result.push('\n');
+                    }
+                    Some('t') => {
+                        chars.next();
+                        result.push('\t');
+                    }
+                    Some('r') => {
+                        chars.next();
+                        result.push('\r');
+                    }
+                    Some('b') => {
+                        chars.next();
+                        result.push('\u{0008}');
+                    } // Backspace
+                    Some('f') => {
+                        chars.next();
+                        result.push('\u{000C}');
+                    } // Form feed
+                    Some('v') => {
+                        chars.next();
+                        result.push('\u{000B}');
+                    } // Vertical tab
+                    Some('a') => {
+                        chars.next();
+                        result.push('\u{0007}');
+                    } // Alert
+                    Some('\\') => {
+                        chars.next();
+                        result.push('\\');
+                    }
+                    Some('\'') => {
+                        chars.next();
+                        result.push('\'');
+                    }
+                    Some('"') => {
+                        chars.next();
+                        result.push('"');
+                    }
+                    Some('?') => {
+                        chars.next();
+                        result.push('?');
+                    }
+                    Some('x') => {
+                        // Hex escape
+                        chars.next(); // consume 'x'
+                        let mut val: u64 = 0;
+                        let mut has_digits = false;
+                        while let Some(&ch) = chars.peek() {
+                            if let Some(digit) = ch.to_digit(16) {
+                                // Prevent overflow
+                                val = val.saturating_mul(16).saturating_add(digit as u64);
+                                has_digits = true;
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                        if has_digits {
+                            // Limit to valid Unicode scalar value range since we must produce a String
+                            let char_val = if val > 0x10FFFF {
+                                0xFFFD // Replacement character
+                            } else {
+                                val as u32
+                            };
+
+                            if let Some(c) = std::char::from_u32(char_val) {
+                                result.push(c);
+                            } else {
+                                // Fallback for invalid unicode scalars (e.g. surrogates)
+                                result.push(std::char::REPLACEMENT_CHARACTER);
+                            }
+                        } else {
+                            // \x with no digits is technically undefined/error.
+                            // Keep \x
+                            result.push('\\');
+                            result.push('x');
+                        }
+                    }
+                    Some(c) if c.is_digit(8) => {
+                        // Octal escape
+                        // Up to 3 digits
+                        let mut val = 0u32;
+                        for _ in 0..3 {
+                            if let Some(&ch) = chars.peek() {
+                                if let Some(digit) = ch.to_digit(8) {
+                                    val = val * 8 + digit;
+                                    chars.next();
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                        if let Some(c) = std::char::from_u32(val) {
+                            result.push(c);
+                        } else {
+                            result.push(std::char::REPLACEMENT_CHARACTER);
+                        }
+                    }
+                    Some(c) => {
+                        // Unknown escape, keep char (standard says undefined)
+                        // GCC emits just the char.
+                        result.push(*c);
+                        chars.next();
+                    }
+                    None => {
+                        // Trailing backslash
+                        result.push('\\');
+                    }
+                }
+            } else {
+                result.push(c);
+            }
+        }
+    }
 }

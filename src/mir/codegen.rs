@@ -985,6 +985,33 @@ fn resolve_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: 
                     // Use the appropriate float constant based on expected type
                     if expected_type == types::F64 {
                         Ok(ctx.builder.ins().f64const(*val))
+                    } else if expected_type == types::F32 {
+                        Ok(ctx.builder.ins().f32const(*val as f32))
+                    } else if expected_type == types::F128 {
+                        // Use memory load for F128 to ensure precision and correct bit pattern (x87 or IEEE)
+                        let bytes = if ctx.triple.architecture == target_lexicon::Architecture::X86_64 {
+                            f64_to_x87_bytes(*val)
+                        } else {
+                            f64_to_f128_bytes(*val)
+                        };
+
+                        let data_id = ctx
+                            .module
+                            .declare_anonymous_data(false, false)
+                            .map_err(|e| format!("Failed to declare anonymous data: {:?}", e))?;
+
+                        let mut dd = DataDescription::new();
+                        dd.define(bytes.to_vec().into_boxed_slice());
+                        ctx.module
+                            .define_data(data_id, &dd)
+                            .map_err(|e| format!("Failed to define anonymous data: {:?}", e))?;
+
+                        let global_val = ctx.module.declare_data_in_func(data_id, ctx.builder.func);
+                        let addr = ctx.builder.ins().global_value(types::I64, global_val);
+                        Ok(ctx
+                            .builder
+                            .ins()
+                            .load(types::F128, MemFlags::new().with_readonly(), addr, 0))
                     } else {
                         Ok(ctx.builder.ins().f32const(*val as f32))
                     }

@@ -1,3 +1,4 @@
+use crate::ast::literal_parsing;
 use crate::{
     intern::StringId,
     source_manager::{SourceId, SourceLoc},
@@ -1099,76 +1100,26 @@ impl PPLexer {
             chars.len()
         };
 
-        let content = &chars[content_start..content_end];
-        let mut codepoint = 0u8;
+        // Safety: content indices are within bounds derived from text
+        let content_str = &text[content_start..content_end];
 
-        if !content.is_empty() {
-            if content[0] == b'\\' {
-                // Escape sequence
-                if content.len() > 1 {
-                    match content[1] {
-                        b'0'..=b'7' => {
-                            // Octal escape
-                            let mut val = 0u32;
-                            let mut idx = 1;
-                            for _ in 0..3 {
-                                if idx < content.len() {
-                                    let digit = content[idx];
-                                    if (b'0'..=b'7').contains(&digit) {
-                                        val = (val << 3) + (digit - b'0') as u32;
-                                        idx += 1;
-                                    } else {
-                                        break;
-                                    }
-                                } else {
-                                    break;
-                                }
-                            }
-                            codepoint = val as u8;
-                        }
-                        b'x' => {
-                            // Hex escape
-                            if content.len() > 2 {
-                                let mut val = 0u32;
-                                let mut idx = 2;
-                                while idx < content.len() {
-                                    let digit = content[idx];
-                                    if let Some(d) = (digit as char).to_digit(16) {
-                                        val = val.wrapping_mul(16).wrapping_add(d);
-                                        idx += 1;
-                                    } else {
-                                        break;
-                                    }
-                                }
-                                codepoint = val as u8;
-                            } else {
-                                // \x but no digits? implementation defined.
-                                codepoint = 0;
-                            }
-                        }
-                        // Standard escapes
-                        b'n' => codepoint = 10,
-                        b't' => codepoint = 9,
-                        b'r' => codepoint = 13,
-                        b'b' => codepoint = 8,
-                        b'f' => codepoint = 12,
-                        b'v' => codepoint = 11,
-                        b'a' => codepoint = 7,
-                        b'\\' => codepoint = 92,
-                        b'\'' => codepoint = 39,
-                        b'"' => codepoint = 34,
-                        b'?' => codepoint = 63,
-                        c => codepoint = c, // Unknown escape, use the character itself
-                    }
-                } else {
-                    // Just a backslash at end?
-                    codepoint = b'\\';
-                }
+        let codepoint = if !content_str.is_empty() {
+            if content_str.starts_with('\\') {
+                // Use unified escape sequence parsing
+                // Note: This aligns behavior with string unescaping.
+                // Invalid escapes like \x with no digits might behave slightly differently than legacy
+                // but standardizing is preferred.
+                literal_parsing::parse_char_literal(content_str)
+                    .map(|c| c as u8)
+                    .unwrap_or(0)
             } else {
-                // Regular character
-                codepoint = content[0];
+                // Regular character (or UCN converted to bytes)
+                // Use raw byte value to preserve behavior for non-ASCII bytes
+                content_str.as_bytes()[0]
             }
-        }
+        } else {
+            0
+        };
 
         PPToken::new(
             PPTokenKind::CharLiteral(codepoint, symbol),

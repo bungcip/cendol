@@ -229,7 +229,6 @@ fn parse_hex_float_literal(text: &str) -> Result<f64, ()> {
     }
 
     Ok(result)
-
 }
 
 /// Unescape C11 string literal content

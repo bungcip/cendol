@@ -1,5 +1,5 @@
-use crate::ast::literal_parsing;
 use crate::ast::NameId;
+use crate::ast::literal_parsing;
 use crate::semantic::BuiltinType;
 
 pub enum StringLiteralKind {

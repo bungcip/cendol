@@ -529,10 +529,8 @@ impl<'a> Interpreter<'a> {
             PPTokenKind::Number(sym) => {
                 let text = sym.as_str();
                 if let Ok((val, suffix)) = literal_parsing::parse_c11_integer_literal(text) {
-                    let mut is_unsigned = matches!(
-                        suffix,
-                        Some(IntegerSuffix::U | IntegerSuffix::UL | IntegerSuffix::ULL)
-                    );
+                    let mut is_unsigned =
+                        matches!(suffix, Some(IntegerSuffix::U | IntegerSuffix::UL | IntegerSuffix::ULL));
 
                     // C11 6.3.1.1: If it fits in signed i64, it's signed (unless U suffix).
                     // If it doesn't fit in i64, it depends on base.

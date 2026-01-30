@@ -432,6 +432,7 @@ fn resolve_record_tag(
     if is_definition {
         // DEFINITION: struct T { ... }
         // Check if defined in CURRENT scope
+        #[allow(clippy::collapsible_if)]
         if let Some((entry_ref, scope_id)) = existing {
             if scope_id == ctx.symbol_table.current_scope() {
                 let (is_completed, def_span, ty) = {

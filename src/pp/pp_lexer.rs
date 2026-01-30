@@ -235,10 +235,7 @@ impl PPLexer {
             let mut consumed_len = 1;
 
             // Phase 1: Trigraphs
-            if ch == b'?'
-                && pos + 2 < self.buffer.len()
-                && self.buffer[pos + 1] == b'?'
-            {
+            if ch == b'?' && pos + 2 < self.buffer.len() && self.buffer[pos + 1] == b'?' {
                 let replacement = match self.buffer[pos + 2] {
                     b'=' => Some(b'#'),
                     b'(' => Some(b'['),

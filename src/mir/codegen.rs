@@ -1562,7 +1562,9 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         }
                         BinaryIntOp::Mod => {
                             if is_operand_signed(left_operand, ctx.mir) {
-                                ctx.builder.ins().srem(left_val, right_val)
+                                let div_val = ctx.builder.ins().sdiv(left_val, right_val);
+                                let mul_val = ctx.builder.ins().imul(div_val, right_val);
+                                ctx.builder.ins().isub(left_val, mul_val)
                             } else {
                                 ctx.builder.ins().urem(left_val, right_val)
                             }

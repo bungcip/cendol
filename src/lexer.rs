@@ -460,7 +460,10 @@ impl<'src> Lexer<'src> {
 
     /// Get all tokens from the stream
     pub fn tokenize_all(&mut self) -> Vec<Token> {
-        let mut tokens = Vec::new();
+        // Bolt ⚡: Pre-allocate the tokens vector with the capacity of the preprocessor tokens.
+        // This is a reasonable estimate that reduces the number of reallocations,
+        // as the number of lexical tokens is usually similar to the number of preprocessor tokens.
+        let mut tokens = Vec::with_capacity(self.tokens.len());
         let mut current_token_iter = self.tokens.iter().peekable();
 
         while let Some(pptoken) = current_token_iter.next() {

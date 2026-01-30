@@ -1,0 +1,15 @@
+---
+source: src/tests/pp_has_include_macro.rs
+assertion_line: 37
+expression: tokens
+---
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: z
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "0"
+- kind: Semicolon
+  text: ;

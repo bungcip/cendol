@@ -811,7 +811,7 @@ impl<'src> Lexer<'src> {
     }
 
     /// Unescape C11 string literal content
-    pub fn unescape_string(s: &str) -> String {
+    pub(crate) fn unescape_string(s: &str) -> String {
         // ⚡ Bolt: Fast path for strings with no escape sequences.
         // This avoids allocating a new string and iterating over it when no
         // unescaping is necessary. It makes the common case of simple strings

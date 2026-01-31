@@ -106,3 +106,25 @@ pub fn setup_multi_file_pp_with_diagnostics(
 
     Ok((significant_tokens, diagnostics.diagnostics().to_vec()))
 }
+
+#[macro_export]
+macro_rules! test_tokens {
+    ($lexer:expr, $( ($input:expr, $expected:pat) ),* $(,)?) => {
+        $(
+            let token = $lexer.next_token().unwrap();
+            match token.kind {
+                $expected => {
+                    assert_eq!(token.get_text(), $input, "Token text mismatch for {}", stringify!($expected));
+                },
+                _ => panic!("Expected {:?}, got {:?}", stringify!($expected), token.kind),
+            }
+        )*
+    };
+}
+
+pub(crate) fn create_test_pp_lexer(source: &str) -> crate::pp::pp_lexer::PPLexer {
+    use crate::source_manager::SourceId;
+    let source_id = SourceId::new(1);
+    let buffer = source.as_bytes().to_vec();
+    crate::pp::pp_lexer::PPLexer::new(source_id, buffer)
+}

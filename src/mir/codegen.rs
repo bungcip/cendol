@@ -491,10 +491,7 @@ fn reborrow_data_description<'b>(dd: &'b mut Option<&mut DataDescription>) -> Op
 
 /// Helper to determine if a type consumes an XMM register (float/vector)
 fn is_xmm_argument(mir_type: &MirType) -> bool {
-    matches!(
-        mir_type,
-        MirType::F32 | MirType::F64 | MirType::F80 | MirType::F128
-    )
+    matches!(mir_type, MirType::F32 | MirType::F64 | MirType::F80 | MirType::F128)
 }
 
 /// Helper to prepare a function signature for a call
@@ -858,15 +855,7 @@ fn emit_function_call_impl(
     );
 
     let split_f128 = use_variadic_hack;
-    let arg_values = resolve_call_args(
-        args,
-        param_types.len(),
-        &sig,
-        ctx,
-        is_variadic,
-        split_f128,
-        ctx.triple,
-    )?;
+    let arg_values = resolve_call_args(args, param_types.len(), &sig, ctx, is_variadic, split_f128, ctx.triple)?;
 
     // 3. Emit the call
     let call_inst = if is_variadic {

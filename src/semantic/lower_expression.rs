@@ -313,7 +313,7 @@ impl<'a> AstToMirLowerer<'a> {
         let target_mir_ty = self.lower_qual_type(operand_ty);
         let operand_converted = self.apply_conversions(operand, operand_ref, target_mir_ty);
 
-        let place = Place::Deref(Box::new(operand_converted));
+        let place = self.deref_operand(operand_converted);
         Operand::Copy(Box::new(place))
     }
 
@@ -790,8 +790,7 @@ impl<'a> AstToMirLowerer<'a> {
 
             if is_arrow {
                 // Dereference: *ptr
-                let deref_op = Operand::Copy(Box::new(current_place));
-                current_place = Place::Deref(Box::new(deref_op));
+                current_place = self.deref_place(current_place);
             }
 
             for field_idx in path {

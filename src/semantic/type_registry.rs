@@ -489,7 +489,6 @@ impl TypeRegistry {
         }
     }
 
-
     pub(crate) fn ensure_layout(&mut self, ty: TypeRef) -> Result<Cow<'_, TypeLayout>, SemanticError> {
         if ty.is_inline_pointer() {
             return Ok(Cow::Owned(TypeLayout {

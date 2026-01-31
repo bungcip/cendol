@@ -1989,11 +1989,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_generic_selection(
-        &mut self,
-        gs: &GenericSelectionData,
-        node_ref: NodeRef,
-    ) -> Option<QualType> {
+    fn visit_generic_selection(&mut self, gs: &GenericSelectionData, node_ref: NodeRef) -> Option<QualType> {
         // First, visit the controlling expression to determine its type.
         let ctrl_ty = self.visit_node(gs.control)?;
 

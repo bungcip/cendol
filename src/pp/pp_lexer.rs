@@ -756,7 +756,10 @@ impl PPLexer {
     where
         F: FnMut(&mut S, u8) -> bool,
     {
-        let mut chars = vec![first_ch];
+        // ⚡ Bolt: Pre-allocate the vector with a reasonable capacity to avoid
+        // multiple reallocations during identifier/number lexing.
+        let mut chars = Vec::with_capacity(32);
+        chars.push(first_ch);
         while let Some(ch) = self.peek_char() {
             if pred(&mut state, ch) {
                 chars.push(self.next_char().unwrap());
@@ -860,7 +863,9 @@ impl PPLexer {
     }
 
     fn lex_identifier(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
-        let mut text = String::new();
+        // ⚡ Bolt: Pre-allocate the string with a reasonable capacity to avoid
+        // multiple reallocations during identifier lexing.
+        let mut text = String::with_capacity(32);
         let mut length = 0u16;
 
         // Handle first character

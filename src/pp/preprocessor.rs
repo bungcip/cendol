@@ -2767,20 +2767,17 @@ impl<'src> Preprocessor<'src> {
                                             // Check if we are at the start (ignoring processed tokens) and it looks like a header
                                             // If args[0] is '<' or string literal, we stop immediately.
                                             // Note: We check j==0 because we only care if the *result* starts with header.
-                                            if j == 0 && !args.is_empty() {
-                                                if args[0].kind == PPTokenKind::Less
-                                                    || matches!(args[0].kind, PPTokenKind::StringLiteral(_))
-                                                {
-                                                    break;
-                                                }
+                                            if j == 0
+                                                && !args.is_empty()
+                                                && (args[0].kind == PPTokenKind::Less
+                                                    || matches!(args[0].kind, PPTokenKind::StringLiteral(_)))
+                                            {
+                                                break;
                                             }
 
                                             // Try expand args[j]
                                             // We manually expand one step
-                                            let expanded_opt = match self.expand_macro(&args[j]) {
-                                                Ok(e) => e,
-                                                Err(_) => None,
-                                            };
+                                            let expanded_opt = self.expand_macro(&args[j]).unwrap_or_default();
 
                                             if let Some(expanded) = expanded_opt {
                                                 // Splice
@@ -3018,15 +3015,19 @@ impl<'src> Preprocessor<'src> {
 
         // println!("Checking recursion for {} starting at {:?}", macro_name, current_id);
 
+        // ⚡ Bolt: Optimized to avoid allocating a String with `format!` in a loop.
+        // We pre-calculate the expected virtual path and use direct `Path` comparison,
+        // which is faster and avoids unnecessary string conversions.
+        let expected_name = format!("<macro_{}>", macro_name);
+        let expected_path = Path::new(&expected_name);
+
         while depth < MAX_DEPTH {
             if let Some(file_info) = self.source_manager.get_file_info(current_id) {
                 // println!("  Depth {}: Path {}", depth, file_info.path.display());
 
                 // Check if this file is a virtual buffer for the macro
                 // Virtual buffers for macros are named "<macro_{name}>"
-                let expected_name = format!("<macro_{}>", macro_name);
-                let path_str = file_info.path.to_string_lossy();
-                if path_str == expected_name {
+                if file_info.path == expected_path {
                     // println!("  -> FOUND RECURSION");
                     return true;
                 }

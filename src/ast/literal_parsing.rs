@@ -53,13 +53,13 @@ pub fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
 
 /// Parse C11 integer literal syntax
 /// Returns (value, suffix)
-pub fn parse_c11_integer_literal(text: &str) -> Result<(u64, Option<IntegerSuffix>), ()> {
+pub fn parse_c11_integer_literal(text: &str) -> Option<(u64, Option<IntegerSuffix>)> {
     // Use the existing, optimized suffix stripper to get the numeric part.
     let (number_part, suffix) = strip_integer_suffix(text);
 
     // Handle the case where the number is just "0" after stripping suffix.
     if number_part == "0" {
-        return Ok((0, suffix));
+        return Some((0, suffix));
     }
 
     let mut base = 10;
@@ -77,25 +77,25 @@ pub fn parse_c11_integer_literal(text: &str) -> Result<(u64, Option<IntegerSuffi
 
     // If after stripping prefixes the string is empty, it's an error.
     if digits_to_parse.is_empty() {
-        return Err(());
+        return None;
     }
 
     let mut result: u64 = 0;
     for c in digits_to_parse.chars() {
         // `to_digit` will return None for invalid characters in the given base
         // (e.g., '9' in octal), which correctly propagates the error.
-        let digit = c.to_digit(base).ok_or(())?;
+        let digit = c.to_digit(base)?;
 
         // Use checked arithmetic to prevent overflow, replicating .parse() behavior.
-        result = result.checked_mul(base as u64).ok_or(())?;
-        result = result.checked_add(digit as u64).ok_or(())?;
+        result = result.checked_mul(base as u64)?;
+        result = result.checked_add(digit as u64)?;
     }
 
-    Ok((result, suffix))
+    Some((result, suffix))
 }
 
 /// Parse C11 floating-point literal syntax
-pub fn parse_c11_float_literal(text: &str) -> Result<(f64, Option<FloatSuffix>), ()> {
+pub fn parse_c11_float_literal(text: &str) -> Option<(f64, Option<FloatSuffix>)> {
     // C11 floating-point literal format:
     // [digits][.digits][e|E[+|-]digits][f|F|l|L]
     // or [digits][e|E[+|-]digits][f|F|l|L]
@@ -121,17 +121,17 @@ pub fn parse_c11_float_literal(text: &str) -> Result<(f64, Option<FloatSuffix>),
     } else {
         // Use Rust's built-in parsing for decimal floats
         match text_without_suffix.parse::<f64>() {
-            Ok(val) => Ok((val, suffix)),
+            Ok(val) => Some((val, suffix)),
             Err(_) => {
                 // Invalid float, treat as unknown
-                Err(())
+                None
             }
         }
     }
 }
 
 /// Parse hexadecimal floating-point literal (C99/C11)
-fn parse_hex_float_literal(text: &str) -> Result<f64, ()> {
+fn parse_hex_float_literal(text: &str) -> Option<f64> {
     // Format: 0[xX][hexdigits][.hexdigits][pP[+|-]digits][fFlL]
     // Example: 0x1.2p3, 0x1p-5f, 0x.8p10L
 
@@ -158,7 +158,7 @@ fn parse_hex_float_literal(text: &str) -> Result<f64, ()> {
         } else if c == 'p' || c == 'P' {
             break;
         } else {
-            return Err(());
+            return None;
         }
     }
 
@@ -173,7 +173,7 @@ fn parse_hex_float_literal(text: &str) -> Result<f64, ()> {
             } else if c == 'p' || c == 'P' {
                 break;
             } else {
-                return Err(());
+                return None;
             }
         }
     }
@@ -203,7 +203,7 @@ fn parse_hex_float_literal(text: &str) -> Result<f64, ()> {
                 // Use checked arithmetic to prevent overflow, replicating .parse() behavior.
                 exp_val = match exp_val.checked_mul(10).and_then(|v| v.checked_add(digit as i32)) {
                     Some(val) => val,
-                    None => return Err(()), // Overflow
+                    None => return None, // Overflow
                 };
                 exp_digits += 1;
                 chars.next();
@@ -213,7 +213,7 @@ fn parse_hex_float_literal(text: &str) -> Result<f64, ()> {
         }
 
         if exp_digits == 0 {
-            return Err(());
+            return None;
         }
 
         exponent = if exp_negative { -exp_val } else { exp_val };
@@ -229,7 +229,7 @@ fn parse_hex_float_literal(text: &str) -> Result<f64, ()> {
         result *= 2.0f64.powi(exponent);
     }
 
-    Ok(result)
+    Some(result)
 }
 
 /// Unescape C11 string literal content
@@ -381,15 +381,15 @@ pub fn unescape_string_into(s: &str, result: &mut String) {
 }
 
 /// Parse a character literal content (e.g. "a", "\n", "\x41") into a codepoint
-pub fn parse_char_literal(s: &str) -> Result<u32, ()> {
+pub fn parse_char_literal(s: &str) -> Option<u32> {
     if s.is_empty() {
-        return Err(());
+        return None;
     }
     let unescaped = unescape_string(s);
     let mut chars = unescaped.chars();
     if let Some(c) = chars.next() {
         // We only care about the first character for simple char literals
-        return Ok(c as u32);
+        return Some(c as u32);
     }
-    Err(())
+    None
 }

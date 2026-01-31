@@ -443,9 +443,9 @@ impl<'src> Lexer<'src> {
             PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint),
             PPTokenKind::Number(value) => {
                 // Try to parse as integer first, then float, then unknown
-                if let Ok((int_val, suffix)) = literal_parsing::parse_c11_integer_literal(value.as_str()) {
+                if let Some((int_val, suffix)) = literal_parsing::parse_c11_integer_literal(value.as_str()) {
                     TokenKind::IntegerConstant(int_val as i64, suffix)
-                } else if let Ok((float_val, suffix)) = literal_parsing::parse_c11_float_literal(value.as_str()) {
+                } else if let Some((float_val, suffix)) = literal_parsing::parse_c11_float_literal(value.as_str()) {
                     TokenKind::FloatConstant(float_val, suffix)
                 } else {
                     TokenKind::Unknown // Could not parse as integer or float

@@ -2767,20 +2767,17 @@ impl<'src> Preprocessor<'src> {
                                             // Check if we are at the start (ignoring processed tokens) and it looks like a header
                                             // If args[0] is '<' or string literal, we stop immediately.
                                             // Note: We check j==0 because we only care if the *result* starts with header.
-                                            if j == 0 && !args.is_empty() {
-                                                if args[0].kind == PPTokenKind::Less
-                                                    || matches!(args[0].kind, PPTokenKind::StringLiteral(_))
-                                                {
-                                                    break;
-                                                }
+                                            if j == 0
+                                                && !args.is_empty()
+                                                && (args[0].kind == PPTokenKind::Less
+                                                    || matches!(args[0].kind, PPTokenKind::StringLiteral(_)))
+                                            {
+                                                break;
                                             }
 
                                             // Try expand args[j]
                                             // We manually expand one step
-                                            let expanded_opt = match self.expand_macro(&args[j]) {
-                                                Ok(e) => e,
-                                                Err(_) => None,
-                                            };
+                                            let expanded_opt = self.expand_macro(&args[j]).unwrap_or_default();
 
                                             if let Some(expanded) = expanded_opt {
                                                 // Splice

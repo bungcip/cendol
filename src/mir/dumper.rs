@@ -11,9 +11,9 @@
 use std::fmt::Write;
 
 use super::{
-    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, Global, GlobalId, LocalId, MirBlock,
-    MirBlockId, MirFunction, MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator,
-    TypeId, UnaryFloatOp, UnaryIntOp,
+    BinaryFloatOp, CallTarget, ConstValueId, ConstValueKind, Global, GlobalId, LocalId, MirBlock, MirBlockId,
+    MirFunction, MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    UnaryFloatOp,
 };
 use crate::mir::MirProgram;
 
@@ -610,7 +610,7 @@ impl<'a> MirDumper<'a> {
                     output,
                     "{} {} {}",
                     self.operand_to_string(left),
-                    self.binary_int_op_to_string(op),
+                    op,
                     self.operand_to_string(right)
                 )?;
             }
@@ -624,12 +624,7 @@ impl<'a> MirDumper<'a> {
                 )?;
             }
             Rvalue::UnaryIntOp(op, operand) => {
-                write!(
-                    output,
-                    "{} {}",
-                    self.unary_int_op_to_string(op),
-                    self.operand_to_string(operand)
-                )?;
+                write!(output, "{} {}", op, self.operand_to_string(operand))?;
             }
             Rvalue::UnaryFloatOp(op, operand) => {
                 write!(
@@ -731,7 +726,7 @@ impl<'a> MirDumper<'a> {
                 write!(
                     output,
                     "atomic_fetch_{}({}, {}, {:?})",
-                    self.binary_int_op_to_string(op),
+                    op,
                     self.operand_to_string(ptr),
                     self.operand_to_string(val),
                     order
@@ -739,28 +734,6 @@ impl<'a> MirDumper<'a> {
             }
         }
         Ok(())
-    }
-
-    /// Convert integer binary operation to string representation
-    fn binary_int_op_to_string(&self, op: &BinaryIntOp) -> String {
-        match op {
-            BinaryIntOp::Add => "+".to_string(),
-            BinaryIntOp::Sub => "-".to_string(),
-            BinaryIntOp::Mul => "*".to_string(),
-            BinaryIntOp::Div => "/".to_string(),
-            BinaryIntOp::Mod => "%".to_string(),
-            BinaryIntOp::BitAnd => "&".to_string(),
-            BinaryIntOp::BitOr => "|".to_string(),
-            BinaryIntOp::BitXor => "^".to_string(),
-            BinaryIntOp::LShift => "<<".to_string(),
-            BinaryIntOp::RShift => ">>".to_string(),
-            BinaryIntOp::Eq => "==".to_string(),
-            BinaryIntOp::Ne => "!=".to_string(),
-            BinaryIntOp::Lt => "<".to_string(),
-            BinaryIntOp::Le => "<=".to_string(),
-            BinaryIntOp::Gt => ">".to_string(),
-            BinaryIntOp::Ge => ">=".to_string(),
-        }
     }
 
     /// Convert floating-point binary operation to string representation
@@ -776,15 +749,6 @@ impl<'a> MirDumper<'a> {
             BinaryFloatOp::Le => "fle".to_string(),
             BinaryFloatOp::Gt => "fgt".to_string(),
             BinaryFloatOp::Ge => "fge".to_string(),
-        }
-    }
-
-    /// Convert integer unary operation to string representation
-    fn unary_int_op_to_string(&self, op: &UnaryIntOp) -> String {
-        match op {
-            UnaryIntOp::Neg => "-".to_string(),
-            UnaryIntOp::LogicalNot => "!".to_string(),
-            UnaryIntOp::BitwiseNot => "~".to_string(),
         }
     }
 

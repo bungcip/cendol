@@ -432,22 +432,22 @@ fn resolve_record_tag(
     if is_definition {
         // DEFINITION: struct T { ... }
         // Check if defined in CURRENT scope
-        if let Some((entry_ref, scope_id)) = existing {
-            if scope_id == ctx.symbol_table.current_scope() {
-                let (is_completed, def_span, ty) = {
-                    let entry = ctx.symbol_table.get_symbol(entry_ref);
-                    (entry.is_completed, entry.def_span, entry.type_info.ty())
-                };
+        if let Some((entry_ref, scope_id)) = existing
+            && scope_id == ctx.symbol_table.current_scope()
+        {
+            let (is_completed, def_span, ty) = {
+                let entry = ctx.symbol_table.get_symbol(entry_ref);
+                (entry.is_completed, entry.def_span, entry.type_info.ty())
+            };
 
-                if is_completed {
-                    ctx.report_error(SemanticError::Redefinition {
-                        name: tag_name,
-                        first_def: def_span,
-                        span,
-                    });
-                }
-                return Ok(ty);
+            if is_completed {
+                ctx.report_error(SemanticError::Redefinition {
+                    name: tag_name,
+                    first_def: def_span,
+                    span,
+                });
             }
+            return Ok(ty);
         }
 
         // Not in current scope OR shadowing outer scope -> Create new record

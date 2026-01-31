@@ -528,7 +528,7 @@ impl<'a> Interpreter<'a> {
         match &token.kind {
             PPTokenKind::Number(sym) => {
                 let text = sym.as_str();
-                if let Ok((val, suffix)) = literal_parsing::parse_c11_integer_literal(text) {
+                if let Some((val, suffix)) = literal_parsing::parse_c11_integer_literal(text) {
                     let mut is_unsigned =
                         matches!(suffix, Some(IntegerSuffix::U | IntegerSuffix::UL | IntegerSuffix::ULL));
 

@@ -1,0 +1,15 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 133
+expression: results
+---
+- - "\"hello\" \"world\""
+  - - StringLiteral: helloworld
+- - "\"hello\"   \"world\""
+  - - StringLiteral: helloworld
+- - "\"a\" \"b\" \"c\""
+  - - StringLiteral: abc
+- - "\"hello\\n\" \"world\""
+  - - StringLiteral: "hello\nworld"
+- - "\"start\" \" middle \" \"end\""
+  - - StringLiteral: start middle end

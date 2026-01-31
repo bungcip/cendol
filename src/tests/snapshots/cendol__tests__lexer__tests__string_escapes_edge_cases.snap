@@ -1,0 +1,13 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 167
+expression: results
+---
+- - "\"\\xg\""
+  - - StringLiteral: "\\xg"
+- - "\"\\x110000\""
+  - - StringLiteral: �
+- - "\"\\?\""
+  - - StringLiteral: "?"
+- - "\"\\q\""
+  - - StringLiteral: q

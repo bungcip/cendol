@@ -1,0 +1,145 @@
+---
+source: src/tests/lexer.rs
+assertion_line: 106
+expression: results
+---
+- - Integers
+  - - - "42"
+      - - IntegerConstant:
+            - 42
+            - ~
+    - - "0x1A"
+      - - IntegerConstant:
+            - 26
+            - ~
+    - - "077"
+      - - IntegerConstant:
+            - 63
+            - ~
+    - - 1ll
+      - - IntegerConstant:
+            - 1
+            - LL
+    - - 42u
+      - - IntegerConstant:
+            - 42
+            - U
+    - - 123l
+      - - IntegerConstant:
+            - 123
+            - L
+    - - 456ul
+      - - IntegerConstant:
+            - 456
+            - UL
+    - - 789lu
+      - - IntegerConstant:
+            - 789
+            - UL
+    - - 1000ull
+      - - IntegerConstant:
+            - 1000
+            - ULL
+    - - 2000llu
+      - - IntegerConstant:
+            - 2000
+            - ULL
+    - - "0x1Au"
+      - - IntegerConstant:
+            - 26
+            - U
+    - - "0xFFll"
+      - - IntegerConstant:
+            - 255
+            - LL
+    - - "0x10UL"
+      - - IntegerConstant:
+            - 16
+            - UL
+    - - "0x20LU"
+      - - IntegerConstant:
+            - 32
+            - UL
+    - - "0x40ULL"
+      - - IntegerConstant:
+            - 64
+            - ULL
+    - - "0x80LLU"
+      - - IntegerConstant:
+            - 128
+            - ULL
+    - - 077u
+      - - IntegerConstant:
+            - 63
+            - U
+    - - 0123l
+      - - IntegerConstant:
+            - 83
+            - L
+    - - 0777ul
+      - - IntegerConstant:
+            - 511
+            - UL
+    - - 0123lu
+      - - IntegerConstant:
+            - 83
+            - UL
+    - - 0777ull
+      - - IntegerConstant:
+            - 511
+            - ULL
+    - - 0123llu
+      - - IntegerConstant:
+            - 83
+            - ULL
+    - - 1LL
+      - - IntegerConstant:
+            - 1
+            - LL
+    - - 42U
+      - - IntegerConstant:
+            - 42
+            - U
+    - - 123L
+      - - IntegerConstant:
+            - 123
+            - L
+    - - 456UL
+      - - IntegerConstant:
+            - 456
+            - UL
+    - - 789LU
+      - - IntegerConstant:
+            - 789
+            - UL
+    - - 1000ULL
+      - - IntegerConstant:
+            - 1000
+            - ULL
+    - - 2000LLU
+      - - IntegerConstant:
+            - 2000
+            - ULL
+- - Floats
+  - - - "1.5"
+      - - FloatConstant:
+            - 1.5
+            - ~
+    - - "1.23e-4"
+      - - FloatConstant:
+            - 0.000123
+            - ~
+    - - "0x1.2p3"
+      - - FloatConstant:
+            - 9
+            - ~
+- - Chars
+  - - - "'a'"
+      - - CharacterConstant: 97
+    - - "'\\n'"
+      - - CharacterConstant: 10
+- - Strings
+  - - - "\"hello\""
+      - - StringLiteral: hello
+    - - "\"world\\n\""
+      - - StringLiteral: "world\n"

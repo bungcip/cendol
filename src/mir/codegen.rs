@@ -635,12 +635,12 @@ fn resolve_call_args(
     // but `sig` might have split params.
     // Simpler: iterate fixed_param_count args and check types.
     for i in 0..fixed_param_count {
-        if let Some(arg) = args.get(i) {
-            if let Ok(type_id) = get_operand_type_id(arg, ctx.mir) {
-                let mir_type = ctx.mir.get_type(type_id);
-                if is_xmm_argument(mir_type) {
-                    xmm_used += 1;
-                }
+        if let Some(arg) = args.get(i)
+            && let Ok(type_id) = get_operand_type_id(arg, ctx.mir)
+        {
+            let mir_type = ctx.mir.get_type(type_id);
+            if is_xmm_argument(mir_type) {
+                xmm_used += 1;
             }
         }
     }

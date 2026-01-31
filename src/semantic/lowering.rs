@@ -432,10 +432,11 @@ fn resolve_record_tag(
     if is_definition {
         // DEFINITION: struct T { ... }
         // Check if defined in CURRENT scope
-        if let Some((entry_ref, scope_id)) = existing {
-            if scope_id == ctx.symbol_table.current_scope() {
-                let (is_completed, def_span, ty) = {
-                    let entry = ctx.symbol_table.get_symbol(entry_ref);
+        if let Some((entry_ref, scope_id)) = existing
+            && scope_id == ctx.symbol_table.current_scope()
+        {
+            let (is_completed, def_span, ty) = {
+                let entry = ctx.symbol_table.get_symbol(entry_ref);
                     (entry.is_completed, entry.def_span, entry.type_info.ty())
                 };
 
@@ -448,7 +449,6 @@ fn resolve_record_tag(
                 }
                 return Ok(ty);
             }
-        }
 
         // Not in current scope OR shadowing outer scope -> Create new record
         let ty = ctx.registry.declare_record(Some(tag_name), is_union);

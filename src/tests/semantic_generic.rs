@@ -136,7 +136,7 @@ fn test_generic_selection_no_match() {
     }
     "#,
         CompilePhase::Mir,
-        "controlling expression type does not match any generic association",
+        "controlling expression type 'float' not compatible with any generic association",
     );
 }
 

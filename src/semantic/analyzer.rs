@@ -1614,7 +1614,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.check_initializer(*init, *ty);
                 Some(*ty)
             }
-            NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs),
+            NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, node_ref),
             NodeKind::GenericAssociation(ga) => {
                 if let Some(ty) = ga.ty {
                     self.visit_type_expressions(ty);
@@ -1989,7 +1989,11 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_generic_selection(&mut self, gs: &GenericSelectionData) -> Option<QualType> {
+    fn visit_generic_selection(
+        &mut self,
+        gs: &GenericSelectionData,
+        node_ref: NodeRef,
+    ) -> Option<QualType> {
         // First, visit the controlling expression to determine its type.
         let ctrl_ty = self.visit_node(gs.control)?;
 
@@ -2078,7 +2082,8 @@ impl<'a> SemanticAnalyzer<'a> {
         } else {
             // If no match is found and there's no default, it's a semantic error.
             self.report_error(SemanticError::GenericNoMatch {
-                span: self.ast.get_span(gs.control),
+                ty: self.registry.display_qual_type(ctrl_ty),
+                span: self.ast.get_span(node_ref),
             });
             None
         }

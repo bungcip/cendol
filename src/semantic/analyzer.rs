@@ -2011,9 +2011,12 @@ impl<'a> SemanticAnalyzer<'a> {
         // This resolves all identifier types within them.
         let mut selected_expr_ref = None;
         let mut default_expr_ref = None;
+        let mut default_first_span = None;
+        let mut seen_types: Vec<(QualType, QualType, SourceSpan)> = Vec::new();
 
         for assoc_node_ref in gs.assoc_start.range(gs.assoc_len) {
             if let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node_ref).clone() {
+                let assoc_span = self.ast.get_span(assoc_node_ref);
                 self.visit_node(assoc_node_ref);
 
                 if let Some(assoc_ty) = ga.ty {
@@ -2021,12 +2024,43 @@ impl<'a> SemanticAnalyzer<'a> {
                     // controlling expression's type and the generic association's type.
                     let unqualified_assoc_ty = self.registry.strip_all(assoc_ty);
 
+                    // Constraint 2: No two generic associations in the same generic selection shall specify compatible types.
+                    let mut duplicate = false;
+                    for (prev_unqualified, prev_original, prev_span) in &seen_types {
+                        if self.registry.is_compatible(unqualified_assoc_ty, *prev_unqualified) {
+                            self.report_error(SemanticError::GenericDuplicateMatch {
+                                ty: self.registry.display_qual_type(assoc_ty),
+                                prev_ty: self.registry.display_qual_type(*prev_original),
+                                span: assoc_span,
+                                first_def: *prev_span,
+                            });
+                            duplicate = true;
+                            break;
+                        }
+                    }
+
+                    if !duplicate {
+                        seen_types.push((unqualified_assoc_ty, assoc_ty, assoc_span));
+                    }
+
+                    // Constraint 1: The controlling expression... shall have type compatible with at most one...
                     if self.registry.is_compatible(unqualified_ctrl_ty, unqualified_assoc_ty) {
-                        selected_expr_ref = Some(ga.result_expr);
+                        if selected_expr_ref.is_none() {
+                            selected_expr_ref = Some(ga.result_expr);
+                        }
                     }
                 } else {
                     // This is the 'default' association.
-                    default_expr_ref = Some(ga.result_expr);
+                    // Constraint 2: If a generic selection has a default association, there shall be only one such association.
+                    if let Some(first_span) = default_first_span {
+                        self.report_error(SemanticError::GenericMultipleDefault {
+                            span: assoc_span,
+                            first_def: first_span,
+                        });
+                    } else {
+                        default_first_span = Some(assoc_span);
+                        default_expr_ref = Some(ga.result_expr);
+                    }
                 }
             }
         }

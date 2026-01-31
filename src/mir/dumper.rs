@@ -624,12 +624,7 @@ impl<'a> MirDumper<'a> {
                 )?;
             }
             Rvalue::UnaryIntOp(op, operand) => {
-                write!(
-                    output,
-                    "{} {}",
-                    op,
-                    self.operand_to_string(operand)
-                )?;
+                write!(output, "{} {}", op, self.operand_to_string(operand))?;
             }
             Rvalue::UnaryFloatOp(op, operand) => {
                 write!(

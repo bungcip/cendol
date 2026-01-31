@@ -437,18 +437,18 @@ fn resolve_record_tag(
         {
             let (is_completed, def_span, ty) = {
                 let entry = ctx.symbol_table.get_symbol(entry_ref);
-                    (entry.is_completed, entry.def_span, entry.type_info.ty())
-                };
+                (entry.is_completed, entry.def_span, entry.type_info.ty())
+            };
 
-                if is_completed {
-                    ctx.report_error(SemanticError::Redefinition {
-                        name: tag_name,
-                        first_def: def_span,
-                        span,
-                    });
-                }
-                return Ok(ty);
+            if is_completed {
+                ctx.report_error(SemanticError::Redefinition {
+                    name: tag_name,
+                    first_def: def_span,
+                    span,
+                });
             }
+            return Ok(ty);
+        }
 
         // Not in current scope OR shadowing outer scope -> Create new record
         let ty = ctx.registry.declare_record(Some(tag_name), is_union);

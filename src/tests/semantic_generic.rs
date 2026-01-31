@@ -29,6 +29,59 @@ fn test_generic_selection_correct_type_is_chosen() {
 }
 
 #[test]
+fn test_generic_selection_rejects_multiple_defaults() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            return _Generic(0, default: 0, default: 1);
+        }
+        "#,
+        CompilePhase::Mir,
+        "duplicate default association",
+    );
+}
+
+#[test]
+fn test_generic_selection_rejects_duplicate_types() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            return _Generic(0, int: 0, int: 1);
+        }
+        "#,
+        CompilePhase::Mir,
+        "compatible with previously specified type 'int'",
+    );
+}
+
+#[test]
+fn test_generic_selection_rejects_compatible_types_due_to_qualifiers() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            return _Generic(0, int: 0, const int: 1);
+        }
+        "#,
+        CompilePhase::Mir,
+        "compatible with previously specified type 'int'",
+    );
+}
+
+#[test]
+fn test_generic_selection_rejects_multiple_matches_even_if_controlling_is_different() {
+    // This should fail because int and int are compatible, regardless of the controlling expression being float.
+    run_fail_with_message(
+        r#"
+        int main() {
+            return _Generic(1.0f, int: 0, int: 1, default: 2);
+        }
+        "#,
+        CompilePhase::Mir,
+        "compatible with previously specified type 'int'",
+    );
+}
+
+#[test]
 fn test_generic_function_decay() {
     run_pass(
         r#"
@@ -83,7 +136,7 @@ fn test_generic_selection_no_match() {
     }
     "#,
         CompilePhase::Mir,
-        "controlling expression type does not match any generic association",
+        "controlling expression type 'float' not compatible with any generic association",
     );
 }
 

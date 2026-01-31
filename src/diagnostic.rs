@@ -168,6 +168,24 @@ impl IntoDiagnostic for SemanticError {
             });
         }
 
+        if let SemanticError::GenericMultipleDefault { first_def, .. } = &self {
+            diagnostics.push(Diagnostic {
+                level: DiagnosticLevel::Note,
+                message: "previous default association is here".to_string(),
+                span: *first_def,
+                ..Default::default()
+            });
+        }
+
+        if let SemanticError::GenericDuplicateMatch { first_def, .. } = &self {
+            diagnostics.push(Diagnostic {
+                level: DiagnosticLevel::Note,
+                message: "previous association is here".to_string(),
+                span: *first_def,
+                ..Default::default()
+            });
+        }
+
         if let SemanticError::ConflictingLinkage { first_def, .. } = &self {
             diagnostics.push(Diagnostic {
                 level: DiagnosticLevel::Note,
@@ -322,8 +340,19 @@ pub enum SemanticError {
     SizeOfIncompleteType { ty: TypeRef, span: SourceSpan },
     #[error("Invalid application of 'sizeof' to a function type")]
     SizeOfFunctionType { span: SourceSpan },
-    #[error("controlling expression type does not match any generic association")]
-    GenericNoMatch { span: SourceSpan },
+    #[error("controlling expression type '{ty}' not compatible with any generic association")]
+    GenericNoMatch { ty: String, span: SourceSpan },
+
+    #[error("duplicate default association in generic selection")]
+    GenericMultipleDefault { span: SourceSpan, first_def: SourceSpan },
+
+    #[error("type '{ty}' in generic association compatible with previously specified type '{prev_ty}'")]
+    GenericDuplicateMatch {
+        ty: String,
+        prev_ty: String,
+        span: SourceSpan,
+        first_def: SourceSpan,
+    },
 
     #[error("requested alignment is not a positive power of 2")]
     InvalidAlignment { value: i64, span: SourceSpan },
@@ -412,7 +441,9 @@ impl SemanticError {
             }
             SemanticError::SizeOfIncompleteType { span, .. } => *span,
             SemanticError::SizeOfFunctionType { span } => *span,
-            SemanticError::GenericNoMatch { span } => *span,
+            SemanticError::GenericNoMatch { span, .. } => *span,
+            SemanticError::GenericMultipleDefault { span, .. } => *span,
+            SemanticError::GenericDuplicateMatch { span, .. } => *span,
             SemanticError::InvalidAlignment { span, .. } => *span,
             SemanticError::NonConstantAlignment { span } => *span,
             SemanticError::AssignmentToReadOnly { span } => *span,

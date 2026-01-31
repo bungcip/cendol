@@ -2,7 +2,7 @@ use crate::ast;
 use crate::ast::{Designator, NameId, NodeKind, NodeRef, literal};
 use crate::mir::{ConstValueId, ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue};
 use crate::semantic::ast_to_mir::AstToMirLowerer;
-use crate::semantic::{ArraySizeType, BuiltinType, QualType, StructMember, TypeKind};
+use crate::semantic::{ArraySizeType, QualType, StructMember, TypeKind};
 
 impl<'a> AstToMirLowerer<'a> {
     pub(crate) fn lower_initializer_list(
@@ -82,20 +82,6 @@ impl<'a> AstToMirLowerer<'a> {
         }
 
         self.finalize_struct_initializer(field_operands, target_ty, destination)
-    }
-
-    pub(crate) fn evaluate_constant_usize(&mut self, expr: NodeRef, error_msg: &str) -> usize {
-        let operand = self.lower_expression(expr, true);
-        if let Some(const_id) = self.operand_to_const_id(operand) {
-            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
-            if let ConstValueKind::Int(val) = const_val.kind {
-                val as usize
-            } else {
-                panic!("{}", error_msg);
-            }
-        } else {
-            panic!("{}", error_msg);
-        }
     }
 
     pub(crate) fn resolve_designator_range(&mut self, designator_ref: NodeRef) -> (usize, usize) {
@@ -427,13 +413,7 @@ impl<'a> AstToMirLowerer<'a> {
             (self.lower_qual_type(qt), layout)
         } else {
             // Fallback based on parsed type
-            let ty_ref = match parsed.builtin_type {
-                BuiltinType::Char => self.registry.type_char,
-                BuiltinType::Int => self.registry.type_int,
-                BuiltinType::UShort => self.registry.type_short_unsigned,
-                BuiltinType::UInt => self.registry.type_int_unsigned,
-                _ => self.registry.type_char,
-            };
+            let ty_ref = self.registry.get_builtin_type(parsed.builtin_type);
             let layout = self.registry.get_layout(ty_ref).into_owned();
             (self.lower_qual_type(QualType::unqualified(ty_ref)), layout)
         };

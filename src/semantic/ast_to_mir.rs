@@ -249,6 +249,20 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
+    pub(crate) fn evaluate_constant_usize(&mut self, expr: NodeRef, error_msg: &str) -> usize {
+        let operand = self.lower_expression(expr, true);
+        if let Some(const_id) = self.operand_to_const_id(operand) {
+            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
+            if let ConstValueKind::Int(val) = const_val.kind {
+                val as usize
+            } else {
+                panic!("{}", error_msg);
+            }
+        } else {
+            panic!("{}", error_msg);
+        }
+    }
+
     pub(crate) fn lower_condition(&mut self, condition: NodeRef) -> Operand {
         let cond_operand = self.lower_expression(condition, true);
         // Apply conversions for condition (should be boolean)
@@ -1147,6 +1161,14 @@ impl<'a> AstToMirLowerer<'a> {
         let local_id = self.mir_builder.create_local(None, type_id, false);
         let place = Place::Local(local_id);
         (local_id, place)
+    }
+
+    pub(crate) fn deref_operand(&self, operand: Operand) -> Place {
+        Place::Deref(Box::new(operand))
+    }
+
+    pub(crate) fn deref_place(&self, place: Place) -> Place {
+        self.deref_operand(Operand::Copy(Box::new(place)))
     }
 
     pub(crate) fn create_temp_local_with_assignment(&mut self, rvalue: Rvalue, type_id: TypeId) -> (LocalId, Place) {

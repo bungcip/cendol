@@ -183,6 +183,29 @@ impl TypeRegistry {
         self.alloc(ty)
     }
 
+    pub(crate) fn get_builtin_type(&self, b: BuiltinType) -> TypeRef {
+        match b {
+            BuiltinType::Void => self.type_void,
+            BuiltinType::Bool => self.type_bool,
+            BuiltinType::Char => self.type_char,
+            BuiltinType::SChar => self.type_schar,
+            BuiltinType::UChar => self.type_char_unsigned,
+            BuiltinType::Short => self.type_short,
+            BuiltinType::UShort => self.type_short_unsigned,
+            BuiltinType::Int => self.type_int,
+            BuiltinType::UInt => self.type_int_unsigned,
+            BuiltinType::Long => self.type_long,
+            BuiltinType::ULong => self.type_long_unsigned,
+            BuiltinType::LongLong => self.type_long_long,
+            BuiltinType::ULongLong => self.type_long_long_unsigned,
+            BuiltinType::Float => self.type_float,
+            BuiltinType::Double => self.type_double,
+            BuiltinType::LongDouble => self.type_long_double,
+            BuiltinType::Signed => self.type_signed,
+            BuiltinType::VaList => self.type_valist,
+        }
+    }
+
     /// Allocate a new canonical type and return its TypeRef.
     fn alloc(&mut self, ty: Type) -> TypeRef {
         let idx = self.types.len() as u32;

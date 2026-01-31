@@ -1,4 +1,4 @@
-use crate::ast::literal::IntegerSuffix;
+use crate::ast::literal::{FloatSuffix, IntegerSuffix};
 
 /// Strip integer literal suffix (u, l, ll, ul, ull, etc.)
 pub fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
@@ -95,7 +95,7 @@ pub fn parse_c11_integer_literal(text: &str) -> Result<(u64, Option<IntegerSuffi
 }
 
 /// Parse C11 floating-point literal syntax
-pub fn parse_c11_float_literal(text: &str) -> Result<f64, ()> {
+pub fn parse_c11_float_literal(text: &str) -> Result<(f64, Option<FloatSuffix>), ()> {
     // C11 floating-point literal format:
     // [digits][.digits][e|E[+|-]digits][f|F|l|L]
     // or [digits][e|E[+|-]digits][f|F|l|L]
@@ -105,22 +105,23 @@ pub fn parse_c11_float_literal(text: &str) -> Result<f64, ()> {
     // This is faster than chaining `ends_with` calls. By checking the last byte
     // directly, we avoid multiple string traversals and improve performance for
     // parsing floating-point literals.
-    let text_without_suffix = if !text.is_empty() {
+    let (text_without_suffix, suffix) = if !text.is_empty() {
         match text.as_bytes()[text.len() - 1] {
-            b'f' | b'F' | b'l' | b'L' => &text[..text.len() - 1],
-            _ => text,
+            b'f' | b'F' => (&text[..text.len() - 1], Some(FloatSuffix::F)),
+            b'l' | b'L' => (&text[..text.len() - 1], Some(FloatSuffix::L)),
+            _ => (text, None),
         }
     } else {
-        text
+        (text, None)
     };
 
     // Handle hexadecimal floating-point literals (C99/C11)
     if text.starts_with("0x") || text.starts_with("0X") {
-        parse_hex_float_literal(text_without_suffix)
+        parse_hex_float_literal(text_without_suffix).map(|val| (val, suffix))
     } else {
         // Use Rust's built-in parsing for decimal floats
         match text_without_suffix.parse::<f64>() {
-            Ok(val) => Ok(val),
+            Ok(val) => Ok((val, suffix)),
             Err(_) => {
                 // Invalid float, treat as unknown
                 Err(())

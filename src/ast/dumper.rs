@@ -334,7 +334,9 @@ impl AstDumper {
                 crate::ast::literal::Literal::Int { val, suffix } => {
                     writeln!(f, "LiteralInt({:?}, {:?})", val, suffix)
                 }
-                crate::ast::literal::Literal::Float(f_val) => writeln!(f, "LiteralFloat({})", f_val),
+                crate::ast::literal::Literal::Float { val, suffix } => {
+                    writeln!(f, "LiteralFloat({}, {:?})", val, suffix)
+                }
                 crate::ast::literal::Literal::String(s) => writeln!(f, "LiteralString(\"{}\")", s),
                 crate::ast::literal::Literal::Char(c) => writeln!(f, "LiteralChar('{}')", *c as char),
             },
@@ -488,7 +490,9 @@ impl AstDumper {
                 crate::ast::literal::Literal::Int { val, suffix } => {
                     writeln!(f, "LiteralInt({:?}, {:?})", val, suffix)
                 }
-                crate::ast::literal::Literal::Float(f_val) => writeln!(f, "LiteralFloat({})", f_val),
+                crate::ast::literal::Literal::Float { val, suffix } => {
+                    writeln!(f, "LiteralFloat({}, {:?})", val, suffix)
+                }
                 crate::ast::literal::Literal::String(s) => writeln!(f, "LiteralString({})", s),
                 crate::ast::literal::Literal::Char(c) => writeln!(f, "LiteralChar('{}')", *c as char),
             },

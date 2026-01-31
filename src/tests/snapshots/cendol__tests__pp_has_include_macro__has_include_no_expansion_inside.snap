@@ -1,6 +1,5 @@
 ---
 source: src/tests/pp_has_include_macro.rs
-assertion_line: 37
 expression: tokens
 ---
 - kind: Identifier

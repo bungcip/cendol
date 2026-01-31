@@ -9,11 +9,16 @@ fn test_fixed_struct_param() {
     "#;
     let clif_dump = setup_cranelift(source);
 
-    // We expect a call to memcpy (or similar) to copy the struct from the pointer param
-    // to the local stack slot.
+    // Optimized: Small structs (1 byte) are passed in register (i8) and stored to stack.
+    // We expect NO memcpy call.
     assert!(
-        clif_dump.contains("call"),
-        "Expected memcpy call for struct parameter copy. Dump:\n{}",
+        !clif_dump.contains("call"),
+        "Expected optimized register passing (no memcpy) for small struct. Dump:\n{}",
+        clif_dump
+    );
+    assert!(
+        clif_dump.contains("store"),
+        "Expected store instruction for struct parameter. Dump:\n{}",
         clif_dump
     );
 }
@@ -31,14 +36,16 @@ fn test_variadic_struct_arg() {
     "#;
     let clif_dump = setup_cranelift(source);
 
-    // For va_arg with aggregate, we expect:
-    // 1. Calculation of address
-    // 2. No load of the value from that address (in the register path)
-    // 3. A memcpy call to copy from that address to the destination
-
+    // Optimized: va_arg for small struct loads value directly from spill area (or register save area).
+    // We expect NO memcpy call for assignment.
     assert!(
-        clif_dump.contains("call"),
-        "Expected memcpy call for va_arg aggregate assignment. Dump:\n{}",
+        !clif_dump.contains("call memcpy"),
+        "Expected no memcpy call for va_arg small struct assignment. Dump:\n{}",
+        clif_dump
+    );
+    assert!(
+        clif_dump.contains("load"),
+        "Expected load instruction for va_arg. Dump:\n{}",
         clif_dump
     );
 }
@@ -62,6 +69,23 @@ fn test_partial_load_struct_arg() {
     assert!(
         clif_dump.contains("load.i8"),
         "Expected partial load (load.i8) for 1-byte struct argument to variadic function. Dump:\n{}",
+        clif_dump
+    );
+}
+
+#[test]
+fn test_hfa_passing() {
+    let source = r#"
+        struct HFA { float a; float b; };
+        void foo(struct HFA h) {}
+    "#;
+    let clif_dump = setup_cranelift(source);
+
+    // HFA (2 floats, 8 bytes) should be passed as F64 (XMM) to align with ABI expectations
+    // and avoid GPR corruption issues.
+    assert!(
+        clif_dump.contains("f64"),
+        "Expected HFA to be passed as f64. Dump:\n{}",
         clif_dump
     );
 }

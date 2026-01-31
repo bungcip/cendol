@@ -35,9 +35,39 @@ pub enum ClifOutput {
     ClifDump(String),
 }
 
+fn is_hfa_recursive(mir_type: &MirType, mir: &MirProgram) -> bool {
+    match mir_type {
+        MirType::F32 | MirType::F64 => true,
+        MirType::Record { field_types, .. } => {
+            if field_types.is_empty() {
+                return false;
+            }
+            for &field_id in field_types {
+                let field_type = mir.get_type(field_id);
+                if !is_hfa_recursive(field_type, mir) {
+                    return false;
+                }
+            }
+            true
+        }
+        MirType::Array { element, .. } => {
+            let element_type = mir.get_type(*element);
+            is_hfa_recursive(element_type, mir)
+        }
+        _ => false,
+    }
+}
+
+fn is_hfa_aggregate(mir_type: &MirType, mir: &MirProgram) -> bool {
+    if !mir_type.is_aggregate() {
+        return false;
+    }
+    is_hfa_recursive(mir_type, mir)
+}
+
 /// Helper function to convert MIR type to Cranelift type
 /// Returns None for void types, as they don't have a representation in Cranelift
-fn convert_type(mir_type: &MirType) -> Option<Type> {
+fn convert_type(mir_type: &MirType, mir: &MirProgram) -> Option<Type> {
     match mir_type {
         MirType::Void => None,
         MirType::Bool => Some(types::I8), // Booleans as i8 (standard C)
@@ -51,8 +81,47 @@ fn convert_type(mir_type: &MirType) -> Option<Type> {
         MirType::F80 | MirType::F128 => Some(types::F128),
         MirType::Pointer { .. } => Some(types::I64), // Pointers are 64-bit on most modern systems
 
-        MirType::Array { .. } | MirType::Record { .. } => None,
         MirType::Function { .. } => Some(types::I64), // Function pointers
+
+        // Small aggregate optimization
+        MirType::Array { layout, .. } => {
+            // Check if it's an HFA first
+            if is_hfa_aggregate(mir_type, mir) {
+                match layout.size {
+                    4 => return Some(types::F32),
+                    8 => return Some(types::F64),
+                    _ => {}
+                }
+            }
+
+            // General small aggregates passed in GPRs
+            match layout.size {
+                1 => Some(types::I8),
+                2 => Some(types::I16),
+                4 => Some(types::I32),
+                8 => Some(types::I64),
+                _ => None,
+            }
+        }
+        MirType::Record { layout, .. } => {
+            // Check if it's an HFA first
+            if is_hfa_aggregate(mir_type, mir) {
+                match layout.size {
+                    4 => return Some(types::F32),
+                    8 => return Some(types::F64),
+                    _ => {}
+                }
+            }
+
+            // General small aggregates passed in GPRs
+            match layout.size {
+                1 => Some(types::I8),
+                2 => Some(types::I16),
+                4 => Some(types::I32),
+                8 => Some(types::I64),
+                _ => None,
+            }
+        }
     }
 }
 
@@ -490,8 +559,15 @@ fn reborrow_data_description<'b>(dd: &'b mut Option<&mut DataDescription>) -> Op
 }
 
 /// Helper to determine if a type consumes an XMM register (float/vector)
-fn is_xmm_argument(mir_type: &MirType) -> bool {
-    matches!(mir_type, MirType::F32 | MirType::F64 | MirType::F80 | MirType::F128)
+fn is_xmm_argument(mir_type: &MirType, mir: &MirProgram) -> bool {
+    if matches!(mir_type, MirType::F32 | MirType::F64 | MirType::F80 | MirType::F128) {
+        return true;
+    }
+    // Check if it's an HFA that is passed in a register
+    if let Some(ty) = convert_type(mir_type, mir) {
+        return ty.is_float();
+    }
+    false
 }
 
 /// Helper to prepare a function signature for a call
@@ -510,7 +586,7 @@ fn prepare_call_signature(
 
     // Return type
     let return_mir_type = mir.get_type(return_type_id);
-    let return_type_opt = match convert_type(return_mir_type) {
+    let return_type_opt = match convert_type(return_mir_type, mir) {
         Some(t) => Some(t),
         None if return_mir_type.is_aggregate() => Some(types::I64),
         None => None,
@@ -529,7 +605,7 @@ fn prepare_call_signature(
     for &param_type_id in param_types {
         let mir_type = mir.get_type(param_type_id);
 
-        if is_xmm_argument(mir_type) {
+        if is_xmm_argument(mir_type, mir) {
             xmm_used += 1;
         }
 
@@ -539,7 +615,7 @@ fn prepare_call_signature(
             continue;
         }
 
-        let param_type = match convert_type(mir_type) {
+        let param_type = match convert_type(mir_type, mir) {
             Some(t) => t,
             None if mir_type.is_aggregate() => types::I64,
             None => types::I32, // Should not happen for valid MIR
@@ -582,7 +658,7 @@ fn prepare_call_signature(
                 xmm_used = 8;
             }
 
-            if is_xmm_argument(mir_type) {
+            if is_xmm_argument(mir_type, mir) {
                 xmm_used += 1;
             }
         }
@@ -638,7 +714,7 @@ fn resolve_call_args(
         if let Some(arg) = args.get(i) {
             if let Ok(type_id) = get_operand_type_id(arg, ctx.mir) {
                 let mir_type = ctx.mir.get_type(type_id);
-                if is_xmm_argument(mir_type) {
+                if is_xmm_argument(mir_type, ctx.mir) {
                     xmm_used += 1;
                 }
             }
@@ -682,7 +758,10 @@ fn resolve_call_args(
             let mir_type = ctx.mir.get_type(type_id);
             if mir_type.is_aggregate() {
                 // Get the struct address
-                let struct_addr = resolve_operand(arg, ctx, types::I64)?;
+                let struct_addr = match arg {
+                    Operand::Copy(place) => resolve_place_to_addr(place, ctx)?,
+                    _ => resolve_operand(arg, ctx, types::I64)?,
+                };
 
                 // Calculate how many I64 slots this struct needs
                 let size = mir_type_size(mir_type, ctx.mir).unwrap_or(8);
@@ -737,7 +816,7 @@ fn resolve_call_args(
                 xmm_used = 8;
             }
 
-            if is_xmm_argument(mir_type) {
+            if is_xmm_argument(mir_type, ctx.mir) {
                 xmm_used += 1;
             }
         }
@@ -1137,6 +1216,14 @@ fn resolve_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: 
             let place_type = ctx.mir.get_type(place_type_id);
 
             if place_type.is_aggregate() {
+                // If the aggregate is small enough to be passed in a register (optimized)
+                if let Some(ty) = convert_type(place_type, ctx.mir) {
+                    let addr = resolve_place_to_addr(place, ctx)?;
+                    let val = ctx.builder.ins().load(ty, MemFlags::new(), addr, 0);
+                    // Perform type conversion if needed (e.g. I8 -> I64 for variadic promotion, though expected_type should match)
+                    return Ok(emit_type_conversion(val, ty, expected_type, place_type.is_signed(), ctx.builder));
+                }
+
                 // For aggregate types, resolving the operand value means getting its address
                 let addr = resolve_place_to_addr(place, ctx)?;
                 return Ok(emit_type_conversion(
@@ -1149,7 +1236,7 @@ fn resolve_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: 
             }
 
             let place_clif_type =
-                convert_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))?;
+                convert_type(place_type, ctx.mir).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))?;
 
             let val = resolve_place(place, ctx, place_clif_type)?;
             Ok(emit_type_conversion(
@@ -1165,7 +1252,7 @@ fn resolve_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: 
             let inner_val = resolve_operand(inner_operand, ctx, inner_type)?;
 
             let mir_type = ctx.mir.get_type(*type_id);
-            let target_type = convert_type(mir_type).unwrap_or(types::I32);
+            let target_type = convert_type(mir_type, ctx.mir).unwrap_or(types::I32);
 
             let converted = emit_type_conversion(
                 inner_val,
@@ -1240,7 +1327,7 @@ fn get_operand_clif_type(operand: &Operand, mir: &MirProgram) -> Result<Type, St
             let mir_type = mir.get_type(const_value.ty);
 
             // If we have a specific type for the constant, use that to determine the Cranelift type
-            if let Some(clif_type) = convert_type(mir_type) {
+            if let Some(clif_type) = convert_type(mir_type, mir) {
                 return Ok(clif_type);
             }
 
@@ -1263,22 +1350,28 @@ fn get_operand_clif_type(operand: &Operand, mir: &MirProgram) -> Result<Type, St
             let place_type_id = get_place_type_id(place, mir);
             let place_type = mir.get_type(place_type_id);
             if place_type.is_aggregate() {
+                if let Some(ty) = convert_type(place_type, mir) {
+                    return Ok(ty);
+                }
                 return Ok(types::I64);
             }
-            convert_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))
+            convert_type(place_type, mir).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))
         }
         Operand::Cast(type_id, _) => {
             let mir_type = mir.get_type(*type_id);
             if mir_type.is_aggregate() {
+                if let Some(ty) = convert_type(mir_type, mir) {
+                    return Ok(ty);
+                }
                 return Ok(types::I64);
             }
-            Ok(convert_type(mir_type).unwrap_or(types::I32))
+            Ok(convert_type(mir_type, mir).unwrap_or(types::I32))
         }
         Operand::AddressOf(_) => Ok(types::I64), // AddressOf always returns a pointer
     }
 }
 
-/// Helper function to check if a MIR type is signed
+/// Helper to check if a MIR type is signed
 fn is_operand_signed(operand: &Operand, mir: &MirProgram) -> bool {
     match operand {
         Operand::Copy(place) => mir.get_type(get_place_type_id(place, mir)).is_signed(),
@@ -1467,13 +1560,14 @@ fn resolve_place_to_addr(place: &Place, ctx: &mut BodyEmitContext) -> Result<Val
         }
     }
 }
+
 /// Helper to lower a single MIR statement
 fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), String> {
     match stmt {
         MirStmt::Assign(place, rvalue) => {
             let place_type_id = get_place_type_id(place, ctx.mir);
             let place_mir_type = ctx.mir.get_type(place_type_id);
-            let expected_type = match convert_type(place_mir_type) {
+            let expected_type = match convert_type(place_mir_type, ctx.mir) {
                 Some(t) => t,
                 None if place_mir_type.is_aggregate() => types::I64,
                 None => return Err("Cannot assign to void type".to_string()),
@@ -1488,7 +1582,7 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
 
                     let target_mir_type = ctx.mir.get_type(*type_id);
                     let target_clif_type =
-                        convert_type(target_mir_type).ok_or_else(|| "Cannot cast to void type".to_string())?;
+                        convert_type(target_mir_type, ctx.mir).ok_or_else(|| "Cannot cast to void type".to_string())?;
 
                     let converted = emit_type_conversion(
                         inner_val,
@@ -1759,7 +1853,7 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     let reg_save_area = ctx.builder.ins().load(types::I64, MemFlags::new(), ap_addr, 16);
 
                     let mir_type = ctx.mir.get_type(*type_id);
-                    let cl_type = convert_type(mir_type).unwrap_or(types::I64);
+                    let cl_type = convert_type(mir_type, ctx.mir).unwrap_or(types::I64);
 
                     // Unified va_arg implementation for "Cendol" ABI (all args in spill_slot/reg_save_area)
                     // We ignore is_float and standard SystemV ABI register separation because our
@@ -1776,7 +1870,11 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     let addr = ctx.builder.ins().iadd(reg_save_area, offset_64);
 
                     let result = if mir_type.is_aggregate() {
-                        addr // Return address for aggregates
+                        if let Some(ty) = convert_type(mir_type, ctx.mir) {
+                            ctx.builder.ins().load(ty, MemFlags::new(), addr, 0)
+                        } else {
+                            addr // Return address for aggregates (passed by pointer)
+                        }
                     } else {
                         ctx.builder.ins().load(cl_type, MemFlags::new(), addr, 0)
                     };
@@ -1799,7 +1897,7 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         return Err("ArrayLiteral with non-array type".to_string());
                     };
                     let element_mir_type = ctx.mir.get_type(*element);
-                    let element_clif_type = convert_type(element_mir_type);
+                    let element_clif_type = convert_type(element_mir_type, ctx.mir);
                     let stride = layout.stride as i64;
 
                     for (i, element_op) in elements.iter().enumerate() {
@@ -1844,7 +1942,7 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                             let size = mir_type_size(field_mir_type, ctx.mir)? as i64;
                             emit_memcpy(field_dest_addr, src_addr, size, ctx.builder, ctx.module)?;
                         } else {
-                            let field_clif_type = convert_type(field_mir_type).unwrap();
+                            let field_clif_type = convert_type(field_mir_type, ctx.mir).unwrap();
                             let val = resolve_operand(element_op, ctx, field_clif_type)?;
                             ctx.builder.ins().store(MemFlags::new(), val, field_dest_addr, 0);
                         }
@@ -1900,7 +1998,7 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                 let place_type_id = get_place_type_id(place, ctx.mir);
                 let mir_type = ctx.mir.get_type(place_type_id);
 
-                if mir_type.is_aggregate() {
+                if mir_type.is_aggregate() && convert_type(mir_type, ctx.mir).is_none() {
                     let dest_addr = resolve_place_to_addr(place, ctx)?;
                     let size = mir_type_size(mir_type, ctx.mir)? as i64;
                     emit_memcpy(dest_addr, value, size, ctx.builder, ctx.module)?;
@@ -1935,7 +2033,7 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
             // We need to determine the correct type for the operand
             let place_type_id = get_place_type_id(place, ctx.mir);
             let place_type = ctx.mir.get_type(place_type_id);
-            let cranelift_type = convert_type(place_type).ok_or_else(|| "Cannot store to a void type".to_string())?;
+            let cranelift_type = convert_type(place_type, ctx.mir).ok_or_else(|| "Cannot store to a void type".to_string())?;
 
             let value = resolve_operand(operand, ctx, cranelift_type)?;
 
@@ -1961,7 +2059,7 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                 // Call with destination - need to store the result
                 let dest_type_id = get_place_type_id(dest_place, ctx.mir);
                 let dest_mir_type = ctx.mir.get_type(dest_type_id);
-                let expected_type = match convert_type(dest_mir_type) {
+                let expected_type = match convert_type(dest_mir_type, ctx.mir) {
                     Some(t) => t,
                     None if dest_mir_type.is_aggregate() => types::I64,
                     None => return Err("Cannot assign to void type".to_string()),
@@ -1970,7 +2068,7 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
 
                 // Store the result in the destination place
                 let dest_mir_type = ctx.mir.get_type(dest_type_id);
-                if dest_mir_type.is_aggregate() {
+                if dest_mir_type.is_aggregate() && convert_type(dest_mir_type, ctx.mir).is_none() {
                     // For aggregate types, result is an address, memcpy to dest
                     let dest_addr = resolve_place_to_addr(dest_place, ctx)?;
                     let size = mir_type_size(dest_mir_type, ctx.mir)? as i64;
@@ -2182,7 +2280,7 @@ fn setup_signature(
 
     // Get the return type from MIR and convert to Cranelift type
     let return_mir_type = mir.get_type(func.return_type);
-    let return_type_opt = match convert_type(return_mir_type) {
+    let return_type_opt = match convert_type(return_mir_type, mir) {
         Some(t) => Some(t),
         None if return_mir_type.is_aggregate() => Some(types::I64),
         None => None, // Void
@@ -2210,7 +2308,7 @@ fn setup_signature(
             continue;
         }
 
-        let param_type = match convert_type(mir_type) {
+        let param_type = match convert_type(mir_type, mir) {
             Some(t) => t,
             None if mir_type.is_aggregate() => types::I64,
             None => return Err(format!("Unsupported parameter type for local {}", param_id.get())),
@@ -2528,10 +2626,17 @@ impl MirToCraneliftLowerer {
                     let param_value = param_iter.next().unwrap();
                     if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
                         if mir_type.is_aggregate() {
-                            // Passed by pointer (I64), copy to stack slot
-                            let dest_addr = builder.ins().stack_addr(types::I64, *stack_slot, 0);
-                            let size = mir_type_size(mir_type, &self.mir)? as i64;
-                            emit_memcpy(dest_addr, param_value, size, &mut builder, &mut self.module)?;
+                            // Check if it was passed by value (register)
+                            if let Some(reg_type) = convert_type(mir_type, &self.mir) {
+                                // Passed in register (I64 or F64).
+                                // Store it to stack slot.
+                                builder.ins().stack_store(param_value, *stack_slot, 0);
+                            } else {
+                                // Passed by pointer (I64), copy to stack slot
+                                let dest_addr = builder.ins().stack_addr(types::I64, *stack_slot, 0);
+                                let size = mir_type_size(mir_type, &self.mir)? as i64;
+                                emit_memcpy(dest_addr, param_value, size, &mut builder, &mut self.module)?;
+                            }
                         } else {
                             builder.ins().stack_store(param_value, *stack_slot, 0);
                         }

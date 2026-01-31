@@ -183,13 +183,13 @@ fn test_compile_struct_pointer_access() {
     let clif_dump = setup_cranelift(source);
     insta::assert_snapshot!(
         clif_dump,
-        @r"
+        @"
     ; Function: main
     function u0:0() -> i32 system_v {
-        ss0 = explicit_slot 8
-        ss1 = explicit_slot 8
-        ss2 = explicit_slot 4
-        ss3 = explicit_slot 4
+        ss0 = explicit_slot 8, align = 16
+        ss1 = explicit_slot 8, align = 16
+        ss2 = explicit_slot 4, align = 16
+        ss3 = explicit_slot 4, align = 16
 
     block0:
         v0 = stack_addr.i64 ss0
@@ -289,10 +289,10 @@ fn test_alloc_dealloc_codegen() {
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
-            insta::assert_snapshot!(clif_ir, @r"
+            insta::assert_snapshot!(clif_ir, @"
             ; Function: main
             function u0:0() system_v {
-                ss0 = explicit_slot 8
+                ss0 = explicit_slot 8, align = 16
                 sig0 = (i64) -> i64 system_v
                 sig1 = (i64) system_v
                 fn0 = u0:1 sig0

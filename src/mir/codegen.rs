@@ -580,7 +580,7 @@ fn prepare_call_signature(
     is_variadic: bool,
     use_variadic_hack: bool,
     triple: &Triple,
-) -> Signature {
+) -> (Signature, usize) {
     let mut sig = Signature::new(call_conv);
     // sig.set_is_variadic(is_variadic); // Try if this method exists
 
@@ -688,7 +688,7 @@ fn prepare_call_signature(
         }
     }
 
-    sig
+    (sig, xmm_used)
 }
 
 /// Helper to resolve arguments for a call, handling variadic struct expansion if needed
@@ -922,7 +922,7 @@ fn emit_function_call_impl(
     };
 
     // 2. Prepare call site signature and resolve arguments
-    let sig = prepare_call_signature(
+    let (sig, xmm_used) = prepare_call_signature(
         ctx.builder.func.signature.call_conv,
         return_type_id,
         &param_types,
@@ -940,7 +940,7 @@ fn emit_function_call_impl(
     let call_inst = if is_variadic {
         if let Some((name, linkage)) = name_linkage {
             // Variadic direct calls must be indirect to use the custom signature
-            let canonical_sig = prepare_call_signature(
+            let (canonical_sig, _) = prepare_call_signature(
                 ctx.builder.func.signature.call_conv,
                 return_type_id,
                 &param_types,
@@ -958,12 +958,12 @@ fn emit_function_call_impl(
             let addr = ctx.builder.ins().func_addr(types::I64, func_ref);
             let sig_ref = ctx.builder.import_signature(sig);
 
-            let addr = emit_al_count_and_pass_addr(args, &param_types, addr, ctx)?;
+            let addr = emit_al_count_and_pass_addr(xmm_used, addr, ctx)?;
 
             ctx.builder.ins().call_indirect(sig_ref, addr, &arg_values)
         } else if let Some(addr) = target_addr {
             let sig_ref = ctx.builder.import_signature(sig);
-            let addr = emit_al_count_and_pass_addr(args, &param_types, addr, ctx)?;
+            let addr = emit_al_count_and_pass_addr(xmm_used, addr, ctx)?;
             ctx.builder.ins().call_indirect(sig_ref, addr, &arg_values)
         } else {
             return Err("Variadic call without target".to_string());
@@ -987,8 +987,7 @@ fn emit_function_call_impl(
 
 /// Helper function to convert boolean to integer (0 or 1)
 fn emit_al_count_and_pass_addr(
-    args: &[Operand],
-    param_types: &[TypeId],
+    xmm_used: usize,
     addr: Value,
     ctx: &mut BodyEmitContext,
 ) -> Result<Value, String> {
@@ -996,19 +995,8 @@ fn emit_al_count_and_pass_addr(
     if ctx.triple.architecture == target_lexicon::Architecture::X86_64
         && ctx.builder.func.signature.call_conv == cranelift::codegen::isa::CallConv::SystemV
     {
-        let mut fp_arg_count = 0;
-        for (i, arg) in args.iter().enumerate() {
-            // Only count arguments that are NOT fixed parameters
-            if i >= param_types.len() {
-                let arg_mir_type = ctx.mir.get_type(get_operand_type_id(arg, ctx.mir).unwrap());
-                if matches!(arg_mir_type, MirType::F32 | MirType::F64) {
-                    fp_arg_count += 1;
-                }
-            }
-        }
-
-        // Ensure fp_arg_count doesn't exceed 8 (number of XMM registers used for args)
-        let fp_arg_count = fp_arg_count.min(8);
+        // Ensure xmm_used doesn't exceed 8 (number of XMM registers used for args)
+        let fp_arg_count = xmm_used.min(8);
 
         // Define __cendol_set_al if not already defined
         if ctx.set_al_func.is_none() {
@@ -1881,6 +1869,21 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         } else {
                             addr // Return address for aggregates (passed by pointer)
                         }
+                    } else if cl_type == types::F128 {
+                        // Special handling for F128/long double to avoid unaligned loads.
+                        // The value is stored as two I64s in the spill area.
+                        // We load them and store to a 16-byte aligned stack slot, then load F128.
+                        let lo = ctx.builder.ins().load(types::I64, MemFlags::new(), addr, 0);
+                        let hi = ctx.builder.ins().load(types::I64, MemFlags::new(), addr, 8);
+
+                        let scratch = ctx.builder.create_sized_stack_slot(StackSlotData::new(
+                            StackSlotKind::ExplicitSlot,
+                            16,
+                            4,
+                        ));
+                        ctx.builder.ins().stack_store(lo, scratch, 0);
+                        ctx.builder.ins().stack_store(hi, scratch, 8);
+                        ctx.builder.ins().stack_load(types::F128, scratch, 0)
                     } else {
                         ctx.builder.ins().load(cl_type, MemFlags::new(), addr, 0)
                     };
@@ -2362,7 +2365,8 @@ fn allocate_stack_slots(
 
         // Don't allocate space for zero-sized types
         if size > 0 {
-            let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, 0));
+            // Use 16-byte alignment for all stack slots to be safe for F128/SSE
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, 4));
             clif_stack_slots.insert(local_id, slot);
         }
     }
@@ -2634,7 +2638,7 @@ impl MirToCraneliftLowerer {
                     if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
                         if mir_type.is_aggregate() {
                             // Check if it was passed by value (register)
-                            if let Some(reg_type) = convert_type(mir_type, &self.mir) {
+                            if let Some(_reg_type) = convert_type(mir_type, &self.mir) {
                                 // Passed in register (I64 or F64).
                                 // Store it to stack slot.
                                 builder.ins().stack_store(param_value, *stack_slot, 0);
@@ -2657,7 +2661,7 @@ impl MirToCraneliftLowerer {
                     let spill_slot = builder.create_sized_stack_slot(StackSlotData::new(
                         StackSlotKind::ExplicitSlot,
                         spill_size as u32,
-                        0,
+                        4,
                     ));
                     let all_param_values = builder.block_params(*clif_block).to_vec();
                     for (i, val) in all_param_values

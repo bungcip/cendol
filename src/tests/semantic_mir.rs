@@ -1186,14 +1186,9 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
-        type %t1 = struct anonymous { a: %t0, __anon_1: %t2, __anon_2: %t3, __anon_3: %t6 }
-        type %t2 = union anonymous { b1: %t0, b2: %t0 }
-        type %t3 = struct anonymous { __anon_0: %t4 }
-        type %t4 = union anonymous { __anon_0: %t5 }
-        type %t5 = struct anonymous { c: %t0 }
-        type %t6 = struct anonymous { d: %t0 }
+        type %t1 = struct anonymous { a: %t0, b1: %t0, b2: %t0, c: %t0, d: %t0 }
 
         fn main() -> i32
         {
@@ -1203,9 +1198,9 @@ mod tests {
 
           bb1:
             %v.field_0 = const 1
-            %v.field_1.field_0 = const 2
-            %v.field_2.field_0.field_0.field_0 = const 3
-            %v.field_3.field_0 = const 4
+            %v.field_1 = const 2
+            %v.field_3 = const 3
+            %v.field_4 = const 4
             return const 0
         }
         ");

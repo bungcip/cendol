@@ -980,25 +980,28 @@ impl<'a> AstToMirLowerer<'a> {
         &mut self,
         type_ref: TypeRef,
         tag: &Option<NameId>,
-        members: &[StructMember],
+        _members: &[StructMember],
         is_union: bool,
         is_complete: bool,
     ) -> MirType {
         let name = tag.unwrap_or_else(|| NameId::new("anonymous"));
 
         let (size, alignment, field_offsets, field_names, field_types) = if is_complete {
-            let (size, alignment, field_layouts, _) = self.registry.get_record_layout(type_ref);
-            let field_offsets = field_layouts.iter().map(|f| f.offset).collect();
+            let mut flat_members = Vec::new();
+            let mut flat_offsets = Vec::new();
+            let ty = self.registry.get(type_ref).into_owned();
+            ty.flatten_members_with_layouts(self.registry, &mut flat_members, &mut flat_offsets, 0);
 
             let mut field_names = Vec::new();
             let mut field_types = Vec::new();
 
-            for (idx, m) in members.iter().enumerate() {
+            for (idx, m) in flat_members.iter().enumerate() {
                 let name = m.name.unwrap_or_else(|| NameId::new(format!("__anon_{}", idx)));
                 field_names.push(name);
                 field_types.push(self.lower_qual_type(m.member_type));
             }
-            (size, alignment, field_offsets, field_names, field_types)
+            let layout = ty.layout.as_ref().unwrap();
+            (layout.size, layout.alignment, flat_offsets, field_names, field_types)
         } else {
             (0, 1, Vec::new(), Vec::new(), Vec::new())
         };

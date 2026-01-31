@@ -736,27 +736,12 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     pub(crate) fn find_member_path(&self, record_ty: semantic::TypeRef, field_name: ast::NameId) -> Option<Vec<usize>> {
+        let mut flat_members = Vec::new();
         let ty = self.registry.get(record_ty);
-        if let TypeKind::Record { members, .. } = &ty.kind {
-            // 1. Check direct members
-            if let Some(idx) = members.iter().position(|m| m.name == Some(field_name)) {
-                return Some(vec![idx]);
-            }
+        ty.flatten_members(self.registry, &mut flat_members);
 
-            // 2. Check anonymous members
-            for (idx, member) in members.iter().enumerate() {
-                if member.name.is_none() {
-                    let member_ty = member.member_type.ty();
-                    // Only recurse if it's a record
-                    if matches!(self.registry.get(member_ty).kind, TypeKind::Record { .. })
-                        && let Some(mut sub_path) = self.find_member_path(member_ty, field_name)
-                    {
-                        let mut full_path = vec![idx];
-                        full_path.append(&mut sub_path);
-                        return Some(full_path);
-                    }
-                }
-            }
+        if let Some(idx) = flat_members.iter().position(|m| m.name == Some(field_name)) {
+            return Some(vec![idx]);
         }
         None
     }

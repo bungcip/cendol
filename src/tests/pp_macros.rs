@@ -8,8 +8,8 @@ use chrono::{TimeZone, Utc};
 #[test]
 fn test_simple_macro_definition_and_expansion() {
     let src = r#"
-#define TEN 10
-OK
+#define TEN OK
+TEN
 "#;
     let tokens = setup_pp_snapshot(src);
     insta::assert_yaml_snapshot!(tokens, @r"
@@ -22,13 +22,29 @@ OK
 fn test_parameter_macro_definition_and_expansion() {
     let src = r#"
 #define ADD(a,b) ( (a) + (b) )
-OK
+ADD(1, 2)
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
-    - kind: Identifier
-      text: OK
-    ");
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: LeftParen
+      text: (
+    - kind: LeftParen
+      text: (
+    - kind: Number
+      text: "1"
+    - kind: RightParen
+      text: )
+    - kind: Plus
+      text: +
+    - kind: LeftParen
+      text: (
+    - kind: Number
+      text: "2"
+    - kind: RightParen
+      text: )
+    - kind: RightParen
+      text: )
+    "#);
 }
 
 #[test]
@@ -36,13 +52,13 @@ fn test_complex_macro_expansion_and_recursion_limit() {
     let src = r#"
 #define ID(x) x
 #define A ID(ID(ID(1)))
-OK
+A
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
-    - kind: Identifier
-      text: OK
-    ");
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Number
+      text: "1"
+    "#);
 }
 
 #[test]
@@ -83,24 +99,12 @@ int x = x(0);
 fn test_stringification_whitespace_handling() {
     let src = r#"
 #define STR(x) #x
-const char* s1 = STR(a + b);
+STR(a + b)
 "#;
     let tokens = setup_pp_snapshot(src);
     insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: const
-    - kind: Identifier
-      text: char
-    - kind: Star
-      text: "*"
-    - kind: Identifier
-      text: s1
-    - kind: Assign
-      text: "="
     - kind: StringLiteral
       text: "\"a + b\""
-    - kind: Semicolon
-      text: ;
     "#);
 }
 
@@ -108,24 +112,12 @@ const char* s1 = STR(a + b);
 fn test_va_args_stringification() {
     let src = r#"
 #define STR(...) #__VA_ARGS__
-const char* s = STR(a, b, c);
+STR(a, b, c)
 "#;
     let tokens = setup_pp_snapshot(src);
     insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: const
-    - kind: Identifier
-      text: char
-    - kind: Star
-      text: "*"
-    - kind: Identifier
-      text: s
-    - kind: Assign
-      text: "="
     - kind: StringLiteral
       text: "\"a, b, c\""
-    - kind: Semicolon
-      text: ;
     "#);
 }
 
@@ -134,20 +126,12 @@ const char* s = STR(a, b, c);
 fn test_paste_numbers() {
     let src = r#"
 #define PASTE(a,b) a ## b
-int x = PASTE(1, 2);
+PASTE(1, 2)
 "#;
     let tokens = setup_pp_snapshot(src);
     insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: int
-    - kind: Identifier
-      text: x
-    - kind: Assign
-      text: "="
     - kind: Number
       text: "12"
-    - kind: Semicolon
-      text: ;
     "#);
 }
 
@@ -173,26 +157,14 @@ PASTE(a, b)
 fn test_redefine_builtin_macro_should_fail() {
     let src = r#"
 #define __DATE__ "123"
-const char* s = __DATE__;
+__DATE__
 "#;
     let mut config = PPConfig::default();
     config.current_time = Some(Utc.with_ymd_and_hms(2026, 1, 28, 0, 0, 0).unwrap());
     let (tokens, diags) = setup_pp_snapshot_with_diags_and_config(src, Some(config));
     insta::assert_yaml_snapshot!((tokens, diags), @r#"
-    - - kind: Identifier
-        text: const
-      - kind: Identifier
-        text: char
-      - kind: Star
-        text: "*"
-      - kind: Identifier
-        text: s
-      - kind: Assign
-        text: "="
-      - kind: StringLiteral
+    - - kind: StringLiteral
         text: "\"Jan 28 2026\""
-      - kind: Semicolon
-        text: ;
     - - "Warning: Redefinition of built-in macro '__DATE__'"
     "#);
 }
@@ -200,55 +172,30 @@ const char* s = __DATE__;
 #[test]
 fn test_file_macro() {
     let src = r#"
-const char* f = __FILE__;
+__FILE__
 "#;
     let tokens = setup_pp_snapshot(src);
     insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: const
-    - kind: Identifier
-      text: char
-    - kind: Star
-      text: "*"
-    - kind: Identifier
-      text: f
-    - kind: Assign
-      text: "="
     - kind: StringLiteral
       text: "\"<test>\""
-    - kind: Semicolon
-      text: ;
     "#);
 }
 
 #[test]
 fn test_counter_macro() {
     let src = r#"
-int a = __COUNTER__;
-int b = __COUNTER__;
+__COUNTER__
+__COUNTER__
+__COUNTER__
 "#;
     let tokens = setup_pp_snapshot(src);
     insta::assert_yaml_snapshot!(tokens, @r#"
-    - kind: Identifier
-      text: int
-    - kind: Identifier
-      text: a
-    - kind: Assign
-      text: "="
     - kind: Number
       text: "0"
-    - kind: Semicolon
-      text: ;
-    - kind: Identifier
-      text: int
-    - kind: Identifier
-      text: b
-    - kind: Assign
-      text: "="
     - kind: Number
       text: "1"
-    - kind: Semicolon
-      text: ;
+    - kind: Number
+      text: "2"
     "#);
 }
 

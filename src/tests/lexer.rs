@@ -168,6 +168,9 @@ mod tests {
             ("1.5", TokenKind::FloatConstant(1.5)),
             ("1.23e-4", TokenKind::FloatConstant(1.23e-4)),
             ("0x1.2p3", TokenKind::FloatConstant(9.0)),
+            // ⚡ Bolt: Improved coverage for hex float literals
+            ("0x1p-1", TokenKind::FloatConstant(0.5)), // Negative exponent
+            ("0X1.2P3", TokenKind::FloatConstant(9.0)), // 0X prefix and P separator
         ];
 
         for (text, expected_kind) in float_literals {

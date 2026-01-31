@@ -1221,7 +1221,13 @@ fn resolve_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: 
                     let addr = resolve_place_to_addr(place, ctx)?;
                     let val = ctx.builder.ins().load(ty, MemFlags::new(), addr, 0);
                     // Perform type conversion if needed (e.g. I8 -> I64 for variadic promotion, though expected_type should match)
-                    return Ok(emit_type_conversion(val, ty, expected_type, place_type.is_signed(), ctx.builder));
+                    return Ok(emit_type_conversion(
+                        val,
+                        ty,
+                        expected_type,
+                        place_type.is_signed(),
+                        ctx.builder,
+                    ));
                 }
 
                 // For aggregate types, resolving the operand value means getting its address
@@ -2033,7 +2039,8 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
             // We need to determine the correct type for the operand
             let place_type_id = get_place_type_id(place, ctx.mir);
             let place_type = ctx.mir.get_type(place_type_id);
-            let cranelift_type = convert_type(place_type, ctx.mir).ok_or_else(|| "Cannot store to a void type".to_string())?;
+            let cranelift_type =
+                convert_type(place_type, ctx.mir).ok_or_else(|| "Cannot store to a void type".to_string())?;
 
             let value = resolve_operand(operand, ctx, cranelift_type)?;
 

@@ -3015,15 +3015,19 @@ impl<'src> Preprocessor<'src> {
 
         // println!("Checking recursion for {} starting at {:?}", macro_name, current_id);
 
+        // ⚡ Bolt: Optimized to avoid allocating a String with `format!` in a loop.
+        // We pre-calculate the expected virtual path and use direct `Path` comparison,
+        // which is faster and avoids unnecessary string conversions.
+        let expected_name = format!("<macro_{}>", macro_name);
+        let expected_path = Path::new(&expected_name);
+
         while depth < MAX_DEPTH {
             if let Some(file_info) = self.source_manager.get_file_info(current_id) {
                 // println!("  Depth {}: Path {}", depth, file_info.path.display());
 
                 // Check if this file is a virtual buffer for the macro
                 // Virtual buffers for macros are named "<macro_{name}>"
-                let expected_name = format!("<macro_{}>", macro_name);
-                let path_str = file_info.path.to_string_lossy();
-                if path_str == expected_name {
+                if file_info.path == expected_path {
                     // println!("  -> FOUND RECURSION");
                     return true;
                 }

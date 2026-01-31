@@ -63,6 +63,33 @@ impl Type {
             }
         }
     }
+
+    pub(crate) fn flatten_members_with_layouts(
+        &self,
+        registry: &super::TypeRegistry,
+        flat_members: &mut Vec<StructMember>,
+        flat_offsets: &mut Vec<u16>,
+        base_offset: u16,
+    ) {
+        if let TypeKind::Record { members, .. } = &self.kind {
+            if let Some(TypeLayout {
+                kind: LayoutKind::Record { fields, .. },
+                ..
+            }) = &self.layout
+            {
+                for (i, member) in members.iter().enumerate() {
+                    let offset = base_offset + fields[i].offset;
+                    if member.name.is_none() {
+                        let inner_type = registry.get(member.member_type.ty());
+                        inner_type.flatten_members_with_layouts(registry, flat_members, flat_offsets, offset);
+                    } else {
+                        flat_members.push(member.clone());
+                        flat_offsets.push(offset);
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[repr(u8)]

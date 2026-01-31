@@ -9,12 +9,12 @@ impl<'a> AstToMirLowerer<'a> {
         &mut self,
         list_data: &ast::nodes::InitializerListData,
         members: &[StructMember],
+        field_offsets: &[u16],
         target_ty: QualType,
         destination: Option<Place>,
     ) -> Operand {
         let mut field_operands = Vec::new();
         let mut current_field_idx = 0;
-        let (_rec_size, _rec_align, field_layouts, _) = self.registry.get_record_layout(target_ty.ty());
 
         for item_ref in list_data.init_start.range(list_data.init_len) {
             let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
@@ -43,14 +43,14 @@ impl<'a> AstToMirLowerer<'a> {
 
             let operand = self.lower_initializer(init.initializer, member_ty, None);
             field_operands.push((field_idx, operand));
-            if field_idx < field_layouts.len() {
+            if field_idx < field_offsets.len() {
                 let target_kind = &self.registry.get(target_ty.ty()).kind;
                 let is_union_container = matches!(target_kind, TypeKind::Record { is_union: true, .. });
 
                 if is_union_container {
                     current_field_idx = members.len();
                 } else {
-                    let base_offset = field_layouts[field_idx].offset;
+                    let base_offset = field_offsets[field_idx];
                     let member_ty = members[field_idx].member_type;
                     let member_ty_ref = member_ty.ty();
                     let member_kind = &self.registry.get(member_ty_ref).kind;
@@ -72,7 +72,7 @@ impl<'a> AstToMirLowerer<'a> {
                     let should_skip = !is_bitfield && member_size > 0;
 
                     if should_skip {
-                        while next_idx < field_layouts.len() && field_layouts[next_idx].offset == base_offset {
+                        while next_idx < field_offsets.len() && field_offsets[next_idx] == base_offset {
                             next_idx += 1;
                         }
                     }
@@ -258,8 +258,9 @@ impl<'a> AstToMirLowerer<'a> {
         match (init_node_kind, &target_type.kind) {
             (NodeKind::InitializerList(list), TypeKind::Record { .. }) => {
                 let mut flat_members = Vec::new();
-                target_type.flatten_members(self.registry, &mut flat_members);
-                self.lower_initializer_list(&list, &flat_members, target_ty, destination)
+                let mut flat_offsets = Vec::new();
+                target_type.flatten_members_with_layouts(self.registry, &mut flat_members, &mut flat_offsets, 0);
+                self.lower_initializer_list(&list, &flat_members, &flat_offsets, target_ty, destination)
             }
             (NodeKind::InitializerList(list), TypeKind::Array { element_type, size }) => {
                 let element_ty = QualType::unqualified(*element_type);

@@ -489,14 +489,6 @@ impl TypeRegistry {
         }
     }
 
-    pub(crate) fn get_record_layout(&self, ty: TypeRef) -> (u16, u16, Vec<FieldLayout>, bool) {
-        let layout = self.get_layout(ty);
-        match &layout.kind {
-            LayoutKind::Record { fields, is_union } => (layout.size, layout.alignment, fields.clone(), *is_union),
-            _ => panic!("ICE: layout is not record"),
-        }
-    }
-
     pub(crate) fn ensure_layout(&mut self, ty: TypeRef) -> Result<Cow<'_, TypeLayout>, SemanticError> {
         if ty.is_inline_pointer() {
             return Ok(Cow::Owned(TypeLayout {

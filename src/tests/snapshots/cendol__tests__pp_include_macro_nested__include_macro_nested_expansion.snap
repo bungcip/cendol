@@ -1,6 +1,5 @@
 ---
 source: src/tests/pp_include_macro_nested.rs
-assertion_line: 19
 expression: diags
 ---
 - "Fatal Error: FileNotFound"

@@ -162,7 +162,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
     match &node.kind {
         ParsedNodeKind::Literal(literal) => match literal {
             crate::ast::literal::Literal::Int { val, .. } => ResolvedNodeKind::LiteralInt(*val),
-            crate::ast::literal::Literal::Float(val) => ResolvedNodeKind::LiteralFloat(*val),
+            crate::ast::literal::Literal::Float { val, .. } => ResolvedNodeKind::LiteralFloat(*val),
             crate::ast::literal::Literal::String(s) => ResolvedNodeKind::LiteralString(s.to_string()),
             crate::ast::literal::Literal::Char(c) => ResolvedNodeKind::LiteralChar(*c),
         },

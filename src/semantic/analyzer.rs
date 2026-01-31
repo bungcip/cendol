@@ -554,7 +554,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 kind,
                 NodeKind::Literal(literal::Literal::Int { .. })
                     | NodeKind::Literal(literal::Literal::Char(_))
-                    | NodeKind::Literal(literal::Literal::Float(_))
+                    | NodeKind::Literal(literal::Literal::Float { .. })
             )
         };
 
@@ -763,7 +763,7 @@ impl<'a> SemanticAnalyzer<'a> {
             self.ast.get_kind(rhs_ref),
             NodeKind::Literal(literal::Literal::Int { .. })
                 | NodeKind::Literal(literal::Literal::Char(_))
-                | NodeKind::Literal(literal::Literal::Float(_))
+                | NodeKind::Literal(literal::Literal::Float { .. })
         );
 
         if ((lhs_ty.is_arithmetic() && current_rhs_ty.is_arithmetic())
@@ -1468,7 +1468,14 @@ impl<'a> SemanticAnalyzer<'a> {
                     };
                     Some(QualType::unqualified(ty))
                 }
-                literal::Literal::Float(_) => Some(QualType::unqualified(self.registry.type_double)),
+                literal::Literal::Float { suffix, .. } => {
+                    let ty = match suffix {
+                        Some(literal::FloatSuffix::F) => self.registry.type_float,
+                        Some(literal::FloatSuffix::L) => self.registry.type_long_double,
+                        None => self.registry.type_double,
+                    };
+                    Some(QualType::unqualified(ty))
+                }
                 literal::Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
                 literal::Literal::String(name) => {
                     let parsed = crate::semantic::literal_utils::parse_string_literal(*name);

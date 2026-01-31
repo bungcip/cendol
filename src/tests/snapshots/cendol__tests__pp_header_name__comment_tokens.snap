@@ -1,0 +1,11 @@
+---
+source: src/tests/pp_header_name.rs
+assertion_line: 44
+expression: tokens
+---
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: ok
+- kind: Semicolon
+  text: ;

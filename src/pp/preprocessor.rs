@@ -1415,16 +1415,32 @@ impl<'src> Preprocessor<'src> {
             }
             PPTokenKind::Less => {
                 // Angled include: collect tokens until >
-                let mut path_parts = Vec::new();
-                loop {
-                    let part_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
-                    match part_token.kind {
-                        PPTokenKind::Greater => break,
-                        _ => path_parts.push(part_token),
+                // If this token wasn't from macro expansion and we have no pending tokens,
+                // we can lex the header name directly (ignoring comments/strings).
+                if !token.flags.contains(PPTokenFlags::MACRO_EXPANDED) && self.pending_tokens.is_empty() {
+                    // Fast path using raw lexer
+                    if let Some(lexer) = self.lexer_stack.last_mut() {
+                        match lexer.lex_header_name_content() {
+                            Ok(path) => (path, true),
+                            Err(_) => return Err(PPError::InvalidIncludePath),
+                        }
+                    } else {
+                        // Should not happen if we have a token
+                        return Err(PPError::UnexpectedEndOfFile);
                     }
+                } else {
+                    // Fallback to token collection loop for computed includes
+                    let mut path_parts = Vec::new();
+                    loop {
+                        let part_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
+                        match part_token.kind {
+                            PPTokenKind::Greater => break,
+                            _ => path_parts.push(part_token),
+                        }
+                    }
+                    let path = self.tokens_to_path_string(&path_parts);
+                    (path, true)
                 }
-                let path = self.tokens_to_path_string(&path_parts);
-                (path, true)
             }
             _ => {
                 // Computed include: C11 6.10.2p4

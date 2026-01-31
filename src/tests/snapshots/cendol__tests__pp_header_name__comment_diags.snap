@@ -1,0 +1,6 @@
+---
+source: src/tests/pp_header_name.rs
+assertion_line: 45
+expression: diags
+---
+[]

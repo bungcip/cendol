@@ -1162,4 +1162,24 @@ impl PPLexer {
     pub(crate) fn take_line_starts(self) -> Vec<u32> {
         self.line_starts
     }
+
+    /// Lex the content of a header name (inside <...>)
+    /// Reads characters until '>' is found.
+    /// Returns Ok(content) if successful (consuming '>'), or Err if newline/EOF reached.
+    pub(crate) fn lex_header_name_content(&mut self) -> Result<String, ()> {
+        let mut text = String::new();
+        loop {
+            // Check for closing >
+            if self.peek_char() == Some(b'>') {
+                self.next_char(); // Consume >
+                return Ok(text);
+            }
+
+            match self.next_char() {
+                Some(b'\n') => return Err(()), // Newline not allowed in header name
+                Some(ch) => text.push(ch as char),
+                None => return Err(()), // EOF inside header name
+            }
+        }
+    }
 }

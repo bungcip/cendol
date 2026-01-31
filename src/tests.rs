@@ -79,3 +79,4 @@ mod type_specifier_regression;
 pub mod typeref;
 pub mod variadic_long_double;
 pub mod variadic_printf_regression;
+pub mod pp_header_name;

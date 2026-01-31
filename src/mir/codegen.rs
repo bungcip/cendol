@@ -986,11 +986,7 @@ fn emit_function_call_impl(
 }
 
 /// Helper function to convert boolean to integer (0 or 1)
-fn emit_al_count_and_pass_addr(
-    xmm_used: usize,
-    addr: Value,
-    ctx: &mut BodyEmitContext,
-) -> Result<Value, String> {
+fn emit_al_count_and_pass_addr(xmm_used: usize, addr: Value, ctx: &mut BodyEmitContext) -> Result<Value, String> {
     // x86_64 SysV ABI requires AL to be set to the number of floating point arguments for variadic calls.
     if ctx.triple.architecture == target_lexicon::Architecture::X86_64
         && ctx.builder.func.signature.call_conv == cranelift::codegen::isa::CallConv::SystemV
@@ -1876,11 +1872,9 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         let lo = ctx.builder.ins().load(types::I64, MemFlags::new(), addr, 0);
                         let hi = ctx.builder.ins().load(types::I64, MemFlags::new(), addr, 8);
 
-                        let scratch = ctx.builder.create_sized_stack_slot(StackSlotData::new(
-                            StackSlotKind::ExplicitSlot,
-                            16,
-                            4,
-                        ));
+                        let scratch =
+                            ctx.builder
+                                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 16, 4));
                         ctx.builder.ins().stack_store(lo, scratch, 0);
                         ctx.builder.ins().stack_store(hi, scratch, 8);
                         ctx.builder.ins().stack_load(types::F128, scratch, 0)

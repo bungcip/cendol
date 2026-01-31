@@ -34,7 +34,7 @@ int y = 0;
     - kind: Assign
       text: "="
     - kind: Number
-      text: "1"
+      text: "0"
     - kind: Semicolon
       text: ;
     "#);
@@ -58,7 +58,7 @@ int x = 0;
     - kind: Assign
       text: "="
     - kind: Number
-      text: "0"
+      text: "1"
     - kind: Semicolon
       text: ;
     "#);
@@ -112,7 +112,7 @@ int y = 0;
     - kind: Assign
       text: "="
     - kind: Number
-      text: "0"
+      text: "1"
     - kind: Semicolon
       text: ;
     "#);

@@ -11,7 +11,7 @@ use crate::mir::{
     MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
     UnaryIntOp,
 };
-use cranelift::codegen::ir::{AtomicRmwOp, Inst, StackSlot, StackSlotData, StackSlotKind};
+use cranelift::codegen::ir::{ArgumentPurpose, AtomicRmwOp, Inst, StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
     AbiParam, Block, Configurable, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type,
     Value, types,
@@ -498,6 +498,7 @@ fn prepare_call_signature(
     mir: &MirProgram,
     is_variadic: bool,
     use_variadic_hack: bool,
+    is_defined: bool,
 ) -> Signature {
     let mut sig = Signature::new(call_conv);
     // sig.set_is_variadic(is_variadic); // Try if this method exists
@@ -523,6 +524,13 @@ fn prepare_call_signature(
         if split_f128 && matches!(mir_type, MirType::F80 | MirType::F128) {
             sig.params.push(AbiParam::new(types::I64));
             sig.params.push(AbiParam::new(types::I64));
+            continue;
+        }
+
+        // Force stack passing for long double in extern calls
+        if !is_defined && matches!(mir_type, MirType::F80 | MirType::F128) {
+            sig.params
+                .push(AbiParam::special(types::I64, ArgumentPurpose::StructArgument(16)));
             continue;
         }
 
@@ -554,6 +562,13 @@ fn prepare_call_signature(
                 sig.params.push(AbiParam::new(types::I64));
                 continue;
             }
+
+            // Force stack passing for long double in extern calls (variadic args)
+            if !is_defined && matches!(mir_type, MirType::F80 | MirType::F128) {
+                sig.params
+                    .push(AbiParam::special(types::I64, ArgumentPurpose::StructArgument(16)));
+                continue;
+            }
         }
         let mut arg_type = get_operand_clif_type(arg, mir).unwrap_or(types::I32);
 
@@ -568,11 +583,11 @@ fn prepare_call_signature(
     }
 
     if use_variadic_hack {
-        // Normalized Variadic Signature hack: Ensure at least 32 slots for variadic functions
-        // This matches the 32-slot spill area in setup_signature
+        // Normalized Variadic Signature hack: Ensure at least 64 slots for variadic functions
+        // This matches the 64-slot spill area in setup_signature
         if is_variadic {
             let current_gpr_count = sig.params.len();
-            let total_variadic_slots = 32;
+            let total_variadic_slots = 64;
             if current_gpr_count < total_variadic_slots {
                 for _ in 0..(total_variadic_slots - current_gpr_count) {
                     sig.params.push(AbiParam::new(types::I64));
@@ -602,9 +617,18 @@ fn resolve_call_args(
         }
 
         let param_type = sig.params[sig_idx].value_type;
+        let purpose = sig.params[sig_idx].purpose;
 
         // Check operand type
         let arg_type_id = get_operand_type_id(arg, ctx.mir).ok();
+
+        // Handle StructArgument (pass by value on stack)
+        if let ArgumentPurpose::StructArgument(size) = purpose {
+            let addr = resolve_operand_as_addr(arg, ctx, size)?;
+            arg_values.push(addr);
+            sig_idx += 1;
+            continue;
+        }
 
         // Check if F128 splitting is needed
         if split_f128
@@ -779,6 +803,7 @@ fn emit_function_call_impl(
         ctx.mir,
         is_variadic,
         use_variadic_hack,
+        use_variadic_hack, // for calls, is_defined matches use_variadic_hack
     );
 
     let split_f128 = use_variadic_hack;
@@ -795,6 +820,7 @@ fn emit_function_call_impl(
                 &[],
                 ctx.mir,
                 is_variadic,
+                use_variadic_hack,
                 use_variadic_hack,
             );
             let decl = ctx
@@ -1119,6 +1145,31 @@ fn resolve_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: 
                 ctx.builder,
             ))
         }
+    }
+}
+
+/// Helper function to resolve a MIR operand to a memory address.
+/// If the operand is already a place, return its address.
+/// If it's a value, store it to a temporary stack slot and return the address.
+fn resolve_operand_as_addr(operand: &Operand, ctx: &mut BodyEmitContext, size: u32) -> Result<Value, String> {
+    if let Operand::Copy(place) = operand {
+        // If it's a place, just get its address
+        resolve_place_to_addr(place, ctx)
+    } else {
+        // It's a value (Constant, Cast, etc.), so we must store it to a temporary slot.
+        // We need to know the type to resolve the value.
+        // We can guess the type from the operand or assume F128/Struct based on size?
+        // But get_operand_clif_type gives us the type.
+        let ty = get_operand_clif_type(operand, ctx.mir)?;
+        let val = resolve_operand(operand, ctx, ty)?;
+
+        // Create a temporary stack slot
+        let slot = ctx
+            .builder
+            .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, 0));
+
+        ctx.builder.ins().stack_store(val, slot, 0);
+        Ok(ctx.builder.ins().stack_addr(types::I64, slot, 0))
     }
 }
 
@@ -2121,18 +2172,26 @@ fn setup_signature(
         let mir_type = mir.get_type(param_local.type_id);
 
         if matches!(mir_type, MirType::F80 | MirType::F128) {
-            // Split F128/F80 into 2 I64s for internal ABI
-            func_ctx.params.push(AbiParam::new(types::I64));
-            func_ctx.params.push(AbiParam::new(types::I64));
-            // Track them as F128 in param_types for lower_function to know,
-            // OR track split types? lower_function iterates MIR params.
-            // It needs to know it consumes 2 slots.
-            // We push F128 to param_types so lower_function knows the logic type.
-            // BUT setup_signature return type `Vec<Type>` is used by lower_function
-            // to append_block_param.
-            // So we must push I64, I64 to param_types.
-            param_types.push(types::I64);
-            param_types.push(types::I64);
+            if matches!(func.kind, MirFunctionKind::Defined) {
+                // Split F128/F80 into 2 I64s for internal ABI
+                func_ctx.params.push(AbiParam::new(types::I64));
+                func_ctx.params.push(AbiParam::new(types::I64));
+                // Track them as F128 in param_types for lower_function to know,
+                // OR track split types? lower_function iterates MIR params.
+                // It needs to know it consumes 2 slots.
+                // We push F128 to param_types so lower_function knows the logic type.
+                // BUT setup_signature return type `Vec<Type>` is used by lower_function
+                // to append_block_param.
+                // So we must push I64, I64 to param_types.
+                param_types.push(types::I64);
+                param_types.push(types::I64);
+            } else {
+                // Extern: Force stack passing via StructArgument
+                func_ctx
+                    .params
+                    .push(AbiParam::special(types::I64, ArgumentPurpose::StructArgument(16)));
+                param_types.push(types::I64);
+            }
             continue;
         }
 
@@ -2146,10 +2205,10 @@ fn setup_signature(
     }
 
     if func.is_variadic && matches!(func.kind, MirFunctionKind::Defined) {
-        // Add 32 total I64 parameters to capture variadic arguments (6 GPRs + 26 stack slots)
+        // Add 64 total I64 parameters to capture variadic arguments
         // This allows variadic functions to receive many struct args that expand to multiple I64s
         let fixed_params_count = func.params.len();
-        let total_variadic_slots = 32; // Support up to 32 I64 slots for variadic args
+        let total_variadic_slots = 64; // Support up to 64 I64 slots for variadic args
         if fixed_params_count < total_variadic_slots {
             for _ in 0..(total_variadic_slots - fixed_params_count) {
                 func_ctx.params.push(AbiParam::new(types::I64));
@@ -2422,7 +2481,7 @@ impl MirToCraneliftLowerer {
                 // Step 2: Add variadic block parameters if needed (still before any instructions)
                 if func.is_variadic {
                     let fixed_param_count = func.params.len();
-                    let total_variadic_slots = 32; // Must match setup_signature
+                    let total_variadic_slots = 64; // Must match setup_signature
                     if fixed_param_count < total_variadic_slots {
                         let extra_count = total_variadic_slots - fixed_param_count;
                         for _ in 0..extra_count {
@@ -2464,10 +2523,10 @@ impl MirToCraneliftLowerer {
                     }
                 }
 
-                // Step 4: Handle variadic spill area - save all 32 slots
+                // Step 4: Handle variadic spill area - save all 64 slots
                 if func.is_variadic {
-                    let total_slots = 32;
-                    let spill_size = total_slots * 8; // 256 bytes for 32 I64 slots
+                    let total_slots = 64;
+                    let spill_size = total_slots * 8; // 512 bytes for 64 I64 slots
                     let spill_slot = builder.create_sized_stack_slot(StackSlotData::new(
                         StackSlotKind::ExplicitSlot,
                         spill_size as u32,

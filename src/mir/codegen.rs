@@ -494,6 +494,21 @@ fn is_xmm_argument(mir_type: &MirType) -> bool {
     matches!(mir_type, MirType::F32 | MirType::F64 | MirType::F80 | MirType::F128)
 }
 
+/// Helper to determine if a type should be packed into registers (I64)
+/// Returns Some(count) of I64 registers needed (max 2)
+fn get_struct_packing(mir_type: &MirType, mir: &MirProgram) -> Option<usize> {
+    if !mir_type.is_aggregate() {
+        return None;
+    }
+
+    let size = mir_type_size(mir_type, mir).ok()?;
+    if size == 0 || size > 16 {
+        return None;
+    }
+
+    Some(size.div_ceil(8) as usize)
+}
+
 /// Helper to prepare a function signature for a call
 fn prepare_call_signature(
     call_conv: cranelift::codegen::isa::CallConv,
@@ -531,6 +546,14 @@ fn prepare_call_signature(
 
         if is_xmm_argument(mir_type) {
             xmm_used += 1;
+        }
+
+        // Check for struct packing (HFA workaround: pass as I64s in GPRs)
+        if let Some(count) = get_struct_packing(mir_type, mir) {
+            for _ in 0..count {
+                sig.params.push(AbiParam::new(types::I64));
+            }
+            continue;
         }
 
         if split_f128 && matches!(mir_type, MirType::F80 | MirType::F128) {
@@ -587,6 +610,10 @@ fn prepare_call_signature(
             }
         }
         let mut arg_type = get_operand_clif_type(arg, mir).unwrap_or(types::I32);
+
+        if is_variadic && arg_type == types::F32 {
+            arg_type = types::F64;
+        }
 
         if use_variadic_hack {
             // Normalized Variadic Signature hack: promote variadic GPR args to i64
@@ -652,6 +679,44 @@ fn resolve_call_args(
 
         // Check operand type
         let arg_type_id = get_operand_type_id(arg, ctx.mir).ok();
+
+        // Check for struct packing in fixed parameters
+        if arg_idx < fixed_param_count
+            && let Some(type_id) = arg_type_id
+            && let Some(count) = get_struct_packing(ctx.mir.get_type(type_id), ctx.mir)
+        {
+            // Resolve struct to address
+            let struct_addr = resolve_operand(arg, ctx, types::I64)?;
+            let size = mir_type_size(ctx.mir.get_type(type_id), ctx.mir).unwrap_or(8u32);
+
+            for i in 0..count {
+                // If it's the last chunk, we might need partial load
+                let offset = (i * 8) as i32;
+                let remaining = size.saturating_sub((i * 8) as u32);
+
+                let val = if remaining >= 8 {
+                    ctx.builder.ins().load(types::I64, MemFlags::new(), struct_addr, offset)
+                } else {
+                    // Partial load
+                    let mut current_val = ctx.builder.ins().iconst(types::I64, 0);
+                    for b in 0..remaining {
+                        let byte_val =
+                            ctx.builder
+                                .ins()
+                                .load(types::I8, MemFlags::new(), struct_addr, offset + b as i32);
+                        let byte_ext = ctx.builder.ins().uextend(types::I64, byte_val);
+                        let shift_amt = ctx.builder.ins().iconst(types::I64, (b * 8) as i64);
+                        let shifted = ctx.builder.ins().ishl(byte_ext, shift_amt);
+                        current_val = ctx.builder.ins().bor(current_val, shifted);
+                    }
+                    current_val
+                };
+                arg_values.push(val);
+            }
+
+            sig_idx += count;
+            continue;
+        }
 
         // Check if F128 splitting is needed
         if split_f128
@@ -2194,6 +2259,14 @@ fn setup_signature(
         let param_local = mir.get_local(param_id);
         let mir_type = mir.get_type(param_local.type_id);
 
+        if let Some(count) = get_struct_packing(mir_type, mir) {
+            for _ in 0..count {
+                func_ctx.params.push(AbiParam::new(types::I64));
+                param_types.push(types::I64);
+            }
+            continue;
+        }
+
         if matches!(mir_type, MirType::F80 | MirType::F128) {
             // Split F128/F80 into 2 I64s for internal ABI
             func_ctx.params.push(AbiParam::new(types::I64));
@@ -2512,6 +2585,36 @@ impl MirToCraneliftLowerer {
                 for &param_id in &func.params {
                     let local = self.mir.get_local(param_id);
                     let mir_type = self.mir.get_type(local.type_id);
+
+                    // Check for struct packing
+                    if let Some(count) = get_struct_packing(mir_type, &self.mir) {
+                        if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
+                            let size = mir_type_size(mir_type, &self.mir).unwrap_or(8);
+                            for i in 0..count {
+                                let val = param_iter.next().unwrap();
+                                let offset = (i * 8) as i32;
+                                let remaining = size.saturating_sub((i * 8) as u32);
+
+                                if remaining >= 8 {
+                                    builder.ins().stack_store(val, *stack_slot, offset);
+                                } else {
+                                    // Partial store
+                                    for b in 0..remaining {
+                                        let shift_amt = builder.ins().iconst(types::I64, (b * 8) as i64);
+                                        let shifted = builder.ins().ushr(val, shift_amt);
+                                        let byte_val = builder.ins().ireduce(types::I8, shifted);
+                                        builder.ins().stack_store(byte_val, *stack_slot, offset + b as i32);
+                                    }
+                                }
+                            }
+                        } else {
+                            // Consume even if no stack slot
+                            for _ in 0..count {
+                                let _ = param_iter.next();
+                            }
+                        }
+                        continue;
+                    }
 
                     if matches!(mir_type, MirType::F80 | MirType::F128) {
                         // Consumes 2 slots

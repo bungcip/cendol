@@ -91,13 +91,13 @@ pub struct MirFunction {
 }
 
 impl MirFunction {
-    pub fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
+    pub fn new(id: MirFunctionId, name: NameId, return_type: TypeId, kind: MirFunctionKind) -> Self {
         Self {
             id,
             name,
             return_type,
             params: Vec::new(),
-            kind: MirFunctionKind::Defined,
+            kind,
             is_variadic: false,
             locals: Vec::new(),
             blocks: Vec::new(),
@@ -105,18 +105,12 @@ impl MirFunction {
         }
     }
 
+    pub fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
+        Self::new(id, name, return_type, MirFunctionKind::Defined)
+    }
+
     pub fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
-        Self {
-            id,
-            name,
-            return_type,
-            params: Vec::new(),
-            kind: MirFunctionKind::Extern,
-            is_variadic: false,
-            locals: Vec::new(),
-            blocks: Vec::new(),
-            entry_block: None,
-        }
+        Self::new(id, name, return_type, MirFunctionKind::Extern)
     }
 }
 

@@ -19,6 +19,7 @@ pub mod parser_utils;
 pub mod pointer_arithmetic_regression;
 #[macro_use]
 pub mod pp_common;
+pub mod hfa_runtime;
 pub mod pp_directives;
 pub mod pp_expressions;
 pub mod pp_include;

@@ -103,50 +103,22 @@ impl SourceSpan {
             return Self::new_with_length(start.source_id, start.offset, 0);
         }
 
-        let source_id = start.source_id.to_u32();
-        if source_id > Self::MAX_SOURCE_ID {
-            panic!("SourceId exceeds 24-bit limit: {}", source_id);
-        }
-
-        let offset = start.offset;
-        let mut length = end.offset.saturating_sub(offset);
-
-        if offset > Self::MAX_OFFSET {
-            panic!("SourceSpan offset exceeds 16 MiB limit: {}", offset);
-        }
-
-        if length > Self::MAX_LENGTH {
-            // Cap length if it's too long
-            length = Self::MAX_LENGTH;
-        }
-
-        let packed = (offset as u64 & Self::OFFSET_MASK)
-            | ((length as u64 & Self::LENGTH_MASK) << Self::LENGTH_SHIFT)
-            | ((source_id as u64 & Self::SOURCE_ID_MASK) << Self::SOURCE_ID_SHIFT);
-
-        Self(packed)
+        let length = end.offset.saturating_sub(start.offset);
+        Self::new_with_length(start.source_id, start.offset, length)
     }
 
     pub fn new_with_length(source_id: SourceId, offset: u32, length: u32) -> Self {
         let id = source_id.to_u32();
-        if id > Self::MAX_SOURCE_ID {
-            panic!("SourceId exceeds 24-bit limit: {}", id);
-        }
+        assert!(id <= Self::MAX_SOURCE_ID, "SourceId exceeds 24-bit limit: {}", id);
+        assert!(
+            offset <= Self::MAX_OFFSET,
+            "SourceSpan offset exceeds 16 MiB limit: {}",
+            offset
+        );
 
-        if offset > Self::MAX_OFFSET {
-            panic!("SourceSpan offset exceeds 16 MiB limit: {}", offset);
-        }
+        let len = length.min(Self::MAX_LENGTH);
 
-        let mut len = length;
-        if len > Self::MAX_LENGTH {
-            len = Self::MAX_LENGTH;
-        }
-
-        let packed = (offset as u64 & Self::OFFSET_MASK)
-            | ((len as u64 & Self::LENGTH_MASK) << Self::LENGTH_SHIFT)
-            | ((id as u64 & Self::SOURCE_ID_MASK) << Self::SOURCE_ID_SHIFT);
-
-        Self(packed)
+        Self((offset as u64) | ((len as u64) << Self::LENGTH_SHIFT) | ((id as u64) << Self::SOURCE_ID_SHIFT))
     }
 
     pub fn empty() -> Self {

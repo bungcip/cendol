@@ -43,9 +43,6 @@ pub enum ParseError {
 
     #[error("Declaration not allowed in this context")]
     DeclarationNotAllowed { span: SourceSpan },
-
-    #[error("Parser exceeded maximum iteration limit - possible infinite loop")]
-    InfiniteLoop { span: SourceSpan },
 }
 
 impl ParseError {
@@ -55,7 +52,6 @@ impl ParseError {
             ParseError::UnexpectedEof { span } => *span,
             ParseError::InvalidUnaryOperator { span } => *span,
             ParseError::DeclarationNotAllowed { span } => *span,
-            ParseError::InfiniteLoop { span } => *span,
         }
     }
 }

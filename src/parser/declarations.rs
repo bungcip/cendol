@@ -318,11 +318,11 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
         // Prevent infinite loops by limiting iterations
         iteration_count += 1;
         if iteration_count > MAX_ITERATIONS {
-            debug!(
+            // infinite loop detected, we have bug in parser, so we don't return error but panic
+            panic!(
                 "Parser exceeded maximum iteration limit at token {:?}, position {}",
                 token.kind, parser.current_idx
             );
-            return Err(ParseError::InfiniteLoop { span: token.span });
         }
 
         let initial_idx = parser.current_idx;

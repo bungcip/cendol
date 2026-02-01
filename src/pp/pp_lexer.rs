@@ -109,11 +109,6 @@ impl PPToken {
         PPToken::new(kind, flags, location, text.len() as u16)
     }
 
-    /// Create a PPToken with custom flags and length 1
-    pub(crate) fn with_flags(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc) -> Self {
-        PPToken::new(kind, flags, location, 1)
-    }
-
     /// Get the raw byte slice from the source buffer for this token
     pub(crate) fn get_raw_slice<'a>(&self, buffer: &'a [u8]) -> &'a [u8] {
         let start = self.location.offset() as usize;
@@ -176,9 +171,8 @@ impl PPToken {
             PPTokenKind::LogicOr => "||",
             PPTokenKind::Hash => "#",
             PPTokenKind::HashHash => "##",
-            PPTokenKind::Eof => "",
-            PPTokenKind::Eod => "",
             PPTokenKind::Unknown => "?",
+            _ => "",
         }
     }
 }
@@ -192,6 +186,7 @@ pub(crate) struct PPLexer {
     put_back_token: Option<PPToken>,
     pub(crate) line_offset: u32,
     pub(crate) in_directive_line: bool, // Whether we are currently processing tokens on a directive line
+    pub(crate) at_start_of_line: bool,  // Whether we are at the beginning of a line (only whitespace/comments seen)
 }
 
 impl PPLexer {
@@ -206,6 +201,7 @@ impl PPLexer {
             put_back_token: None,
             line_offset: 0,
             in_directive_line: false,
+            at_start_of_line: true,
         }
     }
 
@@ -344,11 +340,17 @@ impl PPLexer {
     /// for the compiler to optimize. It also fixes a bug in the original `...` lexing logic.
     fn lex_operator(&mut self, start_pos: u32, ch: u8, flags: PPTokenFlags) -> PPToken {
         let loc = SourceLoc::new(self.source_id, start_pos);
+        // ⚡ Bolt: Check if we're at the beginning of a line (ignoring whitespace).
+        // This is crucial for identifying the '#' or '%:' that starts a preprocessor directive.
+        let is_at_start_of_line = self.at_start_of_line;
 
         // Helper macro to reduce boilerplate when creating a token.
         macro_rules! token {
             ($kind:expr, $len:expr) => {
                 PPToken::new($kind, flags, loc, $len)
+            };
+            ($kind:expr, $len:expr, $custom_flags:expr) => {
+                PPToken::new($kind, $custom_flags, loc, $len)
             };
         }
 
@@ -365,6 +367,18 @@ impl PPLexer {
         }
 
         match ch {
+            b'#' => {
+                if consume_if!(b'#') {
+                    token!(PPTokenKind::HashHash, 2)
+                } else {
+                    let mut token_flags = flags;
+                    if is_at_start_of_line {
+                        token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                        self.in_directive_line = true;
+                    }
+                    token!(PPTokenKind::Hash, 1, token_flags)
+                }
+            }
             b'+' => {
                 if consume_if!(b'+') {
                     token!(PPTokenKind::Increment, 2)
@@ -404,6 +418,34 @@ impl PPLexer {
                     token!(PPTokenKind::ModAssign, 2)
                 } else if consume_if!(b'>') {
                     token!(PPTokenKind::RightBrace, 2)
+                } else if consume_if!(b':') {
+                    // Check for %:%: (##)
+                    let saved_pos = self.position;
+                    let saved_lines_len = self.line_starts.len();
+
+                    if consume_if!(b'%') {
+                        if consume_if!(b':') {
+                            token!(PPTokenKind::HashHash, 4)
+                        } else {
+                            // Backtrack to after %:
+                            self.position = saved_pos;
+                            self.line_starts.truncate(saved_lines_len);
+                            let mut token_flags = flags;
+                            if is_at_start_of_line {
+                                token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                                self.in_directive_line = true;
+                            }
+                            token!(PPTokenKind::Hash, 2, token_flags)
+                        }
+                    } else {
+                        // %: -> Hash
+                        let mut token_flags = flags;
+                        if is_at_start_of_line {
+                            token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                            self.in_directive_line = true;
+                        }
+                        token!(PPTokenKind::Hash, 2, token_flags)
+                    }
                 } else {
                     token!(PPTokenKind::Percent, 1)
                 }
@@ -480,6 +522,7 @@ impl PPLexer {
             b'~' => token!(PPTokenKind::Tilde, 1),
             b'.' => 'ellipsis: {
                 let pos_after_first = self.position;
+                let lines_after_first = self.line_starts.len();
                 if self.peek_char() == Some(b'.') {
                     self.next_char(); // Consume second '.'
                     if self.peek_char() == Some(b'.') {
@@ -488,6 +531,7 @@ impl PPLexer {
                     }
                     // It was '..', which is not a valid C token. Backtrack to handle it as a single '.'
                     self.position = pos_after_first;
+                    self.line_starts.truncate(lines_after_first);
                 }
                 token!(PPTokenKind::Dot, 1)
             }
@@ -547,6 +591,7 @@ impl PPLexer {
         // Only \n triggers Eod, \r is treated as whitespace (Windows \r\n support)
         if ch == b'\n' && self.in_directive_line {
             self.in_directive_line = false;
+            self.at_start_of_line = true;
             return Some(PPToken::new(
                 PPTokenKind::Eod,
                 flags,
@@ -555,7 +600,7 @@ impl PPLexer {
             ));
         }
 
-        match ch {
+        let token = match ch {
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
                 if ch == b'L' || ch == b'u' || ch == b'U' {
                     let next_ch = self.peek_char();
@@ -610,73 +655,7 @@ impl PPLexer {
             b'0'..=b'9' => Some(self.lex_number(start_pos, ch, flags)),
             b'"' => Some(self.lex_string_literal(start_pos, ch, flags)),
             b'\'' => Some(self.lex_char_literal(start_pos, ch, flags)),
-            b'#' => {
-                let mut token_flags = flags;
-                token_flags |= PPTokenFlags::STARTS_PP_LINE;
-                if self.peek_char() == Some(b'#') {
-                    self.next_char(); // consume the second #
-                    Some(PPToken::new(
-                        PPTokenKind::HashHash,
-                        flags, // HashHash does not start a PP line
-                        SourceLoc::new(self.source_id, start_pos),
-                        2,
-                    ))
-                } else {
-                    // Set directive line flag when we encounter a # that starts a preprocessor line
-                    self.in_directive_line = true;
-                    Some(PPToken::with_flags(
-                        PPTokenKind::Hash,
-                        token_flags,
-                        SourceLoc::new(self.source_id, start_pos),
-                    ))
-                }
-            }
-            b'%' => {
-                if self.peek_char() == Some(b':') {
-                    self.next_char(); // consume :
-                    // Check for %:%: (##)
-                    let saved_pos = self.position;
-                    let saved_lines_len = self.line_starts.len();
-
-                    if self.peek_char() == Some(b'%') {
-                        self.next_char(); // consume %
-                        if self.peek_char() == Some(b':') {
-                            self.next_char(); // consume :
-                            Some(PPToken::new(
-                                PPTokenKind::HashHash,
-                                flags,
-                                SourceLoc::new(self.source_id, start_pos),
-                                4,
-                            ))
-                        } else {
-                            // Backtrack
-                            self.position = saved_pos;
-                            self.line_starts.truncate(saved_lines_len);
-
-                            let mut token_flags = flags;
-                            token_flags |= PPTokenFlags::STARTS_PP_LINE;
-                            self.in_directive_line = true;
-                            Some(PPToken::with_flags(
-                                PPTokenKind::Hash,
-                                token_flags,
-                                SourceLoc::new(self.source_id, start_pos),
-                            ))
-                        }
-                    } else {
-                        // %: -> Hash
-                        let mut token_flags = flags;
-                        token_flags |= PPTokenFlags::STARTS_PP_LINE;
-                        self.in_directive_line = true;
-                        Some(PPToken::with_flags(
-                            PPTokenKind::Hash,
-                            token_flags,
-                            SourceLoc::new(self.source_id, start_pos),
-                        ))
-                    }
-                } else {
-                    Some(self.lex_operator(start_pos, ch, flags))
-                }
-            }
+            b'#' | b'%' => Some(self.lex_operator(start_pos, ch, flags)),
             b'.' => {
                 if let Some(next_ch) = self.peek_char()
                     && next_ch.is_ascii_digit()
@@ -695,7 +674,15 @@ impl PPLexer {
                 SourceLoc::new(self.source_id, start_pos),
                 1,
             )),
+        };
+
+        if let Some(t) = &token {
+            if t.kind != PPTokenKind::Eod {
+                self.at_start_of_line = false;
+            }
         }
+
+        token
     }
 
     fn skip_whitespace_and_comments(&mut self) {
@@ -704,6 +691,9 @@ impl PPLexer {
             // But don't skip newlines if we're in a directive line (let them be processed as tokens)
             while let Some(ch) = self.peek_char() {
                 if ch.is_ascii_whitespace() && !(ch == b'\n' && self.in_directive_line) {
+                    if ch == b'\n' {
+                        self.at_start_of_line = true;
+                    }
                     self.next_char();
                 } else {
                     break;
@@ -760,17 +750,31 @@ impl PPLexer {
         // multiple reallocations during identifier/number lexing.
         let mut chars = Vec::with_capacity(32);
         chars.push(first_ch);
-        while let Some(ch) = self.peek_char() {
-            if pred(&mut state, ch) {
-                chars.push(self.next_char().unwrap());
-            } else {
-                break;
+        loop {
+            // ⚡ Bolt: Fast path for direct buffer access when no line splicing or trigraphs are present.
+            let pos = self.position as usize;
+            if pos < self.buffer.len() {
+                let ch = self.buffer[pos];
+                if ch != b'?' && ch != b'\\' {
+                    if pred(&mut state, ch) {
+                        self.position += 1;
+                        chars.push(ch);
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
             }
+
+            if let Some(ch) = self.peek_char() {
+                if pred(&mut state, ch) {
+                    chars.push(self.next_char().unwrap());
+                    continue;
+                }
+            }
+            break;
         }
-        // Safety: We assume the caller only consumes valid UTF-8 characters (identifiers/numbers)
-        // or we handle validation later. For identifiers/numbers constructed from ascii, this is safe.
-        // Actually, identifiers can contain unicode in some extensions, but here we assume standard handling.
-        // PPLexer usually deals with bytes, but text tokens are generally UTF-8 compatible.
+        // Safety: We assume the caller only consumes valid UTF-8 characters (identifiers/numbers).
         String::from_utf8(chars).unwrap()
     }
 
@@ -919,8 +923,33 @@ impl PPLexer {
         }
 
         loop {
+            // ⚡ Bolt: Fast path for common ASCII identifier characters.
+            // We directly access the buffer to avoid the overhead of `peek_char` and `next_char`
+            // when there are no trigraphs ('?') or line splices ('\') to handle.
+            let pos = self.position as usize;
+            if pos < self.buffer.len() {
+                let ch = self.buffer[pos];
+                if ch != b'?' && ch != b'\\' {
+                    if ch.is_ascii_alphanumeric() || ch == b'_' {
+                        self.position += 1;
+                        text.push(ch as char);
+                        length += 1;
+                        continue;
+                    } else if ch < 0x80 {
+                        // Other ASCII, stop identifier
+                        break;
+                    }
+                }
+            }
+
+            // Fallback for tricky cases (Trigraphs, Splices, UCNs, UTF-8)
+            let ch = match self.peek_char() {
+                Some(c) => c,
+                None => break,
+            };
+
             // Check for UCN
-            if let Some(b'\\') = self.peek_char() {
+            if ch == b'\\' {
                 let saved_pos = self.position;
                 let saved_lines_len = self.line_starts.len();
                 self.next_char(); // consume \
@@ -942,39 +971,38 @@ impl PPLexer {
             }
 
             // Check for UTF-8
-            if let Some(ch) = self.peek_char() {
-                if ch >= 0x80 && self.is_valid_utf8_start(ch) {
-                    let saved_pos = self.position;
-                    let saved_lines_len = self.line_starts.len();
+            if ch >= 0x80 && self.is_valid_utf8_start(ch) {
+                let saved_pos = self.position;
+                let saved_lines_len = self.line_starts.len();
 
-                    self.next_char(); // consume first
-                    let mut bytes = vec![ch];
-                    while let Some(cont) = self.peek_char() {
-                        if (0x80..0xC0).contains(&cont) {
-                            bytes.push(self.next_char().unwrap());
-                        } else {
-                            break;
-                        }
-                    }
-
-                    if let Ok(s) = String::from_utf8(bytes) {
-                        text.push_str(&s);
-                        length += s.len() as u16;
+                self.next_char(); // consume first
+                let mut bytes = vec![ch];
+                while let Some(cont) = self.peek_char() {
+                    if (0x80..0xC0).contains(&cont) {
+                        bytes.push(self.next_char().unwrap());
                     } else {
-                        // Invalid UTF-8, backtrack
-                        self.position = saved_pos;
-                        self.line_starts.truncate(saved_lines_len);
                         break;
                     }
-                    continue;
                 }
 
-                if ch.is_ascii_alphanumeric() || ch == b'_' {
-                    self.next_char();
-                    text.push(ch as char);
-                    length += 1;
-                    continue;
+                if let Ok(s) = String::from_utf8(bytes) {
+                    text.push_str(&s);
+                    length += s.len() as u16;
+                } else {
+                    // Invalid UTF-8, backtrack
+                    self.position = saved_pos;
+                    self.line_starts.truncate(saved_lines_len);
+                    break;
                 }
+                continue;
+            }
+
+            // Regular identifier char reached via slow path (e.g. after a splice)
+            if ch.is_ascii_alphanumeric() || ch == b'_' {
+                self.next_char();
+                text.push(ch as char);
+                length += 1;
+                continue;
             }
 
             break;

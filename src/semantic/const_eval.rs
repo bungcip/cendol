@@ -83,10 +83,10 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
         }
         NodeKind::GenericSelection(_) => {
             let info = ctx.semantic_info.or(ctx.ast.semantic_info.as_ref());
-            if let Some(info) = info {
-                if let Some(selected_expr) = info.generic_selections.get(&expr_node_ref.index()) {
-                    return eval_const_expr(ctx, *selected_expr);
-                }
+            if let Some(info) = info
+                && let Some(selected_expr) = info.generic_selections.get(&expr_node_ref.index())
+            {
+                return eval_const_expr(ctx, *selected_expr);
             }
             None
         }

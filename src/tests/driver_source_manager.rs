@@ -76,7 +76,7 @@ fn test_source_manager_get_line_column() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3";
     let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
-    sm.calculate_line_starts_for_test(file_id);
+    sm.calculate_line_starts(file_id);
 
     // Position at 'l' in "line2"
     let loc = SourceLoc::new(file_id, 6); // "line1\n" is 6 bytes
@@ -91,7 +91,7 @@ fn test_source_manager_get_line_column_end_of_file() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2";
     let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
-    sm.calculate_line_starts_for_test(file_id);
+    sm.calculate_line_starts(file_id);
 
     // Position at end of file
     let loc = SourceLoc::new(file_id, content.len() as u32);
@@ -295,7 +295,7 @@ fn test_source_manager_get_presumed_location() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3\nline4\nline5";
     let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
-    sm.calculate_line_starts_for_test(file_id);
+    sm.calculate_line_starts(file_id);
 
     // Add a line mapping: at physical line 3, logical line 100
     {
@@ -315,7 +315,7 @@ fn test_source_manager_get_presumed_location_no_mapping() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3";
     let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
-    sm.calculate_line_starts_for_test(file_id);
+    sm.calculate_line_starts(file_id);
 
     // No line mappings
     let loc = SourceLoc::new(file_id, 7); // "line1\nl" position
@@ -414,7 +414,7 @@ fn test_source_manager_edge_cases() {
 
     // Test helper methods with invalid ID (should not panic)
     sm.set_line_starts(invalid_id, vec![0, 10]);
-    sm.calculate_line_starts_for_test(invalid_id);
+    sm.calculate_line_starts(invalid_id);
     assert!(sm.get_line_map_mut(invalid_id).is_none());
 
     // 2. Empty line_starts (file added but not analyzed/calculated)

@@ -60,3 +60,24 @@ int res = AB(x);
       text: ;
     "#);
 }
+// Magic Macros
+#[test]
+fn test_magic_macros() {
+    let src = r#"
+__LINE__
+__FILE__
+__COUNTER__
+__COUNTER__
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Number
+      text: "2"
+    - kind: StringLiteral
+      text: "\"<test>\""
+    - kind: Number
+      text: "0"
+    - kind: Number
+      text: "1"
+    "#);
+}

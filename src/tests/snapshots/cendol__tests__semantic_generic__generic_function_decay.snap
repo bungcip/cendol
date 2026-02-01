@@ -1,0 +1,20 @@
+---
+source: src/tests/semantic_generic.rs
+expression: mir
+---
+type %t0 = i32
+type %t1 = void
+
+fn main() -> i32
+{
+
+  bb2:
+    return const 0
+}
+
+fn my_func() -> void
+{
+
+  bb1:
+    return
+}

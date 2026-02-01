@@ -24,8 +24,10 @@ pub mod pp_output_dump;
 pub mod pp_pragma;
 
 pub mod semantic_arrays;
+pub mod semantic_atomic;
 pub mod semantic_builtins;
 pub mod semantic_control_flow;
+pub mod semantic_generic;
 pub mod semantic_enums;
 pub mod semantic_expr;
 pub mod semantic_functions;

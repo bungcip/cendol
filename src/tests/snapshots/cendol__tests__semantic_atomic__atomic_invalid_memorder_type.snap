@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_atomic.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: invalid argument type for atomic builtin: char[8]
+Span: SourceSpan(source_id=SourceId(2), start=64, end=73)

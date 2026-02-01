@@ -1,0 +1,16 @@
+---
+source: src/tests/semantic_generic.rs
+expression: mir
+---
+type %t0 = i32
+type %t1 = struct MyStruct { x: %t0 }
+
+fn main() -> i32
+{
+  locals {
+    %s: %t1
+  }
+
+  bb1:
+    return const 0
+}

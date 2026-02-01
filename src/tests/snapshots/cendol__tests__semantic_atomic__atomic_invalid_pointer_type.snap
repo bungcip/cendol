@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_atomic.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: invalid argument type for atomic builtin: int
+Span: SourceSpan(source_id=SourceId(2), start=58, end=61)

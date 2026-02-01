@@ -1,0 +1,17 @@
+---
+source: src/tests/semantic_generic.rs
+expression: mir
+---
+type %t0 = i32
+type %t1 = i8
+type %t2 = ptr<%t1>
+
+fn main() -> i32
+{
+  locals {
+    %ti: ptr<i8>
+  }
+
+  bb1:
+    return const 0
+}

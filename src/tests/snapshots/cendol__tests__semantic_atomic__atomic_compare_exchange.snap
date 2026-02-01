@@ -1,0 +1,30 @@
+---
+source: src/tests/semantic_atomic.rs
+expression: mir
+---
+type %t0 = void
+type %t1 = i32
+type %t2 = ptr<%t1>
+type %t3 = bool
+
+fn test(%param0: ptr<i32>, %param1: i32, %param2: i32) -> void
+{
+  locals {
+    %success: bool
+    %5: i32
+    %6: bool
+  }
+
+  bb1:
+    %5 = atomic_cmpxchg(%param0, deref(addr_of(%param1)), %param2, false, SeqCst, SeqCst)
+    %6 = %5 == deref(addr_of(%param1))
+    cond_br %6, bb3, bb2
+
+  bb2:
+    deref(addr_of(%param1)) = %5
+    br bb3
+
+  bb3:
+    %success = %6
+    return
+}

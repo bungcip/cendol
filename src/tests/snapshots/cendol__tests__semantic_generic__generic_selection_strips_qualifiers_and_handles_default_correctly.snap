@@ -1,0 +1,22 @@
+---
+source: src/tests/semantic_generic.rs
+expression: mir
+---
+type %t0 = i32
+type %t1 = struct A { a: %t0 }
+type %t2 = struct B { b: %t0 }
+
+fn main() -> i32
+{
+  locals {
+    %x: i32
+    %my_a: %t1
+    %my_b: %t2
+    %val: i32
+  }
+
+  bb1:
+    %x = const 0
+    %val = %my_a.field_0
+    return const 0
+}

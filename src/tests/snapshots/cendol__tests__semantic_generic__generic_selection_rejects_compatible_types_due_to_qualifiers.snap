@@ -1,0 +1,13 @@
+---
+source: src/tests/semantic_generic.rs
+expression: output
+---
+Diagnostics count: 2
+
+Level: Error
+Message: type 'const int' in generic association compatible with previously specified type 'int'
+Span: SourceSpan(source_id=SourceId(2), start=41, end=74)
+
+Level: Note
+Message: previous association is here
+Span: SourceSpan(source_id=SourceId(2), start=41, end=74)

@@ -1859,6 +1859,15 @@ impl<'a> SemanticAnalyzer<'a> {
         // After decay, top-level qualifiers are removed for the compatibility check.
         let unqualified_ctrl_ty = self.registry.strip_all(decayed_ctrl_ty);
 
+        // C11 6.5.1.1p2: The controlling expression... shall have a type that is a complete object type,
+        // or a pointer to a function type, or a pointer to a complete object type...
+        if !self.registry.is_complete(decayed_ctrl_ty.ty()) {
+            self.report_error(SemanticError::GenericIncompleteControl {
+                ty: self.registry.display_qual_type(ctrl_ty),
+                span: self.ast.get_span(gs.control),
+            });
+        }
+
         // It's crucial to visit *all* result expressions to ensure they are
         // fully type-checked, even if they are not the selected branch.
         // This resolves all identifier types within them.
@@ -1889,6 +1898,14 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 continue;
             };
+
+            // C11 6.5.1.1p2: The type name in a generic association shall specify a complete object type...
+            if !self.registry.is_complete(assoc_ty.ty()) {
+                self.report_error(SemanticError::GenericIncompleteAssociation {
+                    ty: self.registry.display_qual_type(assoc_ty),
+                    span: assoc_span,
+                });
+            }
 
             // C11 6.5.1.1p2: For the purpose of this comparison, qualifiers are stripped from both the
             // controlling expression's type and the generic association's type.

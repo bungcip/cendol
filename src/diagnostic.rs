@@ -316,6 +316,12 @@ pub enum SemanticError {
     #[error("controlling expression type '{ty}' not compatible with any generic association")]
     GenericNoMatch { ty: String, span: SourceSpan },
 
+    #[error("controlling expression type '{ty}' is an incomplete type")]
+    GenericIncompleteControl { ty: String, span: SourceSpan },
+
+    #[error("generic association specifies incomplete type '{ty}'")]
+    GenericIncompleteAssociation { ty: String, span: SourceSpan },
+
     #[error("duplicate default association in generic selection")]
     GenericMultipleDefault { span: SourceSpan, first_def: SourceSpan },
 
@@ -415,6 +421,8 @@ impl SemanticError {
             SemanticError::SizeOfIncompleteType { span, .. } => *span,
             SemanticError::SizeOfFunctionType { span } => *span,
             SemanticError::GenericNoMatch { span, .. } => *span,
+            SemanticError::GenericIncompleteControl { span, .. } => *span,
+            SemanticError::GenericIncompleteAssociation { span, .. } => *span,
             SemanticError::GenericMultipleDefault { span, .. } => *span,
             SemanticError::GenericDuplicateMatch { span, .. } => *span,
             SemanticError::InvalidAlignment { span, .. } => *span,

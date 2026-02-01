@@ -104,6 +104,7 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub va_spill_slot: Option<StackSlot>,
     pub func: &'a MirFunction,
     pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
+    pub data_id_map: &'a HashMap<GlobalId, DataId>,
     pub triple: &'a Triple,
     pub set_al_func: &'a mut Option<FuncId>,
 }
@@ -1112,6 +1113,48 @@ fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, build
     }
 }
 
+/// Helper to emit a constant to anonymous memory and return its address
+fn emit_constant_to_memory(
+    const_id: ConstValueId,
+    ctx: &mut BodyEmitContext,
+) -> Result<Value, String> {
+    let const_value = ctx.mir.constants.get(&const_id).ok_or("Constant not found")?;
+    let ty = ctx.mir.get_type(const_value.ty);
+    let size = mir_type_size(ty, ctx.mir)? as usize;
+
+    let mut bytes = Vec::with_capacity(size);
+    let emit_ctx = EmitContext {
+        mir: ctx.mir,
+        func_id_map: ctx.func_id_map,
+        data_id_map: ctx.data_id_map,
+    };
+
+    let mut data_description = DataDescription::new();
+
+    emit_const(
+        const_id,
+        &mut bytes,
+        &emit_ctx,
+        Some(&mut *ctx.module),
+        Some(&mut data_description),
+        0,
+    )?;
+
+    data_description.define(bytes.into_boxed_slice());
+
+    let data_id = ctx
+        .module
+        .declare_anonymous_data(false, false)
+        .map_err(|e| format!("Failed to declare anonymous data: {:?}", e))?;
+
+    ctx.module
+        .define_data(data_id, &data_description)
+        .map_err(|e| format!("Failed to define anonymous data: {:?}", e))?;
+
+    let global_val = ctx.module.declare_data_in_func(data_id, ctx.builder.func);
+    Ok(ctx.builder.ins().global_value(types::I64, global_val))
+}
+
 /// Helper function to resolve a MIR operand to a Cranelift value
 fn resolve_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Type) -> Result<Value, String> {
     match operand {
@@ -1193,7 +1236,19 @@ fn resolve_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: 
                         Err(format!("Function ID {} not found in map", func_id.get()))
                     }
                 }
-                _ => Ok(ctx.builder.ins().iconst(expected_type, 0i64)),
+                ConstValueKind::ArrayLiteral(_) | ConstValueKind::StructLiteral(_) => {
+                    emit_constant_to_memory(*const_id, ctx)
+                }
+                _ => {
+                    // Check if the type is aggregate, if so, we must emit to memory
+                    // This handles ConstValueKind::Zero for aggregates
+                    let mir_type = ctx.mir.get_type(const_value.ty);
+                    if mir_type.is_aggregate() {
+                        emit_constant_to_memory(*const_id, ctx)
+                    } else {
+                        Ok(ctx.builder.ins().iconst(expected_type, 0i64))
+                    }
+                }
             }
         }
         Operand::Copy(place) => {
@@ -2689,6 +2744,7 @@ impl MirToCraneliftLowerer {
                 worklist: &mut worklist,
                 return_type: return_type_opt,
                 func_id_map: &self.func_id_map,
+                data_id_map: &self.data_id_map,
                 triple: &self.triple,
                 set_al_func: &mut self.set_al_func,
             };

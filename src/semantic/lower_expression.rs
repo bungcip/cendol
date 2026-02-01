@@ -36,6 +36,7 @@ impl<'a> AstToMirLowerer<'a> {
                 ast: self.ast,
                 symbol_table: self.symbol_table,
                 registry: self.registry,
+                semantic_info: None,
             };
             if let Some(val) = eval_const_expr(&ctx, expr_ref) {
                 let ty_id = self.lower_qual_type(ty);
@@ -250,13 +251,17 @@ impl<'a> AstToMirLowerer<'a> {
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.lower_pre_incdec(op, operand_ref),
             UnaryOp::AddrOf => self.lower_unary_addrof(operand_ref),
             UnaryOp::Deref => self.lower_unary_deref(operand_ref),
-            UnaryOp::Plus => self.lower_expression(operand_ref, true),
+            UnaryOp::Plus => {
+                let operand = self.lower_expression(operand_ref, true);
+                self.apply_conversions(operand, operand_ref, mir_ty)
+            }
             _ => {
                 let operand = self.lower_expression(operand_ref, true);
-                let operand_ty = self.get_operand_type(&operand);
+                let operand_converted = self.apply_conversions(operand, operand_ref, mir_ty);
+                let operand_ty = self.get_operand_type(&operand_converted);
                 let mir_type_info = self.mir_builder.get_type(operand_ty);
 
-                let rval = mir_ops::emit_unary_rvalue(op, operand, mir_type_info.is_float());
+                let rval = mir_ops::emit_unary_rvalue(op, operand_converted, mir_type_info.is_float());
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
         }

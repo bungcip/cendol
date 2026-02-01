@@ -135,6 +135,7 @@ impl<'a> SemanticAnalyzer<'a> {
             ast: self.ast,
             symbol_table: self.symbol_table,
             registry: self.registry,
+            semantic_info: Some(self.semantic_info),
         }
     }
 
@@ -394,20 +395,29 @@ impl<'a> SemanticAnalyzer<'a> {
                 if operand_ty.is_scalar() { Some(operand_ty) } else { None }
             }
             UnaryOp::Plus | UnaryOp::Minus => {
-                if operand_ty.is_scalar() {
+                if operand_ty.is_arithmetic() {
+                    // C11 6.5.3.3: The integer promotions are performed on the operand,
+                    // and the result has the promoted type.
+                    let promoted = self.apply_and_record_integer_promotion(operand_ref, operand_ty);
+
                     // Strip all qualifiers for unary plus/minus operations
-                    let stripped = self.registry.strip_all(operand_ty);
-                    if stripped.qualifiers() != operand_ty.qualifiers() {
+                    let stripped = self.registry.strip_all(promoted);
+                    if stripped.qualifiers() != promoted.qualifiers() {
                         self.push_conversion(
                             operand_ref,
                             Conversion::QualifierAdjust {
-                                from: operand_ty.qualifiers(),
+                                from: promoted.qualifiers(),
                                 to: stripped.qualifiers(),
                             },
                         );
                     }
                     Some(stripped)
                 } else {
+                    let type_kind = &self.registry.get(operand_ty.ty()).kind;
+                    self.report_error(SemanticError::InvalidUnaryOperand {
+                        ty: type_kind.to_string(),
+                        span,
+                    });
                     None
                 }
             }

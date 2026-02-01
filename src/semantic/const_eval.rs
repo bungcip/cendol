@@ -5,13 +5,14 @@
 //! static assertions and array sizes.
 
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, UnaryOp, literal};
-use crate::semantic::{SymbolKind, SymbolTable, TypeRegistry};
+use crate::semantic::{SemanticInfo, SymbolKind, SymbolTable, TypeRegistry};
 
 /// Context for constant expression evaluation
 pub(crate) struct ConstEvalCtx<'a> {
     pub(crate) ast: &'a Ast,
     pub(crate) symbol_table: &'a SymbolTable,
     pub(crate) registry: &'a TypeRegistry,
+    pub(crate) semantic_info: Option<&'a SemanticInfo>,
 }
 
 /// Evaluate a constant expression node to an i64 value
@@ -79,6 +80,15 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
         NodeKind::SizeOfType(ty) => {
             let layout = ctx.registry.get_layout(ty.ty());
             Some(layout.size as i64)
+        }
+        NodeKind::GenericSelection(_) => {
+            let info = ctx.semantic_info.or(ctx.ast.semantic_info.as_ref());
+            if let Some(info) = info {
+                if let Some(selected_expr) = info.generic_selections.get(&expr_node_ref.index()) {
+                    return eval_const_expr(ctx, *selected_expr);
+                }
+            }
+            None
         }
         NodeKind::TernaryOp(cond, then_ref, else_ref) => {
             let cond_val = eval_const_expr(ctx, *cond)?;

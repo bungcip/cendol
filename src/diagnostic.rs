@@ -87,29 +87,6 @@ impl DiagnosticEngine {
         }
     }
 
-    fn _report(&mut self, level: DiagnosticLevel, message: String, span: SourceSpan) {
-        if level == DiagnosticLevel::Warning && self.disable_all_warnings {
-            return;
-        }
-
-        let final_level = if level == DiagnosticLevel::Warning && self.warnings_as_errors {
-            DiagnosticLevel::Error
-        } else {
-            level
-        };
-
-        self.diagnostics.push(Diagnostic {
-            level: final_level,
-            message,
-            span,
-            ..Default::default()
-        });
-    }
-
-    // pub(crate) fn report_note(&mut self, message: String, span: SourceSpan) {
-    //     self._report(DiagnosticLevel::Note, message, span);
-    // }
-
     pub(crate) fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
         self.diagnostics.push(diagnostic);
     }

@@ -62,6 +62,23 @@ pub fn setup_lowering(source: &str) -> (Ast, TypeRegistry, crate::semantic::Symb
     )
 }
 
+pub fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'a crate::semantic::Type {
+    registry
+        .types
+        .iter()
+        .find(|ty| {
+            if let crate::semantic::TypeKind::Record {
+                tag: Some(tag_name), ..
+            } = &ty.kind
+            {
+                tag_name.as_str() == name
+            } else {
+                false
+            }
+        })
+        .unwrap_or_else(|| panic!("Record type '{}' not found in registry", name))
+}
+
 pub fn setup_diagnostics_output(source: &str) -> String {
     let (driver, _) = test_utils::run_pipeline(source, CompilePhase::Mir);
     let diagnostics = driver.get_diagnostics();

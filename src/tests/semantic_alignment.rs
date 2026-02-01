@@ -1,5 +1,4 @@
-use crate::semantic::TypeKind;
-use crate::tests::semantic_common::setup_lowering;
+use crate::tests::semantic_common::{find_record_type, setup_lowering};
 
 #[test]
 fn test_struct_member_alignas() {
@@ -12,18 +11,7 @@ fn test_struct_member_alignas() {
         "#,
     );
 
-    // Look for struct S
-    let mut s_ty = None;
-    for ty in &registry.types {
-        if let TypeKind::Record { tag: Some(name), .. } = &ty.kind {
-            if name.as_str() == "S" {
-                s_ty = Some(ty);
-                break;
-            }
-        }
-    }
-
-    let s_ty = s_ty.expect("Struct S not found");
+    let s_ty = find_record_type(&registry, "S");
     let layout = s_ty.layout.as_ref().expect("Layout not computed for S");
 
     // Alignment of S should be at least 8 because of 'b'
@@ -48,17 +36,7 @@ fn test_member_alignas_type() {
         "#,
     );
 
-    let mut s_ty = None;
-    for ty in &registry.types {
-        if let TypeKind::Record { tag: Some(name), .. } = &ty.kind {
-            if name.as_str() == "S" {
-                s_ty = Some(ty);
-                break;
-            }
-        }
-    }
-
-    let s_ty = s_ty.expect("Struct S not found");
+    let s_ty = find_record_type(&registry, "S");
     let layout = s_ty.layout.as_ref().expect("Layout not computed for S");
 
     assert_eq!(layout.alignment, 8, "Struct S should have alignment 8 (double)");
@@ -100,22 +78,7 @@ fn test_union_member_alignas() {
         "#,
     );
 
-    let mut u_ty = None;
-    for ty in &registry.types {
-        if let TypeKind::Record {
-            tag: Some(name),
-            is_union: true,
-            ..
-        } = &ty.kind
-        {
-            if name.as_str() == "U" {
-                u_ty = Some(ty);
-                break;
-            }
-        }
-    }
-
-    let u_ty = u_ty.expect("Union U not found");
+    let u_ty = find_record_type(&registry, "U");
     let layout = u_ty.layout.as_ref().expect("Layout not computed for U");
 
     assert_eq!(layout.alignment, 16, "Union U should have alignment 16");
@@ -135,17 +98,7 @@ fn test_anonymous_struct_member_alignas() {
         "#,
     );
 
-    let mut s_ty = None;
-    for ty in &registry.types {
-        if let TypeKind::Record { tag: Some(name), .. } = &ty.kind {
-            if name.as_str() == "S" {
-                s_ty = Some(ty);
-                break;
-            }
-        }
-    }
-
-    let s_ty = s_ty.expect("Struct S not found");
+    let s_ty = find_record_type(&registry, "S");
     let layout = s_ty.layout.as_ref().expect("Layout not computed for S");
 
     assert_eq!(layout.alignment, 8, "Struct S should have alignment 8");

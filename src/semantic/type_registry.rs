@@ -268,6 +268,18 @@ impl TypeRegistry {
         }
     }
 
+    /// Helper to get the element type if the given type is an array.
+    pub(crate) fn get_array_element(&self, ty: TypeRef) -> Option<TypeRef> {
+        if ty.is_inline_array() {
+            Some(self.reconstruct_element(ty))
+        } else {
+            match &self.get(ty).kind {
+                TypeKind::Array { element_type, .. } => Some(*element_type),
+                _ => None,
+            }
+        }
+    }
+
     // Legacy support: mutable access only for completing records/enums
     #[inline]
     fn get_mut(&mut self, r: TypeRef) -> &mut Type {

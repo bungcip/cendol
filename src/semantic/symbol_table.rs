@@ -125,7 +125,7 @@ pub enum Namespace {
 }
 
 /// Scope information
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Scope {
     pub parent: Option<ScopeId>,
     pub symbols: HashMap<NameId, SymbolRef>, // Ordinary identifiers
@@ -143,12 +143,6 @@ pub struct SymbolTable {
     next_scope_id: u32,
 }
 
-impl Default for SymbolTable {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl SymbolTable {
     pub(crate) fn new() -> Self {
         let mut table = SymbolTable {
@@ -159,13 +153,7 @@ impl SymbolTable {
         };
 
         // Initialize global scope
-        table.scopes.push(Scope {
-            parent: None,
-            symbols: HashMap::new(),
-            tags: HashMap::new(),
-            labels: HashMap::new(),
-            level: 0,
-        });
+        table.scopes.push(Scope::default());
 
         table
     }
@@ -176,10 +164,8 @@ impl SymbolTable {
 
         let new_scope = Scope {
             parent: Some(self.current_scope_id),
-            symbols: HashMap::new(),
-            tags: HashMap::new(),
-            labels: HashMap::new(),
             level: self.scopes[self.current_scope_id.get() as usize - 1].level + 1,
+            ..Default::default()
         };
 
         self.scopes.push(new_scope);

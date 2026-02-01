@@ -22,7 +22,7 @@ pub mod type_registry;
 pub mod types;
 
 // Re-export key types for public API
-pub use analyzer::{ImplicitConversion, SemanticInfo, ValueCategory};
+pub use analyzer::{Conversion, SemanticInfo, ValueCategory};
 pub(crate) use ast_to_mir::AstToMirLowerer;
 pub use symbol_table::{DefinitionState, Namespace, ScopeId, SymbolKind, SymbolRef, SymbolTable};
 pub use type_registry::TypeRegistry;

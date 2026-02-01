@@ -16,8 +16,8 @@ use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
 use crate::semantic::TypeKind;
 
+use crate::semantic::{Conversion, Namespace, ScopeId};
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
-use crate::semantic::{ImplicitConversion, Namespace, ScopeId};
 use hashbrown::{HashMap, HashSet};
 use log::debug;
 use target_lexicon::Architecture;
@@ -1028,12 +1028,12 @@ impl<'a> AstToMirLowerer<'a> {
         Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val)))
     }
 
-    fn emit_conversion(&mut self, operand: Operand, conv: &ImplicitConversion, target_type_id: TypeId) -> Operand {
+    fn emit_conversion(&mut self, operand: Operand, conv: &Conversion, target_type_id: TypeId) -> Operand {
         let to_mir_type = match conv {
-            ImplicitConversion::IntegerCast { to, .. }
-            | ImplicitConversion::IntegerPromotion { to, .. }
-            | ImplicitConversion::PointerCast { to, .. } => self.lower_type(*to),
-            ImplicitConversion::NullPointerConstant => {
+            Conversion::IntegerCast { to, .. }
+            | Conversion::IntegerPromotion { to, .. }
+            | Conversion::PointerCast { to, .. } => self.lower_type(*to),
+            Conversion::NullPointerConstant => {
                 // Null pointer constant usually converts to void* first.
                 // However, we can use target_type_id if it's already a pointer.
                 let void_ptr_mir = self.lower_type(self.registry.type_void_ptr);
@@ -1043,29 +1043,29 @@ impl<'a> AstToMirLowerer<'a> {
                     void_ptr_mir
                 }
             }
-            ImplicitConversion::PointerDecay { to } => self.lower_type(*to),
-            ImplicitConversion::LValueToRValue => target_type_id,
-            ImplicitConversion::QualifierAdjust { .. } => target_type_id,
+            Conversion::PointerDecay { to } => self.lower_type(*to),
+            Conversion::LValueToRValue => target_type_id,
+            Conversion::QualifierAdjust { .. } => target_type_id,
         };
 
         // Optimization: skip if already same type
         let current_ty = self.get_operand_type(&operand);
-        if current_ty == to_mir_type && !matches!(conv, ImplicitConversion::PointerDecay { .. }) {
+        if current_ty == to_mir_type && !matches!(conv, Conversion::PointerDecay { .. }) {
             return operand;
         }
 
         match conv {
-            ImplicitConversion::IntegerCast { .. }
-            | ImplicitConversion::IntegerPromotion { .. }
-            | ImplicitConversion::PointerCast { .. } => Operand::Cast(to_mir_type, Box::new(operand)),
-            ImplicitConversion::NullPointerConstant => {
+            Conversion::IntegerCast { .. } | Conversion::IntegerPromotion { .. } | Conversion::PointerCast { .. } => {
+                Operand::Cast(to_mir_type, Box::new(operand))
+            }
+            Conversion::NullPointerConstant => {
                 let ty_id = self.lower_type(self.registry.type_int);
                 Operand::Cast(
                     to_mir_type,
                     Box::new(Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(0)))),
                 )
             }
-            ImplicitConversion::PointerDecay { .. } => {
+            Conversion::PointerDecay { .. } => {
                 if let Operand::Copy(place) = &operand {
                     let addr_of_array = Operand::AddressOf(place.clone());
                     Operand::Cast(to_mir_type, Box::new(addr_of_array))

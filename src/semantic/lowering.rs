@@ -157,12 +157,7 @@ fn convert_parsed_array_size(size: &ParsedArraySize, ctx: &mut LowerCtx) -> Arra
 fn resolve_array_size(size: Option<ParsedNodeRef>, ctx: &mut LowerCtx) -> ArraySizeType {
     if let Some(parsed_ref) = size {
         let expr_ref = ctx.lower_expression(parsed_ref);
-        let const_ctx = ConstEvalCtx {
-            ast: ctx.ast,
-            symbol_table: ctx.symbol_table,
-            registry: ctx.registry,
-        };
-        if let Some(val) = const_eval::eval_const_expr(&const_ctx, expr_ref) {
+        if let Some(val) = const_eval::eval_const_expr(&ctx.const_ctx(), expr_ref) {
             if val < 0 {
                 ctx.report_error(SemanticError::InvalidArraySize {
                     span: ctx.ast.get_span(expr_ref),
@@ -255,6 +250,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::TranslationUnit(decls) => decls.len(),
             _ => 1,
+        }
+    }
+
+    fn const_ctx(&self) -> ConstEvalCtx<'_> {
+        ConstEvalCtx {
+            ast: self.ast,
+            symbol_table: self.symbol_table,
+            registry: self.registry,
         }
     }
 }
@@ -690,12 +693,7 @@ fn resolve_type_specifier(
                     if let ParsedNodeKind::EnumConstant(name, value_expr_ref) = &enum_node.kind {
                         let (value, init_expr) = if let Some(v_ref) = value_expr_ref {
                             let expr_ref = ctx.lower_expression(*v_ref);
-                            let const_ctx = ConstEvalCtx {
-                                ast: ctx.ast,
-                                symbol_table: ctx.symbol_table,
-                                registry: ctx.registry,
-                            };
-                            if let Some(val) = const_eval::eval_const_expr(&const_ctx, expr_ref) {
+                            if let Some(val) = const_eval::eval_const_expr(&ctx.const_ctx(), expr_ref) {
                                 (val, Some(expr_ref))
                             } else {
                                 ctx.report_error(SemanticError::NonConstantInitializer { span: enum_node.span });
@@ -1216,122 +1214,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         match kind {
             ParsedNodeKind::TranslationUnit(children) => {
-                self.symbol_table.set_current_scope(ScopeId::GLOBAL);
-
-                // Reserve slot for TranslationUnit
-                let tu_node = self.push_dummy(span);
-
-                // 1. First pass: count how many semantic nodes each child will produce
-                let mut semantic_node_counts = Vec::new();
-                let mut total_semantic_nodes = 0;
-
-                for &child_ref in &children {
-                    let child = self.parsed_ast.get_node(child_ref);
-                    let count = match &child.kind {
-                        ParsedNodeKind::FunctionDef(..) => 1,
-                        ParsedNodeKind::Declaration(decl) => {
-                            if !decl.init_declarators.is_empty() {
-                                decl.init_declarators.len()
-                            } else if let Some(spec) = decl.specifiers.iter().find_map(|s| {
-                                if let ParsedDeclSpecifier::TypeSpecifier(ts) = s {
-                                    Some(ts)
-                                } else {
-                                    None
-                                }
-                            }) {
-                                match spec {
-                                    ParsedTypeSpecifier::Record(_, _, is_def) if is_def.is_some() => 1,
-                                    ParsedTypeSpecifier::Enum(_, is_def) if is_def.is_some() => 1,
-                                    _ => 0, // Empty declaration or no definition side effects
-                                }
-                            } else {
-                                0
-                            }
-                        }
-                        ParsedNodeKind::StaticAssert(..) => 1,
-                        _ => 0, // Should not happen for top-level nodes ideally
-                    };
-                    semantic_node_counts.push(count);
-                    total_semantic_nodes += count;
-                }
-
-                // 2. Reserve contiguous slots for all top-level nodes
-                let decl_len = total_semantic_nodes as u16;
-                let mut reserved_slots = Vec::new();
-                for _ in 0..decl_len {
-                    reserved_slots.push(self.push_dummy(span));
-                }
-
-                // 3. Second pass: Lower children into reserved slots
-                let mut current_slot_idx = 0;
-                for (i, child_ref) in children.iter().enumerate() {
-                    let count = semantic_node_counts[i];
-                    if count == 0 {
-                        continue;
-                    }
-
-                    let target_slots = &reserved_slots[current_slot_idx..current_slot_idx + count];
-                    self.lower_top_level_node(*child_ref, target_slots);
-                    current_slot_idx += count;
-                }
-
-                let decl_start = if decl_len > 0 { reserved_slots[0] } else { NodeRef::ROOT };
-
-                self.ast.kinds[tu_node.index()] = NodeKind::TranslationUnit(TranslationUnitData {
-                    decl_start,
-                    decl_len,
-                    scope_id: ScopeId::GLOBAL,
-                });
-
-                smallvec![tu_node]
+                smallvec![self.lower_translation_unit(&children, span)]
             }
             ParsedNodeKind::CompoundStatement(stmts) => {
-                let scope_id = self.symbol_table.push_scope();
-
-                // Use target slot if provided, otherwise reserve new slot
-                // Note: We set scope AFTER push_scope since CompoundStatement creates a new scope
-                let node = self.get_or_push_slot(target_slots, span);
-
-                // Count total semantic nodes
-                let mut total_stmt_nodes = 0;
-                for stmt_ref in stmts.iter().copied() {
-                    total_stmt_nodes += self.count_semantic_nodes(stmt_ref);
-                }
-
-                // Reserve slots for all statements
-                let mut stmt_slots = Vec::new();
-                for _ in 0..total_stmt_nodes {
-                    stmt_slots.push(self.push_dummy(span));
-                }
-
-                let stmt_start = if !stmt_slots.is_empty() {
-                    stmt_slots[0]
-                } else {
-                    NodeRef::ROOT
-                };
-                let stmt_len = stmt_slots.len() as u16;
-
-                // Lower statements directly into reserved slots
-                let mut current_slot_idx = 0;
-                for stmt_ref in stmts {
-                    let count = self.count_semantic_nodes(stmt_ref);
-                    if count > 0 {
-                        let target_slots = &stmt_slots[current_slot_idx..current_slot_idx + count];
-                        self.lower_node_entry(stmt_ref, Some(target_slots));
-                        current_slot_idx += count;
-                    }
-                }
-
-                self.symbol_table.pop_scope();
-
-                // Replace dummy node with actual CompoundStatement
-                self.ast.kinds[node.index()] = NodeKind::CompoundStatement(CompoundStmtData {
-                    stmt_start,
-                    stmt_len,
-                    scope_id,
-                });
-
-                smallvec![node]
+                smallvec![self.lower_compound_statement(&stmts, target_slots, span)]
             }
             ParsedNodeKind::Declaration(decl_data) => self.lower_declaration(&decl_data, span, target_slots),
             ParsedNodeKind::FunctionDef(func_def) => {
@@ -1342,6 +1228,106 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // ... other top level kinds ...
             _ => self.lower_node_rest(parsed_ref, target_slots),
         }
+    }
+
+    fn lower_translation_unit(&mut self, children: &[ParsedNodeRef], span: SourceSpan) -> NodeRef {
+        self.symbol_table.set_current_scope(ScopeId::GLOBAL);
+        let tu_node = self.push_dummy(span);
+
+        let mut semantic_node_counts = Vec::with_capacity(children.len());
+        let mut total_semantic_nodes = 0;
+
+        for &child_ref in children {
+            let child = self.parsed_ast.get_node(child_ref);
+            let count = match &child.kind {
+                ParsedNodeKind::FunctionDef(..) | ParsedNodeKind::StaticAssert(..) => 1,
+                ParsedNodeKind::Declaration(decl) => {
+                    if !decl.init_declarators.is_empty() {
+                        decl.init_declarators.len()
+                    } else if let Some(ParsedDeclSpecifier::TypeSpecifier(ts)) = decl
+                        .specifiers
+                        .iter()
+                        .find(|s| matches!(s, ParsedDeclSpecifier::TypeSpecifier(..)))
+                    {
+                        match ts {
+                            ParsedTypeSpecifier::Record(_, _, is_def) if is_def.is_some() => 1,
+                            ParsedTypeSpecifier::Enum(_, is_def) if is_def.is_some() => 1,
+                            _ => 0,
+                        }
+                    } else {
+                        0
+                    }
+                }
+                _ => 0,
+            };
+            semantic_node_counts.push(count);
+            total_semantic_nodes += count;
+        }
+
+        let decl_len = total_semantic_nodes as u16;
+        let mut reserved_slots = Vec::with_capacity(decl_len as usize);
+        for _ in 0..decl_len {
+            reserved_slots.push(self.push_dummy(span));
+        }
+
+        let mut current_slot_idx = 0;
+        for (i, child_ref) in children.iter().enumerate() {
+            let count = semantic_node_counts[i];
+            if count > 0 {
+                let target_slots = &reserved_slots[current_slot_idx..current_slot_idx + count];
+                self.lower_top_level_node(*child_ref, target_slots);
+                current_slot_idx += count;
+            }
+        }
+
+        let decl_start = if decl_len > 0 { reserved_slots[0] } else { NodeRef::ROOT };
+        self.ast.kinds[tu_node.index()] = NodeKind::TranslationUnit(TranslationUnitData {
+            decl_start,
+            decl_len,
+            scope_id: ScopeId::GLOBAL,
+        });
+        tu_node
+    }
+
+    fn lower_compound_statement(
+        &mut self,
+        stmts: &[ParsedNodeRef],
+        target_slots: Option<&[NodeRef]>,
+        span: SourceSpan,
+    ) -> NodeRef {
+        let scope_id = self.symbol_table.push_scope();
+        let node = self.get_or_push_slot(target_slots, span);
+
+        let mut total_stmt_nodes = 0;
+        for &stmt_ref in stmts {
+            total_stmt_nodes += self.count_semantic_nodes(stmt_ref);
+        }
+
+        let mut stmt_slots = Vec::with_capacity(total_stmt_nodes);
+        for _ in 0..total_stmt_nodes {
+            stmt_slots.push(self.push_dummy(span));
+        }
+
+        let stmt_start = stmt_slots.first().copied().unwrap_or(NodeRef::ROOT);
+        let stmt_len = stmt_slots.len() as u16;
+
+        let mut current_slot_idx = 0;
+        for &stmt_ref in stmts {
+            let count = self.count_semantic_nodes(stmt_ref);
+            if count > 0 {
+                let target = &stmt_slots[current_slot_idx..current_slot_idx + count];
+                self.lower_node_entry(stmt_ref, Some(target));
+                current_slot_idx += count;
+            }
+        }
+
+        self.symbol_table.pop_scope();
+        self.ast.kinds[node.index()] = NodeKind::CompoundStatement(CompoundStmtData {
+            stmt_start,
+            stmt_len,
+            scope_id,
+        });
+        node
     }
 
     fn lower_top_level_node(&mut self, parsed_ref: ParsedNodeRef, target_slots: &[NodeRef]) {
@@ -1932,34 +1918,19 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             ParsedNodeKind::Break => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    self.ast.kinds[target.index()] = NodeKind::Break;
-                    self.ast.spans[target.index()] = span;
-                    *target
-                } else {
-                    self.ast.push_node(NodeKind::Break, span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
+                self.ast.kinds[node.index()] = NodeKind::Break;
                 smallvec![node]
             }
             ParsedNodeKind::Continue => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    self.ast.kinds[target.index()] = NodeKind::Continue;
-                    self.ast.spans[target.index()] = span;
-                    *target
-                } else {
-                    self.ast.push_node(NodeKind::Continue, span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
+                self.ast.kinds[node.index()] = NodeKind::Continue;
                 smallvec![node]
             }
             ParsedNodeKind::Goto(name) => {
                 let sym = self.resolve_label(*name, span);
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    self.ast.kinds[target.index()] = NodeKind::Goto(*name, sym);
-                    self.ast.spans[target.index()] = span;
-                    *target
-                } else {
-                    self.ast.push_node(NodeKind::Goto(*name, sym), span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
+                self.ast.kinds[node.index()] = NodeKind::Goto(*name, sym);
                 smallvec![node]
             }
             ParsedNodeKind::Label(name, inner) => {
@@ -2002,24 +1973,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             ParsedNodeKind::Literal(literal) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    self.ast.kinds[target.index()] = NodeKind::Literal(literal.clone());
-                    self.ast.spans[target.index()] = span;
-                    *target
-                } else {
-                    self.ast.push_node(NodeKind::Literal(literal.clone()), span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
+                self.ast.kinds[node.index()] = NodeKind::Literal(literal.clone());
                 smallvec![node]
             }
             ParsedNodeKind::Ident(name) => {
                 let sym = self.resolve_ident(*name, span);
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    self.ast.kinds[target.index()] = NodeKind::Ident(*name, sym);
-                    self.ast.spans[target.index()] = span;
-                    *target
-                } else {
-                    self.ast.push_node(NodeKind::Ident(*name, sym), span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
+                self.ast.kinds[node.index()] = NodeKind::Ident(*name, sym);
                 smallvec![node]
             }
             ParsedNodeKind::FunctionCall(func, args) => {
@@ -2131,31 +2092,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             ParsedNodeKind::SizeOfType(ty_name) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    let ty = convert_to_qual_type(self, *ty_name, span)
-                        .unwrap_or(QualType::unqualified(self.registry.type_error));
-                    self.ast.kinds[target.index()] = NodeKind::SizeOfType(ty);
-                    self.ast.spans[target.index()] = span;
-                    *target
-                } else {
-                    let ty = convert_to_qual_type(self, *ty_name, span)
-                        .unwrap_or(QualType::unqualified(self.registry.type_error));
-                    self.ast.push_node(NodeKind::SizeOfType(ty), span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
+                let ty = convert_to_qual_type(self, *ty_name, span)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                self.ast.kinds[node.index()] = NodeKind::SizeOfType(ty);
                 smallvec![node]
             }
             ParsedNodeKind::AlignOf(ty_name) => {
-                let node = if let Some(target) = target_slots.and_then(|t| t.first()) {
-                    let ty = convert_to_qual_type(self, *ty_name, span)
-                        .unwrap_or(QualType::unqualified(self.registry.type_error));
-                    self.ast.kinds[target.index()] = NodeKind::AlignOf(ty);
-                    self.ast.spans[target.index()] = span;
-                    *target
-                } else {
-                    let ty = convert_to_qual_type(self, *ty_name, span)
-                        .unwrap_or(QualType::unqualified(self.registry.type_error));
-                    self.ast.push_node(NodeKind::AlignOf(ty), span)
-                };
+                let node = self.get_or_push_slot(target_slots, span);
+                let ty = convert_to_qual_type(self, *ty_name, span)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                self.ast.kinds[node.index()] = NodeKind::AlignOf(ty);
                 smallvec![node]
             }
             ParsedNodeKind::BuiltinVaArg(ty_name, expr) => {
@@ -2319,24 +2266,21 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     pub(crate) fn lower_expression(&mut self, node: ParsedNodeRef) -> NodeRef {
-        match self.lower_node(node).first().cloned() {
-            Some(n) => n,
-            None => self.push_dummy(SourceSpan::default()),
-        }
+        self.lower_node(node)
+            .first()
+            .copied()
+            .unwrap_or_else(|| self.push_dummy(SourceSpan::default()))
     }
 
     pub(crate) fn lower_expression_into(&mut self, node: ParsedNodeRef, target: NodeRef) -> NodeRef {
-        match self.lower_node_entry(node, Some(&[target])).first().cloned() {
-            Some(n) => n,
-            None => target, // Should not happen if node lowering respects target
-        }
+        self.lower_node_entry(node, Some(&[target]))
+            .first()
+            .copied()
+            .unwrap_or(target)
     }
 
     pub(crate) fn lower_single_statement(&mut self, node: ParsedNodeRef) -> NodeRef {
-        self.lower_node(node)
-            .first()
-            .cloned()
-            .unwrap_or_else(|| self.push_dummy(SourceSpan::default()))
+        self.lower_expression(node)
     }
 
     fn resolve_ident(&mut self, name: NameId, span: SourceSpan) -> SymbolRef {
@@ -2539,14 +2483,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let mut current_index: i64 = 0;
 
                 // Helper for evaluating constant expressions
-                let eval = |expr| {
-                    let const_ctx = ConstEvalCtx {
-                        ast: self.ast,
-                        symbol_table: self.symbol_table,
-                        registry: self.registry,
-                    };
-                    const_eval::eval_const_expr(&const_ctx, expr)
-                };
+                let eval = |expr| const_eval::eval_const_expr(&self.const_ctx(), expr);
 
                 for item_ref in list_data.init_start.range(list_data.init_len) {
                     let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
@@ -2596,13 +2533,7 @@ fn extract_bit_field_width<'a>(
     let width_expr = ctx.lower_expression(*expr_ref);
     let span = ctx.ast.get_span(width_expr);
 
-    let const_ctx = ConstEvalCtx {
-        ast: ctx.ast,
-        symbol_table: ctx.symbol_table,
-        registry: ctx.registry,
-    };
-
-    let width = match const_eval::eval_const_expr(&const_ctx, width_expr) {
+    let width = match const_eval::eval_const_expr(&ctx.const_ctx(), width_expr) {
         Some(val) if val > 0 && val <= 64 => NonZeroU16::new(val as u16),
         Some(_) => {
             ctx.report_error(SemanticError::InvalidBitfieldWidth { span });
@@ -2642,11 +2573,10 @@ fn lower_struct_members(members: &[ParsedDeclarationData], ctx: &mut LowerCtx, s
 
                     if is_anonymous {
                         struct_members.push(StructMember {
-                            name: None,
                             member_type: type_ref,
-                            bit_field_size: None,
                             alignment: spec_info.alignment,
                             span,
+                            ..Default::default()
                         });
                     }
                 }

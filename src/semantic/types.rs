@@ -451,6 +451,13 @@ impl Display for TypeRef {
 #[repr(transparent)]
 pub struct QualType(u32);
 
+impl Default for QualType {
+    fn default() -> Self {
+        // Use raw value 1 (which maps to TypeRef(1)) as default to avoid NonZeroU32(0) UB
+        QualType(1)
+    }
+}
+
 // bits  0..=27  → TypeRef (28 bit)
 // bits 28..=31  → qualifiers (4 bit)
 
@@ -674,7 +681,7 @@ pub struct FunctionParameter {
     pub name: Option<NameId>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct StructMember {
     pub name: Option<NameId>,
     pub member_type: QualType,

@@ -16,7 +16,7 @@ use std::collections::HashSet;
 #[derive(Debug, Clone)]
 pub struct SemanticInfo {
     pub types: Vec<Option<QualType>>,
-    pub conversions: Vec<SmallVec<[ImplicitConversion; 1]>>,
+    pub conversions: Vec<SmallVec<[Conversion; 1]>>,
     pub value_categories: Vec<ValueCategory>,
 }
 
@@ -36,8 +36,9 @@ pub enum ValueCategory {
     RValue,
 }
 
+/// Implicit Conversions
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ImplicitConversion {
+pub enum Conversion {
     /// LValue → RValue
     LValueToRValue,
 
@@ -113,6 +114,26 @@ struct SemanticAnalyzer<'a> {
 impl<'a> SemanticAnalyzer<'a> {
     fn report_error(&mut self, error: SemanticError) {
         self.diag.report(error);
+    }
+
+    fn push_conversion(&mut self, node_ref: NodeRef, conv: Conversion) {
+        self.semantic_info.conversions[node_ref.index()].push(conv);
+    }
+
+    fn unwrap_initializer_item(&self, node_ref: NodeRef) -> (NodeRef, NodeRef, u16) {
+        if let NodeKind::InitializerItem(item) = self.ast.get_kind(node_ref) {
+            (item.initializer, item.designator_start, item.designator_len)
+        } else {
+            (node_ref, NodeRef::new(1).unwrap(), 0)
+        }
+    }
+
+    fn const_ctx(&self) -> crate::semantic::const_eval::ConstEvalCtx<'_> {
+        crate::semantic::const_eval::ConstEvalCtx {
+            ast: self.ast,
+            symbol_table: self.symbol_table,
+            registry: self.registry,
+        }
     }
 
     /// Recursively visit type to find any expressions (e.g. VLA sizes) and resolve them.
@@ -298,55 +319,55 @@ impl<'a> SemanticAnalyzer<'a> {
         self.visit_node(stmt.body);
     }
 
-    fn visit_return_statement(&mut self, expr: &Option<NodeRef>, _span: SourceSpan) {
+    fn visit_return_statement(&mut self, expr: &Option<NodeRef>, span: SourceSpan) {
         if self.current_function_is_noreturn {
             self.report_error(SemanticError::NoreturnFunctionHasReturn {
                 name: self.current_function_name.clone().unwrap(),
-                span: _span,
+                span,
             });
         }
 
         let ret_ty = self.current_function_ret_type;
         let is_void_func = ret_ty.is_some_and(|ty| ty.is_void());
-        let func_name = self
-            .current_function_name
-            .clone()
-            .unwrap_or_else(|| "<unknown>".to_string());
+        let func_name = self.current_function_name.as_deref().unwrap_or("<unknown>");
 
-        if let Some(expr_ref) = expr {
-            if is_void_func {
-                let err_span = self.ast.get_span(*expr_ref);
-                self.report_error(SemanticError::VoidReturnWithValue {
-                    name: func_name.clone(),
-                    span: err_span,
+        let Some(expr_ref) = expr else {
+            if !is_void_func {
+                self.report_error(SemanticError::NonVoidReturnWithoutValue {
+                    name: func_name.to_string(),
+                    span,
                 });
             }
-            if let Some(expr_ty) = self.visit_node(*expr_ref)
-                && let Some(target_ty) = ret_ty
-            {
-                self.record_implicit_conversions(target_ty, expr_ty, *expr_ref);
-            }
-        } else if !is_void_func {
-            self.report_error(SemanticError::NonVoidReturnWithoutValue {
-                name: func_name,
-                span: _span,
+            return;
+        };
+
+        if is_void_func {
+            let err_span = self.ast.get_span(*expr_ref);
+            self.report_error(SemanticError::VoidReturnWithValue {
+                name: func_name.to_string(),
+                span: err_span,
             });
+        }
+
+        if let Some(expr_ty) = self.visit_node(*expr_ref)
+            && let Some(target_ty) = ret_ty
+        {
+            self.record_implicit_conversions(target_ty, expr_ty, *expr_ref);
         }
     }
 
-    fn visit_unary_op(&mut self, op: UnaryOp, operand_ref: NodeRef, full_span: SourceSpan) -> Option<QualType> {
+    fn visit_unary_op(&mut self, op: UnaryOp, operand_ref: NodeRef, span: SourceSpan) -> Option<QualType> {
         let operand_ty = self.visit_node(operand_ref)?;
 
         match op {
             UnaryOp::AddrOf => {
                 if !self.is_lvalue(operand_ref) {
-                    self.report_error(SemanticError::NotAnLvalue { span: full_span });
+                    self.report_error(SemanticError::NotAnLvalue { span });
                     return None;
                 }
                 if operand_ty.is_array() || operand_ty.is_function() {
                     let decayed = self.registry.decay(operand_ty, TypeQualifiers::empty());
-                    self.semantic_info.conversions[operand_ref.index()]
-                        .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
+                    self.push_conversion(operand_ref, Conversion::PointerDecay { to: decayed.ty() });
                     return Some(decayed);
                 }
                 Some(QualType::unqualified(self.registry.pointer_to(operand_ty)))
@@ -354,8 +375,7 @@ impl<'a> SemanticAnalyzer<'a> {
             UnaryOp::Deref => {
                 let actual_ty = if operand_ty.is_array() || operand_ty.is_function() {
                     let decayed = self.registry.decay(operand_ty, TypeQualifiers::empty());
-                    self.semantic_info.conversions[operand_ref.index()]
-                        .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
+                    self.push_conversion(operand_ref, Conversion::PointerDecay { to: decayed.ty() });
                     decayed
                 } else {
                     operand_ty
@@ -368,7 +388,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
-                self.check_lvalue_and_modifiable(operand_ref, operand_ty, full_span);
+                self.check_lvalue_and_modifiable(operand_ref, operand_ty, span);
                 if operand_ty.is_scalar() { Some(operand_ty) } else { None }
             }
             UnaryOp::Plus | UnaryOp::Minus => {
@@ -376,10 +396,13 @@ impl<'a> SemanticAnalyzer<'a> {
                     // Strip all qualifiers for unary plus/minus operations
                     let stripped = self.registry.strip_all(operand_ty);
                     if stripped.qualifiers() != operand_ty.qualifiers() {
-                        self.semantic_info.conversions[operand_ref.index()].push(ImplicitConversion::QualifierAdjust {
-                            from: operand_ty.qualifiers(),
-                            to: stripped.qualifiers(),
-                        });
+                        self.push_conversion(
+                            operand_ref,
+                            Conversion::QualifierAdjust {
+                                from: operand_ty.qualifiers(),
+                                to: stripped.qualifiers(),
+                            },
+                        );
                     }
                     Some(stripped)
                 } else {
@@ -397,7 +420,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     let type_kind = &self.registry.get(operand_ty.ty()).kind;
                     self.report_error(SemanticError::InvalidUnaryOperand {
                         ty: type_kind.to_string(),
-                        span: full_span,
+                        span,
                     });
                     None
                 }
@@ -408,11 +431,13 @@ impl<'a> SemanticAnalyzer<'a> {
     fn apply_and_record_integer_promotion(&mut self, node_ref: NodeRef, ty: QualType) -> QualType {
         let promoted = integer_promotion(self.registry, ty);
         if promoted.ty() != ty.ty() {
-            let idx = node_ref.index();
-            self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerPromotion {
-                from: ty.ty(),
-                to: promoted.ty(),
-            });
+            self.push_conversion(
+                node_ref,
+                Conversion::IntegerPromotion {
+                    from: ty.ty(),
+                    to: promoted.ty(),
+                },
+            );
         }
         promoted
     }
@@ -422,7 +447,7 @@ impl<'a> SemanticAnalyzer<'a> {
         op: BinaryOp,
         lhs_promoted: QualType,
         rhs_promoted: QualType,
-        full_span: SourceSpan,
+        span: SourceSpan,
     ) -> Option<(QualType, QualType)> {
         match op {
             // Pointer + integer = pointer
@@ -464,7 +489,7 @@ impl<'a> SemanticAnalyzer<'a> {
                         self.report_error(SemanticError::IncompatiblePointerComparison {
                             lhs: lhs_str,
                             rhs: rhs_str,
-                            span: full_span,
+                            span,
                         });
                         lhs_promoted
                     }
@@ -503,7 +528,7 @@ impl<'a> SemanticAnalyzer<'a> {
         op: BinaryOp,
         lhs_ref: NodeRef,
         rhs_ref: NodeRef,
-        full_span: SourceSpan,
+        span: SourceSpan,
     ) -> Option<QualType> {
         debug_assert!(
             !op.is_assignment(),
@@ -516,16 +541,14 @@ impl<'a> SemanticAnalyzer<'a> {
         // Perform array/function decay first
         let mut lhs_decayed = lhs_ty;
         if lhs_ty.is_array() || lhs_ty.is_function() {
-            let decayed = self.registry.decay(lhs_ty, TypeQualifiers::empty());
-            self.semantic_info.conversions[lhs_ref.index()].push(ImplicitConversion::PointerDecay { to: decayed.ty() });
-            lhs_decayed = decayed;
+            lhs_decayed = self.registry.decay(lhs_ty, TypeQualifiers::empty());
+            self.push_conversion(lhs_ref, Conversion::PointerDecay { to: lhs_decayed.ty() });
         }
 
         let mut rhs_decayed = rhs_ty;
         if rhs_ty.is_array() || rhs_ty.is_function() {
-            let decayed = self.registry.decay(rhs_ty, TypeQualifiers::empty());
-            self.semantic_info.conversions[rhs_ref.index()].push(ImplicitConversion::PointerDecay { to: decayed.ty() });
-            rhs_decayed = decayed;
+            rhs_decayed = self.registry.decay(rhs_ty, TypeQualifiers::empty());
+            self.push_conversion(rhs_ref, Conversion::PointerDecay { to: rhs_decayed.ty() });
         }
 
         if op == BinaryOp::Comma {
@@ -542,12 +565,12 @@ impl<'a> SemanticAnalyzer<'a> {
             self.report_error(SemanticError::InvalidBinaryOperands {
                 left_ty: lhs_kind.to_string(),
                 right_ty: rhs_kind.to_string(),
-                span: full_span,
+                span,
             });
             return None;
         }
 
-        let (result_ty, common_ty) = self.analyze_binary_operation_types(op, lhs_promoted, rhs_promoted, full_span)?;
+        let (result_ty, common_ty) = self.analyze_binary_operation_types(op, lhs_promoted, rhs_promoted, span)?;
 
         // For arithmetic/comparison operations, operands should be converted to a common type.
         let lhs_kind = self.ast.get_kind(lhs_ref);
@@ -563,18 +586,22 @@ impl<'a> SemanticAnalyzer<'a> {
         };
 
         if lhs_promoted.ty() != common_ty.ty() || is_literal(lhs_kind) {
-            let idx = lhs_ref.index();
-            self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
-                from: lhs_promoted.ty(),
-                to: common_ty.ty(),
-            });
+            self.push_conversion(
+                lhs_ref,
+                Conversion::IntegerCast {
+                    from: lhs_promoted.ty(),
+                    to: common_ty.ty(),
+                },
+            );
         }
         if rhs_promoted.ty() != common_ty.ty() || is_literal(rhs_kind) {
-            let idx = rhs_ref.index();
-            self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
-                from: rhs_promoted.ty(),
-                to: common_ty.ty(),
-            });
+            self.push_conversion(
+                rhs_ref,
+                Conversion::IntegerCast {
+                    from: rhs_promoted.ty(),
+                    to: common_ty.ty(),
+                },
+            );
         }
 
         Some(result_ty)
@@ -586,7 +613,7 @@ impl<'a> SemanticAnalyzer<'a> {
         op: BinaryOp,
         lhs_ref: NodeRef,
         rhs_ref: NodeRef,
-        full_span: SourceSpan,
+        span: SourceSpan,
     ) -> Option<QualType> {
         debug_assert!(
             op.is_assignment(),
@@ -597,7 +624,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
 
-        if !self.check_lvalue_and_modifiable(lhs_ref, lhs_ty, full_span) {
+        if !self.check_lvalue_and_modifiable(lhs_ref, lhs_ty, span) {
             return None;
         }
 
@@ -609,21 +636,27 @@ impl<'a> SemanticAnalyzer<'a> {
             let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
 
             if let Some((_, common_ty)) =
-                self.analyze_binary_operation_types(arithmetic_op, lhs_promoted, rhs_promoted, full_span)
+                self.analyze_binary_operation_types(arithmetic_op, lhs_promoted, rhs_promoted, span)
             {
                 // Record conversions from promoted operands to the common type.
                 // This is what the binary operation will actually work with.
                 if lhs_promoted.ty() != common_ty.ty() {
-                    self.semantic_info.conversions[lhs_ref.index()].push(ImplicitConversion::IntegerCast {
-                        from: lhs_promoted.ty(),
-                        to: common_ty.ty(),
-                    });
+                    self.push_conversion(
+                        lhs_ref,
+                        Conversion::IntegerCast {
+                            from: lhs_promoted.ty(),
+                            to: common_ty.ty(),
+                        },
+                    );
                 }
                 if rhs_promoted.ty() != common_ty.ty() {
-                    self.semantic_info.conversions[rhs_ref.index()].push(ImplicitConversion::IntegerCast {
-                        from: rhs_promoted.ty(),
-                        to: common_ty.ty(),
-                    });
+                    self.push_conversion(
+                        rhs_ref,
+                        Conversion::IntegerCast {
+                            from: rhs_promoted.ty(),
+                            to: common_ty.ty(),
+                        },
+                    );
                 }
 
                 // For compound assignment, the result of (lhs op rhs) is converted back to lhs type.
@@ -635,7 +668,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.report_error(SemanticError::InvalidBinaryOperands {
                     left_ty: lhs_kind.to_string(),
                     right_ty: rhs_kind.to_string(),
-                    span: full_span,
+                    span,
                 });
                 return None;
             }
@@ -653,20 +686,23 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.report_error(SemanticError::TypeMismatch {
                     expected: lhs_kind.to_string(),
                     found: rhs_kind.to_string(),
-                    span: full_span,
+                    span,
                 });
                 return None;
             }
 
             if target_ty.ty() != effective_rhs_ty.ty() {
-                self.semantic_info.conversions[node_ref.index()].push(ImplicitConversion::IntegerCast {
-                    from: effective_rhs_ty.ty(),
-                    to: target_ty.ty(),
-                });
+                self.push_conversion(
+                    node_ref,
+                    Conversion::IntegerCast {
+                        from: effective_rhs_ty.ty(),
+                        to: target_ty.ty(),
+                    },
+                );
             }
         } else {
             // Simple assignment
-            if !self.validate_and_record_assignment(lhs_ty, effective_rhs_ty, rhs_ref, full_span) {
+            if !self.validate_and_record_assignment(lhs_ty, effective_rhs_ty, rhs_ref, span) {
                 return None;
             }
         }
@@ -693,10 +729,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
             // Resolve implicit decay for RHS to check compatibility
             let rhs_pointer_base = if rhs_ty.is_array() {
-                match &self.registry.get(rhs_ty.ty()).kind {
-                    TypeKind::Array { element_type, .. } => Some(*element_type),
-                    _ => None,
-                }
+                self.registry.get_array_element(rhs_ty.ty())
             } else if rhs_ty.is_function() {
                 Some(rhs_ty.ty()) // Function decays to pointer
             } else if rhs_ty.is_pointer() {
@@ -730,39 +763,46 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn record_implicit_conversions(&mut self, lhs_ty: QualType, rhs_ty: QualType, rhs_ref: NodeRef) {
-        let idx = rhs_ref.index();
         let mut current_rhs_ty = rhs_ty;
 
-        // Null pointer constant conversion (0 or (void*)0 -> T*)
+        // 1. Null pointer constant conversion (0 or (void*)0 -> T*)
         if lhs_ty.is_pointer() && self.is_null_pointer_constant(rhs_ref) {
-            self.semantic_info.conversions[idx].push(ImplicitConversion::NullPointerConstant);
-            // If it's still not the same type, we might need a PointerCast after NullPointerConstant desugaring?
-            // Actually NullPointerConstant desugars to (T*)0 in many cases.
+            self.push_conversion(rhs_ref, Conversion::NullPointerConstant);
             if lhs_ty.ty() != self.registry.type_void_ptr {
-                self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
-                    from: self.registry.type_void_ptr,
-                    to: lhs_ty.ty(),
-                });
+                self.push_conversion(
+                    rhs_ref,
+                    Conversion::PointerCast {
+                        from: self.registry.type_void_ptr,
+                        to: lhs_ty.ty(),
+                    },
+                );
             }
             return;
         }
 
-        // Array/Function-to-pointer decay
+        // 2. Array/Function-to-pointer decay
         if lhs_ty.is_pointer() && (current_rhs_ty.is_array() || current_rhs_ty.is_function()) {
-            let decayed = self.registry.decay(current_rhs_ty, TypeQualifiers::empty());
-            self.semantic_info.conversions[idx].push(ImplicitConversion::PointerDecay { to: decayed.ty() });
-            current_rhs_ty = decayed; // Update current type for subsequent checks
+            current_rhs_ty = self.registry.decay(current_rhs_ty, TypeQualifiers::empty());
+            self.push_conversion(
+                rhs_ref,
+                Conversion::PointerDecay {
+                    to: current_rhs_ty.ty(),
+                },
+            );
         }
 
-        // Qualifier adjustment
+        // 3. Qualifier adjustment
         if lhs_ty.ty() == current_rhs_ty.ty() && lhs_ty.qualifiers() != current_rhs_ty.qualifiers() {
-            self.semantic_info.conversions[idx].push(ImplicitConversion::QualifierAdjust {
-                from: current_rhs_ty.qualifiers(),
-                to: lhs_ty.qualifiers(),
-            });
+            self.push_conversion(
+                rhs_ref,
+                Conversion::QualifierAdjust {
+                    from: current_rhs_ty.qualifiers(),
+                    to: lhs_ty.qualifiers(),
+                },
+            );
         }
 
-        // Integer casts
+        // 4. Casts (Integer or Pointer)
         let is_literal = matches!(
             self.ast.get_kind(rhs_ref),
             NodeKind::Literal(literal::Literal::Int { .. })
@@ -770,22 +810,22 @@ impl<'a> SemanticAnalyzer<'a> {
                 | NodeKind::Literal(literal::Literal::Float { .. })
         );
 
-        if ((lhs_ty.is_arithmetic() && current_rhs_ty.is_arithmetic())
-            || (lhs_ty.is_pointer() && current_rhs_ty.is_pointer()))
-            && (lhs_ty.ty() != current_rhs_ty.ty() || is_literal)
-        {
-            // For pointers, it's pointer cast. For arithmetic, integer/float cast.
-            if lhs_ty.is_pointer() && current_rhs_ty.is_pointer() {
-                self.semantic_info.conversions[idx].push(ImplicitConversion::PointerCast {
+        let is_arithmetic_cast = lhs_ty.is_arithmetic() && current_rhs_ty.is_arithmetic();
+        let is_pointer_cast = lhs_ty.is_pointer() && current_rhs_ty.is_pointer();
+
+        if (is_arithmetic_cast || is_pointer_cast) && (lhs_ty.ty() != current_rhs_ty.ty() || is_literal) {
+            let conv = if is_pointer_cast {
+                Conversion::PointerCast {
                     from: current_rhs_ty.ty(),
                     to: lhs_ty.ty(),
-                });
-            } else if lhs_ty.is_arithmetic() && current_rhs_ty.is_arithmetic() {
-                self.semantic_info.conversions[idx].push(ImplicitConversion::IntegerCast {
+                }
+            } else {
+                Conversion::IntegerCast {
                     from: current_rhs_ty.ty(),
                     to: lhs_ty.ty(),
-                });
-            }
+                }
+            };
+            self.push_conversion(rhs_ref, conv);
         }
     }
 
@@ -806,60 +846,43 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn check_initializer(&mut self, init_ref: NodeRef, target_ty: QualType) {
-        let node_kind = self.ast.get_kind(init_ref);
-        match node_kind {
+        match self.ast.get_kind(init_ref) {
             NodeKind::InitializerList(list) => {
                 self.semantic_info.types[init_ref.index()] = Some(target_ty);
-                let list = *list; // Clone to avoid borrow check issues
+                let list = *list;
                 self.check_initializer_list(&list, target_ty);
             }
-            NodeKind::Literal(literal::Literal::String(_)) => {
-                // Visit to resolve type
-                if let Some(init_ty) = self.visit_node(init_ref) {
-                    // Check if array string init
-                    let is_array_string_init = target_ty.is_array() && init_ty.is_array();
-                    if is_array_string_init {
-                        // Check element compatibility
-                        let lhs_elem = match &self.registry.get(target_ty.ty()).kind {
-                            TypeKind::Array { element_type, .. } => *element_type,
-                            _ => unreachable!(),
-                        };
+            NodeKind::Literal(literal::Literal::String(_)) if target_ty.is_array() => {
+                let Some(init_ty) = self.visit_node(init_ref) else {
+                    return;
+                };
 
-                        let rhs_elem = match &self.registry.get(init_ty.ty()).kind {
-                            TypeKind::Array { element_type, .. } => *element_type,
-                            _ => unreachable!(),
-                        };
+                let lhs_elem = self.registry.get_array_element(target_ty.ty()).unwrap();
+                let rhs_elem = self.registry.get_array_element(init_ty.ty()).unwrap();
 
-                        let is_rhs_char = rhs_elem == self.registry.type_char;
-                        let is_lhs_char_type = lhs_elem == self.registry.type_char
-                            || lhs_elem == self.registry.type_schar
-                            || lhs_elem == self.registry.type_char_unsigned;
+                let is_rhs_char = rhs_elem == self.registry.type_char;
+                let is_lhs_char_type = [
+                    self.registry.type_char,
+                    self.registry.type_schar,
+                    self.registry.type_char_unsigned,
+                ]
+                .contains(&lhs_elem);
 
-                        // Allow initializing any char array with char string (signed/unsigned mismatch allowed)
-                        // For wide strings, types must be compatible (e.g. wchar_t[] = L"...")
-                        let compatible = if is_rhs_char {
-                            is_lhs_char_type
-                        } else {
-                            self.registry
-                                .is_compatible(QualType::unqualified(lhs_elem), QualType::unqualified(rhs_elem))
-                        };
+                let compatible = if is_rhs_char {
+                    is_lhs_char_type
+                } else {
+                    self.registry
+                        .is_compatible(QualType::unqualified(lhs_elem), QualType::unqualified(rhs_elem))
+                };
 
-                        if compatible {
-                            self.record_implicit_conversions(target_ty, init_ty, init_ref);
-                        } else {
-                            let lhs_kind = &self.registry.get(target_ty.ty()).kind;
-                            let rhs_kind = &self.registry.get(init_ty.ty()).kind;
-                            let span = self.ast.get_span(init_ref);
-                            self.report_error(SemanticError::TypeMismatch {
-                                expected: lhs_kind.to_string(),
-                                found: rhs_kind.to_string(),
-                                span,
-                            });
-                        }
-                    } else {
-                        // Normal assignment check
-                        self.check_assignment_and_record(target_ty, init_ty, init_ref);
-                    }
+                if compatible {
+                    self.record_implicit_conversions(target_ty, init_ty, init_ref);
+                } else {
+                    self.report_error(SemanticError::TypeMismatch {
+                        expected: self.registry.get(target_ty.ty()).kind.to_string(),
+                        found: self.registry.get(init_ty.ty()).kind.to_string(),
+                        span: self.ast.get_span(init_ref),
+                    });
                 }
             }
             _ => {
@@ -872,41 +895,24 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn check_initializer_list(&mut self, list: &InitializerListData, target_ty: QualType) {
         if target_ty.is_scalar() {
-            if list.init_len > 1 {
-                let second_idx = list.init_start.get() + 1;
-                let second_ref = NodeRef::new(second_idx).unwrap();
-                let span = self.ast.get_span(second_ref);
-                self.report_error(SemanticError::ExcessElements {
-                    kind: "scalar".to_string(),
-                    span,
-                });
-            }
+            let mut items = list.init_start.range(list.init_len);
 
-            if list.init_len > 0 {
-                let first_item_ref = list.init_start;
-                let first_item_kind = self.ast.get_kind(first_item_ref);
-
-                if let NodeKind::InitializerItem(item) = first_item_kind {
-                    let expr = item.initializer;
-                    if let Some(init_ty) = self.visit_node(expr) {
-                        self.check_assignment_and_record(target_ty, init_ty, expr);
-                    }
-                } else if let Some(init_ty) = self.visit_node(first_item_ref) {
-                    self.check_assignment_and_record(target_ty, init_ty, first_item_ref);
+            if let Some(first_ref) = items.next() {
+                let (expr, _, _) = self.unwrap_initializer_item(first_ref);
+                if let Some(init_ty) = self.visit_node(expr) {
+                    self.check_assignment_and_record(target_ty, init_ty, expr);
                 }
             }
 
-            // Visit remaining elements to resolve symbols
-            if list.init_len > 1 {
-                for i in 1..list.init_len {
-                    let item_ref = NodeRef::new(list.init_start.get() + i as u32).unwrap();
-                    let item_kind = self.ast.get_kind(item_ref);
-                    if let NodeKind::InitializerItem(item) = item_kind {
-                        self.visit_node(item.initializer);
-                    } else {
-                        self.visit_node(item_ref);
-                    }
+            for (i, item_ref) in items.enumerate() {
+                if i == 0 {
+                    self.report_error(SemanticError::ExcessElements {
+                        kind: "scalar".to_string(),
+                        span: self.ast.get_span(item_ref),
+                    });
                 }
+                let (expr, _, _) = self.unwrap_initializer_item(item_ref);
+                self.visit_node(expr);
             }
             return;
         }
@@ -914,7 +920,6 @@ impl<'a> SemanticAnalyzer<'a> {
         let target_type = self.registry.get(target_ty.ty()).clone();
         match target_type.kind {
             TypeKind::Record { .. } => {
-                // Flatten members for initialization, handling anonymous structs/unions
                 let mut flat_members = Vec::new();
                 target_type.flatten_members(self.registry, &mut flat_members);
 
@@ -923,29 +928,24 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             _ => {
-                // Fallback: just visit children to resolve symbols/types
                 for item_ref in list.init_start.range(list.init_len) {
-                    let kind = self.ast.get_kind(item_ref);
-                    if let NodeKind::InitializerItem(init) = kind {
-                        let init = *init;
-                        for designator_ref in init.designator_start.range(init.designator_len) {
-                            if let NodeKind::Designator(d) = self.ast.get_kind(designator_ref) {
-                                match d {
-                                    Designator::ArrayIndex(e) => {
-                                        self.visit_node(*e);
-                                    }
-                                    Designator::GnuArrayRange(s, e) => {
-                                        self.visit_node(*s);
-                                        self.visit_node(*e);
-                                    }
-                                    Designator::FieldName(_) => {}
-                                }
+                    let (expr, d_start, d_len) = self.unwrap_initializer_item(item_ref);
+                    for designator_ref in d_start.range(d_len) {
+                        let NodeKind::Designator(d) = self.ast.get_kind(designator_ref) else {
+                            continue;
+                        };
+                        match d {
+                            Designator::ArrayIndex(e) => {
+                                self.visit_node(*e);
                             }
+                            Designator::GnuArrayRange(s, e) => {
+                                self.visit_node(*s);
+                                self.visit_node(*e);
+                            }
+                            Designator::FieldName(_) => {}
                         }
-                        self.visit_node(init.initializer);
-                    } else {
-                        self.visit_node(item_ref);
                     }
+                    self.visit_node(expr);
                 }
             }
         }
@@ -1012,48 +1012,32 @@ impl<'a> SemanticAnalyzer<'a> {
         // Get function kind
         let func_kind = self.registry.get(actual_func_ty_ref).kind.clone();
 
-        if let TypeKind::Function { .. } = &func_kind {
-            if let TypeKind::Function {
-                parameters,
-                is_variadic,
-                ..
-            } = &func_kind
-            {
-                let is_variadic = *is_variadic;
-                for (i, arg_node_ref) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
-                    // Visit the argument expression directly
-                    let arg_ty = self.visit_node(arg_node_ref);
+        if let TypeKind::Function {
+            parameters,
+            is_variadic,
+            ..
+        } = &func_kind
+        {
+            let is_variadic = *is_variadic;
+            for (i, arg_node_ref) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
+                let Some(arg_ty) = self.visit_node(arg_node_ref) else {
+                    continue;
+                };
 
-                    if i < parameters.len() {
-                        let param_ty = parameters[i].param_type;
-                        if let Some(actual_arg_ty) = arg_ty {
-                            // Record implicit conversion on the argument node
-                            self.record_implicit_conversions(param_ty, actual_arg_ty, arg_node_ref);
-                        }
-                    } else if is_variadic {
-                        // C11 6.5.2.2: "If the expression that denotes the called function has a type that
-                        // includes a prototype, the arguments are implicitly converted, as if by assignment,
-                        // to the types of the corresponding parameters... The ellipsis notation in a function
-                        // prototype declarator causes argument type conversion to stop after the last declared
-                        // parameter. The default argument promotions are performed on trailing arguments."
-                        if let Some(mut actual_arg_ty) = arg_ty {
-                            // Explicitly handle array/function decay for variadic arguments first
-                            if actual_arg_ty.is_array() || actual_arg_ty.is_function() {
-                                let decayed = self.registry.decay(actual_arg_ty, TypeQualifiers::empty());
-                                self.semantic_info.conversions[arg_node_ref.index()]
-                                    .push(ImplicitConversion::PointerDecay { to: decayed.ty() });
-                                actual_arg_ty = decayed;
-                            }
+                if i < parameters.len() {
+                    self.record_implicit_conversions(parameters[i].param_type, arg_ty, arg_node_ref);
+                } else if is_variadic {
+                    let mut actual_arg_ty = arg_ty;
+                    if arg_ty.is_array() || arg_ty.is_function() {
+                        actual_arg_ty = self.registry.decay(arg_ty, TypeQualifiers::empty());
+                        self.push_conversion(arg_node_ref, Conversion::PointerDecay { to: actual_arg_ty.ty() });
+                    }
 
-                            let promoted_ty =
-                                crate::semantic::conversions::default_argument_promotions(self.registry, actual_arg_ty);
+                    let promoted_ty =
+                        crate::semantic::conversions::default_argument_promotions(self.registry, actual_arg_ty);
 
-                            // Only record additional conversions if promotion actually changed the type
-                            // (Note: record_implicit_conversions handles IntegerCast/PointerCast etc)
-                            if promoted_ty.ty() != actual_arg_ty.ty() {
-                                self.record_implicit_conversions(promoted_ty, actual_arg_ty, arg_node_ref);
-                            }
-                        }
+                    if promoted_ty.ty() != actual_arg_ty.ty() {
+                        self.record_implicit_conversions(promoted_ty, actual_arg_ty, arg_node_ref);
                     }
                 }
             }
@@ -1154,10 +1138,8 @@ impl<'a> SemanticAnalyzer<'a> {
         if arr_ty.is_array() {
             // Ensure layout is computed for array type
             let _ = self.registry.ensure_layout(arr_ty.ty());
-            match &self.registry.get(arr_ty.ty()).kind {
-                TypeKind::Array { element_type, .. } => Some(QualType::new(*element_type, arr_ty.qualifiers())),
-                _ => unreachable!(),
-            }
+            let element_type = self.registry.get_array_element(arr_ty.ty()).unwrap();
+            Some(QualType::new(element_type, arr_ty.qualifiers()))
         } else {
             self.registry.get_pointee(arr_ty.ty())
         }
@@ -1319,26 +1301,14 @@ impl<'a> SemanticAnalyzer<'a> {
                 if self.switch_depth == 0 {
                     let span = self.ast.get_span(node_ref);
                     self.report_error(SemanticError::CaseNotInSwitch { span });
-                } else {
-                    let ctx = crate::semantic::const_eval::ConstEvalCtx {
-                        ast: self.ast,
-                        symbol_table: self.symbol_table,
-                        registry: self.registry,
-                    };
-                    if let Some(val) = crate::semantic::const_eval::eval_const_expr(&ctx, *expr) {
-                        let is_duplicate = if let Some(cases) = self.switch_cases.last_mut() {
-                            !cases.insert(val)
-                        } else {
-                            false
-                        };
-
-                        if is_duplicate {
-                            let span = self.ast.get_span(node_ref);
-                            self.report_error(SemanticError::DuplicateCase {
-                                value: val.to_string(),
-                                span,
-                            });
-                        }
+                } else if let Some(val) = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), *expr) {
+                    let is_duplicate = self.switch_cases.last_mut().is_some_and(|cases| !cases.insert(val));
+                    if is_duplicate {
+                        let span = self.ast.get_span(node_ref);
+                        self.report_error(SemanticError::DuplicateCase {
+                            value: val.to_string(),
+                            span,
+                        });
                     }
                 }
                 self.visit_node(*expr);
@@ -1349,33 +1319,25 @@ impl<'a> SemanticAnalyzer<'a> {
                 if self.switch_depth == 0 {
                     let span = self.ast.get_span(node_ref);
                     self.report_error(SemanticError::CaseNotInSwitch { span });
-                } else {
-                    let ctx = crate::semantic::const_eval::ConstEvalCtx {
-                        ast: self.ast,
-                        symbol_table: self.symbol_table,
-                        registry: self.registry,
-                    };
-                    if let (Some(start_val), Some(end_val)) = (
-                        crate::semantic::const_eval::eval_const_expr(&ctx, *start),
-                        crate::semantic::const_eval::eval_const_expr(&ctx, *end),
-                    ) {
-                        let mut duplicate_val = None;
-                        if let Some(cases) = self.switch_cases.last_mut() {
-                            for val in start_val..=end_val {
-                                if !cases.insert(val) {
-                                    duplicate_val = Some(val);
-                                    break;
-                                }
+                } else if let (Some(start_val), Some(end_val)) = (
+                    crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), *start),
+                    crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), *end),
+                ) {
+                    let mut duplicate_val = None;
+                    if let Some(cases) = self.switch_cases.last_mut() {
+                        for val in start_val..=end_val {
+                            if !cases.insert(val) {
+                                duplicate_val = Some(val);
+                                break;
                             }
                         }
-
-                        if let Some(val) = duplicate_val {
-                            let span = self.ast.get_span(node_ref);
-                            self.report_error(SemanticError::DuplicateCase {
-                                value: val.to_string(),
-                                span,
-                            });
-                        }
+                    }
+                    if let Some(val) = duplicate_val {
+                        let span = self.ast.get_span(node_ref);
+                        self.report_error(SemanticError::DuplicateCase {
+                            value: val.to_string(),
+                            span,
+                        });
                     }
                 }
                 self.visit_node(*start);
@@ -1388,14 +1350,10 @@ impl<'a> SemanticAnalyzer<'a> {
                     let span = self.ast.get_span(node_ref);
                     self.report_error(SemanticError::CaseNotInSwitch { span });
                 } else {
-                    let is_duplicate = if let Some(seen) = self.switch_default_seen.last_mut() {
-                        let was_seen = *seen;
-                        *seen = true;
-                        was_seen
-                    } else {
-                        false
-                    };
-
+                    let is_duplicate = self
+                        .switch_default_seen
+                        .last_mut()
+                        .is_some_and(|seen| std::mem::replace(seen, true));
                     if is_duplicate {
                         let span = self.ast.get_span(node_ref);
                         self.report_error(SemanticError::MultipleDefaultLabels { span });
@@ -1430,74 +1388,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_expression_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
-            NodeKind::Literal(literal) => match literal {
-                literal::Literal::Int { val, suffix } => {
-                    // C11 6.4.4.1: Determine type based on value and suffix.
-                    // This is a simplified heuristic. A full implementation would check hex/octal.
-                    let ty = match suffix {
-                        Some(literal::IntegerSuffix::L) => self.registry.type_long,
-                        Some(literal::IntegerSuffix::LL) => self.registry.type_long_long,
-                        Some(literal::IntegerSuffix::U) => self.registry.type_int_unsigned,
-                        Some(literal::IntegerSuffix::UL) => self.registry.type_long_unsigned,
-                        Some(literal::IntegerSuffix::ULL) => self.registry.type_long_long_unsigned,
-                        None => {
-                            // Ensure layouts are computed for size checks
-                            let _ = self.registry.ensure_layout(self.registry.type_int);
-                            let _ = self.registry.ensure_layout(self.registry.type_long);
-
-                            let int_size = self.registry.get_layout(self.registry.type_int).size as u32;
-                            let int_max = if int_size >= 8 {
-                                i64::MAX
-                            } else {
-                                (1i64 << (int_size * 8 - 1)) - 1
-                            };
-
-                            let long_size = self.registry.get_layout(self.registry.type_long).size as u32;
-                            let long_max = if long_size >= 8 {
-                                i64::MAX
-                            } else {
-                                (1i64 << (long_size * 8 - 1)) - 1
-                            };
-
-                            if *val >= 0 && *val <= int_max {
-                                self.registry.type_int
-                            } else if *val >= 0 && *val <= long_max {
-                                self.registry.type_long
-                            } else {
-                                // Default to long long (or unsigned long long if it doesn't fit, handled by implicit typing)
-                                // Ideally we should distinguish decimal vs hex here.
-                                self.registry.type_long_long
-                            }
-                        }
-                    };
-                    Some(QualType::unqualified(ty))
-                }
-                literal::Literal::Float { suffix, .. } => {
-                    let ty = match suffix {
-                        Some(literal::FloatSuffix::F) => self.registry.type_float,
-                        Some(literal::FloatSuffix::L) => self.registry.type_long_double,
-                        None => self.registry.type_double,
-                    };
-                    Some(QualType::unqualified(ty))
-                }
-                literal::Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
-                literal::Literal::String(name) => {
-                    let parsed = crate::semantic::literal_utils::parse_string_literal(*name);
-                    let element_type = match parsed.builtin_type {
-                        BuiltinType::Char => self.registry.type_char,
-                        BuiltinType::Int => self.registry.type_int, // wchar_t
-                        BuiltinType::UShort => self.registry.type_short_unsigned, // char16_t
-                        BuiltinType::UInt => self.registry.type_int_unsigned, // char32_t
-                        _ => self.registry.type_char,
-                    };
-
-                    let array_type = self
-                        .registry
-                        .array_of(element_type, ArraySizeType::Constant(parsed.size));
-                    let _ = self.registry.ensure_layout(array_type);
-                    Some(QualType::new(array_type, TypeQualifiers::empty()))
-                }
-            },
+            NodeKind::Literal(literal) => self.visit_literal(literal, node_ref),
             NodeKind::Ident(_, symbol_ref) => {
                 let symbol = self.symbol_table.get_symbol(*symbol_ref);
                 match &symbol.kind {
@@ -1586,17 +1477,15 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::SizeOfExpr(expr) => {
                 if let Some(ty) = self.visit_node(*expr) {
+                    let type_ref = ty.ty();
                     if ty.is_function() {
                         let span = self.ast.get_span(node_ref);
                         self.report_error(SemanticError::SizeOfFunctionType { span });
+                    } else if !self.registry.is_complete(type_ref) {
+                        let span = self.ast.get_span(node_ref);
+                        self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
                     } else {
-                        let type_ref = ty.ty();
-                        if !self.registry.is_complete(type_ref) {
-                            let span = self.ast.get_span(node_ref);
-                            self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
-                        } else {
-                            let _ = self.registry.ensure_layout(type_ref);
-                        }
+                        let _ = self.registry.ensure_layout(type_ref);
                     }
                 }
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
@@ -1800,6 +1689,71 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    fn visit_literal(&mut self, literal: &literal::Literal, _node_ref: NodeRef) -> Option<QualType> {
+        match literal {
+            literal::Literal::Int { val, suffix } => {
+                let ty = match suffix {
+                    Some(literal::IntegerSuffix::L) => self.registry.type_long,
+                    Some(literal::IntegerSuffix::LL) => self.registry.type_long_long,
+                    Some(literal::IntegerSuffix::U) => self.registry.type_int_unsigned,
+                    Some(literal::IntegerSuffix::UL) => self.registry.type_long_unsigned,
+                    Some(literal::IntegerSuffix::ULL) => self.registry.type_long_long_unsigned,
+                    None => {
+                        let _ = self.registry.ensure_layout(self.registry.type_int);
+                        let _ = self.registry.ensure_layout(self.registry.type_long);
+
+                        let int_layout = self.registry.get_layout(self.registry.type_int);
+                        let int_max = if int_layout.size >= 8 {
+                            i64::MAX
+                        } else {
+                            (1i64 << (int_layout.size * 8 - 1)) - 1
+                        };
+
+                        let long_layout = self.registry.get_layout(self.registry.type_long);
+                        let long_max = if long_layout.size >= 8 {
+                            i64::MAX
+                        } else {
+                            (1i64 << (long_layout.size * 8 - 1)) - 1
+                        };
+
+                        if *val >= 0 && *val <= int_max {
+                            self.registry.type_int
+                        } else if *val >= 0 && *val <= long_max {
+                            self.registry.type_long
+                        } else {
+                            self.registry.type_long_long
+                        }
+                    }
+                };
+                Some(QualType::unqualified(ty))
+            }
+            literal::Literal::Float { suffix, .. } => {
+                let ty = match suffix {
+                    Some(literal::FloatSuffix::F) => self.registry.type_float,
+                    Some(literal::FloatSuffix::L) => self.registry.type_long_double,
+                    None => self.registry.type_double,
+                };
+                Some(QualType::unqualified(ty))
+            }
+            literal::Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
+            literal::Literal::String(name) => {
+                let parsed = crate::semantic::literal_utils::parse_string_literal(*name);
+                let element_type = match parsed.builtin_type {
+                    BuiltinType::Char => self.registry.type_char,
+                    BuiltinType::Int => self.registry.type_int,
+                    BuiltinType::UShort => self.registry.type_short_unsigned,
+                    BuiltinType::UInt => self.registry.type_int_unsigned,
+                    _ => self.registry.type_char,
+                };
+
+                let array_type = self
+                    .registry
+                    .array_of(element_type, ArraySizeType::Constant(parsed.size));
+                let _ = self.registry.ensure_layout(array_type);
+                Some(QualType::new(array_type, TypeQualifiers::empty()))
+            }
+        }
+    }
     fn visit_node(&mut self, node_ref: NodeRef) -> Option<QualType> {
         let node_kind = self.ast.get_kind(node_ref);
         let result_type = match node_kind {
@@ -1861,20 +1815,13 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_static_assert(&mut self, node_ref: NodeRef) {
-        let (cond, msg_ref) = match self.ast.get_kind(node_ref) {
-            NodeKind::StaticAssert(c, m) => (*c, *m),
-            _ => return,
+        let NodeKind::StaticAssert(cond, msg_ref) = *self.ast.get_kind(node_ref) else {
+            return;
         };
 
         self.visit_node(cond);
 
-        let ctx = crate::semantic::const_eval::ConstEvalCtx {
-            ast: self.ast,
-            symbol_table: self.symbol_table,
-            registry: self.registry,
-        };
-
-        match crate::semantic::const_eval::eval_const_expr(&ctx, cond) {
+        match crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), cond) {
             Some(0) => {
                 let message = match self.ast.get_kind(msg_ref) {
                     NodeKind::Literal(literal::Literal::String(s)) => s.as_str().to_string(),
@@ -1919,53 +1866,54 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut seen_types: Vec<(QualType, QualType, SourceSpan)> = Vec::new();
 
         for assoc_node_ref in gs.assoc_start.range(gs.assoc_len) {
-            if let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node_ref).clone() {
-                let assoc_span = self.ast.get_span(assoc_node_ref);
-                self.visit_node(assoc_node_ref);
+            let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node_ref).clone() else {
+                continue;
+            };
 
-                if let Some(assoc_ty) = ga.ty {
-                    // C11 6.5.1.1p2: For the purpose of this comparison, qualifiers are stripped from both the
-                    // controlling expression's type and the generic association's type.
-                    let unqualified_assoc_ty = self.registry.strip_all(assoc_ty);
+            let assoc_span = self.ast.get_span(assoc_node_ref);
+            self.visit_node(assoc_node_ref);
 
-                    // Constraint 2: No two generic associations in the same generic selection shall specify compatible types.
-                    let mut duplicate = false;
-                    for (prev_unqualified, prev_original, prev_span) in &seen_types {
-                        if self.registry.is_compatible(unqualified_assoc_ty, *prev_unqualified) {
-                            self.report_error(SemanticError::GenericDuplicateMatch {
-                                ty: self.registry.display_qual_type(assoc_ty),
-                                prev_ty: self.registry.display_qual_type(*prev_original),
-                                span: assoc_span,
-                                first_def: *prev_span,
-                            });
-                            duplicate = true;
-                            break;
-                        }
-                    }
-
-                    if !duplicate {
-                        seen_types.push((unqualified_assoc_ty, assoc_ty, assoc_span));
-                    }
-
-                    // Constraint 1: The controlling expression... shall have type compatible with at most one...
-                    if self.registry.is_compatible(unqualified_ctrl_ty, unqualified_assoc_ty)
-                        && selected_expr_ref.is_none()
-                    {
-                        selected_expr_ref = Some(ga.result_expr);
-                    }
+            let Some(assoc_ty) = ga.ty else {
+                // This is the 'default' association.
+                // Constraint 2: If a generic selection has a default association, there shall be only one such association.
+                if let Some(first_span) = default_first_span {
+                    self.report_error(SemanticError::GenericMultipleDefault {
+                        span: assoc_span,
+                        first_def: first_span,
+                    });
                 } else {
-                    // This is the 'default' association.
-                    // Constraint 2: If a generic selection has a default association, there shall be only one such association.
-                    if let Some(first_span) = default_first_span {
-                        self.report_error(SemanticError::GenericMultipleDefault {
-                            span: assoc_span,
-                            first_def: first_span,
-                        });
-                    } else {
-                        default_first_span = Some(assoc_span);
-                        default_expr_ref = Some(ga.result_expr);
-                    }
+                    default_first_span = Some(assoc_span);
+                    default_expr_ref = Some(ga.result_expr);
                 }
+                continue;
+            };
+
+            // C11 6.5.1.1p2: For the purpose of this comparison, qualifiers are stripped from both the
+            // controlling expression's type and the generic association's type.
+            let unqualified_assoc_ty = self.registry.strip_all(assoc_ty);
+
+            // Constraint 2: No two generic associations in the same generic selection shall specify compatible types.
+            let mut duplicate = false;
+            for (prev_unqualified, prev_original, prev_span) in &seen_types {
+                if self.registry.is_compatible(unqualified_assoc_ty, *prev_unqualified) {
+                    self.report_error(SemanticError::GenericDuplicateMatch {
+                        ty: self.registry.display_qual_type(assoc_ty),
+                        prev_ty: self.registry.display_qual_type(*prev_original),
+                        span: assoc_span,
+                        first_def: *prev_span,
+                    });
+                    duplicate = true;
+                    break;
+                }
+            }
+
+            if !duplicate {
+                seen_types.push((unqualified_assoc_ty, assoc_ty, assoc_span));
+            }
+
+            // Constraint 1: The controlling expression... shall have type compatible with at most one...
+            if self.registry.is_compatible(unqualified_ctrl_ty, unqualified_assoc_ty) && selected_expr_ref.is_none() {
+                selected_expr_ref = Some(ga.result_expr);
             }
         }
 

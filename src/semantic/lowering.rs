@@ -634,6 +634,16 @@ fn resolve_type_specifier(
         ParsedTypeSpecifier::Int => Ok(QualType::unqualified(ctx.registry.type_int)),
         ParsedTypeSpecifier::Long => Ok(QualType::unqualified(ctx.registry.type_long)),
         ParsedTypeSpecifier::LongLong => Ok(QualType::unqualified(ctx.registry.type_long_long)),
+        // New variants
+        ParsedTypeSpecifier::UnsignedLong => Ok(QualType::unqualified(ctx.registry.type_long_unsigned)),
+        ParsedTypeSpecifier::UnsignedLongLong => Ok(QualType::unqualified(ctx.registry.type_long_long_unsigned)),
+        ParsedTypeSpecifier::UnsignedShort => Ok(QualType::unqualified(ctx.registry.type_short_unsigned)),
+        ParsedTypeSpecifier::UnsignedChar => Ok(QualType::unqualified(ctx.registry.type_char_unsigned)),
+        ParsedTypeSpecifier::SignedChar => Ok(QualType::unqualified(ctx.registry.type_schar)),
+        ParsedTypeSpecifier::SignedShort => Ok(QualType::unqualified(ctx.registry.type_short)),
+        ParsedTypeSpecifier::SignedLong => Ok(QualType::unqualified(ctx.registry.type_long)),
+        ParsedTypeSpecifier::SignedLongLong => Ok(QualType::unqualified(ctx.registry.type_long_long)),
+
         ParsedTypeSpecifier::Float => Ok(QualType::unqualified(ctx.registry.type_float)),
         ParsedTypeSpecifier::Double => Ok(QualType::unqualified(ctx.registry.type_double)),
         ParsedTypeSpecifier::LongDouble => Ok(QualType::unqualified(ctx.registry.type_long_double)),

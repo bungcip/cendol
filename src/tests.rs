@@ -46,6 +46,7 @@ pub mod parser_lexical;
 pub mod parser_regr;
 pub mod parser_stmt;
 pub mod parser_utils;
+pub mod parser_type_regr;
 
 pub mod codegen_ternary_array_size;
 

@@ -1,12 +1,8 @@
 use super::semantic_common::{setup_diagnostics_output, setup_mir};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_if_else_statement() {
-        let source = r#"
+#[test]
+fn test_if_else_statement() {
+    let source = r#"
             int main() {
                 int a = 1;
                 int b = 2;
@@ -18,8 +14,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -46,11 +42,11 @@ mod tests {
             return const 0
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_while_statement() {
-        let source = r#"
+#[test]
+fn test_while_statement() {
+    let source = r#"
           int main() {
             int steins = 99;
             while (steins)
@@ -59,8 +55,8 @@ mod tests {
           }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -86,11 +82,11 @@ mod tests {
             return %steins
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_for_stmt() {
-        let source = r#"
+#[test]
+fn test_for_stmt() {
+    let source = r#"
           int main() {
             int steins = 44;
             int gate = 1;
@@ -101,8 +97,8 @@ mod tests {
           }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -130,19 +126,19 @@ mod tests {
             return %steins
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_simple_variable_return() {
-        let source = r#"
+#[test]
+fn test_simple_variable_return() {
+    let source = r#"
             int main() {
                 int result = 99;
                 return result;
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -156,19 +152,19 @@ mod tests {
             return %result
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_global_variable() {
-        let source = r#"
+#[test]
+fn test_global_variable() {
+    let source = r#"
             int result = 99;
             int main() {
                 return result;
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         global @result: i32 = const 99
@@ -180,11 +176,11 @@ mod tests {
             return @result
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_consecutive_labels() {
-        let source = r#"
+#[test]
+fn test_consecutive_labels() {
+    let source = r#"
             int main() {
                 goto end;
                 label1:
@@ -196,8 +192,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -219,11 +215,11 @@ mod tests {
             return const 0
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_struct_type_regression() {
-        let source = r#"
+#[test]
+fn test_struct_type_regression() {
+    let source = r#"
             struct { int a; int b; int c; } s = {1, 2, 3};
             int main() {
                 if (s.a != 1) return 1;
@@ -231,8 +227,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct anonymous { a: %t0, b: %t0, c: %t0 }
 
@@ -258,11 +254,11 @@ mod tests {
             return const 0
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_long_long_comparison_crash() {
-        let source = r#"
+#[test]
+fn test_long_long_comparison_crash() {
+    let source = r#"
             int main() {
                 long long x;
                 x = 0;
@@ -272,8 +268,8 @@ mod tests {
                 return 0;
             }
         "#;
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = i64
 
@@ -302,11 +298,11 @@ mod tests {
             return const 0
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_designated_initializer_global() {
-        let source = r#"
+#[test]
+fn test_designated_initializer_global() {
+    let source = r#"
             struct S { int a; int b; };
             struct S s = { .b = 2, .a = 1 };
             int main() {
@@ -314,8 +310,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct S { a: %t0, b: %t0 }
 
@@ -328,11 +324,11 @@ mod tests {
             return const 0
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_global_initializer_with_address() {
-        let source = r#"
+#[test]
+fn test_global_initializer_with_address() {
+    let source = r#"
             int x = 10;
             struct S { int a; int *p; };
             struct S s = { .p = &x, .a = 1 };
@@ -341,8 +337,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct S { a: %t0, p: %t2 }
         type %t2 = ptr<%t0>
@@ -357,11 +353,11 @@ mod tests {
             return const 0
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_nested_compound_initializer_global() {
-        let source = r#"
+#[test]
+fn test_nested_compound_initializer_global() {
+    let source = r#"
             struct S1 {
                 int a;
                 int b;
@@ -380,8 +376,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct S2 { a: %t0, b: %t0, s: %t2 }
         type %t2 = struct S1 { a: %t0, b: %t0 }
@@ -395,10 +391,10 @@ mod tests {
             return const 0
         }
         ");
-    }
-    #[test]
-    fn test_struct_tag_shadowing() {
-        let source = r#"
+}
+#[test]
+fn test_struct_tag_shadowing() {
+    let source = r#"
             struct T { int x; } s1;
             int main() {
                 s1.x = 1;
@@ -410,8 +406,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct T { x: %t0 }
         type %t2 = struct T { y: %t0 }
@@ -430,10 +426,10 @@ mod tests {
             return @s1.field_0
         }
         ");
-    }
-    #[test]
-    fn test_variable_shadowing() {
-        let source = r#"
+}
+#[test]
+fn test_variable_shadowing() {
+    let source = r#"
             int main() {
                 int x = 1;
                 {
@@ -445,10 +441,10 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        // We expect two different %x locals. MIR printer might show them with same name or different IDs.
-        // Currently it shows names if available.
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    // We expect two different %x locals. MIR printer might show them with same name or different IDs.
+    // Currently it shows names if available.
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -486,11 +482,11 @@ mod tests {
             return const 0
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_parameter_shadowing() {
-        let source = r#"
+#[test]
+fn test_parameter_shadowing() {
+    let source = r#"
             int foo(int x) {
                 {
                     int x = 10;
@@ -502,8 +498,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = fn(%t0) -> %t0
 
@@ -529,11 +525,11 @@ mod tests {
             return %x
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_function_with_many_return_types() {
-        let source = r#"
+#[test]
+fn test_function_with_many_return_types() {
+    let source = r#"
           void fn_void() { return; }
 
           char fn_char() { return 'a'; }
@@ -579,8 +575,8 @@ mod tests {
           }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
         type %t1 = f64
         type %t2 = i8
@@ -715,11 +711,11 @@ mod tests {
             return const 4000000000
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_duplicate_global_declaration() {
-        let source = r#"
+#[test]
+fn test_duplicate_global_declaration() {
+    let source = r#"
             int x;
             int x;
 
@@ -728,8 +724,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         global @x: i32 = const zero
@@ -741,11 +737,11 @@ mod tests {
             return @x
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_duplicate_global_declaration_with_initializers_diagnostic() {
-        let source = r#"
+#[test]
+fn test_duplicate_global_declaration_with_initializers_diagnostic() {
+    let source = r#"
             int x = 1;
             int x = 2;
 
@@ -754,8 +750,8 @@ mod tests {
             }
         "#;
 
-        let output = setup_diagnostics_output(source);
-        insta::assert_snapshot!(output, @r"
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
         Diagnostics count: 2
 
         Level: Error
@@ -766,11 +762,11 @@ mod tests {
         Message: previous definition is here
         Span: SourceSpan(source_id=SourceId(2), start=13, end=23)
         ");
-    }
+}
 
-    #[test]
-    fn test_basic_typedef() {
-        let source = r#"
+#[test]
+fn test_basic_typedef() {
+    let source = r#"
             typedef int my_int;
             int main() {
                 my_int x = 10;
@@ -778,8 +774,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -793,11 +789,11 @@ mod tests {
             return %x
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_mir_generation_for_self_referential_struct() {
-        let source = r#"
+#[test]
+fn test_mir_generation_for_self_referential_struct() {
+    let source = r#"
             int main() {
                 struct S { struct S *p; int x; } s;
                 s.x = 0;
@@ -805,8 +801,8 @@ mod tests {
                 return s.p->p->p->p->p->x;
             }
         "#;
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct S { p: %t2, x: %t0 }
         type %t2 = ptr<%t1>
@@ -823,11 +819,11 @@ mod tests {
             return deref(deref(deref(deref(deref(%s.field_0).field_0).field_0).field_0).field_0).field_1
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_mir_generation_for_self_referential_union() {
-        let source = r#"
+#[test]
+fn test_mir_generation_for_self_referential_union() {
+    let source = r#"
             int main() {
                 union U { union U *p; int x; } u;
                 u.x = 0;
@@ -835,8 +831,8 @@ mod tests {
                 return u.p->p->p->p->p->x;
             }
         "#;
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = union U { p: %t2, x: %t0 }
         type %t2 = ptr<%t1>
@@ -853,11 +849,11 @@ mod tests {
             return deref(deref(deref(deref(deref(%u.field_0).field_0).field_0).field_0).field_0).field_1
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_external_function_call() {
-        let source = r#"
+#[test]
+fn test_external_function_call() {
+    let source = r#"
             int strlen(char *);
 
             int main()
@@ -869,8 +865,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r#"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r#"
         type %t0 = i32
         type %t1 = i8
         type %t2 = ptr<%t1>
@@ -897,11 +893,11 @@ mod tests {
 
         extern fn strlen(%param0: ptr<i8>) -> i32
         "#);
-    }
+}
 
-    #[test]
-    fn test_array_to_pointer_decay_in_function_call() {
-        let source = r#"
+#[test]
+fn test_array_to_pointer_decay_in_function_call() {
+    let source = r#"
             int printf(const char* format);
 
             int main()
@@ -910,8 +906,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r#"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r#"
         type %t0 = i32
         type %t1 = i8
         type %t2 = ptr<%t1>
@@ -934,11 +930,11 @@ mod tests {
 
         extern fn printf(%param0: ptr<i8>) -> i32
         "#);
-    }
+}
 
-    #[test]
-    fn test_array_to_pointer_decay_in_variadic_function_call() {
-        let source = r#"
+#[test]
+fn test_array_to_pointer_decay_in_variadic_function_call() {
+    let source = r#"
             int printf(const char* format, ...);
 
             int main()
@@ -947,8 +943,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r#"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r#"
         type %t0 = i32
         type %t1 = i8
         type %t2 = ptr<%t1>
@@ -974,11 +970,11 @@ mod tests {
 
         extern fn printf(%param0: ptr<i8>, ...) -> i32
         "#);
-    }
+}
 
-    #[test]
-    fn test_increment_decrement() {
-        let source = r#"
+#[test]
+fn test_increment_decrement() {
+    let source = r#"
             int main()
             {
                 int okabe = 1;
@@ -992,8 +988,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -1031,11 +1027,11 @@ mod tests {
             return %kanggoru
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_simple_goto() {
-        let source = r#"
+#[test]
+fn test_simple_goto() {
+    let source = r#"
             int main() {
                 goto end;
                 return 1;
@@ -1043,8 +1039,8 @@ mod tests {
                 return 0;
             }
         "#;
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
 
         fn main() -> i32
@@ -1057,11 +1053,11 @@ mod tests {
             return const 0
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_deref_after_cast() {
-        let source = r#"
+#[test]
+fn test_deref_after_cast() {
+    let source = r#"
             int main() {
                 void *p;
                 int x;
@@ -1073,8 +1069,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = void
         type %t2 = ptr<%t1>
@@ -1104,11 +1100,11 @@ mod tests {
             return const 0
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_function_pointer_in_struct() {
-        let source = r#"
+#[test]
+fn test_function_pointer_in_struct() {
+    let source = r#"
             struct S
             {
                 int (*fptr)();
@@ -1129,13 +1125,13 @@ mod tests {
             }
         "#;
 
-        // Just verify it lowers to MIR without panic
-        let _ = setup_mir(source);
-    }
+    // Just verify it lowers to MIR without panic
+    let _ = setup_mir(source);
+}
 
-    #[test]
-    fn test_incomplete_record_type() {
-        let source = r#"
+#[test]
+fn test_incomplete_record_type() {
+    let source = r#"
             typedef struct I FILE;
             extern struct I *p;
             int main() {
@@ -1143,8 +1139,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = struct I {  }
         type %t2 = ptr<%t1>
@@ -1158,10 +1154,10 @@ mod tests {
             return const 0
         }
         ");
-    }
-    #[test]
-    fn test_anonymous_struct_union_field_indices() {
-        let source = r#"
+}
+#[test]
+fn test_anonymous_struct_union_field_indices() {
+    let source = r#"
             typedef struct {
                 int a;
                 union {
@@ -1185,8 +1181,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
         type %t1 = struct anonymous { a: %t0, b1: %t0, b2: %t0, c: %t0, d: %t0 }
 
@@ -1204,10 +1200,10 @@ mod tests {
             return const 0
         }
         ");
-    }
-    #[test]
-    fn test_global_after_function() {
-        let source = r#"
+}
+#[test]
+fn test_global_after_function() {
+    let source = r#"
             int zero() { return 0; }
             int s = 42;
             int main() {
@@ -1215,8 +1211,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = fn() -> %t0
 
@@ -1242,11 +1238,11 @@ mod tests {
             return const 0
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_ternary_with_mixed_pointer_integer() {
-        let source = r#"
+#[test]
+fn test_ternary_with_mixed_pointer_integer() {
+    let source = r#"
             int main() {
                 int i = 1;
                 void *p;
@@ -1263,8 +1259,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = void
         type %t2 = ptr<%t1>
@@ -1335,11 +1331,11 @@ mod tests {
             return cast<i32>(%q)
         }
         ");
-    }
+}
 
-    #[test]
-    fn test_global_initializer_with_cast() {
-        let source = r#"
+#[test]
+fn test_global_initializer_with_cast() {
+    let source = r#"
             int x = 5;
             long y = 6;
             char c = 7;
@@ -1348,8 +1344,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = i64
         type %t2 = i8
@@ -1365,10 +1361,10 @@ mod tests {
             return const 0
         }
         ");
-    }
-    #[test]
-    fn test_string_literal_decay() {
-        let source = r#"
+}
+#[test]
+fn test_string_literal_decay() {
+    let source = r#"
             int strcmp(const char *s1, const char *s2);
             int main() {
                 char buffer[10] = "hello";
@@ -1377,8 +1373,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r#"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r#"
         type %t0 = i32
         type %t1 = i8
         type %t2 = ptr<%t1>
@@ -1404,11 +1400,11 @@ mod tests {
 
         extern fn strcmp(%param0: ptr<i8>, %param1: ptr<i8>) -> i32
         "#);
-    }
+}
 
-    #[test]
-    fn test_gnu_statement_expression_labels_and_void() {
-        let source = r#"
+#[test]
+fn test_gnu_statement_expression_labels_and_void() {
+    let source = r#"
             extern int printf (const char *, ...);
             static void kb_wait_1(void)
             {
@@ -1431,8 +1427,8 @@ mod tests {
             int main() { return 0; }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r#"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r#"
         type %t0 = i32
         type %t1 = i8
         type %t2 = ptr<%t1>
@@ -1516,5 +1512,4 @@ mod tests {
             br bb9
         }
         "#);
-    }
 }

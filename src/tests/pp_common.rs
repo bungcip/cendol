@@ -75,6 +75,21 @@ pub fn setup_multi_file_pp_with_diagnostics(
     main_file_name: &str,
     config: Option<PPConfig>,
 ) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PPError> {
+    let (tokens, diagnostics) = setup_multi_file_pp_with_diagnostics_raw(files, main_file_name, config)?;
+
+    let significant_tokens: Vec<_> = tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
+        .collect();
+
+    Ok((significant_tokens, diagnostics))
+}
+
+pub fn setup_multi_file_pp_with_diagnostics_raw(
+    files: Vec<(&str, &str)>,
+    main_file_name: &str,
+    config: Option<PPConfig>,
+) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PPError> {
     // Initialize logging for tests
     let _ = env_logger::try_init();
 
@@ -98,13 +113,24 @@ pub fn setup_multi_file_pp_with_diagnostics(
     let mut preprocessor = Preprocessor::new(&mut source_manager, &mut diagnostics, &config);
 
     let tokens = preprocessor.process(main_id, &config)?;
+    Ok((tokens, diagnostics.diagnostics().to_vec()))
+}
 
-    let significant_tokens: Vec<_> = tokens
-        .into_iter()
-        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
-        .collect();
+pub struct TestLexer {
+    lexer: crate::pp::pp_lexer::PPLexer,
+}
 
-    Ok((significant_tokens, diagnostics.diagnostics().to_vec()))
+impl TestLexer {
+    pub fn next_token(&mut self) -> Option<PPToken> {
+        self.lexer.next_token()
+    }
+}
+
+pub fn create_test_pp_lexer(src: &str) -> TestLexer {
+    let mut source_manager = SourceManager::new();
+    let id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>", None);
+    let lexer = crate::pp::pp_lexer::PPLexer::new(id, src.as_bytes().to_vec());
+    TestLexer { lexer }
 }
 
 #[macro_export]
@@ -120,11 +146,4 @@ macro_rules! test_tokens {
             }
         )*
     };
-}
-
-pub(crate) fn create_test_pp_lexer(source: &str) -> crate::pp::pp_lexer::PPLexer {
-    use crate::source_manager::SourceId;
-    let source_id = SourceId::new(1);
-    let buffer = source.as_bytes().to_vec();
-    crate::pp::pp_lexer::PPLexer::new(source_id, buffer)
 }

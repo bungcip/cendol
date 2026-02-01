@@ -23,9 +23,10 @@ impl OutputHandler {
         OutputHandler
     }
 
-    /// Dump preprocessed output to stdout
+    /// Dump preprocessed output to the given writer
     pub(crate) fn dump_preprocessed_output(
         &self,
+        writer: &mut impl std::io::Write,
         pp_tokens: &[PPToken],
         suppress_line_markers: bool,
         source_manager: &SourceManager,
@@ -66,17 +67,17 @@ impl OutputHandler {
                     if let Some(&byte) = current_buffer.get(last_pos as usize)
                         && (byte as char).is_whitespace()
                     {
-                        print!(" ");
+                        write!(writer, " ").map_err(|e| DriverError::IoError(e.to_string()))?;
                     }
                 } else {
                     // Add space between consecutive macro-expanded tokens (linearization)
-                    print!(" ");
+                    write!(writer, " ").map_err(|e| DriverError::IoError(e.to_string()))?;
                 }
 
                 // For macro-expanded tokens, just print the canonical spelling
                 // No whitespace reconstruction for Level A - these tokens don't have
                 // meaningful source locations for whitespace calculation
-                print!("{}", token.get_text());
+                write!(writer, "{}", token.get_text()).map_err(|e| DriverError::IoError(e.to_string()))?;
                 last_was_macro_expanded = true;
                 // Don't update last_pos for macro-expanded tokens
                 continue;
@@ -99,8 +100,9 @@ impl OutputHandler {
                         .unwrap_or("<unknown>");
 
                     // Ensure we start on a new line
-                    println!();
-                    println!("# {} \"{}\" 1", line, filename);
+                    writeln!(writer).map_err(|e| DriverError::IoError(e.to_string()))?;
+                    writeln!(writer, "# {} \"{}\" 1", line, filename)
+                        .map_err(|e| DriverError::IoError(e.to_string()))?;
                 }
 
                 current_file_id = token.location.source_id();
@@ -118,7 +120,7 @@ impl OutputHandler {
                 if let Ok(text) = std::str::from_utf8(slice) {
                     // Only print slices that are all whitespace to avoid printing directive text
                     if text.chars().all(|c| c.is_whitespace()) {
-                        print!("{}", text);
+                        write!(writer, "{}", text).map_err(|e| DriverError::IoError(e.to_string()))?;
                     }
                 }
             }
@@ -126,14 +128,14 @@ impl OutputHandler {
             // Print the token's raw bytes from source
             let token_slice = token.get_raw_slice(current_buffer);
             if let Ok(text) = std::str::from_utf8(token_slice) {
-                print!("{}", text);
+                write!(writer, "{}", text).map_err(|e| DriverError::IoError(e.to_string()))?;
             }
 
             last_pos = token_end;
             last_was_macro_expanded = false;
         }
 
-        println!();
+        writeln!(writer).map_err(|e| DriverError::IoError(e.to_string()))?;
         Ok(())
     }
 }

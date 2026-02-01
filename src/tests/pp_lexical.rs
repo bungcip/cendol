@@ -2,6 +2,7 @@ use crate::intern::StringId;
 use crate::lang_options::LangOptions;
 use crate::pp::PPConfig;
 use crate::pp::{PPTokenFlags, PPTokenKind};
+use crate::test_tokens;
 use crate::tests::pp_common::{create_test_pp_lexer, setup_pp_snapshot, setup_preprocessor_test_with_diagnostics};
 
 // Lexer basic tests

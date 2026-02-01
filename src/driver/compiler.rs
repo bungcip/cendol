@@ -361,6 +361,7 @@ impl CompilerDriver {
                         print!("{}", AstDumper::dump_parsed_ast(&parsed_ast));
                     } else if let Some(preprocessed) = artifact.preprocessed {
                         self.output_handler.dump_preprocessed_output(
+                            &mut std::io::stdout(),
                             &preprocessed,
                             self.config.suppress_line_markers,
                             &self.source_manager,

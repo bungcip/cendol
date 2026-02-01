@@ -1474,10 +1474,7 @@ impl<'src> Preprocessor<'src> {
                             self.report_diagnostic_simple(
                                 DiagnosticLevel::Error,
                                 "Extra tokens at end of #include directive".to_string(),
-                                SourceSpan::new(
-                                    tokens[greater_index + 1].location,
-                                    tokens.last().unwrap().location,
-                                ),
+                                SourceSpan::new(tokens[greater_index + 1].location, tokens.last().unwrap().location),
                                 Some("extra_tokens_directive".to_string()),
                                 vec![],
                             );
@@ -1845,9 +1842,7 @@ impl<'src> Preprocessor<'src> {
                         format!("Unknown pragma '{}'", pragma_name),
                         SourceSpan::new(pragma_token.location, pragma_token.location),
                         Some("unknown_pragma".to_string()),
-                        vec![
-                            "Supported pragmas: once, push_macro, pop_macro, message, warning, error".to_string(),
-                        ],
+                        vec!["Supported pragmas: once, push_macro, pop_macro, message, warning, error".to_string()],
                     );
                     return Err(PPError::UnknownPragma(pragma_name.to_string()));
                 }

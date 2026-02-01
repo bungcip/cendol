@@ -9,7 +9,7 @@ use crate::diagnostic::ParseError;
 use log::debug;
 
 use super::expressions::BindingPower;
-use super::{Parser, ParserState};
+use super::{Parser, ParserState, TokenKind};
 
 /// Common expression parsing patterns
 pub(crate) mod expr_patterns {
@@ -18,9 +18,9 @@ pub(crate) mod expr_patterns {
     /// Parse a parenthesized expression: (expression)
     pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         debug!("parse_parenthesized_expr: parsing parenthesized expression");
-        parser.expect(crate::lexer::TokenKind::LeftParen)?;
+        parser.expect(TokenKind::LeftParen)?;
         let expr = parser.parse_expr_min()?;
-        parser.expect(crate::lexer::TokenKind::RightParen)?;
+        parser.expect(TokenKind::RightParen)?;
         Ok(expr)
     }
 
@@ -32,7 +32,7 @@ pub(crate) mod expr_patterns {
         debug!("parse_expr_list: parsing expression list");
         let mut args = Vec::new();
 
-        if parser.is_token(crate::lexer::TokenKind::RightParen) {
+        if parser.is_token(TokenKind::RightParen) {
             return Ok(args);
         }
 
@@ -40,7 +40,7 @@ pub(crate) mod expr_patterns {
             let arg = parser.parse_expression(binding_power)?;
             args.push(arg);
 
-            if !parser.is_token(crate::lexer::TokenKind::Comma) {
+            if !parser.is_token(TokenKind::Comma) {
                 break;
             }
             parser.advance(); // consume comma

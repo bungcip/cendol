@@ -14,7 +14,7 @@ use crate::ast::parsed::{
     ParsedNodeRef, ParsedTypeSpecifier,
 };
 use crate::diagnostic::ParseError;
-use crate::lexer::TokenKind;
+use crate::parser::TokenKind;
 use log::debug;
 use thin_vec::ThinVec;
 

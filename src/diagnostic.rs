@@ -1,5 +1,5 @@
 use crate::ast::NameId;
-use crate::lexer::TokenKind;
+use crate::parser::TokenKind;
 use crate::semantic::TypeRef;
 use crate::source_manager::{SourceManager, SourceSpan};
 use annotate_snippets::renderer::DecorStyle;

@@ -10,9 +10,9 @@ use crate::ast::dumper::AstDumper;
 use crate::ast::{Ast, NodeKind, NodeRef, ParsedAst, SourceId};
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::driver::cli::PathOrBuffer;
-use crate::lexer::{Lexer, Token};
 use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
 use crate::mir::validation::MirValidator;
+use crate::parser::{Lexer, Token};
 
 use super::artifact::{CompileArtifact, CompilePhase, PipelineOutputs};
 use crate::mir::MirProgram;

@@ -6,7 +6,7 @@
 use super::Parser;
 use crate::ast::*;
 use crate::diagnostic::ParseError;
-use crate::lexer::TokenKind;
+use crate::parser::TokenKind;
 use crate::parser::declaration_core::parse_declaration_specifiers;
 use crate::parser::declarator::parse_declarator;
 use crate::parser::utils::expr_patterns::parse_parenthesized_expr;

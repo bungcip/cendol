@@ -3,7 +3,6 @@ pub mod diagnostic;
 pub mod driver;
 mod intern;
 mod lang_options;
-mod lexer;
 pub mod mir;
 
 mod parser;

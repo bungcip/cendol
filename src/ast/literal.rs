@@ -2,6 +2,7 @@ use crate::ast::NameId;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[repr(u8)]
 pub enum IntegerSuffix {
     L,
     LL,
@@ -11,6 +12,7 @@ pub enum IntegerSuffix {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[repr(u8)]
 pub enum FloatSuffix {
     F,
     L,

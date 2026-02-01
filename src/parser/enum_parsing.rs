@@ -4,7 +4,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::ParseError;
-use crate::lexer::TokenKind;
+use crate::parser::TokenKind;
 
 use super::Parser;
 

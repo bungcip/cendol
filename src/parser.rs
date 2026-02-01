@@ -6,7 +6,6 @@
 
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError};
-use crate::lexer::{Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
 use std::collections::HashSet;
@@ -16,6 +15,7 @@ pub mod declarations;
 pub mod declarator;
 pub mod enum_parsing;
 pub mod expressions;
+pub mod lexer;
 pub mod parsed_type_builder;
 pub mod statements;
 pub mod struct_parsing;
@@ -24,6 +24,7 @@ pub mod utils;
 
 // Re-export commonly used types
 pub(crate) use expressions::BindingPower;
+pub(crate) use lexer::{Lexer, Token, TokenKind};
 
 use expressions::parse_expression;
 

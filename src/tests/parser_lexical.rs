@@ -1,6 +1,6 @@
 use crate::driver::artifact::CompilePhase;
 use crate::intern::StringId;
-use crate::lexer::*;
+use crate::parser::{TokenKind, lexer};
 use crate::tests::test_utils;
 
 /// Helper function to test lexing from string to TokenKind
@@ -46,8 +46,7 @@ fn test_c11_keywords() {
 
     for keyword in keywords {
         let symbol = StringId::new(keyword);
-        let expected_kind =
-            crate::lexer::is_keyword(symbol).unwrap_or_else(|| panic!("{} should be a keyword", keyword));
+        let expected_kind = lexer::is_keyword(symbol).unwrap_or_else(|| panic!("{} should be a keyword", keyword));
 
         let token_kinds = setup_lexer(keyword);
         assert_eq!(token_kinds.len(), 1, "Expected 1 token for keyword: {}", keyword);

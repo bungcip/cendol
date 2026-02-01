@@ -54,3 +54,5 @@ pub mod codegen_ternary_array_size;
 pub mod guardian_generic;
 pub mod semantic_alignment;
 pub mod test_utils;
+
+pub mod codegen_regr;

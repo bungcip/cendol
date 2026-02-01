@@ -266,14 +266,9 @@ impl<'a> AstToMirLowerer<'a> {
                 match &target_type.kind {
                     TypeKind::Array { element_type, size } => {
                         let elem_ty = QualType::unqualified(*element_type);
-                        let mir_elem_ty = self.lower_qual_type(elem_ty);
-                        let conv_op = self.apply_conversions(operand, init_ref, mir_elem_ty);
-                        let final_op = if self.get_operand_type(&conv_op) != mir_elem_ty {
-                            Operand::Cast(mir_elem_ty, Box::new(conv_op))
-                        } else {
-                            conv_op
-                        };
+                        let final_op = self.lower_brace_elision(operand, init_ref, elem_ty);
 
+                        let mir_elem_ty = self.lower_qual_type(elem_ty);
                         let len = if let ArraySizeType::Constant(l) = size { *l } else { 1 };
                         let mut elements = vec![final_op];
                         while elements.len() < len {
@@ -285,13 +280,7 @@ impl<'a> AstToMirLowerer<'a> {
                     }
                     TypeKind::Record { members, .. } if !members.is_empty() => {
                         let member_ty = members[0].member_type;
-                        let mir_member_ty = self.lower_qual_type(member_ty);
-                        let conv_op = self.apply_conversions(operand, init_ref, mir_member_ty);
-                        let final_op = if self.get_operand_type(&conv_op) != mir_member_ty {
-                            Operand::Cast(mir_member_ty, Box::new(conv_op))
-                        } else {
-                            conv_op
-                        };
+                        let final_op = self.lower_brace_elision(operand, init_ref, member_ty);
                         self.finalize_struct_initializer(vec![(0, final_op)], target_ty, destination)
                     }
                     _ => {
@@ -389,5 +378,38 @@ impl<'a> AstToMirLowerer<'a> {
     ) -> Option<crate::mir::ConstValueId> {
         let operand = self.lower_initializer(init_ref, ty, None);
         self.operand_to_const_id(operand)
+    }
+
+    fn lower_brace_elision(&mut self, operand: Operand, init_ref: NodeRef, target_ty: QualType) -> Operand {
+        let target_type = self.registry.get(target_ty.ty()).into_owned();
+        match &target_type.kind {
+            TypeKind::Array { element_type, size } => {
+                let elem_ty = QualType::unqualified(*element_type);
+                let final_op = self.lower_brace_elision(operand, init_ref, elem_ty);
+                let mir_elem_ty = self.lower_qual_type(elem_ty);
+                let len = if let ArraySizeType::Constant(l) = size { *l } else { 1 };
+                let mut elements = vec![final_op];
+                while elements.len() < len {
+                    elements.push(Operand::Constant(
+                        self.create_constant(mir_elem_ty, ConstValueKind::Zero),
+                    ));
+                }
+                self.finalize_array_initializer(elements, target_ty, None)
+            }
+            TypeKind::Record { members, .. } if !members.is_empty() => {
+                let member_ty = members[0].member_type;
+                let final_op = self.lower_brace_elision(operand, init_ref, member_ty);
+                self.finalize_struct_initializer(vec![(0, final_op)], target_ty, None)
+            }
+            _ => {
+                let mir_target_ty = self.lower_qual_type(target_ty);
+                let conv_op = self.apply_conversions(operand, init_ref, mir_target_ty);
+                if self.get_operand_type(&conv_op) != mir_target_ty {
+                    Operand::Cast(mir_target_ty, Box::new(conv_op))
+                } else {
+                    conv_op
+                }
+            }
+        }
     }
 }

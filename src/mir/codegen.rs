@@ -630,7 +630,7 @@ fn prepare_call_signature(
         // This matches the 32-slot spill area in setup_signature
         if is_variadic {
             let current_gpr_count = sig.params.len();
-            let total_variadic_slots = 32;
+            let total_variadic_slots = 128;
             if current_gpr_count < total_variadic_slots {
                 for _ in 0..(total_variadic_slots - current_gpr_count) {
                     sig.params.push(AbiParam::new(types::I64));
@@ -2296,7 +2296,7 @@ fn setup_signature(
         // Add 32 total I64 parameters to capture variadic arguments (6 GPRs + 26 stack slots)
         // This allows variadic functions to receive many struct args that expand to multiple I64s
         let fixed_params_count = func.params.len();
-        let total_variadic_slots = 32; // Support up to 32 I64 slots for variadic args
+        let total_variadic_slots = 128; // Support up to 128 I64 slots for variadic args
         if fixed_params_count < total_variadic_slots {
             for _ in 0..(total_variadic_slots - fixed_params_count) {
                 func_ctx.params.push(AbiParam::new(types::I64));
@@ -2569,7 +2569,7 @@ impl MirToCraneliftLowerer {
                 // Step 2: Add variadic block parameters if needed (still before any instructions)
                 if func.is_variadic {
                     let fixed_param_count = func.params.len();
-                    let total_variadic_slots = 32; // Must match setup_signature
+                    let total_variadic_slots = 128; // Must match setup_signature
                     if fixed_param_count < total_variadic_slots {
                         let extra_count = total_variadic_slots - fixed_param_count;
                         for _ in 0..extra_count {
@@ -2643,7 +2643,7 @@ impl MirToCraneliftLowerer {
 
                 // Step 4: Handle variadic spill area - save all 32 slots
                 if func.is_variadic {
-                    let total_slots = 32;
+                    let total_slots = 128;
                     let spill_size = total_slots * 8; // 256 bytes for 32 I64 slots
                     let spill_slot = builder.create_sized_stack_slot(StackSlotData::new(
                         StackSlotKind::ExplicitSlot,

@@ -163,3 +163,33 @@ int main() {
     let output = run_c_code_with_output(code);
     assert_eq!(output.trim(), "int: 42, double: 3.141590, str: hello");
 }
+
+#[test]
+fn test_variadic_limit_hfa() {
+    let code = r#"
+#include <stdio.h>
+
+struct hfa34 { long double a, b, c, d; } hfa34 = { 34.1, 34.2, 34.3, 34.4 };
+
+void myprintf(int ignored, ...) {
+    __builtin_va_list ap;
+    __builtin_va_start(ap, ignored);
+    struct hfa34 x1 = __builtin_va_arg(ap, struct hfa34);
+    printf("%.1Lf,%.1Lf ", x1.a, x1.d);
+    struct hfa34 x2 = __builtin_va_arg(ap, struct hfa34);
+    printf("%.1Lf,%.1Lf ", x2.a, x2.d);
+    struct hfa34 x3 = __builtin_va_arg(ap, struct hfa34);
+    printf("%.1Lf,%.1Lf ", x3.a, x3.d);
+    struct hfa34 x4 = __builtin_va_arg(ap, struct hfa34);
+    printf("%.1Lf,%.1Lf", x4.a, x4.d);
+    __builtin_va_end(ap);
+}
+
+int main() {
+    myprintf(0, hfa34, hfa34, hfa34, hfa34);
+    return 0;
+}
+"#;
+    let output = run_c_code_with_output(code);
+    assert_eq!(output.trim(), "34.1,34.4 34.1,34.4 34.1,34.4 34.1,34.4");
+}

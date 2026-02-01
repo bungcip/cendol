@@ -80,6 +80,14 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
             let layout = ctx.registry.get_layout(ty.ty());
             Some(layout.size as i64)
         }
+        NodeKind::TernaryOp(cond, then_ref, else_ref) => {
+            let cond_val = eval_const_expr(ctx, *cond)?;
+            if cond_val != 0 {
+                eval_const_expr(ctx, *then_ref)
+            } else {
+                eval_const_expr(ctx, *else_ref)
+            }
+        }
         _ => None,
     }
 }

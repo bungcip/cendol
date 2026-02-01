@@ -8,7 +8,7 @@ use std::collections::{HashSet, VecDeque};
 
 use super::pp_lexer::PPLexer;
 use crate::pp::interpreter::Interpreter;
-use crate::pp::{PPToken, PPTokenFlags, PPTokenKind};
+use crate::pp::{HeaderSearch, PPToken, PPTokenFlags, PPTokenKind};
 use std::path::{Path, PathBuf};
 use target_lexicon::{Architecture, OperatingSystem, Triple};
 
@@ -155,68 +155,6 @@ pub(crate) struct PPConditionalInfo {
     was_skipping: bool,
     found_else: bool,
     found_non_skipping: bool,
-}
-
-/// Manages header search paths and include resolution
-#[derive(Clone)]
-pub(crate) struct HeaderSearch {
-    system_path: Vec<PathBuf>,
-    framework_path: Vec<PathBuf>,
-    quoted_includes: Vec<String>,
-    angled_includes: Vec<String>,
-}
-
-impl HeaderSearch {
-    /// Add a system include path
-    pub(crate) fn add_system_path(&mut self, path: PathBuf) {
-        self.system_path.push(path);
-    }
-
-    /// Add a quoted include path (-iquote)
-    pub(crate) fn add_quoted_path(&mut self, path: PathBuf) {
-        self.quoted_includes.push(path.to_string_lossy().to_string());
-    }
-
-    /// Add an angled include path (-I)
-    pub(crate) fn add_angled_path(&mut self, path: PathBuf) {
-        self.angled_includes.push(path.to_string_lossy().to_string());
-    }
-
-    /// Add a framework path
-    pub(crate) fn add_framework_path(&mut self, path: PathBuf) {
-        self.framework_path.push(path);
-    }
-
-    /// Resolve an include path to an absolute path
-    pub(crate) fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
-        if is_angled {
-            // Angled includes: search angled_includes, then system_path, then framework_path
-            self.check_paths(&self.angled_includes, include_path)
-                .or_else(|| self.check_paths(&self.system_path, include_path))
-                .or_else(|| self.check_paths(&self.framework_path, include_path))
-        } else {
-            // Quoted includes: search current_dir, then quoted_includes, then angled_includes, then system_path, then framework_path
-            let candidate = current_dir.join(include_path);
-            if candidate.exists() {
-                return Some(candidate);
-            }
-            self.check_paths(&self.quoted_includes, include_path)
-                .or_else(|| self.check_paths(&self.angled_includes, include_path))
-                .or_else(|| self.check_paths(&self.system_path, include_path))
-                .or_else(|| self.check_paths(&self.framework_path, include_path))
-        }
-    }
-
-    /// Helper to check a list of paths for an include file
-    fn check_paths<P: AsRef<Path>>(&self, paths: &[P], include_path: &str) -> Option<PathBuf> {
-        for path in paths {
-            let candidate = path.as_ref().join(include_path);
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-        None
-    }
 }
 
 /// Include stack information
@@ -977,6 +915,28 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Lex the next token
+    fn pop_finished_lexer(&mut self) -> bool {
+        // EOF reached, pop the lexer
+        let popped_lexer = self.lexer_stack.pop().unwrap();
+
+        // If this was an included file, pop from include stack and decrement depth.
+        if let Some(include_info) = self.include_stack.last()
+            && include_info.file_id == popped_lexer.source_id
+        {
+            self.include_stack.pop();
+            self.include_depth -= 1;
+        }
+
+        // ⚡ Bolt: Use `take_line_starts` to move the line_starts vector
+        // instead of cloning it. This is a performance optimization that
+        // avoids a potentially large allocation when a file is finished lexing.
+        self.source_manager
+            .set_line_starts(popped_lexer.source_id, popped_lexer.take_line_starts());
+
+        !self.lexer_stack.is_empty()
+    }
+
+    /// Lex the next token
     fn lex_token(&mut self) -> Option<PPToken> {
         if let Some(token) = self.pending_tokens.pop_front() {
             return Some(token);
@@ -996,23 +956,8 @@ impl<'src> Preprocessor<'src> {
                     }
                     return Some(token);
                 } else {
-                    // EOF reached, pop the lexer
-                    let popped_lexer = self.lexer_stack.pop().unwrap();
-
-                    // If this was an included file, pop from include stack and decrement depth.
-                    if let Some(include_info) = self.include_stack.last()
-                        && include_info.file_id == popped_lexer.source_id
-                    {
-                        self.include_stack.pop();
-                        self.include_depth -= 1;
-                    }
-
-                    // ⚡ Bolt: Use `take_line_starts` to move the line_starts vector
-                    // instead of cloning it. This is a performance optimization that
-                    // avoids a potentially large allocation when a file is finished lexing.
-                    self.source_manager
-                        .set_line_starts(popped_lexer.source_id, popped_lexer.take_line_starts());
-                    if self.lexer_stack.is_empty() {
+                    // Current lexer finished
+                    if !self.pop_finished_lexer() {
                         return None;
                     }
                     // Continue to try the next lexer in the stack
@@ -1146,7 +1091,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Destringize a string literal (remove quotes and handle escapes)
-    fn destringize(&self, full_str: &str) -> String {
+    pub(crate) fn destringize(&self, full_str: &str) -> String {
         let inner_content = &full_str[1..full_str.len() - 1];
         let mut content = String::with_capacity(inner_content.len());
         let mut chars = inner_content.chars().peekable();
@@ -1214,8 +1159,8 @@ impl<'src> Preprocessor<'src> {
         content
     }
 
-    /// Perform the action of a pragma directive
-    fn perform_pragma(&mut self, pragma_content: &str) {
+    /// Tokenize the content of a pragma directive
+    fn tokenize_pragma_content(&mut self, pragma_content: &str) -> Vec<PPToken> {
         // Create a buffer for the pragma content
         let source_id = self
             .source_manager
@@ -1242,6 +1187,13 @@ impl<'src> Preprocessor<'src> {
         // Append EOD token to mark end of pragma
         tokens.push(PPToken::new(PPTokenKind::Eod, PPTokenFlags::empty(), eod_loc, 0));
 
+        tokens
+    }
+
+    /// Perform the action of a pragma directive
+    fn perform_pragma(&mut self, pragma_content: &str) {
+        let tokens = self.tokenize_pragma_content(pragma_content);
+
         // Push to pending_tokens in reverse order so they come out in correct order
         for token in tokens.into_iter().rev() {
             self.pending_tokens.push_front(token);
@@ -1261,59 +1213,32 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Handle #define directive
-    fn handle_define(&mut self) -> Result<(), PPError> {
-        let name_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
-        let name = match name_token.kind {
-            PPTokenKind::Identifier(sym) => sym,
-            _ => return Err(PPError::ExpectedIdentifier),
+    fn parse_define_args(&mut self, name: &str) -> Result<(MacroFlags, Vec<StringId>, Option<StringId>), PPError> {
+        let Some(token) = self.lex_token() else {
+            return Ok((MacroFlags::empty(), Vec::new(), None));
         };
 
-        let mut flags = MacroFlags::empty();
-        let mut params = Vec::new();
-        let mut variadic = None;
-        let next = self.lex_token();
-        if let Some(token) = next {
-            if token.kind == PPTokenKind::LeftParen && !token.flags.contains(PPTokenFlags::LEADING_SPACE) {
-                // Peek next token to see if it's potentially a function-like macro start
-                let first_param = self.lex_token();
-                if let Some(fp) = first_param {
-                    if matches!(
-                        fp.kind,
-                        PPTokenKind::RightParen | PPTokenKind::Identifier(_) | PPTokenKind::Ellipsis
-                    ) {
-                        self.pending_tokens.push_front(fp);
-                        let (f, p, v) = self.parse_macro_definition_params(name.as_str())?;
-                        flags |= f;
-                        params = p;
-                        variadic = v;
-                    } else {
-                        self.pending_tokens.push_front(fp);
-                        self.pending_tokens.push_front(token);
-                    }
-                } else {
-                    return Err(PPError::UnexpectedEndOfFile);
-                }
-            } else {
-                self.pending_tokens.push_front(token);
-            }
-        }
-        let mut tokens = Vec::new();
-        while let Some(token) = self.lex_token() {
-            if token.kind == PPTokenKind::Eod {
-                break;
-            }
-            tokens.push(token);
-        }
-        // Store the macro
-        let macro_info = MacroInfo {
-            location: name_token.location,
-            flags,
-            tokens,
-            parameter_list: params,
-            variadic_arg: variadic,
-        };
+        if token.kind == PPTokenKind::LeftParen && !token.flags.contains(PPTokenFlags::LEADING_SPACE) {
+            let first_param = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
 
-        // Check for macro redefinition
+            if matches!(
+                first_param.kind,
+                PPTokenKind::RightParen | PPTokenKind::Identifier(_) | PPTokenKind::Ellipsis
+            ) {
+                self.pending_tokens.push_front(first_param);
+                return self.parse_macro_definition_params(name);
+            }
+
+            self.pending_tokens.push_front(first_param);
+            self.pending_tokens.push_front(token);
+            return Ok((MacroFlags::empty(), Vec::new(), None));
+        }
+
+        self.pending_tokens.push_front(token);
+        Ok((MacroFlags::empty(), Vec::new(), None))
+    }
+
+    fn check_macro_redefinition(&mut self, name: StringId, name_token: &PPToken, macro_info: &MacroInfo) -> bool {
         if let Some(existing) = self.macros.get(&name) {
             if existing.flags.contains(MacroFlags::BUILTIN) {
                 self.report_diagnostic_simple(
@@ -1323,13 +1248,10 @@ impl<'src> Preprocessor<'src> {
                     Some("builtin_macro_redefinition".to_string()),
                     Vec::new(),
                 );
-                return Ok(());
+                return false;
             }
 
             // Check if definition is different
-            // Two macro definitions are distinct if they have different parameter lists,
-            // different variadic arguments, different flags, or different token sequences.
-            // For token sequences, we check kind and flags (ignoring location).
             let is_different = existing.flags != macro_info.flags
                 || existing.parameter_list != macro_info.parameter_list
                 || existing.variadic_arg != macro_info.variadic_arg
@@ -1341,7 +1263,6 @@ impl<'src> Preprocessor<'src> {
                     .any(|(a, b)| a.kind != b.kind || a.flags != b.flags);
 
             if is_different {
-                // Emit warning for redefinition
                 let diag = Diagnostic {
                     level: DiagnosticLevel::Warning,
                     message: format!("Redefinition of macro '{}'", name.as_str()),
@@ -1353,8 +1274,34 @@ impl<'src> Preprocessor<'src> {
                 self.diag.report_diagnostic(diag);
             }
         }
+        true
+    }
 
-        self.macros.insert(name, macro_info);
+    fn handle_define(&mut self) -> Result<(), PPError> {
+        let name_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
+        let name = match name_token.kind {
+            PPTokenKind::Identifier(sym) => sym,
+            _ => return Err(PPError::ExpectedIdentifier),
+        };
+
+        let (flags, params, variadic) = self.parse_define_args(name.as_str())?;
+
+        // Collect body tokens
+        // Use collect_tokens_until_eod which handles the loop and checking for Eod
+        let tokens = self.collect_tokens_until_eod();
+
+        // Store the macro
+        let macro_info = MacroInfo {
+            location: name_token.location,
+            flags,
+            tokens,
+            parameter_list: params,
+            variadic_arg: variadic,
+        };
+
+        if self.check_macro_redefinition(name, &name_token, &macro_info) {
+            self.macros.insert(name, macro_info);
+        }
         Ok(())
     }
 
@@ -1740,35 +1687,24 @@ impl<'src> Preprocessor<'src> {
 
         Ok(())
     }
-    fn handle_line(&mut self) -> Result<(), PPError> {
-        // Collect tokens until end of line
+    fn collect_tokens_until_eod(&mut self) -> Vec<PPToken> {
         let mut tokens = Vec::new();
-        let start_line = if let Some(lexer) = self.lexer_stack.last() {
-            lexer.get_current_line()
-        } else {
-            0
-        };
-
         while let Some(token) = self.lex_token() {
             if token.kind == PPTokenKind::Eod {
                 break;
             }
             tokens.push(token);
         }
+        tokens
+    }
 
-        if tokens.is_empty() {
-            return Err(PPError::InvalidLineDirective);
-        }
-
-        // Expand macros in tokens
-        self.expand_tokens(&mut tokens, false)?;
-
+    fn parse_line_directive_args(&self, tokens: &[PPToken]) -> Result<(u32, Option<String>), PPError> {
         if tokens.is_empty() {
             return Err(PPError::InvalidLineDirective);
         }
 
         // Parse line number
-        let logical_line = match &tokens[0].kind {
+        let line_num = match &tokens[0].kind {
             PPTokenKind::Number(symbol) => {
                 let text = symbol.as_str();
                 text.parse::<u32>().map_err(|_| PPError::InvalidLineDirective)?
@@ -1777,12 +1713,12 @@ impl<'src> Preprocessor<'src> {
         };
 
         // Validate line number (should be positive)
-        if logical_line == 0 {
+        if line_num == 0 {
             return Err(PPError::InvalidLineDirective);
         }
 
         // Optional filename
-        let logical_file = if tokens.len() > 1 {
+        let filename = if tokens.len() > 1 {
             match &tokens[1].kind {
                 PPTokenKind::StringLiteral(symbol) => {
                     let full_str = symbol.as_str();
@@ -1802,6 +1738,28 @@ impl<'src> Preprocessor<'src> {
         if tokens.len() > 2 {
             return Err(PPError::InvalidLineDirective);
         }
+
+        Ok((line_num, filename))
+    }
+
+    fn handle_line(&mut self) -> Result<(), PPError> {
+        let start_line = if let Some(lexer) = self.lexer_stack.last() {
+            lexer.get_current_line()
+        } else {
+            0
+        };
+
+        // Collect tokens until end of line
+        let mut tokens = self.collect_tokens_until_eod();
+
+        if tokens.is_empty() {
+            return Err(PPError::InvalidLineDirective);
+        }
+
+        // Expand macros in tokens
+        self.expand_tokens(&mut tokens, false)?;
+
+        let (logical_line, logical_file) = self.parse_line_directive_args(&tokens)?;
 
         // Get current physical line (where #line directive appears)
         let physical_line = start_line;
@@ -2483,7 +2441,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Stringify tokens for # operator
-    fn stringify_tokens(&self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPError> {
+    pub(crate) fn stringify_tokens(&self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPError> {
         // Bolt ⚡: Use a two-pass approach to build the stringified token efficiently.
         // This avoids multiple reallocations from push/push_str in a loop.
         // 1. Calculate the final length of the string, accounting for escaped characters.
@@ -3160,151 +3118,5 @@ impl<'src> Preprocessor<'src> {
         }
 
         Ok((flags, params, variadic))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::diagnostic::DiagnosticEngine;
-    use crate::source_manager::SourceManager;
-
-    fn create_dummy_preprocessor<'a>(sm: &'a mut SourceManager, diag: &'a mut DiagnosticEngine) -> Preprocessor<'a> {
-        let config = PPConfig::default();
-        Preprocessor::new(sm, diag, &config)
-    }
-
-    #[test]
-    fn test_header_search_resolution() {
-        use std::fs::File;
-
-        // Create temporary directories for search paths
-        let temp_dir = tempfile::tempdir().unwrap();
-        let system_dir = temp_dir.path().join("system");
-        let angled_dir = temp_dir.path().join("angled");
-        let framework_dir = temp_dir.path().join("framework");
-        let local_dir = temp_dir.path().join("local");
-
-        std::fs::create_dir(&system_dir).unwrap();
-        std::fs::create_dir(&angled_dir).unwrap();
-        std::fs::create_dir(&framework_dir).unwrap();
-        std::fs::create_dir(&local_dir).unwrap();
-
-        // Create dummy headers
-        File::create(system_dir.join("sys.h")).unwrap();
-        File::create(angled_dir.join("ang.h")).unwrap();
-        File::create(framework_dir.join("frm.h")).unwrap();
-        File::create(local_dir.join("loc.h")).unwrap();
-
-        let mut search = HeaderSearch {
-            system_path: Vec::new(),
-            framework_path: Vec::new(),
-            quoted_includes: Vec::new(),
-            angled_includes: Vec::new(),
-        };
-
-        search.add_system_path(system_dir.clone());
-        search.add_angled_path(angled_dir.clone());
-        search.add_framework_path(framework_dir.clone());
-
-        // Test angled includes (<header.h>)
-        // Should find in angled_path
-        let resolved = search.resolve_path("ang.h", true, &local_dir);
-        assert_eq!(resolved.unwrap(), angled_dir.join("ang.h"));
-
-        // Should find in system_path
-        let resolved = search.resolve_path("sys.h", true, &local_dir);
-        assert_eq!(resolved.unwrap(), system_dir.join("sys.h"));
-
-        // Should find in framework_path
-        let resolved = search.resolve_path("frm.h", true, &local_dir);
-        assert_eq!(resolved.unwrap(), framework_dir.join("frm.h"));
-
-        // Should NOT find local header for angled include (unless in search path)
-        let resolved = search.resolve_path("loc.h", true, &local_dir);
-        assert!(resolved.is_none());
-
-        // Test quoted includes ("header.h")
-        // Should find in current dir first
-        let resolved = search.resolve_path("loc.h", false, &local_dir);
-        assert_eq!(resolved.unwrap(), local_dir.join("loc.h"));
-
-        // Should fallback to system/angled/framework
-        let resolved = search.resolve_path("sys.h", false, &local_dir);
-        assert_eq!(resolved.unwrap(), system_dir.join("sys.h"));
-    }
-
-    #[test]
-    fn test_destringize() {
-        let mut sm = SourceManager::new();
-        let mut diag = DiagnosticEngine::new();
-        let pp = create_dummy_preprocessor(&mut sm, &mut diag);
-
-        // Test case 1: No escape sequences
-        assert_eq!(pp.destringize("\"hello\""), "hello");
-
-        // Test case 2: Simple escape sequences
-        assert_eq!(pp.destringize("\"a\\nb\\tc\\r\\\\d\\\'e\\\"f\""), "a\nb\tc\r\\d\'e\"f");
-
-        // Test case 3: Octal escapes
-        assert_eq!(pp.destringize("\"\\123\""), "S");
-        assert_eq!(pp.destringize("\"\\0\""), "\0");
-        assert_eq!(pp.destringize("\"\\7\""), "\x07");
-        assert_eq!(pp.destringize("\"a\\123b\""), "aSb");
-
-        // Test case 4: Hexadecimal escapes
-        assert_eq!(pp.destringize("\"\\x41\""), "A");
-        assert_eq!(pp.destringize("\"\\x1b\""), "\x1b");
-        assert_eq!(pp.destringize("\"a\\x41g\""), "aAg");
-        assert_eq!(pp.destringize("\"\\x0a\""), "\n");
-
-        // Test case 5: Mixed and complex cases
-        assert_eq!(pp.destringize("\"a\\\\\\\"b\\tc\\123d\\x41g\""), "a\\\"b\tcSdAg");
-
-        // Test case 6: Empty string
-        assert_eq!(pp.destringize("\"\""), "");
-    }
-
-    #[test]
-    fn test_stringify_tokens_utf8() {
-        let mut sm = SourceManager::new();
-        let mut diag = DiagnosticEngine::new();
-
-        let utf8_text = "⚡ Bolt ⚡";
-        let sid = sm.add_buffer(utf8_text.as_bytes().to_vec(), "test.c", None);
-
-        let text_with_escapes = "a\"b\\c";
-        let sid2 = sm.add_buffer(text_with_escapes.as_bytes().to_vec(), "test2.c", None);
-
-        let pp = create_dummy_preprocessor(&mut sm, &mut diag);
-
-        let token = PPToken::new(
-            PPTokenKind::Identifier(StringId::new(utf8_text)),
-            PPTokenFlags::empty(),
-            SourceLoc::new(sid, 0),
-            utf8_text.len() as u16,
-        );
-
-        let stringified = pp.stringify_tokens(&[token], SourceLoc::builtin()).unwrap();
-        if let PPTokenKind::StringLiteral(s) = stringified.kind {
-            assert_eq!(s.as_str(), "\"⚡ Bolt ⚡\"");
-        } else {
-            panic!("Expected StringLiteral");
-        }
-
-        // Test with escaping
-        let token2 = PPToken::new(
-            PPTokenKind::Identifier(StringId::new(text_with_escapes)),
-            PPTokenFlags::empty(),
-            SourceLoc::new(sid2, 0),
-            text_with_escapes.len() as u16,
-        );
-
-        let stringified2 = pp.stringify_tokens(&[token2], SourceLoc::builtin()).unwrap();
-        if let PPTokenKind::StringLiteral(s) = stringified2.kind {
-            assert_eq!(s.as_str(), "\"a\\\"b\\\\c\"");
-        } else {
-            panic!("Expected StringLiteral");
-        }
     }
 }

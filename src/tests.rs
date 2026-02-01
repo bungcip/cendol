@@ -38,6 +38,7 @@ pub mod semantic_lowering;
 pub mod semantic_mir;
 pub mod semantic_negative;
 pub mod semantic_validation;
+pub mod semantic_regr_comma;
 
 pub mod parser_decl;
 pub mod parser_expr;

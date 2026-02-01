@@ -318,6 +318,7 @@ fn convert_parsed_base_type_to_qual_type(
                         name: parsed_member.name,
                         member_type: member_types[i],
                         bit_field_size: parsed_member.bit_field_size,
+                        alignment: parsed_member.alignment,
                         span: parsed_member.span,
                     });
                 }
@@ -994,6 +995,8 @@ fn lower_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                         if let Some(val) = const_eval::eval_const_expr(&const_ctx, lowered_expr) {
                             if val > 0 && (val as u64).is_power_of_two() {
                                 Some(val as u32)
+                            } else if val == 0 {
+                                None
                             } else {
                                 ctx.report_error(SemanticError::InvalidAlignment { value: val, span });
                                 None
@@ -1153,7 +1156,7 @@ fn apply_declarator(
         ParsedDeclarator::AnonymousRecord(is_union, members) => {
             // Use struct_lowering helper
             let ty = ctx.registry.declare_record(None, *is_union);
-            let struct_members = lower_struct_members(members, ctx, SourceSpan::empty());
+            let struct_members = lower_struct_members(members, ctx, span);
             ctx.registry.complete_record(ty, struct_members);
             let _ = ctx.registry.ensure_layout(ty);
             QualType::unqualified(ty)
@@ -1649,6 +1652,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             NodeKind::FieldDecl(FieldDeclData {
                                 name: m.name,
                                 ty: m.member_type,
+                                alignment: m.alignment,
                             }),
                             m.span,
                         );
@@ -2641,6 +2645,7 @@ fn lower_struct_members(members: &[ParsedDeclarationData], ctx: &mut LowerCtx, s
                             name: None,
                             member_type: type_ref,
                             bit_field_size: None,
+                            alignment: spec_info.alignment,
                             span,
                         });
                     }
@@ -2674,6 +2679,7 @@ fn lower_struct_members(members: &[ParsedDeclarationData], ctx: &mut LowerCtx, s
                 name: member_name,
                 member_type,
                 bit_field_size,
+                alignment: spec_info.alignment,
                 span: init_declarator.span,
             });
         }

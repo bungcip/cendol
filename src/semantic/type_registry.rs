@@ -786,14 +786,18 @@ impl TypeRegistry {
             }
 
             let layout = self.ensure_layout(member_ty)?;
-            max_align = max_align.max(layout.alignment);
+            let mut member_align = layout.alignment;
+            if let Some(req_align) = member.alignment {
+                member_align = member_align.max(req_align as u16);
+            }
+            max_align = max_align.max(member_align);
 
             if is_union {
                 current_size = current_size.max(layout.size);
                 field_layouts.push(FieldLayout { offset: 0 });
             } else {
                 // Align current_size to member's alignment to find its offset
-                let offset = (current_size + layout.alignment - 1) & !(layout.alignment - 1);
+                let offset = (current_size + member_align - 1) & !(member_align - 1);
                 field_layouts.push(FieldLayout { offset });
                 current_size = offset + layout.size;
             }

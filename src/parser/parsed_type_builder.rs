@@ -156,10 +156,30 @@ fn parse_type_specifier_to_parsed_base(
                                     Some(&init_decl.declarator),
                                 )?;
 
+                                // Extract alignment from specifiers
+                                let mut alignment = None;
+                                for spec in &decl.specifiers {
+                                    if let ParsedDeclSpecifier::AlignmentSpecifier(align_spec) = spec {
+                                        match align_spec {
+                                            ParsedAlignmentSpecifier::Expr(expr_ref) => {
+                                                if let ParsedNodeKind::Literal(literal::Literal::Int { val, .. }) =
+                                                    parser.ast.get_node(*expr_ref).kind
+                                                {
+                                                    alignment = Some(val as u32);
+                                                }
+                                            }
+                                            ParsedAlignmentSpecifier::Type(_) => {
+                                                // Handling type alignment in parser is hard, skip for now or resolve during lowering
+                                            }
+                                        }
+                                    }
+                                }
+
                                 parsed_members.push(ParsedStructMember {
                                     name: Some(member_name),
                                     ty: member_parsed_type,
                                     bit_field_size: None,
+                                    alignment,
                                     span: init_decl.span,
                                 });
                             }

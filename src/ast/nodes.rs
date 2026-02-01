@@ -392,6 +392,7 @@ pub struct RecordDeclData {
 pub struct FieldDeclData {
     pub name: Option<NameId>,
     pub ty: QualType, // object type
+    pub alignment: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]

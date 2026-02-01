@@ -679,6 +679,7 @@ pub struct StructMember {
     pub name: Option<NameId>,
     pub member_type: QualType,
     pub bit_field_size: Option<NonZeroU16>,
+    pub alignment: Option<u32>,
     pub span: SourceSpan,
 }
 

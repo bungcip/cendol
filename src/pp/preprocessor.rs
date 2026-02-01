@@ -48,6 +48,9 @@ pub(crate) struct DirectiveKeywordTable {
     warning: StringId,
     defined: StringId, // For the defined operator in expressions
     has_include: StringId,
+    line_macro: StringId,
+    file_macro: StringId,
+    counter_macro: StringId,
 }
 
 impl Default for DirectiveKeywordTable {
@@ -74,6 +77,9 @@ impl DirectiveKeywordTable {
             warning: StringId::new("warning"),
             defined: StringId::new("defined"),
             has_include: StringId::new("__has_include"),
+            line_macro: StringId::new("__LINE__"),
+            file_macro: StringId::new("__FILE__"),
+            counter_macro: StringId::new("__COUNTER__"),
         }
     }
 
@@ -432,8 +438,7 @@ impl<'src> Preprocessor<'src> {
     /// Try to expand a magic macro (e.g. __LINE__, __FILE__, __COUNTER__)
     fn try_expand_magic_macro(&mut self, token: &PPToken) -> Option<PPToken> {
         if let PPTokenKind::Identifier(symbol) = token.kind {
-            let sym_str = symbol.as_str();
-            if sym_str == "__LINE__" {
+            if symbol == self.directive_keywords.line_macro {
                 let line = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
                     presumed.0
                 } else {
@@ -447,7 +452,7 @@ impl<'src> Preprocessor<'src> {
                     token.location,
                     line_str.len() as u16,
                 ));
-            } else if sym_str == "__FILE__" {
+            } else if symbol == self.directive_keywords.file_macro {
                 let filename = if let Some(presumed) = self.source_manager.get_presumed_location(token.location) {
                     if let Some(name) = presumed.2 {
                         format!("\"{}\"", name)
@@ -468,7 +473,7 @@ impl<'src> Preprocessor<'src> {
                     token.location,
                     filename.len() as u16,
                 ));
-            } else if sym_str == "__COUNTER__" {
+            } else if symbol == self.directive_keywords.counter_macro {
                 let val = self.get_next_counter();
                 let val_str = val.to_string();
                 let val_symbol = StringId::new(&val_str);

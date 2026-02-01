@@ -1114,10 +1114,7 @@ fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, build
 }
 
 /// Helper to emit a constant to anonymous memory and return its address
-fn emit_constant_to_memory(
-    const_id: ConstValueId,
-    ctx: &mut BodyEmitContext,
-) -> Result<Value, String> {
+fn emit_constant_to_memory(const_id: ConstValueId, ctx: &mut BodyEmitContext) -> Result<Value, String> {
     let const_value = ctx.mir.constants.get(&const_id).ok_or("Constant not found")?;
     let ty = ctx.mir.get_type(const_value.ty);
     let size = mir_type_size(ty, ctx.mir)? as usize;

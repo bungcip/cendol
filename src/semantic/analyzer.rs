@@ -528,6 +528,10 @@ impl<'a> SemanticAnalyzer<'a> {
             rhs_decayed = decayed;
         }
 
+        if op == BinaryOp::Comma {
+            return Some(rhs_decayed);
+        }
+
         // Perform integer promotions and record them
         let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_decayed);
         let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_decayed);

@@ -689,6 +689,23 @@ impl PPLexer {
         loop {
             // Skip whitespace, handling line splicing
             // But don't skip newlines if we're in a directive line (let them be processed as tokens)
+
+            // ⚡ Bolt: Fast path for skipping common whitespace characters.
+            // This avoids the overhead of `peek_char` and `next_char` for the majority of whitespace.
+            while (self.position as usize) < self.buffer.len() {
+                let ch = self.buffer[self.position as usize];
+                if ch == b' ' || ch == b'\t' || ch == b'\r' || ch == b'\x0c' || ch == b'\x0b' {
+                    self.position += 1;
+                } else if ch == b'\n' && !self.in_directive_line {
+                    self.position += 1;
+                    self.line_starts.push(self.position);
+                    self.at_start_of_line = true;
+                } else {
+                    // Trigraphs, line splices, or non-whitespace.
+                    break;
+                }
+            }
+
             while let Some(ch) = self.peek_char() {
                 if ch.is_ascii_whitespace() && !(ch == b'\n' && self.in_directive_line) {
                     if ch == b'\n' {

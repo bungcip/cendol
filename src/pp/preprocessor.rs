@@ -2498,10 +2498,14 @@ impl<'src> Preprocessor<'src> {
             if end > buffer.len() {
                 return Err(PPError::InvalidStringification);
             }
-            let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
-            for ch in text.chars() {
-                match ch {
-                    '"' | '\\' => total_len += 2, // These will be escaped
+
+            // ⚡ Bolt: Use byte-based iteration for correctness and speed.
+            // Iterating over bytes is faster than UTF-8 chars and correctly calculates
+            // the required byte capacity for multi-byte characters.
+            let bytes = &buffer[start..end];
+            for &b in bytes {
+                match b {
+                    b'"' | b'\\' => total_len += 2, // These will be escaped
                     _ => total_len += 1,
                 }
             }
@@ -2511,7 +2515,7 @@ impl<'src> Preprocessor<'src> {
         let mut result = String::with_capacity(total_len);
         result.push('"');
 
-        // 3. Populate the string.
+        // 3. Populate the string efficiently.
         for (i, token) in tokens.iter().enumerate() {
             if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                 result.push(' ');
@@ -2522,13 +2526,25 @@ impl<'src> Preprocessor<'src> {
             let end = start + token.length as usize;
             // This check is already done above, but for safety we keep it.
             if end <= buffer.len() {
-                let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
-                for ch in text.chars() {
-                    match ch {
-                        '"' => result.push_str("\\\""),
-                        '\\' => result.push_str("\\\\"),
-                        _ => result.push(ch),
+                // ⚡ Bolt: Chunked string building using slices.
+                // This avoids the overhead of character-by-character iteration and pushing.
+                let bytes = &buffer[start..end];
+                let mut last_start = 0;
+                for (j, &b) in bytes.iter().enumerate() {
+                    if b == b'"' || b == b'\\' {
+                        if j > last_start {
+                            result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..j]) });
+                        }
+                        if b == b'"' {
+                            result.push_str("\\\"");
+                        } else {
+                            result.push_str("\\\\");
+                        }
+                        last_start = j + 1;
                     }
+                }
+                if last_start < bytes.len() {
+                    result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..]) });
                 }
             }
         }
@@ -3247,5 +3263,48 @@ mod tests {
 
         // Test case 6: Empty string
         assert_eq!(pp.destringize("\"\""), "");
+    }
+
+    #[test]
+    fn test_stringify_tokens_utf8() {
+        let mut sm = SourceManager::new();
+        let mut diag = DiagnosticEngine::new();
+
+        let utf8_text = "⚡ Bolt ⚡";
+        let sid = sm.add_buffer(utf8_text.as_bytes().to_vec(), "test.c", None);
+
+        let text_with_escapes = "a\"b\\c";
+        let sid2 = sm.add_buffer(text_with_escapes.as_bytes().to_vec(), "test2.c", None);
+
+        let pp = create_dummy_preprocessor(&mut sm, &mut diag);
+
+        let token = PPToken::new(
+            PPTokenKind::Identifier(StringId::new(utf8_text)),
+            PPTokenFlags::empty(),
+            SourceLoc::new(sid, 0),
+            utf8_text.len() as u16,
+        );
+
+        let stringified = pp.stringify_tokens(&[token], SourceLoc::builtin()).unwrap();
+        if let PPTokenKind::StringLiteral(s) = stringified.kind {
+            assert_eq!(s.as_str(), "\"⚡ Bolt ⚡\"");
+        } else {
+            panic!("Expected StringLiteral");
+        }
+
+        // Test with escaping
+        let token2 = PPToken::new(
+            PPTokenKind::Identifier(StringId::new(text_with_escapes)),
+            PPTokenFlags::empty(),
+            SourceLoc::new(sid2, 0),
+            text_with_escapes.len() as u16,
+        );
+
+        let stringified2 = pp.stringify_tokens(&[token2], SourceLoc::builtin()).unwrap();
+        if let PPTokenKind::StringLiteral(s) = stringified2.kind {
+            assert_eq!(s.as_str(), "\"a\\\"b\\\\c\"");
+        } else {
+            panic!("Expected StringLiteral");
+        }
     }
 }

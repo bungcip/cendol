@@ -7,8 +7,6 @@ pub mod artifact;
 pub mod cli;
 pub mod compiler;
 
-pub mod output;
-
 // Re-export public API
 pub use cli::Cli;
 pub use compiler::{CompilerDriver, DriverError};

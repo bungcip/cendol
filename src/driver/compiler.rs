@@ -18,19 +18,17 @@ use super::artifact::{CompileArtifact, CompilePhase, PipelineOutputs};
 use crate::mir::MirProgram;
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
-use crate::pp::{PPToken, Preprocessor};
+use crate::pp::{PPToken, Preprocessor, dumper::PPDumper};
 use crate::semantic::{AstToMirLowerer, SymbolTable, TypeRegistry};
 use crate::source_manager::SourceManager;
 
 use super::cli::CompileConfig;
-use super::output::OutputHandler;
 
 /// Main compiler driver
 pub struct CompilerDriver {
     config: CompileConfig,
     diagnostics: DiagnosticEngine,
     pub(crate) source_manager: SourceManager,
-    output_handler: OutputHandler,
 }
 
 impl CompilerDriver {
@@ -46,7 +44,6 @@ impl CompilerDriver {
         CompilerDriver {
             diagnostics,
             source_manager: SourceManager::new(),
-            output_handler: OutputHandler::new(),
             config,
         }
     }
@@ -360,12 +357,11 @@ impl CompilerDriver {
                     } else if let Some(parsed_ast) = artifact.parsed_ast {
                         print!("{}", AstDumper::dump_parsed_ast(&parsed_ast));
                     } else if let Some(preprocessed) = artifact.preprocessed {
-                        self.output_handler.dump_preprocessed_output(
-                            &mut std::io::stdout(),
-                            &preprocessed,
-                            self.config.suppress_line_markers,
-                            &self.source_manager,
-                        )?;
+                        let dumper =
+                            PPDumper::new(&preprocessed, &self.source_manager, self.config.suppress_line_markers);
+                        dumper
+                            .dump(&mut std::io::stdout())
+                            .map_err(|e| DriverError::IoError(e.to_string()))?;
                     }
                 }
 

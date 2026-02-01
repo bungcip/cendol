@@ -676,11 +676,10 @@ impl PPLexer {
             )),
         };
 
-        if let Some(t) = &token {
-            if t.kind != PPTokenKind::Eod {
+        if let Some(t) = &token
+            && t.kind != PPTokenKind::Eod {
                 self.at_start_of_line = false;
             }
-        }
 
         token
     }
@@ -766,12 +765,11 @@ impl PPLexer {
                 }
             }
 
-            if let Some(ch) = self.peek_char() {
-                if pred(&mut state, ch) {
+            if let Some(ch) = self.peek_char()
+                && pred(&mut state, ch) {
                     chars.push(self.next_char().unwrap());
                     continue;
                 }
-            }
             break;
         }
         // Safety: We assume the caller only consumes valid UTF-8 characters (identifiers/numbers).

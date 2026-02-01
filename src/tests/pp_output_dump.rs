@@ -1,6 +1,5 @@
 use crate::diagnostic::DiagnosticEngine;
-use crate::driver::output::OutputHandler;
-use crate::pp::{PPConfig, Preprocessor};
+use crate::pp::{PPConfig, Preprocessor, dumper::PPDumper};
 use crate::source_manager::SourceManager;
 
 #[test]
@@ -25,13 +24,11 @@ int main() {
         .filter(|t| !matches!(t.kind, crate::pp::PPTokenKind::Eof | crate::pp::PPTokenKind::Eod))
         .collect();
 
-    let output_handler = OutputHandler::new();
-
     // Capture output into a buffer
     let mut buffer = Vec::new();
 
-    output_handler
-        .dump_preprocessed_output(&mut buffer, &significant_tokens, false, &source_manager)
+    PPDumper::new(&significant_tokens, &source_manager, false)
+        .dump(&mut buffer)
         .unwrap();
 
     let content = String::from_utf8(buffer).unwrap();
@@ -64,12 +61,10 @@ int x = TEN;
         .filter(|t| !matches!(t.kind, crate::pp::PPTokenKind::Eof | crate::pp::PPTokenKind::Eod))
         .collect();
 
-    let output_handler = OutputHandler::new();
-
     let mut buffer = Vec::new();
 
-    output_handler
-        .dump_preprocessed_output(&mut buffer, &significant_tokens, false, &source_manager)
+    PPDumper::new(&significant_tokens, &source_manager, false)
+        .dump(&mut buffer)
         .unwrap();
 
     let content = String::from_utf8(buffer).unwrap();
@@ -97,12 +92,10 @@ int x = TEN;
         .filter(|t| !matches!(t.kind, crate::pp::PPTokenKind::Eof | crate::pp::PPTokenKind::Eod))
         .collect();
 
-    let output_handler = OutputHandler::new();
-
     let mut buffer = Vec::new();
 
-    output_handler
-        .dump_preprocessed_output(&mut buffer, &significant_tokens, true, &source_manager)
+    PPDumper::new(&significant_tokens, &source_manager, true)
+        .dump(&mut buffer)
         .unwrap();
 
     let content = String::from_utf8(buffer).unwrap();

@@ -71,6 +71,7 @@ impl Type {
         flat_offsets: &mut Vec<u16>,
         base_offset: u16,
     ) {
+        #[allow(clippy::collapsible_if)]
         if let TypeKind::Record { members, .. } = &self.kind {
             if let Some(TypeLayout {
                 kind: LayoutKind::Record { fields, .. },

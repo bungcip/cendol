@@ -332,8 +332,8 @@ mod tests {
         let config = cli.into_config().expect("Failed to create config");
 
         assert_eq!(config.stop_after, CompilePhase::Mir);
-        assert_eq!(config.verbose, true);
-        assert_eq!(config.suppress_line_markers, true);
+        assert!(config.verbose);
+        assert!(config.suppress_line_markers);
         assert_eq!(config.preprocessor.max_include_depth, 50);
         assert_eq!(config.target.to_string(), "x86_64-unknown-linux-gnu");
 

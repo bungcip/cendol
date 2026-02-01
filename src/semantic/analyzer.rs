@@ -9,7 +9,7 @@ use crate::{
 };
 
 use smallvec::{SmallVec, smallvec};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Side table containing semantic information for AST nodes.
 /// Parallel vectors indexed by node index (NodeRef.index()).
@@ -18,6 +18,7 @@ pub struct SemanticInfo {
     pub types: Vec<Option<QualType>>,
     pub conversions: Vec<SmallVec<[Conversion; 1]>>,
     pub value_categories: Vec<ValueCategory>,
+    pub generic_selections: HashMap<usize, NodeRef>, // Maps NodeIndex of GenericSelection to selected result_expr
 }
 
 impl SemanticInfo {
@@ -26,6 +27,7 @@ impl SemanticInfo {
             types: vec![None; n],
             conversions: vec![SmallVec::new(); n],
             value_categories: vec![ValueCategory::RValue; n],
+            generic_selections: HashMap::new(),
         }
     }
 }
@@ -1145,7 +1147,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_declaration_node(&mut self, _node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
+    fn visit_declaration_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
             NodeKind::TranslationUnit(tu_data) => {
                 for decl_ref in tu_data.decl_start.range(tu_data.decl_len) {
@@ -1171,7 +1173,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(data.body);
 
                 if self.current_function_is_noreturn && self.can_fall_through(data.body) {
-                    let span = self.ast.get_span(_node_ref);
+                    let span = self.ast.get_span(node_ref);
                     self.report_error(SemanticError::NoreturnFunctionFallsOff {
                         name: self.current_function_name.clone().unwrap(),
                         span,
@@ -1189,7 +1191,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::VarDecl(data) => {
                 if data.ty.ty() == self.registry.type_void {
-                    let span = self.ast.get_span(_node_ref);
+                    let span = self.ast.get_span(node_ref);
                     self.report_error(SemanticError::VariableOfVoidType { span });
                 }
                 self.visit_type_expressions(data.ty);
@@ -1198,7 +1200,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     && matches!(data.storage, Some(StorageClass::Extern))
                     && self.current_function_name.is_some()
                 {
-                    let span = self.ast.get_span(_node_ref);
+                    let span = self.ast.get_span(node_ref);
                     self.report_error(SemanticError::InvalidInitializer { span });
                 }
 
@@ -1244,7 +1246,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 } = func_type
                 {
                     if !self.registry.is_complete(return_type) && return_type != self.registry.type_void {
-                        let span = self.ast.get_span(_node_ref);
+                        let span = self.ast.get_span(node_ref);
                         self.report_error(SemanticError::IncompleteReturnType { span });
                     }
 
@@ -1388,7 +1390,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_expression_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
-            NodeKind::Literal(literal) => self.visit_literal(literal, node_ref),
+            NodeKind::Literal(literal) => self.visit_literal(literal),
             NodeKind::Ident(_, symbol_ref) => {
                 let symbol = self.symbol_table.get_symbol(*symbol_ref);
                 match &symbol.kind {
@@ -1689,7 +1691,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_literal(&mut self, literal: &literal::Literal, _node_ref: NodeRef) -> Option<QualType> {
+    fn visit_literal(&mut self, literal: &literal::Literal) -> Option<QualType> {
         match literal {
             literal::Literal::Int { val, suffix } => {
                 let ty = match suffix {
@@ -1914,12 +1916,18 @@ impl<'a> SemanticAnalyzer<'a> {
             // Constraint 1: The controlling expression... shall have type compatible with at most one...
             if self.registry.is_compatible(unqualified_ctrl_ty, unqualified_assoc_ty) && selected_expr_ref.is_none() {
                 selected_expr_ref = Some(ga.result_expr);
+                self.semantic_info
+                    .generic_selections
+                    .insert(node_ref.index(), ga.result_expr);
             }
         }
 
         // If no specific type matches, use the default association if it exists.
         if selected_expr_ref.is_none() {
             selected_expr_ref = default_expr_ref;
+            if let Some(expr) = default_expr_ref {
+                self.semantic_info.generic_selections.insert(node_ref.index(), expr);
+            }
         }
 
         // The type of the _Generic expression is the type of the selected result expression.

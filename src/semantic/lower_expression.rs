@@ -85,7 +85,7 @@ impl<'a> AstToMirLowerer<'a> {
             }
             NodeKind::SizeOfType(ty) => self.lower_type_query(ty.ty(), true),
             NodeKind::AlignOf(ty) => self.lower_type_query(ty.ty(), false),
-            NodeKind::GenericSelection(gs) => self.lower_generic_selection(gs, need_value),
+            NodeKind::GenericSelection(gs) => self.lower_generic_selection(gs, need_value, expr_ref),
             NodeKind::GnuStatementExpression(stmt, result_expr) => {
                 self.lower_gnu_statement_expression(*stmt, *result_expr, need_value)
             }
@@ -206,42 +206,17 @@ impl<'a> AstToMirLowerer<'a> {
 
     pub(crate) fn lower_generic_selection(
         &mut self,
-        gs: &ast::nodes::GenericSelectionData,
+        _gs: &ast::nodes::GenericSelectionData,
         need_value: bool,
+        node_ref: NodeRef,
     ) -> Operand {
-        let ctrl_ty = self
+        let expr_to_lower = *self
             .ast
-            .get_resolved_type(gs.control)
-            .expect("Controlling expr type missing")
-            .ty();
-        // Apply decay to array/function types before matching.
-        let decayed_ctrl_ty = if ctrl_ty.is_array() || ctrl_ty.is_function() {
-            self.registry
-                .decay(QualType::unqualified(ctrl_ty), Default::default())
-                .ty()
-        } else {
-            ctrl_ty
-        };
-        let unqualified_ctrl = self.registry.strip_all(QualType::unqualified(decayed_ctrl_ty));
-
-        let mut selected_expr = None;
-        let mut default_expr = None;
-
-        for assoc_node_ref in gs.assoc_start.range(gs.assoc_len) {
-            if let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node_ref) {
-                if let Some(ty) = ga.ty {
-                    if self.registry.is_compatible(unqualified_ctrl, ty) {
-                        selected_expr = Some(ga.result_expr);
-                        break;
-                    }
-                } else {
-                    default_expr = Some(ga.result_expr);
-                }
-            }
-        }
-
-        let expr_to_lower = selected_expr
-            .or(default_expr)
+            .semantic_info
+            .as_ref()
+            .unwrap()
+            .generic_selections
+            .get(&node_ref.index())
             .expect("Generic selection failed (should be caught by Analyzer)");
         self.lower_expression(expr_to_lower, need_value)
     }

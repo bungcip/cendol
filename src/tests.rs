@@ -46,6 +46,6 @@ pub mod parser_regr;
 pub mod parser_stmt;
 pub mod parser_utils;
 
-pub mod regr_crash_2015;
+pub mod codegen_ternary_array_size;
 
 pub mod test_utils;

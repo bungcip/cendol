@@ -2486,49 +2486,39 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn deduce_array_size_full(&self, init_node: NodeRef) -> Option<usize> {
         match self.ast.get_kind(init_node) {
-            NodeKind::InitializerList(list_data) => {
-                if list_data.init_len == 0 {
-                    return Some(0);
-                }
-
+            NodeKind::InitializerList(list) => {
                 let mut max_index: i64 = -1;
                 let mut current_index: i64 = 0;
+                let eval = |e| const_eval::eval_const_expr(&self.const_ctx(), e);
 
-                // Helper for evaluating constant expressions
-                let eval = |expr| const_eval::eval_const_expr(&self.const_ctx(), expr);
-
-                for item_ref in list_data.init_start.range(list_data.init_len) {
+                for item_ref in list.init_start.range(list.init_len) {
                     let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
                         continue;
                     };
 
                     if init.designator_len > 0 {
                         match self.ast.get_kind(init.designator_start) {
-                            NodeKind::Designator(Designator::ArrayIndex(expr_ref)) => {
-                                current_index = eval(*expr_ref)?;
+                            NodeKind::Designator(Designator::ArrayIndex(idx)) => {
+                                current_index = eval(*idx)?;
                             }
                             NodeKind::Designator(Designator::GnuArrayRange(start, end)) => {
-                                let start_val = eval(*start)?;
-                                let end_val = eval(*end)?;
-                                if start_val > end_val {
+                                let (s_v, e_v) = (eval(*start)?, eval(*end)?);
+                                if s_v > e_v {
                                     return None;
                                 }
-                                current_index = end_val;
+                                current_index = e_v;
                             }
-                            NodeKind::Designator(Designator::FieldName(_)) => return None,
                             _ => return None,
                         }
                     }
 
-                    if current_index > max_index {
-                        max_index = current_index;
-                    }
+                    max_index = max_index.max(current_index);
                     current_index += 1;
                 }
 
-                Some(if max_index >= 0 { (max_index + 1) as usize } else { 0 })
+                Some((max_index + 1) as usize)
             }
-            NodeKind::Literal(literal::Literal::String(name_id)) => Some(name_id.to_string().len() + 1),
+            NodeKind::Literal(literal::Literal::String(s)) => Some(s.as_str().len() + 1),
             _ => None,
         }
     }

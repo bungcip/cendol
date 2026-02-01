@@ -328,7 +328,7 @@ impl AstDumper {
     }
 
     /// Dump a single parsed parsed node kind
-    fn dump_parsed_node_kind(f: &mut fmt::Formatter<'_>, kind: &ParsedNodeKind, _ast: &ParsedAst) -> fmt::Result {
+    fn dump_parsed_node_kind(f: &mut fmt::Formatter<'_>, kind: &ParsedNodeKind, ast: &ParsedAst) -> fmt::Result {
         match kind {
             ParsedNodeKind::Literal(literal) => match literal {
                 crate::ast::literal::Literal::Int { val, suffix } => {
@@ -447,12 +447,12 @@ impl AstDumper {
                 val.map(|v| v.get().to_string()).unwrap_or("auto".to_string())
             ),
             ParsedNodeKind::StaticAssert(cond, msg) => {
-                let message_str =
-                    if let ParsedNodeKind::Literal(literal::Literal::String(s)) = &_ast.get_node(*msg).kind {
-                        s.to_string()
-                    } else {
-                        "<invalid>".to_string()
-                    };
+                let message_str = if let ParsedNodeKind::Literal(literal::Literal::String(s)) = &ast.get_node(*msg).kind
+                {
+                    s.to_string()
+                } else {
+                    "<invalid>".to_string()
+                };
                 writeln!(f, "StaticAssert({}, \"{}\")", cond.get(), message_str)
             }
 

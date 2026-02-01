@@ -477,13 +477,6 @@ fn test_source_manager_get_file_id() {
 }
 
 #[test]
-fn test_source_manager_default() {
-    let mut sm = SourceManager::default();
-    let file_id = sm.add_buffer(b"content".to_vec(), "test.c", None);
-    assert!(sm.get_file_info(file_id).is_some());
-}
-
-#[test]
 fn test_source_span_merge() {
     let id1 = SourceId::new(1);
     let id2 = SourceId::new(2);

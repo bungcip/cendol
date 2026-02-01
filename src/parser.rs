@@ -46,9 +46,6 @@ impl TypeDefContext {
     pub(crate) fn new() -> Self {
         let mut typedef_names = HashSet::new();
         // Add builtin typedefs
-        typedef_names.insert(NameId::new("va_list"));
-        typedef_names.insert(NameId::new("size_t"));
-        typedef_names.insert(NameId::new("ptrdiff_t"));
         typedef_names.insert(NameId::new("int8_t"));
         typedef_names.insert(NameId::new("int16_t"));
         typedef_names.insert(NameId::new("int32_t"));
@@ -57,8 +54,6 @@ impl TypeDefContext {
         typedef_names.insert(NameId::new("uint16_t"));
         typedef_names.insert(NameId::new("uint32_t"));
         typedef_names.insert(NameId::new("uint64_t"));
-        typedef_names.insert(NameId::new("intptr_t"));
-        typedef_names.insert(NameId::new("uintptr_t"));
 
         TypeDefContext { typedef_names }
     }

@@ -307,33 +307,34 @@ impl SourceManager {
 
     /// Add a buffer to the source manager with raw bytes (UTF-8 assumed)
     pub fn add_buffer(&mut self, buffer: Vec<u8>, path: &str, include_loc: Option<SourceLoc>) -> SourceId {
-        let file_id = SourceId::new(self.next_file_id);
-        self.next_file_id += 1;
-
-        let size = buffer.len() as u32;
-        let buffer_index = self.buffers.len();
-        self.buffers.push(buffer);
-
         let path_buf = PathBuf::from(path);
-        let file_info = FileInfo {
-            file_id,
-            path: path_buf.clone(),
-            size,
-            buffer_index,
-            line_starts: Vec::new(),
-            line_map: LineMap::new(),
-            include_loc,
-        };
-
-        self.file_infos.insert(file_id, file_info);
-        self.path_to_id.insert(path_buf, file_id);
-
-        file_id
+        // Standard buffers get empty line_starts initially; they are calculated/set later if needed
+        self.add_file_entry(buffer, path_buf, Vec::new(), include_loc)
     }
 
     /// Add a virtual buffer for macro expansions (Level B support)
     /// Virtual buffers contain expanded macro text with proper sequential locations
     pub fn add_virtual_buffer(&mut self, buffer: Vec<u8>, name: &str, include_loc: Option<SourceLoc>) -> SourceId {
+        // Calculate line starts for the virtual buffer immediately
+        let mut line_starts = vec![0];
+        for (i, &byte) in buffer.iter().enumerate() {
+            if byte == b'\n' {
+                line_starts.push((i + 1) as u32);
+            }
+        }
+
+        let path_buf = PathBuf::from(format!("<{}>", name));
+        self.add_file_entry(buffer, path_buf, line_starts, include_loc)
+    }
+
+    /// Helper to add a file entry and update maps
+    fn add_file_entry(
+        &mut self,
+        buffer: Vec<u8>,
+        path: PathBuf,
+        line_starts: Vec<u32>,
+        include_loc: Option<SourceLoc>,
+    ) -> SourceId {
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
@@ -341,17 +342,9 @@ impl SourceManager {
         let buffer_index = self.buffers.len();
         self.buffers.push(buffer);
 
-        // Calculate line starts for the virtual buffer
-        let mut line_starts = vec![0]; // First line starts at offset 0
-        for (i, &byte) in self.buffers[buffer_index].iter().enumerate() {
-            if byte == b'\n' {
-                line_starts.push((i + 1) as u32);
-            }
-        }
-
         let file_info = FileInfo {
             file_id,
-            path: PathBuf::from(format!("<{}>", name)), // Virtual files use <> notation
+            path: path.clone(),
             size,
             buffer_index,
             line_starts,
@@ -360,6 +353,9 @@ impl SourceManager {
         };
 
         self.file_infos.insert(file_id, file_info);
+        // Only map path for real files (not virtual ones usually, but keeping behavior consistent is safer for unique paths)
+        // Virtual files usually have unique names anyway
+        self.path_to_id.insert(path, file_id);
 
         file_id
     }
@@ -439,27 +435,20 @@ impl SourceManager {
             return Some((1, offset + 1));
         }
 
-        // Binary search to find the line
-        let mut left = 0;
-        let mut right = line_starts.len();
+        // Use partition_point which performs a binary search
+        let idx = line_starts.partition_point(|&start| start <= offset);
 
-        while left < right {
-            let mid = left + (right - left) / 2;
-            if line_starts[mid] <= offset {
-                left = mid + 1;
-            } else {
-                right = mid;
-            }
+        if idx == 0 {
+            return Some((0, 1));
         }
 
-        let line = (left.wrapping_sub(1)) as u32;
-        let column = if line < line_starts.len() as u32 {
-            offset - line_starts[line as usize]
-        } else {
-            0
-        };
+        // idx is the index of the first element GREATER than offset.
+        // The line index corresponds to the element immediately preceding usage.
+        let line_idx = idx - 1;
+        let line_start = line_starts[line_idx];
+        let column = offset - line_start;
 
-        Some((line.wrapping_add(1), column + 1)) // 1-based indexing
+        Some((line_idx as u32 + 1, column + 1)) // 1-based indexing
     }
 
     /// Get the presumed location (logical line and file) for a source location
@@ -474,11 +463,5 @@ impl SourceManager {
         let filename = logical_file.or_else(|| file_info.path.to_str());
 
         Some((logical_line, column, filename))
-    }
-}
-
-impl Default for SourceManager {
-    fn default() -> Self {
-        Self::new()
     }
 }

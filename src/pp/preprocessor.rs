@@ -818,15 +818,13 @@ impl<'src> Preprocessor<'src> {
                 self.get_current_location()
             };
 
-            let diag = Diagnostic {
-                level: DiagnosticLevel::Error,
-                message: "Unclosed preprocessor conditional directive".to_string(),
-                span: SourceSpan::new(start_loc, start_loc),
-                code: Some("unclosed_conditional".to_string()),
-                hints: vec!["Expected #endif before end of file".to_string()],
-                related: Vec::new(),
-            };
-            self.diag.report_diagnostic(diag);
+            self.report_diagnostic_simple(
+                DiagnosticLevel::Error,
+                "Unclosed preprocessor conditional directive".to_string(),
+                SourceSpan::new(start_loc, start_loc),
+                Some("unclosed_conditional".to_string()),
+                vec!["Expected #endif before end of file".to_string()],
+            );
             return Err(PPError::UnexpectedEndOfFile);
         }
 
@@ -926,15 +924,13 @@ impl<'src> Preprocessor<'src> {
                     let loc = self.get_current_location();
                     SourceSpan::new(loc, loc)
                 };
-                let diag = Diagnostic {
-                    level: DiagnosticLevel::Warning,
-                    message: "Failed to expand macros in conditional expression".to_string(),
+                self.report_diagnostic_simple(
+                    DiagnosticLevel::Warning,
+                    "Failed to expand macros in conditional expression".to_string(),
                     span,
-                    code: Some("macro_expansion_failed".to_string()),
-                    hints: vec!["Expression will be treated as false".to_string()],
-                    related: Vec::new(),
-                };
-                self.diag.report_diagnostic(diag);
+                    Some("macro_expansion_failed".to_string()),
+                    vec!["Expression will be treated as false".to_string()],
+                );
                 return Ok(false);
             }
         }
@@ -962,15 +958,13 @@ impl<'src> Preprocessor<'src> {
                     let loc = self.get_current_location();
                     SourceSpan::new(loc, loc)
                 };
-                let diag = Diagnostic {
-                    level: DiagnosticLevel::Warning,
-                    message: "Invalid conditional expression in preprocessor directive".to_string(),
+                self.report_diagnostic_simple(
+                    DiagnosticLevel::Warning,
+                    "Invalid conditional expression in preprocessor directive".to_string(),
                     span,
-                    code: Some("invalid_conditional_expression".to_string()),
-                    hints: vec!["Expression will be treated as false".to_string()],
-                    related: Vec::new(),
-                };
-                self.diag.report_diagnostic(diag);
+                    Some("invalid_conditional_expression".to_string()),
+                    vec!["Expression will be treated as false".to_string()],
+                );
                 // Return false for unparseable expressions to allow compilation to continue
                 Ok(false)
             }
@@ -987,15 +981,13 @@ impl<'src> Preprocessor<'src> {
             if let Some(lexer) = self.lexer_stack.last_mut() {
                 if let Some(token) = lexer.next_token() {
                     if token.flags.contains(PPTokenFlags::HAS_INVALID_UCN) {
-                        let diag = Diagnostic {
-                            level: DiagnosticLevel::Error,
-                            message: "Invalid universal character name in literal".to_string(),
-                            span: SourceSpan::new(token.location, token.location),
-                            code: Some("invalid_ucn".to_string()),
-                            hints: Vec::new(),
-                            related: Vec::new(),
-                        };
-                        self.diag.report_diagnostic(diag);
+                        self.report_diagnostic_simple(
+                            DiagnosticLevel::Error,
+                            "Invalid universal character name in literal".to_string(),
+                            SourceSpan::new(token.location, token.location),
+                            Some("invalid_ucn".to_string()),
+                            Vec::new(),
+                        );
                     }
                     return Some(token);
                 } else {
@@ -1086,29 +1078,25 @@ impl<'src> Preprocessor<'src> {
                     Some(DirectiveKind::Warning) => self.check_skipping_and_execute(|this| this.handle_warning()),
                     None => {
                         let name = sym.as_str();
-                        let diag = Diagnostic {
-                            level: DiagnosticLevel::Error,
-                            message: format!("Invalid preprocessor directive '{name}'"),
-                            span: SourceSpan::new(token.location, token.location),
-                            code: Some("invalid_directive".to_string()),
-                            hints: vec!["Valid directives include #define, #include, #if, #ifdef, #ifndef, #elif, #else, #endif, #line, #pragma, #error, #warning".to_string()],
-                            related: Vec::new(),
-                        };
-                        self.diag.report_diagnostic(diag);
+                        self.report_diagnostic_simple(
+                            DiagnosticLevel::Error,
+                            format!("Invalid preprocessor directive '{name}'"),
+                            SourceSpan::new(token.location, token.location),
+                            Some("invalid_directive".to_string()),
+                            vec!["Valid directives include #define, #include, #if, #ifdef, #ifndef, #elif, #else, #endif, #line, #pragma, #error, #warning".to_string()],
+                        );
                         Err(PPError::InvalidDirective)
                     }
                 }
             }
             _ => {
-                let diag = Diagnostic {
-                    level: DiagnosticLevel::Error,
-                    message: "Invalid preprocessor directive".to_string(),
-                    span: SourceSpan::new(token.location, token.location),
-                    code: Some("invalid_directive".to_string()),
-                    hints: vec!["Valid directives include #define, #include, #if, #ifdef, #ifndef, #elif, #else, #endif, #line, #pragma, #error, #warning".to_string()],
-                    related: Vec::new(),
-                };
-                self.diag.report_diagnostic(diag);
+                self.report_diagnostic_simple(
+                    DiagnosticLevel::Error,
+                    "Invalid preprocessor directive".to_string(),
+                    SourceSpan::new(token.location, token.location),
+                    Some("invalid_directive".to_string()),
+                    vec!["Valid directives include #define, #include, #if, #ifdef, #ifndef, #elif, #else, #endif, #line, #pragma, #error, #warning".to_string()],
+                );
                 Err(PPError::InvalidDirective)
             }
         }
@@ -1323,15 +1311,13 @@ impl<'src> Preprocessor<'src> {
         // Check for macro redefinition
         if let Some(existing) = self.macros.get(&name) {
             if existing.flags.contains(MacroFlags::BUILTIN) {
-                let diag = Diagnostic {
-                    level: DiagnosticLevel::Warning,
-                    message: format!("Redefinition of built-in macro '{}'", name.as_str()),
-                    span: SourceSpan::new(name_token.location, name_token.location),
-                    code: Some("builtin_macro_redefinition".to_string()),
-                    hints: Vec::new(),
-                    related: Vec::new(),
-                };
-                self.diag.report_diagnostic(diag);
+                self.report_diagnostic_simple(
+                    DiagnosticLevel::Warning,
+                    format!("Redefinition of built-in macro '{}'", name.as_str()),
+                    SourceSpan::new(name_token.location, name_token.location),
+                    Some("builtin_macro_redefinition".to_string()),
+                    Vec::new(),
+                );
                 return Ok(());
             }
 
@@ -1377,15 +1363,13 @@ impl<'src> Preprocessor<'src> {
         if let Some(existing) = self.macros.get(&name)
             && existing.flags.contains(MacroFlags::BUILTIN)
         {
-            let diag = Diagnostic {
-                level: DiagnosticLevel::Warning,
-                message: format!("Undefining built-in macro '{}'", name.as_str()),
-                span: SourceSpan::new(name_token.location, name_token.location),
-                code: Some("undef_builtin_macro".to_string()),
-                hints: Vec::new(),
-                related: Vec::new(),
-            };
-            self.diag.report_diagnostic(diag);
+            self.report_diagnostic_simple(
+                DiagnosticLevel::Warning,
+                format!("Undefining built-in macro '{}'", name.as_str()),
+                SourceSpan::new(name_token.location, name_token.location),
+                Some("undef_builtin_macro".to_string()),
+                Vec::new(),
+            );
             self.expect_eod()?;
             return Ok(());
         }
@@ -1450,15 +1434,13 @@ impl<'src> Preprocessor<'src> {
                     PPTokenKind::StringLiteral(symbol) => {
                         // Check for extra tokens
                         if tokens.len() > 1 {
-                            let diag = Diagnostic {
-                                level: DiagnosticLevel::Error,
-                                message: "Extra tokens at end of #include directive".to_string(),
-                                span: SourceSpan::new(tokens[1].location, tokens.last().unwrap().location),
-                                code: Some("extra_tokens_directive".to_string()),
-                                hints: vec![],
-                                related: vec![],
-                            };
-                            self.diag.report_diagnostic(diag);
+                            self.report_diagnostic_simple(
+                                DiagnosticLevel::Error,
+                                "Extra tokens at end of #include directive".to_string(),
+                                SourceSpan::new(tokens[1].location, tokens.last().unwrap().location),
+                                Some("extra_tokens_directive".to_string()),
+                                vec![],
+                            );
                             return Err(PPError::ExpectedEod);
                         }
 
@@ -1489,18 +1471,16 @@ impl<'src> Preprocessor<'src> {
 
                         // Check for extra tokens
                         if greater_index + 1 < tokens.len() {
-                            let diag = Diagnostic {
-                                level: DiagnosticLevel::Error,
-                                message: "Extra tokens at end of #include directive".to_string(),
-                                span: SourceSpan::new(
+                            self.report_diagnostic_simple(
+                                DiagnosticLevel::Error,
+                                "Extra tokens at end of #include directive".to_string(),
+                                SourceSpan::new(
                                     tokens[greater_index + 1].location,
                                     tokens.last().unwrap().location,
                                 ),
-                                code: Some("extra_tokens_directive".to_string()),
-                                hints: vec![],
-                                related: vec![],
-                            };
-                            self.diag.report_diagnostic(diag);
+                                Some("extra_tokens_directive".to_string()),
+                                vec![],
+                            );
                             return Err(PPError::ExpectedEod);
                         }
 
@@ -1538,30 +1518,26 @@ impl<'src> Preprocessor<'src> {
                     .add_file_from_path(&resolved_path, Some(token.location))
                     .map_err(|_| {
                         // Emit diagnostic for file not found
-                        let diag = Diagnostic {
-                            level: DiagnosticLevel::Error,
-                            message: format!("Include file '{}' not found", path_str),
-                            span: SourceSpan::new(token.location, token.location),
-                            code: Some("include_file_not_found".to_string()),
-                            hints: vec!["Check the include path and ensure the file exists".to_string()],
-                            related: Vec::new(),
-                        };
-                        self.diag.report_diagnostic(diag);
+                        self.report_diagnostic_simple(
+                            DiagnosticLevel::Error,
+                            format!("Include file '{}' not found", path_str),
+                            SourceSpan::new(token.location, token.location),
+                            Some("include_file_not_found".to_string()),
+                            vec!["Check the include path and ensure the file exists".to_string()],
+                        );
                         PPError::FileNotFound
                     })?
             } else if let Some(&source_id) = self.built_in_file_ids.get(path_str.as_str()) {
                 source_id
             } else {
                 // Emit diagnostic for file not found
-                let diag = Diagnostic {
-                    level: DiagnosticLevel::Error,
-                    message: format!("Include file '{}' not found", path_str),
-                    span: SourceSpan::new(token.location, token.location),
-                    code: Some("include_file_not_found".to_string()),
-                    hints: vec!["Check the include path and ensure the file exists".to_string()],
-                    related: Vec::new(),
-                };
-                self.diag.report_diagnostic(diag);
+                self.report_diagnostic_simple(
+                    DiagnosticLevel::Error,
+                    format!("Include file '{}' not found", path_str),
+                    SourceSpan::new(token.location, token.location),
+                    Some("include_file_not_found".to_string()),
+                    vec!["Check the include path and ensure the file exists".to_string()],
+                );
                 return Err(PPError::FileNotFound);
             }
         } else {
@@ -1580,30 +1556,26 @@ impl<'src> Preprocessor<'src> {
                     .add_file_from_path(&resolved_path, Some(token.location))
                     .map_err(|_| {
                         // Emit diagnostic for file not found
-                        let diag = Diagnostic {
-                            level: DiagnosticLevel::Error,
-                            message: format!("Include file '{}' not found", path_str),
-                            span: SourceSpan::new(token.location, token.location),
-                            code: Some("include_file_not_found".to_string()),
-                            hints: vec!["Check the include path and ensure the file exists".to_string()],
-                            related: Vec::new(),
-                        };
-                        self.diag.report_diagnostic(diag);
+                        self.report_diagnostic_simple(
+                            DiagnosticLevel::Error,
+                            format!("Include file '{}' not found", path_str),
+                            SourceSpan::new(token.location, token.location),
+                            Some("include_file_not_found".to_string()),
+                            vec!["Check the include path and ensure the file exists".to_string()],
+                        );
                         PPError::FileNotFound
                     })?
             } else if let Some(file_id) = self.source_manager.get_file_id(&path_str) {
                 file_id
             } else {
                 // Emit diagnostic for file not found
-                let diag = Diagnostic {
-                    level: DiagnosticLevel::Error,
-                    message: format!("Include file '{}' not found", path_str),
-                    span: SourceSpan::new(token.location, token.location),
-                    code: Some("include_file_not_found".to_string()),
-                    hints: vec!["Check the include path and ensure the file exists".to_string()],
-                    related: Vec::new(),
-                };
-                self.diag.report_diagnostic(diag);
+                self.report_diagnostic_simple(
+                    DiagnosticLevel::Error,
+                    format!("Include file '{}' not found", path_str),
+                    SourceSpan::new(token.location, token.location),
+                    Some("include_file_not_found".to_string()),
+                    vec!["Check the include path and ensure the file exists".to_string()],
+                );
                 return Err(PPError::FileNotFound);
             }
         };
@@ -1650,7 +1622,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_ifdef(&mut self) -> Result<(), PPError> {
+    fn handle_conditional_def(&mut self, is_ifdef: bool) -> Result<(), PPError> {
         let name_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
         let name = match name_token.kind {
             PPTokenKind::Identifier(sym) => sym,
@@ -1658,73 +1630,43 @@ impl<'src> Preprocessor<'src> {
         };
 
         let defined = self.macros.contains_key(&name);
-        let info = PPConditionalInfo {
-            was_skipping: self.is_currently_skipping(),
-            found_else: false,
-            found_non_skipping: defined,
-        };
-        self.conditional_stack.push(info);
+        let condition = if is_ifdef { defined } else { !defined };
 
-        // Set skipping state for this conditional level
-        if !defined {
-            self.set_skipping(true);
-        }
-
+        self.handle_if_directive(condition)?;
         self.expect_eod()?;
 
         Ok(())
     }
 
+    fn handle_ifdef(&mut self) -> Result<(), PPError> {
+        self.handle_conditional_def(true)
+    }
+
     fn handle_ifndef(&mut self) -> Result<(), PPError> {
-        let name_token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
-        let name = match name_token.kind {
-            PPTokenKind::Identifier(sym) => sym,
-            _ => return Err(PPError::ExpectedIdentifier),
-        };
-
-        let defined = self.macros.contains_key(&name);
-        let info = PPConditionalInfo {
-            was_skipping: self.is_currently_skipping(),
-            found_else: false,
-            found_non_skipping: !defined,
-        };
-        self.conditional_stack.push(info);
-
-        // Set skipping state for this conditional level
-        if defined {
-            self.set_skipping(true);
-        }
-
-        self.expect_eod()?;
-
-        Ok(())
+        self.handle_conditional_def(false)
     }
 
     fn handle_elif_directive(&mut self, condition: bool, location: SourceLoc) -> Result<(), PPError> {
         if self.conditional_stack.is_empty() {
-            let diag = Diagnostic {
-                level: DiagnosticLevel::Error,
-                message: "#elif without #if".to_string(),
-                span: SourceSpan::new(location, location),
-                code: Some("elif_without_if".to_string()),
-                hints: vec!["#elif must be preceded by #if, #ifdef, or #ifndef".to_string()],
-                related: Vec::new(),
-            };
-            self.diag.report_diagnostic(diag);
+            self.report_diagnostic_simple(
+                DiagnosticLevel::Error,
+                "#elif without #if".to_string(),
+                SourceSpan::new(location, location),
+                Some("elif_without_if".to_string()),
+                vec!["#elif must be preceded by #if, #ifdef, or #ifndef".to_string()],
+            );
             return Err(PPError::ElifWithoutIf);
         }
 
         let current = self.conditional_stack.last_mut().unwrap();
         if current.found_else {
-            let diag = Diagnostic {
-                level: DiagnosticLevel::Error,
-                message: "#elif after #else".to_string(),
-                span: SourceSpan::new(location, location),
-                code: Some("elif_after_else".to_string()),
-                hints: vec!["#else must be the last directive in a conditional block".to_string()],
-                related: Vec::new(),
-            };
-            self.diag.report_diagnostic(diag);
+            self.report_diagnostic_simple(
+                DiagnosticLevel::Error,
+                "#elif after #else".to_string(),
+                SourceSpan::new(location, location),
+                Some("elif_after_else".to_string()),
+                vec!["#else must be the last directive in a conditional block".to_string()],
+            );
             return Err(PPError::UnmatchedElif);
         }
 
@@ -1743,29 +1685,25 @@ impl<'src> Preprocessor<'src> {
 
     fn handle_else(&mut self, location: SourceLoc) -> Result<(), PPError> {
         if self.conditional_stack.is_empty() {
-            let diag = Diagnostic {
-                level: DiagnosticLevel::Error,
-                message: "#else without #if".to_string(),
-                span: SourceSpan::new(location, location),
-                code: Some("else_without_if".to_string()),
-                hints: vec!["#else must be preceded by #if, #ifdef, or #ifndef".to_string()],
-                related: Vec::new(),
-            };
-            self.diag.report_diagnostic(diag);
+            self.report_diagnostic_simple(
+                DiagnosticLevel::Error,
+                "#else without #if".to_string(),
+                SourceSpan::new(location, location),
+                Some("else_without_if".to_string()),
+                vec!["#else must be preceded by #if, #ifdef, or #ifndef".to_string()],
+            );
             return Err(PPError::ElseWithoutIf);
         }
 
         let current = self.conditional_stack.last_mut().unwrap();
         if current.found_else {
-            let diag = Diagnostic {
-                level: DiagnosticLevel::Error,
-                message: "Multiple #else directives".to_string(),
-                span: SourceSpan::new(location, location),
-                code: Some("multiple_else".to_string()),
-                hints: vec!["A conditional block can only have one #else".to_string()],
-                related: Vec::new(),
-            };
-            self.diag.report_diagnostic(diag);
+            self.report_diagnostic_simple(
+                DiagnosticLevel::Error,
+                "Multiple #else directives".to_string(),
+                SourceSpan::new(location, location),
+                Some("multiple_else".to_string()),
+                vec!["A conditional block can only have one #else".to_string()],
+            );
             return Err(PPError::UnmatchedElse);
         }
         current.found_else = true;
@@ -1783,15 +1721,13 @@ impl<'src> Preprocessor<'src> {
 
     fn handle_endif(&mut self, location: SourceLoc) -> Result<(), PPError> {
         if self.conditional_stack.is_empty() {
-            let diag = Diagnostic {
-                level: DiagnosticLevel::Error,
-                message: "Unmatched #endif".to_string(),
-                span: SourceSpan::new(location, location),
-                code: Some("unmatched_endif".to_string()),
-                hints: vec!["#endif must be preceded by #if, #ifdef, or #ifndef".to_string()],
-                related: Vec::new(),
-            };
-            self.diag.report_diagnostic(diag);
+            self.report_diagnostic_simple(
+                DiagnosticLevel::Error,
+                "Unmatched #endif".to_string(),
+                SourceSpan::new(location, location),
+                Some("unmatched_endif".to_string()),
+                vec!["#endif must be preceded by #if, #ifdef, or #ifndef".to_string()],
+            );
             return Err(PPError::UnmatchedEndif);
         }
 
@@ -1904,30 +1840,26 @@ impl<'src> Preprocessor<'src> {
                 } else if pragma_name == "error" {
                     self.handle_pragma_error()?;
                 } else {
-                    let diag = Diagnostic {
-                        level: DiagnosticLevel::Error,
-                        message: format!("Unknown pragma '{}'", pragma_name),
-                        span: SourceSpan::new(pragma_token.location, pragma_token.location),
-                        code: Some("unknown_pragma".to_string()),
-                        hints: vec![
+                    self.report_diagnostic_simple(
+                        DiagnosticLevel::Error,
+                        format!("Unknown pragma '{}'", pragma_name),
+                        SourceSpan::new(pragma_token.location, pragma_token.location),
+                        Some("unknown_pragma".to_string()),
+                        vec![
                             "Supported pragmas: once, push_macro, pop_macro, message, warning, error".to_string(),
                         ],
-                        related: Vec::new(),
-                    };
-                    self.diag.report_diagnostic(diag);
+                    );
                     return Err(PPError::UnknownPragma(pragma_name.to_string()));
                 }
             }
             _ => {
-                let diag = Diagnostic {
-                    level: DiagnosticLevel::Error,
-                    message: "Invalid pragma directive".to_string(),
-                    span: SourceSpan::new(pragma_token.location, pragma_token.location),
-                    code: Some("invalid_pragma".to_string()),
-                    hints: vec!["Pragma directive requires an identifier".to_string()],
-                    related: Vec::new(),
-                };
-                self.diag.report_diagnostic(diag);
+                self.report_diagnostic_simple(
+                    DiagnosticLevel::Error,
+                    "Invalid pragma directive".to_string(),
+                    SourceSpan::new(pragma_token.location, pragma_token.location),
+                    Some("invalid_pragma".to_string()),
+                    vec!["Pragma directive requires an identifier".to_string()],
+                );
                 return Err(PPError::InvalidDirective);
             }
         }
@@ -2046,43 +1978,34 @@ impl<'src> Preprocessor<'src> {
         Ok(message)
     }
 
-    fn handle_pragma_message(&mut self) -> Result<(), PPError> {
+    fn handle_pragma_diagnostic_message(&mut self, level: DiagnosticLevel) -> Result<(), PPError> {
         let message = self.parse_pragma_message_content()?;
         let loc = self.get_current_location();
         let diag = Diagnostic {
-            level: DiagnosticLevel::Note,
-            message,
-            span: SourceSpan::new(loc, loc),
-            ..Default::default()
-        };
-        self.diag.report_diagnostic(diag);
-        Ok(())
-    }
-
-    fn handle_pragma_warning(&mut self) -> Result<(), PPError> {
-        let message = self.parse_pragma_message_content()?;
-        let loc = self.get_current_location();
-        let diag = Diagnostic {
-            level: DiagnosticLevel::Warning,
-            message,
-            span: SourceSpan::new(loc, loc),
-            ..Default::default()
-        };
-        self.diag.report_diagnostic(diag);
-        Ok(())
-    }
-
-    fn handle_pragma_error(&mut self) -> Result<(), PPError> {
-        let message = self.parse_pragma_message_content()?;
-        let loc = self.get_current_location();
-        let diag = Diagnostic {
-            level: DiagnosticLevel::Error,
+            level,
             message: message.clone(),
             span: SourceSpan::new(loc, loc),
             ..Default::default()
         };
         self.diag.report_diagnostic(diag);
-        Err(PPError::PragmaError(message))
+
+        if level == DiagnosticLevel::Error {
+            Err(PPError::PragmaError(message))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn handle_pragma_message(&mut self) -> Result<(), PPError> {
+        self.handle_pragma_diagnostic_message(DiagnosticLevel::Note)
+    }
+
+    fn handle_pragma_warning(&mut self) -> Result<(), PPError> {
+        self.handle_pragma_diagnostic_message(DiagnosticLevel::Warning)
+    }
+
+    fn handle_pragma_error(&mut self) -> Result<(), PPError> {
+        self.handle_pragma_diagnostic_message(DiagnosticLevel::Error)
     }
 
     fn handle_error(&mut self) -> Result<(), PPError> {
@@ -2091,13 +2014,13 @@ impl<'src> Preprocessor<'src> {
         let directive_location = self.get_current_location();
         let message = self.consume_rest_of_line_as_string();
 
-        let diag = Diagnostic {
-            level: DiagnosticLevel::Error,
-            message: format!("#error directive: {}", message),
-            span: SourceSpan::new(directive_location, directive_location),
-            ..Default::default()
-        };
-        self.diag.report_diagnostic(diag);
+        self.report_diagnostic_simple(
+            DiagnosticLevel::Error,
+            format!("#error directive: {}", message),
+            SourceSpan::new(directive_location, directive_location),
+            None,
+            Vec::new(),
+        );
         Err(PPError::ErrorDirective(message))
     }
 
@@ -2108,15 +2031,13 @@ impl<'src> Preprocessor<'src> {
         let message = self.consume_rest_of_line_as_string();
 
         // For warning, we emit a diagnostic but don't stop compilation
-        let diag = Diagnostic {
-            level: DiagnosticLevel::Warning,
+        self.report_diagnostic_simple(
+            DiagnosticLevel::Warning,
             message,
-            span: SourceSpan::new(directive_location, directive_location),
-            code: None,
-            hints: Vec::new(),
-            related: Vec::new(),
-        };
-        self.diag.report_diagnostic(diag);
+            SourceSpan::new(directive_location, directive_location),
+            None,
+            Vec::new(),
+        );
         Ok(())
     }
 
@@ -3123,6 +3044,18 @@ impl<'src> Preprocessor<'src> {
             related,
         };
         self.diag.report_diagnostic(diag);
+    }
+
+    /// Helper to report diagnostics with no related spans
+    fn report_diagnostic_simple(
+        &mut self,
+        level: DiagnosticLevel,
+        message: impl Into<String>,
+        span: SourceSpan,
+        code: Option<String>,
+        hints: Vec<String>,
+    ) {
+        self.report_diagnostic(level, message, span, code, hints, Vec::new());
     }
 
     fn parse_macro_definition_params(

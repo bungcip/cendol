@@ -201,10 +201,7 @@ fn parse_hex_float_literal(text: &str) -> Option<f64> {
         while let Some(&c) = chars.peek() {
             if let Some(digit) = c.to_digit(10) {
                 // Use checked arithmetic to prevent overflow, replicating .parse() behavior.
-                exp_val = match exp_val.checked_mul(10).and_then(|v| v.checked_add(digit as i32)) {
-                    Some(val) => val,
-                    None => return None, // Overflow
-                };
+                exp_val = exp_val.checked_mul(10).and_then(|v| v.checked_add(digit as i32))?;
                 exp_digits += 1;
                 chars.next();
             } else {

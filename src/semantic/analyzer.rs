@@ -1944,10 +1944,10 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
 
                     // Constraint 1: The controlling expression... shall have type compatible with at most one...
-                    if self.registry.is_compatible(unqualified_ctrl_ty, unqualified_assoc_ty) {
-                        if selected_expr_ref.is_none() {
-                            selected_expr_ref = Some(ga.result_expr);
-                        }
+                    if self.registry.is_compatible(unqualified_ctrl_ty, unqualified_assoc_ty)
+                        && selected_expr_ref.is_none()
+                    {
+                        selected_expr_ref = Some(ga.result_expr);
                     }
                 } else {
                     // This is the 'default' association.

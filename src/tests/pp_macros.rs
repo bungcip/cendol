@@ -159,8 +159,10 @@ fn test_redefine_builtin_macro_should_fail() {
 #define __DATE__ "123"
 __DATE__
 "#;
-    let mut config = PPConfig::default();
-    config.current_time = Some(Utc.with_ymd_and_hms(2026, 1, 28, 0, 0, 0).unwrap());
+    let config = PPConfig {
+        current_time: Some(Utc.with_ymd_and_hms(2026, 1, 28, 0, 0, 0).unwrap()),
+        ..PPConfig::default()
+    };
     let (tokens, diags) = setup_pp_snapshot_with_diags_and_config(src, Some(config));
     insta::assert_yaml_snapshot!((tokens, diags), @r#"
     - - kind: StringLiteral

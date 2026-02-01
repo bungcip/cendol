@@ -3080,7 +3080,9 @@ impl<'src> Preprocessor<'src> {
                         PPTokenKind::RightParen => break,
                         PPTokenKind::Ellipsis => {
                             variadic = Some(sym);
-                            flags |= MacroFlags::C99_VARARGS;
+                            // Remove the parameter from the list as it is variadic
+                            params.pop();
+                            flags |= MacroFlags::GNU_VARARGS;
                             let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                             if rparen.kind != PPTokenKind::RightParen {
                                 return Err(PPError::InvalidMacroParameter {
@@ -3100,7 +3102,7 @@ impl<'src> Preprocessor<'src> {
                     }
                 }
                 PPTokenKind::Ellipsis => {
-                    flags |= MacroFlags::GNU_VARARGS;
+                    flags |= MacroFlags::C99_VARARGS;
                     variadic = Some(StringId::new("__VA_ARGS__"));
                     let rparen = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
                     if rparen.kind != PPTokenKind::RightParen {

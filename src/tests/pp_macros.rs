@@ -239,3 +239,38 @@ OK
       text: OK
     "#);
 }
+
+// GNU Extensions
+#[test]
+fn test_gnu_named_variadic_macros() {
+    let src = r#"
+#define M(a, args...) args
+M(1, 2, 3, 4)
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Number
+      text: "2"
+    - kind: Comma
+      text: ","
+    - kind: Number
+      text: "3"
+    - kind: Comma
+      text: ","
+    - kind: Number
+      text: "4"
+    "#);
+}
+
+#[test]
+fn test_gnu_comma_swallowing() {
+    let src = r#"
+#define M(a, args...) a, ## args
+M(1)
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Number
+      text: "1"
+    "#);
+}

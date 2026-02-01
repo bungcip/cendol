@@ -297,3 +297,76 @@ impl Cli {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_cli_into_config_and_validation() {
+        // Test case: Valid configuration with defines and specific stop_after
+        let cli = Cli {
+            input_files: vec![PathBuf::from("test.c")],
+            output: Some(PathBuf::from("out")),
+            verbose: true,
+            dump_ast_after_parser: false,
+            dump_ast_after_semantic_lowering: false,
+            dump_mir: true,
+            dump_cranelift: false,
+            preprocess_only: false,
+            preprocessor: PreprocessorOptions { max_include_depth: 50 },
+            suppress_line_markers: true,
+            include_paths: vec![PathBuf::from("inc")],
+            defines: vec!["FOO=1".to_string(), "BAR".to_string()],
+            warnings: vec!["all".to_string()],
+            c_standard: None,
+            target: Some("x86_64-unknown-linux-gnu".to_string()),
+            optimization: Some("2".to_string()),
+            libraries: vec!["m".to_string()],
+            library_paths: vec![PathBuf::from("/lib")],
+            compile_only: true,
+            debug_info: true,
+        };
+
+        let config = cli.into_config().expect("Failed to create config");
+
+        assert_eq!(config.stop_after, CompilePhase::Mir);
+        assert_eq!(config.verbose, true);
+        assert_eq!(config.suppress_line_markers, true);
+        assert_eq!(config.preprocessor.max_include_depth, 50);
+        assert_eq!(config.target.to_string(), "x86_64-unknown-linux-gnu");
+
+        let defines: Vec<_> = config.defines.into_iter().collect();
+        assert!(defines.contains(&("FOO".to_string(), Some("1".to_string()))));
+        assert!(defines.contains(&("BAR".to_string(), None)));
+
+        // Test error case: Input file starting with '-' that does not exist
+        let cli_error = Cli {
+            input_files: vec![PathBuf::from("-nonexistent")],
+            output: None,
+            verbose: false,
+            dump_ast_after_parser: false,
+            dump_ast_after_semantic_lowering: false,
+            dump_mir: false,
+            dump_cranelift: false,
+            preprocess_only: false,
+            preprocessor: PreprocessorOptions { max_include_depth: 100 },
+            suppress_line_markers: false,
+            include_paths: vec![],
+            defines: vec![],
+            warnings: vec![],
+            c_standard: None,
+            target: None,
+            optimization: None,
+            libraries: vec![],
+            library_paths: vec![],
+            compile_only: false,
+            debug_info: false,
+        };
+
+        let err = cli_error.into_config().unwrap_err();
+        assert!(err.contains("File '-nonexistent' not found"));
+        assert!(err.contains("meant to be a command-line option"));
+    }
+}

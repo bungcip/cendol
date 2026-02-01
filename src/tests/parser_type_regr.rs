@@ -4,7 +4,9 @@ use crate::tests::semantic_common::setup_lowering;
 fn check_type(source: &str, expected: &str) {
     let (_ast, registry, symbol_table) = setup_lowering(source);
     // Assume variable is named 'x'
-    let (entry, _) = symbol_table.lookup_symbol(NameId::from("x")).expect("Symbol 'x' not found");
+    let (entry, _) = symbol_table
+        .lookup_symbol(NameId::from("x"))
+        .expect("Symbol 'x' not found");
     let symbol = symbol_table.get_symbol(entry);
     assert_eq!(registry.display_qual_type(symbol.type_info), expected);
 }

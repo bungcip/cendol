@@ -153,14 +153,14 @@ fn parse_base_type_and_qualifiers(
                         // Non-mergeable types (struct, enum, typedef, atomic)
                         // Should error if we already have a type
                         if base_type_specifier.is_some() || other_base_type_node.is_some() {
-                             // Error: multiple types
-                             // Since we don't have easy error here, we might just overwrite or error?
-                             // Let's error.
-                             return Err(ParseError::UnexpectedToken {
+                            // Error: multiple types
+                            // Since we don't have easy error here, we might just overwrite or error?
+                            // Let's error.
+                            return Err(ParseError::UnexpectedToken {
                                 expected_tokens: "single type specifier".to_string(),
                                 found: crate::parser::TokenKind::Unknown,
                                 span: crate::ast::SourceSpan::default(),
-                             });
+                            });
                         }
                         let parsed_base = parse_type_specifier_to_parsed_base(parser, ts)?;
                         other_base_type_node = Some(parsed_base);
@@ -230,14 +230,38 @@ fn parse_type_specifier_to_parsed_base(
             .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::LongLong))),
 
         // New variants
-        ParsedTypeSpecifier::UnsignedLong => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::UnsignedLong))),
-        ParsedTypeSpecifier::UnsignedLongLong => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::UnsignedLongLong))),
-        ParsedTypeSpecifier::UnsignedShort => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::UnsignedShort))),
-        ParsedTypeSpecifier::UnsignedChar => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::UnsignedChar))),
-        ParsedTypeSpecifier::SignedChar => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::SignedChar))),
-        ParsedTypeSpecifier::SignedShort => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::SignedShort))),
-        ParsedTypeSpecifier::SignedLong => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::SignedLong))),
-        ParsedTypeSpecifier::SignedLongLong => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::SignedLongLong))),
+        ParsedTypeSpecifier::UnsignedLong => Ok(parser
+            .ast
+            .parsed_types
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::UnsignedLong))),
+        ParsedTypeSpecifier::UnsignedLongLong => Ok(parser
+            .ast
+            .parsed_types
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::UnsignedLongLong))),
+        ParsedTypeSpecifier::UnsignedShort => Ok(parser
+            .ast
+            .parsed_types
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::UnsignedShort))),
+        ParsedTypeSpecifier::UnsignedChar => Ok(parser
+            .ast
+            .parsed_types
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::UnsignedChar))),
+        ParsedTypeSpecifier::SignedChar => Ok(parser
+            .ast
+            .parsed_types
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::SignedChar))),
+        ParsedTypeSpecifier::SignedShort => Ok(parser
+            .ast
+            .parsed_types
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::SignedShort))),
+        ParsedTypeSpecifier::SignedLong => Ok(parser
+            .ast
+            .parsed_types
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::SignedLong))),
+        ParsedTypeSpecifier::SignedLongLong => Ok(parser
+            .ast
+            .parsed_types
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::SignedLongLong))),
 
         ParsedTypeSpecifier::Float => Ok(parser
             .ast

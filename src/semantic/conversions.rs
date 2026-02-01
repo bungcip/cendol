@@ -5,87 +5,59 @@ use crate::semantic::{BuiltinType, QualType, TypeRegistry};
 
 /// Performs the "usual arithmetic conversions" as specified in C11 6.3.1.8.
 pub(crate) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
-    // Floating point conversions
-    if lhs.ty().builtin() == Some(BuiltinType::LongDouble) || rhs.ty().builtin() == Some(BuiltinType::LongDouble) {
-        return Some(QualType::unqualified(ctx.type_long_double));
-    }
-    if lhs.ty().builtin() == Some(BuiltinType::Double) || rhs.ty().builtin() == Some(BuiltinType::Double) {
-        return Some(QualType::unqualified(ctx.type_double));
-    }
-    if lhs.ty().builtin() == Some(BuiltinType::Float) || rhs.ty().builtin() == Some(BuiltinType::Float) {
-        return Some(QualType::unqualified(ctx.type_float));
+    let lb = lhs.ty().builtin()?;
+    let rb = rhs.ty().builtin()?;
+
+    // Floating point conversions: long double > double > float
+    if lb.is_floating() || rb.is_floating() {
+        let common = match (lb, rb) {
+            (BuiltinType::LongDouble, _) | (_, BuiltinType::LongDouble) => ctx.type_long_double,
+            (BuiltinType::Double, _) | (_, BuiltinType::Double) => ctx.type_double,
+            _ => ctx.type_float,
+        };
+        return Some(QualType::unqualified(common));
     }
 
-    // Integer conversions
-    let lhs_promoted = integer_promotion(ctx, lhs);
-    let rhs_promoted = integer_promotion(ctx, rhs);
-
-    if lhs_promoted.ty() == rhs_promoted.ty() {
-        return Some(lhs_promoted);
+    // Both types are promoted to at least 'int' or 'unsigned int'
+    let lp = integer_promotion(ctx, lhs);
+    let rp = integer_promotion(ctx, rhs);
+    if lp == rp {
+        return Some(lp);
     }
 
-    let (lhs_signed, lhs_rank) = if let Some(b) = lhs_promoted.ty().builtin() {
-        (b.is_signed(), b.rank())
+    let lbp = lp.ty().builtin()?;
+    let rbp = rp.ty().builtin()?;
+    let (ls, lr) = (lbp.is_signed(), lbp.rank());
+    let (rs, rr) = (rbp.is_signed(), rbp.rank());
+
+    // Same signedness: higher rank wins
+    if ls == rs {
+        return Some(if lr >= rr { lp } else { rp });
+    }
+
+    // Different signedness: Higher rank usually wins; if ranks are equal, unsigned wins.
+    let (ut, ur, st, sr) = if ls { (rp, rr, lp, lr) } else { (lp, lr, rp, rr) };
+    if ur >= sr {
+        Some(ut)
     } else {
-        (false, 0)
-    };
-    let (rhs_signed, rhs_rank) = if let Some(b) = rhs_promoted.ty().builtin() {
-        (b.is_signed(), b.rank())
-    } else {
-        (false, 0)
-    };
-
-    if lhs_signed == rhs_signed {
-        return Some(if lhs_rank >= rhs_rank {
-            lhs_promoted
-        } else {
-            rhs_promoted
-        });
+        // If the signed type can represent all values of the unsigned type, it wins.
+        // For currently supported targets (e.g. 32-bit int, 64-bit long), this holds.
+        Some(st)
     }
-
-    if !lhs_signed && lhs_rank >= rhs_rank {
-        return Some(lhs_promoted);
-    }
-    if !rhs_signed && rhs_rank >= lhs_rank {
-        return Some(rhs_promoted);
-    }
-
-    if lhs_signed {
-        if lhs_rank > rhs_rank {
-            return Some(lhs_promoted);
-        }
-    } else if rhs_rank > lhs_rank {
-        return Some(rhs_promoted);
-    }
-
-    None
 }
 
 /// Performs integer promotions as specified in C11 6.3.1.1.
 pub(crate) fn integer_promotion(ctx: &TypeRegistry, ty: QualType) -> QualType {
-    if let Some(builtin) = ty.ty().builtin() {
-        match builtin {
-            BuiltinType::Bool
-            | BuiltinType::Char
-            | BuiltinType::SChar
-            | BuiltinType::UChar
-            | BuiltinType::Short
-            | BuiltinType::UShort => QualType::unqualified(ctx.type_int),
-            _ => ty,
-        }
-    } else {
-        ty
+    match ty.ty().builtin() {
+        Some(b) if b.is_integer() && b.rank() < BuiltinType::Int.rank() => QualType::unqualified(ctx.type_int),
+        _ => ty,
     }
 }
 
 /// Performs default argument promotions as specified in C11 6.5.2.2.
 pub(crate) fn default_argument_promotions(ctx: &TypeRegistry, ty: QualType) -> QualType {
-    if let Some(builtin) = ty.ty().builtin() {
-        match builtin {
-            BuiltinType::Float => QualType::unqualified(ctx.type_double),
-            _ => integer_promotion(ctx, ty),
-        }
-    } else {
-        ty
+    match ty.ty().builtin() {
+        Some(BuiltinType::Float) => QualType::unqualified(ctx.type_double),
+        _ => integer_promotion(ctx, ty),
     }
 }

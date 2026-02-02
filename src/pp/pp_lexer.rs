@@ -1,8 +1,6 @@
-use crate::ast::literal_parsing;
 use crate::ast::StringId;
-use crate::{
-    source_manager::{SourceId, SourceLoc},
-};
+use crate::ast::literal_parsing;
+use crate::source_manager::{SourceId, SourceLoc};
 
 // Packed token flags for preprocessor tokens
 bitflags::bitflags! {

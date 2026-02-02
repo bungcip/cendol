@@ -1,7 +1,7 @@
+use crate::ast::StringId;
 use crate::ast::literal::IntegerSuffix;
 use crate::ast::literal_parsing;
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::ast::StringId;
 use crate::pp::{PPError, PPToken, PPTokenKind, Preprocessor};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

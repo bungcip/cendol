@@ -1,5 +1,5 @@
-use crate::diagnostic::DiagnosticEngine;
 use crate::ast::StringId;
+use crate::diagnostic::DiagnosticEngine;
 use crate::pp::{HeaderSearch, PPConfig, PPToken, PPTokenFlags, PPTokenKind, Preprocessor};
 use crate::source_manager::{SourceLoc, SourceManager};
 

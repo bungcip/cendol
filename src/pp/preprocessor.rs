@@ -1,5 +1,5 @@
-use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::ast::StringId;
+use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::lang_options::LangOptions;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};

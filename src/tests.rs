@@ -36,6 +36,7 @@ pub mod semantic_scope;
 pub mod semantic_types;
 
 pub mod semantic_common;
+pub mod semantic_const_eval;
 pub mod semantic_lowering;
 pub mod semantic_mir;
 pub mod semantic_negative;

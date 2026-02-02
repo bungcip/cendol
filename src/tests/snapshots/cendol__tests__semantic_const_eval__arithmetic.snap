@@ -1,0 +1,20 @@
+---
+source: src/tests/semantic_const_eval.rs
+assertion_line: 53
+expression: output
+---
+Expression: 1 + 2
+Result: 3
+---
+Expression: 10 - 5
+Result: 5
+---
+Expression: 2 * 3
+Result: 6
+---
+Expression: 10 / 2
+Result: 5
+---
+Expression: 10 % 3
+Result: None
+---

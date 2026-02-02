@@ -1,0 +1,14 @@
+---
+source: src/tests/semantic_const_eval.rs
+assertion_line: 53
+expression: output
+---
+Expression: sizeof(int)
+Result: 4
+---
+Expression: sizeof(long)
+Result: 8
+---
+Expression: sizeof(long long)
+Result: 8
+---

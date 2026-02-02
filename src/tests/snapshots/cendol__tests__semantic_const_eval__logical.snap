@@ -1,0 +1,23 @@
+---
+source: src/tests/semantic_const_eval.rs
+assertion_line: 53
+expression: output
+---
+Expression: 1 && 1
+Result: 1
+---
+Expression: 1 && 0
+Result: 0
+---
+Expression: 1 || 0
+Result: 1
+---
+Expression: 0 || 0
+Result: 0
+---
+Expression: !0
+Result: 1
+---
+Expression: !5
+Result: 0
+---

@@ -1,0 +1,8 @@
+---
+source: src/tests/semantic_const_eval.rs
+assertion_line: 53
+expression: output
+---
+Expression: 9223372036854775807LL + 1
+Result: -9223372036854775808
+---

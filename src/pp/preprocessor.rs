@@ -569,28 +569,6 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Convert a list of tokens to a path string
-    fn tokens_to_path_string(&self, tokens: &[PPToken]) -> String {
-        // Bolt ⚡: Use a two-pass approach to build the path string efficiently.
-        // This avoids multiple reallocations from push_str in a loop, a known
-        // performance anti-pattern in this codebase.
-        // 1. Calculate the total length of the path.
-        let total_len = tokens.iter().map(|part| part.length as usize).sum();
-
-        // 2. Allocate the string with the exact capacity.
-        let mut path = String::with_capacity(total_len);
-
-        // 3. Populate the string.
-        for part in tokens.iter() {
-            let buffer = self.sm.get_buffer(part.location.source_id());
-            let start = part.location.offset() as usize;
-            let end = start + part.length as usize;
-            if end <= buffer.len() {
-                let text = unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) };
-                path.push_str(text);
-            }
-        }
-        path
-    }
 
     /// Check if a header exists
     pub(crate) fn check_header_exists(&self, path: &str, is_angled: bool) -> bool {
@@ -737,32 +715,14 @@ impl<'src> Preprocessor<'src> {
 
     /// Evaluate a conditional expression (simplified - handle defined and basic arithmetic)
     fn evaluate_conditional_expression(&mut self, tokens: &[PPToken]) -> Result<bool, PPError> {
-        // Filter out Eod tokens
-        let tokens: Vec<PPToken> = tokens.iter().filter(|t| t.kind != PPTokenKind::Eod).cloned().collect();
-
+        // Bolt ⚡: Removed redundant filtering of Eod tokens and a buggy optimization.
+        // parse_conditional_expression already ensures no Eod tokens are present.
+        // This avoids two allocations and two full clones of the token list.
+        // The buggy 'defined' optimization was also removed as it incorrectly
+        // returned early for complex expressions like '#if defined(FOO) && 0'.
         if tokens.is_empty() {
             // For empty expressions, treat as false
             return Ok(false);
-        }
-
-        // Check for defined(identifier) or defined identifier before macro expansion
-        if tokens.len() >= 2 && matches!(tokens[0].kind, PPTokenKind::Identifier(sym) if sym == self.defined_symbol()) {
-            if tokens.len() == 2 {
-                // defined identifier
-                if let PPTokenKind::Identifier(sym) = &tokens[1].kind {
-                    let is_defined = self.macros.contains_key(sym);
-                    return Ok(is_defined);
-                }
-            } else if tokens.len() >= 4
-                && matches!(tokens[1].kind, PPTokenKind::LeftParen)
-                && matches!(tokens[3].kind, PPTokenKind::RightParen)
-            {
-                // defined(identifier)
-                if let PPTokenKind::Identifier(sym) = &tokens[2].kind {
-                    let is_defined = self.macros.contains_key(sym);
-                    return Ok(is_defined);
-                }
-            }
         }
 
         // First, expand macros in the expression
@@ -1202,7 +1162,7 @@ impl<'src> Preprocessor<'src> {
                     }
                     path_parts.push(t);
                 }
-                (self.tokens_to_path_string(&path_parts), true)
+                (self.tokens_to_string(&path_parts), true)
             }
             _ => {
                 // Computed include
@@ -1255,7 +1215,7 @@ impl<'src> Preprocessor<'src> {
                             );
                             return Err(PPError::ExpectedEod);
                         }
-                        (self.tokens_to_path_string(&path_parts), true)
+                        (self.tokens_to_string(&path_parts), true)
                     }
                     _ => return Err(PPError::InvalidIncludePath),
                 }
@@ -1837,10 +1797,11 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to convert tokens to their string representation
     fn tokens_to_string(&self, tokens: &[PPToken]) -> String {
-        // Bolt ⚡: Use a two-pass approach to build the string efficiently.
-        // This avoids multiple reallocations from push_str in a loop.
-        // 1. Calculate the total length of the string.
-        let total_len: usize = tokens.iter().map(|t| t.get_text().len()).sum();
+        // Bolt ⚡: Optimized two-pass string building.
+        // We use the token's length field for the first pass as it's a fast u16 access.
+        // This avoids calling get_text() in the first pass. The raw length is a safe
+        // upper bound for the cleaned text length.
+        let total_len: usize = tokens.iter().map(|t| t.length as usize).sum();
 
         // 2. Allocate the string with the exact capacity.
         let mut result = String::with_capacity(total_len);

@@ -954,8 +954,7 @@ impl<'a> AstToMirLowerer<'a> {
         let expected_val_op = Operand::Copy(Box::new(expected_place.clone()));
 
         let weak = false;
-        let cas_rval =
-            Rvalue::AtomicCompareExchange(ptr, expected_val_op.clone(), desired.clone(), weak, order, order);
+        let cas_rval = Rvalue::AtomicCompareExchange(ptr, expected_val_op.clone(), desired.clone(), weak, order, order);
 
         let val_ty = self.get_operand_type(&desired);
         let (_, old_val_place) = self.create_temp_local_with_assignment(cas_rval, val_ty);

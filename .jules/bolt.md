@@ -13,3 +13,11 @@
 ## 2025-05-15 - Fast-Path Buffer Scanning in Lexer
 **Learning:** Lexer methods like `peek_char` and `next_char` often have overhead due to `Option` wrapping, state management (e.g., line splicing), and trigraph decoding. For common, non-special characters like whitespace, a tight loop scanning the raw buffer directly is significantly faster.
 **Action:** Implement fast-path loops for common lexing tasks (like skipping whitespace or scanning simple identifiers) that operate directly on the byte buffer and break only when encountering special characters (`\`, `?`, `/`, etc.) or non-ASCII characters.
+
+## 2026-05-20 - Redundant Filter-Collect in Parser Slices
+**Learning:** Calling `.filter(...).cloned().collect()` on a token slice to remove delimiters (like `Eod`) is a significant performance bottleneck when the caller already guarantees the absence of those delimiters. This results in (N)$ redundant allocations and copies on every directive evaluation.
+**Action:** Trust slice-based parsing boundaries. Avoid re-allocating token lists unless modification is strictly required.
+
+## 2026-05-20 - Fast-Path Capacity Hinting from Raw Lengths
+**Learning:** Calculating `String` capacity for cleaned token text (without line splices) can be done efficiently by using the raw `token.length` field as a safe upper bound. This avoids a redundant pass of expensive `get_text()` or `as_str()` calls which may involve hash lookups or enum matching.
+**Action:** Use raw buffer lengths as capacity hints for string building in the preprocessor, then perform a single pass to populate with cleaned text.

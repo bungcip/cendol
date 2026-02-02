@@ -21,6 +21,7 @@ pub mod pp_internal;
 pub mod pp_lexical;
 pub mod pp_macros;
 pub mod pp_misc;
+pub mod pp_null_directive;
 pub mod pp_output_dump;
 pub mod pp_pragma;
 
@@ -35,6 +36,7 @@ pub mod semantic_scope;
 pub mod semantic_types;
 
 pub mod semantic_common;
+pub mod semantic_const_eval;
 pub mod semantic_lowering;
 pub mod semantic_mir;
 pub mod semantic_negative;

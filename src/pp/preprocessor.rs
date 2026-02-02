@@ -949,6 +949,7 @@ impl<'src> Preprocessor<'src> {
                     }
                 }
             }
+            PPTokenKind::Eod => Ok(()),
             _ => {
                 self.report_diagnostic_simple(
                     DiagnosticLevel::Error,

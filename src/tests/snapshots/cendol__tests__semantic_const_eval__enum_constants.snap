@@ -1,0 +1,7 @@
+---
+source: src/tests/semantic_const_eval.rs
+assertion_line: 179
+expression: "format!(\"Source: {}\\nResult: {}\", source, val_str)"
+---
+Source: enum { A = 5, B = 10 }; int test_var = A + B;
+Result: 15

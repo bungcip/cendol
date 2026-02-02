@@ -97,6 +97,14 @@ fn merge_parsed_type_specifiers(
         (SignedShort, Int) => Ok(SignedShort),
         (Int, SignedShort) => Ok(SignedShort),
 
+        // Complex combinations
+        (Float, Complex) => Ok(ComplexFloat),
+        (Complex, Float) => Ok(ComplexFloat),
+        (Double, Complex) => Ok(ComplexDouble),
+        (Complex, Double) => Ok(ComplexDouble),
+        (LongDouble, Complex) => Ok(ComplexLongDouble),
+        (Complex, LongDouble) => Ok(ComplexLongDouble),
+
         // Mismatch
         (a, _) => Err(ParseError::UnexpectedToken {
             expected_tokens: format!("compatible type specifier for {:?}", a),
@@ -275,6 +283,18 @@ fn parse_type_specifier_to_parsed_base(
             .ast
             .parsed_types
             .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::LongDouble))),
+        ParsedTypeSpecifier::ComplexFloat => Ok(parser
+            .ast
+            .parsed_types
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::ComplexFloat))),
+        ParsedTypeSpecifier::ComplexDouble => Ok(parser
+            .ast
+            .parsed_types
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::ComplexDouble))),
+        ParsedTypeSpecifier::ComplexLongDouble => Ok(parser
+            .ast
+            .parsed_types
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::ComplexLongDouble))),
         ParsedTypeSpecifier::Signed => Ok(parser
             .ast
             .parsed_types

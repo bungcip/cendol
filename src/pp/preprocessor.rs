@@ -2023,13 +2023,12 @@ impl<'src> Preprocessor<'src> {
             match token.kind {
                 PPTokenKind::Hash if i + 1 < macro_info.tokens.len() => {
                     let next = &macro_info.tokens[i + 1];
-                    #[allow(clippy::collapsible_if)]
-                    if let PPTokenKind::Identifier(sym) = next.kind {
-                        if let Some(arg) = self.get_macro_param_tokens(macro_info, sym, args, token.location) {
-                            result.push(self.stringify_tokens(&arg, token.location)?);
-                            i += 2;
-                            continue;
-                        }
+                    if let PPTokenKind::Identifier(sym) = next.kind
+                        && let Some(arg) = self.get_macro_param_tokens(macro_info, sym, args, token.location)
+                    {
+                        result.push(self.stringify_tokens(&arg, token.location)?);
+                        i += 2;
+                        continue;
                     }
                 }
                 PPTokenKind::HashHash if i + 1 < macro_info.tokens.len() => {

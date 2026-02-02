@@ -60,6 +60,7 @@ pub struct TypeRegistry {
     pub type_void_ptr: TypeRef,
     pub type_signed: TypeRef,
     pub type_valist: TypeRef,
+    pub type_complex_marker: TypeRef,
     pub type_error: TypeRef,
 }
 
@@ -101,6 +102,7 @@ impl TypeRegistry {
             type_void_ptr: TypeRef::dummy(),
             type_signed: TypeRef::dummy(),
             type_valist: TypeRef::dummy(),
+            type_complex_marker: TypeRef::dummy(),
             type_error: TypeRef::dummy(),
         };
 
@@ -171,11 +173,14 @@ impl TypeRegistry {
         // 18: VaList
         self.type_valist = self.alloc_builtin(TypeKind::Builtin(BuiltinType::VaList));
 
+        // 19: Complex (marker)
+        self.type_complex_marker = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Complex));
+
         // Pre-calculate void*
         self.type_void_ptr = self.pointer_to(QualType::unqualified(self.type_void));
 
         // We can assert that the last allocated index was 18
-        debug_assert_eq!(self.types.len() - 1, 18, "Builtin types allocation mismatch");
+        debug_assert_eq!(self.types.len() - 1, 19, "Builtin types allocation mismatch");
     }
 
     fn alloc_builtin(&mut self, kind: TypeKind) -> TypeRef {
@@ -203,6 +208,7 @@ impl TypeRegistry {
             BuiltinType::LongDouble => self.type_long_double,
             BuiltinType::Signed => self.type_signed,
             BuiltinType::VaList => self.type_valist,
+            BuiltinType::Complex => self.type_complex_marker,
         }
     }
 
@@ -614,6 +620,11 @@ impl TypeRegistry {
                         is_union: false,
                     },
                 },
+                BuiltinType::Complex => TypeLayout {
+                    size: 0,
+                    alignment: 1,
+                    kind: LayoutKind::Scalar,
+                },
             },
 
             TypeKind::Pointer { .. } => {
@@ -1023,6 +1034,7 @@ impl TypeRegistry {
                 BuiltinType::LongDouble => "long double".to_string(),
                 BuiltinType::Signed => "signed".to_string(),
                 BuiltinType::VaList => "__builtin_va_list".to_string(),
+                BuiltinType::Complex => "_Complex (marker)".to_string(),
             },
             TypeKind::Complex { base_type } => format!("_Complex {}", self.display_type(*base_type)),
             TypeKind::Pointer { pointee } => format!("{}*", self.display_qual_type(*pointee)),

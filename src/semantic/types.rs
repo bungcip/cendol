@@ -141,6 +141,7 @@ pub enum BuiltinType {
     LongDouble = 16,
     Signed = 17,
     VaList = 18,
+    Complex = 19,
 }
 
 impl BuiltinType {
@@ -164,6 +165,7 @@ impl BuiltinType {
             16 => Some(Self::LongDouble),
             17 => Some(Self::Signed),
             18 => Some(Self::VaList),
+            19 => Some(Self::Complex),
             _ => None,
         }
     }
@@ -612,6 +614,7 @@ impl Display for TypeKind {
                 BuiltinType::LongDouble => write!(f, "long double"),
                 BuiltinType::Signed => write!(f, "signed"),
                 BuiltinType::VaList => write!(f, "__builtin_va_list"),
+                BuiltinType::Complex => write!(f, "_Complex (marker)"),
             },
             TypeKind::Complex { .. } => write!(f, "_Complex"),
             TypeKind::Pointer { .. } => write!(f, "<pointer>"),

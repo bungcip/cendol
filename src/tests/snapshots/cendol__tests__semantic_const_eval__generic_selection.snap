@@ -1,0 +1,11 @@
+---
+source: src/tests/semantic_const_eval.rs
+assertion_line: 53
+expression: output
+---
+Expression: _Generic(1, int: 10, default: 20)
+Result: None
+---
+Expression: _Generic(1.0, double: 30, default: 20)
+Result: None
+---

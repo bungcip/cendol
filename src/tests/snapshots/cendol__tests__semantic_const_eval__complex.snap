@@ -1,0 +1,11 @@
+---
+source: src/tests/semantic_const_eval.rs
+assertion_line: 53
+expression: output
+---
+Expression: 1 + 2 * 3
+Result: 7
+---
+Expression: (1 + 2) * 3
+Result: 9
+---

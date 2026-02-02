@@ -648,6 +648,18 @@ fn resolve_type_specifier(
         ParsedTypeSpecifier::Float => Ok(QualType::unqualified(ctx.registry.type_float)),
         ParsedTypeSpecifier::Double => Ok(QualType::unqualified(ctx.registry.type_double)),
         ParsedTypeSpecifier::LongDouble => Ok(QualType::unqualified(ctx.registry.type_long_double)),
+        ParsedTypeSpecifier::ComplexFloat => {
+            let complex_type = ctx.registry.complex_type(ctx.registry.type_float);
+            Ok(QualType::unqualified(complex_type))
+        }
+        ParsedTypeSpecifier::ComplexDouble => {
+            let complex_type = ctx.registry.complex_type(ctx.registry.type_double);
+            Ok(QualType::unqualified(complex_type))
+        }
+        ParsedTypeSpecifier::ComplexLongDouble => {
+            let complex_type = ctx.registry.complex_type(ctx.registry.type_long_double);
+            Ok(QualType::unqualified(complex_type))
+        }
         ParsedTypeSpecifier::Signed => {
             // Signed modifier
             Ok(QualType::unqualified(ctx.registry.type_signed))
@@ -657,12 +669,7 @@ fn resolve_type_specifier(
             Ok(QualType::unqualified(ctx.registry.type_int_unsigned))
         }
         ParsedTypeSpecifier::Bool => Ok(QualType::unqualified(ctx.registry.type_bool)),
-        ParsedTypeSpecifier::Complex => {
-            // Complex types need a base type
-            // For now, default to complex double
-            let complex_type = ctx.registry.complex_type(ctx.registry.type_double);
-            Ok(QualType::unqualified(complex_type))
-        }
+        ParsedTypeSpecifier::Complex => Ok(QualType::unqualified(ctx.registry.type_complex_marker)),
         ParsedTypeSpecifier::Atomic(parsed_type) => {
             // Convert the ParsedType to a TypeRef by applying the declarator to the base type
             convert_to_qual_type(ctx, *parsed_type, span)
@@ -896,6 +903,22 @@ fn merge_base_type(
                             Some(QualType::unqualified(ctx.registry.type_long_double))
                         }
 
+                        // Complex combinations
+                        (BuiltinType::Complex, BuiltinType::Float) | (BuiltinType::Float, BuiltinType::Complex) => {
+                            Some(QualType::unqualified(
+                                ctx.registry.complex_type(ctx.registry.type_float),
+                            ))
+                        }
+                        (BuiltinType::Complex, BuiltinType::Double) | (BuiltinType::Double, BuiltinType::Complex) => {
+                            Some(QualType::unqualified(
+                                ctx.registry.complex_type(ctx.registry.type_double),
+                            ))
+                        }
+                        (BuiltinType::Complex, BuiltinType::LongDouble)
+                        | (BuiltinType::LongDouble, BuiltinType::Complex) => Some(QualType::unqualified(
+                            ctx.registry.complex_type(ctx.registry.type_long_double),
+                        )),
+
                         // Error for other combinations (e.g. double int)
                         _ => {
                             ctx.report_error(SemanticError::ConflictingTypeSpecifiers {
@@ -1033,10 +1056,15 @@ fn lower_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
     }
 
     // Finalize base type: 'signed' without anything else defaults to 'int'
-    if let Some(base) = info.base_type
-        && base.ty() == ctx.registry.type_signed
-    {
-        info.base_type = Some(QualType::unqualified(ctx.registry.type_int));
+    if let Some(base) = info.base_type {
+        if base.ty() == ctx.registry.type_signed {
+            info.base_type = Some(QualType::unqualified(ctx.registry.type_int));
+        } else if base.ty() == ctx.registry.type_complex_marker {
+            // Standalone _Complex defaults to double _Complex
+            info.base_type = Some(QualType::unqualified(
+                ctx.registry.complex_type(ctx.registry.type_double),
+            ));
+        }
     }
 
     validate_specifier_combinations(&info, ctx, span);

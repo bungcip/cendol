@@ -805,6 +805,10 @@ impl<'a> AstToMirLowerer<'a> {
                 let mir_type = self.lower_function_type(&return_type, &parameters, is_variadic);
                 self.cache_type(type_ref, mir_type)
             }
+            TypeKind::Complex { base_type } => {
+                let mir_type = self.lower_complex_type(base_type);
+                self.cache_type(type_ref, mir_type)
+            }
             _ => {
                 let mir_type = MirType::I32;
                 self.cache_type(type_ref, mir_type)
@@ -914,7 +918,8 @@ impl<'a> AstToMirLowerer<'a> {
                 }
             }
             BuiltinType::Signed => MirType::I32,
-            BuiltinType::VaList => MirType::U64, // Opaque handle
+            BuiltinType::VaList => MirType::U64,   // Opaque handle
+            BuiltinType::Complex => MirType::Void, // Should not happen in MIR
         }
     }
 
@@ -990,6 +995,27 @@ impl<'a> AstToMirLowerer<'a> {
             return_type,
             params,
             is_variadic,
+        }
+    }
+
+    fn lower_complex_type(&mut self, base_type: TypeRef) -> MirType {
+        let element_id = self.lower_type(base_type);
+        let element_layout = self.registry.get_layout(base_type);
+        let element_size = element_layout.size;
+        let element_align = element_layout.alignment;
+
+        let name = NameId::new(format!("_Complex_{}", self.registry.display_type(base_type)));
+
+        MirType::Record {
+            name,
+            field_types: vec![element_id, element_id],
+            field_names: vec![NameId::new("real"), NameId::new("imag")],
+            is_union: false,
+            layout: MirRecordLayout {
+                size: element_size * 2,
+                alignment: element_align,
+                field_offsets: vec![0, element_size],
+            },
         }
     }
 

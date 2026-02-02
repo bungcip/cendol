@@ -21,6 +21,7 @@ pub mod pp_internal;
 pub mod pp_lexical;
 pub mod pp_macros;
 pub mod pp_misc;
+pub mod pp_null_directive;
 pub mod pp_output_dump;
 pub mod pp_pragma;
 

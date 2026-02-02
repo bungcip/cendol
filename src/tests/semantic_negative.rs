@@ -318,19 +318,6 @@ fn test_extern_init_block_scope() {
     );
 }
 
-#[test]
-fn test_static_redeclared_non_static() {
-    run_fail_with_message(
-        r#"
-        static int foo(void);
-        int foo(void) {
-            return 0;
-        }
-        "#,
-        CompilePhase::Mir,
-        "conflicting linkage",
-    );
-}
 
 // J. Advanced / Compiler-grade features
 #[test]

@@ -94,8 +94,8 @@ fn test_func_identifier_redefinition() {
             int __func__;
         }
     "#;
-    // Shadows implicitly declared __func__
-    run_pass(source, CompilePhase::SemanticLowering);
+    // Shadows implicitly declared __func__ in SAME scope is an error in C11
+    run_fail_with_message(source, CompilePhase::SemanticLowering, "redefinition of '__func__'");
 }
 
 #[test]
@@ -177,35 +177,8 @@ fn test_func_opt_shadowed() {
             printf("%s", __func__);
         }
     "#;
-    let mir_output = setup_mir(source);
-    insta::assert_snapshot!(mir_output, @r#"
-    type %t0 = i32
-    type %t1 = i8
-    type %t2 = ptr<%t1>
-    type %t3 = void
-    type %t4 = [6]%t1
-    type %t5 = [6]%t1
-    type %t6 = fn(%t2, ...) -> %t0
-    type %t7 = [3]%t1
-    type %t8 = [3]%t1
-
-    global @.L.str0: [6]i8 = const "local"
-    global @.L.str1: [3]i8 = const "%s"
-
-    extern fn printf(%param0: ptr<i8>, ...) -> i32
-
-    fn foo() -> void
-    {
-      locals {
-        %__func__: ptr<i8>
-      }
-
-      bb1:
-        %__func__ = cast<ptr<i8>>(const @.L.str0)
-        call printf(cast<ptr<i8>>(const @.L.str1), %__func__)
-        return
-    }
-    "#);
+    // Redefinition in same scope
+    run_fail_with_message(source, CompilePhase::SemanticLowering, "redefinition of '__func__'");
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use crate::ast::literal::{FloatSuffix, IntegerSuffix};
 use crate::ast::literal_parsing;
-use crate::intern::StringId;
+use crate::ast::StringId;
 use crate::pp::{PPToken, PPTokenKind};
 use crate::source_manager::SourceSpan;
 

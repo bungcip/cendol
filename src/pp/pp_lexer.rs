@@ -1,6 +1,6 @@
 use crate::ast::literal_parsing;
+use crate::ast::StringId;
 use crate::{
-    intern::StringId,
     source_manager::{SourceId, SourceLoc},
 };
 

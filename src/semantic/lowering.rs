@@ -184,6 +184,9 @@ pub(crate) struct LowerCtx<'a, 'src> {
     pub(crate) symbol_table: &'a mut SymbolTable,
     pub(crate) has_errors: bool,
     pub(crate) registry: &'a mut TypeRegistry,
+    /// If Some, the next CompoundStatement lowering will use this scope instead of pushing a new one.
+    /// This is used for function bodies to share the parameter scope.
+    pub(crate) next_compound_uses_scope: Option<ScopeId>,
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {
@@ -202,6 +205,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             symbol_table,
             has_errors: false,
             registry,
+            next_compound_uses_scope: None,
         }
     }
 
@@ -1072,6 +1076,7 @@ fn lower_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
 }
 
 fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> Vec<FunctionParameter> {
+    let mut seen_names = HashMap::new();
     params
         .iter()
         .map(|param| {
@@ -1099,6 +1104,14 @@ fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
             let decayed_ty = ctx.registry.decay(final_ty, ptr_quals);
 
             let pname = param.declarator.as_ref().and_then(extract_name);
+            if let Some(name) = pname {
+                if let Some(&first_def) = seen_names.get(&name) {
+                    ctx.report_error(SemanticError::Redefinition { name, first_def, span });
+                } else {
+                    seen_names.insert(name, span);
+                }
+            }
+
             FunctionParameter {
                 param_type: decayed_ty,
                 name: pname,
@@ -1335,7 +1348,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         target_slots: Option<&[NodeRef]>,
         span: SourceSpan,
     ) -> NodeRef {
-        let scope_id = self.symbol_table.push_scope();
+        let (scope_id, pushed) = if let Some(sid) = self.next_compound_uses_scope.take() {
+            (sid, false)
+        } else {
+            (self.symbol_table.push_scope(), true)
+        };
+
         let node = self.get_or_push_slot(target_slots, span);
 
         let mut total_stmt_nodes = 0;
@@ -1351,6 +1369,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let stmt_start = stmt_slots.first().copied().unwrap_or(NodeRef::ROOT);
         let stmt_len = stmt_slots.len() as u16;
 
+        let old_scope = self.symbol_table.current_scope();
+        self.symbol_table.set_current_scope(scope_id);
+
         let mut current_slot_idx = 0;
         for &stmt_ref in stmts {
             let count = self.count_semantic_nodes(stmt_ref);
@@ -1361,7 +1382,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
         }
 
-        self.symbol_table.pop_scope();
+        if pushed {
+            self.symbol_table.pop_scope();
+        } else {
+            self.symbol_table.set_current_scope(old_scope);
+        }
+
         self.ast.kinds[node.index()] = NodeKind::CompoundStatement(CompoundStmtData {
             stmt_start,
             stmt_len,
@@ -1427,6 +1453,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return;
         }
 
+        // C11 6.7p3: If an identifier has no linkage, there shall be no more than one declaration
+        // in the same scope and name space.
+        if existing_scope == current_scope && (!existing_has_linkage || !new_has_linkage) {
+            self.report_error(SemanticError::Redefinition {
+                name,
+                first_def: existing_def_span,
+                span,
+            });
+            return;
+        }
+
         if !self.registry.is_compatible(existing_type_info, new_ty) {
             self.report_error(SemanticError::ConflictingTypes {
                 name: name.to_string(),
@@ -1459,12 +1496,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         existing_ty: QualType,
         existing_storage: Option<Option<StorageClass>>,
     ) {
-        // Check for linkage conflict (static followed by non-static)
+        // Check for linkage conflict
         if let Some(existing_s) = existing_storage {
             let existing_is_static = existing_s == Some(StorageClass::Static);
             let new_is_static = new_storage == Some(StorageClass::Static);
 
-            if existing_is_static && !new_is_static {
+            // C11 6.2.2p5: static followed by extern/plain is OK and inherits internal linkage.
+            // extern/plain followed by static is an error.
+            if !existing_is_static && new_is_static {
                 self.report_error(SemanticError::ConflictingLinkage {
                     name: name.to_string(),
                     span,
@@ -1581,22 +1620,30 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         for (i, param) in parameters.iter().enumerate() {
-            if let Some(pname) = param.name
-                && let Ok(sym) = self
+            if let Some(pname) = param.name {
+                // Check if parameter name conflicts with something already in scope (like __func__)
+                self.check_redeclaration_compatibility(pname, param.param_type, span, None);
+
+                if let Ok(sym) = self
                     .symbol_table
                     .define_variable(pname, param.param_type, None, None, None, span)
-            {
-                let param_ref = param_dummies[i];
-                self.ast.kinds[param_ref.index()] = NodeKind::Param(ParamData {
-                    symbol: sym,
-                    ty: param.param_type,
-                });
+                {
+                    let param_ref = param_dummies[i];
+                    self.ast.kinds[param_ref.index()] = NodeKind::Param(ParamData {
+                        symbol: sym,
+                        ty: param.param_type,
+                    });
+                }
             }
         }
 
         let param_start = if param_len > 0 { param_dummies[0] } else { NodeRef::ROOT };
 
+        // Signal the body block (if it's a compound statement) to reuse the current scope
+        self.next_compound_uses_scope = Some(scope_id);
         let body_node = self.lower_single_statement(func_def.body);
+        // Ensure it's cleared even if it wasn't a compound statement
+        self.next_compound_uses_scope = None;
 
         self.symbol_table.pop_scope();
 

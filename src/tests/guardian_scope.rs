@@ -1,5 +1,5 @@
-use crate::driver::artifact::CompilePhase;
 use super::semantic_common::run_fail_with_message;
+use crate::driver::artifact::CompilePhase;
 use crate::tests::test_utils;
 
 #[test]
@@ -33,18 +33,15 @@ fn test_function_scope_and_linkage_invariants() {
     );
 
     // 5. Allows shadowing in nested blocks
-    let (_, result) = test_utils::run_pipeline(
-        r#"void f(int x) { { float x = 1.0; } }"#,
-        CompilePhase::Mir
-    );
+    let (_, result) = test_utils::run_pipeline(r#"void f(int x) { { float x = 1.0; } }"#, CompilePhase::Mir);
     assert!(result.is_ok(), "Shadowing in nested block should be allowed");
 
     // 6. Correctly handles linkage inheritance (extern after static is OK)
-    let (_, result) = test_utils::run_pipeline(
-        r#"static void f(void); extern void f(void) {}"#,
-        CompilePhase::Mir
+    let (_, result) = test_utils::run_pipeline(r#"static void f(void); extern void f(void) {}"#, CompilePhase::Mir);
+    assert!(
+        result.is_ok(),
+        "extern after static should be allowed and inherit linkage"
     );
-    assert!(result.is_ok(), "extern after static should be allowed and inherit linkage");
 
     // 7. Rejects linkage conflict (static after extern)
     run_fail_with_message(

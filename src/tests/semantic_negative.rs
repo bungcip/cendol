@@ -318,7 +318,6 @@ fn test_extern_init_block_scope() {
     );
 }
 
-
 // J. Advanced / Compiler-grade features
 #[test]
 fn test_sizeof_function_type() {

@@ -1106,11 +1106,7 @@ fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
             let pname = param.declarator.as_ref().and_then(extract_name);
             if let Some(name) = pname {
                 if let Some(&first_def) = seen_names.get(&name) {
-                    ctx.report_error(SemanticError::Redefinition {
-                        name,
-                        first_def,
-                        span,
-                    });
+                    ctx.report_error(SemanticError::Redefinition { name, first_def, span });
                 } else {
                     seen_names.insert(name, span);
                 }
@@ -1628,7 +1624,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 // Check if parameter name conflicts with something already in scope (like __func__)
                 self.check_redeclaration_compatibility(pname, param.param_type, span, None);
 
-                if let Ok(sym) = self.symbol_table.define_variable(pname, param.param_type, None, None, None, span) {
+                if let Ok(sym) = self
+                    .symbol_table
+                    .define_variable(pname, param.param_type, None, None, None, span)
+                {
                     let param_ref = param_dummies[i];
                     self.ast.kinds[param_ref.index()] = NodeKind::Param(ParamData {
                         symbol: sym,

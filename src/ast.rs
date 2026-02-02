@@ -24,6 +24,7 @@ use std::num::NonZeroU32;
 /// Represents an interned string using symbol_table crate.
 /// Alias for GlobalSymbol from symbol_table crate with global feature.
 pub type NameId = symbol_table::GlobalSymbol;
+pub type StringId = NameId;
 
 use crate::semantic::{QualType, ScopeId, SemanticInfo, SymbolRef, TypeRef, ValueCategory};
 pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};

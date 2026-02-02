@@ -1544,7 +1544,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let name_len = func_name_str.len();
 
             // Create string literal for initializer
-            let func_name_id = crate::intern::StringId::new(&func_name_str);
+            let func_name_id = crate::ast::StringId::new(&func_name_str);
             let init_literal = literal::Literal::String(func_name_id);
             let init_node = self.push_dummy(span);
             self.ast.kinds[init_node.index()] = NodeKind::Literal(init_literal);
@@ -1558,7 +1558,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let _ = self.registry.ensure_layout(array_type);
 
             // Define __func__
-            let func_id = crate::intern::StringId::new("__func__");
+            let func_id = crate::ast::StringId::new("__func__");
             let storage = Some(StorageClass::Static);
 
             // We define it in the current scope (function body).

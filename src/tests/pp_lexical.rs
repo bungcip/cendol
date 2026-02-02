@@ -1,4 +1,4 @@
-use crate::intern::StringId;
+use crate::ast::StringId;
 use crate::lang_options::LangOptions;
 use crate::pp::PPConfig;
 use crate::pp::{PPTokenFlags, PPTokenKind};

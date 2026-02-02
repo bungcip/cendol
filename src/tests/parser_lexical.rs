@@ -1,6 +1,6 @@
+use crate::ast::StringId;
 use crate::ast::literal_parsing;
 use crate::driver::artifact::CompilePhase;
-use crate::intern::StringId;
 use crate::parser::{TokenKind, lexer};
 use crate::tests::test_utils;
 

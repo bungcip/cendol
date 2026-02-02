@@ -1,3 +1,4 @@
+use crate::ast::literal_parsing;
 use crate::driver::artifact::CompilePhase;
 use crate::intern::StringId;
 use crate::parser::{TokenKind, lexer};
@@ -311,4 +312,81 @@ fn test_string_escapes_edge_cases() {
             panic!("Expected StringLiteral for input: {}", input);
         }
     }
+}
+
+#[test]
+fn test_literal_parsing_edge_cases() {
+    // Test parse_c11_integer_literal edge cases
+    assert!(
+        literal_parsing::parse_c11_integer_literal("0x").is_none(),
+        "0x should fail"
+    );
+    assert!(
+        literal_parsing::parse_c11_integer_literal("u").is_none(),
+        "Suffix only should fail"
+    );
+
+    // Test parse_c11_float_literal edge cases
+    assert!(
+        literal_parsing::parse_c11_float_literal("").is_none(),
+        "Empty string should fail"
+    );
+    assert!(
+        literal_parsing::parse_c11_float_literal("0x").is_none(),
+        "Hex prefix only should fail"
+    );
+    assert!(
+        literal_parsing::parse_c11_float_literal("0x.").is_none(),
+        "Hex prefix with dot should fail"
+    );
+    assert!(
+        literal_parsing::parse_c11_float_literal("0x..p0").is_none(),
+        "Hex float with double dot should fail"
+    );
+    assert!(
+        literal_parsing::parse_c11_float_literal("0x1G").is_none(),
+        "Hex float with invalid char should fail"
+    );
+    assert!(
+        literal_parsing::parse_c11_float_literal("0x.p0").is_none(),
+        "Hex float with no digits should fail"
+    );
+    assert!(
+        literal_parsing::parse_c11_float_literal("0x1p").is_none(),
+        "Hex float missing exponent digits should fail"
+    );
+    assert!(
+        literal_parsing::parse_c11_float_literal("0x1p+").is_none(),
+        "Hex float missing exponent digits after sign should fail"
+    );
+    assert!(
+        literal_parsing::parse_c11_float_literal("0x1p+A").is_none(),
+        "Hex float exponent cut by non-digit should fail"
+    );
+
+    // Test parse_char_literal edge cases
+    assert!(
+        literal_parsing::parse_char_literal("").is_none(),
+        "Empty char literal should fail"
+    );
+
+    // Test unescape_string edge cases
+    // Short octal escape
+    assert_eq!(
+        literal_parsing::unescape_string("\\1"),
+        "\x01",
+        "Short octal escape failed"
+    );
+    // Octal escape cut by non-octal digit
+    assert_eq!(
+        literal_parsing::unescape_string("\\19"),
+        "\x019",
+        "Octal escape cut by non-octal failed"
+    );
+    // Hex escape cut by non-hex digit
+    assert_eq!(
+        literal_parsing::unescape_string("\\x1G"),
+        "\x01G",
+        "Hex escape cut by non-hex failed"
+    );
 }

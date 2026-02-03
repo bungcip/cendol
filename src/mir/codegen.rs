@@ -2478,7 +2478,8 @@ impl MirToCraneliftLowerer {
         self.emit_kind = emit_kind;
 
         // Pass 1: Declare all global variables
-        for (global_id, global) in &self.mir.globals {
+        for &global_id in &self.mir.module.globals {
+            let global = self.mir.globals.get(&global_id).unwrap();
             let linkage = if global.initial_value.is_some() {
                 Linkage::Export
             } else {
@@ -2490,11 +2491,12 @@ impl MirToCraneliftLowerer {
                 .declare_data(global.name.as_str(), linkage, true, false)
                 .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
 
-            self.data_id_map.insert(*global_id, data_id);
+            self.data_id_map.insert(global_id, data_id);
         }
 
         // Pass 2: Declare all functions
-        for (func_id, func) in &self.mir.functions {
+        for &func_id in &self.mir.module.functions {
+            let func = self.mir.functions.get(&func_id).unwrap();
             let linkage = convert_linkage(func.kind);
 
             // Calculate signature for declaration
@@ -2506,13 +2508,14 @@ impl MirToCraneliftLowerer {
                 .declare_function(func.name.as_str(), linkage, &sig)
                 .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
 
-            self.func_id_map.insert(*func_id, clif_func_id);
+            self.func_id_map.insert(func_id, clif_func_id);
         }
 
         // Pass 3: Define Global Variables (with relocations)
-        for (global_id, global) in &self.mir.globals {
+        for &global_id in &self.mir.module.globals {
+            let global = self.mir.globals.get(&global_id).unwrap();
             if let Some(const_id) = global.initial_value {
-                let data_id = *self.data_id_map.get(global_id).unwrap();
+                let data_id = *self.data_id_map.get(&global_id).unwrap();
                 let mut data_description = DataDescription::new();
                 let mut initial_value_bytes = Vec::new();
                 // Enable relocations by passing data_description and maps

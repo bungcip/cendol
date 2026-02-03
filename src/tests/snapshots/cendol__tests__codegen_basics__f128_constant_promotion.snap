@@ -1,0 +1,17 @@
+---
+source: src/tests/codegen_basics.rs
+assertion_line: 221
+expression: clif_ir
+---
+; Function: main
+function u0:0() system_v {
+    ss0 = explicit_slot 16
+    gv0 = symbol colocated userextname0
+
+block0:
+    v0 = symbol_value.i64 gv0
+    v1 = load.f128 readonly v0
+    v2 = stack_addr.i64 ss0
+    store notrap v1, v2
+    return
+}

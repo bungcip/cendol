@@ -1,0 +1,15 @@
+---
+source: src/tests/codegen_calls.rs
+assertion_line: 136
+expression: clif_ir
+---
+; Function: target
+function u0:0(i32) -> i32 system_v {
+    ss0 = explicit_slot 4
+
+block0(v0: i32):
+    v2 = stack_addr.i64 ss0
+    store notrap v0, v2
+    v1 = iconst.i32 0
+    return v1  ; v1 = 0
+}

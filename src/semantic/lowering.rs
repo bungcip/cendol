@@ -1428,9 +1428,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         new_ty: QualType,
         span: SourceSpan,
         storage: Option<StorageClass>,
-    ) {
+    ) -> QualType {
         let Some((existing_ref, existing_scope)) = self.symbol_table.lookup_symbol(name) else {
-            return;
+            return new_ty;
         };
 
         let current_scope = self.symbol_table.current_scope();
@@ -1450,7 +1450,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let is_conflict = (existing_scope == current_scope) || (new_has_linkage && existing_has_linkage);
 
         if !is_conflict {
-            return;
+            return new_ty;
         }
 
         // C11 6.7p3: If an identifier has no linkage, there shall be no more than one declaration
@@ -1461,17 +1461,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 first_def: existing_def_span,
                 span,
             });
-            return;
+            return new_ty;
         }
 
-        if !self.registry.is_compatible(existing_type_info, new_ty) {
+        let composite = self.registry.composite_type(existing_type_info, new_ty);
+        if composite.is_none() {
             self.report_error(SemanticError::ConflictingTypes {
                 name: name.to_string(),
                 span,
                 first_def: existing_def_span,
             });
-            return;
+            return new_ty;
         }
+        let composite = composite.unwrap();
+
+        // Update the existing symbol's type with the composite type
+        let existing_mut = self.symbol_table.get_symbol_mut(existing_ref);
+        existing_mut.type_info = composite;
 
         if new_ty.is_function() {
             self.check_function_redeclaration(
@@ -1484,6 +1490,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 existing_storage_if_func,
             );
         }
+
+        composite
     }
 
     fn check_function_redeclaration(
@@ -1540,10 +1548,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
         base_ty = self.merge_qualifiers_with_check(base_ty, spec_info.qualifiers, span);
 
-        let final_ty = apply_declarator(base_ty, &func_def.declarator, self, span, &spec_info);
+        let mut final_ty = apply_declarator(base_ty, &func_def.declarator, self, span, &spec_info);
         let func_name = extract_name(&func_def.declarator).expect("Function definition must have a name");
 
-        self.check_redeclaration_compatibility(func_name, final_ty, span, spec_info.storage);
+        final_ty = self.check_redeclaration_compatibility(func_name, final_ty, span, spec_info.storage);
 
         // Check for _Noreturn on existing declarations
         let existing_symbol_is_noreturn = if let Some((existing_ref, _)) = self.symbol_table.lookup_symbol(func_name) {
@@ -1848,6 +1856,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         spec_info: &DeclSpecInfo,
         span: SourceSpan,
     ) {
+        let final_ty = self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
         let func_decl = FunctionDeclData {
             name,
             ty: final_ty.ty(),
@@ -1855,7 +1864,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             body: None,
             scope_id: self.symbol_table.current_scope(),
         };
-        self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
 
         if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) = self
             .symbol_table
@@ -1891,6 +1899,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
         }
 
+        final_ty = self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
         let var_decl = VarDeclData {
             name,
             ty: final_ty,
@@ -1898,7 +1907,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             init: init_expr,
             alignment: spec_info.alignment.map(|a| a as u16),
         };
-        self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
 
         if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
             self.symbol_table

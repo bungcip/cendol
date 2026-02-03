@@ -27,29 +27,18 @@ impl<'a> AstToMirLowerer<'a> {
 
         let mir_ty = self.lower_qual_type(ty);
 
-        // Attempt constant folding for arithmetic/logical operations that are not simple literals
-        if matches!(
-            node_kind,
-            NodeKind::BinaryOp(..) | NodeKind::UnaryOp(..) | NodeKind::TernaryOp(..)
-        ) {
-            let ctx = ConstEvalCtx {
-                ast: self.ast,
-                symbol_table: self.symbol_table,
-                registry: self.registry,
-                semantic_info: None,
-            };
-            if let Some(val) = eval_const_expr(&ctx, expr_ref) {
-                let ty_id = self.lower_qual_type(ty);
-                return Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val)));
-            }
+        if let Some(const_op) = self.try_constant_fold(expr_ref, &node_kind, ty) {
+            return const_op;
         }
 
         match &node_kind {
             NodeKind::Literal(_) => self.lower_literal(&node_kind, ty).expect("Failed to lower literal"),
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(*symbol_ref),
             NodeKind::UnaryOp(op, operand_ref) => self.lower_unary_op_expr(op, *operand_ref, mir_ty),
-            NodeKind::PostIncrement(operand_ref) => self.lower_post_incdec(*operand_ref, true, need_value),
-            NodeKind::PostDecrement(operand_ref) => self.lower_post_incdec(*operand_ref, false, need_value),
+            NodeKind::PostIncrement(operand_ref) => self.lower_inc_dec_expression(*operand_ref, true, true, need_value),
+            NodeKind::PostDecrement(operand_ref) => {
+                self.lower_inc_dec_expression(*operand_ref, false, true, need_value)
+            }
             NodeKind::BinaryOp(op, left_ref, right_ref) => self.lower_binary_op_expr(op, *left_ref, *right_ref, mir_ty),
             NodeKind::Assignment(op, left_ref, right_ref) => {
                 self.lower_assignment_expr(expr_ref, op, *left_ref, *right_ref, mir_ty)
@@ -67,7 +56,6 @@ impl<'a> AstToMirLowerer<'a> {
                 if need_value {
                     Operand::Copy(Box::new(temp_place.unwrap()))
                 } else {
-                    // dummy
                     self.create_dummy_operand()
                 }
             }
@@ -102,11 +90,30 @@ impl<'a> AstToMirLowerer<'a> {
                 self.lower_builtin_void(&node_kind)
             }
             NodeKind::InitializerList(_) | NodeKind::InitializerItem(_) => {
-                // Should be lowered in context of assignment usually.
                 panic!("InitializerList or InitializerItem not implemented");
             }
             _ => unreachable!(),
         }
+    }
+
+    fn try_constant_fold(&mut self, expr_ref: NodeRef, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
+        // Attempt constant folding for arithmetic/logical operations that are not simple literals
+        if matches!(
+            node_kind,
+            NodeKind::BinaryOp(..) | NodeKind::UnaryOp(..) | NodeKind::TernaryOp(..)
+        ) {
+            let ctx = ConstEvalCtx {
+                ast: self.ast,
+                symbol_table: self.symbol_table,
+                registry: self.registry,
+                semantic_info: None,
+            };
+            if let Some(val) = eval_const_expr(&ctx, expr_ref) {
+                let ty_id = self.lower_qual_type(ty);
+                return Some(Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val))));
+            }
+        }
+        None
     }
 
     pub(crate) fn lower_gnu_statement_expression(
@@ -248,7 +255,10 @@ impl<'a> AstToMirLowerer<'a> {
 
     pub(crate) fn lower_unary_op_expr(&mut self, op: &UnaryOp, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
         match op {
-            UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.lower_pre_incdec(op, operand_ref),
+            UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
+                let is_inc = matches!(op, UnaryOp::PreIncrement);
+                self.lower_inc_dec_expression(operand_ref, is_inc, false, true)
+            }
             UnaryOp::AddrOf => self.lower_unary_addrof(operand_ref),
             UnaryOp::Deref => self.lower_unary_deref(operand_ref),
             UnaryOp::Plus => {
@@ -390,35 +400,67 @@ impl<'a> AstToMirLowerer<'a> {
         let lhs = self.lower_expression(left_ref, true);
         let rhs = self.lower_expression(right_ref, true);
 
-        // Handle pointer arithmetic
+        // Check types for correct MIR op
+        // For Comma operator, we just evaluate LHS for side effects and return RHS
+        if matches!(op, BinaryOp::Comma) {
+            // Apply conversions for RHS to match result type (comma result type is RHS type)
+            let rhs_converted = self.apply_conversions(rhs, right_ref, mir_ty);
+            return self.ensure_explicit_cast(rhs_converted, right_ref);
+        }
 
+        let (rval, _op_ty) = self.lower_binary_arithmetic_logic(op, lhs, rhs, left_ref, right_ref, mir_ty);
+        self.emit_rvalue_to_operand(rval, mir_ty)
+    }
+
+    fn lower_binary_arithmetic_logic(
+        &mut self,
+        op: &BinaryOp,
+        lhs: Operand,
+        rhs: Operand,
+        left_ref: NodeRef,
+        right_ref: NodeRef,
+        context_ty: TypeId,
+    ) -> (Rvalue, TypeId) {
+        // Handle pointer arithmetic
         if let Some(rval) = self.lower_pointer_arithmetic(op, lhs.clone(), rhs.clone(), left_ref, right_ref) {
-            return self.emit_rvalue_to_operand(rval, mir_ty);
+            let res_ty = match &rval {
+                Rvalue::PtrAdd(base, _) | Rvalue::PtrSub(base, _) => self.get_operand_type(base),
+                Rvalue::PtrDiff(..) => self.lower_type(self.registry.type_long),
+                _ => unreachable!(),
+            };
+            return (rval, res_ty);
         }
 
         // Apply implicit conversions from semantic info first to match AST
-        let lhs_converted = self.apply_conversions(lhs, left_ref, mir_ty);
-        let rhs_converted = self.apply_conversions(rhs, right_ref, mir_ty);
+        let lhs_converted = self.apply_conversions(lhs, left_ref, context_ty);
+        let rhs_converted = self.apply_conversions(rhs, right_ref, context_ty);
 
         // Ensure both operands have the same type for MIR operations.
         let lhs_mir_ty = self.get_operand_type(&lhs_converted);
         let rhs_mir_ty = self.get_operand_type(&rhs_converted);
 
-        let (lhs_converted, rhs_converted) =
+        let (lhs_unified, rhs_unified) =
             self.unify_binary_operands(lhs_converted, rhs_converted, lhs_mir_ty, rhs_mir_ty);
 
-        let lhs_final = self.ensure_explicit_cast(lhs_converted, left_ref);
-        let rhs_final = self.ensure_explicit_cast(rhs_converted, right_ref);
+        let lhs_final = self.ensure_explicit_cast(lhs_unified, left_ref);
+        let rhs_final = self.ensure_explicit_cast(rhs_unified, right_ref);
 
-        // Check types for correct MIR op
-        let lhs_mir = self.mir_builder.get_type(lhs_mir_ty);
+        let common_ty = self.get_operand_type(&lhs_final);
 
-        if matches!(op, BinaryOp::Comma) {
-            return rhs_final;
-        }
+        let common_mir_type = self.mir_builder.get_type(common_ty);
+        let rval = mir_ops::emit_binary_rvalue(op, lhs_final, rhs_final, common_mir_type.is_float());
 
-        let rval = mir_ops::emit_binary_rvalue(op, lhs_final, rhs_final, lhs_mir.is_float());
-        self.emit_rvalue_to_operand(rval, mir_ty)
+        let result_ty = match op {
+            BinaryOp::Equal
+            | BinaryOp::NotEqual
+            | BinaryOp::Less
+            | BinaryOp::LessEqual
+            | BinaryOp::Greater
+            | BinaryOp::GreaterEqual => self.get_int_type(),
+            _ => common_ty,
+        };
+
+        (rval, result_ty)
     }
 
     pub(crate) fn ensure_explicit_cast(&mut self, operand: Operand, node_ref: NodeRef) -> Operand {
@@ -615,26 +657,10 @@ impl<'a> AstToMirLowerer<'a> {
         // Use the already-evaluated place to read the current value.
         let lhs_copy = Operand::Copy(Box::new(place));
 
-        if let Some(rval) =
-            self.lower_pointer_arithmetic(&compound_op, lhs_copy.clone(), rhs_op.clone(), left_ref, right_ref)
-        {
-            self.emit_rvalue_to_operand(rval, mir_ty)
-        } else {
-            let lhs_converted_for_op = self.apply_conversions(lhs_copy, left_ref, mir_ty);
-            let rhs_converted_for_op = self.apply_conversions(rhs_op, right_ref, mir_ty);
-
-            let lhs_ty_for_op = self.get_operand_type(&lhs_converted_for_op);
-            let mir_type_info = self.mir_builder.get_type(lhs_ty_for_op);
-
-            let rval = mir_ops::emit_binary_rvalue(
-                &compound_op,
-                lhs_converted_for_op,
-                rhs_converted_for_op,
-                mir_type_info.is_float(),
-            );
-            let result_of_op = self.emit_rvalue_to_operand(rval, lhs_ty_for_op);
-            self.apply_conversions(result_of_op, node_ref, mir_ty)
-        }
+        let (rval, op_ty) =
+            self.lower_binary_arithmetic_logic(&compound_op, lhs_copy, rhs_op, left_ref, right_ref, mir_ty);
+        let result_op = self.emit_rvalue_to_operand(rval, op_ty);
+        self.apply_conversions(result_op, node_ref, mir_ty)
     }
 
     pub(crate) fn lower_function_call(&mut self, call_expr: &ast::nodes::CallExpr, dest_place: Option<Place>) {
@@ -783,7 +809,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    pub(crate) fn lower_inc_dec_common(
+    pub(crate) fn lower_inc_dec_expression(
         &mut self,
         operand_ref: NodeRef,
         is_inc: bool,
@@ -863,15 +889,6 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    pub(crate) fn lower_pre_incdec(&mut self, op: &UnaryOp, lhs_ref: NodeRef) -> Operand {
-        let is_inc = matches!(op, UnaryOp::PreIncrement);
-        self.lower_inc_dec_common(lhs_ref, is_inc, false, true)
-    }
-
-    pub(crate) fn lower_post_incdec(&mut self, operand_ref: NodeRef, is_inc: bool, need_value: bool) -> Operand {
-        self.lower_inc_dec_common(operand_ref, is_inc, true, need_value)
-    }
-
     pub(crate) fn lower_builtin_va_arg(&mut self, ty: QualType, expr_ref: NodeRef) -> Operand {
         let ap = self.lower_expression_as_place(expr_ref);
         let mir_ty = self.lower_qual_type(ty);
@@ -908,27 +925,27 @@ impl<'a> AstToMirLowerer<'a> {
         args_len: u16,
         mir_ty: TypeId,
     ) -> Operand {
-        let args: Vec<NodeRef> = args_start.range(args_len).collect();
+        let args = self.get_atomic_args(args_start, args_len);
         let order = AtomicMemOrder::SeqCst; // Default to SeqCst for now
 
         match op {
             AtomicOp::LoadN => {
-                let ptr = self.lower_expression(args[0], true);
-                let _ = self.lower_expression(args[1], true); // ignore memorder
+                let ptr = args[0].clone();
+                // args[1] is memorder, ignored
                 let rval = Rvalue::AtomicLoad(ptr, order);
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
             AtomicOp::StoreN => {
-                let ptr = self.lower_expression(args[0], true);
-                let val = self.lower_expression(args[1], true);
-                let _ = self.lower_expression(args[2], true); // ignore memorder
+                let ptr = args[0].clone();
+                let val = args[1].clone();
+                // args[2] is memorder, ignored
                 self.mir_builder.add_statement(MirStmt::AtomicStore(ptr, val, order));
                 self.create_dummy_operand()
             }
             AtomicOp::ExchangeN => {
-                let ptr = self.lower_expression(args[0], true);
-                let val = self.lower_expression(args[1], true);
-                let _ = self.lower_expression(args[2], true); // ignore memorder
+                let ptr = args[0].clone();
+                let val = args[1].clone();
+                // args[2] is memorder, ignored
                 let rval = Rvalue::AtomicExchange(ptr, val, order);
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
@@ -939,13 +956,18 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    fn lower_atomic_cmpxchg(&mut self, args: &[NodeRef], order: AtomicMemOrder, mir_ty: TypeId) -> Operand {
-        let ptr = self.lower_expression(args[0], true);
-        let expected_ptr = self.lower_expression(args[1], true);
-        let desired = self.lower_expression(args[2], true);
-        let _ = self.lower_expression(args[3], true); // weak (side effects)
-        let _ = self.lower_expression(args[4], true); // success (side effects)
-        let _ = self.lower_expression(args[5], true); // failure (side effects)
+    fn get_atomic_args(&mut self, args_start: NodeRef, args_len: u16) -> Vec<Operand> {
+        args_start
+            .range(args_len)
+            .map(|arg_ref| self.lower_expression(arg_ref, true))
+            .collect()
+    }
+
+    fn lower_atomic_cmpxchg(&mut self, args: &[Operand], order: AtomicMemOrder, mir_ty: TypeId) -> Operand {
+        let ptr = args[0].clone();
+        let expected_ptr = args[1].clone();
+        let desired = args[2].clone();
+        // args[3] weak, args[4] success, args[5] failure (ignored side effects were handled by lowering args)
 
         let expected_place = match expected_ptr {
             Operand::Copy(p) => Place::Deref(Box::new(Operand::Copy(p))),
@@ -988,13 +1010,13 @@ impl<'a> AstToMirLowerer<'a> {
     fn lower_atomic_fetch_op(
         &mut self,
         op: AtomicOp,
-        args: &[NodeRef],
+        args: &[Operand],
         order: AtomicMemOrder,
         mir_ty: TypeId,
     ) -> Operand {
-        let ptr = self.lower_expression(args[0], true);
-        let val = self.lower_expression(args[1], true);
-        let _ = self.lower_expression(args[2], true); // ignore memorder
+        let ptr = args[0].clone();
+        let val = args[1].clone();
+        // args[2] memorder
 
         let bin_op = match op {
             AtomicOp::FetchAdd => BinaryIntOp::Add,

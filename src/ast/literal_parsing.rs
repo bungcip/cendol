@@ -14,7 +14,7 @@ const INTEGER_SUFFIXES: &[(&str, IntegerSuffix)] = &[
 ];
 
 /// Strip integer literal suffix (u, l, ll, ul, ull, etc.)
-pub fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
+fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
     for &(suffix, variant) in INTEGER_SUFFIXES {
         if text.len() >= suffix.len() && text[text.len() - suffix.len()..].eq_ignore_ascii_case(suffix) {
             return (&text[..text.len() - suffix.len()], Some(variant));
@@ -25,7 +25,7 @@ pub fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
 
 /// Parse C11 integer literal syntax
 /// Returns (value, suffix)
-pub fn parse_c11_integer_literal(text: &str) -> Option<(u64, Option<IntegerSuffix>)> {
+pub(crate) fn parse_c11_integer_literal(text: &str) -> Option<(u64, Option<IntegerSuffix>)> {
     let (number_part, suffix) = strip_integer_suffix(text);
 
     if number_part.is_empty() {
@@ -55,7 +55,7 @@ pub fn parse_c11_integer_literal(text: &str) -> Option<(u64, Option<IntegerSuffi
 }
 
 /// Parse C11 floating-point literal syntax
-pub fn parse_c11_float_literal(text: &str) -> Option<(f64, Option<FloatSuffix>)> {
+pub(crate) fn parse_c11_float_literal(text: &str) -> Option<(f64, Option<FloatSuffix>)> {
     if text.is_empty() {
         return None;
     }
@@ -165,7 +165,7 @@ fn parse_hex_float_literal(text: &str) -> Option<f64> {
 }
 
 /// Unescape C11 string literal content
-pub fn unescape_string(s: &str) -> String {
+pub(crate) fn unescape_string(s: &str) -> String {
     if !s.contains('\\') {
         return s.to_string();
     }
@@ -175,7 +175,7 @@ pub fn unescape_string(s: &str) -> String {
 }
 
 /// Unescape C11 string literal content into a buffer
-pub fn unescape_string_into(s: &str, result: &mut String) {
+pub(crate) fn unescape_string_into(s: &str, result: &mut String) {
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\\' {
@@ -287,7 +287,7 @@ fn parse_octal_escape(chars: &mut Peekable<Chars>, result: &mut String) {
 }
 
 /// Parse a character literal content (e.g. "a", "\n", "\x41") into a codepoint
-pub fn parse_char_literal(s: &str) -> Option<u32> {
+pub(crate) fn parse_char_literal(s: &str) -> Option<u32> {
     if s.is_empty() {
         return None;
     }

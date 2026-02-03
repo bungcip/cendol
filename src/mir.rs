@@ -61,7 +61,7 @@ pub struct MirModule {
 }
 
 impl MirModule {
-    pub fn new(id: MirModuleId) -> Self {
+    pub(crate) fn new(id: MirModuleId) -> Self {
         Self {
             id,
             functions: Vec::new(),
@@ -91,7 +91,7 @@ pub struct MirFunction {
 }
 
 impl MirFunction {
-    pub fn new(id: MirFunctionId, name: NameId, return_type: TypeId, kind: MirFunctionKind) -> Self {
+    pub(crate) fn new(id: MirFunctionId, name: NameId, return_type: TypeId, kind: MirFunctionKind) -> Self {
         Self {
             id,
             name,
@@ -105,11 +105,11 @@ impl MirFunction {
         }
     }
 
-    pub fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
+    pub(crate) fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
         Self::new(id, name, return_type, MirFunctionKind::Defined)
     }
 
-    pub fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
+    pub(crate) fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
         Self::new(id, name, return_type, MirFunctionKind::Extern)
     }
 }
@@ -123,7 +123,7 @@ pub struct MirBlock {
 }
 
 impl MirBlock {
-    pub fn new(id: MirBlockId) -> Self {
+    pub(crate) fn new(id: MirBlockId) -> Self {
         Self {
             id,
             statements: Vec::new(),
@@ -248,7 +248,7 @@ pub enum BinaryIntOp {
 }
 
 impl BinaryIntOp {
-    pub fn is_comparison(&self) -> bool {
+    pub(crate) fn is_comparison(&self) -> bool {
         matches!(self, Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge)
     }
 }
@@ -270,7 +270,7 @@ pub enum BinaryFloatOp {
 }
 
 impl BinaryFloatOp {
-    pub fn is_comparison(&self) -> bool {
+    pub(crate) fn is_comparison(&self) -> bool {
         matches!(self, Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge)
     }
 }
@@ -335,23 +335,23 @@ pub enum MirType {
     },
 }
 impl MirType {
-    pub fn is_signed(&self) -> bool {
+    pub(crate) fn is_signed(&self) -> bool {
         matches!(self, MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64)
     }
 
-    pub fn is_pointer(&self) -> bool {
+    pub(crate) fn is_pointer(&self) -> bool {
         matches!(self, MirType::Pointer { .. })
     }
 
-    pub fn is_float(&self) -> bool {
+    pub(crate) fn is_float(&self) -> bool {
         matches!(self, MirType::F32 | MirType::F64 | MirType::F80 | MirType::F128)
     }
 
-    pub fn is_aggregate(&self) -> bool {
+    pub(crate) fn is_aggregate(&self) -> bool {
         matches!(self, MirType::Record { .. } | MirType::Array { .. })
     }
 
-    pub fn is_int(&self) -> bool {
+    pub(crate) fn is_int(&self) -> bool {
         matches!(
             self,
             MirType::I8
@@ -366,7 +366,7 @@ impl MirType {
         )
     }
 
-    pub fn width(&self) -> u32 {
+    pub(crate) fn width(&self) -> u32 {
         match self {
             MirType::I8 | MirType::U8 | MirType::Bool => 8,
             MirType::I16 | MirType::U16 => 16,
@@ -427,7 +427,7 @@ pub struct Local {
 }
 
 impl Local {
-    pub fn new(id: LocalId, name: Option<NameId>, type_id: TypeId, is_param: bool) -> Self {
+    pub(crate) fn new(id: LocalId, name: Option<NameId>, type_id: TypeId, is_param: bool) -> Self {
         Self {
             id,
             name,
@@ -450,7 +450,7 @@ pub struct Global {
 }
 
 impl Global {
-    pub fn new(id: GlobalId, name: NameId, type_id: TypeId, is_constant: bool) -> Self {
+    pub(crate) fn new(id: GlobalId, name: NameId, type_id: TypeId, is_constant: bool) -> Self {
         Self {
             id,
             name,

@@ -24,14 +24,14 @@ pub struct LangOptions {
 }
 
 impl LangOptions {
-    pub fn c11() -> Self {
+    pub(crate) fn c11() -> Self {
         LangOptions {
             c_standard: Some(CStandard::C11),
         }
     }
 
     /// Check if C11 standard is enabled
-    pub fn is_c11(&self) -> bool {
+    pub(crate) fn is_c11(&self) -> bool {
         matches!(self.c_standard, Some(CStandard::C11))
     }
 }

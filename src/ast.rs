@@ -57,7 +57,7 @@ pub struct Ast {
 
 impl Ast {
     /// Create a new empty AST
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Ast::default()
     }
 
@@ -75,21 +75,21 @@ impl Ast {
     }
 
     /// Get node kind by reference
-    pub fn get_kind(&self, node_ref: NodeRef) -> &NodeKind {
+    pub(crate) fn get_kind(&self, node_ref: NodeRef) -> &NodeKind {
         &self.kinds[node_ref.index()]
     }
 
     /// Get node span by reference
-    pub fn get_span(&self, node_ref: NodeRef) -> SourceSpan {
+    pub(crate) fn get_span(&self, node_ref: NodeRef) -> SourceSpan {
         self.spans[node_ref.index()]
     }
 
     /// get root node ref
-    pub fn get_root(&self) -> NodeRef {
+    pub(crate) fn get_root(&self) -> NodeRef {
         NodeRef::ROOT
     }
 
-    pub fn scope_of(&self, node_ref: NodeRef) -> ScopeId {
+    pub(crate) fn scope_of(&self, node_ref: NodeRef) -> ScopeId {
         match &self.kinds[node_ref.index()] {
             NodeKind::TranslationUnit(data) => data.scope_id,
             NodeKind::Function(data) => data.scope_id,
@@ -101,7 +101,7 @@ impl Ast {
     }
 
     /// attach semantic info side table for AST (populated after type resolution)
-    pub fn attach_semantic_info(&mut self, semantic_info: SemanticInfo) {
+    pub(crate) fn attach_semantic_info(&mut self, semantic_info: SemanticInfo) {
         self.semantic_info = Some(semantic_info);
     }
 }
@@ -113,15 +113,15 @@ pub struct NodeRef(NonZeroU32);
 impl NodeRef {
     pub const ROOT: NodeRef = NodeRef(NonZeroU32::new(1).unwrap());
 
-    pub fn new(value: u32) -> Option<Self> {
+    pub(crate) fn new(value: u32) -> Option<Self> {
         NonZeroU32::new(value).map(Self)
     }
 
-    pub fn get(self) -> u32 {
+    pub(crate) fn get(self) -> u32 {
         self.0.get()
     }
 
-    pub fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         (self.get() - 1) as usize
     }
 
@@ -167,12 +167,12 @@ impl ExactSizeIterator for NodeRefRange {}
 
 impl Ast {
     /// Get the resolved type for a node (reads from attached semantic_info)
-    pub fn get_resolved_type(&self, node_ref: NodeRef) -> Option<QualType> {
+    pub(crate) fn get_resolved_type(&self, node_ref: NodeRef) -> Option<QualType> {
         self.semantic_info.as_ref()?.types[node_ref.index()]
     }
 
     /// Get the value category for a node (reads from attached semantic_info)
-    pub fn get_value_category(&self, node_ref: NodeRef) -> Option<ValueCategory> {
+    pub(crate) fn get_value_category(&self, node_ref: NodeRef) -> Option<ValueCategory> {
         self.semantic_info
             .as_ref()?
             .value_categories

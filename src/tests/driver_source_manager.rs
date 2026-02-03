@@ -517,3 +517,19 @@ fn test_source_span_merge() {
     assert_eq!(merged_diff_file.end().offset(), 20);
     assert_eq!(merged_diff_file, span1);
 }
+
+#[test]
+fn test_source_span_mixed_ids() {
+    let id1 = SourceId::new(1);
+    let id2 = SourceId::new(2);
+    let start = SourceLoc::new(id1, 10);
+    let end = SourceLoc::new(id2, 20);
+
+    // When start and end have different SourceIds, SourceSpan::new should
+    // degrade gracefully to a zero-length span at the start location
+    let span = SourceSpan::new(start, end);
+
+    assert_eq!(span.source_id(), id1);
+    assert_eq!(span.start().offset(), 10);
+    assert_eq!(span.end().offset(), 10);
+}

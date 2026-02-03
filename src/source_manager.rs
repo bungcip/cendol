@@ -422,6 +422,7 @@ impl SourceManager {
 
     /// Get the source text for a given span
     /// Since we only support UTF-8, we can assume the bytes are valid UTF-8
+    #[cfg(test)]
     pub(crate) fn get_source_text(&self, span: SourceSpan) -> &str {
         let buffer = self.get_buffer(span.source_id());
         let start = span.start().offset() as usize;

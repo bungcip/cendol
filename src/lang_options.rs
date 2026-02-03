@@ -24,12 +24,6 @@ pub struct LangOptions {
 }
 
 impl LangOptions {
-    pub(crate) fn c11() -> Self {
-        LangOptions {
-            c_standard: Some(CStandard::C11),
-        }
-    }
-
     /// Check if C11 standard is enabled
     pub(crate) fn is_c11(&self) -> bool {
         matches!(self.c_standard, Some(CStandard::C11))
@@ -42,7 +36,9 @@ mod tests {
 
     #[test]
     fn test_lang_options_c11() {
-        let options = LangOptions::c11();
+        let options = LangOptions {
+            c_standard: Some(CStandard::C11),
+        };
         assert!(options.is_c11());
         assert_eq!(options.c_standard, Some(CStandard::C11));
     }

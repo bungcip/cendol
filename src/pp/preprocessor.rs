@@ -568,8 +568,6 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    /// Convert a list of tokens to a path string
-
     /// Check if a header exists
     pub(crate) fn check_header_exists(&self, path: &str, is_angled: bool) -> bool {
         let current_dir = self
@@ -1155,14 +1153,22 @@ impl<'src> Preprocessor<'src> {
                 (path.to_string(), false)
             }
             PPTokenKind::Less => {
-                let mut path_parts = Vec::new();
-                while let Some(t) = self.lex_token() {
-                    if t.kind == PPTokenKind::Greater {
-                        break;
+                if self.pending_tokens.is_empty() {
+                    if let Some(lexer) = self.lexer_stack.last_mut() {
+                        (lexer.lex_header_name_content(), true)
+                    } else {
+                        return Err(PPError::UnexpectedEndOfFile);
                     }
-                    path_parts.push(t);
+                } else {
+                    let mut path_parts = Vec::new();
+                    while let Some(t) = self.lex_token() {
+                        if t.kind == PPTokenKind::Greater {
+                            break;
+                        }
+                        path_parts.push(t);
+                    }
+                    (self.tokens_to_string(&path_parts), true)
                 }
-                (self.tokens_to_string(&path_parts), true)
             }
             _ => {
                 // Computed include

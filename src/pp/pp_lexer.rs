@@ -1210,4 +1210,27 @@ impl PPLexer {
     pub(crate) fn take_line_starts(self) -> Vec<u32> {
         self.line_starts
     }
+
+    /// Lex the content of a header name (inside <...>)
+    /// Returns the content string.
+    /// Stops at '>' or newline.
+    pub(crate) fn lex_header_name_content(&mut self) -> String {
+        let mut text = String::new();
+        loop {
+            let ch = self.next_char();
+            match ch {
+                Some(b'>') => break,
+                Some(b'\n') => {
+                    // Newline inside header name is invalid.
+                    // We stop here. The caller will handle the error (e.g. missing >)
+                    // implicitly by trying to use the partial path or failing to find >.
+                    // But we consumed the newline, so the next token will be on the next line.
+                    break;
+                }
+                Some(c) => text.push(c as char),
+                None => break,
+            }
+        }
+        text
+    }
 }

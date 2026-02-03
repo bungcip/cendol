@@ -15,6 +15,7 @@ pub mod driver_source_manager;
 pub mod pp_common;
 pub mod pp_directives;
 pub mod pp_expressions;
+pub mod pp_header_name;
 pub mod pp_include;
 
 pub mod pp_internal;

@@ -1,0 +1,6 @@
+---
+source: src/tests/pp_header_name.rs
+expression: "(tokens, diags)"
+---
+- []
+- - "Error: Include file 'win\\path.h' not found"

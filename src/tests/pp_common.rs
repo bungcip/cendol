@@ -112,8 +112,19 @@ pub fn setup_multi_file_pp_with_diagnostics_raw(
 
     let mut preprocessor = Preprocessor::new(&mut source_manager, &mut diagnostics, &config);
 
-    let tokens = preprocessor.process(main_id, &config)?;
-    Ok((tokens, diagnostics.diagnostics().to_vec()))
+    let result = preprocessor.process(main_id, &config);
+    let diags = diagnostics.diagnostics().to_vec();
+    match result {
+        Ok(tokens) => Ok((tokens, diags)),
+        Err(e) => {
+            // Return collected diagnostics even on error
+            if !diags.is_empty() {
+                Ok((Vec::new(), diags))
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 pub struct TestLexer {

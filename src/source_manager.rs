@@ -18,7 +18,7 @@ impl std::fmt::Display for SourceId {
 
 impl SourceId {
     /// create a new SourceId from a u32. panics if id is zero.
-    pub fn new(id: u32) -> Self {
+    pub(crate) fn new(id: u32) -> Self {
         SourceId(NonZeroU32::new(id).expect("SourceId must be non-zero"))
     }
 
@@ -41,16 +41,16 @@ impl Default for SourceLoc {
 }
 
 impl SourceLoc {
-    pub fn new(source_id: SourceId, offset: u32) -> Self {
+    pub(crate) fn new(source_id: SourceId, offset: u32) -> Self {
         SourceLoc { source_id, offset }
     }
 
     /// built-in source location (SourceId = 1, offset = 0)
-    pub fn builtin() -> Self {
+    pub(crate) fn builtin() -> Self {
         SourceLoc::new(SourceId::new(1), 0)
     }
 
-    pub fn source_id(&self) -> SourceId {
+    pub(crate) fn source_id(&self) -> SourceId {
         self.source_id
     }
 
@@ -95,7 +95,7 @@ impl SourceSpan {
     const MAX_LENGTH: u32 = Self::LENGTH_MASK as u32;
     const MAX_SOURCE_ID: u32 = Self::SOURCE_ID_MASK as u32;
 
-    pub fn new(start: SourceLoc, end: SourceLoc) -> Self {
+    pub(crate) fn new(start: SourceLoc, end: SourceLoc) -> Self {
         if start.source_id != end.source_id {
             // Panic removed: When start and end are in different files (e.g. usage of macro vs macro expansion),
             // we cannot represent the span correctly in our packed format.
@@ -107,7 +107,7 @@ impl SourceSpan {
         Self::new_with_length(start.source_id, start.offset, length)
     }
 
-    pub fn new_with_length(source_id: SourceId, offset: u32, length: u32) -> Self {
+    pub(crate) fn new_with_length(source_id: SourceId, offset: u32, length: u32) -> Self {
         let id = source_id.to_u32();
         assert!(id <= Self::MAX_SOURCE_ID, "SourceId exceeds 24-bit limit: {}", id);
         assert!(
@@ -121,15 +121,15 @@ impl SourceSpan {
         Self((offset as u64) | ((len as u64) << Self::LENGTH_SHIFT) | ((id as u64) << Self::SOURCE_ID_SHIFT))
     }
 
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self::new(SourceLoc::builtin(), SourceLoc::builtin())
     }
 
-    pub fn dummy() -> Self {
+    pub(crate) fn dummy() -> Self {
         Self::empty()
     }
 
-    pub fn start(&self) -> SourceLoc {
+    pub(crate) fn start(&self) -> SourceLoc {
         let offset = (self.0 & Self::OFFSET_MASK) as u32;
         SourceLoc {
             source_id: self.source_id(),
@@ -137,7 +137,7 @@ impl SourceSpan {
         }
     }
 
-    pub fn end(&self) -> SourceLoc {
+    pub(crate) fn end(&self) -> SourceLoc {
         let offset = (self.0 & Self::OFFSET_MASK) as u32;
         let length = ((self.0 >> Self::LENGTH_SHIFT) & Self::LENGTH_MASK) as u32;
         SourceLoc {
@@ -151,12 +151,12 @@ impl SourceSpan {
         SourceId::new(id)
     }
 
-    pub fn is_source_id_builtin(&self) -> bool {
+    pub(crate) fn is_source_id_builtin(&self) -> bool {
         self.source_id().to_u32() == 1
     }
 
     /// Merge two source spans into a single span covering both
-    pub fn merge(self, other: SourceSpan) -> SourceSpan {
+    pub(crate) fn merge(self, other: SourceSpan) -> SourceSpan {
         let id1 = self.source_id();
         let id2 = other.source_id();
 
@@ -200,7 +200,7 @@ pub struct LineDirective {
 }
 
 impl LineDirective {
-    pub fn new(physical_line: u32, logical_line: u32, logical_file: Option<String>) -> Self {
+    pub(crate) fn new(physical_line: u32, logical_line: u32, logical_file: Option<String>) -> Self {
         LineDirective {
             physical_line,
             logical_line,
@@ -228,12 +228,12 @@ pub struct LineMap {
 }
 
 impl LineMap {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         LineMap { entries: Vec::new() }
     }
 
     /// Add a line directive entry. Must be added in sorted order by physical_line.
-    pub fn add_entry(&mut self, entry: LineDirective) {
+    pub(crate) fn add_entry(&mut self, entry: LineDirective) {
         // Ensure monotonic addition
         if let Some(last) = self.entries.last() {
             assert!(
@@ -245,7 +245,7 @@ impl LineMap {
     }
 
     /// Find the presumed location for a given physical line
-    pub fn presumed_location(&self, physical_line: u32) -> (u32, Option<&str>) {
+    pub(crate) fn presumed_location(&self, physical_line: u32) -> (u32, Option<&str>) {
         // Binary search to find the last entry where physical_line <= target
         let idx = self.entries.partition_point(|e| e.physical_line <= physical_line);
 
@@ -295,13 +295,13 @@ impl Default for SourceManager {
 }
 
 impl SourceManager {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Add a file to the source manager from a file path
     /// Since we only support UTF-8, we can read directly as bytes and assume validity
-    pub fn add_file_from_path(
+    pub(crate) fn add_file_from_path(
         &mut self,
         path: &std::path::Path,
         include_loc: Option<SourceLoc>,
@@ -312,7 +312,7 @@ impl SourceManager {
     }
 
     /// Add a buffer to the source manager with raw bytes (UTF-8 assumed)
-    pub fn add_buffer(&mut self, buffer: Vec<u8>, path: &str, include_loc: Option<SourceLoc>) -> SourceId {
+    pub(crate) fn add_buffer(&mut self, buffer: Vec<u8>, path: &str, include_loc: Option<SourceLoc>) -> SourceId {
         let path_buf = PathBuf::from(path);
         // Standard buffers get empty line_starts initially; they are calculated/set later if needed
         self.add_file_entry(buffer, path_buf, Vec::new(), include_loc)
@@ -320,7 +320,7 @@ impl SourceManager {
 
     /// Add a virtual buffer for macro expansions (Level B support)
     /// Virtual buffers contain expanded macro text with proper sequential locations
-    pub fn add_virtual_buffer(&mut self, buffer: Vec<u8>, name: &str, include_loc: Option<SourceLoc>) -> SourceId {
+    pub(crate) fn add_virtual_buffer(&mut self, buffer: Vec<u8>, name: &str, include_loc: Option<SourceLoc>) -> SourceId {
         // Calculate line starts for the virtual buffer immediately
         let mut line_starts = vec![0];
         for (i, &byte) in buffer.iter().enumerate() {
@@ -369,7 +369,7 @@ impl SourceManager {
     /// Get the buffer for a given source ID
     /// Since SourceId is always valid (we panic if not found), we can use indexing
     /// use get_source_text to get &str from SourceSpan instead if you need text
-    pub fn get_buffer(&self, source_id: SourceId) -> &[u8] {
+    pub(crate) fn get_buffer(&self, source_id: SourceId) -> &[u8] {
         let info = match self.file_infos.get(&source_id) {
             Some(info) => info,
             None => panic!("invalid source_id {source_id}"),
@@ -378,7 +378,7 @@ impl SourceManager {
     }
 
     /// Get file info for a given source ID
-    pub fn get_file_info(&self, source_id: SourceId) -> Option<&FileInfo> {
+    pub(crate) fn get_file_info(&self, source_id: SourceId) -> Option<&FileInfo> {
         self.file_infos.get(&source_id)
     }
 
@@ -417,7 +417,7 @@ impl SourceManager {
 
     /// Get the source text for a given span
     /// Since we only support UTF-8, we can assume the bytes are valid UTF-8
-    pub fn get_source_text(&self, span: SourceSpan) -> &str {
+    pub(crate) fn get_source_text(&self, span: SourceSpan) -> &str {
         let buffer = self.get_buffer(span.source_id());
         let start = span.start().offset() as usize;
         let end = span.end().offset() as usize;
@@ -430,7 +430,7 @@ impl SourceManager {
     }
 
     /// Get line and column for a source location
-    pub fn get_line_column(&self, loc: SourceLoc) -> Option<(u32, u32)> {
+    pub(crate) fn get_line_column(&self, loc: SourceLoc) -> Option<(u32, u32)> {
         let file_info = self.get_file_info(loc.source_id())?;
         let offset = loc.offset();
 

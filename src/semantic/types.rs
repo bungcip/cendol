@@ -106,7 +106,7 @@ pub enum TypeClass {
 }
 
 impl TypeClass {
-    pub fn from_u32(v: u32) -> Self {
+    pub(crate) fn from_u32(v: u32) -> Self {
         match v {
             0 => Self::Builtin,
             1 => Self::Pointer,
@@ -145,7 +145,7 @@ pub enum BuiltinType {
 }
 
 impl BuiltinType {
-    pub fn from_u32(v: u32) -> Option<Self> {
+    pub(crate) fn from_u32(v: u32) -> Option<Self> {
         match v {
             1 => Some(Self::Void),
             2 => Some(Self::Bool),
@@ -170,7 +170,7 @@ impl BuiltinType {
         }
     }
 
-    pub fn is_integer(self) -> bool {
+    pub(crate) fn is_integer(self) -> bool {
         matches!(
             self,
             Self::Bool
@@ -189,11 +189,11 @@ impl BuiltinType {
         )
     }
 
-    pub fn is_floating(self) -> bool {
+    pub(crate) fn is_floating(self) -> bool {
         matches!(self, Self::Float | Self::Double | Self::LongDouble)
     }
 
-    pub fn is_signed(self) -> bool {
+    pub(crate) fn is_signed(self) -> bool {
         match self {
             Self::Bool => false,
             Self::Char => true, // Assuming char is signed
@@ -212,7 +212,7 @@ impl BuiltinType {
         }
     }
 
-    pub fn rank(self) -> u8 {
+    pub(crate) fn rank(self) -> u8 {
         match self {
             Self::Bool => 1,
             Self::Char | Self::SChar | Self::UChar => 2,
@@ -254,7 +254,7 @@ impl TypeRef {
     const ARR_MASK: u32 = (1 << Self::ARR_BITS) - 1;
 
     #[inline]
-    pub fn new(base_index: u32, class: TypeClass, ptr_depth: u8, arr_len: u32) -> Option<Self> {
+    pub(crate) fn new(base_index: u32, class: TypeClass, ptr_depth: u8, arr_len: u32) -> Option<Self> {
         if base_index == 0 || base_index > Self::BASE_MASK {
             return None; // Base index must be non-zero and fit in 18 bits
         }
@@ -304,7 +304,7 @@ impl TypeRef {
 
     // Unsafe constructor for internal use / tests
     #[inline]
-    pub unsafe fn from_raw_unchecked(n: u32) -> Self {
+    pub(crate) unsafe fn from_raw_unchecked(n: u32) -> Self {
         unsafe { TypeRef(NonZeroU32::new_unchecked(n)) }
     }
 
@@ -316,27 +316,27 @@ impl TypeRef {
     }
 
     #[inline]
-    pub fn get(self) -> u32 {
+    pub(crate) fn get(self) -> u32 {
         self.raw()
     }
 
     #[inline]
-    pub fn base(self) -> u32 {
+    pub(crate) fn base(self) -> u32 {
         (self.0.get() >> Self::BASE_SHIFT) & Self::BASE_MASK
     }
 
     #[inline]
-    pub fn class(self) -> TypeClass {
+    pub(crate) fn class(self) -> TypeClass {
         TypeClass::from_u32((self.0.get() >> Self::CLASS_SHIFT) & Self::CLASS_MASK)
     }
 
     #[inline]
-    pub fn pointer_depth(self) -> u8 {
+    pub(crate) fn pointer_depth(self) -> u8 {
         ((self.0.get() >> Self::PTR_SHIFT) & Self::PTR_MASK) as u8
     }
 
     #[inline]
-    pub fn array_len(self) -> Option<u32> {
+    pub(crate) fn array_len(self) -> Option<u32> {
         let val = (self.0.get() >> Self::ARR_SHIFT) & Self::ARR_MASK;
         if val == 0 { None } else { Some(val) }
     }
@@ -347,27 +347,27 @@ impl TypeRef {
     }
 
     #[inline]
-    pub fn is_pointer(self) -> bool {
+    pub(crate) fn is_pointer(self) -> bool {
         self.class() == TypeClass::Pointer
     }
 
     #[inline]
-    pub fn is_array(self) -> bool {
+    pub(crate) fn is_array(self) -> bool {
         self.class() == TypeClass::Array
     }
 
     #[inline]
-    pub fn is_function(self) -> bool {
+    pub(crate) fn is_function(self) -> bool {
         self.class() == TypeClass::Function
     }
 
     #[inline]
-    pub fn is_record(self) -> bool {
+    pub(crate) fn is_record(self) -> bool {
         self.class() == TypeClass::Record
     }
 
     #[inline]
-    pub fn is_enum(self) -> bool {
+    pub(crate) fn is_enum(self) -> bool {
         self.class() == TypeClass::Enum
     }
 
@@ -385,7 +385,7 @@ impl TypeRef {
     // --- Legacy/Compat helpers ---
 
     #[inline]
-    pub fn builtin(self) -> Option<BuiltinType> {
+    pub(crate) fn builtin(self) -> Option<BuiltinType> {
         if self.is_builtin() {
             BuiltinType::from_u32(self.base())
         } else {
@@ -394,12 +394,12 @@ impl TypeRef {
     }
 
     #[inline]
-    pub fn raw(self) -> u32 {
+    pub(crate) fn raw(self) -> u32 {
         self.0.get()
     }
 
     #[inline]
-    pub fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         // Compatibility: returns base as index.
         // For inline types, this returns the index of the base type.
         // For registry types, this returns the registry index.
@@ -407,27 +407,27 @@ impl TypeRef {
     }
 
     #[inline]
-    pub fn is_void(self) -> bool {
+    pub(crate) fn is_void(self) -> bool {
         matches!(self.builtin(), Some(BuiltinType::Void))
     }
 
     #[inline]
-    pub fn is_integer(self) -> bool {
+    pub(crate) fn is_integer(self) -> bool {
         self.is_enum() || self.builtin().is_some_and(|b| b.is_integer())
     }
 
     #[inline]
-    pub fn is_floating(self) -> bool {
+    pub(crate) fn is_floating(self) -> bool {
         self.builtin().is_some_and(|b| b.is_floating())
     }
 
     #[inline]
-    pub fn is_arithmetic(self) -> bool {
+    pub(crate) fn is_arithmetic(self) -> bool {
         self.is_integer() || self.is_floating()
     }
 
     #[inline]
-    pub fn is_scalar(self) -> bool {
+    pub(crate) fn is_scalar(self) -> bool {
         self.is_arithmetic() || self.is_pointer()
     }
 }
@@ -469,7 +469,7 @@ impl QualType {
     const TY_MASK: u32 = (1 << Self::QUAL_SHIFT) - 1;
 
     #[inline]
-    pub fn new(ty: TypeRef, quals: TypeQualifiers) -> Self {
+    pub(crate) fn new(ty: TypeRef, quals: TypeQualifiers) -> Self {
         debug_assert!(quals.bits() < (1 << Self::QUAL_BITS));
         debug_assert!(ty.raw() <= Self::TY_MASK);
 
@@ -477,55 +477,55 @@ impl QualType {
     }
 
     #[inline]
-    pub fn unqualified(ty: TypeRef) -> Self {
+    pub(crate) fn unqualified(ty: TypeRef) -> Self {
         Self::new(ty, TypeQualifiers::empty())
     }
 
     #[inline]
-    pub fn ty(self) -> TypeRef {
+    pub(crate) fn ty(self) -> TypeRef {
         unsafe { TypeRef::from_raw_unchecked(self.0 & Self::TY_MASK) }
     }
 
     #[inline]
-    pub fn qualifiers(self) -> TypeQualifiers {
+    pub(crate) fn qualifiers(self) -> TypeQualifiers {
         TypeQualifiers::from_bits_truncate((self.0 >> Self::QUAL_SHIFT) as u8)
     }
 
     #[inline]
-    pub fn is_const(self) -> bool {
+    pub(crate) fn is_const(self) -> bool {
         self.qualifiers().contains(TypeQualifiers::CONST)
     }
 
     #[inline]
-    pub fn is_pointer(self) -> bool {
+    pub(crate) fn is_pointer(self) -> bool {
         self.ty().is_pointer()
     }
     #[inline]
-    pub fn is_array(self) -> bool {
+    pub(crate) fn is_array(self) -> bool {
         self.ty().is_array()
     }
     #[inline]
-    pub fn is_function(self) -> bool {
+    pub(crate) fn is_function(self) -> bool {
         self.ty().is_function()
     }
     #[inline]
-    pub fn is_record(self) -> bool {
+    pub(crate) fn is_record(self) -> bool {
         self.ty().is_record()
     }
     #[inline]
-    pub fn is_void(self) -> bool {
+    pub(crate) fn is_void(self) -> bool {
         self.ty().is_void()
     }
     #[inline]
-    pub fn is_integer(self) -> bool {
+    pub(crate) fn is_integer(self) -> bool {
         self.ty().is_integer()
     }
     #[inline]
-    pub fn is_arithmetic(self) -> bool {
+    pub(crate) fn is_arithmetic(self) -> bool {
         self.ty().is_arithmetic()
     }
     #[inline]
-    pub fn is_scalar(self) -> bool {
+    pub(crate) fn is_scalar(self) -> bool {
         self.ty().is_scalar()
     }
 }
@@ -579,7 +579,7 @@ pub enum TypeKind {
 }
 
 impl TypeKind {
-    pub fn to_class(&self) -> TypeClass {
+    pub(crate) fn to_class(&self) -> TypeClass {
         match self {
             TypeKind::Builtin(_) | TypeKind::Error => TypeClass::Builtin,
             TypeKind::Complex { .. } => TypeClass::Record, // Treat complex as Record for now in terms of class, or fallthrough

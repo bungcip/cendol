@@ -46,7 +46,7 @@ pub enum ParseError {
 }
 
 impl ParseError {
-    pub fn span(&self) -> SourceSpan {
+    pub(crate) fn span(&self) -> SourceSpan {
         match self {
             ParseError::UnexpectedToken { span, .. } => *span,
             ParseError::UnexpectedEof { span } => *span,
@@ -377,7 +377,7 @@ pub enum SemanticError {
 }
 
 impl SemanticError {
-    pub fn span(&self) -> SourceSpan {
+    pub(crate) fn span(&self) -> SourceSpan {
         match self {
             SemanticError::VariableOfVoidType { span } => *span,
             SemanticError::CalledNonFunctionType { span, .. } => *span,

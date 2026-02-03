@@ -36,7 +36,9 @@ impl<'a> AstToMirLowerer<'a> {
             NodeKind::Ident(_, symbol_ref) => self.lower_ident(*symbol_ref),
             NodeKind::UnaryOp(op, operand_ref) => self.lower_unary_op_expr(op, *operand_ref, mir_ty),
             NodeKind::PostIncrement(operand_ref) => self.lower_inc_dec_expression(*operand_ref, true, true, need_value),
-            NodeKind::PostDecrement(operand_ref) => self.lower_inc_dec_expression(*operand_ref, false, true, need_value),
+            NodeKind::PostDecrement(operand_ref) => {
+                self.lower_inc_dec_expression(*operand_ref, false, true, need_value)
+            }
             NodeKind::BinaryOp(op, left_ref, right_ref) => self.lower_binary_op_expr(op, *left_ref, *right_ref, mir_ty),
             NodeKind::Assignment(op, left_ref, right_ref) => {
                 self.lower_assignment_expr(expr_ref, op, *left_ref, *right_ref, mir_ty)
@@ -421,12 +423,12 @@ impl<'a> AstToMirLowerer<'a> {
     ) -> (Rvalue, TypeId) {
         // Handle pointer arithmetic
         if let Some(rval) = self.lower_pointer_arithmetic(op, lhs.clone(), rhs.clone(), left_ref, right_ref) {
-             let res_ty = match &rval {
-                 Rvalue::PtrAdd(base, _) | Rvalue::PtrSub(base, _) => self.get_operand_type(base),
-                 Rvalue::PtrDiff(..) => self.lower_type(self.registry.type_long),
-                 _ => unreachable!(),
-             };
-             return (rval, res_ty);
+            let res_ty = match &rval {
+                Rvalue::PtrAdd(base, _) | Rvalue::PtrSub(base, _) => self.get_operand_type(base),
+                Rvalue::PtrDiff(..) => self.lower_type(self.registry.type_long),
+                _ => unreachable!(),
+            };
+            return (rval, res_ty);
         }
 
         // Apply implicit conversions from semantic info first to match AST
@@ -437,7 +439,8 @@ impl<'a> AstToMirLowerer<'a> {
         let lhs_mir_ty = self.get_operand_type(&lhs_converted);
         let rhs_mir_ty = self.get_operand_type(&rhs_converted);
 
-        let (lhs_unified, rhs_unified) = self.unify_binary_operands(lhs_converted, rhs_converted, lhs_mir_ty, rhs_mir_ty);
+        let (lhs_unified, rhs_unified) =
+            self.unify_binary_operands(lhs_converted, rhs_converted, lhs_mir_ty, rhs_mir_ty);
 
         let lhs_final = self.ensure_explicit_cast(lhs_unified, left_ref);
         let rhs_final = self.ensure_explicit_cast(rhs_unified, right_ref);
@@ -654,7 +657,8 @@ impl<'a> AstToMirLowerer<'a> {
         // Use the already-evaluated place to read the current value.
         let lhs_copy = Operand::Copy(Box::new(place));
 
-        let (rval, op_ty) = self.lower_binary_arithmetic_logic(&compound_op, lhs_copy, rhs_op, left_ref, right_ref, mir_ty);
+        let (rval, op_ty) =
+            self.lower_binary_arithmetic_logic(&compound_op, lhs_copy, rhs_op, left_ref, right_ref, mir_ty);
         let result_op = self.emit_rvalue_to_operand(rval, op_ty);
         self.apply_conversions(result_op, node_ref, mir_ty)
     }

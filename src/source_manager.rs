@@ -320,7 +320,12 @@ impl SourceManager {
 
     /// Add a virtual buffer for macro expansions (Level B support)
     /// Virtual buffers contain expanded macro text with proper sequential locations
-    pub(crate) fn add_virtual_buffer(&mut self, buffer: Vec<u8>, name: &str, include_loc: Option<SourceLoc>) -> SourceId {
+    pub(crate) fn add_virtual_buffer(
+        &mut self,
+        buffer: Vec<u8>,
+        name: &str,
+        include_loc: Option<SourceLoc>,
+    ) -> SourceId {
         // Calculate line starts for the virtual buffer immediately
         let mut line_starts = vec![0];
         for (i, &byte) in buffer.iter().enumerate() {

@@ -21,3 +21,35 @@ pub(crate) fn run_pipeline_to_mir(source: &str) -> PipelineOutputs {
     }
     result.unwrap()
 }
+
+pub(crate) fn sort_clif_ir(ir: &str) -> String {
+    let chunks: Vec<&str> = ir.split("\n\n").collect();
+    let mut functions = Vec::new();
+    let mut current_function = String::new();
+
+    for chunk in chunks {
+        if chunk.trim().is_empty() {
+            continue;
+        }
+
+        if chunk.starts_with("; Function:") {
+            if !current_function.is_empty() {
+                functions.push(current_function);
+            }
+            current_function = chunk.to_string();
+        } else {
+            if !current_function.is_empty() {
+                current_function.push_str("\n\n");
+                current_function.push_str(chunk);
+            } else {
+                current_function = chunk.to_string();
+            }
+        }
+    }
+    if !current_function.is_empty() {
+        functions.push(current_function);
+    }
+
+    functions.sort();
+    functions.join("\n\n")
+}

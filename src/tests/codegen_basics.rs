@@ -47,15 +47,16 @@ fn test_emit_const_struct_literal() {
     emit_const(struct_const_id, &mut output, &ctx, None, None, 0).expect("emit_const failed");
 
     // 5. Verify Output
-    let expected = vec![0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22];
-
-    assert_eq!(
-        output.len(),
-        8,
-        "Output size mismatch. Expected 8 bytes, got {}",
-        output.len()
-    );
-    assert_eq!(output, expected, "Output content mismatch");
+    insta::assert_yaml_snapshot!(output, @r"
+    - 17
+    - 17
+    - 17
+    - 17
+    - 34
+    - 34
+    - 34
+    - 34
+    ");
 }
 
 #[test]
@@ -94,11 +95,7 @@ fn test_store_statement_lowering() {
     // 7. Assert
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
-            println!("{}", clif_ir); // for debugging
-            // Check that we are calculating the stack address and then storing to it.
-            assert!(clif_ir.contains("iconst.i32 42"));
-            assert!(clif_ir.contains("stack_addr"));
-            assert!(clif_ir.contains("store"));
+            insta::assert_snapshot!(clif_ir);
         }
         Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump, got object file"),
         Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
@@ -152,13 +149,7 @@ fn test_store_deref_pointer() {
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
-            println!("{}", clif_ir);
-            // Check that we load the pointer's value (an address) from its stack slot,
-            // and then perform a general `store` to that address.
-            assert!(clif_ir.contains("load"));
-            assert!(clif_ir.contains("iconst.i32 42"));
-            // Check that a general store is used.
-            assert!(clif_ir.contains("store"));
+            insta::assert_snapshot!(clif_ir);
         }
         Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump, got object file"),
         Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
@@ -178,13 +169,7 @@ fn test_boolean_logic_lowering() {
         "#;
     // Verify it compiles without crashing
     let clif_dump = setup_cranelift(source);
-    println!("{}", clif_dump);
-
-    // Check for 'select' instructions which we used to fix the uextend issue
-    assert!(
-        clif_dump.contains("select"),
-        "Expected select instruction for boolean conversion"
-    );
+    insta::assert_snapshot!(clif_dump);
 }
 
 #[test]
@@ -198,17 +183,7 @@ fn test_float_to_char_conversion() {
         "#;
     // Verify it compiles without crashing
     let clif_dump = setup_cranelift(source);
-    println!("{}", clif_dump);
-
-    // Check for 'ireduce' instructions which we used to fix the crash
-    assert!(
-        clif_dump.contains("ireduce.i8"),
-        "Expected ireduce.i8 instruction for float->char conversion"
-    );
-    assert!(
-        clif_dump.contains("ireduce.i16"),
-        "Expected ireduce.i16 instruction for float->short conversion"
-    );
+    insta::assert_snapshot!(clif_dump);
 }
 
 #[test]
@@ -243,13 +218,7 @@ fn test_f128_constant_promotion() {
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
-            println!("{}", clif_ir);
-            // Verify load from memory is used instead of fpromote
-            assert!(clif_ir.contains("load.f128"), "Expected load.f128 instruction");
-            assert!(
-                clif_ir.contains("global_value") || clif_ir.contains("symbol_value"),
-                "Expected global_value or symbol_value instruction"
-            );
+            insta::assert_snapshot!(clif_ir);
         }
         Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
         Err(e) => panic!("Error: {}", e),

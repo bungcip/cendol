@@ -2,6 +2,7 @@
 use crate::ast::NameId;
 use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
 use crate::mir::{CallTarget, MirModuleId, MirStmt, MirType, Operand, Place, Terminator};
+use crate::tests::test_utils;
 
 #[test]
 fn test_indirect_function_call() {
@@ -88,8 +89,7 @@ fn test_indirect_function_call() {
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
-            println!("{}", clif_ir);
-            assert!(clif_ir.contains("call_indirect"), "Expected call_indirect instruction");
+            insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir));
         }
         Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
         Err(e) => panic!("Error: {}", e),
@@ -133,7 +133,10 @@ fn test_global_function_pointer_init() {
     let result = lowerer.compile_module(EmitKind::Clif);
 
     match result {
-        Ok(_) => (), // Success if no panic
+        Ok(ClifOutput::ClifDump(clif_ir)) => {
+            insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir));
+        }
+        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
         Err(e) => panic!("Compilation failed: {}", e),
     }
 }

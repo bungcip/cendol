@@ -384,3 +384,31 @@ fn test_dump_parser_ast_with_designated_initializers() {
     28: LiteralInt(0, None)
     "#);
 }
+
+#[test]
+fn test_scope_of_function_decl() {
+    use crate::ast::NodeKind;
+
+    let source = "void foo();";
+    let phase = CompilePhase::SemanticLowering;
+    let (_, out) = test_utils::run_pipeline(source, phase);
+    let mut out = out.unwrap();
+    let (_, artifact) = out.units.first_mut().unwrap();
+    let ast = artifact.ast.as_ref().unwrap();
+
+    let root = ast.get_root();
+    if let NodeKind::TranslationUnit(tu) = ast.get_kind(root) {
+        let expected_scope = tu.scope_id;
+        let mut found = false;
+        for decl_ref in tu.decl_start.range(tu.decl_len) {
+            if let NodeKind::FunctionDecl(_) = ast.get_kind(decl_ref) {
+                let scope_id = ast.scope_of(decl_ref);
+                assert_eq!(scope_id, expected_scope);
+                found = true;
+            }
+        }
+        assert!(found, "Did not find FunctionDecl node");
+    } else {
+        panic!("Root is not TranslationUnit");
+    }
+}

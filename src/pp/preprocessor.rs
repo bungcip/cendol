@@ -1673,40 +1673,40 @@ impl<'src> Preprocessor<'src> {
         self.handle_pragma_diagnostic_message(DiagnosticLevel::Error)
     }
 
-    fn handle_error(&mut self) -> Result<(), PPError> {
-        // Note: Skipping is handled by caller (check_skipping_and_execute)
-
+    fn handle_diagnostic_directive(&mut self, level: DiagnosticLevel, is_error: bool) -> Result<(), PPError> {
         let directive_location = self.get_current_location();
-        let message = self.consume_rest_of_line_as_string();
+        let message = self.read_directive_message();
+
+        let formatted_message = if is_error {
+            format!("#error directive: {}", message)
+        } else {
+            message.clone()
+        };
 
         self.report_diagnostic_simple(
-            DiagnosticLevel::Error,
-            format!("#error directive: {}", message),
+            level,
+            formatted_message,
             SourceSpan::new(directive_location, directive_location),
             None,
             Vec::new(),
         );
-        Err(PPError::ErrorDirective(message))
+
+        if is_error {
+            Err(PPError::ErrorDirective(message))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn handle_error(&mut self) -> Result<(), PPError> {
+        self.handle_diagnostic_directive(DiagnosticLevel::Error, true)
     }
 
     fn handle_warning(&mut self) -> Result<(), PPError> {
-        // Note: Skipping is handled by caller (check_skipping_and_execute)
-
-        let directive_location = self.get_current_location();
-        let message = self.consume_rest_of_line_as_string();
-
-        // For warning, we emit a diagnostic but don't stop compilation
-        self.report_diagnostic_simple(
-            DiagnosticLevel::Warning,
-            message,
-            SourceSpan::new(directive_location, directive_location),
-            None,
-            Vec::new(),
-        );
-        Ok(())
+        self.handle_diagnostic_directive(DiagnosticLevel::Warning, false)
     }
 
-    fn consume_rest_of_line_as_string(&mut self) -> String {
+    fn read_directive_message(&mut self) -> String {
         // Optimization: Avoid multiple small allocations by calculating final string size first.
         // This follows the two-pass approach:
         // 1. Collect tokens for the line.

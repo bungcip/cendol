@@ -568,11 +568,11 @@ impl<'a> AstToMirLowerer<'a> {
                 if lhs_type.is_pointer() {
                     let rhs_mir_ty = self.lower_qual_type(rhs_type);
                     let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
-                    Some(Rvalue::PtrAdd(lhs, rhs_converted))
+                    Some(self.create_pointer_arithmetic_rvalue(lhs, rhs_converted, BinaryOp::Add))
                 } else if rhs_type.is_pointer() {
                     let lhs_mir_ty = self.lower_qual_type(lhs_type);
                     let lhs_converted = self.apply_conversions(lhs, left_ref, lhs_mir_ty);
-                    Some(Rvalue::PtrAdd(rhs, lhs_converted))
+                    Some(self.create_pointer_arithmetic_rvalue(rhs, lhs_converted, BinaryOp::Add))
                 } else {
                     None
                 }
@@ -584,7 +584,7 @@ impl<'a> AstToMirLowerer<'a> {
                     } else if rhs_type.is_integer() {
                         let rhs_mir_ty = self.lower_qual_type(rhs_type);
                         let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
-                        Some(Rvalue::PtrSub(lhs, rhs_converted))
+                        Some(self.create_pointer_arithmetic_rvalue(lhs, rhs_converted, BinaryOp::Sub))
                     } else {
                         None
                     }
@@ -876,16 +876,21 @@ impl<'a> AstToMirLowerer<'a> {
         let minus_one_const = self.create_int_operand(-1);
 
         if operand_ty.is_pointer() {
-            if is_inc {
-                Rvalue::PtrAdd(operand, one_const)
-            } else {
-                Rvalue::PtrSub(operand, one_const)
-            }
+            let op = if is_inc { BinaryOp::Add } else { BinaryOp::Sub };
+            self.create_pointer_arithmetic_rvalue(operand, one_const, op)
         } else {
             // For Integers: Add(delta) (Note: we use Add with negative delta for decrement
             // to support proper wrapping arithmetic and fix previous bugs)
             let rhs = if is_inc { one_const } else { minus_one_const };
             Rvalue::BinaryIntOp(BinaryIntOp::Add, operand, rhs)
+        }
+    }
+
+    pub(crate) fn create_pointer_arithmetic_rvalue(&mut self, lhs: Operand, rhs: Operand, op: BinaryOp) -> Rvalue {
+        match op {
+            BinaryOp::Add => Rvalue::PtrAdd(lhs, rhs),
+            BinaryOp::Sub => Rvalue::PtrSub(lhs, rhs),
+            _ => panic!("Invalid pointer arithmetic op"),
         }
     }
 
@@ -950,9 +955,11 @@ impl<'a> AstToMirLowerer<'a> {
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
             AtomicOp::CompareExchangeN => self.lower_atomic_cmpxchg(&args, order, mir_ty),
-            AtomicOp::FetchAdd | AtomicOp::FetchSub | AtomicOp::FetchAnd | AtomicOp::FetchOr | AtomicOp::FetchXor => {
-                self.lower_atomic_fetch_op(op, &args, order, mir_ty)
-            }
+            AtomicOp::FetchAdd => self.lower_atomic_fetch_op(BinaryIntOp::Add, &args, order, mir_ty),
+            AtomicOp::FetchSub => self.lower_atomic_fetch_op(BinaryIntOp::Sub, &args, order, mir_ty),
+            AtomicOp::FetchAnd => self.lower_atomic_fetch_op(BinaryIntOp::BitAnd, &args, order, mir_ty),
+            AtomicOp::FetchOr => self.lower_atomic_fetch_op(BinaryIntOp::BitOr, &args, order, mir_ty),
+            AtomicOp::FetchXor => self.lower_atomic_fetch_op(BinaryIntOp::BitXor, &args, order, mir_ty),
         }
     }
 
@@ -1009,7 +1016,7 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_atomic_fetch_op(
         &mut self,
-        op: AtomicOp,
+        bin_op: BinaryIntOp,
         args: &[Operand],
         order: AtomicMemOrder,
         mir_ty: TypeId,
@@ -1017,15 +1024,6 @@ impl<'a> AstToMirLowerer<'a> {
         let ptr = args[0].clone();
         let val = args[1].clone();
         // args[2] memorder
-
-        let bin_op = match op {
-            AtomicOp::FetchAdd => BinaryIntOp::Add,
-            AtomicOp::FetchSub => BinaryIntOp::Sub,
-            AtomicOp::FetchAnd => BinaryIntOp::BitAnd,
-            AtomicOp::FetchOr => BinaryIntOp::BitOr,
-            AtomicOp::FetchXor => BinaryIntOp::BitXor,
-            _ => unreachable!(),
-        };
 
         let rval = Rvalue::AtomicFetchOp(bin_op, ptr, val, order);
         self.emit_rvalue_to_operand(rval, mir_ty)

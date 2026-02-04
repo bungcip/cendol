@@ -1001,8 +1001,7 @@ impl TypeRegistry {
                 if var_a != var_b {
                     return None;
                 }
-                let composite_ret =
-                    self.composite_type(QualType::unqualified(ret_a), QualType::unqualified(ret_b))?;
+                let composite_ret = self.composite_type(QualType::unqualified(ret_a), QualType::unqualified(ret_b))?;
                 if params_a.len() != params_b.len() {
                     return None;
                 }
@@ -1019,12 +1018,7 @@ impl TypeRegistry {
                         name: p_b.name.or(p_a.name),
                     });
                 }
-                let res_ty = self.function_type(
-                    composite_ret.ty(),
-                    composite_params,
-                    var_a,
-                    noreturn_a || noreturn_b,
-                );
+                let res_ty = self.function_type(composite_ret.ty(), composite_params, var_a, noreturn_a || noreturn_b);
                 Some(QualType::new(res_ty, a.qualifiers()))
             }
             (TypeKind::Pointer { pointee: p_a }, TypeKind::Pointer { pointee: p_b }) => {

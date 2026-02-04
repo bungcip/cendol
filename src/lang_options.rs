@@ -24,6 +24,7 @@ pub struct LangOptions {
 }
 
 impl LangOptions {
+    #[cfg(test)]
     pub(crate) fn c11() -> Self {
         LangOptions {
             c_standard: Some(CStandard::C11),

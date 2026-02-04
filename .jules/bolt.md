@@ -21,3 +21,7 @@
 ## 2026-05-20 - Fast-Path Capacity Hinting from Raw Lengths
 **Learning:** Calculating `String` capacity for cleaned token text (without line splices) can be done efficiently by using the raw `token.length` field as a safe upper bound. This avoids a redundant pass of expensive `get_text()` or `as_str()` calls which may involve hash lookups or enum matching.
 **Action:** Use raw buffer lengths as capacity hints for string building in the preprocessor, then perform a single pass to populate with cleaned text.
+
+## 2026-10-15 - Reducing Allocations in Macro Expansion
+**Learning:** Macro expansion is a very hot path where every allocation counts. Returning `Vec<PPToken>` for every macro parameter replacement causes significant overhead. Using `Cow<'a, [PPToken]>` allows borrowing arguments directly from the input without allocation in the common case. Similarly, taking `Vec<T>` by value when the caller already has an owned vector avoids redundant `.to_vec()` clones.
+**Action:** Favor `Cow` for return types of functions that might return either a borrow or a new collection. Transfer ownership of `Vec`s to avoid cloning when the caller doesn't need them anymore. Always use `Vec::with_capacity` when the minimum size is known (e.g., from the macro definition).

@@ -4,6 +4,7 @@ use crate::lang_options::LangOptions;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use hashbrown::HashMap;
+use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
 
 use super::pp_lexer::PPLexer;
@@ -714,25 +715,26 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Evaluate a conditional expression (simplified - handle defined and basic arithmetic)
-    fn evaluate_conditional_expression(&mut self, tokens: &[PPToken]) -> Result<bool, PPError> {
+    fn evaluate_conditional_expression(&mut self, tokens: Vec<PPToken>) -> Result<bool, PPError> {
         // Bolt ⚡: Removed redundant filtering of Eod tokens and a buggy optimization.
         // parse_conditional_expression already ensures no Eod tokens are present.
         // This avoids two allocations and two full clones of the token list.
         // The buggy 'defined' optimization was also removed as it incorrectly
         // returned early for complex expressions like '#if defined(FOO) && 0'.
+        // Bolt ⚡: Optimized to take tokens by value, avoiding a redundant `to_vec()` clone.
         if tokens.is_empty() {
             // For empty expressions, treat as false
             return Ok(false);
         }
 
         // First, expand macros in the expression
-        let mut expanded_tokens = tokens.to_vec();
+        let mut expanded_tokens = tokens;
         match self.expand_tokens(&mut expanded_tokens, true) {
             Ok(_) => {}
             Err(_e) => {
                 // If macro expansion fails, emit diagnostic and treat as false
-                let span = if !tokens.is_empty() {
-                    SourceSpan::new(tokens[0].location, tokens.last().unwrap().location)
+                let span = if !expanded_tokens.is_empty() {
+                    SourceSpan::new(expanded_tokens[0].location, expanded_tokens.last().unwrap().location)
                 } else {
                     let loc = self.get_current_location();
                     SourceSpan::new(loc, loc)
@@ -856,7 +858,7 @@ impl<'src> Preprocessor<'src> {
                             self.skip_directive()?;
                         } else {
                             let expr_tokens = self.parse_conditional_expression().unwrap_or_default();
-                            let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);
+                            let condition = self.evaluate_conditional_expression(expr_tokens).unwrap_or(false);
                             self.handle_if_directive(condition)?;
                         }
                         Ok(())
@@ -882,7 +884,7 @@ impl<'src> Preprocessor<'src> {
                     Some(DirectiveKind::Elif) => {
                         if self.should_evaluate_conditional() {
                             let expr_tokens = self.parse_conditional_expression().unwrap_or_default();
-                            let condition = self.evaluate_conditional_expression(&expr_tokens).unwrap_or(false);
+                            let condition = self.evaluate_conditional_expression(expr_tokens).unwrap_or(false);
                             self.handle_elif_directive(condition, token.location)?;
                         } else {
                             // Just update state to keep skipping
@@ -1951,19 +1953,21 @@ impl<'src> Preprocessor<'src> {
         macro_info.variadic_arg == Some(symbol) || macro_info.parameter_list.contains(&symbol)
     }
 
-    fn get_macro_param_tokens(
+    fn get_macro_param_tokens<'a>(
         &mut self,
         macro_info: &MacroInfo,
         symbol: StringId,
-        args: &[Vec<PPToken>],
+        args: &'a [Vec<PPToken>],
         location: SourceLoc,
-    ) -> Option<Vec<PPToken>> {
+    ) -> Option<Cow<'a, [PPToken]>> {
         if let Some(idx) = macro_info.parameter_list.iter().position(|&p| p == symbol) {
-            return Some(args[idx].clone());
+            return Some(Cow::Borrowed(&args[idx]));
         }
         if macro_info.variadic_arg == Some(symbol) {
             let start = macro_info.parameter_list.len();
-            return Some(self.collect_variadic_args_with_commas(args, start, location));
+            return Some(Cow::Owned(
+                self.collect_variadic_args_with_commas(args, start, location),
+            ));
         }
         None
     }
@@ -1975,7 +1979,9 @@ impl<'src> Preprocessor<'src> {
         args: &[Vec<PPToken>],
         expanded_args: &[Vec<PPToken>],
     ) -> Result<Vec<PPToken>, PPError> {
-        let mut result = Vec::new();
+        // Bolt ⚡: Pre-allocate result vector to minimize reallocations during substitution.
+        // The macro body size is a good baseline capacity.
+        let mut result = Vec::with_capacity(macro_info.tokens.len());
         let mut i = 0;
 
         while i < macro_info.tokens.len() {
@@ -1998,9 +2004,9 @@ impl<'src> Preprocessor<'src> {
 
                     let right_tokens = if let PPTokenKind::Identifier(sym) = right_token.kind {
                         self.get_macro_param_tokens(macro_info, sym, args, right_token.location)
-                            .unwrap_or_else(|| vec![*right_token])
+                            .unwrap_or(Cow::Borrowed(std::slice::from_ref(right_token)))
                     } else {
-                        vec![*right_token]
+                        Cow::Borrowed(std::slice::from_ref(right_token))
                     };
 
                     if right_tokens.is_empty() {
@@ -2013,7 +2019,8 @@ impl<'src> Preprocessor<'src> {
                     } else {
                         let pasted = self.paste_tokens(&left, &right_tokens[0])?;
                         result.extend(pasted);
-                        result.extend(right_tokens.into_iter().skip(1));
+                        // Bolt ⚡: Use iter().copied() to avoid cloning the temporary Vec if right_tokens is Owned.
+                        result.extend(right_tokens.iter().skip(1).copied());
                     }
                     i += 2;
                     continue;
@@ -2022,10 +2029,10 @@ impl<'src> Preprocessor<'src> {
                     let next_is_hh =
                         i + 1 < macro_info.tokens.len() && macro_info.tokens[i + 1].kind == PPTokenKind::HashHash;
                     let src = if next_is_hh { args } else { expanded_args };
-                    result.extend(
-                        self.get_macro_param_tokens(macro_info, sym, src, token.location)
-                            .unwrap(),
-                    );
+                    // Bolt ⚡: Avoid redundant Vec allocation by using get_macro_param_tokens with Cow.
+                    if let Some(param_tokens) = self.get_macro_param_tokens(macro_info, sym, src, token.location) {
+                        result.extend(param_tokens.iter().copied());
+                    }
                 }
                 _ => result.push(*token),
             }
@@ -2041,11 +2048,22 @@ impl<'src> Preprocessor<'src> {
         // This avoids multiple reallocations from push/push_str in a loop.
         // 1. Calculate the final length of the string, accounting for escaped characters.
         let mut total_len = 2; // For the opening and closing quotes
+        let mut last_sid = None;
+        let mut last_buffer = None;
+
         for (i, token) in tokens.iter().enumerate() {
             if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                 total_len += 1; // For the space
             }
-            let buffer = self.sm.get_buffer(token.location.source_id());
+            let sid = token.location.source_id();
+            let buffer = if last_sid == Some(sid) {
+                last_buffer.unwrap()
+            } else {
+                let b = self.sm.get_buffer(sid);
+                last_sid = Some(sid);
+                last_buffer = Some(b);
+                b
+            };
             let start = token.location.offset() as usize;
             let end = start + token.length as usize;
             if end > buffer.len() {
@@ -2069,12 +2087,22 @@ impl<'src> Preprocessor<'src> {
         result.push('"');
 
         // 3. Populate the string efficiently.
+        last_sid = None;
+        last_buffer = None;
         for (i, token) in tokens.iter().enumerate() {
             if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                 result.push(' ');
             }
 
-            let buffer = self.sm.get_buffer(token.location.source_id());
+            let sid = token.location.source_id();
+            let buffer = if last_sid == Some(sid) {
+                last_buffer.unwrap()
+            } else {
+                let b = self.sm.get_buffer(sid);
+                last_sid = Some(sid);
+                last_buffer = Some(b);
+                b
+            };
             let start = token.location.offset() as usize;
             let end = start + token.length as usize;
             // This check is already done above, but for safety we keep it.

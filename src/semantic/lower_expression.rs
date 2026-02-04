@@ -886,12 +886,7 @@ impl<'a> AstToMirLowerer<'a> {
         }
     }
 
-    pub(crate) fn create_pointer_arithmetic_rvalue(
-        &mut self,
-        lhs: Operand,
-        rhs: Operand,
-        op: BinaryOp,
-    ) -> Rvalue {
+    pub(crate) fn create_pointer_arithmetic_rvalue(&mut self, lhs: Operand, rhs: Operand, op: BinaryOp) -> Rvalue {
         match op {
             BinaryOp::Add => Rvalue::PtrAdd(lhs, rhs),
             BinaryOp::Sub => Rvalue::PtrSub(lhs, rhs),

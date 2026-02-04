@@ -569,8 +569,6 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    /// Convert a list of tokens to a path string
-
     /// Check if a header exists
     pub(crate) fn check_header_exists(&self, path: &str, is_angled: bool) -> bool {
         let current_dir = self

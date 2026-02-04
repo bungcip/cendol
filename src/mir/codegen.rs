@@ -2567,7 +2567,11 @@ impl MirToCraneliftLowerer {
         } else {
             // For Clif dump, concatenate all function IRs
             let mut clif_dump = String::new();
-            for (func_name, func_ir) in &self.compiled_functions {
+            let mut func_names: Vec<_> = self.compiled_functions.keys().collect();
+            func_names.sort();
+
+            for func_name in func_names {
+                let func_ir = self.compiled_functions.get(func_name).unwrap();
                 clif_dump.push_str(&format!("; Function: {}\n", func_name));
                 clif_dump.push_str(func_ir);
                 clif_dump.push_str("\n\n");

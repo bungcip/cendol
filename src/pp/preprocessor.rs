@@ -1965,7 +1965,9 @@ impl<'src> Preprocessor<'src> {
         }
         if macro_info.variadic_arg == Some(symbol) {
             let start = macro_info.parameter_list.len();
-            return Some(Cow::Owned(self.collect_variadic_args_with_commas(args, start, location)));
+            return Some(Cow::Owned(
+                self.collect_variadic_args_with_commas(args, start, location),
+            ));
         }
         None
     }

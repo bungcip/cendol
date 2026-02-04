@@ -1981,6 +1981,7 @@ impl<'src> Preprocessor<'src> {
         // The macro body size is a good baseline capacity.
         let mut result = Vec::with_capacity(macro_info.tokens.len());
         let mut i = 0;
+        let mut last_token_produced_output = false;
 
         while i < macro_info.tokens.len() {
             let token = &macro_info.tokens[i];
@@ -1992,13 +1993,22 @@ impl<'src> Preprocessor<'src> {
                         && let Some(arg) = self.get_macro_param_tokens(macro_info, sym, args, token.location)
                     {
                         result.push(self.stringify_tokens(&arg, token.location)?);
+                        last_token_produced_output = true;
                         i += 2;
                         continue;
                     }
                 }
                 PPTokenKind::HashHash if i + 1 < macro_info.tokens.len() => {
                     let right_token = &macro_info.tokens[i + 1];
-                    let left = result.pop().unwrap_or(*token);
+
+                    // Determine the left operand
+                    let left = if last_token_produced_output {
+                        // If the previous token produced output, the left operand is the last token in the result
+                        result.pop()
+                    } else {
+                        // If the previous token produced no output (empty placemarker), the left operand is empty
+                        None
+                    };
 
                     let right_tokens = if let PPTokenKind::Identifier(sym) = right_token.kind {
                         self.get_macro_param_tokens(macro_info, sym, args, right_token.location)
@@ -2008,17 +2018,44 @@ impl<'src> Preprocessor<'src> {
                     };
 
                     if right_tokens.is_empty() {
-                        // Potential GNU comma swallowing extension
-                        let is_comma = left.kind == PPTokenKind::Comma;
+                        // Right operand is empty (placemarker)
+
+                        // Check for GNU comma swallowing extension
+                        // #define M(args...) , ## args
+                        // M() -> empty (swallow comma)
+                        // Left must be comma.
+                        let is_comma = left.as_ref().is_some_and(|t| t.kind == PPTokenKind::Comma);
                         let is_variadic = matches!(right_token.kind, PPTokenKind::Identifier(s) if macro_info.variadic_arg == Some(s));
-                        if !(is_comma && is_variadic) {
-                            result.push(left);
+
+                        if is_comma && is_variadic {
+                            // Swallow comma: do not push left back
+                            last_token_produced_output = false;
+                        } else {
+                            // Standard behavior: paste left with empty -> left
+                            if let Some(l) = left {
+                                result.push(l);
+                                last_token_produced_output = true;
+                            } else {
+                                // empty ## empty -> empty
+                                last_token_produced_output = false;
+                            }
                         }
                     } else {
-                        let pasted = self.paste_tokens(&left, &right_tokens[0])?;
-                        result.extend(pasted);
-                        // Bolt ⚡: Use iter().copied() to avoid cloning the temporary Vec if right_tokens is Owned.
-                        result.extend(right_tokens.iter().skip(1).copied());
+                        // Right operand is not empty
+                        if let Some(l) = left {
+                            // Paste left ## right[0]
+                            let pasted = self.paste_tokens(&l, &right_tokens[0])?;
+                            let pasted_count = pasted.len();
+                            result.extend(pasted);
+                            result.extend(right_tokens.iter().skip(1).copied());
+                            // If pasting resulted in tokens, or right had more tokens, we have output
+                            last_token_produced_output = pasted_count > 0 || right_tokens.len() > 1;
+                        } else {
+                            // empty ## right -> right
+                            // (Placemarker at start)
+                            result.extend(right_tokens.iter().copied());
+                            last_token_produced_output = true;
+                        }
                     }
                     i += 2;
                     continue;
@@ -2029,10 +2066,21 @@ impl<'src> Preprocessor<'src> {
                     let src = if next_is_hh { args } else { expanded_args };
                     // Bolt ⚡: Avoid redundant Vec allocation by using get_macro_param_tokens with Cow.
                     if let Some(param_tokens) = self.get_macro_param_tokens(macro_info, sym, src, token.location) {
-                        result.extend(param_tokens.iter().copied());
+                        if param_tokens.is_empty() {
+                            last_token_produced_output = false;
+                        } else {
+                            result.extend(param_tokens.iter().copied());
+                            last_token_produced_output = true;
+                        }
+                    } else {
+                        // Should not happen if is_macro_param is correct, but safe fallback
+                        last_token_produced_output = false;
                     }
                 }
-                _ => result.push(*token),
+                _ => {
+                    result.push(*token);
+                    last_token_produced_output = true;
+                }
             }
             i += 1;
         }

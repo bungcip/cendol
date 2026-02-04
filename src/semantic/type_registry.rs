@@ -946,6 +946,96 @@ impl TypeRegistry {
         }
     }
 
+    pub(crate) fn composite_type(&mut self, a: QualType, b: QualType) -> Option<QualType> {
+        if a.qualifiers() != b.qualifiers() {
+            return None;
+        }
+
+        if a.ty() == b.ty() {
+            return Some(a);
+        }
+
+        let kind_a = self.get(a.ty()).kind.clone();
+        let kind_b = self.get(b.ty()).kind.clone();
+
+        match (kind_a, kind_b) {
+            (
+                TypeKind::Array {
+                    element_type: elem_a,
+                    size: size_a,
+                },
+                TypeKind::Array {
+                    element_type: elem_b,
+                    size: size_b,
+                },
+            ) => {
+                let composite_elem =
+                    self.composite_type(QualType::unqualified(elem_a), QualType::unqualified(elem_b))?;
+                let composite_size = match (size_a, size_b) {
+                    (ArraySizeType::Incomplete, s) => s,
+                    (s, ArraySizeType::Incomplete) => s,
+                    (ArraySizeType::Constant(sa), ArraySizeType::Constant(sb)) if sa == sb => {
+                        ArraySizeType::Constant(sa)
+                    }
+                    (ArraySizeType::Star, s) => s,
+                    (s, ArraySizeType::Star) => s,
+                    _ => return None,
+                };
+                let res_ty = self.array_of(composite_elem.ty(), composite_size);
+                Some(QualType::new(res_ty, a.qualifiers()))
+            }
+            (
+                TypeKind::Function {
+                    return_type: ret_a,
+                    parameters: params_a,
+                    is_variadic: var_a,
+                    is_noreturn: noreturn_a,
+                },
+                TypeKind::Function {
+                    return_type: ret_b,
+                    parameters: params_b,
+                    is_variadic: var_b,
+                    is_noreturn: noreturn_b,
+                },
+            ) => {
+                if var_a != var_b {
+                    return None;
+                }
+                let composite_ret = self.composite_type(QualType::unqualified(ret_a), QualType::unqualified(ret_b))?;
+                if params_a.len() != params_b.len() {
+                    return None;
+                }
+                let mut composite_params = Vec::with_capacity(params_a.len());
+                for (p_a, p_b) in params_a.iter().zip(params_b.iter()) {
+                    // C11 6.7.6.3p15: each parameter declared with qualified type is taken as
+                    // having the unqualified version of its declared type.
+                    let type_a = QualType::unqualified(p_a.param_type.ty());
+                    let type_b = QualType::unqualified(p_b.param_type.ty());
+                    let cp = self.composite_type(type_a, type_b)?;
+
+                    composite_params.push(FunctionParameter {
+                        param_type: cp,
+                        name: p_b.name.or(p_a.name),
+                    });
+                }
+                let res_ty = self.function_type(composite_ret.ty(), composite_params, var_a, noreturn_a || noreturn_b);
+                Some(QualType::new(res_ty, a.qualifiers()))
+            }
+            (TypeKind::Pointer { pointee: p_a }, TypeKind::Pointer { pointee: p_b }) => {
+                let composite_pointee = self.composite_type(p_a, p_b)?;
+                let res_ty = self.pointer_to(composite_pointee);
+                Some(QualType::new(res_ty, a.qualifiers()))
+            }
+            _ => {
+                if self.is_compatible(a, b) {
+                    Some(a)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     pub(crate) fn is_complete(&self, ty: TypeRef) -> bool {
         if ty.is_inline_pointer() {
             return true;

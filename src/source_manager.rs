@@ -1,5 +1,6 @@
 use hashbrown::HashMap;
 use serde::Serialize;
+use std::sync::Arc;
 use std::{
     cmp::Ordering,
     num::NonZeroU32,
@@ -277,7 +278,7 @@ pub struct FileInfo {
 /// File size limit: 4 MiB per file (22-bit offset in SourceLoc)
 /// Maximum files: 1023 unique source files (10-bit file ID in SourceLoc)
 pub struct SourceManager {
-    buffers: Vec<Vec<u8>>, // Use Rust Vec<u8>
+    buffers: Vec<Arc<[u8]>>,
     file_infos: HashMap<SourceId, FileInfo>,
     path_to_id: HashMap<PathBuf, SourceId>,
     next_file_id: u32,
@@ -315,7 +316,7 @@ impl SourceManager {
     pub(crate) fn add_buffer(&mut self, buffer: Vec<u8>, path: &str, include_loc: Option<SourceLoc>) -> SourceId {
         let path_buf = PathBuf::from(path);
         // Standard buffers get empty line_starts initially; they are calculated/set later if needed
-        self.add_file_entry(buffer, path_buf, Vec::new(), include_loc)
+        self.add_file_entry(Arc::from(buffer), path_buf, Vec::new(), include_loc)
     }
 
     /// Add a virtual buffer for macro expansions (Level B support)
@@ -335,13 +336,13 @@ impl SourceManager {
         }
 
         let path_buf = PathBuf::from(format!("<{}>", name));
-        self.add_file_entry(buffer, path_buf, line_starts, include_loc)
+        self.add_file_entry(Arc::from(buffer), path_buf, line_starts, include_loc)
     }
 
     /// Helper to add a file entry and update maps
     fn add_file_entry(
         &mut self,
-        buffer: Vec<u8>,
+        buffer: Arc<[u8]>,
         path: PathBuf,
         line_starts: Vec<u32>,
         include_loc: Option<SourceLoc>,
@@ -380,6 +381,16 @@ impl SourceManager {
             None => panic!("invalid source_id {source_id}"),
         };
         &self.buffers[info.buffer_index][..]
+    }
+
+    /// Get the buffer as an Arc for a given source ID.
+    /// This allows shared ownership without cloning the entire buffer.
+    pub(crate) fn get_buffer_arc(&self, source_id: SourceId) -> Arc<[u8]> {
+        let info = match self.file_infos.get(&source_id) {
+            Some(info) => info,
+            None => panic!("invalid source_id {source_id}"),
+        };
+        self.buffers[info.buffer_index].clone()
     }
 
     /// Get file info for a given source ID

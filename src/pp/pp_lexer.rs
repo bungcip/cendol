@@ -1,6 +1,7 @@
 use crate::ast::StringId;
 use crate::ast::literal_parsing;
 use crate::source_manager::{SourceId, SourceLoc};
+use std::sync::Arc;
 
 // Packed token flags for preprocessor tokens
 bitflags::bitflags! {
@@ -178,7 +179,7 @@ impl PPToken {
 /// Manages lexing from different source buffers
 pub(crate) struct PPLexer {
     pub(crate) source_id: SourceId,
-    buffer: Vec<u8>,
+    buffer: Arc<[u8]>,
     pub(crate) position: u32, // its okay to use u32 here since source files are limited to 4 MB
     line_starts: Vec<u32>,
     put_back_token: Option<PPToken>,
@@ -188,7 +189,7 @@ pub(crate) struct PPLexer {
 }
 
 impl PPLexer {
-    pub(crate) fn new(source_id: SourceId, buffer: Vec<u8>) -> Self {
+    pub(crate) fn new(source_id: SourceId, buffer: Arc<[u8]>) -> Self {
         let line_starts = vec![0]; // First line starts at offset 0
 
         PPLexer {

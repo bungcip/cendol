@@ -129,7 +129,7 @@ impl TestLexer {
 pub fn create_test_pp_lexer(src: &str) -> TestLexer {
     let mut source_manager = SourceManager::new();
     let id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>", None);
-    let lexer = crate::pp::pp_lexer::PPLexer::new(id, src.as_bytes().to_vec());
+    let lexer = crate::pp::pp_lexer::PPLexer::new(id, std::sync::Arc::from(src.as_bytes().to_vec()));
     TestLexer { lexer }
 }
 

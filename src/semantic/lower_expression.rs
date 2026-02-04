@@ -231,6 +231,9 @@ impl<'a> AstToMirLowerer<'a> {
 
     pub(crate) fn lower_cast(&mut self, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
         let operand = self.lower_expression(operand_ref, true);
+        if self.get_operand_type(&operand) == mir_ty {
+            return operand;
+        }
         Operand::Cast(mir_ty, Box::new(operand))
     }
 

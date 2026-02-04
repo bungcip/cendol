@@ -64,3 +64,4 @@ pub mod test_utils;
 pub mod codegen_regr;
 pub mod complex_types;
 pub mod guardian_alignment;
+pub mod codegen_cast_init;

@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::semantic_common::{check_diagnostic, run_fail, run_pass, setup_diagnostics_output, setup_mir};
+use crate::tests::semantic_common::{run_fail, run_pass, setup_diagnostics_output, setup_mir};
 use std::process::Command;
 use tempfile::NamedTempFile;
 
@@ -12,16 +12,23 @@ fn test_sizeof_logic_not_is_int_size() {
     }
     "#;
     let mir = setup_mir(src);
-    assert!(
-        mir.contains("const 4"),
-        "MIR should contain constant 4 (sizeof int). Dump:\n{}",
-        mir
-    );
-    assert!(
-        !mir.contains("const 1"),
-        "MIR should NOT contain constant 1 (sizeof bool). Dump:\n{}",
-        mir
-    );
+    insta::assert_snapshot!(mir, @r"
+    type %t0 = void
+    type %t1 = i32
+    type %t2 = u64
+
+    fn f() -> void
+    {
+      locals {
+        %x: i32
+        %sz: u64
+      }
+
+      bb1:
+        %sz = cast<u64>(const 4)
+        return
+    }
+    ");
 }
 
 #[test]
@@ -33,12 +40,23 @@ fn test_sizeof_logic_and_is_int_size() {
     }
     "#;
     let mir = setup_mir(src);
-    assert!(mir.contains("const 4"), "MIR should contain constant 4. Dump:\n{}", mir);
-    assert!(
-        !mir.contains("const 1"),
-        "MIR should NOT contain constant 1. Dump:\n{}",
-        mir
-    );
+    insta::assert_snapshot!(mir, @r"
+    type %t0 = void
+    type %t1 = i32
+    type %t2 = u64
+
+    fn f() -> void
+    {
+      locals {
+        %x: i32
+        %sz: u64
+      }
+
+      bb1:
+        %sz = cast<u64>(const 4)
+        return
+    }
+    ");
 }
 
 #[test]
@@ -50,12 +68,23 @@ fn test_sizeof_logic_or_is_int_size() {
     }
     "#;
     let mir = setup_mir(src);
-    assert!(mir.contains("const 4"), "MIR should contain constant 4. Dump:\n{}", mir);
-    assert!(
-        !mir.contains("const 1"),
-        "MIR should NOT contain constant 1. Dump:\n{}",
-        mir
-    );
+    insta::assert_snapshot!(mir, @r"
+    type %t0 = void
+    type %t1 = i32
+    type %t2 = u64
+
+    fn f() -> void
+    {
+      locals {
+        %x: i32
+        %sz: u64
+      }
+
+      bb1:
+        %sz = cast<u64>(const 4)
+        return
+    }
+    ");
 }
 // tests_compound_assign.rs - End-to-end tests for compound assignment operators.
 //
@@ -607,111 +636,146 @@ fn test_enum_constant_assignment() {
 }
 // Semantic validation tests for lvalue constraints.
 
-fn run_lvalue_test(source: &str, expected_line: u32, expected_col: u32) {
-    let driver = run_fail(source, CompilePhase::Mir);
-    check_diagnostic(
-        &driver,
-        "Expression is not assignable (not an lvalue)",
-        expected_line,
-        expected_col,
-    );
-}
-
 #[test]
-fn rejects_invalid_lvalue_assignments() {
-    // Assignment to a literal
-    run_lvalue_test(
-        r#"
+fn test_lvalue_assign_to_literal() {
+    let source = r#"
         int main() {
             1 = 2;
         }
-    "#,
-        3,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
 
-    // Assignment to an arithmetic expression
-    run_lvalue_test(
-        r#"
+    Level: Error
+    Message: Expression is not assignable (not an lvalue)
+    Span: SourceSpan(source_id=SourceId(2), start=34, end=39)
+    ");
+}
+
+#[test]
+fn test_lvalue_assign_to_arithmetic_expr() {
+    let source = r#"
         int main() {
             int x;
             x + 1 = 5;
         }
-    "#,
-        4,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
 
-    // Pre-increment on a literal
-    run_lvalue_test(
-        r#"
+    Level: Error
+    Message: Expression is not assignable (not an lvalue)
+    Span: SourceSpan(source_id=SourceId(2), start=53, end=62)
+    ");
+}
+
+#[test]
+fn test_lvalue_pre_inc_literal() {
+    let source = r#"
         int main() {
             ++1;
         }
-    "#,
-        3,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
 
-    // Post-increment on a literal
-    run_lvalue_test(
-        r#"
+    Level: Error
+    Message: Expression is not assignable (not an lvalue)
+    Span: SourceSpan(source_id=SourceId(2), start=34, end=37)
+    ");
+}
+
+#[test]
+fn test_lvalue_post_inc_literal() {
+    let source = r#"
         int main() {
             1++;
         }
-    "#,
-        3,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
 
-    // Pre-decrement on an rvalue
-    run_lvalue_test(
-        r#"
+    Level: Error
+    Message: Expression is not assignable (not an lvalue)
+    Span: SourceSpan(source_id=SourceId(2), start=34, end=37)
+    ");
+}
+
+#[test]
+fn test_lvalue_pre_dec_rvalue() {
+    let source = r#"
         int main() {
             int x, y;
             --(x + y);
         }
-    "#,
-        4,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
 
-    // Post-decrement on an rvalue
-    run_lvalue_test(
-        r#"
+    Level: Error
+    Message: Expression is not assignable (not an lvalue)
+    Span: SourceSpan(source_id=SourceId(2), start=56, end=64)
+    ");
+}
+
+#[test]
+fn test_lvalue_post_dec_rvalue() {
+    let source = r#"
         int main() {
             int x, y;
             (x + y)--;
         }
-    "#,
-        4,
-        14,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
 
-    // Address-of operator on rvalue
-    run_lvalue_test(
-        r#"
+    Level: Error
+    Message: Expression is not assignable (not an lvalue)
+    Span: SourceSpan(source_id=SourceId(2), start=57, end=65)
+    ");
+}
+
+#[test]
+fn test_lvalue_addr_of_rvalue() {
+    let source = r#"
         int main() {
             int x;
             &(x + 1);
         }
-    "#,
-        4,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
 
-    // Assignment to a member of a struct returned by value (rvalue)
-    run_lvalue_test(
-        r#"
+    Level: Error
+    Message: Expression is not assignable (not an lvalue)
+    Span: SourceSpan(source_id=SourceId(2), start=53, end=60)
+    ");
+}
+
+#[test]
+fn test_lvalue_assign_struct_rvalue_member() {
+    let source = r#"
         struct S { int x; };
         struct S f() { struct S s; return s; }
         int main() {
             f().x = 1;
         }
-    "#,
-        5,
-        13,
-    );
+    "#;
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: Expression is not assignable (not an lvalue)
+    Span: SourceSpan(source_id=SourceId(2), start=110, end=119)
+    ");
 }
 use crate::tests::test_utils;
 

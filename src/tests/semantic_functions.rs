@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::semantic_common::{run_fail_with_diagnostic, run_fail_with_message, run_pass, setup_mir};
+use crate::tests::semantic_common::{run_pass, setup_diagnostics_output, setup_mir};
 
 #[test]
 fn test_array_param_qualifiers_decay() {
@@ -36,7 +36,18 @@ fn test_conflicting_types_basic() {
         void foo(int *x);
         void foo(const int *x); // Conflict
     "#;
-    run_fail_with_message(code, CompilePhase::SemanticLowering, "conflicting types");
+    let output = setup_diagnostics_output(code);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 2
+
+    Level: Error
+    Message: conflicting types for 'foo'
+    Span: SourceSpan(source_id=SourceId(2), start=35, end=58)
+
+    Level: Note
+    Message: previous declaration is here
+    Span: SourceSpan(source_id=SourceId(2), start=9, end=26)
+    ");
 }
 
 #[test]
@@ -95,7 +106,18 @@ fn test_func_identifier_redefinition() {
         }
     "#;
     // Shadows implicitly declared __func__ in SAME scope is an error in C11
-    run_fail_with_message(source, CompilePhase::SemanticLowering, "redefinition of '__func__'");
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 2
+
+    Level: Error
+    Message: redefinition of '__func__'
+    Span: SourceSpan(source_id=SourceId(2), start=34, end=47)
+
+    Level: Note
+    Message: previous definition is here
+    Span: SourceSpan(source_id=SourceId(2), start=9, end=57)
+    ");
 }
 
 #[test]
@@ -178,7 +200,18 @@ fn test_func_opt_shadowed() {
         }
     "#;
     // Redefinition in same scope
-    run_fail_with_message(source, CompilePhase::SemanticLowering, "redefinition of '__func__'");
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 2
+
+    Level: Error
+    Message: redefinition of '__func__'
+    Span: SourceSpan(source_id=SourceId(2), start=73, end=104)
+
+    Level: Note
+    Message: previous definition is here
+    Span: SourceSpan(source_id=SourceId(2), start=48, end=150)
+    ");
 }
 
 #[test]
@@ -188,11 +221,14 @@ fn test_noreturn_function_returns_error() {
                 return;
             }
         "#;
-    run_fail_with_message(
-        a,
-        CompilePhase::Mir,
-        "function 'foo' declared '_Noreturn' contains a return statement",
-    );
+    let output = setup_diagnostics_output(a);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: function 'foo' declared '_Noreturn' contains a return statement
+    Span: SourceSpan(source_id=SourceId(2), start=52, end=59)
+    ");
 }
 // tests for _Noreturn function specifier
 
@@ -202,13 +238,14 @@ fn test_noreturn_function_can_fall_through() {
     _Noreturn void foo() {
     }
     "#;
-    run_fail_with_diagnostic(
-        src,
-        CompilePhase::Mir,
-        "function 'foo' declared '_Noreturn' can fall off the end",
-        2,
-        5,
-    );
+    let output = setup_diagnostics_output(src);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: function 'foo' declared '_Noreturn' can fall off the end
+    Span: SourceSpan(source_id=SourceId(2), start=5, end=33)
+    ");
 }
 
 #[test]
@@ -218,13 +255,14 @@ fn test_noreturn_function_returns() {
         return 1;
     }
     "#;
-    run_fail_with_diagnostic(
-        src,
-        CompilePhase::Mir,
-        "function 'foo' declared '_Noreturn' contains a return statement",
-        3,
-        9,
-    );
+    let output = setup_diagnostics_output(src);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: function 'foo' declared '_Noreturn' contains a return statement
+    Span: SourceSpan(source_id=SourceId(2), start=35, end=44)
+    ");
 }
 
 #[test]
@@ -234,5 +272,16 @@ fn test_noreturn_declaration_mismatch() {
     void foo() {
     }
     "#;
-    run_fail_with_diagnostic(src, CompilePhase::SemanticLowering, "conflicting types for 'foo'", 3, 5);
+    let output = setup_diagnostics_output(src);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 2
+
+    Level: Error
+    Message: conflicting types for 'foo'
+    Span: SourceSpan(source_id=SourceId(2), start=31, end=49)
+
+    Level: Note
+    Message: previous declaration is here
+    Span: SourceSpan(source_id=SourceId(2), start=5, end=26)
+    ");
 }

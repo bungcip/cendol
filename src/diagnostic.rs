@@ -379,7 +379,11 @@ pub enum SemanticError {
     AlignmentNotAllowed { context: String, span: SourceSpan },
 
     #[error("alignment specifier specifies {requested}-byte alignment, but {natural}-byte alignment is required")]
-    AlignmentTooLoose { requested: u32, natural: u32, span: SourceSpan },
+    AlignmentTooLoose {
+        requested: u32,
+        natural: u32,
+        span: SourceSpan,
+    },
 }
 
 impl SemanticError {

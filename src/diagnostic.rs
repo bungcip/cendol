@@ -374,6 +374,12 @@ pub enum SemanticError {
     NoreturnFunctionFallsOff { name: String, span: SourceSpan },
     #[error("unreachable code")]
     UnreachableCode { span: SourceSpan },
+
+    #[error("alignment specifier cannot be used in a {context}")]
+    AlignmentNotAllowed { context: String, span: SourceSpan },
+
+    #[error("alignment specifier specifies {requested}-byte alignment, but {natural}-byte alignment is required")]
+    AlignmentTooLoose { requested: u32, natural: u32, span: SourceSpan },
 }
 
 impl SemanticError {
@@ -439,6 +445,8 @@ impl SemanticError {
             SemanticError::NoreturnFunctionHasReturn { span, .. } => *span,
             SemanticError::NoreturnFunctionFallsOff { span, .. } => *span,
             SemanticError::UnreachableCode { span } => *span,
+            SemanticError::AlignmentNotAllowed { span, .. } => *span,
+            SemanticError::AlignmentTooLoose { span, .. } => *span,
         }
     }
 }

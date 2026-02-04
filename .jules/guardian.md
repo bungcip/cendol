@@ -19,3 +19,13 @@ Action: Always ensure that scope boundaries correctly match language semantics, 
 
 Learning: C11 composite type rules (6.2.7p3) require that all declarations of the same identifier in a translation unit refer to a single composite type. Simply checking for type compatibility on redeclaration is insufficient; the compiler must compute the composite type (e.g., merging an incomplete array with a complete one) and update the symbol table entry so that subsequent uses (like 'sizeof') reflect the most complete type information.
 Action: Implement and use a 'composite_type' mechanism during redeclaration checks to ensure symbol types are correctly refined across multiple declarations.
+
+2025-05-18 - [_Alignas Constraints and Strictness]
+
+Learning: C11  (6.7.5) has strict constraints on where it can appear: it is prohibited in s, function declarations, function parameters, and  objects. Additionally, it cannot specify an alignment less strict than the type's natural alignment. While  is valid and has no effect, any other value must be a power of two and satisfy the strictness constraint.
+Action: Implement and enforce alignment constraints during the semantic lowering phase to ensure C11 compliance and prevent invalid object layouts.
+
+2025-05-18 - [_Alignas Constraints and Strictness]
+
+Learning: C11 `_Alignas` (6.7.5) has strict constraints on where it can appear: it is prohibited in `typedef`s, function declarations, function parameters, and `register` objects. Additionally, it cannot specify an alignment less strict than the type's natural alignment. While `_Alignas(0)` is valid and has no effect, any other value must be a power of two and satisfy the strictness constraint.
+Action: Implement and enforce alignment constraints during the semantic lowering phase to ensure C11 compliance and prevent invalid object layouts.

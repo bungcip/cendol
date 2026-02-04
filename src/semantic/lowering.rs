@@ -952,6 +952,14 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
         ctx.report_error(SemanticError::ConflictingStorageClasses { span });
     }
 
+    // _Alignas constraints (C11 6.7.5p3)
+    if info.alignment.is_some() && info.storage == Some(StorageClass::Register) {
+        ctx.report_error(SemanticError::AlignmentNotAllowed {
+            context: "register object".to_string(),
+            span,
+        });
+    }
+
     // _Thread_local constraints (C11 6.7.1p3)
     if info.is_thread_local {
         // Can only be used alone or with static/extern
@@ -1110,6 +1118,13 @@ fn lower_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
                 } else {
                     seen_names.insert(name, span);
                 }
+            }
+
+            if spec_info.alignment.is_some() {
+                ctx.report_error(SemanticError::AlignmentNotAllowed {
+                    context: "function parameter".to_string(),
+                    span,
+                });
             }
 
             FunctionParameter {
@@ -1798,6 +1813,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         };
 
         if spec_info.is_typedef {
+            if spec_info.alignment.is_some() {
+                self.report_error(SemanticError::AlignmentNotAllowed {
+                    context: "typedef".to_string(),
+                    span: init.span,
+                });
+            }
+
             if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
                 self.symbol_table.define_typedef(name, final_ty, span)
             {
@@ -1856,6 +1878,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         spec_info: &DeclSpecInfo,
         span: SourceSpan,
     ) {
+        if spec_info.alignment.is_some() {
+            self.report_error(SemanticError::AlignmentNotAllowed {
+                context: "function".to_string(),
+                span,
+            });
+        }
+
         let final_ty = self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
         let func_decl = FunctionDeclData {
             name,
@@ -1916,8 +1945,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(SemanticError::Redefinition { name, first_def, span });
         }
 
-        if self.registry.ensure_layout(final_ty.ty()).is_err() {
-            // Swallow error
+        if let Ok(layout) = self.registry.ensure_layout(final_ty.ty()) {
+            if let Some(req_align) = spec_info.alignment {
+                let natural_align = layout.alignment as u32;
+                if req_align < natural_align {
+                    self.report_error(SemanticError::AlignmentTooLoose {
+                        requested: req_align,
+                        natural: natural_align,
+                        span,
+                    });
+                }
+            }
         }
 
         self.ast.kinds[node.index()] = NodeKind::VarDecl(var_decl);
@@ -2672,6 +2710,13 @@ fn lower_struct_members(members: &[ParsedDeclarationData], ctx: &mut LowerCtx, s
         for init_declarator in &decl.init_declarators {
             let (bit_field_size, base_declarator) = extract_bit_field_width(&init_declarator.declarator, ctx);
 
+            if bit_field_size.is_some() && spec_info.alignment.is_some() {
+                ctx.report_error(SemanticError::AlignmentNotAllowed {
+                    context: "bit-field".to_string(),
+                    span: init_declarator.span,
+                });
+            }
+
             let member_name = extract_name(base_declarator);
 
             let member_type = if let Some(base_type_ref) = spec_info.base_type {
@@ -2688,6 +2733,21 @@ fn lower_struct_members(members: &[ParsedDeclarationData], ctx: &mut LowerCtx, s
                     ty: ctx.registry.display_qual_type(member_type),
                     span: init_declarator.span,
                 });
+            }
+
+            if bit_field_size.is_none() {
+                if let Ok(layout) = ctx.registry.ensure_layout(member_type.ty()) {
+                    if let Some(req_align) = spec_info.alignment {
+                        let natural_align = layout.alignment as u32;
+                        if req_align < natural_align {
+                            ctx.report_error(SemanticError::AlignmentTooLoose {
+                                requested: req_align,
+                                natural: natural_align,
+                                span: init_declarator.span,
+                            });
+                        }
+                    }
+                }
             }
 
             struct_members.push(StructMember {

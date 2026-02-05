@@ -37,7 +37,18 @@ impl<'a> AstToMirLowerer<'a> {
                 continue;
             }
 
-            let operand = self.lower_initializer(init.initializer, members[field_idx].member_type, None);
+            let operand = if init.designator_len > 1 {
+                let range = init.designator_start.range(init.designator_len);
+                let iter = range.skip(1);
+                self.lower_initializer_with_designators(
+                    iter,
+                    init.initializer,
+                    members[field_idx].member_type,
+                    None,
+                )
+            } else {
+                self.lower_initializer(init.initializer, members[field_idx].member_type, None)
+            };
             field_operands.push((field_idx, operand));
 
             // Update positional index for next elements
@@ -119,7 +130,13 @@ impl<'a> AstToMirLowerer<'a> {
                 (current_idx, current_idx)
             };
 
-            let operand = self.lower_initializer(init.initializer, element_ty, None);
+            let operand = if init.designator_len > 1 {
+                let range = init.designator_start.range(init.designator_len);
+                let iter = range.skip(1);
+                self.lower_initializer_with_designators(iter, init.initializer, element_ty, None)
+            } else {
+                self.lower_initializer(init.initializer, element_ty, None)
+            };
             for i in start..=end {
                 if i >= elements.len() {
                     elements.resize(i + 1, None);
@@ -350,6 +367,78 @@ impl<'a> AstToMirLowerer<'a> {
     ) -> Option<crate::mir::ConstValueId> {
         let operand = self.lower_initializer(init_ref, ty, None);
         self.operand_to_const_id(operand)
+    }
+
+    fn lower_initializer_with_designators(
+        &mut self,
+        mut designators: impl Iterator<Item = NodeRef>,
+        initializer: NodeRef,
+        target_ty: QualType,
+        destination: Option<Place>,
+    ) -> Operand {
+        let designator = if let Some(d) = designators.next() {
+            d
+        } else {
+            return self.lower_initializer(initializer, target_ty, destination);
+        };
+
+        let target_type = self.registry.get(target_ty.ty()).into_owned();
+
+        match &target_type.kind {
+            TypeKind::Record { members, .. } => {
+                let member_idx = if let NodeKind::Designator(Designator::FieldName(name)) =
+                    self.ast.get_kind(designator)
+                {
+                    members
+                        .iter()
+                        .position(|m| m.name == Some(*name))
+                        .expect("Unknown field in designator")
+                } else {
+                    panic!("Expected field designator for struct initialization");
+                };
+
+                let member_ty = members[member_idx].member_type;
+                let sub_op = self.lower_initializer_with_designators(
+                    designators,
+                    initializer,
+                    member_ty,
+                    None,
+                );
+
+                self.finalize_struct_initializer(vec![(member_idx, sub_op)], target_ty, destination)
+            }
+            TypeKind::Array { element_type, size } => {
+                let (start, end) = self.resolve_designator_range(designator);
+                let elem_ty = QualType::unqualified(*element_type);
+
+                let sub_op = self.lower_initializer_with_designators(
+                    designators,
+                    initializer,
+                    elem_ty,
+                    None,
+                );
+
+                let array_len = if let ArraySizeType::Constant(s) = size {
+                    *s
+                } else {
+                    end + 1
+                };
+
+                let mir_elem_ty = self.lower_qual_type(elem_ty);
+                let zero =
+                    Operand::Constant(self.create_constant(mir_elem_ty, ConstValueKind::Zero));
+
+                let mut elements = vec![zero; array_len];
+                for i in start..=end {
+                    if i < array_len {
+                        elements[i] = sub_op.clone();
+                    }
+                }
+
+                self.finalize_array_initializer(elements, target_ty, destination)
+            }
+            _ => panic!("Designator on non-aggregate type"),
+        }
     }
 
     fn lower_brace_elision(

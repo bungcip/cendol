@@ -489,6 +489,31 @@ fn test_string_literal_array_init() {
 }
 
 #[test]
+fn test_nested_struct_designator() {
+    let source = r#"
+        struct SEA { int i; int j; };
+        struct SEB { struct SEA a; };
+        struct SEB b = { .a.j = 5 };
+        int main() { return 0; }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir, @r"
+    type %t0 = i32
+    type %t1 = struct SEB { a: %t2 }
+    type %t2 = struct SEA { i: %t0, j: %t0 }
+
+    global @b: %t1 = const struct_literal { 0: const struct_literal { 1: const 5 } }
+
+    fn main() -> i32
+    {
+
+      bb1:
+        return const 0
+    }
+    ");
+}
+
+#[test]
 fn test_wide_string_init() {
     run_full_pass(
         r#"

@@ -23,7 +23,7 @@ impl<'a> AstToMirLowerer<'a> {
             let node_span = self.ast.get_span(expr_ref);
             panic!("Type not resolved for node {:?} at {:?}", node_kind, node_span);
         });
-        let node_kind = self.ast.get_kind(expr_ref).clone();
+        let node_kind = *self.ast.get_kind(expr_ref);
 
         let mir_ty = self.lower_qual_type(ty);
 

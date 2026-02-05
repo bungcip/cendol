@@ -225,7 +225,7 @@ impl<'a> AstToMirLowerer<'a> {
         target_ty: QualType,
         destination: Option<Place>,
     ) -> Operand {
-        let kind = self.ast.get_kind(init_ref).clone();
+        let kind = *self.ast.get_kind(init_ref);
         let target_type = self.registry.get(target_ty.ty()).into_owned();
 
         match (&kind, &target_type.kind) {
@@ -361,7 +361,7 @@ impl<'a> AstToMirLowerer<'a> {
         ty: QualType,
     ) -> Option<crate::mir::ConstValueId> {
         let operand = self.lower_initializer(init_ref, ty, None);
-        self.operand_to_const_id(operand)
+        self.operand_to_const_id(&operand)
     }
 
     fn lower_initializer_with_designators(

@@ -698,13 +698,13 @@ impl Display for TypeQualifiers {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FunctionParameter {
     pub param_type: QualType,
     pub name: Option<NameId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct StructMember {
     pub name: Option<NameId>,
     pub member_type: QualType,
@@ -713,7 +713,7 @@ pub struct StructMember {
     pub span: SourceSpan,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EnumConstant {
     pub name: NameId,
     pub value: i64,

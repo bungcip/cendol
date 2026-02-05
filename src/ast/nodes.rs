@@ -17,7 +17,7 @@ use crate::{
 /// Maintained original structure for compatibility, but moved to this module.
 use crate::ast::literal::Literal;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub enum NodeKind {
     // --- Literals (Inline storage for common types) ---
     Literal(Literal),
@@ -335,7 +335,7 @@ pub struct InitializerListData {
     pub init_len: u16,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct FunctionData {
     pub symbol: SymbolRef,
     pub ty: TypeRef, // function type, not the return type
@@ -346,14 +346,14 @@ pub struct FunctionData {
     pub scope_id: ScopeId,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct ParamData {
     pub symbol: SymbolRef,
     pub ty: QualType,
 }
 
 // Semantic node data structures (type-resolved)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct VarDeclData {
     pub name: NameId,
     pub ty: QualType,
@@ -362,7 +362,7 @@ pub struct VarDeclData {
     pub alignment: Option<u16>, // Max alignment in bytes
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct FunctionDeclData {
     pub name: NameId,
     pub ty: TypeRef,
@@ -371,13 +371,13 @@ pub struct FunctionDeclData {
     pub scope_id: ScopeId,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct TypedefDeclData {
     pub name: NameId,
     pub ty: QualType,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct RecordDeclData {
     pub name: Option<NameId>,
     pub ty: TypeRef,
@@ -388,21 +388,21 @@ pub struct RecordDeclData {
     pub is_union: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct FieldDeclData {
     pub name: Option<NameId>,
     pub ty: QualType, // object type
     pub alignment: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct CallExpr {
     pub callee: NodeRef,
     pub arg_start: NodeRef, // index where CallArg located
     pub arg_len: u16,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct EnumDeclData {
     pub name: Option<NameId>,
     pub ty: TypeRef,
@@ -410,7 +410,7 @@ pub struct EnumDeclData {
     pub member_len: u16,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct EnumMemberData {
     pub name: NameId,
     pub value: i64,
@@ -543,7 +543,7 @@ impl BinaryOp {
     }
 }
 // Array sizes
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub enum ArraySize {
     Expression {
         expr: NodeRef,
@@ -567,21 +567,21 @@ pub struct DesignatedInitializer {
     pub initializer: NodeRef,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub enum Designator {
     FieldName(NameId),
     ArrayIndex(NodeRef),             // Index expression
     GnuArrayRange(NodeRef, NodeRef), // GCC extension: Range expression [start ... end]
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct GenericSelectionData {
     pub control: NodeRef,
     pub assoc_start: NodeRef,
     pub assoc_len: u16,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct GenericAssociationData {
     pub ty: Option<QualType>, // None for 'default:'
     pub result_expr: NodeRef,

@@ -103,6 +103,7 @@ pub enum TypeClass {
     Record = 4,
     Enum = 5,
     Typedef = 6,
+    Complex = 7,
 }
 
 impl TypeClass {
@@ -115,6 +116,7 @@ impl TypeClass {
             4 => Self::Record,
             5 => Self::Enum,
             6 => Self::Typedef,
+            7 => Self::Complex,
             _ => unreachable!("Invalid TypeClass value: {}", v),
         }
     }
@@ -286,7 +288,7 @@ impl TypeRef {
                     return None;
                 }
             }
-            TypeClass::Function | TypeClass::Record | TypeClass::Enum | TypeClass::Typedef => {
+            TypeClass::Function | TypeClass::Record | TypeClass::Enum | TypeClass::Typedef | TypeClass::Complex => {
                 if ptr_depth != 0 || arr_len != 0 {
                     return None;
                 }
@@ -371,6 +373,11 @@ impl TypeRef {
         self.class() == TypeClass::Enum
     }
 
+    #[inline]
+    pub(crate) fn is_complex(self) -> bool {
+        self.class() == TypeClass::Complex
+    }
+
     // --- Helpers for inline/registry check ---
 
     #[inline]
@@ -418,12 +425,17 @@ impl TypeRef {
 
     #[inline]
     pub(crate) fn is_floating(self) -> bool {
-        self.builtin().is_some_and(|b| b.is_floating())
+        self.is_complex() || self.builtin().is_some_and(|b| b.is_floating())
     }
 
     #[inline]
     pub(crate) fn is_arithmetic(self) -> bool {
         self.is_integer() || self.is_floating()
+    }
+
+    #[inline]
+    pub(crate) fn is_real(self) -> bool {
+        self.is_integer() || self.builtin().is_some_and(|b| b.is_floating())
     }
 
     #[inline]
@@ -513,6 +525,10 @@ impl QualType {
         self.ty().is_record()
     }
     #[inline]
+    pub(crate) fn is_complex(self) -> bool {
+        self.ty().is_complex()
+    }
+    #[inline]
     pub(crate) fn is_void(self) -> bool {
         self.ty().is_void()
     }
@@ -523,6 +539,10 @@ impl QualType {
     #[inline]
     pub(crate) fn is_arithmetic(self) -> bool {
         self.ty().is_arithmetic()
+    }
+    #[inline]
+    pub(crate) fn is_real(self) -> bool {
+        self.ty().is_real()
     }
     #[inline]
     pub(crate) fn is_scalar(self) -> bool {
@@ -582,7 +602,7 @@ impl TypeKind {
     pub(crate) fn to_class(&self) -> TypeClass {
         match self {
             TypeKind::Builtin(_) | TypeKind::Error => TypeClass::Builtin,
-            TypeKind::Complex { .. } => TypeClass::Record, // Treat complex as Record for now in terms of class, or fallthrough
+            TypeKind::Complex { .. } => TypeClass::Complex,
             TypeKind::Pointer { .. } => TypeClass::Pointer,
             TypeKind::Array { .. } => TypeClass::Array,
             TypeKind::Function { .. } => TypeClass::Function,

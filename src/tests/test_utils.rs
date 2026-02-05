@@ -37,13 +37,11 @@ pub(crate) fn sort_clif_ir(ir: &str) -> String {
                 functions.push(current_function);
             }
             current_function = chunk.trim_start().to_string();
+        } else if !current_function.is_empty() {
+            current_function.push_str("\n\n");
+            current_function.push_str(chunk);
         } else {
-            if !current_function.is_empty() {
-                current_function.push_str("\n\n");
-                current_function.push_str(chunk);
-            } else {
-                current_function = chunk.to_string();
-            }
+            current_function = chunk.to_string();
         }
     }
     if !current_function.is_empty() {

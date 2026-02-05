@@ -18,11 +18,11 @@ fn test_complex_declarations() {
     // Verify that we have some record types for complex numbers
     let mut found_complex = false;
     for ty in mir.types.values() {
-        if let crate::mir::MirType::Record { name, .. } = ty {
-            if name.as_str().contains("_Complex_") {
-                found_complex = true;
-                break;
-            }
+        if let crate::mir::MirType::Record { name, .. } = ty
+            && name.as_str().contains("_Complex_")
+        {
+            found_complex = true;
+            break;
         }
     }
     assert!(found_complex, "Should have found complex record types in MIR");

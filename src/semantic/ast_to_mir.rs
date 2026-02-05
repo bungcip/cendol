@@ -1072,6 +1072,27 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn emit_conversion(&mut self, operand: Operand, conv: &Conversion, target_type_id: TypeId) -> Operand {
+        let to_ty_ref = match conv {
+            Conversion::IntegerCast { to, .. }
+            | Conversion::IntegerPromotion { to, .. }
+            | Conversion::PointerCast { to, .. } => Some(*to),
+            Conversion::PointerDecay { to } => Some(*to),
+            _ => None,
+        };
+
+        let from_ty_ref = match conv {
+            Conversion::IntegerCast { from, .. }
+            | Conversion::IntegerPromotion { from, .. }
+            | Conversion::PointerCast { from, .. } => Some(*from),
+            _ => None,
+        };
+
+        if let Some(to) = to_ty_ref
+            && (to.is_complex() || from_ty_ref.is_some_and(|f| f.is_complex()))
+        {
+            return self.emit_complex_conversion(operand, from_ty_ref, to);
+        }
+
         let to_mir_type = match conv {
             Conversion::IntegerCast { to, .. }
             | Conversion::IntegerPromotion { to, .. }
@@ -1201,6 +1222,44 @@ impl<'a> AstToMirLowerer<'a> {
 
     pub(crate) fn get_int_type(&mut self) -> TypeId {
         self.lower_type(self.registry.type_int)
+    }
+
+    fn emit_complex_conversion(&mut self, operand: Operand, from_ty: Option<TypeRef>, to_ty: TypeRef) -> Operand {
+        let to_mir_ty = self.lower_type(to_ty);
+        let from_mir_ty = self.get_operand_type(&operand);
+
+        if to_ty.is_complex() {
+            let to_element_ty = match &self.registry.get(to_ty).kind {
+                TypeKind::Complex { base_type } => *base_type,
+                _ => unreachable!(),
+            };
+            let to_element_mir_ty = self.lower_type(to_element_ty);
+
+            if from_ty.is_some_and(|f| f.is_complex()) {
+                // Complex to Complex
+                let from_place = self.ensure_place(operand, from_mir_ty);
+                let real = Operand::Copy(Box::new(Place::StructField(Box::new(from_place.clone()), 0)));
+                let imag = Operand::Copy(Box::new(Place::StructField(Box::new(from_place), 1)));
+
+                let res_real = self.emit_rvalue_to_operand(Rvalue::Cast(to_element_mir_ty, real), to_element_mir_ty);
+                let res_imag = self.emit_rvalue_to_operand(Rvalue::Cast(to_element_mir_ty, imag), to_element_mir_ty);
+
+                self.emit_rvalue_to_operand(Rvalue::StructLiteral(vec![(0, res_real), (1, res_imag)]), to_mir_ty)
+            } else {
+                // Real to Complex
+                let res_real = self.emit_rvalue_to_operand(Rvalue::Cast(to_element_mir_ty, operand), to_element_mir_ty);
+                let zero_const = self.create_constant(to_element_mir_ty, ConstValueKind::Float(0.0));
+                let res_imag =
+                    self.emit_rvalue_to_operand(Rvalue::Use(Operand::Constant(zero_const)), to_element_mir_ty);
+
+                self.emit_rvalue_to_operand(Rvalue::StructLiteral(vec![(0, res_real), (1, res_imag)]), to_mir_ty)
+            }
+        } else {
+            // Complex to Real
+            let from_place = self.ensure_place(operand, from_mir_ty);
+            let real = Operand::Copy(Box::new(Place::StructField(Box::new(from_place), 0)));
+            self.emit_rvalue_to_operand(Rvalue::Cast(to_mir_ty, real), to_mir_ty)
+        }
     }
 
     pub(crate) fn create_temp_local(&mut self, type_id: TypeId) -> (LocalId, Place) {

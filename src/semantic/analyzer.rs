@@ -428,6 +428,8 @@ impl<'a> SemanticAnalyzer<'a> {
             UnaryOp::BitNot => {
                 if operand_ty.is_integer() {
                     Some(self.apply_and_record_integer_promotion(operand_ref, operand_ty))
+                } else if operand_ty.is_complex() {
+                    Some(operand_ty)
                 } else {
                     let type_kind = &self.registry.get(operand_ty.ty()).kind;
                     self.report_error(SemanticError::InvalidUnaryOperand {
@@ -481,12 +483,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
 
             // Pointer/Integer comparisons
-            BinaryOp::Equal
-            | BinaryOp::NotEqual
-            | BinaryOp::Less
-            | BinaryOp::LessEqual
-            | BinaryOp::Greater
-            | BinaryOp::GreaterEqual => {
+            BinaryOp::Equal | BinaryOp::NotEqual => {
                 let common = if lhs_promoted.is_pointer() && rhs_promoted.is_pointer() {
                     let lhs_base = self.registry.get_pointee(lhs_promoted.ty()).unwrap();
                     let rhs_base = self.registry.get_pointee(rhs_promoted.ty()).unwrap();
@@ -511,6 +508,35 @@ impl<'a> SemanticAnalyzer<'a> {
                     rhs_promoted
                 } else {
                     usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted)?
+                };
+                Some((QualType::unqualified(self.registry.type_int), common))
+            }
+
+            BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
+                let common = if lhs_promoted.is_pointer() && rhs_promoted.is_pointer() {
+                    let lhs_base = self.registry.get_pointee(lhs_promoted.ty()).unwrap();
+                    let rhs_base = self.registry.get_pointee(rhs_promoted.ty()).unwrap();
+                    if lhs_base != rhs_base {
+                        let lhs_str = self.registry.display_type(lhs_promoted.ty());
+                        let rhs_str = self.registry.display_type(rhs_promoted.ty());
+                        self.report_error(SemanticError::IncompatiblePointerComparison {
+                            lhs: lhs_str,
+                            rhs: rhs_str,
+                            span,
+                        });
+                    }
+                    lhs_promoted
+                } else if lhs_promoted.is_real() && rhs_promoted.is_real() {
+                    usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted)?
+                } else {
+                    let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                    let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                    self.report_error(SemanticError::InvalidBinaryOperands {
+                        left_ty: lhs_str,
+                        right_ty: rhs_str,
+                        span,
+                    });
+                    return None;
                 };
                 Some((QualType::unqualified(self.registry.type_int), common))
             }

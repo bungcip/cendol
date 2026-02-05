@@ -1945,16 +1945,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(SemanticError::Redefinition { name, first_def, span });
         }
 
-        if let Ok(layout) = self.registry.ensure_layout(final_ty.ty()) {
-            if let Some(req_align) = spec_info.alignment {
-                let natural_align = layout.alignment as u32;
-                if req_align < natural_align {
-                    self.report_error(SemanticError::AlignmentTooLoose {
-                        requested: req_align,
-                        natural: natural_align,
-                        span,
-                    });
-                }
+        if let Ok(layout) = self.registry.ensure_layout(final_ty.ty())
+            && let Some(req_align) = spec_info.alignment
+        {
+            let natural_align = layout.alignment as u32;
+            if req_align < natural_align {
+                self.report_error(SemanticError::AlignmentTooLoose {
+                    requested: req_align,
+                    natural: natural_align,
+                    span,
+                });
             }
         }
 
@@ -2735,18 +2735,17 @@ fn lower_struct_members(members: &[ParsedDeclarationData], ctx: &mut LowerCtx, s
                 });
             }
 
-            if bit_field_size.is_none() {
-                if let Ok(layout) = ctx.registry.ensure_layout(member_type.ty()) {
-                    if let Some(req_align) = spec_info.alignment {
-                        let natural_align = layout.alignment as u32;
-                        if req_align < natural_align {
-                            ctx.report_error(SemanticError::AlignmentTooLoose {
-                                requested: req_align,
-                                natural: natural_align,
-                                span: init_declarator.span,
-                            });
-                        }
-                    }
+            if bit_field_size.is_none()
+                && let Ok(layout) = ctx.registry.ensure_layout(member_type.ty())
+                && let Some(req_align) = spec_info.alignment
+            {
+                let natural_align = layout.alignment as u32;
+                if req_align < natural_align {
+                    ctx.report_error(SemanticError::AlignmentTooLoose {
+                        requested: req_align,
+                        natural: natural_align,
+                        span: init_declarator.span,
+                    });
                 }
             }
 

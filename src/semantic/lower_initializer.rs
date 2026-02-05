@@ -132,11 +132,11 @@ impl<'a> AstToMirLowerer<'a> {
             } else {
                 self.lower_initializer(init.initializer, element_ty, None)
             };
-            for i in start..=end {
-                if i >= elements.len() {
-                    elements.resize(i + 1, None);
-                }
-                elements[i] = Some(operand.clone());
+            if end >= elements.len() {
+                elements.resize(end + 1, None);
+            }
+            for item in elements.iter_mut().take(end + 1).skip(start) {
+                *item = Some(operand.clone());
             }
             current_idx = end + 1;
         }
@@ -412,10 +412,8 @@ impl<'a> AstToMirLowerer<'a> {
                 let zero = Operand::Constant(self.create_constant(mir_elem_ty, ConstValueKind::Zero));
 
                 let mut elements = vec![zero; array_len];
-                for i in start..=end {
-                    if i < array_len {
-                        elements[i] = sub_op.clone();
-                    }
+                for item in elements.iter_mut().take(end + 1).skip(start) {
+                    *item = sub_op.clone();
                 }
 
                 self.finalize_array_initializer(elements, target_ty, destination)

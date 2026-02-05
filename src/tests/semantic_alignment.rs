@@ -53,10 +53,10 @@ fn test_alignas_zero() {
     // Find x
     let mut x_align = None;
     for kind in &ast.kinds {
-        if let crate::ast::NodeKind::VarDecl(data) = kind {
-            if data.name.as_str() == "x" {
-                x_align = Some(data.alignment);
-            }
+        if let crate::ast::NodeKind::VarDecl(data) = kind
+            && data.name.as_str() == "x"
+        {
+            x_align = Some(data.alignment);
         }
     }
 

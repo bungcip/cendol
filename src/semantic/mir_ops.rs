@@ -12,6 +12,11 @@ pub(crate) fn emit_binary_rvalue(op: &BinaryOp, lhs: Operand, rhs: Operand, is_f
 }
 
 pub(crate) fn emit_unary_rvalue(op: &UnaryOp, operand: Operand, is_float: bool) -> Rvalue {
+    // Unary plus is a no-op in MIR (conversions handled by caller)
+    if matches!(op, UnaryOp::Plus) {
+        return Rvalue::Use(operand);
+    }
+
     if is_float {
         let mir_op = map_ast_unary_op_to_mir_float(op);
         Rvalue::UnaryFloatOp(mir_op, operand)

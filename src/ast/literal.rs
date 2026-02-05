@@ -18,7 +18,7 @@ pub enum FloatSuffix {
     L,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum Literal {
     Int { val: i64, suffix: Option<IntegerSuffix> },
     Float { val: f64, suffix: Option<FloatSuffix> },

@@ -99,7 +99,7 @@ impl<'a> AstToMirLowerer<'a> {
 
     pub(crate) fn lower_node_ref(&mut self, node_ref: NodeRef) {
         let old_scope = self.current_scope_id;
-        let node_kind = self.ast.get_kind(node_ref).clone();
+        let node_kind = *self.ast.get_kind(node_ref);
 
         match node_kind {
             NodeKind::TranslationUnit(tu_data) => {
@@ -242,7 +242,7 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     pub(crate) fn operand_to_const_id_strict(&mut self, op: Operand, msg: &str) -> ConstValueId {
-        if let Some(id) = self.operand_to_const_id(op.clone()) {
+        if let Some(id) = self.operand_to_const_id(&op) {
             id
         } else {
             panic!("{} - Operand: {:?}", msg, op);
@@ -251,7 +251,7 @@ impl<'a> AstToMirLowerer<'a> {
 
     pub(crate) fn evaluate_constant_usize(&mut self, expr: NodeRef, error_msg: &str) -> usize {
         let operand = self.lower_expression(expr, true);
-        if let Some(const_id) = self.operand_to_const_id(operand) {
+        if let Some(const_id) = self.operand_to_const_id(&operand) {
             let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
             if let ConstValueKind::Int(val) = const_val.kind {
                 val as usize
@@ -309,11 +309,11 @@ impl<'a> AstToMirLowerer<'a> {
         // Parameter locals are now created in `define_function`. We just need to
         // map the SymbolRef to the LocalId.
         self.local_map.clear();
-        let mir_function = self.mir_builder.get_functions().get(&func_id).unwrap().clone();
+        let mir_params = self.mir_builder.get_functions().get(&func_id).unwrap().params.clone();
 
         for (i, param_ref) in function_data.param_start.range(function_data.param_len).enumerate() {
             if let NodeKind::Param(param_data) = self.ast.get_kind(param_ref) {
-                let local_id = mir_function.params[i];
+                let local_id = mir_params[i];
                 self.local_map.insert(param_data.symbol, local_id);
             }
         }
@@ -716,7 +716,7 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn collect_switch_cases_recursive(&mut self, node: NodeRef, cases: &mut Vec<(NodeRef, Option<ConstValueId>)>) {
-        let kind = self.ast.get_kind(node).clone();
+        let kind = *self.ast.get_kind(node);
         match kind {
             NodeKind::Case(expr, stmt) => {
                 let op = self.lower_expression(expr, true);
@@ -1297,21 +1297,21 @@ impl<'a> AstToMirLowerer<'a> {
         Operand::Copy(Box::new(place))
     }
 
-    pub(crate) fn operand_to_const_id(&mut self, operand: Operand) -> Option<ConstValueId> {
+    pub(crate) fn operand_to_const_id(&mut self, operand: &Operand) -> Option<ConstValueId> {
         match operand {
-            Operand::Constant(id) => Some(id),
+            Operand::Constant(id) => Some(*id),
             Operand::Cast(ty, inner) => {
                 // Recursively try to get constant from inner operand
-                if let Some(inner_const_id) = self.operand_to_const_id(*inner) {
+                if let Some(inner_const_id) = self.operand_to_const_id(inner) {
                     let inner_const = self.mir_builder.get_constants().get(&inner_const_id).unwrap();
                     // Create a new constant with the target type but same kind
-                    Some(self.create_constant(ty, inner_const.kind.clone()))
+                    Some(self.create_constant(*ty, inner_const.kind.clone()))
                 } else {
                     None
                 }
             }
             Operand::AddressOf(place) => {
-                if let Place::Global(global_id) = *place {
+                if let Place::Global(global_id) = **place {
                     let global_type = self.get_global_type(global_id);
                     let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: global_type });
                     Some(self.create_constant(ptr_ty, ConstValueKind::GlobalAddress(global_id)))
@@ -1320,7 +1320,7 @@ impl<'a> AstToMirLowerer<'a> {
                 }
             }
             Operand::Copy(place) => {
-                if let Place::Global(global_id) = *place {
+                if let Place::Global(global_id) = **place {
                     // If it is an array, using it in an expression decays to a pointer (GlobalAddress)
                     let global_ty_id = self.get_global_type(global_id);
                     let global_mir_ty = self.mir_builder.get_type(global_ty_id);
@@ -1354,7 +1354,7 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn scan_for_labels(&mut self, node_ref: NodeRef) {
-        let node_kind = self.ast.get_kind(node_ref).clone();
+        let node_kind = *self.ast.get_kind(node_ref);
         if let NodeKind::Label(name, _, _) = node_kind
             && !self.label_map.contains_key(&name)
         {

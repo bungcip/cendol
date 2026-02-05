@@ -2146,7 +2146,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::Literal(literal) => {
                 let node = self.get_or_push_slot(target_slots, span);
-                self.ast.kinds[node.index()] = NodeKind::Literal(literal.clone());
+                self.ast.kinds[node.index()] = NodeKind::Literal(*literal);
                 smallvec![node]
             }
             ParsedNodeKind::Ident(name) => {

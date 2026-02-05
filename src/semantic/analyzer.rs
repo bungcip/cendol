@@ -1913,7 +1913,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut seen_types: Vec<(QualType, QualType, SourceSpan)> = Vec::new();
 
         for assoc_node_ref in gs.assoc_start.range(gs.assoc_len) {
-            let NodeKind::GenericAssociation(ga) = self.ast.get_kind(assoc_node_ref).clone() else {
+            let NodeKind::GenericAssociation(ga) = *self.ast.get_kind(assoc_node_ref) else {
                 continue;
             };
 

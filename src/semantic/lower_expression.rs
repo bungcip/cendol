@@ -264,10 +264,6 @@ impl<'a> AstToMirLowerer<'a> {
             }
             UnaryOp::AddrOf => self.lower_unary_addrof(operand_ref),
             UnaryOp::Deref => self.lower_unary_deref(operand_ref),
-            UnaryOp::Plus => {
-                let operand = self.lower_expression(operand_ref, true);
-                self.apply_conversions(operand, operand_ref, mir_ty)
-            }
             _ => {
                 let operand = self.lower_expression(operand_ref, true);
                 let operand_converted = self.apply_conversions(operand, operand_ref, mir_ty);
@@ -612,18 +608,14 @@ impl<'a> AstToMirLowerer<'a> {
             "lower_assignment_expr called with non-assignment operator: {:?}",
             op
         );
-        let lhs_op = self.lower_expression(left_ref, true);
 
         // Ensure the LHS is a place. If not, this is a semantic error.
         if self.ast.get_value_category(left_ref) != Some(ValueCategory::LValue) {
             panic!("LHS of assignment must be an lvalue");
         }
 
-        let place = if let Operand::Copy(place) = lhs_op {
-            *place
-        } else {
-            panic!("LHS of assignment lowered to non-place operand despite being LValue");
-        };
+        // Use lower_expression_as_place to properly resolve the destination place
+        let place = self.lower_expression_as_place(left_ref);
 
         let rhs_op = self.lower_expression(right_ref, true);
 
@@ -669,6 +661,31 @@ impl<'a> AstToMirLowerer<'a> {
     pub(crate) fn lower_function_call(&mut self, call_expr: &ast::nodes::CallExpr, dest_place: Option<Place>) {
         let callee = self.lower_expression(call_expr.callee, true);
 
+        let arg_operands = self.lower_function_call_args(call_expr);
+
+        let call_target = if let Operand::Constant(const_id) = callee {
+            if let ConstValue {
+                kind: ConstValueKind::FunctionAddress(func_id),
+                ..
+            } = self.mir_builder.get_constants().get(&const_id).unwrap()
+            {
+                CallTarget::Direct(*func_id)
+            } else {
+                panic!("Expected function address");
+            }
+        } else {
+            CallTarget::Indirect(callee)
+        };
+
+        let stmt = MirStmt::Call {
+            target: call_target,
+            args: arg_operands,
+            dest: dest_place,
+        };
+        self.mir_builder.add_statement(stmt);
+    }
+
+    fn lower_function_call_args(&mut self, call_expr: &ast::nodes::CallExpr) -> Vec<Operand> {
         let mut arg_operands = Vec::new();
 
         // Get the function type to determine parameter types for conversions
@@ -721,27 +738,7 @@ impl<'a> AstToMirLowerer<'a> {
 
             arg_operands.push(converted_arg);
         }
-
-        let call_target = if let Operand::Constant(const_id) = callee {
-            if let ConstValue {
-                kind: ConstValueKind::FunctionAddress(func_id),
-                ..
-            } = self.mir_builder.get_constants().get(&const_id).unwrap()
-            {
-                CallTarget::Direct(*func_id)
-            } else {
-                panic!("Expected function address");
-            }
-        } else {
-            CallTarget::Indirect(callee)
-        };
-
-        let stmt = MirStmt::Call {
-            target: call_target,
-            args: arg_operands,
-            dest: dest_place,
-        };
-        self.mir_builder.add_statement(stmt);
+        arg_operands
     }
 
     pub(crate) fn find_member_path(&self, record_ty: semantic::TypeRef, field_name: ast::NameId) -> Option<Vec<usize>> {

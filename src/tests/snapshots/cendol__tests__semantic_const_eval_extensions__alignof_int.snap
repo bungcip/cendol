@@ -1,0 +1,6 @@
+---
+source: src/tests/semantic_const_eval_extensions.rs
+expression: "format!(\"Expression: {}\\nResult: {}\", expr, val_str)"
+---
+Expression: _Alignof(int)
+Result: 4

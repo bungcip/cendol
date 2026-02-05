@@ -31,6 +31,26 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
         }
         NodeKind::BinaryOp(op, left_ref, right_ref) => {
             let left_val = eval_const_expr(ctx, *left_ref)?;
+
+            // Short-circuiting logic
+            match op {
+                BinaryOp::LogicAnd => {
+                    if left_val == 0 {
+                        return Some(0);
+                    }
+                    let right_val = eval_const_expr(ctx, *right_ref)?;
+                    return Some((right_val != 0) as i64);
+                }
+                BinaryOp::LogicOr => {
+                    if left_val != 0 {
+                        return Some(1);
+                    }
+                    let right_val = eval_const_expr(ctx, *right_ref)?;
+                    return Some((right_val != 0) as i64);
+                }
+                _ => {}
+            }
+
             let right_val = eval_const_expr(ctx, *right_ref)?;
             match op {
                 BinaryOp::Add => Some(left_val.wrapping_add(right_val)),
@@ -49,8 +69,7 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
                 BinaryOp::LessEqual => Some((left_val <= right_val) as i64),
                 BinaryOp::Greater => Some((left_val > right_val) as i64),
                 BinaryOp::GreaterEqual => Some((left_val >= right_val) as i64),
-                BinaryOp::LogicAnd => Some(((left_val != 0) && (right_val != 0)) as i64),
-                BinaryOp::LogicOr => Some(((left_val != 0) || (right_val != 0)) as i64),
+                // LogicAnd/LogicOr handled above
                 BinaryOp::BitOr => Some(left_val | right_val),
                 BinaryOp::BitAnd => Some(left_val & right_val),
                 BinaryOp::BitXor => Some(left_val ^ right_val),
@@ -76,6 +95,10 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
             let ty = ctx.ast.get_resolved_type(*expr).expect("Type not resolved");
             let layout = ctx.registry.get_layout(ty.ty());
             Some(layout.size as i64)
+        }
+        NodeKind::AlignOf(ty) => {
+            let layout = ctx.registry.get_layout(ty.ty());
+            Some(layout.alignment as i64)
         }
         NodeKind::SizeOfType(ty) => {
             let layout = ctx.registry.get_layout(ty.ty());

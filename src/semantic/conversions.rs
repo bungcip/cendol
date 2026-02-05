@@ -4,18 +4,39 @@
 use crate::semantic::{BuiltinType, QualType, TypeRegistry};
 
 /// Performs the "usual arithmetic conversions" as specified in C11 6.3.1.8.
-pub(crate) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
-    let lb = lhs.ty().builtin()?;
-    let rb = rhs.ty().builtin()?;
+pub(crate) fn usual_arithmetic_conversions(ctx: &mut TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
+    let lt = lhs.ty();
+    let rt = rhs.ty();
 
-    // Floating point conversions: long double > double > float
-    if lb.is_floating() || rb.is_floating() {
-        let common = match (lb, rb) {
-            (BuiltinType::LongDouble, _) | (_, BuiltinType::LongDouble) => ctx.type_long_double,
-            (BuiltinType::Double, _) | (_, BuiltinType::Double) => ctx.type_double,
+    if lt.is_floating() || rt.is_floating() {
+        let get_real_type = |registry: &TypeRegistry, ty: crate::semantic::TypeRef| {
+            if ty.is_complex() {
+                match &registry.get(ty).kind {
+                    crate::semantic::TypeKind::Complex { base_type } => Some(*base_type),
+                    _ => None,
+                }
+            } else {
+                Some(ty)
+            }
+        };
+
+        let lr = get_real_type(ctx, lt)?;
+        let rr = get_real_type(ctx, rt)?;
+
+        let lb = lr.builtin();
+        let rb = rr.builtin();
+
+        let common_real = match (lb, rb) {
+            (Some(BuiltinType::LongDouble), _) | (_, Some(BuiltinType::LongDouble)) => ctx.type_long_double,
+            (Some(BuiltinType::Double), _) | (_, Some(BuiltinType::Double)) => ctx.type_double,
             _ => ctx.type_float,
         };
-        return Some(QualType::unqualified(common));
+
+        if lt.is_complex() || rt.is_complex() {
+            return Some(QualType::unqualified(ctx.complex_type(common_real)));
+        } else {
+            return Some(QualType::unqualified(common_real));
+        }
     }
 
     // Both types are promoted to at least 'int' or 'unsigned int'
@@ -48,7 +69,11 @@ pub(crate) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rh
 
 /// Performs integer promotions as specified in C11 6.3.1.1.
 pub(crate) fn integer_promotion(ctx: &TypeRegistry, ty: QualType) -> QualType {
-    match ty.ty().builtin() {
+    let t = ty.ty();
+    if t.is_enum() {
+        return QualType::unqualified(ctx.type_int);
+    }
+    match t.builtin() {
         Some(b) if b.is_integer() && b.rank() < BuiltinType::Int.rank() => QualType::unqualified(ctx.type_int),
         _ => ty,
     }

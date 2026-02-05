@@ -22,10 +22,10 @@ fn snapshot_const_eval_batch(name: &str, exprs: &[&str]) {
             tu.decl_start
                 .range(tu.decl_len)
                 .find_map(|decl_ref| {
-                    if let NodeKind::VarDecl(data) = ast.get_kind(decl_ref) {
-                        if data.name.to_string() == "test_var" {
-                            return data.init;
-                        }
+                    if let NodeKind::VarDecl(data) = ast.get_kind(decl_ref)
+                        && data.name.to_string() == "test_var"
+                    {
+                        return data.init;
                     }
                     None
                 })
@@ -130,10 +130,10 @@ fn test_enum_constants() {
         tu.decl_start
             .range(tu.decl_len)
             .find_map(|decl_ref| {
-                if let NodeKind::VarDecl(data) = ast.get_kind(decl_ref) {
-                    if data.name.to_string() == "test_var" {
-                        return data.init;
-                    }
+                if let NodeKind::VarDecl(data) = ast.get_kind(decl_ref)
+                    && data.name.to_string() == "test_var"
+                {
+                    return data.init;
                 }
                 None
             })

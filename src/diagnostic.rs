@@ -386,16 +386,10 @@ pub enum SemanticError {
     },
 
     #[error("_Atomic qualifier cannot be used with {type_kind} type")]
-    InvalidAtomicQualifier {
-        type_kind: String,
-        span: SourceSpan,
-    },
+    InvalidAtomicQualifier { type_kind: String, span: SourceSpan },
 
     #[error("_Atomic(type-name) specifier cannot be used with {reason}")]
-    InvalidAtomicSpecifier {
-        reason: String,
-        span: SourceSpan,
-    },
+    InvalidAtomicSpecifier { reason: String, span: SourceSpan },
 }
 
 impl SemanticError {

@@ -599,7 +599,7 @@ impl<'src> Preprocessor<'src> {
     pub fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPError> {
         // Initialize lexer for main file
         let buffer_len = self.sm.get_buffer(source_id).len() as u32;
-        let buffer = self.sm.get_buffer(source_id).to_vec();
+        let buffer = self.sm.get_buffer_arc(source_id);
 
         self.lexer_stack.push(PPLexer::new(source_id, buffer));
         self.sm.calculate_line_starts(source_id);
@@ -972,8 +972,8 @@ impl<'src> Preprocessor<'src> {
         let source_id = self
             .sm
             .add_buffer(pragma_content.as_bytes().to_vec(), "<_Pragma>", None);
-        let buffer = self.sm.get_buffer(source_id);
-        let mut temp_lexer = PPLexer::new(source_id, buffer.to_vec());
+        let buffer = self.sm.get_buffer_arc(source_id);
+        let mut temp_lexer = PPLexer::new(source_id, buffer);
 
         // Collect all tokens from the pragma content
         let mut tokens = Vec::new();
@@ -1240,8 +1240,8 @@ impl<'src> Preprocessor<'src> {
             self.expect_eod()?;
         }
 
-        let buffer = self.sm.get_buffer(include_source_id);
-        self.lexer_stack.push(PPLexer::new(include_source_id, buffer.to_vec()));
+        let buffer = self.sm.get_buffer_arc(include_source_id);
+        self.lexer_stack.push(PPLexer::new(include_source_id, buffer));
         self.include_depth += 1;
 
         Ok(())
@@ -2214,8 +2214,8 @@ impl<'src> Preprocessor<'src> {
         let virtual_id = self.sm.add_virtual_buffer(virtual_buffer, "<pasted-tokens>", None);
 
         // Create a temporary lexer to lex the pasted text
-        let buffer = self.sm.get_buffer(virtual_id);
-        let mut lexer = PPLexer::new(virtual_id, buffer.to_vec());
+        let buffer = self.sm.get_buffer_arc(virtual_id);
+        let mut lexer = PPLexer::new(virtual_id, buffer);
 
         let mut tokens = Vec::new();
         while let Some(token) = lexer.next_token() {

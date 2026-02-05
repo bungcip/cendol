@@ -40,12 +40,7 @@ impl<'a> AstToMirLowerer<'a> {
             let operand = if init.designator_len > 1 {
                 let range = init.designator_start.range(init.designator_len);
                 let iter = range.skip(1);
-                self.lower_initializer_with_designators(
-                    iter,
-                    init.initializer,
-                    members[field_idx].member_type,
-                    None,
-                )
+                self.lower_initializer_with_designators(iter, init.initializer, members[field_idx].member_type, None)
             } else {
                 self.lower_initializer(init.initializer, members[field_idx].member_type, None)
             };
@@ -386,24 +381,18 @@ impl<'a> AstToMirLowerer<'a> {
 
         match &target_type.kind {
             TypeKind::Record { members, .. } => {
-                let member_idx = if let NodeKind::Designator(Designator::FieldName(name)) =
-                    self.ast.get_kind(designator)
-                {
-                    members
-                        .iter()
-                        .position(|m| m.name == Some(*name))
-                        .expect("Unknown field in designator")
-                } else {
-                    panic!("Expected field designator for struct initialization");
-                };
+                let member_idx =
+                    if let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(designator) {
+                        members
+                            .iter()
+                            .position(|m| m.name == Some(*name))
+                            .expect("Unknown field in designator")
+                    } else {
+                        panic!("Expected field designator for struct initialization");
+                    };
 
                 let member_ty = members[member_idx].member_type;
-                let sub_op = self.lower_initializer_with_designators(
-                    designators,
-                    initializer,
-                    member_ty,
-                    None,
-                );
+                let sub_op = self.lower_initializer_with_designators(designators, initializer, member_ty, None);
 
                 self.finalize_struct_initializer(vec![(member_idx, sub_op)], target_ty, destination)
             }
@@ -411,12 +400,7 @@ impl<'a> AstToMirLowerer<'a> {
                 let (start, end) = self.resolve_designator_range(designator);
                 let elem_ty = QualType::unqualified(*element_type);
 
-                let sub_op = self.lower_initializer_with_designators(
-                    designators,
-                    initializer,
-                    elem_ty,
-                    None,
-                );
+                let sub_op = self.lower_initializer_with_designators(designators, initializer, elem_ty, None);
 
                 let array_len = if let ArraySizeType::Constant(s) = size {
                     *s
@@ -425,8 +409,7 @@ impl<'a> AstToMirLowerer<'a> {
                 };
 
                 let mir_elem_ty = self.lower_qual_type(elem_ty);
-                let zero =
-                    Operand::Constant(self.create_constant(mir_elem_ty, ConstValueKind::Zero));
+                let zero = Operand::Constant(self.create_constant(mir_elem_ty, ConstValueKind::Zero));
 
                 let mut elements = vec![zero; array_len];
                 for i in start..=end {

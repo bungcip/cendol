@@ -1042,6 +1042,31 @@ fn emit_memcpy(
     Ok(())
 }
 
+/// Helper function to emit a memset call
+fn emit_memset(
+    dest: Value,
+    val: i8,
+    size: i64,
+    builder: &mut FunctionBuilder,
+    module: &mut ObjectModule,
+) -> Result<(), String> {
+    let mut sig = Signature::new(builder.func.signature.call_conv);
+    sig.params.push(AbiParam::new(types::I64)); // dest
+    sig.params.push(AbiParam::new(types::I32)); // val
+    sig.params.push(AbiParam::new(types::I64)); // size
+    sig.returns.push(AbiParam::new(types::I64)); // returns dest (ignored)
+
+    let callee = module
+        .declare_function("memset", Linkage::Import, &sig)
+        .map_err(|e| format!("Failed to declare memset: {:?}", e))?;
+    let local_callee = module.declare_func_in_func(callee, builder.func);
+
+    let val_val = builder.ins().iconst(types::I32, val as i64);
+    let size_val = builder.ins().iconst(types::I64, size);
+    builder.ins().call(local_callee, &[dest, val_val, size_val]);
+    Ok(())
+}
+
 /// Helper function to emit a type conversion in Cranelift
 fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, builder: &mut FunctionBuilder) -> Value {
     if from == to {
@@ -1946,6 +1971,10 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     else {
                         return Err("StructLiteral with non-record type".to_string());
                     };
+
+                    // Zero-initialize the entire struct first to ensure uninitialized members are zero
+                    let struct_size = layout.size as i64;
+                    emit_memset(dest_addr, 0, struct_size, ctx.builder, ctx.module)?;
 
                     for (field_idx, element_op) in fields.iter() {
                         let offset = layout.field_offsets[*field_idx] as i64;

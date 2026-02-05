@@ -121,7 +121,10 @@ mod tests {
         assert_eq!(map_ast_binary_op_to_mir_float(&BinaryOp::Less), BinaryFloatOp::Lt);
         assert_eq!(map_ast_binary_op_to_mir_float(&BinaryOp::LessEqual), BinaryFloatOp::Le);
         assert_eq!(map_ast_binary_op_to_mir_float(&BinaryOp::Greater), BinaryFloatOp::Gt);
-        assert_eq!(map_ast_binary_op_to_mir_float(&BinaryOp::GreaterEqual), BinaryFloatOp::Ge);
+        assert_eq!(
+            map_ast_binary_op_to_mir_float(&BinaryOp::GreaterEqual),
+            BinaryFloatOp::Ge
+        );
 
         // Test map_ast_unary_op_to_mir_int
         assert_eq!(map_ast_unary_op_to_mir_int(&UnaryOp::Minus), UnaryIntOp::Neg);
@@ -154,8 +157,8 @@ mod tests {
         }
 
         match emit_unary_rvalue(&UnaryOp::Minus, op1.clone(), true) {
-             Rvalue::UnaryFloatOp(op, _) => assert_eq!(op, UnaryFloatOp::Neg),
-             _ => panic!("Expected UnaryFloatOp"),
+            Rvalue::UnaryFloatOp(op, _) => assert_eq!(op, UnaryFloatOp::Neg),
+            _ => panic!("Expected UnaryFloatOp"),
         }
     }
 }

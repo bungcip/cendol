@@ -224,6 +224,19 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if add.contains(TypeQualifiers::RESTRICT) && !base.is_pointer() {
             self.report_error(SemanticError::InvalidRestrict { span });
         }
+        if add.contains(TypeQualifiers::ATOMIC) {
+            if base.is_array() {
+                self.report_error(SemanticError::InvalidAtomicQualifier {
+                    type_kind: "array".to_string(),
+                    span,
+                });
+            } else if base.is_function() {
+                self.report_error(SemanticError::InvalidAtomicQualifier {
+                    type_kind: "function".to_string(),
+                    span,
+                });
+            }
+        }
         self.registry.merge_qualifiers(base, add)
     }
 
@@ -676,7 +689,33 @@ fn resolve_type_specifier(
         ParsedTypeSpecifier::Complex => Ok(QualType::unqualified(ctx.registry.type_complex_marker)),
         ParsedTypeSpecifier::Atomic(parsed_type) => {
             // Convert the ParsedType to a TypeRef by applying the declarator to the base type
-            convert_to_qual_type(ctx, *parsed_type, span)
+            let qt = convert_to_qual_type(ctx, *parsed_type, span)?;
+
+            // C11 6.7.2.4p3: shall not be used if the type-name is an array type,
+            // a function type, an atomic type, or a qualified type.
+            if qt.is_array() {
+                ctx.report_error(SemanticError::InvalidAtomicSpecifier {
+                    reason: "array type".to_string(),
+                    span,
+                });
+            } else if qt.is_function() {
+                ctx.report_error(SemanticError::InvalidAtomicSpecifier {
+                    reason: "function type".to_string(),
+                    span,
+                });
+            } else if qt.qualifiers().contains(TypeQualifiers::ATOMIC) {
+                ctx.report_error(SemanticError::InvalidAtomicSpecifier {
+                    reason: "atomic type".to_string(),
+                    span,
+                });
+            } else if !qt.qualifiers().is_empty() {
+                ctx.report_error(SemanticError::InvalidAtomicSpecifier {
+                    reason: "qualified type".to_string(),
+                    span,
+                });
+            }
+
+            Ok(ctx.registry.merge_qualifiers(qt, TypeQualifiers::ATOMIC))
         }
         ParsedTypeSpecifier::Record(is_union, tag, definition) => {
             // ... resolve_record_tag works same args ...

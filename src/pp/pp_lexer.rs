@@ -1088,10 +1088,6 @@ impl PPLexer {
 
                 if let Some(next_ch) = self.next_char() {
                     chars.push(next_ch);
-                    if next_ch == b'\n' {
-                        // This is line splicing within a string - the newline is consumed as part of the escape
-                        continue;
-                    }
                 }
             } else if ch >= 0x80 {
                 // Handle UTF-8 multi-byte characters

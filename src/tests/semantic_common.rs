@@ -62,6 +62,31 @@ pub fn setup_lowering(source: &str) -> (Ast, TypeRegistry, crate::semantic::Symb
     )
 }
 
+pub fn setup_analysis(source: &str) -> (Ast, TypeRegistry, crate::semantic::SymbolTable) {
+    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::SemanticLowering);
+    let out = match result {
+        Ok(out) => out,
+        Err(_) => panic!("failed to run: {:?}", driver.get_diagnostics()),
+    };
+    let unit = out.units.into_iter().next().expect("No units in output").1;
+
+    let mut ast = unit.ast.expect("No AST available");
+    let mut registry = unit.type_registry.expect("No TypeRegistry available");
+    let symbol_table = unit.symbol_table.expect("No SymbolTable available");
+
+    let mut diagnostics = crate::diagnostic::DiagnosticEngine::from_warnings(&[]);
+    let semantic_info =
+        crate::semantic::analyzer::run_semantic_analyzer(&ast, &mut diagnostics, &symbol_table, &mut registry);
+
+    if diagnostics.has_errors() {
+        panic!("Semantic analysis failed: {:?}", diagnostics.diagnostics());
+    }
+
+    ast.attach_semantic_info(semantic_info);
+
+    (ast, registry, symbol_table)
+}
+
 pub fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'a crate::semantic::Type {
     registry
         .types

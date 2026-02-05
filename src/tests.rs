@@ -66,3 +66,4 @@ pub mod codegen_regr;
 pub mod complex_arithmetic;
 pub mod complex_types;
 pub mod guardian_alignment;
+pub mod semantic_const_eval_extensions;

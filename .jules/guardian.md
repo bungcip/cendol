@@ -29,3 +29,8 @@ Action: Implement and enforce alignment constraints during the semantic lowering
 
 Learning: C11 `_Alignas` (6.7.5) has strict constraints on where it can appear: it is prohibited in `typedef`s, function declarations, function parameters, and `register` objects. Additionally, it cannot specify an alignment less strict than the type's natural alignment. While `_Alignas(0)` is valid and has no effect, any other value must be a power of two and satisfy the strictness constraint.
 Action: Implement and enforce alignment constraints during the semantic lowering phase to ensure C11 compliance and prevent invalid object layouts.
+
+2025-05-19 - [_Atomic Constraints and Specifiers]
+
+Learning: C11 (6.7.2.4 and 6.7.3) enforces strict constraints on _Atomic. The qualifier is prohibited on array and function types. The _Atomic(type-name) specifier is even stricter: it also prohibits already atomic types and qualified types, and it requires the type-name to designate an object type. Redundant _Atomic qualifiers in a specifier-qualifier list are allowed and collapsed, but nested _Atomic specifiers are specifically prohibited by the specifier's constraints.
+Action: Enforce _Atomic constraints during semantic lowering in both qualifier merging and type-name resolution. Ensure that _Atomic(type-name) correctly results in an atomic-qualified version of the inner type.

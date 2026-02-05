@@ -159,7 +159,6 @@ fn test_initializer_list_crash_regression() {
     type %t2 = u8
     type %t3 = struct anonymous {  }
 
-    global @.L.str0: %t3 = const struct_literal {  }
     global @ce: %t1 = const struct_literal { 0: const 1, 1: const struct_literal {  }, 2: const 18 }
 
     fn main() -> i32
@@ -567,4 +566,54 @@ fn test_array_init_bug() {
         }
     "#,
     );
+}
+
+#[test]
+fn test_struct_array_brace_elision() {
+    let source = r#"
+        struct S { unsigned char c[2]; };
+        struct S gs = {1, 2};
+        int main() { return 0; }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir, @r"
+    type %t0 = i32
+    type %t1 = struct S { c: %t3 }
+    type %t2 = u8
+    type %t3 = [2]%t2
+
+    global @gs: %t1 = const struct_literal { 0: const array_literal [const 1, const 2] }
+
+    fn main() -> i32
+    {
+
+      bb1:
+        return const 0
+    }
+    ");
+}
+
+#[test]
+fn test_brace_elision_designator_break() {
+    let source = r#"
+        struct Inner { int a; };
+        struct Outer { struct Inner i; int b; };
+        struct Outer o = { 1, .b = 2 };
+        int main() { return 0; }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir, @r"
+    type %t0 = i32
+    type %t1 = struct Outer { i: %t2, b: %t0 }
+    type %t2 = struct Inner { a: %t0 }
+
+    global @o: %t1 = const struct_literal { 0: const struct_literal { 0: const 1 }, 1: const 2 }
+
+    fn main() -> i32
+    {
+
+      bb1:
+        return const 0
+    }
+    ");
 }

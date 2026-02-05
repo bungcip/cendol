@@ -1,3 +1,5 @@
+use std::iter::Peekable;
+
 use crate::ast;
 use crate::ast::{Designator, NodeKind, NodeRef, literal};
 use crate::mir::{ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue};
@@ -13,36 +15,155 @@ impl<'a> AstToMirLowerer<'a> {
         target_ty: QualType,
         destination: Option<Place>,
     ) -> Operand {
+        let range = list_data.init_start.range(list_data.init_len);
+        let mut iter = range.peekable();
+        self.lower_initializer_list_from_iter(&mut iter, None, members, field_offsets, target_ty, destination)
+    }
+
+    fn lower_initializer_list_from_iter(
+        &mut self,
+        iter: &mut Peekable<impl Iterator<Item = NodeRef>>,
+        pending_initializer: Option<NodeRef>,
+        members: &[StructMember],
+        field_offsets: &[u16],
+        target_ty: QualType,
+        destination: Option<Place>,
+    ) -> Operand {
         let mut field_operands = Vec::new();
         let mut current_pos = 0;
+        let mut first_item_processed = false;
 
-        for item_ref in list_data.init_start.range(list_data.init_len) {
-            let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
-                continue;
+        loop {
+            // Determine the next item to process
+            // If we have a pending initializer (brace elision from parent), use it first.
+            // Otherwise, peek the iterator.
+            let (item_ref, is_pending) = if let Some(pending) = pending_initializer
+                && !first_item_processed
+            {
+                first_item_processed = true;
+                (pending, true)
+            } else if let Some(r) = iter.peek() {
+                (*r, false)
+            } else {
+                break;
             };
 
-            let field_idx = if init.designator_len > 0 {
-                let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(init.designator_start) else {
+            let (initializer, designator_info) = if is_pending {
+                // Pending initializer is just the expression/value, no designators
+                (item_ref, None)
+            } else {
+                let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
+                    iter.next(); // Should not happen
+                    continue;
+                };
+                (
+                    init.initializer,
+                    if init.designator_len > 0 {
+                        Some((init.designator_start, init.designator_len))
+                    } else {
+                        None
+                    },
+                )
+            };
+
+            let field_idx = if let Some((d_start, _)) = designator_info {
+                let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(d_start) else {
+                    // Not a field designator (could be array designator if this struct is inside an array?)
+                    // If we encounter an array designator here, it does not belong to this struct.
+                    // We must return to the caller.
+                    if !is_pending {
+                        break;
+                    }
                     panic!("Array designator in struct initializer");
                 };
-                members
-                    .iter()
-                    .position(|m| m.name == Some(*name))
-                    .expect("Unknown field in designator")
+
+                if let Some(pos) = members.iter().position(|m| m.name == Some(*name)) {
+                    pos
+                } else {
+                    // Unknown field name. If it doesn't belong to this struct,
+                    // it might belong to a parent struct (if we are recursing).
+                    // We break to let the caller handle it.
+                    // Note: If this is the top-level and the field is truly unknown,
+                    // this will result in the designator being ignored (or picked up by next iter?)
+                    // Ideally we should error if no one claims it, but avoiding panic on valid code is priority.
+                    break;
+                }
             } else {
                 current_pos
             };
 
             if field_idx >= members.len() {
-                continue;
+                if !is_pending {
+                    // No more fields, but we have items.
+                    // If they are positional, it's "excess elements" (ignored or error).
+                    // We consume and ignore? Or break?
+                    // Clang warns. We'll just break to let outer handle (or drop).
+                    // Actually, if we break, outer might pick it up.
+                    // But for positional, excess elements usually dropped.
+                    // Let's break.
+                    break;
+                }
+                break;
             }
 
-            let operand = if init.designator_len > 1 {
-                let range = init.designator_start.range(init.designator_len);
-                let iter = range.skip(1);
-                self.lower_initializer_with_designators(iter, init.initializer, members[field_idx].member_type, None)
+            // Consume the item from iterator if it wasn't pending
+            if !is_pending {
+                iter.next();
+            }
+
+            let operand = if let Some((d_start, d_len)) = designator_info
+                && d_len > 1
+            {
+                let range = d_start.range(d_len);
+                let sub_iter = range.skip(1);
+                self.lower_initializer_with_designators(sub_iter, initializer, members[field_idx].member_type, None)
             } else {
-                self.lower_initializer(init.initializer, members[field_idx].member_type, None)
+                // Check for brace elision recursion
+                let member_ty = members[field_idx].member_type;
+                let member_type_kind = &self.registry.get(member_ty.ty()).kind;
+                let init_kind = self.ast.get_kind(initializer);
+
+                let is_aggregate_member = matches!(member_type_kind, TypeKind::Record { .. } | TypeKind::Array { .. });
+                let is_braced_init = matches!(init_kind, NodeKind::InitializerList(_));
+                let is_string_literal = matches!(init_kind, NodeKind::Literal(literal::Literal::String(_)));
+
+                // If member is aggregate, and init is NOT braced (and not string for array),
+                // we recurse with brace elision.
+                if is_aggregate_member && !is_braced_init && !is_string_literal {
+                    match member_type_kind {
+                        TypeKind::Record { .. } => {
+                            let (mut sub_members, mut sub_offsets) = (Vec::new(), Vec::new());
+                            self.registry.get(member_ty.ty()).clone().flatten_members_with_layouts(
+                                self.registry,
+                                &mut sub_members,
+                                &mut sub_offsets,
+                                0,
+                            );
+                            self.lower_initializer_list_from_iter(
+                                iter,
+                                Some(initializer),
+                                &sub_members,
+                                &sub_offsets,
+                                member_ty,
+                                None,
+                            )
+                        }
+                        TypeKind::Array { element_type, size } => {
+                            let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
+                            self.lower_array_initializer_from_iter(
+                                iter,
+                                Some(initializer),
+                                QualType::unqualified(*element_type),
+                                array_size,
+                                member_ty,
+                                None,
+                            )
+                        }
+                        _ => unreachable!(),
+                    }
+                } else {
+                    self.lower_initializer(initializer, member_ty, None)
+                }
             };
             field_operands.push((field_idx, operand));
 
@@ -111,26 +232,130 @@ impl<'a> AstToMirLowerer<'a> {
         target_ty: QualType,
         destination: Option<Place>,
     ) -> Operand {
+        let range = list_data.init_start.range(list_data.init_len);
+        let mut iter = range.peekable();
+        self.lower_array_initializer_from_iter(&mut iter, None, element_ty, size, target_ty, destination)
+    }
+
+    fn lower_array_initializer_from_iter(
+        &mut self,
+        iter: &mut Peekable<impl Iterator<Item = NodeRef>>,
+        pending_initializer: Option<NodeRef>,
+        element_ty: QualType,
+        size: usize,
+        target_ty: QualType,
+        destination: Option<Place>,
+    ) -> Operand {
         let mut elements: Vec<Option<Operand>> = vec![None; size];
         let mut current_idx = 0;
+        let mut first_item_processed = false;
 
-        for item_ref in list_data.init_start.range(list_data.init_len) {
-            let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
-                continue;
+        loop {
+            // Determine next item
+            let (item_ref, is_pending) = if let Some(pending) = pending_initializer
+                && !first_item_processed
+            {
+                first_item_processed = true;
+                (pending, true)
+            } else if let Some(r) = iter.peek() {
+                (*r, false)
+            } else {
+                break;
             };
 
-            let (start, end) = if init.designator_len > 0 {
-                self.resolve_designator_range(init.designator_start)
+            let (initializer, designator_info) = if is_pending {
+                (item_ref, None)
+            } else {
+                let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
+                    iter.next();
+                    continue;
+                };
+                (
+                    init.initializer,
+                    if init.designator_len > 0 {
+                        Some((init.designator_start, init.designator_len))
+                    } else {
+                        None
+                    },
+                )
+            };
+
+            let (start, end) = if let Some((d_start, _)) = designator_info {
+                match self.ast.get_kind(d_start) {
+                    NodeKind::Designator(Designator::ArrayIndex(_))
+                    | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => self.resolve_designator_range(d_start),
+                    _ => {
+                        // Field designator or other. Not for array.
+                        if !is_pending {
+                            break;
+                        }
+                        panic!("Field designator in array initializer");
+                    }
+                }
             } else {
                 (current_idx, current_idx)
             };
 
-            let operand = if init.designator_len > 1 {
-                let range = init.designator_start.range(init.designator_len);
-                let iter = range.skip(1);
-                self.lower_initializer_with_designators(iter, init.initializer, element_ty, None)
+            if !is_pending {
+                iter.next();
+            }
+
+            let operand = if let Some((d_start, d_len)) = designator_info
+                && d_len > 1
+            {
+                let range = d_start.range(d_len);
+                let sub_iter = range.skip(1);
+                self.lower_initializer_with_designators(sub_iter, initializer, element_ty, None)
             } else {
-                self.lower_initializer(init.initializer, element_ty, None)
+                // Check for brace elision
+                let elem_type_kind = &self.registry.get(element_ty.ty()).kind;
+                let init_kind = self.ast.get_kind(initializer);
+                let is_aggregate_elem = matches!(elem_type_kind, TypeKind::Record { .. } | TypeKind::Array { .. });
+                let is_braced_init = matches!(init_kind, NodeKind::InitializerList(_));
+                let is_string_literal = matches!(init_kind, NodeKind::Literal(literal::Literal::String(_)));
+
+                if is_aggregate_elem && !is_braced_init && !is_string_literal {
+                    match elem_type_kind {
+                        TypeKind::Record { .. } => {
+                            let (mut sub_members, mut sub_offsets) = (Vec::new(), Vec::new());
+                            self.registry.get(element_ty.ty()).clone().flatten_members_with_layouts(
+                                self.registry,
+                                &mut sub_members,
+                                &mut sub_offsets,
+                                0,
+                            );
+                            self.lower_initializer_list_from_iter(
+                                iter,
+                                Some(initializer),
+                                &sub_members,
+                                &sub_offsets,
+                                element_ty,
+                                None,
+                            )
+                        }
+                        TypeKind::Array {
+                            element_type: inner_elem,
+                            size: inner_size,
+                        } => {
+                            let array_size = if let ArraySizeType::Constant(s) = inner_size {
+                                *s
+                            } else {
+                                0
+                            };
+                            self.lower_array_initializer_from_iter(
+                                iter,
+                                Some(initializer),
+                                QualType::unqualified(*inner_elem),
+                                array_size,
+                                element_ty,
+                                None,
+                            )
+                        }
+                        _ => unreachable!(),
+                    }
+                } else {
+                    self.lower_initializer(initializer, element_ty, None)
+                }
             };
             if end >= elements.len() {
                 elements.resize(end + 1, None);

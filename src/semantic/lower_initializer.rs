@@ -17,14 +17,7 @@ impl<'a> AstToMirLowerer<'a> {
     ) -> Operand {
         let range = list_data.init_start.range(list_data.init_len);
         let mut iter = range.peekable();
-        self.lower_initializer_list_from_iter(
-            &mut iter,
-            None,
-            members,
-            field_offsets,
-            target_ty,
-            destination,
-        )
+        self.lower_initializer_list_from_iter(&mut iter, None, members, field_offsets, target_ty, destination)
     }
 
     fn lower_initializer_list_from_iter(
@@ -123,22 +116,14 @@ impl<'a> AstToMirLowerer<'a> {
             {
                 let range = d_start.range(d_len);
                 let sub_iter = range.skip(1);
-                self.lower_initializer_with_designators(
-                    sub_iter,
-                    initializer,
-                    members[field_idx].member_type,
-                    None,
-                )
+                self.lower_initializer_with_designators(sub_iter, initializer, members[field_idx].member_type, None)
             } else {
                 // Check for brace elision recursion
                 let member_ty = members[field_idx].member_type;
                 let member_type_kind = &self.registry.get(member_ty.ty()).kind;
                 let init_kind = self.ast.get_kind(initializer);
 
-                let is_aggregate_member = matches!(
-                    member_type_kind,
-                    TypeKind::Record { .. } | TypeKind::Array { .. }
-                );
+                let is_aggregate_member = matches!(member_type_kind, TypeKind::Record { .. } | TypeKind::Array { .. });
                 let is_braced_init = matches!(init_kind, NodeKind::InitializerList(_));
                 let is_string_literal = matches!(init_kind, NodeKind::Literal(literal::Literal::String(_)));
 
@@ -164,11 +149,7 @@ impl<'a> AstToMirLowerer<'a> {
                             )
                         }
                         TypeKind::Array { element_type, size } => {
-                            let array_size = if let ArraySizeType::Constant(s) = size {
-                                *s
-                            } else {
-                                0
-                            };
+                            let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
                             self.lower_array_initializer_from_iter(
                                 iter,
                                 Some(initializer),
@@ -253,14 +234,7 @@ impl<'a> AstToMirLowerer<'a> {
     ) -> Operand {
         let range = list_data.init_start.range(list_data.init_len);
         let mut iter = range.peekable();
-        self.lower_array_initializer_from_iter(
-            &mut iter,
-            None,
-            element_ty,
-            size,
-            target_ty,
-            destination,
-        )
+        self.lower_array_initializer_from_iter(&mut iter, None, element_ty, size, target_ty, destination)
     }
 
     fn lower_array_initializer_from_iter(
@@ -309,9 +283,7 @@ impl<'a> AstToMirLowerer<'a> {
             let (start, end) = if let Some((d_start, _)) = designator_info {
                 match self.ast.get_kind(d_start) {
                     NodeKind::Designator(Designator::ArrayIndex(_))
-                    | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
-                        self.resolve_designator_range(d_start)
-                    }
+                    | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => self.resolve_designator_range(d_start),
                     _ => {
                         // Field designator or other. Not for array.
                         if !is_pending {
@@ -338,10 +310,7 @@ impl<'a> AstToMirLowerer<'a> {
                 // Check for brace elision
                 let elem_type_kind = &self.registry.get(element_ty.ty()).kind;
                 let init_kind = self.ast.get_kind(initializer);
-                let is_aggregate_elem = matches!(
-                    elem_type_kind,
-                    TypeKind::Record { .. } | TypeKind::Array { .. }
-                );
+                let is_aggregate_elem = matches!(elem_type_kind, TypeKind::Record { .. } | TypeKind::Array { .. });
                 let is_braced_init = matches!(init_kind, NodeKind::InitializerList(_));
                 let is_string_literal = matches!(init_kind, NodeKind::Literal(literal::Literal::String(_)));
 
@@ -364,8 +333,11 @@ impl<'a> AstToMirLowerer<'a> {
                                 None,
                             )
                         }
-                        TypeKind::Array { element_type: inner_elem, size: inner_size } => {
-                             let array_size = if let ArraySizeType::Constant(s) = inner_size {
+                        TypeKind::Array {
+                            element_type: inner_elem,
+                            size: inner_size,
+                        } => {
+                            let array_size = if let ArraySizeType::Constant(s) = inner_size {
                                 *s
                             } else {
                                 0

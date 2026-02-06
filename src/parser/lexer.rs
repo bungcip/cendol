@@ -582,10 +582,10 @@ impl<'src> Lexer<'src> {
             if rest.ends_with('"') {
                 return Some(("u8", &rest[..rest.len() - 1]));
             }
-        } else if let Some(rest) = s.strip_prefix("\"") {
-            if rest.ends_with('"') {
-                return Some(("", &rest[..rest.len() - 1]));
-            }
+        } else if let Some(rest) = s.strip_prefix("\"")
+            && rest.ends_with('"')
+        {
+            return Some(("", &rest[..rest.len() - 1]));
         }
         None
     }

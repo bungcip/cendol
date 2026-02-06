@@ -301,3 +301,18 @@ pub(crate) fn parse_char_literal(s: &str) -> Option<u32> {
     let unescaped = unescape_string(s);
     unescaped.chars().next().map(|c| c as u32)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_uppercase_hex_literals() {
+        // Test 0X integer prefix
+        assert_eq!(parse_c11_integer_literal("0X10"), Some((16, None)));
+
+        // Test 0X float prefix
+        // 0X1p0 -> 1.0 * 2^0 = 1.0
+        assert_eq!(parse_c11_float_literal("0X1p0"), Some((1.0, None)));
+    }
+}

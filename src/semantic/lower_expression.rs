@@ -1048,132 +1048,60 @@ impl<'a> AstToMirLowerer<'a> {
         let lhs_ty = self.get_operand_type(&lhs);
         let rhs_ty = self.get_operand_type(&rhs);
 
-        let lhs_place = self.ensure_place(lhs, lhs_ty);
-        let rhs_place = self.ensure_place(rhs, rhs_ty);
+        let (lhs_real, lhs_imag) = self.get_complex_components(lhs, lhs_ty);
+        let (rhs_real, rhs_imag) = self.get_complex_components(rhs, rhs_ty);
 
         let element_ty = match self.mir_builder.get_type(lhs_ty) {
             crate::mir::MirType::Record { field_types, .. } => field_types[0],
             _ => panic!("Expected complex record type"),
         };
 
-        let lhs_real = Operand::Copy(Box::new(Place::StructField(Box::new(lhs_place.clone()), 0)));
-        let lhs_imag = Operand::Copy(Box::new(Place::StructField(Box::new(lhs_place), 1)));
-        let rhs_real = Operand::Copy(Box::new(Place::StructField(Box::new(rhs_place.clone()), 0)));
-        let rhs_imag = Operand::Copy(Box::new(Place::StructField(Box::new(rhs_place), 1)));
+        use crate::mir::BinaryFloatOp::*;
 
         match op {
             BinaryOp::Add | BinaryOp::Sub => {
-                let mir_op = if *op == BinaryOp::Add {
-                    crate::mir::BinaryFloatOp::Add
-                } else {
-                    crate::mir::BinaryFloatOp::Sub
-                };
-                let res_real =
-                    self.emit_rvalue_to_operand(Rvalue::BinaryFloatOp(mir_op, lhs_real, rhs_real), element_ty);
-                let res_imag =
-                    self.emit_rvalue_to_operand(Rvalue::BinaryFloatOp(mir_op, lhs_imag, rhs_imag), element_ty);
-                self.emit_rvalue_to_operand(Rvalue::StructLiteral(vec![(0, res_real), (1, res_imag)]), mir_ty)
+                let mir_op = if *op == BinaryOp::Add { Add } else { Sub };
+                let res_real = self.emit_float_binop(mir_op, lhs_real, rhs_real, element_ty);
+                let res_imag = self.emit_float_binop(mir_op, lhs_imag, rhs_imag, element_ty);
+                self.emit_complex_struct(res_real, res_imag, mir_ty)
             }
             BinaryOp::Mul => {
-                let ac = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Mul, lhs_real.clone(), rhs_real.clone()),
-                    element_ty,
-                );
-                let bd = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Mul, lhs_imag.clone(), rhs_imag.clone()),
-                    element_ty,
-                );
-                let real = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Sub, ac, bd),
-                    element_ty,
-                );
+                let ac = self.emit_float_binop(Mul, lhs_real.clone(), rhs_real.clone(), element_ty);
+                let bd = self.emit_float_binop(Mul, lhs_imag.clone(), rhs_imag.clone(), element_ty);
+                let real = self.emit_float_binop(Sub, ac, bd, element_ty);
 
-                let ad = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Mul, lhs_real, rhs_imag.clone()),
-                    element_ty,
-                );
-                let bc = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Mul, lhs_imag, rhs_real),
-                    element_ty,
-                );
-                let imag = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Add, ad, bc),
-                    element_ty,
-                );
+                let ad = self.emit_float_binop(Mul, lhs_real, rhs_imag.clone(), element_ty);
+                let bc = self.emit_float_binop(Mul, lhs_imag, rhs_real, element_ty);
+                let imag = self.emit_float_binop(Add, ad, bc, element_ty);
 
-                self.emit_rvalue_to_operand(Rvalue::StructLiteral(vec![(0, real), (1, imag)]), mir_ty)
+                self.emit_complex_struct(real, imag, mir_ty)
             }
             BinaryOp::Div => {
-                let cc = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Mul, rhs_real.clone(), rhs_real.clone()),
-                    element_ty,
-                );
-                let dd = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Mul, rhs_imag.clone(), rhs_imag.clone()),
-                    element_ty,
-                );
-                let denom = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Add, cc, dd),
-                    element_ty,
-                );
+                let cc = self.emit_float_binop(Mul, rhs_real.clone(), rhs_real.clone(), element_ty);
+                let dd = self.emit_float_binop(Mul, rhs_imag.clone(), rhs_imag.clone(), element_ty);
+                let denom = self.emit_float_binop(Add, cc, dd, element_ty);
 
-                let ac = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Mul, lhs_real.clone(), rhs_real.clone()),
-                    element_ty,
-                );
-                let bd = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Mul, lhs_imag.clone(), rhs_imag.clone()),
-                    element_ty,
-                );
-                let num_real = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Add, ac, bd),
-                    element_ty,
-                );
-                let real = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Div, num_real, denom.clone()),
-                    element_ty,
-                );
+                let ac = self.emit_float_binop(Mul, lhs_real.clone(), rhs_real.clone(), element_ty);
+                let bd = self.emit_float_binop(Mul, lhs_imag.clone(), rhs_imag.clone(), element_ty);
+                let num_real = self.emit_float_binop(Add, ac, bd, element_ty);
+                let real = self.emit_float_binop(Div, num_real, denom.clone(), element_ty);
 
-                let bc = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Mul, lhs_imag, rhs_real),
-                    element_ty,
-                );
-                let ad = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Mul, lhs_real, rhs_imag),
-                    element_ty,
-                );
-                let num_imag = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Sub, bc, ad),
-                    element_ty,
-                );
-                let imag = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Div, num_imag, denom),
-                    element_ty,
-                );
+                let bc = self.emit_float_binop(Mul, lhs_imag, rhs_real, element_ty);
+                let ad = self.emit_float_binop(Mul, lhs_real, rhs_imag, element_ty);
+                let num_imag = self.emit_float_binop(Sub, bc, ad, element_ty);
+                let imag = self.emit_float_binop(Div, num_imag, denom, element_ty);
 
-                self.emit_rvalue_to_operand(Rvalue::StructLiteral(vec![(0, real), (1, imag)]), mir_ty)
+                self.emit_complex_struct(real, imag, mir_ty)
             }
             BinaryOp::Equal | BinaryOp::NotEqual => {
                 let bool_ty = self.lower_type(self.registry.type_bool);
                 if *op == BinaryOp::Equal {
-                    let real_eq = self.emit_rvalue_to_operand(
-                        Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Eq, lhs_real, rhs_real),
-                        bool_ty,
-                    );
-                    let imag_eq = self.emit_rvalue_to_operand(
-                        Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Eq, lhs_imag, rhs_imag),
-                        bool_ty,
-                    );
+                    let real_eq = self.emit_float_binop(Eq, lhs_real, rhs_real, bool_ty);
+                    let imag_eq = self.emit_float_binop(Eq, lhs_imag, rhs_imag, bool_ty);
                     self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, real_eq, imag_eq), mir_ty)
                 } else {
-                    let real_ne = self.emit_rvalue_to_operand(
-                        Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Ne, lhs_real, rhs_real),
-                        bool_ty,
-                    );
-                    let imag_ne = self.emit_rvalue_to_operand(
-                        Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Ne, lhs_imag, rhs_imag),
-                        bool_ty,
-                    );
+                    let real_ne = self.emit_float_binop(Ne, lhs_real, rhs_real, bool_ty);
+                    let imag_ne = self.emit_float_binop(Ne, lhs_imag, rhs_imag, bool_ty);
                     self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::BitOr, real_ne, imag_ne), mir_ty)
                 }
             }
@@ -1184,45 +1112,38 @@ impl<'a> AstToMirLowerer<'a> {
     fn lower_complex_unary_op(&mut self, op: &UnaryOp, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
         let operand = self.lower_expression(operand_ref, true);
         let operand_ty = self.get_operand_type(&operand);
-        let place = self.ensure_place(operand, operand_ty);
+
+        let (real, imag) = self.get_complex_components(operand, operand_ty);
 
         let element_ty = match self.mir_builder.get_type(operand_ty) {
             crate::mir::MirType::Record { field_types, .. } => field_types[0],
             _ => panic!("Expected complex record type"),
         };
 
-        let real = Operand::Copy(Box::new(Place::StructField(Box::new(place.clone()), 0)));
-        let imag = Operand::Copy(Box::new(Place::StructField(Box::new(place.clone()), 1)));
+        use crate::mir::UnaryFloatOp::*;
 
         match op {
             UnaryOp::Minus => {
-                let res_real =
-                    self.emit_rvalue_to_operand(Rvalue::UnaryFloatOp(crate::mir::UnaryFloatOp::Neg, real), element_ty);
-                let res_imag =
-                    self.emit_rvalue_to_operand(Rvalue::UnaryFloatOp(crate::mir::UnaryFloatOp::Neg, imag), element_ty);
-                self.emit_rvalue_to_operand(Rvalue::StructLiteral(vec![(0, res_real), (1, res_imag)]), mir_ty)
+                let res_real = self.emit_float_unop(Neg, real, element_ty);
+                let res_imag = self.emit_float_unop(Neg, imag, element_ty);
+                self.emit_complex_struct(res_real, res_imag, mir_ty)
             }
             UnaryOp::BitNot => {
                 // conjugate
-                let res_imag =
-                    self.emit_rvalue_to_operand(Rvalue::UnaryFloatOp(crate::mir::UnaryFloatOp::Neg, imag), element_ty);
-                self.emit_rvalue_to_operand(Rvalue::StructLiteral(vec![(0, real), (1, res_imag)]), mir_ty)
+                let res_imag = self.emit_float_unop(Neg, imag, element_ty);
+                self.emit_complex_struct(real, res_imag, mir_ty)
             }
             UnaryOp::LogicNot => {
                 let zero = self.create_constant(element_ty, ConstValueKind::Float(0.0));
                 let zero_op = Operand::Constant(zero);
                 let bool_ty = self.lower_type(self.registry.type_bool);
-                let real_eq = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Eq, real, zero_op.clone()),
-                    bool_ty,
-                );
-                let imag_eq = self.emit_rvalue_to_operand(
-                    Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Eq, imag, zero_op),
-                    bool_ty,
-                );
+
+                use crate::mir::BinaryFloatOp::Eq;
+                let real_eq = self.emit_float_binop(Eq, real, zero_op.clone(), bool_ty);
+                let imag_eq = self.emit_float_binop(Eq, imag, zero_op, bool_ty);
                 self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, real_eq, imag_eq), mir_ty)
             }
-            UnaryOp::Plus => self.emit_rvalue_to_operand(Rvalue::Use(Operand::Copy(Box::new(place))), mir_ty),
+            UnaryOp::Plus => self.emit_complex_struct(real, imag, mir_ty),
             _ => panic!("Unsupported complex unary operator: {:?}", op),
         }
     }

@@ -1000,7 +1000,7 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_complex_type(&mut self, base_type: TypeRef) -> MirType {
         let element_id = self.lower_type(base_type);
-        let element_layout = self.registry.get_layout(base_type);
+        let element_layout = self.registry.ensure_layout(base_type).expect("Layout computation failed");
         let element_size = element_layout.size;
         let element_align = element_layout.alignment;
 
@@ -1237,14 +1237,12 @@ impl<'a> AstToMirLowerer<'a> {
 
             if from_ty.is_some_and(|f| f.is_complex()) {
                 // Complex to Complex
-                let from_place = self.ensure_place(operand, from_mir_ty);
-                let real = Operand::Copy(Box::new(Place::StructField(Box::new(from_place.clone()), 0)));
-                let imag = Operand::Copy(Box::new(Place::StructField(Box::new(from_place), 1)));
+                let (real, imag) = self.get_complex_components(operand, from_mir_ty);
 
                 let res_real = self.emit_rvalue_to_operand(Rvalue::Cast(to_element_mir_ty, real), to_element_mir_ty);
                 let res_imag = self.emit_rvalue_to_operand(Rvalue::Cast(to_element_mir_ty, imag), to_element_mir_ty);
 
-                self.emit_rvalue_to_operand(Rvalue::StructLiteral(vec![(0, res_real), (1, res_imag)]), to_mir_ty)
+                self.emit_complex_struct(res_real, res_imag, to_mir_ty)
             } else {
                 // Real to Complex
                 let res_real = self.emit_rvalue_to_operand(Rvalue::Cast(to_element_mir_ty, operand), to_element_mir_ty);
@@ -1252,12 +1250,11 @@ impl<'a> AstToMirLowerer<'a> {
                 let res_imag =
                     self.emit_rvalue_to_operand(Rvalue::Use(Operand::Constant(zero_const)), to_element_mir_ty);
 
-                self.emit_rvalue_to_operand(Rvalue::StructLiteral(vec![(0, res_real), (1, res_imag)]), to_mir_ty)
+                self.emit_complex_struct(res_real, res_imag, to_mir_ty)
             }
         } else {
             // Complex to Real
-            let from_place = self.ensure_place(operand, from_mir_ty);
-            let real = Operand::Copy(Box::new(Place::StructField(Box::new(from_place), 0)));
+            let (real, _) = self.get_complex_components(operand, from_mir_ty);
             self.emit_rvalue_to_operand(Rvalue::Cast(to_mir_ty, real), to_mir_ty)
         }
     }
@@ -1295,6 +1292,36 @@ impl<'a> AstToMirLowerer<'a> {
     pub(crate) fn emit_rvalue_to_operand(&mut self, rvalue: Rvalue, type_id: TypeId) -> Operand {
         let (_, place) = self.create_temp_local_with_assignment(rvalue, type_id);
         Operand::Copy(Box::new(place))
+    }
+
+    pub(crate) fn get_complex_components(&mut self, operand: Operand, ty: TypeId) -> (Operand, Operand) {
+        let place = self.ensure_place(operand, ty);
+        let real = Operand::Copy(Box::new(Place::StructField(Box::new(place.clone()), 0)));
+        let imag = Operand::Copy(Box::new(Place::StructField(Box::new(place), 1)));
+        (real, imag)
+    }
+
+    pub(crate) fn emit_float_binop(
+        &mut self,
+        op: crate::mir::BinaryFloatOp,
+        lhs: Operand,
+        rhs: Operand,
+        ty: TypeId,
+    ) -> Operand {
+        self.emit_rvalue_to_operand(Rvalue::BinaryFloatOp(op, lhs, rhs), ty)
+    }
+
+    pub(crate) fn emit_float_unop(
+        &mut self,
+        op: crate::mir::UnaryFloatOp,
+        operand: Operand,
+        ty: TypeId,
+    ) -> Operand {
+        self.emit_rvalue_to_operand(Rvalue::UnaryFloatOp(op, operand), ty)
+    }
+
+    pub(crate) fn emit_complex_struct(&mut self, real: Operand, imag: Operand, ty: TypeId) -> Operand {
+        self.emit_rvalue_to_operand(Rvalue::StructLiteral(vec![(0, real), (1, imag)]), ty)
     }
 
     pub(crate) fn operand_to_const_id(&mut self, operand: &Operand) -> Option<ConstValueId> {

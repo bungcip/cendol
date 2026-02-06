@@ -22,6 +22,6 @@ pub enum FloatSuffix {
 pub enum Literal {
     Int { val: i64, suffix: Option<IntegerSuffix> },
     Float { val: f64, suffix: Option<FloatSuffix> },
-    Char(u8),
+    Char(u64),
     String(NameId),
 }

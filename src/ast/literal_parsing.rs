@@ -233,6 +233,7 @@ fn parse_escape_sequence(chars: &mut Peekable<Chars>, result: &mut String) {
             result.push('?');
         }
         Some('x') => parse_hex_escape(chars, result),
+        Some('u') | Some('U') => parse_ucn_escape(chars, result),
         Some(c) if c.is_digit(8) => parse_octal_escape(chars, result),
         Some(c) => {
             // Unknown escape, keep char
@@ -284,6 +285,43 @@ fn parse_octal_escape(chars: &mut Peekable<Chars>, result: &mut String) {
         }
     }
     result.push(char::from_u32(val).unwrap_or(char::REPLACEMENT_CHARACTER));
+}
+
+fn parse_ucn_escape(chars: &mut Peekable<Chars>, result: &mut String) {
+    let is_u = chars.next() == Some('u'); // consume u/U
+    let digits_needed = if is_u { 4 } else { 8 };
+    let mut hex_str = String::new();
+
+    for _ in 0..digits_needed {
+        if let Some(&ch) = chars.peek() {
+            if ch.is_ascii_hexdigit() {
+                chars.next();
+                hex_str.push(ch);
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    if hex_str.len() != digits_needed {
+        // Invalid, preserve as raw
+        result.push('\\');
+        result.push(if is_u { 'u' } else { 'U' });
+        result.push_str(&hex_str);
+        return;
+    }
+
+    if let Ok(code_point) = u32::from_str_radix(&hex_str, 16) {
+        if let Some(c) = char::from_u32(code_point) {
+            result.push(c);
+            return;
+        }
+    }
+
+    // Invalid codepoint
+    result.push(char::REPLACEMENT_CHARACTER);
 }
 
 /// Parse a character literal content (e.g. "a", "\n", "\x41") into a codepoint

@@ -339,7 +339,11 @@ impl AstDumper {
                     writeln!(f, "LiteralFloat({}, {:?})", val, suffix)
                 }
                 crate::ast::literal::Literal::String(s) => writeln!(f, "LiteralString(\"{}\")", s),
-                crate::ast::literal::Literal::Char(c) => writeln!(f, "LiteralChar('{}')", *c as char),
+                crate::ast::literal::Literal::Char(c) => writeln!(
+                    f,
+                    "LiteralChar('{}')",
+                    char::from_u32(*c as u32).unwrap_or(char::REPLACEMENT_CHARACTER)
+                ),
             },
             ParsedNodeKind::Ident(name) => writeln!(f, "Ident({})", name),
 
@@ -495,7 +499,11 @@ impl AstDumper {
                     writeln!(f, "LiteralFloat({}, {:?})", val, suffix)
                 }
                 crate::ast::literal::Literal::String(s) => writeln!(f, "LiteralString({})", s),
-                crate::ast::literal::Literal::Char(c) => writeln!(f, "LiteralChar('{}')", *c as char),
+                crate::ast::literal::Literal::Char(c) => writeln!(
+                    f,
+                    "LiteralChar('{}')",
+                    char::from_u32(*c as u32).unwrap_or(char::REPLACEMENT_CHARACTER)
+                ),
             },
             NodeKind::Ident(sym, _) => writeln!(f, "Ident({})", sym),
             NodeKind::UnaryOp(op, operand) => writeln!(f, "UnaryOp({:?}, {})", op, operand.get()),

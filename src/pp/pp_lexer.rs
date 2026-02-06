@@ -70,7 +70,7 @@ pub enum PPTokenKind {
     // Literals and identifiers
     Identifier(StringId),      // Interned identifier
     StringLiteral(StringId),   // Interned string literal
-    CharLiteral(u8, StringId), // byte char value and raw text
+    CharLiteral(u64, StringId), // char value and raw text
     Number(StringId),          // Raw numeric literal text for parser
     // Special
     Eof,
@@ -1172,19 +1172,10 @@ impl PPLexer {
         let content_str = &text[content_start..content_end];
 
         let codepoint = if !content_str.is_empty() {
-            if content_str.starts_with('\\') {
-                // Use unified escape sequence parsing
-                // Note: This aligns behavior with string unescaping.
-                // Invalid escapes like \x with no digits might behave slightly differently than legacy
-                // but standardizing is preferred.
-                literal_parsing::parse_char_literal(content_str)
-                    .map(|c| c as u8)
-                    .unwrap_or(0)
-            } else {
-                // Regular character (or UCN converted to bytes)
-                // Use raw byte value to preserve behavior for non-ASCII bytes
-                content_str.as_bytes()[0]
-            }
+            // Use unified parsing for all char literals to handle UCNs and escapes correctly
+            literal_parsing::parse_char_literal(content_str)
+                .map(|c| c as u64)
+                .unwrap_or(0)
         } else {
             0
         };

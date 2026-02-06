@@ -15,7 +15,7 @@ pub(crate) enum ResolvedNodeKind {
     LiteralInt(i64),
     LiteralFloat(f64),
     LiteralString(String),
-    LiteralChar(u8),
+    LiteralChar(u64),
     Ident(String),
     UnaryOp(UnaryOp, Box<ResolvedNodeKind>),
     BinaryOp(BinaryOp, Box<ResolvedNodeKind>, Box<ResolvedNodeKind>),

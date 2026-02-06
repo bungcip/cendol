@@ -550,7 +550,7 @@ impl<'a> Interpreter<'a> {
                     Err(PPError::InvalidConditionalExpression)
                 }
             }
-            PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(ExprValue::new(*codepoint as u64, false))),
+            PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(ExprValue::new(*codepoint, false))),
             PPTokenKind::Identifier(sym) => {
                 // Identifiers are 0 if not defined, but since we expanded macros, should be numbers
                 Ok(PPExpr::Identifier(sym.as_str().to_string()))

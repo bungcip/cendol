@@ -70,3 +70,4 @@ pub mod complex_types;
 pub mod guardian_alignment;
 pub mod guardian_atomic;
 pub mod semantic_const_eval_extensions;
+pub mod test_generic_lvalue;

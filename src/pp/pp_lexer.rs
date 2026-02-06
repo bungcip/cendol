@@ -68,10 +68,10 @@ pub enum PPTokenKind {
     Hash,
     HashHash, // # ##
     // Literals and identifiers
-    Identifier(StringId),      // Interned identifier
-    StringLiteral(StringId),   // Interned string literal
+    Identifier(StringId),       // Interned identifier
+    StringLiteral(StringId),    // Interned string literal
     CharLiteral(u64, StringId), // char value and raw text
-    Number(StringId),          // Raw numeric literal text for parser
+    Number(StringId),           // Raw numeric literal text for parser
     // Special
     Eof,
     Eod,

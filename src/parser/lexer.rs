@@ -11,7 +11,7 @@ pub enum TokenKind {
     // === LITERALS ===
     IntegerConstant(i64, Option<IntegerSuffix>), // Parsed integer literal value
     FloatConstant(f64, Option<FloatSuffix>),     // Parsed float literal value
-    CharacterConstant(u8),                       // Byte value of character constant
+    CharacterConstant(u64),                      // Value of character constant
     StringLiteral(StringId),                     // Interned string literal
 
     // === IDENTIFIERS ===

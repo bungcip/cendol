@@ -25,3 +25,7 @@
 ## 2026-10-15 - Reducing Allocations in Macro Expansion
 **Learning:** Macro expansion is a very hot path where every allocation counts. Returning `Vec<PPToken>` for every macro parameter replacement causes significant overhead. Using `Cow<'a, [PPToken]>` allows borrowing arguments directly from the input without allocation in the common case. Similarly, taking `Vec<T>` by value when the caller already has an owned vector avoids redundant `.to_vec()` clones.
 **Action:** Favor `Cow` for return types of functions that might return either a borrow or a new collection. Transfer ownership of `Vec`s to avoid cloning when the caller doesn't need them anymore. Always use `Vec::with_capacity` when the minimum size is known (e.g., from the macro definition).
+
+## 2024-05-22 - Optimizing Recursive Expansion and Token Stringification
+**Learning:** Identifying macro recursion via string formatting and Path allocation in the preprocessor's main loop is a major bottleneck. Moving the check into expansion-specific paths and using direct string prefix/suffix matching on the existing Path object significantly reduces overhead. Additionally, tokens without an associated SourceId (built-ins) must be handled gracefully in buffer-based stringification.
+**Action:** Favor direct string/path property checks over re-formatting existing information. Ensure buffer-based optimizations have safe fallbacks for tokens without backing source files.

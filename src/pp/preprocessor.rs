@@ -623,8 +623,6 @@ impl<'src> Preprocessor<'src> {
                         result_tokens.push(magic);
                     } else if sym_str == "_Pragma" {
                         self.handle_pragma_operator()?;
-                    } else if self.is_recursive_expansion(token.location, sym_str) {
-                        result_tokens.push(token);
                     } else if let Some(expanded) = self.expand_macro(&token)? {
                         for t in expanded.into_iter().rev() {
                             self.pending_tokens.push_front(t);
@@ -1767,6 +1765,11 @@ impl<'src> Preprocessor<'src> {
             return Ok(None);
         };
 
+        // Bolt ⚡: Check for recursive expansion here to avoid walking include stack for non-macros.
+        if self.is_recursive_expansion(token.location, symbol.as_str()) {
+            return Ok(None);
+        }
+
         if macro_info.flags.contains(MacroFlags::FUNCTION_LIKE) {
             let next = self.lex_token();
             let is_call = matches!(next, Some(ref t) if t.kind == PPTokenKind::LeftParen);
@@ -1807,8 +1810,35 @@ impl<'src> Preprocessor<'src> {
         let mut result = String::with_capacity(total_len);
 
         // 3. Populate the string.
+        // Bolt ⚡: Use direct buffer access to avoid interner lookups and kind matching.
+        let mut last_sid = None;
+        let mut last_buffer = None;
         for token in tokens {
-            result.push_str(token.get_text());
+            let sid = token.location.source_id();
+            let buffer = if last_sid == Some(sid) {
+                last_buffer.unwrap()
+            } else {
+                // Bolt ⚡: Check if the token has associated file info before trying to access its buffer.
+                // This correctly handles built-in tokens (like those from SourceId 1) which don't have buffers.
+                if self.sm.get_file_info(sid).is_none() {
+                    result.push_str(token.get_text());
+                    continue;
+                }
+                let b = self.sm.get_buffer(sid);
+                last_sid = Some(sid);
+                last_buffer = Some(b);
+                b
+            };
+            let start = token.location.offset() as usize;
+            let end = start + token.length as usize;
+            if end <= buffer.len() {
+                // Safety: Tokens are guaranteed to be valid UTF-8 by the lexer.
+                result.push_str(unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) });
+            } else {
+                // Bolt ⚡: Fallback for unexpected cases (e.g., internal inconsistencies).
+                debug_assert!(false, "Token bounds exceed buffer length");
+                result.push_str(token.get_text());
+            }
         }
         result
     }
@@ -2374,6 +2404,11 @@ impl<'src> Preprocessor<'src> {
             return Ok(false);
         };
 
+        // Bolt ⚡: Check for recursive expansion here to avoid walking include stack for non-macros.
+        if self.is_recursive_expansion(symbol_token.location, symbol.as_str()) {
+            return Ok(false);
+        }
+
         if !macro_info.flags.contains(MacroFlags::FUNCTION_LIKE) || macro_info.flags.contains(MacroFlags::DISABLED) {
             return Ok(false);
         }
@@ -2454,12 +2489,7 @@ impl<'src> Preprocessor<'src> {
                 continue;
             }
 
-            let PPTokenKind::Identifier(symbol) = token.kind else {
-                i += 1;
-                continue;
-            };
-
-            if self.is_recursive_expansion(token.location, symbol.as_str()) {
+            if !matches!(token.kind, PPTokenKind::Identifier(_)) {
                 i += 1;
                 continue;
             }
@@ -2528,14 +2558,20 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn is_recursive_expansion(&self, location: SourceLoc, macro_name: &str) -> bool {
-        let expected_name = format!("<macro_{}>", macro_name);
-        let expected_path = Path::new(&expected_name);
-
+        // Bolt ⚡: Optimization: avoid format! and Path allocation in a hot loop.
+        // We check the path directly by string prefix/suffix which is much faster.
         std::iter::successors(self.sm.get_file_info(location.source_id()), |info| {
             info.include_loc.and_then(|loc| self.sm.get_file_info(loc.source_id()))
         })
         .take(100)
-        .any(|info| info.path == expected_path)
+        .any(|info| {
+            let path_str = info.path.to_str().unwrap_or("");
+            // Bolt ⚡: Prefix "<macro_" is 7 chars, suffix ">" is 1 char. Total 8.
+            path_str.len() == macro_name.len() + 8
+                && path_str.starts_with("<macro_")
+                && path_str.ends_with('>')
+                && &path_str[7..path_str.len() - 1] == macro_name
+        })
     }
 
     fn create_virtual_buffer_tokens(

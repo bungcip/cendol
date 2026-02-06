@@ -42,6 +42,7 @@ pub mod semantic_lowering;
 pub mod semantic_mir;
 pub mod semantic_negative;
 pub mod semantic_regr_comma;
+pub mod semantic_regr_complex_refactor;
 pub mod semantic_regr_unary_promotion;
 pub mod semantic_validation;
 

@@ -84,7 +84,7 @@ impl Type {
                         let inner_type = registry.get(member.member_type.ty());
                         inner_type.flatten_members_with_layouts(registry, flat_members, flat_offsets, offset);
                     } else {
-                        flat_members.push(member.clone());
+                        flat_members.push(*member);
                         flat_offsets.push(offset);
                     }
                 }

@@ -235,6 +235,13 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::MemberAccess(obj_ref, _, is_arrow) => *is_arrow || self.is_lvalue(*obj_ref),
             NodeKind::Literal(literal::Literal::String(_)) => true,
             NodeKind::CompoundLiteral(..) => true,
+            NodeKind::GenericSelection(_) => {
+                if let Some(&selected) = self.semantic_info.generic_selections.get(&node_ref.index()) {
+                    self.is_lvalue(selected)
+                } else {
+                    false
+                }
+            }
             _ => false,
         }
     }

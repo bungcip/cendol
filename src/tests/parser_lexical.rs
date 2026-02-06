@@ -186,8 +186,8 @@ fn test_literals() {
 
     // String literals
     let string_literals = vec![
-        ("\"hello\"", TokenKind::StringLiteral(StringId::new("hello"))),
-        ("\"world\\n\"", TokenKind::StringLiteral(StringId::new("world\n"))),
+        ("\"hello\"", TokenKind::StringLiteral(StringId::new("\"hello\""))),
+        ("\"world\\n\"", TokenKind::StringLiteral(StringId::new("\"world\\n\""))),
     ];
 
     for (text, expected_kind) in string_literals {
@@ -219,15 +219,15 @@ fn test_string_literal_concatenation() {
     // Test adjacent string literal concatenation (C11 6.4.5)
     let test_cases = vec![
         // Basic concatenation
-        ("\"hello\" \"world\"", "helloworld"),
+        ("\"hello\" \"world\"", "\"helloworld\""),
         // With whitespace between
-        ("\"hello\"   \"world\"", "helloworld"),
+        ("\"hello\"   \"world\"", "\"helloworld\""),
         // Multiple concatenations
-        ("\"a\" \"b\" \"c\"", "abc"),
+        ("\"a\" \"b\" \"c\"", "\"abc\""),
         // With escape sequences
-        ("\"hello\\n\" \"world\"", "hello\nworld"),
+        ("\"hello\\n\" \"world\"", "\"hello\\nworld\""),
         // Mixed quotes and content
-        ("\"start\" \" middle \" \"end\"", "start middle end"),
+        ("\"start\" \" middle \" \"end\"", "\"start middle end\""),
     ];
 
     for (input, expected_content) in test_cases {
@@ -292,14 +292,16 @@ fn test_string_escapes_edge_cases() {
     // Test edge cases in string literal unescaping
     let test_cases = vec![
         // \x with no digits - should keep the x
-        ("\"\\xg\"", "\\xg"),
+        ("\"\\xg\"", "\"\\xg\""),
         // \x with invalid unicode value (overflow) - should use replacement character
         // \x110000 is > 0x10FFFF
-        ("\"\\x110000\"", "\u{FFFD}"),
+        // Lexer no longer unescapes, so it preserves raw source.
+        // Unescaping happens later in parse_string_literal or similar.
+        ("\"\\x110000\"", "\"\\x110000\""),
         // \? escape
-        ("\"\\?\"", "?"),
+        ("\"\\?\"", "\"\\?\""),
         // Unknown escape sequence (e.g. \q) - should keep the character
-        ("\"\\q\"", "q"),
+        ("\"\\q\"", "\"\\q\""),
     ];
 
     for (input, expected) in test_cases {

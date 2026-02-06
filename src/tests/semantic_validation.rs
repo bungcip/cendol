@@ -101,7 +101,7 @@ fn test_static_assert_fail() {
         }
     "#,
         CompilePhase::Mir,
-        "static assertion failed: This should fail",
+        "static assertion failed: \"This should fail\"",
     );
 }
 
@@ -115,7 +115,7 @@ fn test_static_assert_file_scope_fail() {
         }
     "#,
         CompilePhase::Mir,
-        "static assertion failed: This should fail",
+        "static assertion failed: \"This should fail\"",
     );
 }
 

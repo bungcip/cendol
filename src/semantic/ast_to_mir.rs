@@ -1000,7 +1000,10 @@ impl<'a> AstToMirLowerer<'a> {
 
     fn lower_complex_type(&mut self, base_type: TypeRef) -> MirType {
         let element_id = self.lower_type(base_type);
-        let element_layout = self.registry.ensure_layout(base_type).expect("Layout computation failed");
+        let element_layout = self
+            .registry
+            .ensure_layout(base_type)
+            .expect("Layout computation failed");
         let element_size = element_layout.size;
         let element_align = element_layout.alignment;
 
@@ -1311,12 +1314,7 @@ impl<'a> AstToMirLowerer<'a> {
         self.emit_rvalue_to_operand(Rvalue::BinaryFloatOp(op, lhs, rhs), ty)
     }
 
-    pub(crate) fn emit_float_unop(
-        &mut self,
-        op: crate::mir::UnaryFloatOp,
-        operand: Operand,
-        ty: TypeId,
-    ) -> Operand {
+    pub(crate) fn emit_float_unop(&mut self, op: crate::mir::UnaryFloatOp, operand: Operand, ty: TypeId) -> Operand {
         self.emit_rvalue_to_operand(Rvalue::UnaryFloatOp(op, operand), ty)
     }
 

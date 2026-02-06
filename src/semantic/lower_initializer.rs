@@ -289,6 +289,11 @@ impl<'a> AstToMirLowerer<'a> {
                 )
             };
 
+            // Stop if we have filled the array with positional initializers
+            if designator_info.is_none() && size > 0 && current_idx >= size {
+                break;
+            }
+
             let (start, end) = if let Some((d_start, _)) = designator_info {
                 match self.ast.get_kind(d_start) {
                     NodeKind::Designator(Designator::ArrayIndex(_))

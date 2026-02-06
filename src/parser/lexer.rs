@@ -431,15 +431,7 @@ impl<'src> Lexer<'src> {
                 // Check if it's a keyword
                 is_keyword(symbol).unwrap_or(TokenKind::Identifier(symbol))
             }
-            PPTokenKind::StringLiteral(symbol) => {
-                // Strip quotes from string literal
-                if let Some(content) = Self::extract_string_content(&symbol) {
-                    let unescaped = literal_parsing::unescape_string(content);
-                    TokenKind::StringLiteral(StringId::new(unescaped))
-                } else {
-                    TokenKind::StringLiteral(symbol)
-                }
-            }
+            PPTokenKind::StringLiteral(symbol) => TokenKind::StringLiteral(symbol),
             PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint),
             PPTokenKind::Number(value) => {
                 // Try to parse as integer first, then float, then unknown
@@ -483,7 +475,7 @@ impl<'src> Lexer<'src> {
                     })
                 ) {
                     tokens.push(Token {
-                        kind: self.classify_token(pptoken), // Handles quote stripping
+                        kind: self.classify_token(pptoken),
                         span: SourceSpan::new_with_length(
                             pptoken.location.source_id(),
                             pptoken.location.offset(),
@@ -501,14 +493,27 @@ impl<'src> Lexer<'src> {
                 );
                 let mut final_span = start_span;
 
-                // --- Phase 1: Calculate total size and find last span ---
-                let mut total_size = Self::extract_string_content(&symbol).unwrap_or("").len();
+                // --- Phase 1: Determine final prefix and total size ---
+                let (mut prefix, first_content) = Self::extract_literal_parts(symbol.as_str()).unwrap_or(("", ""));
+
+                // Concatenate raw content (inside quotes)
+                let mut concatenated_content = String::with_capacity(first_content.len() * 2);
+                concatenated_content.push_str(first_content);
+
                 let mut adjacent_literals = 0;
                 let next_token_idx = self.tokens.len() - current_token_iter.len();
 
                 while let Some(next_pptoken) = self.tokens.get(next_token_idx + adjacent_literals) {
                     if let PPTokenKind::StringLiteral(next_symbol) = next_pptoken.kind {
-                        total_size += Self::extract_string_content(&next_symbol).unwrap_or("").len();
+                        let (next_prefix, next_content) =
+                            Self::extract_literal_parts(next_symbol.as_str()).unwrap_or(("", ""));
+
+                        if prefix.is_empty() && !next_prefix.is_empty() {
+                            prefix = next_prefix;
+                        }
+
+                        concatenated_content.push_str(next_content);
+
                         final_span = SourceSpan::new_with_length(
                             next_pptoken.location.source_id(),
                             next_pptoken.location.offset(),
@@ -520,23 +525,20 @@ impl<'src> Lexer<'src> {
                     }
                 }
 
-                // --- Phase 2: Allocate and append ---
-                let mut content = String::with_capacity(total_size);
-                if let Some(s_content) = Self::extract_string_content(&symbol) {
-                    literal_parsing::unescape_string_into(s_content, &mut content);
+                // --- Phase 2: Consume tokens ---
+                for _ in 0..adjacent_literals {
+                    current_token_iter.next();
                 }
 
-                for _ in 0..adjacent_literals {
-                    let consumed_pptoken = current_token_iter.next().unwrap();
-                    if let PPTokenKind::StringLiteral(next_symbol) = consumed_pptoken.kind
-                        && let Some(s_content) = Self::extract_string_content(&next_symbol)
-                    {
-                        literal_parsing::unescape_string_into(s_content, &mut content);
-                    }
-                }
+                // Construct final literal: prefix + " + content + "
+                let mut final_literal = String::with_capacity(concatenated_content.len() + prefix.len() + 2);
+                final_literal.push_str(prefix);
+                final_literal.push('"');
+                final_literal.push_str(&concatenated_content);
+                final_literal.push('"');
 
                 tokens.push(Token {
-                    kind: TokenKind::StringLiteral(StringId::new(content)),
+                    kind: TokenKind::StringLiteral(StringId::new(final_literal)),
                     span: start_span.merge(final_span),
                 });
                 continue;
@@ -562,13 +564,29 @@ impl<'src> Lexer<'src> {
         tokens
     }
 
-    /// Extract content from a string literal symbol, removing quotes
-    fn extract_string_content(symbol: &StringId) -> Option<&str> {
-        let s = symbol.as_str();
-        if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-            Some(&s[1..s.len() - 1])
-        } else {
-            None
+    /// Extract parts from a string literal symbol: (prefix, content_without_quotes)
+    fn extract_literal_parts(s: &str) -> Option<(&str, &str)> {
+        if let Some(rest) = s.strip_prefix("L\"") {
+            if rest.ends_with('"') {
+                return Some(("L", &rest[..rest.len() - 1]));
+            }
+        } else if let Some(rest) = s.strip_prefix("u\"") {
+            if rest.ends_with('"') {
+                return Some(("u", &rest[..rest.len() - 1]));
+            }
+        } else if let Some(rest) = s.strip_prefix("U\"") {
+            if rest.ends_with('"') {
+                return Some(("U", &rest[..rest.len() - 1]));
+            }
+        } else if let Some(rest) = s.strip_prefix("u8\"") {
+            if rest.ends_with('"') {
+                return Some(("u8", &rest[..rest.len() - 1]));
+            }
+        } else if let Some(rest) = s.strip_prefix("\"") {
+            if rest.ends_with('"') {
+                return Some(("", &rest[..rest.len() - 1]));
+            }
         }
+        None
     }
 }

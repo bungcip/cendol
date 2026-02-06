@@ -27,6 +27,8 @@ pub fn parse_string_literal(name: NameId) -> ParsedStringLiteral {
         (Some(s), BuiltinType::UInt, StringLiteralPrefix::Char32)
     } else if let Some(s) = raw.strip_prefix("u8\"") {
         (Some(s), BuiltinType::Char, StringLiteralPrefix::Utf8)
+    } else if let Some(s) = raw.strip_prefix("\"") {
+        (Some(s), BuiltinType::Char, StringLiteralPrefix::None)
     } else {
         (None, BuiltinType::Char, StringLiteralPrefix::None)
     };

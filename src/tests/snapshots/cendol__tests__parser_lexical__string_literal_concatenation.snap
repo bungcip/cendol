@@ -1,0 +1,9 @@
+---
+source: src/tests/parser_lexical.rs
+expression: map
+---
+"\"a\" \"b\" \"c\"": abc
+"\"hello\"   \"world\"": helloworld
+"\"hello\" \"world\"": helloworld
+"\"hello\\n\" \"world\"": "hello\nworld"
+"\"start\" \" middle \" \"end\"": start middle end

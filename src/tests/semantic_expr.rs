@@ -914,3 +914,46 @@ fn test_nested_qualifier_preservation() {
     Span: SourceSpan(source_id=SourceId(2), start=150, end=155)
     ");
 }
+
+#[test]
+fn test_compound_assignment_mir() {
+    let source = r#"
+        void test(int *p, int x) {
+            int a = 10;
+            a += 5;
+            a -= x;
+            a *= 2;
+            a /= 2;
+            a %= 3;
+            *p += 1;
+        }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir);
+}
+
+#[test]
+fn test_compound_assignment_mixed_types_mir() {
+    let source = r#"
+        void test() {
+            int a = 10;
+            double d = 2.5;
+            a += d;
+            d -= a;
+        }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir);
+}
+
+#[test]
+fn test_compound_assignment_pointer_arithmetic_mir() {
+    let source = r#"
+        void test(int *p) {
+            p += 1;
+            p -= 2;
+        }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir);
+}

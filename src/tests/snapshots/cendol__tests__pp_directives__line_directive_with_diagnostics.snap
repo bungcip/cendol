@@ -1,0 +1,10 @@
+---
+source: src/tests/pp_directives.rs
+expression: tokens
+---
+- kind: Identifier
+  text: invalid
+- kind: Identifier
+  text: syntax
+- kind: Identifier
+  text: here

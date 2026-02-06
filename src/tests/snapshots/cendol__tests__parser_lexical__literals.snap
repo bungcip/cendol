@@ -1,0 +1,140 @@
+---
+source: src/tests/parser_lexical.rs
+expression: map
+---
+"char '\\n'":
+  CharacterConstant: 10
+"char 'a'":
+  CharacterConstant: 97
+float 0x1.2p3:
+  FloatConstant:
+    - 9
+    - ~
+float 1.23e-4:
+  FloatConstant:
+    - 0.000123
+    - ~
+float 1.5:
+  FloatConstant:
+    - 1.5
+    - ~
+int 0123l:
+  IntegerConstant:
+    - 83
+    - L
+int 0123llu:
+  IntegerConstant:
+    - 83
+    - ULL
+int 0123lu:
+  IntegerConstant:
+    - 83
+    - UL
+int 077:
+  IntegerConstant:
+    - 63
+    - ~
+int 0777ul:
+  IntegerConstant:
+    - 511
+    - UL
+int 0777ull:
+  IntegerConstant:
+    - 511
+    - ULL
+int 077u:
+  IntegerConstant:
+    - 63
+    - U
+int 0x10UL:
+  IntegerConstant:
+    - 16
+    - UL
+int 0x1A:
+  IntegerConstant:
+    - 26
+    - ~
+int 0x1Au:
+  IntegerConstant:
+    - 26
+    - U
+int 0x20LU:
+  IntegerConstant:
+    - 32
+    - UL
+int 0x40ULL:
+  IntegerConstant:
+    - 64
+    - ULL
+int 0x80LLU:
+  IntegerConstant:
+    - 128
+    - ULL
+int 0xFFll:
+  IntegerConstant:
+    - 255
+    - LL
+int 1000ULL:
+  IntegerConstant:
+    - 1000
+    - ULL
+int 1000ull:
+  IntegerConstant:
+    - 1000
+    - ULL
+int 123L:
+  IntegerConstant:
+    - 123
+    - L
+int 123l:
+  IntegerConstant:
+    - 123
+    - L
+int 1LL:
+  IntegerConstant:
+    - 1
+    - LL
+int 1ll:
+  IntegerConstant:
+    - 1
+    - LL
+int 2000LLU:
+  IntegerConstant:
+    - 2000
+    - ULL
+int 2000llu:
+  IntegerConstant:
+    - 2000
+    - ULL
+int 42:
+  IntegerConstant:
+    - 42
+    - ~
+int 42U:
+  IntegerConstant:
+    - 42
+    - U
+int 42u:
+  IntegerConstant:
+    - 42
+    - U
+int 456UL:
+  IntegerConstant:
+    - 456
+    - UL
+int 456ul:
+  IntegerConstant:
+    - 456
+    - UL
+int 789LU:
+  IntegerConstant:
+    - 789
+    - UL
+int 789lu:
+  IntegerConstant:
+    - 789
+    - UL
+"string \"hello\"":
+  StringLiteral: hello
+"string \"world\\n\"":
+  StringLiteral: "world\n"

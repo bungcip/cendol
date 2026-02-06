@@ -1,0 +1,26 @@
+---
+source: src/tests/semantic_expr.rs
+expression: mir
+---
+type %t0 = void
+type %t1 = i32
+type %t2 = f64
+
+fn test() -> void
+{
+  locals {
+    %a: i32
+    %d: f64
+    %3: f64
+    %4: f64
+  }
+
+  bb1:
+    %a = const 10
+    %d = const 2.5
+    %3 = cast<f64>(%a) fadd %d
+    %a = cast<i32>(%3)
+    %4 = %d fsub cast<f64>(%a)
+    %d = %4
+    return
+}

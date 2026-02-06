@@ -1,0 +1,8 @@
+---
+source: src/tests/parser_lexical.rs
+expression: map
+---
+"\"\\?\"": "?"
+"\"\\q\"": q
+"\"\\x110000\"": �
+"\"\\xg\"": "\\xg"

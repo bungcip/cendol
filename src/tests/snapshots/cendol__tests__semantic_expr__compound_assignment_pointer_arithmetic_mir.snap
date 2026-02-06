@@ -1,0 +1,22 @@
+---
+source: src/tests/semantic_expr.rs
+expression: mir
+---
+type %t0 = void
+type %t1 = i32
+type %t2 = ptr<%t1>
+
+fn test(%param0: ptr<i32>) -> void
+{
+  locals {
+    %2: ptr<i32>
+    %3: ptr<i32>
+  }
+
+  bb1:
+    %2 = ptradd(%param0, cast<ptr<i32>>(const 1))
+    %param0 = %2
+    %3 = ptrsub(%param0, cast<ptr<i32>>(const 2))
+    %param0 = %3
+    return
+}

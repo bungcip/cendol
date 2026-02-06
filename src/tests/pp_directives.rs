@@ -34,7 +34,8 @@ fn test_line_directive_with_diagnostics() {
 #line 50 "test.c"
 invalid syntax here
 "#;
-    setup_pp_snapshot(src);
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens);
 }
 
 #[test]
@@ -73,11 +74,5 @@ fn test_unknown_pragma_throws_error() {
 #pragma unknown_pragma
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    assert!(
-        diags
-            .iter()
-            .any(|d| d.contains("Fatal Error: UnknownPragma") && d.contains("unknown_pragma")),
-        "Expected error 'Fatal Error: UnknownPragma' containing 'unknown_pragma', got: {:?}",
-        diags
-    );
+    insta::assert_yaml_snapshot!(diags);
 }

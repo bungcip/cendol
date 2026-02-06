@@ -1,0 +1,5 @@
+---
+source: src/tests/pp_directives.rs
+expression: diags
+---
+- "Fatal Error: UnknownPragma(\"unknown_pragma\")"

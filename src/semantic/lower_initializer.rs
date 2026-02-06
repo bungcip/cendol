@@ -127,9 +127,15 @@ impl<'a> AstToMirLowerer<'a> {
                 let is_braced_init = matches!(init_kind, NodeKind::InitializerList(_));
                 let is_string_literal = matches!(init_kind, NodeKind::Literal(literal::Literal::String(_)));
 
+                let init_type_matches = self
+                    .ast
+                    .get_resolved_type(initializer)
+                    .map(|t| t.ty() == member_ty.ty())
+                    .unwrap_or(false);
+
                 // If member is aggregate, and init is NOT braced (and not string for array),
                 // we recurse with brace elision.
-                if is_aggregate_member && !is_braced_init && !is_string_literal {
+                if is_aggregate_member && !is_braced_init && !is_string_literal && !init_type_matches {
                     match member_type_kind {
                         TypeKind::Record { .. } => {
                             let (mut sub_members, mut sub_offsets) = (Vec::new(), Vec::new());
@@ -314,7 +320,13 @@ impl<'a> AstToMirLowerer<'a> {
                 let is_braced_init = matches!(init_kind, NodeKind::InitializerList(_));
                 let is_string_literal = matches!(init_kind, NodeKind::Literal(literal::Literal::String(_)));
 
-                if is_aggregate_elem && !is_braced_init && !is_string_literal {
+                let init_type_matches = self
+                    .ast
+                    .get_resolved_type(initializer)
+                    .map(|t| t.ty() == element_ty.ty())
+                    .unwrap_or(false);
+
+                if is_aggregate_elem && !is_braced_init && !is_string_literal && !init_type_matches {
                     match elem_type_kind {
                         TypeKind::Record { .. } => {
                             let (mut sub_members, mut sub_offsets) = (Vec::new(), Vec::new());

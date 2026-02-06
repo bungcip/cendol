@@ -127,9 +127,18 @@ impl<'a> AstToMirLowerer<'a> {
                 let is_braced_init = matches!(init_kind, NodeKind::InitializerList(_));
                 let is_string_literal = matches!(init_kind, NodeKind::Literal(literal::Literal::String(_)));
 
+                let is_compatible_aggregate = if !is_braced_init && !is_string_literal {
+                    self.ast
+                        .get_resolved_type(initializer)
+                        .map(|ty| self.registry.is_compatible(ty, member_ty))
+                        .unwrap_or(false)
+                } else {
+                    false
+                };
+
                 // If member is aggregate, and init is NOT braced (and not string for array),
                 // we recurse with brace elision.
-                if is_aggregate_member && !is_braced_init && !is_string_literal {
+                if is_aggregate_member && !is_braced_init && !is_string_literal && !is_compatible_aggregate {
                     match member_type_kind {
                         TypeKind::Record { .. } => {
                             let (mut sub_members, mut sub_offsets) = (Vec::new(), Vec::new());

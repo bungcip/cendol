@@ -54,3 +54,17 @@ fn test_nested_array_brace_elision() {
     // The bad MIR `cast<[1]i32>(const 1)` is definitely wrong.
     // If we fix it, the MIR should be `[[[1]]]`.
 }
+
+#[test]
+fn test_nested_struct_compound_literal_init() {
+    let source = r#"
+        struct A { int x; };
+        struct B { struct A a; };
+        struct B b = { (struct A){1} };
+        int main() { return 0; }
+    "#;
+
+    // This should not crash with "StructLiteral with non-record type"
+    let clif_dump = setup_cranelift(source);
+    println!("{}", clif_dump);
+}

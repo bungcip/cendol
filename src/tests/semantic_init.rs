@@ -159,6 +159,7 @@ fn test_initializer_list_crash_regression() {
     type %t2 = u8
     type %t3 = struct anonymous {  }
 
+    global @.L.str0: %t3 = const struct_literal {  }
     global @ce: %t1 = const struct_literal { 0: const 1, 1: const struct_literal {  }, 2: const 18 }
 
     fn main() -> i32

@@ -1,15 +1,8 @@
 use crate::diagnostic::DiagnosticEngine;
-use crate::pp::{PPConfig, Preprocessor, dumper::PPDumper};
+use crate::pp::{PPConfig, PPTokenKind, Preprocessor, dumper::PPDumper};
 use crate::source_manager::SourceManager;
 
-#[test]
-fn test_dump_preprocessed_output_simple() {
-    let src = r#"
-int main() {
-    return 0;
-}
-"#;
-    // Set up preprocessor and source manager in the same context
+fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {
     let mut source_manager = SourceManager::new();
     let mut diagnostics = DiagnosticEngine::new();
     let config = PPConfig::default();
@@ -21,18 +14,26 @@ int main() {
 
     let significant_tokens: Vec<_> = tokens
         .into_iter()
-        .filter(|t| !matches!(t.kind, crate::pp::PPTokenKind::Eof | crate::pp::PPTokenKind::Eod))
+        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
         .collect();
 
-    // Capture output into a buffer
     let mut buffer = Vec::new();
 
-    PPDumper::new(&significant_tokens, &source_manager, false)
+    PPDumper::new(&significant_tokens, &source_manager, suppress_line_markers)
         .dump(&mut buffer)
         .unwrap();
 
-    let content = String::from_utf8(buffer).unwrap();
+    String::from_utf8(buffer).unwrap()
+}
 
+#[test]
+fn test_dump_preprocessed_output_simple() {
+    let src = r#"
+int main() {
+    return 0;
+}
+"#;
+    let content = dump_pp_output(src, false);
     insta::assert_snapshot!(content, @r###"
 
 int main() {
@@ -47,28 +48,7 @@ fn test_dump_preprocessed_output_with_macros() {
 #define TEN 10
 int x = TEN;
 "#;
-    let mut source_manager = SourceManager::new();
-    let mut diagnostics = DiagnosticEngine::new();
-    let config = PPConfig::default();
-
-    let source_id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>", None);
-
-    let mut preprocessor = Preprocessor::new(&mut source_manager, &mut diagnostics, &config);
-    let tokens = preprocessor.process(source_id, &config).unwrap();
-
-    let significant_tokens: Vec<_> = tokens
-        .into_iter()
-        .filter(|t| !matches!(t.kind, crate::pp::PPTokenKind::Eof | crate::pp::PPTokenKind::Eod))
-        .collect();
-
-    let mut buffer = Vec::new();
-
-    PPDumper::new(&significant_tokens, &source_manager, false)
-        .dump(&mut buffer)
-        .unwrap();
-
-    let content = String::from_utf8(buffer).unwrap();
-
+    let content = dump_pp_output(src, false);
     insta::assert_snapshot!(content, @"int x = 10;");
 }
 
@@ -78,27 +58,6 @@ fn test_dump_preprocessed_output_suppress_line_markers() {
 #define TEN 10
 int x = TEN;
 "#;
-    let mut source_manager = SourceManager::new();
-    let mut diagnostics = DiagnosticEngine::new();
-    let config = PPConfig::default();
-
-    let source_id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>", None);
-
-    let mut preprocessor = Preprocessor::new(&mut source_manager, &mut diagnostics, &config);
-    let tokens = preprocessor.process(source_id, &config).unwrap();
-
-    let significant_tokens: Vec<_> = tokens
-        .into_iter()
-        .filter(|t| !matches!(t.kind, crate::pp::PPTokenKind::Eof | crate::pp::PPTokenKind::Eod))
-        .collect();
-
-    let mut buffer = Vec::new();
-
-    PPDumper::new(&significant_tokens, &source_manager, true)
-        .dump(&mut buffer)
-        .unwrap();
-
-    let content = String::from_utf8(buffer).unwrap();
-
+    let content = dump_pp_output(src, true);
     insta::assert_snapshot!(content, @"int x = 10;");
 }

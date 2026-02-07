@@ -105,6 +105,8 @@ fn test_deref_incomplete_type() {
 
 #[test]
 fn test_pointer_comparison_incompatible() {
+    use crate::tests::test_utils::run_pass_with_diagnostic;
+
     // Should warn but proceed
     let source = r#"
         int main() {
@@ -115,17 +117,10 @@ fn test_pointer_comparison_incompatible() {
             if (p == q) {}
         }
     "#;
-    use crate::tests::test_utils;
-    use crate::tests::test_utils::check_diagnostic;
 
-    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::Mir);
-    assert!(result.is_ok(), "Compilation should succeed with warning");
-
-    assert!(result.is_ok(), "Compilation should succeed with warning");
-
-    // Check for improved message
-    check_diagnostic(
-        &driver,
+    run_pass_with_diagnostic(
+        source,
+        CompilePhase::Mir,
         "comparison of incompatible pointer types 'int*' and 'double*'",
         7,
         17,

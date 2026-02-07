@@ -14,21 +14,14 @@ fn evaluate_program(source: &str) -> String {
     let _ = registry.ensure_layout(registry.type_double);
 
     let root = ast.get_root();
-    let init_expr = if let NodeKind::TranslationUnit(tu) = ast.get_kind(root) {
-        tu.decl_start
-            .range(tu.decl_len)
-            .find_map(|decl_ref| {
-                if let NodeKind::VarDecl(data) = ast.get_kind(decl_ref)
-                    && data.name.to_string() == "test_var"
-                {
-                    return data.init;
-                }
-                None
-            })
-            .expect("Could not find test_var initializer")
-    } else {
+    // Ensure we have a translation unit
+    if !matches!(ast.get_kind(root), NodeKind::TranslationUnit(_)) {
         panic!("Root is not a TranslationUnit");
-    };
+    }
+
+    let init_expr = crate::tests::semantic_common::find_var_decl(&ast, "test_var")
+        .init
+        .expect("Could not find test_var initializer");
 
     let ctx = ConstEvalCtx {
         ast: &ast,

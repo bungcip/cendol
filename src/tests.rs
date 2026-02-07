@@ -62,7 +62,6 @@ pub mod codegen_cast_init;
 pub mod codegen_regr;
 pub mod semantic_atomic;
 pub mod semantic_brace_elision;
-pub mod semantic_complex_arithmetic;
 pub mod semantic_complex_types;
 pub mod semantic_generic;
 pub mod semantic_generic_lvalue;

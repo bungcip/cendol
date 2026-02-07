@@ -81,6 +81,21 @@ pub fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'a crate
         .unwrap_or_else(|| panic!("Record type '{}' not found in registry", name))
 }
 
+pub fn find_var_decl<'a>(ast: &'a Ast, name: &str) -> &'a crate::ast::VarDeclData {
+    ast.kinds
+        .iter()
+        .find_map(|kind| {
+            if let crate::ast::NodeKind::VarDecl(data) = kind
+                && data.name.as_str() == name
+            {
+                Some(data)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| panic!("Variable declaration '{}' not found in AST", name))
+}
+
 // TODO: remove this function and refactor unit test to appropriate phase, if needed to run full pass
 //       unit test must check the result.
 //       this function only check if unit test not error but not checking if result is correct or not
@@ -95,4 +110,22 @@ pub fn run_full_pass(source: &str) {
             driver.get_diagnostics()
         );
     }
+}
+
+pub fn find_enum_constant(symbol_table: &crate::semantic::SymbolTable, name: &str) -> i64 {
+    symbol_table
+        .entries
+        .iter()
+        .find_map(|entry| {
+            if entry.name.as_str() == name {
+                if let crate::semantic::SymbolKind::EnumConstant { value } = entry.kind {
+                    Some(value)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| panic!("Enum constant '{}' not found", name))
 }

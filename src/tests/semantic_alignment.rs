@@ -1,4 +1,4 @@
-use crate::tests::semantic_common::{find_record_type, setup_lowering};
+use crate::tests::semantic_common::{find_record_type, find_var_decl, setup_lowering};
 
 #[test]
 fn test_struct_member_alignas() {
@@ -44,27 +44,9 @@ fn test_member_alignas_type() {
 
 #[test]
 fn test_alignas_zero() {
-    let (ast, _, _) = setup_lowering(
-        r#"
-        _Alignas(0) int x;
-        "#,
-    );
-
-    // Find x
-    let mut x_align = None;
-    for kind in &ast.kinds {
-        if let crate::ast::NodeKind::VarDecl(data) = kind
-            && data.name.as_str() == "x"
-        {
-            x_align = Some(data.alignment);
-        }
-    }
-
-    assert_eq!(
-        x_align,
-        Some(None),
-        "_Alignas(0) should have no effect (None alignment)"
-    );
+    let (ast, _, _) = setup_lowering(r#"_Alignas(0) int x;"#);
+    let x = find_var_decl(&ast, "x");
+    assert_eq!(x.alignment, None, "_Alignas(0) should have no effect (None alignment)");
 }
 
 #[test]

@@ -121,3 +121,9 @@ pub fn setup_diagnostics_output(source: &str) -> String {
             .join("\n\n")
     )
 }
+
+pub fn run_pass_with_diagnostic(source: &str, phase: CompilePhase, message: &str, line: u32, col: u32) {
+    let (driver, result) = run_pipeline(source, phase);
+    assert!(result.is_ok(), "Compilation should have succeeded");
+    check_diagnostic(&driver, message, line, col);
+}

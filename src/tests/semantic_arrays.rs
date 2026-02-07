@@ -2,14 +2,7 @@ use crate::semantic::{ArraySizeType, TypeKind, TypeQualifiers, types::TypeClass}
 use crate::tests::semantic_common::{setup_lowering, setup_mir};
 
 fn find_var_type(ast: &crate::ast::Ast, target_name: &str) -> crate::semantic::types::QualType {
-    for kind in &ast.kinds {
-        if let crate::ast::NodeKind::VarDecl(v) = kind
-            && v.name.to_string() == target_name
-        {
-            return v.ty;
-        }
-    }
-    panic!("Variable '{}' not found in AST", target_name);
+    crate::tests::semantic_common::find_var_decl(ast, target_name).ty
 }
 
 #[test]

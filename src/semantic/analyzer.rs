@@ -1917,7 +1917,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut selected_expr_ref = None;
         let mut default_expr_ref = None;
         let mut default_first_span = None;
-        let mut seen_types: Vec<(QualType, QualType, SourceSpan)> = Vec::new();
+        let mut seen_types: Vec<(QualType, SourceSpan)> = Vec::new();
 
         for assoc_node_ref in gs.assoc_start.range(gs.assoc_len) {
             let NodeKind::GenericAssociation(ga) = *self.ast.get_kind(assoc_node_ref) else {
@@ -1950,17 +1950,16 @@ impl<'a> SemanticAnalyzer<'a> {
                 });
             }
 
-            // C11 6.5.1.1p2: For the purpose of this comparison, qualifiers are stripped from both the
-            // controlling expression's type and the generic association's type.
-            let unqualified_assoc_ty = self.registry.strip_all(assoc_ty);
+            // C11 6.5.1.1p2: The controlling expression... shall have type compatible with at most one...
+            // "No two generic associations in the same generic selection shall specify compatible types."
 
             // Constraint 2: No two generic associations in the same generic selection shall specify compatible types.
             let mut duplicate = false;
-            for (prev_unqualified, prev_original, prev_span) in &seen_types {
-                if self.registry.is_compatible(unqualified_assoc_ty, *prev_unqualified) {
+            for (prev_ty, prev_span) in &seen_types {
+                if self.registry.is_compatible(assoc_ty, *prev_ty) {
                     self.report_error(SemanticError::GenericDuplicateMatch {
                         ty: self.registry.display_qual_type(assoc_ty),
-                        prev_ty: self.registry.display_qual_type(*prev_original),
+                        prev_ty: self.registry.display_qual_type(*prev_ty),
                         span: assoc_span,
                         first_def: *prev_span,
                     });
@@ -1970,11 +1969,13 @@ impl<'a> SemanticAnalyzer<'a> {
             }
 
             if !duplicate {
-                seen_types.push((unqualified_assoc_ty, assoc_ty, assoc_span));
+                seen_types.push((assoc_ty, assoc_span));
             }
 
             // Constraint 1: The controlling expression... shall have type compatible with at most one...
-            if self.registry.is_compatible(unqualified_ctrl_ty, unqualified_assoc_ty) && selected_expr_ref.is_none() {
+            // unqualified_ctrl_ty is the controlling expression type after lvalue conversion (which strips qualifiers).
+            // It is compared against the association type (which keeps qualifiers).
+            if self.registry.is_compatible(unqualified_ctrl_ty, assoc_ty) && selected_expr_ref.is_none() {
                 selected_expr_ref = Some(ga.result_expr);
                 self.semantic_info
                     .generic_selections

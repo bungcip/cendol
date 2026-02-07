@@ -1,53 +1,55 @@
 use crate::ast::NodeKind;
 use crate::semantic::const_eval::{ConstEvalCtx, eval_const_expr};
-use crate::tests::semantic_common::setup_lowering;
+use crate::tests::semantic_common::setup_analysis;
+
+fn evaluate_program(source: &str) -> String {
+    let (ast, mut registry, symbol_table) = setup_analysis(source);
+
+    // Force layout computation for types likely to be used in sizeof tests.
+    let _ = registry.ensure_layout(registry.type_int);
+    let _ = registry.ensure_layout(registry.type_long);
+    let _ = registry.ensure_layout(registry.type_long_long);
+    let _ = registry.ensure_layout(registry.type_char);
+    let _ = registry.ensure_layout(registry.type_float);
+    let _ = registry.ensure_layout(registry.type_double);
+
+    let root = ast.get_root();
+    let init_expr = if let NodeKind::TranslationUnit(tu) = ast.get_kind(root) {
+        tu.decl_start
+            .range(tu.decl_len)
+            .find_map(|decl_ref| {
+                if let NodeKind::VarDecl(data) = ast.get_kind(decl_ref)
+                    && data.name.to_string() == "test_var"
+                {
+                    return data.init;
+                }
+                None
+            })
+            .expect("Could not find test_var initializer")
+    } else {
+        panic!("Root is not a TranslationUnit");
+    };
+
+    let ctx = ConstEvalCtx {
+        ast: &ast,
+        symbol_table: &symbol_table,
+        registry: &registry,
+        semantic_info: ast.semantic_info.as_ref(),
+    };
+
+    let result = eval_const_expr(&ctx, init_expr);
+    match result {
+        Some(val) => format!("{}", val),
+        None => "None".to_string(),
+    }
+}
 
 fn format_const_eval_batch(exprs: &[&str]) -> String {
     let mut output = String::new();
 
     for expr in exprs {
         let source = format!("long long test_var = {};", expr);
-        let (ast, mut registry, symbol_table) = setup_lowering(&source);
-
-        // Force layout computation for types likely to be used in sizeof tests.
-        let _ = registry.ensure_layout(registry.type_int);
-        let _ = registry.ensure_layout(registry.type_long);
-        let _ = registry.ensure_layout(registry.type_long_long);
-        let _ = registry.ensure_layout(registry.type_char);
-        let _ = registry.ensure_layout(registry.type_float);
-        let _ = registry.ensure_layout(registry.type_double);
-
-        let root = ast.get_root();
-        let init_expr = if let NodeKind::TranslationUnit(tu) = ast.get_kind(root) {
-            tu.decl_start
-                .range(tu.decl_len)
-                .find_map(|decl_ref| {
-                    if let NodeKind::VarDecl(data) = ast.get_kind(decl_ref)
-                        && data.name.to_string() == "test_var"
-                    {
-                        return data.init;
-                    }
-                    None
-                })
-                .expect("Could not find test_var initializer")
-        } else {
-            panic!("Root is not a TranslationUnit");
-        };
-
-        let ctx = ConstEvalCtx {
-            ast: &ast,
-            symbol_table: &symbol_table,
-            registry: &registry,
-            semantic_info: ast.semantic_info.as_ref(),
-        };
-
-        let result = eval_const_expr(&ctx, init_expr);
-
-        let val_str = match result {
-            Some(val) => format!("{}", val),
-            None => "None".to_string(),
-        };
-
+        let val_str = evaluate_program(&source);
         output.push_str(&format!("Expression: {}\nResult: {}\n---\n", expr, val_str));
     }
 
@@ -217,10 +219,10 @@ fn test_generic_selection() {
     ]);
     insta::assert_snapshot!(output, @r"
     Expression: _Generic(1, int: 10, default: 20)
-    Result: None
+    Result: 10
     ---
     Expression: _Generic(1.0, double: 30, default: 20)
-    Result: None
+    Result: 30
     ---
     ");
 }
@@ -228,40 +230,52 @@ fn test_generic_selection() {
 #[test]
 fn test_enum_constants() {
     let source = "enum { A = 5, B = 10 }; int test_var = A + B;";
-    let (ast, registry, symbol_table) = setup_lowering(source);
-
-    let root = ast.get_root();
-    let init_expr = if let NodeKind::TranslationUnit(tu) = ast.get_kind(root) {
-        tu.decl_start
-            .range(tu.decl_len)
-            .find_map(|decl_ref| {
-                if let NodeKind::VarDecl(data) = ast.get_kind(decl_ref)
-                    && data.name.to_string() == "test_var"
-                {
-                    return data.init;
-                }
-                None
-            })
-            .expect("Could not find test_var initializer")
-    } else {
-        panic!("Root is not a TranslationUnit");
-    };
-
-    let ctx = ConstEvalCtx {
-        ast: &ast,
-        symbol_table: &symbol_table,
-        registry: &registry,
-        semantic_info: ast.semantic_info.as_ref(),
-    };
-
-    let result = eval_const_expr(&ctx, init_expr);
-    let val_str = match result {
-        Some(val) => format!("{}", val),
-        None => "None".to_string(),
-    };
+    let val_str = evaluate_program(source);
 
     insta::assert_snapshot!(format!("Source: {}\nResult: {}", source, val_str), @r"
     Source: enum { A = 5, B = 10 }; int test_var = A + B;
     Result: 15
+    ");
+}
+
+#[test]
+fn test_sizeof_expression() {
+    let output = format_const_eval_batch(&["sizeof(1 + 1)"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: sizeof(1 + 1)
+    Result: 4
+    ---
+    ");
+}
+
+#[test]
+fn test_alignof() {
+    let output = format_const_eval_batch(&["_Alignof(int)"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: _Alignof(int)
+    Result: 4
+    ---
+    ");
+}
+
+#[test]
+fn test_logical_short_circuit_or() {
+    // Should result in 1 and not divide by zero error
+    let output = format_const_eval_batch(&["1 || (1 / 0)"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: 1 || (1 / 0)
+    Result: 1
+    ---
+    ");
+}
+
+#[test]
+fn test_logical_short_circuit_and() {
+    // Should result in 0 and not divide by zero error
+    let output = format_const_eval_batch(&["0 && (1 / 0)"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: 0 && (1 / 0)
+    Result: 0
+    ---
     ");
 }

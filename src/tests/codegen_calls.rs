@@ -89,7 +89,42 @@ fn test_indirect_function_call() {
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
-            insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir));
+            insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @r"
+            ; Function: main
+            function u0:0() -> i32 system_v {
+                ss0 = explicit_slot 8
+                ss1 = explicit_slot 4
+                sig0 = (i32) -> i32 system_v
+                sig1 = (i32) -> i32 system_v
+                fn0 = colocated u0:0 sig0
+
+            block0:
+                v0 = func_addr.i64 fn0
+                v8 = stack_addr.i64 ss0
+                store notrap v0, v8
+                v7 = stack_addr.i64 ss0
+                v1 = load.i64 notrap v7
+                v2 = iconst.i32 42
+                v3 = call_indirect sig1, v1(v2)  ; v2 = 42
+                v6 = stack_addr.i64 ss1
+                store notrap v3, v6
+                v5 = stack_addr.i64 ss1
+                v4 = load.i32 notrap v5
+                return v4
+            }
+
+            ; Function: target
+            function u0:0(i32) -> i32 system_v {
+                ss0 = explicit_slot 4
+
+            block0(v0: i32):
+                v3 = stack_addr.i64 ss0
+                store notrap v0, v3
+                v2 = stack_addr.i64 ss0
+                v1 = load.i32 notrap v2
+                return v1
+            }
+            ");
         }
         Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
         Err(e) => panic!("Error: {}", e),
@@ -134,7 +169,18 @@ fn test_global_function_pointer_init() {
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
-            insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir));
+            insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @r"
+            ; Function: target
+            function u0:0(i32) -> i32 system_v {
+                ss0 = explicit_slot 4
+
+            block0(v0: i32):
+                v2 = stack_addr.i64 ss0
+                store notrap v0, v2
+                v1 = iconst.i32 0
+                return v1  ; v1 = 0
+            }
+            ");
         }
         Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
         Err(e) => panic!("Compilation failed: {}", e),

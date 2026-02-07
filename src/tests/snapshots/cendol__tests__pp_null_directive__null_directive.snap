@@ -1,7 +1,0 @@
----
-source: src/tests/pp_null_directive.rs
-expression: "(tokens, diags)"
----
-- - kind: Identifier
-    text: OK
-- []

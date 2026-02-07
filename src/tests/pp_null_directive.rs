@@ -8,5 +8,9 @@ fn test_null_directive() {
 OK
 "#;
     let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags));
+    insta::assert_yaml_snapshot!((tokens, diags), @r"
+    - - kind: Identifier
+        text: OK
+    - []
+    ");
 }

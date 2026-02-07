@@ -618,3 +618,23 @@ fn test_brace_elision_designator_break() {
     }
     ");
 }
+
+#[test]
+fn test_unicode_string_init() {
+    run_full_pass(
+        r#"
+        typedef unsigned short char16_t;
+        typedef unsigned int char32_t;
+
+        char16_t s16[] = u"hello";
+        char32_t s32[] = U"hello";
+
+        int main() {
+            if (sizeof(s16) != 12) return 1; // 6 * 2
+            if (sizeof(s32) != 24) return 2; // 6 * 4
+
+            return 0;
+        }
+    "#,
+    );
+}

@@ -5,7 +5,7 @@
 //! are only relevant in the Parser phase and will be converted to semantic
 //! types during the SymbolResolver phase.
 
-use std::num::{NonZeroU16, NonZeroU32};
+use std::num::NonZeroU32;
 
 use serde::Serialize;
 
@@ -61,7 +61,7 @@ pub struct ParsedFunctionParam {
 pub struct ParsedStructMember {
     pub name: Option<NameId>,
     pub ty: ParsedType,
-    pub bit_field_size: Option<NonZeroU16>,
+    pub bit_field_size: Option<u16>,
     pub alignment: Option<u32>,
     pub span: SourceSpan,
 }

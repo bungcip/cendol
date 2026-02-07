@@ -13,7 +13,6 @@
 
 use hashbrown::HashMap;
 use smallvec::{SmallVec, smallvec};
-use std::num::NonZeroU16;
 
 use crate::ast::literal;
 use crate::ast::parsed::{
@@ -2682,7 +2681,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 fn extract_bit_field_width<'a>(
     declarator: &'a ParsedDeclarator,
     ctx: &mut LowerCtx,
-) -> (Option<NonZeroU16>, &'a ParsedDeclarator) {
+) -> (Option<u16>, &'a ParsedDeclarator) {
     let ParsedDeclarator::BitField(base, expr_ref) = declarator else {
         return (None, declarator);
     };
@@ -2691,7 +2690,7 @@ fn extract_bit_field_width<'a>(
     let span = ctx.ast.get_span(width_expr);
 
     let width = match const_eval::eval_const_expr(&ctx.const_ctx(), width_expr) {
-        Some(val) if val > 0 && val <= 64 => NonZeroU16::new(val as u16),
+        Some(val) if val >= 0 && val <= 65535 => Some(val as u16),
         Some(_) => {
             ctx.report_error(SemanticError::InvalidBitfieldWidth { span });
             None
@@ -2761,12 +2760,29 @@ fn lower_struct_members(members: &[ParsedDeclarationData], ctx: &mut LowerCtx, s
                 QualType::unqualified(ctx.registry.type_int)
             };
 
-            // Validate bit-field type
-            if bit_field_size.is_some() && !member_type.is_integer() {
-                ctx.report_error(SemanticError::InvalidBitfieldType {
-                    ty: ctx.registry.display_qual_type(member_type),
-                    span: init_declarator.span,
-                });
+            // Validate bit-field
+            if let Some(width) = bit_field_size {
+                if !member_type.is_integer() {
+                    ctx.report_error(SemanticError::InvalidBitfieldType {
+                        ty: ctx.registry.display_qual_type(member_type),
+                        span: init_declarator.span,
+                    });
+                } else if let Ok(layout) = ctx.registry.ensure_layout(member_type.ty()) {
+                    let type_width = layout.size * 8;
+                    if width > type_width {
+                        ctx.report_error(SemanticError::BitfieldWidthExceedsType {
+                            width,
+                            type_width,
+                            span: init_declarator.span,
+                        });
+                    }
+                }
+
+                if width == 0 && member_name.is_some() {
+                    ctx.report_error(SemanticError::NamedZeroWidthBitfield {
+                        span: init_declarator.span,
+                    });
+                }
             }
 
             if bit_field_size.is_none()

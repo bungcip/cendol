@@ -311,7 +311,7 @@ impl From<PPError> for Diagnostic {
 
 impl<'src> Preprocessor<'src> {
     /// Create a new preprocessor
-    pub fn new(source_manager: &'src mut SourceManager, diag: &'src mut DiagnosticEngine, config: &PPConfig) -> Self {
+    pub(crate) fn new(source_manager: &'src mut SourceManager, diag: &'src mut DiagnosticEngine, config: &PPConfig) -> Self {
         let mut header_search = HeaderSearch {
             system_path: Vec::new(),
             framework_path: Vec::new(),
@@ -596,7 +596,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Process source file and return preprocessed tokens
-    pub fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPError> {
+    pub(crate) fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPError> {
         // Initialize lexer for main file
         let buffer_len = self.sm.get_buffer(source_id).len() as u32;
         let buffer = self.sm.get_buffer_arc(source_id);

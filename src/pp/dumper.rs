@@ -16,7 +16,7 @@ pub struct PPDumper<'a> {
 
 impl<'a> PPDumper<'a> {
     /// Create a new preprocessor dumper
-    pub fn new(tokens: &'a [PPToken], source_manager: &'a SourceManager, suppress_line_markers: bool) -> Self {
+    pub(crate) fn new(tokens: &'a [PPToken], source_manager: &'a SourceManager, suppress_line_markers: bool) -> Self {
         Self {
             tokens,
             source_manager,
@@ -25,7 +25,7 @@ impl<'a> PPDumper<'a> {
     }
 
     /// Dump preprocessed output to the given writer
-    pub fn dump(&self, writer: &mut impl Write) -> std::io::Result<()> {
+    pub(crate) fn dump(&self, writer: &mut impl Write) -> std::io::Result<()> {
         if self.tokens.is_empty() {
             return Ok(());
         }

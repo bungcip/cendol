@@ -2,7 +2,7 @@ use crate::ast::NodeKind;
 use crate::semantic::const_eval::{ConstEvalCtx, eval_const_expr};
 use crate::tests::semantic_common::setup_lowering;
 
-fn snapshot_const_eval_batch(name: &str, exprs: &[&str]) {
+fn format_const_eval_batch(exprs: &[&str]) -> String {
     let mut output = String::new();
 
     for expr in exprs {
@@ -51,73 +51,178 @@ fn snapshot_const_eval_batch(name: &str, exprs: &[&str]) {
         output.push_str(&format!("Expression: {}\nResult: {}\n---\n", expr, val_str));
     }
 
-    insta::assert_snapshot!(name, output);
+    output
 }
 
 #[test]
 fn test_arithmetic() {
-    snapshot_const_eval_batch("arithmetic", &["1 + 2", "10 - 5", "2 * 3", "10 / 2", "10 % 3"]);
+    let output = format_const_eval_batch(&["1 + 2", "10 - 5", "2 * 3", "10 / 2", "10 % 3"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: 1 + 2
+    Result: 3
+    ---
+    Expression: 10 - 5
+    Result: 5
+    ---
+    Expression: 2 * 3
+    Result: 6
+    ---
+    Expression: 10 / 2
+    Result: 5
+    ---
+    Expression: 10 % 3
+    Result: None
+    ---
+    ");
 }
 
 #[test]
 fn test_bitwise() {
-    snapshot_const_eval_batch(
-        "bitwise",
-        &["1 << 2", "8 >> 1", "0x0F & 0xF0", "0x0F | 0xF0", "0x0F ^ 0xFF", "~0"],
-    );
+    let output = format_const_eval_batch(&["1 << 2", "8 >> 1", "0x0F & 0xF0", "0x0F | 0xF0", "0x0F ^ 0xFF", "~0"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: 1 << 2
+    Result: 4
+    ---
+    Expression: 8 >> 1
+    Result: 4
+    ---
+    Expression: 0x0F & 0xF0
+    Result: 0
+    ---
+    Expression: 0x0F | 0xF0
+    Result: 255
+    ---
+    Expression: 0x0F ^ 0xFF
+    Result: 240
+    ---
+    Expression: ~0
+    Result: -1
+    ---
+    ");
 }
 
 #[test]
 fn test_logical() {
-    snapshot_const_eval_batch("logical", &["1 && 1", "1 && 0", "1 || 0", "0 || 0", "!0", "!5"]);
+    let output = format_const_eval_batch(&["1 && 1", "1 && 0", "1 || 0", "0 || 0", "!0", "!5"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: 1 && 1
+    Result: 1
+    ---
+    Expression: 1 && 0
+    Result: 0
+    ---
+    Expression: 1 || 0
+    Result: 1
+    ---
+    Expression: 0 || 0
+    Result: 0
+    ---
+    Expression: !0
+    Result: 1
+    ---
+    Expression: !5
+    Result: 0
+    ---
+    ");
 }
 
 #[test]
 fn test_comparisons() {
-    snapshot_const_eval_batch(
-        "comparisons",
-        &["1 < 2", "2 > 1", "1 <= 1", "2 >= 2", "1 == 1", "1 != 2"],
-    );
+    let output = format_const_eval_batch(&["1 < 2", "2 > 1", "1 <= 1", "2 >= 2", "1 == 1", "1 != 2"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: 1 < 2
+    Result: 1
+    ---
+    Expression: 2 > 1
+    Result: 1
+    ---
+    Expression: 1 <= 1
+    Result: 1
+    ---
+    Expression: 2 >= 2
+    Result: 1
+    ---
+    Expression: 1 == 1
+    Result: 1
+    ---
+    Expression: 1 != 2
+    Result: 1
+    ---
+    ");
 }
 
 #[test]
 fn test_ternary() {
-    snapshot_const_eval_batch("ternary", &["1 ? 10 : 20", "0 ? 10 : 20"]);
+    let output = format_const_eval_batch(&["1 ? 10 : 20", "0 ? 10 : 20"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: 1 ? 10 : 20
+    Result: 10
+    ---
+    Expression: 0 ? 10 : 20
+    Result: 20
+    ---
+    ");
 }
 
 #[test]
 fn test_sizeof() {
-    snapshot_const_eval_batch(
-        "sizeof",
-        &[
-            "sizeof(int)",
-            "sizeof(long)",
-            "sizeof(long long)",
-            // "sizeof(1 + 1)", // Fails because operand type is not resolved in AST for unevaluated operands in this test setup
-        ],
-    );
+    let output = format_const_eval_batch(&[
+        "sizeof(int)",
+        "sizeof(long)",
+        "sizeof(long long)",
+        // "sizeof(1 + 1)", // Fails because operand type is not resolved in AST for unevaluated operands in this test setup
+    ]);
+    insta::assert_snapshot!(output, @r"
+    Expression: sizeof(int)
+    Result: 4
+    ---
+    Expression: sizeof(long)
+    Result: 8
+    ---
+    Expression: sizeof(long long)
+    Result: 8
+    ---
+    ");
 }
 
 #[test]
 fn test_complex() {
-    snapshot_const_eval_batch("complex", &["1 + 2 * 3", "(1 + 2) * 3"]);
+    let output = format_const_eval_batch(&["1 + 2 * 3", "(1 + 2) * 3"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: 1 + 2 * 3
+    Result: 7
+    ---
+    Expression: (1 + 2) * 3
+    Result: 9
+    ---
+    ");
 }
 
 #[test]
 fn test_overflow_wrapping() {
     // 9223372036854775807 is LLONG_MAX (2^63 - 1)
-    snapshot_const_eval_batch("overflow_wrapping", &["9223372036854775807LL + 1"]);
+    let output = format_const_eval_batch(&["9223372036854775807LL + 1"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: 9223372036854775807LL + 1
+    Result: -9223372036854775808
+    ---
+    ");
 }
 
 #[test]
 fn test_generic_selection() {
-    snapshot_const_eval_batch(
-        "generic_selection",
-        &[
-            "_Generic(1, int: 10, default: 20)",
-            "_Generic(1.0, double: 30, default: 20)",
-        ],
-    );
+    let output = format_const_eval_batch(&[
+        "_Generic(1, int: 10, default: 20)",
+        "_Generic(1.0, double: 30, default: 20)",
+    ]);
+    insta::assert_snapshot!(output, @r"
+    Expression: _Generic(1, int: 10, default: 20)
+    Result: None
+    ---
+    Expression: _Generic(1.0, double: 30, default: 20)
+    Result: None
+    ---
+    ");
 }
 
 #[test]
@@ -155,5 +260,8 @@ fn test_enum_constants() {
         None => "None".to_string(),
     };
 
-    insta::assert_snapshot!("enum_constants", format!("Source: {}\nResult: {}", source, val_str));
+    insta::assert_snapshot!(format!("Source: {}\nResult: {}", source, val_str), @r"
+    Source: enum { A = 5, B = 10 }; int test_var = A + B;
+    Result: 15
+    ");
 }

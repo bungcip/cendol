@@ -405,9 +405,9 @@ impl<'a> AstToMirLowerer<'a> {
                 crate::ast::NameId::new(format!("{}.{}", name, entry_ref.get()))
             };
 
-            let global_id = self
-                .mir_builder
-                .create_global_with_init(global_name, mir_type_id, false, final_init);
+            let global_id =
+                self.mir_builder
+                    .create_global_with_init(global_name, mir_type_id, symbol.is_const(), final_init);
 
             if let Some(align) = alignment {
                 self.mir_builder.set_global_alignment(global_id, align);

@@ -101,11 +101,10 @@ impl<'a> AstToMirLowerer<'a> {
         if matches!(
             node_kind,
             NodeKind::BinaryOp(..) | NodeKind::UnaryOp(..) | NodeKind::TernaryOp(..)
-        ) {
-            if let Some(val) = eval_const_expr(&self.const_ctx(), expr_ref) {
-                let ty_id = self.lower_qual_type(ty);
-                return Some(Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val))));
-            }
+        ) && let Some(val) = eval_const_expr(&self.const_ctx(), expr_ref)
+        {
+            let ty_id = self.lower_qual_type(ty);
+            return Some(Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val))));
         }
         None
     }

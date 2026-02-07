@@ -98,7 +98,7 @@ fn test_mir_type_is_float() {
 fn test_mir_type_is_aggregate() {
     // Aggregate types
     let record_type = MirType::Record {
-        name: NameId::new("TestStruct".to_string()),
+        name: NameId::new("TestStruct"),
         field_types: vec![],
         field_names: vec![],
         is_union: false,
@@ -184,7 +184,7 @@ fn test_mir_type_width() {
     assert_eq!(MirType::Void.width(), 0);
 
     let record_type = MirType::Record {
-        name: NameId::new("TestStruct".to_string()),
+        name: NameId::new("TestStruct"),
         field_types: vec![],
         field_names: vec![],
         is_union: false,

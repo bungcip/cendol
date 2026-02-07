@@ -567,25 +567,25 @@ impl<'src> Lexer<'src> {
     /// Extract parts from a string literal symbol: (prefix, content_without_quotes)
     fn extract_literal_parts(s: &str) -> Option<(&str, &str)> {
         if let Some(rest) = s.strip_prefix("L\"") {
-            if rest.ends_with('"') {
-                return Some(("L", &rest[..rest.len() - 1]));
+            if let Some(inner) = rest.strip_suffix('"') {
+                return Some(("L", inner));
             }
         } else if let Some(rest) = s.strip_prefix("u\"") {
-            if rest.ends_with('"') {
-                return Some(("u", &rest[..rest.len() - 1]));
+            if let Some(inner) = rest.strip_suffix('"') {
+                return Some(("u", inner));
             }
         } else if let Some(rest) = s.strip_prefix("U\"") {
-            if rest.ends_with('"') {
-                return Some(("U", &rest[..rest.len() - 1]));
+            if let Some(inner) = rest.strip_suffix('"') {
+                return Some(("U", inner));
             }
         } else if let Some(rest) = s.strip_prefix("u8\"") {
-            if rest.ends_with('"') {
-                return Some(("u8", &rest[..rest.len() - 1]));
+            if let Some(inner) = rest.strip_suffix('"') {
+                return Some(("u8", inner));
             }
         } else if let Some(rest) = s.strip_prefix("\"")
-            && rest.ends_with('"')
+            && let Some(inner) = rest.strip_suffix('"')
         {
-            return Some(("", &rest[..rest.len() - 1]));
+            return Some(("", inner));
         }
         None
     }

@@ -15,10 +15,10 @@ fn snapshot_const_eval(name: &str, expr: &str) {
         tu.decl_start
             .range(tu.decl_len)
             .find_map(|decl_ref| {
-                if let NodeKind::VarDecl(data) = ast.get_kind(decl_ref) {
-                    if data.name.to_string() == "test_var" {
-                        return data.init;
-                    }
+                if let NodeKind::VarDecl(data) = ast.get_kind(decl_ref)
+                    && data.name.to_string() == "test_var"
+                {
+                    return data.init;
                 }
                 None
             })

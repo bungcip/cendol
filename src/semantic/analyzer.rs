@@ -1115,7 +1115,15 @@ impl<'a> SemanticAnalyzer<'a> {
         let obj_ty = self.visit_node(obj_ref)?;
 
         let record_ty_ref = if is_arrow {
-            self.registry.get_pointee(obj_ty.ty()).map(|qt| qt.ty())?
+            if let Some(pointee) = self.registry.get_pointee(obj_ty.ty()) {
+                pointee.ty()
+            } else if let TypeKind::Array { element_type, .. } = self.registry.get(obj_ty.ty()).kind {
+                // Decay array to pointer
+                self.push_conversion(obj_ref, Conversion::PointerDecay { to: element_type });
+                element_type
+            } else {
+                return None;
+            }
         } else {
             obj_ty.ty()
         };

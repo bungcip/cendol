@@ -1260,77 +1260,77 @@ fn test_ternary_with_mixed_pointer_integer() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = void
-        type %t2 = ptr<%t1>
-        type %t3 = ptr<%t0>
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
+    type %t1 = void
+    type %t2 = ptr<%t1>
+    type %t3 = ptr<%t0>
 
-        fn main() -> i32
-        {
-          locals {
-            %i: i32
-            %p: ptr<void>
-            %q: ptr<i32>
-            %4: ptr<void>
-            %5: ptr<void>
-            %6: ptr<i32>
-            %7: ptr<i32>
-          }
+    fn main() -> i32
+    {
+      locals {
+        %i: i32
+        %p: ptr<void>
+        %q: ptr<i32>
+        %4: ptr<void>
+        %5: ptr<void>
+        %6: ptr<i32>
+        %7: ptr<i32>
+      }
 
-          bb1:
-            %i = const 1
-            cond_br %i, bb2, bb3
+      bb1:
+        %i = const 1
+        cond_br %i, bb2, bb3
 
-          bb2:
-            %4 = cast<ptr<void>>(const 0)
-            br bb4
+      bb2:
+        %4 = cast<ptr<void>>(const 0)
+        br bb4
 
-          bb3:
-            %4 = cast<ptr<void>>(const 0)
-            br bb4
+      bb3:
+        %4 = const 0
+        br bb4
 
-          bb4:
-            %p = %4
-            cond_br %i, bb5, bb6
+      bb4:
+        %p = %4
+        cond_br %i, bb5, bb6
 
-          bb5:
-            %5 = cast<ptr<void>>(const 0)
-            br bb7
+      bb5:
+        %5 = const 0
+        br bb7
 
-          bb6:
-            %5 = cast<ptr<void>>(const 0)
-            br bb7
+      bb6:
+        %5 = cast<ptr<void>>(const 0)
+        br bb7
 
-          bb7:
-            %p = %5
-            cond_br %i, bb8, bb9
+      bb7:
+        %p = %5
+        cond_br %i, bb8, bb9
 
-          bb8:
-            %6 = cast<ptr<i32>>(const 0)
-            br bb10
+      bb8:
+        %6 = cast<ptr<i32>>(const 0)
+        br bb10
 
-          bb9:
-            %6 = %q
-            br bb10
+      bb9:
+        %6 = %q
+        br bb10
 
-          bb10:
-            %q = %6
-            cond_br %i, bb11, bb12
+      bb10:
+        %q = %6
+        cond_br %i, bb11, bb12
 
-          bb11:
-            %7 = %q
-            br bb13
+      bb11:
+        %7 = %q
+        br bb13
 
-          bb12:
-            %7 = cast<ptr<i32>>(const 0)
-            br bb13
+      bb12:
+        %7 = cast<ptr<i32>>(const 0)
+        br bb13
 
-          bb13:
-            %q = %7
-            return cast<i32>(%q)
-        }
-        ");
+      bb13:
+        %q = %7
+        return cast<i32>(%q)
+    }
+    ");
 }
 
 #[test]

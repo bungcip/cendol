@@ -1,0 +1,25 @@
+---
+source: src/tests/semantic_const_eval.rs
+expression: output
+---
+Expression: (char)257
+Result: 1
+---
+Expression: (char)128
+Result: -128
+---
+Expression: (unsigned char)257
+Result: 1
+---
+Expression: (int)123456789012345LL
+Result: -2045911175
+---
+Expression: (long long)(int)123456789012345LL
+Result: -2045911175
+---
+Expression: (short)-1
+Result: -1
+---
+Expression: (unsigned short)-1
+Result: 65535
+---

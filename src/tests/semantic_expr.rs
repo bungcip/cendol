@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::semantic_common::{run_fail, run_pass, setup_diagnostics_output, setup_mir};
+use crate::tests::semantic_common::{run_fail, run_pass, setup_analysis, setup_diagnostics_output, setup_mir};
 use std::process::Command;
 use tempfile::NamedTempFile;
 
@@ -913,4 +913,9 @@ fn test_nested_qualifier_preservation() {
     Message: cannot assign to read-only location
     Span: SourceSpan(source_id=SourceId(2), start=150, end=155)
     ");
+}
+
+#[test]
+fn test_arrow_access_on_array() {
+    setup_analysis("struct S { int a; }; struct S arr[1]; int main() { return arr->a; }");
 }

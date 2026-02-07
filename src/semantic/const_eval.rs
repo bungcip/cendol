@@ -5,7 +5,7 @@
 //! static assertions and array sizes.
 
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, UnaryOp, literal};
-use crate::semantic::{SemanticInfo, SymbolKind, SymbolTable, TypeRegistry};
+use crate::semantic::{SemanticInfo, SymbolKind, SymbolTable, TypeKind, TypeRegistry};
 
 /// Context for constant expression evaluation
 pub(crate) struct ConstEvalCtx<'a> {
@@ -120,6 +120,27 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
             } else {
                 eval_const_expr(ctx, *else_ref)
             }
+        }
+        NodeKind::Cast(ty, expr) => {
+            let val = eval_const_expr(ctx, *expr)?;
+            let inner_ty = ctx.registry.get(ty.ty());
+            if let TypeKind::Builtin(builtin) = inner_ty.kind {
+                if builtin.is_integer() {
+                    let layout = ctx.registry.get_layout(ty.ty());
+                    let size = layout.size;
+                    if size < 8 {
+                        let mask = (1u64 << (size * 8)) - 1;
+                        let val_u = val as u64 & mask;
+                        if builtin.is_signed() {
+                            let shift = 64 - (size * 8);
+                            return Some(((val_u << shift) as i64) >> shift);
+                        } else {
+                            return Some(val_u as i64);
+                        }
+                    }
+                }
+            }
+            Some(val)
         }
         _ => None,
     }

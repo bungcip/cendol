@@ -1959,7 +1959,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             } = &self.registry.get(final_ty.ty()).kind
         {
             let element_type = *element_type;
-            if let Some(deduced_size) = self.deduce_array_size_full(ie) {
+            if let Some(deduced_size) = self.deduce_array_size_full(ie, QualType::unqualified(element_type)) {
                 let new_ty = self
                     .registry
                     .array_of(element_type, ArraySizeType::Constant(deduced_size));
@@ -2644,42 +2644,136 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn deduce_array_size_full(&self, init_node: NodeRef) -> Option<usize> {
+    fn deduce_array_size_full(&self, init_node: NodeRef, element_ty: QualType) -> Option<usize> {
         match self.ast.get_kind(init_node) {
             NodeKind::InitializerList(list) => {
                 let mut max_index: i64 = -1;
-                let mut current_index: i64 = 0;
+                let mut current_array_idx: i64 = 0;
+                let mut iter = list.init_start.range(list.init_len).peekable();
                 let eval = |e| const_eval::eval_const_expr(&self.const_ctx(), e);
 
-                for item_ref in list.init_start.range(list.init_len) {
+                while let Some(&item_ref) = iter.peek() {
                     let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
+                        iter.next();
                         continue;
                     };
 
                     if init.designator_len > 0 {
                         match self.ast.get_kind(init.designator_start) {
                             NodeKind::Designator(Designator::ArrayIndex(idx)) => {
-                                current_index = eval(*idx)?;
+                                current_array_idx = eval(*idx)?;
+                                iter.next();
+                                // Skip elements consumed by brace elision for this element
+                                self.simulate_consumption(&mut iter, element_ty, init.initializer);
                             }
                             NodeKind::Designator(Designator::GnuArrayRange(start, end)) => {
                                 let (s_v, e_v) = (eval(*start)?, eval(*end)?);
                                 if s_v > e_v {
                                     return None;
                                 }
-                                current_index = e_v;
+                                current_array_idx = e_v;
+                                iter.next();
+                                self.simulate_consumption(&mut iter, element_ty, init.initializer);
                             }
                             _ => return None,
                         }
+                    } else {
+                        iter.next();
+                        self.simulate_consumption(&mut iter, element_ty, init.initializer);
                     }
 
-                    max_index = max_index.max(current_index);
-                    current_index += 1;
+                    max_index = max_index.max(current_array_idx);
+                    current_array_idx += 1;
                 }
 
                 Some((max_index + 1) as usize)
             }
             NodeKind::Literal(literal::Literal::String(s)) => Some(s.as_str().len() + 1),
             _ => None,
+        }
+    }
+
+    fn simulate_consumption(
+        &self,
+        iter: &mut std::iter::Peekable<impl Iterator<Item = NodeRef>>,
+        ty: QualType,
+        pending: NodeRef,
+    ) {
+        let kind = self.ast.get_kind(pending);
+        let is_braced = matches!(kind, NodeKind::InitializerList(_));
+        let is_string = matches!(kind, NodeKind::Literal(literal::Literal::String(_)));
+
+        let type_kind = &self.registry.get(ty.ty()).kind;
+        let is_aggregate = matches!(type_kind, TypeKind::Record { .. } | TypeKind::Array { .. });
+
+        if is_braced || is_string || !is_aggregate {
+            // Consumes exactly one item (already consumed by caller or is pending)
+            return;
+        }
+
+        // Brace elision: consume enough items for members/elements
+        match type_kind {
+            TypeKind::Record { .. } => {
+                let mut members = Vec::new();
+                self.registry.get(ty.ty()).flatten_members(self.registry, &mut members);
+                let mut first = true;
+                for member in members {
+                    let p = if first {
+                        Some(pending)
+                    } else if let Some(&r) = iter.peek() {
+                        let NodeKind::InitializerItem(init) = self.ast.get_kind(r) else {
+                            iter.next();
+                            continue;
+                        };
+                        // Check if next item has a designator that doesn't belong to us
+                        if init.designator_len > 0 {
+                            if let NodeKind::Designator(Designator::FieldName(_)) =
+                                self.ast.get_kind(init.designator_start)
+                            {
+                                // If it's a field name, it might belong to us.
+                                // For simplicity in deduction, we assume it does if it's a field.
+                                // But if it's an array index, it definitely doesn't belong to this struct!
+                            } else {
+                                break;
+                            }
+                        }
+                        iter.next();
+                        Some(init.initializer)
+                    } else {
+                        break;
+                    };
+                    first = false;
+                    if let Some(p) = p {
+                        self.simulate_consumption(iter, member.member_type, p);
+                    }
+                }
+            }
+            TypeKind::Array { element_type, size } => {
+                let len = if let ArraySizeType::Constant(l) = size { *l } else { 0 };
+                let mut first = true;
+                for _ in 0..len {
+                    let p = if first {
+                        Some(pending)
+                    } else if let Some(&r) = iter.peek() {
+                        let NodeKind::InitializerItem(init) = self.ast.get_kind(r) else {
+                            iter.next();
+                            continue;
+                        };
+                        if init.designator_len > 0 {
+                            break; // Array designator ends brace elision
+                        }
+                        iter.next();
+                        Some(init.initializer)
+                    } else {
+                        break;
+                    };
+                    first = false;
+                    if let Some(p) = p {
+                        self.simulate_consumption(iter, QualType::unqualified(*element_type), p);
+                    }
+                }
+            }
+            _ => unreachable!(),
         }
     }
 }

@@ -100,7 +100,7 @@ impl<'a> AstToMirLowerer<'a> {
         // Attempt constant folding for arithmetic/logical operations that are not simple literals
         if matches!(
             node_kind,
-            NodeKind::BinaryOp(..) | NodeKind::UnaryOp(..) | NodeKind::TernaryOp(..)
+            NodeKind::BinaryOp(..) | NodeKind::UnaryOp(..) | NodeKind::TernaryOp(..) | NodeKind::Cast(..)
         ) {
             let ctx = ConstEvalCtx {
                 ast: self.ast,

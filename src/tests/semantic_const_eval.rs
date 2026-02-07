@@ -14,6 +14,10 @@ fn snapshot_const_eval_batch(name: &str, exprs: &[&str]) {
         let _ = registry.ensure_layout(registry.type_long);
         let _ = registry.ensure_layout(registry.type_long_long);
         let _ = registry.ensure_layout(registry.type_char);
+        let _ = registry.ensure_layout(registry.type_schar);
+        let _ = registry.ensure_layout(registry.type_char_unsigned);
+        let _ = registry.ensure_layout(registry.type_short);
+        let _ = registry.ensure_layout(registry.type_short_unsigned);
         let _ = registry.ensure_layout(registry.type_float);
         let _ = registry.ensure_layout(registry.type_double);
 
@@ -156,4 +160,20 @@ fn test_enum_constants() {
     };
 
     insta::assert_snapshot!("enum_constants", format!("Source: {}\nResult: {}", source, val_str));
+}
+
+#[test]
+fn test_const_eval_cast() {
+    snapshot_const_eval_batch(
+        "const_eval_cast",
+        &[
+            "(char)257",
+            "(char)128",
+            "(unsigned char)257",
+            "(int)123456789012345LL",
+            "(long long)(int)123456789012345LL",
+            "(short)-1",
+            "(unsigned short)-1",
+        ],
+    );
 }

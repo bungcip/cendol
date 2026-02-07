@@ -260,7 +260,6 @@ impl<'a> AstToMirLowerer<'a> {
         let mut first_item_processed = false;
 
         loop {
-            // Determine next item
             let (item_ref, is_pending) = if let Some(pending) = pending_initializer
                 && !first_item_processed
             {
@@ -302,6 +301,9 @@ impl<'a> AstToMirLowerer<'a> {
                     }
                 }
             } else {
+                if size > 0 && current_idx >= size {
+                    break;
+                }
                 (current_idx, current_idx)
             };
 

@@ -1070,12 +1070,7 @@ fn lower_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                     }
                     ParsedAlignmentSpecifier::Expr(expr_ref) => {
                         let lowered_expr = ctx.lower_expression(*expr_ref);
-                        let const_ctx = ConstEvalCtx {
-                            ast: ctx.ast,
-                            symbol_table: ctx.symbol_table,
-                            registry: ctx.registry,
-                            semantic_info: None,
-                        };
+                        let const_ctx = ctx.const_ctx();
                         if let Some(val) = const_eval::eval_const_expr(&const_ctx, lowered_expr) {
                             if val > 0 && (val as u64).is_power_of_two() {
                                 Some(val as u32)

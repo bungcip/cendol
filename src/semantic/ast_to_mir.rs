@@ -16,6 +16,7 @@ use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
 use crate::semantic::TypeKind;
 
+use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::{Conversion, Namespace, ScopeId};
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use hashbrown::{HashMap, HashSet};
@@ -63,6 +64,15 @@ impl<'a> AstToMirLowerer<'a> {
             continue_target: None,
             switch_case_map: HashMap::new(),
             valist_mir_id: None,
+        }
+    }
+
+    pub(crate) fn const_ctx(&self) -> ConstEvalCtx<'_> {
+        ConstEvalCtx {
+            ast: self.ast,
+            symbol_table: self.symbol_table,
+            registry: self.registry,
+            semantic_info: None,
         }
     }
 

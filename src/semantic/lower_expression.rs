@@ -5,7 +5,7 @@ use crate::mir::{
     TypeId,
 };
 use crate::semantic::ast_to_mir::AstToMirLowerer;
-use crate::semantic::const_eval::{ConstEvalCtx, eval_const_expr};
+use crate::semantic::const_eval::eval_const_expr;
 use crate::semantic::{QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory, mir_ops};
 use crate::{ast, semantic};
 
@@ -102,13 +102,7 @@ impl<'a> AstToMirLowerer<'a> {
             node_kind,
             NodeKind::BinaryOp(..) | NodeKind::UnaryOp(..) | NodeKind::TernaryOp(..)
         ) {
-            let ctx = ConstEvalCtx {
-                ast: self.ast,
-                symbol_table: self.symbol_table,
-                registry: self.registry,
-                semantic_info: None,
-            };
-            if let Some(val) = eval_const_expr(&ctx, expr_ref) {
+            if let Some(val) = eval_const_expr(&self.const_ctx(), expr_ref) {
                 let ty_id = self.lower_qual_type(ty);
                 return Some(Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val))));
             }

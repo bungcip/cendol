@@ -4,6 +4,7 @@ use crate::{
     semantic::{
         ArraySizeType, BuiltinType, QualType, StructMember, SymbolKind, SymbolTable, TypeKind, TypeQualifiers, TypeRef,
         TypeRegistry,
+        const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
     },
 };
@@ -130,8 +131,8 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn const_ctx(&self) -> crate::semantic::const_eval::ConstEvalCtx<'_> {
-        crate::semantic::const_eval::ConstEvalCtx {
+    fn const_ctx(&self) -> ConstEvalCtx<'_> {
+        ConstEvalCtx {
             ast: self.ast,
             symbol_table: self.symbol_table,
             registry: self.registry,

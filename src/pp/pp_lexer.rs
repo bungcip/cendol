@@ -603,10 +603,25 @@ impl PPLexer {
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
                 if ch == b'L' || ch == b'u' || ch == b'U' {
                     let next_ch = self.peek_char();
-                    if next_ch == Some(b'"') {
-                        Some(self.lex_string_literal(start_pos, ch, flags))
+
+                    // Check for u8" (UTF-8 string literal)
+                    if ch == b'u' && next_ch == Some(b'8') {
+                        let saved_pos = self.position;
+                        let saved_line_starts_len = self.line_starts.len();
+                        self.next_char(); // consume '8'
+
+                        if self.peek_char() == Some(b'"') {
+                            Some(self.lex_string_literal(start_pos, b"u8", flags))
+                        } else {
+                            // Backtrack if it's not u8"
+                            self.position = saved_pos;
+                            self.line_starts.truncate(saved_line_starts_len);
+                            Some(self.lex_identifier(start_pos, ch, flags))
+                        }
+                    } else if next_ch == Some(b'"') {
+                        Some(self.lex_string_literal(start_pos, &[ch], flags))
                     } else if next_ch == Some(b'\'') {
-                        Some(self.lex_char_literal(start_pos, ch, flags))
+                        Some(self.lex_char_literal(start_pos, &[ch], flags))
                     } else {
                         Some(self.lex_identifier(start_pos, ch, flags))
                     }
@@ -652,8 +667,8 @@ impl PPLexer {
                 }
             }
             b'0'..=b'9' => Some(self.lex_number(start_pos, ch, flags)),
-            b'"' => Some(self.lex_string_literal(start_pos, ch, flags)),
-            b'\'' => Some(self.lex_char_literal(start_pos, ch, flags)),
+            b'"' => Some(self.lex_string_literal(start_pos, &[ch], flags)),
+            b'\'' => Some(self.lex_char_literal(start_pos, &[ch], flags)),
             b'#' | b'%' => Some(self.lex_operator(start_pos, ch, flags)),
             b'.' => {
                 if let Some(next_ch) = self.peek_char()
@@ -1106,11 +1121,10 @@ impl PPLexer {
     }
 
     /// Shared logic for lexing quoted literals (strings and chars)
-    fn lex_quoted_literal(&mut self, first_ch: u8, delimiter: u8) -> (String, StringId, bool) {
-        let has_prefix = first_ch == b'L' || first_ch == b'u' || first_ch == b'U';
-        let mut chars = vec![first_ch];
+    fn lex_quoted_literal(&mut self, prefix: &[u8], delimiter: u8) -> (String, StringId, bool) {
+        let mut chars = prefix.to_vec();
 
-        if has_prefix {
+        if prefix.is_empty() || prefix.last() != Some(&delimiter) {
             // consume the quote
             let quote = self.next_char().unwrap();
             chars.push(quote);
@@ -1124,8 +1138,8 @@ impl PPLexer {
         (text, symbol, has_invalid_ucn)
     }
 
-    fn lex_string_literal(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
-        let (text, symbol, invalid_ucn) = self.lex_quoted_literal(first_ch, b'"');
+    fn lex_string_literal(&mut self, start_pos: u32, prefix: &[u8], flags: PPTokenFlags) -> PPToken {
+        let (text, symbol, invalid_ucn) = self.lex_quoted_literal(prefix, b'"');
         let mut final_flags = flags;
         if invalid_ucn {
             final_flags |= PPTokenFlags::HAS_INVALID_UCN;
@@ -1149,8 +1163,8 @@ impl PPLexer {
         (0xC2..=0xF4).contains(&byte)
     }
 
-    fn lex_char_literal(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
-        let (text, symbol, invalid_ucn) = self.lex_quoted_literal(first_ch, b'\'');
+    fn lex_char_literal(&mut self, start_pos: u32, prefix: &[u8], flags: PPTokenFlags) -> PPToken {
+        let (text, symbol, invalid_ucn) = self.lex_quoted_literal(prefix, b'\'');
         let mut final_flags = flags;
         if invalid_ucn {
             final_flags |= PPTokenFlags::HAS_INVALID_UCN;
@@ -1158,8 +1172,11 @@ impl PPLexer {
         let chars = text.as_bytes();
 
         // Parse character literal content
-        let has_prefix = first_ch == b'L' || first_ch == b'u' || first_ch == b'U';
-        let quote_start = if has_prefix { 1 } else { 0 };
+        let quote_start = if !prefix.is_empty() && prefix.last() == Some(&b'\'') {
+            prefix.len() - 1
+        } else {
+            prefix.len()
+        };
         let content_start = quote_start + 1;
 
         let content_end = if chars.last() == Some(&b'\'') && chars.len() > content_start {

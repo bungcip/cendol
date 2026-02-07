@@ -1,8 +1,6 @@
 //! Common utilities for semantic analysis tests.
 use crate::ast::Ast;
 use crate::driver::artifact::CompilePhase;
-use crate::driver::cli::CompileConfig;
-use crate::driver::compiler::CompilerDriver;
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::semantic::TypeRegistry;
 use crate::tests::test_utils;
@@ -99,22 +97,6 @@ pub fn find_var_decl<'a>(ast: &'a Ast, name: &str) -> &'a crate::ast::VarDeclDat
             }
         })
         .unwrap_or_else(|| panic!("Variable declaration '{}' not found in AST", name))
-}
-
-// TODO: remove this function and refactor unit test to appropriate phase, if needed to run full pass
-//       unit test must check the result.
-//       this function only check if unit test not error but not checking if result is correct or not
-pub fn run_full_pass(source: &str) {
-    let config = CompileConfig::from_virtual_file(source.to_string(), CompilePhase::EmitObject);
-    let mut driver = CompilerDriver::from_config(config);
-    let result = driver.run();
-    if let Err(e) = result {
-        panic!(
-            "Driver run failed: {:?}. Diagnostics: {:?}",
-            e,
-            driver.get_diagnostics()
-        );
-    }
 }
 
 pub fn find_enum_constant(symbol_table: &crate::semantic::SymbolTable, name: &str) -> i64 {

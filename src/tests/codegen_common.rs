@@ -19,7 +19,7 @@ pub fn setup_cranelift(c_code: &str) -> String {
     }
 }
 
-pub fn run_c_code_with_output(source: &str) -> String {
+fn compile_and_run_c(source: &str) -> std::process::Output {
     let temp_file = NamedTempFile::new().unwrap();
     let temp_path = temp_file.into_temp_path();
     let exe_path = temp_path.to_path_buf();
@@ -48,6 +48,15 @@ pub fn run_c_code_with_output(source: &str) -> String {
         panic!("Compilation failed");
     }
 
-    let run_output = Command::new(exe_path).output().expect("Failed to execute");
+    Command::new(exe_path).output().expect("Failed to execute")
+}
+
+pub fn run_c_code_with_output(source: &str) -> String {
+    let run_output = compile_and_run_c(source);
     String::from_utf8_lossy(&run_output.stdout).to_string()
+}
+
+pub fn run_c_code_exit_status(source: &str) -> i32 {
+    let run_output = compile_and_run_c(source);
+    run_output.status.code().unwrap_or(-1)
 }

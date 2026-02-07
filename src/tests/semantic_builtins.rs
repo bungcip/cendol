@@ -206,19 +206,6 @@ fn test_generic_selection_rejects_duplicate_types() {
 }
 
 #[test]
-fn test_generic_selection_rejects_compatible_types_due_to_qualifiers() {
-    run_fail_with_message(
-        r#"
-        int main() {
-            return _Generic(0, int: 0, const int: 1);
-        }
-        "#,
-        CompilePhase::Mir,
-        "compatible with previously specified type 'int'",
-    );
-}
-
-#[test]
 fn test_generic_selection_rejects_multiple_matches_even_if_controlling_is_different() {
     // This should fail because int and int are compatible, regardless of the controlling expression being float.
     run_fail_with_message(

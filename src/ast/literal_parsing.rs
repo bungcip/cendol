@@ -313,11 +313,11 @@ fn parse_ucn_escape(chars: &mut Peekable<Chars>, result: &mut String) {
         return;
     }
 
-    if let Ok(code_point) = u32::from_str_radix(&hex_str, 16) {
-        if let Some(c) = char::from_u32(code_point) {
-            result.push(c);
-            return;
-        }
+    if let Ok(code_point) = u32::from_str_radix(&hex_str, 16)
+        && let Some(c) = char::from_u32(code_point)
+    {
+        result.push(c);
+        return;
     }
 
     // Invalid codepoint

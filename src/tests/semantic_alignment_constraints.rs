@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::semantic_common::run_fail_with_message;
+use crate::tests::test_utils::run_fail_with_message;
 
 #[test]
 fn test_alignas_constraints() {

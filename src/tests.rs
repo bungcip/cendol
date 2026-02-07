@@ -57,18 +57,18 @@ pub mod parser_utils;
 
 pub mod codegen_ternary_array_size;
 
-pub mod guardian_generic;
-pub mod guardian_scope;
 pub mod semantic_alignment;
+pub mod semantic_alignment_constraints;
 pub mod semantic_composite;
 pub mod test_utils;
 
 pub mod codegen_cast_init;
 pub mod codegen_regr;
-pub mod complex_arithmetic;
-pub mod complex_types;
-pub mod guardian_alignment;
-pub mod guardian_atomic;
-pub mod guardian_brace_elision;
-pub mod mir_const_global;
-pub mod test_generic_lvalue;
+pub mod semantic_atomic;
+pub mod semantic_brace_elision;
+pub mod semantic_complex_arithmetic;
+pub mod semantic_complex_types;
+pub mod semantic_generic;
+pub mod semantic_generic_lvalue;
+pub mod semantic_mir_const_global;
+pub mod semantic_scope_invariants;

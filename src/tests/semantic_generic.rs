@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::semantic_common::{run_fail_with_message, run_pass};
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn test_generic_controlling_expression_must_be_complete() {

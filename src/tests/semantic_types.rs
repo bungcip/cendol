@@ -1,9 +1,10 @@
-use super::semantic_common::{run_fail, run_pass, setup_diagnostics_output, setup_lowering, setup_mir};
+use super::semantic_common::{setup_lowering, setup_mir};
 use crate::ast::NameId;
 use crate::driver::artifact::CompilePhase;
 use crate::semantic::ArraySizeType;
 use crate::semantic::type_registry::TypeRegistry;
 use crate::semantic::types::{QualType, TypeClass, TypeRef};
+use crate::tests::test_utils::{run_fail, run_pass, setup_diagnostics_output};
 
 fn check_type(source: &str, expected: &str) {
     let (_ast, registry, symbol_table) = setup_lowering(source);
@@ -80,7 +81,7 @@ fn test_restrict_array_of_pointers() {
 #[cfg(test)]
 mod tests {
     use crate::driver::artifact::CompilePhase;
-    use crate::tests::semantic_common::run_pass;
+    use crate::tests::test_utils::run_pass;
 
     #[test]
     fn test_signed_int() {

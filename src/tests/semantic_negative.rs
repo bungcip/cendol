@@ -1,5 +1,5 @@
-use super::semantic_common::run_fail_with_message;
 use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils::run_fail_with_message;
 
 // A. Lvalue & Assignment Constraints
 #[test]
@@ -115,8 +115,8 @@ fn test_pointer_comparison_incompatible() {
             if (p == q) {}
         }
     "#;
-    use crate::tests::semantic_common::check_diagnostic;
     use crate::tests::test_utils;
+    use crate::tests::test_utils::check_diagnostic;
 
     let (driver, result) = test_utils::run_pipeline(source, CompilePhase::Mir);
     assert!(result.is_ok(), "Compilation should succeed with warning");

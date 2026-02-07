@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::semantic_common::run_pass;
+use crate::tests::test_utils::run_pass;
 
 #[test]
 fn test_complex_function_param_declarators() {

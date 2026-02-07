@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::semantic_common::{run_fail_with_message, run_pass};
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn test_atomic_builtins_compilation() {
@@ -22,7 +22,7 @@ fn test_atomic_builtins_compilation() {
 
 #[test]
 fn test_atomic_semantic_errors() {
-    use crate::tests::semantic_common::run_fail_with_diagnostic;
+    use crate::tests::test_utils::run_fail_with_diagnostic;
 
     // Invalid memory order type
     let source_memorder = r#"

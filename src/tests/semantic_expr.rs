@@ -1,5 +1,6 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::semantic_common::{run_fail, run_pass, setup_diagnostics_output, setup_mir};
+use crate::tests::semantic_common::setup_mir;
+use crate::tests::test_utils::{run_fail, run_pass, setup_diagnostics_output};
 use std::process::Command;
 use tempfile::NamedTempFile;
 

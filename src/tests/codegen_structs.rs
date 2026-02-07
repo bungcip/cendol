@@ -4,7 +4,7 @@ use crate::driver::artifact::CompilePhase;
 use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
 use crate::mir::{MirModuleId, MirStmt, MirType, Operand, Place, Terminator};
 use crate::tests::codegen_common::setup_cranelift;
-use crate::tests::semantic_common::run_pass;
+use crate::tests::test_utils::run_pass;
 
 #[test]
 fn test_compile_struct_pointer_access() {

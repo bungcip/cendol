@@ -7,29 +7,6 @@ use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::semantic::TypeRegistry;
 use crate::tests::test_utils;
 
-pub fn run_pass(source: &str, phase: CompilePhase) {
-    let (driver, result) = test_utils::run_pipeline(source, phase);
-    if result.is_err() {
-        panic!("Compilation failed unexpectedly: {:?}", driver.get_diagnostics());
-    }
-}
-
-pub fn run_fail(source: &str, phase: CompilePhase) -> CompilerDriver {
-    let (driver, result) = test_utils::run_pipeline(source, phase);
-    assert!(result.is_err(), "Compilation should have failed");
-    driver
-}
-
-pub fn run_fail_with_message(source: &str, phase: CompilePhase, message: &str) {
-    let driver = run_fail(source, phase);
-    check_diagnostic_message_only(&driver, message);
-}
-
-pub fn run_fail_with_diagnostic(source: &str, phase: CompilePhase, message: &str, line: u32, col: u32) {
-    let driver = run_fail(source, phase);
-    check_diagnostic(&driver, message, line, col);
-}
-
 pub fn setup_mir(source: &str) -> String {
     let (driver, result) = test_utils::run_pipeline(source, CompilePhase::Mir);
     let mut out = match result {
@@ -104,53 +81,9 @@ pub fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'a crate
         .unwrap_or_else(|| panic!("Record type '{}' not found in registry", name))
 }
 
-pub fn setup_diagnostics_output(source: &str) -> String {
-    let (driver, _) = test_utils::run_pipeline(source, CompilePhase::Mir);
-    let diagnostics = driver.get_diagnostics();
-
-    format!(
-        "Diagnostics count: {}\n\n{}",
-        diagnostics.len(),
-        diagnostics
-            .iter()
-            .map(|diag| format!(
-                "Level: {:?}\nMessage: {}\nSpan: {}",
-                diag.level, diag.message, diag.span
-            ))
-            .collect::<Vec<_>>()
-            .join("\n\n")
-    )
-}
-
-pub fn check_diagnostic(driver: &CompilerDriver, message: &str, line: u32, col: u32) {
-    let diagnostics = driver.get_diagnostics();
-    let found = diagnostics.iter().any(|d| {
-        if d.message.contains(message)
-            && let Some((l, c)) = driver.source_manager.get_line_column(d.span.start())
-            && l == line
-            && c == col
-        {
-            return true;
-        }
-        false
-    });
-    assert!(
-        found,
-        "Expected diagnostic message containing '{}' at {}:{} not found.\nActual diagnostics: {:?}",
-        message, line, col, diagnostics
-    );
-}
-
-pub fn check_diagnostic_message_only(driver: &CompilerDriver, message: &str) {
-    let diagnostics = driver.get_diagnostics();
-    let found = diagnostics.iter().any(|d| d.message.contains(message));
-    assert!(
-        found,
-        "Expected diagnostic message containing '{}' not found.\nActual diagnostics: {:?}",
-        message, diagnostics
-    );
-}
-
+// TODO: remove this function and refactor unit test to appropriate phase, if needed to run full pass
+//       unit test must check the result.
+//       this function only check if unit test not error but not checking if result is correct or not
 pub fn run_full_pass(source: &str) {
     let config = CompileConfig::from_virtual_file(source.to_string(), CompilePhase::EmitObject);
     let mut driver = CompilerDriver::from_config(config);

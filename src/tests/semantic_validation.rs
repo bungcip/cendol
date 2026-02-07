@@ -1,5 +1,5 @@
-use super::semantic_common::{run_fail_with_diagnostic, run_fail_with_message, run_pass};
 use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils::{run_fail_with_diagnostic, run_fail_with_message, run_pass};
 
 #[test]
 fn test_static_assert_pass() {

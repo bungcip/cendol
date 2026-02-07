@@ -80,7 +80,7 @@ fn test_enum_constant_expression_reference() {
     // This is expected to fail or be incorrect with current implementation
     assert_eq!(b_val, Some(15), "Enum B should be 15");
 }
-use super::semantic_common::run_pass;
+use crate::tests::test_utils::run_pass;
 
 #[test]
 fn test_enum_init_with_other_enum() {

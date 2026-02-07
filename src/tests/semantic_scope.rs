@@ -1,5 +1,6 @@
-use super::semantic_common::{run_fail_with_diagnostic, run_full_pass, run_pass, setup_diagnostics_output, setup_mir};
+use super::semantic_common::{run_full_pass, setup_mir};
 use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils::{run_fail_with_diagnostic, run_pass, setup_diagnostics_output};
 
 #[test]
 fn test_nested_scope_shadowing() {

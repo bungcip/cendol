@@ -5,7 +5,7 @@ use crate::mir::codegen::{ClifOutput, EmitContext, EmitKind, MirToCraneliftLower
 use crate::mir::{ConstValueKind, Rvalue};
 use crate::mir::{MirModuleId, MirRecordLayout, MirStmt, MirType, Operand, Place, Terminator};
 use crate::tests::codegen_common::setup_cranelift;
-use crate::tests::semantic_common::run_pass;
+use crate::tests::test_utils::run_pass;
 
 #[test]
 fn test_emit_const_struct_literal() {

@@ -1,4 +1,5 @@
-use super::semantic_common::{setup_diagnostics_output, setup_mir};
+use super::semantic_common::setup_mir;
+use crate::tests::test_utils::setup_diagnostics_output;
 
 #[test]
 fn test_if_else_statement() {

@@ -2580,28 +2580,85 @@ impl<'src> Preprocessor<'src> {
         macro_name: &str,
         trigger_location: SourceLoc,
     ) -> Vec<PPToken> {
+        // Bolt ⚡: Optimized macro expansion token creation.
+        // This function is a hot path during macro expansion. We've optimized it by:
+        // 1. Using a single pass to build the virtual buffer and collect token metadata.
+        // 2. Caching SourceId lookups and 'is_pasted' checks to avoid redundant HashMap
+        //    lookups and string comparisons for tokens from the same source.
+        // 3. Avoiding redundant calls to `get_text()` by using the buffer lengths directly.
+        // 4. Pre-allocating all necessary vectors with the correct capacity.
+
+        // Pass 0: Sum up lengths for capacity hint.
+        let total_upper_bound: usize = tokens.iter().map(|t| t.length as usize).sum();
+        let mut buffer = Vec::with_capacity(total_upper_bound);
+
+        // Metadata to avoid re-calculating things in the final mapping pass.
+        // (is_pasted, offset_in_new_buffer, length_in_new_buffer)
+        let mut token_metadata = Vec::with_capacity(tokens.len());
+
+        let mut last_sid = None;
+        let mut last_source_buffer = None;
+        let mut last_is_pasted_sid = None;
+        let mut last_is_pasted_val = false;
+
+        for t in tokens {
+            let sid = t.location.source_id();
+
+            // Optimized is_pasted check with caching.
+            let is_pasted = if Some(sid) == last_is_pasted_sid {
+                last_is_pasted_val
+            } else {
+                let val = self.sm.get_file_info(sid).is_some_and(|info| {
+                    let p = info.path.to_str().unwrap_or("");
+                    p == "<<pasted-tokens>>" || p == "<pasted-tokens>"
+                });
+                last_is_pasted_sid = Some(sid);
+                last_is_pasted_val = val;
+                val
+            };
+
+            let start_offset = buffer.len() as u32;
+
+            // Build buffer efficiently.
+            if let Some(b) = if last_sid == Some(sid) {
+                last_source_buffer
+            } else {
+                let b = self.sm.get_file_info(sid).map(|_| self.sm.get_buffer(sid));
+                last_sid = Some(sid);
+                last_source_buffer = b;
+                b
+            } {
+                let start = t.location.offset() as usize;
+                let end = start + t.length as usize;
+                if end <= b.len() {
+                    buffer.extend_from_slice(&b[start..end]);
+                } else {
+                    buffer.extend_from_slice(t.get_text().as_bytes());
+                }
+            } else {
+                buffer.extend_from_slice(t.get_text().as_bytes());
+            }
+
+            let len = (buffer.len() as u32 - start_offset) as u16;
+            token_metadata.push((is_pasted, start_offset, len));
+        }
+
         let virtual_id = self.sm.add_virtual_buffer(
-            self.tokens_to_string(tokens).into_bytes(),
+            buffer,
             &format!("macro_{}", macro_name),
             Some(trigger_location),
         );
 
-        let mut offset = 0;
+        // Final pass: Construct new tokens using the pre-calculated metadata.
         tokens
             .iter()
-            .map(|t| {
-                let len = t.get_text().len() as u16;
-                let is_pasted = self.sm.get_file_info(t.location.source_id()).is_some_and(|info| {
-                    let p = info.path.to_string_lossy();
-                    p == "<<pasted-tokens>>" || p == "<pasted-tokens>"
-                });
-
+            .zip(token_metadata)
+            .map(|(t, (is_pasted, offset, len))| {
                 let loc = if is_pasted {
                     t.location
                 } else {
                     SourceLoc::new(virtual_id, offset)
                 };
-                offset += len as u32;
 
                 PPToken::new(t.kind, t.flags | PPTokenFlags::MACRO_EXPANDED, loc, len)
             })

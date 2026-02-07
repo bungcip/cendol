@@ -304,26 +304,16 @@ fn test_long_long_comparison_crash() {
 #[test]
 fn test_designated_initializer_global() {
     let source = r#"
-            struct S { int a; int b; };
-            struct S s = { .b = 2, .a = 1 };
-            int main() {
-                return 0;
-            }
-        "#;
+        struct S { int a; int b; };
+        struct S s = { .b = 2, .a = 1 };
+    "#;
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r"
-    type %t0 = i32
-    type %t1 = struct S { a: %t0, b: %t0 }
+    type %t0 = struct S { a: %t1, b: %t1 }
+    type %t1 = i32
 
-    global @s: %t1 = const struct_literal { 0: const 1, 1: const 2 }
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
+    global @s: %t0 = const struct_literal { 0: const 1, 1: const 2 }
     ");
 }
 
@@ -333,9 +323,6 @@ fn test_global_initializer_with_address() {
             int x = 10;
             struct S { int a; int *p; };
             struct S s = { .p = &x, .a = 1 };
-            int main() {
-                return 0;
-            }
         "#;
 
     let mir_dump = setup_mir(source);
@@ -346,13 +333,6 @@ fn test_global_initializer_with_address() {
 
     global @x: i32 = const 10
     global @s: %t1 = const struct_literal { 0: const 1, 1: const @x }
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
     ");
 }
 
@@ -371,27 +351,16 @@ fn test_nested_compound_initializer_global() {
             };
 
             struct S2 v = {1, 2, {3, 4}};
-
-            int main() {
-                return 0;
-            }
         "#;
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = struct S2 { a: %t0, b: %t0, s: %t2 }
-        type %t2 = struct S1 { a: %t0, b: %t0 }
+    type %t0 = struct S2 { a: %t1, b: %t1, s: %t2 }
+    type %t1 = i32
+    type %t2 = struct S1 { a: %t1, b: %t1 }
 
-        global @v: %t1 = const struct_literal { 0: const 1, 1: const 2, 2: const struct_literal { 0: const 3, 1: const 4 } }
-
-        fn main() -> i32
-        {
-
-          bb1:
-            return const 0
-        }
-        ");
+    global @v: %t0 = const struct_literal { 0: const 1, 1: const 2, 2: const struct_literal { 0: const 3, 1: const 4 } }
+    ");
 }
 #[test]
 fn test_struct_tag_shadowing() {
@@ -431,16 +400,16 @@ fn test_struct_tag_shadowing() {
 #[test]
 fn test_variable_shadowing() {
     let source = r#"
-            int main() {
-                int x = 1;
-                {
-                    int x = 2;
-                    if (x != 2) return 1;
-                }
-                if (x != 1) return 1;
-                return 0;
-            }
-        "#;
+    int main() {
+        int x = 1;
+        {
+            int x = 2;
+            if (x != 2) return 1;
+        }
+        if (x != 1) return 1;
+        return 0;
+    }
+    "#;
 
     let mir_dump = setup_mir(source);
     // We expect two different %x locals. MIR printer might show them with same name or different IDs.
@@ -488,16 +457,16 @@ fn test_variable_shadowing() {
 #[test]
 fn test_parameter_shadowing() {
     let source = r#"
-            int foo(int x) {
-                {
-                    int x = 10;
-                    return x;
-                }
-            }
-            int main() {
-                return foo(5);
-            }
-        "#;
+    int foo(int x) {
+        {
+            int x = 10;
+            return x;
+        }
+    }
+    int main() {
+        return foo(5);
+    }
+    "#;
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r"
@@ -717,13 +686,13 @@ fn test_function_with_many_return_types() {
 #[test]
 fn test_duplicate_global_declaration() {
     let source = r#"
-            int x;
-            int x;
+        int x;
+        int x;
 
-            int main() {
-                return x;
-            }
-        "#;
+        int main() {
+            return x;
+        }
+    "#;
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r"
@@ -743,37 +712,37 @@ fn test_duplicate_global_declaration() {
 #[test]
 fn test_duplicate_global_declaration_with_initializers_diagnostic() {
     let source = r#"
-            int x = 1;
-            int x = 2;
+      int x = 1;
+      int x = 2;
 
-            int main() {
-                return x;
-            }
-        "#;
+      int main() {
+          return x;
+      }
+    "#;
 
     let output = setup_diagnostics_output(source);
     insta::assert_snapshot!(output, @r"
-        Diagnostics count: 2
+    Diagnostics count: 2
 
-        Level: Error
-        Message: redefinition of 'x'
-        Span: SourceSpan(source_id=SourceId(2), start=36, end=46)
+    Level: Error
+    Message: redefinition of 'x'
+    Span: SourceSpan(source_id=SourceId(2), start=24, end=34)
 
-        Level: Note
-        Message: previous definition is here
-        Span: SourceSpan(source_id=SourceId(2), start=13, end=23)
-        ");
+    Level: Note
+    Message: previous definition is here
+    Span: SourceSpan(source_id=SourceId(2), start=7, end=17)
+    ");
 }
 
 #[test]
 fn test_basic_typedef() {
     let source = r#"
-            typedef int my_int;
-            int main() {
-                my_int x = 10;
-                return x;
-            }
-        "#;
+        typedef int my_int;
+        int main() {
+            my_int x = 10;
+            return x;
+        }
+    "#;
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r"
@@ -795,13 +764,13 @@ fn test_basic_typedef() {
 #[test]
 fn test_mir_generation_for_self_referential_struct() {
     let source = r#"
-            int main() {
-                struct S { struct S *p; int x; } s;
-                s.x = 0;
-                s.p = &s;
-                return s.p->p->p->p->p->x;
-            }
-        "#;
+    int main() {
+        struct S { struct S *p; int x; } s;
+        s.x = 0;
+        s.p = &s;
+        return s.p->p->p->p->p->x;
+    }
+    "#;
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
@@ -1135,27 +1104,17 @@ fn test_incomplete_record_type() {
     let source = r#"
             typedef struct I FILE;
             extern struct I *p;
-            int main() {
-                return 0;
-            }
         "#;
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = struct I {  }
-        type %t2 = ptr<%t1>
+    type %t0 = struct I {  }
+    type %t1 = ptr<%t0>
 
-        global @p: ptr<%t1>
-
-        fn main() -> i32
-        {
-
-          bb1:
-            return const 0
-        }
-        ");
+    global @p: ptr<%t0>
+    ");
 }
+
 #[test]
 fn test_anonymous_struct_union_field_indices() {
     let source = r#"
@@ -1340,9 +1299,6 @@ fn test_global_initializer_with_cast() {
             int x = 5;
             long y = 6;
             char c = 7;
-            int main() {
-                return 0;
-            }
         "#;
 
     let mir_dump = setup_mir(source);
@@ -1354,13 +1310,6 @@ fn test_global_initializer_with_cast() {
         global @x: i32 = const 5
         global @y: i64 = const 6
         global @c: i8 = const 7
-
-        fn main() -> i32
-        {
-
-          bb1:
-            return const 0
-        }
         ");
 }
 #[test]
@@ -1425,7 +1374,6 @@ fn test_gnu_statement_expression_labels_and_void() {
                   timeout--;
               } while (timeout);
             }
-            int main() { return 0; }
         "#;
 
     let mir_dump = setup_mir(source);
@@ -1443,13 +1391,6 @@ fn test_gnu_statement_expression_labels_and_void() {
 
         global @.L.str0: [13]i8 = const "timeout=%ld\n"
         global @.L.str1: [7]i8 = const "error\n"
-
-        fn main() -> i32
-        {
-
-          bb15:
-            return const 0
-        }
 
         extern fn printf(%param0: ptr<i8>, ...) -> i32
 

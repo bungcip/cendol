@@ -380,19 +380,6 @@ fn test_recursive_struct_definition() {
 }
 
 #[test]
-fn test_noreturn_function_returns() {
-    run_fail_with_message(
-        r#"
-        _Noreturn void foo() {
-            return;
-        }
-        "#,
-        CompilePhase::Mir,
-        "function 'foo' declared '_Noreturn' contains a return statement",
-    );
-}
-
-#[test]
 fn test_incomplete_array_in_union() {
     run_fail_with_message(
         r#"
@@ -424,5 +411,189 @@ fn test_invalid_alignas_non_power_of_two() {
         "#,
         CompilePhase::SemanticLowering,
         "requested alignment is not a positive power of 2",
+    );
+}
+
+// K. Type System Edge Cases
+#[test]
+fn test_sizeof_incomplete_struct() {
+    run_fail_with_message(
+        r#"
+        struct S;
+        int main() {
+            int x = sizeof(struct S);
+        }
+        "#,
+        CompilePhase::Mir,
+        "Invalid application of 'sizeof' to an incomplete type",
+    );
+}
+
+// L. More Control Flow Edge Cases
+#[test]
+fn test_break_outside_loop() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            break;
+        }
+        "#,
+        CompilePhase::Mir,
+        "break statement not in loop or switch",
+    );
+}
+
+#[test]
+fn test_continue_outside_loop() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            continue;
+        }
+        "#,
+        CompilePhase::Mir,
+        "continue statement not in loop",
+    );
+}
+
+// M. Expression Validation
+#[test]
+fn test_invalid_use_of_void_in_expr() {
+    run_fail_with_message(
+        r#"
+        void foo() {}
+        int main() {
+            int x = foo();
+        }
+        "#,
+        CompilePhase::Mir,
+        "void",
+    );
+}
+
+// NOTE: Currently the compiler accepts non-constant global initializers
+// This should be rejected but isn't yet implemented
+
+#[test]
+fn test_member_access_on_non_struct() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            int x = 5;
+            x.field = 10;
+        }
+        "#,
+        CompilePhase::Mir,
+        "not a structure or union",
+    );
+}
+
+// N. Alignment & Atomic
+#[test]
+fn test_non_constant_alignment() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            int x = 8;
+            _Alignas(x) int arr[10];
+        }
+        "#,
+        CompilePhase::SemanticLowering,
+        "not a constant expression",
+    );
+}
+
+// NOTE: Atomic type validation is not yet fully implemented
+// These tests would fail to reject invalid atomic usage
+
+// NOTE: _Noreturn function tests are in semantic_functions.rs
+
+// Q. Additional Type Constraints
+
+#[test]
+fn test_incomplete_return_type() {
+    run_fail_with_message(
+        r#"
+        struct S;
+        struct S foo();
+        "#,
+        CompilePhase::Mir,
+        "incomplete return type",
+    );
+}
+
+// NOTE: Missing return statements in non-void functions are currently not detected
+// This is a warning in C, and not yet implemented in this compiler
+
+// Q. Additional Type Constraints
+#[test]
+fn test_flexible_array_in_empty_struct() {
+    run_fail_with_message(
+        r#"
+        struct A {
+            int arr[];
+        };
+        "#,
+        CompilePhase::Mir,
+        "flexible array member in otherwise empty structure",
+    );
+}
+
+// Note: test_incomplete_array_in_union already exists above
+
+// R. Bitfield Edge Cases
+#[test]
+fn test_bitfield_zero_width() {
+    run_fail_with_message(
+        r#"
+        struct A {
+            int x : 0;
+        };
+        "#,
+        CompilePhase::Mir,
+        "bit-field has non-positive width",
+    );
+}
+
+#[test]
+fn test_bitfield_non_constant_width() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            int n = 5;
+            struct A {
+                int x : n;
+            } a;
+        }
+        "#,
+        CompilePhase::Mir,
+        "bit-field width is not a constant expression",
+    );
+}
+
+// S. Undeclared Identifiers
+#[test]
+fn test_undeclared_variable() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            x = 5;
+        }
+        "#,
+        CompilePhase::Mir,
+        "Undeclared",
+    );
+}
+
+#[test]
+fn test_undeclared_function() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            return foo();
+        }
+        "#,
+        CompilePhase::Mir,
+        "Undeclared",
     );
 }

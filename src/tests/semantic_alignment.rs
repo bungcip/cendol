@@ -1,4 +1,4 @@
-use crate::tests::semantic_common::{find_record_type, find_var_decl, setup_lowering};
+use crate::tests::semantic_common::{find_layout, find_record_type, find_var_decl, setup_lowering};
 
 #[test]
 fn test_struct_member_alignas() {
@@ -11,10 +11,7 @@ fn test_struct_member_alignas() {
         "#,
     );
 
-    let s_ty = find_record_type(&registry, "S");
-    let layout = s_ty.layout.as_ref().expect("Layout not computed for S");
-
-    // Alignment of S should be at least 8 because of 'b'
+    let layout = find_layout(&registry, "S");
     assert_eq!(layout.alignment, 8, "Struct S should have alignment 8");
 
     // Offset of 'b' should be 8 (or at least 8-byte aligned)
@@ -36,9 +33,7 @@ fn test_member_alignas_type() {
         "#,
     );
 
-    let s_ty = find_record_type(&registry, "S");
-    let layout = s_ty.layout.as_ref().expect("Layout not computed for S");
-
+    let layout = find_layout(&registry, "S");
     assert_eq!(layout.alignment, 8, "Struct S should have alignment 8 (double)");
 }
 
@@ -80,9 +75,7 @@ fn test_anonymous_struct_member_alignas() {
         "#,
     );
 
-    let s_ty = find_record_type(&registry, "S");
-    let layout = s_ty.layout.as_ref().expect("Layout not computed for S");
-
+    let layout = find_layout(&registry, "S");
     assert_eq!(layout.alignment, 8, "Struct S should have alignment 8");
 
     if let crate::semantic::types::LayoutKind::Record { fields, .. } = &layout.kind {

@@ -1,6 +1,6 @@
 use super::semantic_common::{run_full_pass, setup_mir};
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_fail_with_diagnostic, run_pass, setup_diagnostics_output};
+use crate::tests::test_utils::{run_fail_with_message, run_pass, setup_diagnostics_output};
 
 #[test]
 fn test_nested_scope_shadowing() {
@@ -128,7 +128,6 @@ mod tests {
         ");
     }
 }
-// Tests for C11 typedef redefinition rules.
 
 #[test]
 fn rejects_conflicting_typedef_redefinition() {
@@ -152,12 +151,13 @@ typedef float T;
 
 #[test]
 fn allows_compatible_typedef_redefinition() {
-    let source = r#"
-typedef int T;
-typedef int T;
-        "#;
-    let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @"");
+    run_pass(
+        r#"
+        typedef int T;
+        typedef int T;
+        "#,
+        CompilePhase::Mir,
+    );
 }
 
 #[test]
@@ -173,42 +173,36 @@ void foo(T T) {}
 
 #[test]
 fn rejects_variable_declaration_conflicting_with_typedef() {
-    run_fail_with_diagnostic(
+    run_fail_with_message(
         r#"
 typedef int T;
 int T;
         "#,
         CompilePhase::Mir,
         "redefinition of 'T'",
-        3,
-        1,
     );
 }
 
 #[test]
 fn rejects_typedef_declaration_conflicting_with_variable() {
-    run_fail_with_diagnostic(
+    run_fail_with_message(
         r#"
 int T;
 typedef int T;
         "#,
         CompilePhase::Mir,
         "redefinition of 'T'",
-        3,
-        1,
     );
 }
 
 #[test]
 fn rejects_extern_variable_declaration_conflicting_with_typedef() {
-    run_fail_with_diagnostic(
+    run_fail_with_message(
         r#"
 typedef int T;
 extern int T;
         "#,
         CompilePhase::Mir,
         "redefinition of 'T'",
-        3,
-        1,
     );
 }

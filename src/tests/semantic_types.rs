@@ -65,50 +65,41 @@ fn test_unsigned_long_const_long() {
 
 #[test]
 fn test_restrict_array_of_pointers() {
-    use crate::driver::artifact::CompilePhase;
-    use crate::tests::test_utils;
-
-    let source = r#"
+    let code = r#"
         int main() {
             int x;
             int * restrict arr[10];
             arr[0] = &x;
         }
     "#;
-    let (_driver, result) = test_utils::run_pipeline(source, CompilePhase::Mir);
-    assert!(result.is_ok(), "Compilation failed: {:?}", result.err());
+    run_pass(code, CompilePhase::Mir);
 }
-#[cfg(test)]
-mod tests {
-    use crate::driver::artifact::CompilePhase;
-    use crate::tests::test_utils::run_pass;
 
-    #[test]
-    fn test_signed_int() {
-        let code = "typedef signed int int32_t; int main() { int32_t x = 0; return 0; }";
-        run_pass(code, CompilePhase::Mir);
-    }
-
-    #[test]
-    fn test_signed_long() {
-        let code = "typedef signed long int64_t; int main() { int64_t l = 0; return 0; }";
-        run_pass(code, CompilePhase::Mir);
-    }
-
-    #[test]
-    fn test_signed_char() {
-        let code = "signed char c = 'a'; int main() { return 0; }";
-        run_pass(code, CompilePhase::Mir);
-    }
-
-    #[test]
-    fn test_unsigned_int() {
-        let code = "unsigned int x = 0; int main() { return 0; }";
-        run_pass(code, CompilePhase::Mir);
-    }
+#[test]
+fn test_signed_int() {
+    let code = "typedef signed int int32_t; int main() { int32_t x = 0; return 0; }";
+    run_pass(code, CompilePhase::Mir);
 }
+
+#[test]
+fn test_signed_long() {
+    let code = "typedef signed long int64_t; int main() { int64_t l = 0; return 0; }";
+    run_pass(code, CompilePhase::Mir);
+}
+
+#[test]
+fn test_signed_char() {
+    let code = "signed char c = 'a'; int main() { return 0; }";
+    run_pass(code, CompilePhase::Mir);
+}
+
+#[test]
+fn test_unsigned_int() {
+    let code = "unsigned int x = 0; int main() { return 0; }";
+    run_pass(code, CompilePhase::Mir);
+}
+
 // Semantic validation tests for incomplete types.
-
 #[test]
 fn rejects_sizeof_on_incomplete_struct() {
     let source = r#"

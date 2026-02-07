@@ -7,7 +7,6 @@ fn test_array_init_bug_mir() {
     // Expected: 5 at index 0, 0 at index 1 (implicit), 2 at index 2 (explicit designated), 3 at index 3 (positional after designated)
     let source = r#"
         int a[] = {5, [2] = 2, 3};
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
@@ -15,13 +14,6 @@ fn test_array_init_bug_mir() {
     type %t1 = [4]%t0
 
     global @a: [4]i32 = const array_literal [const 5, const zero, const 2, const 3]
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
     ");
 }
 
@@ -29,7 +21,6 @@ fn test_array_init_bug_mir() {
 fn test_array_designator_simple() {
     let source = r#"
         int a[5] = {[1] = 10, [3] = 30};
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
@@ -37,13 +28,6 @@ fn test_array_designator_simple() {
     type %t1 = [5]%t0
 
     global @a: [5]i32 = const array_literal [const zero, const 10, const zero, const 30, const zero]
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
     ");
 }
 
@@ -51,7 +35,6 @@ fn test_array_designator_simple() {
 fn test_array_designator_out_of_order() {
     let source = r#"
         int a[5] = {[3] = 30, [1] = 10};
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
@@ -59,13 +42,6 @@ fn test_array_designator_out_of_order() {
     type %t1 = [5]%t0
 
     global @a: [5]i32 = const array_literal [const zero, const 10, const zero, const 30, const zero]
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
     ");
 }
 
@@ -74,7 +50,6 @@ fn test_array_designator_override() {
     // C11 allows later initializers to override earlier ones
     let source = r#"
         int a[3] = {[1] = 10, [1] = 20};
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
@@ -82,13 +57,6 @@ fn test_array_designator_override() {
     type %t1 = [3]%t0
 
     global @a: [3]i32 = const array_literal [const zero, const 20, const zero]
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
     ");
 }
 
@@ -97,21 +65,13 @@ fn test_struct_designator_simple() {
     let source = r#"
         struct S { int x; int y; };
         struct S s = {.y = 2, .x = 1};
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
-    type %t0 = i32
-    type %t1 = struct S { x: %t0, y: %t0 }
+    type %t0 = struct S { x: %t1, y: %t1 }
+    type %t1 = i32
 
-    global @s: %t1 = const struct_literal { 0: const 1, 1: const 2 }
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
+    global @s: %t0 = const struct_literal { 0: const 1, 1: const 2 }
     ");
 }
 
@@ -120,22 +80,14 @@ fn test_mixed_array_struct_designators() {
     let source = r#"
         struct S { int arr[3]; int val; };
         struct S s = { .val = 99, .arr = {[1] = 10} };
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
-    type %t0 = i32
-    type %t1 = struct S { arr: %t2, val: %t0 }
-    type %t2 = [3]%t0
+    type %t0 = struct S { arr: %t2, val: %t1 }
+    type %t1 = i32
+    type %t2 = [3]%t1
 
-    global @s: %t1 = const struct_literal { 0: const array_literal [const zero, const 10, const zero], 1: const 99 }
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
+    global @s: %t0 = const struct_literal { 0: const array_literal [const zero, const 10, const zero], 1: const 99 }
     ");
 }
 
@@ -150,24 +102,16 @@ fn test_initializer_list_crash_regression() {
             u8 b;
         };
         struct contains_empty ce = { { (1) }, (empty_s){}, 022, };
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
-    type %t0 = i32
-    type %t1 = struct contains_empty { a: %t2, empty: %t3, b: %t2 }
-    type %t2 = u8
-    type %t3 = struct anonymous {  }
+    type %t0 = struct contains_empty { a: %t1, empty: %t2, b: %t1 }
+    type %t1 = u8
+    type %t2 = struct anonymous {  }
+    type %t3 = i32
 
-    global @.L.str0: %t3 = const struct_literal {  }
-    global @ce: %t1 = const struct_literal { 0: const 1, 1: const struct_literal {  }, 2: const 18 }
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
+    global @.L.str0: %t2 = const struct_literal {  }
+    global @ce: %t0 = const struct_literal { 0: const 1, 1: const struct_literal {  }, 2: const 18 }
     ");
 }
 
@@ -177,7 +121,6 @@ fn test_scalar_braced_init() {
         int a = { 1 };
         // int b = { 1, 2 }; // Excess ignored but causes error in Analyzer
         int c = { }; // Zero init (GNU/C23)
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
@@ -185,13 +128,6 @@ fn test_scalar_braced_init() {
 
     global @a: i32 = const 1
     global @c: i32 = const zero
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
     ");
 }
 
@@ -200,22 +136,14 @@ fn test_fam_initialization() {
     let source = r#"
         struct S { int x; int y[]; };
         struct S s = { 1, {2, 3} };
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
-    type %t0 = i32
-    type %t1 = struct S { x: %t0, y: %t2 }
-    type %t2 = [0]%t0
+    type %t0 = struct S { x: %t1, y: %t2 }
+    type %t1 = i32
+    type %t2 = [0]%t1
 
-    global @s: %t1 = const struct_literal { 0: const 1, 1: const array_literal [const 2, const 3] }
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
+    global @s: %t0 = const struct_literal { 0: const 1, 1: const array_literal [const 2, const 3] }
     ");
 }
 
@@ -223,7 +151,6 @@ fn test_fam_initialization() {
 fn test_range_designators() {
     let source = r#"
         int a[10] = { [1 ... 3] = 5, [5 ... 6] = 6 };
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
@@ -231,13 +158,6 @@ fn test_range_designators() {
     type %t1 = [10]%t0
 
     global @a: [10]i32 = const array_literal [const zero, const 5, const 5, const 5, const zero, const 6, const 6, const zero, const zero, const zero]
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
     ");
 }
 
@@ -248,22 +168,14 @@ fn test_scalar_to_aggregate_elision() {
         struct Wrapper { struct S s; };
         // Scalar 1 initializes Wrapper.s.x. 0 initializes Wrapper.s.y
         struct Wrapper w = { 1 };
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
-    type %t0 = i32
-    type %t1 = struct Wrapper { s: %t2 }
-    type %t2 = struct S { x: %t0, y: %t0 }
+    type %t0 = struct Wrapper { s: %t1 }
+    type %t1 = struct S { x: %t2, y: %t2 }
+    type %t2 = i32
 
-    global @w: %t1 = const struct_literal { 0: const struct_literal { 0: const 1 } }
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
+    global @w: %t0 = const struct_literal { 0: const struct_literal { 0: const 1 } }
     ");
 }
 
@@ -494,22 +406,14 @@ fn test_nested_struct_designator() {
         struct SEA { int i; int j; };
         struct SEB { struct SEA a; };
         struct SEB b = { .a.j = 5 };
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
-    type %t0 = i32
-    type %t1 = struct SEB { a: %t2 }
-    type %t2 = struct SEA { i: %t0, j: %t0 }
+    type %t0 = struct SEB { a: %t1 }
+    type %t1 = struct SEA { i: %t2, j: %t2 }
+    type %t2 = i32
 
-    global @b: %t1 = const struct_literal { 0: const struct_literal { 1: const 5 } }
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
+    global @b: %t0 = const struct_literal { 0: const struct_literal { 1: const 5 } }
     ");
 }
 
@@ -574,23 +478,15 @@ fn test_struct_array_brace_elision() {
     let source = r#"
         struct S { unsigned char c[2]; };
         struct S gs = {1, 2};
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
-    type %t0 = i32
-    type %t1 = struct S { c: %t3 }
-    type %t2 = u8
-    type %t3 = [2]%t2
+    type %t0 = struct S { c: %t2 }
+    type %t1 = u8
+    type %t2 = [2]%t1
+    type %t3 = i32
 
-    global @gs: %t1 = const struct_literal { 0: const array_literal [const 1, const 2] }
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
+    global @gs: %t0 = const struct_literal { 0: const array_literal [const 1, const 2] }
     ");
 }
 
@@ -600,22 +496,14 @@ fn test_brace_elision_designator_break() {
         struct Inner { int a; };
         struct Outer { struct Inner i; int b; };
         struct Outer o = { 1, .b = 2 };
-        int main() { return 0; }
     "#;
     let mir = setup_mir(source);
     insta::assert_snapshot!(mir, @r"
-    type %t0 = i32
-    type %t1 = struct Outer { i: %t2, b: %t0 }
-    type %t2 = struct Inner { a: %t0 }
+    type %t0 = struct Outer { i: %t1, b: %t2 }
+    type %t1 = struct Inner { a: %t2 }
+    type %t2 = i32
 
-    global @o: %t1 = const struct_literal { 0: const struct_literal { 0: const 1 }, 1: const 2 }
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return const 0
-    }
+    global @o: %t0 = const struct_literal { 0: const struct_literal { 0: const 1 }, 1: const 2 }
     ");
 }
 

@@ -83,6 +83,7 @@ pub(crate) fn run_semantic_analyzer(
         current_function_name: None,
         current_function_is_noreturn: false,
         deferred_checks: Vec::new(),
+        loop_depth: 0,
         switch_depth: 0,
         switch_cases: Vec::new(),
         switch_default_seen: Vec::new(),
@@ -108,6 +109,7 @@ struct SemanticAnalyzer<'a> {
     current_function_name: Option<String>,
     current_function_is_noreturn: bool,
     deferred_checks: Vec<DeferredCheck>,
+    loop_depth: usize,
     switch_depth: usize,
     switch_cases: Vec<HashSet<i64>>,
     switch_default_seen: Vec<bool>,
@@ -314,7 +316,9 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_while_statement(&mut self, stmt: &WhileStmt) {
         self.check_scalar_condition(stmt.condition);
+        self.loop_depth += 1;
         self.visit_node(stmt.body);
+        self.loop_depth -= 1;
     }
 
     fn visit_for_statement(&mut self, stmt: &ForStmt) {
@@ -327,7 +331,9 @@ impl<'a> SemanticAnalyzer<'a> {
         if let Some(inc) = stmt.increment {
             self.visit_node(inc);
         }
+        self.loop_depth += 1;
         self.visit_node(stmt.body);
+        self.loop_depth -= 1;
     }
 
     fn visit_return_statement(&mut self, expr: &Option<NodeRef>, span: SourceSpan) {
@@ -1328,7 +1334,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 None
             }
             NodeKind::DoWhile(body, condition) => {
+                self.loop_depth += 1;
                 self.visit_node(*body);
+                self.loop_depth -= 1;
                 self.visit_node(*condition);
                 None
             }
@@ -1423,7 +1431,21 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.deferred_checks.push(DeferredCheck::StaticAssert(node_ref));
                 None
             }
-            NodeKind::Break | NodeKind::Continue | NodeKind::Goto(_, _) => None,
+            NodeKind::Break => {
+                if self.loop_depth == 0 && self.switch_depth == 0 {
+                    let span = self.ast.get_span(node_ref);
+                    self.report_error(SemanticError::BreakNotInLoop { span });
+                }
+                None
+            }
+            NodeKind::Continue => {
+                if self.loop_depth == 0 {
+                    let span = self.ast.get_span(node_ref);
+                    self.report_error(SemanticError::ContinueNotInLoop { span });
+                }
+                None
+            }
+            NodeKind::Goto(_, _) => None,
             NodeKind::Label(_, stmt, _) => {
                 self.visit_node(*stmt);
                 None

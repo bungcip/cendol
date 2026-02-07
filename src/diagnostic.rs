@@ -390,6 +390,12 @@ pub enum SemanticError {
 
     #[error("_Atomic(type-name) specifier cannot be used with {reason}")]
     InvalidAtomicSpecifier { reason: String, span: SourceSpan },
+
+    #[error("break statement not in loop or switch")]
+    BreakNotInLoop { span: SourceSpan },
+
+    #[error("continue statement not in loop statement")]
+    ContinueNotInLoop { span: SourceSpan },
 }
 
 impl SemanticError {
@@ -459,6 +465,8 @@ impl SemanticError {
             SemanticError::UnreachableCode { span } => *span,
             SemanticError::AlignmentNotAllowed { span, .. } => *span,
             SemanticError::AlignmentTooLoose { span, .. } => *span,
+            SemanticError::BreakNotInLoop { span } => *span,
+            SemanticError::ContinueNotInLoop { span } => *span,
         }
     }
 }

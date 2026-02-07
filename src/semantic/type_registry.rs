@@ -274,6 +274,10 @@ impl TypeRegistry {
         }
     }
 
+    pub(crate) fn is_char_type(&self, ty: TypeRef) -> bool {
+        self.get(ty).kind.builtin().is_some_and(|b| b.is_char())
+    }
+
     /// Helper to get the element type if the given type is an array.
     pub(crate) fn get_array_element(&self, ty: TypeRef) -> Option<TypeRef> {
         if ty.is_inline_array() {

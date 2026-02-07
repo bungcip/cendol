@@ -313,18 +313,18 @@ fn test_designated_initializer_global() {
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = struct S { a: %t0, b: %t0 }
+    type %t0 = i32
+    type %t1 = struct S { a: %t0, b: %t0 }
 
-        global @s: %t1 = const struct_literal { 1: const 2, 0: const 1 }
+    global @s: %t1 = const struct_literal { 0: const 1, 1: const 2 }
 
-        fn main() -> i32
-        {
+    fn main() -> i32
+    {
 
-          bb1:
-            return const 0
-        }
-        ");
+      bb1:
+        return const 0
+    }
+    ");
 }
 
 #[test]
@@ -340,20 +340,20 @@ fn test_global_initializer_with_address() {
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = struct S { a: %t0, p: %t2 }
-        type %t2 = ptr<%t0>
+    type %t0 = i32
+    type %t1 = struct S { a: %t0, p: %t2 }
+    type %t2 = ptr<%t0>
 
-        global @x: i32 = const 10
-        global @s: %t1 = const struct_literal { 1: const @x, 0: const 1 }
+    global @x: i32 = const 10
+    global @s: %t1 = const struct_literal { 0: const 1, 1: const @x }
 
-        fn main() -> i32
-        {
+    fn main() -> i32
+    {
 
-          bb1:
-            return const 0
-        }
-        ");
+      bb1:
+        return const 0
+    }
+    ");
 }
 
 #[test]

@@ -104,7 +104,7 @@ fn test_struct_designator_simple() {
     type %t0 = i32
     type %t1 = struct S { x: %t0, y: %t0 }
 
-    global @s: %t1 = const struct_literal { 1: const 2, 0: const 1 }
+    global @s: %t1 = const struct_literal { 0: const 1, 1: const 2 }
 
     fn main() -> i32
     {
@@ -128,7 +128,7 @@ fn test_mixed_array_struct_designators() {
     type %t1 = struct S { arr: %t2, val: %t0 }
     type %t2 = [3]%t0
 
-    global @s: %t1 = const struct_literal { 1: const 99, 0: const array_literal [const zero, const 10, const zero] }
+    global @s: %t1 = const struct_literal { 0: const array_literal [const zero, const 10, const zero], 1: const 99 }
 
     fn main() -> i32
     {
@@ -340,7 +340,7 @@ fn test_local_struct_designator_simple() {
       }
 
       bb1:
-        %s = struct{1: const 2, 0: const 1}
+        %s = struct{0: const 1, 1: const 2}
         return const 0
     }
     ");
@@ -370,7 +370,7 @@ fn test_local_mixed_array_struct_designators() {
 
       bb1:
         %2 = [const zero, const 10, const zero]
-        %s = struct{1: const 99, 0: %2}
+        %s = struct{0: %2, 1: const 99}
         return const 0
     }
     ");

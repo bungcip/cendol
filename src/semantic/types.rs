@@ -91,6 +91,18 @@ impl Type {
             }
         }
     }
+
+    pub(crate) fn is_union(&self) -> bool {
+        matches!(self.kind, TypeKind::Record { is_union: true, .. })
+    }
+
+    pub(crate) fn is_record_empty(&self) -> bool {
+        if let TypeKind::Record { members, .. } = &self.kind {
+            members.is_empty()
+        } else {
+            false
+        }
+    }
 }
 
 #[repr(u8)]
@@ -189,6 +201,10 @@ impl BuiltinType {
                 | Self::ULongLong
                 | Self::Signed // signed int
         )
+    }
+
+    pub(crate) fn is_char(self) -> bool {
+        matches!(self, Self::Char | Self::SChar | Self::UChar)
     }
 
     pub(crate) fn is_floating(self) -> bool {
@@ -599,6 +615,13 @@ pub enum TypeKind {
 }
 
 impl TypeKind {
+    pub(crate) fn builtin(&self) -> Option<BuiltinType> {
+        match self {
+            TypeKind::Builtin(b) => Some(*b),
+            _ => None,
+        }
+    }
+
     pub(crate) fn to_class(&self) -> TypeClass {
         match self {
             TypeKind::Builtin(_) | TypeKind::Error => TypeClass::Builtin,

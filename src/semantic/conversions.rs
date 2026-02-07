@@ -1,7 +1,7 @@
 //! Implements C11 semantic conversions, such as usual arithmetic conversions
 //! and integer promotions.
 
-use crate::semantic::{BuiltinType, QualType, TypeRegistry};
+use crate::semantic::{BuiltinType, QualType, TypeKind, TypeRef, TypeRegistry};
 
 /// Performs the "usual arithmetic conversions" as specified in C11 6.3.1.8.
 pub(crate) fn usual_arithmetic_conversions(ctx: &mut TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
@@ -9,10 +9,10 @@ pub(crate) fn usual_arithmetic_conversions(ctx: &mut TypeRegistry, lhs: QualType
     let rt = rhs.ty();
 
     if lt.is_floating() || rt.is_floating() {
-        let get_real_type = |registry: &TypeRegistry, ty: crate::semantic::TypeRef| {
+        let get_real_type = |registry: &TypeRegistry, ty: TypeRef| {
             if ty.is_complex() {
                 match &registry.get(ty).kind {
-                    crate::semantic::TypeKind::Complex { base_type } => Some(*base_type),
+                    TypeKind::Complex { base_type } => Some(*base_type),
                     _ => None,
                 }
             } else {

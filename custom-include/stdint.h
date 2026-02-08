@@ -47,7 +47,7 @@ typedef unsigned long long uintmax_t;
 
 #define INT32_MIN (-2147483648)
 #define INT32_MAX (2147483647)
-#define UINT32_MAX (4294967295)
+#define UINT32_MAX (4294967295U)
 
 #define INT64_MIN (-9223372036854775808LL)
 #define INT64_MAX (9223372036854775807LL)
@@ -65,5 +65,29 @@ typedef unsigned long long uintmax_t;
 #define PTRDIFF_MAX LONG_MAX
 
 #define SIZE_MAX ULONG_MAX
+
+/* Integer constant macros */
+#define INT8_C(x) x
+#define INT16_C(x) x
+#define INT32_C(x) x
+#define INT64_C(x) x ## LL
+
+#define UINT8_C(x) x
+#define UINT16_C(x) x
+#define UINT32_C(x) x ## U
+#define UINT64_C(x) x ## ULL
+
+#define INTMAX_C(x) x ## LL
+#define UINTMAX_C(x) x ## ULL
+
+/* Limits of other integer types */
+#define SIG_ATOMIC_MIN INT32_MIN
+#define SIG_ATOMIC_MAX INT32_MAX
+
+#define WCHAR_MIN INT32_MIN
+#define WCHAR_MAX INT32_MAX
+
+#define WINT_MIN INT32_MIN
+#define WINT_MAX INT32_MAX
 
 #endif

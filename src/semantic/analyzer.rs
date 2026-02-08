@@ -1121,10 +1121,11 @@ impl<'a> SemanticAnalyzer<'a> {
     ) -> Option<QualType> {
         let obj_ty = self.visit_node(obj_ref)?;
 
-        let record_ty_ref = if is_arrow {
-            self.registry.get_pointee(obj_ty.ty()).map(|qt| qt.ty())?
+        let (record_ty_ref, base_quals) = if is_arrow {
+            let pointee = self.registry.get_pointee(obj_ty.ty())?;
+            (pointee.ty(), pointee.qualifiers())
         } else {
-            obj_ty.ty()
+            (obj_ty.ty(), obj_ty.qualifiers())
         };
 
         // Ensure layout is computed for the record type
@@ -1149,6 +1150,10 @@ impl<'a> SemanticAnalyzer<'a> {
                         if member_ty.is_record()
                             && let Some(found_ty) = find_member(registry, member_ty, name)
                         {
+                            // Note: C11 6.7.2.1p13: "An unnamed member of structure type with no tag is called an anonymous structure;
+                            // an unnamed member of union type with no tag is called an anonymous union."
+                            // We don't need to merge qualifiers of the anonymous member ITSELF here because
+                            // they will be merged with base_quals later.
                             return Some(found_ty);
                         }
                     }
@@ -1170,7 +1175,12 @@ impl<'a> SemanticAnalyzer<'a> {
             return None;
         }
 
-        if let Some(ty) = find_member(self.registry, record_ty_ref, field_name) {
+        if let Some(mut ty) = find_member(self.registry, record_ty_ref, field_name) {
+            // C11 6.5.2.3p4: if the first expression has qualified type, the result has the so-qualified
+            // version of the type of the designated member.
+            if !base_quals.is_empty() {
+                ty = self.registry.merge_qualifiers(ty, base_quals);
+            }
             return Some(ty);
         }
 

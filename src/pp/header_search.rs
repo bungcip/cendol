@@ -60,4 +60,79 @@ impl HeaderSearch {
         }
         None
     }
+
+    /// Resolve an include path for #include_next, skipping the search path valid for current_dir
+    pub(crate) fn resolve_next_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
+        let mut found_current = false;
+
+        if !is_angled {
+            for path_str in &self.quoted_includes {
+                let path: &Path = Path::new(path_str);
+                if !found_current {
+                    if current_dir.starts_with(path) {
+                        found_current = true;
+                        continue;
+                    }
+                }
+
+                if found_current {
+                    let candidate = path.join(include_path);
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+
+        for path_str in &self.angled_includes {
+            let path: &Path = Path::new(path_str);
+            if !found_current {
+                if current_dir.starts_with(path) {
+                    found_current = true;
+                    continue;
+                }
+            }
+
+            if found_current {
+                let candidate = path.join(include_path);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+
+        for path in &self.system_path {
+            if !found_current {
+                if current_dir.starts_with(path) {
+                    found_current = true;
+                    continue;
+                }
+            }
+
+            if found_current {
+                let candidate = path.join(include_path);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+
+        for path in &self.framework_path {
+            if !found_current {
+                if current_dir.starts_with(path) {
+                    found_current = true;
+                    continue;
+                }
+            }
+
+            if found_current {
+                let candidate = path.join(include_path);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+
+        None
+    }
 }

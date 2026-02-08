@@ -1,5 +1,7 @@
-#ifndef _STDALIGN_H
-#define _STDALIGN_H
+#ifndef _CENDOL_STDALIGN_H
+#define _CENDOL_STDALIGN_H
+
+/* C11 alignment support */
 
 #define alignas _Alignas
 #define alignof _Alignof

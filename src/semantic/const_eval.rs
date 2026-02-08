@@ -121,6 +121,7 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
                 eval_const_expr(ctx, *else_ref)
             }
         }
+        NodeKind::Cast(_, expr) => eval_const_expr(ctx, *expr),
         _ => None,
     }
 }

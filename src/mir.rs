@@ -339,6 +339,10 @@ impl MirType {
         matches!(self, MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64)
     }
 
+    pub(crate) fn is_void(&self) -> bool {
+        matches!(self, MirType::Void)
+    }
+
     pub(crate) fn is_pointer(&self) -> bool {
         matches!(self, MirType::Pointer { .. })
     }

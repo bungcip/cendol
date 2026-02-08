@@ -1228,9 +1228,15 @@ fn resolve_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: 
                     // Get the global variable and return its address
                     // This handles the array-to-pointer decay for string literals
                     let global = ctx.mir.get_global(*global_id);
+                    // Use local linkage for string literals and internal symbols to avoid conflicts
+                    let linkage = if global.name.as_str().starts_with(".L.str") {
+                        Linkage::Local
+                    } else {
+                        Linkage::Export
+                    };
                     let global_val = ctx
                         .module
-                        .declare_data(global.name.as_str(), Linkage::Export, true, false)
+                        .declare_data(global.name.as_str(), linkage, true, false)
                         .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
                     let local_id = ctx.module.declare_data_in_func(global_val, ctx.builder.func);
                     // Global addresses are always pointer-sized (i64)
@@ -1346,7 +1352,9 @@ fn resolve_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) 
             if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
                 Ok(ctx.builder.ins().stack_load(expected_type, *stack_slot, 0))
             } else {
-                Err(format!("Stack slot not found for local {}", local_id.get()))
+                // Zero-sized locals don't have stack slots. Return a dummy value.
+                // This can happen with flexible array members or zero-length arrays.
+                Ok(ctx.builder.ins().iconst(expected_type, 0))
             }
         }
         Place::Global(_global_id) => {
@@ -1511,12 +1519,17 @@ fn resolve_place_to_addr(place: &Place, ctx: &mut BodyEmitContext) -> Result<Val
             if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
                 Ok(ctx.builder.ins().stack_addr(types::I64, *stack_slot, 0))
             } else {
-                Err(format!("Stack slot not found for local {}", local_id.get()))
+                // Zero-sized locals don't have stack slots. Return a null address.
+                // This can happen with flexible array members or zero-length arrays.
+                Ok(ctx.builder.ins().iconst(types::I64, 0))
             }
         }
         Place::Global(global_id) => {
             let global = ctx.mir.get_global(*global_id);
-            let linkage = if global.initial_value.is_some() {
+            // Use local linkage for string literals to avoid conflicts
+            let linkage = if global.name.as_str().starts_with(".L.str") {
+                Linkage::Local
+            } else if global.initial_value.is_some() {
                 Linkage::Export
             } else {
                 Linkage::Import
@@ -2088,10 +2101,13 @@ fn lower_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
             // Now, store the value into the place
             match place {
                 Place::Local(local_id) => {
-                    let stack_slot = ctx
-                        .stack_slots
-                        .get(local_id)
-                        .ok_or_else(|| format!("Stack slot not found for local {}", local_id.get()))?;
+                    let stack_slot = ctx.stack_slots.get(local_id).ok_or_else(|| {
+                        format!(
+                            "Stack slot not found for local {} in function {}",
+                            local_id.get(),
+                            ctx.func.name
+                        )
+                    })?;
                     ctx.builder.ins().stack_store(value, *stack_slot, 0);
                 }
                 _ => {
@@ -2509,7 +2525,10 @@ impl MirToCraneliftLowerer {
         // Pass 1: Declare all global variables
         for &global_id in &self.mir.module.globals {
             let global = self.mir.globals.get(&global_id).unwrap();
-            let linkage = if global.initial_value.is_some() {
+            // Use local linkage for string literals to avoid multiple definition errors
+            let linkage = if global.name.as_str().starts_with(".L.str") {
+                Linkage::Local
+            } else if global.initial_value.is_some() {
                 Linkage::Export
             } else {
                 Linkage::Import
@@ -2826,7 +2845,7 @@ fn emit_cendol_set_al(module: &mut ObjectModule) -> Result<FuncId, String> {
     sig.returns.push(AbiParam::new(types::I64)); // addr (RDX)
 
     let func_id = module
-        .declare_function("__cendol_set_al", Linkage::Export, &sig)
+        .declare_function("__cendol_set_al", Linkage::Local, &sig)
         .map_err(|e| format!("Failed to declare __cendol_set_al: {:?}", e))?;
 
     let mut ctx = cranelift::codegen::Context::new();

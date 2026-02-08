@@ -181,6 +181,35 @@ impl TypeRegistry {
 
         // We can assert that the last allocated index was 18
         debug_assert_eq!(self.types.len() - 1, 19, "Builtin types allocation mismatch");
+
+        // Compute layouts for all builtins immediately
+        // This prevents ICEs when code generation assumes builtins have layouts
+        let builtins = [
+            self.type_void,
+            self.type_bool,
+            self.type_char,
+            self.type_schar,
+            self.type_char_unsigned,
+            self.type_short,
+            self.type_short_unsigned,
+            self.type_int,
+            self.type_int_unsigned,
+            self.type_long,
+            self.type_long_unsigned,
+            self.type_long_long,
+            self.type_long_long_unsigned,
+            self.type_float,
+            self.type_double,
+            self.type_long_double,
+            self.type_signed,
+            self.type_valist,
+            self.type_complex_marker,
+            self.type_void_ptr,
+        ];
+
+        for &ty in &builtins {
+            let _ = self.ensure_layout(ty);
+        }
     }
 
     fn alloc_builtin(&mut self, kind: TypeKind) -> TypeRef {
@@ -1074,10 +1103,19 @@ impl TypeRegistry {
 
         let ty_ref = qt.ty();
         if ty_ref.is_record()
-            && let TypeKind::Record { members, .. } = &self.get(ty_ref).kind
+            && let TypeKind::Record { members, is_union, .. } = &self.get(ty_ref).kind
         {
+            if *is_union {
+                // For unions, the entire union is not "const" just because one member is.
+                // Only the specific const member access is restricted, handled in check_lvalue.
+                return false;
+            }
+
             for member in members {
-                if self.is_const_recursive(member.member_type) {
+                // Pointers are only const if the pointer itself is const,
+                // not if the pointee is const.
+                // Arrays and nested structs incur recursive constness if they contain const elements/members.
+                if !member.member_type.is_pointer() && self.is_const_recursive(member.member_type) {
                     return true;
                 }
             }

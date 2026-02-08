@@ -44,7 +44,13 @@ impl<'a> AstToMirLowerer<'a> {
                 self.lower_assignment_expr(expr_ref, op, *left_ref, *right_ref, mir_ty)
             }
             NodeKind::FunctionCall(call_expr) => {
-                let temp_place = if need_value {
+                // Check for builtin float constant functions
+                if let Some(builtin_op) = self.try_lower_builtin_float_const(call_expr, mir_ty) {
+                    return builtin_op;
+                }
+
+                let is_void = self.mir_builder.get_type(mir_ty).is_void();
+                let temp_place = if need_value && !is_void {
                     let (_, temp_place) = self.create_temp_local(mir_ty);
                     Some(temp_place)
                 } else {
@@ -54,7 +60,11 @@ impl<'a> AstToMirLowerer<'a> {
                 self.lower_function_call(call_expr, temp_place.clone());
 
                 if need_value {
-                    Operand::Copy(Box::new(temp_place.unwrap()))
+                    if is_void {
+                        self.create_dummy_operand()
+                    } else {
+                        Operand::Copy(Box::new(temp_place.unwrap()))
+                    }
                 } else {
                     self.create_dummy_operand()
                 }
@@ -223,6 +233,11 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     pub(crate) fn lower_cast(&mut self, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
+        let is_void = self.mir_builder.get_type(mir_ty).is_void();
+        if is_void {
+            self.lower_expression(operand_ref, false);
+            return self.create_dummy_operand();
+        }
         let operand = self.lower_expression(operand_ref, true);
         if self.get_operand_type(&operand) == mir_ty {
             return operand;
@@ -373,6 +388,18 @@ impl<'a> AstToMirLowerer<'a> {
                 rhs = Operand::Cast(lhs_mir_ty, Box::new(rhs));
             } else if lhs_mir.is_int() && rhs_mir.is_pointer() {
                 lhs = Operand::Cast(rhs_mir_ty, Box::new(lhs));
+            } else if lhs_mir.is_float() && rhs_mir.is_float() {
+                let w1 = lhs_mir.width();
+                let w2 = rhs_mir.width();
+                if w1 > w2 {
+                    rhs = Operand::Cast(lhs_mir_ty, Box::new(rhs));
+                } else if w2 > w1 {
+                    lhs = Operand::Cast(rhs_mir_ty, Box::new(lhs));
+                }
+            } else if lhs_mir.is_float() && rhs_mir.is_int() {
+                rhs = Operand::Cast(lhs_mir_ty, Box::new(rhs));
+            } else if lhs_mir.is_int() && rhs_mir.is_float() {
+                lhs = Operand::Cast(rhs_mir_ty, Box::new(lhs));
             }
         }
         (lhs, rhs)
@@ -394,16 +421,16 @@ impl<'a> AstToMirLowerer<'a> {
             return self.lower_logical_op(op, left_ref, right_ref, mir_ty);
         }
 
-        let lhs = self.lower_expression(left_ref, true);
-        let rhs = self.lower_expression(right_ref, true);
-
-        // Check types for correct MIR op
-        // For Comma operator, we just evaluate LHS for side effects and return RHS
         if matches!(op, BinaryOp::Comma) {
+            self.lower_expression(left_ref, false);
+            let rhs = self.lower_expression(right_ref, true);
             // Apply conversions for RHS to match result type (comma result type is RHS type)
             let rhs_converted = self.apply_conversions(rhs, right_ref, mir_ty);
             return self.ensure_explicit_cast(rhs_converted, right_ref);
         }
+
+        let lhs = self.lower_expression(left_ref, true);
+        let rhs = self.lower_expression(right_ref, true);
 
         let (rval, _op_ty) = self.lower_binary_arithmetic_logic(op, lhs, rhs, left_ref, right_ref, mir_ty);
         self.emit_rvalue_to_operand(rval, mir_ty)
@@ -887,10 +914,20 @@ impl<'a> AstToMirLowerer<'a> {
             let op = if is_inc { BinaryOp::Add } else { BinaryOp::Sub };
             self.create_pointer_arithmetic_rvalue(operand, one_const, op)
         } else {
-            // For Integers: Add(delta) (Note: we use Add with negative delta for decrement
-            // to support proper wrapping arithmetic and fix previous bugs)
-            let rhs = if is_inc { one_const } else { minus_one_const };
-            Rvalue::BinaryIntOp(BinaryIntOp::Add, operand, rhs)
+            let mir_ty_id = self.lower_qual_type(operand_ty);
+            let mir_ty = self.mir_builder.get_type(mir_ty_id);
+
+            if mir_ty.is_float() {
+                let val = if is_inc { 1.0 } else { -1.0 };
+                let const_val = self.create_constant(mir_ty_id, ConstValueKind::Float(val));
+                let rhs = Operand::Constant(const_val);
+                Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Add, operand, rhs)
+            } else {
+                // For Integers: Add(delta) (Note: we use Add with negative delta for decrement
+                // to support proper wrapping arithmetic and fix previous bugs)
+                let rhs = if is_inc { one_const } else { minus_one_const };
+                Rvalue::BinaryIntOp(BinaryIntOp::Add, operand, rhs)
+            }
         }
     }
 
@@ -1138,6 +1175,37 @@ impl<'a> AstToMirLowerer<'a> {
             }
             UnaryOp::Plus => self.emit_complex_struct(real, imag, mir_ty),
             _ => panic!("Unsupported complex unary operator: {:?}", op),
+        }
+    }
+
+    /// Try to lower builtin float constant functions like `__builtin_inff`, `__builtin_nanf`, etc.
+    /// Returns Some(Operand) if the call is a builtin float constant, None otherwise.
+    fn try_lower_builtin_float_const(&mut self, call_expr: &ast::nodes::CallExpr, mir_ty: TypeId) -> Option<Operand> {
+        // Check if callee is an identifier
+        let callee_kind = self.ast.get_kind(call_expr.callee);
+        let name = match callee_kind {
+            NodeKind::Ident(name_id, _) => name_id.as_str(),
+            _ => return None,
+        };
+
+        match name {
+            "__builtin_inff" | "__builtin_huge_valf" => {
+                let val = f32::INFINITY as f64;
+                Some(self.create_float_operand(val, mir_ty))
+            }
+            "__builtin_inf" | "__builtin_huge_val" => {
+                let val = f64::INFINITY;
+                Some(self.create_float_operand(val, mir_ty))
+            }
+            "__builtin_nanf" => {
+                let val = f32::NAN as f64;
+                Some(self.create_float_operand(val, mir_ty))
+            }
+            "__builtin_nan" => {
+                let val = f64::NAN;
+                Some(self.create_float_operand(val, mir_ty))
+            }
+            _ => None,
         }
     }
 }

@@ -319,19 +319,34 @@ impl CompilerDriver {
                 // Process outputs if needed
                 for (_source_id, artifact) in outputs.units {
                     if let Some(object_file) = artifact.object_file {
-                        // Write the object file to a temporary file
-                        let mut temp_file = tempfile::Builder::new()
-                            .suffix(".o")
-                            .tempfile()
-                            .map_err(|e| DriverError::IoError(format!("Failed to create temp file: {}", e)))?;
+                        if self.config.compile_only {
+                            // Write directly to output path when compile_only is set
+                            let output_path = if let Some(ref path) = self.config.output_path {
+                                path.clone()
+                            } else {
+                                // Default output name when -c but no -o
+                                std::path::PathBuf::from("a.o")
+                            };
+                            use std::io::Write;
+                            let mut file = std::fs::File::create(&output_path)
+                                .map_err(|e| DriverError::IoError(format!("Failed to create output file: {}", e)))?;
+                            file.write_all(&object_file)
+                                .map_err(|e| DriverError::IoError(format!("Failed to write object file: {}", e)))?;
+                        } else {
+                            // Write the object file to a temporary file for linking
+                            let mut temp_file = tempfile::Builder::new()
+                                .suffix(".o")
+                                .tempfile()
+                                .map_err(|e| DriverError::IoError(format!("Failed to create temp file: {}", e)))?;
 
-                        use std::io::Write;
-                        temp_file
-                            .write_all(&object_file)
-                            .map_err(|e| DriverError::IoError(format!("Failed to write object file: {}", e)))?;
+                            use std::io::Write;
+                            temp_file
+                                .write_all(&object_file)
+                                .map_err(|e| DriverError::IoError(format!("Failed to write object file: {}", e)))?;
 
-                        object_files_to_link.push(temp_file.path().to_path_buf());
-                        temp_files.push(temp_file);
+                            object_files_to_link.push(temp_file.path().to_path_buf());
+                            temp_files.push(temp_file);
+                        }
                     } else if let Some(clif_dump) = artifact.clif_dump {
                         // Output Cranelift IR dump to console
                         println!("{}", clif_dump);
@@ -404,6 +419,10 @@ impl CompilerDriver {
                     if !self.config.libraries.contains(&"m".to_string()) {
                         clang_cmd.arg("-lm");
                     }
+
+                    // Suppress linker warnings about deprecated libc functions (tempnam, tmpnam, gets, etc.)
+                    // These warnings come from glibc, not from the compiled code
+                    clang_cmd.arg("-Wl,-w");
 
                     if self.config.verbose {
                         println!("Executing linker: {:?}", clang_cmd);

@@ -4,7 +4,7 @@ use crate::tests::codegen_common::run_c_code_with_output;
 #[test]
 fn test_hfa_mixed_args() {
     let code = r#"
-#include <stdio.h>
+int printf(const char *fmt, ...);
 
 struct hfa_float2 { float a, b; } f2 = { 1.1f, 1.2f };
 struct hfa_double1 { double a; } d1 = { 2.2 };

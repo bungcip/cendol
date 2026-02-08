@@ -1,6 +1,7 @@
 use crate::pp::PPConfig;
 use crate::tests::pp_common::{
-    setup_pp_snapshot, setup_pp_snapshot_with_diags_and_config, setup_preprocessor_test_with_diagnostics,
+    setup_pp_snapshot, setup_pp_snapshot_with_diags, setup_pp_snapshot_with_diags_and_config,
+    setup_preprocessor_test_with_diagnostics,
 };
 use chrono::{TimeZone, Utc};
 
@@ -398,5 +399,84 @@ M(, , C)
     insta::assert_yaml_snapshot!(tokens, @r#"
     - kind: Identifier
       text: C
+    "#);
+}
+
+// GCC Compatibility
+#[test]
+fn test_gcc_version_macros() {
+    let src = r#"
+__GNUC__
+__GNUC_MINOR__
+__GNUC_PATCHLEVEL__
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Number
+      text: "4"
+    - kind: Number
+      text: "2"
+    - kind: Number
+      text: "1"
+    "#);
+}
+
+// Regression Tests for TinyExpr Fixes
+#[test]
+fn test_concat_with_empty_argument() {
+    let src = r#"
+#define __CONCAT(x,y) x ## y
+__CONCAT(a,)
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: a
+    "#);
+}
+
+#[test]
+fn test_gcc_extension_keywords() {
+    let src = r#"
+__extension__
+__restrict
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    []
+    "#);
+}
+
+// Macro Redefinition Tests (C11 6.10.3)
+#[test]
+fn test_identical_macro_redefinition_no_warning() {
+    // C11 6.10.3: Identical macro redefinition is allowed without warning.
+    // All whitespace separations are considered identical.
+    let src = r#"
+#define FOO 42
+#define FOO 42
+FOO
+"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - - kind: Number
+        text: "42"
+    - []
+    "#);
+}
+
+#[test]
+fn test_different_macro_redefinition_warns() {
+    // Different macro redefinition should produce a warning
+    let src = r#"
+#define FOO 42
+#define FOO 43
+FOO
+"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - - kind: Number
+        text: "43"
+    - - "Warning: Redefinition of macro 'FOO'"
     "#);
 }

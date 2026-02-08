@@ -1,5 +1,7 @@
-#ifndef _ISO646_H
-#define _ISO646_H
+#ifndef _CENDOL_ISO646_H
+#define _CENDOL_ISO646_H
+
+/* Alternative spellings for logical and bitwise operators */
 
 #define and &&
 #define and_eq &=

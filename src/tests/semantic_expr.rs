@@ -936,17 +936,13 @@ fn test_comma_operator() {
       locals {
         %3: ptr<i8>
         %4: ptr<i8>
-        %5: ptr<i8>
-        %6: ptr<i8>
       }
 
       bb1:
-        %3 = %param0
-        %4 = ptradd(%param0, const 1)
-        %param0 = %4
-        %5 = %param1
-        %6 = ptradd(%param1, const 1)
-        %param1 = %6
+        %param0 = ptradd(%param0, const 1)
+        %3 = %param1
+        %4 = ptradd(%param1, const 1)
+        %param1 = %4
         return
     }
     ");
@@ -976,16 +972,12 @@ fn test_comma_operator_types() {
         %x: i32
         %p: ptr<i8>
         %q: ptr<i8>
-        %4: i32
-        %5: i32
       }
 
       bb1:
         %x = const 0
         %p = cast<ptr<i8>>(const 0)
-        %4 = %x
-        %5 = %x + const 1
-        %x = %5
+        %x = %x + const 1
         %q = %p
         return
     }
@@ -1012,8 +1004,6 @@ fn test_comma_operator_loop() {
       locals {
         %3: ptr<i8>
         %4: ptr<i8>
-        %5: ptr<i8>
-        %6: ptr<i8>
       }
 
       bb1:
@@ -1026,12 +1016,10 @@ fn test_comma_operator_loop() {
         br bb4
 
       bb4:
-        %3 = %param1
-        %4 = ptradd(%param1, const 1)
-        %param1 = %4
-        %5 = %param0
-        %6 = ptradd(%param0, const 1)
-        %param0 = %6
+        %param1 = ptradd(%param1, const 1)
+        %3 = %param0
+        %4 = ptradd(%param0, const 1)
+        %param0 = %4
         br bb2
 
       bb5:

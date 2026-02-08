@@ -3,7 +3,7 @@ use crate::tests::codegen_common::run_c_code_with_output;
 #[test]
 fn test_ternary_array_size() {
     let code = r#"
-#include <stdio.h>
+int printf(const char *fmt, ...);
 
 int main() {
     // This array size calculation relies on constant folding of the ternary operator.

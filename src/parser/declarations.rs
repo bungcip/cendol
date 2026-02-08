@@ -212,11 +212,20 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         trx.parser.advance(); // consume comma
     }
 
-    // Check for __attribute__ after declarator (GCC extension)
-    if trx.parser.is_token(TokenKind::Attribute) {
-        debug!("parse_declaration: found __attribute__ after declarator, parsing it");
-        if let Err(_e) = super::declaration_core::parse_attribute(trx.parser) {
-            debug!("parse_declaration: failed to parse __attribute__: {:?}", _e);
+    // Check for __attribute__ or __asm__ after declarator (GCC extension)
+    loop {
+        if trx.parser.is_token(TokenKind::Attribute) {
+            debug!("parse_declaration: found __attribute__ after declarator, parsing it");
+            if let Err(_e) = super::declaration_core::parse_attribute(trx.parser) {
+                debug!("parse_declaration: failed to parse __attribute__: {:?}", _e);
+            }
+        } else if trx.parser.is_token(TokenKind::Asm) {
+            debug!("parse_declaration: found __asm__ after declarator, parsing it");
+            if let Err(_e) = super::declaration_core::parse_asm(trx.parser) {
+                debug!("parse_declaration: failed to parse __asm__: {:?}", _e);
+            }
+        } else {
+            break;
         }
     }
 

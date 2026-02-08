@@ -19,6 +19,7 @@ pub enum DirectiveKind {
     Define,
     Undef,
     Include,
+    IncludeNext,
     If,
     Ifdef,
     Ifndef,
@@ -37,6 +38,7 @@ pub(crate) struct DirectiveKeywordTable {
     define: StringId,
     undef: StringId,
     include: StringId,
+    include_next: StringId,
     if_: StringId,
     ifdef: StringId,
     ifndef: StringId,
@@ -66,6 +68,7 @@ impl DirectiveKeywordTable {
             define: StringId::new("define"),
             undef: StringId::new("undef"),
             include: StringId::new("include"),
+            include_next: StringId::new("include_next"),
             if_: StringId::new("if"),
             ifdef: StringId::new("ifdef"),
             ifndef: StringId::new("ifndef"),
@@ -91,6 +94,8 @@ impl DirectiveKeywordTable {
             Some(DirectiveKind::Undef)
         } else if symbol == self.include {
             Some(DirectiveKind::Include)
+        } else if symbol == self.include_next {
+            Some(DirectiveKind::IncludeNext)
         } else if symbol == self.if_ {
             Some(DirectiveKind::If)
         } else if symbol == self.ifdef {
@@ -338,6 +343,7 @@ impl<'src> Preprocessor<'src> {
         built_in_headers.insert("stdint.h", include_str!("../../custom-include/stdint.h"));
         built_in_headers.insert("stdarg.h", include_str!("../../custom-include/stdarg.h"));
         built_in_headers.insert("stdbool.h", include_str!("../../custom-include/stdbool.h"));
+        built_in_headers.insert("limits.h", include_str!("../../custom-include/limits.h"));
 
         let mut preprocessor = Preprocessor {
             sm: source_manager,
@@ -479,6 +485,38 @@ impl<'src> Preprocessor<'src> {
             }
             _ => {}
         }
+
+        // GCC version macros for compatibility with glibc headers
+        // We define these to match what Clang does for GCC compatibility
+        self.define_builtin_macro("__extension__", vec![]);
+        self.define_builtin_macro("__restrict", vec![]);
+        self.define_builtin_macro(
+            "__GNUC__",
+            vec![PPToken::new(
+                PPTokenKind::Number(StringId::new("4")),
+                PPTokenFlags::empty(),
+                SourceLoc::builtin(),
+                1,
+            )],
+        );
+        self.define_builtin_macro(
+            "__GNUC_MINOR__",
+            vec![PPToken::new(
+                PPTokenKind::Number(StringId::new("2")),
+                PPTokenFlags::empty(),
+                SourceLoc::builtin(),
+                1,
+            )],
+        );
+        self.define_builtin_macro(
+            "__GNUC_PATCHLEVEL__",
+            vec![PPToken::new(
+                PPTokenKind::Number(StringId::new("1")),
+                PPTokenFlags::empty(),
+                SourceLoc::builtin(),
+                1,
+            )],
+        );
 
         if self.lang_opts.is_c11() {
             self.define_builtin_macro(
@@ -847,6 +885,9 @@ impl<'src> Preprocessor<'src> {
                     Some(DirectiveKind::Define) => self.check_skipping_and_execute(|this| this.handle_define()),
                     Some(DirectiveKind::Undef) => self.check_skipping_and_execute(|this| this.handle_undef()),
                     Some(DirectiveKind::Include) => self.check_skipping_and_execute(|this| this.handle_include()),
+                    Some(DirectiveKind::IncludeNext) => {
+                        self.check_skipping_and_execute(|this| this.handle_include_next())
+                    }
                     Some(DirectiveKind::If) => {
                         // Always process #if to track nesting
                         if self.is_currently_skipping() {
@@ -1057,7 +1098,10 @@ impl<'src> Preprocessor<'src> {
             }
 
             // Check if definition is different
-            let is_different = existing.flags != macro_info.flags
+            // Mask out runtime state flags (USED, DISABLED) that don't affect definition identity
+            let definition_flags_mask =
+                MacroFlags::FUNCTION_LIKE | MacroFlags::C99_VARARGS | MacroFlags::GNU_VARARGS | MacroFlags::BUILTIN;
+            let is_different = (existing.flags & definition_flags_mask) != (macro_info.flags & definition_flags_mask)
                 || existing.parameter_list != macro_info.parameter_list
                 || existing.variadic_arg != macro_info.variadic_arg
                 || existing.tokens.len() != macro_info.tokens.len()
@@ -1065,7 +1109,7 @@ impl<'src> Preprocessor<'src> {
                     .tokens
                     .iter()
                     .zip(macro_info.tokens.iter())
-                    .any(|(a, b)| a.kind != b.kind || a.flags != b.flags);
+                    .any(|(a, b)| a.kind != b.kind);
 
             if is_different {
                 let diag = Diagnostic {
@@ -1245,6 +1289,112 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
+    fn handle_include_next(&mut self) -> Result<(), PPError> {
+        let token = self.lex_token().ok_or(PPError::UnexpectedEndOfFile)?;
+        let mut eod_consumed = false;
+
+        let (path_str, is_angled) = match token.kind {
+            PPTokenKind::StringLiteral(symbol) => {
+                let s = symbol.as_str();
+                let path = s
+                    .strip_prefix('"')
+                    .and_then(|s| s.strip_suffix('"'))
+                    .ok_or(PPError::InvalidIncludePath)?;
+                (path.to_string(), false)
+            }
+            PPTokenKind::Less => {
+                let mut path_parts = Vec::new();
+                while let Some(t) = self.lex_token() {
+                    if t.kind == PPTokenKind::Greater {
+                        break;
+                    }
+                    path_parts.push(t);
+                }
+                (self.tokens_to_string(&path_parts), true)
+            }
+            _ => {
+                // Computed include
+                let mut tokens = vec![token];
+                while let Some(t) = self.lex_token() {
+                    if t.kind == PPTokenKind::Eod {
+                        break;
+                    }
+                    tokens.push(t);
+                }
+                eod_consumed = true;
+                self.expand_tokens(&mut tokens, false)?;
+
+                if tokens.is_empty() {
+                    return Err(PPError::InvalidIncludePath);
+                }
+
+                let first = &tokens[0];
+                match first.kind {
+                    PPTokenKind::StringLiteral(symbol) => {
+                        if tokens.len() > 1 {
+                            self.report_extra_tokens_after_directive(
+                                tokens[1].location,
+                                tokens.last().unwrap().location,
+                            );
+                            return Err(PPError::ExpectedEod);
+                        }
+                        let s = symbol.as_str();
+                        let path = s
+                            .strip_prefix('"')
+                            .and_then(|s| s.strip_suffix('"'))
+                            .ok_or(PPError::InvalidIncludePath)?;
+                        (path.to_string(), false)
+                    }
+                    PPTokenKind::Less => {
+                        let mut path_parts = Vec::new();
+                        let mut greater_idx = None;
+                        for (i, t) in tokens.iter().enumerate().skip(1) {
+                            if t.kind == PPTokenKind::Greater {
+                                greater_idx = Some(i);
+                                break;
+                            }
+                            path_parts.push(*t);
+                        }
+                        let idx = greater_idx.ok_or(PPError::InvalidIncludePath)?;
+                        if idx + 1 < tokens.len() {
+                            self.report_extra_tokens_after_directive(
+                                tokens[idx + 1].location,
+                                tokens.last().unwrap().location,
+                            );
+                            return Err(PPError::ExpectedEod);
+                        }
+                        (self.tokens_to_string(&path_parts), true)
+                    }
+                    _ => return Err(PPError::InvalidIncludePath),
+                }
+            }
+        };
+
+        if self.include_depth >= self.max_include_depth {
+            return Err(PPError::IncludeDepthExceeded);
+        }
+
+        let include_source_id = self.resolve_next_include_path(&path_str, is_angled, token.location)?;
+
+        if self.once_included.contains(&include_source_id) {
+            return Ok(());
+        }
+
+        self.include_stack.push(IncludeStackInfo {
+            file_id: include_source_id,
+        });
+
+        if !eod_consumed {
+            self.expect_eod()?;
+        }
+
+        let buffer = self.sm.get_buffer_arc(include_source_id);
+        self.lexer_stack.push(PPLexer::new(include_source_id, buffer));
+        self.include_depth += 1;
+
+        Ok(())
+    }
+
     fn resolve_include_path(&mut self, path: &str, is_angled: bool, loc: SourceLoc) -> Result<SourceId, PPError> {
         let current_dir = self
             .lexer_stack
@@ -1274,6 +1424,41 @@ impl<'src> Preprocessor<'src> {
             self.report_include_not_found(path, loc);
             Err(PPError::FileNotFound)
         }
+    }
+
+    fn resolve_next_include_path(&mut self, path: &str, is_angled: bool, loc: SourceLoc) -> Result<SourceId, PPError> {
+        let current_dir = self
+            .lexer_stack
+            .last()
+            .and_then(|lexer| self.sm.get_file_info(lexer.source_id))
+            .and_then(|info| info.path.parent())
+            .unwrap_or(Path::new("."));
+
+        let resolved = self.header_search.resolve_next_path(path, is_angled, current_dir);
+
+        if let Some(path_buf) = resolved {
+            return self.sm.add_file_from_path(&path_buf, Some(loc)).map_err(|_| {
+                self.report_include_not_found(path, loc);
+                PPError::FileNotFound
+            });
+        }
+
+        if is_angled {
+            if let Some(id) = self.built_in_file_ids.get(path).copied() {
+                let is_recursive = if let Some(current) = self.lexer_stack.last() {
+                    current.source_id == id
+                } else {
+                    false
+                };
+
+                if !is_recursive {
+                    return Ok(id);
+                }
+            }
+        }
+
+        self.report_include_not_found(path, loc);
+        Err(PPError::FileNotFound)
     }
 
     fn report_include_not_found(&mut self, path: &str, loc: SourceLoc) {
@@ -1867,7 +2052,15 @@ impl<'src> Preprocessor<'src> {
         token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
         // Parse arguments from lexer
-        let args = self.parse_macro_args_from_lexer(macro_info)?;
+        let args = match self.parse_macro_args_from_lexer(macro_info) {
+            Ok(args) => args,
+            Err(PPError::InvalidMacroParameter { .. }) => {
+                return Err(PPError::InvalidMacroParameter {
+                    span: SourceSpan::new(token.location, token.location),
+                });
+            }
+            Err(e) => return Err(e),
+        };
 
         // Pre-expand arguments (prescan)
         let mut expanded_args = Vec::with_capacity(args.len());
@@ -2022,7 +2215,8 @@ impl<'src> Preprocessor<'src> {
                     if let PPTokenKind::Identifier(sym) = next.kind
                         && let Some(arg) = self.get_macro_param_tokens(macro_info, sym, args, token.location)
                     {
-                        result.push(self.stringify_tokens(&arg, token.location)?);
+                        let stringified = self.stringify_tokens(&arg, token.location)?;
+                        result.push(stringified);
                         last_token_produced_output = true;
                         i += 2;
                         continue;
@@ -2309,7 +2503,7 @@ impl<'src> Preprocessor<'src> {
                 _ => current_arg.push(*token),
             }
         }
-        if !current_arg.is_empty() {
+        if !current_arg.is_empty() || !args.is_empty() {
             args.push(current_arg);
         }
         args

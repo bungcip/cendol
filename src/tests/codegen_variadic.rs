@@ -75,7 +75,7 @@ fn test_variadic_al_setup() {
 #[test]
 fn test_printf_long_double() {
     let code = r#"
-#include <stdio.h>
+int printf(const char *fmt, ...);
 int main() {
     printf("%.1Lf", 34.1L);
     return 0;
@@ -88,7 +88,7 @@ int main() {
 #[test]
 fn test_printf_mixed_long_double() {
     let code = r#"
-#include <stdio.h>
+int printf(const char *fmt, ...);
 int main() {
     printf("%f %.1Lf %d", 1.0, 34.1L, 42);
     return 0;
@@ -103,7 +103,7 @@ fn test_myprintf_repro() {
     // Original reproduction case
     let code = r#"
 #include <stdarg.h>
-#include <stdio.h>
+int printf(const char *fmt, ...);
 
 void myprintf(int count, ...) {
     va_list ap;
@@ -128,7 +128,7 @@ int main() {
 #[test]
 fn test_printf_double() {
     let code = r#"
-#include <stdio.h>
+int printf(const char *fmt, ...);
 int main() {
     printf("%f", 1.25);
     return 0;
@@ -141,7 +141,7 @@ int main() {
 #[test]
 fn test_printf_multiple_doubles() {
     let code = r#"
-#include <stdio.h>
+int printf(const char *fmt, ...);
 int main() {
     printf("%f, %f", 1.25, 2.5);
     return 0;
@@ -154,7 +154,7 @@ int main() {
 #[test]
 fn test_printf_mixed_types() {
     let code = r#"
-#include <stdio.h>
+int printf(const char *fmt, ...);
 int main() {
     printf("int: %d, double: %f, str: %s", 42, 3.14159, "hello");
     return 0;
@@ -167,7 +167,7 @@ int main() {
 #[test]
 fn test_variadic_limit_hfa() {
     let code = r#"
-#include <stdio.h>
+int printf(const char *fmt, ...);
 
 struct hfa34 { long double a, b, c, d; } hfa34 = { 34.1, 34.2, 34.3, 34.4 };
 

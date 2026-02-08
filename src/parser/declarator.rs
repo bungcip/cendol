@@ -24,38 +24,57 @@ enum DeclaratorComponent {
 ///
 /// Expects: Attribute (( ... ))
 fn peek_past_attribute(parser: &Parser, mut start_offset: u32) -> Option<Token> {
-    // start_offset points to Attribute token
-    // Attribute should be followed by ((...))
-    start_offset += 1;
+    // Check for multiple attributes
+    loop {
+        // start_offset points to Attribute
+        // Skip Attribute
+        start_offset += 1;
 
-    // Expect ((
-    let t1 = parser.peek_token(start_offset)?;
-    if t1.kind != TokenKind::LeftParen {
-        return None;
-    }
-    start_offset += 1;
-
-    let t2 = parser.peek_token(start_offset)?;
-    if t2.kind != TokenKind::LeftParen {
-        return None;
-    }
-    start_offset += 1;
-
-    // Skip balanced parens
-    let mut depth = 2; // We saw two LeftParens
-
-    while depth > 0 {
-        let t = parser.peek_token(start_offset)?;
-        match t.kind {
-            TokenKind::LeftParen => depth += 1,
-            TokenKind::RightParen => depth -= 1,
-            _ => {}
+        // Expect ((
+        // If not ((, then it's not a GCC attribute (or it's ill-formed), stop
+        if let Some(t) = parser.peek_token(start_offset) {
+            if t.kind != TokenKind::LeftParen {
+                return parser.peek_token(start_offset).cloned();
+            }
+        } else {
+            return None;
         }
         start_offset += 1;
-    }
 
-    // Now we are past the attribute
-    parser.peek_token(start_offset).cloned()
+        if let Some(t) = parser.peek_token(start_offset) {
+            if t.kind != TokenKind::LeftParen {
+                return None;
+            }
+        } else {
+            return None;
+        }
+        start_offset += 1;
+
+        // Skip balanced parens
+        let mut depth = 2; // We saw two LeftParens
+
+        while depth > 0 {
+            let t = parser.peek_token(start_offset)?;
+            match t.kind {
+                TokenKind::LeftParen => depth += 1,
+                TokenKind::RightParen => depth -= 1,
+                _ => {}
+            }
+            start_offset += 1;
+        }
+
+        // Now we are past one attribute.
+        // Check if there is another one.
+        if let Some(t) = parser.peek_token(start_offset) {
+            if t.kind != TokenKind::Attribute {
+                // Not an attribute, so we are done
+                return Some(t.clone());
+            }
+            // It is an attribute, loop again (start_offset points to it)
+        } else {
+            return None;
+        }
+    }
 }
 
 /// Validate declarator combinations
@@ -96,10 +115,10 @@ pub(crate) fn parse_declarator(
     );
 
     // Check for __attribute__ before declarator (GCC extension)
-    if parser.is_token(TokenKind::Attribute)
-        && let Err(_e) = super::declaration_core::parse_attribute(parser)
-    {
-        debug!("parse_declarator: failed to parse __attribute__: {:?}", _e);
+    while parser.is_token(TokenKind::Attribute) {
+        if let Err(_e) = super::declaration_core::parse_attribute(parser) {
+            debug!("parse_declarator: failed to parse __attribute__: {:?}", _e);
+        }
     }
 
     // Parse leading pointers and their qualifiers
@@ -504,10 +523,10 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDec
     );
 
     // Check for __attribute__ at the beginning (GCC extension)
-    if parser.is_token(TokenKind::Attribute)
-        && let Err(_e) = super::declaration_core::parse_attribute(parser)
-    {
-        debug!("parse_abstract_declarator: failed to parse __attribute__: {:?}", _e);
+    while parser.is_token(TokenKind::Attribute) {
+        if let Err(_e) = super::declaration_core::parse_attribute(parser) {
+            debug!("parse_abstract_declarator: failed to parse __attribute__: {:?}", _e);
+        }
     }
 
     // Parse leading pointers and their qualifiers

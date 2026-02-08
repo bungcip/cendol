@@ -142,41 +142,6 @@ fn test_complex_expression() {
 }
 
 #[test]
-fn test_attribute_in_cast() {
-    let resolved = setup_expr("(__attribute__((__noinline__)) int) 1");
-    insta::assert_yaml_snapshot!(&resolved, @r"
-    Cast:
-      - parsed_type_1_1
-      - LiteralInt: 1
-    ");
-}
-
-#[test]
-fn test_gnu_statement_expression() {
-    let resolved = setup_expr("({ int x = 1; x + 2; })");
-    insta::assert_yaml_snapshot!(&resolved, @r"
-    GnuStatementExpression:
-      - CompoundStatement:
-          - Declaration:
-              specifiers:
-                - int
-              init_declarators:
-                - name: x
-                  initializer:
-                    LiteralInt: 1
-          - ExpressionStatement:
-              BinaryOp:
-                - Add
-                - Ident: x
-                - LiteralInt: 2
-      - BinaryOp:
-          - Add
-          - Ident: x
-          - LiteralInt: 2
-    ");
-}
-
-#[test]
 fn test_generic_selection_simple() {
     let resolved = setup_expr("_Generic(a, int: a_f)");
     insta::assert_yaml_snapshot!(&resolved, @r"

@@ -152,3 +152,21 @@ int main()
 "#;
     run_pass(source, CompilePhase::Mir);
 }
+
+// GCC Type Aliases
+#[test]
+fn test_gnuc_va_list_typedef() {
+    let source = r#"
+        // Test that __gnuc_va_list is recognized as a type name
+        typedef __gnuc_va_list my_va_list;
+        
+        // Test using it in a function declaration
+        int vprintf(const char *fmt, __gnuc_va_list ap);
+        
+        // Test using it in a struct
+        struct format_ctx {
+            __gnuc_va_list args;
+        };
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}

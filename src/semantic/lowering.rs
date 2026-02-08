@@ -2453,9 +2453,52 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if let Some((sym_ref, _)) = self.symbol_table.lookup_symbol(name) {
             sym_ref
         } else {
+            let name_str = name.as_str();
+            if name_str.starts_with("__builtin_") {
+                if let Some(sym_ref) = self.handle_builtin_implicit_decl(name, name_str, span) {
+                    return sym_ref;
+                }
+            }
             self.report_error(SemanticError::UndeclaredIdentifier { name, span });
             SymbolRef::new(1).expect("SymbolRef 1 creation failed")
         }
+    }
+
+    fn handle_builtin_implicit_decl(&mut self, name: NameId, name_str: &str, span: SourceSpan) -> Option<SymbolRef> {
+        let (params, ret_ty) = match name_str {
+            "__builtin_nanf" | "__builtin_nan" => {
+                let char_const = QualType::new(self.registry.type_char, TypeQualifiers::CONST);
+                let char_ptr = QualType::unqualified(self.registry.pointer_to(char_const));
+                let params = vec![FunctionParameter {
+                    param_type: char_ptr,
+                    name: None,
+                }];
+                let ret = if name_str == "__builtin_nanf" {
+                    self.registry.type_float
+                } else {
+                    self.registry.type_double
+                };
+                (params, ret)
+            }
+            "__builtin_inff" | "__builtin_inf" | "__builtin_huge_val" | "__builtin_huge_valf" => {
+                let ret = if name_str.ends_with('f') {
+                    self.registry.type_float
+                } else {
+                    self.registry.type_double
+                };
+                (vec![], ret)
+            }
+            _ => return None,
+        };
+
+        let func_ty = self.registry.function_type(ret_ty, params, false, false);
+
+        // Save current scope and switch to global for implicit decl
+        let old_scope = self.symbol_table.current_scope();
+        self.symbol_table.set_current_scope(ScopeId::GLOBAL);
+        let result = self.symbol_table.define_function(name, func_ty, None, false, span).ok();
+        self.symbol_table.set_current_scope(old_scope);
+        result
     }
 
     fn define_label(&mut self, name: NameId, span: SourceSpan) -> SymbolRef {
@@ -2752,12 +2795,12 @@ fn lower_struct_members(members: &[ParsedDeclarationData], ctx: &mut LowerCtx, s
 
             let member_name = extract_name(base_declarator);
 
-            let member_type = if let Some(base_type_ref) = spec_info.base_type {
-                // Manually re-apply qualifiers from the base type.
-                let ty = apply_declarator(base_type_ref, base_declarator, ctx, init_declarator.span, &spec_info);
-                ctx.merge_qualifiers_with_check(ty, spec_info.qualifiers, init_declarator.span)
-            } else {
-                QualType::unqualified(ctx.registry.type_int)
+            let member_type = {
+                let base = spec_info
+                    .base_type
+                    .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
+                let qualified_base = ctx.merge_qualifiers_with_check(base, spec_info.qualifiers, init_declarator.span);
+                apply_declarator(qualified_base, base_declarator, ctx, init_declarator.span, &spec_info)
             };
 
             // Validate bit-field

@@ -371,3 +371,38 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
     debug!("parse_attribute: successfully parsed __attribute__ construct");
     Ok(())
 }
+
+/// Parse GCC __asm__ syntax: __asm__ ( string-literal )
+pub(crate) fn parse_asm(parser: &mut Parser) -> Result<(), ParseError> {
+    debug!("parse_asm: parsing __asm__ construct");
+
+    // Expect __asm__ (or asm)
+    parser.expect(TokenKind::Asm)?;
+
+    // Expect opening (
+    parser.expect(TokenKind::LeftParen)?;
+
+    // Parse string literal(s) - often a string literal, but can be concatenation
+    // We can reuse parse_expr_assignment or just parse string literals loop
+    // For simplicity, let's just consume tokens until ) matching the first (
+    let mut paren_depth = 1;
+    while let Some(token) = parser.try_current_token() {
+        match token.kind {
+            TokenKind::LeftParen => paren_depth += 1,
+            TokenKind::RightParen => {
+                paren_depth -= 1;
+                if paren_depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+        parser.advance();
+    }
+
+    // Expect closing )
+    parser.expect(TokenKind::RightParen)?;
+
+    debug!("parse_asm: successfully parsed __asm__ construct");
+    Ok(())
+}

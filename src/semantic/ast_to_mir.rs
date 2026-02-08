@@ -1084,6 +1084,10 @@ impl<'a> AstToMirLowerer<'a> {
         Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val)))
     }
 
+    pub(crate) fn create_float_operand(&mut self, val: f64, ty_id: TypeId) -> Operand {
+        Operand::Constant(self.create_constant(ty_id, ConstValueKind::Float(val)))
+    }
+
     fn emit_conversion(&mut self, operand: Operand, conv: &Conversion, target_type_id: TypeId) -> Operand {
         let to_ty_ref = match conv {
             Conversion::IntegerCast { to, .. }
@@ -1297,12 +1301,21 @@ impl<'a> AstToMirLowerer<'a> {
         if let Operand::Copy(place) = operand {
             *place
         } else {
+            if self.mir_builder.get_type(type_id).is_void() {
+                // This shouldn't normally happen if the rest of the lowerer handles void correctly.
+                panic!("ICE: Cannot ensure_place for void type");
+            }
             let (_, temp_place) = self.create_temp_local_with_assignment(Rvalue::Use(operand), type_id);
             temp_place
         }
     }
 
     pub(crate) fn emit_rvalue_to_operand(&mut self, rvalue: Rvalue, type_id: TypeId) -> Operand {
+        if self.mir_builder.get_type(type_id).is_void() {
+            // For void expressions, just return a dummy operand.
+            // Any side effects in the Rvalue's operands were already emitted.
+            return self.create_dummy_operand();
+        }
         let (_, place) = self.create_temp_local_with_assignment(rvalue, type_id);
         Operand::Copy(Box::new(place))
     }

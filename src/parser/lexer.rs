@@ -80,6 +80,7 @@ pub enum TokenKind {
     BuiltinVaEnd,
     BuiltinVaCopy,
     BuiltinExpect,
+    Asm,
 
     // Atomic builtins
     BuiltinAtomicLoadN,
@@ -392,6 +393,7 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__attribute"), TokenKind::Attribute);
         m.insert(StringId::new("__builtin_va_arg"), TokenKind::BuiltinVaArg);
         m.insert(StringId::new("__builtin_va_list"), TokenKind::BuiltinVaList);
+        m.insert(StringId::new("__gnuc_va_list"), TokenKind::BuiltinVaList); // GCC alias for __builtin_va_list
         m.insert(StringId::new("__builtin_va_start"), TokenKind::BuiltinVaStart);
         m.insert(StringId::new("__builtin_va_end"), TokenKind::BuiltinVaEnd);
         m.insert(StringId::new("__builtin_va_copy"), TokenKind::BuiltinVaCopy);
@@ -408,6 +410,23 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__atomic_fetch_and"), TokenKind::BuiltinAtomicFetchAnd);
         m.insert(StringId::new("__atomic_fetch_or"), TokenKind::BuiltinAtomicFetchOr);
         m.insert(StringId::new("__atomic_fetch_xor"), TokenKind::BuiltinAtomicFetchXor);
+
+        // GCC/Clang extensions
+        m.insert(StringId::new("__restrict"), TokenKind::Restrict);
+        m.insert(StringId::new("__restrict__"), TokenKind::Restrict);
+        m.insert(StringId::new("__const"), TokenKind::Const);
+        m.insert(StringId::new("__const__"), TokenKind::Const);
+        m.insert(StringId::new("__volatile"), TokenKind::Volatile);
+        m.insert(StringId::new("__volatile__"), TokenKind::Volatile);
+        m.insert(StringId::new("__inline"), TokenKind::Inline);
+        m.insert(StringId::new("__inline__"), TokenKind::Inline);
+        m.insert(StringId::new("__signed"), TokenKind::Signed);
+        m.insert(StringId::new("__signed__"), TokenKind::Signed);
+        m.insert(StringId::new("__unsigned"), TokenKind::Unsigned);
+        m.insert(StringId::new("__unsigned__"), TokenKind::Unsigned);
+        m.insert(StringId::new("__asm"), TokenKind::Asm);
+        m.insert(StringId::new("__asm__"), TokenKind::Asm);
+        m.insert(StringId::new("asm"), TokenKind::Asm);
         m
     })
 }

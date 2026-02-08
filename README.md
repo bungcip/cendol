@@ -86,7 +86,6 @@ Comprehensive design documentation is available in the [`design-document/`](desi
 * [Lexer Design](design-document/lexer_design.md) - Tokenization strategy
 * [Parser Design](design-document/parser_design.md) - AST construction
 * [Semantic Analysis](design-document/semantic_analysis_design.md) - Type checking and validation
-* [AST Dumper](design-document/ast_dumper_design.md) - HTML visualization system
 
 ## Contributing
 

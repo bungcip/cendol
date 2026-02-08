@@ -1953,7 +1953,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             } = &self.registry.get(final_ty.ty()).kind
         {
             let element_type = *element_type;
-            if let Some(deduced_size) = self.deduce_array_size_full(ie) {
+            if let Some(deduced_size) = self.deduce_array_size_full(ie, element_type) {
                 let new_ty = self
                     .registry
                     .array_of(element_type, ArraySizeType::Constant(deduced_size));
@@ -2332,9 +2332,24 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::CompoundLiteral(ty_name, init) => {
                 let node = self.get_or_push_slot(target_slots, span);
-                let ty = convert_to_qual_type(self, *ty_name, span)
+                let mut ty = convert_to_qual_type(self, *ty_name, span)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
                 let i = self.lower_expression(*init);
+
+                if let TypeKind::Array {
+                    element_type,
+                    size: ArraySizeType::Incomplete,
+                } = &self.registry.get(ty.ty()).kind
+                {
+                    let element_type = *element_type;
+                    if let Some(deduced_size) = self.deduce_array_size_full(i, element_type) {
+                        let new_ty = self
+                            .registry
+                            .array_of(element_type, ArraySizeType::Constant(deduced_size));
+                        ty = QualType::new(new_ty, ty.qualifiers());
+                    }
+                }
+
                 self.ast.kinds[node.index()] = NodeKind::CompoundLiteral(ty, i);
                 smallvec![node]
             }
@@ -2681,9 +2696,34 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn deduce_array_size_full(&self, init_node: NodeRef) -> Option<usize> {
+    fn deduce_array_size_full(&self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
         match self.ast.get_kind(init_node) {
             NodeKind::InitializerList(list) => {
+                // Special case: array of character type initialized by { "string" }
+                if list.init_len > 0 {
+                    let first_item_ref = list.init_start;
+                    if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item_ref)
+                        && item.designator_len == 0
+                        && let NodeKind::Literal(literal::Literal::String(s)) = self.ast.get_kind(item.initializer)
+                    {
+                        let parsed = crate::semantic::literal_utils::parse_string_literal(*s);
+                        let string_elem_type = match parsed.builtin_type {
+                            BuiltinType::Char => self.registry.type_char,
+                            BuiltinType::Int => self.registry.type_int,
+                            BuiltinType::UShort => self.registry.type_short_unsigned,
+                            BuiltinType::UInt => self.registry.type_int_unsigned,
+                            _ => self.registry.type_char,
+                        };
+
+                        if self.registry.is_compatible(
+                            QualType::unqualified(element_type),
+                            QualType::unqualified(string_elem_type),
+                        ) {
+                            return Some(parsed.size);
+                        }
+                    }
+                }
+
                 let mut max_index: i64 = -1;
                 let mut current_index: i64 = 0;
                 let eval = |e| const_eval::eval_const_expr(&self.const_ctx(), e);
@@ -2715,7 +2755,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 Some((max_index + 1) as usize)
             }
-            NodeKind::Literal(literal::Literal::String(s)) => Some(s.as_str().len() + 1),
+            NodeKind::Literal(literal::Literal::String(s)) => {
+                let parsed = crate::semantic::literal_utils::parse_string_literal(*s);
+                Some(parsed.size)
+            }
             _ => None,
         }
     }
@@ -2733,7 +2776,7 @@ fn extract_bit_field_width<'a>(
     let span = ctx.ast.get_span(width_expr);
 
     let width = match const_eval::eval_const_expr(&ctx.const_ctx(), width_expr) {
-        Some(val) if val >= 0 && val <= 65535 => Some(val as u16),
+        Some(val) if (0..=65535).contains(&val) => Some(val as u16),
         Some(_) => {
             ctx.report_error(SemanticError::InvalidBitfieldWidth { span });
             None

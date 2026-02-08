@@ -59,6 +59,7 @@ pub mod test_utils;
 pub mod codegen_cast_init;
 pub mod codegen_regr;
 pub mod mir_unit;
+pub mod parser_type_conflict;
 pub mod pp_u8_literal;
 pub mod semantic_atomic;
 pub mod semantic_brace_elision;

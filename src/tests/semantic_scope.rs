@@ -1,11 +1,11 @@
-use super::semantic_common::{run_full_pass, setup_mir};
+use super::semantic_common::setup_mir;
 use crate::driver::artifact::CompilePhase;
+use crate::tests::codegen_common::run_c_code_exit_status;
 use crate::tests::test_utils::{run_fail_with_message, run_pass, setup_diagnostics_output};
 
 #[test]
 fn test_nested_scope_shadowing() {
-    run_full_pass(
-        r#"
+    let source = r#"
         typedef struct s s;
         struct s {
             int x;
@@ -20,14 +20,13 @@ fn test_nested_scope_shadowing() {
             }
             return s.x - 1;
         }
-        "#,
-    );
+        "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
 }
 
 #[test]
 fn allows_parameter_to_shadow_typedef() {
-    run_full_pass(
-        r#"
+    let source = r#"
 typedef int T;
 void f(int T) {
     T = 1;
@@ -37,8 +36,8 @@ int main() {
     f(0);
     return 0;
 }
-        "#,
-    );
+        "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
 }
 
 #[test]

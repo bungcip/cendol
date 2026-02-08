@@ -141,7 +141,13 @@ fn parse_base_type_and_qualifiers(
                     | ParsedTypeSpecifier::Unsigned
                     | ParsedTypeSpecifier::Bool
                     | ParsedTypeSpecifier::Complex => {
-                        // TODO: Check if we have an existing non-mergeable type (e.g. struct) -> Error
+                        if other_base_type_node.is_some() {
+                            return Err(ParseError::UnexpectedToken {
+                                expected_tokens: "single type specifier".to_string(),
+                                found: crate::parser::TokenKind::Unknown,
+                                span: crate::ast::SourceSpan::default(),
+                            });
+                        }
                         if let Some(current) = base_type_specifier {
                             // Merge
                             // We don't have span for specifiers in ThinVec directly?

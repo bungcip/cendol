@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use crate::source_manager::SourceSpan;
 use crate::{ast::NameId, diagnostic::SemanticError, semantic::QualType};
 use hashbrown::{HashMap, HashSet};
+use smallvec::SmallVec;
 use target_lexicon::{PointerWidth, Triple};
 
 use super::types::TypeClass;
@@ -416,6 +417,8 @@ impl TypeRegistry {
         is_variadic: bool,
         is_noreturn: bool,
     ) -> TypeRef {
+        // Bolt ⚡: Collect into SmallVec to avoid heap allocation for the lookup key
+        // in the common case (<= 8 parameters).
         let key = FnSigKey {
             return_type,
             params: params.iter().map(|p| p.param_type).collect(),
@@ -1218,10 +1221,13 @@ impl TypeRegistry {
 // Helper types
 // ================================================================
 
+/// Key for canonicalizing function types.
+/// Bolt ⚡: Uses SmallVec to avoid heap allocations during function type lookups.
+/// Most C functions have <= 8 parameters, allowing the key to remain on the stack.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct FnSigKey {
     return_type: TypeRef,
-    params: Vec<QualType>,
+    params: SmallVec<[QualType; 8]>,
     is_variadic: bool,
     is_noreturn: bool,
 }

@@ -37,3 +37,7 @@
 ## 2026-11-20 - Optimizing Macro Expansion and Virtual Buffer Creation
 **Learning:** Macro expansion is a highly repetitive process where `create_virtual_buffer_tokens` is called for every expansion. Redundant passes over tokens (for length calculation, stringification, and metadata collection) and repeated HashMap/Path lookups for `is_pasted` checks are major bottlenecks.
 **Action:** Use a single-pass approach to build the buffer and collect metadata simultaneously. Cache `SourceId` results for expensive properties like `is_pasted` and use `Path::to_str()` for fast comparisons. Pre-allocate all buffers and vectors to avoid intermediate reallocations.
+
+## 2026-11-25 - Reducing Allocations for HashMap Keys
+**Learning:** Using `Vec<T>` as a key in a `HashMap` (or as part of a composite key) causes a heap allocation on every lookup, even for cache hits. This is especially costly in hot paths like type canonicalization.
+**Action:** Use `SmallVec<[T; N]>` for collection fields in composite keys. This allows the key to be stack-allocated during lookup for the common case where the collection is small, significantly reducing heap pressure and improving cache locality.

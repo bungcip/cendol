@@ -29,3 +29,11 @@
 ## 2024-05-22 - Optimizing Recursive Expansion and Token Stringification
 **Learning:** Identifying macro recursion via string formatting and Path allocation in the preprocessor's main loop is a major bottleneck. Moving the check into expansion-specific paths and using direct string prefix/suffix matching on the existing Path object significantly reduces overhead. Additionally, tokens without an associated SourceId (built-ins) must be handled gracefully in buffer-based stringification.
 **Action:** Favor direct string/path property checks over re-formatting existing information. Ensure buffer-based optimizations have safe fallbacks for tokens without backing source files.
+
+## 2026-11-20 - Optimizing Macro Expansion and Virtual Buffer Creation
+**Learning:** Macro expansion is a highly repetitive process where  is called for every expansion. Redundant passes over tokens (for length calculation, stringification, and metadata collection) and repeated HashMap/Path lookups for  checks are major bottlenecks.
+**Action:** Use a single-pass approach to build the buffer and collect metadata simultaneously. Cache  results for expensive properties like  and use  for fast comparisons. Pre-allocate all buffers and vectors to avoid intermediate reallocations.
+
+## 2026-11-20 - Optimizing Macro Expansion and Virtual Buffer Creation
+**Learning:** Macro expansion is a highly repetitive process where `create_virtual_buffer_tokens` is called for every expansion. Redundant passes over tokens (for length calculation, stringification, and metadata collection) and repeated HashMap/Path lookups for `is_pasted` checks are major bottlenecks.
+**Action:** Use a single-pass approach to build the buffer and collect metadata simultaneously. Cache `SourceId` results for expensive properties like `is_pasted` and use `Path::to_str()` for fast comparisons. Pre-allocate all buffers and vectors to avoid intermediate reallocations.

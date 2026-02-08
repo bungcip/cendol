@@ -420,7 +420,7 @@ pub struct Lexer<'src> {
 
 impl<'src> Lexer<'src> {
     /// Create a new lexer with the given preprocessor token stream
-    pub fn new(tokens: &'src [PPToken]) -> Self {
+    pub(crate) fn new(tokens: &'src [PPToken]) -> Self {
         Lexer { tokens }
     }
 
@@ -451,7 +451,7 @@ impl<'src> Lexer<'src> {
     }
 
     /// Get all tokens from the stream
-    pub fn tokenize_all(&mut self) -> Vec<Token> {
+    pub(crate) fn tokenize_all(&mut self) -> Vec<Token> {
         // Bolt ⚡: Pre-allocate the tokens vector with the capacity of the preprocessor tokens.
         // This is a reasonable estimate that reduces the number of reallocations,
         // as the number of lexical tokens is usually similar to the number of preprocessor tokens.

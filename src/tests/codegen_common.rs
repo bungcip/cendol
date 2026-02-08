@@ -4,7 +4,7 @@ use std::process::Command;
 use tempfile::NamedTempFile;
 
 /// setup test with output is cranelift ir
-pub fn setup_cranelift(c_code: &str) -> String {
+pub(crate) fn setup_cranelift(c_code: &str) -> String {
     let (driver, pipeline_result) = test_utils::run_pipeline(c_code, CompilePhase::Cranelift);
     match pipeline_result {
         Err(_) => {
@@ -19,7 +19,7 @@ pub fn setup_cranelift(c_code: &str) -> String {
     }
 }
 
-pub fn run_c_code_with_output(source: &str) -> String {
+pub(crate) fn run_c_code_with_output(source: &str) -> String {
     let temp_file = NamedTempFile::new().unwrap();
     let temp_path = temp_file.into_temp_path();
     let exe_path = temp_path.to_path_buf();

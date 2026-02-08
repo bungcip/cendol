@@ -37,12 +37,12 @@ pub struct MirDumper<'a> {
 
 impl<'a> MirDumper<'a> {
     /// Create a new MIR dumper
-    pub fn new(mir: &'a MirProgram, config: &'a MirDumpConfig) -> Self {
+    pub(crate) fn new(mir: &'a MirProgram, config: &'a MirDumpConfig) -> Self {
         Self { mir, config }
     }
 
     /// Generate the complete MIR dump
-    pub fn generate_mir_dump(&self) -> Result<String, std::fmt::Error> {
+    pub(crate) fn generate_mir_dump(&self) -> Result<String, std::fmt::Error> {
         let mut output = String::new();
 
         // Dump module header

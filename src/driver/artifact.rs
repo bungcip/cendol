@@ -8,6 +8,7 @@ use crate::semantic::{SymbolTable, TypeRegistry};
 /// compilation outputs for all source files
 pub struct PipelineOutputs {
     pub units: indexmap::IndexMap<SourceId, CompileArtifact>,
+    pub external_object_files: Vec<std::path::PathBuf>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]

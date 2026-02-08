@@ -50,11 +50,33 @@ impl CompilerDriver {
     }
 
     pub(crate) fn run_pipeline(&mut self, stop_after: CompilePhase) -> Result<PipelineOutputs, PipelineError> {
-        let mut outputs = PipelineOutputs { units: IndexMap::new() };
+        let mut outputs = PipelineOutputs {
+            units: IndexMap::new(),
+            external_object_files: Vec::new(),
+        };
 
         // Process each input file
         let input_files = std::mem::take(&mut self.config.input_files);
         for input_file in input_files {
+            // Check if input file is an object file or library that should be passed to linker directly
+            let is_external_object = match &input_file {
+                PathOrBuffer::Path(path) => {
+                    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                        matches!(ext, "o" | "obj" | "a" | "so" | "dylib" | "dll")
+                    } else {
+                        false
+                    }
+                }
+                PathOrBuffer::Buffer(_, _) => false,
+            };
+
+            if is_external_object {
+                if let PathOrBuffer::Path(path) = input_file {
+                    outputs.external_object_files.push(path);
+                    continue;
+                }
+            }
+
             let source_id = match input_file {
                 PathOrBuffer::Path(path) => match self.source_manager.add_file_from_path(&path, None) {
                     Ok(id) => id,
@@ -311,6 +333,9 @@ impl CompilerDriver {
             Ok(outputs) => {
                 self.print_diagnostics();
                 let mut object_files_to_link = Vec::new();
+                // Add any external object files to the link list
+                object_files_to_link.extend(outputs.external_object_files);
+
                 // We need to keep the temp files alive until the linking process is complete
                 let mut temp_files = Vec::new();
 

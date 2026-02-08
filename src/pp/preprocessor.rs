@@ -2643,11 +2643,9 @@ impl<'src> Preprocessor<'src> {
             token_metadata.push((is_pasted, start_offset, len));
         }
 
-        let virtual_id = self.sm.add_virtual_buffer(
-            buffer,
-            &format!("macro_{}", macro_name),
-            Some(trigger_location),
-        );
+        let virtual_id = self
+            .sm
+            .add_virtual_buffer(buffer, &format!("macro_{}", macro_name), Some(trigger_location));
 
         // Final pass: Construct new tokens using the pre-calculated metadata.
         tokens

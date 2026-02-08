@@ -267,11 +267,21 @@ pub enum SemanticError {
     #[error("size of array has non-positive value")]
     InvalidArraySize { span: SourceSpan },
 
-    #[error("bit-field has non-positive width")]
+    #[error("invalid bit-field width")]
     InvalidBitfieldWidth { span: SourceSpan },
 
     #[error("bit-field width is not a constant expression")]
     NonConstantBitfieldWidth { span: SourceSpan },
+
+    #[error("width of bit-field ({width} bits) exceeds width of its type ({type_width} bits)")]
+    BitfieldWidthExceedsType {
+        width: u16,
+        type_width: u16,
+        span: SourceSpan,
+    },
+
+    #[error("zero-width bit-field shall not specify a declarator")]
+    NamedZeroWidthBitfield { span: SourceSpan },
 
     #[error("bit-field type '{ty}' is invalid")]
     InvalidBitfieldType { ty: String, span: SourceSpan },
@@ -427,6 +437,8 @@ impl SemanticError {
             SemanticError::InvalidBitfieldWidth { span } => *span,
             SemanticError::NonConstantBitfieldWidth { span } => *span,
             SemanticError::InvalidBitfieldType { span, .. } => *span,
+            SemanticError::BitfieldWidthExceedsType { span, .. } => *span,
+            SemanticError::NamedZeroWidthBitfield { span } => *span,
             SemanticError::ConflictingStorageClasses { span } => *span,
             SemanticError::ConflictingLinkage { span, .. } => *span,
             SemanticError::ConflictingTypeSpecifiers { span, .. } => *span,

@@ -551,7 +551,7 @@ fn test_bitfield_zero_width() {
         };
         "#,
         CompilePhase::Mir,
-        "bit-field has non-positive width",
+        "zero-width bit-field shall not specify a declarator",
     );
 }
 

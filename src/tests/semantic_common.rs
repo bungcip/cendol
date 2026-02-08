@@ -51,7 +51,7 @@ pub fn setup_analysis(source: &str) -> (Ast, TypeRegistry, crate::semantic::Symb
 
     let mut diagnostics = crate::diagnostic::DiagnosticEngine::from_warnings(&[]);
     let semantic_info =
-        crate::semantic::analyzer::run_semantic_analyzer(&ast, &mut diagnostics, &symbol_table, &mut registry);
+        crate::semantic::analyzer::visit_ast(&ast, &mut diagnostics, &symbol_table, &mut registry);
 
     if diagnostics.has_errors() {
         panic!("Semantic analysis failed: {:?}", diagnostics.diagnostics());

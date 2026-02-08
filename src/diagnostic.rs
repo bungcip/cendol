@@ -56,27 +56,14 @@ impl ParseError {
     }
 }
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
+#[derive(Default)]
 pub struct DiagnosticEngine {
     pub diagnostics: Vec<Diagnostic>,
     pub warnings_as_errors: bool,
     pub disable_all_warnings: bool,
 }
 
-impl Default for DiagnosticEngine {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl DiagnosticEngine {
-    pub(crate) fn new() -> Self {
-        DiagnosticEngine {
-            diagnostics: Vec::new(),
-            warnings_as_errors: false,
-            disable_all_warnings: false,
-        }
-    }
-
     pub(crate) fn from_warnings(warnings: &[String]) -> Self {
         let warnings_as_errors = warnings.iter().any(|w| w == "error");
         let disable_all_warnings = warnings.iter().any(|w| w == "no-warnings");

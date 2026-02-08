@@ -99,7 +99,7 @@ impl CompilerDriver {
         }
 
         // semantic lowering (Symbol Resolution & AST Construction)
-        let (ast, symbol_table, registry) = self.run_semantic_lowering(parsed_ast)?;
+        let (ast, symbol_table, registry) = self.visit_parsed_ast(parsed_ast)?;
         if stop_after == CompilePhase::SemanticLowering {
             out.ast = Some(ast);
             out.type_registry = Some(registry);
@@ -108,7 +108,7 @@ impl CompilerDriver {
         }
 
         // semantic analyzer & MIR generation phase
-        let mir_program = self.run_semantic_analyzer(ast, symbol_table, registry)?;
+        let mir_program = self.visit_ast(ast, symbol_table, registry)?;
         if stop_after == CompilePhase::Mir {
             out.mir_program = Some(mir_program);
             return Ok(out);
@@ -177,17 +177,14 @@ impl CompilerDriver {
         }
     }
 
-    fn run_semantic_lowering(
-        &mut self,
-        parsed_ast: ParsedAst,
-    ) -> Result<(Ast, SymbolTable, TypeRegistry), PipelineError> {
+    fn visit_parsed_ast(&mut self, parsed_ast: ParsedAst) -> Result<(Ast, SymbolTable, TypeRegistry), PipelineError> {
         let mut symbol_table = SymbolTable::new();
         // Use the target triple from configuration to initialize TypeRegistry
         let mut registry = TypeRegistry::new(self.config.target.clone());
         let mut ast = Ast::new();
 
-        use crate::semantic::lowering::run_semantic_lowering;
-        run_semantic_lowering(
+        use crate::semantic::lowering::visit_ast;
+        visit_ast(
             &parsed_ast,
             &mut ast,
             &mut self.diagnostics,
@@ -236,14 +233,14 @@ impl CompilerDriver {
         Ok((ast, symbol_table, registry))
     }
 
-    fn run_semantic_analyzer(
+    fn visit_ast(
         &mut self,
         mut ast: Ast,
         symbol_table: SymbolTable,
         mut registry: TypeRegistry,
     ) -> Result<MirProgram, PipelineError> {
-        use crate::semantic::analyzer::run_semantic_analyzer;
-        let semantic_info = run_semantic_analyzer(&ast, &mut self.diagnostics, &symbol_table, &mut registry);
+        use crate::semantic::analyzer::visit_ast;
+        let semantic_info = visit_ast(&ast, &mut self.diagnostics, &symbol_table, &mut registry);
         self.check_diagnostics_and_return_if_error()?;
 
         // Attach semantic info to AST (like scope_map)

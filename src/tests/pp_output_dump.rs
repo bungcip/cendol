@@ -4,7 +4,7 @@ use crate::source_manager::SourceManager;
 
 fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {
     let mut source_manager = SourceManager::new();
-    let mut diagnostics = DiagnosticEngine::new();
+    let mut diagnostics = DiagnosticEngine::default();
     let config = PPConfig::default();
 
     let source_id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>", None);

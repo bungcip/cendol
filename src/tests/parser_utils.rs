@@ -491,7 +491,7 @@ where
     let artifact = first.1;
     let tokens = artifact.lexed.clone().unwrap();
 
-    let mut diag = DiagnosticEngine::new();
+    let mut diag = DiagnosticEngine::default();
     let mut ast = ParsedAst::new();
     let mut parser = Parser::new(&tokens, &mut ast, &mut diag);
     let result = parse_fn(&mut parser);

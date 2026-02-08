@@ -66,7 +66,7 @@ pub enum Conversion {
 
 /// Run Semantic Analyzer in our AST and return analysist result in SemanticInfo
 /// which contains resolved type, conversion table, and value category
-pub(crate) fn run_semantic_analyzer(
+pub(crate) fn visit_ast(
     ast: &Ast,
     diag: &mut DiagnosticEngine,
     symbol_table: &SymbolTable,
@@ -969,12 +969,12 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn check_initializer(&mut self, init_ref: NodeRef, target_ty: QualType) {
+    fn visit_initializer(&mut self, init_ref: NodeRef, target_ty: QualType) {
         match self.ast.get_kind(init_ref) {
             NodeKind::InitializerList(list) => {
                 self.semantic_info.types[init_ref.index()] = Some(target_ty);
                 let list = *list;
-                self.check_initializer_list(&list, target_ty);
+                self.visit_initializer_list(&list, target_ty);
             }
             NodeKind::Literal(literal::Literal::String(_)) if target_ty.is_array() => {
                 let Some(init_ty) = self.visit_node(init_ref) else {
@@ -1017,7 +1017,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn check_initializer_list(&mut self, list: &InitializerListData, target_ty: QualType) {
+    fn visit_initializer_list(&mut self, list: &InitializerListData, target_ty: QualType) {
         if target_ty.is_scalar() {
             let mut items = list.init_start.range(list.init_len);
 
@@ -1048,7 +1048,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 target_type.flatten_members(self.registry, &mut flat_members);
 
                 for item_ref in list.init_start.range(list.init_len) {
-                    self.check_initializer_item_record(item_ref, &flat_members, target_ty);
+                    self.visit_initializer_item_record(item_ref, &flat_members, target_ty);
                 }
             }
             _ => {
@@ -1075,7 +1075,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn check_initializer_item_record(&mut self, item_ref: NodeRef, members: &[StructMember], record_ty: QualType) {
+    fn visit_initializer_item_record(&mut self, item_ref: NodeRef, members: &[StructMember], record_ty: QualType) {
         let node_kind = self.ast.get_kind(item_ref);
         if let NodeKind::InitializerItem(init) = node_kind {
             // 1. Validate designators
@@ -1337,7 +1337,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
 
                 if let Some(init_ref) = data.init {
-                    self.check_initializer(init_ref, data.ty);
+                    self.visit_initializer(init_ref, data.ty);
                 }
                 Some(data.ty)
             }
@@ -1657,7 +1657,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::CompoundLiteral(ty, init) => {
                 self.visit_type_expressions(*ty);
                 let _ = self.registry.ensure_layout(ty.ty());
-                self.check_initializer(*init, *ty);
+                self.visit_initializer(*init, *ty);
                 Some(*ty)
             }
             NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, node_ref),

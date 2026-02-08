@@ -94,7 +94,7 @@ pub fn setup_multi_file_pp_with_diagnostics_raw(
     let _ = env_logger::try_init();
 
     let mut source_manager = SourceManager::new();
-    let mut diagnostics = DiagnosticEngine::new();
+    let mut diagnostics = DiagnosticEngine::default();
     let config = config.unwrap_or_else(|| PPConfig {
         max_include_depth: 100,
         ..Default::default()

@@ -2659,25 +2659,24 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 // Special case: array of character type initialized by { "string" }
                 if list.init_len > 0 {
                     let first_item_ref = list.init_start;
-                    if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item_ref) {
-                        if item.designator_len == 0 {
-                            if let NodeKind::Literal(literal::Literal::String(s)) = self.ast.get_kind(item.initializer) {
-                                let parsed = crate::semantic::literal_utils::parse_string_literal(*s);
-                                let string_elem_type = match parsed.builtin_type {
-                                    BuiltinType::Char => self.registry.type_char,
-                                    BuiltinType::Int => self.registry.type_int,
-                                    BuiltinType::UShort => self.registry.type_short_unsigned,
-                                    BuiltinType::UInt => self.registry.type_int_unsigned,
-                                    _ => self.registry.type_char,
-                                };
+                    if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item_ref)
+                        && item.designator_len == 0
+                        && let NodeKind::Literal(literal::Literal::String(s)) = self.ast.get_kind(item.initializer)
+                    {
+                        let parsed = crate::semantic::literal_utils::parse_string_literal(*s);
+                        let string_elem_type = match parsed.builtin_type {
+                            BuiltinType::Char => self.registry.type_char,
+                            BuiltinType::Int => self.registry.type_int,
+                            BuiltinType::UShort => self.registry.type_short_unsigned,
+                            BuiltinType::UInt => self.registry.type_int_unsigned,
+                            _ => self.registry.type_char,
+                        };
 
-                                if self.registry.is_compatible(
-                                    QualType::unqualified(element_type),
-                                    QualType::unqualified(string_elem_type),
-                                ) {
-                                    return Some(parsed.size);
-                                }
-                            }
+                        if self.registry.is_compatible(
+                            QualType::unqualified(element_type),
+                            QualType::unqualified(string_elem_type),
+                        ) {
+                            return Some(parsed.size);
                         }
                     }
                 }
@@ -2734,7 +2733,7 @@ fn extract_bit_field_width<'a>(
     let span = ctx.ast.get_span(width_expr);
 
     let width = match const_eval::eval_const_expr(&ctx.const_ctx(), width_expr) {
-        Some(val) if val >= 0 && val <= 65535 => Some(val as u16),
+        Some(val) if (0..=65535).contains(&val) => Some(val as u16),
         Some(_) => {
             ctx.report_error(SemanticError::InvalidBitfieldWidth { span });
             None

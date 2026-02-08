@@ -401,6 +401,27 @@ fn test_string_literal_array_init() {
 }
 
 #[test]
+fn test_braced_wide_string_init() {
+    let source = r#"
+        typedef int wchar_t;
+        typedef unsigned short char16_t;
+        typedef unsigned int char32_t;
+
+        wchar_t s[] = { L"hello" };
+        char16_t s16[] = { u"hi" };
+        char32_t s32[] = { U"hey" };
+
+        int main() {
+            if (sizeof(s) != 24) return 1; // 6 * 4
+            if (sizeof(s16) != 6) return 2; // 3 * 2
+            if (sizeof(s32) != 16) return 3; // 4 * 4
+            return 0;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
+}
+
+#[test]
 fn test_nested_struct_designator() {
     let source = r#"
         struct SEA { int i; int j; };

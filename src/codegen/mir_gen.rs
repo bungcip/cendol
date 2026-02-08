@@ -81,10 +81,10 @@ impl<'a> MirGen<'a> {
         self.create_int_operand(9999)
     }
 
-    pub(crate) fn lower_module_complete(&mut self) -> MirProgram {
+    pub(crate) fn visit_module(&mut self) -> MirProgram {
         debug!("Starting semantic analysis and MIR construction (complete)");
         let root = self.ast.get_root();
-        self.lower_node_ref(root);
+        self.visit_node(root);
         debug!("Semantic analysis complete");
 
         // Take ownership of the builder to consume it, replacing it with a dummy.
@@ -107,36 +107,36 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn lower_node_ref(&mut self, node_ref: NodeRef) {
+    pub(crate) fn visit_node(&mut self, node_ref: NodeRef) {
         let old_scope = self.current_scope_id;
         let node_kind = *self.ast.get_kind(node_ref);
 
         match node_kind {
             NodeKind::TranslationUnit(tu_data) => {
                 self.current_scope_id = self.ast.scope_of(node_ref);
-                self.lower_translation_unit(&tu_data)
+                self.visit_translation_unit(&tu_data)
             }
             NodeKind::Function(function_data) => {
                 self.current_scope_id = self.ast.scope_of(node_ref);
-                self.lower_function(&function_data)
+                self.visit_function(&function_data)
             }
             NodeKind::For(for_stmt) => {
                 self.current_scope_id = self.ast.scope_of(node_ref);
-                self.lower_for_statement(&for_stmt)
+                self.visit_for_stmt(&for_stmt)
             }
             NodeKind::CompoundStatement(cs) => {
                 self.current_scope_id = self.ast.scope_of(node_ref);
-                self.lower_compound_statement(&cs)
+                self.visit_compound_statement(&cs)
             }
-            NodeKind::VarDecl(var_decl) => self.lower_var(&var_decl),
+            NodeKind::VarDecl(var_decl) => self.visit_var_decl(&var_decl),
 
-            NodeKind::Return(expr) => self.lower_return_statement(&expr),
-            NodeKind::If(if_stmt) => self.lower_if_statement(&if_stmt),
-            NodeKind::While(while_stmt) => self.lower_while_statement(&while_stmt),
-            NodeKind::DoWhile(body, condition) => self.lower_do_while_statement(body, condition),
+            NodeKind::Return(expr) => self.visit_return_stmt(&expr),
+            NodeKind::If(if_stmt) => self.visit_if_stmt(&if_stmt),
+            NodeKind::While(while_stmt) => self.visit_while_stmt(&while_stmt),
+            NodeKind::DoWhile(body, condition) => self.visit_do_while_stmt(body, condition),
             NodeKind::ExpressionStatement(Some(expr_ref)) => {
                 // Expression statement: value not needed, only side-effects
-                self.lower_expression(expr_ref, false);
+                self.emit_expression(expr_ref, false);
             }
             NodeKind::Break => {
                 let target = self.break_target.unwrap();
@@ -146,11 +146,11 @@ impl<'a> MirGen<'a> {
                 let target = self.continue_target.unwrap();
                 self.mir_builder.set_terminator(Terminator::Goto(target));
             }
-            NodeKind::Goto(label_name, _) => self.lower_goto_statement(&label_name),
-            NodeKind::Label(label_name, statement, _) => self.lower_label_statement(&label_name, statement),
-            NodeKind::Switch(cond, body) => self.lower_switch_statement(cond, body),
-            NodeKind::Case(_, stmt) => self.lower_case_default_statement(node_ref, stmt),
-            NodeKind::Default(stmt) => self.lower_case_default_statement(node_ref, stmt),
+            NodeKind::Goto(label_name, _) => self.visit_goto_stmt(&label_name),
+            NodeKind::Label(label_name, statement, _) => self.visit_label_stmt(&label_name, statement),
+            NodeKind::Switch(cond, body) => self.visit_switch_stmt(cond, body),
+            NodeKind::Case(_, stmt) => self.visit_case_default_stmt(node_ref, stmt),
+            NodeKind::Default(stmt) => self.visit_case_default_stmt(node_ref, stmt),
 
             // Expressions used as statements (without ExpressionStatement wrapper)
             // This happens in For loop initializers/increments and potentially GnuStatementExpression results.
@@ -177,7 +177,7 @@ impl<'a> MirGen<'a> {
             | NodeKind::BuiltinVaCopy(..)
             | NodeKind::GenericSelection(..)
             | NodeKind::GnuStatementExpression(..) => {
-                self.lower_expression(node_ref, false);
+                self.emit_expression(node_ref, false);
             }
 
             _ => {}
@@ -186,10 +186,10 @@ impl<'a> MirGen<'a> {
         self.current_scope_id = old_scope;
     }
 
-    fn lower_translation_unit(&mut self, tu_data: &nodes::TranslationUnitData) {
+    fn visit_translation_unit(&mut self, tu_data: &nodes::TranslationUnitData) {
         self.predeclare_global_functions();
         for child_ref in tu_data.decl_start.range(tu_data.decl_len) {
-            self.lower_node_ref(child_ref);
+            self.visit_node(child_ref);
         }
     }
 
@@ -260,7 +260,7 @@ impl<'a> MirGen<'a> {
     }
 
     pub(crate) fn evaluate_constant_usize(&mut self, expr: NodeRef, error_msg: &str) -> usize {
-        let operand = self.lower_expression(expr, true);
+        let operand = self.emit_expression(expr, true);
         if let Some(const_id) = self.operand_to_const_id(&operand) {
             let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
             if let ConstValueKind::Int(val) = const_val.kind {
@@ -274,23 +274,23 @@ impl<'a> MirGen<'a> {
     }
 
     pub(crate) fn lower_condition(&mut self, condition: NodeRef) -> Operand {
-        let cond_operand = self.lower_expression(condition, true);
+        let cond_operand = self.emit_expression(condition, true);
         // Apply conversions for condition (should be boolean)
         let cond_ty = self.ast.get_resolved_type(condition).unwrap();
         let cond_mir_ty = self.lower_qual_type(cond_ty);
         self.apply_conversions(cond_operand, condition, cond_mir_ty)
     }
 
-    fn lower_compound_statement(&mut self, cs: &nodes::CompoundStmtData) {
+    fn visit_compound_statement(&mut self, cs: &nodes::CompoundStmtData) {
         for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
             // We visit all statements regardless of whether the current block is terminated.
             // MirBuilder will suppress statement addition to terminated blocks, but we need
             // to traverse to find nested labels/cases which start new reachable blocks.
-            self.lower_node_ref(stmt_ref)
+            self.visit_node(stmt_ref)
         }
     }
 
-    fn lower_function(&mut self, function_data: &FunctionData) {
+    fn visit_function(&mut self, function_data: &FunctionData) {
         let symbol_entry = self.symbol_table.get_symbol(function_data.symbol);
         let func_name = symbol_entry.name;
 
@@ -328,7 +328,7 @@ impl<'a> MirGen<'a> {
             }
         }
 
-        self.lower_node_ref(function_data.body);
+        self.visit_node(function_data.body);
 
         // Handle implicit return if control falls off the end
         if !self.mir_builder.current_block_has_terminator() {
@@ -354,35 +354,35 @@ impl<'a> MirGen<'a> {
         self.current_block = None;
     }
 
-    fn lower_var(&mut self, var_decl: &VarDeclData) {
+    fn visit_var_decl(&mut self, var_decl: &VarDeclData) {
         let mir_type_id = self.lower_qual_type(var_decl.ty);
         let (entry_ref, _) = self
             .symbol_table
             .lookup(var_decl.name, self.current_scope_id, Namespace::Ordinary)
             .unwrap();
 
-        self.lower_variable_symbol(entry_ref, mir_type_id);
+        self.visit_variable(entry_ref, mir_type_id);
     }
 
-    pub(crate) fn lower_variable_symbol(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
+    pub(crate) fn visit_variable(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(entry_ref);
         let (is_global_sym, storage) = if let SymbolKind::Variable { is_global, storage, .. } = symbol.kind {
             (is_global, storage)
         } else {
-            panic!("lower_variable_symbol called on non-variable");
+            panic!("visit_variable called on non-variable");
         };
 
         // Treat static locals as globals for MIR generation purposes (lifetime/storage)
         let is_global = self.current_function.is_none() || is_global_sym || storage == Some(StorageClass::Static);
 
         if is_global {
-            self.lower_global(entry_ref, mir_type_id);
+            self.emit_global(entry_ref, mir_type_id);
         } else {
-            self.lower_local(entry_ref, mir_type_id);
+            self.emit_local(entry_ref, mir_type_id);
         }
     }
 
-    fn lower_global(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
+    fn emit_global(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(entry_ref);
         let (init, alignment, name, ty) = if let SymbolKind::Variable {
             initializer, alignment, ..
@@ -393,7 +393,7 @@ impl<'a> MirGen<'a> {
             unreachable!()
         };
 
-        let initial_value_id = init.and_then(|init_ref| self.lower_initializer_to_const(init_ref, ty));
+        let initial_value_id = init.and_then(|init_ref| self.eval_initializer_to_const(init_ref, ty));
 
         let final_init = initial_value_id.or_else(|| {
             if symbol.def_state == DefinitionState::Tentative {
@@ -427,7 +427,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn lower_local(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
+    fn emit_local(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(entry_ref);
         let (init, alignment, name, ty) = if let SymbolKind::Variable {
             initializer, alignment, ..
@@ -447,16 +447,16 @@ impl<'a> MirGen<'a> {
         self.local_map.insert(entry_ref, local_id);
 
         if let Some(initializer) = init {
-            let init_operand = self.lower_initializer(initializer, ty, Some(Place::Local(local_id)));
-            // If lower_initializer used the destination, it returns Operand::Copy(destination)
+            let init_operand = self.emit_initializer(initializer, ty, Some(Place::Local(local_id)));
+            // If emit_initializer used the destination, it returns Operand::Copy(destination)
             // emit_assignment will then emit Place::Local(local_id) = Place::Local(local_id), which is fine or can be skipped.
             self.emit_assignment(Place::Local(local_id), init_operand);
         }
     }
 
-    fn lower_return_statement(&mut self, expr: &Option<NodeRef>) {
+    fn visit_return_stmt(&mut self, expr: &Option<NodeRef>) {
         let operand = expr.map(|expr_ref| {
-            let expr_operand = self.lower_expression(expr_ref, true);
+            let expr_operand = self.emit_expression(expr_ref, true);
             // Apply conversions for return value if needed
             if let Some(func_id) = self.current_function {
                 let func = self.mir_builder.get_functions().get(&func_id).unwrap();
@@ -469,7 +469,7 @@ impl<'a> MirGen<'a> {
         self.mir_builder.set_terminator(Terminator::Return(operand));
     }
 
-    fn lower_if_statement(&mut self, if_stmt: &IfStmt) {
+    fn visit_if_stmt(&mut self, if_stmt: &IfStmt) {
         let then_block = self.mir_builder.create_block();
         let else_block = self.mir_builder.create_block();
         let merge_block = self.mir_builder.create_block();
@@ -479,14 +479,14 @@ impl<'a> MirGen<'a> {
             .set_terminator(Terminator::If(cond_converted, then_block, else_block));
 
         self.mir_builder.set_current_block(then_block);
-        self.lower_node_ref(if_stmt.then_branch);
+        self.visit_node(if_stmt.then_branch);
         if !self.mir_builder.current_block_has_terminator() {
             self.mir_builder.set_terminator(Terminator::Goto(merge_block));
         }
 
         self.mir_builder.set_current_block(else_block);
         if let Some(else_branch) = &if_stmt.else_branch {
-            self.lower_node_ref(*else_branch);
+            self.visit_node(*else_branch);
         }
         if !self.mir_builder.current_block_has_terminator() {
             self.mir_builder.set_terminator(Terminator::Goto(merge_block));
@@ -496,7 +496,7 @@ impl<'a> MirGen<'a> {
         self.current_block = Some(merge_block);
     }
 
-    fn lower_loop_generic<I, C, B, Inc>(
+    fn emit_loop_generic<I, C, B, Inc>(
         &mut self,
         init_fn: Option<I>,
         cond_fn: Option<C>,
@@ -567,30 +567,28 @@ impl<'a> MirGen<'a> {
         self.current_block = Some(exit_block);
     }
 
-    fn lower_while_statement(&mut self, while_stmt: &WhileStmt) {
-        self.lower_loop_generic(
+    fn visit_while_stmt(&mut self, while_stmt: &WhileStmt) {
+        self.emit_loop_generic(
             None::<fn(&mut Self)>,
             Some(|this: &mut Self| this.lower_condition(while_stmt.condition)),
-            |this| this.lower_node_ref(while_stmt.body),
+            |this| this.visit_node(while_stmt.body),
             None::<fn(&mut Self)>,
             false,
         );
     }
 
-    fn lower_do_while_statement(&mut self, body: NodeRef, condition: NodeRef) {
-        self.lower_loop_generic(
+    fn visit_do_while_stmt(&mut self, body: NodeRef, condition: NodeRef) {
+        self.emit_loop_generic(
             None::<fn(&mut Self)>,
             Some(|this: &mut Self| this.lower_condition(condition)),
-            |this| this.lower_node_ref(body),
+            |this| this.visit_node(body),
             None::<fn(&mut Self)>,
             true,
         );
     }
 
-    fn lower_for_statement(&mut self, for_stmt: &ForStmt) {
-        let init_fn = for_stmt
-            .init
-            .map(|init| move |this: &mut Self| this.lower_node_ref(init));
+    fn visit_for_stmt(&mut self, for_stmt: &ForStmt) {
+        let init_fn = for_stmt.init.map(|init| move |this: &mut Self| this.visit_node(init));
 
         let cond_fn = for_stmt
             .condition
@@ -598,23 +596,17 @@ impl<'a> MirGen<'a> {
 
         let inc_fn = for_stmt.increment.map(|inc| {
             move |this: &mut Self| {
-                this.lower_expression(inc, false);
+                this.emit_expression(inc, false);
             }
         });
 
-        self.lower_loop_generic(
-            init_fn,
-            cond_fn,
-            |this| this.lower_node_ref(for_stmt.body),
-            inc_fn,
-            false,
-        );
+        self.emit_loop_generic(init_fn, cond_fn, |this| this.visit_node(for_stmt.body), inc_fn, false);
     }
 
-    fn lower_switch_statement(&mut self, cond: NodeRef, body: NodeRef) {
-        let cond_op = self.lower_expression(cond, true);
+    fn visit_switch_stmt(&mut self, cond: NodeRef, body: NodeRef) {
+        let cond_op = self.emit_expression(cond, true);
 
-        // Integer promotions on controlling expression are handled by lower_expression if sema did it?
+        // Integer promotions on controlling expression are handled by emit_expression if sema did it?
         // Semantic analysis should have inserted implicit conversions.
         // But we might need to cast case values to this type.
         let cond_ty_id = self.get_operand_type(&cond_op);
@@ -688,7 +680,7 @@ impl<'a> MirGen<'a> {
         self.mir_builder.set_current_block(body_entry_dummy);
         self.current_block = Some(body_entry_dummy);
 
-        self.lower_node_ref(body);
+        self.visit_node(body);
 
         // If body falls through, go to merge
         if self.mir_builder.current_block_has_terminator() == false {
@@ -705,7 +697,7 @@ impl<'a> MirGen<'a> {
         self.current_block = Some(merge_block);
     }
 
-    fn lower_case_default_statement(&mut self, node: NodeRef, stmt: NodeRef) {
+    fn visit_case_default_stmt(&mut self, node: NodeRef, stmt: NodeRef) {
         let target_block = *self.switch_case_map.get(&node).expect("Case/Default not mapped");
 
         // Fallthrough from previous block
@@ -716,7 +708,7 @@ impl<'a> MirGen<'a> {
         self.mir_builder.set_current_block(target_block);
         self.current_block = Some(target_block);
 
-        self.lower_node_ref(stmt);
+        self.visit_node(stmt);
     }
 
     fn collect_switch_cases(&mut self, node: NodeRef) -> Vec<(NodeRef, Option<ConstValueId>)> {
@@ -729,7 +721,7 @@ impl<'a> MirGen<'a> {
         let kind = *self.ast.get_kind(node);
         match kind {
             NodeKind::Case(expr, stmt) => {
-                let op = self.lower_expression(expr, true);
+                let op = self.emit_expression(expr, true);
                 let val = self.operand_to_const_id_strict(op, "Case label must be constant");
                 cases.push((node, Some(val)));
                 self.collect_switch_cases_recursive(stmt, cases);
@@ -1412,7 +1404,7 @@ impl<'a> MirGen<'a> {
         node_kind.visit_children(|child| self.scan_for_labels(child));
     }
 
-    fn lower_goto_statement(&mut self, label_name: &NameId) {
+    fn visit_goto_stmt(&mut self, label_name: &NameId) {
         if let Some(target_block) = self.label_map.get(label_name).copied() {
             self.mir_builder.set_terminator(Terminator::Goto(target_block));
         } else {
@@ -1421,7 +1413,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn lower_label_statement(&mut self, label_name: &NameId, statement: NodeRef) {
+    fn visit_label_stmt(&mut self, label_name: &NameId, statement: NodeRef) {
         if let Some(label_block) = self.label_map.get(label_name).copied() {
             // Make sure the current block is terminated before switching
             if !self.mir_builder.current_block_has_terminator() {
@@ -1432,7 +1424,7 @@ impl<'a> MirGen<'a> {
             self.current_block = Some(label_block);
 
             // Now, lower the statement that follows the label
-            self.lower_node_ref(statement);
+            self.visit_node(statement);
         } else {
             panic!("Label '{}' was not pre-scanned", label_name.as_str());
         }

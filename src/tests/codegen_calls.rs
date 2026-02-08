@@ -85,7 +85,7 @@ fn test_indirect_function_call() {
     // Compile
     let mir = builder.consume();
     let lowerer = ClifGen::new(mir);
-    let result = lowerer.compile_module(EmitKind::Clif);
+    let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
@@ -165,7 +165,7 @@ fn test_global_function_pointer_init() {
     // Compile
     let mir = builder.consume();
     let lowerer = ClifGen::new(mir);
-    let result = lowerer.compile_module(EmitKind::Clif);
+    let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {

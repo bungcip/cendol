@@ -1,7 +1,7 @@
 use crate::ast::nodes::AtomicOp;
 use crate::ast::{BinaryOp, NodeKind, NodeRef, UnaryOp};
 use crate::codegen::mir_gen::MirGen;
-use crate::codegen::mir_ops;
+use crate::codegen::mir_gen_ops;
 use crate::mir::{
     AtomicMemOrder, BinaryIntOp, CallTarget, ConstValue, ConstValueKind, MirStmt, Operand, Place, Rvalue, Terminator,
     TypeId,
@@ -11,14 +11,14 @@ use crate::semantic::{QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
 use crate::{ast, semantic};
 
 impl<'a> MirGen<'a> {
-    pub(crate) fn lower_expression_as_place(&mut self, expr_ref: NodeRef) -> Place {
-        let op = self.lower_expression(expr_ref, true);
+    pub(crate) fn emit_expression_as_place(&mut self, expr_ref: NodeRef) -> Place {
+        let op = self.emit_expression(expr_ref, true);
         let ty = self.ast.get_resolved_type(expr_ref).unwrap();
         let mir_ty = self.lower_qual_type(ty);
         self.ensure_place(op, mir_ty)
     }
 
-    pub(crate) fn lower_expression(&mut self, expr_ref: NodeRef, need_value: bool) -> Operand {
+    pub(crate) fn emit_expression(&mut self, expr_ref: NodeRef, need_value: bool) -> Operand {
         let ty = self.ast.get_resolved_type(expr_ref).unwrap_or_else(|| {
             let node_kind = self.ast.get_kind(expr_ref);
             let node_span = self.ast.get_span(expr_ref);
@@ -33,20 +33,18 @@ impl<'a> MirGen<'a> {
         }
 
         match &node_kind {
-            NodeKind::Literal(_) => self.lower_literal(&node_kind, ty).expect("Failed to lower literal"),
-            NodeKind::Ident(_, symbol_ref) => self.lower_ident(*symbol_ref),
-            NodeKind::UnaryOp(op, operand_ref) => self.lower_unary_op_expr(op, *operand_ref, mir_ty),
-            NodeKind::PostIncrement(operand_ref) => self.lower_inc_dec_expression(*operand_ref, true, true, need_value),
-            NodeKind::PostDecrement(operand_ref) => {
-                self.lower_inc_dec_expression(*operand_ref, false, true, need_value)
-            }
-            NodeKind::BinaryOp(op, left_ref, right_ref) => self.lower_binary_op_expr(op, *left_ref, *right_ref, mir_ty),
+            NodeKind::Literal(_) => self.emit_literal(&node_kind, ty).expect("Failed to lower literal"),
+            NodeKind::Ident(_, symbol_ref) => self.emit_ident(*symbol_ref),
+            NodeKind::UnaryOp(op, operand_ref) => self.emit_unary_op_expr(op, *operand_ref, mir_ty),
+            NodeKind::PostIncrement(operand_ref) => self.emit_inc_dec_expression(*operand_ref, true, true, need_value),
+            NodeKind::PostDecrement(operand_ref) => self.emit_inc_dec_expression(*operand_ref, false, true, need_value),
+            NodeKind::BinaryOp(op, left_ref, right_ref) => self.emit_binary_op_expr(op, *left_ref, *right_ref, mir_ty),
             NodeKind::Assignment(op, left_ref, right_ref) => {
-                self.lower_assignment_expr(expr_ref, op, *left_ref, *right_ref, mir_ty)
+                self.emit_assignment_expr(expr_ref, op, *left_ref, *right_ref, mir_ty)
             }
             NodeKind::FunctionCall(call_expr) => {
                 // Check for builtin float constant functions
-                if let Some(builtin_op) = self.try_lower_builtin_float_const(call_expr, mir_ty) {
+                if let Some(builtin_op) = self.try_emit_builtin_float_const(call_expr, mir_ty) {
                     return builtin_op;
                 }
 
@@ -58,7 +56,7 @@ impl<'a> MirGen<'a> {
                     None
                 };
 
-                self.lower_function_call(call_expr, temp_place.clone());
+                self.emit_function_call(call_expr, temp_place.clone());
 
                 if need_value {
                     if is_void {
@@ -71,34 +69,34 @@ impl<'a> MirGen<'a> {
                 }
             }
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
-                self.lower_member_access(*obj_ref, field_name, *is_arrow)
+                self.emit_member_access(*obj_ref, field_name, *is_arrow)
             }
-            NodeKind::IndexAccess(arr_ref, idx_ref) => self.lower_index_access(*arr_ref, *idx_ref),
-            NodeKind::TernaryOp(cond, then, else_expr) => self.lower_ternary_op(*cond, *then, *else_expr, mir_ty),
+            NodeKind::IndexAccess(arr_ref, idx_ref) => self.emit_index_access(*arr_ref, *idx_ref),
+            NodeKind::TernaryOp(cond, then, else_expr) => self.emit_ternary_op(*cond, *then, *else_expr, mir_ty),
             NodeKind::SizeOfExpr(expr) => {
                 let ty = self
                     .ast
                     .get_resolved_type(*expr)
                     .expect("SizeOf operand type missing")
                     .ty();
-                self.lower_type_query(ty, true)
+                self.emit_type_query(ty, true)
             }
-            NodeKind::SizeOfType(ty) => self.lower_type_query(ty.ty(), true),
-            NodeKind::AlignOf(ty) => self.lower_type_query(ty.ty(), false),
-            NodeKind::GenericSelection(gs) => self.lower_generic_selection(gs, need_value, expr_ref),
+            NodeKind::SizeOfType(ty) => self.emit_type_query(ty.ty(), true),
+            NodeKind::AlignOf(ty) => self.emit_type_query(ty.ty(), false),
+            NodeKind::GenericSelection(gs) => self.emit_generic_selection(gs, need_value, expr_ref),
             NodeKind::GnuStatementExpression(stmt, result_expr) => {
-                self.lower_gnu_statement_expression(*stmt, *result_expr, need_value)
+                self.emit_gnu_stmt_expr(*stmt, *result_expr, need_value)
             }
-            NodeKind::Cast(_ty, operand_ref) => self.lower_cast(*operand_ref, mir_ty),
-            NodeKind::CompoundLiteral(ty, init_ref) => self.lower_compound_literal(*ty, *init_ref),
-            NodeKind::BuiltinVaArg(ty, expr) => self.lower_builtin_va_arg(*ty, *expr),
+            NodeKind::Cast(_ty, operand_ref) => self.emit_cast(*operand_ref, mir_ty),
+            NodeKind::CompoundLiteral(ty, init_ref) => self.emit_compound_literal(*ty, *init_ref),
+            NodeKind::BuiltinVaArg(ty, expr) => self.emit_builtin_va_arg(*ty, *expr),
             NodeKind::BuiltinExpect(exp, c) => {
-                let _ = self.lower_expression(*c, true); // lower 'c' for side effects or just to process it
-                self.lower_expression(*exp, need_value)
+                let _ = self.emit_expression(*c, true); // lower 'c' for side effects or just to process it
+                self.emit_expression(*exp, need_value)
             }
-            NodeKind::AtomicOp(op, args_start, args_len) => self.lower_atomic_op(*op, *args_start, *args_len, mir_ty),
+            NodeKind::AtomicOp(op, args_start, args_len) => self.emit_atomic_op(*op, *args_start, *args_len, mir_ty),
             NodeKind::BuiltinVaStart(..) | NodeKind::BuiltinVaEnd(..) | NodeKind::BuiltinVaCopy(..) => {
-                self.lower_builtin_void(&node_kind)
+                self.emit_builtin_void(&node_kind)
             }
             NodeKind::InitializerList(_) | NodeKind::InitializerItem(_) => {
                 panic!("InitializerList or InitializerItem not implemented");
@@ -120,12 +118,7 @@ impl<'a> MirGen<'a> {
         None
     }
 
-    pub(crate) fn lower_gnu_statement_expression(
-        &mut self,
-        stmt: NodeRef,
-        result_expr: NodeRef,
-        need_value: bool,
-    ) -> Operand {
+    pub(crate) fn emit_gnu_stmt_expr(&mut self, stmt: NodeRef, result_expr: NodeRef, need_value: bool) -> Operand {
         let stmt_kind = self.ast.get_kind(stmt);
         if let NodeKind::CompoundStatement(cs) = stmt_kind {
             let old_scope = self.current_scope_id;
@@ -150,13 +143,13 @@ impl<'a> MirGen<'a> {
                         continue;
                     }
                 }
-                self.lower_node_ref(stmt_ref);
+                self.visit_node(stmt_ref);
             }
 
             let op = if let NodeKind::Dummy = self.ast.get_kind(result_expr) {
                 self.create_dummy_operand()
             } else {
-                self.lower_expression(result_expr, need_value)
+                self.emit_expression(result_expr, need_value)
             };
 
             self.current_scope_id = old_scope;
@@ -166,7 +159,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn lower_ternary_op(
+    pub(crate) fn emit_ternary_op(
         &mut self,
         cond: NodeRef,
         then_expr: NodeRef,
@@ -175,7 +168,7 @@ impl<'a> MirGen<'a> {
     ) -> Operand {
         let is_void = matches!(self.mir_builder.get_type(mir_ty), crate::mir::MirType::Void);
 
-        let cond_op = self.lower_expression(cond, true);
+        let cond_op = self.emit_expression(cond, true);
 
         let then_block = self.mir_builder.create_block();
         let else_block = self.mir_builder.create_block();
@@ -193,7 +186,7 @@ impl<'a> MirGen<'a> {
 
         for (target_block, expr_ref) in [(then_block, then_expr), (else_block, else_expr)] {
             self.mir_builder.set_current_block(target_block);
-            let val = self.lower_expression(expr_ref, !is_void);
+            let val = self.emit_expression(expr_ref, !is_void);
             if let Some(local) = result_local {
                 let val_conv = self.apply_conversions(val, expr_ref, mir_ty);
                 self.emit_assignment(Place::Local(local), val_conv);
@@ -210,13 +203,13 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn lower_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
+    pub(crate) fn emit_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
         let layout = self.registry.get_layout(ty);
         let val = if is_size { layout.size } else { layout.alignment };
         self.create_int_operand(val as i64)
     }
 
-    pub(crate) fn lower_generic_selection(
+    pub(crate) fn emit_generic_selection(
         &mut self,
         _gs: &ast::nodes::GenericSelectionData,
         need_value: bool,
@@ -230,23 +223,23 @@ impl<'a> MirGen<'a> {
             .generic_selections
             .get(&node_ref.index())
             .expect("Generic selection failed (should be caught by Analyzer)");
-        self.lower_expression(expr_to_lower, need_value)
+        self.emit_expression(expr_to_lower, need_value)
     }
 
-    pub(crate) fn lower_cast(&mut self, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
+    pub(crate) fn emit_cast(&mut self, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
         let is_void = self.mir_builder.get_type(mir_ty).is_void();
         if is_void {
-            self.lower_expression(operand_ref, false);
+            self.emit_expression(operand_ref, false);
             return self.create_dummy_operand();
         }
-        let operand = self.lower_expression(operand_ref, true);
+        let operand = self.emit_expression(operand_ref, true);
         if self.get_operand_type(&operand) == mir_ty {
             return operand;
         }
         Operand::Cast(mir_ty, Box::new(operand))
     }
 
-    pub(crate) fn lower_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
+    pub(crate) fn emit_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
         let mir_ty = self.lower_qual_type(ty);
         match node_kind {
             NodeKind::Literal(literal) => match literal {
@@ -259,39 +252,39 @@ impl<'a> MirGen<'a> {
                 crate::ast::literal::Literal::Char(val) => Some(Operand::Constant(
                     self.create_constant(mir_ty, ConstValueKind::Int(*val as i64)),
                 )),
-                crate::ast::literal::Literal::String(val) => Some(self.lower_literal_string(val, ty)),
+                crate::ast::literal::Literal::String(val) => Some(self.emit_literal_string(val, ty)),
             },
             _ => None,
         }
     }
 
-    pub(crate) fn lower_unary_op_expr(&mut self, op: &UnaryOp, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
+    pub(crate) fn emit_unary_op_expr(&mut self, op: &UnaryOp, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
         let ty = self.ast.get_resolved_type(operand_ref).unwrap();
         if ty.is_complex() && !matches!(op, UnaryOp::AddrOf | UnaryOp::Deref) {
-            return self.lower_complex_unary_op(op, operand_ref, mir_ty);
+            return self.emit_complex_unary_op(op, operand_ref, mir_ty);
         }
 
         match op {
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
                 let is_inc = matches!(op, UnaryOp::PreIncrement);
-                self.lower_inc_dec_expression(operand_ref, is_inc, false, true)
+                self.emit_inc_dec_expression(operand_ref, is_inc, false, true)
             }
-            UnaryOp::AddrOf => self.lower_unary_addrof(operand_ref),
-            UnaryOp::Deref => self.lower_unary_deref(operand_ref),
+            UnaryOp::AddrOf => self.emit_unary_addrof(operand_ref),
+            UnaryOp::Deref => self.emit_unary_deref(operand_ref),
             _ => {
-                let operand = self.lower_expression(operand_ref, true);
+                let operand = self.emit_expression(operand_ref, true);
                 let operand_converted = self.apply_conversions(operand, operand_ref, mir_ty);
                 let operand_ty = self.get_operand_type(&operand_converted);
                 let mir_type_info = self.mir_builder.get_type(operand_ty);
 
-                let rval = mir_ops::emit_unary_rvalue(op, operand_converted, mir_type_info.is_float());
+                let rval = mir_gen_ops::emit_unary_rvalue(op, operand_converted, mir_type_info.is_float());
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
         }
     }
 
-    pub(crate) fn lower_unary_addrof(&mut self, operand_ref: NodeRef) -> Operand {
-        let operand = self.lower_expression(operand_ref, true);
+    pub(crate) fn emit_unary_addrof(&mut self, operand_ref: NodeRef) -> Operand {
+        let operand = self.emit_expression(operand_ref, true);
         if let Operand::Copy(place) = operand {
             Operand::AddressOf(place)
         } else if let Operand::Constant(const_id) = operand
@@ -310,8 +303,8 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn lower_unary_deref(&mut self, operand_ref: NodeRef) -> Operand {
-        let operand = self.lower_expression(operand_ref, true);
+    pub(crate) fn emit_unary_deref(&mut self, operand_ref: NodeRef) -> Operand {
+        let operand = self.emit_expression(operand_ref, true);
         let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
         let target_mir_ty = self.lower_qual_type(operand_ty);
         let operand_converted = self.apply_conversions(operand, operand_ref, target_mir_ty);
@@ -320,7 +313,7 @@ impl<'a> MirGen<'a> {
         Operand::Copy(Box::new(place))
     }
 
-    pub(crate) fn lower_ident(&mut self, resolved_ref: SymbolRef) -> Operand {
+    pub(crate) fn emit_ident(&mut self, resolved_ref: SymbolRef) -> Operand {
         let entry = self.symbol_table.get_symbol(resolved_ref);
 
         match &entry.kind {
@@ -331,7 +324,7 @@ impl<'a> MirGen<'a> {
                     if !self.global_map.contains_key(&resolved_ref) {
                         let ty_info = entry.type_info;
                         let mir_type_id = self.lower_qual_type(ty_info);
-                        self.lower_variable_symbol(resolved_ref, mir_type_id);
+                        self.visit_variable(resolved_ref, mir_type_id);
                     }
 
                     let global_id = match self.global_map.get(&resolved_ref) {
@@ -406,7 +399,7 @@ impl<'a> MirGen<'a> {
         (lhs, rhs)
     }
 
-    pub(crate) fn lower_binary_op_expr(
+    pub(crate) fn emit_binary_op_expr(
         &mut self,
         op: &BinaryOp,
         left_ref: NodeRef,
@@ -415,29 +408,29 @@ impl<'a> MirGen<'a> {
     ) -> Operand {
         debug_assert!(
             !op.is_assignment(),
-            "lower_binary_op_expr called with assignment operator: {:?}",
+            "emit_binary_op_expr called with assignment operator: {:?}",
             op
         );
         if matches!(op, BinaryOp::LogicAnd | BinaryOp::LogicOr) {
-            return self.lower_logical_op(op, left_ref, right_ref, mir_ty);
+            return self.emit_logical_op(op, left_ref, right_ref, mir_ty);
         }
 
         if matches!(op, BinaryOp::Comma) {
-            self.lower_expression(left_ref, false);
-            let rhs = self.lower_expression(right_ref, true);
+            self.emit_expression(left_ref, false);
+            let rhs = self.emit_expression(right_ref, true);
             // Apply conversions for RHS to match result type (comma result type is RHS type)
             let rhs_converted = self.apply_conversions(rhs, right_ref, mir_ty);
             return self.ensure_explicit_cast(rhs_converted, right_ref);
         }
 
-        let lhs = self.lower_expression(left_ref, true);
-        let rhs = self.lower_expression(right_ref, true);
+        let lhs = self.emit_expression(left_ref, true);
+        let rhs = self.emit_expression(right_ref, true);
 
-        let (rval, _op_ty) = self.lower_binary_arithmetic_logic(op, lhs, rhs, left_ref, right_ref, mir_ty);
+        let (rval, _op_ty) = self.emit_binary_arithmetic_logic(op, lhs, rhs, left_ref, right_ref, mir_ty);
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
-    fn lower_binary_arithmetic_logic(
+    fn emit_binary_arithmetic_logic(
         &mut self,
         op: &BinaryOp,
         lhs: Operand,
@@ -447,7 +440,7 @@ impl<'a> MirGen<'a> {
         context_ty: TypeId,
     ) -> (Rvalue, TypeId) {
         // Handle pointer arithmetic
-        if let Some(rval) = self.lower_pointer_arithmetic(op, lhs.clone(), rhs.clone(), left_ref, right_ref) {
+        if let Some(rval) = self.emit_pointer_arithmetic(op, lhs.clone(), rhs.clone(), left_ref, right_ref) {
             let res_ty = match &rval {
                 Rvalue::PtrAdd(base, _) | Rvalue::PtrSub(base, _) => self.get_operand_type(base),
                 Rvalue::PtrDiff(..) => self.lower_type(self.registry.type_long),
@@ -469,7 +462,7 @@ impl<'a> MirGen<'a> {
             && self.ast.get_resolved_type(right_ref).is_some_and(|t| t.is_complex());
 
         if lhs_is_complex || rhs_is_complex {
-            let op = self.lower_complex_binary_op(op, lhs_converted, rhs_converted, context_ty);
+            let op = self.emit_complex_binary_op(op, lhs_converted, rhs_converted, context_ty);
             return (Rvalue::Use(op), context_ty);
         }
 
@@ -483,7 +476,7 @@ impl<'a> MirGen<'a> {
         let common_ty = self.get_operand_type(&lhs_final);
 
         let common_mir_type = self.mir_builder.get_type(common_ty);
-        let rval = mir_ops::emit_binary_rvalue(op, lhs_final, rhs_final, common_mir_type.is_float());
+        let rval = mir_gen_ops::emit_binary_rvalue(op, lhs_final, rhs_final, common_mir_type.is_float());
 
         let result_ty = match op {
             BinaryOp::Equal
@@ -537,7 +530,7 @@ impl<'a> MirGen<'a> {
         self.mir_builder.set_terminator(Terminator::Goto(merge_block));
     }
 
-    pub(crate) fn lower_logical_op(
+    pub(crate) fn emit_logical_op(
         &mut self,
         op: &BinaryOp,
         left_ref: NodeRef,
@@ -622,7 +615,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn lower_pointer_arithmetic(
+    pub(crate) fn emit_pointer_arithmetic(
         &mut self,
         op: &BinaryOp,
         lhs: Operand,
@@ -701,7 +694,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn lower_assignment_expr(
+    pub(crate) fn emit_assignment_expr(
         &mut self,
         node_ref: NodeRef,
         op: &BinaryOp,
@@ -711,7 +704,7 @@ impl<'a> MirGen<'a> {
     ) -> Operand {
         debug_assert!(
             op.is_assignment(),
-            "lower_assignment_expr called with non-assignment operator: {:?}",
+            "emit_assignment_expr called with non-assignment operator: {:?}",
             op
         );
 
@@ -720,13 +713,13 @@ impl<'a> MirGen<'a> {
             panic!("LHS of assignment must be an lvalue");
         }
 
-        // Use lower_expression_as_place to properly resolve the destination place
-        let place = self.lower_expression_as_place(left_ref);
+        // Use emit_expression_as_place to properly resolve the destination place
+        let place = self.emit_expression_as_place(left_ref);
 
-        let rhs_op = self.lower_expression(right_ref, true);
+        let rhs_op = self.emit_expression(right_ref, true);
 
         let final_rhs = if let Some(compound_op) = op.without_assignment() {
-            self.lower_compound_assignment(
+            self.emit_compound_assignment(
                 node_ref,
                 compound_op,
                 place.clone(),
@@ -744,7 +737,7 @@ impl<'a> MirGen<'a> {
         final_rhs // C assignment expressions evaluate to the assigned value
     }
 
-    pub(crate) fn lower_compound_assignment(
+    pub(crate) fn emit_compound_assignment(
         &mut self,
         node_ref: NodeRef,
         compound_op: BinaryOp,
@@ -759,15 +752,15 @@ impl<'a> MirGen<'a> {
         let lhs_copy = Operand::Copy(Box::new(place));
 
         let (rval, op_ty) =
-            self.lower_binary_arithmetic_logic(&compound_op, lhs_copy, rhs_op, left_ref, right_ref, mir_ty);
+            self.emit_binary_arithmetic_logic(&compound_op, lhs_copy, rhs_op, left_ref, right_ref, mir_ty);
         let result_op = self.emit_rvalue_to_operand(rval, op_ty);
         self.apply_conversions(result_op, node_ref, mir_ty)
     }
 
-    pub(crate) fn lower_function_call(&mut self, call_expr: &ast::nodes::CallExpr, dest_place: Option<Place>) {
-        let callee = self.lower_expression(call_expr.callee, true);
+    pub(crate) fn emit_function_call(&mut self, call_expr: &ast::nodes::CallExpr, dest_place: Option<Place>) {
+        let callee = self.emit_expression(call_expr.callee, true);
 
-        let arg_operands = self.lower_function_call_args(call_expr);
+        let arg_operands = self.emit_function_call_args(call_expr);
 
         let call_target = if let Operand::Constant(const_id) = callee {
             if let ConstValue {
@@ -791,7 +784,7 @@ impl<'a> MirGen<'a> {
         self.mir_builder.add_statement(stmt);
     }
 
-    fn lower_function_call_args(&mut self, call_expr: &ast::nodes::CallExpr) -> Vec<Operand> {
+    fn emit_function_call_args(&mut self, call_expr: &ast::nodes::CallExpr) -> Vec<Operand> {
         let mut arg_operands = Vec::new();
 
         // Get the function type to determine parameter types for conversions
@@ -816,9 +809,9 @@ impl<'a> MirGen<'a> {
         };
 
         for (i, arg_ref) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
-            // Note: lower_expression(CallArg) will just lower the inner expression.
+            // Note: emit_expression(CallArg) will just lower the inner expression.
             // But we use arg_ref (the CallArg node) for implicit conversion lookup.
-            let arg_operand = self.lower_expression(arg_ref, true);
+            let arg_operand = self.emit_expression(arg_ref, true);
 
             // Apply conversions for function arguments if needed
             // The resolved type of CallArg is same as inner expr.
@@ -858,12 +851,7 @@ impl<'a> MirGen<'a> {
         None
     }
 
-    pub(crate) fn lower_member_access(
-        &mut self,
-        obj_ref: NodeRef,
-        field_name: &ast::NameId,
-        is_arrow: bool,
-    ) -> Operand {
+    pub(crate) fn emit_member_access(&mut self, obj_ref: NodeRef, field_name: &ast::NameId, is_arrow: bool) -> Operand {
         let obj_ty = self.ast.get_resolved_type(obj_ref).unwrap();
         let record_ty = if is_arrow {
             self.registry
@@ -883,7 +871,7 @@ impl<'a> MirGen<'a> {
             // Apply the chain of field accesses
 
             // Resolve base place
-            let mut current_place = self.lower_expression_as_place(obj_ref);
+            let mut current_place = self.emit_expression_as_place(obj_ref);
 
             if is_arrow {
                 // Dereference: *ptr
@@ -900,14 +888,14 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn lower_index_access(&mut self, arr_ref: NodeRef, idx_ref: NodeRef) -> Operand {
+    pub(crate) fn emit_index_access(&mut self, arr_ref: NodeRef, idx_ref: NodeRef) -> Operand {
         let arr_ty = self.ast.get_resolved_type(arr_ref).unwrap();
 
         // Handle both array and pointer types for index access
         // In C, arr[idx] is equivalent to *(arr + idx)
         if arr_ty.is_array() || arr_ty.is_pointer() {
-            let arr_place = self.lower_expression_as_place(arr_ref);
-            let idx_operand = self.lower_expression(idx_ref, true);
+            let arr_place = self.emit_expression_as_place(arr_ref);
+            let idx_operand = self.emit_expression(idx_ref, true);
 
             Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
         } else {
@@ -915,14 +903,14 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn lower_inc_dec_expression(
+    pub(crate) fn emit_inc_dec_expression(
         &mut self,
         operand_ref: NodeRef,
         is_inc: bool,
         is_post: bool,
         need_value: bool,
     ) -> Operand {
-        let operand = self.lower_expression(operand_ref, true);
+        let operand = self.emit_expression(operand_ref, true);
         let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
         let mir_ty = self.lower_qual_type(operand_ty);
 
@@ -1010,27 +998,27 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn lower_builtin_va_arg(&mut self, ty: QualType, expr_ref: NodeRef) -> Operand {
-        let ap = self.lower_expression_as_place(expr_ref);
+    pub(crate) fn emit_builtin_va_arg(&mut self, ty: QualType, expr_ref: NodeRef) -> Operand {
+        let ap = self.emit_expression_as_place(expr_ref);
         let mir_ty = self.lower_qual_type(ty);
         let rval = Rvalue::BuiltinVaArg(ap, mir_ty);
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
-    pub(crate) fn lower_builtin_void(&mut self, kind: &NodeKind) -> Operand {
+    pub(crate) fn emit_builtin_void(&mut self, kind: &NodeKind) -> Operand {
         let stmt = match kind {
             NodeKind::BuiltinVaStart(ap_ref, last_ref) => {
-                let ap = self.lower_expression_as_place(*ap_ref);
-                let last = self.lower_expression(*last_ref, true);
+                let ap = self.emit_expression_as_place(*ap_ref);
+                let last = self.emit_expression(*last_ref, true);
                 MirStmt::BuiltinVaStart(ap, last)
             }
             NodeKind::BuiltinVaEnd(ap_ref) => {
-                let ap = self.lower_expression_as_place(*ap_ref);
+                let ap = self.emit_expression_as_place(*ap_ref);
                 MirStmt::BuiltinVaEnd(ap)
             }
             NodeKind::BuiltinVaCopy(dst_ref, src_ref) => {
-                let dst = self.lower_expression_as_place(*dst_ref);
-                let src = self.lower_expression_as_place(*src_ref);
+                let dst = self.emit_expression_as_place(*dst_ref);
+                let src = self.emit_expression_as_place(*src_ref);
                 MirStmt::BuiltinVaCopy(dst, src)
             }
             _ => unreachable!(),
@@ -1039,7 +1027,7 @@ impl<'a> MirGen<'a> {
         self.create_int_operand(0)
     }
 
-    pub(crate) fn lower_atomic_op(
+    pub(crate) fn emit_atomic_op(
         &mut self,
         op: AtomicOp,
         args_start: NodeRef,
@@ -1070,23 +1058,23 @@ impl<'a> MirGen<'a> {
                 let rval = Rvalue::AtomicExchange(ptr, val, order);
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
-            AtomicOp::CompareExchangeN => self.lower_atomic_cmpxchg(&args, order, mir_ty),
-            AtomicOp::FetchAdd => self.lower_atomic_fetch_op(BinaryIntOp::Add, &args, order, mir_ty),
-            AtomicOp::FetchSub => self.lower_atomic_fetch_op(BinaryIntOp::Sub, &args, order, mir_ty),
-            AtomicOp::FetchAnd => self.lower_atomic_fetch_op(BinaryIntOp::BitAnd, &args, order, mir_ty),
-            AtomicOp::FetchOr => self.lower_atomic_fetch_op(BinaryIntOp::BitOr, &args, order, mir_ty),
-            AtomicOp::FetchXor => self.lower_atomic_fetch_op(BinaryIntOp::BitXor, &args, order, mir_ty),
+            AtomicOp::CompareExchangeN => self.emit_atomic_cmpxchg(&args, order, mir_ty),
+            AtomicOp::FetchAdd => self.emit_atomic_fetch_op(BinaryIntOp::Add, &args, order, mir_ty),
+            AtomicOp::FetchSub => self.emit_atomic_fetch_op(BinaryIntOp::Sub, &args, order, mir_ty),
+            AtomicOp::FetchAnd => self.emit_atomic_fetch_op(BinaryIntOp::BitAnd, &args, order, mir_ty),
+            AtomicOp::FetchOr => self.emit_atomic_fetch_op(BinaryIntOp::BitOr, &args, order, mir_ty),
+            AtomicOp::FetchXor => self.emit_atomic_fetch_op(BinaryIntOp::BitXor, &args, order, mir_ty),
         }
     }
 
     fn get_atomic_args(&mut self, args_start: NodeRef, args_len: u16) -> Vec<Operand> {
         args_start
             .range(args_len)
-            .map(|arg_ref| self.lower_expression(arg_ref, true))
+            .map(|arg_ref| self.emit_expression(arg_ref, true))
             .collect()
     }
 
-    fn lower_atomic_cmpxchg(&mut self, args: &[Operand], order: AtomicMemOrder, mir_ty: TypeId) -> Operand {
+    fn emit_atomic_cmpxchg(&mut self, args: &[Operand], order: AtomicMemOrder, mir_ty: TypeId) -> Operand {
         let ptr = args[0].clone();
         let expected_ptr = args[1].clone();
         let desired = args[2].clone();
@@ -1130,7 +1118,7 @@ impl<'a> MirGen<'a> {
         success_op
     }
 
-    fn lower_atomic_fetch_op(
+    fn emit_atomic_fetch_op(
         &mut self,
         bin_op: BinaryIntOp,
         args: &[Operand],
@@ -1145,7 +1133,7 @@ impl<'a> MirGen<'a> {
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
-    fn lower_complex_binary_op(&mut self, op: &BinaryOp, lhs: Operand, rhs: Operand, mir_ty: TypeId) -> Operand {
+    fn emit_complex_binary_op(&mut self, op: &BinaryOp, lhs: Operand, rhs: Operand, mir_ty: TypeId) -> Operand {
         let lhs_ty = self.get_operand_type(&lhs);
         let rhs_ty = self.get_operand_type(&rhs);
 
@@ -1210,8 +1198,8 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn lower_complex_unary_op(&mut self, op: &UnaryOp, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
-        let operand = self.lower_expression(operand_ref, true);
+    fn emit_complex_unary_op(&mut self, op: &UnaryOp, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
+        let operand = self.emit_expression(operand_ref, true);
         let operand_ty = self.get_operand_type(&operand);
 
         let (real, imag) = self.get_complex_components(operand, operand_ty);
@@ -1251,7 +1239,7 @@ impl<'a> MirGen<'a> {
 
     /// Try to lower builtin float constant functions like `__builtin_inff`, `__builtin_nanf`, etc.
     /// Returns Some(Operand) if the call is a builtin float constant, None otherwise.
-    fn try_lower_builtin_float_const(&mut self, call_expr: &ast::nodes::CallExpr, mir_ty: TypeId) -> Option<Operand> {
+    fn try_emit_builtin_float_const(&mut self, call_expr: &ast::nodes::CallExpr, mir_ty: TypeId) -> Option<Operand> {
         // Check if callee is an identifier
         let callee_kind = self.ast.get_kind(call_expr.callee);
         let name = match callee_kind {

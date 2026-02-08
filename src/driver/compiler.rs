@@ -267,7 +267,7 @@ impl CompilerDriver {
         }
 
         let mut sema = MirGen::new(&ast, &symbol_table, &mut registry);
-        let mir_program = sema.lower_module_complete();
+        let mir_program = sema.visit_module();
         self.check_diagnostics_and_return_if_error()?;
 
         Ok(mir_program)
@@ -283,7 +283,7 @@ impl CompilerDriver {
 
         // Use MIR codegen instead of AST codegen
         let mir_codegen = ClifGen::new(mir_program);
-        match mir_codegen.compile_module(emit_kind) {
+        match mir_codegen.visit_module(emit_kind) {
             Ok(output) => Ok(output),
             Err(e) => {
                 self.diagnostics.report_diagnostic(Diagnostic {

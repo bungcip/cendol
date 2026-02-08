@@ -123,7 +123,7 @@ fn test_alloc_dealloc_codegen() {
 
     let mir = builder.consume();
     let lowerer = ClifGen::new(mir);
-    let result = lowerer.compile_module(EmitKind::Clif);
+    let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {

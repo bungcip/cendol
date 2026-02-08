@@ -11,9 +11,9 @@ pub mod link_gen;
 pub mod mir_gen;
 pub mod object_gen;
 
-pub(crate) mod lower_expression;
-pub(crate) mod lower_initializer;
-pub(crate) mod mir_ops;
+pub(crate) mod mir_gen_expression;
+pub(crate) mod mir_gen_initializer;
+pub(crate) mod mir_gen_ops;
 
 // Re-export key types for public API
 pub use clif_gen::{ClifOutput, EmitKind};

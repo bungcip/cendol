@@ -91,7 +91,7 @@ fn test_store_statement_lowering() {
     // 6. Compile
     let mir = builder.consume();
     let lowerer = ClifGen::new(mir);
-    let result = lowerer.compile_module(EmitKind::Clif);
+    let result = lowerer.visit_module(EmitKind::Clif);
 
     // 7. Assert
     match result {
@@ -157,7 +157,7 @@ fn test_store_deref_pointer() {
 
     let mir = builder.consume();
     let lowerer = ClifGen::new(mir);
-    let result = lowerer.compile_module(EmitKind::Clif);
+    let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
@@ -351,7 +351,7 @@ fn test_f128_constant_promotion() {
 
     let mir = builder.consume();
     let lowerer = ClifGen::new(mir);
-    let result = lowerer.compile_module(EmitKind::Clif);
+    let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {

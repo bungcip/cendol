@@ -587,27 +587,38 @@ impl<'a> AstToMirLowerer<'a> {
     }
 
     fn unwrap_cast_if_int(&mut self, op: Operand) -> Operand {
-        if let Operand::Cast(_, inner) = &op {
-            let inner_op = *inner.clone();
-            let ty_id = self.get_operand_type(&inner_op);
-            if self.mir_builder.get_type(ty_id).is_int() {
-                return inner_op;
+        match op {
+            Operand::Cast(ty, inner) => {
+                let inner_ty = self.get_operand_type(&inner);
+                if self.mir_builder.get_type(inner_ty).is_int() {
+                    return *inner;
+                }
+
+                let unwrapped = self.unwrap_cast_if_int(*inner.clone());
+                let unwrapped_ty = self.get_operand_type(&unwrapped);
+                if self.mir_builder.get_type(unwrapped_ty).is_int() {
+                    return unwrapped;
+                }
+
+                Operand::Cast(ty, inner)
             }
-            // Recursive check
-            let unwrapped = self.unwrap_cast_if_int(inner_op.clone());
-            let unwrapped_ty_id = self.get_operand_type(&unwrapped);
-            if self.mir_builder.get_type(unwrapped_ty_id).is_int() {
-                return unwrapped;
+            Operand::Constant(const_id) => {
+                let val_opt = {
+                    let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
+                    if let ConstValueKind::Int(val) = const_val.kind {
+                        Some(val)
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(val) = val_opt {
+                    return self.create_int_operand(val);
+                }
+                Operand::Constant(const_id)
             }
-        } else if let Operand::Constant(const_id) = &op {
-            // Handle integer constants that were typed as pointers
-            let const_val = self.mir_builder.get_constants().get(const_id).unwrap();
-            if let ConstValueKind::Int(val) = const_val.kind {
-                // Re-create as proper integer operand
-                return self.create_int_operand(val);
-            }
+            _ => op,
         }
-        op
     }
 
     pub(crate) fn lower_pointer_arithmetic(
@@ -650,12 +661,9 @@ impl<'a> AstToMirLowerer<'a> {
                     let lhs_u_ty = self.get_operand_type(&lhs_unwrapped);
                     let rhs_u_ty = self.get_operand_type(&rhs_unwrapped);
 
-                    if self.mir_builder.get_type(lhs_u_ty).is_pointer() && self.mir_builder.get_type(rhs_u_ty).is_int()
-                    {
+                    if self.mir_builder.get_type(lhs_u_ty).is_pointer() && self.mir_builder.get_type(rhs_u_ty).is_int() {
                         Some(self.create_pointer_arithmetic_rvalue(lhs_unwrapped, rhs_unwrapped, BinaryOp::Add))
-                    } else if self.mir_builder.get_type(rhs_u_ty).is_pointer()
-                        && self.mir_builder.get_type(lhs_u_ty).is_int()
-                    {
+                    } else if self.mir_builder.get_type(rhs_u_ty).is_pointer() && self.mir_builder.get_type(lhs_u_ty).is_int() {
                         Some(self.create_pointer_arithmetic_rvalue(rhs_unwrapped, lhs_unwrapped, BinaryOp::Add))
                     } else {
                         None

@@ -661,9 +661,12 @@ impl<'a> AstToMirLowerer<'a> {
                     let lhs_u_ty = self.get_operand_type(&lhs_unwrapped);
                     let rhs_u_ty = self.get_operand_type(&rhs_unwrapped);
 
-                    if self.mir_builder.get_type(lhs_u_ty).is_pointer() && self.mir_builder.get_type(rhs_u_ty).is_int() {
+                    if self.mir_builder.get_type(lhs_u_ty).is_pointer() && self.mir_builder.get_type(rhs_u_ty).is_int()
+                    {
                         Some(self.create_pointer_arithmetic_rvalue(lhs_unwrapped, rhs_unwrapped, BinaryOp::Add))
-                    } else if self.mir_builder.get_type(rhs_u_ty).is_pointer() && self.mir_builder.get_type(lhs_u_ty).is_int() {
+                    } else if self.mir_builder.get_type(rhs_u_ty).is_pointer()
+                        && self.mir_builder.get_type(lhs_u_ty).is_int()
+                    {
                         Some(self.create_pointer_arithmetic_rvalue(rhs_unwrapped, lhs_unwrapped, BinaryOp::Add))
                     } else {
                         None

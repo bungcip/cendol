@@ -1,7 +1,7 @@
 //! Tests for Struct/Union/Array lowering and access
 use crate::ast::NameId;
+use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::driver::artifact::CompilePhase;
-use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
 use crate::mir::{MirModuleId, MirStmt, MirType, Operand, Place, Terminator};
 use crate::tests::codegen_common::setup_cranelift;
 use crate::tests::test_utils::run_pass;
@@ -122,7 +122,7 @@ fn test_alloc_dealloc_codegen() {
     builder.set_terminator(Terminator::Return(None));
 
     let mir = builder.consume();
-    let lowerer = MirToCraneliftLowerer::new(mir);
+    let lowerer = ClifGen::new(mir);
     let result = lowerer.compile_module(EmitKind::Clif);
 
     match result {

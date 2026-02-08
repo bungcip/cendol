@@ -1,4 +1,5 @@
 pub mod ast;
+pub mod codegen;
 pub mod diagnostic;
 pub mod driver;
 mod lang_options;

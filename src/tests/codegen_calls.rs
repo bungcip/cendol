@@ -1,6 +1,6 @@
 //! Tests for function calls
 use crate::ast::NameId;
-use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
+use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::mir::{CallTarget, MirModuleId, MirStmt, MirType, Operand, Place, Terminator};
 use crate::tests::test_utils;
 
@@ -84,7 +84,7 @@ fn test_indirect_function_call() {
 
     // Compile
     let mir = builder.consume();
-    let lowerer = MirToCraneliftLowerer::new(mir);
+    let lowerer = ClifGen::new(mir);
     let result = lowerer.compile_module(EmitKind::Clif);
 
     match result {
@@ -164,7 +164,7 @@ fn test_global_function_pointer_init() {
 
     // Compile
     let mir = builder.consume();
-    let lowerer = MirToCraneliftLowerer::new(mir);
+    let lowerer = ClifGen::new(mir);
     let result = lowerer.compile_module(EmitKind::Clif);
 
     match result {

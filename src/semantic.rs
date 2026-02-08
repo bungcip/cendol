@@ -11,26 +11,18 @@
 //! for clean separation of concerns and maintainable code.
 
 pub mod analyzer;
-pub mod ast_to_mir;
 pub mod const_eval;
 pub mod conversions;
-
+pub(crate) mod literal_utils;
 pub mod lowering;
-
 pub mod symbol_table;
 pub mod type_registry;
 pub mod types;
 
-// Re-export key types for public API
 pub use analyzer::{Conversion, SemanticInfo, ValueCategory};
-pub(crate) use ast_to_mir::AstToMirLowerer;
 pub use symbol_table::{DefinitionState, Namespace, ScopeId, SymbolKind, SymbolRef, SymbolTable};
 pub use type_registry::TypeRegistry;
 pub use types::{
     ArraySizeType, BuiltinType, EnumConstant, FunctionParameter, QualType, StructMember, Type, TypeKind, TypeLayout,
     TypeQualifiers, TypeRef,
 };
-pub(crate) mod literal_utils;
-pub(crate) mod lower_expression;
-pub(crate) mod lower_initializer;
-pub(crate) mod mir_ops;

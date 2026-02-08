@@ -14,7 +14,6 @@ use std::num::NonZeroU32;
 
 use crate::ast::NameId;
 
-pub mod codegen;
 pub mod dumper;
 pub mod validation;
 

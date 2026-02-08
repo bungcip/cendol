@@ -8,18 +8,19 @@ use indexmap::IndexMap;
 
 use crate::ast::dumper::AstDumper;
 use crate::ast::{Ast, NodeKind, NodeRef, ParsedAst, SourceId};
+use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::driver::cli::PathOrBuffer;
-use crate::mir::codegen::{ClifOutput, EmitKind, MirToCraneliftLowerer};
 use crate::mir::validation::MirValidator;
 use crate::parser::{Lexer, Token};
 
 use super::artifact::{CompileArtifact, CompilePhase, PipelineOutputs};
+use crate::codegen::MirGen;
 use crate::mir::MirProgram;
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
 use crate::pp::{PPToken, Preprocessor, dumper::PPDumper};
-use crate::semantic::{AstToMirLowerer, SymbolTable, TypeRegistry};
+use crate::semantic::{SymbolTable, TypeRegistry};
 use crate::source_manager::SourceManager;
 
 use super::cli::CompileConfig;
@@ -265,7 +266,7 @@ impl CompilerDriver {
             }
         }
 
-        let mut sema = AstToMirLowerer::new(&ast, &symbol_table, &mut registry);
+        let mut sema = MirGen::new(&ast, &symbol_table, &mut registry);
         let mir_program = sema.lower_module_complete();
         self.check_diagnostics_and_return_if_error()?;
 
@@ -281,7 +282,7 @@ impl CompilerDriver {
         }
 
         // Use MIR codegen instead of AST codegen
-        let mir_codegen = MirToCraneliftLowerer::new(mir_program);
+        let mir_codegen = ClifGen::new(mir_program);
         match mir_codegen.compile_module(emit_kind) {
             Ok(output) => Ok(output),
             Err(e) => {

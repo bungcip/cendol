@@ -2,11 +2,11 @@ use std::iter::Peekable;
 
 use crate::ast;
 use crate::ast::{Designator, NodeKind, NodeRef, literal};
+use crate::codegen::mir_gen::MirGen;
 use crate::mir::{ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue};
-use crate::semantic::ast_to_mir::AstToMirLowerer;
 use crate::semantic::{ArraySizeType, QualType, StructMember, TypeKind};
 
-impl<'a> AstToMirLowerer<'a> {
+impl<'a> MirGen<'a> {
     pub(crate) fn lower_initializer_list(
         &mut self,
         list_data: &ast::nodes::InitializerListData,

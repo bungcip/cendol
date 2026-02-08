@@ -1,7 +1,8 @@
 //! Basic MIR to Cranelift IR lowering tests
 use crate::ast::NameId;
+use crate::codegen::clif_gen::{EmitContext, emit_const};
+use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::driver::artifact::CompilePhase;
-use crate::mir::codegen::{ClifOutput, EmitContext, EmitKind, MirToCraneliftLowerer, emit_const};
 use crate::mir::{ConstValueKind, Rvalue};
 use crate::mir::{MirModuleId, MirRecordLayout, MirStmt, MirType, Operand, Place, Terminator};
 use crate::tests::codegen_common::setup_cranelift;
@@ -89,7 +90,7 @@ fn test_store_statement_lowering() {
 
     // 6. Compile
     let mir = builder.consume();
-    let lowerer = MirToCraneliftLowerer::new(mir);
+    let lowerer = ClifGen::new(mir);
     let result = lowerer.compile_module(EmitKind::Clif);
 
     // 7. Assert
@@ -155,7 +156,7 @@ fn test_store_deref_pointer() {
     builder.set_terminator(Terminator::Return(None));
 
     let mir = builder.consume();
-    let lowerer = MirToCraneliftLowerer::new(mir);
+    let lowerer = ClifGen::new(mir);
     let result = lowerer.compile_module(EmitKind::Clif);
 
     match result {
@@ -349,7 +350,7 @@ fn test_f128_constant_promotion() {
     builder.set_terminator(Terminator::Return(None));
 
     let mir = builder.consume();
-    let lowerer = MirToCraneliftLowerer::new(mir);
+    let lowerer = ClifGen::new(mir);
     let result = lowerer.compile_module(EmitKind::Clif);
 
     match result {

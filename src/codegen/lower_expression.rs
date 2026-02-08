@@ -1,15 +1,16 @@
 use crate::ast::nodes::AtomicOp;
 use crate::ast::{BinaryOp, NodeKind, NodeRef, UnaryOp};
+use crate::codegen::mir_gen::MirGen;
+use crate::codegen::mir_ops;
 use crate::mir::{
     AtomicMemOrder, BinaryIntOp, CallTarget, ConstValue, ConstValueKind, MirStmt, Operand, Place, Rvalue, Terminator,
     TypeId,
 };
-use crate::semantic::ast_to_mir::AstToMirLowerer;
 use crate::semantic::const_eval::eval_const_expr;
-use crate::semantic::{QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory, mir_ops};
+use crate::semantic::{QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
 use crate::{ast, semantic};
 
-impl<'a> AstToMirLowerer<'a> {
+impl<'a> MirGen<'a> {
     pub(crate) fn lower_expression_as_place(&mut self, expr_ref: NodeRef) -> Place {
         let op = self.lower_expression(expr_ref, true);
         let ty = self.ast.get_resolved_type(expr_ref).unwrap();

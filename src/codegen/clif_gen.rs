@@ -2465,19 +2465,19 @@ fn finalize_function_processing(
 }
 
 /// MIR to Cranelift IR Lowerer
-pub(crate) struct MirToCraneliftLowerer {
-    builder_context: FunctionBuilderContext,
-    module: ObjectModule,
-    mir: MirProgram, // NOTE: need better nama
-    clif_stack_slots: HashMap<LocalId, StackSlot>,
+pub struct ClifGen {
+    pub(crate) builder_context: FunctionBuilderContext,
+    pub(crate) module: ObjectModule,
+    pub(crate) mir: MirProgram, // NOTE: need better nama
+    pub(crate) clif_stack_slots: HashMap<LocalId, StackSlot>,
     // Store compiled functions for dumping
-    compiled_functions: HashMap<String, String>,
+    pub(crate) compiled_functions: HashMap<String, String>,
 
-    emit_kind: EmitKind,
+    pub(crate) emit_kind: EmitKind,
 
     // Mappings for relocations
-    func_id_map: HashMap<MirFunctionId, FuncId>,
-    data_id_map: HashMap<GlobalId, DataId>,
+    pub(crate) func_id_map: HashMap<MirFunctionId, FuncId>,
+    pub(crate) data_id_map: HashMap<GlobalId, DataId>,
 
     // Variadic spill area for the current function
     va_spill_slot: Option<StackSlot>,
@@ -2487,7 +2487,7 @@ pub(crate) struct MirToCraneliftLowerer {
 }
 
 /// NOTE: we use panic!() to ICE because codegen rely on correct MIR, so if we give invalid MIR, then problem is in previous phase
-impl MirToCraneliftLowerer {
+impl ClifGen {
     pub(crate) fn new(mir: MirProgram) -> Self {
         let triple = Triple::host();
         let mut flag_builder = cranelift::prelude::settings::builder();

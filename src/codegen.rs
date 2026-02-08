@@ -1,0 +1,25 @@
+//! Code generation module.
+//!
+//! This module provides the complete code generation pipeline:
+//! - MirGen: AST → MIR (Mid-level Intermediate Representation)
+//! - ClifGen: MIR → Cranelift IR
+//! - ObjectGen: Cranelift → Object file
+//! - LinkGen: Object → Executable/Library
+
+pub mod clif_gen;
+pub mod link_gen;
+pub mod mir_gen;
+pub mod object_gen;
+
+pub(crate) mod lower_expression;
+pub(crate) mod lower_initializer;
+pub(crate) mod mir_ops;
+
+// Re-export key types for public API
+pub use clif_gen::{ClifOutput, EmitKind};
+pub use link_gen::{LinkConfig, LinkGen};
+pub use object_gen::ObjectGen;
+
+// Re-export crate-internal types
+pub(crate) use clif_gen::ClifGen;
+pub(crate) use mir_gen::MirGen;

@@ -25,7 +25,7 @@ use target_lexicon::Architecture;
 
 use crate::mir::GlobalId;
 
-pub(crate) struct AstToMirLowerer<'a> {
+pub(crate) struct MirGen<'a> {
     pub(crate) ast: &'a Ast,
     pub(crate) symbol_table: &'a SymbolTable, // Now immutable
     pub(crate) mir_builder: MirBuilder,
@@ -44,7 +44,7 @@ pub(crate) struct AstToMirLowerer<'a> {
     pub(crate) valist_mir_id: Option<TypeId>,
 }
 
-impl<'a> AstToMirLowerer<'a> {
+impl<'a> MirGen<'a> {
     pub(crate) fn new(ast: &'a Ast, symbol_table: &'a SymbolTable, registry: &'a mut TypeRegistry) -> Self {
         let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap(), 8);
         Self {

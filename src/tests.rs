@@ -59,6 +59,7 @@ pub mod test_utils;
 
 pub mod codegen_cast_init;
 pub mod codegen_regr;
+pub mod guardian_addr_sizeof_constraints;
 pub mod guardian_bitfields;
 pub mod mir_unit;
 pub mod parser_type_conflict;

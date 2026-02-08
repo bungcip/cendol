@@ -326,6 +326,15 @@ pub enum SemanticError {
     #[error("controlling expression type '{ty}' not compatible with any generic association")]
     GenericNoMatch { ty: String, span: SourceSpan },
 
+    #[error("cannot take address of bit-field")]
+    AddressOfBitfield { span: SourceSpan },
+
+    #[error("cannot take address of 'register' variable")]
+    AddressOfRegister { span: SourceSpan },
+
+    #[error("cannot apply 'sizeof' to a bit-field")]
+    SizeOfBitfield { span: SourceSpan },
+
     #[error("controlling expression type '{ty}' is an incomplete type")]
     GenericIncompleteControl { ty: String, span: SourceSpan },
 
@@ -457,6 +466,9 @@ impl SemanticError {
             SemanticError::SizeOfIncompleteType { span, .. } => *span,
             SemanticError::SizeOfFunctionType { span } => *span,
             SemanticError::GenericNoMatch { span, .. } => *span,
+            SemanticError::AddressOfBitfield { span } => *span,
+            SemanticError::AddressOfRegister { span } => *span,
+            SemanticError::SizeOfBitfield { span } => *span,
             SemanticError::GenericIncompleteControl { span, .. } => *span,
             SemanticError::GenericIncompleteAssociation { span, .. } => *span,
             SemanticError::GenericMultipleDefault { span, .. } => *span,

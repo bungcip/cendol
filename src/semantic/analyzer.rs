@@ -249,6 +249,72 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    fn is_bitfield(&self, node_ref: NodeRef) -> bool {
+        let node_kind = self.ast.get_kind(node_ref);
+        match node_kind {
+            NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
+                let Some(obj_ty) = self.semantic_info.types[obj_ref.index()] else {
+                    return false;
+                };
+                let record_ty_ref = if *is_arrow {
+                    let Some(pointee) = self.registry.get_pointee(obj_ty.ty()) else {
+                        return false;
+                    };
+                    pointee.ty()
+                } else {
+                    obj_ty.ty()
+                };
+
+                fn find_bitfield(registry: &TypeRegistry, record_ty: TypeRef, name: NameId) -> bool {
+                    if let TypeKind::Record { members, .. } = &registry.get(record_ty).kind {
+                        if let Some(member) = members.iter().find(|m| m.name == Some(name)) {
+                            return member.bit_field_size.is_some();
+                        }
+                        for member in members {
+                            if member.name.is_none() {
+                                if find_bitfield(registry, member.member_type.ty(), name) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    false
+                }
+
+                find_bitfield(self.registry, record_ty_ref, *field_name)
+            }
+            NodeKind::GenericSelection(_) => {
+                if let Some(&selected) = self.semantic_info.generic_selections.get(&node_ref.index()) {
+                    self.is_bitfield(selected)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn is_register_variable(&self, node_ref: NodeRef) -> bool {
+        let node_kind = self.ast.get_kind(node_ref);
+        match node_kind {
+            NodeKind::Ident(_, symbol_ref) => {
+                let symbol = self.symbol_table.get_symbol(*symbol_ref);
+                if let SymbolKind::Variable { storage, .. } = &symbol.kind {
+                    return *storage == Some(StorageClass::Register);
+                }
+                false
+            }
+            NodeKind::GenericSelection(_) => {
+                if let Some(&selected) = self.semantic_info.generic_selections.get(&node_ref.index()) {
+                    self.is_register_variable(selected)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
     fn is_null_pointer_constant(&self, node_ref: NodeRef) -> bool {
         let node_kind = self.ast.get_kind(node_ref);
         match node_kind {
@@ -380,6 +446,14 @@ impl<'a> SemanticAnalyzer<'a> {
             UnaryOp::AddrOf => {
                 if !self.is_lvalue(operand_ref) {
                     self.report_error(SemanticError::NotAnLvalue { span });
+                    return None;
+                }
+                if self.is_bitfield(operand_ref) {
+                    self.report_error(SemanticError::AddressOfBitfield { span });
+                    return None;
+                }
+                if self.is_register_variable(operand_ref) {
+                    self.report_error(SemanticError::AddressOfRegister { span });
                     return None;
                 }
                 if operand_ty.is_array() || operand_ty.is_function() {
@@ -1562,6 +1636,9 @@ impl<'a> SemanticAnalyzer<'a> {
                     } else if !self.registry.is_complete(type_ref) {
                         let span = self.ast.get_span(node_ref);
                         self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
+                    } else if self.is_bitfield(*expr) {
+                        let span = self.ast.get_span(node_ref);
+                        self.report_error(SemanticError::SizeOfBitfield { span });
                     } else {
                         let _ = self.registry.ensure_layout(type_ref);
                     }

@@ -1,7 +1,5 @@
 use super::semantic_common::setup_mir;
-use crate::driver::artifact::CompilePhase;
 use crate::tests::codegen_common::run_c_code_exit_status;
-use crate::tests::test_utils::run_pass;
 
 #[test]
 fn test_array_init_bug_mir() {
@@ -399,9 +397,7 @@ fn test_string_literal_array_init() {
             return 0;
         }
     "#;
-    // FIXME: run_c_code_exit_status exposes that runtime execution fails (sizeof incorrect).
-    // Reverting to compilation check to preserve regression testing baseline.
-    run_pass(source, CompilePhase::EmitObject);
+    assert_eq!(run_c_code_exit_status(source), 0);
 }
 
 #[test]
@@ -431,9 +427,7 @@ fn test_wide_string_init() {
             return 0;
         }
     "#;
-    // FIXME: run_c_code_exit_status exposes that runtime execution fails (sizeof incorrect).
-    // Reverting to compilation check to preserve regression testing baseline.
-    run_pass(source, CompilePhase::EmitObject);
+    assert_eq!(run_c_code_exit_status(source), 0);
 }
 
 #[test]
@@ -447,9 +441,7 @@ fn test_string_literal_concatenated_init() {
             return 0;
         }
     "#;
-    // FIXME: run_c_code_exit_status exposes that runtime execution fails (sizeof incorrect).
-    // Reverting to compilation check to preserve regression testing baseline.
-    run_pass(source, CompilePhase::EmitObject);
+    assert_eq!(run_c_code_exit_status(source), 0);
 }
 
 #[test]
@@ -528,7 +520,18 @@ fn test_unicode_string_init() {
             return 0;
         }
     "#;
-    // FIXME: run_c_code_exit_status exposes that runtime execution fails (sizeof incorrect).
-    // Reverting to compilation check to preserve regression testing baseline.
-    run_pass(source, CompilePhase::EmitObject);
+    assert_eq!(run_c_code_exit_status(source), 0);
+}
+
+#[test]
+fn test_compound_literal_array_deduction() {
+    let source = r#"
+        int main() {
+            if (sizeof((char[]){"abc"}) != 4) return 1;
+            if (sizeof((int[]){1, 2, 3}) != 12) return 2;
+            if (sizeof((int[]){[5]=1}) != 24) return 3;
+            return 0;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
 }

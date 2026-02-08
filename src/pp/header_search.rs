@@ -68,11 +68,9 @@ impl HeaderSearch {
         if !is_angled {
             for path_str in &self.quoted_includes {
                 let path: &Path = Path::new(path_str);
-                if !found_current {
-                    if current_dir.starts_with(path) {
-                        found_current = true;
-                        continue;
-                    }
+                if !found_current && current_dir.starts_with(path) {
+                    found_current = true;
+                    continue;
                 }
 
                 if found_current {
@@ -86,11 +84,9 @@ impl HeaderSearch {
 
         for path_str in &self.angled_includes {
             let path: &Path = Path::new(path_str);
-            if !found_current {
-                if current_dir.starts_with(path) {
-                    found_current = true;
-                    continue;
-                }
+            if !found_current && current_dir.starts_with(path) {
+                found_current = true;
+                continue;
             }
 
             if found_current {
@@ -102,11 +98,9 @@ impl HeaderSearch {
         }
 
         for path in &self.system_path {
-            if !found_current {
-                if current_dir.starts_with(path) {
-                    found_current = true;
-                    continue;
-                }
+            if !found_current && current_dir.starts_with(path) {
+                found_current = true;
+                continue;
             }
 
             if found_current {
@@ -118,11 +112,9 @@ impl HeaderSearch {
         }
 
         for path in &self.framework_path {
-            if !found_current {
-                if current_dir.starts_with(path) {
-                    found_current = true;
-                    continue;
-                }
+            if !found_current && current_dir.starts_with(path) {
+                found_current = true;
+                continue;
             }
 
             if found_current {

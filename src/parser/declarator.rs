@@ -68,7 +68,7 @@ fn peek_past_attribute(parser: &Parser, mut start_offset: u32) -> Option<Token> 
         if let Some(t) = parser.peek_token(start_offset) {
             if t.kind != TokenKind::Attribute {
                 // Not an attribute, so we are done
-                return Some(t.clone());
+                return Some(*t);
             }
             // It is an attribute, loop again (start_offset points to it)
         } else {

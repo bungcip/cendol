@@ -2469,10 +2469,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             sym_ref
         } else {
             let name_str = name.as_str();
-            if name_str.starts_with("__builtin_") {
-                if let Some(sym_ref) = self.handle_builtin_implicit_decl(name, name_str, span) {
-                    return sym_ref;
-                }
+            if name_str.starts_with("__builtin_")
+                && let Some(sym_ref) = self.handle_builtin_implicit_decl(name, name_str, span)
+            {
+                return sym_ref;
             }
             self.report_error(SemanticError::UndeclaredIdentifier { name, span });
             SymbolRef::new(1).expect("SymbolRef 1 creation failed")

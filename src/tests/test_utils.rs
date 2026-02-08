@@ -1,10 +1,18 @@
+use crate::diagnostic::DiagnosticEngine;
 use crate::driver::artifact::{CompilePhase, PipelineOutputs};
 use crate::driver::cli::CompileConfig;
 use crate::driver::compiler::CompilerDriver;
+use crate::source_manager::SourceManager;
 
 pub(crate) fn setup_driver(source: &str, phase: CompilePhase) -> CompilerDriver {
     let config = CompileConfig::from_virtual_file(source.to_string(), phase);
     CompilerDriver::from_config(config)
+}
+
+pub(crate) fn setup_sm_and_diag() -> (SourceManager, DiagnosticEngine) {
+    let source_manager = SourceManager::new();
+    let diagnostics = DiagnosticEngine::default();
+    (source_manager, diagnostics)
 }
 
 pub(crate) fn run_pipeline(source: &str, phase: CompilePhase) -> (CompilerDriver, Result<PipelineOutputs, String>) {

@@ -2,7 +2,7 @@ use crate::ast::parsed::{
     ParsedAst, ParsedDeclSpecifier, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpecifier,
 };
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::diagnostic::{DiagnosticEngine, ParseError};
+use crate::diagnostic::ParseError;
 use crate::driver::artifact::CompilePhase;
 use crate::parser::statements::parse_compound_statement;
 use crate::parser::{Parser, declarations, statements};
@@ -485,13 +485,13 @@ where
     F: FnOnce(&mut Parser<'_, '_>) -> T,
 {
     let phase = CompilePhase::Lex;
-    let (_, out) = test_utils::run_pipeline(source, phase);
+    let (driver, out) = test_utils::run_pipeline(source, phase);
     let mut out = out.unwrap();
     let first = out.units.first_mut().unwrap();
     let artifact = first.1;
     let tokens = artifact.lexed.clone().unwrap();
 
-    let mut diag = DiagnosticEngine::default();
+    let mut diag = driver.diagnostics;
     let mut ast = ParsedAst::new();
     let mut parser = Parser::new(&tokens, &mut ast, &mut diag);
     let result = parse_fn(&mut parser);

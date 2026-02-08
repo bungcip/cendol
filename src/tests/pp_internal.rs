@@ -2,6 +2,7 @@ use crate::ast::StringId;
 use crate::diagnostic::DiagnosticEngine;
 use crate::pp::{HeaderSearch, PPConfig, PPToken, PPTokenFlags, PPTokenKind, Preprocessor};
 use crate::source_manager::{SourceLoc, SourceManager};
+use crate::tests::test_utils::setup_sm_and_diag;
 
 fn create_dummy_preprocessor<'a>(sm: &'a mut SourceManager, diag: &'a mut DiagnosticEngine) -> Preprocessor<'a> {
     let config = PPConfig::default();
@@ -70,8 +71,7 @@ fn test_header_search_resolution() {
 
 #[test]
 fn test_destringize() {
-    let mut sm = SourceManager::new();
-    let mut diag = DiagnosticEngine::default();
+    let (mut sm, mut diag) = setup_sm_and_diag();
     let pp = create_dummy_preprocessor(&mut sm, &mut diag);
 
     // Test case 1: No escape sequences
@@ -101,8 +101,7 @@ fn test_destringize() {
 
 #[test]
 fn test_stringify_tokens_utf8() {
-    let mut sm = SourceManager::new();
-    let mut diag = DiagnosticEngine::default();
+    let (mut sm, mut diag) = setup_sm_and_diag();
 
     let utf8_text = "⚡ Bolt ⚡";
     let sid = sm.add_buffer(utf8_text.as_bytes().to_vec(), "test.c", None);

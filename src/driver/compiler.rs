@@ -28,7 +28,7 @@ use super::cli::CompileConfig;
 /// Main compiler driver
 pub struct CompilerDriver {
     config: CompileConfig,
-    diagnostics: DiagnosticEngine,
+    pub(crate) diagnostics: DiagnosticEngine,
     pub(crate) source_manager: SourceManager,
 }
 

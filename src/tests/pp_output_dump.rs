@@ -1,15 +1,12 @@
-use crate::diagnostic::DiagnosticEngine;
 use crate::pp::{PPConfig, PPTokenKind, Preprocessor, dumper::PPDumper};
-use crate::source_manager::SourceManager;
+use crate::tests::test_utils::setup_sm_and_diag;
 
 fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {
-    let mut source_manager = SourceManager::new();
-    let mut diagnostics = DiagnosticEngine::default();
+    let (mut sm, mut diag) = setup_sm_and_diag();
     let config = PPConfig::default();
+    let source_id = sm.add_buffer(src.as_bytes().to_vec(), "<test>", None);
 
-    let source_id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>", None);
-
-    let mut preprocessor = Preprocessor::new(&mut source_manager, &mut diagnostics, &config);
+    let mut preprocessor = Preprocessor::new(&mut sm, &mut diag, &config);
     let tokens = preprocessor.process(source_id, &config).unwrap();
 
     let significant_tokens: Vec<_> = tokens
@@ -19,7 +16,7 @@ fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {
 
     let mut buffer = Vec::new();
 
-    PPDumper::new(&significant_tokens, &source_manager, suppress_line_markers)
+    PPDumper::new(&significant_tokens, &sm, suppress_line_markers)
         .dump(&mut buffer)
         .unwrap();
 

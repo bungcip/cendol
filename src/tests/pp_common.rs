@@ -1,6 +1,6 @@
-use crate::diagnostic::DiagnosticEngine;
 use crate::pp::*;
 use crate::source_manager::SourceManager;
+use crate::tests::test_utils::setup_sm_and_diag;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -93,8 +93,7 @@ pub fn setup_multi_file_pp_with_diagnostics_raw(
     // Initialize logging for tests
     let _ = env_logger::try_init();
 
-    let mut source_manager = SourceManager::new();
-    let mut diagnostics = DiagnosticEngine::default();
+    let (mut sm, mut diag) = setup_sm_and_diag();
     let config = config.unwrap_or_else(|| PPConfig {
         max_include_depth: 100,
         ..Default::default()
@@ -102,7 +101,7 @@ pub fn setup_multi_file_pp_with_diagnostics_raw(
 
     let mut main_id = None;
     for (name, content) in files {
-        let id = source_manager.add_buffer(content.as_bytes().to_vec(), name, None);
+        let id = sm.add_buffer(content.as_bytes().to_vec(), name, None);
         if name == main_file_name {
             main_id = Some(id);
         }
@@ -110,10 +109,10 @@ pub fn setup_multi_file_pp_with_diagnostics_raw(
 
     let main_id = main_id.expect("Main file not found in provided files");
 
-    let mut preprocessor = Preprocessor::new(&mut source_manager, &mut diagnostics, &config);
+    let mut preprocessor = Preprocessor::new(&mut sm, &mut diag, &config);
 
     let tokens = preprocessor.process(main_id, &config)?;
-    Ok((tokens, diagnostics.diagnostics().to_vec()))
+    Ok((tokens, diag.diagnostics().to_vec()))
 }
 
 pub struct TestLexer {

@@ -58,6 +58,7 @@ pub mod test_utils;
 
 pub mod codegen_cast_init;
 pub mod codegen_regr;
+pub mod guardian_bitfields;
 pub mod mir_unit;
 pub mod parser_type_conflict;
 pub mod pp_u8_literal;
@@ -67,4 +68,3 @@ pub mod semantic_complex_types;
 pub mod semantic_generic;
 pub mod semantic_mir_const_global;
 pub mod semantic_scope_invariants;
-pub mod guardian_bitfields;

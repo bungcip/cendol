@@ -8,10 +8,7 @@ fn test_bitfield_zero_width_unnamed() {
     // "An unnamed bit-field with a width of 0 shall not specify a declarator..."
 
     // This should pass
-    run_pass(
-        r#"struct S { int x : 1; int : 0; int y : 1; };"#,
-        CompilePhase::Mir,
-    );
+    run_pass(r#"struct S { int x : 1; int : 0; int y : 1; };"#, CompilePhase::Mir);
 }
 
 #[test]

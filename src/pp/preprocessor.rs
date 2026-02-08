@@ -1443,17 +1443,15 @@ impl<'src> Preprocessor<'src> {
             });
         }
 
-        if is_angled {
-            if let Some(id) = self.built_in_file_ids.get(path).copied() {
-                let is_recursive = if let Some(current) = self.lexer_stack.last() {
-                    current.source_id == id
-                } else {
-                    false
-                };
+        if is_angled && let Some(id) = self.built_in_file_ids.get(path).copied() {
+            let is_recursive = if let Some(current) = self.lexer_stack.last() {
+                current.source_id == id
+            } else {
+                false
+            };
 
-                if !is_recursive {
-                    return Ok(id);
-                }
+            if !is_recursive {
+                return Ok(id);
             }
         }
 

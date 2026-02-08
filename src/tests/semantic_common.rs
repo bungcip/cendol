@@ -63,7 +63,7 @@ pub fn setup_analysis(source: &str) -> (Ast, TypeRegistry, crate::semantic::Symb
 }
 
 pub fn find_layout<'a>(registry: &'a TypeRegistry, name: &str) -> &'a crate::semantic::types::TypeLayout {
-    let s_ty = find_record_type(&registry, name);
+    let s_ty = find_record_type(registry, name);
     s_ty.layout.as_ref().expect("Layout not computed for S")
 }
 

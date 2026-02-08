@@ -286,3 +286,14 @@ fn test_noreturn_declaration_mismatch() {
     Span: SourceSpan(source_id=SourceId(2), start=5, end=26)
     ");
 }
+
+#[test]
+fn test_pretty_function_identifier() {
+    let source = r#"
+        int printf(const char *, ...);
+        void foo() {
+            printf("%s", __PRETTY_FUNCTION__);
+        }
+    "#;
+    run_pass(source, CompilePhase::SemanticLowering);
+}

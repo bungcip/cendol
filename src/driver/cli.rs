@@ -68,6 +68,14 @@ pub struct Cli {
     #[clap(short = 'W', action = clap::ArgAction::Append)]
     pub warnings: Vec<String>,
 
+    /// Issue all the warnings demanded by strict ISO C
+    #[clap(long)]
+    pub pedantic: bool,
+
+    /// Issue all the warnings demanded by strict ISO C as errors
+    #[clap(long)]
+    pub pedantic_errors: bool,
+
     /// Set C language standard (e.g., c99, c11)
     #[clap(long = "std", value_name = "STANDARD")]
     pub c_standard: Option<CStandard>,
@@ -220,7 +228,16 @@ impl Cli {
 
         // Handle -Wall flag by adding "all" to warnings if -Wall is specified
         // Actually, with short='W' and append, -Wall will result in "all" in warnings.
-        let warnings = self.warnings;
+        // Handle -Wall flag by adding "all" to warnings if -Wall is specified
+        // Actually, with short='W' and append, -Wall will result in "all" in warnings.
+        let mut warnings = self.warnings;
+
+        if self.pedantic {
+            warnings.push("pedantic".to_string());
+        }
+        if self.pedantic_errors {
+            warnings.push("pedantic-errors".to_string());
+        }
 
         // Build language options
 
@@ -320,6 +337,8 @@ mod tests {
             include_paths: vec![PathBuf::from("inc")],
             defines: vec!["FOO=1".to_string(), "BAR".to_string()],
             warnings: vec!["all".to_string()],
+            pedantic: false,
+            pedantic_errors: false,
             c_standard: None,
             target: Some("x86_64-unknown-linux-gnu".to_string()),
             optimization: Some("2".to_string()),
@@ -356,6 +375,8 @@ mod tests {
             include_paths: vec![],
             defines: vec![],
             warnings: vec![],
+            pedantic: false,
+            pedantic_errors: false,
             c_standard: None,
             target: None,
             optimization: None,

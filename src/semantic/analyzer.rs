@@ -1149,7 +1149,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 };
 
                 if i < parameters.len() {
-                    self.record_implicit_conversions(parameters[i].param_type, arg_ty, arg_node_ref);
+                    let mut actual_arg_ty = arg_ty;
+                    if arg_ty.is_array() || arg_ty.is_function() {
+                        actual_arg_ty = self.registry.decay(arg_ty, TypeQualifiers::empty());
+                        self.push_conversion(arg_node_ref, Conversion::PointerDecay { to: actual_arg_ty.ty() });
+                    }
+                    self.record_implicit_conversions(parameters[i].param_type, actual_arg_ty, arg_node_ref);
                 } else if is_variadic {
                     let mut actual_arg_ty = arg_ty;
                     if arg_ty.is_array() || arg_ty.is_function() {

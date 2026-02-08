@@ -1662,6 +1662,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let _ = self
                 .symbol_table
                 .define_variable(func_id, qt, storage, Some(init_node), None, span);
+
+            // Also define __PRETTY_FUNCTION__ (GCC extension)
+            let pretty_func_id = crate::ast::StringId::new("__PRETTY_FUNCTION__");
+            let _ = self
+                .symbol_table
+                .define_variable(pretty_func_id, qt, storage, Some(init_node), None, span);
         }
 
         // Pre-scan labels for forward goto support

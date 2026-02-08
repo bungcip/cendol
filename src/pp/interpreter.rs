@@ -2,7 +2,8 @@ use crate::ast::StringId;
 use crate::ast::literal::IntegerSuffix;
 use crate::ast::literal_parsing;
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::pp::{PPError, PPToken, PPTokenKind, Preprocessor};
+use crate::pp::{PPError, PPErrorKind, PPToken, PPTokenKind, Preprocessor};
+use crate::source_manager::{SourceLoc, SourceSpan};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ExprValue {
@@ -39,7 +40,7 @@ pub(crate) enum PPExpr {
 }
 
 impl PPExpr {
-    pub(crate) fn evaluate(&self, pp: &Preprocessor) -> Result<ExprValue, PPError> {
+    pub(crate) fn evaluate(&self, pp: &Preprocessor, default_span: SourceSpan) -> Result<ExprValue, PPError> {
         match self {
             PPExpr::Number(n) => Ok(*n),
             PPExpr::Identifier(_s) => Ok(ExprValue::new(0, false)), // C11 6.10.1p4: All remaining identifiers are replaced with 0
@@ -48,7 +49,10 @@ impl PPExpr {
                     let defined = pp.is_macro_defined(&StringId::new(s));
                     Ok(ExprValue::from_bool(defined))
                 } else {
-                    Err(PPError::InvalidConditionalExpression)
+                    Err(PPError {
+                        kind: PPErrorKind::InvalidConditionalExpression,
+                        span: default_span,
+                    })
                 }
             }
             PPExpr::HasInclude(path, is_angled) => {
@@ -56,13 +60,13 @@ impl PPExpr {
                 Ok(ExprValue::from_bool(exists))
             }
             PPExpr::Binary(op, left, right) => {
-                let l = left.evaluate(pp)?;
+                let l = left.evaluate(pp, default_span)?;
                 match op {
                     BinaryOp::LogicAnd => {
                         if !l.is_truthy() {
                             Ok(ExprValue::from_bool(false))
                         } else {
-                            let r = right.evaluate(pp)?;
+                            let r = right.evaluate(pp, default_span)?;
                             Ok(ExprValue::from_bool(r.is_truthy()))
                         }
                     }
@@ -70,12 +74,12 @@ impl PPExpr {
                         if l.is_truthy() {
                             Ok(ExprValue::from_bool(true))
                         } else {
-                            let r = right.evaluate(pp)?;
+                            let r = right.evaluate(pp, default_span)?;
                             Ok(ExprValue::from_bool(r.is_truthy()))
                         }
                     }
                     _ => {
-                        let r = right.evaluate(pp)?;
+                        let r = right.evaluate(pp, default_span)?;
                         // Usual arithmetic conversions
                         let is_unsigned = l.is_unsigned || r.is_unsigned;
                         let l_val = l.value;
@@ -149,7 +153,10 @@ impl PPExpr {
                             BinaryOp::Mul => Ok(ExprValue::new(l_val.wrapping_mul(r_val), is_unsigned)),
                             BinaryOp::Div => {
                                 if r_val == 0 {
-                                    Err(PPError::InvalidConditionalExpression)
+                                    Err(PPError {
+                                        kind: PPErrorKind::InvalidConditionalExpression,
+                                        span: default_span,
+                                    })
                                 } else if is_unsigned {
                                     Ok(ExprValue::new(l_val / r_val, true))
                                 } else {
@@ -166,7 +173,10 @@ impl PPExpr {
                             }
                             BinaryOp::Mod => {
                                 if r_val == 0 {
-                                    Err(PPError::InvalidConditionalExpression)
+                                    Err(PPError {
+                                        kind: PPErrorKind::InvalidConditionalExpression,
+                                        span: default_span,
+                                    })
                                 } else if is_unsigned {
                                     Ok(ExprValue::new(l_val % r_val, true))
                                 } else {
@@ -185,7 +195,7 @@ impl PPExpr {
                 }
             }
             PPExpr::Unary(op, operand) => {
-                let o = operand.evaluate(pp)?;
+                let o = operand.evaluate(pp, default_span)?;
                 match op {
                     UnaryOp::Plus => Ok(o),
                     UnaryOp::Minus => {
@@ -198,9 +208,9 @@ impl PPExpr {
                 }
             }
             PPExpr::Conditional(cond, true_e, false_e) => {
-                let c = cond.evaluate(pp)?;
-                let t = true_e.evaluate(pp)?;
-                let f = false_e.evaluate(pp)?;
+                let c = cond.evaluate(pp, default_span)?;
+                let t = true_e.evaluate(pp, default_span)?;
+                let f = false_e.evaluate(pp, default_span)?;
 
                 if c.is_truthy() {
                     // Result type depends on both operands usual arithmetic conversions
@@ -249,9 +259,22 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    fn current_span(&self) -> SourceSpan {
+        if self.pos < self.tokens.len() {
+            let token = &self.tokens[self.pos];
+            SourceSpan::new(token.location, token.location)
+        } else if !self.tokens.is_empty() {
+            let token = &self.tokens[self.tokens.len() - 1];
+            SourceSpan::new(token.location, token.location)
+        } else {
+            // Fallback for empty tokens
+            SourceSpan::new(SourceLoc::builtin(), SourceLoc::builtin())
+        }
+    }
+
     pub(crate) fn evaluate(&mut self) -> Result<ExprValue, PPError> {
         let expr = self.parse_conditional()?;
-        expr.evaluate(self.preprocessor)
+        expr.evaluate(self.preprocessor, self.current_span())
     }
 
     fn parse_conditional(&mut self) -> Result<PPExpr, PPError> {
@@ -264,7 +287,10 @@ impl<'a> Interpreter<'a> {
                 let false_e = self.parse_conditional()?;
                 Ok(PPExpr::Conditional(Box::new(cond), Box::new(true_e), Box::new(false_e)))
             } else {
-                Err(PPError::InvalidConditionalExpression)
+                Err(PPError {
+                    kind: PPErrorKind::InvalidConditionalExpression,
+                    span: self.current_span(),
+                })
             }
         } else {
             Ok(cond)
@@ -429,7 +455,10 @@ impl<'a> Interpreter<'a> {
 
     fn parse_unary(&mut self) -> Result<PPExpr, PPError> {
         if self.pos >= self.tokens.len() {
-            return Err(PPError::InvalidConditionalExpression);
+            return Err(PPError {
+                kind: PPErrorKind::InvalidConditionalExpression,
+                span: self.current_span(),
+            });
         }
         let token = &self.tokens[self.pos];
         if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.defined_symbol()) {
@@ -442,7 +471,10 @@ impl<'a> Interpreter<'a> {
                     self.pos += 1;
                     ident
                 } else {
-                    return Err(PPError::InvalidConditionalExpression);
+                    return Err(PPError {
+                        kind: PPErrorKind::InvalidConditionalExpression,
+                        span: self.current_span(),
+                    });
                 }
             } else {
                 self.parse_primary()?
@@ -453,13 +485,19 @@ impl<'a> Interpreter<'a> {
 
             // Expect LeftParen
             if self.pos >= self.tokens.len() || self.tokens[self.pos].kind != PPTokenKind::LeftParen {
-                return Err(PPError::InvalidConditionalExpression);
+                return Err(PPError {
+                    kind: PPErrorKind::InvalidConditionalExpression,
+                    span: self.current_span(),
+                });
             }
             self.pos += 1;
 
             // Parse argument
             if self.pos >= self.tokens.len() {
-                return Err(PPError::InvalidConditionalExpression);
+                return Err(PPError {
+                    kind: PPErrorKind::InvalidConditionalExpression,
+                    span: self.current_span(),
+                });
             }
 
             let (path, is_angled) = match &self.tokens[self.pos].kind {
@@ -469,7 +507,10 @@ impl<'a> Interpreter<'a> {
                         self.pos += 1;
                         (full_str[1..full_str.len() - 1].to_string(), false)
                     } else {
-                        return Err(PPError::InvalidConditionalExpression);
+                        return Err(PPError {
+                            kind: PPErrorKind::InvalidConditionalExpression,
+                            span: self.current_span(),
+                        });
                     }
                 }
                 PPTokenKind::Less => {
@@ -478,7 +519,10 @@ impl<'a> Interpreter<'a> {
                     let mut path_str = String::new();
                     loop {
                         if self.pos >= self.tokens.len() {
-                            return Err(PPError::InvalidConditionalExpression);
+                            return Err(PPError {
+                                kind: PPErrorKind::InvalidConditionalExpression,
+                                span: self.current_span(),
+                            });
                         }
                         let token = &self.tokens[self.pos];
                         if token.kind == PPTokenKind::Greater {
@@ -490,12 +534,20 @@ impl<'a> Interpreter<'a> {
                     }
                     (path_str, true)
                 }
-                _ => return Err(PPError::InvalidConditionalExpression),
+                _ => {
+                    return Err(PPError {
+                        kind: PPErrorKind::InvalidConditionalExpression,
+                        span: self.current_span(),
+                    });
+                }
             };
 
             // Expect RightParen
             if self.pos >= self.tokens.len() || self.tokens[self.pos].kind != PPTokenKind::RightParen {
-                return Err(PPError::InvalidConditionalExpression);
+                return Err(PPError {
+                    kind: PPErrorKind::InvalidConditionalExpression,
+                    span: self.current_span(),
+                });
             }
             self.pos += 1;
 
@@ -521,7 +573,10 @@ impl<'a> Interpreter<'a> {
 
     fn parse_primary(&mut self) -> Result<PPExpr, PPError> {
         if self.pos >= self.tokens.len() {
-            return Err(PPError::InvalidConditionalExpression);
+            return Err(PPError {
+                kind: PPErrorKind::InvalidConditionalExpression,
+                span: self.current_span(),
+            });
         }
         let token = &self.tokens[self.pos];
         self.pos += 1;
@@ -547,7 +602,10 @@ impl<'a> Interpreter<'a> {
 
                     Ok(PPExpr::Number(ExprValue::new(val, is_unsigned)))
                 } else {
-                    Err(PPError::InvalidConditionalExpression)
+                    Err(PPError {
+                        kind: PPErrorKind::InvalidConditionalExpression,
+                        span: self.current_span(),
+                    })
                 }
             }
             PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(ExprValue::new(*codepoint, false))),
@@ -561,10 +619,16 @@ impl<'a> Interpreter<'a> {
                     self.pos += 1;
                     Ok(result)
                 } else {
-                    Err(PPError::InvalidConditionalExpression)
+                    Err(PPError {
+                        kind: PPErrorKind::InvalidConditionalExpression,
+                        span: self.current_span(),
+                    })
                 }
             }
-            _ => Err(PPError::InvalidConditionalExpression),
+            _ => Err(PPError {
+                kind: PPErrorKind::InvalidConditionalExpression,
+                span: self.current_span(),
+            }),
         }
     }
 }

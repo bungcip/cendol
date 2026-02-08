@@ -383,6 +383,13 @@ impl SourceManager {
         &self.buffers[info.buffer_index][..]
     }
 
+    /// Get the buffer for a given source ID, returning None if not found
+    pub(crate) fn get_buffer_safe(&self, source_id: SourceId) -> Option<&[u8]> {
+        self.file_infos
+            .get(&source_id)
+            .map(|info| &self.buffers[info.buffer_index][..])
+    }
+
     /// Get the buffer as an Arc for a given source ID.
     /// This allows shared ownership without cloning the entire buffer.
     pub(crate) fn get_buffer_arc(&self, source_id: SourceId) -> Arc<[u8]> {

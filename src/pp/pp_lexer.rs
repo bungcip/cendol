@@ -98,11 +98,6 @@ impl PPToken {
         }
     }
 
-    /// Create a simple PPToken with empty flags and length 1 (most common case)
-    pub(crate) fn simple(kind: PPTokenKind, location: SourceLoc) -> Self {
-        PPToken::new(kind, PPTokenFlags::empty(), location, 1)
-    }
-
     /// Create a PPToken with text-based length
     pub(crate) fn text(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc, text: &str) -> Self {
         PPToken::new(kind, flags, location, text.len() as u16)

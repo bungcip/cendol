@@ -9,7 +9,7 @@ fn test_error_directive_produces_failure() {
 #endif
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: ErrorDirective(\"\\\"this should be reported\\\"\")""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ErrorDirective(\"\\\"this should be reported\\\"\"), span: SourceSpan(2199023255571) }""#);
 }
 
 #[test]
@@ -35,7 +35,7 @@ fn test_invalid_line_directive() {
 OK
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: InvalidLineDirective""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: InvalidLineDirective, span: SourceSpan(2199023255559) }""#);
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn test_line_directive_zero_line_number() {
 OK
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: InvalidLineDirective""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: InvalidLineDirective, span: SourceSpan(2199023255559) }""#);
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn test_line_directive_malformed_filename() {
 OK
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: InvalidLineDirective""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: InvalidLineDirective, span: SourceSpan(2199023255563) }""#);
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn test_unknown_pragma_throws_error() {
 #pragma unknown_pragma
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: UnknownPragma(\"unknown_pragma\")""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: UnknownPragma(\"unknown_pragma\"), span: SourceSpan(2199023255561) }""#);
 }
 
 #[test]

@@ -586,6 +586,41 @@ impl<'a> AstToMirLowerer<'a> {
         Operand::Copy(Box::new(res_place))
     }
 
+    fn unwrap_cast_if_int(&mut self, op: Operand) -> Operand {
+        match op {
+            Operand::Cast(ty, inner) => {
+                let inner_ty = self.get_operand_type(&inner);
+                if self.mir_builder.get_type(inner_ty).is_int() {
+                    return *inner;
+                }
+
+                let unwrapped = self.unwrap_cast_if_int(*inner.clone());
+                let unwrapped_ty = self.get_operand_type(&unwrapped);
+                if self.mir_builder.get_type(unwrapped_ty).is_int() {
+                    return unwrapped;
+                }
+
+                Operand::Cast(ty, inner)
+            }
+            Operand::Constant(const_id) => {
+                let val_opt = {
+                    let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
+                    if let ConstValueKind::Int(val) = const_val.kind {
+                        Some(val)
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(val) = val_opt {
+                    return self.create_int_operand(val);
+                }
+                Operand::Constant(const_id)
+            }
+            _ => op,
+        }
+    }
+
     pub(crate) fn lower_pointer_arithmetic(
         &mut self,
         op: &BinaryOp,
@@ -594,31 +629,66 @@ impl<'a> AstToMirLowerer<'a> {
         left_ref: NodeRef,
         right_ref: NodeRef,
     ) -> Option<Rvalue> {
-        let lhs_type = self.ast.get_resolved_type(left_ref).unwrap();
-        let rhs_type = self.ast.get_resolved_type(right_ref).unwrap();
+        // Lower types and apply conversions locally to check for pointer arithmetic
+        // We use the operand's own type as the target for conversion to avoid forcing
+        // implicit casts to the result type (which causes issues for Ptr + Int -> Ptr)
+        let lhs_ty = self.ast.get_resolved_type(left_ref).unwrap();
+        let rhs_ty = self.ast.get_resolved_type(right_ref).unwrap();
+
+        let lhs_mir_target = self.lower_qual_type(lhs_ty);
+        let rhs_mir_target = self.lower_qual_type(rhs_ty);
+
+        let lhs_converted = self.apply_conversions(lhs, left_ref, lhs_mir_target);
+        let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_target);
+
+        let lhs_mir_ty = self.get_operand_type(&lhs_converted);
+        let rhs_mir_ty = self.get_operand_type(&rhs_converted);
+
+        let lhs_type_info = self.mir_builder.get_type(lhs_mir_ty);
+        let rhs_type_info = self.mir_builder.get_type(rhs_mir_ty);
 
         match op {
             BinaryOp::Add => {
-                if lhs_type.is_pointer() {
-                    let rhs_mir_ty = self.lower_qual_type(rhs_type);
-                    let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
-                    Some(self.create_pointer_arithmetic_rvalue(lhs, rhs_converted, BinaryOp::Add))
-                } else if rhs_type.is_pointer() {
-                    let lhs_mir_ty = self.lower_qual_type(lhs_type);
-                    let lhs_converted = self.apply_conversions(lhs, left_ref, lhs_mir_ty);
-                    Some(self.create_pointer_arithmetic_rvalue(rhs, lhs_converted, BinaryOp::Add))
+                if lhs_type_info.is_pointer() && rhs_type_info.is_int() {
+                    Some(self.create_pointer_arithmetic_rvalue(lhs_converted, rhs_converted, BinaryOp::Add))
+                } else if rhs_type_info.is_pointer() && lhs_type_info.is_int() {
+                    Some(self.create_pointer_arithmetic_rvalue(rhs_converted, lhs_converted, BinaryOp::Add))
+                } else if lhs_type_info.is_pointer() && rhs_type_info.is_pointer() {
+                    // Try unwrapping implicit casts (Analyzer might have casted Int to Ptr)
+                    let lhs_unwrapped = self.unwrap_cast_if_int(lhs_converted.clone());
+                    let rhs_unwrapped = self.unwrap_cast_if_int(rhs_converted.clone());
+
+                    let lhs_u_ty = self.get_operand_type(&lhs_unwrapped);
+                    let rhs_u_ty = self.get_operand_type(&rhs_unwrapped);
+
+                    if self.mir_builder.get_type(lhs_u_ty).is_pointer() && self.mir_builder.get_type(rhs_u_ty).is_int()
+                    {
+                        Some(self.create_pointer_arithmetic_rvalue(lhs_unwrapped, rhs_unwrapped, BinaryOp::Add))
+                    } else if self.mir_builder.get_type(rhs_u_ty).is_pointer()
+                        && self.mir_builder.get_type(lhs_u_ty).is_int()
+                    {
+                        Some(self.create_pointer_arithmetic_rvalue(rhs_unwrapped, lhs_unwrapped, BinaryOp::Add))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
             }
             BinaryOp::Sub => {
-                if lhs_type.is_pointer() {
-                    if rhs_type.is_pointer() {
-                        Some(Rvalue::PtrDiff(lhs, rhs))
-                    } else if rhs_type.is_integer() {
-                        let rhs_mir_ty = self.lower_qual_type(rhs_type);
-                        let rhs_converted = self.apply_conversions(rhs, right_ref, rhs_mir_ty);
-                        Some(self.create_pointer_arithmetic_rvalue(lhs, rhs_converted, BinaryOp::Sub))
+                if lhs_type_info.is_pointer() {
+                    if rhs_type_info.is_pointer() {
+                        // Check if rhs is casted from int (Analyzer might have casted Int to Ptr)
+                        let rhs_unwrapped = self.unwrap_cast_if_int(rhs_converted.clone());
+                        let rhs_u_ty_id = self.get_operand_type(&rhs_unwrapped);
+
+                        if self.mir_builder.get_type(rhs_u_ty_id).is_int() {
+                            Some(self.create_pointer_arithmetic_rvalue(lhs_converted, rhs_unwrapped, BinaryOp::Sub))
+                        } else {
+                            Some(Rvalue::PtrDiff(lhs_converted, rhs_converted))
+                        }
+                    } else if rhs_type_info.is_int() {
+                        Some(self.create_pointer_arithmetic_rvalue(lhs_converted, rhs_converted, BinaryOp::Sub))
                     } else {
                         None
                     }

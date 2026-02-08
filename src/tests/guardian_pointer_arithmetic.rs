@@ -33,7 +33,11 @@ int main() {
 }
 "#;
     let output = run_c_code_with_output(source);
-    assert!(output.contains("PASSED: Pointer arithmetic is correct."), "Output was: {}", output);
+    assert!(
+        output.contains("PASSED: Pointer arithmetic is correct."),
+        "Output was: {}",
+        output
+    );
 }
 
 #[test]
@@ -60,5 +64,9 @@ int main() {
 }
 "#;
     let output = run_c_code_with_output(source);
-    assert!(output.contains("PASSED: Pointer sub assign is correct."), "Output was: {}", output);
+    assert!(
+        output.contains("PASSED: Pointer sub assign is correct."),
+        "Output was: {}",
+        output
+    );
 }

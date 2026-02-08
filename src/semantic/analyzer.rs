@@ -271,10 +271,8 @@ impl<'a> SemanticAnalyzer<'a> {
                             return member.bit_field_size.is_some();
                         }
                         for member in members {
-                            if member.name.is_none() {
-                                if find_bitfield(registry, member.member_type.ty(), name) {
-                                    return true;
-                                }
+                            if member.name.is_none() && find_bitfield(registry, member.member_type.ty(), name) {
+                                return true;
                             }
                         }
                     }

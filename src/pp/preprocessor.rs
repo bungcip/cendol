@@ -311,9 +311,7 @@ impl std::error::Error for PPError {
 
 impl From<PPError> for Diagnostic {
     fn from(val: PPError) -> Self {
-        let level = match &val.kind {
-            _ => DiagnosticLevel::Error,
-        };
+        let level = DiagnosticLevel::Error;
 
         Diagnostic {
             level,
@@ -691,7 +689,7 @@ impl<'src> Preprocessor<'src> {
     /// Collect tokens balanced between open and close delimiters.
     /// Assumes the opening delimiter has NOT been consumed yet and will consume it.
     fn collect_balanced_tokens(&mut self, open: PPTokenKind, close: PPTokenKind) -> Result<Vec<PPToken>, PPError> {
-        self.expect_kind(open.clone())?;
+        self.expect_kind(open)?;
         let mut tokens = Vec::new();
         let mut depth = 1;
         while let Some(t) = self.lex_token() {
@@ -2183,25 +2181,24 @@ impl<'src> Preprocessor<'src> {
             };
             return Ok(Some(end.min(tokens.len())));
         }
-
         if sym == self.directive_keywords.has_include {
             let next = i + 1;
             if let Some(PPTokenKind::LeftParen) = tokens.get(next).map(|t| &t.kind) {
                 let arg_start = next + 1;
-                if let Some(arg_t) = tokens.get(arg_start) {
-                    if let Some(arg_end) = self.find_balanced_paren_range(tokens, next) {
-                        match arg_t.kind {
-                            PPTokenKind::Less | PPTokenKind::StringLiteral(_) => {
-                                return Ok(Some(arg_end));
-                            }
-                            _ => {
-                                // Computed form: __has_include(MACRO)
-                                let mut args = tokens[arg_start..arg_end - 1].to_vec();
-                                self.expand_has_include_computed_args(&mut args);
-                                let len = args.len();
-                                tokens.splice(arg_start..arg_end - 1, args);
-                                return Ok(Some(arg_start + len + 1));
-                            }
+                if let Some(arg_t) = tokens.get(arg_start)
+                    && let Some(arg_end) = self.find_balanced_paren_range(tokens, next)
+                {
+                    match arg_t.kind {
+                        PPTokenKind::Less | PPTokenKind::StringLiteral(_) => {
+                            return Ok(Some(arg_end));
+                        }
+                        _ => {
+                            // Computed form: __has_include(MACRO)
+                            let mut args = tokens[arg_start..arg_end - 1].to_vec();
+                            self.expand_has_include_computed_args(&mut args);
+                            let len = args.len();
+                            tokens.splice(arg_start..arg_end - 1, args);
+                            return Ok(Some(arg_start + len + 1));
                         }
                     }
                 }
@@ -2622,16 +2619,14 @@ impl<'a> SourceBufferCache<'a> {
         let sid = token.location.source_id();
         let buffer = if self.last_sid == Some(sid) {
             self.last_buffer.unwrap()
+        } else if let Some(b) = self.sm.get_buffer_safe(sid) {
+            // Bolt ⚡: Cache the buffer for the current source ID.
+            self.last_sid = Some(sid);
+            self.last_buffer = Some(b);
+            b
         } else {
-            if let Some(b) = self.sm.get_buffer_safe(sid) {
-                // Bolt ⚡: Cache the buffer for the current source ID.
-                self.last_sid = Some(sid);
-                self.last_buffer = Some(b);
-                b
-            } else {
-                // Fallback for built-in tokens or tokens without a physical buffer.
-                return token.get_text().as_bytes();
-            }
+            // Fallback for built-in tokens or tokens without a physical buffer.
+            return token.get_text().as_bytes();
         };
 
         let start = token.location.offset() as usize;

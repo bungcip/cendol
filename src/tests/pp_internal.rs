@@ -70,6 +70,77 @@ fn test_header_search_resolution() {
 }
 
 #[test]
+fn test_header_search_include_next() {
+    use std::fs::File;
+
+    // Create temporary directories for search paths
+    let temp_dir = tempfile::tempdir().unwrap();
+    let include_a = temp_dir.path().join("a");
+    let include_b = temp_dir.path().join("b");
+    let include_c = temp_dir.path().join("c");
+
+    std::fs::create_dir(&include_a).unwrap();
+    std::fs::create_dir(&include_b).unwrap();
+    std::fs::create_dir(&include_c).unwrap();
+
+    // Create same-named header in all directories
+    File::create(include_a.join("foo.h")).unwrap();
+    File::create(include_b.join("foo.h")).unwrap();
+    File::create(include_c.join("foo.h")).unwrap();
+
+    let mut search = HeaderSearch {
+        system_path: Vec::new(),
+        framework_path: Vec::new(),
+        quoted_includes: Vec::new(),
+        angled_includes: Vec::new(),
+    };
+
+    // Add paths in order: A, B, C
+    search.add_angled_path(include_a.clone());
+    search.add_angled_path(include_b.clone());
+    search.add_angled_path(include_c.clone());
+
+    // Case 1: Current file is in A. #include_next <foo.h> should find B/foo.h
+    // resolve_next_path(filename, is_angled, current_dir)
+    let current_dir_a = &include_a;
+    let resolved = search.resolve_next_path("foo.h", true, current_dir_a);
+    assert_eq!(resolved.unwrap(), include_b.join("foo.h"));
+
+    // Case 2: Current file is in B. #include_next <foo.h> should find C/foo.h
+    let current_dir_b = &include_b;
+    let resolved = search.resolve_next_path("foo.h", true, current_dir_b);
+    assert_eq!(resolved.unwrap(), include_c.join("foo.h"));
+
+    // Case 3: Current file is in C. #include_next <foo.h> should find nothing
+    let current_dir_c = &include_c;
+    let resolved = search.resolve_next_path("foo.h", true, current_dir_c);
+    assert!(resolved.is_none());
+
+    // Case 4: Test with quoted includes and mixed paths
+    // Clear paths and reconfigure
+    let mut search = HeaderSearch {
+        system_path: Vec::new(),
+        framework_path: Vec::new(),
+        quoted_includes: Vec::new(),
+        angled_includes: Vec::new(),
+    };
+
+    search.add_quoted_path(include_a.clone());
+    search.add_angled_path(include_b.clone());
+    search.add_system_path(include_c.clone());
+
+    // Start in A (quoted path), looking for quoted include "foo.h"
+    // Should find B/foo.h (angled path)
+    let resolved = search.resolve_next_path("foo.h", false, current_dir_a);
+    assert_eq!(resolved.unwrap(), include_b.join("foo.h"));
+
+    // Start in B (angled path), looking for quoted include "foo.h"
+    // Should find C/foo.h (system path)
+    let resolved = search.resolve_next_path("foo.h", false, current_dir_b);
+    assert_eq!(resolved.unwrap(), include_c.join("foo.h"));
+}
+
+#[test]
 fn test_destringize() {
     let (mut sm, mut diag) = setup_sm_and_diag();
     let pp = create_dummy_preprocessor(&mut sm, &mut diag);

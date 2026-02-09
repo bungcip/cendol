@@ -301,10 +301,10 @@ fn test_dump_parser_ast_with_functions() {
     insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=2..3) (parser kind)
     2: Function(name=add, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=5..6, body=7)
-    3: Function(name=main, symbol=5, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=13)
+    3: Function(name=main, symbol=6, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=13)
     4: LiteralString(add)
-    5: Param(symbol=3, ty=QualType(8))
-    6: Param(symbol=4, ty=QualType(8))
+    5: Param(symbol=4, ty=QualType(8))
+    6: Param(symbol=5, ty=QualType(8))
     7: CompoundStatement(stmts=8..8)
     8: Return(9)
     9: BinaryOp(Add, 10, 11)

@@ -21,11 +21,11 @@ pub struct ParsedAst {
 }
 
 impl ParsedAst {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         ParsedAst::default()
     }
 
-    pub fn push_node(&mut self, node: ParsedNode) -> ParsedNodeRef {
+    pub(crate) fn push_node(&mut self, node: ParsedNode) -> ParsedNodeRef {
         let index = self.nodes.len() as u32 + 1;
         self.nodes.push(node);
         ParsedNodeRef::new(index).expect("ParsedNodeRef overflow")
@@ -35,7 +35,7 @@ impl ParsedAst {
         &self.nodes[(index.get() - 1) as usize]
     }
 
-    pub fn replace_node(&mut self, old_node_ref: ParsedNodeRef, new_node: ParsedNode) -> ParsedNodeRef {
+    pub(crate) fn replace_node(&mut self, old_node_ref: ParsedNodeRef, new_node: ParsedNode) -> ParsedNodeRef {
         let old_index = (old_node_ref.get() - 1) as usize;
         self.nodes[old_index] = new_node;
         old_node_ref
@@ -53,7 +53,7 @@ pub struct ParsedNode {
 }
 
 impl ParsedNode {
-    pub fn new(kind: ParsedNodeKind, span: SourceSpan) -> Self {
+    pub(crate) fn new(kind: ParsedNodeKind, span: SourceSpan) -> Self {
         ParsedNode { kind, span }
     }
 }

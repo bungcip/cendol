@@ -16,7 +16,7 @@ pub struct ParsedStringLiteral {
     pub size: usize,
 }
 
-pub fn parse_string_literal(name: NameId) -> ParsedStringLiteral {
+pub(crate) fn parse_string_literal(name: NameId) -> ParsedStringLiteral {
     let raw = name.as_str();
 
     let (stripped, builtin_type, kind) = if let Some(s) = raw.strip_prefix("L\"") {

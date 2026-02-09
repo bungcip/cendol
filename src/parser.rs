@@ -90,7 +90,7 @@ pub struct Parser<'arena, 'src> {
 
 impl<'arena, 'src> Parser<'arena, 'src> {
     /// Create a new parser
-    pub fn new(tokens: &'src [Token], ast: &'arena mut ParsedAst, diag: &'src mut DiagnosticEngine) -> Self {
+    pub(crate) fn new(tokens: &'src [Token], ast: &'arena mut ParsedAst, diag: &'src mut DiagnosticEngine) -> Self {
         Parser {
             tokens,
             current_idx: 0,
@@ -290,7 +290,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse translation unit (top level)
-    pub fn parse_translation_unit(&mut self) -> Result<ParsedNodeRef, ParseError> {
+    pub(crate) fn parse_translation_unit(&mut self) -> Result<ParsedNodeRef, ParseError> {
         declarations::parse_translation_unit(self)
     }
 

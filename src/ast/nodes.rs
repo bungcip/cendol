@@ -6,7 +6,6 @@
 
 use serde::Serialize;
 
-use crate::semantic::TypeQualifiers;
 use crate::{
     ast::{NameId, NodeRef, SymbolRef, TypeRef},
     semantic::{QualType, ScopeId},
@@ -541,23 +540,6 @@ impl BinaryOp {
             _ => None,
         }
     }
-}
-// Array sizes
-#[derive(Debug, Clone, Copy, Serialize)]
-pub enum ArraySize {
-    Expression {
-        expr: NodeRef,
-        qualifiers: TypeQualifiers,
-    },
-    Star {
-        qualifiers: TypeQualifiers,
-    }, // [*] VLA
-    Incomplete, // []
-    VlaSpecifier {
-        is_static: bool,
-        qualifiers: TypeQualifiers,
-        size: Option<NodeRef>,
-    }, // for VLA
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]

@@ -272,3 +272,13 @@ fn test_logical_short_circuit_and() {
     ---
     ");
 }
+
+#[test]
+fn test_div_by_zero() {
+    let output = format_const_eval_batch(&["1 / 0"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: 1 / 0
+    Result: None
+    ---
+    ");
+}

@@ -2604,11 +2604,7 @@ impl ClifGen {
         }
 
         // Finalize and return the compiled code
-        let product = self.module.finish();
-        let code = product
-            .object
-            .write()
-            .map_err(|e| format!("Failed to write object file: {:?}", e))?;
+        let code = crate::codegen::ObjectGen::finalize(self.module)?;
 
         if emit_kind == EmitKind::Object {
             Ok(ClifOutput::ObjectFile(code))

@@ -85,8 +85,8 @@ pub(crate) fn visit_ast(
         deferred_checks: Vec::new(),
         loop_depth: 0,
         switch_depth: 0,
-        switch_cases: Vec::new(),
-        switch_default_seen: Vec::new(),
+        switch_cases: SmallVec::new(),
+        switch_default_seen: SmallVec::new(),
         checked_types: HashSet::new(),
     };
     let root = ast.get_root();
@@ -111,8 +111,9 @@ struct SemanticAnalyzer<'a> {
     deferred_checks: Vec<DeferredCheck>,
     loop_depth: usize,
     switch_depth: usize,
-    switch_cases: Vec<HashSet<i64>>,
-    switch_default_seen: Vec<bool>,
+    // Bolt ⚡: Use SmallVec for switch state to avoid heap allocations for nested switches.
+    switch_cases: SmallVec<[HashSet<i64>; 4]>,
+    switch_default_seen: SmallVec<[bool; 4]>,
     checked_types: HashSet<TypeRef>,
 }
 
@@ -1735,13 +1736,25 @@ impl<'a> SemanticAnalyzer<'a> {
         args_len: u16,
         span: SourceSpan,
     ) -> Option<QualType> {
-        let args: Vec<NodeRef> = args_start.range(args_len).collect();
-        let arg_tys_opts: Vec<Option<QualType>> = args.iter().map(|&arg| self.visit_node(arg)).collect();
+        // Bolt ⚡: Optimized argument processing by using SmallVec and a single pass.
+        // This avoids three Vec allocations and multiple iterations over the arguments.
+        // Atomic operations have at most 6 arguments (CompareExchangeN).
+        let mut args = SmallVec::<[NodeRef; 6]>::new();
+        let mut arg_tys = SmallVec::<[QualType; 6]>::new();
+        let mut has_error = false;
 
-        if arg_tys_opts.iter().any(|ty| ty.is_none()) {
+        for arg_ref in args_start.range(args_len) {
+            args.push(arg_ref);
+            if let Some(ty) = self.visit_node(arg_ref) {
+                arg_tys.push(ty);
+            } else {
+                has_error = true;
+            }
+        }
+
+        if has_error {
             return None;
         }
-        let arg_tys: Vec<QualType> = arg_tys_opts.into_iter().map(|ty| ty.unwrap()).collect();
 
         let expected_args = match op {
             AtomicOp::LoadN => 2,
@@ -1965,7 +1978,13 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn process_deferred_checks(&mut self) {
-        for check in self.deferred_checks.drain(..).collect::<Vec<_>>() {
+        if self.deferred_checks.is_empty() {
+            return;
+        }
+
+        // Bolt ⚡: Use std::mem::take and iterate to avoid heap allocation and copy from collect()
+        let checks = std::mem::take(&mut self.deferred_checks);
+        for check in checks {
             match check {
                 DeferredCheck::StaticAssert(node_ref) => self.visit_static_assert(node_ref),
             }
@@ -2030,7 +2049,8 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut selected_expr_ref = None;
         let mut default_expr_ref = None;
         let mut default_first_span = None;
-        let mut seen_types: Vec<(QualType, SourceSpan)> = Vec::new();
+        // Bolt ⚡: Use SmallVec to avoid heap allocation for small generic selection lists.
+        let mut seen_types: SmallVec<[(QualType, SourceSpan); 8]> = SmallVec::new();
 
         for assoc_node_ref in gs.assoc_start.range(gs.assoc_len) {
             let NodeKind::GenericAssociation(ga) = *self.ast.get_kind(assoc_node_ref) else {

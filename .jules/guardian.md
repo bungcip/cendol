@@ -34,3 +34,8 @@ Action: Implement and enforce alignment constraints during the semantic lowering
 
 Learning: C11 (6.7.2.4 and 6.7.3) enforces strict constraints on _Atomic. The qualifier is prohibited on array and function types. The _Atomic(type-name) specifier is even stricter: it also prohibits already atomic types and qualified types, and it requires the type-name to designate an object type. Redundant _Atomic qualifiers in a specifier-qualifier list are allowed and collapsed, but nested _Atomic specifiers are specifically prohibited by the specifier's constraints.
 Action: Enforce _Atomic constraints during semantic lowering in both qualifier merging and type-name resolution. Ensure that _Atomic(type-name) correctly results in an atomic-qualified version of the inner type.
+
+2025-05-20 - [Restrict Qualifier Constraints]
+
+Learning: C11 `restrict` constraints (6.7.3p2) require that it shall be a pointer type AND the pointed-to type shall be an object type or incomplete type. A function type is NOT an object type or an incomplete type. Therefore, `void (* restrict f)(void);` is invalid and must be rejected during semantic analysis.
+Action: Enforce pointed-to type constraints for the `restrict` qualifier in `merge_qualifiers_with_check` by ensuring the target type is not a function type.

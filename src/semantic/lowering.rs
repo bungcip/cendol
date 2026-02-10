@@ -220,8 +220,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         add: TypeQualifiers,
         span: SourceSpan,
     ) -> QualType {
-        if add.contains(TypeQualifiers::RESTRICT) && !base.is_pointer() {
-            self.report_error(SemanticError::InvalidRestrict { span });
+        if add.contains(TypeQualifiers::RESTRICT) {
+            let is_valid = if let TypeKind::Pointer { pointee } = &self.registry.get(base.ty()).kind {
+                !pointee.is_function()
+            } else {
+                false
+            };
+
+            if !is_valid {
+                self.report_error(SemanticError::InvalidRestrict { span });
+            }
         }
         if add.contains(TypeQualifiers::ATOMIC) {
             if base.is_array() {

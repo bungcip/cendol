@@ -374,6 +374,8 @@ pub enum SemanticError {
 
     #[error("restrict requires a pointer type")]
     InvalidRestrict { span: SourceSpan },
+    #[error("invalid storage class for function parameter")]
+    InvalidStorageClassForParameter { span: SourceSpan },
     #[error("function '{name}' declared '_Noreturn' contains a return statement")]
     NoreturnFunctionHasReturn { name: String, span: SourceSpan },
     #[error("function '{name}' declared '_Noreturn' can fall off the end")]
@@ -412,6 +414,7 @@ impl SemanticError {
             SemanticError::VariableOfVoidType { span } => *span,
             SemanticError::CalledNonFunctionType { span, .. } => *span,
             SemanticError::InvalidRestrict { span } => *span,
+            SemanticError::InvalidStorageClassForParameter { span } => *span,
             SemanticError::UndeclaredIdentifier { span, .. } => *span,
             SemanticError::Redefinition { span, .. } => *span,
             SemanticError::RedefinitionWithDifferentType { span, .. } => *span,

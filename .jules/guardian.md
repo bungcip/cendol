@@ -39,3 +39,8 @@ Action: Enforce _Atomic constraints during semantic lowering in both qualifier m
 
 Learning: C11 `restrict` constraints (6.7.3p2) require that it shall be a pointer type AND the pointed-to type shall be an object type or incomplete type. A function type is NOT an object type or an incomplete type. Therefore, `void (* restrict f)(void);` is invalid and must be rejected during semantic analysis.
 Action: Enforce pointed-to type constraints for the `restrict` qualifier in `merge_qualifiers_with_check` by ensuring the target type is not a function type.
+
+2025-05-21 - [Function Parameter Storage Class Constraints]
+
+Learning: C11 (6.7.6.3p2) restricts the storage-class specifiers in a function parameter declaration to ONLY `register`. Specifiers like `static`, `extern`, `auto`, `typedef`, or `_Thread_local` are illegal. Furthermore, while `register` is allowed, its semantics must be correctly propagated to the function's scope to ensure that operations like taking the address of the parameter are properly rejected.
+Action: Enforce parameter storage class constraints during semantic lowering and ensure the storage class is preserved in the symbol table for subsequent semantic analysis (e.g., lvalue address-of checks).

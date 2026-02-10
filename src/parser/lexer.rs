@@ -80,6 +80,7 @@ pub enum TokenKind {
     BuiltinVaEnd,
     BuiltinVaCopy,
     BuiltinExpect,
+    BuiltinOffsetof,
     Asm,
 
     // Atomic builtins
@@ -398,6 +399,7 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__builtin_va_end"), TokenKind::BuiltinVaEnd);
         m.insert(StringId::new("__builtin_va_copy"), TokenKind::BuiltinVaCopy);
         m.insert(StringId::new("__builtin_expect"), TokenKind::BuiltinExpect);
+        m.insert(StringId::new("__builtin_offsetof"), TokenKind::BuiltinOffsetof);
         m.insert(StringId::new("__atomic_load_n"), TokenKind::BuiltinAtomicLoadN);
         m.insert(StringId::new("__atomic_store_n"), TokenKind::BuiltinAtomicStoreN);
         m.insert(StringId::new("__atomic_exchange_n"), TokenKind::BuiltinAtomicExchangeN);

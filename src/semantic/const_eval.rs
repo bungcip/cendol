@@ -5,7 +5,7 @@
 //! static assertions and array sizes.
 
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, UnaryOp, literal};
-use crate::semantic::{SemanticInfo, SymbolKind, SymbolTable, TypeRegistry};
+use crate::semantic::{QualType, SemanticInfo, SymbolKind, SymbolTable, TypeRegistry};
 
 /// Context for constant expression evaluation
 pub(crate) struct ConstEvalCtx<'a> {
@@ -122,6 +122,73 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
             }
         }
         NodeKind::Cast(_, expr) => eval_const_expr(ctx, *expr),
+        NodeKind::BuiltinOffsetof(ty, expr) => eval_offsetof(ctx, *ty, *expr),
         _ => None,
+    }
+}
+
+pub(crate) fn eval_offsetof(ctx: &ConstEvalCtx, ty: QualType, expr_ref: NodeRef) -> Option<i64> {
+    let mut current_ty = ty;
+    let mut offset = 0i64;
+
+    fn walk(ctx: &ConstEvalCtx, node_ref: NodeRef, current_ty: &mut QualType, offset: &mut i64) -> bool {
+        match *ctx.ast.get_kind(node_ref) {
+            NodeKind::Dummy => true,
+            NodeKind::MemberAccess(base, member_name, is_arrow) => {
+                if !walk(ctx, base, current_ty, offset) {
+                    return false;
+                }
+
+                let record_ty = if is_arrow {
+                    ctx.registry.get_pointee(current_ty.ty()).map(|qt| qt.ty())
+                } else {
+                    Some(current_ty.ty())
+                };
+
+                let Some(record_ty) = record_ty else {
+                    return false;
+                };
+                if !record_ty.is_record() {
+                    return false;
+                }
+
+                let mut flat_members = Vec::new();
+                let mut flat_offsets = Vec::new();
+                let ty_obj = ctx.registry.get(record_ty);
+                ty_obj.flatten_members_with_layouts(ctx.registry, &mut flat_members, &mut flat_offsets, 0);
+
+                if let Some(idx) = flat_members.iter().position(|m| m.name == Some(member_name)) {
+                    *offset += flat_offsets[idx] as i64;
+                    *current_ty = flat_members[idx].member_type;
+                    true
+                } else {
+                    false
+                }
+            }
+            NodeKind::IndexAccess(base, index) => {
+                if !walk(ctx, base, current_ty, offset) {
+                    return false;
+                }
+
+                let Some(elem_ty) = ctx.registry.get_array_element(current_ty.ty()) else {
+                    return false;
+                };
+                let Some(index_val) = eval_const_expr(ctx, index) else {
+                    return false;
+                };
+
+                let layout = ctx.registry.get_layout(elem_ty);
+                *offset += index_val * (layout.size as i64);
+                *current_ty = QualType::unqualified(elem_ty);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    if walk(ctx, expr_ref, &mut current_ty, &mut offset) {
+        Some(offset)
+    } else {
+        None
     }
 }

@@ -83,6 +83,10 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::SizeOfType(ty) => self.emit_type_query(ty.ty(), true),
             NodeKind::AlignOf(ty) => self.emit_type_query(ty.ty(), false),
+            NodeKind::BuiltinOffsetof(..) => {
+                let val = eval_const_expr(&self.const_ctx(), expr_ref).expect("offsetof should be constant");
+                self.create_int_operand(val)
+            }
             NodeKind::GenericSelection(gs) => self.emit_generic_selection(gs, need_value, expr_ref),
             NodeKind::GnuStatementExpression(stmt, result_expr) => {
                 self.emit_gnu_stmt_expr(*stmt, *result_expr, need_value)

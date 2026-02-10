@@ -70,11 +70,11 @@ impl CompilerDriver {
                 PathOrBuffer::Buffer(_, _) => false,
             };
 
-            if is_external_object {
-                if let PathOrBuffer::Path(path) = input_file {
-                    outputs.external_object_files.push(path);
-                    continue;
-                }
+            if is_external_object
+                && let PathOrBuffer::Path(path) = input_file
+            {
+                outputs.external_object_files.push(path);
+                continue;
             }
 
             let source_id = match input_file {

@@ -533,3 +533,11 @@ fn test_source_span_mixed_ids() {
     assert_eq!(span.start().offset(), 10);
     assert_eq!(span.end().offset(), 10);
 }
+
+#[test]
+#[should_panic(expected = "invalid source_id SourceId(999)")]
+fn test_source_manager_get_buffer_arc_invalid_id() {
+    let sm = SourceManager::new();
+    let invalid_id = SourceId::new(999);
+    sm.get_buffer_arc(invalid_id);
+}

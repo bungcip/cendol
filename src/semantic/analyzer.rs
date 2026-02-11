@@ -20,6 +20,7 @@ pub struct SemanticInfo {
     pub conversions: Vec<SmallVec<[Conversion; 1]>>,
     pub value_categories: Vec<ValueCategory>,
     pub generic_selections: HashMap<usize, NodeRef>, // Maps NodeIndex of GenericSelection to selected result_expr
+    pub offsetof_results: HashMap<usize, i64>,       // Maps NodeIndex of BuiltinOffsetof to computed offset
 }
 
 impl SemanticInfo {
@@ -29,6 +30,7 @@ impl SemanticInfo {
             conversions: vec![SmallVec::new(); n],
             value_categories: vec![ValueCategory::RValue; n],
             generic_selections: HashMap::new(),
+            offsetof_results: HashMap::new(),
         }
     }
 }
@@ -1721,6 +1723,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*c);
                 ty
             }
+            NodeKind::BuiltinOffsetof(ty, expr) => self.visit_builtin_offsetof(*ty, *expr, node_ref),
             NodeKind::AtomicOp(op, args_start, args_len) => {
                 let span = self.ast.get_span(node_ref);
                 self.visit_atomic_op(*op, *args_start, *args_len, span)
@@ -2136,6 +2139,109 @@ impl<'a> SemanticAnalyzer<'a> {
                 span: self.ast.get_span(node_ref),
             });
             None
+        }
+    }
+
+    fn visit_builtin_offsetof(&mut self, ty: QualType, expr_ref: NodeRef, node_ref: NodeRef) -> Option<QualType> {
+        self.visit_type_expressions(ty);
+
+        let mut current_ty = ty;
+        let mut offset = 0i64;
+
+        if !self.compute_offsetof_recursive(expr_ref, &mut current_ty, &mut offset) {
+            let res_ty = QualType::unqualified(self.registry.type_long_unsigned);
+            return Some(res_ty);
+        }
+
+        self.semantic_info.offsetof_results.insert(node_ref.index(), offset);
+        let res_ty = QualType::unqualified(self.registry.type_long_unsigned);
+        Some(res_ty)
+    }
+
+    fn compute_offsetof_recursive(&mut self, node_ref: NodeRef, current_ty: &mut QualType, offset: &mut i64) -> bool {
+        let kind = *self.ast.get_kind(node_ref);
+        match kind {
+            NodeKind::Dummy => true,
+            NodeKind::MemberAccess(base, member_name, is_arrow) => {
+                if !self.compute_offsetof_recursive(base, current_ty, offset) {
+                    return false;
+                }
+
+                let record_ty = if is_arrow {
+                    self.registry.get_pointee(current_ty.ty()).map(|qt| qt.ty())
+                } else {
+                    Some(current_ty.ty())
+                };
+
+                let Some(record_ty) = record_ty else {
+                    self.report_error(SemanticError::MemberAccessOnNonRecord {
+                        ty: self.registry.display_qual_type(*current_ty),
+                        span: self.ast.get_span(node_ref),
+                    });
+                    return false;
+                };
+
+                if !record_ty.is_record() {
+                    self.report_error(SemanticError::MemberAccessOnNonRecord {
+                        ty: self.registry.display_qual_type(QualType::unqualified(record_ty)),
+                        span: self.ast.get_span(node_ref),
+                    });
+                    return false;
+                }
+
+                let mut flat_members = Vec::new();
+                let mut flat_offsets = Vec::new();
+                let ty_obj = self.registry.get(record_ty);
+                ty_obj.flatten_members_with_layouts(self.registry, &mut flat_members, &mut flat_offsets, 0);
+
+                if let Some(idx) = flat_members.iter().position(|m| m.name == Some(member_name)) {
+                    *offset += flat_offsets[idx] as i64;
+                    *current_ty = flat_members[idx].member_type;
+                    true
+                } else {
+                    self.report_error(SemanticError::MemberNotFound {
+                        name: member_name,
+                        ty: self.registry.display_type(record_ty),
+                        span: self.ast.get_span(node_ref),
+                    });
+                    false
+                }
+            }
+            NodeKind::IndexAccess(base, index) => {
+                if !self.compute_offsetof_recursive(base, current_ty, offset) {
+                    return false;
+                }
+
+                let elem_ty = self.registry.get_array_element(current_ty.ty());
+                let Some(elem_ty) = elem_ty else {
+                    self.report_error(SemanticError::ExpectedArrayType {
+                        found: self.registry.display_qual_type(*current_ty),
+                        span: self.ast.get_span(node_ref),
+                    });
+                    return false;
+                };
+
+                self.visit_node(index);
+                let index_val = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), index);
+                let Some(index_val) = index_val else {
+                    // C11 7.19p3: "integer constant expression"
+                    self.report_error(SemanticError::NonConstantInitializer {
+                        span: self.ast.get_span(index),
+                    });
+                    return false;
+                };
+
+                let layout = self.registry.get_layout(elem_ty);
+                *offset += index_val * (layout.size as i64);
+                *current_ty = QualType::unqualified(elem_ty);
+                true
+            }
+            _ => {
+                self.report_error(SemanticError::InvalidOffsetofDesignator {
+                    span: self.ast.get_span(node_ref),
+                });
+                false
+            }
         }
     }
 }

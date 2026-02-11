@@ -404,6 +404,12 @@ pub enum SemanticError {
 
     #[error("continue statement not in loop statement")]
     ContinueNotInLoop { span: SourceSpan },
+
+    #[error("subscripted value is not an array (have '{found}')")]
+    ExpectedArrayType { found: String, span: SourceSpan },
+
+    #[error("invalid designator in 'offsetof'")]
+    InvalidOffsetofDesignator { span: SourceSpan },
 }
 
 impl SemanticError {
@@ -481,6 +487,8 @@ impl SemanticError {
             SemanticError::AlignmentTooLoose { span, .. } => *span,
             SemanticError::BreakNotInLoop { span } => *span,
             SemanticError::ContinueNotInLoop { span } => *span,
+            SemanticError::ExpectedArrayType { span, .. } => *span,
+            SemanticError::InvalidOffsetofDesignator { span } => *span,
         }
     }
 }

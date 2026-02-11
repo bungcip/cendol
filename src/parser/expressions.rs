@@ -277,6 +277,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinVaEnd => parse_builtin_va_end(parser),
         TokenKind::BuiltinVaCopy => parse_builtin_va_copy(parser),
         TokenKind::BuiltinExpect => parse_builtin_expect(parser),
+        TokenKind::BuiltinOffsetof => parse_builtin_offsetof(parser),
         TokenKind::BuiltinAtomicLoadN => parse_atomic_op(parser, AtomicOp::LoadN),
         TokenKind::BuiltinAtomicStoreN => parse_atomic_op(parser, AtomicOp::StoreN),
         TokenKind::BuiltinAtomicExchangeN => parse_atomic_op(parser, AtomicOp::ExchangeN),
@@ -770,6 +771,65 @@ fn parse_builtin_expect(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError
     let span = SourceSpan::new(start_loc, end_loc);
 
     let node = parser.push_node(ParsedNodeKind::BuiltinExpect(exp, c), span);
+    Ok(node)
+}
+
+fn parse_builtin_offsetof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let token = parser.expect(TokenKind::BuiltinOffsetof)?;
+    let start_loc = token.span.start();
+
+    parser.expect(TokenKind::LeftParen)?;
+
+    // Parse type
+    let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+
+    parser.expect(TokenKind::Comma)?;
+
+    // Parse member-designator.
+    // C11 7.19p3: "The member-designator shall be such that given static type t* p;
+    // the expression &(p->member-designator) is an integer constant expression."
+    // We'll parse this into a tree of MemberAccess and IndexAccess nodes.
+    // We start with a dummy base representing 'p'.
+    let mut current_node = parser.push_node(ParsedNodeKind::Dummy, parser.previous_token_span());
+
+    // First element MUST be a member name.
+    let (first_member_name, first_member_span) = parser.expect_name()?;
+
+    current_node = parser.push_node(
+        ParsedNodeKind::MemberAccess(current_node, first_member_name, false /* is_arrow */),
+        first_member_span,
+    );
+
+    // Subsequent elements can be .member or [index]
+    loop {
+        let tok = parser.current_token()?;
+        match tok.kind {
+            TokenKind::Dot => {
+                parser.advance();
+                let (member_name, member_span) = parser.expect_name()?;
+                current_node = parser.push_node(
+                    ParsedNodeKind::MemberAccess(current_node, member_name, false /* is_arrow */),
+                    tok.span.merge(member_span),
+                );
+            }
+            TokenKind::LeftBracket => {
+                parser.advance();
+                let index_expr = parser.parse_expr_min()?; // Use parse_expr_min for full expression
+                let right_bracket = parser.expect(TokenKind::RightBracket)?;
+                current_node = parser.push_node(
+                    ParsedNodeKind::IndexAccess(current_node, index_expr),
+                    tok.span.merge(right_bracket.span),
+                );
+            }
+            _ => break,
+        }
+    }
+
+    let right_paren = parser.expect(TokenKind::RightParen)?;
+    let end_loc = right_paren.span.end();
+    let span = SourceSpan::new(start_loc, end_loc);
+
+    let node = parser.push_node(ParsedNodeKind::BuiltinOffsetof(parsed_type, current_node), span);
     Ok(node)
 }
 

@@ -47,6 +47,7 @@ pub enum NodeKind {
 
     Cast(QualType, NodeRef),
     BuiltinVaArg(QualType, NodeRef),
+    BuiltinOffsetof(QualType, NodeRef),
     BuiltinVaStart(NodeRef, NodeRef),
     BuiltinVaEnd(NodeRef),
     BuiltinVaCopy(NodeRef, NodeRef),
@@ -136,6 +137,7 @@ impl NodeKind {
             | NodeKind::MemberAccess(child, ..)
             | NodeKind::Cast(_, child)
             | NodeKind::BuiltinVaArg(_, child)
+            | NodeKind::BuiltinOffsetof(_, child)
             | NodeKind::BuiltinVaEnd(child)
             | NodeKind::SizeOfExpr(child)
             | NodeKind::CompoundLiteral(_, child)

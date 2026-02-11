@@ -217,7 +217,7 @@ impl AstDumper {
             NodeKind::CompoundLiteral(qual_type, _) => {
                 type_refs.insert(qual_type.ty());
             }
-            NodeKind::BuiltinVaArg(qual_type, _) => {
+            NodeKind::BuiltinVaArg(qual_type, _) | NodeKind::BuiltinOffsetof(qual_type, _) => {
                 type_refs.insert(qual_type.ty());
             }
             NodeKind::BuiltinVaStart(_, _)
@@ -399,6 +399,9 @@ impl AstDumper {
             ParsedNodeKind::BuiltinExpect(exp, c) => {
                 writeln!(f, "BuiltinExpect({}, {})", exp.get(), c.get())
             }
+            ParsedNodeKind::BuiltinOffsetof(ty, expr) => {
+                writeln!(f, "BuiltinOffsetof({:?}, {})", ty, expr.get())
+            }
             ParsedNodeKind::AtomicOp(op, args) => {
                 let args_str = args.iter().map(|a| a.get().to_string()).collect::<Vec<_>>().join(", ");
                 writeln!(f, "AtomicOp({:?}, args=[{}])", op, args_str)
@@ -565,6 +568,9 @@ impl AstDumper {
             }
             NodeKind::BuiltinExpect(exp, c) => {
                 writeln!(f, "BuiltinExpect({}, {})", exp.get(), c.get())
+            }
+            NodeKind::BuiltinOffsetof(ty, expr) => {
+                writeln!(f, "BuiltinOffsetof({}, {})", ty, expr.get())
             }
             NodeKind::AtomicOp(op, args_start, args_len) => {
                 let start = args_start.get();

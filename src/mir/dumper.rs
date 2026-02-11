@@ -19,8 +19,8 @@ use crate::mir::MirProgram;
 
 /// Configuration for MIR dump output
 #[derive(Debug, Clone)]
-pub struct MirDumpConfig {
-    pub include_header: bool,
+pub(crate) struct MirDumpConfig {
+    pub(crate) include_header: bool,
 }
 
 impl Default for MirDumpConfig {
@@ -30,19 +30,19 @@ impl Default for MirDumpConfig {
 }
 
 /// Main MIR dumper that generates human-readable MIR output
-pub struct MirDumper<'a> {
+pub(crate) struct MirDumper<'a> {
     mir: &'a MirProgram,
     config: &'a MirDumpConfig,
 }
 
 impl<'a> MirDumper<'a> {
     /// Create a new MIR dumper
-    pub fn new(mir: &'a MirProgram, config: &'a MirDumpConfig) -> Self {
+    pub(crate) fn new(mir: &'a MirProgram, config: &'a MirDumpConfig) -> Self {
         Self { mir, config }
     }
 
     /// Generate the complete MIR dump
-    pub fn generate_mir_dump(&self) -> Result<String, std::fmt::Error> {
+    pub(crate) fn generate_mir_dump(&self) -> Result<String, std::fmt::Error> {
         let mut output = String::new();
 
         // Dump module header

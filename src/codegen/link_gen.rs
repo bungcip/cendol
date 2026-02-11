@@ -8,24 +8,24 @@ use std::process::Command;
 
 /// Configuration for the linker.
 #[derive(Debug, Clone, Default)]
-pub struct LinkConfig {
+pub(crate) struct LinkConfig {
     /// Output file path
-    pub output_path: PathBuf,
+    pub(crate) output_path: PathBuf,
     /// Library search paths (-L)
-    pub library_paths: Vec<PathBuf>,
+    pub(crate) library_paths: Vec<PathBuf>,
     /// Libraries to link (-l)
-    pub libraries: Vec<String>,
+    pub(crate) libraries: Vec<String>,
     /// Optimization level (e.g., "0", "1", "2", "3", "s")
-    pub optimization: Option<String>,
+    pub(crate) optimization: Option<String>,
     /// Include debug info (-g)
-    pub debug_info: bool,
+    pub(crate) debug_info: bool,
     /// Verbose output
-    pub verbose: bool,
+    pub(crate) verbose: bool,
 }
 
 /// Error type for linking operations.
 #[derive(Debug)]
-pub enum LinkError {
+pub(crate) enum LinkError {
     /// IO error during linking
     IoError(String),
     /// Linker returned non-zero exit code
@@ -44,7 +44,7 @@ impl std::fmt::Display for LinkError {
 impl std::error::Error for LinkError {}
 
 /// Links object files into an executable or library.
-pub struct LinkGen;
+pub(crate) struct LinkGen;
 
 impl LinkGen {
     /// Link object files into an executable using clang.
@@ -56,7 +56,7 @@ impl LinkGen {
     /// # Returns
     /// * `Ok(())` on success
     /// * `Err(LinkError)` on failure
-    pub fn link<P: AsRef<Path>>(object_files: &[P], config: &LinkConfig) -> Result<(), LinkError> {
+    pub(crate) fn link<P: AsRef<Path>>(object_files: &[P], config: &LinkConfig) -> Result<(), LinkError> {
         if object_files.is_empty() {
             return Ok(());
         }

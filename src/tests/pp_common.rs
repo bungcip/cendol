@@ -4,9 +4,9 @@ use crate::tests::test_utils::setup_sm_and_diag;
 use serde::Serialize;
 
 #[derive(Serialize)]
-pub struct DebugToken {
-    pub kind: String,
-    pub text: String,
+pub(crate) struct DebugToken {
+    pub(crate) kind: String,
+    pub(crate) text: String,
 }
 
 impl From<&PPToken> for DebugToken {
@@ -26,16 +26,16 @@ impl From<&PPToken> for DebugToken {
     }
 }
 
-pub fn setup_pp_snapshot(src: &str) -> Vec<DebugToken> {
+pub(crate) fn setup_pp_snapshot(src: &str) -> Vec<DebugToken> {
     let (tokens, _) = setup_preprocessor_test_with_diagnostics(src, None).unwrap();
     tokens.iter().map(DebugToken::from).collect()
 }
 
-pub fn setup_pp_snapshot_with_diags(src: &str) -> (Vec<DebugToken>, Vec<String>) {
+pub(crate) fn setup_pp_snapshot_with_diags(src: &str) -> (Vec<DebugToken>, Vec<String>) {
     setup_pp_snapshot_with_diags_and_config(src, None)
 }
 
-pub fn setup_pp_snapshot_with_diags_and_config(src: &str, config: Option<PPConfig>) -> (Vec<DebugToken>, Vec<String>) {
+pub(crate) fn setup_pp_snapshot_with_diags_and_config(src: &str, config: Option<PPConfig>) -> (Vec<DebugToken>, Vec<String>) {
     // Return a Result-like structure for the snapshot
     match setup_preprocessor_test_with_diagnostics(src, config) {
         Ok((tokens, diags)) => {
@@ -47,7 +47,7 @@ pub fn setup_pp_snapshot_with_diags_and_config(src: &str, config: Option<PPConfi
     }
 }
 
-pub fn setup_multi_file_pp_snapshot(
+pub(crate) fn setup_multi_file_pp_snapshot(
     files: Vec<(&str, &str)>,
     main_file: &str,
     config: Option<PPConfig>,
@@ -63,14 +63,14 @@ pub fn setup_multi_file_pp_snapshot(
 }
 
 /// Helper function to set up preprocessor testing and return diagnostics
-pub fn setup_preprocessor_test_with_diagnostics(
+pub(crate) fn setup_preprocessor_test_with_diagnostics(
     src: &str,
     config: Option<PPConfig>,
 ) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PPError> {
     setup_multi_file_pp_with_diagnostics(vec![("<test>", src)], "<test>", config)
 }
 
-pub fn setup_multi_file_pp_with_diagnostics(
+pub(crate) fn setup_multi_file_pp_with_diagnostics(
     files: Vec<(&str, &str)>,
     main_file_name: &str,
     config: Option<PPConfig>,
@@ -85,7 +85,7 @@ pub fn setup_multi_file_pp_with_diagnostics(
     Ok((significant_tokens, diagnostics))
 }
 
-pub fn setup_multi_file_pp_with_diagnostics_raw(
+pub(crate) fn setup_multi_file_pp_with_diagnostics_raw(
     files: Vec<(&str, &str)>,
     main_file_name: &str,
     config: Option<PPConfig>,
@@ -115,17 +115,17 @@ pub fn setup_multi_file_pp_with_diagnostics_raw(
     Ok((tokens, diag.diagnostics().to_vec()))
 }
 
-pub struct TestLexer {
+pub(crate) struct TestLexer {
     lexer: crate::pp::pp_lexer::PPLexer,
 }
 
 impl TestLexer {
-    pub fn next_token(&mut self) -> Option<PPToken> {
+    pub(crate) fn next_token(&mut self) -> Option<PPToken> {
         self.lexer.next_token()
     }
 }
 
-pub fn create_test_pp_lexer(src: &str) -> TestLexer {
+pub(crate) fn create_test_pp_lexer(src: &str) -> TestLexer {
     let mut source_manager = SourceManager::new();
     let id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>", None);
     let lexer = crate::pp::pp_lexer::PPLexer::new(id, std::sync::Arc::from(src.as_bytes().to_vec()));

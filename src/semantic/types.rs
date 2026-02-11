@@ -8,7 +8,7 @@ use std::{fmt::Display, num::NonZeroU32};
 use bitflags::bitflags;
 use serde::Serialize;
 
-use crate::ast::{NameId, NodeRef, SourceSpan};
+use crate::ast::{NameId, NodeRef, SourceSpan, StorageClass};
 
 /// Type representation (for semantic analysis)
 /// This is a canonical type, distinct from TypeSpecifier which is a syntax construct.
@@ -724,6 +724,7 @@ impl Display for TypeQualifiers {
 pub struct FunctionParameter {
     pub param_type: QualType,
     pub name: Option<NameId>,
+    pub storage: Option<StorageClass>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

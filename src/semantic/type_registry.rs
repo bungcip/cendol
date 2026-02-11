@@ -1052,6 +1052,7 @@ impl TypeRegistry {
                     composite_params.push(FunctionParameter {
                         param_type: cp,
                         name: p_b.name.or(p_a.name),
+                        storage: p_b.storage.or(p_a.storage),
                     });
                 }
                 let res_ty = self.function_type(composite_ret.ty(), composite_params, var_a, noreturn_a || noreturn_b);

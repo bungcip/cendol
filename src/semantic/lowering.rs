@@ -78,6 +78,7 @@ fn apply_parsed_declarator(
                 processed_params.push(FunctionParameter {
                     param_type: decayed_param_type,
                     name: param.name,
+                    storage: None,
                 });
             }
 
@@ -1168,9 +1169,34 @@ fn visit_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
                 });
             }
 
+            // C11 6.7.6.3p2: "The only storage-class specifier that shall occur in a parameter declaration is register."
+            if let Some(sc) = spec_info.storage {
+                if sc != StorageClass::Register {
+                    ctx.report_error(SemanticError::InvalidStorageClassForParameter { span });
+                }
+            }
+            if spec_info.is_thread_local {
+                ctx.report_error(SemanticError::InvalidStorageClassForParameter { span });
+            }
+
+            // Function specifiers are only allowed for functions
+            if spec_info.is_inline {
+                ctx.report_error(SemanticError::InvalidFunctionSpecifier {
+                    spec: "inline".to_string(),
+                    span,
+                });
+            }
+            if spec_info.is_noreturn {
+                ctx.report_error(SemanticError::InvalidFunctionSpecifier {
+                    spec: "_Noreturn".to_string(),
+                    span,
+                });
+            }
+
             FunctionParameter {
                 param_type: decayed_ty,
                 name: pname,
+                storage: spec_info.storage,
             }
         })
         .collect()
@@ -1696,7 +1722,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 if let Ok(sym) = self
                     .symbol_table
-                    .define_variable(pname, param.param_type, None, None, None, span)
+                    .define_variable(pname, param.param_type, param.storage, None, None, span)
                 {
                     let param_ref = param_dummies[i];
                     self.ast.kinds[param_ref.index()] = NodeKind::Param(ParamData {
@@ -2501,6 +2527,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let params = vec![FunctionParameter {
                     param_type: char_ptr,
                     name: None,
+                    storage: None,
                 }];
                 let ret = if name_str == "__builtin_nanf" {
                     self.registry.type_float

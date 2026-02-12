@@ -1170,6 +1170,7 @@ fn visit_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
             }
 
             // C11 6.7.6.3p2: "The only storage-class specifier that shall occur in a parameter declaration is register."
+            #[allow(clippy::collapsible_if)]
             if let Some(sc) = spec_info.storage {
                 if sc != StorageClass::Register {
                     ctx.report_error(SemanticError::InvalidStorageClassForParameter { span });

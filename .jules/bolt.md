@@ -41,3 +41,7 @@
 ## 2026-11-25 - Reducing Allocations for HashMap Keys
 **Learning:** Using `Vec<T>` as a key in a `HashMap` (or as part of a composite key) causes a heap allocation on every lookup, even for cache hits. This is especially costly in hot paths like type canonicalization.
 **Action:** Use `SmallVec<[T; N]>` for collection fields in composite keys. This allows the key to be stack-allocated during lookup for the common case where the collection is small, significantly reducing heap pressure and improving cache locality.
+
+## 2024-12-04 - Restoring Arc-based MacroInfo sharing
+**Learning:** Macro definitions are frequently cloned during expansion. Using `Vec<T>` causes a deep copy and heap allocation on every lookup. Restoration of `Arc<[T]>` was necessary after it was found reverted to `Vec<T>`. This optimization reduces macro expansion overhead from O(N) to O(1) for cloning.
+**Action:** Always favor `Arc<[T]>` for frequently-shared, immutable-after-creation collections in hot paths like the preprocessor and type system.

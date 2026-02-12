@@ -1651,12 +1651,27 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 Some(QualType::unqualified(self.registry.type_long_unsigned))
             }
-            NodeKind::SizeOfType(ty) | NodeKind::AlignOf(ty) => {
+            NodeKind::SizeOfType(ty) => {
                 self.visit_type_expressions(*ty);
                 let type_ref = ty.ty();
-                if !self.registry.is_complete(type_ref) {
-                    let span = self.ast.get_span(node_ref);
+                let span = self.ast.get_span(node_ref);
+                if ty.is_function() {
+                    self.report_error(SemanticError::SizeOfFunctionType { span });
+                } else if !self.registry.is_complete(type_ref) {
                     self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
+                } else {
+                    let _ = self.registry.ensure_layout(type_ref);
+                }
+                Some(QualType::unqualified(self.registry.type_long_unsigned))
+            }
+            NodeKind::AlignOf(ty) => {
+                self.visit_type_expressions(*ty);
+                let type_ref = ty.ty();
+                let span = self.ast.get_span(node_ref);
+                if ty.is_function() {
+                    self.report_error(SemanticError::AlignOfFunctionType { span });
+                } else if !self.registry.is_complete(type_ref) {
+                    self.report_error(SemanticError::AlignOfIncompleteType { ty: type_ref, span });
                 } else {
                     let _ = self.registry.ensure_layout(type_ref);
                 }

@@ -44,3 +44,8 @@ Action: Enforce pointed-to type constraints for the `restrict` qualifier in `mer
 
 Learning: C11 (6.7.6.3p2) restricts the storage-class specifiers in a function parameter declaration to ONLY `register`. Specifiers like `static`, `extern`, `auto`, `typedef`, or `_Thread_local` are illegal. Furthermore, while `register` is allowed, its semantics must be correctly propagated to the function's scope to ensure that operations like taking the address of the parameter are properly rejected.
 Action: Enforce parameter storage class constraints during semantic lowering and ensure the storage class is preserved in the symbol table for subsequent semantic analysis (e.g., lvalue address-of checks).
+
+2025-05-22 - [Sizeof and Alignof Constraint Enforcement]
+
+Learning: C11 constraints (6.5.3.4p1) regarding the `sizeof` and `_Alignof` operators require explicit checks for function types, which are neither object types nor incomplete types. While `sizeof(expression)` correctly rejected function types, `sizeof(type-name)` and `_Alignof(type-name)` previously bypassed these checks because function types were incorrectly treated as "complete" for layout purposes. Additionally, `_Alignof` requires its own diagnostic variants to avoid misleading "sizeof" error messages when applied to incomplete types.
+Action: Always separate `sizeof` and `_Alignof` semantic logic to ensure both operator-specific constraints (especially function type rejection) and diagnostic precision are maintained.

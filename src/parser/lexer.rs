@@ -73,6 +73,8 @@ pub enum TokenKind {
     Sizeof,
     StaticAssert,
     Typedef,
+    Real,
+    Imag,
     Attribute,
     BuiltinVaArg,
     BuiltinVaList,
@@ -380,6 +382,8 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("void"), TokenKind::Void);
         m.insert(StringId::new("volatile"), TokenKind::Volatile);
         m.insert(StringId::new("while"), TokenKind::While);
+        m.insert(StringId::new("__real__"), TokenKind::Real);
+        m.insert(StringId::new("__imag__"), TokenKind::Imag);
         m.insert(StringId::new("_Alignas"), TokenKind::Alignas);
         m.insert(StringId::new("_Alignof"), TokenKind::Alignof);
         m.insert(StringId::new("_Atomic"), TokenKind::Atomic);

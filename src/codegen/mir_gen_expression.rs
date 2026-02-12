@@ -275,6 +275,19 @@ impl<'a> MirGen<'a> {
             }
             UnaryOp::AddrOf => self.emit_unary_addrof(operand_ref),
             UnaryOp::Deref => self.emit_unary_deref(operand_ref),
+            UnaryOp::Real => {
+                let operand = self.emit_expression(operand_ref, true);
+                self.apply_conversions(operand, operand_ref, mir_ty)
+            }
+            UnaryOp::Imag => {
+                let _ = self.emit_expression(operand_ref, false);
+                let kind = if self.mir_builder.get_type(mir_ty).is_float() {
+                    ConstValueKind::Float(0.0)
+                } else {
+                    ConstValueKind::Int(0)
+                };
+                Operand::Constant(self.create_constant(mir_ty, kind))
+            }
             _ => {
                 let operand = self.emit_expression(operand_ref, true);
                 let operand_converted = self.apply_conversions(operand, operand_ref, mir_ty);
@@ -1237,6 +1250,8 @@ impl<'a> MirGen<'a> {
                 self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, real_eq, imag_eq), mir_ty)
             }
             UnaryOp::Plus => self.emit_complex_struct(real, imag, mir_ty),
+            UnaryOp::Real => real,
+            UnaryOp::Imag => imag,
             _ => panic!("Unsupported complex unary operator: {:?}", op),
         }
     }

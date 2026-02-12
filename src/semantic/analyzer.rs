@@ -479,6 +479,25 @@ impl<'a> SemanticAnalyzer<'a> {
                     None
                 }
             }
+            UnaryOp::Real | UnaryOp::Imag => {
+                if let TypeKind::Complex { base_type } = &self.registry.get(operand_ty.ty()).kind {
+                    Some(QualType::new(*base_type, operand_ty.qualifiers()))
+                } else if operand_ty.is_real() {
+                    if op == UnaryOp::Real {
+                        Some(operand_ty)
+                    } else {
+                        // __imag__ on real type returns zero of that type
+                        Some(self.registry.strip_all(operand_ty))
+                    }
+                } else {
+                    let type_kind = &self.registry.get(operand_ty.ty()).kind;
+                    self.report_error(SemanticError::InvalidUnaryOperand {
+                        ty: type_kind.to_string(),
+                        span,
+                    });
+                    None
+                }
+            }
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
                 self.check_lvalue_and_modifiable(operand_ref, operand_ty, span);
                 if operand_ty.is_scalar() { Some(operand_ty) } else { None }

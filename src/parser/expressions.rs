@@ -262,7 +262,9 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         | TokenKind::Increment
         | TokenKind::Decrement
         | TokenKind::Star
-        | TokenKind::And => parse_unary_operator(parser, token),
+        | TokenKind::And
+        | TokenKind::Real
+        | TokenKind::Imag => parse_unary_operator(parser, token),
         TokenKind::Generic => parse_generic_selection(parser),
         TokenKind::Alignof => parse_alignof(parser),
         TokenKind::Sizeof => {
@@ -309,6 +311,8 @@ fn parse_unary_operator(parser: &mut Parser, token: Token) -> Result<ParsedNodeR
         TokenKind::Decrement => UnaryOp::PreDecrement,
         TokenKind::Star => UnaryOp::Deref,
         TokenKind::And => UnaryOp::AddrOf,
+        TokenKind::Real => UnaryOp::Real,
+        TokenKind::Imag => UnaryOp::Imag,
         _ => {
             return Err(ParseError::InvalidUnaryOperator { span: token.span });
         }

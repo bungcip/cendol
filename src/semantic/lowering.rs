@@ -1170,10 +1170,10 @@ fn visit_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
             }
 
             // C11 6.7.6.3p2: "The only storage-class specifier that shall occur in a parameter declaration is register."
-            if let Some(sc) = spec_info.storage {
-                if sc != StorageClass::Register {
-                    ctx.report_error(SemanticError::InvalidStorageClassForParameter { span });
-                }
+            if let Some(sc) = spec_info.storage
+                && sc != StorageClass::Register
+            {
+                ctx.report_error(SemanticError::InvalidStorageClassForParameter { span });
             }
             if spec_info.is_thread_local {
                 ctx.report_error(SemanticError::InvalidStorageClassForParameter { span });
@@ -1720,9 +1720,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 // Check if parameter name conflicts with something already in scope (like __func__)
                 self.check_redeclaration_compatibility(pname, param.param_type, span, None);
 
-                if let Ok(sym) = self
-                    .symbol_table
-                    .define_variable(pname, param.param_type, param.storage, None, None, span)
+                if let Ok(sym) =
+                    self.symbol_table
+                        .define_variable(pname, param.param_type, param.storage, None, None, span)
                 {
                     let param_ref = param_dummies[i];
                     self.ast.kinds[param_ref.index()] = NodeKind::Param(ParamData {

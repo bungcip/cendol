@@ -28,6 +28,7 @@ use crate::semantic::{
 };
 use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
+use std::sync::Arc;
 
 /// Recursively apply parsed declarator to base type
 fn apply_parsed_declarator(
@@ -619,7 +620,7 @@ fn complete_record_symbol(
         } = &mut entry.kind
         {
             *is_complete = true;
-            *entry_members = members; // This is now the original value
+            *entry_members = Arc::from(members); // This is now the original value
         }
     }
     Ok(())
@@ -1793,8 +1794,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         // Extract needed data from registry to avoid borrowing self.registry during node creation
         enum TypeData {
-            Record(Option<NameId>, Vec<StructMember>, bool),
-            Enum(Option<NameId>, Vec<EnumConstant>),
+            Record(Option<NameId>, Arc<[StructMember]>, bool),
+            Enum(Option<NameId>, Arc<[EnumConstant]>),
         }
 
         let type_ref = qual_ty.ty();
@@ -1816,7 +1817,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     let member_start = NodeRef::new(member_start_idx).expect("NodeRef overflow");
                     let member_len = members.len() as u16;
 
-                    for m in members {
+                    for m in members.iter() {
                         self.ast.push_node(
                             NodeKind::FieldDecl(FieldDeclData {
                                 name: m.name,

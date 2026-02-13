@@ -6,6 +6,7 @@
 
 use hashbrown::HashMap;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
 use log::debug;
 use thiserror::Error;
@@ -79,7 +80,7 @@ pub enum SymbolKind {
     Label,
     Record {
         is_complete: bool,
-        members: Vec<StructMember>,
+        members: Arc<[StructMember]>,
     },
     EnumTag {
         is_complete: bool,
@@ -423,7 +424,7 @@ impl SymbolTable {
             name,
             kind: SymbolKind::Record {
                 is_complete,
-                members: Vec::new(),
+                members: Arc::from([]),
             },
             type_info: QualType::unqualified(ty),
             scope_id: self.current_scope_id,

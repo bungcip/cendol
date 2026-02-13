@@ -3,6 +3,7 @@
 //! This module defines the semantic type system used during analysis,
 //! distinct from the syntactic TypeSpecifier constructs used in parsing.
 
+use std::sync::Arc;
 use std::{fmt::Display, num::NonZeroU32};
 
 use bitflags::bitflags;
@@ -35,7 +36,7 @@ pub struct TypeLayout {
 pub enum LayoutKind {
     Scalar,
     Array { element: TypeRef, len: u64 },
-    Record { fields: Vec<FieldLayout>, is_union: bool },
+    Record { fields: Arc<[FieldLayout]>, is_union: bool },
 }
 
 #[derive(Debug, Clone)]
@@ -593,20 +594,20 @@ pub enum TypeKind {
     },
     Function {
         return_type: TypeRef,
-        parameters: Vec<FunctionParameter>,
+        parameters: Arc<[FunctionParameter]>,
         is_variadic: bool,
         is_noreturn: bool,
     },
     Record {
         tag: Option<NameId>,
-        members: Vec<StructMember>,
+        members: Arc<[StructMember]>,
         is_complete: bool,
         is_union: bool,
     },
     Enum {
         tag: Option<NameId>,
         base_type: TypeRef,
-        enumerators: Vec<EnumConstant>,
+        enumerators: Arc<[EnumConstant]>,
         is_complete: bool,
     },
     #[default]

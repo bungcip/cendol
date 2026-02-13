@@ -483,10 +483,9 @@ impl SourceManager {
     /// Get the presumed location (logical line and file) for a source location
     pub(crate) fn get_presumed_location(&self, loc: SourceLoc) -> Option<(u32, u32, Option<&str>)> {
         let file_info = self.get_file_info(loc.source_id())?;
-        let physical_line = self.get_line_column(loc)?.0;
+        let (physical_line, column) = self.get_line_column(loc)?;
 
         let (logical_line, logical_file) = file_info.line_map.presumed_location(physical_line);
-        let column = self.get_line_column(loc)?.1;
 
         // If no logical file specified, use the physical filename
         let filename = logical_file.or_else(|| file_info.path.to_str());

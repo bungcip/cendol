@@ -175,7 +175,7 @@ pub(crate) fn unescape_string(s: &str) -> String {
 }
 
 /// Unescape C11 string literal content into a buffer
-pub(crate) fn unescape_string_into(s: &str, result: &mut String) {
+fn unescape_string_into(s: &str, result: &mut String) {
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\\' {

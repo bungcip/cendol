@@ -10,7 +10,6 @@ use crate::mir::{
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
 use crate::semantic::QualType;
-use crate::semantic::StructMember;
 use crate::semantic::SymbolKind;
 use crate::semantic::SymbolRef;
 use crate::semantic::SymbolTable;
@@ -778,10 +777,10 @@ impl<'a> MirGen<'a> {
         match ast_type_kind {
             TypeKind::Record {
                 tag,
-                members,
                 is_union,
                 is_complete,
-            } => self.lower_recursive_record_pattern(type_ref, tag, members, is_union, is_complete),
+                ..
+            } => self.lower_recursive_record_pattern(type_ref, tag, is_union, is_complete),
             TypeKind::Builtin(b) => {
                 let mir_type = if matches!(b, BuiltinType::VaList) {
                     self.lower_valist_type()
@@ -822,7 +821,6 @@ impl<'a> MirGen<'a> {
         &mut self,
         type_ref: TypeRef,
         tag: Option<NameId>,
-        members: Vec<StructMember>,
         is_union: bool,
         is_complete: bool,
     ) -> TypeId {
@@ -843,7 +841,7 @@ impl<'a> MirGen<'a> {
         let placeholder_id = self.mir_builder.add_type(placeholder_type);
         self.type_cache.insert(type_ref, placeholder_id);
 
-        let mir_type = self.lower_record_type(type_ref, &tag, &members, is_union, is_complete);
+        let mir_type = self.lower_record_type(type_ref, &tag, is_union, is_complete);
 
         // Remove from in-progress set
         self.type_conversion_in_progress.remove(&type_ref);
@@ -1028,7 +1026,6 @@ impl<'a> MirGen<'a> {
         &mut self,
         type_ref: TypeRef,
         tag: &Option<NameId>,
-        _members: &[StructMember],
         is_union: bool,
         is_complete: bool,
     ) -> MirType {

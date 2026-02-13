@@ -8,7 +8,7 @@ fn main() {
     // Clap does not strictly support single-dash long options (e.g. -std=c99), so we manually
     // map them to double-dash options (e.g. --std=c99) before parsing.
     let args = std::env::args().map(|arg| {
-        if arg.starts_with("-std=") || arg.starts_with("-target=") {
+        if arg.starts_with("-std=") || arg.starts_with("-target=") || arg.starts_with("-fuse-ld=") {
             format!("-{}", arg)
         } else if arg == "-pedantic" {
             "--pedantic".to_string()

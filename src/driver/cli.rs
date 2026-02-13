@@ -103,6 +103,10 @@ pub struct Cli {
     /// Generate debug information
     #[clap(short = 'g')]
     pub debug_info: bool,
+
+    /// Use a specific linker
+    #[clap(long = "fuse-ld", value_name = "LINKER")]
+    pub fuse_ld: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -139,6 +143,7 @@ pub struct CompileConfig {
     pub library_paths: Vec<PathBuf>,
     pub compile_only: bool,
     pub debug_info: bool,
+    pub fuse_ld: Option<String>,
 }
 
 impl Default for CompileConfig {
@@ -159,6 +164,7 @@ impl Default for CompileConfig {
             library_paths: Vec::new(),
             compile_only: false,
             debug_info: false,
+            fuse_ld: None,
         }
     }
 }
@@ -311,6 +317,7 @@ impl Cli {
             library_paths: self.library_paths,
             compile_only: self.compile_only,
             debug_info: self.debug_info,
+            fuse_ld: self.fuse_ld,
         })
     }
 }
@@ -346,10 +353,12 @@ mod tests {
             library_paths: vec![PathBuf::from("/lib")],
             compile_only: true,
             debug_info: true,
+            fuse_ld: Some("lld".to_string()),
         };
 
         let config = cli.into_config().expect("Failed to create config");
 
+        assert_eq!(config.fuse_ld, Some("lld".to_string()));
         assert_eq!(config.stop_after, CompilePhase::Mir);
         assert!(config.verbose);
         assert!(config.suppress_line_markers);
@@ -384,6 +393,7 @@ mod tests {
             library_paths: vec![],
             compile_only: false,
             debug_info: false,
+            fuse_ld: None,
         };
 
         let err = cli_error.into_config().unwrap_err();

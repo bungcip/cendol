@@ -561,3 +561,39 @@ fn test_struct_copy_init() {
     }
     ");
 }
+
+#[test]
+fn test_type_registry_display_builtins() {
+    use crate::semantic::type_registry::TypeRegistry;
+    use crate::semantic::types::BuiltinType;
+    use target_lexicon::Triple;
+
+    let reg = TypeRegistry::new(Triple::host());
+
+    let cases = [
+        (BuiltinType::Void, "void"),
+        (BuiltinType::Bool, "_Bool"),
+        (BuiltinType::Char, "char"),
+        (BuiltinType::SChar, "signed char"),
+        (BuiltinType::UChar, "unsigned char"),
+        (BuiltinType::Short, "short"),
+        (BuiltinType::UShort, "unsigned short"),
+        (BuiltinType::Int, "int"),
+        (BuiltinType::UInt, "unsigned int"),
+        (BuiltinType::Long, "long"),
+        (BuiltinType::ULong, "unsigned long"),
+        (BuiltinType::LongLong, "long long"),
+        (BuiltinType::ULongLong, "unsigned long long"),
+        (BuiltinType::Float, "float"),
+        (BuiltinType::Double, "double"),
+        (BuiltinType::LongDouble, "long double"),
+        (BuiltinType::Signed, "signed"),
+        (BuiltinType::VaList, "__builtin_va_list"),
+        (BuiltinType::Complex, "_Complex (marker)"),
+    ];
+
+    for (builtin, expected) in cases {
+        let ty = reg.get_builtin_type(builtin);
+        assert_eq!(reg.display_type(ty), expected, "Failed for {:?}", builtin);
+    }
+}

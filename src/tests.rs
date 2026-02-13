@@ -61,6 +61,7 @@ pub mod builtin_offsetof;
 pub mod codegen_cast_init;
 pub mod codegen_regr;
 pub mod guardian_addr_sizeof_constraints;
+pub mod guardian_alignof_sizeof_function;
 pub mod guardian_bitfields;
 pub mod guardian_parameter_storage;
 pub mod guardian_pointer_arithmetic;

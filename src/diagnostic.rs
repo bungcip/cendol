@@ -310,6 +310,10 @@ pub enum SemanticError {
     SizeOfIncompleteType { ty: TypeRef, span: SourceSpan },
     #[error("Invalid application of 'sizeof' to a function type")]
     SizeOfFunctionType { span: SourceSpan },
+    #[error("Invalid application of '_Alignof' to an incomplete type")]
+    AlignOfIncompleteType { ty: TypeRef, span: SourceSpan },
+    #[error("Invalid application of '_Alignof' to a function type")]
+    AlignOfFunctionType { span: SourceSpan },
     #[error("controlling expression type '{ty}' not compatible with any generic association")]
     GenericNoMatch { ty: String, span: SourceSpan },
 
@@ -461,6 +465,8 @@ impl SemanticError {
             }
             SemanticError::SizeOfIncompleteType { span, .. } => *span,
             SemanticError::SizeOfFunctionType { span } => *span,
+            SemanticError::AlignOfIncompleteType { span, .. } => *span,
+            SemanticError::AlignOfFunctionType { span } => *span,
             SemanticError::GenericNoMatch { span, .. } => *span,
             SemanticError::AddressOfBitfield { span } => *span,
             SemanticError::AddressOfRegister { span } => *span,

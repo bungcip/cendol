@@ -6,6 +6,7 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 use hashbrown::HashMap;
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
 
 use super::pp_lexer::PPLexer;
 use crate::pp::interpreter::Interpreter;
@@ -150,8 +151,8 @@ bitflags::bitflags! {
 pub(crate) struct MacroInfo {
     pub(crate) location: SourceLoc,
     pub(crate) flags: MacroFlags, // Packed boolean flags
-    pub(crate) tokens: Vec<PPToken>,
-    pub(crate) parameter_list: Vec<StringId>,
+    pub(crate) tokens: Arc<[PPToken]>,
+    pub(crate) parameter_list: Arc<[StringId]>,
     pub(crate) variadic_arg: Option<StringId>,
 }
 
@@ -594,8 +595,8 @@ impl<'src> Preprocessor<'src> {
         let macro_info = MacroInfo {
             location: SourceLoc::builtin(),
             flags: MacroFlags::BUILTIN,
-            tokens,
-            parameter_list: Vec::new(),
+            tokens: Arc::from(tokens),
+            parameter_list: Arc::from([]),
             variadic_arg: None,
         };
         self.macros.insert(symbol, macro_info);
@@ -1166,8 +1167,8 @@ impl<'src> Preprocessor<'src> {
         let macro_info = MacroInfo {
             location: name_token.location,
             flags,
-            tokens,
-            parameter_list: params,
+            tokens: Arc::from(tokens),
+            parameter_list: Arc::from(params),
             variadic_arg: variadic,
         };
 

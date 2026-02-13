@@ -2421,51 +2421,37 @@ impl<'src> Preprocessor<'src> {
         // (is_pasted, offset_in_new_buffer, length_in_new_buffer)
         let mut token_metadata = Vec::with_capacity(tokens.len());
 
-        let mut last_sid = None;
-        let mut last_source_buffer = None;
         let mut last_is_pasted_sid = None;
         let mut last_is_pasted_val = false;
 
-        for t in tokens {
-            let sid = t.location.source_id();
+        {
+            let mut cache = SourceBufferCache::new(self.sm);
 
-            // Optimized is_pasted check with caching.
-            let is_pasted = if Some(sid) == last_is_pasted_sid {
-                last_is_pasted_val
-            } else {
-                let val = self.sm.get_file_info(sid).is_some_and(|info| {
-                    let p = info.path.to_str().unwrap_or("");
-                    p == "<<pasted-tokens>>" || p == "<pasted-tokens>"
-                });
-                last_is_pasted_sid = Some(sid);
-                last_is_pasted_val = val;
-                val
-            };
+            for t in tokens {
+                let sid = t.location.source_id();
 
-            let start_offset = buffer.len() as u32;
-
-            // Build buffer efficiently.
-            if let Some(b) = if last_sid == Some(sid) {
-                last_source_buffer
-            } else {
-                let b = self.sm.get_file_info(sid).map(|_| self.sm.get_buffer(sid));
-                last_sid = Some(sid);
-                last_source_buffer = b;
-                b
-            } {
-                let start = t.location.offset() as usize;
-                let end = start + t.length as usize;
-                if end <= b.len() {
-                    buffer.extend_from_slice(&b[start..end]);
+                // Optimized is_pasted check with caching.
+                let is_pasted = if Some(sid) == last_is_pasted_sid {
+                    last_is_pasted_val
                 } else {
-                    buffer.extend_from_slice(t.get_text().as_bytes());
-                }
-            } else {
-                buffer.extend_from_slice(t.get_text().as_bytes());
-            }
+                    let val = self.sm.get_file_info(sid).is_some_and(|info| {
+                        let p = info.path.to_str().unwrap_or("");
+                        p == "<<pasted-tokens>>" || p == "<pasted-tokens>"
+                    });
+                    last_is_pasted_sid = Some(sid);
+                    last_is_pasted_val = val;
+                    val
+                };
 
-            let len = (buffer.len() as u32 - start_offset) as u16;
-            token_metadata.push((is_pasted, start_offset, len));
+                let start_offset = buffer.len() as u32;
+
+                // Build buffer efficiently using cache
+                let bytes = cache.get_token_bytes(t);
+                buffer.extend_from_slice(bytes);
+
+                let len = (buffer.len() as u32 - start_offset) as u16;
+                token_metadata.push((is_pasted, start_offset, len));
+            }
         }
 
         let virtual_id = self

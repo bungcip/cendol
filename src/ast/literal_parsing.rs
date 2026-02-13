@@ -351,4 +351,23 @@ mod tests {
         // 0X1p0 -> 1.0 * 2^0 = 1.0
         assert_eq!(parse_c11_float_literal("0X1p0"), Some((1.0, None)));
     }
+
+    #[test]
+    fn test_escape_sequences() {
+        // Test various C escape sequences
+        assert_eq!(unescape_string(r"\n"), "\n");
+        assert_eq!(unescape_string(r"\t"), "\t");
+        assert_eq!(unescape_string(r"\r"), "\r");
+        assert_eq!(unescape_string(r"\b"), "\x08"); // BS
+        assert_eq!(unescape_string(r"\f"), "\x0C"); // FF
+        assert_eq!(unescape_string(r"\v"), "\x0B"); // VT
+        assert_eq!(unescape_string(r"\a"), "\x07"); // BEL
+        assert_eq!(unescape_string(r"\\"), "\\");
+        assert_eq!(unescape_string(r"\'"), "\'");
+        assert_eq!(unescape_string(r#"\""#), "\"");
+        assert_eq!(unescape_string(r"\?"), "?");
+
+        // Mixed content
+        assert_eq!(unescape_string(r"Hello\nWorld"), "Hello\nWorld");
+    }
 }

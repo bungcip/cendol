@@ -251,6 +251,41 @@ fn test_complex_ops_float() {
 }
 
 #[test]
+fn test_complex_real_imag_operators() {
+    let src = r#"
+        void test(double _Complex a) {
+            double r = __real__ a;
+            double i = __imag__ a;
+            double r2 = __real__ r;
+            double i2 = __imag__ r;
+        }
+    "#;
+    let mir = setup_mir(src);
+    insta::assert_snapshot!(mir, @r"
+    type %t0 = void
+    type %t1 = f64
+    type %t2 = struct _Complex_double { real: %t1, imag: %t1 }
+
+    fn test(%param0: %t2) -> void
+    {
+      locals {
+        %r: f64
+        %i: f64
+        %r2: f64
+        %i2: f64
+      }
+
+      bb1:
+        %r = %param0.field_0
+        %i = %param0.field_1
+        %r2 = %r
+        %i2 = const 0
+        return
+    }
+    ");
+}
+
+#[test]
 fn test_complex_ops_double() {
     let src = r#"
         void test(double _Complex a, double _Complex b) {

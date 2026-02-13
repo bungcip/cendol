@@ -458,6 +458,8 @@ pub enum UnaryOp {
     LogicNot,
     PreIncrement,
     PreDecrement,
+    Real,
+    Imag,
 }
 
 // Binary Operators (includes assignment types)

@@ -419,6 +419,7 @@ impl CompilerDriver {
                         optimization: self.config.optimization.clone(),
                         debug_info: self.config.debug_info,
                         verbose: self.config.verbose,
+                        fuse_ld: self.config.fuse_ld.clone(),
                     };
 
                     // Link using LinkGen

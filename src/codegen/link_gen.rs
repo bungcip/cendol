@@ -21,6 +21,8 @@ pub(crate) struct LinkConfig {
     pub debug_info: bool,
     /// Verbose output
     pub verbose: bool,
+    /// Use a specific linker
+    pub fuse_ld: Option<String>,
 }
 
 /// Error type for linking operations.
@@ -86,6 +88,10 @@ impl LinkGen {
         // Add debug info if requested
         if config.debug_info {
             clang_cmd.arg("-g");
+        }
+
+        if let Some(linker) = &config.fuse_ld {
+            clang_cmd.arg(format!("-fuse-ld={}", linker));
         }
 
         // Default to linking math library

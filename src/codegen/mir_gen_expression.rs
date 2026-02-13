@@ -163,13 +163,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn emit_ternary_op(
-        &mut self,
-        cond: NodeRef,
-        then_expr: NodeRef,
-        else_expr: NodeRef,
-        mir_ty: TypeId,
-    ) -> Operand {
+    fn emit_ternary_op(&mut self, cond: NodeRef, then_expr: NodeRef, else_expr: NodeRef, mir_ty: TypeId) -> Operand {
         let is_void = matches!(self.mir_builder.get_type(mir_ty), crate::mir::MirType::Void);
 
         let cond_op = self.emit_expression(cond, true);
@@ -416,13 +410,7 @@ impl<'a> MirGen<'a> {
         (lhs, rhs)
     }
 
-    fn emit_binary_op_expr(
-        &mut self,
-        op: &BinaryOp,
-        left_ref: NodeRef,
-        right_ref: NodeRef,
-        mir_ty: TypeId,
-    ) -> Operand {
+    fn emit_binary_op_expr(&mut self, op: &BinaryOp, left_ref: NodeRef, right_ref: NodeRef, mir_ty: TypeId) -> Operand {
         debug_assert!(
             !op.is_assignment(),
             "emit_binary_op_expr called with assignment operator: {:?}",
@@ -522,12 +510,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn emit_bool_normalization(
-        &mut self,
-        value_op: Operand,
-        result_place: Place,
-        merge_block: crate::mir::MirBlockId,
-    ) {
+    fn emit_bool_normalization(&mut self, value_op: Operand, result_place: Place, merge_block: crate::mir::MirBlockId) {
         let true_block = self.mir_builder.create_block();
         let false_block = self.mir_builder.create_block();
 
@@ -547,13 +530,7 @@ impl<'a> MirGen<'a> {
         self.mir_builder.set_terminator(Terminator::Goto(merge_block));
     }
 
-    fn emit_logical_op(
-        &mut self,
-        op: &BinaryOp,
-        left_ref: NodeRef,
-        right_ref: NodeRef,
-        mir_ty: TypeId,
-    ) -> Operand {
+    fn emit_logical_op(&mut self, op: &BinaryOp, left_ref: NodeRef, right_ref: NodeRef, mir_ty: TypeId) -> Operand {
         // Short-circuiting logic for && and ||
         let (_res_local, res_place) = self.create_temp_local(mir_ty);
 
@@ -1044,13 +1021,7 @@ impl<'a> MirGen<'a> {
         self.create_int_operand(0)
     }
 
-    fn emit_atomic_op(
-        &mut self,
-        op: AtomicOp,
-        args_start: NodeRef,
-        args_len: u16,
-        mir_ty: TypeId,
-    ) -> Operand {
+    fn emit_atomic_op(&mut self, op: AtomicOp, args_start: NodeRef, args_len: u16, mir_ty: TypeId) -> Operand {
         let args = self.get_atomic_args(args_start, args_len);
         let order = AtomicMemOrder::SeqCst; // Default to SeqCst for now
 

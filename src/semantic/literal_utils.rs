@@ -2,7 +2,7 @@ use crate::ast::NameId;
 use crate::ast::literal_parsing;
 use crate::semantic::BuiltinType;
 
-pub enum StringLiteralPrefix {
+enum StringLiteralPrefix {
     None,
     Wide,   // L"..." -> wchar_t (int)
     Char16, // u"..." -> char16_t (uint16)

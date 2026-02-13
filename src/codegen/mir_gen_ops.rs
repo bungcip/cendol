@@ -26,7 +26,7 @@ pub(crate) fn emit_unary_rvalue(op: &UnaryOp, operand: Operand, is_float: bool) 
     }
 }
 
-pub(crate) fn map_ast_binary_op_to_mir_int(ast_op: &BinaryOp) -> BinaryIntOp {
+fn map_ast_binary_op_to_mir_int(ast_op: &BinaryOp) -> BinaryIntOp {
     let op = ast_op.without_assignment().unwrap_or(*ast_op);
     match op {
         BinaryOp::Add => BinaryIntOp::Add,
@@ -52,7 +52,7 @@ pub(crate) fn map_ast_binary_op_to_mir_int(ast_op: &BinaryOp) -> BinaryIntOp {
     }
 }
 
-pub(crate) fn map_ast_binary_op_to_mir_float(ast_op: &BinaryOp) -> BinaryFloatOp {
+fn map_ast_binary_op_to_mir_float(ast_op: &BinaryOp) -> BinaryFloatOp {
     let op = ast_op.without_assignment().unwrap_or(*ast_op);
     match op {
         BinaryOp::Add => BinaryFloatOp::Add,
@@ -69,7 +69,7 @@ pub(crate) fn map_ast_binary_op_to_mir_float(ast_op: &BinaryOp) -> BinaryFloatOp
     }
 }
 
-pub(crate) fn map_ast_unary_op_to_mir_int(ast_op: &UnaryOp) -> UnaryIntOp {
+fn map_ast_unary_op_to_mir_int(ast_op: &UnaryOp) -> UnaryIntOp {
     match ast_op {
         UnaryOp::Minus => UnaryIntOp::Neg,
         UnaryOp::BitNot => UnaryIntOp::BitwiseNot,
@@ -78,7 +78,7 @@ pub(crate) fn map_ast_unary_op_to_mir_int(ast_op: &UnaryOp) -> UnaryIntOp {
     }
 }
 
-pub(crate) fn map_ast_unary_op_to_mir_float(ast_op: &UnaryOp) -> UnaryFloatOp {
+fn map_ast_unary_op_to_mir_float(ast_op: &UnaryOp) -> UnaryFloatOp {
     match ast_op {
         UnaryOp::Minus => UnaryFloatOp::Neg,
         _ => panic!("Unsupported float unary operator: {:?}", ast_op),

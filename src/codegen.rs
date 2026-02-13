@@ -16,9 +16,9 @@ pub(crate) mod mir_gen_initializer;
 pub(crate) mod mir_gen_ops;
 
 // Re-export key types for public API
-pub use clif_gen::{ClifOutput, EmitKind};
-pub use link_gen::{LinkConfig, LinkGen};
-pub use object_gen::ObjectGen;
+pub(crate) use clif_gen::{ClifOutput, EmitKind};
+pub(crate) use link_gen::{LinkConfig, LinkGen};
+pub(crate) use object_gen::ObjectGen;
 
 // Re-export crate-internal types
 pub(crate) use clif_gen::ClifGen;

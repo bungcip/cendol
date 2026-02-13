@@ -11,7 +11,7 @@ use crate::semantic::{QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
 use crate::{ast, semantic};
 
 impl<'a> MirGen<'a> {
-    pub(crate) fn emit_expression_as_place(&mut self, expr_ref: NodeRef) -> Place {
+    fn emit_expression_as_place(&mut self, expr_ref: NodeRef) -> Place {
         let op = self.emit_expression(expr_ref, true);
         let ty = self.ast.get_resolved_type(expr_ref).unwrap();
         let mir_ty = self.lower_qual_type(ty);
@@ -122,7 +122,7 @@ impl<'a> MirGen<'a> {
         None
     }
 
-    pub(crate) fn emit_gnu_stmt_expr(&mut self, stmt: NodeRef, result_expr: NodeRef, need_value: bool) -> Operand {
+    fn emit_gnu_stmt_expr(&mut self, stmt: NodeRef, result_expr: NodeRef, need_value: bool) -> Operand {
         let stmt_kind = self.ast.get_kind(stmt);
         if let NodeKind::CompoundStatement(cs) = stmt_kind {
             let old_scope = self.current_scope_id;
@@ -163,13 +163,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_ternary_op(
-        &mut self,
-        cond: NodeRef,
-        then_expr: NodeRef,
-        else_expr: NodeRef,
-        mir_ty: TypeId,
-    ) -> Operand {
+    fn emit_ternary_op(&mut self, cond: NodeRef, then_expr: NodeRef, else_expr: NodeRef, mir_ty: TypeId) -> Operand {
         let is_void = matches!(self.mir_builder.get_type(mir_ty), crate::mir::MirType::Void);
 
         let cond_op = self.emit_expression(cond, true);
@@ -207,13 +201,13 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
+    fn emit_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
         let layout = self.registry.get_layout(ty);
         let val = if is_size { layout.size } else { layout.alignment };
         self.create_int_operand(val as i64)
     }
 
-    pub(crate) fn emit_generic_selection(
+    fn emit_generic_selection(
         &mut self,
         _gs: &ast::nodes::GenericSelectionData,
         need_value: bool,
@@ -230,7 +224,7 @@ impl<'a> MirGen<'a> {
         self.emit_expression(expr_to_lower, need_value)
     }
 
-    pub(crate) fn emit_cast(&mut self, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
+    fn emit_cast(&mut self, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
         let is_void = self.mir_builder.get_type(mir_ty).is_void();
         if is_void {
             self.emit_expression(operand_ref, false);
@@ -243,7 +237,7 @@ impl<'a> MirGen<'a> {
         Operand::Cast(mir_ty, Box::new(operand))
     }
 
-    pub(crate) fn emit_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
+    fn emit_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
         let mir_ty = self.lower_qual_type(ty);
         match node_kind {
             NodeKind::Literal(literal) => match literal {
@@ -262,7 +256,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_unary_op_expr(&mut self, op: &UnaryOp, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
+    fn emit_unary_op_expr(&mut self, op: &UnaryOp, operand_ref: NodeRef, mir_ty: TypeId) -> Operand {
         let ty = self.ast.get_resolved_type(operand_ref).unwrap();
         if ty.is_complex() && !matches!(op, UnaryOp::AddrOf | UnaryOp::Deref) {
             return self.emit_complex_unary_op(op, operand_ref, mir_ty);
@@ -300,7 +294,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_unary_addrof(&mut self, operand_ref: NodeRef) -> Operand {
+    fn emit_unary_addrof(&mut self, operand_ref: NodeRef) -> Operand {
         let operand = self.emit_expression(operand_ref, true);
         if let Operand::Copy(place) = operand {
             Operand::AddressOf(place)
@@ -320,7 +314,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_unary_deref(&mut self, operand_ref: NodeRef) -> Operand {
+    fn emit_unary_deref(&mut self, operand_ref: NodeRef) -> Operand {
         let operand = self.emit_expression(operand_ref, true);
         let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
         let target_mir_ty = self.lower_qual_type(operand_ty);
@@ -330,7 +324,7 @@ impl<'a> MirGen<'a> {
         Operand::Copy(Box::new(place))
     }
 
-    pub(crate) fn emit_ident(&mut self, resolved_ref: SymbolRef) -> Operand {
+    fn emit_ident(&mut self, resolved_ref: SymbolRef) -> Operand {
         let entry = self.symbol_table.get_symbol(resolved_ref);
 
         match &entry.kind {
@@ -376,7 +370,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn unify_binary_operands(
+    fn unify_binary_operands(
         &mut self,
         mut lhs: Operand,
         mut rhs: Operand,
@@ -416,13 +410,7 @@ impl<'a> MirGen<'a> {
         (lhs, rhs)
     }
 
-    pub(crate) fn emit_binary_op_expr(
-        &mut self,
-        op: &BinaryOp,
-        left_ref: NodeRef,
-        right_ref: NodeRef,
-        mir_ty: TypeId,
-    ) -> Operand {
+    fn emit_binary_op_expr(&mut self, op: &BinaryOp, left_ref: NodeRef, right_ref: NodeRef, mir_ty: TypeId) -> Operand {
         debug_assert!(
             !op.is_assignment(),
             "emit_binary_op_expr called with assignment operator: {:?}",
@@ -508,7 +496,7 @@ impl<'a> MirGen<'a> {
         (rval, result_ty)
     }
 
-    pub(crate) fn ensure_explicit_cast(&mut self, operand: Operand, node_ref: NodeRef) -> Operand {
+    fn ensure_explicit_cast(&mut self, operand: Operand, node_ref: NodeRef) -> Operand {
         match operand {
             Operand::Constant(_) => {
                 if let Some(ty) = self.ast.get_resolved_type(node_ref) {
@@ -522,12 +510,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_bool_normalization(
-        &mut self,
-        value_op: Operand,
-        result_place: Place,
-        merge_block: crate::mir::MirBlockId,
-    ) {
+    fn emit_bool_normalization(&mut self, value_op: Operand, result_place: Place, merge_block: crate::mir::MirBlockId) {
         let true_block = self.mir_builder.create_block();
         let false_block = self.mir_builder.create_block();
 
@@ -547,13 +530,7 @@ impl<'a> MirGen<'a> {
         self.mir_builder.set_terminator(Terminator::Goto(merge_block));
     }
 
-    pub(crate) fn emit_logical_op(
-        &mut self,
-        op: &BinaryOp,
-        left_ref: NodeRef,
-        right_ref: NodeRef,
-        mir_ty: TypeId,
-    ) -> Operand {
+    fn emit_logical_op(&mut self, op: &BinaryOp, left_ref: NodeRef, right_ref: NodeRef, mir_ty: TypeId) -> Operand {
         // Short-circuiting logic for && and ||
         let (_res_local, res_place) = self.create_temp_local(mir_ty);
 
@@ -632,7 +609,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_pointer_arithmetic(
+    fn emit_pointer_arithmetic(
         &mut self,
         op: &BinaryOp,
         lhs: Operand,
@@ -711,7 +688,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_assignment_expr(
+    fn emit_assignment_expr(
         &mut self,
         node_ref: NodeRef,
         op: &BinaryOp,
@@ -754,7 +731,7 @@ impl<'a> MirGen<'a> {
         final_rhs // C assignment expressions evaluate to the assigned value
     }
 
-    pub(crate) fn emit_compound_assignment(
+    fn emit_compound_assignment(
         &mut self,
         node_ref: NodeRef,
         compound_op: BinaryOp,
@@ -774,7 +751,7 @@ impl<'a> MirGen<'a> {
         self.apply_conversions(result_op, node_ref, mir_ty)
     }
 
-    pub(crate) fn emit_function_call(&mut self, call_expr: &ast::nodes::CallExpr, dest_place: Option<Place>) {
+    fn emit_function_call(&mut self, call_expr: &ast::nodes::CallExpr, dest_place: Option<Place>) {
         let callee = self.emit_expression(call_expr.callee, true);
 
         let arg_operands = self.emit_function_call_args(call_expr);
@@ -857,7 +834,7 @@ impl<'a> MirGen<'a> {
         arg_operands
     }
 
-    pub(crate) fn find_member_path(&self, record_ty: semantic::TypeRef, field_name: ast::NameId) -> Option<Vec<usize>> {
+    fn find_member_path(&self, record_ty: semantic::TypeRef, field_name: ast::NameId) -> Option<Vec<usize>> {
         let mut flat_members = Vec::new();
         let ty = self.registry.get(record_ty);
         ty.flatten_members(self.registry, &mut flat_members);
@@ -868,7 +845,7 @@ impl<'a> MirGen<'a> {
         None
     }
 
-    pub(crate) fn emit_member_access(&mut self, obj_ref: NodeRef, field_name: &ast::NameId, is_arrow: bool) -> Operand {
+    fn emit_member_access(&mut self, obj_ref: NodeRef, field_name: &ast::NameId, is_arrow: bool) -> Operand {
         let obj_ty = self.ast.get_resolved_type(obj_ref).unwrap();
         let record_ty = if is_arrow {
             self.registry
@@ -905,7 +882,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_index_access(&mut self, arr_ref: NodeRef, idx_ref: NodeRef) -> Operand {
+    fn emit_index_access(&mut self, arr_ref: NodeRef, idx_ref: NodeRef) -> Operand {
         let arr_ty = self.ast.get_resolved_type(arr_ref).unwrap();
 
         // Handle both array and pointer types for index access
@@ -920,7 +897,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_inc_dec_expression(
+    fn emit_inc_dec_expression(
         &mut self,
         operand_ref: NodeRef,
         is_inc: bool,
@@ -982,7 +959,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn create_inc_dec_rvalue(&mut self, operand: Operand, operand_ty: QualType, is_inc: bool) -> Rvalue {
+    fn create_inc_dec_rvalue(&mut self, operand: Operand, operand_ty: QualType, is_inc: bool) -> Rvalue {
         let one_const = self.create_int_operand(1);
         let minus_one_const = self.create_int_operand(-1);
 
@@ -1007,7 +984,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn create_pointer_arithmetic_rvalue(&mut self, lhs: Operand, rhs: Operand, op: BinaryOp) -> Rvalue {
+    fn create_pointer_arithmetic_rvalue(&mut self, lhs: Operand, rhs: Operand, op: BinaryOp) -> Rvalue {
         match op {
             BinaryOp::Add => Rvalue::PtrAdd(lhs, rhs),
             BinaryOp::Sub => Rvalue::PtrSub(lhs, rhs),
@@ -1015,14 +992,14 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_builtin_va_arg(&mut self, ty: QualType, expr_ref: NodeRef) -> Operand {
+    fn emit_builtin_va_arg(&mut self, ty: QualType, expr_ref: NodeRef) -> Operand {
         let ap = self.emit_expression_as_place(expr_ref);
         let mir_ty = self.lower_qual_type(ty);
         let rval = Rvalue::BuiltinVaArg(ap, mir_ty);
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
-    pub(crate) fn emit_builtin_void(&mut self, kind: &NodeKind) -> Operand {
+    fn emit_builtin_void(&mut self, kind: &NodeKind) -> Operand {
         let stmt = match kind {
             NodeKind::BuiltinVaStart(ap_ref, last_ref) => {
                 let ap = self.emit_expression_as_place(*ap_ref);
@@ -1044,13 +1021,7 @@ impl<'a> MirGen<'a> {
         self.create_int_operand(0)
     }
 
-    pub(crate) fn emit_atomic_op(
-        &mut self,
-        op: AtomicOp,
-        args_start: NodeRef,
-        args_len: u16,
-        mir_ty: TypeId,
-    ) -> Operand {
+    fn emit_atomic_op(&mut self, op: AtomicOp, args_start: NodeRef, args_len: u16, mir_ty: TypeId) -> Operand {
         let args = self.get_atomic_args(args_start, args_len);
         let order = AtomicMemOrder::SeqCst; // Default to SeqCst for now
 

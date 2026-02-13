@@ -7,7 +7,7 @@ use crate::mir::{ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue
 use crate::semantic::{ArraySizeType, QualType, StructMember, TypeKind};
 
 impl<'a> MirGen<'a> {
-    pub(crate) fn emit_initializer_list(
+    fn emit_initializer_list(
         &mut self,
         list_data: &ast::nodes::InitializerListData,
         target_ty: QualType,
@@ -230,7 +230,7 @@ impl<'a> MirGen<'a> {
             .collect()
     }
 
-    pub(crate) fn resolve_designator_range(&mut self, designator_ref: NodeRef) -> (usize, usize) {
+    fn resolve_designator_range(&mut self, designator_ref: NodeRef) -> (usize, usize) {
         match self.ast.get_kind(designator_ref) {
             NodeKind::Designator(Designator::ArrayIndex(idx_expr)) => {
                 let idx = self.evaluate_constant_usize(*idx_expr, "Array designator must be constant");
@@ -248,7 +248,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_array_initializer(
+    fn emit_array_initializer(
         &mut self,
         list_data: &ast::nodes::InitializerListData,
         element_ty: QualType,
@@ -382,7 +382,7 @@ impl<'a> MirGen<'a> {
         self.finalize_array_initializer(final_elements, target_ty, destination)
     }
 
-    pub(crate) fn finalize_initializer_generic<T, C, R>(
+    fn finalize_initializer_generic<T, C, R>(
         &mut self,
         target_ty: QualType,
         data: T,
@@ -409,7 +409,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn finalize_struct_initializer(
+    fn finalize_struct_initializer(
         &mut self,
         field_operands: Vec<(usize, Operand)>,
         target_ty: QualType,
@@ -441,7 +441,7 @@ impl<'a> MirGen<'a> {
         )
     }
 
-    pub(crate) fn finalize_array_initializer(
+    fn finalize_array_initializer(
         &mut self,
         elements: Vec<Operand>,
         target_ty: QualType,
@@ -606,7 +606,7 @@ impl<'a> MirGen<'a> {
         self.operand_to_const_id(&operand)
     }
 
-    pub(crate) fn emit_initializer_with_designators(
+    fn emit_initializer_with_designators(
         &mut self,
         mut designators: impl Iterator<Item = NodeRef>,
         initializer: NodeRef,

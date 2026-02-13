@@ -25,12 +25,12 @@ use target_lexicon::Triple;
 
 /// emitted from codegen
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EmitKind {
+pub(crate) enum EmitKind {
     Object,
     Clif,
 }
 
-pub enum ClifOutput {
+pub(crate) enum ClifOutput {
     ObjectFile(Vec<u8>),
     ClifDump(String),
 }
@@ -65,7 +65,7 @@ fn lower_linkage(kind: MirFunctionKind) -> Linkage {
 }
 
 /// Helper function to get the size of a MIR type in bytes
-pub(crate) fn lower_type_size(mir_type: &MirType, mir: &MirProgram) -> Result<u32, String> {
+fn lower_type_size(mir_type: &MirType, mir: &MirProgram) -> Result<u32, String> {
     match mir_type {
         MirType::I8 | MirType::U8 => Ok(1),
         MirType::I16 | MirType::U16 => Ok(2),

@@ -177,7 +177,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 ..
             } => {
                 self.visit_type_expressions(QualType::unqualified(return_type));
-                for param in parameters {
+                for param in parameters.iter() {
                     self.visit_type_expressions(param.param_type);
                 }
             }
@@ -273,7 +273,7 @@ impl<'a> SemanticAnalyzer<'a> {
                         if let Some(member) = members.iter().find(|m| m.name == Some(name)) {
                             return member.bit_field_size.is_some();
                         }
-                        for member in members {
+                        for member in members.iter() {
                             if member.name.is_none() && find_bitfield(registry, member.member_type.ty(), name) {
                                 return true;
                             }
@@ -1243,7 +1243,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
 
                 // 2. Check anonymous members
-                for member in members {
+                for member in members.iter() {
                     if member.name.is_none() {
                         let member_ty = member.member_type.ty();
                         if member_ty.is_record()
@@ -1409,7 +1409,7 @@ impl<'a> SemanticAnalyzer<'a> {
                         self.report_error(SemanticError::IncompleteReturnType { span });
                     }
 
-                    for param in parameters {
+                    for param in parameters.iter() {
                         let _ = self.registry.ensure_layout(param.param_type.ty());
                     }
                 }

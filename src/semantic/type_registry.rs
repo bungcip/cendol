@@ -4,6 +4,7 @@
 //! All TypeRef creation and mutation MUST go through this context.
 
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use crate::source_manager::SourceSpan;
 use crate::{ast::NameId, diagnostic::SemanticError, semantic::QualType};
@@ -432,7 +433,7 @@ impl TypeRegistry {
 
         let f = self.alloc(Type::new(TypeKind::Function {
             return_type,
-            parameters: params,
+            parameters: Arc::from(params),
             is_variadic,
             is_noreturn,
         }));
@@ -459,7 +460,7 @@ impl TypeRegistry {
     pub(crate) fn declare_record(&mut self, tag: Option<NameId>, is_union: bool) -> TypeRef {
         self.alloc(Type::new(TypeKind::Record {
             tag,
-            members: Vec::new(),
+            members: Arc::from([]),
             is_complete: false,
             is_union,
         }))
@@ -473,7 +474,7 @@ impl TypeRegistry {
                 members: slot,
                 ..
             } => {
-                *slot = members;
+                *slot = Arc::from(members);
                 *is_complete = true;
             }
             _ => unreachable!("complete_record on non-record"),
@@ -484,7 +485,7 @@ impl TypeRegistry {
         self.alloc(Type::new(TypeKind::Enum {
             tag,
             base_type,
-            enumerators: Vec::new(),
+            enumerators: Arc::from([]),
             is_complete: false,
         }))
     }
@@ -497,7 +498,7 @@ impl TypeRegistry {
                 enumerators: slot,
                 ..
             } => {
-                *slot = enumerators;
+                *slot = Arc::from(enumerators);
                 *is_complete = true;
             }
             _ => unreachable!("complete_enum on non-enum"),
@@ -647,12 +648,12 @@ impl TypeRegistry {
                     size: 24,
                     alignment: 8,
                     kind: LayoutKind::Record {
-                        fields: vec![
+                        fields: Arc::from([
                             FieldLayout { offset: 0 },
                             FieldLayout { offset: 4 },
                             FieldLayout { offset: 8 },
                             FieldLayout { offset: 16 },
-                        ],
+                        ]),
                         is_union: false,
                     },
                 },
@@ -869,7 +870,7 @@ impl TypeRegistry {
             size: final_size,
             alignment: max_align,
             kind: LayoutKind::Record {
-                fields: field_layouts,
+                fields: Arc::from(field_layouts),
                 is_union,
             },
         })
@@ -1115,7 +1116,7 @@ impl TypeRegistry {
                 return false;
             }
 
-            for member in members {
+            for member in members.iter() {
                 // Pointers are only const if the pointer itself is const,
                 // not if the pointee is const.
                 // Arrays and nested structs incur recursive constness if they contain const elements/members.

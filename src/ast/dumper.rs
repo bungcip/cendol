@@ -153,7 +153,7 @@ impl AstDumper {
             } => {
                 let return_str = Self::format_type_kind_user_friendly(&registry.get(*return_type).kind, registry);
                 let mut param_strs = Vec::new();
-                for param in parameters {
+                for param in parameters.iter() {
                     let param_str =
                         Self::format_type_kind_user_friendly(&registry.get(param.param_type.ty()).kind, registry);
                     param_strs.push(param_str);

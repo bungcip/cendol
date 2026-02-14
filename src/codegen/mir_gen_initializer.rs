@@ -42,7 +42,7 @@ impl<'a> MirGen<'a> {
         // Precalculate flattened offsets for hierarchical members
         let mut hierarchical_offsets = Vec::with_capacity(members.len());
         let mut offset = 0;
-        for m in &members {
+        for m in members.iter() {
             hierarchical_offsets.push(offset);
             if !is_union {
                 offset += self.count_flattened_members(m);

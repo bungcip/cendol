@@ -1521,10 +1521,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let existing_type_info = existing.type_info;
         let existing_def_span = existing.def_span;
         let existing_has_linkage = existing.has_linkage();
-        let existing_storage_if_func = if let SymbolKind::Function { storage } = existing.kind {
-            Some(storage)
-        } else {
-            None
+        let existing_storage = match &existing.kind {
+            SymbolKind::Variable { storage, .. } => Some(*storage),
+            SymbolKind::Function { storage } => Some(*storage),
+            _ => None,
         };
 
         let is_global = current_scope == ScopeId::GLOBAL;
@@ -1534,6 +1534,22 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if !is_conflict {
             return new_ty;
+        }
+
+        // Check for linkage conflict (C11 6.2.2)
+        if let Some(existing_s) = existing_storage {
+            let existing_is_static = existing_s == Some(StorageClass::Static);
+            let new_is_static = storage == Some(StorageClass::Static);
+
+            // static followed by extern/plain is OK and inherits internal linkage.
+            // extern/plain followed by static is an error.
+            if !existing_is_static && new_is_static {
+                self.report_error(SemanticError::ConflictingLinkage {
+                    name: name.to_string(),
+                    span,
+                    first_def: existing_def_span,
+                });
+            }
         }
 
         // C11 6.7p3: If an identifier has no linkage, there shall be no more than one declaration
@@ -1563,15 +1579,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         existing_mut.type_info = composite;
 
         if new_ty.is_function() {
-            self.check_function_redeclaration(
-                name,
-                new_ty,
-                span,
-                storage,
-                existing_def_span,
-                existing_type_info,
-                existing_storage_if_func,
-            );
+            self.check_function_redeclaration(name, new_ty, span, existing_def_span, existing_type_info);
         }
 
         composite
@@ -1582,27 +1590,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         name: NameId,
         new_ty: QualType,
         span: SourceSpan,
-        new_storage: Option<StorageClass>,
         first_def: SourceSpan,
         existing_ty: QualType,
-        existing_storage: Option<Option<StorageClass>>,
     ) {
-        // Check for linkage conflict
-        if let Some(existing_s) = existing_storage {
-            let existing_is_static = existing_s == Some(StorageClass::Static);
-            let new_is_static = new_storage == Some(StorageClass::Static);
-
-            // C11 6.2.2p5: static followed by extern/plain is OK and inherits internal linkage.
-            // extern/plain followed by static is an error.
-            if !existing_is_static && new_is_static {
-                self.report_error(SemanticError::ConflictingLinkage {
-                    name: name.to_string(),
-                    span,
-                    first_def,
-                });
-            }
-        }
-
         // Check for _Noreturn mismatch
         let get_noreturn = |ty: QualType, registry: &TypeRegistry| {
             if let TypeKind::Function { is_noreturn, .. } = &registry.get(ty.ty()).kind {

@@ -35,7 +35,10 @@ pub(crate) fn setup_pp_snapshot_with_diags(src: &str) -> (Vec<DebugToken>, Vec<S
     setup_pp_snapshot_with_diags_and_config(src, None)
 }
 
-pub(crate) fn setup_pp_snapshot_with_diags_and_config(src: &str, config: Option<PPConfig>) -> (Vec<DebugToken>, Vec<String>) {
+pub(crate) fn setup_pp_snapshot_with_diags_and_config(
+    src: &str,
+    config: Option<PPConfig>,
+) -> (Vec<DebugToken>, Vec<String>) {
     // Return a Result-like structure for the snapshot
     match setup_preprocessor_test_with_diagnostics(src, config) {
         Ok((tokens, diags)) => {

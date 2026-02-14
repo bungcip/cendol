@@ -50,7 +50,6 @@ fn test_block_scope_extern_refers_to_global_static() {
     );
 }
 
-
 #[test]
 fn test_plain_followed_by_static_variable_mismatch() {
     run_fail_with_message(

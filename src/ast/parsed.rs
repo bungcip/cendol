@@ -31,7 +31,7 @@ impl ParsedAst {
         ParsedNodeRef::new(index).expect("ParsedNodeRef overflow")
     }
 
-    pub fn get_node(&self, index: ParsedNodeRef) -> &ParsedNode {
+    pub(crate) fn get_node(&self, index: ParsedNodeRef) -> &ParsedNode {
         &self.nodes[(index.get() - 1) as usize]
     }
 
@@ -41,7 +41,7 @@ impl ParsedAst {
         old_node_ref
     }
 
-    pub fn get_root(&self) -> ParsedNodeRef {
+    pub(crate) fn get_root(&self) -> ParsedNodeRef {
         ParsedNodeRef::new(1).expect("Parsed AST empty")
     }
 }

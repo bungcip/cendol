@@ -5,7 +5,7 @@ use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::semantic::TypeRegistry;
 use crate::tests::test_utils;
 
-pub fn setup_mir(source: &str) -> String {
+pub(crate) fn setup_mir(source: &str) -> String {
     let (driver, result) = test_utils::run_pipeline(source, CompilePhase::Mir);
     let mut out = match result {
         Ok(out) => out,
@@ -22,7 +22,7 @@ pub fn setup_mir(source: &str) -> String {
     dumper.generate_mir_dump().expect("Failed to generate MIR dump")
 }
 
-pub fn setup_lowering(source: &str) -> (Ast, TypeRegistry, crate::semantic::SymbolTable) {
+pub(crate) fn setup_lowering(source: &str) -> (Ast, TypeRegistry, crate::semantic::SymbolTable) {
     let (driver, result) = test_utils::run_pipeline(source, CompilePhase::SemanticLowering);
     let out = match result {
         Ok(out) => out,
@@ -37,7 +37,7 @@ pub fn setup_lowering(source: &str) -> (Ast, TypeRegistry, crate::semantic::Symb
     )
 }
 
-pub fn setup_analysis(source: &str) -> (Ast, TypeRegistry, crate::semantic::SymbolTable) {
+pub(crate) fn setup_analysis(source: &str) -> (Ast, TypeRegistry, crate::semantic::SymbolTable) {
     let (driver, result) = test_utils::run_pipeline(source, CompilePhase::SemanticLowering);
     let out = match result {
         Ok(out) => out,
@@ -61,12 +61,12 @@ pub fn setup_analysis(source: &str) -> (Ast, TypeRegistry, crate::semantic::Symb
     (ast, registry, symbol_table)
 }
 
-pub fn find_layout<'a>(registry: &'a TypeRegistry, name: &str) -> &'a crate::semantic::types::TypeLayout {
+pub(crate) fn find_layout<'a>(registry: &'a TypeRegistry, name: &str) -> &'a crate::semantic::types::TypeLayout {
     let s_ty = find_record_type(registry, name);
     s_ty.layout.as_ref().expect("Layout not computed for S")
 }
 
-pub fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'a crate::semantic::Type {
+pub(crate) fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'a crate::semantic::Type {
     registry
         .types
         .iter()
@@ -83,7 +83,7 @@ pub fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'a crate
         .unwrap_or_else(|| panic!("Record type '{}' not found in registry", name))
 }
 
-pub fn find_var_decl<'a>(ast: &'a Ast, name: &str) -> &'a crate::ast::VarDeclData {
+pub(crate) fn find_var_decl<'a>(ast: &'a Ast, name: &str) -> &'a crate::ast::VarDeclData {
     ast.kinds
         .iter()
         .find_map(|kind| {
@@ -98,7 +98,7 @@ pub fn find_var_decl<'a>(ast: &'a Ast, name: &str) -> &'a crate::ast::VarDeclDat
         .unwrap_or_else(|| panic!("Variable declaration '{}' not found in AST", name))
 }
 
-pub fn find_enum_constant(symbol_table: &crate::semantic::SymbolTable, name: &str) -> i64 {
+pub(crate) fn find_enum_constant(symbol_table: &crate::semantic::SymbolTable, name: &str) -> i64 {
     symbol_table
         .entries
         .iter()

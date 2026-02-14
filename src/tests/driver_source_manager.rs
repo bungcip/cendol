@@ -9,6 +9,7 @@ fn test_source_loc_packing() {
 
     assert_eq!(loc.source_id(), source_id);
     assert_eq!(loc.offset(), offset);
+    assert_eq!(format!("{}", loc), "SourceLoc(source_id=SourceId(1), offset=12345)");
 }
 
 #[test]

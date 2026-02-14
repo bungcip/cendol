@@ -60,30 +60,30 @@ pub(crate) fn sort_clif_ir(ir: &str) -> String {
     functions.join("\n\n")
 }
 
-pub fn run_pass(source: &str, phase: CompilePhase) {
+pub(crate) fn run_pass(source: &str, phase: CompilePhase) {
     let (driver, result) = run_pipeline(source, phase);
     if result.is_err() {
         panic!("Compilation failed unexpectedly: {:?}", driver.get_diagnostics());
     }
 }
 
-pub fn run_fail(source: &str, phase: CompilePhase) -> CompilerDriver {
+pub(crate) fn run_fail(source: &str, phase: CompilePhase) -> CompilerDriver {
     let (driver, result) = run_pipeline(source, phase);
     assert!(result.is_err(), "Compilation should have failed");
     driver
 }
 
-pub fn run_fail_with_message(source: &str, phase: CompilePhase, message: &str) {
+pub(crate) fn run_fail_with_message(source: &str, phase: CompilePhase, message: &str) {
     let driver = run_fail(source, phase);
     check_diagnostic_message_only(&driver, message);
 }
 
-pub fn run_fail_with_diagnostic(source: &str, phase: CompilePhase, message: &str, line: u32, col: u32) {
+pub(crate) fn run_fail_with_diagnostic(source: &str, phase: CompilePhase, message: &str, line: u32, col: u32) {
     let driver = run_fail(source, phase);
     check_diagnostic(&driver, message, line, col);
 }
 
-pub fn check_diagnostic(driver: &CompilerDriver, message: &str, line: u32, col: u32) {
+pub(crate) fn check_diagnostic(driver: &CompilerDriver, message: &str, line: u32, col: u32) {
     let diagnostics = driver.get_diagnostics();
     let found = diagnostics.iter().any(|d| {
         if d.message.contains(message)
@@ -102,7 +102,7 @@ pub fn check_diagnostic(driver: &CompilerDriver, message: &str, line: u32, col: 
     );
 }
 
-pub fn check_diagnostic_message_only(driver: &CompilerDriver, message: &str) {
+pub(crate) fn check_diagnostic_message_only(driver: &CompilerDriver, message: &str) {
     let diagnostics = driver.get_diagnostics();
     let found = diagnostics.iter().any(|d| d.message.contains(message));
     assert!(
@@ -112,7 +112,7 @@ pub fn check_diagnostic_message_only(driver: &CompilerDriver, message: &str) {
     );
 }
 
-pub fn setup_diagnostics_output(source: &str) -> String {
+pub(crate) fn setup_diagnostics_output(source: &str) -> String {
     let (driver, _) = run_pipeline(source, CompilePhase::Mir);
     let diagnostics = driver.get_diagnostics();
 
@@ -130,7 +130,7 @@ pub fn setup_diagnostics_output(source: &str) -> String {
     )
 }
 
-pub fn run_pass_with_diagnostic(source: &str, phase: CompilePhase, message: &str, line: u32, col: u32) {
+pub(crate) fn run_pass_with_diagnostic(source: &str, phase: CompilePhase, message: &str, line: u32, col: u32) {
     let (driver, result) = run_pipeline(source, phase);
     assert!(result.is_ok(), "Compilation should have succeeded");
     check_diagnostic(&driver, message, line, col);

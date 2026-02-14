@@ -127,7 +127,7 @@ impl NodeRef {
 
     /// Create an iterator over a range of consecutive NodeRefs, starting from `self`.
     #[inline]
-    pub fn range(self, len: impl Into<u32>) -> NodeRefRange {
+    pub(crate) fn range(self, len: impl Into<u32>) -> NodeRefRange {
         NodeRefRange {
             current: self.get(),
             end: self.get() + len.into(),

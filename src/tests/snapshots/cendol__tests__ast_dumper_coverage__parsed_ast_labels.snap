@@ -1,9 +1,0 @@
----
-source: src/tests/ast_dumper_coverage.rs
-expression: output
----
-1: TranslationUnit(decls=[3])
-3: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
-4: CompoundStatement(stmts=[6])
-5: Goto(label)
-6: Label(label, 5)

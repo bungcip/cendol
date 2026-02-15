@@ -13,6 +13,20 @@ fn test_error_directive_produces_failure() {
 }
 
 #[test]
+fn test_warning_directive() {
+    let src = r#"
+#warning "this is a warning"
+OK
+"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - - kind: Identifier
+        text: OK
+    - - "Warning: \"this is a warning\""
+    "#);
+}
+
+#[test]
 fn test_line_directive_presumed_location() {
     let src = r#"
 // This is line 2

@@ -157,6 +157,149 @@ SIGNED
     "#);
 }
 
+#[test]
+fn test_pp_eval_binary_coverage() {
+    let src = r#"
+/* LogicAnd Short-circuit */
+#if 0 && (1/0)
+FAIL_AND
+#else
+OK_AND_SHORT
+#endif
+
+/* LogicOr Short-circuit */
+#if 1 || (1/0)
+OK_OR_SHORT
+#else
+FAIL_OR
+#endif
+
+/* BitOr */
+#if (1 | 2) == 3
+OK_BITOR
+#endif
+
+/* BitXor */
+#if (3 ^ 1) == 2
+OK_BITXOR
+#endif
+
+/* BitAnd */
+#if (3 & 1) == 1
+OK_BITAND
+#endif
+
+/* NotEqual */
+#if 1 != 2
+OK_NE
+#endif
+
+/* LessEqual */
+#if 1 <= 1
+OK_LE
+#endif
+#if 1 <= 2
+OK_LE2
+#endif
+
+/* GreaterEqual */
+#if 1 >= 1
+OK_GE
+#endif
+#if 2 >= 1
+OK_GE2
+#endif
+
+/* LShift */
+#if (1 << 1) == 2
+OK_LSHIFT
+#endif
+
+/* RShift Unsigned */
+#if (2U >> 1) == 1
+OK_RSHIFT_U
+#endif
+
+/* RShift Signed (Arithmetic Shift) */
+#if (-2 >> 1) == -1
+OK_RSHIFT_S
+#endif
+
+/* Add */
+#if (1 + 2) == 3
+OK_ADD
+#endif
+
+/* Sub */
+#if (3 - 1) == 2
+OK_SUB
+#endif
+
+/* Mul */
+#if (2 * 3) == 6
+OK_MUL
+#endif
+
+/* Div */
+#if (6 / 3) == 2
+OK_DIV
+#endif
+
+/* Mod */
+#if (7 % 3) == 1
+OK_MOD
+#endif
+
+/* Signed vs Unsigned Comparison */
+#if -1 < 0
+OK_SIGNED_COMPARE
+#else
+FAIL_SIGNED_COMPARE
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: OK_AND_SHORT
+    - kind: Identifier
+      text: OK_OR_SHORT
+    - kind: Identifier
+      text: OK_BITOR
+    - kind: Identifier
+      text: OK_BITXOR
+    - kind: Identifier
+      text: OK_BITAND
+    - kind: Identifier
+      text: OK_NE
+    - kind: Identifier
+      text: OK_LE
+    - kind: Identifier
+      text: OK_LE2
+    - kind: Identifier
+      text: OK_GE
+    - kind: Identifier
+      text: OK_GE2
+    - kind: Identifier
+      text: OK_LSHIFT
+    - kind: Identifier
+      text: OK_RSHIFT_U
+    - kind: Identifier
+      text: OK_RSHIFT_S
+    - kind: Identifier
+      text: OK_ADD
+    - kind: Identifier
+      text: OK_SUB
+    - kind: Identifier
+      text: OK_MUL
+    - kind: Identifier
+      text: OK_DIV
+    - kind: Identifier
+      text: OK_MOD
+    - kind: Identifier
+      text: OK_SIGNED_COMPARE
+    "#);
+}
+
 // Unary Operators
 #[test]
 fn test_pp_unary_ops() {

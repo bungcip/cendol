@@ -361,21 +361,8 @@ fn convert_parsed_base_type_to_qual_type(
 
                 // Now create struct members with the processed types
                 let mut struct_members = Vec::new();
-                let mut seen_names = HashMap::new();
 
                 for (i, parsed_member) in parsed_members.iter().enumerate() {
-                    if let Some(name) = parsed_member.name {
-                        if let Some(&first_def) = seen_names.get(&name) {
-                            ctx.report_error(SemanticError::DuplicateMember {
-                                name,
-                                span: parsed_member.span,
-                                first_def,
-                            });
-                        } else {
-                            seen_names.insert(name, parsed_member.span);
-                        }
-                    }
-
                     struct_members.push(StructMember {
                         name: parsed_member.name,
                         member_type: member_types[i],
@@ -1373,8 +1360,9 @@ fn apply_declarator(
             // Use struct_lowering helper
             let ty = ctx.registry.declare_record(None, *is_union);
             let struct_members = visit_struct_members(members, ctx, span);
-            ctx.registry.complete_record(ty, struct_members);
-            let _ = ctx.registry.ensure_layout(ty);
+            if let Err(e) = complete_record_symbol(ctx, None, ty, struct_members) {
+                ctx.report_error(e);
+            }
             QualType::unqualified(ty)
         }
         ParsedDeclarator::BitField(base, _) => {

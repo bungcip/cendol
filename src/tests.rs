@@ -74,6 +74,7 @@ pub mod guardian_pointer_arithmetic;
 pub mod guardian_restrict_constraints;
 pub mod mir_unit;
 pub mod parser_type_conflict;
+pub mod pp_expand_tokens_coverage;
 pub mod pp_mod_div;
 pub mod pp_u8_literal;
 pub mod semantic_atomic;

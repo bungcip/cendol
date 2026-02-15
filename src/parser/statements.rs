@@ -74,9 +74,10 @@ pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(ParsedNod
         );
 
         // Try parsing as declaration first, but only if it looks like a declaration start
-        let mut declaration_error: Option<ParseError> = None;
+        let should_try_declaration = parser.starts_declaration();
+        let mut declaration_attempt: Option<Result<ParsedNodeRef, ParseError>> = None;
 
-        if parser.starts_declaration() {
+        if should_try_declaration {
             let trx = parser.start_transaction();
             debug!(
                 "parse_compound_statement: trying declaration parsing at position {}",
@@ -87,45 +88,44 @@ pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(ParsedNod
                     debug!("parse_compound_statement: successfully parsed declaration");
                     block_items.push(declaration);
                     trx.commit();
-                    continue;
                 }
                 Err(decl_error) => {
                     debug!("parse_compound_statement: declaration parsing failed: {:?}", decl_error);
-                    declaration_error = Some(decl_error);
+                    declaration_attempt = Some(Err(decl_error));
                 }
             }
         }
 
-        // Fallback: try as statement
-        if declaration_error.is_some() {
-            debug!(
-                "parse_compound_statement: reset to position {}, trying statement",
-                initial_idx
-            );
-        } else {
-            debug!("parse_compound_statement: not a declaration start, trying statement");
-        }
-
-        match parse_statement(parser) {
-            Ok(statement) => {
-                debug!("parse_compound_statement: successfully parsed statement");
-                block_items.push(statement);
-            }
-            Err(stmt_error) => {
+        // If declaration failed or wasn't attempted, try as statement
+        if declaration_attempt.is_some() || !should_try_declaration {
+            if declaration_attempt.is_some() {
                 debug!(
-                    "parse_compound_statement: statement parsing also failed: {:?}",
-                    stmt_error
+                    "parse_compound_statement: reset to position {}, trying statement",
+                    initial_idx
                 );
-                // Both declaration and statement parsing failed.
-                // If we attempted a declaration and it failed, report that error as it's likely more relevant
-                // (e.g., "invalid type specifier" vs "unexpected token").
-                // Otherwise report the statement error.
-                if let Some(decl_error) = declaration_error {
-                    parser.diag.report(decl_error);
-                } else {
-                    parser.diag.report(stmt_error);
+            } else {
+                debug!("parse_compound_statement: not a declaration start, trying statement");
+            }
+
+            match parse_statement(parser) {
+                Ok(statement) => {
+                    debug!("parse_compound_statement: successfully parsed statement");
+                    block_items.push(statement);
                 }
-                parser.synchronize();
+                Err(stmt_error) => {
+                    debug!(
+                        "parse_compound_statement: statement parsing also failed: {:?}",
+                        stmt_error
+                    );
+                    // Both declaration and statement parsing failed
+                    // Report the declaration error and try to synchronize
+                    if let Some(Err(decl_error)) = declaration_attempt {
+                        parser.diag.report(decl_error);
+                    } else {
+                        parser.diag.report(stmt_error);
+                    }
+                    parser.synchronize();
+                }
             }
         }
     }

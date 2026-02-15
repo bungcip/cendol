@@ -62,6 +62,7 @@ pub mod codegen_cast_init;
 pub mod codegen_regr;
 pub mod guardian_addr_sizeof_constraints;
 pub mod guardian_alignof_sizeof_function;
+pub mod guardian_array_parameter_qualifiers;
 pub mod guardian_bitfields;
 pub mod guardian_linkage;
 pub mod guardian_parameter_storage;

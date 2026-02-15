@@ -30,12 +30,18 @@ use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
 use std::sync::Arc;
 
+#[derive(Clone, Copy)]
+struct DeclaratorContext {
+    in_parameter: bool,
+}
+
 /// Recursively apply parsed declarator to base type
 fn apply_parsed_declarator(
     current_type: QualType,
     declarator_ref: ParsedDeclRef,
     ctx: &mut LowerCtx,
     span: SourceSpan,
+    decl_ctx: DeclaratorContext,
 ) -> QualType {
     let declarator_node = ctx.parsed_ast.parsed_types.get_decl(declarator_ref);
 
@@ -48,18 +54,50 @@ fn apply_parsed_declarator(
             // Pointer type is always compatible with restrict, but we use checked merge anyway for consistency
             let modified_current =
                 ctx.merge_qualifiers_with_check(QualType::unqualified(pointer_type), qualifiers, span);
-            apply_parsed_declarator(modified_current, inner, ctx, span)
+            apply_parsed_declarator(modified_current, inner, ctx, span, decl_ctx)
         }
         ParsedDeclaratorNode::Array { size, inner } => {
             // Array
             // Apply Array modifier to the current type
             // Propagate qualifiers from the element type to the array type (C11 6.7.3)
+
+            // C11 6.7.6.2p1: qualifiers and static in array declarator only allowed in function parameters
+            // and only in the outermost array type derivation.
+            let has_quals = match &size {
+                ParsedArraySize::Expression { qualifiers, .. } => !qualifiers.is_empty(),
+                ParsedArraySize::Star { qualifiers } => !qualifiers.is_empty(),
+                ParsedArraySize::VlaSpecifier { qualifiers, .. } => !qualifiers.is_empty(),
+                ParsedArraySize::Incomplete => false,
+            };
+            let has_static = matches!(size, ParsedArraySize::VlaSpecifier { is_static: true, .. });
+
+            if has_static || has_quals {
+                let inner_node = ctx.parsed_ast.parsed_types.get_decl(inner);
+                let is_outermost = matches!(inner_node, ParsedDeclaratorNode::Identifier { .. });
+
+                if !decl_ctx.in_parameter {
+                    if has_static {
+                        ctx.report_error(SemanticError::ArrayStaticOutsideParameter { span });
+                    }
+                    if has_quals {
+                        ctx.report_error(SemanticError::ArrayQualifierOutsideParameter { span });
+                    }
+                } else if !is_outermost {
+                    if has_static {
+                        ctx.report_error(SemanticError::ArrayStaticNotOutermost { span });
+                    }
+                    if has_quals {
+                        ctx.report_error(SemanticError::ArrayQualifierNotOutermost { span });
+                    }
+                }
+            }
+
             let array_size = convert_parsed_array_size(&size, ctx);
             let array_type_ref = ctx.registry.array_of(current_type.ty(), array_size);
             let qualified_array = ctx
                 .registry
                 .merge_qualifiers(QualType::unqualified(array_type_ref), current_type.qualifiers());
-            apply_parsed_declarator(qualified_array, inner, ctx, span)
+            apply_parsed_declarator(qualified_array, inner, ctx, span, decl_ctx)
         }
         ParsedDeclaratorNode::Function { params, flags, inner } => {
             // Function
@@ -67,7 +105,7 @@ fn apply_parsed_declarator(
             let parsed_params: Vec<_> = ctx.parsed_ast.parsed_types.get_params(params).to_vec();
             let mut processed_params = Vec::new();
             for param in parsed_params {
-                let param_type = convert_to_qual_type(ctx, param.ty, param.span).unwrap_or_else(|_| {
+                let param_type = convert_to_qual_type(ctx, param.ty, param.span, true).unwrap_or_else(|_| {
                     // Create an error type if conversion fails
                     QualType::unqualified(ctx.registry.type_int)
                 });
@@ -90,7 +128,7 @@ fn apply_parsed_declarator(
                 flags.is_variadic,
                 false, // `_Noreturn` is a specifier, not part of declarator
             );
-            apply_parsed_declarator(QualType::unqualified(function_type_ref), inner, ctx, span)
+            apply_parsed_declarator(QualType::unqualified(function_type_ref), inner, ctx, span, decl_ctx)
         }
     }
 }
@@ -99,8 +137,8 @@ fn extract_array_param_qualifiers_from_ref(decl_ref: ParsedDeclRef, ctx: &LowerC
     let decl = ctx.parsed_ast.parsed_types.get_decl(decl_ref);
     match decl {
         ParsedDeclaratorNode::Identifier { .. } => TypeQualifiers::empty(),
-        ParsedDeclaratorNode::Pointer { inner, .. } => extract_array_param_qualifiers_from_ref(inner, ctx),
-        ParsedDeclaratorNode::Function { inner, .. } => extract_array_param_qualifiers_from_ref(inner, ctx),
+        ParsedDeclaratorNode::Pointer { .. } => TypeQualifiers::empty(),
+        ParsedDeclaratorNode::Function { .. } => TypeQualifiers::empty(),
         ParsedDeclaratorNode::Array { size, inner } => {
             let inner_quals = extract_array_param_qualifiers_from_ref(inner, ctx);
             if !inner_quals.is_empty() {
@@ -119,13 +157,7 @@ fn extract_array_param_qualifiers_from_ref(decl_ref: ParsedDeclRef, ctx: &LowerC
 fn extract_array_param_qualifiers(decl: &ParsedDeclarator) -> TypeQualifiers {
     match decl {
         ParsedDeclarator::Identifier(..) | ParsedDeclarator::Abstract => TypeQualifiers::empty(),
-        ParsedDeclarator::Pointer(_, inner) => {
-            if let Some(inner_decl) = inner {
-                extract_array_param_qualifiers(inner_decl)
-            } else {
-                TypeQualifiers::empty()
-            }
-        }
+        ParsedDeclarator::Pointer(..) => TypeQualifiers::empty(),
         ParsedDeclarator::Array(inner, size) => {
             let inner_quals = extract_array_param_qualifiers(inner);
             if !inner_quals.is_empty() {
@@ -138,7 +170,7 @@ fn extract_array_param_qualifiers(decl: &ParsedDeclarator) -> TypeQualifiers {
                 ParsedArraySize::Incomplete => TypeQualifiers::empty(),
             }
         }
-        ParsedDeclarator::Function { inner, .. } => extract_array_param_qualifiers(inner),
+        ParsedDeclarator::Function { .. } => TypeQualifiers::empty(),
         ParsedDeclarator::BitField(inner, _) => extract_array_param_qualifiers(inner),
         ParsedDeclarator::AnonymousRecord(..) => TypeQualifiers::empty(),
     }
@@ -323,7 +355,7 @@ fn convert_parsed_base_type_to_qual_type(
                 // Process member types separately to avoid borrowing conflicts
                 let mut member_types = Vec::new();
                 for parsed_member in &parsed_members {
-                    let member_type_ref = convert_to_qual_type(ctx, parsed_member.ty, span)?;
+                    let member_type_ref = convert_to_qual_type(ctx, parsed_member.ty, span, false)?;
                     member_types.push(member_type_ref);
                 }
 
@@ -428,6 +460,7 @@ fn convert_to_qual_type(
     ctx: &mut LowerCtx,
     parsed_type: ParsedType,
     span: SourceSpan,
+    in_parameter: bool,
 ) -> Result<QualType, SemanticError> {
     let base_type_node = {
         // borrow immutable hanya di dalam block ini
@@ -441,7 +474,13 @@ fn convert_to_qual_type(
     let base_type_ref = convert_parsed_base_type_to_qual_type(ctx, &base_type_node, span)?;
     let qualified_base = ctx.merge_qualifiers_with_check(base_type_ref, qualifiers, span);
 
-    let final_type = apply_parsed_declarator(qualified_base, declarator_ref, ctx, span);
+    let final_type = apply_parsed_declarator(
+        qualified_base,
+        declarator_ref,
+        ctx,
+        span,
+        DeclaratorContext { in_parameter },
+    );
     Ok(final_type)
 }
 
@@ -698,7 +737,7 @@ fn resolve_type_specifier(
         ParsedTypeSpecifier::Complex => Ok(QualType::unqualified(ctx.registry.type_complex_marker)),
         ParsedTypeSpecifier::Atomic(parsed_type) => {
             // Convert the ParsedType to a TypeRef by applying the declarator to the base type
-            let qt = convert_to_qual_type(ctx, *parsed_type, span)?;
+            let qt = convert_to_qual_type(ctx, *parsed_type, span, false)?;
 
             // C11 6.7.2.4p3: shall not be used if the type-name is an array type,
             // a function type, an atomic type, or a qualified type.
@@ -1067,7 +1106,7 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
             ParsedDeclSpecifier::AlignmentSpecifier(align) => {
                 let align_val: Option<u32> = match align {
                     ParsedAlignmentSpecifier::Type(parsed_ty) => {
-                        let qt = convert_to_qual_type(ctx, *parsed_ty, span)
+                        let qt = convert_to_qual_type(ctx, *parsed_ty, span, false)
                             .unwrap_or(QualType::unqualified(ctx.registry.type_error));
                         match ctx.registry.ensure_layout(qt.ty()) {
                             Ok(layout) => Some(layout.alignment as u32),
@@ -1141,7 +1180,14 @@ fn visit_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
             base_ty = ctx.registry.merge_qualifiers(base_ty, spec_info.qualifiers);
 
             let final_ty = if let Some(declarator) = &param.declarator {
-                apply_declarator(base_ty, declarator, ctx, span, &spec_info)
+                apply_declarator(
+                    base_ty,
+                    declarator,
+                    ctx,
+                    span,
+                    &spec_info,
+                    DeclaratorContext { in_parameter: true },
+                )
             } else {
                 base_ty
             };
@@ -1240,6 +1286,7 @@ fn apply_declarator(
     ctx: &mut LowerCtx,
     span: SourceSpan,
     spec_info: &DeclSpecInfo,
+    decl_ctx: DeclaratorContext,
 ) -> QualType {
     match declarator {
         ParsedDeclarator::Pointer(qualifiers, next) => {
@@ -1247,7 +1294,7 @@ fn apply_declarator(
             // Checked merge
             let modified_ty = ctx.merge_qualifiers_with_check(QualType::unqualified(ty), *qualifiers, span);
             if let Some(next_decl) = next {
-                apply_declarator(modified_ty, next_decl, ctx, span, spec_info)
+                apply_declarator(modified_ty, next_decl, ctx, span, spec_info, decl_ctx)
             } else {
                 modified_ty
             }
@@ -1259,6 +1306,41 @@ fn apply_declarator(
             if !ctx.registry.is_complete(base_type.ty()) || base_type.ty().is_function() {
                 let ty_str = ctx.registry.display_type(base_type.ty());
                 ctx.report_error(SemanticError::IncompleteType { ty: ty_str, span });
+            }
+
+            // C11 6.7.6.2p1: qualifiers and static in array declarator only allowed in function parameters
+            // and only in the outermost array type derivation.
+            let has_quals = match &size {
+                ParsedArraySize::Expression { qualifiers, .. } => !qualifiers.is_empty(),
+                ParsedArraySize::Star { qualifiers } => !qualifiers.is_empty(),
+                ParsedArraySize::VlaSpecifier { qualifiers, .. } => !qualifiers.is_empty(),
+                ParsedArraySize::Incomplete => false,
+            };
+            let has_static = matches!(size, ParsedArraySize::VlaSpecifier { is_static: true, .. });
+
+            if has_static || has_quals {
+                let is_outermost = matches!(
+                    base.as_ref(),
+                    ParsedDeclarator::Identifier(..)
+                        | ParsedDeclarator::Abstract
+                        | ParsedDeclarator::AnonymousRecord(..)
+                );
+
+                if !decl_ctx.in_parameter {
+                    if has_static {
+                        ctx.report_error(SemanticError::ArrayStaticOutsideParameter { span });
+                    }
+                    if has_quals {
+                        ctx.report_error(SemanticError::ArrayQualifierOutsideParameter { span });
+                    }
+                } else if !is_outermost {
+                    if has_static {
+                        ctx.report_error(SemanticError::ArrayStaticNotOutermost { span });
+                    }
+                    if has_quals {
+                        ctx.report_error(SemanticError::ArrayQualifierNotOutermost { span });
+                    }
+                }
             }
 
             let array_size = match size {
@@ -1274,7 +1356,7 @@ fn apply_declarator(
 
             let ty = ctx.registry.array_of(base_type.ty(), array_size);
             let array_qt = QualType::new(ty, base_type.qualifiers());
-            apply_declarator(array_qt, base, ctx, span, spec_info)
+            apply_declarator(array_qt, base, ctx, span, spec_info, decl_ctx)
         }
         ParsedDeclarator::Function {
             inner: base,
@@ -1285,7 +1367,7 @@ fn apply_declarator(
             let ty = ctx
                 .registry
                 .function_type(base_type.ty(), parameters, *is_variadic, spec_info.is_noreturn);
-            apply_declarator(QualType::unqualified(ty), base, ctx, span, spec_info)
+            apply_declarator(QualType::unqualified(ty), base, ctx, span, spec_info, decl_ctx)
         }
         ParsedDeclarator::AnonymousRecord(is_union, members) => {
             // Use struct_lowering helper
@@ -1297,7 +1379,7 @@ fn apply_declarator(
         }
         ParsedDeclarator::BitField(base, _) => {
             // Bitfield logic handled in struct lowering usually. Here just type application.
-            apply_declarator(base_type, base, ctx, span, spec_info)
+            apply_declarator(base_type, base, ctx, span, spec_info, decl_ctx)
         }
         ParsedDeclarator::Abstract => base_type,
     }
@@ -1621,7 +1703,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
         base_ty = self.merge_qualifiers_with_check(base_ty, spec_info.qualifiers, span);
 
-        let mut final_ty = apply_declarator(base_ty, &func_def.declarator, self, span, &spec_info);
+        let mut final_ty = apply_declarator(
+            base_ty,
+            &func_def.declarator,
+            self,
+            span,
+            &spec_info,
+            DeclaratorContext { in_parameter: false },
+        );
         let func_name = extract_name(&func_def.declarator).expect("Function definition must have a name");
 
         final_ty = self.check_redeclaration_compatibility(func_name, final_ty, span, spec_info.storage);
@@ -1866,7 +1955,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
         target_slot: Option<NodeRef>,
     ) -> Option<NodeRef> {
-        let final_ty = apply_declarator(base_ty, &init.declarator, self, init.span, spec_info);
+        let final_ty = apply_declarator(
+            base_ty,
+            &init.declarator,
+            self,
+            init.span,
+            spec_info,
+            DeclaratorContext { in_parameter: false },
+        );
         let name = extract_name(&init.declarator).expect("Declarator must have identifier");
 
         let node = if let Some(slot) = target_slot {
@@ -2227,7 +2323,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::Cast(ty_name, expr) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let e = self.visit_expression(*expr);
-                let ty = convert_to_qual_type(self, *ty_name, span)
+                let ty = convert_to_qual_type(self, *ty_name, span, false)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
                 self.ast.kinds[node.index()] = NodeKind::Cast(ty, e);
                 smallvec![node]
@@ -2290,14 +2386,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::SizeOfType(ty_name) => {
                 let node = self.get_or_push_slot(target_slots, span);
-                let ty = convert_to_qual_type(self, *ty_name, span)
+                let ty = convert_to_qual_type(self, *ty_name, span, false)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
                 self.ast.kinds[node.index()] = NodeKind::SizeOfType(ty);
                 smallvec![node]
             }
             ParsedNodeKind::AlignOf(ty_name) => {
                 let node = self.get_or_push_slot(target_slots, span);
-                let ty = convert_to_qual_type(self, *ty_name, span)
+                let ty = convert_to_qual_type(self, *ty_name, span, false)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
                 self.ast.kinds[node.index()] = NodeKind::AlignOf(ty);
                 smallvec![node]
@@ -2305,7 +2401,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::BuiltinVaArg(ty_name, expr) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let e = self.visit_expression(*expr);
-                let ty = convert_to_qual_type(self, *ty_name, span)
+                let ty = convert_to_qual_type(self, *ty_name, span, false)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
                 self.ast.kinds[node.index()] = NodeKind::BuiltinVaArg(ty, e);
                 smallvec![node]
@@ -2313,7 +2409,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::BuiltinOffsetof(ty_name, expr) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let e = self.visit_expression(*expr);
-                let ty = convert_to_qual_type(self, *ty_name, span)
+                let ty = convert_to_qual_type(self, *ty_name, span, false)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
                 self.ast.kinds[node.index()] = NodeKind::BuiltinOffsetof(ty, e);
                 smallvec![node]
@@ -2371,7 +2467,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::CompoundLiteral(ty_name, init) => {
                 let node = self.get_or_push_slot(target_slots, span);
-                let mut ty = convert_to_qual_type(self, *ty_name, span)
+                let mut ty = convert_to_qual_type(self, *ty_name, span, false)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
                 let i = self.visit_expression(*init);
 
@@ -2404,7 +2500,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 for (i, a) in associations.iter().enumerate() {
                     let ty = a.type_name.map(|t| {
-                        convert_to_qual_type(self, t, span).unwrap_or(QualType::unqualified(self.registry.type_error))
+                        convert_to_qual_type(self, t, span, false)
+                            .unwrap_or(QualType::unqualified(self.registry.type_error))
                     });
                     let expr = self.visit_expression(a.result_expr);
                     let assoc_ref = assoc_dummies[i];
@@ -2886,7 +2983,14 @@ fn visit_struct_members(members: &[ParsedDeclarationData], ctx: &mut LowerCtx, s
                     .base_type
                     .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
                 let qualified_base = ctx.merge_qualifiers_with_check(base, spec_info.qualifiers, init_declarator.span);
-                apply_declarator(qualified_base, base_declarator, ctx, init_declarator.span, &spec_info)
+                apply_declarator(
+                    qualified_base,
+                    base_declarator,
+                    ctx,
+                    init_declarator.span,
+                    &spec_info,
+                    DeclaratorContext { in_parameter: false },
+                )
             };
 
             // Validate bit-field

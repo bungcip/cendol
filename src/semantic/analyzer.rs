@@ -238,18 +238,12 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::UnaryOp(op, _) => matches!(*op, UnaryOp::Deref),
             NodeKind::IndexAccess(..) => true,
-            NodeKind::MemberAccess(obj_ref, _, is_arrow) => {
-                // ⚡ Bolt: Optimization - avoid O(N^2) recursive traversal for member access chains.
-                // Since child nodes are always visited before parents in `visit_node`,
-                // their value categories are already computed and stored in the side table.
-                *is_arrow || self.semantic_info.value_categories[obj_ref.index()] == ValueCategory::LValue
-            }
+            NodeKind::MemberAccess(obj_ref, _, is_arrow) => *is_arrow || self.is_lvalue(*obj_ref),
             NodeKind::Literal(literal::Literal::String(_)) => true,
             NodeKind::CompoundLiteral(..) => true,
             NodeKind::GenericSelection(_) => {
-                // ⚡ Bolt: Same optimization for generic selections.
                 if let Some(&selected) = self.semantic_info.generic_selections.get(&node_ref.index()) {
-                    self.semantic_info.value_categories[selected.index()] == ValueCategory::LValue
+                    self.is_lvalue(selected)
                 } else {
                     false
                 }

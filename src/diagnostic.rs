@@ -403,6 +403,18 @@ pub enum SemanticError {
     #[error("_Atomic(type-name) specifier cannot be used with {reason}")]
     InvalidAtomicSpecifier { reason: String, span: SourceSpan },
 
+    #[error("static in array declarator only allowed in function parameters")]
+    ArrayStaticOutsideParameter { span: SourceSpan },
+
+    #[error("type qualifiers in array declarator only allowed in function parameters")]
+    ArrayQualifierOutsideParameter { span: SourceSpan },
+
+    #[error("static in array declarator only allowed in outermost array type")]
+    ArrayStaticNotOutermost { span: SourceSpan },
+
+    #[error("type qualifiers in array declarator only allowed in outermost array type")]
+    ArrayQualifierNotOutermost { span: SourceSpan },
+
     #[error("break statement not in loop or switch")]
     BreakNotInLoop { span: SourceSpan },
 
@@ -491,6 +503,10 @@ impl SemanticError {
             SemanticError::UnreachableCode { span } => *span,
             SemanticError::AlignmentNotAllowed { span, .. } => *span,
             SemanticError::AlignmentTooLoose { span, .. } => *span,
+            SemanticError::ArrayStaticOutsideParameter { span } => *span,
+            SemanticError::ArrayQualifierOutsideParameter { span } => *span,
+            SemanticError::ArrayStaticNotOutermost { span } => *span,
+            SemanticError::ArrayQualifierNotOutermost { span } => *span,
             SemanticError::BreakNotInLoop { span } => *span,
             SemanticError::ContinueNotInLoop { span } => *span,
             SemanticError::ExpectedArrayType { span, .. } => *span,

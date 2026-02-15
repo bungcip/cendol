@@ -542,3 +542,13 @@ fn test_source_manager_get_buffer_arc_invalid_id() {
     let invalid_id = SourceId::new(999);
     sm.get_buffer_arc(invalid_id);
 }
+
+#[test]
+#[should_panic(expected = "SourceId exceeds 24-bit limit")]
+fn test_source_span_source_id_overflow() {
+    // 2^24 = 16777216. We need a value > 16777215 (which is 2^24 - 1).
+    let large_id = (1 << 24) + 1;
+    let source_id = SourceId::new(large_id);
+    // SourceId itself supports u32, but SourceSpan only supports 24 bits.
+    SourceSpan::new_with_length(source_id, 0, 10);
+}

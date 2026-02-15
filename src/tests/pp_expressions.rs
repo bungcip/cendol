@@ -109,3 +109,50 @@ OK
       text: OK
     "#);
 }
+
+// Conditional Operator
+#[test]
+fn test_pp_conditional_op() {
+    let src = r#"
+#if 1 ? 1 : 0
+TRUE
+#else
+FALSE
+#endif
+
+#if 0 ? 1 : 0
+FALSE
+#else
+TRUE
+#endif
+
+#if (1 ? 2 : 3) == 2
+OK
+#endif
+
+#if (1 ? -1 : 1U) > 0
+UNSIGNED
+#else
+SIGNED
+#endif
+
+#if (1 ? -1 : 0) > 0
+UNSIGNED
+#else
+SIGNED
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: "TRUE"
+    - kind: Identifier
+      text: "TRUE"
+    - kind: Identifier
+      text: OK
+    - kind: Identifier
+      text: UNSIGNED
+    - kind: Identifier
+      text: SIGNED
+    "#);
+}

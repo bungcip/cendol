@@ -342,6 +342,7 @@ fn emit_const_struct(
 }
 
 /// Helper to emit array constants
+#[allow(clippy::manual_saturating_arithmetic, clippy::manual_repeat_n)]
 fn emit_const_array(
     elements: &[ConstValueId],
     ty: &MirType,

@@ -69,3 +69,29 @@ OK
       text: OK
     ");
 }
+
+#[test]
+fn test_pragma_operator_inside_macro() {
+    let src = r#"
+#define M _Pragma("message(\"Inside Macro\")")
+M
+    "#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - []
+    - - "Note: Inside Macro"
+    "#);
+}
+
+#[test]
+fn test_pragma_operator_in_if() {
+    let src = r#"
+#if _Pragma("message(\"Inside If\")") 1
+#endif
+    "#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - []
+    - - "Note: Inside If"
+    "#);
+}

@@ -279,7 +279,7 @@ pub struct FileInfo {
 /// Maximum files: 1023 unique source files (10-bit file ID in SourceLoc)
 pub struct SourceManager {
     buffers: Vec<Arc<[u8]>>,
-    file_infos: HashMap<SourceId, FileInfo>,
+    file_infos: Vec<FileInfo>,
     path_to_id: HashMap<PathBuf, SourceId>,
     next_file_id: u32,
 }
@@ -288,7 +288,7 @@ impl Default for SourceManager {
     fn default() -> Self {
         Self {
             buffers: Vec::new(),
-            file_infos: HashMap::new(),
+            file_infos: Vec::new(),
             path_to_id: HashMap::new(),
             next_file_id: 2, // Start from 2, reserve 1 for built-ins
         }
@@ -316,7 +316,7 @@ impl SourceManager {
     pub(crate) fn add_buffer(&mut self, buffer: Vec<u8>, path: &str, include_loc: Option<SourceLoc>) -> SourceId {
         let path_buf = PathBuf::from(path);
         // Standard buffers get empty line_starts initially; they are calculated/set later if needed
-        self.add_file_entry(Arc::from(buffer), path_buf, Vec::new(), include_loc)
+        self.add_file_entry(Arc::from(buffer), path_buf, Vec::new(), include_loc, true)
     }
 
     /// Add a virtual buffer for macro expansions (Level B support)
@@ -336,7 +336,7 @@ impl SourceManager {
         }
 
         let path_buf = PathBuf::from(format!("<{}>", name));
-        self.add_file_entry(Arc::from(buffer), path_buf, line_starts, include_loc)
+        self.add_file_entry(Arc::from(buffer), path_buf, line_starts, include_loc, false)
     }
 
     /// Helper to add a file entry and update maps
@@ -346,6 +346,7 @@ impl SourceManager {
         path: PathBuf,
         line_starts: Vec<u32>,
         include_loc: Option<SourceLoc>,
+        is_real_file: bool,
     ) -> SourceId {
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
@@ -354,9 +355,15 @@ impl SourceManager {
         let buffer_index = self.buffers.len();
         self.buffers.push(buffer);
 
+        if is_real_file {
+            // Only map path for real files (not virtual ones usually).
+            // This avoids unnecessary map insertions for short-lived virtual buffers.
+            self.path_to_id.insert(path.clone(), file_id);
+        }
+
         let file_info = FileInfo {
             file_id,
-            path: path.clone(),
+            path,
             size,
             buffer_index,
             line_starts,
@@ -364,10 +371,7 @@ impl SourceManager {
             include_loc,
         };
 
-        self.file_infos.insert(file_id, file_info);
-        // Only map path for real files (not virtual ones usually, but keeping behavior consistent is safer for unique paths)
-        // Virtual files usually have unique names anyway
-        self.path_to_id.insert(path, file_id);
+        self.file_infos.push(file_info);
 
         file_id
     }
@@ -376,7 +380,11 @@ impl SourceManager {
     /// Since SourceId is always valid (we panic if not found), we can use indexing
     /// use get_source_text to get &str from SourceSpan instead if you need text
     pub(crate) fn get_buffer(&self, source_id: SourceId) -> &[u8] {
-        let info = match self.file_infos.get(&source_id) {
+        let id = source_id.to_u32();
+        if id < 2 {
+            panic!("invalid source_id {source_id}");
+        }
+        let info = match self.file_infos.get(id as usize - 2) {
             Some(info) => info,
             None => panic!("invalid source_id {source_id}"),
         };
@@ -385,15 +393,23 @@ impl SourceManager {
 
     /// Get the buffer for a given source ID, returning None if not found
     pub(crate) fn get_buffer_safe(&self, source_id: SourceId) -> Option<&[u8]> {
+        let id = source_id.to_u32();
+        if id < 2 {
+            return None;
+        }
         self.file_infos
-            .get(&source_id)
+            .get(id as usize - 2)
             .map(|info| &self.buffers[info.buffer_index][..])
     }
 
     /// Get the buffer as an Arc for a given source ID.
     /// This allows shared ownership without cloning the entire buffer.
     pub(crate) fn get_buffer_arc(&self, source_id: SourceId) -> Arc<[u8]> {
-        let info = match self.file_infos.get(&source_id) {
+        let id = source_id.to_u32();
+        if id < 2 {
+            panic!("invalid source_id {source_id}");
+        }
+        let info = match self.file_infos.get(id as usize - 2) {
             Some(info) => info,
             None => panic!("invalid source_id {source_id}"),
         };
@@ -402,39 +418,53 @@ impl SourceManager {
 
     /// Get file info for a given source ID
     pub(crate) fn get_file_info(&self, source_id: SourceId) -> Option<&FileInfo> {
-        self.file_infos.get(&source_id)
+        let id = source_id.to_u32();
+        if id < 2 {
+            return None;
+        }
+        self.file_infos.get(id as usize - 2)
     }
 
-    /// Get file info for a given source ID
+    /// Get source ID for a given file path
     pub(crate) fn get_file_id(&self, path: &str) -> Option<SourceId> {
         self.path_to_id.get(Path::new(path)).copied()
     }
 
     /// Get mutable access to the LineMap for a given source ID
     pub(crate) fn get_line_map_mut(&mut self, source_id: SourceId) -> Option<&mut LineMap> {
-        self.file_infos.get_mut(&source_id).map(|fi| &mut fi.line_map)
+        let id = source_id.to_u32();
+        if id < 2 {
+            return None;
+        }
+        self.file_infos.get_mut(id as usize - 2).map(|fi| &mut fi.line_map)
     }
 
     /// Set line starts for a given source ID
     pub(crate) fn set_line_starts(&mut self, source_id: SourceId, line_starts: Vec<u32>) {
-        if let Some(file_info) = self.file_infos.get_mut(&source_id) {
-            file_info.line_starts = line_starts;
+        let id = source_id.to_u32();
+        if id >= 2 {
+            if let Some(file_info) = self.file_infos.get_mut(id as usize - 2) {
+                file_info.line_starts = line_starts;
+            }
         }
     }
 
     /// Calculate line starts for a given source ID
     pub(crate) fn calculate_line_starts(&mut self, source_id: SourceId) {
-        if let Some(file_info) = self.file_infos.get_mut(&source_id) {
-            let buffer = &self.buffers[file_info.buffer_index];
-            let mut line_starts = vec![0]; // First line starts at offset 0
+        let id = source_id.to_u32();
+        if id >= 2 {
+            if let Some(file_info) = self.file_infos.get_mut(id as usize - 2) {
+                let buffer = &self.buffers[file_info.buffer_index];
+                let mut line_starts = vec![0]; // First line starts at offset 0
 
-            for (i, &byte) in buffer.iter().enumerate() {
-                if byte == b'\n' {
-                    line_starts.push((i + 1) as u32);
+                for (i, &byte) in buffer.iter().enumerate() {
+                    if byte == b'\n' {
+                        line_starts.push((i + 1) as u32);
+                    }
                 }
-            }
 
-            file_info.line_starts = line_starts;
+                file_info.line_starts = line_starts;
+            }
         }
     }
 

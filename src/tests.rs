@@ -61,6 +61,7 @@ pub mod semantic_alignment_constraints;
 pub mod semantic_composite;
 pub mod test_utils;
 
+pub mod ast_dumper_coverage;
 pub mod builtin_offsetof;
 pub mod codegen_cast_init;
 pub mod codegen_regr;

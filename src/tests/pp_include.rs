@@ -12,7 +12,7 @@ fn test_include_same_file_twice_without_pragma_once() {
         ),
     ];
     let (tokens, _) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     - kind: Identifier

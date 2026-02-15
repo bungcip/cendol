@@ -36,7 +36,7 @@ fn test_pragma_once_via_pragma_operator() {
         ("main.c", "#include \"header.h\"\n#include \"header.h\""),
     ];
     let (tokens, _) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -54,7 +54,7 @@ fn test_push_pop_macro() {
 OK
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");

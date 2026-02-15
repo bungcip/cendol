@@ -52,7 +52,7 @@ fn format_const_eval_batch(exprs: &[&str]) -> String {
 #[test]
 fn test_arithmetic() {
     let output = format_const_eval_batch(&["1 + 2", "10 - 5", "2 * 3", "10 / 2", "10 % 3"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: 1 + 2
     Result: 3
     ---
@@ -74,7 +74,7 @@ fn test_arithmetic() {
 #[test]
 fn test_bitwise() {
     let output = format_const_eval_batch(&["1 << 2", "8 >> 1", "0x0F & 0xF0", "0x0F | 0xF0", "0x0F ^ 0xFF", "~0"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: 1 << 2
     Result: 4
     ---
@@ -99,7 +99,7 @@ fn test_bitwise() {
 #[test]
 fn test_logical() {
     let output = format_const_eval_batch(&["1 && 1", "1 && 0", "1 || 0", "0 || 0", "!0", "!5"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: 1 && 1
     Result: 1
     ---
@@ -124,7 +124,7 @@ fn test_logical() {
 #[test]
 fn test_comparisons() {
     let output = format_const_eval_batch(&["1 < 2", "2 > 1", "1 <= 1", "2 >= 2", "1 == 1", "1 != 2"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: 1 < 2
     Result: 1
     ---
@@ -149,7 +149,7 @@ fn test_comparisons() {
 #[test]
 fn test_ternary() {
     let output = format_const_eval_batch(&["1 ? 10 : 20", "0 ? 10 : 20"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: 1 ? 10 : 20
     Result: 10
     ---
@@ -167,7 +167,7 @@ fn test_sizeof() {
         "sizeof(long long)",
         // "sizeof(1 + 1)", // Fails because operand type is not resolved in AST for unevaluated operands in this test setup
     ]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: sizeof(int)
     Result: 4
     ---
@@ -183,7 +183,7 @@ fn test_sizeof() {
 #[test]
 fn test_complex() {
     let output = format_const_eval_batch(&["1 + 2 * 3", "(1 + 2) * 3"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: 1 + 2 * 3
     Result: 7
     ---
@@ -197,7 +197,7 @@ fn test_complex() {
 fn test_overflow_wrapping() {
     // 9223372036854775807 is LLONG_MAX (2^63 - 1)
     let output = format_const_eval_batch(&["9223372036854775807LL + 1"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: 9223372036854775807LL + 1
     Result: -9223372036854775808
     ---
@@ -210,7 +210,7 @@ fn test_generic_selection() {
         "_Generic(1, int: 10, default: 20)",
         "_Generic(1.0, double: 30, default: 20)",
     ]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: _Generic(1, int: 10, default: 20)
     Result: 10
     ---
@@ -225,7 +225,7 @@ fn test_enum_constants() {
     let source = "enum { A = 5, B = 10 }; int test_var = A + B;";
     let val_str = evaluate_program(source);
 
-    insta::assert_snapshot!(format!("Source: {}\nResult: {}", source, val_str), @r"
+    insta::assert_snapshot!(format!("Source: {}\nResult: {}", source, val_str), @"
     Source: enum { A = 5, B = 10 }; int test_var = A + B;
     Result: 15
     ");
@@ -234,7 +234,7 @@ fn test_enum_constants() {
 #[test]
 fn test_sizeof_expression() {
     let output = format_const_eval_batch(&["sizeof(1 + 1)"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: sizeof(1 + 1)
     Result: 4
     ---
@@ -244,7 +244,7 @@ fn test_sizeof_expression() {
 #[test]
 fn test_alignof() {
     let output = format_const_eval_batch(&["_Alignof(int)"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: _Alignof(int)
     Result: 4
     ---
@@ -255,7 +255,7 @@ fn test_alignof() {
 fn test_logical_short_circuit_or() {
     // Should result in 1 and not divide by zero error
     let output = format_const_eval_batch(&["1 || (1 / 0)"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: 1 || (1 / 0)
     Result: 1
     ---
@@ -266,7 +266,7 @@ fn test_logical_short_circuit_or() {
 fn test_logical_short_circuit_and() {
     // Should result in 0 and not divide by zero error
     let output = format_const_eval_batch(&["0 && (1 / 0)"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: 0 && (1 / 0)
     Result: 0
     ---
@@ -276,7 +276,7 @@ fn test_logical_short_circuit_and() {
 #[test]
 fn test_div_by_zero() {
     let output = format_const_eval_batch(&["1 / 0"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: 1 / 0
     Result: None
     ---

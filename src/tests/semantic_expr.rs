@@ -13,7 +13,7 @@ fn test_sizeof_logic_not_is_int_size() {
     }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i32
     type %t2 = u64
@@ -41,7 +41,7 @@ fn test_sizeof_logic_and_is_int_size() {
     }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i32
     type %t2 = u64
@@ -69,7 +69,7 @@ fn test_sizeof_logic_or_is_int_size() {
     }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i32
     type %t2 = u64
@@ -249,7 +249,7 @@ fn test_assign_struct_to_int() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -269,7 +269,7 @@ fn test_assign_int_to_struct() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -292,7 +292,7 @@ fn test_assign_incompatible_struct() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -313,7 +313,7 @@ fn test_assign_incompatible_pointers() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -332,7 +332,7 @@ fn test_assign_int_to_pointer() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -352,7 +352,7 @@ fn test_assign_pointer_to_int() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -374,7 +374,7 @@ fn test_assign_struct_mismatch() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -396,7 +396,7 @@ fn test_assign_valid_void_ptr() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = ptr<%t0>
     type %t2 = void
@@ -430,7 +430,7 @@ fn test_assign_valid_null_ptr() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = ptr<%t0>
     type %t2 = void
@@ -461,7 +461,7 @@ fn test_assign_pointer_to_bool() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = ptr<%t0>
     type %t2 = bool
@@ -492,7 +492,7 @@ fn test_assign_valid_arithmetic() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = f32
     type %t2 = f64
@@ -523,7 +523,7 @@ fn test_void_init_variable() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -544,7 +544,7 @@ fn test_void_assign_variable() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -564,7 +564,7 @@ fn test_assign_enum_to_int() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -593,7 +593,7 @@ fn test_assign_int_to_enum() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -620,7 +620,7 @@ fn test_enum_constant_assignment() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -645,7 +645,7 @@ fn test_lvalue_assign_to_literal() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -663,7 +663,7 @@ fn test_lvalue_assign_to_arithmetic_expr() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -680,7 +680,7 @@ fn test_lvalue_pre_inc_literal() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -697,7 +697,7 @@ fn test_lvalue_post_inc_literal() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -715,7 +715,7 @@ fn test_lvalue_pre_dec_rvalue() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -733,7 +733,7 @@ fn test_lvalue_post_dec_rvalue() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -751,7 +751,7 @@ fn test_lvalue_addr_of_rvalue() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -770,7 +770,7 @@ fn test_lvalue_assign_struct_rvalue_member() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -831,7 +831,7 @@ mod tests {
             }
         "#;
         let mir = setup_mir(source);
-        insta::assert_snapshot!(mir, @r"
+        insta::assert_snapshot!(mir, @"
         type %t0 = i32
         type %t1 = i64
 
@@ -863,7 +863,7 @@ fn test_nested_const_pointer() {
         }
     ";
     let output = setup_diagnostics_output(code);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -883,7 +883,7 @@ fn test_const_pointer_to_int() {
         }
     ";
     let output = setup_diagnostics_output(code);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -903,7 +903,7 @@ fn test_nested_qualifier_preservation() {
         }
     ";
     let output = setup_diagnostics_output(code);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 2
 
     Level: Error
@@ -925,7 +925,7 @@ fn test_comma_operator() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i8
     type %t2 = ptr<%t1>
@@ -959,7 +959,7 @@ fn test_comma_operator_types() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i32
     type %t2 = i8
@@ -993,7 +993,7 @@ fn test_comma_operator_loop() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i8
     type %t2 = ptr<%t1>

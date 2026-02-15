@@ -48,7 +48,7 @@ fn test_emit_const_struct_literal() {
     emit_const(struct_const_id, &mut output, &ctx, None, None, 0).expect("emit_const failed");
 
     // 5. Verify Output
-    insta::assert_yaml_snapshot!(output, @r"
+    insta::assert_yaml_snapshot!(output, @"
     - 17
     - 17
     - 17
@@ -102,7 +102,7 @@ fn test_store_statement_lowering() {
     // 7. Assert
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
-            insta::assert_snapshot!(clif_ir, @r"
+            insta::assert_snapshot!(clif_ir, @"
             ; Function: main
             function u0:0() system_v {
                 ss0 = explicit_slot 4
@@ -173,7 +173,7 @@ fn test_store_deref_pointer() {
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
-            insta::assert_snapshot!(clif_ir, @r"
+            insta::assert_snapshot!(clif_ir, @"
             ; Function: main
             function u0:0() system_v {
                 ss0 = explicit_slot 4
@@ -212,7 +212,7 @@ fn test_boolean_logic_lowering() {
         "#;
     // Verify it compiles without crashing
     let clif_dump = setup_cranelift(source);
-    insta::assert_snapshot!(clif_dump, @r"
+    insta::assert_snapshot!(clif_dump, @"
     ; Function: main
     function u0:0() -> i32 system_v {
         ss0 = explicit_slot 4
@@ -312,7 +312,7 @@ fn test_float_to_char_conversion() {
         "#;
     // Verify it compiles without crashing
     let clif_dump = setup_cranelift(source);
-    insta::assert_snapshot!(clif_dump, @r"
+    insta::assert_snapshot!(clif_dump, @"
     ; Function: main
     function u0:0() -> i32 system_v {
         ss0 = explicit_slot 1
@@ -373,7 +373,7 @@ fn test_f128_constant_promotion() {
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
-            insta::assert_snapshot!(clif_ir, @r"
+            insta::assert_snapshot!(clif_ir, @"
             ; Function: main
             function u0:0() system_v {
                 ss0 = explicit_slot 16

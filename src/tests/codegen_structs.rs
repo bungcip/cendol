@@ -21,7 +21,7 @@ fn test_compile_struct_pointer_access() {
     let clif_dump = setup_cranelift(source);
     insta::assert_snapshot!(
         clif_dump,
-        @r"
+        @"
     ; Function: main
     function u0:0() -> i32 system_v {
         ss0 = explicit_slot 8
@@ -133,7 +133,7 @@ fn test_alloc_dealloc_codegen() {
 
     match result {
         Ok(ClifOutput::ClifDump(clif_ir)) => {
-            insta::assert_snapshot!(clif_ir, @r"
+            insta::assert_snapshot!(clif_ir, @"
             ; Function: main
             function u0:0() system_v {
                 ss0 = explicit_slot 8

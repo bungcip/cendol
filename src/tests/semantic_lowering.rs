@@ -188,7 +188,7 @@ fn test_const_pointer_init() {
     let (ast, registry, symbol_table) = setup_lowering("const int * const * volatile p;");
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @r"
+    insta::assert_yaml_snapshot!(resolved, @"
     TranslationUnit:
       - VarDecl:
           name: p
@@ -210,7 +210,7 @@ fn test_record_decl_members_populated() {
     );
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @r"
+    insta::assert_yaml_snapshot!(resolved, @"
     TranslationUnit:
       - RecordDecl:
           name: Point
@@ -238,7 +238,7 @@ fn test_enum_decl_members_populated() {
 
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @r"
+    insta::assert_yaml_snapshot!(resolved, @"
     TranslationUnit:
       - EnumDecl:
           name: Color
@@ -268,7 +268,7 @@ fn test_struct_member_qualifiers_preserved() {
 
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @r"
+    insta::assert_yaml_snapshot!(resolved, @"
     TranslationUnit:
       - RecordDecl:
           name: S
@@ -295,7 +295,7 @@ fn test_function_call_args_contiguity() {
 
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @r"
+    insta::assert_yaml_snapshot!(resolved, @"
     TranslationUnit:
       - Function:
           name: add
@@ -339,7 +339,7 @@ fn test_alignment_specifier() {
 
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @r"
+    insta::assert_yaml_snapshot!(resolved, @"
     TranslationUnit:
       - VarDecl:
           name: x

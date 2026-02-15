@@ -38,7 +38,7 @@ fn test_conflicting_types_basic() {
         void foo(const int *x); // Conflict
     "#;
     let output = setup_diagnostics_output(code);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 2
 
     Level: Error
@@ -108,7 +108,7 @@ fn test_func_identifier_redefinition() {
     "#;
     // Shadows implicitly declared __func__ in SAME scope is an error in C11
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 2
 
     Level: Error
@@ -144,7 +144,7 @@ fn test_func_opt_unused() {
     "#;
     // Check the MIR to ensure __func__ global is NOT generated.
     let mir_output = setup_mir(source);
-    insta::assert_snapshot!(mir_output, @r"
+    insta::assert_snapshot!(mir_output, @"
     type %t0 = void
 
     fn foo() -> void
@@ -202,7 +202,7 @@ fn test_func_opt_shadowed() {
     "#;
     // Redefinition in same scope
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 2
 
     Level: Error
@@ -223,7 +223,7 @@ fn test_noreturn_function_returns_error() {
             }
         "#;
     let output = setup_diagnostics_output(a);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -240,7 +240,7 @@ fn test_noreturn_function_can_fall_through() {
     }
     "#;
     let output = setup_diagnostics_output(src);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -257,7 +257,7 @@ fn test_noreturn_function_returns() {
     }
     "#;
     let output = setup_diagnostics_output(src);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -274,7 +274,7 @@ fn test_noreturn_declaration_mismatch() {
     }
     "#;
     let output = setup_diagnostics_output(src);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 2
 
     Level: Error

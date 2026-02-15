@@ -5,7 +5,7 @@ use crate::tests::parser_utils::{resolve_node, setup_compound, setup_source, set
 #[test]
 fn test_label_with_expression_statement() {
     let resolved = setup_statement("start: x = 1;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - start
       - ExpressionStatement:
@@ -19,7 +19,7 @@ fn test_label_with_expression_statement() {
 #[test]
 fn test_label_with_compound_statement() {
     let resolved = setup_statement("block: { int x = 1; }");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - block
       - CompoundStatement:
@@ -36,7 +36,7 @@ fn test_label_with_compound_statement() {
 #[test]
 fn test_label_with_if_statement() {
     let resolved = setup_statement("if_label: if (x) y = 1;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - if_label
       - If:
@@ -53,7 +53,7 @@ fn test_label_with_if_statement() {
 #[test]
 fn test_label_with_while_loop() {
     let resolved = setup_statement("loop_start: while (x < 10) x++;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - loop_start
       - While:
@@ -71,7 +71,7 @@ fn test_label_with_while_loop() {
 fn test_multiple_labels_sequence() {
     // Test consecutive labels (like "next:" and "foo:" in the goto test)
     let resolved = setup_statement("label1: label2: return 0;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - label1
       - Label:
@@ -90,7 +90,7 @@ fn test_goto_with_complex_label_name() {
 #[test]
 fn test_label_followed_by_goto() {
     let resolved = setup_statement("target: goto target;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - target
       - Goto: target
@@ -100,7 +100,7 @@ fn test_label_followed_by_goto() {
 #[test]
 fn test_label_with_numeric_suffix() {
     let resolved = setup_statement("_label123: return 1;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - _label123
       - Return:
@@ -111,7 +111,7 @@ fn test_label_with_numeric_suffix() {
 #[test]
 fn test_label_followed_by_compound_statement_with_declaration() {
     let resolved = setup_statement("declare: { int x = 5; }");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - declare
       - CompoundStatement:
@@ -128,7 +128,7 @@ fn test_label_followed_by_compound_statement_with_declaration() {
 #[test]
 fn test_label_followed_by_function_call() {
     let resolved = setup_statement("call_func: foo();");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - call_func
       - ExpressionStatement:
@@ -141,7 +141,7 @@ fn test_label_followed_by_function_call() {
 #[test]
 fn test_label_with_break_statement() {
     let resolved = setup_statement("break_point: break;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - break_point
       - Break
@@ -151,7 +151,7 @@ fn test_label_with_break_statement() {
 #[test]
 fn test_label_with_continue_statement() {
     let resolved = setup_statement("continue_loop: continue;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - continue_loop
       - Continue
@@ -161,7 +161,7 @@ fn test_label_with_continue_statement() {
 #[test]
 fn test_label_followed_by_empty_statement() {
     let resolved = setup_statement("empty: ;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Label:
       - empty
       - Empty
@@ -183,7 +183,7 @@ fn test_multiple_statements_with_labels() {
     let resolved = setup_compound(source);
 
     // Just verify it parses as a label
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     CompoundStatement:
       - Label:
           - success
@@ -204,7 +204,7 @@ fn test_multiple_statements_with_labels() {
 #[test]
 fn test_case_range_statement() {
     let resolved = setup_statement("case 1 ... 10: x = 1;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     CaseRange:
       - LiteralInt: 1
       - LiteralInt: 10
@@ -224,7 +224,7 @@ fn test_ambiguous_compound_statement() {
     // The `parse_compound_statement` logic tries declaration first, fails, then tries statement.
     let source = "T * x;";
     let resolved = setup_compound(source);
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     CompoundStatement:
       - ExpressionStatement:
           BinaryOp:

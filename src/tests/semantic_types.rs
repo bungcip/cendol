@@ -109,7 +109,7 @@ fn rejects_sizeof_on_incomplete_struct() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -125,7 +125,7 @@ fn rejects_function_returning_incomplete_type() {
         struct S foo();
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -143,7 +143,7 @@ fn rejects_sizeof_on_incomplete_array() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 1
 
     Level: Error
@@ -533,7 +533,7 @@ fn test_struct_copy_init() {
         int main() { return 0; }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = void
     type %t2 = struct Wrap { func: %t3 }

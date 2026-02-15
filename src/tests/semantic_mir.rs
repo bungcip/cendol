@@ -16,33 +16,33 @@ fn test_if_else_statement() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
 
-        fn main() -> i32
-        {
-          locals {
-            %a: i32
-            %b: i32
-            %3: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %a: i32
+        %b: i32
+        %3: i32
+      }
 
-          bb1:
-            %a = const 1
-            %b = const 2
-            %3 = %a > %b
-            cond_br %3, bb2, bb3
+      bb1:
+        %a = const 1
+        %b = const 2
+        %3 = %a > %b
+        cond_br %3, bb2, bb3
 
-          bb2:
-            return const 1
+      bb2:
+        return const 1
 
-          bb3:
-            return const 2
+      bb3:
+        return const 2
 
-          bb4:
-            return const 0
-        }
-        ");
+      bb4:
+        return const 0
+    }
+    ");
 }
 
 #[test]
@@ -57,32 +57,32 @@ fn test_while_statement() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
 
-        fn main() -> i32
-        {
-          locals {
-            %steins: i32
-            %2: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %steins: i32
+        %2: i32
+      }
 
-          bb1:
-            %steins = const 99
-            br bb2
+      bb1:
+        %steins = const 99
+        br bb2
 
-          bb2:
-            cond_br %steins, bb3, bb4
+      bb2:
+        cond_br %steins, bb3, bb4
 
-          bb3:
-            %2 = %steins - cast<i32>(const 1)
-            %steins = %2
-            br bb2
+      bb3:
+        %2 = %steins - cast<i32>(const 1)
+        %steins = %2
+        br bb2
 
-          bb4:
-            return %steins
-        }
-        ");
+      bb4:
+        return %steins
+    }
+    ");
 }
 
 #[test]
@@ -99,34 +99,34 @@ fn test_for_stmt() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
 
-        fn main() -> i32
-        {
-          locals {
-            %steins: i32
-            %gate: i32
-            %3: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %steins: i32
+        %gate: i32
+        %3: i32
+      }
 
-          bb1:
-            %steins = const 44
-            %gate = const 1
-            br bb2
+      bb1:
+        %steins = const 44
+        %gate = const 1
+        br bb2
 
-          bb2:
-            cond_br %steins, bb3, bb4
+      bb2:
+        cond_br %steins, bb3, bb4
 
-          bb3:
-            %3 = %steins - %gate
-            %steins = %3
-            br bb2
+      bb3:
+        %3 = %steins - %gate
+        %steins = %3
+        br bb2
 
-          bb4:
-            return %steins
-        }
-        ");
+      bb4:
+        return %steins
+    }
+    ");
 }
 
 #[test]
@@ -139,20 +139,20 @@ fn test_simple_variable_return() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
 
-        fn main() -> i32
-        {
-          locals {
-            %result: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %result: i32
+      }
 
-          bb1:
-            %result = const 99
-            return %result
-        }
-        ");
+      bb1:
+        %result = const 99
+        return %result
+    }
+    ");
 }
 
 #[test]
@@ -165,18 +165,18 @@ fn test_global_variable() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
 
-        global @result: i32 = const 99
+    global @result: i32 = const 99
 
-        fn main() -> i32
-        {
+    fn main() -> i32
+    {
 
-          bb1:
-            return @result
-        }
-        ");
+      bb1:
+        return @result
+    }
+    ");
 }
 
 #[test]
@@ -194,28 +194,28 @@ fn test_consecutive_labels() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
 
-        fn main() -> i32
-        {
+    fn main() -> i32
+    {
 
-          bb1:
-            br bb5
+      bb1:
+        br bb5
 
-          bb2:
-            br bb3
+      bb2:
+        br bb3
 
-          bb3:
-            br bb4
+      bb3:
+        br bb4
 
-          bb4:
-            return const 1
+      bb4:
+        return const 1
 
-          bb5:
-            return const 0
-        }
-        ");
+      bb5:
+        return const 0
+    }
+    ");
 }
 
 #[test]
@@ -229,32 +229,32 @@ fn test_struct_type_regression() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = struct anonymous { a: %t0, b: %t0, c: %t0 }
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
+    type %t1 = struct anonymous { a: %t0, b: %t0, c: %t0 }
 
-        global @s: %t1 = const struct_literal { 0: const 1, 1: const 2, 2: const 3 }
+    global @s: %t1 = const struct_literal { 0: const 1, 1: const 2, 2: const 3 }
 
-        fn main() -> i32
-        {
-          locals {
-            %1: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %1: i32
+      }
 
-          bb1:
-            %1 = @s.field_0 != cast<i32>(const 1)
-            cond_br %1, bb2, bb3
+      bb1:
+        %1 = @s.field_0 != cast<i32>(const 1)
+        cond_br %1, bb2, bb3
 
-          bb2:
-            return const 1
+      bb2:
+        return const 1
 
-          bb3:
-            br bb4
+      bb3:
+        br bb4
 
-          bb4:
-            return const 0
-        }
-        ");
+      bb4:
+        return const 0
+    }
+    ");
 }
 
 #[test]
@@ -270,35 +270,35 @@ fn test_long_long_comparison_crash() {
             }
         "#;
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = i64
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
+    type %t1 = i64
 
-        fn main() -> i32
-        {
-          locals {
-            %x: i64
-            %2: i64
-            %3: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %x: i64
+        %2: i64
+        %3: i32
+      }
 
-          bb1:
-            %x = cast<i64>(const 0)
-            %2 = %x + cast<i64>(const 1)
-            %x = %2
-            %3 = %x != cast<i64>(const 1)
-            cond_br %3, bb2, bb3
+      bb1:
+        %x = cast<i64>(const 0)
+        %2 = %x + cast<i64>(const 1)
+        %x = %2
+        %3 = %x != cast<i64>(const 1)
+        cond_br %3, bb2, bb3
 
-          bb2:
-            return const 1
+      bb2:
+        return const 1
 
-          bb3:
-            br bb4
+      bb3:
+        br bb4
 
-          bb4:
-            return const 0
-        }
-        ");
+      bb4:
+        return const 0
+    }
+    ");
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn test_designated_initializer_global() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = struct S { a: %t1, b: %t1 }
     type %t1 = i32
 
@@ -326,7 +326,7 @@ fn test_global_initializer_with_address() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = struct S { a: %t0, p: %t2 }
     type %t2 = ptr<%t0>
@@ -354,7 +354,7 @@ fn test_nested_compound_initializer_global() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = struct S2 { a: %t1, b: %t1, s: %t2 }
     type %t1 = i32
     type %t2 = struct S1 { a: %t1, b: %t1 }
@@ -377,25 +377,25 @@ fn test_struct_tag_shadowing() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = struct T { x: %t0 }
-        type %t2 = struct T { y: %t0 }
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
+    type %t1 = struct T { x: %t0 }
+    type %t2 = struct T { y: %t0 }
 
-        global @s1: %t1 = const zero
+    global @s1: %t1 = const zero
 
-        fn main() -> i32
-        {
-          locals {
-            %s2: %t2
-          }
+    fn main() -> i32
+    {
+      locals {
+        %s2: %t2
+      }
 
-          bb1:
-            @s1.field_0 = const 1
-            %s2.field_0 = const 2
-            return @s1.field_0
-        }
-        ");
+      bb1:
+        @s1.field_0 = const 1
+        %s2.field_0 = const 2
+        return @s1.field_0
+    }
+    ");
 }
 #[test]
 fn test_variable_shadowing() {
@@ -414,44 +414,44 @@ fn test_variable_shadowing() {
     let mir_dump = setup_mir(source);
     // We expect two different %x locals. MIR printer might show them with same name or different IDs.
     // Currently it shows names if available.
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
 
-        fn main() -> i32
-        {
-          locals {
-            %x: i32
-            %x: i32
-            %3: i32
-            %4: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %x: i32
+        %x: i32
+        %3: i32
+        %4: i32
+      }
 
-          bb1:
-            %x = const 1
-            %x = const 2
-            %3 = %x != cast<i32>(const 2)
-            cond_br %3, bb2, bb3
+      bb1:
+        %x = const 1
+        %x = const 2
+        %3 = %x != cast<i32>(const 2)
+        cond_br %3, bb2, bb3
 
-          bb2:
-            return const 1
+      bb2:
+        return const 1
 
-          bb3:
-            br bb4
+      bb3:
+        br bb4
 
-          bb4:
-            %4 = %x != cast<i32>(const 1)
-            cond_br %4, bb5, bb6
+      bb4:
+        %4 = %x != cast<i32>(const 1)
+        cond_br %4, bb5, bb6
 
-          bb5:
-            return const 1
+      bb5:
+        return const 1
 
-          bb6:
-            br bb7
+      bb6:
+        br bb7
 
-          bb7:
-            return const 0
-        }
-        ");
+      bb7:
+        return const 0
+    }
+    ");
 }
 
 #[test]
@@ -469,32 +469,32 @@ fn test_parameter_shadowing() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = fn(%t0) -> %t0
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
+    type %t1 = fn(%t0) -> %t0
 
-        fn main() -> i32
-        {
-          locals {
-            %3: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %3: i32
+      }
 
-          bb2:
-            %3 = call foo(const 5)
-            return %3
-        }
+      bb2:
+        %3 = call foo(const 5)
+        return %3
+    }
 
-        fn foo(%param0: i32) -> i32
-        {
-          locals {
-            %x: i32
-          }
+    fn foo(%param0: i32) -> i32
+    {
+      locals {
+        %x: i32
+      }
 
-          bb1:
-            %x = const 10
-            return %x
-        }
-        ");
+      bb1:
+        %x = const 10
+        return %x
+    }
+    ");
 }
 
 #[test]
@@ -547,140 +547,140 @@ fn test_function_with_many_return_types() {
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @"
-        type %t0 = i32
-        type %t1 = f64
-        type %t2 = i8
-        type %t3 = u64
-        type %t4 = void
-        type %t5 = u8
-        type %t6 = u32
-        type %t7 = i16
-        type %t8 = f32
-        type %t9 = i64
-        type %t10 = u16
-        type %t11 = fn() -> %t4
-        type %t12 = fn() -> %t2
-        type %t13 = fn() -> %t5
-        type %t14 = fn() -> %t7
-        type %t15 = fn() -> %t10
-        type %t16 = fn() -> %t0
-        type %t17 = fn() -> %t6
-        type %t18 = fn() -> %t9
-        type %t19 = fn() -> %t3
-        type %t20 = fn() -> %t8
-        type %t21 = fn() -> %t1
+    type %t0 = i32
+    type %t1 = f64
+    type %t2 = i8
+    type %t3 = u64
+    type %t4 = void
+    type %t5 = u8
+    type %t6 = u32
+    type %t7 = i16
+    type %t8 = f32
+    type %t9 = i64
+    type %t10 = u16
+    type %t11 = fn() -> %t4
+    type %t12 = fn() -> %t2
+    type %t13 = fn() -> %t5
+    type %t14 = fn() -> %t7
+    type %t15 = fn() -> %t10
+    type %t16 = fn() -> %t0
+    type %t17 = fn() -> %t6
+    type %t18 = fn() -> %t9
+    type %t19 = fn() -> %t3
+    type %t20 = fn() -> %t8
+    type %t21 = fn() -> %t1
 
-        fn main() -> i32
-        {
+    fn main() -> i32
+    {
 
-          bb14:
-            call fn_void()
-            call fn_char()
-            call fn_uchar()
-            call fn_short()
-            call fn_ushort()
-            call fn_int()
-            call fn_uint()
-            call fn_long()
-            call fn_ulong()
-            call fn_llong()
-            call fn_ullong()
-            call fn_float()
-            call fn_double()
-            return const 0
-        }
+      bb14:
+        call fn_void()
+        call fn_char()
+        call fn_uchar()
+        call fn_short()
+        call fn_ushort()
+        call fn_int()
+        call fn_uint()
+        call fn_long()
+        call fn_ulong()
+        call fn_llong()
+        call fn_ullong()
+        call fn_float()
+        call fn_double()
+        return const 0
+    }
 
-        fn fn_double() -> f64
-        {
+    fn fn_double() -> f64
+    {
 
-          bb13:
-            return const 2.71828
-        }
+      bb13:
+        return const 2.71828
+    }
 
-        fn fn_char() -> i8
-        {
+    fn fn_char() -> i8
+    {
 
-          bb2:
-            return cast<i8>(const 97)
-        }
+      bb2:
+        return cast<i8>(const 97)
+    }
 
-        fn fn_ulong() -> u64
-        {
+    fn fn_ulong() -> u64
+    {
 
-          bb9:
-            return const 200000
-        }
+      bb9:
+        return const 200000
+    }
 
-        fn fn_void() -> void
-        {
+    fn fn_void() -> void
+    {
 
-          bb1:
-            return
-        }
+      bb1:
+        return
+    }
 
-        fn fn_uchar() -> u8
-        {
+    fn fn_uchar() -> u8
+    {
 
-          bb3:
-            return cast<u8>(const 98)
-        }
+      bb3:
+        return cast<u8>(const 98)
+    }
 
-        fn fn_uint() -> u32
-        {
+    fn fn_uint() -> u32
+    {
 
-          bb7:
-            return cast<u32>(const 42)
-        }
+      bb7:
+        return cast<u32>(const 42)
+    }
 
-        fn fn_short() -> i16
-        {
+    fn fn_short() -> i16
+    {
 
-          bb4:
-            return cast<i16>(const -7)
-        }
+      bb4:
+        return cast<i16>(const -7)
+    }
 
-        fn fn_int() -> i32
-        {
+    fn fn_int() -> i32
+    {
 
-          bb6:
-            return const -1
-        }
+      bb6:
+        return const -1
+    }
 
-        fn fn_float() -> f32
-        {
+    fn fn_float() -> f32
+    {
 
-          bb12:
-            return const 3.14
-        }
+      bb12:
+        return const 3.14
+    }
 
-        fn fn_llong() -> i64
-        {
+    fn fn_llong() -> i64
+    {
 
-          bb10:
-            return const -3000000000
-        }
+      bb10:
+        return const -3000000000
+    }
 
-        fn fn_long() -> i64
-        {
+    fn fn_long() -> i64
+    {
 
-          bb8:
-            return const 100000
-        }
+      bb8:
+        return const 100000
+    }
 
-        fn fn_ushort() -> u16
-        {
+    fn fn_ushort() -> u16
+    {
 
-          bb5:
-            return cast<u16>(const 14)
-        }
+      bb5:
+        return cast<u16>(const 14)
+    }
 
-        fn fn_ullong() -> u64
-        {
+    fn fn_ullong() -> u64
+    {
 
-          bb11:
-            return const 4000000000
-        }
-        ");
+      bb11:
+        return const 4000000000
+    }
+    ");
 }
 
 #[test]
@@ -695,18 +695,18 @@ fn test_duplicate_global_declaration() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
 
-        global @x: i32 = const zero
+    global @x: i32 = const zero
 
-        fn main() -> i32
-        {
+    fn main() -> i32
+    {
 
-          bb1:
-            return @x
-        }
-        ");
+      bb1:
+        return @x
+    }
+    ");
 }
 
 #[test]
@@ -721,7 +721,7 @@ fn test_duplicate_global_declaration_with_initializers_diagnostic() {
     "#;
 
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 2
 
     Level: Error
@@ -745,20 +745,20 @@ fn test_basic_typedef() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
 
-        fn main() -> i32
-        {
-          locals {
-            %x: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %x: i32
+      }
 
-          bb1:
-            %x = const 10
-            return %x
-        }
-        ");
+      bb1:
+        %x = const 10
+        return %x
+    }
+    ");
 }
 
 #[test]
@@ -772,23 +772,23 @@ fn test_mir_generation_for_self_referential_struct() {
     }
     "#;
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = struct S { p: %t2, x: %t0 }
-        type %t2 = ptr<%t1>
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
+    type %t1 = struct S { p: %t2, x: %t0 }
+    type %t2 = ptr<%t1>
 
-        fn main() -> i32
-        {
-          locals {
-            %s: %t1
-          }
+    fn main() -> i32
+    {
+      locals {
+        %s: %t1
+      }
 
-          bb1:
-            %s.field_1 = const 0
-            %s.field_0 = addr_of(%s)
-            return deref(deref(deref(deref(deref(%s.field_0).field_0).field_0).field_0).field_0).field_1
-        }
-        ");
+      bb1:
+        %s.field_1 = const 0
+        %s.field_0 = addr_of(%s)
+        return deref(deref(deref(deref(deref(%s.field_0).field_0).field_0).field_0).field_0).field_1
+    }
+    ");
 }
 
 #[test]
@@ -802,23 +802,23 @@ fn test_mir_generation_for_self_referential_union() {
             }
         "#;
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = union U { p: %t2, x: %t0 }
-        type %t2 = ptr<%t1>
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
+    type %t1 = union U { p: %t2, x: %t0 }
+    type %t2 = ptr<%t1>
 
-        fn main() -> i32
-        {
-          locals {
-            %u: %t1
-          }
+    fn main() -> i32
+    {
+      locals {
+        %u: %t1
+      }
 
-          bb1:
-            %u.field_1 = const 0
-            %u.field_0 = addr_of(%u)
-            return deref(deref(deref(deref(deref(%u.field_0).field_0).field_0).field_0).field_0).field_1
-        }
-        ");
+      bb1:
+        %u.field_1 = const 0
+        %u.field_0 = addr_of(%u)
+        return deref(deref(deref(deref(deref(%u.field_0).field_0).field_0).field_0).field_0).field_1
+    }
+    ");
 }
 
 #[test]
@@ -837,32 +837,32 @@ fn test_external_function_call() {
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r#"
-        type %t0 = i32
-        type %t1 = i8
-        type %t2 = ptr<%t1>
-        type %t3 = [5]%t1
-        type %t4 = [5]%t1
-        type %t5 = fn(%t2) -> %t0
+    type %t0 = i32
+    type %t1 = i8
+    type %t2 = ptr<%t1>
+    type %t3 = [5]%t1
+    type %t4 = [5]%t1
+    type %t5 = fn(%t2) -> %t0
 
-        global @.L.str0: [5]i8 = const "gate"
+    global @.L.str0: [5]i8 = const "gate"
 
-        fn main() -> i32
-        {
-          locals {
-            %steins: ptr<i8>
-            %3: i32
-            %4: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %steins: ptr<i8>
+        %3: i32
+        %4: i32
+      }
 
-          bb1:
-            %steins = cast<ptr<i8>>(const @.L.str0)
-            %3 = call strlen(%steins)
-            %4 = %3 - cast<i32>(const 4)
-            return %4
-        }
+      bb1:
+        %steins = cast<ptr<i8>>(const @.L.str0)
+        %3 = call strlen(%steins)
+        %4 = %3 - cast<i32>(const 4)
+        return %4
+    }
 
-        extern fn strlen(%param0: ptr<i8>) -> i32
-        "#);
+    extern fn strlen(%param0: ptr<i8>) -> i32
+    "#);
 }
 
 #[test]
@@ -878,28 +878,28 @@ fn test_array_to_pointer_decay_in_function_call() {
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r#"
-        type %t0 = i32
-        type %t1 = i8
-        type %t2 = ptr<%t1>
-        type %t3 = fn(%t2) -> %t0
-        type %t4 = [15]%t1
-        type %t5 = [15]%t1
+    type %t0 = i32
+    type %t1 = i8
+    type %t2 = ptr<%t1>
+    type %t3 = fn(%t2) -> %t0
+    type %t4 = [15]%t1
+    type %t5 = [15]%t1
 
-        global @.L.str0: [15]i8 = const "Hello, World!\n"
+    global @.L.str0: [15]i8 = const "Hello, World!\n"
 
-        fn main() -> i32
-        {
-          locals {
-            %2: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %2: i32
+      }
 
-          bb1:
-            %2 = call printf(cast<ptr<i8>>(const @.L.str0))
-            return %2
-        }
+      bb1:
+        %2 = call printf(cast<ptr<i8>>(const @.L.str0))
+        return %2
+    }
 
-        extern fn printf(%param0: ptr<i8>) -> i32
-        "#);
+    extern fn printf(%param0: ptr<i8>) -> i32
+    "#);
 }
 
 #[test]
@@ -915,31 +915,31 @@ fn test_array_to_pointer_decay_in_variadic_function_call() {
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r#"
-        type %t0 = i32
-        type %t1 = i8
-        type %t2 = ptr<%t1>
-        type %t3 = fn(%t2, ...) -> %t0
-        type %t4 = [15]%t1
-        type %t5 = [15]%t1
-        type %t6 = [5]%t1
-        type %t7 = [5]%t1
+    type %t0 = i32
+    type %t1 = i8
+    type %t2 = ptr<%t1>
+    type %t3 = fn(%t2, ...) -> %t0
+    type %t4 = [15]%t1
+    type %t5 = [15]%t1
+    type %t6 = [5]%t1
+    type %t7 = [5]%t1
 
-        global @.L.str0: [15]i8 = const "Value: %d, %s\n"
-        global @.L.str1: [5]i8 = const "test"
+    global @.L.str0: [15]i8 = const "Value: %d, %s\n"
+    global @.L.str1: [5]i8 = const "test"
 
-        fn main() -> i32
-        {
-          locals {
-            %2: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %2: i32
+      }
 
-          bb1:
-            %2 = call printf(cast<ptr<i8>>(const @.L.str0), const 42, cast<ptr<i8>>(const @.L.str1))
-            return %2
-        }
+      bb1:
+        %2 = call printf(cast<ptr<i8>>(const @.L.str0), const 42, cast<ptr<i8>>(const @.L.str1))
+        return %2
+    }
 
-        extern fn printf(%param0: ptr<i8>, ...) -> i32
-        "#);
+    extern fn printf(%param0: ptr<i8>, ...) -> i32
+    "#);
 }
 
 #[test]
@@ -959,44 +959,44 @@ fn test_increment_decrement() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
 
-        fn main() -> i32
-        {
-          locals {
-            %okabe: i32
-            %rintaro: i32
-            %3: i32
-            %4: i32
-            %kyouma: i32
-            %6: i32
-            %hohohin: i32
-            %8: i32
-            %9: i32
-            %kanggoru: i32
-            %11: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %okabe: i32
+        %rintaro: i32
+        %3: i32
+        %4: i32
+        %kyouma: i32
+        %6: i32
+        %hohohin: i32
+        %8: i32
+        %9: i32
+        %kanggoru: i32
+        %11: i32
+      }
 
-          bb1:
-            %okabe = const 1
-            %3 = %okabe
-            %4 = %okabe + const 1
-            %okabe = %4
-            %rintaro = %3
-            %6 = %rintaro + const 1
-            %rintaro = %6
-            %kyouma = %6
-            %8 = %kyouma
-            %9 = %kyouma + const -1
-            %kyouma = %9
-            %hohohin = %8
-            %11 = %hohohin + const -1
-            %hohohin = %11
-            %kanggoru = %11
-            return %kanggoru
-        }
-        ");
+      bb1:
+        %okabe = const 1
+        %3 = %okabe
+        %4 = %okabe + const 1
+        %okabe = %4
+        %rintaro = %3
+        %6 = %rintaro + const 1
+        %rintaro = %6
+        %kyouma = %6
+        %8 = %kyouma
+        %9 = %kyouma + const -1
+        %kyouma = %9
+        %hohohin = %8
+        %11 = %hohohin + const -1
+        %hohohin = %11
+        %kanggoru = %11
+        return %kanggoru
+    }
+    ");
 }
 
 #[test]
@@ -1010,19 +1010,19 @@ fn test_simple_goto() {
             }
         "#;
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
 
-        fn main() -> i32
-        {
+    fn main() -> i32
+    {
 
-          bb1:
-            br bb2
+      bb1:
+        br bb2
 
-          bb2:
-            return const 0
-        }
-        ");
+      bb2:
+        return const 0
+    }
+    ");
 }
 
 #[test]
@@ -1040,36 +1040,36 @@ fn test_deref_after_cast() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = void
-        type %t2 = ptr<%t1>
-        type %t3 = ptr<%t0>
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
+    type %t1 = void
+    type %t2 = ptr<%t1>
+    type %t3 = ptr<%t0>
 
-        fn main() -> i32
-        {
-          locals {
-            %p: ptr<void>
-            %x: i32
-            %3: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %p: ptr<void>
+        %x: i32
+        %3: i32
+      }
 
-          bb1:
-            %x = const 2
-            %p = cast<ptr<void>>(addr_of(%x))
-            %3 = deref(cast<ptr<i32>>(%p)) != cast<i32>(const 2)
-            cond_br %3, bb2, bb3
+      bb1:
+        %x = const 2
+        %p = cast<ptr<void>>(addr_of(%x))
+        %3 = deref(cast<ptr<i32>>(%p)) != cast<i32>(const 2)
+        cond_br %3, bb2, bb3
 
-          bb2:
-            return const 1
+      bb2:
+        return const 1
 
-          bb3:
-            br bb4
+      bb3:
+        br bb4
 
-          bb4:
-            return const 0
-        }
-        ");
+      bb4:
+        return const 0
+    }
+    ");
 }
 
 #[test]
@@ -1107,7 +1107,7 @@ fn test_incomplete_record_type() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = struct I {  }
     type %t1 = ptr<%t0>
 
@@ -1143,23 +1143,23 @@ fn test_anonymous_struct_union_field_indices() {
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @"
-        type %t0 = i32
-        type %t1 = struct anonymous { a: %t0, b1: %t0, b2: %t0, c: %t0, d: %t0 }
+    type %t0 = i32
+    type %t1 = struct anonymous { a: %t0, b1: %t0, b2: %t0, c: %t0, d: %t0 }
 
-        fn main() -> i32
-        {
-          locals {
-            %v: %t1
-          }
+    fn main() -> i32
+    {
+      locals {
+        %v: %t1
+      }
 
-          bb1:
-            %v.field_0 = const 1
-            %v.field_1 = const 2
-            %v.field_3 = const 3
-            %v.field_4 = const 4
-            return const 0
-        }
-        ");
+      bb1:
+        %v.field_0 = const 1
+        %v.field_1 = const 2
+        %v.field_3 = const 3
+        %v.field_4 = const 4
+        return const 0
+    }
+    ");
 }
 #[test]
 fn test_global_after_function() {
@@ -1172,32 +1172,32 @@ fn test_global_after_function() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = fn() -> %t0
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
+    type %t1 = fn() -> %t0
 
-        global @s: i32 = const 42
+    global @s: i32 = const 42
 
-        fn main() -> i32
-        {
-          locals {
-            %1: i32
-            %2: i32
-          }
+    fn main() -> i32
+    {
+      locals {
+        %1: i32
+        %2: i32
+      }
 
-          bb2:
-            %1 = call zero()
-            %2 = @s + %1
-            return %2
-        }
+      bb2:
+        %1 = call zero()
+        %2 = @s + %1
+        return %2
+    }
 
-        fn zero() -> i32
-        {
+    fn zero() -> i32
+    {
 
-          bb1:
-            return const 0
-        }
-        ");
+      bb1:
+        return const 0
+    }
+    ");
 }
 
 #[test]
@@ -1220,77 +1220,77 @@ fn test_ternary_with_mixed_pointer_integer() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = void
-        type %t2 = ptr<%t1>
-        type %t3 = ptr<%t0>
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
+    type %t1 = void
+    type %t2 = ptr<%t1>
+    type %t3 = ptr<%t0>
 
-        fn main() -> i32
-        {
-          locals {
-            %i: i32
-            %p: ptr<void>
-            %q: ptr<i32>
-            %4: ptr<void>
-            %5: ptr<void>
-            %6: ptr<i32>
-            %7: ptr<i32>
-          }
+    fn main() -> i32
+    {
+      locals {
+        %i: i32
+        %p: ptr<void>
+        %q: ptr<i32>
+        %4: ptr<void>
+        %5: ptr<void>
+        %6: ptr<i32>
+        %7: ptr<i32>
+      }
 
-          bb1:
-            %i = const 1
-            cond_br %i, bb2, bb3
+      bb1:
+        %i = const 1
+        cond_br %i, bb2, bb3
 
-          bb2:
-            %4 = cast<ptr<void>>(const 0)
-            br bb4
+      bb2:
+        %4 = cast<ptr<void>>(const 0)
+        br bb4
 
-          bb3:
-            %4 = cast<ptr<void>>(const 0)
-            br bb4
+      bb3:
+        %4 = cast<ptr<void>>(const 0)
+        br bb4
 
-          bb4:
-            %p = %4
-            cond_br %i, bb5, bb6
+      bb4:
+        %p = %4
+        cond_br %i, bb5, bb6
 
-          bb5:
-            %5 = cast<ptr<void>>(const 0)
-            br bb7
+      bb5:
+        %5 = cast<ptr<void>>(const 0)
+        br bb7
 
-          bb6:
-            %5 = cast<ptr<void>>(const 0)
-            br bb7
+      bb6:
+        %5 = cast<ptr<void>>(const 0)
+        br bb7
 
-          bb7:
-            %p = %5
-            cond_br %i, bb8, bb9
+      bb7:
+        %p = %5
+        cond_br %i, bb8, bb9
 
-          bb8:
-            %6 = cast<ptr<i32>>(const 0)
-            br bb10
+      bb8:
+        %6 = cast<ptr<i32>>(const 0)
+        br bb10
 
-          bb9:
-            %6 = %q
-            br bb10
+      bb9:
+        %6 = %q
+        br bb10
 
-          bb10:
-            %q = %6
-            cond_br %i, bb11, bb12
+      bb10:
+        %q = %6
+        cond_br %i, bb11, bb12
 
-          bb11:
-            %7 = %q
-            br bb13
+      bb11:
+        %7 = %q
+        br bb13
 
-          bb12:
-            %7 = cast<ptr<i32>>(const 0)
-            br bb13
+      bb12:
+        %7 = cast<ptr<i32>>(const 0)
+        br bb13
 
-          bb13:
-            %q = %7
-            return cast<i32>(%q)
-        }
-        ");
+      bb13:
+        %q = %7
+        return cast<i32>(%q)
+    }
+    ");
 }
 
 #[test]
@@ -1302,15 +1302,15 @@ fn test_global_initializer_with_cast() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
-        type %t0 = i32
-        type %t1 = i64
-        type %t2 = i8
+    insta::assert_snapshot!(mir_dump, @"
+    type %t0 = i32
+    type %t1 = i64
+    type %t2 = i8
 
-        global @x: i32 = const 5
-        global @y: i64 = const 6
-        global @c: i8 = const 7
-        ");
+    global @x: i32 = const 5
+    global @y: i64 = const 6
+    global @c: i8 = const 7
+    ");
 }
 #[test]
 fn test_string_literal_decay() {
@@ -1325,31 +1325,31 @@ fn test_string_literal_decay() {
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r#"
-        type %t0 = i32
-        type %t1 = i8
-        type %t2 = ptr<%t1>
-        type %t3 = [10]%t1
-        type %t4 = [10]%t1
-        type %t5 = fn(%t2, %t2) -> %t0
-        type %t6 = [6]%t1
-        type %t7 = [6]%t1
+    type %t0 = i32
+    type %t1 = i8
+    type %t2 = ptr<%t1>
+    type %t3 = [10]%t1
+    type %t4 = [10]%t1
+    type %t5 = fn(%t2, %t2) -> %t0
+    type %t6 = [6]%t1
+    type %t7 = [6]%t1
 
-        global @.L.str0: [6]i8 = const "world"
+    global @.L.str0: [6]i8 = const "world"
 
-        fn main() -> i32
-        {
-          locals {
-            %buffer: [10]i8
-          }
+    fn main() -> i32
+    {
+      locals {
+        %buffer: [10]i8
+      }
 
-          bb1:
-            %buffer = const array_literal [const 104, const 101, const 108, const 108, const 111, const 0, const 0, const 0, const 0, const 0]
-            call strcmp(cast<ptr<i8>>(addr_of(%buffer)), cast<ptr<i8>>(const @.L.str0))
-            return const 0
-        }
+      bb1:
+        %buffer = const array_literal [const 104, const 101, const 108, const 108, const 111, const 0, const 0, const 0, const 0, const 0]
+        call strcmp(cast<ptr<i8>>(addr_of(%buffer)), cast<ptr<i8>>(const @.L.str0))
+        return const 0
+    }
 
-        extern fn strcmp(%param0: ptr<i8>, %param1: ptr<i8>) -> i32
-        "#);
+    extern fn strcmp(%param0: ptr<i8>, %param1: ptr<i8>) -> i32
+    "#);
 }
 
 #[test]
@@ -1378,80 +1378,80 @@ fn test_gnu_statement_expression_labels_and_void() {
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r#"
-        type %t0 = i32
-        type %t1 = i8
-        type %t2 = ptr<%t1>
-        type %t3 = void
-        type %t4 = u64
-        type %t5 = fn(%t2, ...) -> %t0
-        type %t6 = [13]%t1
-        type %t7 = [13]%t1
-        type %t8 = [7]%t1
-        type %t9 = [7]%t1
+    type %t0 = i32
+    type %t1 = i8
+    type %t2 = ptr<%t1>
+    type %t3 = void
+    type %t4 = u64
+    type %t5 = fn(%t2, ...) -> %t0
+    type %t6 = [13]%t1
+    type %t7 = [13]%t1
+    type %t8 = [7]%t1
+    type %t9 = [7]%t1
 
-        global @.L.str0: [13]i8 = const "timeout=%ld\n"
-        global @.L.str1: [7]i8 = const "error\n"
+    global @.L.str0: [13]i8 = const "timeout=%ld\n"
+    global @.L.str1: [7]i8 = const "error\n"
 
-        extern fn printf(%param0: ptr<i8>, ...) -> i32
+    extern fn printf(%param0: ptr<i8>, ...) -> i32
 
-        fn kb_wait_1() -> void
-        {
-          locals {
-            %timeout: u64
-            %i: i32
-            %4: i32
-            %5: i32
-          }
+    fn kb_wait_1() -> void
+    {
+      locals {
+        %timeout: u64
+        %i: i32
+        %4: i32
+        %5: i32
+      }
 
-          bb1:
-            %timeout = cast<u64>(const 2)
-            br bb4
+      bb1:
+        %timeout = cast<u64>(const 2)
+        br bb4
 
-          bb2:
-            call printf(cast<ptr<i8>>(const @.L.str1))
-            br bb12
+      bb2:
+        call printf(cast<ptr<i8>>(const @.L.str1))
+        br bb12
 
-          bb3:
-            cond_br %timeout, bb4, bb5
+      bb3:
+        cond_br %timeout, bb4, bb5
 
-          bb4:
-            cond_br const 1, bb6, bb7
+      bb4:
+        cond_br const 1, bb6, bb7
 
-          bb5:
-            return
+      bb5:
+        return
 
-          bb6:
-            call printf(cast<ptr<i8>>(const @.L.str0), %timeout)
-            br bb8
+      bb6:
+        call printf(cast<ptr<i8>>(const @.L.str0), %timeout)
+        br bb8
 
-          bb7:
-            %i = const 1
-            br bb9
+      bb7:
+        %i = const 1
+        br bb9
 
-          bb8:
-            %timeout = %timeout + const -1
-            br bb3
+      bb8:
+        %timeout = %timeout + const -1
+        br bb3
 
-          bb9:
-            cond_br const 1, bb10, bb11
+      bb9:
+        cond_br const 1, bb10, bb11
 
-          bb10:
-            br bb12
+      bb10:
+        br bb12
 
-          bb11:
-            br bb2
+      bb11:
+        br bb2
 
-          bb12:
-            %4 = %i
-            %5 = %i + const -1
-            %i = %5
-            cond_br %4, bb13, bb14
+      bb12:
+        %4 = %i
+        %5 = %i + const -1
+        %i = %5
+        cond_br %4, bb13, bb14
 
-          bb13:
-            br bb2
+      bb13:
+        br bb2
 
-          bb14:
-            br bb9
-        }
-        "#);
+      bb14:
+        br bb9
+    }
+    "#);
 }

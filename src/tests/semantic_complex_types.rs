@@ -154,7 +154,7 @@ fn test_complex_ops_float() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = f32
     type %t2 = struct _Complex_float { real: %t1, imag: %t1 }
@@ -261,7 +261,7 @@ fn test_complex_real_imag_operators() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = f64
     type %t2 = struct _Complex_double { real: %t1, imag: %t1 }
@@ -298,7 +298,7 @@ fn test_complex_ops_double() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = f64
     type %t2 = struct _Complex_double { real: %t1, imag: %t1 }
@@ -404,7 +404,7 @@ fn test_complex_comparison_v2() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = f32
     type %t2 = struct _Complex_float { real: %t1, imag: %t1 }

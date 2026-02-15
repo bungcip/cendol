@@ -9,7 +9,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -29,7 +29,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     - kind: Identifier
@@ -46,7 +46,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -67,7 +67,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     - kind: Identifier
@@ -84,7 +84,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -104,10 +104,10 @@ OK
         ),
     ];
     let (tokens, _) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 // Conditional Operator
@@ -258,7 +258,7 @@ FAIL_SIGNED_COMPARE
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK_AND_SHORT
     - kind: Identifier
@@ -297,7 +297,7 @@ FAIL_SIGNED_COMPARE
       text: OK_MOD
     - kind: Identifier
       text: OK_SIGNED_COMPARE
-    "#);
+    ");
 }
 
 // Unary Operators
@@ -338,7 +338,7 @@ LOGICNOT_1_OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: PLUS_OK
     - kind: Identifier
@@ -385,7 +385,7 @@ FAIL_INDIRECT_LOCAL
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK_STD
     - kind: Identifier
@@ -394,5 +394,5 @@ FAIL_INDIRECT_LOCAL
       text: OK_INDIRECT_STD
     - kind: Identifier
       text: OK_INDIRECT_LOCAL
-    "#);
+    ");
 }

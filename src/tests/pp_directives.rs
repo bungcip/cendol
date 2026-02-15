@@ -35,11 +35,11 @@ fn test_line_directive_presumed_location() {
 OK
 "#;
     let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    insta::assert_yaml_snapshot!((tokens, diags), @"
     - - kind: Identifier
         text: OK
     - []
-    "#);
+    ");
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn test_null_directive() {
 OK
 "#;
     let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r"
+    insta::assert_yaml_snapshot!((tokens, diags), @"
     - - kind: Identifier
         text: OK
     - []
@@ -114,9 +114,9 @@ fn test_skipped_directives_coverage() {
 OK
 "#;
     let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    insta::assert_yaml_snapshot!((tokens, diags), @"
     - - kind: Identifier
         text: OK
     - []
-    "#);
+    ");
 }

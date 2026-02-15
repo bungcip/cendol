@@ -3,7 +3,7 @@ use crate::tests::parser_utils::setup_expr;
 #[test]
 fn test_simple_addition() {
     let resolved = setup_expr("1 + 2");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     BinaryOp:
       - Add
       - LiteralInt: 1
@@ -14,7 +14,7 @@ fn test_simple_addition() {
 #[test]
 fn test_generic_selection_with_assignment() {
     let resolved = setup_expr("_Generic(x = 10, int: 1, default: 0)");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     GenericSelection:
       - Assignment:
           - Assign
@@ -32,7 +32,7 @@ fn test_generic_selection_with_assignment() {
 #[test]
 fn test_unary_operators() {
     let resolved = setup_expr("-1");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     UnaryOp:
       - Minus
       - LiteralInt: 1
@@ -42,7 +42,7 @@ fn test_unary_operators() {
 #[test]
 fn test_precedence() {
     let resolved = setup_expr("1 + 2 * 3");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     BinaryOp:
       - Add
       - LiteralInt: 1
@@ -56,7 +56,7 @@ fn test_precedence() {
 #[test]
 fn test_parenthesized_expression() {
     let resolved = setup_expr("(1 + 2) * 3");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     BinaryOp:
       - Mul
       - BinaryOp:
@@ -70,7 +70,7 @@ fn test_parenthesized_expression() {
 #[test]
 fn test_assignment() {
     let resolved = setup_expr("a = 1");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Assignment:
       - Assign
       - Ident: a
@@ -81,7 +81,7 @@ fn test_assignment() {
 #[test]
 fn test_function_call() {
     let resolved = setup_expr("foo(1, 2)");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     FunctionCall:
       - Ident: foo
       - - LiteralInt: 1
@@ -92,7 +92,7 @@ fn test_function_call() {
 #[test]
 fn test_member_access() {
     let resolved = setup_expr("a.b");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     MemberAccess:
       - Ident: a
       - b
@@ -103,7 +103,7 @@ fn test_member_access() {
 #[test]
 fn test_array_indexing() {
     let resolved = setup_expr("a[1]");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     IndexAccess:
       - Ident: a
       - LiteralInt: 1
@@ -113,7 +113,7 @@ fn test_array_indexing() {
 #[test]
 fn test_sizeof_expression() {
     let resolved = setup_expr("sizeof(a)");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     SizeOfExpr:
       Ident: a
     ");
@@ -122,7 +122,7 @@ fn test_sizeof_expression() {
 #[test]
 fn test_complex_expression() {
     let resolved = setup_expr("a + b * c[d] - e.f");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     BinaryOp:
       - Sub
       - BinaryOp:
@@ -144,7 +144,7 @@ fn test_complex_expression() {
 #[test]
 fn test_generic_selection_simple() {
     let resolved = setup_expr("_Generic(a, int: a_f)");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     GenericSelection:
       - Ident: a
       - - type_name: type_1
@@ -156,7 +156,7 @@ fn test_generic_selection_simple() {
 #[test]
 fn test_generic_selection_with_multiple_associations() {
     let resolved = setup_expr("_Generic(a, int: a_f, const int: b_f)");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     GenericSelection:
       - Ident: a
       - - type_name: type_1
@@ -171,7 +171,7 @@ fn test_generic_selection_with_multiple_associations() {
 #[test]
 fn test_generic_selection_with_default() {
     let resolved = setup_expr("_Generic(a, int: a_f, default: b_f)");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     GenericSelection:
       - Ident: a
       - - type_name: type_1
@@ -186,7 +186,7 @@ fn test_generic_selection_with_default() {
 #[test]
 fn test_generic_selection_with_function_call() {
     let resolved = setup_expr("_Generic(a, int: a_f)()");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     FunctionCall:
       - GenericSelection:
           - Ident: a
@@ -200,7 +200,7 @@ fn test_generic_selection_with_function_call() {
 #[test]
 fn test_generic_selection_with_qualified_type() {
     let resolved = setup_expr("_Generic(i, const int: 1/1, default: 0)");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     GenericSelection:
       - Ident: i
       - - type_name: type_1
@@ -218,7 +218,7 @@ fn test_generic_selection_with_qualified_type() {
 #[test]
 fn test_generic_selection_with_pointer_types() {
     let resolved = setup_expr("_Generic(ptr, int *:1, int * const:2, default:20)");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     GenericSelection:
       - Ident: ptr
       - - type_name: type_1
@@ -236,7 +236,7 @@ fn test_generic_selection_with_pointer_types() {
 #[test]
 fn test_chained_assignment() {
     let resolved = setup_expr("a = b = c");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Assignment:
       - Assign
       - Ident: a
@@ -250,7 +250,7 @@ fn test_chained_assignment() {
 #[test]
 fn test_ternary_with_assignment() {
     let resolved = setup_expr("a ? b : c = 1");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Assignment:
       - Assign
       - TernaryOp:
@@ -264,7 +264,7 @@ fn test_ternary_with_assignment() {
 #[test]
 fn test_ternary_with_assignment_in_middle_operand() {
     let resolved = setup_expr("a ? b = 1 : c");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     TernaryOp:
       - Ident: a
       - Assignment:
@@ -278,7 +278,7 @@ fn test_ternary_with_assignment_in_middle_operand() {
 #[test]
 fn test_chained_subtraction() {
     let resolved = setup_expr("a - b - c");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     BinaryOp:
       - Sub
       - BinaryOp:
@@ -292,7 +292,7 @@ fn test_chained_subtraction() {
 #[test]
 fn test_array_indexing_with_expression() {
     let resolved = setup_expr("a[b + c]");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     IndexAccess:
       - Ident: a
       - BinaryOp:
@@ -305,7 +305,7 @@ fn test_array_indexing_with_expression() {
 #[test]
 fn test_compound_literal() {
     let resolved = setup_expr("(int){1}");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     CompoundLiteral:
       - parsed_type_1
       - InitializerList:
@@ -316,7 +316,7 @@ fn test_compound_literal() {
 #[test]
 fn test_compound_literal_struct() {
     let resolved = setup_expr("(struct Point){.x=1, .y=2}");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     CompoundLiteral:
       - parsed_type_1
       - InitializerList:
@@ -329,7 +329,7 @@ fn test_compound_literal_struct() {
 fn test_postfix_operator_precedence() {
     // Test that postfix operators bind tighter than binary operators
     let resolved = setup_expr("a.b + c");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     BinaryOp:
       - Add
       - MemberAccess:
@@ -341,7 +341,7 @@ fn test_postfix_operator_precedence() {
 
     // Test chaining of postfix operators
     let resolved = setup_expr("foo()->bar[0]++");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     PostIncrement:
       IndexAccess:
         - MemberAccess:
@@ -355,7 +355,7 @@ fn test_postfix_operator_precedence() {
 
     // Test a complex expression with mixed operators
     let resolved = setup_expr("++a * b.c[d--] + foo(1, 2)");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     BinaryOp:
       - Add
       - BinaryOp:

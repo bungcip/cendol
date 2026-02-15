@@ -88,7 +88,7 @@ mod tests {
         "#;
 
         let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+        insta::assert_snapshot!(mir_dump, @"
         type %t0 = i32
         type %t1 = void
         type %t2 = ptr<%t1>
@@ -135,7 +135,7 @@ typedef int T;
 typedef float T;
         "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Diagnostics count: 2
 
     Level: Error

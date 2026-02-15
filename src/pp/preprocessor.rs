@@ -488,14 +488,14 @@ impl<'src> Preprocessor<'src> {
         // Architecture
         match self.target.architecture {
             Architecture::X86_64 => {
-                self.define_builtin_macro_one("__x86_64__");
-                self.define_builtin_macro_one("__x86_64");
-                self.define_builtin_macro_one("__amd64__");
-                self.define_builtin_macro_one("__amd64");
+                for macro_name in &["__x86_64__", "__x86_64", "__amd64__", "__amd64"] {
+                    self.define_builtin_macro_one(macro_name);
+                }
             }
             Architecture::X86_32(_) => {
-                self.define_builtin_macro_one("__i386__");
-                self.define_builtin_macro_one("__i386");
+                for macro_name in &["__i386__", "__i386"] {
+                    self.define_builtin_macro_one(macro_name);
+                }
             }
             Architecture::Aarch64(_) => {
                 self.define_builtin_macro_one("__aarch64__");
@@ -508,26 +508,26 @@ impl<'src> Preprocessor<'src> {
 
         // Pointer width
         if self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(64) == 64 {
-            self.define_builtin_macro_one("__LP64__");
-            self.define_builtin_macro_one("_LP64");
+            for macro_name in &["__LP64__", "_LP64"] {
+                self.define_builtin_macro_one(macro_name);
+            }
         } else {
-            self.define_builtin_macro_one("__ILP32__");
-            self.define_builtin_macro_one("_ILP32");
+            for macro_name in &["__ILP32__", "_ILP32"] {
+                self.define_builtin_macro_one(macro_name);
+            }
         }
 
         // OS
         match self.target.operating_system {
             OperatingSystem::Linux => {
-                self.define_builtin_macro_one("__linux__");
-                self.define_builtin_macro_one("__linux");
-                self.define_builtin_macro_one("__unix__");
-                self.define_builtin_macro_one("__unix");
-                self.define_builtin_macro_one("__ELF__");
-                self.define_builtin_macro_one("__gnu_linux__");
+                for macro_name in &["__linux__", "__linux", "__unix__", "__unix", "__ELF__", "__gnu_linux__"] {
+                    self.define_builtin_macro_one(macro_name);
+                }
             }
             OperatingSystem::Darwin(_) => {
-                self.define_builtin_macro_one("__APPLE__");
-                self.define_builtin_macro_one("__MACH__");
+                for macro_name in &["__APPLE__", "__MACH__"] {
+                    self.define_builtin_macro_one(macro_name);
+                }
             }
             OperatingSystem::Windows => {
                 self.define_builtin_macro_one("_WIN32");
@@ -716,8 +716,8 @@ impl<'src> Preprocessor<'src> {
         self.emit_error_loc(PPErrorKind::UnexpectedEndOfFile, self.get_current_location())
     }
 
-    /// Helper to parse content of a string literal, stripping quotes.
-    fn parse_string_content(
+    /// Helper to extract content of a string literal, stripping quotes.
+    fn extract_string_literal_content(
         &self,
         symbol: StringId,
         location: SourceLoc,
@@ -965,42 +965,19 @@ impl<'src> Preprocessor<'src> {
         match token.kind {
             PPTokenKind::Identifier(sym) => match self.directive_keywords.is_directive(sym) {
                 Some(kind) => match kind {
-                    DirectiveKind::If | DirectiveKind::Ifdef | DirectiveKind::Ifndef => {
+                    DirectiveKind::If
+                    | DirectiveKind::Ifdef
+                    | DirectiveKind::Ifndef
+                    | DirectiveKind::Elif
+                    | DirectiveKind::Else
+                    | DirectiveKind::Endif => self.handle_conditional_directive(kind, token.location),
+                    _ => {
                         if self.is_currently_skipping() {
-                            self.push_skipped_conditional();
                             self.skip_directive()
                         } else {
-                            match kind {
-                                DirectiveKind::If => {
-                                    let tokens = self.parse_conditional_expression().unwrap_or_default();
-                                    let cond = self.evaluate_conditional_expression(tokens).unwrap_or(false);
-                                    self.handle_if_directive(cond)
-                                }
-                                DirectiveKind::Ifdef => self.handle_ifdef(),
-                                DirectiveKind::Ifndef => self.handle_ifndef(),
-                                _ => unreachable!(),
-                            }
+                            self.execute_directive(kind)
                         }
                     }
-                    DirectiveKind::Elif => {
-                        if self.should_evaluate_conditional() {
-                            let tokens = self.parse_conditional_expression().unwrap_or_default();
-                            let cond = self.evaluate_conditional_expression(tokens).unwrap_or(false);
-                            self.handle_elif_directive(cond, token.location)
-                        } else {
-                            self.handle_elif_directive(false, token.location)
-                        }
-                    }
-                    DirectiveKind::Else => self.handle_else(token.location),
-                    DirectiveKind::Endif => self.handle_endif(token.location),
-                    DirectiveKind::Define => self.check_skipping_and_execute(|this| this.handle_define()),
-                    DirectiveKind::Undef => self.check_skipping_and_execute(|this| this.handle_undef()),
-                    DirectiveKind::Include => self.check_skipping_and_execute(|this| this.handle_include()),
-                    DirectiveKind::IncludeNext => self.check_skipping_and_execute(|this| this.handle_include_next()),
-                    DirectiveKind::Line => self.check_skipping_and_execute(|this| this.handle_line()),
-                    DirectiveKind::Pragma => self.check_skipping_and_execute(|this| this.handle_pragma()),
-                    DirectiveKind::Error => self.check_skipping_and_execute(|this| this.handle_error()),
-                    DirectiveKind::Warning => self.check_skipping_and_execute(|this| this.handle_warning()),
                 },
                 None => self.emit_error_loc(PPErrorKind::InvalidDirective, token.location),
             },
@@ -1009,15 +986,51 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    /// Check if skipping is active, and if so, skip the directive. Otherwise, execute the action.
-    fn check_skipping_and_execute<F>(&mut self, action: F) -> Result<(), PPError>
-    where
-        F: FnOnce(&mut Self) -> Result<(), PPError>,
-    {
-        if self.is_currently_skipping() {
-            self.skip_directive()
-        } else {
-            action(self)
+    fn handle_conditional_directive(&mut self, kind: DirectiveKind, location: SourceLoc) -> Result<(), PPError> {
+        match kind {
+            DirectiveKind::If | DirectiveKind::Ifdef | DirectiveKind::Ifndef => {
+                if self.is_currently_skipping() {
+                    self.push_skipped_conditional();
+                    self.skip_directive()
+                } else {
+                    match kind {
+                        DirectiveKind::If => {
+                            let tokens = self.parse_conditional_expression().unwrap_or_default();
+                            let cond = self.evaluate_conditional_expression(tokens).unwrap_or(false);
+                            self.handle_if_directive(cond)
+                        }
+                        DirectiveKind::Ifdef => self.handle_ifdef(),
+                        DirectiveKind::Ifndef => self.handle_ifndef(),
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            DirectiveKind::Elif => {
+                if self.should_evaluate_conditional() {
+                    let tokens = self.parse_conditional_expression().unwrap_or_default();
+                    let cond = self.evaluate_conditional_expression(tokens).unwrap_or(false);
+                    self.handle_elif_directive(cond, location)
+                } else {
+                    self.handle_elif_directive(false, location)
+                }
+            }
+            DirectiveKind::Else => self.handle_else(location),
+            DirectiveKind::Endif => self.handle_endif(location),
+            _ => unreachable!(),
+        }
+    }
+
+    fn execute_directive(&mut self, kind: DirectiveKind) -> Result<(), PPError> {
+        match kind {
+            DirectiveKind::Define => self.handle_define(),
+            DirectiveKind::Undef => self.handle_undef(),
+            DirectiveKind::Include => self.handle_include(),
+            DirectiveKind::IncludeNext => self.handle_include_next(),
+            DirectiveKind::Line => self.handle_line(),
+            DirectiveKind::Pragma => self.handle_pragma(),
+            DirectiveKind::Error => self.handle_error(),
+            DirectiveKind::Warning => self.handle_warning(),
+            _ => unreachable!("Conditional directives handled separately"),
         }
     }
 
@@ -1204,7 +1217,8 @@ impl<'src> Preprocessor<'src> {
 
         let (path_str, is_angled) = match token.kind {
             PPTokenKind::StringLiteral(symbol) => {
-                let path = self.parse_string_content(symbol, token.location, PPErrorKind::InvalidIncludePath)?;
+                let path =
+                    self.extract_string_literal_content(symbol, token.location, PPErrorKind::InvalidIncludePath)?;
                 (path, false)
             }
             PPTokenKind::Less => {
@@ -1239,8 +1253,11 @@ impl<'src> Preprocessor<'src> {
                         if tokens.len() > 1 {
                             return self.emit_error_loc(PPErrorKind::ExpectedEod, tokens[1].location);
                         }
-                        let path =
-                            self.parse_string_content(symbol, first.location, PPErrorKind::InvalidIncludePath)?;
+                        let path = self.extract_string_literal_content(
+                            symbol,
+                            first.location,
+                            PPErrorKind::InvalidIncludePath,
+                        )?;
                         (path, false)
                     }
                     PPTokenKind::Less => {
@@ -1466,7 +1483,7 @@ impl<'src> Preprocessor<'src> {
                 let PPTokenKind::StringLiteral(s) = t.kind else {
                     return self.emit_error_loc(PPErrorKind::InvalidLineDirective, t.location);
                 };
-                Some(self.parse_string_content(s, t.location, PPErrorKind::InvalidLineDirective)?)
+                Some(self.extract_string_literal_content(s, t.location, PPErrorKind::InvalidLineDirective)?)
             }
             _ => return self.emit_error_loc(PPErrorKind::InvalidLineDirective, first.location),
         };
@@ -1539,7 +1556,7 @@ impl<'src> Preprocessor<'src> {
         self.expect_kind(PPTokenKind::LeftParen)?;
         let (symbol, token_loc) = self.expect_string_literal()?;
 
-        let name = self.parse_string_content(symbol, token_loc, PPErrorKind::InvalidDirective)?;
+        let name = self.extract_string_literal_content(symbol, token_loc, PPErrorKind::InvalidDirective)?;
 
         self.expect_kind(PPTokenKind::RightParen)?;
 

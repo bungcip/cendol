@@ -2,8 +2,8 @@ use crate::ast::NameId;
 use crate::mir::validation::{MirValidator, ValidationError};
 use crate::mir::{
     BinaryIntOp, CallTarget, ConstValue, ConstValueId, ConstValueKind, GlobalId, Local, LocalId, MirBlock, MirBlockId,
-    MirBuilder, MirFunction, MirFunctionId, MirModuleId, MirProgram, MirStmt, MirStmtId, MirType,
-    Operand, Place, Rvalue, Terminator, TypeId,
+    MirBuilder, MirFunction, MirFunctionId, MirModuleId, MirProgram, MirStmt, MirStmtId, MirType, Operand, Place,
+    Rvalue, Terminator, TypeId,
 };
 
 fn create_valid_mir() -> MirProgram {
@@ -266,8 +266,12 @@ fn test_call_arg_count_mismatch() {
     let validator = MirValidator::new(&mir);
     let res = validator.validate();
     let expected_msg = "Call to function main arg count mismatch";
-    if let Err(e) = &res { println!("Errors: {:?}", e); }
-    assert!(matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg))));
+    if let Err(e) = &res {
+        println!("Errors: {:?}", e);
+    }
+    assert!(
+        matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg)))
+    );
 }
 
 #[test]
@@ -318,7 +322,9 @@ fn test_call_arg_type_mismatch() {
         expected_type: i32_ty,
         actual_type: f32_ty,
     };
-    if let Err(e) = &res { println!("Errors: {:?}", e); }
+    if let Err(e) = &res {
+        println!("Errors: {:?}", e);
+    }
     assert!(matches!(res, Err(errors) if errors.contains(&expected_err)));
 }
 
@@ -375,7 +381,9 @@ fn test_constant_value_out_of_range() {
         value: 300,
         type_id: u8_ty_id,
     };
-    if let Err(e) = &res { println!("Errors: {:?}", e); }
+    if let Err(e) = &res {
+        println!("Errors: {:?}", e);
+    }
     assert!(matches!(res, Err(errors) if errors.contains(&expected_err)));
 }
 
@@ -419,7 +427,9 @@ fn test_place_field_access_non_record() {
     let validator = MirValidator::new(&mir);
     let res = validator.validate();
     let expected_msg = "Struct field access on non-record type";
-    assert!(matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg))));
+    assert!(
+        matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg)))
+    );
 }
 
 #[test]
@@ -493,7 +503,8 @@ fn test_flexible_assignment() {
     let local_dest = LocalId::new(100).unwrap(); // i32
     let local_src = LocalId::new(101).unwrap(); // i32
 
-    mir.locals.insert(local_dest, Local::new(local_dest, None, i32_ty, false));
+    mir.locals
+        .insert(local_dest, Local::new(local_dest, None, i32_ty, false));
     mir.locals.insert(local_src, Local::new(local_src, None, i32_ty, false));
 
     if let Some(func) = mir.functions.get_mut(&func_id) {
@@ -527,7 +538,6 @@ fn test_flexible_assignment() {
     // This should Pass because of is_flexible_assignment allowlisting comparisons assigned to ints
     assert_eq!(validator.validate(), Ok(()));
 }
-
 
 #[test]
 fn test_call_void_with_dest() {
@@ -582,7 +592,9 @@ fn test_call_void_with_dest() {
     let validator = MirValidator::new(&mir);
     let res = validator.validate();
     let expected_msg = "Call to void function foo with destination";
-    assert!(matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg))));
+    assert!(
+        matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg)))
+    );
 }
 
 #[test]
@@ -604,7 +616,9 @@ fn test_operand_missing_constant() {
     let validator = MirValidator::new(&mir);
     let res = validator.validate();
     let expected_msg = "Constant 999 not found";
-    assert!(matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg))));
+    assert!(
+        matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg)))
+    );
 }
 
 #[test]
@@ -658,7 +672,9 @@ fn test_place_deref_non_pointer() {
     let validator = MirValidator::new(&mir);
     let res = validator.validate();
     let expected_msg = "Deref of non-pointer operand";
-    assert!(matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg))));
+    assert!(
+        matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg)))
+    );
 }
 
 #[test]
@@ -674,7 +690,11 @@ fn test_place_field_out_of_bounds() {
         field_types: vec![i32_ty],
         field_names: vec![NameId::new("f1")],
         is_union: false,
-        layout: MirRecordLayout { size: 4, alignment: 4, field_offsets: vec![0] },
+        layout: MirRecordLayout {
+            size: 4,
+            alignment: 4,
+            field_offsets: vec![0],
+        },
     };
     let struct_ty_id = builder.add_type(struct_ty);
 
@@ -701,7 +721,9 @@ fn test_place_field_out_of_bounds() {
     let res = validator.validate();
 
     let expected_msg = "Struct field index 1 out of bounds";
-    assert!(matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg))));
+    assert!(
+        matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg)))
+    );
 }
 
 #[test]
@@ -717,7 +739,11 @@ fn test_rvalue_cast_aggregate_invalid() {
         field_types: vec![i32_ty],
         field_names: vec![NameId::new("f1")],
         is_union: false,
-        layout: MirRecordLayout { size: 4, alignment: 4, field_offsets: vec![0] },
+        layout: MirRecordLayout {
+            size: 4,
+            alignment: 4,
+            field_offsets: vec![0],
+        },
     };
     let struct_ty_id = builder.add_type(struct_ty);
 

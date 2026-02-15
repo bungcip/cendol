@@ -95,3 +95,18 @@ fn test_pragma_operator_in_if() {
     - - "Note: Inside If"
     "#);
 }
+
+#[test]
+fn test_push_pop_undefined_macro() {
+    let src = r#"
+#pragma push_macro("M")
+#define M 1
+#pragma pop_macro("M")
+M
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: M
+    ");
+}

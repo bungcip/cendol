@@ -96,3 +96,42 @@ fn test_elif_without_if() {
     - "Fatal Error: PPError { kind: ElifWithoutIf, span: SourceSpan(2199023255554) }"
     "#);
 }
+
+#[test]
+fn test_nested_elif_skipped() {
+    let src = r#"
+#if 0
+  #if 1
+    FAIL_1
+  #elif 1
+    FAIL_2
+  #else
+    FAIL_3
+  #endif
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    []
+    "#);
+}
+
+#[test]
+fn test_nested_elif_skipped_expression_not_evaluated() {
+    let src = r#"
+#if 0
+  #if 1
+    FAIL
+  #elif 1/0
+    FAIL
+  #endif
+#endif
+"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    []
+    "#);
+    insta::assert_yaml_snapshot!(diags, @r#"
+    []
+    "#);
+}

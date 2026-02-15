@@ -41,7 +41,7 @@ fn apply_parsed_declarator(
     declarator_ref: ParsedDeclRef,
     ctx: &mut LowerCtx,
     span: SourceSpan,
-    context: DeclaratorContext,
+    decl_ctx: DeclaratorContext,
 ) -> QualType {
     let declarator_node = ctx.parsed_ast.parsed_types.get_decl(declarator_ref);
 
@@ -54,7 +54,7 @@ fn apply_parsed_declarator(
             // Pointer type is always compatible with restrict, but we use checked merge anyway for consistency
             let modified_current =
                 ctx.merge_qualifiers_with_check(QualType::unqualified(pointer_type), qualifiers, span);
-            apply_parsed_declarator(modified_current, inner, ctx, span, context)
+            apply_parsed_declarator(modified_current, inner, ctx, span, decl_ctx)
         }
         ParsedDeclaratorNode::Array { size, inner } => {
             // Array
@@ -75,7 +75,7 @@ fn apply_parsed_declarator(
                 let inner_node = ctx.parsed_ast.parsed_types.get_decl(inner);
                 let is_outermost = matches!(inner_node, ParsedDeclaratorNode::Identifier { .. });
 
-                if !context.in_parameter {
+                if !decl_ctx.in_parameter {
                     if has_static {
                         ctx.report_error(SemanticError::ArrayStaticOutsideParameter { span });
                     }
@@ -97,7 +97,7 @@ fn apply_parsed_declarator(
             let qualified_array = ctx
                 .registry
                 .merge_qualifiers(QualType::unqualified(array_type_ref), current_type.qualifiers());
-            apply_parsed_declarator(qualified_array, inner, ctx, span, context)
+            apply_parsed_declarator(qualified_array, inner, ctx, span, decl_ctx)
         }
         ParsedDeclaratorNode::Function { params, flags, inner } => {
             // Function
@@ -128,7 +128,7 @@ fn apply_parsed_declarator(
                 flags.is_variadic,
                 false, // `_Noreturn` is a specifier, not part of declarator
             );
-            apply_parsed_declarator(QualType::unqualified(function_type_ref), inner, ctx, span, context)
+            apply_parsed_declarator(QualType::unqualified(function_type_ref), inner, ctx, span, decl_ctx)
         }
     }
 }
@@ -1286,7 +1286,7 @@ fn apply_declarator(
     ctx: &mut LowerCtx,
     span: SourceSpan,
     spec_info: &DeclSpecInfo,
-    context: DeclaratorContext,
+    decl_ctx: DeclaratorContext,
 ) -> QualType {
     match declarator {
         ParsedDeclarator::Pointer(qualifiers, next) => {
@@ -1294,7 +1294,7 @@ fn apply_declarator(
             // Checked merge
             let modified_ty = ctx.merge_qualifiers_with_check(QualType::unqualified(ty), *qualifiers, span);
             if let Some(next_decl) = next {
-                apply_declarator(modified_ty, next_decl, ctx, span, spec_info, context)
+                apply_declarator(modified_ty, next_decl, ctx, span, spec_info, decl_ctx)
             } else {
                 modified_ty
             }
@@ -1326,7 +1326,7 @@ fn apply_declarator(
                         | ParsedDeclarator::AnonymousRecord(..)
                 );
 
-                if !context.in_parameter {
+                if !decl_ctx.in_parameter {
                     if has_static {
                         ctx.report_error(SemanticError::ArrayStaticOutsideParameter { span });
                     }
@@ -1356,7 +1356,7 @@ fn apply_declarator(
 
             let ty = ctx.registry.array_of(base_type.ty(), array_size);
             let array_qt = QualType::new(ty, base_type.qualifiers());
-            apply_declarator(array_qt, base, ctx, span, spec_info, context)
+            apply_declarator(array_qt, base, ctx, span, spec_info, decl_ctx)
         }
         ParsedDeclarator::Function {
             inner: base,
@@ -1367,7 +1367,7 @@ fn apply_declarator(
             let ty = ctx
                 .registry
                 .function_type(base_type.ty(), parameters, *is_variadic, spec_info.is_noreturn);
-            apply_declarator(QualType::unqualified(ty), base, ctx, span, spec_info, context)
+            apply_declarator(QualType::unqualified(ty), base, ctx, span, spec_info, decl_ctx)
         }
         ParsedDeclarator::AnonymousRecord(is_union, members) => {
             // Use struct_lowering helper
@@ -1379,7 +1379,7 @@ fn apply_declarator(
         }
         ParsedDeclarator::BitField(base, _) => {
             // Bitfield logic handled in struct lowering usually. Here just type application.
-            apply_declarator(base_type, base, ctx, span, spec_info, context)
+            apply_declarator(base_type, base, ctx, span, spec_info, decl_ctx)
         }
         ParsedDeclarator::Abstract => base_type,
     }

@@ -4,8 +4,8 @@ use crate::mir::MirArrayLayout;
 use crate::mir::MirProgram;
 use crate::mir::MirRecordLayout;
 use crate::mir::{
-    self, BinaryIntOp, ConstValueId, ConstValueKind, LocalId, MirBlockId, MirBuilder, MirFunctionId, MirStmt, MirType,
-    Operand, Place, Rvalue, Terminator, TypeId,
+    self, BinaryIntOp, ConstValueId, ConstValueKind, LocalId, MirBlockId, MirBuilder, MirFunctionId, MirLinkage,
+    MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
@@ -203,13 +203,18 @@ impl<'a> MirGen<'a> {
         global_symbols.sort_by_key(|s| self.symbol_table.get_symbol(*s).name);
 
         for sym_ref in global_symbols {
-            let (symbol_name, symbol_type_info, is_function, has_definition) = {
+            let (symbol_name, symbol_ty, is_function, has_definition, storage) = {
                 let symbol = self.symbol_table.get_symbol(sym_ref);
+                let (is_func, storage) = match symbol.kind {
+                    SymbolKind::Function { storage, .. } => (true, storage),
+                    _ => (false, None),
+                };
                 (
                     symbol.name,
-                    symbol.type_info,
-                    matches!(symbol.kind, SymbolKind::Function { .. }),
+                    symbol.ty,
+                    is_func,
                     symbol.def_state == DefinitionState::Defined,
+                    storage,
                 )
             };
 
@@ -223,7 +228,7 @@ impl<'a> MirGen<'a> {
                     continue;
                 }
 
-                let func_type_kind = self.registry.get(symbol_type_info.ty()).kind.clone();
+                let func_type_kind = self.registry.get(symbol_ty.ty()).kind.clone();
                 if let TypeKind::Function {
                     return_type,
                     parameters,
@@ -234,17 +239,32 @@ impl<'a> MirGen<'a> {
                     let return_mir_type = self.lower_type(*return_type);
                     let param_mir_types = parameters.iter().map(|p| self.lower_qual_type(p.param_type)).collect();
 
+                    let linkage = match storage {
+                        Some(StorageClass::Static) => MirLinkage::Internal,
+                        Some(StorageClass::Extern) => MirLinkage::Import,
+                        _ if !has_definition => MirLinkage::Import,
+                        _ => MirLinkage::Export,
+                    };
+
                     self.define_or_declare_function(
                         symbol_name,
                         param_mir_types,
                         return_mir_type,
                         *is_variadic,
                         has_definition,
+                        linkage,
                     );
                 } else {
                     // This case should ideally not be reached for a SymbolKind::Function
                     let return_mir_type = self.get_int_type();
-                    self.define_or_declare_function(symbol_name, vec![], return_mir_type, false, has_definition);
+                    self.define_or_declare_function(
+                        symbol_name,
+                        vec![],
+                        return_mir_type,
+                        false,
+                        has_definition,
+                        MirLinkage::Export,
+                    );
                 }
             }
         }
@@ -383,11 +403,22 @@ impl<'a> MirGen<'a> {
 
     fn emit_global(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(entry_ref);
-        let (init, alignment, name, ty) = if let SymbolKind::Variable {
-            initializer, alignment, ..
+        let (init, alignment, name, ty, is_thread_local, storage) = if let SymbolKind::Variable {
+            initializer,
+            alignment,
+            is_thread_local,
+            storage,
+            ..
         } = &symbol.kind
         {
-            (*initializer, *alignment, symbol.name, symbol.type_info)
+            (
+                *initializer,
+                *alignment,
+                symbol.name,
+                symbol.ty,
+                *is_thread_local,
+                *storage,
+            )
         } else {
             unreachable!()
         };
@@ -414,9 +445,20 @@ impl<'a> MirGen<'a> {
                 crate::ast::NameId::new(format!("{}.{}", name, entry_ref.get()))
             };
 
-            let global_id =
-                self.mir_builder
-                    .create_global_with_init(global_name, mir_type_id, symbol.is_const(), final_init);
+            let linkage = match storage {
+                Some(StorageClass::Static) => MirLinkage::Internal,
+                Some(StorageClass::Extern) => MirLinkage::Import,
+                _ => MirLinkage::Export,
+            };
+
+            let global_id = self.mir_builder.create_global_with_init(
+                global_name,
+                mir_type_id,
+                ty.is_const(),
+                is_thread_local,
+                linkage,
+                final_init,
+            );
 
             if let Some(align) = alignment {
                 self.mir_builder.set_global_alignment(global_id, align);
@@ -432,7 +474,7 @@ impl<'a> MirGen<'a> {
             initializer, alignment, ..
         } = &symbol.kind
         {
-            (*initializer, *alignment, symbol.name, symbol.type_info)
+            (*initializer, *alignment, symbol.name, symbol.ty)
         } else {
             unreachable!()
         };
@@ -1434,11 +1476,12 @@ impl<'a> MirGen<'a> {
         ret: TypeId,
         variadic: bool,
         is_def: bool,
+        linkage: MirLinkage,
     ) {
         if is_def {
-            self.mir_builder.define_function(name, params, ret, variadic);
+            self.mir_builder.define_function(name, params, ret, variadic, linkage);
         } else {
-            self.mir_builder.declare_function(name, params, ret, variadic);
+            self.mir_builder.declare_function(name, params, ret, variadic, linkage);
         }
     }
 }

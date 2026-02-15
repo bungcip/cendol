@@ -23,7 +23,7 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
         NodeKind::Literal(literal::Literal::Char(val)) => Some(*val as i64),
         NodeKind::Ident(_, sym_ref) => {
             let symbol = ctx.symbol_table.get_symbol(*sym_ref);
-            if let SymbolKind::EnumConstant { value } = &symbol.kind {
+            if let SymbolKind::EnumConstant(value) = &symbol.kind {
                 Some(*value)
             } else {
                 None

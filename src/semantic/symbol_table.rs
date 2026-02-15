@@ -19,7 +19,7 @@ use crate::{
 pub type SymbolRef = NonZeroU32;
 
 /// Represents the definition state of a symbol entry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DefinitionState {
     Tentative,    // int x;
     Defined,      // int x = ...;
@@ -30,14 +30,14 @@ pub enum DefinitionState {
 /// This structure is typically populated during the semantic analysis phase.
 /// Symbol are stored in a separate Vec<Symbol> with SymbolRef references.
 /// invariant:
-/// - Variable / Typedef / Function: type_info is meaningful
-/// - EnumConstant: type_info = int (unqualified)
-/// - Label / RecordTag / EnumTag: type_info = TypeKind::Error
+/// - Variable / Typedef / Function: ty is meaningful
+/// - EnumConstant: ty = int (unqualified)
+/// - Label / RecordTag / EnumTag: ty = TypeKind::Error
 #[derive(Debug, Clone)]
 pub struct Symbol {
     pub name: NameId,
     pub kind: SymbolKind, // e.g., Variable, Function, Typedef
-    pub type_info: QualType,
+    pub ty: QualType,
     pub scope_id: ScopeId, // Reference to the scope where it's defined
     pub def_span: SourceSpan,
     pub def_state: DefinitionState,
@@ -45,10 +45,6 @@ pub struct Symbol {
 }
 
 impl Symbol {
-    pub(crate) fn is_const(&self) -> bool {
-        self.type_info.is_const()
-    }
-
     pub(crate) fn has_linkage(&self) -> bool {
         match &self.kind {
             SymbolKind::Function { .. } => true,
@@ -63,6 +59,7 @@ impl Symbol {
 pub enum SymbolKind {
     Variable {
         is_global: bool,
+        is_thread_local: bool,
         storage: Option<StorageClass>,
         // Initializer might be an AST node or a constant value
         initializer: Option<NodeRef>,
@@ -74,9 +71,7 @@ pub enum SymbolKind {
     Typedef {
         aliased_type: QualType,
     },
-    EnumConstant {
-        value: i64, // Resolved constant value
-    },
+    EnumConstant(i64),
     Label,
     Record {
         is_complete: bool,
@@ -285,6 +280,7 @@ impl SymbolTable {
         &mut self,
         name: NameId,
         ty: QualType,
+        is_thread_local: bool,
         storage: Option<StorageClass>,
         initializer: Option<NodeRef>,
         alignment: Option<u32>,
@@ -304,11 +300,12 @@ impl SymbolTable {
             name,
             kind: SymbolKind::Variable {
                 is_global,
+                is_thread_local,
                 storage,
                 initializer,
                 alignment,
             },
-            type_info: ty,
+            ty,
             scope_id: self.current_scope_id,
             def_span: span,
             def_state,
@@ -342,7 +339,7 @@ impl SymbolTable {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::Function { storage },
-            type_info: QualType::unqualified(ty),
+            ty: QualType::unqualified(ty),
             scope_id: self.current_scope_id,
             def_span: span,
             def_state,
@@ -366,7 +363,7 @@ impl SymbolTable {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::Typedef { aliased_type: ty },
-            type_info: ty,
+            ty,
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
@@ -394,8 +391,8 @@ impl SymbolTable {
     ) -> Result<SymbolRef, SymbolTableError> {
         let symbol_entry = Symbol {
             name,
-            kind: SymbolKind::EnumConstant { value },
-            type_info: QualType::unqualified(ty),
+            kind: SymbolKind::EnumConstant(value),
+            ty: QualType::unqualified(ty),
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
@@ -426,7 +423,7 @@ impl SymbolTable {
                 is_complete,
                 members: Arc::from([]),
             },
-            type_info: QualType::unqualified(ty),
+            ty: QualType::unqualified(ty),
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
@@ -440,7 +437,7 @@ impl SymbolTable {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::EnumTag { is_complete: false },
-            type_info: QualType::unqualified(ty),
+            ty: QualType::unqualified(ty),
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,
@@ -459,7 +456,7 @@ impl SymbolTable {
         let symbol_entry = Symbol {
             name,
             kind: SymbolKind::Label,
-            type_info: QualType::unqualified(ty),
+            ty: QualType::unqualified(ty),
             scope_id: self.current_scope_id,
             def_span: span,
             def_state: DefinitionState::Defined,

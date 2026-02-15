@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use crate::ast;
 use crate::ast::{Designator, NodeKind, NodeRef, literal};
 use crate::codegen::mir_gen::MirGen;
-use crate::mir::{ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue};
+use crate::mir::{ConstValueKind, MirArrayLayout, MirLinkage, MirType, Operand, Place, Rvalue};
 use crate::semantic::{ArraySizeType, QualType, StructMember, TypeKind};
 
 impl<'a> MirGen<'a> {
@@ -570,9 +570,14 @@ impl<'a> MirGen<'a> {
 
         let array_const = self.create_array_const_from_string(val, None, Some(QualType::unqualified(elem_ty)));
         let name = self.mir_builder.get_next_anonymous_global_name();
-        let global = self
-            .mir_builder
-            .create_global_with_init(name, mir_ty, true, Some(array_const));
+        let global = self.mir_builder.create_global_with_init(
+            name,
+            mir_ty,
+            true,
+            false,
+            MirLinkage::Internal,
+            Some(array_const),
+        );
 
         Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global)))
     }
@@ -585,9 +590,14 @@ impl<'a> MirGen<'a> {
                 .eval_initializer_to_const(init_ref, ty)
                 .expect("Global compound literal init must be const");
             let name = self.mir_builder.get_next_anonymous_global_name();
-            let global = self
-                .mir_builder
-                .create_global_with_init(name, mir_ty, false, Some(init_const));
+            let global = self.mir_builder.create_global_with_init(
+                name,
+                mir_ty,
+                false,
+                false,
+                MirLinkage::Internal,
+                Some(init_const),
+            );
             Operand::Copy(Box::new(Place::Global(global)))
         } else {
             let (_, place) = self.create_temp_local(mir_ty);

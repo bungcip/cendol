@@ -104,7 +104,7 @@ pub(crate) fn find_enum_constant(symbol_table: &crate::semantic::SymbolTable, na
         .iter()
         .find_map(|entry| {
             if entry.name.as_str() == name {
-                if let crate::semantic::SymbolKind::EnumConstant { value } = entry.kind {
+                if let crate::semantic::SymbolKind::EnumConstant(value) = entry.kind {
                     Some(value)
                 } else {
                     None

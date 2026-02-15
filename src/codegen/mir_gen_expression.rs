@@ -333,7 +333,7 @@ impl<'a> MirGen<'a> {
                 if *is_global || is_static_local {
                     // Lazy lowering for globals/statics (e.g. __func__) that might not be lowered yet
                     if !self.global_map.contains_key(&resolved_ref) {
-                        let ty_info = entry.type_info;
+                        let ty_info = entry.ty;
                         let mir_type_id = self.lower_qual_type(ty_info);
                         self.visit_variable(resolved_ref, mir_type_id);
                     }
@@ -365,7 +365,7 @@ impl<'a> MirGen<'a> {
                 let func_type = self.get_function_type(func_id);
                 Operand::Constant(self.create_constant(func_type, ConstValueKind::FunctionAddress(func_id)))
             }
-            SymbolKind::EnumConstant { value } => self.create_int_operand(*value),
+            SymbolKind::EnumConstant(value) => self.create_int_operand(*value),
             _ => panic!("Unexpected symbol kind"),
         }
     }
@@ -786,7 +786,7 @@ impl<'a> MirGen<'a> {
         let func_type_kind = if let NodeKind::Ident(_, symbol_ref) = func_node_kind {
             let resolved_symbol = *symbol_ref;
             let func_entry = self.symbol_table.get_symbol(resolved_symbol);
-            Some(self.registry.get(func_entry.type_info.ty()).kind.clone())
+            Some(self.registry.get(func_entry.ty.ty()).kind.clone())
         } else {
             None
         };

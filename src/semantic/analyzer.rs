@@ -1570,7 +1570,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let symbol = self.symbol_table.get_symbol(*symbol_ref);
                 match &symbol.kind {
                     SymbolKind::EnumConstant { .. } => Some(QualType::unqualified(self.registry.type_int)),
-                    _ => Some(symbol.type_info),
+                    _ => Some(symbol.ty),
                 }
             }
             NodeKind::UnaryOp(op, operand) => {

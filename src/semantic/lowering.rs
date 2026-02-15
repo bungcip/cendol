@@ -507,7 +507,7 @@ fn resolve_record_tag(
         {
             let (is_completed, def_span, ty) = {
                 let entry = ctx.symbol_table.get_symbol(entry_ref);
-                (entry.is_completed, entry.def_span, entry.type_info.ty())
+                (entry.is_completed, entry.def_span, entry.ty.ty())
             };
 
             if is_completed {
@@ -527,7 +527,7 @@ fn resolve_record_tag(
     } else {
         // USAGE or FORWARD DECL: struct T;
         if let Some((entry_ref, _)) = existing {
-            Ok(ctx.symbol_table.get_symbol(entry_ref).type_info.ty())
+            Ok(ctx.symbol_table.get_symbol(entry_ref).ty.ty())
         } else {
             // Implicit forward declaration in current scope
             let ty = ctx.registry.declare_record(Some(tag_name), is_union);
@@ -555,7 +555,7 @@ fn resolve_enum_tag(
                 // Found in current scope, check if completed
                 let (is_completed, first_def, type_info) = {
                     let entry = ctx.symbol_table.get_symbol(entry_ref);
-                    (entry.is_completed, entry.def_span, entry.type_info)
+                    (entry.is_completed, entry.def_span, entry.ty)
                 };
                 if is_completed {
                     ctx.report_error(SemanticError::Redefinition {
@@ -575,7 +575,7 @@ fn resolve_enum_tag(
             // This is a USAGE or FORWARD DECL: enum T; or enum T e;
             if let Some((entry_ref, _)) = existing_entry {
                 let entry = ctx.symbol_table.get_symbol(entry_ref);
-                Ok(entry.type_info.ty())
+                Ok(entry.ty.ty())
             } else {
                 // Implicit forward declaration
                 let forward_ref = ctx.registry.declare_enum(Some(tag_name), ctx.registry.type_int);
@@ -1600,7 +1600,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let current_scope = self.symbol_table.current_scope();
         let existing = self.symbol_table.get_symbol(existing_ref);
-        let existing_type_info = existing.type_info;
+        let existing_type_info = existing.ty;
         let existing_def_span = existing.def_span;
         let existing_has_linkage = existing.has_linkage();
         let existing_storage = match &existing.kind {
@@ -1658,7 +1658,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         // Update the existing symbol's type with the composite type
         let existing_mut = self.symbol_table.get_symbol_mut(existing_ref);
-        existing_mut.type_info = composite;
+        existing_mut.ty = composite;
 
         if new_ty.is_function() {
             self.check_function_redeclaration(name, new_ty, span, existing_def_span, existing_type_info);
@@ -1718,7 +1718,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // Check for _Noreturn on existing declarations
         let existing_symbol_is_noreturn = if let Some((existing_ref, _)) = self.symbol_table.lookup_symbol(func_name) {
             let existing = self.symbol_table.get_symbol(existing_ref);
-            if let TypeKind::Function { is_noreturn, .. } = &self.registry.get(existing.type_info.ty()).kind {
+            if let TypeKind::Function { is_noreturn, .. } = &self.registry.get(existing.ty.ty()).kind {
                 *is_noreturn
             } else {
                 false
@@ -1775,13 +1775,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // by the standard variable declaration logic because this one is inserted first.
             let _ = self
                 .symbol_table
-                .define_variable(func_id, qt, storage, Some(init_node), None, span);
+                .define_variable(func_id, qt, false, storage, Some(init_node), None, span);
 
             // Also define __PRETTY_FUNCTION__ (GCC extension)
             let pretty_func_id = crate::ast::StringId::new("__PRETTY_FUNCTION__");
             let _ = self
                 .symbol_table
-                .define_variable(pretty_func_id, qt, storage, Some(init_node), None, span);
+                .define_variable(pretty_func_id, qt, false, storage, Some(init_node), None, span);
         }
 
         // Pre-scan labels for forward goto support
@@ -1802,7 +1802,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 if let Ok(sym) =
                     self.symbol_table
-                        .define_variable(pname, param.param_type, param.storage, None, None, span)
+                        .define_variable(pname, param.param_type, false, param.storage, None, None, span)
                 {
                     let param_ref = param_dummies[i];
                     self.ast.kinds[param_ref.index()] = NodeKind::Param(ParamData {
@@ -2093,14 +2093,20 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             name,
             ty: final_ty,
             storage: spec_info.storage,
+            is_thread_local: spec_info.is_thread_local,
             init: init_expr,
             alignment: spec_info.alignment.map(|a| a as u16),
         };
 
-        if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
-            self.symbol_table
-                .define_variable(name, final_ty, spec_info.storage, init_expr, spec_info.alignment, span)
-        {
+        if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) = self.symbol_table.define_variable(
+            name,
+            final_ty,
+            spec_info.is_thread_local,
+            spec_info.storage,
+            init_expr,
+            spec_info.alignment,
+            span,
+        ) {
             let first_def = self.symbol_table.get_symbol(existing).def_span;
             self.report_error(SemanticError::Redefinition { name, first_def, span });
         }

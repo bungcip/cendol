@@ -8,7 +8,7 @@ fn check_type(source: &str, expected: &str) {
         .lookup_symbol(NameId::from("x"))
         .expect("Symbol 'x' not found");
     let symbol = symbol_table.get_symbol(entry);
-    assert_eq!(registry.display_qual_type(symbol.type_info), expected);
+    assert_eq!(registry.display_qual_type(symbol.ty), expected);
 }
 
 #[test]

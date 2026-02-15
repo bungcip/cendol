@@ -359,6 +359,7 @@ pub struct VarDeclData {
     pub name: NameId,
     pub ty: QualType,
     pub storage: Option<StorageClass>,
+    pub is_thread_local: bool,
     pub init: Option<NodeRef>,  // InitializerList or Expression
     pub alignment: Option<u16>, // Max alignment in bytes
 }

@@ -10,7 +10,7 @@ fn check_type(source: &str, expected: &str) {
     let (_ast, registry, symbol_table) = setup_lowering(source);
     let (entry, _) = symbol_table.lookup_symbol(NameId::from("x")).unwrap();
     let symbol = symbol_table.get_symbol(entry);
-    assert_eq!(registry.display_qual_type(symbol.type_info), expected);
+    assert_eq!(registry.display_qual_type(symbol.ty), expected);
 }
 
 #[test]

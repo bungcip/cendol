@@ -41,6 +41,14 @@ pub type TypeId = NonZeroU32;
 /// Unique identifier for MIR constant values
 pub type ConstValueId = NonZeroU32;
 
+/// MIR Linkage - specifies how symbols are linked
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub enum MirLinkage {
+    Export,
+    Internal,
+    Import,
+}
+
 /// Function kind - distinguishes between defined and extern functions
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum MirFunctionKind {
@@ -81,6 +89,7 @@ pub struct MirFunction {
     pub params: Vec<LocalId>,
 
     pub kind: MirFunctionKind,
+    pub linkage: MirLinkage,
     pub is_variadic: bool, // Track if this function is variadic
 
     // Only valid if kind is Defined
@@ -90,13 +99,20 @@ pub struct MirFunction {
 }
 
 impl MirFunction {
-    pub(crate) fn new(id: MirFunctionId, name: NameId, return_type: TypeId, kind: MirFunctionKind) -> Self {
+    pub(crate) fn new(
+        id: MirFunctionId,
+        name: NameId,
+        return_type: TypeId,
+        kind: MirFunctionKind,
+        linkage: MirLinkage,
+    ) -> Self {
         Self {
             id,
             name,
             return_type,
             params: Vec::new(),
             kind,
+            linkage,
             is_variadic: false,
             locals: Vec::new(),
             blocks: Vec::new(),
@@ -104,12 +120,12 @@ impl MirFunction {
         }
     }
 
-    pub(crate) fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
-        Self::new(id, name, return_type, MirFunctionKind::Defined)
+    pub(crate) fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
+        Self::new(id, name, return_type, MirFunctionKind::Defined, linkage)
     }
 
-    pub(crate) fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
-        Self::new(id, name, return_type, MirFunctionKind::Extern)
+    pub(crate) fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
+        Self::new(id, name, return_type, MirFunctionKind::Extern, linkage)
     }
 }
 
@@ -448,17 +464,28 @@ pub struct Global {
     pub name: NameId,
     pub type_id: TypeId,
     pub is_constant: bool,
+    pub is_thread_local: bool,
+    pub linkage: MirLinkage,
     pub initial_value: Option<ConstValueId>,
     pub alignment: Option<u32>, // Max alignment in bytes
 }
 
 impl Global {
-    pub(crate) fn new(id: GlobalId, name: NameId, type_id: TypeId, is_constant: bool) -> Self {
+    pub(crate) fn new(
+        id: GlobalId,
+        name: NameId,
+        type_id: TypeId,
+        is_constant: bool,
+        is_thread_local: bool,
+        linkage: MirLinkage,
+    ) -> Self {
         Self {
             id,
             name,
             type_id,
             is_constant,
+            is_thread_local,
+            linkage,
             initial_value: None,
             alignment: None,
         }
@@ -664,9 +691,10 @@ impl MirBuilder {
         param_types: Vec<TypeId>,
         return_type: TypeId,
         is_variadic: bool,
+        linkage: MirLinkage,
     ) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
-        let mut func = MirFunction::new_extern(func_id, name, return_type);
+        let mut func = MirFunction::new_extern(func_id, name, return_type, linkage);
         func.is_variadic = is_variadic;
 
         // Create locals for each parameter
@@ -689,9 +717,10 @@ impl MirBuilder {
         param_types: Vec<TypeId>,
         return_type: TypeId,
         is_variadic: bool,
+        linkage: MirLinkage,
     ) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
-        let mut func = MirFunction::new_defined(func_id, name, return_type);
+        let mut func = MirFunction::new_defined(func_id, name, return_type, linkage);
         func.is_variadic = is_variadic;
 
         // Create locals for each parameter
@@ -723,12 +752,14 @@ impl MirBuilder {
         name: NameId,
         type_id: TypeId,
         is_constant: bool,
+        is_thread_local: bool,
+        linkage: MirLinkage,
         initial_value: Option<ConstValueId>,
     ) -> GlobalId {
         let global_id = GlobalId::new(self.next_global_id).unwrap();
         self.next_global_id += 1;
 
-        let mut global = Global::new(global_id, name, type_id, is_constant);
+        let mut global = Global::new(global_id, name, type_id, is_constant, is_thread_local, linkage);
         global.initial_value = initial_value;
         self.globals.insert(global_id, global);
         self.module.globals.push(global_id);
@@ -859,10 +890,11 @@ impl fmt::Display for MirFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "MirFunction(id: {}, name: {}, kind: {:?}, is_variadic: {})",
+            "MirFunction(id: {}, name: {}, kind: {:?}, linkage: {:?}, is_variadic: {})",
             self.id.get(),
             self.name,
             self.kind,
+            self.linkage,
             self.is_variadic
         )?;
         writeln!(f, "  Return type: {:?}", self.return_type)?;
@@ -1128,11 +1160,13 @@ impl fmt::Display for Global {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Global(id: {}, name: {}, type: {}, is_constant: {})",
+            "Global(id: {}, name: {}, type: {}, is_constant: {}, is_thread_local: {}, linkage: {:?})",
             self.id.get(),
             self.name,
             self.type_id.get(),
-            self.is_constant
+            self.is_constant,
+            self.is_thread_local,
+            self.linkage
         )
     }
 }

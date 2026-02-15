@@ -8,10 +8,12 @@
 use crate::mir::MirProgram;
 use crate::mir::{
     BinaryFloatOp, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, GlobalId, LocalId, MirBlockId, MirFunction,
-    MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
-    UnaryIntOp,
+    MirFunctionId, MirFunctionKind, MirLinkage, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    UnaryFloatOp, UnaryIntOp,
 };
-use cranelift::codegen::ir::{AtomicRmwOp, Inst, StackSlot, StackSlotData, StackSlotKind};
+use cranelift::codegen::ir::{
+    AtomicRmwOp, Inst, StackSlot, StackSlotData, StackSlotKind, UserExternalName, UserFuncName,
+};
 use cranelift::prelude::{
     AbiParam, Block, Configurable, FloatCC, FunctionBuilderContext, InstBuilder, IntCC, MemFlags, Signature, Type,
     Value, types,
@@ -57,10 +59,11 @@ fn lower_type(mir_type: &MirType) -> Option<Type> {
 }
 
 /// Helper function to convert MIR function kind to Cranelift linkage
-fn lower_linkage(kind: MirFunctionKind) -> Linkage {
-    match kind {
-        MirFunctionKind::Extern => Linkage::Import,
-        MirFunctionKind::Defined => Linkage::Export,
+fn lower_linkage(linkage: MirLinkage) -> Linkage {
+    match linkage {
+        MirLinkage::Export => Linkage::Export,
+        MirLinkage::Internal => Linkage::Local,
+        MirLinkage::Import => Linkage::Import,
     }
 }
 
@@ -363,7 +366,7 @@ fn emit_const_array(
     let element_type = ctx.mir.get_type(*element);
     let element_size = lower_type_size(element_type, ctx.mir).expect("valid type") as usize;
     let stride = array_layout.stride as usize;
-    let padding = stride.checked_sub(element_size).unwrap_or(0);
+    let padding = stride.saturating_sub(element_size);
 
     for (i, element_const_id) in elements.iter().take(*size).enumerate() {
         let element_offset = (i * stride) as u32;
@@ -379,7 +382,7 @@ fn emit_const_array(
         .expect("emit_const failed");
 
         if padding > 0 {
-            output.extend(std::iter::repeat(0).take(padding));
+            output.extend(std::iter::repeat_n(0, padding));
         }
     }
 
@@ -390,7 +393,7 @@ fn emit_const_array(
 
     if emitted_size < total_size {
         let remaining = total_size - emitted_size;
-        output.extend(std::iter::repeat(0).take(remaining));
+        output.extend(std::iter::repeat_n(0, remaining));
     }
 }
 
@@ -851,7 +854,7 @@ fn emit_function_call(
         CallTarget::Direct(func_id) => {
             let func = ctx.mir.get_function(*func_id);
             let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
-            let name_linkage = Some((func.name.as_str(), lower_linkage(func.kind)));
+            let name_linkage = Some((func.name.as_str(), lower_linkage(func.linkage)));
             let is_defined = matches!(func.kind, MirFunctionKind::Defined);
             (
                 func.return_type,
@@ -2425,7 +2428,14 @@ fn emit_stack_slots(
 
         // Don't allocate space for zero-sized types
         if size > 0 {
-            let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, 0));
+            let alignment = local.alignment.unwrap_or(0);
+            let alignment_log2 = if alignment > 0 {
+                (alignment as f32).log2().round() as u8
+            } else {
+                0
+            };
+            let slot =
+                builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, alignment_log2));
             clif_stack_slots.insert(local_id, slot);
         }
     }
@@ -2440,7 +2450,7 @@ fn finalize_function_processing(
     compiled_functions: &mut HashMap<String, String>,
 ) -> Result<(), String> {
     // Now declare and define the function
-    let linkage = lower_linkage(func.kind);
+    let linkage = lower_linkage(func.linkage);
 
     let id = module
         .declare_function(func.name.as_str(), linkage, &func_ctx.func.signature)
@@ -2523,18 +2533,11 @@ impl ClifGen {
         // Pass 1: Declare all global variables
         for &global_id in &self.mir.module.globals {
             let global = self.mir.globals.get(&global_id).unwrap();
-            // Use local linkage for string literals to avoid multiple definition errors
-            let linkage = if global.name.as_str().starts_with(".L.str") {
-                Linkage::Local
-            } else if global.initial_value.is_some() {
-                Linkage::Export
-            } else {
-                Linkage::Import
-            };
+            let linkage = lower_linkage(global.linkage);
 
             let data_id = self
                 .module
-                .declare_data(global.name.as_str(), linkage, true, false)
+                .declare_data(global.name.as_str(), linkage, true, global.is_thread_local)
                 .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
 
             self.data_id_map.insert(global_id, data_id);
@@ -2543,7 +2546,7 @@ impl ClifGen {
         // Pass 2: Declare all functions
         for &func_id in &self.mir.module.functions {
             let func = self.mir.functions.get(&func_id).unwrap();
-            let linkage = lower_linkage(func.kind);
+            let linkage = lower_linkage(func.linkage);
 
             // Calculate signature for declaration
             let mut sig = self.module.make_signature();
@@ -2563,6 +2566,9 @@ impl ClifGen {
             if let Some(const_id) = global.initial_value {
                 let data_id = *self.data_id_map.get(&global_id).unwrap();
                 let mut data_description = DataDescription::new();
+                if let Some(align) = global.alignment {
+                    data_description.set_align(align as u64);
+                }
                 let mut initial_value_bytes = Vec::new();
                 // Enable relocations by passing data_description and maps
                 let ctx = EmitContext {
@@ -2627,6 +2633,11 @@ impl ClifGen {
         let func = self.mir.get_function(func_id);
         // Create a fresh context for this function
         let mut func_ctx = self.module.make_context();
+        let clif_func_id = *self.func_id_map.get(&func_id).unwrap();
+        func_ctx.func.name = UserFuncName::User(UserExternalName {
+            namespace: 0,
+            index: clif_func_id.as_u32(),
+        });
 
         let (return_type_opt, param_types) = lower_function_signature(func, &self.mir, &mut func_ctx.func.signature)?;
 

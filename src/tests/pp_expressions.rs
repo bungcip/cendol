@@ -351,3 +351,48 @@ LOGICNOT_1_OK
       text: LOGICNOT_1_OK
     ");
 }
+
+#[test]
+fn test_has_include_computed() {
+    let src = r#"
+#define STD_HEADER <stddef.h>
+#define LOCAL_HEADER "stddef.h"
+#define INDIRECT_STD STD_HEADER
+#define INDIRECT_LOCAL LOCAL_HEADER
+
+#if __has_include(STD_HEADER)
+OK_STD
+#else
+FAIL_STD
+#endif
+
+#if __has_include(LOCAL_HEADER)
+OK_LOCAL
+#else
+FAIL_LOCAL
+#endif
+
+#if __has_include(INDIRECT_STD)
+OK_INDIRECT_STD
+#else
+FAIL_INDIRECT_STD
+#endif
+
+#if __has_include(INDIRECT_LOCAL)
+OK_INDIRECT_LOCAL
+#else
+FAIL_INDIRECT_LOCAL
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: OK_STD
+    - kind: Identifier
+      text: OK_LOCAL
+    - kind: Identifier
+      text: OK_INDIRECT_STD
+    - kind: Identifier
+      text: OK_INDIRECT_LOCAL
+    "#);
+}

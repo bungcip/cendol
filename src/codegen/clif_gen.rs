@@ -350,18 +350,18 @@ fn emit_const_array(
     mut module: Option<&mut ObjectModule>,
     mut data_description: Option<&mut DataDescription>,
     base_offset: u32,
-) -> Result<(), String> {
+) {
     let MirType::Array {
         element,
         size,
         layout: array_layout,
     } = ty
     else {
-        return Err("ArrayLiteral with non-array type".to_string());
+        panic!("ArrayLiteral with non-array type");
     };
 
     let element_type = ctx.mir.get_type(*element);
-    let element_size = lower_type_size(element_type, ctx.mir)? as usize;
+    let element_size = lower_type_size(element_type, ctx.mir).expect("valid type") as usize;
     let stride = array_layout.stride as usize;
     let padding = stride.checked_sub(element_size).unwrap_or(0);
 
@@ -375,7 +375,8 @@ fn emit_const_array(
             reborrow_module(&mut module),
             reborrow_data_description(&mut data_description),
             base_offset + element_offset,
-        )?;
+        )
+        .expect("emit_const failed");
 
         if padding > 0 {
             output.extend(std::iter::repeat(0).take(padding));
@@ -391,7 +392,6 @@ fn emit_const_array(
         let remaining = total_size - emitted_size;
         output.extend(std::iter::repeat(0).take(remaining));
     }
-    Ok(())
 }
 
 /// Emit a constant value to the output buffer based on its type layout
@@ -474,7 +474,8 @@ pub(crate) fn emit_const(
             emit_const_struct(fields, ty, output, ctx, module, data_description, offset)
         }
         ConstValueKind::ArrayLiteral(elements) => {
-            emit_const_array(elements, ty, output, ctx, module, data_description, offset)
+            emit_const_array(elements, ty, output, ctx, module, data_description, offset);
+            Ok(())
         }
     }
 }

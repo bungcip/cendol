@@ -2623,3 +2623,22 @@ impl<'a> SourceBufferCache<'a> {
         unsafe { std::str::from_utf8_unchecked(self.get_token_bytes(token)) }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::StringId;
+
+    #[test]
+    fn test_is_directive() {
+        let table = DirectiveKeywordTable::new();
+
+        // Test known directive
+        let define_sym = StringId::new("define");
+        assert_eq!(table.is_directive(define_sym), Some(DirectiveKind::Define));
+
+        // Test unknown directive (this covers the else { None } branch)
+        let unknown_sym = StringId::new("not_a_directive");
+        assert_eq!(table.is_directive(unknown_sym), None);
+    }
+}

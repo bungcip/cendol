@@ -463,13 +463,15 @@ impl<'a> MirValidator<'a> {
         match op {
             Operand::Copy(place) => self.validate_place(place),
             Operand::Constant(cid) => {
-                if self.mir.constants.get(cid).is_none() {
+                if let Some(cv) = self.mir.constants.get(cid) {
+                    Some(cv.ty)
+                } else {
                     self.errors.push(ValidationError::IllegalOperation(format!(
                         "Constant {} not found",
                         cid.get()
                     )));
+                    None
                 }
-                None
             }
             Operand::AddressOf(place) => {
                 if let Some(base_ty) = self.validate_place(place) {

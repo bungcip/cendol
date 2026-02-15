@@ -1,0 +1,15 @@
+---
+source: src/tests/ast_dumper_coverage.rs
+expression: output
+---
+1: TranslationUnit(decls=2..2) (parser kind)
+2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
+3: LiteralString(f)
+4: CompoundStatement(stmts=5..5)
+5: VarDecl(name=x, ty=Int, storage=None)
+6: GnuStatementExpression(7, 11)
+7: CompoundStatement(stmts=8..9)
+8: VarDecl(name=y, ty=Int, storage=None)
+9: ExpressionStatement(11)
+10: LiteralInt(1, None)
+11: Ident(y)

@@ -1,0 +1,8 @@
+---
+source: src/tests/ast_dumper_coverage.rs
+expression: output
+---
+1: TranslationUnit(decls=[5])
+3: LiteralInt(1, None)
+4: LiteralString(""msg"")
+5: StaticAssert(3, ""msg"")

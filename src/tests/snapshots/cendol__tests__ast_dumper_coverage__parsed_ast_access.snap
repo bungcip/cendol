@@ -1,0 +1,22 @@
+---
+source: src/tests/ast_dumper_coverage.rs
+expression: output
+---
+1: TranslationUnit(decls=[3, 5])
+3: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Record(false, Some("S"), Some(ParsedRecordDefData { tag: Some("S"), members: Some([ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("a", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032783) }] }]), is_union: false })))], init_declarators: [] })
+5: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 6 })
+6: CompoundStatement(stmts=[7, 8, 9, 20])
+7: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Record(false, Some("S"), None))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("s", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032808) }] })
+8: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Record(false, Some("S"), None))], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Identifier("p", TypeQualifiers(0x0)))), initializer: None, span: SourceSpan(2199056810036) }] })
+9: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Array(Identifier("arr", TypeQualifiers(0x0)), Expression { expr: 10, qualifiers: TypeQualifiers(0x0) }), initializer: None, span: SourceSpan(2199140696124) }] })
+10: LiteralInt(10, None)
+11: Ident(s)
+12: MemberAccess(11, a, .)
+13: Ident(p)
+14: MemberAccess(13, a, ->)
+15: BinaryOp(Add, 12, 14)
+16: Ident(arr)
+17: LiteralInt(0, None)
+18: IndexAccess(16, 17)
+19: BinaryOp(Add, 15, 18)
+20: Return(19)

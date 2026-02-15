@@ -1,0 +1,13 @@
+---
+source: src/tests/ast_dumper_coverage.rs
+expression: output
+---
+1: TranslationUnit(decls=[3, 5])
+3: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Record(false, Some("S"), Some(ParsedRecordDefData { tag: Some("S"), members: Some([ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("a", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032783) }] }]), is_union: false })))], init_declarators: [] })
+5: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 6 })
+6: CompoundStatement(stmts=[11])
+7: LiteralInt(1, None)
+8: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 7 }])
+9: CompoundLiteral(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) }, 8)
+10: MemberAccess(9, a, .)
+11: Return(10)

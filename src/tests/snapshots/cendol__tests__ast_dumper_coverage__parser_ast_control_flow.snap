@@ -1,0 +1,19 @@
+---
+source: src/tests/ast_dumper_coverage.rs
+expression: output
+---
+1: TranslationUnit(decls=2..2) (parser kind)
+2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
+3: LiteralString(f)
+4: CompoundStatement(stmts=5..8)
+5: If(condition=9, then=10, else=none)
+6: While(condition=11, body=12)
+7: DoWhile(body=13, condition=14)
+8: For(init=none, condition=none, increment=none, body=15)
+9: LiteralInt(1, None)
+10: CompoundStatement(stmts=[])
+11: LiteralInt(0, None)
+12: CompoundStatement(stmts=[])
+13: CompoundStatement(stmts=[])
+14: LiteralInt(0, None)
+15: CompoundStatement(stmts=[])

@@ -1152,7 +1152,11 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
     info
 }
 
-fn visit_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> Vec<FunctionParameter> {
+fn visit_function_parameters(
+    params: &[ParsedParamData],
+    ctx: &mut LowerCtx,
+    is_definition: bool,
+) -> Vec<FunctionParameter> {
     let mut seen_names = HashMap::new();
     params
         .iter()
@@ -1192,7 +1196,7 @@ fn visit_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
             // C11 6.7.6.3p4: After adjustment, the parameters ... shall not have incomplete type.
             // C11 6.7.6.3p10: The special case of an unnamed parameter of type void as the only item
             // in the list specifies that the function has no parameters.
-            if !ctx.registry.is_complete(decayed_ty.ty()) {
+            if is_definition && !ctx.registry.is_complete(decayed_ty.ty()) {
                 let is_void_param_list = params.len() == 1 && decayed_ty.is_void() && pname.is_none();
                 if !is_void_param_list {
                     ctx.report_error(SemanticError::IncompleteType {
@@ -1259,7 +1263,7 @@ fn get_definition_params(decl: &ParsedDeclarator, ctx: &mut LowerCtx) -> Option<
             if let Some(inner_params) = get_definition_params(inner, ctx) {
                 Some(inner_params)
             } else {
-                Some(visit_function_parameters(params, ctx))
+                Some(visit_function_parameters(params, ctx, true))
             }
         }
         ParsedDeclarator::Pointer(_, inner) => inner.as_ref().and_then(|d| get_definition_params(d, ctx)),
@@ -1364,7 +1368,7 @@ fn apply_declarator(
             params,
             is_variadic,
         } => {
-            let parameters = visit_function_parameters(params, ctx);
+            let parameters = visit_function_parameters(params, ctx, false);
             let ty = ctx
                 .registry
                 .function_type(base_type.ty(), parameters, *is_variadic, spec_info.is_noreturn);

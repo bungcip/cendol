@@ -964,20 +964,21 @@ impl<'src> Preprocessor<'src> {
 
         match token.kind {
             PPTokenKind::Identifier(sym) => match self.directive_keywords.is_directive(sym) {
-                Some(kind) => {
-                    match kind {
-                        DirectiveKind::If | DirectiveKind::Ifdef | DirectiveKind::Ifndef | DirectiveKind::Elif | DirectiveKind::Else | DirectiveKind::Endif => {
-                            self.handle_conditional_directive(kind, token.location)
-                        }
-                        _ => {
-                            if self.is_currently_skipping() {
-                                self.skip_directive()
-                            } else {
-                                self.execute_directive(kind)
-                            }
+                Some(kind) => match kind {
+                    DirectiveKind::If
+                    | DirectiveKind::Ifdef
+                    | DirectiveKind::Ifndef
+                    | DirectiveKind::Elif
+                    | DirectiveKind::Else
+                    | DirectiveKind::Endif => self.handle_conditional_directive(kind, token.location),
+                    _ => {
+                        if self.is_currently_skipping() {
+                            self.skip_directive()
+                        } else {
+                            self.execute_directive(kind)
                         }
                     }
-                }
+                },
                 None => self.emit_error_loc(PPErrorKind::InvalidDirective, token.location),
             },
             PPTokenKind::Eod => Ok(()),

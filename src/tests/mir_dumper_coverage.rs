@@ -17,12 +17,7 @@ fn test_mir_dumper_manual_coverage() {
     let ptr_ty = builder.add_type(MirType::Pointer { pointee: i32_ty });
 
     // Function with Body
-    let func_id = builder.define_function(
-        NameId::new("test_func"),
-        vec![i32_ty],
-        void_ty,
-        false,
-    );
+    let func_id = builder.define_function(NameId::new("test_func"), vec![i32_ty], void_ty, false);
     builder.set_current_function(func_id);
 
     let entry_block = builder.create_block();
@@ -40,7 +35,10 @@ fn test_mir_dumper_manual_coverage() {
     let const_func = builder.create_constant(ptr_ty, ConstValueKind::FunctionAddress(func_id));
 
     // Statements: Assign const null (to use const_null)
-    builder.add_statement(MirStmt::Assign(Place::Local(loc_ptr), Rvalue::Use(Operand::Constant(const_null))));
+    builder.add_statement(MirStmt::Assign(
+        Place::Local(loc_ptr),
+        Rvalue::Use(Operand::Constant(const_null)),
+    ));
 
     // Statements: Alloc/Dealloc
     builder.add_statement(MirStmt::Alloc(Place::Local(loc_i32), i32_ty));
@@ -59,25 +57,33 @@ fn test_mir_dumper_manual_coverage() {
         Operand::Constant(const_zero),
     ));
     builder.add_statement(MirStmt::BuiltinVaEnd(Place::Local(loc_ptr)));
-    builder.add_statement(MirStmt::BuiltinVaCopy(
-        Place::Local(loc_ptr),
-        Place::Local(loc_ptr),
-    ));
+    builder.add_statement(MirStmt::BuiltinVaCopy(Place::Local(loc_ptr), Place::Local(loc_ptr)));
 
     // Statements: Store
     builder.add_statement(MirStmt::Store(
         Operand::Constant(const_zero),
-        Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(loc_ptr)))))
+        Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(loc_ptr))))),
     ));
 
     // RValues: BinaryFloatOp (Cover all variants)
     let ops = [
-        BinaryFloatOp::Add, BinaryFloatOp::Sub, BinaryFloatOp::Mul, BinaryFloatOp::Div,
-        BinaryFloatOp::Eq, BinaryFloatOp::Ne, BinaryFloatOp::Lt, BinaryFloatOp::Le,
-        BinaryFloatOp::Gt, BinaryFloatOp::Ge,
+        BinaryFloatOp::Add,
+        BinaryFloatOp::Sub,
+        BinaryFloatOp::Mul,
+        BinaryFloatOp::Div,
+        BinaryFloatOp::Eq,
+        BinaryFloatOp::Ne,
+        BinaryFloatOp::Lt,
+        BinaryFloatOp::Le,
+        BinaryFloatOp::Gt,
+        BinaryFloatOp::Ge,
     ];
     for op in ops {
-        let rv = Rvalue::BinaryFloatOp(op, Operand::Copy(Box::new(Place::Local(loc_f32))), Operand::Copy(Box::new(Place::Local(loc_f32))));
+        let rv = Rvalue::BinaryFloatOp(
+            op,
+            Operand::Copy(Box::new(Place::Local(loc_f32))),
+            Operand::Copy(Box::new(Place::Local(loc_f32))),
+        );
         builder.add_statement(MirStmt::Assign(Place::Local(loc_f32), rv));
     }
 
@@ -92,7 +98,7 @@ fn test_mir_dumper_manual_coverage() {
     let rv_atomic_xchg = Rvalue::AtomicExchange(
         Operand::Copy(Box::new(Place::Local(loc_ptr))),
         Operand::Constant(const_zero),
-        AtomicMemOrder::AcqRel
+        AtomicMemOrder::AcqRel,
     );
     builder.add_statement(MirStmt::Assign(Place::Local(loc_i32), rv_atomic_xchg));
 
@@ -102,7 +108,7 @@ fn test_mir_dumper_manual_coverage() {
         Operand::Constant(const_zero),
         true, // weak
         AtomicMemOrder::SeqCst,
-        AtomicMemOrder::Acquire
+        AtomicMemOrder::Acquire,
     );
     builder.add_statement(MirStmt::Assign(Place::Local(loc_i32), rv_atomic_cmpxchg));
 
@@ -110,7 +116,7 @@ fn test_mir_dumper_manual_coverage() {
         BinaryIntOp::Add,
         Operand::Copy(Box::new(Place::Local(loc_ptr))),
         Operand::Constant(const_zero),
-        AtomicMemOrder::Consume
+        AtomicMemOrder::Consume,
     );
     builder.add_statement(MirStmt::Assign(Place::Local(loc_i32), rv_atomic_fetch));
 
@@ -140,12 +146,7 @@ fn test_mir_dumper_manual_coverage() {
     // No terminator set, defaults to Unreachable
 
     // Globals
-    let _ = builder.create_global_with_init(
-        NameId::new("g_func_ptr"),
-        ptr_ty,
-        true,
-        Some(const_func)
-    );
+    let _ = builder.create_global_with_init(NameId::new("g_func_ptr"), ptr_ty, true, Some(const_func));
 
     let program = builder.consume();
 

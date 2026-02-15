@@ -299,3 +299,55 @@ FAIL_SIGNED_COMPARE
       text: OK_SIGNED_COMPARE
     "#);
 }
+
+// Unary Operators
+#[test]
+fn test_pp_unary_ops() {
+    let src = r#"
+/* Unary Plus */
+#if +1 == 1
+PLUS_OK
+#else
+PLUS_FAIL
+#endif
+
+/* Unary BitNot */
+#if ~0 == -1
+BITNOT_SIGNED_OK
+#else
+BITNOT_SIGNED_FAIL
+#endif
+
+#if ~0U == 0xFFFFFFFFFFFFFFFFU
+BITNOT_UNSIGNED_OK
+#else
+BITNOT_UNSIGNED_FAIL
+#endif
+
+/* Unary LogicNot */
+#if !0
+LOGICNOT_0_OK
+#else
+LOGICNOT_0_FAIL
+#endif
+
+#if !1
+LOGICNOT_1_FAIL
+#else
+LOGICNOT_1_OK
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: PLUS_OK
+    - kind: Identifier
+      text: BITNOT_SIGNED_OK
+    - kind: Identifier
+      text: BITNOT_UNSIGNED_OK
+    - kind: Identifier
+      text: LOGICNOT_0_OK
+    - kind: Identifier
+      text: LOGICNOT_1_OK
+    ");
+}

@@ -254,6 +254,22 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Returns the current token or an error if at the end of the stream.
+    fn current(&self) -> Result<&'a PPToken, PPError> {
+        if self.at_end() {
+            Err(self.error())
+        } else {
+            Ok(&self.tokens[self.pos])
+        }
+    }
+
+    /// Returns the current token and advances the position, or returns an error if at the end.
+    fn next(&mut self) -> Result<&'a PPToken, PPError> {
+        let token = self.current()?;
+        self.advance();
+        Ok(token)
+    }
+
     pub(crate) fn evaluate(&mut self) -> Result<ExprValue, PPError> {
         let expr = self.parse_conditional()?;
         expr.evaluate(self.preprocessor, self.current_span())
@@ -362,10 +378,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn parse_unary(&mut self) -> Result<PPExpr, PPError> {
-        if self.at_end() {
-            return Err(self.error());
-        }
-        let token = &self.tokens[self.pos];
+        let token = self.current()?;
 
         // Handle `defined`
         if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.defined_symbol()) {
@@ -405,11 +418,8 @@ impl<'a> Interpreter<'a> {
 
     fn parse_has_include(&mut self) -> Result<PPExpr, PPError> {
         self.expect(PPTokenKind::LeftParen)?;
-        if self.at_end() {
-            return Err(self.error());
-        }
+        let token = self.current()?;
 
-        let token = &self.tokens[self.pos];
         let (path, is_angled) = match &token.kind {
             PPTokenKind::StringLiteral(sym) => {
                 let s = sym.as_str();
@@ -445,11 +455,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn parse_primary(&mut self) -> Result<PPExpr, PPError> {
-        if self.at_end() {
-            return Err(self.error());
-        }
-        let token = &self.tokens[self.pos];
-        self.advance();
+        let token = self.next()?;
 
         match &token.kind {
             PPTokenKind::Number(sym) => {

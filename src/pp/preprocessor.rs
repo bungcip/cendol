@@ -540,8 +540,6 @@ impl<'src> Preprocessor<'src> {
 
         // GCC version macros for compatibility with glibc headers
         // We define these to match what Clang does for GCC compatibility
-        // GCC version macros for compatibility with glibc headers
-        // We define these to match what Clang does for GCC compatibility
         self.define_builtin_macro("__extension__", vec![]);
         self.define_builtin_macro("__restrict", vec![]);
         self.define_builtin_macro_with_val("__GNUC__", "4");

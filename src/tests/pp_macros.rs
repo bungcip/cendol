@@ -480,3 +480,14 @@ FOO
     - - "Warning: Redefinition of macro 'FOO'"
     "#);
 }
+
+#[test]
+fn test_undef_builtin_macro_should_warn() {
+    let src = r#"
+#undef __DATE__
+"#;
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(diags, @r#"
+    - "Warning: Undefining built-in macro '__DATE__'"
+    "#);
+}

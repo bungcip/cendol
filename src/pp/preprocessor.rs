@@ -682,10 +682,10 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expect an identifier token
-    fn expect_identifier(&mut self) -> Result<PPToken, PPError> {
+    fn expect_identifier(&mut self) -> Result<(PPToken, StringId), PPError> {
         let token = self.expect_token()?;
-        if matches!(token.kind, PPTokenKind::Identifier(_)) {
-            Ok(token)
+        if let PPTokenKind::Identifier(sym) = token.kind {
+            Ok((token, sym))
         } else {
             self.emit_error_loc(PPErrorKind::ExpectedIdentifier, token.location)
         }
@@ -1152,10 +1152,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_define(&mut self) -> Result<(), PPError> {
-        let name_token = self.expect_identifier()?;
-        let PPTokenKind::Identifier(name) = name_token.kind else {
-            unreachable!()
-        };
+        let (name_token, name) = self.expect_identifier()?;
 
         let (flags, params, variadic) = self.parse_define_args(name.as_str())?;
 
@@ -1179,10 +1176,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_undef(&mut self) -> Result<(), PPError> {
-        let name_token = self.expect_identifier()?;
-        let PPTokenKind::Identifier(name) = name_token.kind else {
-            unreachable!()
-        };
+        let (name_token, name) = self.expect_identifier()?;
 
         if let Some(existing) = self.macros.get(&name)
             && existing.flags.contains(MacroFlags::BUILTIN)
@@ -1380,10 +1374,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_conditional_def(&mut self, is_ifdef: bool) -> Result<(), PPError> {
-        let token = self.expect_identifier()?;
-        let PPTokenKind::Identifier(sym) = token.kind else {
-            unreachable!()
-        };
+        let (_, sym) = self.expect_identifier()?;
 
         let condition = self.macros.contains_key(&sym) == is_ifdef;
         self.handle_if_directive(condition)?;
@@ -1520,10 +1511,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
     fn handle_pragma(&mut self) -> Result<(), PPError> {
-        let token = self.expect_identifier()?;
-        let PPTokenKind::Identifier(symbol) = token.kind else {
-            unreachable!()
-        };
+        let (token, symbol) = self.expect_identifier()?;
 
         let pragma_name = symbol.as_str();
         match pragma_name {

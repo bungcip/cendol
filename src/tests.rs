@@ -16,6 +16,7 @@ pub mod pp_common;
 pub mod pp_directives;
 pub mod pp_expressions;
 pub mod pp_include;
+pub mod pp_include_next;
 
 pub mod pp_internal;
 pub mod pp_lexical;

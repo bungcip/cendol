@@ -81,3 +81,28 @@ OK
     - []
     ");
 }
+
+#[test]
+fn test_skipped_directives_coverage() {
+    let src = r#"
+#if 0
+#define FOO 1
+#undef FOO
+#include "non_existent.h"
+#line 100 "bad_file.c"
+#pragma unknown
+#error "should not error"
+#warning "should not warn"
+#if 1
+  #error "should not error nested"
+#endif
+#endif
+OK
+"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - - kind: Identifier
+        text: OK
+    - []
+    "#);
+}

@@ -350,50 +350,47 @@ fn emit_const_array(
     mut module: Option<&mut ObjectModule>,
     mut data_description: Option<&mut DataDescription>,
     base_offset: u32,
-) -> Result<(), String> {
-    match ty {
-        MirType::Array {
-            element,
-            size,
-            layout: array_layout,
-        } => {
-            // Emit each element according to the array layout
-            for (i, element_const_id) in elements.iter().enumerate() {
-                if i >= *size {
-                    break; // Don't emit more elements than the array size
-                }
+) {
+    let MirType::Array {
+        element,
+        size,
+        layout: array_layout,
+    } = ty
+    else {
+        panic!("ArrayLiteral with non-array type");
+    };
 
-                let element_type = ctx.mir.get_type(*element);
-                let element_size = lower_type_size(element_type, ctx.mir)? as usize;
+    let element_type = ctx.mir.get_type(*element);
+    let element_size = lower_type_size(element_type, ctx.mir).expect("valid type") as usize;
+    let stride = array_layout.stride as usize;
+    let padding = stride.checked_sub(element_size).unwrap_or(0);
 
-                // Calculate offset for this element
-                let element_offset = (i * array_layout.stride as usize) as u32;
+    for (i, element_const_id) in elements.iter().take(*size).enumerate() {
+        let element_offset = (i * stride) as u32;
 
-                emit_const(
-                    *element_const_id,
-                    output,
-                    ctx,
-                    reborrow_module(&mut module),
-                    reborrow_data_description(&mut data_description),
-                    base_offset + element_offset,
-                )?;
+        emit_const(
+            *element_const_id,
+            output,
+            ctx,
+            reborrow_module(&mut module),
+            reborrow_data_description(&mut data_description),
+            base_offset + element_offset,
+        )
+        .expect("emit_const failed");
 
-                // Add padding if needed for stride > element size
-                if array_layout.stride as usize > element_size {
-                    let padding = array_layout.stride as usize - element_size;
-                    output.extend_from_slice(&vec![0u8; padding]);
-                }
-            }
-
-            // Fill remaining space with zeros if array is partially initialized
-            let emitted_size = elements.len() * array_layout.stride as usize;
-            if emitted_size < array_layout.size as usize {
-                let remaining = array_layout.size as usize - emitted_size;
-                output.extend_from_slice(&vec![0u8; remaining]);
-            }
-            Ok(())
+        if padding > 0 {
+            output.extend(std::iter::repeat(0).take(padding));
         }
-        _ => Err("ArrayLiteral with non-array type".to_string()),
+    }
+
+    // Fill remaining space with zeros if array is partially initialized
+    let count = elements.len().min(*size);
+    let emitted_size = count * stride;
+    let total_size = array_layout.size as usize;
+
+    if emitted_size < total_size {
+        let remaining = total_size - emitted_size;
+        output.extend(std::iter::repeat(0).take(remaining));
     }
 }
 
@@ -477,7 +474,8 @@ pub(crate) fn emit_const(
             emit_const_struct(fields, ty, output, ctx, module, data_description, offset)
         }
         ConstValueKind::ArrayLiteral(elements) => {
-            emit_const_array(elements, ty, output, ctx, module, data_description, offset)
+            emit_const_array(elements, ty, output, ctx, module, data_description, offset);
+            Ok(())
         }
     }
 }

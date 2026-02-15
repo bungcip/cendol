@@ -55,6 +55,7 @@ pub(crate) struct DirectiveKeywordTable {
     line_macro: StringId,
     file_macro: StringId,
     counter_macro: StringId,
+    pragma_operator: StringId,
 }
 
 impl Default for DirectiveKeywordTable {
@@ -85,6 +86,7 @@ impl DirectiveKeywordTable {
             line_macro: StringId::new("__LINE__"),
             file_macro: StringId::new("__FILE__"),
             counter_macro: StringId::new("__COUNTER__"),
+            pragma_operator: StringId::new("_Pragma"),
         }
     }
 
@@ -751,10 +753,9 @@ impl<'src> Preprocessor<'src> {
                 PPTokenKind::Eod => continue,
                 // Handle identifiers (macros, magic macros, _Pragma)
                 PPTokenKind::Identifier(symbol) => {
-                    let sym_str = symbol.as_str();
                     if let Some(magic) = self.try_expand_magic_macro(&token) {
                         result_tokens.push(magic);
-                    } else if sym_str == "_Pragma" {
+                    } else if symbol == self.directive_keywords.pragma_operator {
                         self.handle_pragma_operator()?;
                     } else if let Some(expanded) = self.expand_macro(&token)? {
                         for t in expanded.into_iter().rev() {
@@ -2268,7 +2269,7 @@ impl<'src> Preprocessor<'src> {
 
     fn try_handle_pragma_operator(&mut self, tokens: &mut Vec<PPToken>, i: usize) -> bool {
         let token = tokens[i];
-        if !matches!(token.kind, PPTokenKind::Identifier(s) if s.as_str() == "_Pragma") {
+        if !matches!(token.kind, PPTokenKind::Identifier(s) if s == self.directive_keywords.pragma_operator) {
             return false;
         }
 

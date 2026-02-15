@@ -18,6 +18,16 @@ fn test_pragma_warning() {
     insta::assert_yaml_snapshot!(diags, @r#"- "Warning: This is a warning""#);
 }
 
+#[test]
+fn test_pragma_error() {
+    let src = r#"#pragma error("This is an error")"#;
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    // The pragma error causes a fatal error in the preprocessor, so we expect
+    // the diagnostic to reflect that.
+    assert!(!diags.is_empty());
+    assert!(diags[0].contains("PragmaError(\"This is an error\")"));
+}
+
 // _Pragma Operator
 #[test]
 fn test_pragma_operator_message() {

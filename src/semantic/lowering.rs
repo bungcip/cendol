@@ -1188,6 +1188,20 @@ fn visit_function_parameters(params: &[ParsedParamData], ctx: &mut LowerCtx) -> 
             let decayed_ty = ctx.registry.decay(final_ty, ptr_quals);
 
             let pname = param.declarator.as_ref().and_then(extract_name);
+
+            // C11 6.7.6.3p4: After adjustment, the parameters ... shall not have incomplete type.
+            // C11 6.7.6.3p10: The special case of an unnamed parameter of type void as the only item
+            // in the list specifies that the function has no parameters.
+            if !ctx.registry.is_complete(decayed_ty.ty()) {
+                let is_void_param_list = params.len() == 1 && decayed_ty.is_void() && pname.is_none();
+                if !is_void_param_list {
+                    ctx.report_error(SemanticError::IncompleteType {
+                        ty: ctx.registry.display_qual_type(decayed_ty),
+                        span,
+                    });
+                }
+            }
+
             if let Some(name) = pname {
                 if let Some(&first_def) = seen_names.get(&name) {
                     ctx.report_error(SemanticError::Redefinition { name, first_def, span });
@@ -2077,6 +2091,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         final_ty = self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
+
+        // C11 6.7p7: If an identifier for an object is declared with no linkage, the type for the object
+        // shall be complete by the end of its declarator...
+        // C11 6.9.2p3: If the declaration of an identifier for an object is a tentative definition
+        // and has internal linkage, the declared type shall not be an incomplete type.
+        let current_scope = self.symbol_table.current_scope();
+        let is_global = current_scope == ScopeId::GLOBAL;
+        let has_internal_linkage = is_global && spec_info.storage == Some(StorageClass::Static);
+        let has_no_linkage = !is_global && spec_info.storage != Some(StorageClass::Extern);
+
+        if (has_internal_linkage || has_no_linkage) && !self.registry.is_complete(final_ty.ty()) {
+            self.report_error(SemanticError::IncompleteType {
+                ty: self.registry.display_qual_type(final_ty),
+                span,
+            });
+        }
+
         let var_decl = VarDeclData {
             name,
             ty: final_ty,

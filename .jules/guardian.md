@@ -44,3 +44,8 @@ Action: Enforce pointed-to type constraints for the `restrict` qualifier in `mer
 
 Learning: C11 (6.7.6.3p2) restricts the storage-class specifiers in a function parameter declaration to ONLY `register`. Specifiers like `static`, `extern`, `auto`, `typedef`, or `_Thread_local` are illegal. Furthermore, while `register` is allowed, its semantics must be correctly propagated to the function's scope to ensure that operations like taking the address of the parameter are properly rejected.
 Action: Enforce parameter storage class constraints during semantic lowering and ensure the storage class is preserved in the symbol table for subsequent semantic analysis (e.g., lvalue address-of checks).
+
+2025-05-22 - [Incomplete Type Constraints for Linkage and Parameters]
+
+Learning: C11 enforces strict completeness rules for object declarations depending on linkage. Identifiers with no linkage (block scope, non-extern) must be complete (6.7p7). Tentative definitions with internal linkage (file scope, static) must also be complete (6.9.2p3). However, tentative definitions with external linkage (file scope, non-static) can be incomplete as they are completed at the end of the TU. Function parameters in definitions must be complete after adjustment (6.7.6.3p4), meaning 'void f(int arr[])' is OK as it decays to a complete pointer, but 'void f(void x)' is not.
+Action: Enforce completeness checks in 'visit_variable_decl' and 'visit_function_parameters' by carefully distinguishing linkage and storage classes. Ensure initializers have a chance to complete array types before the check occurs.

@@ -74,6 +74,7 @@ pub mod guardian_parameter_storage;
 pub mod guardian_pointer_arithmetic;
 pub mod guardian_restrict_constraints;
 pub mod guardian_tentative_definitions;
+pub mod guardian_typedef_constraints;
 pub mod mir_dumper_coverage;
 pub mod mir_unit;
 pub mod mir_validation;

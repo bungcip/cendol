@@ -1991,7 +1991,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             {
                 let existing_symbol = self.symbol_table.get_symbol(existing);
                 if let SymbolKind::Typedef { aliased_type } = existing_symbol.kind {
-                    if !self.registry.is_compatible(aliased_type, final_ty) {
+                    if aliased_type != final_ty {
                         self.report_error(SemanticError::RedefinitionWithDifferentType {
                             name,
                             first_def: existing_symbol.def_span,

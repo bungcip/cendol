@@ -522,7 +522,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn create_array_const_from_string(
+    fn create_array_const_from_string(
         &mut self,
         val: &ast::NameId,
         fixed_size: Option<usize>,

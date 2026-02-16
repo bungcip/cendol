@@ -317,7 +317,7 @@ fn test_call_arg_type_mismatch() {
     let res = validator.validate();
 
     let expected_err = ValidationError::FunctionCallArgTypeMismatch {
-        func_name: func_name,
+        func_name,
         arg_index: 0,
         expected_type: i32_ty,
         actual_type: f32_ty,

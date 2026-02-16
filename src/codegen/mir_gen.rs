@@ -1164,7 +1164,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn get_place_type(&mut self, place: &Place) -> TypeId {
+    fn get_place_type(&mut self, place: &Place) -> TypeId {
         match place {
             Place::Local(local_id) => self.mir_builder.get_locals().get(local_id).unwrap().type_id,
             Place::Global(global_id) => self.get_global_type(*global_id),

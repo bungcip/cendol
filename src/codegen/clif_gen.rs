@@ -895,7 +895,6 @@ fn emit_function_call(
             };
 
             // Assuming function pointers point to internal functions requiring the hack.
-            // TODO: Distinguish between internal and external function pointers if possible.
             (
                 return_type_id,
                 param_types,
@@ -2603,7 +2602,11 @@ impl ClifGen {
         }
 
         // Finalize and return the compiled code
-        let code = crate::codegen::ObjectGen::finalize(self.module)?;
+        let product = self.module.finish();
+        let code = product
+            .object
+            .write()
+            .map_err(|e| format!("Failed to write object file: {:?}", e))?;
 
         if emit_kind == EmitKind::Object {
             Ok(ClifOutput::ObjectFile(code))

@@ -77,7 +77,7 @@ impl<'a> MirGen<'a> {
 
     // create dummy operand
     pub(crate) fn create_dummy_operand(&mut self) -> Operand {
-        self.create_int_operand(9999)
+        self.create_int_operand(0)
     }
 
     pub(crate) fn visit_module(&mut self) -> MirProgram {

@@ -78,6 +78,7 @@ pub mod mir_dumper_coverage;
 pub mod mir_unit;
 pub mod mir_validation;
 pub mod parser_type_conflict;
+pub mod pp_expect_eod;
 pub mod pp_expand_tokens_coverage;
 pub mod pp_mod_div;
 pub mod pp_u8_literal;

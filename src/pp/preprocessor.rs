@@ -2656,40 +2656,4 @@ mod tests {
         let unknown_sym = StringId::new("not_a_directive");
         assert_eq!(table.is_directive(unknown_sym), None);
     }
-
-    #[test]
-    fn test_expect_eod() {
-        use crate::pp::{PPConfig, Preprocessor, PPErrorKind};
-        use crate::tests::test_utils::setup_sm_and_diag;
-
-        // Case 1: End of file is acceptable (None)
-        let (mut sm, mut diag) = setup_sm_and_diag();
-        let config = PPConfig::default();
-        let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-
-        // We need to call expect_eod on a preprocessor that has no tokens left.
-        // A fresh preprocessor has no lexers. lex_token() returns None immediately.
-        assert!(pp.expect_eod().is_ok());
-
-        // Case 2: Error when unexpected token
-        let (mut sm, mut diag) = setup_sm_and_diag();
-
-        // Add a buffer with some content
-        let src = "some_token";
-        let buffer_id = sm.add_buffer(src.as_bytes().to_vec(), "<test>", None);
-        let buffer = sm.get_buffer_arc(buffer_id);
-
-        let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
-
-        // Push a lexer manually since we are testing internal state
-        pp.lexer_stack.push(PPLexer::new(buffer_id, buffer));
-
-        // expect_eod should fail because there is a token "some_token"
-        let result = pp.expect_eod();
-        assert!(result.is_err());
-        match result {
-            Err(e) => assert!(matches!(e.kind, PPErrorKind::ExpectedEod)),
-            _ => panic!("Expected ExpectedEod error"),
-        }
-    }
 }

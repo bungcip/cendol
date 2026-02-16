@@ -49,3 +49,8 @@ Action: Enforce parameter storage class constraints during semantic lowering and
 
 Learning: C11 enforces strict completeness rules for object declarations depending on linkage. Identifiers with no linkage (block scope, non-extern) must be complete (6.7p7). Tentative definitions with internal linkage (file scope, static) must also be complete (6.9.2p3). However, tentative definitions with external linkage (file scope, non-static) can be incomplete as they are completed at the end of the TU. Function parameters in definitions must be complete after adjustment (6.7.6.3p4), meaning 'void f(int arr[])' is OK as it decays to a complete pointer, but 'void f(void x)' is not.
 Action: Enforce completeness checks in 'visit_variable_decl' and 'visit_function_parameters' by carefully distinguishing linkage and storage classes. Ensure initializers have a chance to complete array types before the check occurs.
+
+2025-05-23 - [Typedef Redefinition and Type Identity]
+
+Learning: C11 6.7p3 requires that a typedef redefinition in the same scope denote the SAME type. This is stricter than type compatibility. For example, 'int[]' and 'int[10]' are compatible but not the same type, and thus a typedef redefinition from one to the other must be rejected. However, differences that do not affect type identity (like function parameter names) are ignored due to canonicalization.
+Action: Use strict QualType equality (which relies on canonical TypeRefs and qualifier masks) for typedef redefinition checks instead of 'is_compatible'.

@@ -409,9 +409,7 @@ impl SourceManager {
         if id < 2 {
             return None;
         }
-        self.file_infos
-            .get(id as usize - 2)
-            .map(|info| &info.buffer[..])
+        self.file_infos.get(id as usize - 2).map(|info| &info.buffer[..])
     }
 
     /// Get the buffer as an Arc for a given source ID.

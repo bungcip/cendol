@@ -1851,7 +1851,10 @@ impl<'src> Preprocessor<'src> {
         // We create a virtual buffer for it to ensure stringification works correctly.
         // We only create it if we actually need a comma.
         let comma_source_id = if args.len() > start_index + 1 {
-            Some(self.sm.add_virtual_buffer(b",".to_vec(), "<comma>", Some(trigger_loc), FileKind::Virtual))
+            Some(
+                self.sm
+                    .add_virtual_buffer(b",".to_vec(), "<comma>", Some(trigger_loc), FileKind::Virtual),
+            )
         } else {
             None
         };
@@ -2081,7 +2084,9 @@ impl<'src> Preprocessor<'src> {
 
         // Create a virtual buffer containing the pasted text
         let virtual_buffer = pasted_text.clone().into_bytes();
-        let virtual_id = self.sm.add_virtual_buffer(virtual_buffer, "pasted-tokens", None, FileKind::PastedToken);
+        let virtual_id = self
+            .sm
+            .add_virtual_buffer(virtual_buffer, "pasted-tokens", None, FileKind::PastedToken);
 
         // Create a temporary lexer to lex the pasted text
         let buffer = self.sm.get_buffer_arc(virtual_id);
@@ -2440,9 +2445,10 @@ impl<'src> Preprocessor<'src> {
                 let is_pasted = if Some(sid) == last_is_pasted_sid {
                     last_is_pasted_val
                 } else {
-                    let val = self.sm.get_file_info(sid).is_some_and(|info| {
-                        info.kind == FileKind::PastedToken
-                    });
+                    let val = self
+                        .sm
+                        .get_file_info(sid)
+                        .is_some_and(|info| info.kind == FileKind::PastedToken);
                     last_is_pasted_sid = Some(sid);
                     last_is_pasted_val = val;
                     val
@@ -2459,9 +2465,12 @@ impl<'src> Preprocessor<'src> {
             }
         }
 
-        let virtual_id = self
-            .sm
-            .add_virtual_buffer(buffer, &format!("macro_{}", macro_name), Some(trigger_location), FileKind::MacroExpansion);
+        let virtual_id = self.sm.add_virtual_buffer(
+            buffer,
+            &format!("macro_{}", macro_name),
+            Some(trigger_location),
+            FileKind::MacroExpansion,
+        );
 
         // Final pass: Construct new tokens using the pre-calculated metadata.
         tokens

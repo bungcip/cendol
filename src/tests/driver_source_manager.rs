@@ -431,7 +431,7 @@ fn test_virtual_buffer_newlines() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3";
     // Virtual buffers calculate line starts immediately
-    let file_id = sm.add_virtual_buffer(content.as_bytes().to_vec(), "macro", None);
+    let file_id = sm.add_virtual_buffer(content.as_bytes().to_vec(), "macro", None, FileKind::Virtual);
 
     // Check line 2
     let loc = SourceLoc::new(file_id, 6); // Start of "line2"

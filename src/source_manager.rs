@@ -222,6 +222,19 @@ impl PartialOrd for LineDirective {
     }
 }
 
+/// Indicates the kind of source file
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum FileKind {
+    /// A real file on disk
+    Real,
+    /// A virtual buffer for macro expansion
+    MacroExpansion,
+    /// A virtual buffer for pasted tokens (## operator)
+    PastedToken,
+    /// Other virtual buffers (e.g. built-in headers, command line defines)
+    Virtual,
+}
+
 /// Stores all #line directives for a single file, sorted by physical line
 #[derive(Debug, Clone, Default)]
 pub struct LineMap {
@@ -268,7 +281,8 @@ pub struct FileInfo {
     pub file_id: SourceId,
     pub path: PathBuf,
     pub size: u32,
-    pub buffer_index: usize,            // Index into buffers Vec
+    pub(crate) buffer: Arc<[u8]>,
+    pub(crate) kind: FileKind,
     pub line_starts: Vec<u32>,          // Line start offsets for efficient line lookup
     pub line_map: LineMap,              // #line directive mappings
     pub include_loc: Option<SourceLoc>, // Location where this file was included/expanded from
@@ -278,7 +292,6 @@ pub struct FileInfo {
 /// File size limit: 4 MiB per file (22-bit offset in SourceLoc)
 /// Maximum files: 1023 unique source files (10-bit file ID in SourceLoc)
 pub struct SourceManager {
-    buffers: Vec<Arc<[u8]>>,
     file_infos: Vec<FileInfo>,
     path_to_id: HashMap<PathBuf, SourceId>,
     next_file_id: u32,
@@ -287,7 +300,6 @@ pub struct SourceManager {
 impl Default for SourceManager {
     fn default() -> Self {
         Self {
-            buffers: Vec::new(),
             file_infos: Vec::new(),
             path_to_id: HashMap::new(),
             next_file_id: 2, // Start from 2, reserve 1 for built-ins
@@ -316,7 +328,7 @@ impl SourceManager {
     pub(crate) fn add_buffer(&mut self, buffer: Vec<u8>, path: &str, include_loc: Option<SourceLoc>) -> SourceId {
         let path_buf = PathBuf::from(path);
         // Standard buffers get empty line_starts initially; they are calculated/set later if needed
-        self.add_file_entry(Arc::from(buffer), path_buf, Vec::new(), include_loc, true)
+        self.add_file_entry(Arc::from(buffer), path_buf, Vec::new(), include_loc, FileKind::Real)
     }
 
     /// Add a virtual buffer for macro expansions (Level B support)
@@ -326,6 +338,7 @@ impl SourceManager {
         buffer: Vec<u8>,
         name: &str,
         include_loc: Option<SourceLoc>,
+        kind: FileKind,
     ) -> SourceId {
         // Calculate line starts for the virtual buffer immediately
         let mut line_starts = vec![0];
@@ -336,7 +349,7 @@ impl SourceManager {
         }
 
         let path_buf = PathBuf::from(format!("<{}>", name));
-        self.add_file_entry(Arc::from(buffer), path_buf, line_starts, include_loc, false)
+        self.add_file_entry(Arc::from(buffer), path_buf, line_starts, include_loc, kind)
     }
 
     /// Helper to add a file entry and update maps
@@ -346,16 +359,14 @@ impl SourceManager {
         path: PathBuf,
         line_starts: Vec<u32>,
         include_loc: Option<SourceLoc>,
-        is_real_file: bool,
+        kind: FileKind,
     ) -> SourceId {
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
         let size = buffer.len() as u32;
-        let buffer_index = self.buffers.len();
-        self.buffers.push(buffer);
 
-        if is_real_file {
+        if kind == FileKind::Real {
             // Only map path for real files (not virtual ones usually).
             // This avoids unnecessary map insertions for short-lived virtual buffers.
             self.path_to_id.insert(path.clone(), file_id);
@@ -365,7 +376,8 @@ impl SourceManager {
             file_id,
             path,
             size,
-            buffer_index,
+            buffer,
+            kind,
             line_starts,
             line_map: LineMap::new(),
             include_loc,
@@ -388,7 +400,7 @@ impl SourceManager {
             Some(info) => info,
             None => panic!("invalid source_id {source_id}"),
         };
-        &self.buffers[info.buffer_index][..]
+        &info.buffer[..]
     }
 
     /// Get the buffer for a given source ID, returning None if not found
@@ -397,9 +409,7 @@ impl SourceManager {
         if id < 2 {
             return None;
         }
-        self.file_infos
-            .get(id as usize - 2)
-            .map(|info| &self.buffers[info.buffer_index][..])
+        self.file_infos.get(id as usize - 2).map(|info| &info.buffer[..])
     }
 
     /// Get the buffer as an Arc for a given source ID.
@@ -413,7 +423,7 @@ impl SourceManager {
             Some(info) => info,
             None => panic!("invalid source_id {source_id}"),
         };
-        self.buffers[info.buffer_index].clone()
+        info.buffer.clone()
     }
 
     /// Get file info for a given source ID
@@ -454,7 +464,7 @@ impl SourceManager {
         let id = source_id.to_u32();
         if id >= 2 {
             if let Some(file_info) = self.file_infos.get_mut(id as usize - 2) {
-                let buffer = &self.buffers[file_info.buffer_index];
+                let buffer = &file_info.buffer;
                 let mut line_starts = vec![0]; // First line starts at offset 0
 
                 for (i, &byte) in buffer.iter().enumerate() {

@@ -11,6 +11,7 @@ use std::sync::Arc;
 use super::pp_lexer::PPLexer;
 use crate::pp::interpreter::Interpreter;
 use crate::pp::{HeaderSearch, PPToken, PPTokenFlags, PPTokenKind};
+use crate::source_manager::FileKind;
 use std::path::{Path, PathBuf};
 use target_lexicon::{Architecture, OperatingSystem, Triple};
 
@@ -1850,7 +1851,7 @@ impl<'src> Preprocessor<'src> {
         // We create a virtual buffer for it to ensure stringification works correctly.
         // We only create it if we actually need a comma.
         let comma_source_id = if args.len() > start_index + 1 {
-            Some(self.sm.add_virtual_buffer(b",".to_vec(), "<comma>", Some(trigger_loc)))
+            Some(self.sm.add_virtual_buffer(b",".to_vec(), "<comma>", Some(trigger_loc), FileKind::Virtual))
         } else {
             None
         };
@@ -2080,7 +2081,7 @@ impl<'src> Preprocessor<'src> {
 
         // Create a virtual buffer containing the pasted text
         let virtual_buffer = pasted_text.clone().into_bytes();
-        let virtual_id = self.sm.add_virtual_buffer(virtual_buffer, "<pasted-tokens>", None);
+        let virtual_id = self.sm.add_virtual_buffer(virtual_buffer, "pasted-tokens", None, FileKind::PastedToken);
 
         // Create a temporary lexer to lex the pasted text
         let buffer = self.sm.get_buffer_arc(virtual_id);
@@ -2440,8 +2441,7 @@ impl<'src> Preprocessor<'src> {
                     last_is_pasted_val
                 } else {
                     let val = self.sm.get_file_info(sid).is_some_and(|info| {
-                        let p = info.path.to_str().unwrap_or("");
-                        p == "<<pasted-tokens>>" || p == "<pasted-tokens>"
+                        info.kind == FileKind::PastedToken
                     });
                     last_is_pasted_sid = Some(sid);
                     last_is_pasted_val = val;
@@ -2461,7 +2461,7 @@ impl<'src> Preprocessor<'src> {
 
         let virtual_id = self
             .sm
-            .add_virtual_buffer(buffer, &format!("macro_{}", macro_name), Some(trigger_location));
+            .add_virtual_buffer(buffer, &format!("macro_{}", macro_name), Some(trigger_location), FileKind::MacroExpansion);
 
         // Final pass: Construct new tokens using the pre-calculated metadata.
         tokens

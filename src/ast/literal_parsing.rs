@@ -370,4 +370,27 @@ mod tests {
         // Mixed content
         assert_eq!(unescape_string(r"Hello\nWorld"), "Hello\nWorld");
     }
+
+    #[test]
+    fn test_escape_edge_cases() {
+        // Unknown escape -> keep char (e.g., \q -> q)
+        assert_eq!(unescape_string(r"\q"), "q");
+
+        // Trailing backslash -> keep backslash
+        assert_eq!(unescape_string(r"foo\"), r"foo\");
+
+        // Incomplete UCN -> keep raw
+        assert_eq!(unescape_string(r"\u123"), r"\u123");
+        assert_eq!(unescape_string(r"\U12345"), r"\U12345"); // too short for U
+
+        // Invalid hex digits in UCN -> keep partial raw
+        assert_eq!(unescape_string(r"\u12z"), r"\u12z");
+
+        // Invalid codepoint in UCN -> replacement char (U+FFFD)
+        // U+D800 is a surrogate, which is invalid in scalar value
+        assert_eq!(unescape_string(r"\uD800"), "\u{FFFD}");
+
+        // Empty hex escape -> \x
+        assert_eq!(unescape_string(r"\xz"), r"\xz");
+    }
 }

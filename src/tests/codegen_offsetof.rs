@@ -1,4 +1,4 @@
-use crate::tests::codegen_common::run_c_code_with_output;
+use crate::tests::codegen_common::{run_c_code_exit_status, run_c_code_with_output};
 
 #[test]
 fn test_builtin_offsetof_simple() {
@@ -114,7 +114,6 @@ fn test_builtin_offsetof_constant_context() {
             return sizeof(arr) / sizeof(int);
         }
     "#;
-    use crate::tests::codegen_common::run_c_code_exit_status;
     let status = run_c_code_exit_status(source);
     assert_eq!(status, 4);
 }

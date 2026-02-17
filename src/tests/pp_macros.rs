@@ -487,3 +487,38 @@ fn test_undef_builtin_macro_should_warn() {
     let (_, diags) = setup_pp_snapshot_with_diags(src);
     insta::assert_yaml_snapshot!(diags, @r#"- "Warning: Undefining built-in macro '__DATE__'""#);
 }
+
+// Macro Expansion Coverage
+#[test]
+fn test_expand_tokens_magic_macro_coverage() {
+    // This test targets the code path:
+    // if let Some(magic) = self.try_expand_magic_macro(&token) {
+    //     tokens[i] = magic;
+    //     i += 1;
+    //     continue;
+    // }
+    let src = r#"
+#define M __LINE__
+M
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Number
+      text: "1"
+    "#);
+}
+
+#[test]
+fn test_expand_tokens_pragma_operator_coverage() {
+    // This test targets the code path:
+    // if self.try_handle_pragma_operator(tokens, i) {
+    //     continue;
+    // }
+    let src = r#"
+#define P _Pragma("once")
+P
+"#;
+    let tokens = setup_pp_snapshot(src);
+    // The _Pragma("once") is handled and removed from the token stream.
+    insta::assert_yaml_snapshot!(tokens, @"[]");
+}

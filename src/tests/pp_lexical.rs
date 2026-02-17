@@ -1,9 +1,9 @@
 use crate::ast::StringId;
 use crate::lang_options::LangOptions;
-use crate::pp::PPConfig;
-use crate::pp::{PPTokenFlags, PPTokenKind};
+use crate::pp::{PPConfig, PPTokenFlags, PPTokenKind, Preprocessor, dumper::PPDumper};
 use crate::test_tokens;
 use crate::tests::pp_common::{create_test_pp_lexer, setup_pp_snapshot, setup_preprocessor_test_with_diagnostics};
+use crate::tests::test_utils::setup_sm_and_diag;
 
 // Lexer basic tests
 #[test]
@@ -467,4 +467,103 @@ fn test_line_splicing_in_skip_whitespace() {
     let source = "   \\\n   identifier";
     let mut lexer = create_test_pp_lexer(source);
     test_tokens!(lexer, ("identifier", PPTokenKind::Identifier(_)));
+}
+
+#[test]
+fn test_u8_string_literal() {
+    let source = "u8\"hello\"";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(lexer, ("u8\"hello\"", PPTokenKind::StringLiteral(_)),);
+}
+
+#[test]
+fn test_u8_string_literal_with_escapes() {
+    let source = "u8\"hello\\nworld\\u00E4\"";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(lexer, ("u8\"hello\\nworld\\u00E4\"", PPTokenKind::StringLiteral(_)),);
+}
+
+#[test]
+fn test_not_u8_literal() {
+    let source = "u8+1";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(
+        lexer,
+        ("u8", PPTokenKind::Identifier(_)),
+        ("+", PPTokenKind::Plus),
+        ("1", PPTokenKind::Number(_)),
+    );
+}
+
+#[test]
+fn test_u8_char_literal_not_supported_in_c11() {
+    // C11 doesn't have u8'a', so it should be lexed as Identifier(u8) then CharLiteral('a')
+    let source = "u8'a'";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(
+        lexer,
+        ("u8", PPTokenKind::Identifier(_)),
+        ("'a'", PPTokenKind::CharLiteral(97, _)),
+    );
+}
+
+fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {
+    let (mut sm, mut diag) = setup_sm_and_diag();
+    let config = PPConfig::default();
+    let source_id = sm.add_buffer(src.as_bytes().to_vec(), "<test>", None);
+
+    let mut preprocessor = Preprocessor::new(&mut sm, &mut diag, &config);
+    let tokens = preprocessor.process(source_id, &config).unwrap();
+
+    let significant_tokens: Vec<_> = tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
+        .collect();
+
+    let mut buffer = Vec::new();
+
+    PPDumper::new(&significant_tokens, &sm, suppress_line_markers)
+        .dump(&mut buffer)
+        .unwrap();
+
+    String::from_utf8(buffer).unwrap()
+}
+
+#[test]
+fn test_dump_preprocessed_output_simple() {
+    let src = r#"
+int main() {
+    return 0;
+}
+"#;
+    let content = dump_pp_output(src, false);
+    insta::assert_snapshot!(content, @r"
+    int main() {
+        return 0;
+    }
+    ");
+}
+
+#[test]
+fn test_dump_preprocessed_output_with_macros() {
+    let src = r#"
+#define TEN 10
+int x = TEN;
+"#;
+    let content = dump_pp_output(src, false);
+    insta::assert_snapshot!(content, @"int x = 10;");
+}
+
+#[test]
+fn test_dump_preprocessed_output_suppress_line_markers() {
+    let src = r#"
+#define TEN 10
+int x = TEN;
+"#;
+    let content = dump_pp_output(src, true);
+    insta::assert_snapshot!(content, @"int x = 10;");
 }

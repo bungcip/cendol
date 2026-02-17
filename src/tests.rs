@@ -3,7 +3,8 @@ pub mod codegen_abi_compat;
 pub mod codegen_basics;
 pub mod codegen_calls;
 pub mod codegen_common;
-pub mod codegen_regr_movi;
+
+pub mod codegen_offsetof;
 pub mod codegen_runtime;
 pub mod codegen_structs;
 pub mod codegen_switch;
@@ -13,19 +14,12 @@ pub mod driver_ast_dumper;
 pub mod driver_source_manager;
 
 pub mod pp_common;
-pub mod pp_computed_include;
+pub mod pp_conditionals;
 pub mod pp_directives;
-pub mod pp_elif;
-pub mod pp_expressions;
-pub mod pp_ifdef;
-pub mod pp_include;
-pub mod pp_include_next;
-
+pub mod pp_includes;
 pub mod pp_internal;
 pub mod pp_lexical;
 pub mod pp_macros;
-pub mod pp_output_dump;
-pub mod pp_pragma;
 
 pub mod semantic_arrays;
 pub mod semantic_builtins;
@@ -62,7 +56,7 @@ pub mod semantic_composite;
 pub mod test_utils;
 
 pub mod ast_dumper_coverage;
-pub mod builtin_offsetof;
+
 pub mod codegen_cast_init;
 pub mod codegen_regr;
 pub mod driver_defines;
@@ -82,10 +76,6 @@ pub mod mir_gen_sizeof;
 pub mod mir_unit;
 pub mod mir_validation;
 pub mod parser_type_conflict;
-pub mod pp_expand_tokens_coverage;
-pub mod pp_expect_eod;
-pub mod pp_mod_div;
-pub mod pp_u8_literal;
 pub mod semantic_assignment_coverage;
 pub mod semantic_atomic;
 pub mod semantic_brace_elision;

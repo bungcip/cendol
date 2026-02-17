@@ -1,6 +1,280 @@
-use crate::tests::pp_common::{setup_multi_file_pp_snapshot, setup_pp_snapshot};
+use crate::tests::pp_common::{setup_multi_file_pp_snapshot, setup_pp_snapshot, setup_pp_snapshot_with_diags};
 
-// Preprocessor Expression and Conditional tests
+// ifdef / ifndef Basic Tests
+#[test]
+fn test_ifdef_defined() {
+    let src = r#"
+#define FOO
+#ifdef FOO
+OK
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_ifdef_undefined() {
+    let src = r#"
+#ifdef FOO
+FAIL
+#endif
+OK
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_ifndef_defined() {
+    let src = r#"
+#define FOO
+#ifndef FOO
+FAIL
+#endif
+OK
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_ifndef_undefined() {
+    let src = r#"
+#ifndef FOO
+OK
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_ifdef_else_defined() {
+    let src = r#"
+#define FOO
+#ifdef FOO
+OK
+#else
+FAIL
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_ifdef_else_undefined() {
+    let src = r#"
+#ifdef FOO
+FAIL
+#else
+OK
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_nested_ifdef() {
+    let src = r#"
+#define FOO
+#define BAR
+#ifdef FOO
+  #ifdef BAR
+    OK
+  #endif
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_nested_ifdef_mixed() {
+    let src = r#"
+#define FOO
+#ifdef FOO
+  #ifdef BAR
+    FAIL
+  #else
+    OK
+  #endif
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_ifdef_elif_chain() {
+    let src = r#"
+#ifdef FOO
+FAIL
+#elif 1
+OK
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+// elif Tests
+#[test]
+fn test_elif_basic_true() {
+    let src = r#"
+#if 0
+FAIL
+#elif 1
+OK
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_elif_basic_false() {
+    let src = r#"
+#if 0
+FAIL
+#elif 0
+FAIL
+#else
+OK
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_elif_skipped() {
+    let src = r#"
+#if 1
+OK
+#elif 1
+FAIL
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_multiple_elifs() {
+    let src = r#"
+#if 0
+FAIL_1
+#elif 0
+FAIL_2
+#elif 1
+OK
+#elif 1
+FAIL_3
+#else
+FAIL_4
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_elif_after_else() {
+    let src = r#"
+#if 0
+#else
+#elif 1
+#endif
+"#;
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ElifAfterElse, span: SourceSpan(2199023255566) }""#);
+}
+
+#[test]
+fn test_elif_without_if() {
+    let src = r#"
+#elif 1
+"#;
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ElifWithoutIf, span: SourceSpan(2199023255554) }""#);
+}
+
+#[test]
+fn test_nested_elif_skipped() {
+    let src = r#"
+#if 0
+  #if 1
+    FAIL_1
+  #elif 1
+    FAIL_2
+  #else
+    FAIL_3
+  #endif
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @"[]");
+}
+
+#[test]
+fn test_nested_elif_skipped_expression_not_evaluated() {
+    let src = r#"
+#if 0
+  #if 1
+    FAIL
+  #elif 1/0
+    FAIL
+  #endif
+#endif
+"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(tokens, @"[]");
+    insta::assert_yaml_snapshot!(diags, @"[]");
+}
+
+// Expression Evaluation Tests
 #[test]
 fn test_pp_arithmetic_ops() {
     let src = r#"
@@ -52,7 +326,6 @@ OK
     ");
 }
 
-// Unsigned Arithmetic
 #[test]
 fn test_pp_unsigned_arithmetic() {
     let src = r#"
@@ -75,7 +348,6 @@ OK
     ");
 }
 
-// __has_include
 #[test]
 fn test_has_include_builtin() {
     let src = r#"
@@ -110,7 +382,6 @@ OK
     ");
 }
 
-// Conditional Operator
 #[test]
 fn test_pp_conditional_op() {
     let src = r#"
@@ -300,7 +571,6 @@ FAIL_SIGNED_COMPARE
     ");
 }
 
-// Unary Operators
 #[test]
 fn test_pp_unary_ops() {
     let src = r#"
@@ -440,4 +710,93 @@ FAIL_MOD_OVERFLOW
     - kind: Identifier
       text: OK_MOD_OVERFLOW
     ");
+}
+
+// Division and Modulo Tests
+#[test]
+fn test_pp_div_unsigned() {
+    let src = r#"
+#if 10U / 2U == 5U
+OK
+#else
+FAIL
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_pp_div_signed() {
+    let src = r#"
+#if -10 / 2 == -5
+OK
+#else
+FAIL
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_pp_div_zero() {
+    let src = r#"
+#if 1 / 0
+OK
+#endif
+"#;
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    assert!(!diags.is_empty());
+    assert!(diags[0].contains("Invalid conditional expression"));
+}
+
+#[test]
+fn test_pp_mod_unsigned() {
+    let src = r#"
+#if 10U % 3U == 1U
+OK
+#else
+FAIL
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_pp_mod_signed() {
+    let src = r#"
+#if -10 % 3 == -1
+OK
+#else
+FAIL
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_pp_mod_zero() {
+    let src = r#"
+#if 1 % 0
+OK
+#endif
+"#;
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    assert!(!diags.is_empty());
+    assert!(diags[0].contains("Invalid conditional expression"));
 }

@@ -595,11 +595,9 @@ impl<'src> Preprocessor<'src> {
         let value_str = value.unwrap_or("1");
 
         // Create a buffer for the macro value
-        let source_id = self.sm.add_buffer(
-            value_str.as_bytes().to_vec(),
-            "<command-line>",
-            None,
-        );
+        let source_id = self
+            .sm
+            .add_buffer(value_str.as_bytes().to_vec(), "<command-line>", None);
         let buffer = self.sm.get_buffer_arc(source_id);
         let mut lexer = PPLexer::new(source_id, buffer);
 

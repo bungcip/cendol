@@ -8,14 +8,12 @@ fn test_atomic_qualifier_constraints() {
     // 1. Array type (via typedef)
     run_fail_with_message(
         "typedef int arr[10]; _Atomic arr x;",
-        CompilePhase::SemanticLowering,
         "_Atomic qualifier cannot be used with array type",
     );
 
     // 2. Function type (via typedef)
     run_fail_with_message(
         "typedef void func(void); _Atomic func f;",
-        CompilePhase::SemanticLowering,
         "_Atomic qualifier cannot be used with function type",
     );
 
@@ -31,42 +29,36 @@ fn test_atomic_specifier_constraints() {
     // 1. Array type
     run_fail_with_message(
         "_Atomic(int [10]) b;",
-        CompilePhase::SemanticLowering,
         "_Atomic(type-name) specifier cannot be used with array type",
     );
 
     // 2. Function type
     run_fail_with_message(
         "_Atomic(void(void)) f;",
-        CompilePhase::SemanticLowering,
         "_Atomic(type-name) specifier cannot be used with function type",
     );
 
     // 3. Atomic type
     run_fail_with_message(
         "_Atomic(_Atomic int) d;",
-        CompilePhase::SemanticLowering,
         "_Atomic(type-name) specifier cannot be used with atomic type",
     );
 
     // 4. Qualified type (const)
     run_fail_with_message(
         "_Atomic(const int) c;",
-        CompilePhase::SemanticLowering,
         "_Atomic(type-name) specifier cannot be used with qualified type",
     );
 
     // 5. Qualified type (volatile)
     run_fail_with_message(
         "_Atomic(volatile int) v;",
-        CompilePhase::SemanticLowering,
         "_Atomic(type-name) specifier cannot be used with qualified type",
     );
 
     // 6. Nested specifier (should be caught as atomic type)
     run_fail_with_message(
         "_Atomic(_Atomic(int)) nested;",
-        CompilePhase::SemanticLowering,
         "_Atomic(type-name) specifier cannot be used with atomic type",
     );
 }
@@ -79,7 +71,6 @@ fn test_atomic_specifier_success() {
     // Verify that _Atomic(int) x; results in an atomic type by trying to apply it again via typedef
     run_fail_with_message(
         "typedef _Atomic(int) atomic_int; _Atomic(atomic_int) y;",
-        CompilePhase::SemanticLowering,
         "_Atomic(type-name) specifier cannot be used with atomic type",
     );
 }

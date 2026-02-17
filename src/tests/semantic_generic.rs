@@ -10,7 +10,6 @@ fn test_generic_controlling_expression_must_be_complete() {
             return _Generic(foo(), default: 1);
         }
         "#,
-        CompilePhase::Mir,
         "controlling expression type 'void' is an incomplete type",
     );
 }
@@ -24,7 +23,6 @@ fn test_generic_controlling_expression_incomplete_struct() {
             _Generic(*p, default: 1);
         }
         "#,
-        CompilePhase::Mir,
         "controlling expression type 'struct A' is an incomplete type",
     );
 }
@@ -38,7 +36,6 @@ fn test_generic_association_must_be_complete() {
             return _Generic(0, struct Incomplete: 1, default: 0);
         }
         "#,
-        CompilePhase::Mir,
         "generic association specifies incomplete type 'struct Incomplete'",
     );
 }
@@ -51,7 +48,6 @@ fn test_generic_association_void_is_incomplete() {
             return _Generic(0, void: 1, default: 0);
         }
         "#,
-        CompilePhase::Mir,
         "generic association specifies incomplete type 'void'",
     );
 }
@@ -157,7 +153,6 @@ fn test_generic_selection_rejects_multiple_defaults() {
             return _Generic(0, default: 0, default: 1);
         }
         "#,
-        CompilePhase::Mir,
         "duplicate default association",
     );
 }
@@ -170,7 +165,6 @@ fn test_generic_selection_rejects_duplicate_types() {
             return _Generic(0, int: 0, int: 1);
         }
         "#,
-        CompilePhase::Mir,
         "compatible with previously specified type 'int'",
     );
 }
@@ -184,7 +178,6 @@ fn test_generic_selection_rejects_multiple_matches_even_if_controlling_is_differ
             return _Generic(1.0f, int: 0, int: 1, default: 2);
         }
         "#,
-        CompilePhase::Mir,
         "compatible with previously specified type 'int'",
     );
 }
@@ -228,7 +221,6 @@ fn test_generic_selection_invalid_type_name() {
         return 0;
     }
     "#,
-        CompilePhase::Mir,
         "Unexpected token: expected declaration specifiers",
     );
 }
@@ -243,7 +235,6 @@ fn test_generic_selection_no_match() {
         return 0;
     }
     "#,
-        CompilePhase::Mir,
         "controlling expression type 'float' not compatible with any generic association",
     );
 }

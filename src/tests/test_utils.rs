@@ -73,8 +73,8 @@ pub(crate) fn run_fail(source: &str, phase: CompilePhase) -> CompilerDriver {
     driver
 }
 
-pub(crate) fn run_fail_with_message(source: &str, phase: CompilePhase, message: &str) {
-    let driver = run_fail(source, phase);
+pub(crate) fn run_fail_with_message(source: &str, message: &str) {
+    let driver = run_fail(source, CompilePhase::Mir);
     check_diagnostic_message_only(&driver, message);
 }
 

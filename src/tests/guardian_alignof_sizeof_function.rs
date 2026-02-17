@@ -1,4 +1,3 @@
-use crate::driver::artifact::CompilePhase;
 use crate::tests::test_utils::run_fail_with_message;
 
 #[test]
@@ -10,7 +9,6 @@ fn test_sizeof_function_type_name() {
             return sizeof(int(int));
         }
         "#,
-        CompilePhase::Mir,
         "Invalid application of 'sizeof' to a function type",
     );
 }
@@ -24,7 +22,6 @@ fn test_alignof_function_type_name() {
             return _Alignof(int(int));
         }
         "#,
-        CompilePhase::Mir,
         "Invalid application of '_Alignof' to a function type",
     );
 }
@@ -38,7 +35,6 @@ fn test_alignof_incomplete_type_name() {
             return _Alignof(void);
         }
         "#,
-        CompilePhase::Mir,
         "Invalid application of '_Alignof' to an incomplete type",
     );
 }
@@ -52,7 +48,6 @@ fn test_alignof_incomplete_struct_name() {
             return _Alignof(struct S);
         }
         "#,
-        CompilePhase::Mir,
         "Invalid application of '_Alignof' to an incomplete type",
     );
 }

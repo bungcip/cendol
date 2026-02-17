@@ -19,7 +19,6 @@ fn test_typedef_redefinition_different_type() {
         typedef int T;
         typedef float T;
         "#,
-        CompilePhase::SemanticLowering,
         "redefinition of 'T' with a different type",
     );
 }
@@ -33,7 +32,6 @@ fn test_typedef_redefinition_compatible_but_not_same() {
         typedef int A[];
         typedef int A[10];
         "#,
-        CompilePhase::SemanticLowering,
         "redefinition of 'A' with a different type",
     );
 }
@@ -48,7 +46,6 @@ fn test_typedef_redefinition_defines_new_struct() {
         typedef struct { int x; } S;
         typedef struct { int x; } S;
         "#,
-        CompilePhase::SemanticLowering,
         "redefinition of 'S'",
     );
 }
@@ -84,7 +81,6 @@ fn test_typedef_redefinition_function_params_different_type_rejects() {
         typedef int (*F)(int a);
         typedef int (*F)(float b);
         "#,
-        CompilePhase::SemanticLowering,
         "redefinition of 'F' with a different type",
     );
 }

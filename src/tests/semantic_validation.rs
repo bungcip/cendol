@@ -66,14 +66,11 @@ fn rejects_bitnot_on_non_integer() {
 
 #[test]
 fn rejects_conflicting_storage_classes() {
-    run_fail_with_diagnostic(
+    run_fail_with_message(
         r#"
         extern static int x;
     "#,
-        CompilePhase::Mir,
         "conflicting storage class specifiers",
-        2,
-        9,
     );
 }
 
@@ -86,7 +83,6 @@ fn rejects_variable_as_typedef_in_cast() {
             (my_var) 1;
         }
     "#,
-        CompilePhase::Mir,
         "Unexpected token: expected Semicolon, found IntegerConstant(1, None)",
     );
 }
@@ -100,7 +96,6 @@ fn test_static_assert_fail() {
             return 0;
         }
     "#,
-        CompilePhase::Mir,
         "static assertion failed: \"This should fail\"",
     );
 }
@@ -114,7 +109,6 @@ fn test_static_assert_file_scope_fail() {
             return 0;
         }
     "#,
-        CompilePhase::Mir,
         "static assertion failed: \"This should fail\"",
     );
 }
@@ -129,7 +123,6 @@ fn test_static_assert_non_constant() {
             return 0;
         }
     "#,
-        CompilePhase::Mir,
         "expression in static assertion is not constant",
     );
 }

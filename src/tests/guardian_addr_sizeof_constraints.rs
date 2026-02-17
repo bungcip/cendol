@@ -1,4 +1,3 @@
-use crate::driver::artifact::CompilePhase;
 use crate::tests::test_utils::run_fail_with_message;
 
 #[test]
@@ -13,7 +12,6 @@ fn test_address_of_bitfield_prohibited() {
             return 0;
         }
         "#,
-        CompilePhase::Mir,
         "cannot take address of bit-field",
     );
 }
@@ -29,7 +27,6 @@ fn test_address_of_register_prohibited() {
             return 0;
         }
         "#,
-        CompilePhase::Mir,
         "cannot take address of 'register' variable",
     );
 }
@@ -45,7 +42,6 @@ fn test_sizeof_bitfield_prohibited() {
             return sizeof(s.x);
         }
         "#,
-        CompilePhase::Mir,
         "cannot apply 'sizeof' to a bit-field",
     );
 }
@@ -61,7 +57,6 @@ fn test_address_of_bitfield_in_generic_prohibited() {
             return 0;
         }
         "#,
-        CompilePhase::Mir,
         "cannot take address of bit-field",
     );
 }
@@ -76,7 +71,6 @@ fn test_sizeof_bitfield_in_generic_prohibited() {
             return sizeof(_Generic(0, int: s.x));
         }
         "#,
-        CompilePhase::Mir,
         "cannot apply 'sizeof' to a bit-field",
     );
 }

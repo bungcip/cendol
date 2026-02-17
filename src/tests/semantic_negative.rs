@@ -12,7 +12,6 @@ fn test_assignment_to_const() {
             y = x;
         }
         "#,
-        CompilePhase::Mir,
         "read-only",
     );
 }
@@ -27,7 +26,6 @@ fn test_assignment_to_deref_const_ptr() {
             *p = 2;
         }
         "#,
-        CompilePhase::Mir,
         "read-only",
     );
 }
@@ -41,7 +39,6 @@ fn test_increment_const() {
             x++;
         }
         "#,
-        CompilePhase::Mir,
         "read-only",
     );
 }
@@ -55,7 +52,6 @@ fn test_void_function_return_value() {
             return 1;
         }
         "#,
-        CompilePhase::Mir,
         "void function",
     );
 }
@@ -69,7 +65,6 @@ fn test_conflicting_function_decl() {
         int foo(double x);
         int main() { return 0; }
         "#,
-        CompilePhase::Mir,
         "conflicting types",
     );
 }
@@ -83,7 +78,6 @@ fn test_addrof_rvalue() {
             int *p = &(1 + 2);
         }
         "#,
-        CompilePhase::Mir,
         "lvalue",
     );
 }
@@ -98,7 +92,6 @@ fn test_deref_incomplete_type() {
             p->x = 1;
         }
         "#,
-        CompilePhase::Mir,
         "incomplete type",
     );
 }
@@ -137,7 +130,6 @@ fn test_duplicate_member() {
             float x;
         };
         "#,
-        CompilePhase::Mir,
         "duplicate member",
     );
 }
@@ -152,7 +144,6 @@ fn test_flexible_array_not_last() {
             int y;
         };
         "#,
-        CompilePhase::Mir,
         "flexible array",
     );
 }
@@ -165,7 +156,6 @@ fn test_bitfield_invalid_type() {
             float x : 3;
         };
         "#,
-        CompilePhase::Mir,
         "bit-field",
     );
 }
@@ -181,7 +171,6 @@ fn test_enum_redefinition_enumerator() {
             A
         };
         "#,
-        CompilePhase::Mir,
         "redefinition",
     );
 }
@@ -195,7 +184,6 @@ fn test_enumerator_outside_enum() {
             int x = C;
         }
         "#,
-        CompilePhase::Mir,
         "Undeclared",
     );
 }
@@ -210,7 +198,6 @@ fn test_array_of_incomplete_type() {
             struct A arr[10];
         }
         "#,
-        CompilePhase::Mir,
         "incomplete type",
     );
 }
@@ -223,7 +210,6 @@ fn test_negative_array_size() {
             int a[-1];
         }
         "#,
-        CompilePhase::Mir,
         "size of array has non-positive value",
     );
 }
@@ -238,7 +224,6 @@ fn test_case_outside_switch() {
                 break;
         }
         "#,
-        CompilePhase::Mir,
         "not in switch",
     );
 }
@@ -254,7 +239,6 @@ fn test_duplicate_case() {
             }
         }
         "#,
-        CompilePhase::Mir,
         "duplicate case",
     );
 }
@@ -269,7 +253,6 @@ fn test_designated_init_field_not_found() {
             struct A a = {.y = 1};
         }
         "#,
-        CompilePhase::Mir,
         "no member named",
     );
 }
@@ -282,7 +265,6 @@ fn test_scalar_init_brace_list() {
             int x = {1, 2};
         }
         "#,
-        CompilePhase::Mir,
         "excess elements",
     );
 }
@@ -295,7 +277,6 @@ fn test_global_variable_redefinition() {
         int x = 5;
         int x = 10;
         "#,
-        CompilePhase::SemanticLowering,
         "redefinition of",
     );
 }
@@ -308,7 +289,6 @@ fn test_extern_init_block_scope() {
             extern int x = 10;
         }
         "#,
-        CompilePhase::Mir,
         "invalid initializer",
     );
 }
@@ -323,7 +303,6 @@ fn test_sizeof_function_type() {
             int x = sizeof(foo);
         }
         "#,
-        CompilePhase::Mir,
         "Invalid application of 'sizeof' to a function type",
     );
 }
@@ -336,7 +315,6 @@ fn test_invalid_restrict() {
             int restrict x;
         }
         "#,
-        CompilePhase::Mir,
         "restrict",
     );
 }
@@ -350,7 +328,6 @@ fn test_call_non_function() {
             x();
         }
         "#,
-        CompilePhase::Mir,
         "called object type 'int' is not a function or function pointer",
     );
 }
@@ -361,7 +338,6 @@ fn test_multiple_storage_class_specifiers() {
         r#"
         typedef static int my_int;
         "#,
-        CompilePhase::SemanticLowering,
         "conflicting storage class specifiers",
     );
 }
@@ -374,7 +350,6 @@ fn test_recursive_struct_definition() {
             struct A x;
         };
         "#,
-        CompilePhase::SemanticLowering,
         "recursive type definition",
     );
 }
@@ -387,7 +362,6 @@ fn test_incomplete_array_in_union() {
             int x[];
         };
         "#,
-        CompilePhase::Mir,
         "incomplete/VLA array in union",
     );
 }
@@ -398,7 +372,6 @@ fn test_variable_of_void_type() {
         r#"
         void x;
         "#,
-        CompilePhase::Mir,
         "variable has incomplete type 'void'",
     );
 }
@@ -409,7 +382,6 @@ fn test_invalid_alignas_non_power_of_two() {
         r#"
         _Alignas(3) int x;
         "#,
-        CompilePhase::SemanticLowering,
         "requested alignment is not a positive power of 2",
     );
 }
@@ -424,7 +396,6 @@ fn test_sizeof_incomplete_struct() {
             int x = sizeof(struct S);
         }
         "#,
-        CompilePhase::Mir,
         "Invalid application of 'sizeof' to an incomplete type",
     );
 }
@@ -438,7 +409,6 @@ fn test_break_outside_loop() {
             break;
         }
         "#,
-        CompilePhase::Mir,
         "break statement not in loop or switch",
     );
 }
@@ -451,7 +421,6 @@ fn test_continue_outside_loop() {
             continue;
         }
         "#,
-        CompilePhase::Mir,
         "continue statement not in loop",
     );
 }
@@ -466,7 +435,6 @@ fn test_invalid_use_of_void_in_expr() {
             int x = foo();
         }
         "#,
-        CompilePhase::Mir,
         "void",
     );
 }
@@ -483,7 +451,6 @@ fn test_member_access_on_non_struct() {
             x.field = 10;
         }
         "#,
-        CompilePhase::Mir,
         "not a structure or union",
     );
 }
@@ -498,17 +465,9 @@ fn test_non_constant_alignment() {
             _Alignas(x) int arr[10];
         }
         "#,
-        CompilePhase::SemanticLowering,
         "not a constant expression",
     );
 }
-
-// NOTE: Atomic type validation is not yet fully implemented
-// These tests would fail to reject invalid atomic usage
-
-// NOTE: _Noreturn function tests are in semantic_functions.rs
-
-// Q. Additional Type Constraints
 
 #[test]
 fn test_incomplete_return_type() {
@@ -517,15 +476,10 @@ fn test_incomplete_return_type() {
         struct S;
         struct S foo();
         "#,
-        CompilePhase::Mir,
         "incomplete return type",
     );
 }
 
-// NOTE: Missing return statements in non-void functions are currently not detected
-// This is a warning in C, and not yet implemented in this compiler
-
-// Q. Additional Type Constraints
 #[test]
 fn test_flexible_array_in_empty_struct() {
     run_fail_with_message(
@@ -534,12 +488,9 @@ fn test_flexible_array_in_empty_struct() {
             int arr[];
         };
         "#,
-        CompilePhase::Mir,
         "flexible array member in otherwise empty structure",
     );
 }
-
-// Note: test_incomplete_array_in_union already exists above
 
 // R. Bitfield Edge Cases
 #[test]
@@ -550,7 +501,6 @@ fn test_bitfield_zero_width() {
             int x : 0;
         };
         "#,
-        CompilePhase::Mir,
         "zero-width bit-field shall not specify a declarator",
     );
 }
@@ -566,7 +516,6 @@ fn test_bitfield_non_constant_width() {
             } a;
         }
         "#,
-        CompilePhase::Mir,
         "bit-field width is not a constant expression",
     );
 }
@@ -580,7 +529,6 @@ fn test_undeclared_variable() {
             x = 5;
         }
         "#,
-        CompilePhase::Mir,
         "Undeclared",
     );
 }
@@ -593,7 +541,6 @@ fn test_undeclared_function() {
             return foo();
         }
         "#,
-        CompilePhase::Mir,
         "Undeclared",
     );
 }

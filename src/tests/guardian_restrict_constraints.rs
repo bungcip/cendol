@@ -1,4 +1,3 @@
-use crate::driver::artifact::CompilePhase;
 use crate::tests::test_utils::run_fail_with_message;
 
 #[test]
@@ -10,7 +9,6 @@ fn test_restrict_on_function_pointer_prohibited() {
         r#"
         void (* restrict f)(void);
         "#,
-        CompilePhase::Mir,
         "restrict requires a pointer type",
     );
 }
@@ -21,7 +19,6 @@ fn test_restrict_on_non_pointer_prohibited() {
         r#"
         int restrict x;
         "#,
-        CompilePhase::Mir,
         "restrict requires a pointer type",
     );
 }

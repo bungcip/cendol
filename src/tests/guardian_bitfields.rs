@@ -16,7 +16,6 @@ fn test_bitfield_width_exceeds_type() {
     // C11 6.7.2.1p4: "... does not exceed the width of an object of the type..."
     run_fail_with_message(
         r#"struct S { char c : 9; };"#,
-        CompilePhase::Mir,
         "width of bit-field (9 bits) exceeds width of its type (8 bits)",
     );
 }
@@ -26,7 +25,6 @@ fn test_named_bitfield_zero_width() {
     // C11 6.7.2.1p12: "An unnamed bit-field with a width of 0 shall not specify a declarator..."
     run_fail_with_message(
         r#"struct S { int x : 0; };"#,
-        CompilePhase::Mir,
         "zero-width bit-field shall not specify a declarator",
     );
 }

@@ -8,7 +8,6 @@ fn test_extern_followed_by_static_variable_mismatch() {
         extern int x;
         static int x;
         "#,
-        CompilePhase::SemanticLowering,
         "conflicting linkage",
     );
 }
@@ -57,7 +56,6 @@ fn test_plain_followed_by_static_variable_mismatch() {
         int x;
         static int x;
         "#,
-        CompilePhase::SemanticLowering,
         "conflicting linkage",
     );
 }
@@ -80,7 +78,6 @@ fn test_extern_followed_by_static_function_mismatch() {
         extern void f(void);
         static void f(void) {}
         "#,
-        CompilePhase::SemanticLowering,
         "conflicting linkage",
     );
 }

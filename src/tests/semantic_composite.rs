@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::run_pass;
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn test_array_completion_composite() {
@@ -31,13 +31,11 @@ fn test_array_of_pointers_composite() {
 
 #[test]
 fn test_conflicting_array_composite() {
-    use crate::tests::test_utils::run_fail_with_message;
     run_fail_with_message(
         r#"
         extern int a[5];
         extern int a[10];
         "#,
-        CompilePhase::SemanticLowering,
         "conflicting types",
     );
 }

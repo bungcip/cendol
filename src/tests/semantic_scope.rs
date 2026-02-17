@@ -177,7 +177,6 @@ fn rejects_variable_declaration_conflicting_with_typedef() {
 typedef int T;
 int T;
         "#,
-        CompilePhase::Mir,
         "redefinition of 'T'",
     );
 }
@@ -189,7 +188,6 @@ fn rejects_typedef_declaration_conflicting_with_variable() {
 int T;
 typedef int T;
         "#,
-        CompilePhase::Mir,
         "redefinition of 'T'",
     );
 }
@@ -201,7 +199,6 @@ fn rejects_extern_variable_declaration_conflicting_with_typedef() {
 typedef int T;
 extern int T;
         "#,
-        CompilePhase::Mir,
         "redefinition of 'T'",
     );
 }

@@ -5,48 +5,23 @@ use crate::tests::test_utils::{run_fail_with_message, run_pass};
 fn guards_incomplete_types_in_declarations() {
     // 1. Tentative definitions with internal linkage (C11 6.9.2p3)
     // Shall not be an incomplete type.
-    run_fail_with_message(
-        "static int arr[];",
-        CompilePhase::SemanticLowering,
-        "incomplete type 'int[]'",
-    );
-    run_fail_with_message(
-        "struct S; static struct S x;",
-        CompilePhase::SemanticLowering,
-        "incomplete type 'struct S'",
-    );
+    run_fail_with_message("static int arr[];", "incomplete type 'int[]'");
+    run_fail_with_message("struct S; static struct S x;", "incomplete type 'struct S'");
 
     // 2. Objects with no linkage (C11 6.7p7)
     // Shall be complete by the end of its declarator.
-    run_fail_with_message(
-        "void f() { int arr[]; }",
-        CompilePhase::SemanticLowering,
-        "incomplete type 'int[]'",
-    );
-    run_fail_with_message(
-        "void f() { static int arr[]; }",
-        CompilePhase::SemanticLowering,
-        "incomplete type 'int[]'",
-    );
+    run_fail_with_message("void f() { int arr[]; }", "incomplete type 'int[]'");
+    run_fail_with_message("void f() { static int arr[]; }", "incomplete type 'int[]'");
     run_fail_with_message(
         "void f() { struct S; static struct S x; }",
-        CompilePhase::SemanticLowering,
         "incomplete type 'struct S'",
     );
 
     // 3. Function parameters in definitions (C11 6.7.6.3p4)
     // After adjustment, parameters shall not have incomplete type.
-    run_fail_with_message(
-        "void f(void x) {}",
-        CompilePhase::SemanticLowering,
-        "incomplete type 'void'",
-    );
+    run_fail_with_message("void f(void x) {}", "incomplete type 'void'");
     // Note: void y in a definition is also invalid if not (void)
-    run_fail_with_message(
-        "void f(int x, void y) {}",
-        CompilePhase::SemanticLowering,
-        "incomplete type 'void'",
-    );
+    run_fail_with_message("void f(int x, void y) {}", "incomplete type 'void'");
 
     // --- Valid cases that must continue to pass ---
 

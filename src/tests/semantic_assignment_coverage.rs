@@ -1,0 +1,74 @@
+use super::semantic_common::setup_mir;
+
+#[test]
+fn test_compound_assignments() {
+    let source = r#"
+        int main() {
+            int a = 10;
+            int b = 3;
+
+            a += b;
+            a -= b;
+            a *= b;
+            a /= b;
+            a %= b;
+
+            a <<= b;
+            a >>= b;
+
+            a &= b;
+            a ^= b;
+            a |= b;
+
+            return a;
+        }
+    "#;
+
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
+    type %t0 = i32
+
+    fn main() -> i32
+    {
+      locals {
+        %a: i32
+        %b: i32
+        %3: i32
+        %4: i32
+        %5: i32
+        %6: i32
+        %7: i32
+        %8: i32
+        %9: i32
+        %10: i32
+        %11: i32
+        %12: i32
+      }
+
+      bb1:
+        %a = const 10
+        %b = const 3
+        %3 = %a + %b
+        %a = %3
+        %4 = %a - %b
+        %a = %4
+        %5 = %a * %b
+        %a = %5
+        %6 = %a / %b
+        %a = %6
+        %7 = %a % %b
+        %a = %7
+        %8 = %a << %b
+        %a = %8
+        %9 = %a >> %b
+        %a = %9
+        %10 = %a & %b
+        %a = %10
+        %11 = %a ^ %b
+        %a = %11
+        %12 = %a | %b
+        %a = %12
+        return %a
+    }
+    ");
+}

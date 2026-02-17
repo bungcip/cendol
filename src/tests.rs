@@ -85,6 +85,7 @@ pub mod pp_expand_tokens_coverage;
 pub mod pp_expect_eod;
 pub mod pp_mod_div;
 pub mod pp_u8_literal;
+pub mod semantic_assignment_coverage;
 pub mod semantic_atomic;
 pub mod semantic_brace_elision;
 pub mod semantic_complex_types;

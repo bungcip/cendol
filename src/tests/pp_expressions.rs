@@ -396,3 +396,48 @@ FAIL_INDIRECT_LOCAL
       text: OK_INDIRECT_LOCAL
     "#);
 }
+
+#[test]
+fn test_pp_arithmetic_edge_cases() {
+    let src = r#"
+/* Division by zero */
+#if 1 / 0
+FAIL_DIV_ZERO
+#else
+OK_DIV_ZERO
+#endif
+
+/* Modulo by zero */
+#if 1 % 0
+FAIL_MOD_ZERO
+#else
+OK_MOD_ZERO
+#endif
+
+/* Signed overflow division: INT64_MIN / -1 */
+/* -9223372036854775807 - 1 constructs INT64_MIN as signed */
+#if ((-9223372036854775807 - 1) / -1) == (-9223372036854775807 - 1)
+OK_DIV_OVERFLOW
+#else
+FAIL_DIV_OVERFLOW
+#endif
+
+/* Signed overflow modulo: INT64_MIN % -1 */
+#if ((-9223372036854775807 - 1) % -1) == 0
+OK_MOD_OVERFLOW
+#else
+FAIL_MOD_OVERFLOW
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: OK_DIV_ZERO
+    - kind: Identifier
+      text: OK_MOD_ZERO
+    - kind: Identifier
+      text: OK_DIV_OVERFLOW
+    - kind: Identifier
+      text: OK_MOD_OVERFLOW
+    "#);
+}

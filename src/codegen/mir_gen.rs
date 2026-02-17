@@ -626,8 +626,8 @@ impl<'a> MirGen<'a> {
             let block = self.mir_builder.create_block();
             self.switch_case_map.insert(node, block);
 
-            if let Some((start_val_id, end_val_id)) = val_opt {
-                case_blocks.push((start_val_id, end_val_id, block));
+            if let Some(val) = val_opt {
+                case_blocks.push((val, block));
             } else {
                 default_block = Some(block);
             }
@@ -636,47 +636,33 @@ impl<'a> MirGen<'a> {
         // Generate dispatch
         let fallback_block = default_block.unwrap_or(merge_block);
 
-        for (start_val_id, end_val_id, target_block) in case_blocks {
+        for (val_id, target_block) in case_blocks {
             let next_test_block = self.mir_builder.create_block();
-            
-            let start_val_const = self.mir_builder.get_constants().get(&start_val_id).unwrap().clone();
-            let end_val_const = self.mir_builder.get_constants().get(&end_val_id).unwrap().clone();
+            let val_const = self.mir_builder.get_constants().get(&val_id).unwrap().clone();
 
-            // Re-create constants with the same type as condition to ensure safe comparison
-            let start_val_op = Operand::Constant(start_val_id);
-            let cast_start_val_op = if start_val_const.ty != cond_ty_id {
-                Operand::Cast(cond_ty_id, Box::new(start_val_op))
+            // Re-create constant with the same type as condition to ensure safe comparison
+            // This assumes the values are compatible (integral).
+            // Sema should ensure they are compatible.
+            // We just cast the constant value to the condition type for the comparison operand.
+            // Note: `val_const` is already lowered to some type.
+
+            let val_op = Operand::Constant(val_id);
+            let cast_val_op = if val_const.ty != cond_ty_id {
+                Operand::Cast(cond_ty_id, Box::new(val_op))
             } else {
-                start_val_op
+                val_op
             };
 
-            let end_val_op = Operand::Constant(end_val_id);
-            let cast_end_val_op = if end_val_const.ty != cond_ty_id {
-                Operand::Cast(cond_ty_id, Box::new(end_val_op))
-            } else {
-                end_val_op
-            };
-
-            // Check if cond >= start_val and cond <= end_val
+            // Use Eq comparison
+            // If condition is float (illegal in C switch), we panic?
+            // Switch only works on integers.
+            let cmp_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Eq, cond_op.clone(), cast_val_op);
             let bool_type_id = self.lower_type(self.registry.type_bool);
-            
-            // cond >= start_val
-            let ge_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Ge, cond_op.clone(), cast_start_val_op);
-            let (_ge_local, ge_place) = self.create_temp_local_with_assignment(ge_rvalue, bool_type_id);
-            let ge_op = Operand::Copy(Box::new(ge_place));
-            
-            // cond <= end_val
-            let le_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Le, cond_op.clone(), cast_end_val_op);
-            let (_le_local, le_place) = self.create_temp_local_with_assignment(le_rvalue, bool_type_id);
-            let le_op = Operand::Copy(Box::new(le_place));
-            
-            // (cond >= start_val) && (cond <= end_val)
-            let and_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::LogicAnd, ge_op, le_op);
-            let (_and_local, and_place) = self.create_temp_local_with_assignment(and_rvalue, bool_type_id);
-            let and_op = Operand::Copy(Box::new(and_place));
+            let (_cmp_local, cmp_place) = self.create_temp_local_with_assignment(cmp_rvalue, bool_type_id);
+            let cmp_op = Operand::Copy(Box::new(cmp_place));
 
             self.mir_builder
-                .set_terminator(Terminator::If(and_op, target_block, next_test_block));
+                .set_terminator(Terminator::If(cmp_op, target_block, next_test_block));
 
             self.mir_builder.set_current_block(next_test_block);
             self.current_block = Some(next_test_block);
@@ -724,27 +710,19 @@ impl<'a> MirGen<'a> {
         self.visit_node(stmt);
     }
 
-    fn collect_switch_cases(&mut self, node: NodeRef) -> Vec<(NodeRef, Option<(ConstValueId, ConstValueId)>)> {
+    fn collect_switch_cases(&mut self, node: NodeRef) -> Vec<(NodeRef, Option<ConstValueId>)> {
         let mut cases = Vec::new();
         self.collect_switch_cases_recursive(node, &mut cases);
         cases
     }
 
-    fn collect_switch_cases_recursive(&mut self, node: NodeRef, cases: &mut Vec<(NodeRef, Option<(ConstValueId, ConstValueId)>)>) {
+    fn collect_switch_cases_recursive(&mut self, node: NodeRef, cases: &mut Vec<(NodeRef, Option<ConstValueId>)>) {
         let kind = *self.ast.get_kind(node);
         match kind {
             NodeKind::Case(expr, stmt) => {
                 let op = self.emit_expression(expr, true);
                 let val = self.operand_to_const_id_strict(op, "Case label must be constant");
-                cases.push((node, Some((val, val))));
-                self.collect_switch_cases_recursive(stmt, cases);
-            }
-            NodeKind::CaseRange(start_expr, end_expr, stmt) => {
-                let start_op = self.emit_expression(start_expr, true);
-                let start_val = self.operand_to_const_id_strict(start_op, "Case range start must be constant");
-                let end_op = self.emit_expression(end_expr, true);
-                let end_val = self.operand_to_const_id_strict(end_op, "Case range end must be constant");
-                cases.push((node, Some((start_val, end_val))));
+                cases.push((node, Some(val)));
                 self.collect_switch_cases_recursive(stmt, cases);
             }
             NodeKind::Default(stmt) => {

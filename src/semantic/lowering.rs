@@ -248,6 +248,21 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.diag.report(error);
     }
 
+    pub(crate) fn check_function_specifiers(&mut self, info: &DeclSpecInfo, span: SourceSpan) {
+        if info.is_inline {
+            self.report_error(SemanticError::InvalidFunctionSpecifier {
+                spec: "inline".to_string(),
+                span,
+            });
+        }
+        if info.is_noreturn {
+            self.report_error(SemanticError::InvalidFunctionSpecifier {
+                spec: "_Noreturn".to_string(),
+                span,
+            });
+        }
+    }
+
     pub(crate) fn merge_qualifiers_with_check(
         &mut self,
         base: QualType,
@@ -1232,18 +1247,7 @@ fn visit_function_parameters(
             }
 
             // Function specifiers are only allowed for functions
-            if spec_info.is_inline {
-                ctx.report_error(SemanticError::InvalidFunctionSpecifier {
-                    spec: "inline".to_string(),
-                    span,
-                });
-            }
-            if spec_info.is_noreturn {
-                ctx.report_error(SemanticError::InvalidFunctionSpecifier {
-                    spec: "_Noreturn".to_string(),
-                    span,
-                });
-            }
+            ctx.check_function_specifiers(&spec_info, span);
 
             FunctionParameter {
                 param_type: decayed_ty,
@@ -1896,6 +1900,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if let Some(data) = type_data {
             let node = self.get_or_push_slot(target_slots, span);
 
+            self.check_function_specifiers(spec_info, span);
+
             match data {
                 TypeData::Record(tag, members, is_union) => {
                     let member_start_idx = self.ast.kinds.len() as u32 + 1;
@@ -1986,6 +1992,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 });
             }
 
+            self.check_function_specifiers(spec_info, init.span);
+
             if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
                 self.symbol_table.define_typedef(name, final_ty, span)
             {
@@ -2014,18 +2022,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let is_func = final_ty.is_function();
 
         if !is_func {
-            if spec_info.is_inline {
-                self.report_error(SemanticError::InvalidFunctionSpecifier {
-                    spec: "inline".to_string(),
-                    span,
-                });
-            }
-            if spec_info.is_noreturn {
-                self.report_error(SemanticError::InvalidFunctionSpecifier {
-                    spec: "_Noreturn".to_string(),
-                    span,
-                });
-            }
+            self.check_function_specifiers(spec_info, span);
         }
 
         if is_func {
@@ -2998,6 +2995,8 @@ fn visit_struct_members(members: &[ParsedDeclarationData], ctx: &mut LowerCtx, s
                     span: init_declarator.span,
                 });
             }
+
+            ctx.check_function_specifiers(&spec_info, init_declarator.span);
 
             let member_name = extract_name(base_declarator);
 

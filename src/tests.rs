@@ -69,6 +69,7 @@ pub mod guardian_addr_sizeof_constraints;
 pub mod guardian_alignof_sizeof_function;
 pub mod guardian_array_parameter_qualifiers;
 pub mod guardian_bitfields;
+pub mod guardian_function_specifiers;
 pub mod guardian_linkage;
 pub mod guardian_parameter_storage;
 pub mod guardian_pointer_arithmetic;

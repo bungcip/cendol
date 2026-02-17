@@ -149,6 +149,7 @@ impl<'a> MirGen<'a> {
             NodeKind::Label(label_name, statement, _) => self.visit_label_stmt(&label_name, statement),
             NodeKind::Switch(cond, body) => self.visit_switch_stmt(cond, body),
             NodeKind::Case(_, stmt) => self.visit_case_default_stmt(node_ref, stmt),
+            NodeKind::CaseRange(_, _, stmt) => self.visit_case_default_stmt(node_ref, stmt),
             NodeKind::Default(stmt) => self.visit_case_default_stmt(node_ref, stmt),
 
             // Expressions used as statements (without ExpressionStatement wrapper)
@@ -723,6 +724,28 @@ impl<'a> MirGen<'a> {
                 let op = self.emit_expression(expr, true);
                 let val = self.operand_to_const_id_strict(op, "Case label must be constant");
                 cases.push((node, Some(val)));
+                self.collect_switch_cases_recursive(stmt, cases);
+            }
+            NodeKind::CaseRange(start, end, stmt) => {
+                let start_op = self.emit_expression(start, true);
+                let start_val = self.operand_to_const_id_strict(start_op, "Case range start must be constant");
+                let end_op = self.emit_expression(end, true);
+                let end_val = self.operand_to_const_id_strict(end_op, "Case range end must be constant");
+                
+                // Get the actual integer values from the constants
+                let start_const = self.mir_builder.get_constants().get(&start_val).unwrap();
+                let end_const = self.mir_builder.get_constants().get(&end_val).unwrap();
+                
+                if let (ConstValueKind::Int(start_i), ConstValueKind::Int(end_i)) = (start_const.kind.clone(), end_const.kind.clone()) {
+                    // Add all values in the range to the cases
+                    for val in start_i..=end_i {
+                        // Create a new constant for each value in the range
+                        let const_kind = ConstValueKind::Int(val);
+                        let const_id = self.create_constant(start_const.ty, const_kind);
+                        cases.push((node, Some(const_id)));
+                    }
+                }
+                
                 self.collect_switch_cases_recursive(stmt, cases);
             }
             NodeKind::Default(stmt) => {

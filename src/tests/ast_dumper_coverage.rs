@@ -472,12 +472,12 @@ fn test_type_registry_complex() {
     insta::assert_snapshot!(output, @r"
     === TypeRegistry (Used TypeRefs) ===
     TypeRef(8): int
-    TypeRef(24): <VLA>
+    TypeRef(24): int[*]
     TypeRef(22): void(int)
     TypeRef(25): void(int, ...)
     TypeRef(20): struct Point
     TypeRef(21): enum Color
-    TypeRef(23): _Complex
+    TypeRef(23): _Complex double
     ");
 }
 

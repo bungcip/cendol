@@ -380,6 +380,34 @@ impl MirType {
             _ => 0,                        // Others have no intrinsic "width" in this context
         }
     }
+
+    /// Truncate an integer value to the width of this type.
+    /// Handles sign extension if this is a signed type.
+    pub(crate) fn truncate_int(&self, val: i64) -> i64 {
+        if !self.is_int() && !self.is_pointer() {
+            return val;
+        }
+
+        let width = self.width();
+        if width >= 64 {
+            return val;
+        }
+
+        // Apply bitmask for the width
+        let mask = if width > 0 { (1u64 << width) - 1 } else { 0 };
+        let truncated = (val as u64) & mask;
+
+        if self.is_signed() {
+            // Sign-extend if the MSB of the truncated value is set
+            let sign_bit = 1u64 << (width - 1);
+            if (truncated & sign_bit) != 0 {
+                // To sign-extend, we set all bits above 'width' to 1
+                return (truncated | !mask) as i64;
+            }
+        }
+
+        truncated as i64
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

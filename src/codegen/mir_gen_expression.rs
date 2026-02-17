@@ -117,7 +117,11 @@ impl<'a> MirGen<'a> {
         ) && let Some(val) = eval_const_expr(&self.const_ctx(), expr_ref)
         {
             let ty_id = self.lower_qual_type(ty);
-            return Some(Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val))));
+            let mir_type = self.mir_builder.get_type(ty_id);
+            let truncated_val = mir_type.truncate_int(val);
+            return Some(Operand::Constant(
+                self.create_constant(ty_id, ConstValueKind::Int(truncated_val)),
+            ));
         }
         None
     }
@@ -234,6 +238,29 @@ impl<'a> MirGen<'a> {
         if self.get_operand_type(&operand) == mir_ty {
             return operand;
         }
+
+        // Fold constant casts if types are compatible
+        if let Some(const_id) = self.operand_to_const_id(&operand) {
+            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap().clone();
+            let mir_type = self.mir_builder.get_type(mir_ty);
+
+            let is_compatible = match (&const_val.kind, mir_type) {
+                (ConstValueKind::Int(_), t) => t.is_int() || t.is_pointer(),
+                (ConstValueKind::Float(_), t) => t.is_float(),
+                (ConstValueKind::GlobalAddress(_), t) => t.is_pointer() || t.is_int(),
+                (ConstValueKind::FunctionAddress(_), t) => t.is_pointer() || t.is_int(),
+                _ => false,
+            };
+
+            if is_compatible {
+                let truncated_kind = match const_val.kind {
+                    ConstValueKind::Int(val) => ConstValueKind::Int(mir_type.truncate_int(val)),
+                    kind => kind,
+                };
+                return Operand::Constant(self.create_constant(mir_ty, truncated_kind));
+            }
+        }
+
         Operand::Cast(mir_ty, Box::new(operand))
     }
 
@@ -424,8 +451,7 @@ impl<'a> MirGen<'a> {
             self.emit_expression(left_ref, false);
             let rhs = self.emit_expression(right_ref, true);
             // Apply conversions for RHS to match result type (comma result type is RHS type)
-            let rhs_converted = self.apply_conversions(rhs, right_ref, mir_ty);
-            return self.ensure_explicit_cast(rhs_converted, right_ref);
+            return self.apply_conversions(rhs, right_ref, mir_ty);
         }
 
         let lhs = self.emit_expression(left_ref, true);
@@ -475,8 +501,8 @@ impl<'a> MirGen<'a> {
         let (lhs_unified, rhs_unified) =
             self.unify_binary_operands(lhs_converted, rhs_converted, lhs_mir_ty, rhs_mir_ty);
 
-        let lhs_final = self.ensure_explicit_cast(lhs_unified, left_ref);
-        let rhs_final = self.ensure_explicit_cast(rhs_unified, right_ref);
+        let lhs_final = lhs_unified;
+        let rhs_final = rhs_unified;
 
         let common_ty = self.get_operand_type(&lhs_final);
 
@@ -494,20 +520,6 @@ impl<'a> MirGen<'a> {
         };
 
         (rval, result_ty)
-    }
-
-    fn ensure_explicit_cast(&mut self, operand: Operand, node_ref: NodeRef) -> Operand {
-        match operand {
-            Operand::Constant(_) => {
-                if let Some(ty) = self.ast.get_resolved_type(node_ref) {
-                    let mir_type_id = self.lower_qual_type(ty);
-                    Operand::Cast(mir_type_id, Box::new(operand))
-                } else {
-                    operand
-                }
-            }
-            _ => operand,
-        }
     }
 
     fn emit_bool_normalization(&mut self, value_op: Operand, result_place: Place, merge_block: crate::mir::MirBlockId) {

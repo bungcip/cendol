@@ -104,7 +104,7 @@ mod tests {
           }
 
           bb2:
-            %1 = @x != cast<i32>(const 3)
+            %1 = @x != const 3
             cond_br %1, bb3, bb4
 
           bb3:
@@ -122,7 +122,7 @@ mod tests {
         {
 
           bb1:
-            return cast<ptr<void>>(const main)
+            return const main
         }
         ");
     }

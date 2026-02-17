@@ -152,7 +152,7 @@ fn test_vla_ice_fix() {
         %3 = %param0
         %4 = %param0 + const -1
         %param0 = %4
-        %5 = %3 == cast<i32>(const 0)
+        %5 = %3 == const 0
         cond_br %5, bb6, bb7
 
       bb6:

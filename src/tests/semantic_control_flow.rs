@@ -80,7 +80,7 @@ fn test_for_loop_init_assignment() {
         br bb2
 
       bb2:
-        %2 = %i < cast<i32>(const 10)
+        %2 = %i < const 10
         cond_br %2, bb3, bb5
 
       bb3:

@@ -75,7 +75,7 @@ fn test_while_statement() {
         cond_br %steins, bb3, bb4
 
       bb3:
-        %2 = %steins - cast<i32>(const 1)
+        %2 = %steins - const 1
         %steins = %2
         br bb2
 
@@ -242,7 +242,7 @@ fn test_struct_type_regression() {
       }
 
       bb1:
-        %1 = @s.field_0 != cast<i32>(const 1)
+        %1 = @s.field_0 != const 1
         cond_br %1, bb2, bb3
 
       bb2:
@@ -283,10 +283,10 @@ fn test_long_long_comparison_crash() {
       }
 
       bb1:
-        %x = cast<i64>(const 0)
-        %2 = %x + cast<i64>(const 1)
+        %x = const 0
+        %2 = %x + const 1
         %x = %2
-        %3 = %x != cast<i64>(const 1)
+        %3 = %x != const 1
         cond_br %3, bb2, bb3
 
       bb2:
@@ -429,7 +429,7 @@ fn test_variable_shadowing() {
       bb1:
         %x = const 1
         %x = const 2
-        %3 = %x != cast<i32>(const 2)
+        %3 = %x != const 2
         cond_br %3, bb2, bb3
 
       bb2:
@@ -439,7 +439,7 @@ fn test_variable_shadowing() {
         br bb4
 
       bb4:
-        %4 = %x != cast<i32>(const 1)
+        %4 = %x != const 1
         cond_br %4, bb5, bb6
 
       bb5:
@@ -601,7 +601,7 @@ fn test_function_with_many_return_types() {
     {
 
       bb2:
-        return cast<i8>(const 97)
+        return const 97
     }
 
     fn fn_ulong() -> u64
@@ -622,21 +622,21 @@ fn test_function_with_many_return_types() {
     {
 
       bb3:
-        return cast<u8>(const 98)
+        return const 98
     }
 
     fn fn_uint() -> u32
     {
 
       bb7:
-        return cast<u32>(const 42)
+        return const 42
     }
 
     fn fn_short() -> i16
     {
 
       bb4:
-        return cast<i16>(const -7)
+        return const -7
     }
 
     fn fn_int() -> i32
@@ -671,7 +671,7 @@ fn test_function_with_many_return_types() {
     {
 
       bb5:
-        return cast<u16>(const 14)
+        return const 14
     }
 
     fn fn_ullong() -> u64
@@ -857,7 +857,7 @@ fn test_external_function_call() {
       bb1:
         %steins = cast<ptr<i8>>(const @.L.str0)
         %3 = call strlen(%steins)
-        %4 = %3 - cast<i32>(const 4)
+        %4 = %3 - const 4
         return %4
     }
 
@@ -1057,7 +1057,7 @@ fn test_deref_after_cast() {
       bb1:
         %x = const 2
         %p = cast<ptr<void>>(addr_of(%x))
-        %3 = deref(cast<ptr<i32>>(%p)) != cast<i32>(const 2)
+        %3 = deref(cast<ptr<i32>>(%p)) != const 2
         cond_br %3, bb2, bb3
 
       bb2:
@@ -1247,7 +1247,7 @@ fn test_ternary_with_mixed_pointer_integer() {
         br bb4
 
       bb3:
-        %4 = cast<ptr<void>>(const 0)
+        %4 = const 0
         br bb4
 
       bb4:
@@ -1255,7 +1255,7 @@ fn test_ternary_with_mixed_pointer_integer() {
         cond_br %i, bb5, bb6
 
       bb5:
-        %5 = cast<ptr<void>>(const 0)
+        %5 = const 0
         br bb7
 
       bb6:
@@ -1404,7 +1404,7 @@ fn test_gnu_statement_expression_labels_and_void() {
       }
 
       bb1:
-        %timeout = cast<u64>(const 2)
+        %timeout = const 2
         br bb4
 
       bb2:

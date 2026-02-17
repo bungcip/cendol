@@ -1131,7 +1131,31 @@ impl<'a> MirGen<'a> {
 
         match conv {
             Conversion::IntegerCast { .. } | Conversion::IntegerPromotion { .. } | Conversion::PointerCast { .. } => {
-                Operand::Cast(to_mir_type, Box::new(operand))
+                // Fold constant casts if types are compatible
+                if let Some(const_id) = self.operand_to_const_id(&operand) {
+                    let const_val = self.mir_builder.get_constants().get(&const_id).unwrap().clone();
+                    let mir_type = self.mir_builder.get_type(to_mir_type);
+
+                    let is_compatible = match (&const_val.kind, mir_type) {
+                        (ConstValueKind::Int(_), t) => t.is_int() || t.is_pointer(),
+                        (ConstValueKind::Float(_), t) => t.is_float(),
+                        (ConstValueKind::GlobalAddress(_), t) => t.is_pointer() || t.is_int(),
+                        (ConstValueKind::FunctionAddress(_), t) => t.is_pointer() || t.is_int(),
+                        _ => false,
+                    };
+
+                    if is_compatible {
+                        let truncated_kind = match const_val.kind {
+                            ConstValueKind::Int(val) => ConstValueKind::Int(mir_type.truncate_int(val)),
+                            kind => kind,
+                        };
+                        Operand::Constant(self.create_constant(to_mir_type, truncated_kind))
+                    } else {
+                        Operand::Cast(to_mir_type, Box::new(operand))
+                    }
+                } else {
+                    Operand::Cast(to_mir_type, Box::new(operand))
+                }
             }
             Conversion::NullPointerConstant => {
                 let ty_id = self.lower_type(self.registry.type_int);
@@ -1345,9 +1369,14 @@ impl<'a> MirGen<'a> {
             Operand::Cast(ty, inner) => {
                 // Recursively try to get constant from inner operand
                 if let Some(inner_const_id) = self.operand_to_const_id(inner) {
-                    let inner_const = self.mir_builder.get_constants().get(&inner_const_id).unwrap();
+                    let inner_const = self.mir_builder.get_constants().get(&inner_const_id).unwrap().clone();
+                    let mir_type = self.mir_builder.get_type(*ty);
+                    let truncated_kind = match inner_const.kind {
+                        ConstValueKind::Int(val) => ConstValueKind::Int(mir_type.truncate_int(val)),
+                        kind => kind,
+                    };
                     // Create a new constant with the target type but same kind
-                    Some(self.create_constant(*ty, inner_const.kind.clone()))
+                    Some(self.create_constant(*ty, truncated_kind))
                 } else {
                     None
                 }

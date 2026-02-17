@@ -42,9 +42,8 @@ pub mod semantic_validation;
 pub mod parser_decl;
 pub mod parser_expr;
 pub mod parser_lexical;
-pub mod parser_regr;
 pub mod parser_stmt;
-pub mod parser_type_regr;
+pub mod parser_types;
 pub mod parser_utils;
 
 pub mod codegen_ternary_array_size;
@@ -75,7 +74,6 @@ pub mod mir_dumper_coverage;
 pub mod mir_gen_sizeof;
 pub mod mir_unit;
 pub mod mir_validation;
-pub mod parser_type_conflict;
 pub mod semantic_assignment_coverage;
 pub mod semantic_atomic;
 pub mod semantic_brace_elision;

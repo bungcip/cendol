@@ -1,5 +1,6 @@
 use crate::ast::NameId;
 use crate::tests::semantic_common::setup_lowering;
+use crate::tests::test_utils::run_fail_with_message;
 
 fn check_type(source: &str, expected: &str) {
     let (_ast, registry, symbol_table) = setup_lowering(source);
@@ -12,40 +13,19 @@ fn check_type(source: &str, expected: &str) {
 }
 
 #[test]
-fn test_long_int_regr() {
-    check_type("long int x;", "long");
-}
-
-#[test]
-fn test_long_long_int_regr() {
-    check_type("long long int x;", "long long");
-}
-
-#[test]
-fn test_unsigned_long_int_regr() {
-    check_type("unsigned long int x;", "unsigned long");
-}
-
-#[test]
-fn test_signed_long_int_regr() {
-    check_type("signed long int x;", "long");
-}
-
-#[test]
-fn test_short_int_regr() {
+fn test_type_combinations() {
     check_type("short int x;", "short");
-}
-
-#[test]
-fn test_unsigned_short_int_regr() {
     check_type("unsigned short int x;", "unsigned short");
-}
 
-#[test]
-fn test_complex_combinations() {
+    check_type("long int x;", "long");
+    check_type("signed long int x;", "long");
+
+    check_type("unsigned long int x;", "unsigned long");
     check_type("long unsigned int x;", "unsigned long");
     check_type("int long unsigned x;", "unsigned long");
     check_type("unsigned int long x;", "unsigned long");
+
+    check_type("long long int x;", "long long");
 
     check_type("long long unsigned int x;", "unsigned long long");
     check_type("int unsigned long long x;", "unsigned long long");
@@ -127,4 +107,10 @@ fn test_type_specifier_combinations() {
     check_type("_Atomic(double _Complex) x;", "_Atomic _Complex double");
     check_type("_Atomic(_Complex long double) x;", "_Atomic _Complex long double");
     check_type("_Atomic(long double _Complex) x;", "_Atomic _Complex long double");
+}
+
+#[test]
+fn test_conflict_cast() {
+    let src = "void foo() { (int struct S { int x; }) 0; }";
+    run_fail_with_message(src, "single type specifier");
 }

@@ -6,7 +6,11 @@ use crate::tests::test_utils;
 #[test]
 fn test_function_decl_visit_children_with_c_source() {
     // 1. Setup: Parse some C code to get a valid environment (AST, TypeRegistry, etc.)
-    let source = "void f(void);"; // A simple function declaration
+    // We start with a standard function declaration which lowers to NodeKind::FunctionDecl.
+    // Note: Function definitions (with bodies) lower to NodeKind::Function, not FunctionDecl.
+    // Therefore, a FunctionDecl with a body is currently unreachable via standard C source code.
+    // To cover the visit_children logic for this internal AST state, we must manually inject a body.
+    let source = "void f(void);";
     let phase = CompilePhase::SemanticLowering;
     let (_, out) = test_utils::run_pipeline(source, phase);
     let mut out = out.unwrap();
@@ -23,7 +27,6 @@ fn test_function_decl_visit_children_with_c_source() {
     let decl_node = {
         let kind = ast.get_kind(root);
         if let NodeKind::TranslationUnit(data) = kind {
-            // data is &TranslationUnitData. data.decl_start is Copy.
             data.decl_start
         } else {
             panic!("Expected TranslationUnit as root");
@@ -41,6 +44,8 @@ fn test_function_decl_visit_children_with_c_source() {
     };
 
     // 3. Create a dummy body node and attach it to the FunctionDecl
+    // This simulates an AST state where a FunctionDecl has an associated body,
+    // which is valid structurally but not produced by the current frontend lowering.
     let dummy_body_span = SourceSpan::default();
     let dummy_body = ast.push_node(NodeKind::Dummy, dummy_body_span);
 

@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_pass, run_fail_with_message};
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn test_noreturn_calling_noreturn() {

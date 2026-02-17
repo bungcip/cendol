@@ -225,6 +225,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     true
                 }
             }
+            NodeKind::Label(_, stmt, _) => self.can_fall_through(*stmt),
             _ => true,
         }
     }

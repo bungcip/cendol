@@ -15,5 +15,23 @@ fn test_case_range_coverage() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir);
+    insta::assert_snapshot!(mir, @r###"
+    type %t0 = i32
+
+    fn foo(%param0: i32) -> i32
+    {
+
+      bb1:
+        br bb3
+
+      bb2:
+        unreachable
+
+      bb3:
+        return const 0
+
+      bb4:
+        br bb3
+    }
+    "###);
 }

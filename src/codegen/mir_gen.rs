@@ -738,10 +738,7 @@ impl<'a> MirGen<'a> {
         self.visit_node(stmt);
     }
 
-    fn collect_switch_cases(
-        &mut self,
-        node: NodeRef,
-    ) -> Vec<(NodeRef, Option<ConstValueId>, Option<ConstValueId>)> {
+    fn collect_switch_cases(&mut self, node: NodeRef) -> Vec<(NodeRef, Option<ConstValueId>, Option<ConstValueId>)> {
         let mut cases = Vec::new();
         self.collect_switch_cases_recursive(node, &mut cases);
         cases

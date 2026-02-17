@@ -774,83 +774,97 @@ impl<'a> SemanticAnalyzer<'a> {
             return None;
         }
 
-        // For compound assignments like +=, we need to check if the underlying arithmetic is valid.
-        let (effective_rhs_ty, final_assignment_cast_target) = if let Some(arithmetic_op) = op.without_assignment() {
-            // Reuse visit_binary_op logic conceptually, but for compound assignment operands.
-            // For p += 1, LHS is pointer, RHS is integer.
-            let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);
-            let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
+        if let Some(arithmetic_op) = op.without_assignment() {
+            return self.visit_compound_assignment(node_ref, arithmetic_op, lhs_ref, rhs_ref, lhs_ty, rhs_ty, span);
+        }
 
-            if let Some((_, common_ty)) =
-                self.analyze_binary_operation_types(arithmetic_op, lhs_promoted, rhs_promoted, span)
-            {
-                // Record conversions from promoted operands to the common type.
-                // This is what the binary operation will actually work with.
-                if lhs_promoted.ty() != common_ty.ty() {
-                    self.push_conversion(
-                        lhs_ref,
-                        Conversion::IntegerCast {
-                            from: lhs_promoted.ty(),
-                            to: common_ty.ty(),
-                        },
-                    );
-                }
-                if rhs_promoted.ty() != common_ty.ty() {
-                    self.push_conversion(
-                        rhs_ref,
-                        Conversion::IntegerCast {
-                            from: rhs_promoted.ty(),
-                            to: common_ty.ty(),
-                        },
-                    );
-                }
+        // Simple assignment
+        if !self.validate_and_record_assignment(lhs_ty, rhs_ty, rhs_ref, span) {
+            return None;
+        }
 
-                // For compound assignment, the result of (lhs op rhs) is converted back to lhs type.
-                // We record this conversion on the assignment node itself.
-                (common_ty, Some(lhs_ty))
-            } else {
-                let lhs_kind = &self.registry.get(lhs_promoted.ty()).kind;
-                let rhs_kind = &self.registry.get(rhs_promoted.ty()).kind;
-                self.report_error(SemanticError::InvalidBinaryOperands {
-                    left_ty: lhs_kind.to_string(),
-                    right_ty: rhs_kind.to_string(),
-                    span,
-                });
-                return None;
-            }
-        } else {
-            (rhs_ty, None)
-        };
+        Some(lhs_ty)
+    }
 
-        // For compound assignment, we record the final cast on the assignment node.
-        if let Some(target_ty) = final_assignment_cast_target {
-            // Check assignment constraints (C11 6.5.16.1)
-            if !self.check_assignment_constraints(lhs_ty, effective_rhs_ty, rhs_ref) {
-                let lhs_kind = &self.registry.get(lhs_ty.ty()).kind;
-                let rhs_kind = &self.registry.get(effective_rhs_ty.ty()).kind;
+    fn visit_compound_assignment(
+        &mut self,
+        node_ref: NodeRef,
+        arithmetic_op: BinaryOp,
+        lhs_ref: NodeRef,
+        rhs_ref: NodeRef,
+        lhs_ty: QualType,
+        rhs_ty: QualType,
+        span: SourceSpan,
+    ) -> Option<QualType> {
+        // Reuse visit_binary_op logic conceptually, but for compound assignment operands.
+        // For p += 1, LHS is pointer, RHS is integer.
+        let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);
+        let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
 
-                self.report_error(SemanticError::TypeMismatch {
-                    expected: lhs_kind.to_string(),
-                    found: rhs_kind.to_string(),
-                    span,
-                });
-                return None;
-            }
-
-            if target_ty.ty() != effective_rhs_ty.ty() {
+        let (common_ty, target_ty) = if let Some((_, common_ty)) =
+            self.analyze_binary_operation_types(arithmetic_op, lhs_promoted, rhs_promoted, span)
+        {
+            // Record conversions from promoted operands to the common type.
+            // This is what the binary operation will actually work with.
+            if lhs_promoted.ty() != common_ty.ty() {
                 self.push_conversion(
-                    node_ref,
+                    lhs_ref,
                     Conversion::IntegerCast {
-                        from: effective_rhs_ty.ty(),
-                        to: target_ty.ty(),
+                        from: lhs_promoted.ty(),
+                        to: common_ty.ty(),
                     },
                 );
             }
-        } else {
-            // Simple assignment
-            if !self.validate_and_record_assignment(lhs_ty, effective_rhs_ty, rhs_ref, span) {
-                return None;
+            if rhs_promoted.ty() != common_ty.ty() {
+                self.push_conversion(
+                    rhs_ref,
+                    Conversion::IntegerCast {
+                        from: rhs_promoted.ty(),
+                        to: common_ty.ty(),
+                    },
+                );
             }
+
+            // For compound assignment, the result of (lhs op rhs) is converted back to lhs type.
+            // We record this conversion on the assignment node itself.
+            (common_ty, lhs_ty)
+        } else {
+            let lhs_kind = &self.registry.get(lhs_promoted.ty()).kind;
+            let rhs_kind = &self.registry.get(rhs_promoted.ty()).kind;
+            self.report_error(SemanticError::InvalidBinaryOperands {
+                left_ty: lhs_kind.to_string(),
+                right_ty: rhs_kind.to_string(),
+                span,
+            });
+            return None;
+        };
+
+        // Check assignment constraints (C11 6.5.16.1)
+        // Note: For compound assignment, the RHS is the result of the binary operation (common_ty).
+        // BUT, `check_assignment_constraints` expects the RHS expression ref for some specific checks (like NULL pointer constants).
+        // Here, rhs_ref is the original RHS of the +=. This might be slightly inaccurate if check_assignment_constraints relies heavily on the node structure for value checks,
+        // but for type checks it uses `common_ty` (which is the effective RHS).
+        // The previous code passed `effective_rhs_ty` which was `common_ty`.
+        if !self.check_assignment_constraints(lhs_ty, common_ty, rhs_ref) {
+            let lhs_kind = &self.registry.get(lhs_ty.ty()).kind;
+            let rhs_kind = &self.registry.get(common_ty.ty()).kind;
+
+            self.report_error(SemanticError::TypeMismatch {
+                expected: lhs_kind.to_string(),
+                found: rhs_kind.to_string(),
+                span,
+            });
+            return None;
+        }
+
+        if target_ty.ty() != common_ty.ty() {
+            self.push_conversion(
+                node_ref,
+                Conversion::IntegerCast {
+                    from: common_ty.ty(),
+                    to: target_ty.ty(),
+                },
+            );
         }
 
         Some(lhs_ty)
@@ -1314,60 +1328,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 None
             }
-            NodeKind::Function(data) => {
-                let func_ty = self.registry.get(data.ty).kind.clone();
-                if let TypeKind::Function { return_type, .. } = func_ty {
-                    self.current_function_ret_type = Some(QualType::unqualified(return_type));
-                    self.current_function_is_noreturn = data.is_noreturn;
-                };
-
-                let symbol = self.symbol_table.get_symbol(data.symbol);
-                let prev_func_name = self.current_function_name.take();
-                self.current_function_name = Some(symbol.name.to_string());
-
-                for param_ref in data.param_start.range(data.param_len) {
-                    self.visit_node(param_ref);
-                }
-
-                self.visit_node(data.body);
-
-                if self.current_function_is_noreturn && self.can_fall_through(data.body) {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::NoreturnFunctionFallsOff {
-                        name: self.current_function_name.clone().unwrap(),
-                        span,
-                    });
-                }
-
-                self.current_function_ret_type = None;
-                self.current_function_name = prev_func_name;
-                self.current_function_is_noreturn = false;
-                None
-            }
+            NodeKind::Function(data) => self.visit_function_definition(data, node_ref),
             NodeKind::Param(data) => {
                 self.visit_type_expressions(data.ty);
                 Some(data.ty)
             }
-            NodeKind::VarDecl(data) => {
-                if data.ty.ty() == self.registry.type_void {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::VariableOfVoidType { span });
-                }
-                self.visit_type_expressions(data.ty);
-                let _ = self.registry.ensure_layout(data.ty.ty());
-                if data.init.is_some()
-                    && matches!(data.storage, Some(StorageClass::Extern))
-                    && self.current_function_name.is_some()
-                {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::InvalidInitializer { span });
-                }
-
-                if let Some(init_ref) = data.init {
-                    self.visit_initializer(init_ref, data.ty);
-                }
-                Some(data.ty)
-            }
+            NodeKind::VarDecl(data) => self.visit_var_declaration(data, node_ref),
             NodeKind::EnumConstant(_, value_expr) => {
                 if let Some(expr) = value_expr {
                     self.visit_node(*expr);
@@ -1419,6 +1385,58 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    fn visit_function_definition(&mut self, data: &FunctionData, node_ref: NodeRef) -> Option<QualType> {
+        let func_ty = self.registry.get(data.ty).kind.clone();
+        if let TypeKind::Function { return_type, .. } = func_ty {
+            self.current_function_ret_type = Some(QualType::unqualified(return_type));
+            self.current_function_is_noreturn = data.is_noreturn;
+        };
+
+        let symbol = self.symbol_table.get_symbol(data.symbol);
+        let prev_func_name = self.current_function_name.take();
+        self.current_function_name = Some(symbol.name.to_string());
+
+        for param_ref in data.param_start.range(data.param_len) {
+            self.visit_node(param_ref);
+        }
+
+        self.visit_node(data.body);
+
+        if self.current_function_is_noreturn && self.can_fall_through(data.body) {
+            let span = self.ast.get_span(node_ref);
+            self.report_error(SemanticError::NoreturnFunctionFallsOff {
+                name: self.current_function_name.clone().unwrap(),
+                span,
+            });
+        }
+
+        self.current_function_ret_type = None;
+        self.current_function_name = prev_func_name;
+        self.current_function_is_noreturn = false;
+        None
+    }
+
+    fn visit_var_declaration(&mut self, data: &VarDeclData, node_ref: NodeRef) -> Option<QualType> {
+        if data.ty.ty() == self.registry.type_void {
+            let span = self.ast.get_span(node_ref);
+            self.report_error(SemanticError::VariableOfVoidType { span });
+        }
+        self.visit_type_expressions(data.ty);
+        let _ = self.registry.ensure_layout(data.ty.ty());
+        if data.init.is_some()
+            && matches!(data.storage, Some(StorageClass::Extern))
+            && self.current_function_name.is_some()
+        {
+            let span = self.ast.get_span(node_ref);
+            self.report_error(SemanticError::InvalidInitializer { span });
+        }
+
+        if let Some(init_ref) = data.init {
+            self.visit_initializer(init_ref, data.ty);
+        }
+        Some(data.ty)
+    }
+
     fn visit_statement_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
         // let node = self.ast.get_node(node_ref); // For span access if needed
         match kind {
@@ -1449,81 +1467,18 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*condition);
                 None
             }
-            NodeKind::Switch(cond, body) => {
-                self.visit_node(*cond);
-                self.switch_depth += 1;
-                self.switch_cases.push(HashSet::new());
-                self.switch_default_seen.push(false);
-                self.visit_node(*body);
-                self.switch_default_seen.pop();
-                self.switch_cases.pop();
-                self.switch_depth -= 1;
-                None
-            }
+            NodeKind::Switch(cond, body) => self.visit_switch_statement(*cond, *body),
             NodeKind::Case(expr, stmt) => {
-                if self.switch_depth == 0 {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::CaseNotInSwitch { span });
-                } else if let Some(val) = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), *expr) {
-                    let is_duplicate = self.switch_cases.last_mut().is_some_and(|cases| !cases.insert(val));
-                    if is_duplicate {
-                        let span = self.ast.get_span(node_ref);
-                        self.report_error(SemanticError::DuplicateCase {
-                            value: val.to_string(),
-                            span,
-                        });
-                    }
-                }
-                self.visit_node(*expr);
-                self.visit_node(*stmt);
-                None
+                let span = self.ast.get_span(node_ref);
+                self.visit_case_statement(Some(*expr), None, *stmt, span)
             }
             NodeKind::CaseRange(start, end, stmt) => {
-                if self.switch_depth == 0 {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::CaseNotInSwitch { span });
-                } else if let (Some(start_val), Some(end_val)) = (
-                    crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), *start),
-                    crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), *end),
-                ) {
-                    let mut duplicate_val = None;
-                    if let Some(cases) = self.switch_cases.last_mut() {
-                        for val in start_val..=end_val {
-                            if !cases.insert(val) {
-                                duplicate_val = Some(val);
-                                break;
-                            }
-                        }
-                    }
-                    if let Some(val) = duplicate_val {
-                        let span = self.ast.get_span(node_ref);
-                        self.report_error(SemanticError::DuplicateCase {
-                            value: val.to_string(),
-                            span,
-                        });
-                    }
-                }
-                self.visit_node(*start);
-                self.visit_node(*end);
-                self.visit_node(*stmt);
-                None
+                let span = self.ast.get_span(node_ref);
+                self.visit_case_statement(Some(*start), Some(*end), *stmt, span)
             }
             NodeKind::Default(stmt) => {
-                if self.switch_depth == 0 {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::CaseNotInSwitch { span });
-                } else {
-                    let is_duplicate = self
-                        .switch_default_seen
-                        .last_mut()
-                        .is_some_and(|seen| std::mem::replace(seen, true));
-                    if is_duplicate {
-                        let span = self.ast.get_span(node_ref);
-                        self.report_error(SemanticError::MultipleDefaultLabels { span });
-                    }
-                }
-                self.visit_node(*stmt);
-                None
+                let span = self.ast.get_span(node_ref);
+                self.visit_default_statement(*stmt, span)
             }
             NodeKind::Return(expr) => {
                 let span = self.ast.get_span(node_ref);
@@ -1563,6 +1518,80 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    fn visit_switch_statement(&mut self, cond: NodeRef, body: NodeRef) -> Option<QualType> {
+        self.visit_node(cond);
+        self.switch_depth += 1;
+        self.switch_cases.push(HashSet::new());
+        self.switch_default_seen.push(false);
+        self.visit_node(body);
+        self.switch_default_seen.pop();
+        self.switch_cases.pop();
+        self.switch_depth -= 1;
+        None
+    }
+
+    fn visit_case_statement(
+        &mut self,
+        start: Option<NodeRef>,
+        end: Option<NodeRef>,
+        stmt: NodeRef,
+        span: SourceSpan,
+    ) -> Option<QualType> {
+        if self.switch_depth == 0 {
+            self.report_error(SemanticError::CaseNotInSwitch { span });
+        } else if let Some(start_ref) = start {
+            let start_val = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), start_ref);
+            let end_val = if let Some(end_ref) = end {
+                crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), end_ref)
+            } else {
+                start_val
+            };
+
+            if let (Some(start_v), Some(end_v)) = (start_val, end_val) {
+                let mut duplicate_val = None;
+                if let Some(cases) = self.switch_cases.last_mut() {
+                    for val in start_v..=end_v {
+                        if !cases.insert(val) {
+                            duplicate_val = Some(val);
+                            break;
+                        }
+                    }
+                }
+                if let Some(val) = duplicate_val {
+                    self.report_error(SemanticError::DuplicateCase {
+                        value: val.to_string(),
+                        span,
+                    });
+                }
+            }
+        }
+
+        if let Some(s) = start {
+            self.visit_node(s);
+        }
+        if let Some(e) = end {
+            self.visit_node(e);
+        }
+        self.visit_node(stmt);
+        None
+    }
+
+    fn visit_default_statement(&mut self, stmt: NodeRef, span: SourceSpan) -> Option<QualType> {
+        if self.switch_depth == 0 {
+            self.report_error(SemanticError::CaseNotInSwitch { span });
+        } else {
+            let is_duplicate = self
+                .switch_default_seen
+                .last_mut()
+                .is_some_and(|seen| std::mem::replace(seen, true));
+            if is_duplicate {
+                self.report_error(SemanticError::MultipleDefaultLabels { span });
+            }
+        }
+        self.visit_node(stmt);
+        None
+    }
+
     fn visit_expression_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
             NodeKind::Literal(literal) => self.visit_literal(literal),
@@ -1581,46 +1610,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let span = self.ast.get_span(node_ref);
                 self.visit_binary_op(*op, *lhs, *rhs, span)
             }
-            NodeKind::TernaryOp(cond, then, else_expr) => {
-                self.visit_node(*cond);
-                let then_ty = self.visit_node(*then);
-                let else_ty = self.visit_node(*else_expr);
-
-                if let (Some(t), Some(e)) = (then_ty, else_ty) {
-                    let result_ty = match (t, e) {
-                        (t, e) if t.is_arithmetic() && e.is_arithmetic() => {
-                            usual_arithmetic_conversions(self.registry, t, e)
-                        }
-                        (t, e) if t.ty() == e.ty() => Some(t),
-                        (t, _) if t.ty() == self.registry.type_void => Some(t),
-                        (_, e) if e.ty() == self.registry.type_void => Some(e),
-                        (t, _) if t.is_pointer() && self.is_null_pointer_constant(*else_expr) => Some(t),
-                        (_, e) if e.is_pointer() && self.is_null_pointer_constant(*then) => Some(e),
-                        (t, e) if t.is_pointer() && e.is_pointer() => {
-                            // C11 6.5.15: pointer to void and pointer to object -> pointer to void
-                            if t.ty() == self.registry.type_void_ptr || e.ty() == self.registry.type_void_ptr {
-                                Some(QualType::unqualified(self.registry.type_void_ptr))
-                            } else {
-                                // Should check compatibility, for now just use one or common
-                                Some(t)
-                            }
-                        }
-                        _ => usual_arithmetic_conversions(self.registry, t, e),
-                    };
-
-                    if let Some(res) = result_ty {
-                        // Don't record conversions for void types
-                        if !res.is_void() {
-                            self.record_implicit_conversions(res, t, *then);
-                            self.record_implicit_conversions(res, e, *else_expr);
-                        }
-                        return Some(res);
-                    }
-                    None
-                } else {
-                    None
-                }
-            }
+            NodeKind::TernaryOp(cond, then, else_expr) => self.visit_ternary_op(*cond, *then, *else_expr),
             NodeKind::GnuStatementExpression(stmt, result_expr) => {
                 self.visit_node(*stmt);
 
@@ -1652,52 +1642,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*expr);
                 Some(*ty)
             }
-            NodeKind::SizeOfExpr(expr) => {
-                if let Some(ty) = self.visit_node(*expr) {
-                    let type_ref = ty.ty();
-                    if ty.is_function() {
-                        let span = self.ast.get_span(node_ref);
-                        self.report_error(SemanticError::SizeOfFunctionType { span });
-                    } else if !self.registry.is_complete(type_ref) {
-                        let span = self.ast.get_span(node_ref);
-                        self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
-                    } else if self.is_bitfield(*expr) {
-                        let span = self.ast.get_span(node_ref);
-                        self.report_error(SemanticError::SizeOfBitfield { span });
-                    } else {
-                        let _ = self.registry.ensure_layout(type_ref);
-                    }
-                }
-                Some(QualType::unqualified(self.registry.type_long_unsigned))
-            }
-            NodeKind::SizeOfType(ty) => {
-                self.visit_type_expressions(*ty);
-                let type_ref = ty.ty();
-                if ty.is_function() {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::SizeOfFunctionType { span });
-                } else if !self.registry.is_complete(type_ref) {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
-                } else {
-                    let _ = self.registry.ensure_layout(type_ref);
-                }
-                Some(QualType::unqualified(self.registry.type_long_unsigned))
-            }
-            NodeKind::AlignOf(ty) => {
-                self.visit_type_expressions(*ty);
-                let type_ref = ty.ty();
-                if ty.is_function() {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::AlignOfFunctionType { span });
-                } else if !self.registry.is_complete(type_ref) {
-                    let span = self.ast.get_span(node_ref);
-                    self.report_error(SemanticError::AlignOfIncompleteType { ty: type_ref, span });
-                } else {
-                    let _ = self.registry.ensure_layout(type_ref);
-                }
-                Some(QualType::unqualified(self.registry.type_long_unsigned))
-            }
+            NodeKind::SizeOfExpr(expr) => self.visit_sizeof_alignof(Some(*expr), None, false, node_ref),
+            NodeKind::SizeOfType(ty) => self.visit_sizeof_alignof(None, Some(*ty), false, node_ref),
+            NodeKind::AlignOf(ty) => self.visit_sizeof_alignof(None, Some(*ty), true, node_ref),
             NodeKind::CompoundLiteral(ty, init) => {
                 self.visit_type_expressions(*ty);
                 let _ = self.registry.ensure_layout(ty.ty());
@@ -1766,6 +1713,90 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             _ => None,
         }
+    }
+
+    fn visit_ternary_op(&mut self, cond: NodeRef, then: NodeRef, else_expr: NodeRef) -> Option<QualType> {
+        self.visit_node(cond);
+        let then_ty = self.visit_node(then);
+        let else_ty = self.visit_node(else_expr);
+
+        if let (Some(t), Some(e)) = (then_ty, else_ty) {
+            let result_ty = match (t, e) {
+                (t, e) if t.is_arithmetic() && e.is_arithmetic() => usual_arithmetic_conversions(self.registry, t, e),
+                (t, e) if t.ty() == e.ty() => Some(t),
+                (t, _) if t.ty() == self.registry.type_void => Some(t),
+                (_, e) if e.ty() == self.registry.type_void => Some(e),
+                (t, _) if t.is_pointer() && self.is_null_pointer_constant(else_expr) => Some(t),
+                (_, e) if e.is_pointer() && self.is_null_pointer_constant(then) => Some(e),
+                (t, e) if t.is_pointer() && e.is_pointer() => {
+                    // C11 6.5.15: pointer to void and pointer to object -> pointer to void
+                    if t.ty() == self.registry.type_void_ptr || e.ty() == self.registry.type_void_ptr {
+                        Some(QualType::unqualified(self.registry.type_void_ptr))
+                    } else {
+                        // Should check compatibility, for now just use one or common
+                        Some(t)
+                    }
+                }
+                _ => usual_arithmetic_conversions(self.registry, t, e),
+            };
+
+            if let Some(res) = result_ty {
+                // Don't record conversions for void types
+                if !res.is_void() {
+                    self.record_implicit_conversions(res, t, then);
+                    self.record_implicit_conversions(res, e, else_expr);
+                }
+                return Some(res);
+            }
+            None
+        } else {
+            None
+        }
+    }
+
+    fn visit_sizeof_alignof(
+        &mut self,
+        expr: Option<NodeRef>,
+        ty: Option<QualType>,
+        is_alignof: bool,
+        node_ref: NodeRef,
+    ) -> Option<QualType> {
+        let type_ref = if let Some(t) = ty {
+            self.visit_type_expressions(t);
+            Some(t.ty())
+        } else if let Some(e) = expr {
+            self.visit_node(e).map(|qt| qt.ty())
+        } else {
+            None
+        };
+
+        if let Some(type_ref) = type_ref {
+            // function type check
+            let is_function = matches!(self.registry.get(type_ref).kind, TypeKind::Function { .. });
+
+            if is_function {
+                let span = self.ast.get_span(node_ref);
+                if is_alignof {
+                    self.report_error(SemanticError::AlignOfFunctionType { span });
+                } else {
+                    self.report_error(SemanticError::SizeOfFunctionType { span });
+                }
+            } else if !self.registry.is_complete(type_ref) {
+                let span = self.ast.get_span(node_ref);
+                if is_alignof {
+                    self.report_error(SemanticError::AlignOfIncompleteType { ty: type_ref, span });
+                } else {
+                    self.report_error(SemanticError::SizeOfIncompleteType { ty: type_ref, span });
+                }
+            } else if !is_alignof && expr.is_some() && self.is_bitfield(expr.unwrap()) {
+                let span = self.ast.get_span(node_ref);
+                self.report_error(SemanticError::SizeOfBitfield { span });
+            } else {
+                let _ = self.registry.ensure_layout(type_ref);
+            }
+        }
+
+        Some(QualType::unqualified(self.registry.type_long_unsigned))
     }
 
     fn visit_atomic_op(

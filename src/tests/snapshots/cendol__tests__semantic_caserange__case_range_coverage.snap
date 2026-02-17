@@ -1,0 +1,22 @@
+---
+source: src/tests/semantic_caserange.rs
+assertion_line: 18
+expression: mir
+---
+type %t0 = i32
+
+fn foo(%param0: i32) -> i32
+{
+
+  bb1:
+    br bb3
+
+  bb2:
+    unreachable
+
+  bb3:
+    return const 0
+
+  bb4:
+    br bb3
+}

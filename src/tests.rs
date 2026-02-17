@@ -77,6 +77,7 @@ pub mod mir_validation;
 pub mod semantic_assignment_coverage;
 pub mod semantic_atomic;
 pub mod semantic_brace_elision;
+pub mod semantic_caserange;
 pub mod semantic_complex_types;
 pub mod semantic_generic;
 pub mod semantic_mir_const_global;

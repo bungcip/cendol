@@ -2080,10 +2080,10 @@ impl<'src> Preprocessor<'src> {
             return self.emit_error_loc(PPErrorKind::InvalidTokenPasting, right.location);
         };
 
-        let pasted_text = format!("{}{}", left_text, right_text);
-
-        // Create a virtual buffer containing the pasted text
-        let virtual_buffer = pasted_text.clone().into_bytes();
+        // ⚡ Bolt: Avoid redundant format! and clone by building the byte buffer directly.
+        let mut virtual_buffer = Vec::with_capacity(left_text.len() + right_text.len());
+        virtual_buffer.extend_from_slice(left_text.as_bytes());
+        virtual_buffer.extend_from_slice(right_text.as_bytes());
         let virtual_id = self
             .sm
             .add_virtual_buffer(virtual_buffer, "pasted-tokens", None, FileKind::PastedToken);

@@ -45,3 +45,7 @@
 ## 2026-11-28 - Optimized MacroInfo with Arc for Token Lists
 **Learning:** Cloning `MacroInfo` on every macro expansion and push/pop operation was a significant bottleneck due to `Vec<PPToken>` and `Vec<StringId>` causing repeated heap allocations and deep copies.
 **Action:** Use `Arc<[T]>` for immutable collections in frequently cloned data structures like `MacroInfo`. This turns (N)$ clones into (1)$ reference count increments while maintaining read-only performance.
+
+## 2026-02-17 - Optimizing Token Pasting Buffer Construction
+**Learning:** Using `format!` followed by `.clone().into_bytes()` for simple string concatenation in a hot path like token pasting introduces two unnecessary heap allocations and a redundant copy.
+**Action:** Build the byte buffer directly using `Vec::with_capacity(len1 + len2)` followed by `extend_from_slice`. This is more efficient and avoids the formatting overhead.

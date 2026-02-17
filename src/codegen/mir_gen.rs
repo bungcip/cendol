@@ -149,6 +149,14 @@ impl<'a> MirGen<'a> {
             NodeKind::Label(label_name, statement, _) => self.visit_label_stmt(&label_name, statement),
             NodeKind::Switch(cond, body) => self.visit_switch_stmt(cond, body),
             NodeKind::Case(_, stmt) => self.visit_case_default_stmt(node_ref, stmt),
+            NodeKind::CaseRange(..) => self.visit_case_default_stmt(node_ref, {
+                // CaseRange stmt is the 3rd argument
+                if let NodeKind::CaseRange(_, _, stmt) = node_kind {
+                    stmt
+                } else {
+                    unreachable!()
+                }
+            }),
             NodeKind::Default(stmt) => self.visit_case_default_stmt(node_ref, stmt),
 
             // Expressions used as statements (without ExpressionStatement wrapper)
@@ -622,12 +630,12 @@ impl<'a> MirGen<'a> {
         let mut case_blocks = Vec::new();
         let mut default_block = None;
 
-        for (node, val_opt) in cases {
+        for (node, start_val, end_val) in cases {
             let block = self.mir_builder.create_block();
             self.switch_case_map.insert(node, block);
 
-            if let Some(val) = val_opt {
-                case_blocks.push((val, block));
+            if let Some(start) = start_val {
+                case_blocks.push((start, end_val, block));
             } else {
                 default_block = Some(block);
             }
@@ -635,31 +643,51 @@ impl<'a> MirGen<'a> {
 
         // Generate dispatch
         let fallback_block = default_block.unwrap_or(merge_block);
+        let bool_type_id = self.lower_type(self.registry.type_bool);
 
-        for (val_id, target_block) in case_blocks {
+        for (start_id, end_id_opt, target_block) in case_blocks {
             let next_test_block = self.mir_builder.create_block();
-            let val_const = self.mir_builder.get_constants().get(&val_id).unwrap().clone();
+            let start_const = self.mir_builder.get_constants().get(&start_id).unwrap().clone();
 
             // Re-create constant with the same type as condition to ensure safe comparison
-            // This assumes the values are compatible (integral).
-            // Sema should ensure they are compatible.
-            // We just cast the constant value to the condition type for the comparison operand.
-            // Note: `val_const` is already lowered to some type.
-
-            let val_op = Operand::Constant(val_id);
-            let cast_val_op = if val_const.ty != cond_ty_id {
-                Operand::Cast(cond_ty_id, Box::new(val_op))
+            let start_op = Operand::Constant(start_id);
+            let cast_start_op = if start_const.ty != cond_ty_id {
+                Operand::Cast(cond_ty_id, Box::new(start_op))
             } else {
-                val_op
+                start_op
             };
 
-            // Use Eq comparison
-            // If condition is float (illegal in C switch), we panic?
-            // Switch only works on integers.
-            let cmp_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Eq, cond_op.clone(), cast_val_op);
-            let bool_type_id = self.lower_type(self.registry.type_bool);
-            let (_cmp_local, cmp_place) = self.create_temp_local_with_assignment(cmp_rvalue, bool_type_id);
-            let cmp_op = Operand::Copy(Box::new(cmp_place));
+            let cmp_op = if let Some(end_id) = end_id_opt {
+                // Range check: x >= start && x <= end
+                let end_const = self.mir_builder.get_constants().get(&end_id).unwrap().clone();
+                let end_op = Operand::Constant(end_id);
+                let cast_end_op = if end_const.ty != cond_ty_id {
+                    Operand::Cast(cond_ty_id, Box::new(end_op))
+                } else {
+                    end_op
+                };
+
+                // GE: x >= start
+                let ge_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Ge, cond_op.clone(), cast_start_op);
+                let (_, ge_place) = self.create_temp_local_with_assignment(ge_rvalue, bool_type_id);
+                let ge_op = Operand::Copy(Box::new(ge_place));
+
+                // LE: x <= end
+                let le_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Le, cond_op.clone(), cast_end_op);
+                let (_, le_place) = self.create_temp_local_with_assignment(le_rvalue, bool_type_id);
+                let le_op = Operand::Copy(Box::new(le_place));
+
+                // AND: (x >= start) && (x <= end)
+                // Use BitAnd which works for boolean types (conceptually i1/i8 0 or 1)
+                let and_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, ge_op, le_op);
+                let (_, and_place) = self.create_temp_local_with_assignment(and_rvalue, bool_type_id);
+                Operand::Copy(Box::new(and_place))
+            } else {
+                // Single value check: x == val
+                let eq_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Eq, cond_op.clone(), cast_start_op);
+                let (_, eq_place) = self.create_temp_local_with_assignment(eq_rvalue, bool_type_id);
+                Operand::Copy(Box::new(eq_place))
+            };
 
             self.mir_builder
                 .set_terminator(Terminator::If(cmp_op, target_block, next_test_block));
@@ -710,23 +738,40 @@ impl<'a> MirGen<'a> {
         self.visit_node(stmt);
     }
 
-    fn collect_switch_cases(&mut self, node: NodeRef) -> Vec<(NodeRef, Option<ConstValueId>)> {
+    fn collect_switch_cases(
+        &mut self,
+        node: NodeRef,
+    ) -> Vec<(NodeRef, Option<ConstValueId>, Option<ConstValueId>)> {
         let mut cases = Vec::new();
         self.collect_switch_cases_recursive(node, &mut cases);
         cases
     }
 
-    fn collect_switch_cases_recursive(&mut self, node: NodeRef, cases: &mut Vec<(NodeRef, Option<ConstValueId>)>) {
+    fn collect_switch_cases_recursive(
+        &mut self,
+        node: NodeRef,
+        cases: &mut Vec<(NodeRef, Option<ConstValueId>, Option<ConstValueId>)>,
+    ) {
         let kind = *self.ast.get_kind(node);
         match kind {
             NodeKind::Case(expr, stmt) => {
                 let op = self.emit_expression(expr, true);
                 let val = self.operand_to_const_id_strict(op, "Case label must be constant");
-                cases.push((node, Some(val)));
+                cases.push((node, Some(val), None));
+                self.collect_switch_cases_recursive(stmt, cases);
+            }
+            NodeKind::CaseRange(start, end, stmt) => {
+                let start_op = self.emit_expression(start, true);
+                let start_val = self.operand_to_const_id_strict(start_op, "Case range start must be constant");
+
+                let end_op = self.emit_expression(end, true);
+                let end_val = self.operand_to_const_id_strict(end_op, "Case range end must be constant");
+
+                cases.push((node, Some(start_val), Some(end_val)));
                 self.collect_switch_cases_recursive(stmt, cases);
             }
             NodeKind::Default(stmt) => {
-                cases.push((node, None));
+                cases.push((node, None, None));
                 self.collect_switch_cases_recursive(stmt, cases);
             }
             NodeKind::Switch(..) => {

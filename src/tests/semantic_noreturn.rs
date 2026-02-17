@@ -22,7 +22,7 @@ fn test_noreturn_calling_regular() {
             regular();
         }
     "#;
-    run_fail_with_message(source, CompilePhase::Mir, "function 'die' declared '_Noreturn' can fall off the end");
+    run_fail_with_message(source, "function 'die' declared '_Noreturn' can fall off the end");
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn test_noreturn_empty_body() {
     let source = r#"
         _Noreturn void die(void) {}
     "#;
-    run_fail_with_message(source, CompilePhase::Mir, "function 'die' declared '_Noreturn' can fall off the end");
+    run_fail_with_message(source, "function 'die' declared '_Noreturn' can fall off the end");
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn test_noreturn_if_only() {
             }
         }
     "#;
-    run_fail_with_message(source, CompilePhase::Mir, "function 'die' declared '_Noreturn' can fall off the end");
+    run_fail_with_message(source, "function 'die' declared '_Noreturn' can fall off the end");
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn test_noreturn_while_true() {
             while (1);
         }
     "#;
-    run_fail_with_message(source, CompilePhase::Mir, "function 'die' declared '_Noreturn' can fall off the end");
+    run_fail_with_message(source, "function 'die' declared '_Noreturn' can fall off the end");
 }
 
 #[test]

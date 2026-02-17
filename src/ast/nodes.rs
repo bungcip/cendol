@@ -233,11 +233,7 @@ impl NodeKind {
                 }
             }
 
-            NodeKind::FunctionDecl(data) => {
-                if let Some(body) = data.body {
-                    f(body);
-                }
-            }
+            NodeKind::FunctionDecl(_) => {}
 
             NodeKind::RecordDecl(data) => {
                 for child in data.member_start.range(data.member_len) {
@@ -368,7 +364,6 @@ pub struct FunctionDeclData {
     pub name: NameId,
     pub ty: TypeRef,
     pub storage: Option<StorageClass>,
-    pub body: Option<NodeRef>,
     pub scope_id: ScopeId,
 }
 

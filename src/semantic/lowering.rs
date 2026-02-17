@@ -2053,7 +2053,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             name,
             ty: final_ty.ty(),
             storage: spec_info.storage,
-            body: None,
             scope_id: self.symbol_table.current_scope(),
         };
 

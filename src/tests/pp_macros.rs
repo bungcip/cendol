@@ -396,10 +396,10 @@ fn test_placemarker_concatenation_chained() {
 M(, , C)
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: C
-    "#);
+    ");
 }
 
 // GCC Compatibility
@@ -429,10 +429,10 @@ fn test_concat_with_empty_argument() {
 __CONCAT(a,)
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: a
-    "#);
+    ");
 }
 
 #[test]
@@ -442,9 +442,7 @@ __extension__
 __restrict
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    []
-    "#);
+    insta::assert_yaml_snapshot!(tokens, @"[]");
 }
 
 // Macro Redefinition Tests (C11 6.10.3)
@@ -487,7 +485,5 @@ fn test_undef_builtin_macro_should_warn() {
 #undef __DATE__
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"
-    - "Warning: Undefining built-in macro '__DATE__'"
-    "#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Warning: Undefining built-in macro '__DATE__'""#);
 }

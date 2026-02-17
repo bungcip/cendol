@@ -104,10 +104,10 @@ OK
         ),
     ];
     let (tokens, _) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 // Conditional Operator
@@ -258,7 +258,7 @@ FAIL_SIGNED_COMPARE
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK_AND_SHORT
     - kind: Identifier
@@ -297,7 +297,7 @@ FAIL_SIGNED_COMPARE
       text: OK_MOD
     - kind: Identifier
       text: OK_SIGNED_COMPARE
-    "#);
+    ");
 }
 
 // Unary Operators
@@ -385,7 +385,7 @@ FAIL_INDIRECT_LOCAL
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK_STD
     - kind: Identifier
@@ -394,7 +394,7 @@ FAIL_INDIRECT_LOCAL
       text: OK_INDIRECT_STD
     - kind: Identifier
       text: OK_INDIRECT_LOCAL
-    "#);
+    ");
 }
 
 #[test]
@@ -430,7 +430,7 @@ FAIL_MOD_OVERFLOW
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK_DIV_ZERO
     - kind: Identifier
@@ -439,5 +439,5 @@ FAIL_MOD_OVERFLOW
       text: OK_DIV_OVERFLOW
     - kind: Identifier
       text: OK_MOD_OVERFLOW
-    "#);
+    ");
 }

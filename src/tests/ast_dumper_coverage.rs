@@ -230,7 +230,7 @@ fn test_parsed_ast_empty_stmt() {
 #[test]
 fn test_parser_ast_control_flow() {
     let output = dump_parser_ast("void f() { if (1) {} while(0) {} do {} while(0); for(;;) {} }");
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @r"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
@@ -246,13 +246,13 @@ fn test_parser_ast_control_flow() {
     13: CompoundStatement(stmts=[])
     14: LiteralInt(0, None)
     15: CompoundStatement(stmts=[])
-    "#);
+    ");
 }
 
 #[test]
 fn test_parser_ast_switch() {
     let output = dump_parser_ast("void f() { switch(1) { case 1: break; default: continue; } }");
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @r"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
@@ -265,14 +265,14 @@ fn test_parser_ast_switch() {
     10: LiteralInt(1, None)
     11: Break
     12: Continue
-    "#);
+    ");
 }
 
 #[test]
 fn test_parser_ast_ops() {
     let output =
         dump_parser_ast("void f() { int a = 1; int b = 2; int c; c = a + b; c = a > b ? a : b; c += 1; a++; ++b; }");
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @r"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
@@ -307,13 +307,13 @@ fn test_parser_ast_ops() {
     32: Ident(a)
     33: UnaryOp(PreIncrement, 34)
     34: Ident(b)
-    "#);
+    ");
 }
 
 #[test]
 fn test_parser_ast_sizeof_alignof() {
     let output = dump_parser_ast("void f() { int a = (int)1.0; int s = sizeof(int) + sizeof(a) + _Alignof(int); }");
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @r"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
@@ -328,7 +328,7 @@ fn test_parser_ast_sizeof_alignof() {
     12: SizeOfExpr(13)
     13: Ident(a)
     14: AlignOf(Int)
-    "#);
+    ");
 }
 
 #[test]
@@ -381,7 +381,7 @@ fn test_parser_ast_compound_literal() {
 #[test]
 fn test_parser_ast_generic() {
     let output = dump_parser_ast("void f() { int x = _Generic(1, int: 1, default: 0); }");
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @r"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
@@ -393,13 +393,13 @@ fn test_parser_ast_generic() {
     9: GenericAssociation(ty=None, result_expr=11)
     10: LiteralInt(1, None)
     11: LiteralInt(0, None)
-    "#);
+    ");
 }
 
 #[test]
 fn test_parser_ast_gnu_stmt_expr() {
     let output = dump_parser_ast("void f() { int x = ({ int y = 1; y; }); }");
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @r"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
@@ -411,7 +411,7 @@ fn test_parser_ast_gnu_stmt_expr() {
     9: ExpressionStatement(11)
     10: LiteralInt(1, None)
     11: Ident(y)
-    "#);
+    ");
 }
 
 #[test]
@@ -444,14 +444,14 @@ fn test_parser_ast_static_assert() {
 #[test]
 fn test_parser_ast_labels() {
     let output = dump_parser_ast("void f() { L: goto L; }");
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @r"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
     4: CompoundStatement(stmts=5..5)
     5: Label(L, 6)
     6: Goto(L)
-    "#);
+    ");
 }
 
 #[test]
@@ -469,8 +469,7 @@ fn test_type_registry_complex() {
         void g(int x, ...); // Variadic
     ",
     );
-    insta::assert_snapshot!(output, @r#"
-
+    insta::assert_snapshot!(output, @r"
     === TypeRegistry (Used TypeRefs) ===
     TypeRef(8): int
     TypeRef(24): <VLA>
@@ -479,7 +478,7 @@ fn test_type_registry_complex() {
     TypeRef(20): struct Point
     TypeRef(21): enum Color
     TypeRef(23): _Complex
-    "#);
+    ");
 }
 
 #[test]
@@ -528,7 +527,7 @@ fn test_atomic_ops_and_case_range() {
         }
     ",
     );
-    insta::assert_snapshot!(output_parser, @r#"
+    insta::assert_snapshot!(output_parser, @r"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
@@ -542,5 +541,5 @@ fn test_atomic_ops_and_case_range() {
     11: LiteralInt(1, None)
     12: LiteralInt(5, None)
     13: Break
-    "#);
+    ");
 }

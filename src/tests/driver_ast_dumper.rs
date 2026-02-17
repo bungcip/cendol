@@ -285,7 +285,7 @@ fn test_dump_parsed_ast_with_switch() {
 #[test]
 fn test_dump_parser_ast() {
     let output = dump_parser_ast("int main() { return 0; }");
-    insta::assert_snapshot!(output, @"
+    insta::assert_snapshot!(output, @r"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=main, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(main)
@@ -298,7 +298,7 @@ fn test_dump_parser_ast() {
 #[test]
 fn test_dump_parser_ast_with_functions() {
     let output = dump_parser_ast("int add(int a, int b) { return a + b; } int main() { return add(2, 3); }");
-    insta::assert_snapshot!(output, @"
+    insta::assert_snapshot!(output, @r"
     1: TranslationUnit(decls=2..3) (parser kind)
     2: Function(name=add, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=5..6, body=7)
     3: Function(name=main, symbol=6, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=13)
@@ -323,8 +323,7 @@ fn test_dump_parser_ast_with_functions() {
 #[test]
 fn test_dump_type_registry() {
     let output = dump_type_registry("int main() { int x = 42; float y = 3.14; return x + (int)y; }");
-    insta::assert_snapshot!(output, @"
-
+    insta::assert_snapshot!(output, @r"
     === TypeRegistry (Used TypeRefs) ===
     TypeRef(8): int
     TypeRef(14): float
@@ -337,8 +336,7 @@ fn test_dump_type_registry_with_complex_types() {
     let output = dump_type_registry(
         "struct Point { int x; int y; }; int main() { struct Point p = {1, 2}; int *ptr = &p.x; float arr[10]; return 0; }",
     );
-    insta::assert_snapshot!(output, @"
-
+    insta::assert_snapshot!(output, @r"
     === TypeRegistry (Used TypeRefs) ===
     TypeRef(8): int
     TypeRef(21): int()

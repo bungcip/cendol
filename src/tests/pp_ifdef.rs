@@ -9,10 +9,10 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]
@@ -24,10 +24,10 @@ FAIL
 OK
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]
@@ -40,10 +40,10 @@ FAIL
 OK
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]
@@ -54,10 +54,10 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]
@@ -71,10 +71,10 @@ FAIL
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]
@@ -87,10 +87,10 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]
@@ -105,10 +105,10 @@ fn test_nested_ifdef() {
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]
@@ -124,10 +124,10 @@ fn test_nested_ifdef_mixed() {
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]
@@ -140,8 +140,8 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }

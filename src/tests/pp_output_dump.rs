@@ -31,12 +31,11 @@ int main() {
 }
 "#;
     let content = dump_pp_output(src, false);
-    insta::assert_snapshot!(content, @r###"
-
-int main() {
-    return 0;
-}
-"###);
+    insta::assert_snapshot!(content, @r"
+    int main() {
+        return 0;
+    }
+    ");
 }
 
 #[test]

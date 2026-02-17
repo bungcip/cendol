@@ -5,10 +5,10 @@ fn test_computed_include_string() {
     let files = vec![("foo.h", "OK"), ("main.c", "#define H \"foo.h\"\n#include H")];
     let (tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
     assert!(diags.is_empty(), "Unexpected diagnostics: {:?}", diags);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]

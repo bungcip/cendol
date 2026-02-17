@@ -17,18 +17,18 @@ fn test_const_global_mir() {
     globals.sort_by_key(|g| g.name.to_string());
 
     // we check is_constant value if it is constant, it will be true
-    assert_yaml_snapshot!(globals, @r#"
-- id: 1
-  name: x
-  type_id: 1
-  is_constant: true
-  initial_value: 1
-  alignment: ~
-- id: 2
-  name: y
-  type_id: 1
-  is_constant: false
-  initial_value: 2
-  alignment: ~
-"#);
+    assert_yaml_snapshot!(globals, @r"
+    - id: 1
+      name: x
+      type_id: 1
+      is_constant: true
+      initial_value: 1
+      alignment: ~
+    - id: 2
+      name: y
+      type_id: 1
+      is_constant: false
+      initial_value: 2
+      alignment: ~
+    ");
 }

@@ -26,7 +26,7 @@ fn test_sizeof_logic_not_is_int_size() {
       }
 
       bb1:
-        %sz = cast<u64>(const 4)
+        %sz = const 4
         return
     }
     ");
@@ -54,7 +54,7 @@ fn test_sizeof_logic_and_is_int_size() {
       }
 
       bb1:
-        %sz = cast<u64>(const 4)
+        %sz = const 4
         return
     }
     ");
@@ -82,7 +82,7 @@ fn test_sizeof_logic_or_is_int_size() {
       }
 
       bb1:
-        %sz = cast<u64>(const 4)
+        %sz = const 4
         return
     }
     ");

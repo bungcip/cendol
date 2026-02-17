@@ -85,7 +85,7 @@ impl<'a> MirGen<'a> {
             NodeKind::AlignOf(ty) => self.emit_type_query(ty.ty(), false),
             NodeKind::BuiltinOffsetof(..) => {
                 let val = eval_const_expr(&self.const_ctx(), expr_ref).expect("offsetof should be constant");
-                self.create_int_operand(val)
+                self.create_size_t_operand(val as u64)
             }
             NodeKind::GenericSelection(gs) => self.emit_generic_selection(gs, need_value, expr_ref),
             NodeKind::GnuStatementExpression(stmt, result_expr) => {
@@ -204,7 +204,7 @@ impl<'a> MirGen<'a> {
     fn emit_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
         let layout = self.registry.get_layout(ty);
         let val = if is_size { layout.size } else { layout.alignment };
-        self.create_int_operand(val as i64)
+        self.create_size_t_operand(val as u64)
     }
 
     fn emit_generic_selection(

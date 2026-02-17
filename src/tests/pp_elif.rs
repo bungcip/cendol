@@ -10,10 +10,10 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]
@@ -28,10 +28,10 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]
@@ -44,10 +44,10 @@ FAIL
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]
@@ -66,10 +66,10 @@ FAIL_4
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK
-    "#);
+    ");
 }
 
 #[test]
@@ -81,9 +81,7 @@ fn test_elif_after_else() {
 #endif
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"
-    - "Fatal Error: PPError { kind: ElifAfterElse, span: SourceSpan(2199023255566) }"
-    "#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ElifAfterElse, span: SourceSpan(2199023255566) }""#);
 }
 
 #[test]
@@ -92,9 +90,7 @@ fn test_elif_without_if() {
 #elif 1
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"
-    - "Fatal Error: PPError { kind: ElifWithoutIf, span: SourceSpan(2199023255554) }"
-    "#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ElifWithoutIf, span: SourceSpan(2199023255554) }""#);
 }
 
 #[test]
@@ -111,9 +107,7 @@ fn test_nested_elif_skipped() {
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    []
-    "#);
+    insta::assert_yaml_snapshot!(tokens, @"[]");
 }
 
 #[test]
@@ -128,10 +122,6 @@ fn test_nested_elif_skipped_expression_not_evaluated() {
 #endif
 "#;
     let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    []
-    "#);
-    insta::assert_yaml_snapshot!(diags, @r#"
-    []
-    "#);
+    insta::assert_yaml_snapshot!(tokens, @"[]");
+    insta::assert_yaml_snapshot!(diags, @"[]");
 }

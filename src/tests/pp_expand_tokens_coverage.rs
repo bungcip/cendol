@@ -44,7 +44,5 @@ P
 "#;
     let tokens = setup_pp_snapshot(src);
     // The _Pragma("once") is handled and removed from the token stream.
-    insta::assert_yaml_snapshot!(tokens, @r#"
-    []
-    "#);
+    insta::assert_yaml_snapshot!(tokens, @"[]");
 }

@@ -1077,6 +1077,11 @@ impl<'a> MirGen<'a> {
         Operand::Constant(self.create_constant(ty_id, ConstValueKind::Float(val)))
     }
 
+    pub(crate) fn create_size_t_operand(&mut self, val: u64) -> Operand {
+        let ty_id = self.lower_type(self.registry.type_long_unsigned);
+        Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val as i64)))
+    }
+
     fn emit_conversion(&mut self, operand: Operand, conv: &Conversion, target_type_id: TypeId) -> Operand {
         let to_ty_ref = match conv {
             Conversion::IntegerCast { to, .. }

@@ -8,7 +8,7 @@ use std::fmt;
 use crate::ast::literal;
 use crate::ast::parsed::{ParsedAst, ParsedNodeKind};
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind};
-use crate::semantic::{ArraySizeType, BuiltinType, SymbolRef, SymbolTable, TypeKind, TypeRef, TypeRegistry};
+use crate::semantic::{SymbolRef, SymbolTable, TypeRef, TypeRegistry};
 
 pub struct ParsedAstDisplay<'a>(pub &'a ParsedAst);
 
@@ -72,8 +72,7 @@ impl<'a> fmt::Display for TypeRegistryDisplay<'a> {
 
         // Dump each used TypeRef with user-friendly formatting
         for ty_ref in sorted_type_refs {
-            let ty = self.registry.get(ty_ref);
-            let formatted_type = AstDumper::format_type_kind_user_friendly(&ty.kind, self.registry);
+            let formatted_type = self.registry.display_type(ty_ref);
             writeln!(f, "TypeRef({}): {}", ty_ref.base(), formatted_type)?;
         }
         Ok(())
@@ -97,87 +96,6 @@ impl AstDumper {
     /// Dump TypeRegistry information for used TypeRefs in the AST
     pub(crate) fn dump_type_registry<'a>(ast: &'a Ast, registry: &'a TypeRegistry) -> TypeRegistryDisplay<'a> {
         TypeRegistryDisplay { ast, registry }
-    }
-
-    /// Format TypeKind in a user-friendly way for TypeRegistry dump
-    #[allow(clippy::only_used_in_recursion)]
-    fn format_type_kind_user_friendly(kind: &TypeKind, registry: &TypeRegistry) -> String {
-        match kind {
-            // Basic types - use the existing dump format
-            TypeKind::Builtin(b) => match b {
-                BuiltinType::Void => "void".to_string(),
-                BuiltinType::Bool => "_Bool".to_string(),
-                BuiltinType::Char => "char".to_string(),
-                BuiltinType::SChar => "signed char".to_string(),
-                BuiltinType::UChar => "unsigned char".to_string(),
-                BuiltinType::Short => "short".to_string(),
-                BuiltinType::UShort => "unsigned short".to_string(),
-                BuiltinType::Int => "int".to_string(),
-                BuiltinType::UInt => "unsigned int".to_string(),
-                BuiltinType::Long => "long".to_string(),
-                BuiltinType::ULong => "unsigned long".to_string(),
-                BuiltinType::LongLong => "long long".to_string(),
-                BuiltinType::ULongLong => "unsigned long long".to_string(),
-                BuiltinType::Float => "float".to_string(),
-                BuiltinType::Double => "double".to_string(),
-                BuiltinType::LongDouble => "long double".to_string(),
-                BuiltinType::Signed => "signed".to_string(),
-                BuiltinType::VaList => "__builtin_va_list".to_string(),
-                BuiltinType::Complex => "_Complex (marker)".to_string(),
-            },
-            TypeKind::Complex { .. } => "_Complex".to_string(),
-            TypeKind::Error => "<error>".to_string(),
-
-            // Complex types - provide more detailed information
-            TypeKind::Pointer { pointee } => {
-                let current_type = registry.get(pointee.ty());
-                format!(
-                    "{}*",
-                    Self::format_type_kind_user_friendly(&current_type.kind, registry)
-                )
-            }
-            TypeKind::Array { element_type, size } => {
-                let element_str = Self::format_type_kind_user_friendly(&registry.get(*element_type).kind, registry);
-                match size {
-                    ArraySizeType::Constant(len) => format!("{}[{}]", element_str, len),
-                    ArraySizeType::Incomplete => format!("{}[]", element_str),
-                    ArraySizeType::Variable(_) => "<VLA>".to_string(),
-                    ArraySizeType::Star => format!("{}[*]", element_str),
-                }
-            }
-            TypeKind::Function {
-                return_type,
-                parameters,
-                is_variadic,
-                ..
-            } => {
-                let return_str = Self::format_type_kind_user_friendly(&registry.get(*return_type).kind, registry);
-                let mut param_strs = Vec::new();
-                for param in parameters.iter() {
-                    let param_str =
-                        Self::format_type_kind_user_friendly(&registry.get(param.param_type.ty()).kind, registry);
-                    param_strs.push(param_str);
-                }
-                let params = param_strs.join(", ");
-                let variadic = if *is_variadic { ", ..." } else { "" };
-                format!("{}({}{})", return_str, params, variadic)
-            }
-            TypeKind::Record { tag, is_union, .. } => {
-                let kind_str = if *is_union { "union" } else { "struct" };
-                if let Some(tag_name) = tag {
-                    format!("{} {}", kind_str, tag_name)
-                } else {
-                    format!("{} (anonymous)", kind_str)
-                }
-            }
-            TypeKind::Enum { tag, .. } => {
-                if let Some(tag_name) = tag {
-                    format!("enum {}", tag_name)
-                } else {
-                    "enum (anonymous)".to_string()
-                }
-            }
-        }
     }
 
     /// Collect TypeRefs from a NodeKind

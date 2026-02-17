@@ -65,6 +65,7 @@ pub mod ast_dumper_coverage;
 pub mod builtin_offsetof;
 pub mod codegen_cast_init;
 pub mod codegen_regr;
+pub mod driver_defines;
 pub mod guardian_addr_sizeof_constraints;
 pub mod guardian_alignof_sizeof_function;
 pub mod guardian_array_parameter_qualifiers;

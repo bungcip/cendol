@@ -161,6 +161,11 @@ impl CompilerDriver {
             &self.config.preprocessor,
         );
 
+        // Apply user-defined macros
+        for (name, value) in &self.config.defines {
+            preprocessor.define_user_macro(name, value.as_deref());
+        }
+
         // Preprocessor is dropped here, releasing the borrow on diagnostics
         match preprocessor.process(source_id, &self.config.preprocessor) {
             Ok(t) => Ok(t),

@@ -590,6 +590,36 @@ impl<'src> Preprocessor<'src> {
         );
     }
 
+    /// Define a macro from command line or other external source
+    pub(crate) fn define_user_macro(&mut self, name: &str, value: Option<&str>) {
+        let value_str = value.unwrap_or("1");
+
+        // Create a buffer for the macro value
+        let source_id = self
+            .sm
+            .add_buffer(value_str.as_bytes().to_vec(), "<command-line>", None);
+        let buffer = self.sm.get_buffer_arc(source_id);
+        let mut lexer = PPLexer::new(source_id, buffer);
+
+        let mut tokens = Vec::new();
+        while let Some(token) = lexer.next_token() {
+            if matches!(token.kind, PPTokenKind::Eod | PPTokenKind::Eof) {
+                continue;
+            }
+            tokens.push(token);
+        }
+
+        let symbol = StringId::new(name);
+        let macro_info = MacroInfo {
+            location: SourceLoc::builtin(),
+            flags: MacroFlags::empty(), // Not BUILTIN, so it can be redefined (with warning if different)
+            tokens: Arc::from(tokens),
+            parameter_list: Arc::from([]),
+            variadic_arg: None,
+        };
+        self.macros.insert(symbol, macro_info);
+    }
+
     /// Define a built-in macro
     fn define_builtin_macro(&mut self, name: &str, tokens: Vec<PPToken>) {
         let symbol = StringId::new(name);

@@ -54,3 +54,8 @@ Action: Enforce completeness checks in 'visit_variable_decl' and 'visit_function
 
 Learning: C11 6.7p3 requires that a typedef redefinition in the same scope denote the SAME type. This is stricter than type compatibility. For example, 'int[]' and 'int[10]' are compatible but not the same type, and thus a typedef redefinition from one to the other must be rejected. However, differences that do not affect type identity (like function parameter names) are ignored due to canonicalization.
 Action: Use strict QualType equality (which relies on canonical TypeRefs and qualifier masks) for typedef redefinition checks instead of 'is_compatible'.
+
+2025-05-24 - [Function Specifier Constraints]
+
+Learning: C11 6.7.4p1 requires that function specifiers ('inline' and '_Noreturn') only be used in the declaration of an identifier that is a function. This means they must be rejected for typedefs, struct/union members, and tag declarations (forward decls or definitions), even if the underlying type is a function pointer.
+Action: Centralize function specifier validation in semantic lowering to ensure all non-function declaration paths (variables, typedefs, members, tags) correctly enforce these constraints.

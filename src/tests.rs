@@ -92,3 +92,4 @@ pub mod semantic_generic;
 pub mod semantic_mir_const_global;
 pub mod semantic_parsed_types_coverage;
 pub mod semantic_scope_invariants;
+pub mod semantic_assignment_coverage;

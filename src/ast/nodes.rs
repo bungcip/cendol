@@ -572,3 +572,25 @@ pub struct GenericAssociationData {
     pub ty: Option<QualType>, // None for 'default:'
     pub result_expr: NodeRef,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_without_assignment() {
+        assert_eq!(BinaryOp::AssignAdd.without_assignment(), Some(BinaryOp::Add));
+        assert_eq!(BinaryOp::AssignSub.without_assignment(), Some(BinaryOp::Sub));
+        assert_eq!(BinaryOp::AssignMul.without_assignment(), Some(BinaryOp::Mul));
+        assert_eq!(BinaryOp::AssignDiv.without_assignment(), Some(BinaryOp::Div));
+        assert_eq!(BinaryOp::AssignMod.without_assignment(), Some(BinaryOp::Mod));
+        assert_eq!(BinaryOp::AssignBitAnd.without_assignment(), Some(BinaryOp::BitAnd));
+        assert_eq!(BinaryOp::AssignBitOr.without_assignment(), Some(BinaryOp::BitOr));
+        assert_eq!(BinaryOp::AssignBitXor.without_assignment(), Some(BinaryOp::BitXor));
+        assert_eq!(BinaryOp::AssignLShift.without_assignment(), Some(BinaryOp::LShift));
+        assert_eq!(BinaryOp::AssignRShift.without_assignment(), Some(BinaryOp::RShift));
+
+        assert_eq!(BinaryOp::Add.without_assignment(), None);
+        assert_eq!(BinaryOp::Assign.without_assignment(), None);
+    }
+}

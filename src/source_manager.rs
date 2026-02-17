@@ -450,6 +450,7 @@ impl SourceManager {
     }
 
     /// Set line starts for a given source ID
+    #[allow(clippy::collapsible_if)]
     pub(crate) fn set_line_starts(&mut self, source_id: SourceId, line_starts: Vec<u32>) {
         let id = source_id.to_u32();
         if id >= 2 {
@@ -460,6 +461,7 @@ impl SourceManager {
     }
 
     /// Calculate line starts for a given source ID
+    #[allow(clippy::collapsible_if)]
     pub(crate) fn calculate_line_starts(&mut self, source_id: SourceId) {
         let id = source_id.to_u32();
         if id >= 2 {

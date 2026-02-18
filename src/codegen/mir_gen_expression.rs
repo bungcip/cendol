@@ -731,23 +731,14 @@ impl<'a> MirGen<'a> {
 
         let rhs_op = self.visit_expression(right_ref, true);
 
-        let final_rhs = if let Some(compound_op) = op.without_assignment() {
-            self.visit_compound_assignment(
-                node_ref,
-                compound_op,
-                place.clone(),
-                rhs_op,
-                left_ref,
-                right_ref,
-                mir_ty,
-            )
+        if let Some(compound_op) = op.without_assignment() {
+            self.visit_compound_assignment(node_ref, compound_op, place, rhs_op, left_ref, right_ref, mir_ty)
         } else {
             // Simple assignment, just use the RHS
-            self.apply_conversions(rhs_op, right_ref, mir_ty)
-        };
-
-        self.emit_assignment(place, final_rhs.clone());
-        final_rhs // C assignment expressions evaluate to the assigned value
+            let final_rhs = self.apply_conversions(rhs_op, right_ref, mir_ty);
+            self.emit_assignment(place, final_rhs.clone());
+            final_rhs // C assignment expressions evaluate to the assigned value
+        }
     }
 
     fn visit_compound_assignment(
@@ -762,12 +753,47 @@ impl<'a> MirGen<'a> {
     ) -> Operand {
         // This is a compound assignment, e.g., a += b
         // Use the already-evaluated place to read the current value.
-        let lhs_copy = Operand::Copy(Box::new(place));
+        let lhs_copy = Operand::Copy(Box::new(place.clone()));
 
         let (rval, op_ty) =
             self.visit_binary_arithmetic_logic(&compound_op, lhs_copy, rhs_op, left_ref, right_ref, mir_ty);
         let result_op = self.emit_rvalue_to_operand(rval, op_ty);
-        self.apply_conversions(result_op, node_ref, mir_ty)
+
+        let truncated_op = self.emit_cast(result_op, mir_ty);
+
+        self.emit_assignment(place, truncated_op.clone());
+
+        self.apply_conversions(truncated_op, node_ref, mir_ty)
+    }
+
+    fn emit_cast(&mut self, operand: Operand, target_ty: TypeId) -> Operand {
+        if self.get_operand_type(&operand) == target_ty {
+            return operand;
+        }
+
+        // Fold constant casts if types are compatible
+        if let Some(const_id) = self.operand_to_const_id(&operand) {
+            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap().clone();
+            let mir_type = self.mir_builder.get_type(target_ty);
+
+            let is_compatible = match (&const_val.kind, mir_type) {
+                (ConstValueKind::Int(_), t) => t.is_int() || t.is_pointer(),
+                (ConstValueKind::Float(_), t) => t.is_float(),
+                (ConstValueKind::GlobalAddress(_), t) => t.is_pointer() || t.is_int(),
+                (ConstValueKind::FunctionAddress(_), t) => t.is_pointer() || t.is_int(),
+                _ => false,
+            };
+
+            if is_compatible {
+                let truncated_kind = match const_val.kind {
+                    ConstValueKind::Int(val) => ConstValueKind::Int(mir_type.truncate_int(val)),
+                    kind => kind,
+                };
+                return Operand::Constant(self.create_constant(target_ty, truncated_kind));
+            }
+        }
+
+        Operand::Cast(target_ty, Box::new(operand))
     }
 
     fn visit_function_call(&mut self, call_expr: &ast::nodes::CallExpr, dest_place: Option<Place>) {

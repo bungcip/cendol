@@ -71,6 +71,7 @@ pub mod guardian_restrict_constraints;
 pub mod guardian_tentative_definitions;
 pub mod guardian_typedef_constraints;
 pub mod mir_dumper_coverage;
+pub mod mir_gen_compound_assignment;
 pub mod mir_gen_sizeof;
 pub mod mir_unit;
 pub mod mir_validation;

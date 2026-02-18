@@ -67,14 +67,13 @@ fn test_noreturn_if_only() {
 
 #[test]
 fn test_noreturn_while_true() {
-    // Current implementation treats `while` as potentially falling through.
-    // So this should fail.
+    // while (1) is infinite, so it does not fall off.
     let source = r#"
         _Noreturn void die(void) {
             while (1);
         }
     "#;
-    run_fail_with_message(source, "function 'die' declared '_Noreturn' can fall off the end");
+    run_pass(source, CompilePhase::Mir);
 }
 
 #[test]

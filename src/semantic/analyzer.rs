@@ -191,6 +191,28 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    fn is_always_true(&self, expr: NodeRef) -> bool {
+        crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), expr).is_some_and(|v| v != 0)
+    }
+
+    fn contains_break(&self, node_ref: NodeRef) -> bool {
+        match self.ast.get_kind(node_ref) {
+            NodeKind::Break => true,
+            NodeKind::CompoundStatement(cs) => cs
+                .stmt_start
+                .range(cs.stmt_len)
+                .any(|s| self.contains_break(s)),
+            NodeKind::If(if_stmt) => {
+                self.contains_break(if_stmt.then_branch)
+                    || if_stmt.else_branch.is_some_and(|e| self.contains_break(e))
+            }
+            // Do not recurse into nested loops or switches as their breaks belong to them.
+            NodeKind::While(_) | NodeKind::For(_) | NodeKind::DoWhile(_, _) | NodeKind::Switch(_, _) => false,
+            NodeKind::Label(_, stmt, _) => self.contains_break(*stmt),
+            _ => false,
+        }
+    }
+
     fn can_fall_through(&self, node_ref: NodeRef) -> bool {
         match self.ast.get_kind(node_ref) {
             NodeKind::Return(_) | NodeKind::Break | NodeKind::Continue | NodeKind::Goto(_, _) => false,
@@ -208,13 +230,17 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 true
             }
-            NodeKind::While(_) => {
-                // While loop can only be exited via break, so it can fall through.
-                true
+            NodeKind::While(while_stmt) => {
+                !self.is_always_true(while_stmt.condition) || self.contains_break(while_stmt.body)
+            }
+            NodeKind::DoWhile(body, condition) => {
+                !self.is_always_true(*condition) || self.contains_break(*body)
             }
             NodeKind::For(for_stmt) => {
-                // A for loop without a condition is infinite unless there's a break.
-                for_stmt.condition.is_some()
+                for_stmt
+                    .condition
+                    .map_or(false, |c| !self.is_always_true(c))
+                    || self.contains_break(for_stmt.body)
             }
             NodeKind::CompoundStatement(cs) => {
                 if cs.stmt_len > 0 {

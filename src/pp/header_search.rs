@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 pub(crate) struct HeaderSearch {
     pub(crate) system_path: Vec<PathBuf>,
     pub(crate) framework_path: Vec<PathBuf>,
-    pub(crate) quoted_includes: Vec<String>,
-    pub(crate) angled_includes: Vec<String>,
+    pub(crate) quoted_includes: Vec<PathBuf>,
+    pub(crate) angled_includes: Vec<PathBuf>,
 }
 
 impl HeaderSearch {
@@ -17,12 +17,12 @@ impl HeaderSearch {
 
     /// Add a quoted include path (-iquote)
     pub(crate) fn add_quoted_path(&mut self, path: PathBuf) {
-        self.quoted_includes.push(path.to_string_lossy().to_string());
+        self.quoted_includes.push(path);
     }
 
     /// Add an angled include path (-I)
     pub(crate) fn add_angled_path(&mut self, path: PathBuf) {
-        self.angled_includes.push(path.to_string_lossy().to_string());
+        self.angled_includes.push(path);
     }
 
     /// Add a framework path
@@ -65,9 +65,19 @@ impl HeaderSearch {
     pub(crate) fn resolve_next_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
         let mut found_current = false;
 
-        if !is_angled {
-            for path_str in &self.quoted_includes {
-                let path: &Path = Path::new(path_str);
+        let paths_to_search: Vec<&[PathBuf]> = if !is_angled {
+            vec![
+                &self.quoted_includes,
+                &self.angled_includes,
+                &self.system_path,
+                &self.framework_path,
+            ]
+        } else {
+            vec![&self.angled_includes, &self.system_path, &self.framework_path]
+        };
+
+        for path_list in paths_to_search {
+            for path in path_list {
                 if !found_current && current_dir.starts_with(path) {
                     found_current = true;
                     continue;
@@ -78,49 +88,6 @@ impl HeaderSearch {
                     if candidate.exists() {
                         return Some(candidate);
                     }
-                }
-            }
-        }
-
-        for path_str in &self.angled_includes {
-            let path: &Path = Path::new(path_str);
-            if !found_current && current_dir.starts_with(path) {
-                found_current = true;
-                continue;
-            }
-
-            if found_current {
-                let candidate = path.join(include_path);
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-        }
-
-        for path in &self.system_path {
-            if !found_current && current_dir.starts_with(path) {
-                found_current = true;
-                continue;
-            }
-
-            if found_current {
-                let candidate = path.join(include_path);
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-        }
-
-        for path in &self.framework_path {
-            if !found_current && current_dir.starts_with(path) {
-                found_current = true;
-                continue;
-            }
-
-            if found_current {
-                let candidate = path.join(include_path);
-                if candidate.exists() {
-                    return Some(candidate);
                 }
             }
         }

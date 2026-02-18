@@ -34,6 +34,11 @@ pub(crate) enum PPExpr {
     Identifier(String),
     Defined(Box<PPExpr>),
     HasInclude(String, bool),
+    HasIncludeNext(String, bool),
+    HasBuiltin(String),
+    HasAttribute(String),
+    HasFeature(String),
+    HasExtension(String),
     Binary(BinaryOp, Box<PPExpr>, Box<PPExpr>),
     Unary(UnaryOp, Box<PPExpr>),
     Conditional(Box<PPExpr>, Box<PPExpr>, Box<PPExpr>),
@@ -52,10 +57,53 @@ impl PPExpr {
                 }
             }
             PPExpr::HasInclude(path, is_angled) => Ok(ExprValue::from_bool(pp.check_header_exists(path, *is_angled))),
+            PPExpr::HasIncludeNext(path, is_angled) => {
+                Ok(ExprValue::from_bool(pp.check_next_header_exists(path, *is_angled)))
+            }
+            PPExpr::HasBuiltin(s) => Ok(ExprValue::from_bool(Self::is_builtin_supported(s))),
+            PPExpr::HasAttribute(s) => Ok(ExprValue::from_bool(Self::is_attribute_supported(s))),
+            PPExpr::HasFeature(s) | PPExpr::HasExtension(s) => Ok(ExprValue::from_bool(Self::is_feature_supported(s))),
             PPExpr::Binary(op, left, right) => Self::eval_binary(*op, left, right, pp, span),
             PPExpr::Unary(op, operand) => Self::eval_unary(*op, operand, pp, span),
             PPExpr::Conditional(cond, true_e, false_e) => Self::eval_conditional(cond, true_e, false_e, pp, span),
         }
+    }
+
+    fn is_builtin_supported(name: &str) -> bool {
+        matches!(
+            name,
+            "__builtin_va_arg"
+                | "__builtin_va_list"
+                | "__builtin_va_start"
+                | "__builtin_va_end"
+                | "__builtin_va_copy"
+                | "__builtin_expect"
+                | "__builtin_offsetof"
+                | "__atomic_load_n"
+                | "__atomic_store_n"
+                | "__atomic_exchange_n"
+                | "__atomic_compare_exchange_n"
+                | "__atomic_fetch_add"
+                | "__atomic_fetch_sub"
+                | "__atomic_fetch_and"
+                | "__atomic_fetch_or"
+                | "__atomic_fetch_xor"
+        )
+    }
+
+    fn is_attribute_supported(_name: &str) -> bool {
+        // We parse and skip all attributes, so technically we "support" them
+        // by not failing, but usually __has_attribute returns 1 only for
+        // attributes that have semantic meaning for the compiler.
+        // For now, return 0 as we don't implement any special attribute semantics.
+        false
+    }
+
+    fn is_feature_supported(name: &str) -> bool {
+        matches!(
+            name,
+            "c_static_assert" | "c_generic_selection" | "c_atomic" | "c_alignas" | "c_alignof" | "c_thread_local"
+        )
     }
 
     fn expr_error(span: SourceSpan) -> PPError {
@@ -397,7 +445,37 @@ impl<'a> Interpreter<'a> {
         // Handle `__has_include`
         if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_include_symbol()) {
             self.advance();
-            return self.parse_has_include();
+            return self.parse_has_include(false);
+        }
+
+        // Handle `__has_include_next`
+        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_include_next_symbol()) {
+            self.advance();
+            return self.parse_has_include(true);
+        }
+
+        // Handle `__has_builtin`
+        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_builtin_symbol()) {
+            self.advance();
+            return self.parse_has_builtin_style(PPExpr::HasBuiltin);
+        }
+
+        // Handle `__has_attribute`
+        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_attribute_symbol()) {
+            self.advance();
+            return self.parse_has_builtin_style(PPExpr::HasAttribute);
+        }
+
+        // Handle `__has_feature`
+        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_feature_symbol()) {
+            self.advance();
+            return self.parse_has_builtin_style(PPExpr::HasFeature);
+        }
+
+        // Handle `__has_extension`
+        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_extension_symbol()) {
+            self.advance();
+            return self.parse_has_builtin_style(PPExpr::HasExtension);
         }
 
         // Handle unary operators
@@ -416,7 +494,7 @@ impl<'a> Interpreter<'a> {
         self.parse_primary()
     }
 
-    fn parse_has_include(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_has_include(&mut self, is_next: bool) -> Result<PPExpr, PPError> {
         self.expect(PPTokenKind::LeftParen)?;
         let token = self.current()?;
 
@@ -451,7 +529,22 @@ impl<'a> Interpreter<'a> {
         };
 
         self.expect(PPTokenKind::RightParen)?;
-        Ok(PPExpr::HasInclude(path, is_angled))
+        if is_next {
+            Ok(PPExpr::HasIncludeNext(path, is_angled))
+        } else {
+            Ok(PPExpr::HasInclude(path, is_angled))
+        }
+    }
+
+    fn parse_has_builtin_style(&mut self, f: impl FnOnce(String) -> PPExpr) -> Result<PPExpr, PPError> {
+        self.expect(PPTokenKind::LeftParen)?;
+        let token = self.next()?;
+        let name = match &token.kind {
+            PPTokenKind::Identifier(sym) => sym.as_str().to_string(),
+            _ => return Err(self.error()),
+        };
+        self.expect(PPTokenKind::RightParen)?;
+        Ok(f(name))
     }
 
     fn parse_primary(&mut self) -> Result<PPExpr, PPError> {

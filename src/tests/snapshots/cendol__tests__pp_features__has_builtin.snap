@@ -1,0 +1,10 @@
+---
+source: src/tests/pp_features.rs
+expression: setup_pp_snapshot(src)
+---
+- kind: Identifier
+  text: has_expect
+- kind: Identifier
+  text: no_non_existent
+- kind: Identifier
+  text: has_expect_macro

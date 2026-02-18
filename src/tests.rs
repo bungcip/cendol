@@ -16,6 +16,7 @@ pub mod driver_source_manager;
 pub mod pp_common;
 pub mod pp_conditionals;
 pub mod pp_directives;
+pub mod pp_features;
 pub mod pp_includes;
 pub mod pp_internal;
 pub mod pp_lexical;

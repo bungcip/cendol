@@ -1,0 +1,10 @@
+---
+source: src/tests/pp_features.rs
+expression: setup_pp_snapshot(src)
+---
+- kind: Identifier
+  text: has_static_assert
+- kind: Identifier
+  text: has_generic_selection
+- kind: Identifier
+  text: no_non_existent

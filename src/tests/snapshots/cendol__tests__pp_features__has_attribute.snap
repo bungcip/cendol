@@ -1,0 +1,6 @@
+---
+source: src/tests/pp_features.rs
+expression: setup_pp_snapshot(src)
+---
+- kind: Identifier
+  text: no_aligned

@@ -53,6 +53,11 @@ pub(crate) struct DirectiveKeywordTable {
     warning: StringId,
     defined: StringId, // For the defined operator in expressions
     has_include: StringId,
+    has_include_next: StringId,
+    has_builtin: StringId,
+    has_attribute: StringId,
+    has_feature: StringId,
+    has_extension: StringId,
     line_macro: StringId,
     file_macro: StringId,
     counter_macro: StringId,
@@ -84,6 +89,11 @@ impl DirectiveKeywordTable {
             warning: StringId::new("warning"),
             defined: StringId::new("defined"),
             has_include: StringId::new("__has_include"),
+            has_include_next: StringId::new("__has_include_next"),
+            has_builtin: StringId::new("__has_builtin"),
+            has_attribute: StringId::new("__has_attribute"),
+            has_feature: StringId::new("__has_feature"),
+            has_extension: StringId::new("__has_extension"),
             line_macro: StringId::new("__LINE__"),
             file_macro: StringId::new("__FILE__"),
             counter_macro: StringId::new("__COUNTER__"),
@@ -133,6 +143,31 @@ impl DirectiveKeywordTable {
     /// Get the interned symbol for the "__has_include" operator
     pub(crate) fn has_include_symbol(&self) -> StringId {
         self.has_include
+    }
+
+    /// Get the interned symbol for the "__has_include_next" operator
+    pub(crate) fn has_include_next_symbol(&self) -> StringId {
+        self.has_include_next
+    }
+
+    /// Get the interned symbol for the "__has_builtin" operator
+    pub(crate) fn has_builtin_symbol(&self) -> StringId {
+        self.has_builtin
+    }
+
+    /// Get the interned symbol for the "__has_attribute" operator
+    pub(crate) fn has_attribute_symbol(&self) -> StringId {
+        self.has_attribute
+    }
+
+    /// Get the interned symbol for the "__has_feature" operator
+    pub(crate) fn has_feature_symbol(&self) -> StringId {
+        self.has_feature
+    }
+
+    /// Get the interned symbol for the "__has_extension" operator
+    pub(crate) fn has_extension_symbol(&self) -> StringId {
+        self.has_extension
     }
 }
 
@@ -648,6 +683,31 @@ impl<'src> Preprocessor<'src> {
         self.directive_keywords.has_include_symbol()
     }
 
+    /// Get the interned symbol for the "__has_include_next" operator
+    pub(crate) fn has_include_next_symbol(&self) -> StringId {
+        self.directive_keywords.has_include_next_symbol()
+    }
+
+    /// Get the interned symbol for the "__has_builtin" operator
+    pub(crate) fn has_builtin_symbol(&self) -> StringId {
+        self.directive_keywords.has_builtin_symbol()
+    }
+
+    /// Get the interned symbol for the "__has_attribute" operator
+    pub(crate) fn has_attribute_symbol(&self) -> StringId {
+        self.directive_keywords.has_attribute_symbol()
+    }
+
+    /// Get the interned symbol for the "__has_feature" operator
+    pub(crate) fn has_feature_symbol(&self) -> StringId {
+        self.directive_keywords.has_feature_symbol()
+    }
+
+    /// Get the interned symbol for the "__has_extension" operator
+    pub(crate) fn has_extension_symbol(&self) -> StringId {
+        self.directive_keywords.has_extension_symbol()
+    }
+
     /// Get the text associated with a token
     pub(crate) fn get_token_text(&self, token: &PPToken) -> &str {
         let buffer = self.sm.get_buffer(token.location.source_id());
@@ -675,6 +735,20 @@ impl<'src> Preprocessor<'src> {
 
         self.header_search.resolve_path(path, is_angled, current_dir).is_some()
             || (!is_angled && self.sm.get_file_id(path).is_some())
+    }
+
+    /// Check if a header exists for #include_next
+    pub(crate) fn check_next_header_exists(&self, path: &str, is_angled: bool) -> bool {
+        let current_dir = self
+            .lexer_stack
+            .last()
+            .and_then(|lexer| self.sm.get_file_info(lexer.source_id))
+            .and_then(|info| info.path.parent())
+            .unwrap_or(Path::new("."));
+
+        self.header_search
+            .resolve_next_path(path, is_angled, current_dir)
+            .is_some()
     }
 
     /// Expect and consume an Eod token or end of file
@@ -2226,7 +2300,7 @@ impl<'src> Preprocessor<'src> {
             };
             return Ok(Some(end.min(tokens.len())));
         }
-        if sym == self.directive_keywords.has_include {
+        if sym == self.directive_keywords.has_include || sym == self.directive_keywords.has_include_next {
             let next = i + 1;
             if let Some(PPTokenKind::LeftParen) = tokens.get(next).map(|t| &t.kind) {
                 let arg_start = next + 1;
@@ -2246,6 +2320,26 @@ impl<'src> Preprocessor<'src> {
                             return Ok(Some(arg_start + len + 1));
                         }
                     }
+                }
+            }
+            return Ok(Some(next.min(tokens.len())));
+        }
+
+        if sym == self.directive_keywords.has_builtin
+            || sym == self.directive_keywords.has_attribute
+            || sym == self.directive_keywords.has_feature
+            || sym == self.directive_keywords.has_extension
+        {
+            let next = i + 1;
+            if let Some(PPTokenKind::LeftParen) = tokens.get(next).map(|t| &t.kind) {
+                if let Some(arg_end) = self.find_balanced_paren_range(tokens, next) {
+                    // Argument to __has_builtin and friends should be expanded if it's a macro.
+                    let arg_start = next + 1;
+                    let mut args = tokens[arg_start..arg_end - 1].to_vec();
+                    self.expand_tokens(&mut args, false)?;
+                    let len = args.len();
+                    tokens.splice(arg_start..arg_end - 1, args);
+                    return Ok(Some(arg_start + len + 1));
                 }
             }
             return Ok(Some(next.min(tokens.len())));

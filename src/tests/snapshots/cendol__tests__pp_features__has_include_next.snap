@@ -1,0 +1,8 @@
+---
+source: src/tests/pp_features.rs
+expression: debug_tokens
+---
+- kind: Identifier
+  text: found_next
+- kind: Identifier
+  text: final_header

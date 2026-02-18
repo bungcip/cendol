@@ -542,3 +542,11 @@ fn test_source_manager_get_buffer_arc_invalid_id() {
     let invalid_id = SourceId::new(999);
     sm.get_buffer_arc(invalid_id);
 }
+
+#[test]
+#[should_panic(expected = "invalid source_id SourceId(1)")]
+fn test_source_manager_get_buffer_reserved_id() {
+    let sm = SourceManager::new();
+    let reserved_id = SourceId::new(1);
+    sm.get_buffer(reserved_id);
+}

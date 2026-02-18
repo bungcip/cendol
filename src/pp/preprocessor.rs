@@ -800,7 +800,8 @@ impl<'src> Preprocessor<'src> {
     /// Assumes the opening delimiter has NOT been consumed yet and will consume it.
     fn collect_balanced_tokens(&mut self, open: PPTokenKind, close: PPTokenKind) -> Result<Vec<PPToken>, PPError> {
         self.expect_kind(open)?;
-        let mut tokens = Vec::new();
+        // ⚡ Bolt: Use a small initial capacity to avoid reallocations for common short expressions.
+        let mut tokens = Vec::with_capacity(8);
         let mut depth = 1;
         while let Some(t) = self.lex_token() {
             if t.kind == PPTokenKind::Eod {
@@ -1898,7 +1899,7 @@ impl<'src> Preprocessor<'src> {
             return self.emit_error_loc(PPErrorKind::InvalidMacroParameter, token.location);
         }
 
-        let mut args = Vec::new();
+        let mut args = Vec::with_capacity(macro_info.parameter_list.len());
         let mut current_arg = Vec::new();
         let mut depth = 0;
 
@@ -1948,13 +1949,23 @@ impl<'src> Preprocessor<'src> {
         start_index: usize,
         trigger_loc: SourceLoc,
     ) -> Vec<PPToken> {
-        let mut result = Vec::new();
+        // ⚡ Bolt: Pre-allocate result vector and avoid redundant clones.
+        let mut total_tokens = 0;
+        let num_args = args.len().saturating_sub(start_index);
+        if num_args > 0 {
+            total_tokens += num_args - 1; // for commas
+            for arg in args.iter().skip(start_index) {
+                total_tokens += arg.len();
+            }
+        }
+        let mut result = Vec::with_capacity(total_tokens);
+
         let mut first = true;
 
         // We need a source for the comma token.
         // We create a virtual buffer for it to ensure stringification works correctly.
         // We only create it if we actually need a comma.
-        let comma_source_id = if args.len() > start_index + 1 {
+        let comma_source_id = if num_args > 1 {
             Some(
                 self.sm
                     .add_virtual_buffer(b",".to_vec(), "<comma>", Some(trigger_loc), FileKind::Virtual),
@@ -1972,7 +1983,7 @@ impl<'src> Preprocessor<'src> {
                     1,
                 ));
             }
-            result.extend(arg.clone());
+            result.extend_from_slice(arg);
             first = false;
         }
         result

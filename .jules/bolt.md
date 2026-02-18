@@ -49,3 +49,7 @@
 ## 2026-02-17 - Optimizing Token Pasting Buffer Construction
 **Learning:** Using `format!` followed by `.clone().into_bytes()` for simple string concatenation in a hot path like token pasting introduces two unnecessary heap allocations and a redundant copy.
 **Action:** Build the byte buffer directly using `Vec::with_capacity(len1 + len2)` followed by `extend_from_slice`. This is more efficient and avoids the formatting overhead.
+
+## 2026-02-18 - Avoiding Redundant Clones in Vector Extension
+**Learning:** Using `result.extend(vec.clone())` on a `Vec<T>` where `T: Copy` is a major performance anti-pattern. It creates a temporary heap-allocated `Vec`, copies elements into it, and then moves them into the result before dropping the temporary.
+**Action:** Always use `result.extend_from_slice(vec)` or `result.extend(vec.iter().copied())` for `Copy` types. For non-`Copy` types where you need to keep the original, `result.extend(vec.iter().cloned())` is preferred as it avoids the intermediate `Vec` allocation.

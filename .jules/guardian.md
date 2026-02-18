@@ -22,11 +22,6 @@ Action: Implement and use a 'composite_type' mechanism during redeclaration chec
 
 2025-05-18 - [_Alignas Constraints and Strictness]
 
-Learning: C11  (6.7.5) has strict constraints on where it can appear: it is prohibited in s, function declarations, function parameters, and  objects. Additionally, it cannot specify an alignment less strict than the type's natural alignment. While  is valid and has no effect, any other value must be a power of two and satisfy the strictness constraint.
-Action: Implement and enforce alignment constraints during the semantic lowering phase to ensure C11 compliance and prevent invalid object layouts.
-
-2025-05-18 - [_Alignas Constraints and Strictness]
-
 Learning: C11 `_Alignas` (6.7.5) has strict constraints on where it can appear: it is prohibited in `typedef`s, function declarations, function parameters, and `register` objects. Additionally, it cannot specify an alignment less strict than the type's natural alignment. While `_Alignas(0)` is valid and has no effect, any other value must be a power of two and satisfy the strictness constraint.
 Action: Implement and enforce alignment constraints during the semantic lowering phase to ensure C11 compliance and prevent invalid object layouts.
 
@@ -59,3 +54,8 @@ Action: Use strict QualType equality (which relies on canonical TypeRefs and qua
 
 Learning: C11 6.7.4p1 requires that function specifiers ('inline' and '_Noreturn') only be used in the declaration of an identifier that is a function. This means they must be rejected for typedefs, struct/union members, and tag declarations (forward decls or definitions), even if the underlying type is a function pointer.
 Action: Centralize function specifier validation in semantic lowering to ensure all non-function declaration paths (variables, typedefs, members, tags) correctly enforce these constraints.
+
+2025-05-25 - [_Noreturn Fall-through and Loop Breaks]
+
+Learning: `can_fall_through` analysis for `_Noreturn` compliance must distinguish between truly infinite loops and those that can exit via `break`. A loop without a condition (like `for(;;)`) or with a constant true condition (like `while(1)`) only satisfies `_Noreturn` if it contains no `break` statements targeting it. Shallow scanning for `NodeKind::Break` (avoiding nested loops) combined with `const_eval` for loop conditions provides a robust safeguard against miscompilation of divergent control flow.
+Action: Always combine condition analysis with internal control-flow jump detection (like `break`) when validating divergent or non-returning constructs.

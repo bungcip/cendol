@@ -135,7 +135,7 @@ impl<'a> MirGen<'a> {
             NodeKind::DoWhile(body, condition) => self.visit_do_while_stmt(body, condition),
             NodeKind::ExpressionStatement(Some(expr_ref)) => {
                 // Expression statement: value not needed, only side-effects
-                self.emit_expression(expr_ref, false);
+                self.visit_expression(expr_ref, false);
             }
             NodeKind::Break => {
                 let target = self.break_target.unwrap();
@@ -184,7 +184,7 @@ impl<'a> MirGen<'a> {
             | NodeKind::BuiltinVaCopy(..)
             | NodeKind::GenericSelection(..)
             | NodeKind::GnuStatementExpression(..) => {
-                self.emit_expression(node_ref, false);
+                self.visit_expression(node_ref, false);
             }
 
             _ => {}
@@ -267,7 +267,7 @@ impl<'a> MirGen<'a> {
     }
 
     pub(crate) fn evaluate_constant_usize(&mut self, expr: NodeRef, error_msg: &str) -> usize {
-        let operand = self.emit_expression(expr, true);
+        let operand = self.visit_expression(expr, true);
         if let Some(const_id) = self.operand_to_const_id(&operand) {
             let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
             if let ConstValueKind::Int(val) = const_val.kind {
@@ -281,7 +281,7 @@ impl<'a> MirGen<'a> {
     }
 
     pub(crate) fn lower_condition(&mut self, condition: NodeRef) -> Operand {
-        let cond_operand = self.emit_expression(condition, true);
+        let cond_operand = self.visit_expression(condition, true);
         // Apply conversions for condition (should be boolean)
         let cond_ty = self.ast.get_resolved_type(condition).unwrap();
         let cond_mir_ty = self.lower_qual_type(cond_ty);
@@ -383,13 +383,13 @@ impl<'a> MirGen<'a> {
         let is_global = self.current_function.is_none() || is_global_sym || storage == Some(StorageClass::Static);
 
         if is_global {
-            self.emit_global(entry_ref, mir_type_id);
+            self.visit_global_symbol(entry_ref, mir_type_id);
         } else {
-            self.emit_local(entry_ref, mir_type_id);
+            self.visit_local_symbol(entry_ref, mir_type_id);
         }
     }
 
-    fn emit_global(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
+    fn visit_global_symbol(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(entry_ref);
         let (init, alignment, name, ty) = if let SymbolKind::Variable {
             initializer, alignment, ..
@@ -434,7 +434,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn emit_local(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
+    fn visit_local_symbol(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(entry_ref);
         let (init, alignment, name, ty) = if let SymbolKind::Variable {
             initializer, alignment, ..
@@ -454,8 +454,8 @@ impl<'a> MirGen<'a> {
         self.local_map.insert(entry_ref, local_id);
 
         if let Some(initializer) = init {
-            let init_operand = self.emit_initializer(initializer, ty, Some(Place::Local(local_id)));
-            // If emit_initializer used the destination, it returns Operand::Copy(destination)
+            let init_operand = self.visit_initializer(initializer, ty, Some(Place::Local(local_id)));
+            // If visit_initializer used the destination, it returns Operand::Copy(destination)
             // emit_assignment will then emit Place::Local(local_id) = Place::Local(local_id), which is fine or can be skipped.
             self.emit_assignment(Place::Local(local_id), init_operand);
         }
@@ -463,7 +463,7 @@ impl<'a> MirGen<'a> {
 
     fn visit_return_stmt(&mut self, expr: &Option<NodeRef>) {
         let operand = expr.map(|expr_ref| {
-            let expr_operand = self.emit_expression(expr_ref, true);
+            let expr_operand = self.visit_expression(expr_ref, true);
             // Apply conversions for return value if needed
             if let Some(func_id) = self.current_function {
                 let func = self.mir_builder.get_functions().get(&func_id).unwrap();
@@ -603,7 +603,7 @@ impl<'a> MirGen<'a> {
 
         let inc_fn = for_stmt.increment.map(|inc| {
             move |this: &mut Self| {
-                this.emit_expression(inc, false);
+                this.visit_expression(inc, false);
             }
         });
 
@@ -611,9 +611,9 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_switch_stmt(&mut self, cond: NodeRef, body: NodeRef) {
-        let cond_op = self.emit_expression(cond, true);
+        let cond_op = self.visit_expression(cond, true);
 
-        // Integer promotions on controlling expression are handled by emit_expression if sema did it?
+        // Integer promotions on controlling expression are handled by visit_expression if sema did it?
         // Semantic analysis should have inserted implicit conversions.
         // But we might need to cast case values to this type.
         let cond_ty_id = self.get_operand_type(&cond_op);
@@ -752,16 +752,16 @@ impl<'a> MirGen<'a> {
         let kind = *self.ast.get_kind(node);
         match kind {
             NodeKind::Case(expr, stmt) => {
-                let op = self.emit_expression(expr, true);
+                let op = self.visit_expression(expr, true);
                 let val = self.operand_to_const_id_strict(op, "Case label must be constant");
                 cases.push((node, Some(val), None));
                 self.collect_switch_cases_recursive(stmt, cases);
             }
             NodeKind::CaseRange(start, end, stmt) => {
-                let start_op = self.emit_expression(start, true);
+                let start_op = self.visit_expression(start, true);
                 let start_val = self.operand_to_const_id_strict(start_op, "Case range start must be constant");
 
-                let end_op = self.emit_expression(end, true);
+                let end_op = self.visit_expression(end, true);
                 let end_val = self.operand_to_const_id_strict(end_op, "Case range end must be constant");
 
                 cases.push((node, Some(start_val), Some(end_val)));

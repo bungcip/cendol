@@ -73,11 +73,7 @@ impl HeaderSearch {
                 &self.framework_path,
             ]
         } else {
-            vec![
-                &self.angled_includes,
-                &self.system_path,
-                &self.framework_path,
-            ]
+            vec![&self.angled_includes, &self.system_path, &self.framework_path]
         };
 
         for path_list in paths_to_search {

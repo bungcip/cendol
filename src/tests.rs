@@ -77,6 +77,7 @@ pub mod mir_gen_compound_assignment;
 pub mod mir_gen_sizeof;
 pub mod mir_unit;
 pub mod mir_validation;
+pub mod parser_attributes_declarator;
 pub mod semantic_assignment_coverage;
 pub mod semantic_atomic;
 pub mod semantic_brace_elision;

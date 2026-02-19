@@ -809,7 +809,8 @@ impl<'a> MirGen<'a> {
             {
                 CallTarget::Direct(*func_id)
             } else {
-                panic!("Expected function address");
+                // Handle non-function-address constants (e.g. casted integers) as indirect calls
+                CallTarget::Indirect(Operand::Constant(const_id))
             }
         } else {
             CallTarget::Indirect(callee)

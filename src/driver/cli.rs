@@ -9,7 +9,7 @@ use target_lexicon::Triple;
 
 use crate::{
     driver::artifact::CompilePhase,
-    lang_options::{CStandard, LangOptions},
+    lang_options::CStandard,
 };
 
 /// CLI interface using clap
@@ -135,7 +135,7 @@ pub struct CompileConfig {
     pub suppress_line_markers: bool,
     pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
     pub warnings: Vec<String>,
-    pub lang_options: LangOptions,
+    pub c_standard: CStandard,
     pub target: Triple,
 
     pub optimization: Option<String>,
@@ -157,7 +157,7 @@ impl Default for CompileConfig {
             suppress_line_markers: false,
             defines: Vec::new(),
             warnings: Vec::new(),
-            lang_options: LangOptions::default(),
+            c_standard: CStandard::default(),
             target: Triple::host(),
             optimization: None,
             libraries: Vec::new(),
@@ -247,9 +247,7 @@ impl Cli {
 
         // Build language options
 
-        let lang_options = LangOptions {
-            c_standard: self.c_standard,
-        };
+        let c_standard = self.c_standard.unwrap_or_default();
 
         // Build preprocessor configuration with include paths
         let mut system_include_paths = Vec::new();
@@ -305,12 +303,13 @@ impl Cli {
                 max_include_depth: self.preprocessor.max_include_depth,
                 system_include_paths,
                 target: target_triple.clone(),
+                c_standard,
                 ..Default::default()
             },
             suppress_line_markers: self.suppress_line_markers,
             defines,
             warnings,
-            lang_options,
+            c_standard,
             target: target_triple,
             optimization: self.optimization,
             libraries: self.libraries,

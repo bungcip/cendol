@@ -454,28 +454,21 @@ impl<'a> Interpreter<'a> {
             return self.parse_has_include(true);
         }
 
-        // Handle `__has_builtin`
-        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_builtin_symbol()) {
-            self.advance();
-            return self.parse_has_builtin_style(PPExpr::HasBuiltin);
-        }
+        // Handle `__has_builtin` and friends
+        let checks = [
+            (self.preprocessor.has_builtin_symbol(), PPExpr::HasBuiltin as fn(String) -> PPExpr),
+            (self.preprocessor.has_attribute_symbol(), PPExpr::HasAttribute),
+            (self.preprocessor.has_feature_symbol(), PPExpr::HasFeature),
+            (self.preprocessor.has_extension_symbol(), PPExpr::HasExtension),
+        ];
 
-        // Handle `__has_attribute`
-        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_attribute_symbol()) {
-            self.advance();
-            return self.parse_has_builtin_style(PPExpr::HasAttribute);
-        }
-
-        // Handle `__has_feature`
-        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_feature_symbol()) {
-            self.advance();
-            return self.parse_has_builtin_style(PPExpr::HasFeature);
-        }
-
-        // Handle `__has_extension`
-        if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.has_extension_symbol()) {
-            self.advance();
-            return self.parse_has_builtin_style(PPExpr::HasExtension);
+        if let PPTokenKind::Identifier(sym) = token.kind {
+            for (id, constructor) in checks {
+                if sym == id {
+                    self.advance();
+                    return self.parse_has_builtin_style(constructor);
+                }
+            }
         }
 
         // Handle unary operators

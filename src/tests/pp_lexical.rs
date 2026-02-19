@@ -1,5 +1,5 @@
 use crate::ast::StringId;
-use crate::lang_options::LangOptions;
+use crate::lang_options::CStandard;
 use crate::pp::{PPConfig, PPTokenFlags, PPTokenKind, Preprocessor, dumper::PPDumper};
 use crate::test_tokens;
 use crate::tests::pp_common::{create_test_pp_lexer, setup_pp_snapshot, setup_preprocessor_test_with_diagnostics};
@@ -382,7 +382,7 @@ int u32 = 1;
 #endif
 "#;
     let config = PPConfig {
-        lang_options: LangOptions::c11(),
+        c_standard: CStandard::C11,
         ..Default::default()
     };
     let (tokens, _) = setup_preprocessor_test_with_diagnostics(src, Some(config)).unwrap();

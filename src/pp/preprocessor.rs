@@ -1,6 +1,6 @@
 use crate::ast::StringId;
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
-use crate::lang_options::LangOptions;
+use crate::lang_options::CStandard;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use hashbrown::HashMap;
@@ -217,7 +217,7 @@ pub struct PPConfig {
     pub quoted_include_paths: Vec<PathBuf>,
     pub angled_include_paths: Vec<PathBuf>,
     pub framework_paths: Vec<PathBuf>,
-    pub lang_options: LangOptions,
+    pub c_standard: CStandard,
     pub target: Triple,
     pub current_time: Option<DateTime<Utc>>,
 }
@@ -230,7 +230,7 @@ impl Default for PPConfig {
             quoted_include_paths: Vec::new(),
             angled_include_paths: Vec::new(),
             framework_paths: Vec::new(),
-            lang_options: LangOptions::default(),
+            c_standard: CStandard::default(),
             target: Triple::host(),
             current_time: None,
         }
@@ -241,7 +241,7 @@ impl Default for PPConfig {
 pub struct Preprocessor<'src> {
     sm: &'src mut SourceManager,
     diag: &'src mut DiagnosticEngine,
-    lang_opts: LangOptions,
+    c_standard: CStandard,
     target: Triple,
 
     // Pre-interned directive keywords for fast comparison
@@ -438,7 +438,7 @@ impl<'src> Preprocessor<'src> {
         let mut preprocessor = Preprocessor {
             sm: source_manager,
             diag,
-            lang_opts: config.lang_options,
+            c_standard: config.c_standard,
             directive_keywords: DirectiveKeywordTable::new(),
             macros: HashMap::new(),
             macro_stack: HashMap::new(),
@@ -582,7 +582,7 @@ impl<'src> Preprocessor<'src> {
         self.define_builtin_macro_with_val("__GNUC_MINOR__", "2");
         self.define_builtin_macro_with_val("__GNUC_PATCHLEVEL__", "1");
 
-        if self.lang_opts.is_c11() {
+        if self.c_standard.is_c11() {
             self.define_builtin_macro_with_val("__STDC_VERSION__", "201112");
             self.define_builtin_macro_one("__STDC_HOSTED__");
             self.define_builtin_macro_one("__STDC_MB_MIGHT_NEQ_WC__");
@@ -1836,6 +1836,22 @@ impl<'src> Preprocessor<'src> {
         result
     }
 
+    /// Helper to create a virtual buffer and expand tokens within it
+    fn expand_virtual_buffer(
+        &mut self,
+        tokens: &[PPToken],
+        name: &str,
+        location: SourceLoc,
+    ) -> Result<Vec<PPToken>, PPError> {
+        // For Level B: Create a virtual buffer containing the replacement text
+        let mut expanded = self.create_virtual_buffer_tokens(tokens, name, location);
+
+        // Recursively expand any macros in the replacement
+        self.expand_tokens(&mut expanded, false)?;
+
+        Ok(expanded)
+    }
+
     /// Expand an object-like macro
     fn expand_object_macro(
         &mut self,
@@ -1843,13 +1859,7 @@ impl<'src> Preprocessor<'src> {
         symbol: &StringId,
         token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
-        // For Level B: Create a virtual buffer containing the replacement text
-        let mut expanded = self.create_virtual_buffer_tokens(&macro_info.tokens, symbol.as_str(), token.location);
-
-        // Recursively expand any macros in the replacement
-        self.expand_tokens(&mut expanded, false)?;
-
-        Ok(expanded)
+        self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), token.location)
     }
 
     /// Expand a function-like macro
@@ -1882,13 +1892,7 @@ impl<'src> Preprocessor<'src> {
         // Substitute parameters in macro body
         let substituted = self.substitute_macro(macro_info, &args, &expanded_args)?;
 
-        // For Level B: Create a virtual buffer containing the substituted text
-        let mut expanded = self.create_virtual_buffer_tokens(&substituted, symbol.as_str(), token.location);
-
-        // Recursively expand any macros in the replacement
-        self.expand_tokens(&mut expanded, false)?;
-
-        Ok(expanded)
+        self.expand_virtual_buffer(&substituted, symbol.as_str(), token.location)
     }
 
     /// Parse macro arguments from the current lexer

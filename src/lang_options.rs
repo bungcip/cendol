@@ -6,6 +6,19 @@ pub enum CStandard {
     C11,
 }
 
+impl Default for CStandard {
+    fn default() -> Self {
+        Self::C11
+    }
+}
+
+impl CStandard {
+    /// Check if C11 standard is enabled
+    pub(crate) fn is_c11(&self) -> bool {
+        matches!(self, CStandard::C11)
+    }
+}
+
 impl From<&str> for CStandard {
     fn from(s: &str) -> Self {
         match s {
@@ -17,41 +30,19 @@ impl From<&str> for CStandard {
     }
 }
 
-/// Language options affecting compilation behavior
-#[derive(Copy, Clone, Debug, Default)]
-pub struct LangOptions {
-    pub c_standard: Option<CStandard>, // C standard version (e.g., "c99", "c11")
-}
-
-impl LangOptions {
-    #[cfg(test)]
-    pub(crate) fn c11() -> Self {
-        LangOptions {
-            c_standard: Some(CStandard::C11),
-        }
-    }
-
-    /// Check if C11 standard is enabled
-    pub(crate) fn is_c11(&self) -> bool {
-        matches!(self.c_standard, Some(CStandard::C11))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_lang_options_c11() {
-        let options = LangOptions::c11();
-        assert!(options.is_c11());
-        assert_eq!(options.c_standard, Some(CStandard::C11));
+    fn test_c_standard_default() {
+        assert_eq!(CStandard::default(), CStandard::C11);
     }
 
     #[test]
-    fn test_lang_options_default() {
-        let options = LangOptions::default();
-        assert!(!options.is_c11());
-        assert_eq!(options.c_standard, None);
+    fn test_c_standard_is_c11() {
+        assert!(CStandard::C11.is_c11());
+        assert!(!CStandard::C99.is_c11());
+        assert!(!CStandard::C89.is_c11());
     }
 }

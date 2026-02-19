@@ -21,6 +21,7 @@ pub mod pp_includes;
 pub mod pp_internal;
 pub mod pp_lexical;
 pub mod pp_macros;
+pub mod pp_dumper_coverage;
 
 pub mod semantic_arrays;
 pub mod semantic_builtins;

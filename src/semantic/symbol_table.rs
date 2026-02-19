@@ -142,9 +142,11 @@ pub struct SymbolTable {
 
 impl SymbolTable {
     pub(crate) fn new() -> Self {
+        // ⚡ Bolt: Pre-allocate space for symbols and scopes to avoid multiple reallocations.
+        // A medium-sized C translation unit can easily have hundreds of symbols and multiple scopes.
         let mut table = SymbolTable {
-            entries: Vec::new(),
-            scopes: Vec::new(),
+            entries: Vec::with_capacity(512),
+            scopes: Vec::with_capacity(32),
             current_scope_id: ScopeId::GLOBAL,
             next_scope_id: 2, // Start after GLOBAL
         };

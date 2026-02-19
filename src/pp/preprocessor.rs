@@ -843,7 +843,10 @@ impl<'src> Preprocessor<'src> {
         self.lexer_stack.push(PPLexer::new(source_id, buffer));
         self.sm.calculate_line_starts(source_id);
 
-        let mut result_tokens = Vec::new();
+        // ⚡ Bolt: Pre-allocate the result_tokens vector using a capacity hint based on buffer size.
+        // A common estimate for C code is around 8 bytes per token.
+        // This avoids multiple costly reallocations for large source files.
+        let mut result_tokens = Vec::with_capacity(buffer_len as usize / 8);
 
         while let Some(token) = self.lex_token() {
             match token.kind {

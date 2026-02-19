@@ -204,18 +204,18 @@ impl SymbolTable {
         &self.scopes[scope_id.get() as usize - 1]
     }
 
-    pub(crate) fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
+    fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
         &mut self.scopes[scope_id.get() as usize - 1]
     }
 
-    pub(crate) fn add_symbol(&mut self, name: NameId, entry: Symbol) -> SymbolRef {
+    fn add_symbol(&mut self, name: NameId, entry: Symbol) -> SymbolRef {
         let entry_ref = self.push_symbol(entry);
         let current_scope = self.get_scope_mut(self.current_scope_id);
         current_scope.symbols.insert(name, entry_ref);
         entry_ref
     }
 
-    pub(crate) fn add_symbol_in_namespace(&mut self, name: NameId, entry: Symbol, ns: Namespace) -> SymbolRef {
+    fn add_symbol_in_namespace(&mut self, name: NameId, entry: Symbol, ns: Namespace) -> SymbolRef {
         let entry_ref = self.push_symbol(entry);
         let current_scope = self.get_scope_mut(self.current_scope_id);
         match ns {

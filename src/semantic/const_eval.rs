@@ -127,7 +127,7 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
     }
 }
 
-pub(crate) fn eval_offsetof(ctx: &ConstEvalCtx, ty: QualType, expr_ref: NodeRef) -> Option<i64> {
+fn eval_offsetof(ctx: &ConstEvalCtx, ty: QualType, expr_ref: NodeRef) -> Option<i64> {
     let mut current_ty = ty;
     let mut offset = 0i64;
 

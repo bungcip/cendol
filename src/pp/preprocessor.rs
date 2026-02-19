@@ -101,7 +101,7 @@ impl DirectiveKeywordTable {
         }
     }
 
-    pub(crate) fn is_directive(&self, symbol: StringId) -> Option<DirectiveKind> {
+    fn is_directive(&self, symbol: StringId) -> Option<DirectiveKind> {
         if symbol == self.define {
             Some(DirectiveKind::Define)
         } else if symbol == self.undef {
@@ -1773,7 +1773,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expand a macro if it exists
-    pub(crate) fn expand_macro(&mut self, token: &PPToken) -> Result<Option<Vec<PPToken>>, PPError> {
+    fn expand_macro(&mut self, token: &PPToken) -> Result<Option<Vec<PPToken>>, PPError> {
         let PPTokenKind::Identifier(symbol) = token.kind else {
             return Ok(None);
         };
@@ -2342,16 +2342,19 @@ impl<'src> Preprocessor<'src> {
             || sym == self.directive_keywords.has_extension
         {
             let next = i + 1;
-            if let Some(PPTokenKind::LeftParen) = tokens.get(next).map(|t| &t.kind) {
-                if let Some(arg_end) = self.find_balanced_paren_range(tokens, next) {
-                    // Argument to __has_builtin and friends should be expanded if it's a macro.
-                    let arg_start = next + 1;
-                    let mut args = tokens[arg_start..arg_end - 1].to_vec();
-                    self.expand_tokens(&mut args, false)?;
-                    let len = args.len();
-                    tokens.splice(arg_start..arg_end - 1, args);
-                    return Ok(Some(arg_start + len + 1));
-                }
+            let arg_end = tokens
+                .get(next)
+                .filter(|t| t.kind == PPTokenKind::LeftParen)
+                .and_then(|_| self.find_balanced_paren_range(tokens, next));
+
+            if let Some(arg_end) = arg_end {
+                // Argument to __has_builtin and friends should be expanded if it's a macro.
+                let arg_start = next + 1;
+                let mut args = tokens[arg_start..arg_end - 1].to_vec();
+                self.expand_tokens(&mut args, false)?;
+                let len = args.len();
+                tokens.splice(arg_start..arg_end - 1, args);
+                return Ok(Some(arg_start + len + 1));
             }
             return Ok(Some(next.min(tokens.len())));
         }

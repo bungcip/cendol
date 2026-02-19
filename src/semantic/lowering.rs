@@ -248,7 +248,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.diag.report(error);
     }
 
-    pub(crate) fn check_function_specifiers(&mut self, info: &DeclSpecInfo, span: SourceSpan) {
+    fn check_function_specifiers(&mut self, info: &DeclSpecInfo, span: SourceSpan) {
         if info.is_inline {
             self.report_error(SemanticError::InvalidFunctionSpecifier {
                 spec: "inline".to_string(),
@@ -263,7 +263,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    pub(crate) fn merge_qualifiers_with_check(
+    fn merge_qualifiers_with_check(
         &mut self,
         base: QualType,
         add: TypeQualifiers,
@@ -2608,14 +2608,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .unwrap_or_else(|| self.push_dummy(SourceSpan::default()))
     }
 
-    pub(crate) fn visit_expression_into(&mut self, node: ParsedNodeRef, target: NodeRef) -> NodeRef {
+    fn visit_expression_into(&mut self, node: ParsedNodeRef, target: NodeRef) -> NodeRef {
         self.visit_node_entry(node, Some(&[target]))
             .first()
             .copied()
             .unwrap_or(target)
     }
 
-    pub(crate) fn visit_single_statement(&mut self, node: ParsedNodeRef) -> NodeRef {
+    fn visit_single_statement(&mut self, node: ParsedNodeRef) -> NodeRef {
         self.visit_expression(node)
     }
 

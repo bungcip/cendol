@@ -231,7 +231,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::DoWhile(body, condition) => !self.is_always_true(*condition) || self.contains_break(*body),
             NodeKind::For(for_stmt) => {
-                for_stmt.condition.map_or(false, |c| !self.is_always_true(c)) || self.contains_break(for_stmt.body)
+                for_stmt.condition.is_some_and(|c| !self.is_always_true(c)) || self.contains_break(for_stmt.body)
             }
             NodeKind::CompoundStatement(cs) => {
                 if cs.stmt_len > 0 {

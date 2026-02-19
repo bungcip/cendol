@@ -201,7 +201,7 @@ impl PPLexer {
 
     /// Get the next character, handling line splicing transparently
     /// Line splicing: backslash followed by newline removes both characters
-    pub(crate) fn next_char(&mut self) -> Option<u8> {
+    fn next_char(&mut self) -> Option<u8> {
         loop {
             let pos = self.position as usize;
             if pos >= self.buffer.len() {
@@ -298,7 +298,7 @@ impl PPLexer {
     }
 
     /// Peek at the next character without consuming it, handling line splicing
-    pub(crate) fn peek_char(&mut self) -> Option<u8> {
+    fn peek_char(&mut self) -> Option<u8> {
         let pos = self.position as usize;
 
         // ⚡ Bolt: Fast path for peeking common characters.

@@ -168,7 +168,7 @@ pub enum TokenKind {
 
 impl TokenKind {
     /// Check if the token is a storage class specifier
-    pub(crate) fn is_storage_class_specifier(&self) -> bool {
+    fn is_storage_class_specifier(&self) -> bool {
         matches!(
             self,
             TokenKind::Typedef
@@ -181,7 +181,7 @@ impl TokenKind {
     }
 
     /// Check if the token is a type specifier
-    pub(crate) fn is_type_specifier(&self) -> bool {
+    fn is_type_specifier(&self) -> bool {
         matches!(
             self,
             TokenKind::Void
@@ -204,7 +204,7 @@ impl TokenKind {
     }
 
     /// Check if the token is a type qualifier
-    pub(crate) fn is_type_qualifier(&self) -> bool {
+    fn is_type_qualifier(&self) -> bool {
         matches!(
             self,
             TokenKind::Const | TokenKind::Restrict | TokenKind::Volatile | TokenKind::Atomic
@@ -212,12 +212,12 @@ impl TokenKind {
     }
 
     /// Check if the token is a function specifier
-    pub(crate) fn is_function_specifier(&self) -> bool {
+    fn is_function_specifier(&self) -> bool {
         matches!(self, TokenKind::Inline | TokenKind::Noreturn)
     }
 
     /// Check if the token is an alignment specifier
-    pub(crate) fn is_alignment_specifier(&self) -> bool {
+    fn is_alignment_specifier(&self) -> bool {
         matches!(self, TokenKind::Alignas)
     }
 

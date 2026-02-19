@@ -108,7 +108,7 @@ impl MirFunction {
         Self::new(id, name, return_type, MirFunctionKind::Defined)
     }
 
-    pub(crate) fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
+    fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
         Self::new(id, name, return_type, MirFunctionKind::Extern)
     }
 }

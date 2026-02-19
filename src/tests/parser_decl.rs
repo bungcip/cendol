@@ -901,3 +901,26 @@ int main () { return 0; }
 "#;
     run_pass(code, CompilePhase::SemanticLowering);
 }
+
+#[test]
+fn test_struct_attribute_error_recovery() {
+    // Test error recovery when __attribute__ is malformed before tag
+    // expected: struct __attribute__ S; -> struct S;
+    let resolved = setup_declaration("struct __attribute__ S;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    Declaration:
+      specifiers:
+        - struct S
+      init_declarators: []
+    ");
+
+    // Test error recovery when __attribute__ is malformed after definition
+    // expected: struct S { } __attribute__; -> struct S { };
+    let resolved_def = setup_declaration("struct S { } __attribute__;");
+    insta::assert_yaml_snapshot!(&resolved_def, @r#"
+    Declaration:
+      specifiers:
+        - "struct S { ... }"
+      init_declarators: []
+    "#);
+}

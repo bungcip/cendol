@@ -27,8 +27,8 @@ pub struct Type {
 
 #[derive(Debug, Clone)]
 pub struct TypeLayout {
-    pub size: u16,
-    pub alignment: u16,
+    pub size: u64,
+    pub alignment: u64,
     pub kind: LayoutKind,
 }
 
@@ -41,7 +41,7 @@ pub enum LayoutKind {
 
 #[derive(Debug, Clone)]
 pub struct FieldLayout {
-    pub offset: u16,
+    pub offset: u64,
 }
 
 impl Type {
@@ -68,8 +68,8 @@ impl Type {
         &self,
         registry: &super::TypeRegistry,
         flat_members: &mut Vec<StructMember>,
-        flat_offsets: &mut Vec<u16>,
-        base_offset: u16,
+        flat_offsets: &mut Vec<u64>,
+        base_offset: u64,
     ) {
         #[allow(clippy::collapsible_if)]
         if let TypeKind::Record { members, .. } = &self.kind {

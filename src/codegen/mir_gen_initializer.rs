@@ -19,7 +19,7 @@ impl<'a> MirGen<'a> {
         self.finalize_struct_initializer(fields, target_ty, destination)
     }
 
-    fn get_flattened_type_info(&self, ty_ref: crate::semantic::TypeRef) -> (Vec<StructMember>, Vec<u16>) {
+    fn get_flattened_type_info(&self, ty_ref: crate::semantic::TypeRef) -> (Vec<StructMember>, Vec<u64>) {
         let mut members = Vec::new();
         let mut offsets = Vec::new();
         let ty = self.registry.get(ty_ref);

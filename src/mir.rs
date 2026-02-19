@@ -412,16 +412,16 @@ impl MirType {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirRecordLayout {
-    pub size: u16,
-    pub alignment: u16,
-    pub field_offsets: Vec<u16>,
+    pub size: u64,
+    pub alignment: u64,
+    pub field_offsets: Vec<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct MirArrayLayout {
-    pub size: u16,
-    pub align: u16,
-    pub stride: u16,
+    pub size: u64,
+    pub align: u64,
+    pub stride: u64,
 }
 
 /// Constant Value Kind - discriminant for ConstValue

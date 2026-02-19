@@ -263,7 +263,7 @@ pub enum SemanticError {
     #[error("width of bit-field ({width} bits) exceeds width of its type ({type_width} bits)")]
     BitfieldWidthExceedsType {
         width: u16,
-        type_width: u16,
+        type_width: u64,
         span: SourceSpan,
     },
 

@@ -3018,7 +3018,7 @@ fn visit_struct_members(members: &[ParsedDeclarationData], ctx: &mut LowerCtx, s
                     });
                 } else if let Ok(layout) = ctx.registry.ensure_layout(member_type.ty()) {
                     let type_width = layout.size * 8;
-                    if width > type_width {
+                    if (width as u64) > type_width {
                         ctx.report_error(SemanticError::BitfieldWidthExceedsType {
                             width,
                             type_width,

@@ -523,7 +523,7 @@ impl TypeRegistry {
             let elem_layout = self.get_layout(elem);
             let len = ty.array_len().unwrap() as u64;
             return Cow::Owned(TypeLayout {
-                size: elem_layout.size * (len as u16), // Potential overflow if not careful, but C rules apply
+                size: elem_layout.size * len, // Potential overflow if not careful, but C rules apply
                 alignment: elem_layout.alignment,
                 kind: LayoutKind::Array { element: elem, len },
             });
@@ -536,7 +536,7 @@ impl TypeRegistry {
         }
     }
 
-    pub(crate) fn get_array_layout(&self, ty: TypeRef) -> (u16, u16, TypeRef, u64) {
+    pub(crate) fn get_array_layout(&self, ty: TypeRef) -> (u64, u64, TypeRef, u64) {
         let layout = self.get_layout(ty);
         match layout.kind {
             LayoutKind::Array { element, len } => (layout.size, layout.alignment, element, len),
@@ -558,7 +558,7 @@ impl TypeRegistry {
             let elem = self.reconstruct_element(ty);
             let elem_layout = self.ensure_layout(elem)?; // returns Cow
             let len = ty.array_len().unwrap() as u64;
-            let size = (elem_layout.size as u64 * len) as u16;
+            let size = elem_layout.size * len;
 
             return Ok(Cow::Owned(TypeLayout {
                 size,
@@ -690,9 +690,9 @@ impl TypeRegistry {
             TypeKind::Array { element_type, size } => match size {
                 ArraySizeType::Constant(len) => {
                     let element_layout = self.ensure_layout(element_type)?;
-                    let total_size = element_layout.size as u64 * len as u64;
+                    let total_size = element_layout.size * len as u64;
                     TypeLayout {
-                        size: total_size as u16,
+                        size: total_size,
                         alignment: element_layout.alignment,
                         kind: LayoutKind::Array {
                             element: element_type,
@@ -848,7 +848,7 @@ impl TypeRegistry {
             let layout = self.ensure_layout(member_ty)?;
             let mut member_align = layout.alignment;
             if let Some(req_align) = member.alignment {
-                member_align = member_align.max(req_align as u16);
+                member_align = member_align.max(req_align as u64);
             }
             max_align = max_align.max(member_align);
 

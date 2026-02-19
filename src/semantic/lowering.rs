@@ -263,12 +263,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn merge_qualifiers_with_check(
-        &mut self,
-        base: QualType,
-        add: TypeQualifiers,
-        span: SourceSpan,
-    ) -> QualType {
+    fn merge_qualifiers_with_check(&mut self, base: QualType, add: TypeQualifiers, span: SourceSpan) -> QualType {
         if add.contains(TypeQualifiers::RESTRICT) {
             let is_valid = if let TypeKind::Pointer { pointee } = &self.registry.get(base.ty()).kind {
                 !pointee.is_function()

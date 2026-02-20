@@ -206,7 +206,6 @@ pub(crate) struct PPConditionalInfo {
 #[derive(Clone)]
 pub(crate) struct IncludeStackInfo {
     pub(crate) file_id: SourceId,
-    // pub location: SourceLoc,
 }
 
 /// Configuration for preprocessor

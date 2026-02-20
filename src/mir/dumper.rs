@@ -610,7 +610,7 @@ impl<'a> MirDumper<'a> {
                     output,
                     "{} {} {}",
                     self.operand_to_string(left),
-                    op,
+                    self.binary_int_op_to_string(op),
                     self.operand_to_string(right)
                 )?;
             }
@@ -624,7 +624,12 @@ impl<'a> MirDumper<'a> {
                 )?;
             }
             Rvalue::UnaryIntOp(op, operand) => {
-                write!(output, "{} {}", op, self.operand_to_string(operand))?;
+                write!(
+                    output,
+                    "{} {}",
+                    self.unary_int_op_to_string(op),
+                    self.operand_to_string(operand)
+                )?;
             }
             Rvalue::UnaryFloatOp(op, operand) => {
                 write!(
@@ -726,7 +731,7 @@ impl<'a> MirDumper<'a> {
                 write!(
                     output,
                     "atomic_fetch_{}({}, {}, {:?})",
-                    op,
+                    self.binary_int_op_to_string(op),
                     self.operand_to_string(ptr),
                     self.operand_to_string(val),
                     order
@@ -734,6 +739,37 @@ impl<'a> MirDumper<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Convert integer binary operation to string representation
+    fn binary_int_op_to_string(&self, op: &super::BinaryIntOp) -> String {
+        match op {
+            super::BinaryIntOp::Add => "+".to_string(),
+            super::BinaryIntOp::Sub => "-".to_string(),
+            super::BinaryIntOp::Mul => "*".to_string(),
+            super::BinaryIntOp::Div => "/".to_string(),
+            super::BinaryIntOp::Mod => "%".to_string(),
+            super::BinaryIntOp::BitAnd => "&".to_string(),
+            super::BinaryIntOp::BitOr => "|".to_string(),
+            super::BinaryIntOp::BitXor => "^".to_string(),
+            super::BinaryIntOp::LShift => "<<".to_string(),
+            super::BinaryIntOp::RShift => ">>".to_string(),
+            super::BinaryIntOp::Eq => "==".to_string(),
+            super::BinaryIntOp::Ne => "!=".to_string(),
+            super::BinaryIntOp::Lt => "<".to_string(),
+            super::BinaryIntOp::Le => "<=".to_string(),
+            super::BinaryIntOp::Gt => ">".to_string(),
+            super::BinaryIntOp::Ge => ">=".to_string(),
+        }
+    }
+
+    /// Convert integer unary operation to string representation
+    fn unary_int_op_to_string(&self, op: &super::UnaryIntOp) -> String {
+        match op {
+            super::UnaryIntOp::Neg => "-".to_string(),
+            super::UnaryIntOp::BitwiseNot => "~".to_string(),
+            super::UnaryIntOp::LogicalNot => "!".to_string(),
+        }
     }
 
     /// Convert floating-point binary operation to string representation

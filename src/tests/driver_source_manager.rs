@@ -550,3 +550,22 @@ fn test_source_manager_get_buffer_reserved_id() {
     let reserved_id = SourceId::new(1);
     sm.get_buffer(reserved_id);
 }
+
+#[test]
+fn test_reserved_source_id_behavior() {
+    let mut sm = SourceManager::new();
+    let reserved_id = SourceId::new(1);
+
+    // get_line_map_mut should return None for reserved ID
+    assert!(sm.get_line_map_mut(reserved_id).is_none());
+
+    // set_line_starts should do nothing (no panic) for reserved ID
+    sm.set_line_starts(reserved_id, vec![0, 10]);
+
+    // calculate_line_starts should do nothing (no panic) for reserved ID
+    sm.calculate_line_starts(reserved_id);
+
+    // Explicitly check that get_file_info and get_buffer_safe handle reserved ID gracefully
+    assert!(sm.get_file_info(reserved_id).is_none());
+    assert!(sm.get_buffer_safe(reserved_id).is_none());
+}

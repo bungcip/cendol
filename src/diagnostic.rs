@@ -43,6 +43,9 @@ pub enum ParseError {
 
     #[error("Declaration not allowed in this context")]
     DeclarationNotAllowed { span: SourceSpan },
+
+    #[error("{message}")]
+    Custom { message: String, span: SourceSpan },
 }
 
 impl ParseError {
@@ -52,6 +55,7 @@ impl ParseError {
             ParseError::UnexpectedEof { span } => *span,
             ParseError::InvalidUnaryOperator { span } => *span,
             ParseError::DeclarationNotAllowed { span } => *span,
+            ParseError::Custom { span, .. } => *span,
         }
     }
 }

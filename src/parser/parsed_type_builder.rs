@@ -203,6 +203,8 @@ fn parse_base_type_and_qualifiers(
         node
     } else {
         // Default to int if no type specifier found
+        // C allows this in some declarations (e.g. static x;), and
+        // it's treated as int x;
         parser
             .ast
             .parsed_types
@@ -318,7 +320,33 @@ fn parse_type_specifier_to_parsed_base(
             .parsed_types
             .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Complex))),
         ParsedTypeSpecifier::Atomic(parsed_type) => {
-            // _Atomic(type-name) - the parsed_type already contains the parsed inner type
+            // C11 6.7.2.4p3: "The type name in an atomic type specifier shall not designate
+            // an array type, a function type, an atomic type, or an incomplete type."
+            let decl = parser.ast.parsed_types.get_decl(parsed_type.declarator);
+            match decl {
+                ParsedDeclaratorNode::Array { .. } => {
+                    return Err(ParseError::Custom {
+                        message: "_Atomic(type-name) specifier cannot be used with array type".to_string(),
+                        span: parser.previous_token_span(),
+                    });
+                }
+                ParsedDeclaratorNode::Function { .. } => {
+                    return Err(ParseError::Custom {
+                        message: "_Atomic(type-name) specifier cannot be used with function type".to_string(),
+                        span: parser.previous_token_span(),
+                    });
+                }
+                _ => {}
+            }
+
+            let base = parser.ast.parsed_types.get_base_type(parsed_type.base);
+            if let ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Atomic(_)) = base {
+                return Err(ParseError::Custom {
+                    message: "_Atomic(type-name) specifier cannot be used with atomic type".to_string(),
+                    span: parser.previous_token_span(),
+                });
+            }
+
             Ok(parser
                 .ast
                 .parsed_types

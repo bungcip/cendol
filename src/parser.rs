@@ -340,8 +340,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             | TokenKind::Volatile
             | TokenKind::Restrict
             | TokenKind::Atomic
-            // GCC attribute extension
-            | TokenKind::Attribute => true,
+            // GCC attribute and builtin extensions
+            | TokenKind::Attribute
+            | TokenKind::BuiltinVaList => true,
             // Check for typedef'd identifiers
             TokenKind::Identifier(symbol) => self.is_type_name(symbol),
             _ => false,

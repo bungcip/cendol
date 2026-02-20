@@ -231,8 +231,6 @@ impl Cli {
 
         // Handle -Wall flag by adding "all" to warnings if -Wall is specified
         // Actually, with short='W' and append, -Wall will result in "all" in warnings.
-        // Handle -Wall flag by adding "all" to warnings if -Wall is specified
-        // Actually, with short='W' and append, -Wall will result in "all" in warnings.
         let mut warnings = self.warnings;
 
         if self.pedantic {

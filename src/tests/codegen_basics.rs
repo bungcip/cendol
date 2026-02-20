@@ -61,6 +61,12 @@ fn test_emit_const_struct_literal() {
 }
 
 #[test]
+fn test_invalid_hex_float_no_exponent() {
+    let source = "int main() { double f = 0x1.0p; }";
+    crate::tests::test_utils::run_fail_with_message(source, "Unknown");
+}
+
+#[test]
 fn test_store_statement_lowering() {
     let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
 

@@ -96,7 +96,7 @@ impl Ast {
             NodeKind::FunctionDecl(data) => data.scope_id,
             NodeKind::CompoundStatement(data) => data.scope_id,
             NodeKind::For(data) => data.scope_id,
-            _ => panic!("ICE: Node {:?} does not have a scope", self.get_kind(node_ref)),
+            _ => unreachable!("ICE: Node {:?} does not have a scope", self.get_kind(node_ref)),
         }
     }
 

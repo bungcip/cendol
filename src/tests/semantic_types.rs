@@ -27,6 +27,11 @@ fn test_unsigned_long_int() {
 fn test_long_int() {
     check_type("long int x;", "long");
 }
+#[test]
+fn test_typeregistry_default() {
+    let registry = crate::semantic::TypeRegistry::default();
+    assert_eq!(registry.types.len(), 20); // dummy + 19 built-ins
+}
 
 #[test]
 fn test_short_int() {

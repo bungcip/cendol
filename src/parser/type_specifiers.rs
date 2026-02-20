@@ -103,13 +103,9 @@ fn parse_type_specifier_with_context(
             parser.advance();
             Ok(ParsedTypeSpecifier::VaList)
         }
-        _ => {
-            let expected = "void, char, short, int, long, float, double, signed, unsigned, bool, complex, atomic, struct, union, enum, or identifier";
-            Err(ParseError::UnexpectedToken {
-                expected_tokens: expected.to_string(),
-                found: token.kind,
-                span: token.span,
-            })
-        }
+        _ => unreachable!(
+            "ICE: Token {:?} should have been validated as a type specifier by the caller",
+            token.kind
+        ),
     }
 }

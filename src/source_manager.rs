@@ -579,4 +579,9 @@ mod tests {
         });
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_sourceloc_default() {
+        assert_eq!(SourceLoc::default(), SourceLoc::builtin());
+    }
 }

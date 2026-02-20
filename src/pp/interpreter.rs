@@ -456,7 +456,10 @@ impl<'a> Interpreter<'a> {
 
         // Handle `__has_builtin` and friends
         let checks = [
-            (self.preprocessor.has_builtin_symbol(), PPExpr::HasBuiltin as fn(String) -> PPExpr),
+            (
+                self.preprocessor.has_builtin_symbol(),
+                PPExpr::HasBuiltin as fn(String) -> PPExpr,
+            ),
             (self.preprocessor.has_attribute_symbol(), PPExpr::HasAttribute),
             (self.preprocessor.has_feature_symbol(), PPExpr::HasFeature),
             (self.preprocessor.has_extension_symbol(), PPExpr::HasExtension),

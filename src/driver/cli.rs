@@ -7,10 +7,7 @@ use clap::{Args, Parser as CliParser};
 use std::path::PathBuf;
 use target_lexicon::Triple;
 
-use crate::{
-    driver::artifact::CompilePhase,
-    lang_options::CStandard,
-};
+use crate::{driver::artifact::CompilePhase, lang_options::CStandard};
 
 /// CLI interface using clap
 #[derive(CliParser, Debug)]

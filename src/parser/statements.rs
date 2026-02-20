@@ -244,7 +244,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError>
         let specifiers = parse_declaration_specifiers(parser)?;
         let declarator_start_span = parser.current_token_span_or_empty();
         // Parse declarator
-        let declarator = parse_declarator(parser, None)?;
+        let declarator = parse_declarator(parser)?;
         // Parse initializer if present
         let initializer = if parser.accept(TokenKind::Assign).is_some() {
             Some(super::declaration_core::parse_initializer(parser)?)

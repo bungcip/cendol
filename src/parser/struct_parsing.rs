@@ -92,7 +92,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData
                 let mut init_declarators = ThinVec::new();
                 loop {
                     let start_span = parser.current_token_span_or_empty();
-                    let declarator = super::declarator::parse_declarator(parser, None)?;
+                    let declarator = super::declarator::parse_declarator(parser)?;
                     let end_span = parser.last_token_span().unwrap_or(start_span);
                     let span = start_span.merge(end_span);
 
@@ -151,7 +151,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData
                     let mut init_declarators = ThinVec::new();
                     loop {
                         let start_span = parser.current_token_span_or_empty();
-                        let declarator = super::declarator::parse_declarator(parser, None)?;
+                        let declarator = super::declarator::parse_declarator(parser)?;
                         let end_span = parser.last_token_span().unwrap_or(start_span);
                         let span = start_span.merge(end_span);
 
@@ -210,7 +210,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData
                     let mut init_declarators = ThinVec::new();
                     loop {
                         let start_span = parser.current_token_span_or_empty();
-                        let declarator = super::declarator::parse_declarator(parser, None)?;
+                        let declarator = super::declarator::parse_declarator(parser)?;
                         let end_span = parser.last_token_span().unwrap_or(start_span);
                         let span = start_span.merge(end_span);
 
@@ -241,7 +241,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData
         let mut init_declarators = ThinVec::new();
         loop {
             let start_span = parser.current_token_span_or_empty();
-            let declarator = super::declarator::parse_declarator(parser, None)?; // This needs to enable ParsedDeclarator
+            let declarator = super::declarator::parse_declarator(parser)?; // This needs to enable ParsedDeclarator
             let end_span = parser.last_token_span().unwrap_or(start_span);
             let span = start_span.merge(end_span);
 

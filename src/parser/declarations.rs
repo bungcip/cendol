@@ -162,7 +162,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
             trx.parser.current_token_kind()
         );
 
-        let declarator = match super::declarator::parse_declarator(trx.parser, None) {
+        let declarator = match super::declarator::parse_declarator(trx.parser) {
             Ok(declarator) => {
                 debug!(
                     "parse_declaration: parsed declarator, current token {:?}",
@@ -289,7 +289,7 @@ fn parse_function_definition(parser: &mut Parser) -> Result<ParsedNodeRef, Parse
     let specifiers = parse_declaration_specifiers(parser)?;
 
     // Parse declarator (should be a function declarator)
-    let declarator = super::declarator::parse_declarator(parser, None)?;
+    let declarator = super::declarator::parse_declarator(parser)?;
 
     // Parse function body
     let (body, body_end_loc) = super::statements::parse_compound_statement(parser)?;

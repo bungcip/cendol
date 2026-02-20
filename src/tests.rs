@@ -41,6 +41,7 @@ pub mod semantic_regr_unary_promotion;
 pub mod semantic_validation;
 
 pub mod parser_decl;
+pub mod parser_declarator_coverage;
 pub mod parser_expr;
 pub mod parser_lexical;
 pub mod parser_stmt;

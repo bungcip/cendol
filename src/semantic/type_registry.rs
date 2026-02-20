@@ -1128,6 +1128,38 @@ impl TypeRegistry {
         false
     }
 
+    pub(crate) fn is_variably_modified(&self, ty: TypeRef) -> bool {
+        if ty.is_inline_pointer() {
+            return self.is_variably_modified(self.reconstruct_pointee(ty));
+        }
+        if ty.is_inline_array() {
+            return self.is_variably_modified(self.reconstruct_element(ty));
+        }
+
+        let kind = &self.types[ty.index()].kind;
+        match kind {
+            TypeKind::Array { element_type, size } => {
+                if matches!(size, ArraySizeType::Variable(_)) {
+                    return true;
+                }
+                self.is_variably_modified(*element_type)
+            }
+            TypeKind::Pointer { pointee } => self.is_variably_modified(pointee.ty()),
+            TypeKind::Function {
+                return_type,
+                parameters,
+                ..
+            } => {
+                if self.is_variably_modified(*return_type) {
+                    return true;
+                }
+                parameters.iter().any(|p| self.is_variably_modified(p.param_type.ty()))
+            }
+            TypeKind::Complex { base_type } => self.is_variably_modified(*base_type),
+            _ => false,
+        }
+    }
+
     pub(crate) fn display_qual_type(&self, qt: QualType) -> String {
         let quals = qt.qualifiers();
         let ty_str = self.display_type(qt.ty());

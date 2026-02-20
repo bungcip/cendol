@@ -317,6 +317,12 @@ pub enum SemanticError {
     #[error("controlling expression type '{ty}' not compatible with any generic association")]
     GenericNoMatch { ty: String, span: SourceSpan },
 
+    #[error("generic association specifies function type '{ty}'")]
+    GenericFunctionAssociation { ty: String, span: SourceSpan },
+
+    #[error("generic association specifies variably modified type '{ty}'")]
+    GenericVlaAssociation { ty: String, span: SourceSpan },
+
     #[error("cannot take address of bit-field")]
     AddressOfBitfield { span: SourceSpan },
 
@@ -480,6 +486,8 @@ impl SemanticError {
             SemanticError::AlignOfIncompleteType { span, .. } => *span,
             SemanticError::AlignOfFunctionType { span } => *span,
             SemanticError::GenericNoMatch { span, .. } => *span,
+            SemanticError::GenericFunctionAssociation { span, .. } => *span,
+            SemanticError::GenericVlaAssociation { span, .. } => *span,
             SemanticError::AddressOfBitfield { span } => *span,
             SemanticError::AddressOfRegister { span } => *span,
             SemanticError::SizeOfBitfield { span } => *span,

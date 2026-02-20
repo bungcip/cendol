@@ -2,15 +2,15 @@ use crate::driver::artifact::CompilePhase;
 use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pipeline_to_mir};
 
 #[test]
-fn test_generic_controlling_expression_must_be_complete() {
-    run_fail_with_message(
+fn test_generic_controlling_expression_allows_void() {
+    run_pass(
         r#"
         void foo();
         int main() {
             return _Generic(foo(), default: 1);
         }
         "#,
-        "controlling expression type 'void' is an incomplete type",
+        CompilePhase::Mir,
     );
 }
 

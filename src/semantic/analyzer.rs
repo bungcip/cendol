@@ -2122,9 +2122,9 @@ impl<'a> SemanticAnalyzer<'a> {
         // After decay, top-level qualifiers are removed for the compatibility check.
         let unqualified_ctrl_ty = self.registry.strip_all(decayed_ctrl_ty);
 
-        // C11 6.5.1.1p2: The controlling expression... shall have a type that is a complete object type,
-        // or a pointer to a function type, or a pointer to a complete object type...
-        if !self.registry.is_complete(decayed_ctrl_ty.ty()) {
+        // C11 6.5.1.1p2: The controlling expression shall be an expression of a complete object type,
+        // or the void type.
+        if !self.registry.is_complete(decayed_ctrl_ty.ty()) && decayed_ctrl_ty.ty() != self.registry.type_void {
             self.report_error(SemanticError::GenericIncompleteControl {
                 ty: self.registry.display_qual_type(ctrl_ty),
                 span: self.ast.get_span(gs.control),
@@ -2163,9 +2163,21 @@ impl<'a> SemanticAnalyzer<'a> {
                 continue;
             };
 
-            // C11 6.5.1.1p2: The type name in a generic association shall specify a complete object type...
-            if !self.registry.is_complete(assoc_ty.ty()) {
+            // C11 6.5.1.1p2: The type name in a generic association shall specify a complete object type
+            // other than a variably modified type.
+            let assoc_ty_kind = &self.registry.get(assoc_ty.ty()).kind;
+            if matches!(assoc_ty_kind, TypeKind::Function { .. }) {
+                self.report_error(SemanticError::GenericFunctionAssociation {
+                    ty: self.registry.display_qual_type(assoc_ty),
+                    span: assoc_span,
+                });
+            } else if !self.registry.is_complete(assoc_ty.ty()) {
                 self.report_error(SemanticError::GenericIncompleteAssociation {
+                    ty: self.registry.display_qual_type(assoc_ty),
+                    span: assoc_span,
+                });
+            } else if self.registry.is_variably_modified(assoc_ty.ty()) {
+                self.report_error(SemanticError::GenericVlaAssociation {
                     ty: self.registry.display_qual_type(assoc_ty),
                     span: assoc_span,
                 });

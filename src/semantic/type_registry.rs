@@ -583,18 +583,24 @@ impl TypeRegistry {
             return Err(SemanticError::RecursiveType { ty });
         }
 
+        self.layout_in_progress.insert(ty);
+        let result = self.compute_layout_internal(ty);
+        self.layout_in_progress.remove(&ty);
+        result
+    }
+
+    fn compute_layout_internal(&mut self, ty: TypeRef) -> Result<TypeLayout, SemanticError> {
         // We clone Kind to release borrow on self
         let type_kind = self.get(ty).kind.clone();
 
-        self.layout_in_progress.insert(ty);
-
         let layout = match type_kind {
             TypeKind::Builtin(b) => match b {
-                BuiltinType::Void => TypeLayout {
-                    size: 0,
-                    alignment: 1,
-                    kind: LayoutKind::Scalar,
-                },
+                BuiltinType::Void => {
+                    return Err(SemanticError::SizeOfIncompleteType {
+                        ty,
+                        span: SourceSpan::dummy(),
+                    });
+                }
                 BuiltinType::Bool | BuiltinType::Char | BuiltinType::SChar | BuiltinType::UChar => TypeLayout {
                     size: 1,
                     alignment: 1,
@@ -657,11 +663,12 @@ impl TypeRegistry {
                         is_union: false,
                     },
                 },
-                BuiltinType::Complex => TypeLayout {
-                    size: 0,
-                    alignment: 1,
-                    kind: LayoutKind::Scalar,
-                },
+                BuiltinType::Complex => {
+                    return Err(SemanticError::SizeOfIncompleteType {
+                        ty,
+                        span: SourceSpan::dummy(),
+                    });
+                }
             },
 
             TypeKind::Pointer { .. } => {
@@ -708,11 +715,11 @@ impl TypeRegistry {
                 }
             },
 
-            TypeKind::Function { .. } => TypeLayout {
-                size: 0,
-                alignment: 1,
-                kind: LayoutKind::Scalar,
-            },
+            TypeKind::Function { .. } => {
+                return Err(SemanticError::SizeOfFunctionType {
+                    span: SourceSpan::dummy(),
+                });
+            }
 
             TypeKind::Record {
                 members,
@@ -752,7 +759,6 @@ impl TypeRegistry {
             }
         };
 
-        self.layout_in_progress.remove(&ty);
         Ok(layout)
     }
 
@@ -774,78 +780,105 @@ impl TypeRegistry {
             // Special handling for flexible array member (FAM)
             // Need to check if it is incomplete array
             // We can't use is_complete because that recurses. We check TypeKind directly.
-            let is_incomplete_or_vla_array = if member_ty.is_inline_array() {
-                false // inline array always has len
+            let array_size = if member_ty.is_inline_array() {
+                None
+            } else if let TypeKind::Array { size, .. } = &self.get(member_ty).kind {
+                Some(size.clone())
             } else {
-                matches!(
-                    self.get(member_ty).kind,
-                    TypeKind::Array {
-                        size: ArraySizeType::Incomplete | ArraySizeType::Variable(_),
-                        ..
-                    }
-                )
+                None
             };
 
-            if is_incomplete_or_vla_array {
-                if is_union {
-                    // Incomplete or VLA types not allowed in union
+            if let Some(size) = array_size {
+                if matches!(size, ArraySizeType::Variable(_)) {
                     return Err(SemanticError::UnsupportedFeature {
-                        feature: "incomplete/VLA array in union".to_string(),
+                        feature: "variably modified type (VLA) as struct member".to_string(),
                         span: member.span,
                     });
                 }
 
-                // Must be last member
-                if i != member_count - 1 {
-                    return Err(SemanticError::FlexibleArrayNotLast { span: member.span });
+                if matches!(size, ArraySizeType::Incomplete) {
+                    if is_union {
+                        // Incomplete types not allowed in union (FAM is only for structures)
+                        return Err(SemanticError::UnsupportedFeature {
+                            feature: "incomplete/VLA array in union".to_string(),
+                            span: member.span,
+                        });
+                    }
+
+                    // Must be last member
+                    if i != member_count - 1 {
+                        return Err(SemanticError::FlexibleArrayNotLast { span: member.span });
+                    }
+
+                    // Must have at least one other named member.
+                    // Or rather, "structure with more than one named member".
+                    // If this is the only member, it's invalid.
+                    if member_count < 2 {
+                        return Err(SemanticError::FlexibleArrayInEmptyStruct { span: member.span });
+                    }
+
+                    // If valid FAM:
+                    // Size of structure is as if FAM was omitted.
+                    // But we must respect its alignment for the struct's alignment.
+                    // We need to get the element type to find alignment.
+                    let elem_ty = match &self.get(member_ty).kind {
+                        TypeKind::Array { element_type, .. } => *element_type,
+                        _ => unreachable!(),
+                    };
+                    let elem_layout = self.ensure_layout(elem_ty)?;
+
+                    max_align = max_align.max(elem_layout.alignment);
+
+                    // FAM has size 0 for layout purposes of the struct size,
+                    // but its offset is where it would start.
+                    // The standard says: "size of the structure is as if the flexible array member were omitted"
+                    // This means current_size stays as is (after padding for alignment of FAM? No, omitted means omitted).
+                    // "except that it may have more trailing padding than the omission would imply"
+                    // Usually this is interpreted as: sizeof(struct) = max(sizeof(struct_without_fam), offsetof(fam)).
+                    // Or simply: layout the FAM, but don't increment current_size by its size (which is unknown/0).
+                    // But we might need to add padding to current_size to reach FAM alignment?
+                    // "as if the flexible array member were omitted" implies we don't even add padding for it?
+                    // BUT "except that it may have more trailing padding".
+                    // Most compilers align the end of the struct to the alignment of the FAM.
+
+                    // Let's compute offset.
+                    let offset = (current_size + elem_layout.alignment - 1) & !(elem_layout.alignment - 1);
+                    field_layouts.push(FieldLayout { offset });
+
+                    // We do NOT update current_size with FAM size (which is effectively 0 or variable).
+                    // But we might update current_size to offset?
+                    // GCC: sizeof(struct { int x; int y[]; }) == 4.
+                    //      sizeof(struct { char c; int y[]; }) == 4 (aligned to 4).
+                    // So we do align current_size.
+                    current_size = offset;
+
+                    continue;
                 }
-
-                // Must have at least one other named member.
-                // Or rather, "structure with more than one named member".
-                // If this is the only member, it's invalid.
-                if member_count < 2 {
-                    return Err(SemanticError::FlexibleArrayInEmptyStruct { span: member.span });
-                }
-
-                // If valid FAM:
-                // Size of structure is as if FAM was omitted.
-                // But we must respect its alignment for the struct's alignment.
-                // We need to get the element type to find alignment.
-                let elem_ty = match &self.get(member_ty).kind {
-                    TypeKind::Array { element_type, .. } => *element_type,
-                    _ => unreachable!(),
-                };
-                let elem_layout = self.ensure_layout(elem_ty)?;
-
-                max_align = max_align.max(elem_layout.alignment);
-
-                // FAM has size 0 for layout purposes of the struct size,
-                // but its offset is where it would start.
-                // The standard says: "size of the structure is as if the flexible array member were omitted"
-                // This means current_size stays as is (after padding for alignment of FAM? No, omitted means omitted).
-                // "except that it may have more trailing padding than the omission would imply"
-                // Usually this is interpreted as: sizeof(struct) = max(sizeof(struct_without_fam), offsetof(fam)).
-                // Or simply: layout the FAM, but don't increment current_size by its size (which is unknown/0).
-                // But we might need to add padding to current_size to reach FAM alignment?
-                // "as if the flexible array member were omitted" implies we don't even add padding for it?
-                // BUT "except that it may have more trailing padding".
-                // Most compilers align the end of the struct to the alignment of the FAM.
-
-                // Let's compute offset.
-                let offset = (current_size + elem_layout.alignment - 1) & !(elem_layout.alignment - 1);
-                field_layouts.push(FieldLayout { offset });
-
-                // We do NOT update current_size with FAM size (which is effectively 0 or variable).
-                // But we might update current_size to offset?
-                // GCC: sizeof(struct { int x; int y[]; }) == 4.
-                //      sizeof(struct { char c; int y[]; }) == 4 (aligned to 4).
-                // So we do align current_size.
-                current_size = offset;
-
-                continue;
             }
 
-            let layout = self.ensure_layout(member_ty)?;
+            let layout = match self.ensure_layout(member_ty) {
+                Ok(l) => l,
+                Err(e) => {
+                    let new_e = match e {
+                        SemanticError::SizeOfIncompleteType { .. } => SemanticError::IncompleteType {
+                            ty: self.display_type(member_ty),
+                            span: member.span,
+                        },
+                        SemanticError::SizeOfFunctionType { .. } => {
+                            if let Some(name) = member.name {
+                                SemanticError::MemberHasFunctionType {
+                                    name,
+                                    span: member.span,
+                                }
+                            } else {
+                                e
+                            }
+                        }
+                        _ => e,
+                    };
+                    return Err(new_e);
+                }
+            };
             let mut member_align = layout.alignment;
             if let Some(req_align) = member.alignment {
                 member_align = member_align.max(req_align as u64);

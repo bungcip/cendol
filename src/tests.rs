@@ -71,6 +71,7 @@ pub mod guardian_noreturn_break;
 pub mod guardian_parameter_storage;
 pub mod guardian_pointer_arithmetic;
 pub mod guardian_restrict_constraints;
+pub mod guardian_struct_member_constraints;
 pub mod guardian_tentative_definitions;
 pub mod guardian_typedef_constraints;
 pub mod mir_dumper_coverage;

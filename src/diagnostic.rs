@@ -294,6 +294,8 @@ pub enum SemanticError {
     },
     #[error("member reference base type '{ty}' is not a structure or union")]
     MemberAccessOnNonRecord { ty: String, span: SourceSpan },
+    #[error("member '{name}' has function type")]
+    MemberHasFunctionType { name: NameId, span: SourceSpan },
     #[error("no member named '{name}' in '{ty}'")]
     MemberNotFound { name: NameId, ty: String, span: SourceSpan },
     #[error("expected a typedef name, found {found}")]
@@ -472,6 +474,7 @@ impl SemanticError {
             SemanticError::InvalidFunctionSpecifier { span, .. } => *span,
             SemanticError::DuplicateMember { span, .. } => *span,
             SemanticError::MemberAccessOnNonRecord { span, .. } => *span,
+            SemanticError::MemberHasFunctionType { span, .. } => *span,
             SemanticError::MemberNotFound { span, .. } => *span,
             SemanticError::ExpectedTypedefName { span, .. } => *span,
             SemanticError::MissingTypeSpecifier { span } => *span,

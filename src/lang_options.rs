@@ -1,15 +1,10 @@
 /// supported C standards
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum CStandard {
     C89,
     C99,
+    #[default]
     C11,
-}
-
-impl Default for CStandard {
-    fn default() -> Self {
-        Self::C11
-    }
 }
 
 impl CStandard {

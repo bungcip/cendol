@@ -460,16 +460,12 @@ fn parse_expression_statement(parser: &mut Parser) -> Result<ParsedNodeRef, Pars
     let start_loc = parser.current_token_span()?.start();
     let dummy = parser.push_dummy();
 
-    let (semi, expr) = if let Some(token) = parser.accept(TokenKind::Semicolon) {
-        (token, None)
-    } else {
-        let expr = parser.parse_expr_min()?;
-        (parser.expect(TokenKind::Semicolon)?, Some(expr))
-    };
+    let expr = parser.parse_expr_min()?;
+    let semi = parser.expect(TokenKind::Semicolon)?;
 
     let end_loc = semi.span.end();
     let span = SourceSpan::new(start_loc, end_loc);
 
-    let node = parser.replace_node(dummy, ParsedNodeKind::ExpressionStatement(expr), span);
+    let node = parser.replace_node(dummy, ParsedNodeKind::ExpressionStatement(Some(expr)), span);
     Ok(node)
 }

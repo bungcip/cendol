@@ -415,7 +415,7 @@ fn test_variadic_function_declaration() {
 
 #[test]
 fn test_enum_declaration_with_values() {
-    let resolved = setup_declaration("enum Color { RED = 1, GREEN = 2, BLUE };");
+    let resolved = setup_declaration("enum Color { RED = 1, GREEN = 2, BLUE, };");
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:

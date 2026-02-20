@@ -260,3 +260,35 @@ fn test_ambiguous_compound_statement_with_typedef() {
             - name: x
     "#);
 }
+
+#[test]
+fn test_compound_statement_error_recovery() {
+    let source = "int main() { int 1; }";
+    crate::tests::test_utils::run_fail_with_message(
+        source,
+        "expected Expected declarator or identifier after type specifier",
+    );
+}
+
+#[test]
+fn test_for_statement_with_declaration() {
+    let source = "for (int i = 0; i < 10; i++) {}";
+    let resolved = setup_statement(source);
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    For:
+      - Declaration:
+          specifiers:
+            - int
+          init_declarators:
+            - name: i
+              initializer:
+                LiteralInt: 0
+      - BinaryOp:
+          - Less
+          - Ident: i
+          - LiteralInt: 10
+      - PostIncrement:
+          Ident: i
+      - CompoundStatement: []
+    ");
+}

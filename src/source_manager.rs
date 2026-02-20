@@ -535,3 +535,48 @@ impl SourceManager {
         Some((logical_line, column, filename))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_empty_and_dummy() {
+        let span = SourceSpan::empty();
+        assert_eq!(span.start(), SourceLoc::builtin());
+        assert_eq!(span.end(), SourceLoc::builtin());
+        assert_eq!(span.source_id().to_u32(), 1);
+
+        let dummy = SourceSpan::dummy();
+        assert_eq!(dummy, span);
+
+        let merged = span.merge(dummy);
+        assert_eq!(merged, span);
+    }
+
+    #[test]
+    fn test_builtin() {
+        let span = SourceSpan::empty();
+        assert!(span.is_source_id_builtin());
+
+        let builtin = SourceLoc::builtin();
+        let other = SourceLoc::new(SourceId::new(2), 0);
+
+        let merged = SourceSpan::new(builtin, builtin).merge(SourceSpan::new(other, other));
+        assert_eq!(
+            merged,
+            SourceSpan::empty(),
+            "Merging spans from different source IDs should return the first span unchanged"
+        );
+    }
+
+    #[test]
+    fn test_source_manager_get_buffer_arc_invalid() {
+        let sm = SourceManager::new();
+        // ID 1 is builtin, so it should panic because it's less than 2
+        let result = std::panic::catch_unwind(|| {
+            sm.get_buffer_arc(SourceId::new(1));
+        });
+        assert!(result.is_err());
+    }
+}

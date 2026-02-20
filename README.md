@@ -1,5 +1,7 @@
 # Cendol
 
+[![codecov](https://codecov.io/gh/bungcip/cendol/graph/badge.svg)](https://codecov.io/gh/bungcip/cendol)
+
 Cendol is a C11 compiler implemented in Rust. It is a learning project to understand the process of building a compiler from scratch, focusing on high-performance compiler architecture and comprehensive C11 standard compliance.
 
 ## Features

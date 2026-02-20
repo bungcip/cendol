@@ -582,12 +582,12 @@ impl<'src> Preprocessor<'src> {
         self.define_builtin_macro_with_val("__GNUC_PATCHLEVEL__", "1");
 
         if self.c_standard.is_c11() {
-            self.define_builtin_macro_with_val("__STDC_VERSION__", "201112");
+            self.define_builtin_macro_with_val("__STDC_VERSION__", "201112L");
             self.define_builtin_macro_one("__STDC_HOSTED__");
             self.define_builtin_macro_one("__STDC_MB_MIGHT_NEQ_WC__");
             self.define_builtin_macro_one("__STDC_IEC_559__");
             self.define_builtin_macro_one("__STDC_IEC_559_COMPLEX__");
-            self.define_builtin_macro_with_val("__STDC_ISO_10646__", "201103L");
+            self.define_builtin_macro_with_val("__STDC_ISO_10646__", "201706L");
             self.define_builtin_macro_one("__STDC_UTF_16__");
             self.define_builtin_macro_one("__STDC_UTF_32__");
         }
@@ -1239,19 +1239,13 @@ impl<'src> Preprocessor<'src> {
 
     fn check_macro_redefinition(&mut self, name: StringId, name_token: &PPToken, macro_info: &MacroInfo) -> bool {
         if let Some(existing) = self.macros.get(&name) {
-            if existing.flags.contains(MacroFlags::BUILTIN) {
-                self.report_warning(
-                    format!("Redefinition of built-in macro '{}'", name),
-                    name_token.location,
-                );
-                return false;
-            }
-
             // Check if definition is different
-            // Mask out runtime state flags (USED, DISABLED) that don't affect definition identity
-            let definition_flags_mask =
-                MacroFlags::FUNCTION_LIKE | MacroFlags::C99_VARARGS | MacroFlags::GNU_VARARGS | MacroFlags::BUILTIN;
-            let is_different = (existing.flags & definition_flags_mask) != (macro_info.flags & definition_flags_mask)
+            // Mask out runtime state flags (USED, DISABLED) that don't affect definition identity.
+            // We also exclude BUILTIN from the comparison itself because we want to allow
+            // the user to redefine a built-in macro with an identical definition.
+            let identity_flags_mask = MacroFlags::FUNCTION_LIKE | MacroFlags::C99_VARARGS | MacroFlags::GNU_VARARGS;
+
+            let is_different = (existing.flags & identity_flags_mask) != (macro_info.flags & identity_flags_mask)
                 || existing.parameter_list != macro_info.parameter_list
                 || existing.variadic_arg != macro_info.variadic_arg
                 || existing.tokens.len() != macro_info.tokens.len()
@@ -1260,6 +1254,18 @@ impl<'src> Preprocessor<'src> {
                     .iter()
                     .zip(macro_info.tokens.iter())
                     .any(|(a, b)| a.kind != b.kind);
+
+            if existing.flags.contains(MacroFlags::BUILTIN) {
+                if is_different {
+                    self.report_warning(
+                        format!("Redefinition of built-in macro '{}'", name),
+                        name_token.location,
+                    );
+                }
+                // Return false to block overwriting the built-in macro,
+                // but we only warn if it was actually different.
+                return false;
+            }
 
             if is_different {
                 self.report_warning(

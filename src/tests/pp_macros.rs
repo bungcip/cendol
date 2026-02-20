@@ -522,3 +522,18 @@ P
     // The _Pragma("once") is handled and removed from the token stream.
     insta::assert_yaml_snapshot!(tokens, @"[]");
 }
+
+#[test]
+fn test_identical_builtin_redefinition_no_warning() {
+    // Identical redefinition of a built-in macro should not warn.
+    let src = r#"
+#define __STDC_IEC_559__ 1
+__STDC_IEC_559__
+"#;
+    let (tokens, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!((tokens, diags), @r#"
+    - - kind: Number
+        text: "1"
+    - []
+    "#);
+}

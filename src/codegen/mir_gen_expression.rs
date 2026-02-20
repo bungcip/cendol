@@ -210,7 +210,7 @@ impl<'a> MirGen<'a> {
     fn visit_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
         let layout = self.registry.get_layout(ty);
         let val = if is_size { layout.size } else { layout.alignment };
-        self.create_size_t_operand(val as u64)
+        self.create_size_t_operand(val)
     }
 
     fn visit_generic_selection(

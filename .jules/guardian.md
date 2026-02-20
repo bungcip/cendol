@@ -59,3 +59,8 @@ Action: Centralize function specifier validation in semantic lowering to ensure 
 
 Learning: `can_fall_through` analysis for `_Noreturn` compliance must distinguish between truly infinite loops and those that can exit via `break`. A loop without a condition (like `for(;;)`) or with a constant true condition (like `while(1)`) only satisfies `_Noreturn` if it contains no `break` statements targeting it. Shallow scanning for `NodeKind::Break` (avoiding nested loops) combined with `const_eval` for loop conditions provides a robust safeguard against miscompilation of divergent control flow.
 Action: Always combine condition analysis with internal control-flow jump detection (like `break`) when validating divergent or non-returning constructs.
+
+2025-05-26 - [Structure and Union Member Constraints]
+
+Learning: C11 6.7.2.1p3 requires that structure/union members must not have incomplete or function types (with the exception of FAM in structs). Incomplete type layout computation must be robust against recursion and errors to prevent "leaked" state in tracking sets like `layout_in_progress`, which could otherwise cause false "recursive type definition" errors for subsequent valid types. Mapping general layout errors (like `SizeOfIncompleteType`) to member-specific diagnostics (like `IncompleteType` or `MemberHasFunctionType`) with correct spans significantly improves compiler quality.
+Action: Implement robust internal/external function splits for stateful semantic checks (like layout) and prioritize context-specific re-mapping of lower-level errors to provide precise diagnostics.

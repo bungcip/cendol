@@ -1153,9 +1153,7 @@ impl TypeRegistry {
                 if self.is_variably_modified(*return_type) {
                     return true;
                 }
-                parameters
-                    .iter()
-                    .any(|p| self.is_variably_modified(p.param_type.ty()))
+                parameters.iter().any(|p| self.is_variably_modified(p.param_type.ty()))
             }
             TypeKind::Complex { base_type } => self.is_variably_modified(*base_type),
             _ => false,

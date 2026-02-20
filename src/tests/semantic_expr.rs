@@ -635,6 +635,68 @@ fn test_enum_constant_assignment() {
     }
     ");
 }
+
+#[test]
+fn test_enum_arithmetic() {
+    let source = r#"
+        enum E { X = 5 };
+        int main() {
+            enum E e = X;
+            return e + 1;
+        }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir, @r"
+    type %t0 = i32
+
+    fn main() -> i32
+    {
+      locals {
+        %e: i32
+        %2: i32
+      }
+
+      bb1:
+        %e = const 5
+        %2 = %e + const 1
+        return %2
+    }
+    ");
+}
+
+#[test]
+fn test_long_double_arithmetic_conversion() {
+    let source = r#"
+        int main() {
+            long double ld = 1.0;
+            float f = 2.0f;
+            return (int)(ld + f);
+        }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir, @r"
+    type %t0 = i32
+    type %t1 = f80
+    type %t2 = f64
+    type %t3 = f32
+
+    fn main() -> i32
+    {
+      locals {
+        %ld: f80
+        %f: f32
+        %3: f80
+      }
+
+      bb1:
+        %ld = const 1
+        %f = const 2
+        %3 = %ld fadd cast<f80>(%f)
+        return cast<i32>(%3)
+    }
+    ");
+}
+
 // Semantic validation tests for lvalue constraints.
 
 #[test]

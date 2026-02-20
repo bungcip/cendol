@@ -545,6 +545,19 @@ fn test_unicode_string_init() {
 }
 
 #[test]
+fn test_u8_string_init() {
+    let source = r#"
+        char s8[] = u8"hello";
+
+        int main() {
+            if (sizeof(s8) != 6) return 1;
+            return 0;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
+}
+
+#[test]
 fn test_compound_literal_array_deduction() {
     let source = r#"
         int main() {

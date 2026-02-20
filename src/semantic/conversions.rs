@@ -13,7 +13,7 @@ pub(crate) fn usual_arithmetic_conversions(ctx: &mut TypeRegistry, lhs: QualType
             if ty.is_complex() {
                 match &registry.get(ty).kind {
                     TypeKind::Complex { base_type } => Some(*base_type),
-                    _ => None,
+                    _ => unreachable!(),
                 }
             } else {
                 Some(ty)

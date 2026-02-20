@@ -78,18 +78,14 @@ pub(crate) fn parse_c11_float_literal(text: &str) -> Option<(f64, Option<FloatSu
 }
 
 /// Parse hexadecimal floating-point literal (C99/C11)
+/// invariant: first 2 character must be 0x or 0X
 fn parse_hex_float_literal(text: &str) -> Option<f64> {
     // Format: 0[xX][hexdigits][.hexdigits][pP[+|-]digits][fFlL]
     let mut chars = text.chars().peekable();
 
     // Skip "0x"
-    if chars.next() != Some('0') {
-        return None;
-    }
-    let x = chars.next()?;
-    if x != 'x' && x != 'X' {
-        return None;
-    }
+    chars.next(); // '0'
+    chars.next(); // 'x' or 'X'
 
     let mut result = 0.0f64;
     let mut exponent = 0i32;

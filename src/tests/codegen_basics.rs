@@ -405,3 +405,20 @@ fn test_constant_range_validation() {
         CompilePhase::Cranelift,
     );
 }
+
+#[test]
+fn test_hex_float_negative_exponent() {
+    run_pass(
+        r#"
+        int printf(const char *fmt, ...);
+        int main() {
+            double d = 0x1.0p-2;
+            if (d == 0.25) {
+                return 0;
+            }
+            return 1;
+        }
+        "#,
+        CompilePhase::Cranelift,
+    );
+}

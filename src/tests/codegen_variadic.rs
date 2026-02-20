@@ -193,3 +193,28 @@ int main() {
     let output = run_c_code_with_output(code);
     assert_eq!(output.trim(), "34.1,34.4 34.1,34.4 34.1,34.4 34.1,34.4");
 }
+
+#[test]
+fn test_builtin_va_copy() {
+    let code = r#"
+int printf(const char *fmt, ...);
+
+void myprintf(int ignored, ...) {
+    __builtin_va_list ap, ap2;
+    __builtin_va_start(ap, ignored);
+    __builtin_va_copy(ap2, ap);
+    int x1 = __builtin_va_arg(ap, int);
+    int x2 = __builtin_va_arg(ap2, int);
+    printf("%d %d\n", x1, x2);
+    __builtin_va_end(ap2);
+    __builtin_va_end(ap);
+}
+
+int main() {
+    myprintf(0, 42);
+    return 0;
+}
+"#;
+    let output = run_c_code_with_output(code);
+    assert_eq!(output.trim(), "42 42");
+}

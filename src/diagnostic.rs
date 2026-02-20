@@ -665,3 +665,32 @@ impl ErrorFormatter {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::source_manager::SourceSpan;
+
+    #[test]
+    fn test_error_spans() {
+        let span = SourceSpan::dummy();
+
+        let p1 = ParseError::UnexpectedEof { span };
+        assert_eq!(p1.span(), span);
+
+        let p2 = ParseError::InvalidUnaryOperator { span };
+        assert_eq!(p2.span(), span);
+
+        let p3 = ParseError::DeclarationNotAllowed { span };
+        assert_eq!(p3.span(), span);
+
+        let s1 = SemanticError::NonConstantInitializer { span };
+        assert_eq!(s1.span(), span);
+
+        let s2 = SemanticError::InvalidInitializer { span };
+        assert_eq!(s2.span(), span);
+
+        let s3 = SemanticError::UnreachableCode { span };
+        assert_eq!(s3.span(), span);
+    }
+}

@@ -132,3 +132,13 @@ fn test_gnu_statement_expression() {
           - LiteralInt: 2
     ");
 }
+
+#[test]
+fn test_gnu_statement_expression_empty() {
+    let resolved = setup_expr("({ })");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    GnuStatementExpression:
+      - CompoundStatement: []
+      - Empty
+    ");
+}

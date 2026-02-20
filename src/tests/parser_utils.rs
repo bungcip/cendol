@@ -341,7 +341,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
                 body: Box::new(resolve_node(ast, def.body)),
             }
         }
-        ParsedNodeKind::EmptyStatement => ResolvedNodeKind::Empty,
+        ParsedNodeKind::EmptyStatement | ParsedNodeKind::Dummy => ResolvedNodeKind::Empty,
         // Add more cases as needed for other ParsedNodeKind variants used in tests
         _ => panic!("Unsupported ParsedNodeKind for resolution: {:?}", node.kind),
     }

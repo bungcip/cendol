@@ -394,4 +394,40 @@ mod tests {
         assert!(err.contains("File '-nonexistent' not found"));
         assert!(err.contains("meant to be a command-line option"));
     }
+
+    #[test]
+    fn test_cli_config_features() {
+        let cli = Cli {
+            input_files: vec![PathBuf::from("dummy.c")],
+            output: None,
+            verbose: false,
+            dump_ast_after_parser: true,
+            dump_ast_after_semantic_lowering: true,
+            dump_mir: false,
+            dump_cranelift: true,
+            preprocess_only: true,
+            preprocessor: PreprocessorOptions { max_include_depth: 100 },
+            suppress_line_markers: false,
+            include_paths: vec![],
+            defines: vec![],
+            warnings: vec![],
+            pedantic: true,
+            pedantic_errors: true,
+            c_standard: None,
+            target: None,
+            optimization: None,
+            libraries: vec![],
+            library_paths: vec![],
+            compile_only: false,
+            debug_info: false,
+            fuse_ld: None,
+        };
+
+        // This tests testing the default bounds, pedantic bounds, and dump priorities
+        let config = cli.into_config().unwrap();
+        assert_eq!(config.stop_after, CompilePhase::Preprocess);
+        assert!(config.warnings.contains(&"pedantic".to_string()));
+        assert!(config.warnings.contains(&"pedantic-errors".to_string()));
+        assert_eq!(config.target, Triple::host());
+    }
 }

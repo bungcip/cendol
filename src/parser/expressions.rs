@@ -313,9 +313,7 @@ fn parse_unary_operator(parser: &mut Parser, token: Token) -> Result<ParsedNodeR
         TokenKind::And => UnaryOp::AddrOf,
         TokenKind::Real => UnaryOp::Real,
         TokenKind::Imag => UnaryOp::Imag,
-        _ => {
-            return Err(ParseError::InvalidUnaryOperator { span: token.span });
-        }
+        _ => unreachable!("ICE: token {:?} passed to parse_unary_operator", token.kind),
     };
 
     parser.advance();
@@ -372,13 +370,7 @@ fn parse_infix(
         TokenKind::RightShiftAssign => BinaryOp::AssignRShift,
         TokenKind::Comma => BinaryOp::Comma,
         // Postfix operators are handled in `parse_expression` and should not reach here.
-        _ => {
-            return Err(ParseError::UnexpectedToken {
-                expected_tokens: "binary operator".to_string(),
-                found: operator_token.kind,
-                span: operator_token.span,
-            });
-        }
+        _ => unreachable!("ICE: token {:?} passed to parse_infix", operator_token.kind),
     };
 
     let span = SourceSpan::new(

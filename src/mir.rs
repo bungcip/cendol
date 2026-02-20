@@ -869,4 +869,3 @@ impl MirBuilder {
         NameId::new(name)
     }
 }
-

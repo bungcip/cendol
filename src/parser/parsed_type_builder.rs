@@ -354,44 +354,49 @@ fn parse_type_specifier_to_parsed_base(
         }
         ParsedTypeSpecifier::Record(is_union, tag, definition) => {
             let members = if let Some(def_data) = definition {
-                if let Some(member_decls) = &def_data.members {
+                if let Some(member_node_refs) = &def_data.members {
                     let mut parsed_members = Vec::new();
-                    for decl in member_decls {
-                        // Parse each member declaration
-                        for init_decl in &decl.init_declarators {
-                            if let Some(member_name) = super::declarator::get_declarator_name(&init_decl.declarator) {
-                                let member_parsed_type = build_parsed_type_from_specifiers(
-                                    parser,
-                                    &decl.specifiers,
-                                    Some(&init_decl.declarator),
-                                )?;
+                    for &node_ref in member_node_refs {
+                        let node_kind = parser.ast.get_node(node_ref).kind.clone();
+                        if let ParsedNodeKind::Declaration(decl) = &node_kind {
+                            // Parse each member declaration
+                            for init_decl in &decl.init_declarators {
+                                if let Some(member_name) = super::declarator::get_declarator_name(&init_decl.declarator)
+                                {
+                                    let member_parsed_type = build_parsed_type_from_specifiers(
+                                        parser,
+                                        &decl.specifiers,
+                                        Some(&init_decl.declarator),
+                                    )?;
 
-                                // Extract alignment from specifiers
-                                let mut alignment = None;
-                                for spec in &decl.specifiers {
-                                    if let ParsedDeclSpecifier::AlignmentSpecifier(align_spec) = spec {
-                                        match align_spec {
-                                            ParsedAlignmentSpecifier::Expr(expr_ref) => {
-                                                if let ParsedNodeKind::Literal(literal::Literal::Int { val, .. }) =
-                                                    parser.ast.get_node(*expr_ref).kind
-                                                {
-                                                    alignment = Some(val as u32);
+                                    // Extract alignment from specifiers
+                                    let mut alignment = None;
+                                    for spec in &decl.specifiers {
+                                        if let ParsedDeclSpecifier::AlignmentSpecifier(align_spec) = spec {
+                                            match align_spec {
+                                                ParsedAlignmentSpecifier::Expr(expr_ref) => {
+                                                    if let ParsedNodeKind::Literal(literal::Literal::Int {
+                                                        val, ..
+                                                    }) = parser.ast.get_node(*expr_ref).kind
+                                                    {
+                                                        alignment = Some(val as u32);
+                                                    }
                                                 }
-                                            }
-                                            ParsedAlignmentSpecifier::Type(_) => {
-                                                // Handling type alignment in parser is hard, skip for now or resolve during lowering
+                                                ParsedAlignmentSpecifier::Type(_) => {
+                                                    // Handling type alignment in parser is hard, skip for now or resolve during lowering
+                                                }
                                             }
                                         }
                                     }
-                                }
 
-                                parsed_members.push(ParsedStructMember {
-                                    name: Some(member_name),
-                                    ty: member_parsed_type,
-                                    bit_field_size: None,
-                                    alignment,
-                                    span: init_decl.span,
-                                });
+                                    parsed_members.push(ParsedStructMember {
+                                        name: Some(member_name),
+                                        ty: member_parsed_type,
+                                        bit_field_size: None,
+                                        alignment,
+                                        span: init_decl.span,
+                                    });
+                                }
                             }
                         }
                     }

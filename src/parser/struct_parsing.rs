@@ -5,6 +5,7 @@
 
 use thin_vec::{ThinVec, thin_vec};
 
+use crate::ast::parsed::*;
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::parser::TokenKind;
@@ -52,7 +53,7 @@ pub(crate) fn parse_record_specifier_with_context(
 }
 
 /// Parse struct declaration list
-fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<ParsedDeclarationData>, ParseError> {
+fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseError> {
     let mut declarations = Vec::new();
 
     while !parser.is_token(TokenKind::RightBrace) {
@@ -64,7 +65,14 @@ fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<ParsedDeclar
 }
 
 /// Parse struct declaration
-fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData, ParseError> {
+fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    // Check for _Static_assert (C11)
+    if let Some(token) = parser.accept(TokenKind::StaticAssert) {
+        return super::declarations::parse_static_assert(parser, token);
+    }
+
+    let start_loc = parser.current_token_span()?.start();
+
     // Check if we have an anonymous struct/union
     let is_struct = parser.accept(TokenKind::Struct).is_some();
     let is_union = if !is_struct {
@@ -72,7 +80,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData
     } else {
         false
     };
-    if is_struct || is_union {
+    let declaration_data = if is_struct || is_union {
         // Check if this is an anonymous struct
         if parser.is_token(TokenKind::LeftBrace) {
             // Anonymous struct definition
@@ -126,10 +134,10 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData
                 parser.expect(TokenKind::Semicolon)?;
             }
 
-            Ok(ParsedDeclarationData {
+            ParsedDeclarationData {
                 specifiers,
                 init_declarators,
-            })
+            }
         } else {
             // Named struct - read the tag first
             let tag = parser.accept_name();
@@ -185,10 +193,10 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData
                     parser.expect(TokenKind::Semicolon)?;
                 }
 
-                Ok(ParsedDeclarationData {
+                ParsedDeclarationData {
                     specifiers,
                     init_declarators,
-                })
+                }
             } else {
                 // Named struct type with declarators: struct tag declarator1, declarator2;
                 // OR forward declaration: struct tag;
@@ -201,10 +209,10 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData
                     // Just a forward declaration: struct tag;
                     parser.expect(TokenKind::Semicolon)?;
 
-                    Ok(ParsedDeclarationData {
+                    ParsedDeclarationData {
                         specifiers,
                         init_declarators: ThinVec::new(),
-                    })
+                    }
                 } else {
                     // Named struct type with declarators: struct tag declarator1, declarator2;
                     let mut init_declarators = ThinVec::new();
@@ -227,10 +235,10 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData
 
                     parser.expect(TokenKind::Semicolon)?;
 
-                    Ok(ParsedDeclarationData {
+                    ParsedDeclarationData {
                         specifiers,
                         init_declarators,
-                    })
+                    }
                 }
             }
         }
@@ -258,9 +266,13 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedDeclarationData
 
         parser.expect(TokenKind::Semicolon)?;
 
-        Ok(ParsedDeclarationData {
+        ParsedDeclarationData {
             specifiers,
             init_declarators,
-        })
-    }
+        }
+    };
+
+    let end_loc = parser.previous_token_span().end();
+    let span = SourceSpan::new(start_loc, end_loc);
+    Ok(parser.push_node(ParsedNodeKind::Declaration(declaration_data), span))
 }

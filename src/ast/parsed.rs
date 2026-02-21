@@ -243,10 +243,7 @@ pub enum ParsedDeclarator {
         params: ThinVec<ParsedParamData>,
         is_variadic: bool,
     }, // e.g., `(int x)`
-    AnonymousRecord(
-        bool,                           /* is_union */
-        ThinVec<ParsedDeclarationData>, /* members */
-    ), // C11 anonymous struct/union
+    AnonymousRecord(bool /* is_union */, ThinVec<ParsedNodeRef> /* members */), // C11 anonymous struct/union
     BitField(Box<ParsedDeclarator>, ParsedNodeRef /* bit width expression */), // e.g., `x : 8`
 }
 
@@ -286,8 +283,8 @@ pub struct ParsedGenericAssociation {
 
 #[derive(Debug, Clone)]
 pub struct ParsedRecordDefData {
-    pub tag: Option<NameId>,                         // None if anonymous
-    pub members: Option<Vec<ParsedDeclarationData>>, // Field declarations
+    pub tag: Option<NameId>,                 // None if anonymous
+    pub members: Option<Vec<ParsedNodeRef>>, // Field declarations
     pub is_union: bool,
 }
 

@@ -21,6 +21,11 @@ PROJECTS = {
         "repo": "https://github.com/c-testsuite/c-testsuite",
         "build_cmd": ["true"],
         "test_cmd": ["sh", "-c", "for t in tests/single-exec/*.c; do CC={CC} CFLAGS='' ./runners/single-exec/posix $t || exit 1; done"],
+    },
+    "lua": {
+        "repo": "https://github.com/lua/lua",
+        "build_cmd": ["make", "CC={CC}", "CFLAGS=-O2 -DLUA_USE_LINUX", "MYCFLAGS=", "MYLDFLAGS=", "MYLIBS=-lm"],
+        "test_cmd": ["./lua", "-e", "print('hello from lua built with cendol')"],
     }
 }
 

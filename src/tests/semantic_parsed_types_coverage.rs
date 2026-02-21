@@ -308,3 +308,51 @@ fn test_type_mismatch_in_type_name() {
         CompilePhase::Mir,
     );
 }
+
+#[test]
+fn test_struct_parsing_coverage() {
+    use crate::driver::artifact::CompilePhase;
+    use crate::tests::test_utils::run_pass;
+
+    // 1. Nested Anonymous Struct with Multiple Declarators (Line 107)
+    run_pass(
+        "struct Outer { struct { int a; } s1, s2; }; int main() { return 0; }",
+        CompilePhase::Mir,
+    );
+
+    // 2. Nested Named Struct Definitions (Lines 140-148, 151-162, 164-168, 171-181, 184-186, 188-191)
+    run_pass(
+        "struct Outer { struct Inner { int a; }; }; int main() { return 0; }",
+        CompilePhase::Mir,
+    );
+    run_pass(
+        "struct Outer { struct Inner { int a; } i; }; int main() { return 0; }",
+        CompilePhase::Mir,
+    );
+    run_pass(
+        "struct Outer { struct Inner2 { int a; } i1, i2; }; int main() { return 0; }",
+        CompilePhase::Mir,
+    );
+
+    // 3. Forward Declaration in Struct Member (Lines 202, 204-207)
+    run_pass(
+        "struct Outer { struct Inner; }; int main() { return 0; }",
+        CompilePhase::Mir,
+    );
+
+    // 4. GCC Attributes on Structs (Lines 22, 37)
+    run_pass(
+        "struct __attribute__((packed)) S { int x; }; int main() { return 0; }",
+        CompilePhase::Mir,
+    );
+    run_pass(
+        "struct S2 { int x; } __attribute__((aligned(8))); int main() { return 0; }",
+        CompilePhase::Mir,
+    );
+
+    // 5. Union variants
+    run_pass(
+        "union U { union { int a; float b; } anonymous; }; int main() { return 0; }",
+        CompilePhase::Mir,
+    );
+}

@@ -19,8 +19,6 @@ use crate::{
 /// MIR Validation Error
 #[derive(Debug, PartialEq, Clone)]
 pub enum ValidationError {
-    /// Local variable is missing a type
-    LocalMissingType(LocalId),
     /// Illegal operation found in MIR
     IllegalOperation(String),
     /// Type not found in type table
@@ -35,8 +33,6 @@ pub enum ValidationError {
     BlockNotFound(MirBlockId),
     /// Statement not found in statement table
     StatementNotFound(MirStmtId),
-    /// Invalid pointer arithmetic operation
-    InvalidPointerArithmetic,
     /// Invalid cast operation
     InvalidCast(TypeId, TypeId),
     /// Function call argument type mismatch
@@ -57,7 +53,6 @@ pub enum ValidationError {
 impl std::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ValidationError::LocalMissingType(local_id) => write!(f, "Local {} is missing a type", local_id.get()),
             ValidationError::IllegalOperation(op) => write!(f, "Illegal operation: {}", op),
             ValidationError::TypeNotFound(type_id) => write!(f, "Type {} not found", type_id.get()),
             ValidationError::LocalNotFound(local_id) => write!(f, "Local {} not found", local_id.get()),
@@ -65,7 +60,6 @@ impl std::fmt::Display for ValidationError {
             ValidationError::FunctionNotFound(func_id) => write!(f, "Function {} not found", func_id.get()),
             ValidationError::BlockNotFound(block_id) => write!(f, "Block {} not found", block_id.get()),
             ValidationError::StatementNotFound(stmt_id) => write!(f, "Statement {} not found", stmt_id.get()),
-            ValidationError::InvalidPointerArithmetic => write!(f, "Invalid pointer arithmetic operation"),
             ValidationError::InvalidCast(from, to) => {
                 write!(f, "Invalid cast from type {} to type {}", from.get(), to.get())
             }

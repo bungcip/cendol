@@ -277,12 +277,8 @@ pub struct Preprocessor<'src> {
 pub enum PPErrorKind {
     #[error("File not found: {path}")]
     FileNotFound { path: String },
-    #[error("Invalid UTF-8 sequence")]
-    InvalidUtf8,
     #[error("Include depth exceeded")]
     IncludeDepthExceeded,
-    #[error("Macro redefinition")]
-    MacroRedefinition,
     #[error("Expected identifier")]
     ExpectedIdentifier,
     #[error("Invalid directive")]
@@ -309,14 +305,8 @@ pub enum PPErrorKind {
     ElifWithoutIf,
     #[error("#else without #if")]
     ElseWithoutIf,
-    #[error("Macro expansion recursion detected")]
-    MacroRecursion,
     #[error("Invalid token pasting")]
     InvalidTokenPasting,
-    #[error("Invalid stringification")]
-    InvalidStringification,
-    #[error("Circular include detected")]
-    CircularInclude,
     #[error("Expected end of directive")]
     ExpectedEod,
     #[error("Unknown pragma: {0}")]
@@ -1653,8 +1643,8 @@ impl<'src> Preprocessor<'src> {
             "push_macro" => self.handle_push_macro()?,
             "pop_macro" => self.handle_pop_macro()?,
             "message" => self.handle_pragma_message()?,
-            "warning" => self.handle_pragma_warning()?,
-            "error" => self.handle_pragma_error()?,
+            "warning" => self.handle_pragma_warning(DiagnosticLevel::Warning)?,
+            "error" => self.handle_pragma_error(DiagnosticLevel::Error)?,
             _ => {
                 return self.emit_error_loc(PPErrorKind::UnknownPragma(pragma_name.to_string()), token.location);
             }
@@ -1736,12 +1726,12 @@ impl<'src> Preprocessor<'src> {
         self.handle_pragma_diagnostic_message(DiagnosticLevel::Note)
     }
 
-    fn handle_pragma_warning(&mut self) -> Result<(), PPError> {
-        self.handle_pragma_diagnostic_message(DiagnosticLevel::Warning)
+    fn handle_pragma_warning(&mut self, level: DiagnosticLevel) -> Result<(), PPError> {
+        self.handle_pragma_diagnostic_message(level)
     }
 
-    fn handle_pragma_error(&mut self) -> Result<(), PPError> {
-        self.handle_pragma_diagnostic_message(DiagnosticLevel::Error)
+    fn handle_pragma_error(&mut self, level: DiagnosticLevel) -> Result<(), PPError> {
+        self.handle_pragma_diagnostic_message(level)
     }
 
     fn handle_diagnostic_directive(&mut self, is_error: bool) -> Result<(), PPError> {
@@ -2671,13 +2661,27 @@ impl<'src> Preprocessor<'src> {
     /// Helper to report error diagnostics
     fn report_error(&mut self, message: impl Into<String>, loc: SourceLoc) {
         let span = SourceSpan::new(loc, loc);
-        self.report_diagnostic(DiagnosticLevel::Error, message, span, None, Vec::new(), Vec::new());
+        self.report_diagnostic(
+            DiagnosticLevel::Error,
+            message,
+            span,
+            None,
+            Vec::new(),
+            Vec::new(),
+        );
     }
 
     /// Helper to report warning diagnostics
     fn report_warning(&mut self, message: impl Into<String>, loc: SourceLoc) {
         let span = SourceSpan::new(loc, loc);
-        self.report_diagnostic(DiagnosticLevel::Warning, message, span, None, Vec::new(), Vec::new());
+        self.report_diagnostic(
+            DiagnosticLevel::Warning,
+            message,
+            span,
+            None,
+            Vec::new(),
+            Vec::new(),
+        );
     }
 
     fn parse_macro_definition_params(

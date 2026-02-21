@@ -445,10 +445,6 @@ fn convert_parsed_base_type_to_qual_type(
                 Ok(QualType::unqualified(ctx.registry.declare_record(Some(*name), false)))
             }
         }
-        ParsedBaseTypeNode::Error => {
-            // Create an error type
-            Ok(QualType::unqualified(ctx.registry.type_error))
-        }
     }
 }
 

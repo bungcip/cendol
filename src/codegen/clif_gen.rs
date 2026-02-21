@@ -56,11 +56,12 @@ fn lower_type(mir_type: &MirType) -> Option<Type> {
     }
 }
 
-/// Helper function to convert MIR function kind to Cranelift linkage
-fn lower_linkage(kind: MirFunctionKind) -> Linkage {
-    match kind {
-        MirFunctionKind::Extern => Linkage::Import,
-        MirFunctionKind::Defined => Linkage::Export,
+/// Helper function to convert MIR function kind and linkage to Cranelift linkage
+fn lower_linkage(kind: MirFunctionKind, linkage: MirLinkage) -> Linkage {
+    match (kind, linkage) {
+        (MirFunctionKind::Extern, _) => Linkage::Import,
+        (MirFunctionKind::Defined, MirLinkage::Internal) => Linkage::Local,
+        (MirFunctionKind::Defined, MirLinkage::External) => Linkage::Export,
     }
 }
 
@@ -851,7 +852,7 @@ fn emit_function_call(
         CallTarget::Direct(func_id) => {
             let func = ctx.mir.get_function(*func_id);
             let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
-            let name_linkage = Some((func.name.as_str(), lower_linkage(func.kind)));
+            let name_linkage = Some((func.name.as_str(), lower_linkage(func.kind, func.linkage)));
             let is_defined = matches!(func.kind, MirFunctionKind::Defined);
             (
                 func.return_type,
@@ -2452,7 +2453,7 @@ fn finalize_function_processing(
     compiled_functions: &mut HashMap<String, String>,
 ) -> Result<(), String> {
     // Now declare and define the function
-    let linkage = lower_linkage(func.kind);
+    let linkage = lower_linkage(func.kind, func.linkage);
 
     let id = module
         .declare_function(func.name.as_str(), linkage, &func_ctx.func.signature)
@@ -2563,7 +2564,7 @@ impl ClifGen {
                 continue;
             }
             let func = self.mir.functions.get(&func_id).unwrap();
-            let linkage = lower_linkage(func.kind);
+            let linkage = lower_linkage(func.kind, func.linkage);
 
             // Calculate signature for declaration
             let mut sig = self.module.make_signature();

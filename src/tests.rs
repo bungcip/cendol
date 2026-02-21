@@ -3,6 +3,7 @@ pub mod codegen_abi_compat;
 pub mod codegen_basics;
 pub mod codegen_calls;
 pub mod codegen_common;
+pub mod codegen_large_array;
 
 pub mod codegen_offsetof;
 pub mod codegen_runtime;

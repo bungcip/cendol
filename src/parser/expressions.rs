@@ -423,7 +423,7 @@ fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseEr
         let result_expr = parser.parse_expression(BindingPower::COMMA)?;
         associations.push(ParsedGenericAssociation { type_name, result_expr });
 
-        if !parser.accept(TokenKind::Comma).is_some() {
+        if parser.accept(TokenKind::Comma).is_none() {
             break;
         }
     }

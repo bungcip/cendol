@@ -17,7 +17,13 @@ fn test_mir_dumper_manual_coverage() {
     let ptr_ty = builder.add_type(MirType::Pointer { pointee: i32_ty });
 
     // Function with Body
-    let func_id = builder.define_function(NameId::new("test_func"), vec![i32_ty], void_ty, false, crate::mir::MirLinkage::External);
+    let func_id = builder.define_function(
+        NameId::new("test_func"),
+        vec![i32_ty],
+        void_ty,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
 
     let entry_block = builder.create_block();

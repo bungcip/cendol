@@ -104,7 +104,13 @@ fn test_alloc_dealloc_codegen() {
     let ptr_type_id = builder.add_type(MirType::Pointer { pointee: int_type_id });
     let void_type_id = builder.add_type(MirType::Void);
 
-    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false, crate::mir::MirLinkage::External);
+    let func_id = builder.define_function(
+        NameId::new("main"),
+        vec![],
+        void_type_id,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
 
     let entry_block_id = builder.create_block();
@@ -126,7 +132,7 @@ fn test_alloc_dealloc_codegen() {
     let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
-        Ok(ClifOutput::ClifDump(clif_ir)) => {
+        ClifOutput::ClifDump(clif_ir) => {
             insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
@@ -148,8 +154,7 @@ fn test_alloc_dealloc_codegen() {
             }
             ");
         }
-        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump, got object file"),
-        Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
+        ClifOutput::ObjectFile(_) => panic!("Expected Clif dump, got object file"),
     }
 }
 

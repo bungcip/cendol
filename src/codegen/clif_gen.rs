@@ -56,33 +56,34 @@ fn lower_type(mir_type: &MirType) -> Option<Type> {
     }
 }
 
-/// Helper function to convert MIR function kind and linkage to Cranelift linkage
-fn lower_linkage(kind: MirFunctionKind, linkage: MirLinkage) -> Linkage {
-    match (kind, linkage) {
-        (MirFunctionKind::Extern, _) => Linkage::Import,
-        (MirFunctionKind::Defined, MirLinkage::Internal) => Linkage::Local,
-        (MirFunctionKind::Defined, MirLinkage::External) => Linkage::Export,
+/// Helper function to convert MIR function kind to Cranelift linkage
+fn lower_linkage(func: &MirFunction) -> Linkage {
+    match func.kind {
+        MirFunctionKind::Extern => Linkage::Import,
+        MirFunctionKind::Defined => match func.linkage {
+            crate::mir::MirLinkage::Internal => Linkage::Local,
+            crate::mir::MirLinkage::External => Linkage::Export,
+        },
     }
 }
 
 /// Helper function to get the size of a MIR type in bytes
-fn lower_type_size(mir_type: &MirType, mir: &MirProgram) -> Result<u32, String> {
+fn lower_type_size(mir_type: &MirType, mir: &MirProgram) -> u32 {
     match mir_type {
-        MirType::I8 | MirType::U8 => Ok(1),
-        MirType::I16 | MirType::U16 => Ok(2),
-        MirType::I32 | MirType::U32 => Ok(4),
-        MirType::I64 | MirType::U64 => Ok(8),
-        MirType::F32 => Ok(4),
-        MirType::F64 => Ok(8),
-        MirType::F80 | MirType::F128 => Ok(16),
+        MirType::I8 | MirType::U8 => 1,
+        MirType::I16 | MirType::U16 => 2,
+        MirType::I32 | MirType::U32 => 4,
+        MirType::I64 | MirType::U64 => 8,
+        MirType::F32 => 4,
+        MirType::F64 => 8,
+        MirType::F80 | MirType::F128 => 16,
 
-        MirType::Pointer { .. } => Ok(mir.pointer_width as u32),
-        MirType::Array { layout, .. } => Ok(layout.size as u32),
-        MirType::Record { layout, .. } => Ok(layout.size as u32),
-        MirType::Bool => Ok(1),
-        MirType::Void => Ok(0),
-        // For other complex types, let's have a default, though this should be comprehensive.
-        _ => Ok(4), // Default size for other types
+        MirType::Pointer { .. } => mir.pointer_width as u32,
+        MirType::Array { layout, .. } => layout.size as u32,
+        MirType::Record { layout, .. } => layout.size as u32,
+        MirType::Bool => 1,
+        MirType::Void => 0,
+        _ => 4, // Default size for other types
     }
 }
 
@@ -111,38 +112,16 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
 }
 
 /// Helper to emit integer constants
-fn emit_const_int(val: i64, layout: &MirType, output: &mut Vec<u8>) -> Result<(), String> {
+fn emit_const_int(val: i64, layout: &MirType, output: &mut Vec<u8>) {
     match layout {
-        MirType::I8 | MirType::U8 => {
-            let bytes = (val as i8).to_le_bytes();
-            output.extend_from_slice(&bytes);
-        }
-        MirType::I16 | MirType::U16 => {
-            let bytes = (val as i16).to_le_bytes();
-            output.extend_from_slice(&bytes);
-        }
-        MirType::I32 | MirType::U32 => {
-            let bytes = (val as i32).to_le_bytes();
-            output.extend_from_slice(&bytes);
-        }
-        MirType::I64 | MirType::U64 => {
-            let bytes = val.to_le_bytes();
-            output.extend_from_slice(&bytes);
-        }
-        MirType::Bool => {
-            let byte = if val != 0 { 1u8 } else { 0u8 };
-            output.push(byte);
-        }
-        MirType::Pointer { .. } => {
-            let bytes = (val).to_le_bytes();
-            output.extend_from_slice(&bytes);
-        }
-        _ => {
-            let bytes = (val as i32).to_le_bytes();
-            output.extend_from_slice(&bytes);
-        }
+        MirType::I8 | MirType::U8 => output.extend_from_slice(&(val as i8).to_le_bytes()),
+        MirType::I16 | MirType::U16 => output.extend_from_slice(&(val as i16).to_le_bytes()),
+        MirType::I32 | MirType::U32 => output.extend_from_slice(&(val as i32).to_le_bytes()),
+        MirType::I64 | MirType::U64 => output.extend_from_slice(&val.to_le_bytes()),
+        MirType::Bool => output.push(if val != 0 { 1u8 } else { 0u8 }),
+        MirType::Pointer { .. } => output.extend_from_slice(&val.to_le_bytes()),
+        _ => output.extend_from_slice(&(val as i32).to_le_bytes()),
     }
-    Ok(())
 }
 
 fn f64_to_f128_bytes(val: f64) -> [u8; 16] {
@@ -266,30 +245,14 @@ fn f64_to_x87_bytes(val: f64) -> [u8; 16] {
 }
 
 /// Helper to emit float constants
-fn emit_const_float(val: f64, ty: &MirType, output: &mut Vec<u8>) -> Result<(), String> {
+fn emit_const_float(val: f64, ty: &MirType, output: &mut Vec<u8>) {
     match ty {
-        MirType::F32 => {
-            let bytes = (val as f32).to_bits().to_le_bytes();
-            output.extend_from_slice(&bytes);
-        }
-        MirType::F64 => {
-            let bytes = val.to_bits().to_le_bytes();
-            output.extend_from_slice(&bytes);
-        }
-        MirType::F80 => {
-            let bytes = f64_to_x87_bytes(val);
-            output.extend_from_slice(&bytes);
-        }
-        MirType::F128 => {
-            let bytes = f64_to_f128_bytes(val);
-            output.extend_from_slice(&bytes);
-        }
-        _ => {
-            let bytes = val.to_bits().to_le_bytes();
-            output.extend_from_slice(&bytes);
-        }
+        MirType::F32 => output.extend_from_slice(&(val as f32).to_bits().to_le_bytes()),
+        MirType::F64 => output.extend_from_slice(&val.to_bits().to_le_bytes()),
+        MirType::F80 => output.extend_from_slice(&f64_to_x87_bytes(val)),
+        MirType::F128 => output.extend_from_slice(&f64_to_f128_bytes(val)),
+        _ => output.extend_from_slice(&val.to_bits().to_le_bytes()),
     }
-    Ok(())
 }
 
 /// Helper to emit struct constants
@@ -301,45 +264,41 @@ fn emit_const_struct(
     mut module: Option<&mut ObjectModule>,
     mut data_description: Option<&mut DataDescription>,
     base_offset: u32,
-) -> Result<(), String> {
-    match ty {
-        MirType::Record {
-            layout: record_layout,
-            field_types: _,
-            ..
-        } => {
-            // Initialize the entire struct with zeros
-            let struct_size = record_layout.size as usize;
-            let mut struct_bytes = vec![0u8; struct_size];
+) {
+    let MirType::Record {
+        layout: record_layout, ..
+    } = ty
+    else {
+        panic!("StructLiteral with non-record type");
+    };
 
-            // Emit each field at its proper offset
-            for (field_index, field_const_id) in fields {
-                if *field_index < record_layout.field_offsets.len() {
-                    let field_offset = record_layout.field_offsets[*field_index] as usize;
+    // Initialize the entire struct with zeros
+    let mut struct_bytes = vec![0u8; record_layout.size as usize];
 
-                    let mut field_bytes = Vec::new();
-                    emit_const(
-                        *field_const_id,
-                        &mut field_bytes,
-                        ctx,
-                        reborrow_module(&mut module),
-                        reborrow_data_description(&mut data_description),
-                        base_offset + field_offset as u32,
-                    )?;
+    // Emit each field at its proper offset
+    for (field_index, field_const_id) in fields {
+        if *field_index < record_layout.field_offsets.len() {
+            let field_offset = record_layout.field_offsets[*field_index] as usize;
 
-                    // Copy the field bytes into the struct buffer
-                    let required_size = field_offset + field_bytes.len();
-                    if required_size > struct_bytes.len() {
-                        struct_bytes.resize(required_size, 0);
-                    }
-                    struct_bytes[field_offset..field_offset + field_bytes.len()].copy_from_slice(&field_bytes);
-                }
+            let mut field_bytes = Vec::new();
+            emit_const(
+                *field_const_id,
+                &mut field_bytes,
+                ctx,
+                reborrow_module(&mut module),
+                reborrow_data_description(&mut data_description),
+                base_offset + field_offset as u32,
+            );
+
+            // Copy the field bytes into the struct buffer
+            let required_size = field_offset + field_bytes.len();
+            if required_size > struct_bytes.len() {
+                struct_bytes.resize(required_size, 0);
             }
-            output.extend_from_slice(&struct_bytes);
-            Ok(())
+            struct_bytes[field_offset..field_offset + field_bytes.len()].copy_from_slice(&field_bytes);
         }
-        _ => Err("StructLiteral with non-record type".to_string()),
     }
+    output.extend_from_slice(&struct_bytes);
 }
 
 /// Helper to emit array constants
@@ -362,7 +321,7 @@ fn emit_const_array(
     };
 
     let element_type = ctx.mir.get_type(*element);
-    let element_size = lower_type_size(element_type, ctx.mir).expect("valid type") as usize;
+    let element_size = lower_type_size(element_type, ctx.mir) as usize;
     let stride = array_layout.stride as usize;
     let padding = stride.saturating_sub(element_size);
 
@@ -376,8 +335,7 @@ fn emit_const_array(
             reborrow_module(&mut module),
             reborrow_data_description(&mut data_description),
             base_offset + element_offset,
-        )
-        .expect("emit_const failed");
+        );
 
         if padding > 0 {
             output.extend(std::iter::repeat_n(0, padding));
@@ -403,80 +361,41 @@ pub(crate) fn emit_const(
     mut module: Option<&mut ObjectModule>,
     mut data_description: Option<&mut DataDescription>,
     offset: u32,
-) -> Result<(), String> {
-    let const_value = ctx
-        .mir
-        .constants
-        .get(&const_id)
-        .ok_or_else(|| format!("Constant ID {} not found", const_id.get()))?;
-
+) {
+    let const_value = ctx.mir.constants.get(&const_id).expect("Constant ID not found");
     let ty = ctx.mir.get_type(const_value.ty);
 
     match &const_value.kind {
         ConstValueKind::Int(val) => emit_const_int(*val, ty, output),
         ConstValueKind::Float(val) => emit_const_float(*val, ty, output),
-        ConstValueKind::Bool(val) => {
-            let byte = if *val { 1u8 } else { 0u8 };
-            output.push(byte);
-            Ok(())
-        }
-        ConstValueKind::Null => {
-            // Emit null as all zeros (pointer-sized)
-            let null_bytes = 0i64.to_le_bytes();
-            output.extend_from_slice(&null_bytes);
-            Ok(())
-        }
-        ConstValueKind::Zero => {
-            // Emit zeros for the entire type size
-            let size = lower_type_size(ty, ctx.mir)? as usize;
-            output.extend(std::iter::repeat(0).take(size));
-            Ok(())
-        }
+        ConstValueKind::Bool(val) => output.push(if *val { 1u8 } else { 0u8 }),
+        ConstValueKind::Null => output.extend_from_slice(&0i64.to_le_bytes()),
+        ConstValueKind::Zero => output.extend(std::iter::repeat_n(0, lower_type_size(ty, ctx.mir) as usize)),
         ConstValueKind::GlobalAddress(global_id) => {
-            // Handle Global Relocation
             if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module) {
-                if let Some(&data_id) = ctx.data_id_map.get(global_id) {
-                    let global_val = mod_obj.declare_data_in_data(data_id, dd);
-                    dd.write_data_addr(offset, global_val, 0);
-                } else {
-                    return Err(format!(
-                        "Global ID {} not found in map during relocation",
-                        global_id.get()
-                    ));
-                }
+                let data_id = *ctx
+                    .data_id_map
+                    .get(global_id)
+                    .unwrap_or_else(|| panic!("Global ID {} not found in map during relocation", global_id.get()));
+                let global_val = mod_obj.declare_data_in_data(data_id, dd);
+                dd.write_data_addr(offset, global_val, 0);
             }
-
-            // Emit zero placeholder
-            let addr_bytes = 0i64.to_le_bytes();
-            output.extend_from_slice(&addr_bytes);
-            Ok(())
+            output.extend_from_slice(&0i64.to_le_bytes());
         }
         ConstValueKind::FunctionAddress(func_id) => {
-            // Handle Function Relocation
             if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module) {
                 if let Some(&clif_func_id) = ctx.func_id_map.get(func_id) {
                     let func_ref = mod_obj.declare_func_in_data(clif_func_id, dd);
                     dd.write_function_addr(offset, func_ref);
-                } else {
-                    println!(
-                        "Warning: Function ID {} not found in map during relocation. Maps available: {:?}",
-                        func_id.get(),
-                        ctx.func_id_map.keys()
-                    );
                 }
             }
-
-            // Emit zero placeholder
-            let addr_bytes = 0i64.to_le_bytes();
-            output.extend_from_slice(&addr_bytes);
-            Ok(())
+            output.extend_from_slice(&0i64.to_le_bytes());
         }
         ConstValueKind::StructLiteral(fields) => {
-            emit_const_struct(fields, ty, output, ctx, module, data_description, offset)
+            emit_const_struct(fields, ty, output, ctx, module, data_description, offset);
         }
         ConstValueKind::ArrayLiteral(elements) => {
             emit_const_array(elements, ty, output, ctx, module, data_description, offset);
-            Ok(())
         }
     }
 }
@@ -501,7 +420,7 @@ fn get_struct_packing(mir_type: &MirType, mir: &MirProgram) -> Option<usize> {
         return None;
     }
 
-    let size = lower_type_size(mir_type, mir).ok()?;
+    let size = lower_type_size(mir_type, mir);
     if size == 0 || size > 16 {
         return None;
     }
@@ -572,12 +491,13 @@ fn lower_call_signature(
 
     // Variadic arguments (if any) - structs are expanded to multiple I64 slots
     for arg in args.iter().skip(param_types.len()) {
-        let arg_type_id = lower_operand_type_id(arg, mir).ok();
-        if let Some(type_id) = arg_type_id {
+        let arg_type_id = lower_operand_type_id(arg, mir);
+        {
+            let type_id = arg_type_id;
             let mir_type = mir.get_type(type_id);
             if mir_type.is_aggregate() {
                 // For structs/arrays, calculate how many I64 slots we need
-                let size = lower_type_size(mir_type, mir).unwrap_or(8);
+                let size = lower_type_size(mir_type, mir);
                 let num_slots = size.div_ceil(8) as usize; // Round up to nearest 8 bytes
                 for _ in 0..num_slots {
                     sig.params.push(AbiParam::new(types::I64));
@@ -609,7 +529,7 @@ fn lower_call_signature(
                 xmm_used += 1;
             }
         }
-        let mut arg_type = lower_operand_type(arg, mir).unwrap_or(types::I32);
+        let mut arg_type = lower_operand_type(arg, mir);
 
         if is_variadic && arg_type == types::F32 {
             arg_type = types::F64;
@@ -651,7 +571,7 @@ fn emit_call_args(
     is_variadic: bool,
     split_f128: bool,
     triple: &Triple,
-) -> Result<Vec<Value>, String> {
+) -> Vec<Value> {
     let mut arg_values = Vec::new();
     let mut sig_idx = 0;
     let mut xmm_used = 0;
@@ -662,9 +582,8 @@ fn emit_call_args(
     // but `sig` might have split params.
     // Simpler: iterate fixed_param_count args and check types.
     for i in 0..fixed_param_count {
-        if let Some(arg) = args.get(i)
-            && let Ok(type_id) = lower_operand_type_id(arg, ctx.mir)
-        {
+        if let Some(arg) = args.get(i) {
+            let type_id = lower_operand_type_id(arg, ctx.mir);
             let mir_type = ctx.mir.get_type(type_id);
             if is_xmm_argument(mir_type) {
                 xmm_used += 1;
@@ -678,7 +597,7 @@ fn emit_call_args(
         }
 
         // Check operand type
-        let arg_type_id = lower_operand_type_id(arg, ctx.mir).ok();
+        let arg_type_id = Some(lower_operand_type_id(arg, ctx.mir));
 
         // Check for struct packing in fixed parameters
         if arg_idx < fixed_param_count
@@ -686,8 +605,8 @@ fn emit_call_args(
             && let Some(count) = get_struct_packing(ctx.mir.get_type(type_id), ctx.mir)
         {
             // Resolve struct to address
-            let struct_addr = emit_operand(arg, ctx, types::I64)?;
-            let size = lower_type_size(ctx.mir.get_type(type_id), ctx.mir).unwrap_or(8u32);
+            let struct_addr = emit_operand(arg, ctx, types::I64);
+            let size = lower_type_size(ctx.mir.get_type(type_id), ctx.mir);
 
             for i in 0..count {
                 // If it's the last chunk, we might need partial load
@@ -723,7 +642,7 @@ fn emit_call_args(
             && let Some(type_id) = arg_type_id
             && matches!(ctx.mir.get_type(type_id), MirType::F80 | MirType::F128)
         {
-            let val = emit_operand(arg, ctx, types::F128)?;
+            let val = emit_operand(arg, ctx, types::F128);
             // Split val into lo, hi by storing to stack and reloading
             let slot = ctx
                 .builder
@@ -747,10 +666,10 @@ fn emit_call_args(
             let mir_type = ctx.mir.get_type(type_id);
             if mir_type.is_aggregate() {
                 // Get the struct address
-                let struct_addr = emit_operand(arg, ctx, types::I64)?;
+                let struct_addr = emit_operand(arg, ctx, types::I64);
 
                 // Calculate how many I64 slots this struct needs
-                let size = lower_type_size(mir_type, ctx.mir).unwrap_or(8);
+                let size = lower_type_size(mir_type, ctx.mir);
                 let num_slots = size.div_ceil(8) as usize;
 
                 // Load each I64 chunk from the struct
@@ -814,10 +733,8 @@ fn emit_call_args(
         let param_type = sig.params[sig_idx].value_type;
 
         // Non-struct argument (or fixed param)
-        match emit_operand(arg, ctx, param_type) {
-            Ok(value) => arg_values.push(value),
-            Err(e) => return Err(format!("Failed to resolve function argument: {}", e)),
-        }
+        let value = emit_operand(arg, ctx, param_type);
+        arg_values.push(value);
         sig_idx += 1;
     }
 
@@ -828,7 +745,7 @@ fn emit_call_args(
         sig_idx += 1;
     }
 
-    Ok(arg_values)
+    arg_values
 }
 
 /// Helper to get the result of a call, or a zero constant if it has no return value
@@ -846,13 +763,13 @@ fn emit_function_call(
     args: &[Operand],
     expected_type: Type,
     ctx: &mut BodyEmitContext,
-) -> Result<Value, String> {
+) -> Value {
     // 1. Determine function properties and callee address if indirect/variadic
     let (return_type_id, param_types, is_variadic, name_linkage, target_addr, use_variadic_hack) = match call_target {
         CallTarget::Direct(func_id) => {
             let func = ctx.mir.get_function(*func_id);
             let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
-            let name_linkage = Some((func.name.as_str(), lower_linkage(func.kind, func.linkage)));
+            let name_linkage = Some((func.name.as_str(), lower_linkage(func)));
             let is_defined = matches!(func.kind, MirFunctionKind::Defined);
             (
                 func.return_type,
@@ -864,8 +781,7 @@ fn emit_function_call(
             )
         }
         CallTarget::Indirect(func_operand) => {
-            let func_ptr_type_id = lower_operand_type_id(func_operand, ctx.mir)
-                .map_err(|e| format!("Failed to get function pointer type: {}", e))?;
+            let func_ptr_type_id = lower_operand_type_id(func_operand, ctx.mir);
             let func_ptr_type = ctx.mir.get_type(func_ptr_type_id);
 
             let ((return_type_id, param_types), is_function_type, is_variadic_call) = match func_ptr_type {
@@ -875,23 +791,23 @@ fn emit_function_call(
                         params,
                         is_variadic,
                     } => ((*return_type, params.clone()), false, *is_variadic),
-                    _ => return Err("Indirect call operand points to non-function type".to_string()),
+                    _ => panic!("Indirect call operand points to non-function type"),
                 },
                 MirType::Function {
                     return_type,
                     params,
                     is_variadic,
                 } => ((*return_type, params.clone()), true, *is_variadic),
-                _ => return Err("Indirect call operand is not a pointer".to_string()),
+                _ => panic!("Indirect call operand is not a pointer"),
             };
 
             let callee_val = if is_function_type {
                 match func_operand {
-                    Operand::Copy(place) => emit_place_addr(place, ctx)?,
-                    _ => emit_operand(func_operand, ctx, types::I64)?,
+                    Operand::Copy(place) => emit_place_addr(place, ctx),
+                    _ => emit_operand(func_operand, ctx, types::I64),
                 }
             } else {
-                emit_operand(func_operand, ctx, types::I64)?
+                emit_operand(func_operand, ctx, types::I64)
             };
 
             // Assuming function pointers point to internal functions requiring the hack.
@@ -920,7 +836,7 @@ fn emit_function_call(
     );
 
     let split_f128 = use_variadic_hack;
-    let arg_values = emit_call_args(args, param_types.len(), &sig, ctx, is_variadic, split_f128, ctx.triple)?;
+    let arg_values = emit_call_args(args, param_types.len(), &sig, ctx, is_variadic, split_f128, ctx.triple);
 
     // 3. Emit the call
     let call_inst = if is_variadic {
@@ -939,20 +855,20 @@ fn emit_function_call(
             let decl = ctx
                 .module
                 .declare_function(name, linkage, &canonical_sig)
-                .map_err(|e| format!("Failed to declare variadic function {}: {:?}", name, e))?;
+                .expect("Failed to declare variadic function");
             let func_ref = ctx.module.declare_func_in_func(decl, ctx.builder.func);
             let addr = ctx.builder.ins().func_addr(types::I64, func_ref);
             let sig_ref = ctx.builder.import_signature(sig);
 
-            let addr = emit_al_count_and_pass_addr(args, &param_types, addr, ctx)?;
+            let addr = emit_al_count_and_pass_addr(args, &param_types, addr, ctx);
 
             ctx.builder.ins().call_indirect(sig_ref, addr, &arg_values)
         } else if let Some(addr) = target_addr {
             let sig_ref = ctx.builder.import_signature(sig);
-            let addr = emit_al_count_and_pass_addr(args, &param_types, addr, ctx)?;
+            let addr = emit_al_count_and_pass_addr(args, &param_types, addr, ctx);
             ctx.builder.ins().call_indirect(sig_ref, addr, &arg_values)
         } else {
-            return Err("Variadic call without target".to_string());
+            panic!("Variadic call without target");
         }
     } else if let Some(addr) = target_addr {
         let sig_ref = ctx.builder.import_signature(sig);
@@ -963,12 +879,12 @@ fn emit_function_call(
         let decl = ctx
             .module
             .declare_function(name, linkage, &sig)
-            .map_err(|e| format!("Failed to declare function {}: {:?}", name, e))?;
+            .expect("Failed to declare function");
         let func_ref = ctx.module.declare_func_in_func(decl, ctx.builder.func);
         ctx.builder.ins().call(func_ref, &arg_values)
     };
 
-    Ok(get_call_result(ctx.builder, call_inst, expected_type))
+    get_call_result(ctx.builder, call_inst, expected_type)
 }
 
 /// Helper function to convert boolean to integer (0 or 1)
@@ -977,37 +893,33 @@ fn emit_al_count_and_pass_addr(
     param_types: &[TypeId],
     addr: Value,
     ctx: &mut BodyEmitContext,
-) -> Result<Value, String> {
-    // x86_64 SysV ABI requires AL to be set to the number of floating point arguments for variadic calls.
+) -> Value {
     if ctx.triple.architecture == target_lexicon::Architecture::X86_64
         && ctx.builder.func.signature.call_conv == cranelift::codegen::isa::CallConv::SystemV
     {
         let mut fp_arg_count = 0;
         for (i, arg) in args.iter().enumerate() {
-            // Only count arguments that are NOT fixed parameters
             if i >= param_types.len() {
-                let arg_mir_type = ctx.mir.get_type(lower_operand_type_id(arg, ctx.mir).unwrap());
+                let arg_mir_type = ctx.mir.get_type(lower_operand_type_id(arg, ctx.mir));
                 if matches!(arg_mir_type, MirType::F32 | MirType::F64) {
                     fp_arg_count += 1;
                 }
             }
         }
 
-        // Ensure fp_arg_count doesn't exceed 8 (number of XMM registers used for args)
         let fp_arg_count = fp_arg_count.min(8);
 
-        // Define __cendol_set_al if not already defined
         if ctx.set_al_func.is_none() {
-            *ctx.set_al_func = Some(emit_cendol_set_al(ctx.module)?);
+            *ctx.set_al_func = Some(emit_cendol_set_al(ctx.module));
         }
 
         let set_al_func = ctx.set_al_func.unwrap();
         let local_set_al = ctx.module.declare_func_in_func(set_al_func, ctx.builder.func);
         let count_val = ctx.builder.ins().iconst(types::I64, fp_arg_count as i64);
         let call_inst = ctx.builder.ins().call(local_set_al, &[count_val, addr]);
-        Ok(ctx.builder.inst_results(call_inst)[1]) // Return the address (RDX)
+        ctx.builder.inst_results(call_inst)[1]
     } else {
-        Ok(addr)
+        addr
     }
 }
 
@@ -1018,13 +930,7 @@ fn emit_bool_to_int(val: Value, target_type: Type, builder: &mut FunctionBuilder
 }
 
 /// Helper function to emit a memcpy call
-fn emit_memcpy(
-    dest: Value,
-    src: Value,
-    size: i64,
-    builder: &mut FunctionBuilder,
-    module: &mut ObjectModule,
-) -> Result<(), String> {
+fn emit_memcpy(dest: Value, src: Value, size: i64, builder: &mut FunctionBuilder, module: &mut ObjectModule) {
     let mut sig = Signature::new(builder.func.signature.call_conv);
     sig.params.push(AbiParam::new(types::I64)); // dest
     sig.params.push(AbiParam::new(types::I64)); // src
@@ -1033,22 +939,15 @@ fn emit_memcpy(
 
     let callee = module
         .declare_function("memcpy", Linkage::Import, &sig)
-        .map_err(|e| format!("Failed to declare memcpy: {:?}", e))?;
+        .expect("Failed to declare memcpy");
     let local_callee = module.declare_func_in_func(callee, builder.func);
 
     let size_val = builder.ins().iconst(types::I64, size);
     builder.ins().call(local_callee, &[dest, src, size_val]);
-    Ok(())
 }
 
 /// Helper function to emit a memset call
-fn emit_memset(
-    dest: Value,
-    val: i8,
-    size: i64,
-    builder: &mut FunctionBuilder,
-    module: &mut ObjectModule,
-) -> Result<(), String> {
+fn emit_memset(dest: Value, val: i8, size: i64, builder: &mut FunctionBuilder, module: &mut ObjectModule) {
     let mut sig = Signature::new(builder.func.signature.call_conv);
     sig.params.push(AbiParam::new(types::I64)); // dest
     sig.params.push(AbiParam::new(types::I32)); // val
@@ -1057,13 +956,12 @@ fn emit_memset(
 
     let callee = module
         .declare_function("memset", Linkage::Import, &sig)
-        .map_err(|e| format!("Failed to declare memset: {:?}", e))?;
+        .expect("Failed to declare memset");
     let local_callee = module.declare_func_in_func(callee, builder.func);
 
     let val_val = builder.ins().iconst(types::I32, val as i64);
     let size_val = builder.ins().iconst(types::I64, size);
     builder.ins().call(local_callee, &[dest, val_val, size_val]);
-    Ok(())
 }
 
 /// Helper function to emit a type conversion in Cranelift
@@ -1138,10 +1036,10 @@ fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, build
 }
 
 /// Helper to emit a constant to anonymous memory and return its address
-fn emit_constant_to_memory(const_id: ConstValueId, ctx: &mut BodyEmitContext) -> Result<Value, String> {
-    let const_value = ctx.mir.constants.get(&const_id).ok_or("Constant not found")?;
+fn emit_constant_to_memory(const_id: ConstValueId, ctx: &mut BodyEmitContext) -> Value {
+    let const_value = ctx.mir.constants.get(&const_id).expect("Constant not found");
     let ty = ctx.mir.get_type(const_value.ty);
-    let size = lower_type_size(ty, ctx.mir)? as usize;
+    let size = lower_type_size(ty, ctx.mir) as usize;
 
     let mut data_description = DataDescription::new();
 
@@ -1162,7 +1060,7 @@ fn emit_constant_to_memory(const_id: ConstValueId, ctx: &mut BodyEmitContext) ->
             Some(&mut *ctx.module),
             Some(&mut data_description),
             0,
-        )?;
+        );
 
         data_description.define(bytes.into_boxed_slice());
     }
@@ -1170,31 +1068,29 @@ fn emit_constant_to_memory(const_id: ConstValueId, ctx: &mut BodyEmitContext) ->
     let data_id = ctx
         .module
         .declare_anonymous_data(false, false)
-        .map_err(|e| format!("Failed to declare anonymous data: {:?}", e))?;
+        .expect("Failed to declare anonymous data");
 
     ctx.module
         .define_data(data_id, &data_description)
-        .map_err(|e| format!("Failed to define anonymous data: {:?}", e))?;
+        .expect("Failed to define anonymous data");
 
     let global_val = ctx.module.declare_data_in_func(data_id, ctx.builder.func);
-    Ok(ctx.builder.ins().global_value(types::I64, global_val))
+    ctx.builder.ins().global_value(types::I64, global_val)
 }
 
 /// Helper function to resolve a MIR operand to a Cranelift value
-fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Type) -> Result<Value, String> {
+fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Type) -> Value {
     match operand {
         Operand::Constant(const_id) => {
             let const_value = ctx.mir.constants.get(const_id).expect("constant id not found");
             match &const_value.kind {
-                ConstValueKind::Int(val) => Ok(ctx.builder.ins().iconst(expected_type, *val)),
+                ConstValueKind::Int(val) => ctx.builder.ins().iconst(expected_type, *val),
                 ConstValueKind::Float(val) => {
-                    // Use the appropriate float constant based on expected type
                     if expected_type == types::F64 {
-                        Ok(ctx.builder.ins().f64const(*val))
+                        ctx.builder.ins().f64const(*val)
                     } else if expected_type == types::F32 {
-                        Ok(ctx.builder.ins().f32const(*val as f32))
+                        ctx.builder.ins().f32const(*val as f32)
                     } else if expected_type == types::F128 {
-                        // Use memory load for F128 to ensure precision and correct bit pattern (x87 or IEEE)
                         let bytes = if ctx.triple.architecture == target_lexicon::Architecture::X86_64 {
                             f64_to_x87_bytes(*val)
                         } else {
@@ -1204,34 +1100,30 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                         let data_id = ctx
                             .module
                             .declare_anonymous_data(false, false)
-                            .map_err(|e| format!("Failed to declare anonymous data: {:?}", e))?;
+                            .expect("Failed to declare anonymous data");
 
                         let mut dd = DataDescription::new();
                         dd.define(bytes.to_vec().into_boxed_slice());
                         ctx.module
                             .define_data(data_id, &dd)
-                            .map_err(|e| format!("Failed to define anonymous data: {:?}", e))?;
+                            .expect("Failed to define anonymous data");
 
                         let global_val = ctx.module.declare_data_in_func(data_id, ctx.builder.func);
                         let addr = ctx.builder.ins().global_value(types::I64, global_val);
-                        Ok(ctx
-                            .builder
+                        ctx.builder
                             .ins()
-                            .load(types::F128, MemFlags::new().with_readonly(), addr, 0))
+                            .load(types::F128, MemFlags::new().with_readonly(), addr, 0)
                     } else {
-                        Ok(ctx.builder.ins().f32const(*val as f32))
+                        ctx.builder.ins().f32const(*val as f32)
                     }
                 }
                 ConstValueKind::Bool(val) => {
                     let int_val = if *val { 1 } else { 0 };
-                    Ok(ctx.builder.ins().iconst(expected_type, int_val))
+                    ctx.builder.ins().iconst(expected_type, int_val)
                 }
-                ConstValueKind::Null => Ok(ctx.builder.ins().iconst(expected_type, 0i64)),
+                ConstValueKind::Null => ctx.builder.ins().iconst(expected_type, 0i64),
                 ConstValueKind::GlobalAddress(global_id) => {
-                    // Get the global variable and return its address
-                    // This handles the array-to-pointer decay for string literals
                     let global = ctx.mir.get_global(*global_id);
-                    // Use local linkage for string literals and internal symbols to avoid conflicts
                     let linkage = if global.name.as_str().starts_with(".L.str") {
                         Linkage::Local
                     } else {
@@ -1240,80 +1132,51 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                     let global_val = ctx
                         .module
                         .declare_data(global.name.as_str(), linkage, true, false)
-                        .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
+                        .expect("Failed to declare global data");
                     let local_id = ctx.module.declare_data_in_func(global_val, ctx.builder.func);
-                    // Global addresses are always pointer-sized (i64)
                     let addr = ctx.builder.ins().global_value(types::I64, local_id);
-                    Ok(emit_type_conversion(
-                        addr,
-                        types::I64,
-                        expected_type,
-                        false,
-                        ctx.builder,
-                    ))
+                    emit_type_conversion(addr, types::I64, expected_type, false, ctx.builder)
                 }
                 ConstValueKind::FunctionAddress(func_id) => {
-                    if let Some(&clif_func_id) = ctx.func_id_map.get(func_id) {
-                        let func_ref = ctx.module.declare_func_in_func(clif_func_id, ctx.builder.func);
-                        let addr = ctx.builder.ins().func_addr(types::I64, func_ref);
-                        Ok(emit_type_conversion(
-                            addr,
-                            types::I64,
-                            expected_type,
-                            false,
-                            ctx.builder,
-                        ))
-                    } else {
-                        Err(format!("Function ID {} not found in map", func_id.get()))
-                    }
+                    let clif_func_id = *ctx
+                        .func_id_map
+                        .get(func_id)
+                        .unwrap_or_else(|| panic!("Function ID {} not found in map", func_id.get()));
+                    let func_ref = ctx.module.declare_func_in_func(clif_func_id, ctx.builder.func);
+                    let addr = ctx.builder.ins().func_addr(types::I64, func_ref);
+                    emit_type_conversion(addr, types::I64, expected_type, false, ctx.builder)
                 }
                 ConstValueKind::ArrayLiteral(_) | ConstValueKind::StructLiteral(_) => {
                     emit_constant_to_memory(*const_id, ctx)
                 }
                 _ => {
-                    // Check if the type is aggregate, if so, we must emit to memory
-                    // This handles ConstValueKind::Zero for aggregates
                     let mir_type = ctx.mir.get_type(const_value.ty);
                     if mir_type.is_aggregate() {
                         emit_constant_to_memory(*const_id, ctx)
                     } else {
-                        Ok(ctx.builder.ins().iconst(expected_type, 0i64))
+                        ctx.builder.ins().iconst(expected_type, 0i64)
                     }
                 }
             }
         }
         Operand::Copy(place) => {
-            // Determine the correct type from the place itself
             let place_type_id = lower_place_type_id(place, ctx.mir);
             let place_type = ctx.mir.get_type(place_type_id);
 
             if place_type.is_aggregate() {
-                // For aggregate types, resolving the operand value means getting its address
-                let addr = emit_place_addr(place, ctx)?;
-                return Ok(emit_type_conversion(
-                    addr,
-                    types::I64,
-                    expected_type,
-                    false,
-                    ctx.builder,
-                ));
+                let addr = emit_place_addr(place, ctx);
+                return emit_type_conversion(addr, types::I64, expected_type, false, ctx.builder);
             }
 
             let place_clif_type =
-                lower_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))?;
+                lower_type(place_type).unwrap_or_else(|| panic!("Unsupported place type: {:?}", place_type));
 
-            let val = emit_place(place, ctx, place_clif_type)?;
-            Ok(emit_type_conversion(
-                val,
-                place_clif_type,
-                expected_type,
-                place_type.is_signed(),
-                ctx.builder,
-            ))
+            let val = emit_place(place, ctx, place_clif_type);
+            emit_type_conversion(val, place_clif_type, expected_type, place_type.is_signed(), ctx.builder)
         }
         Operand::Cast(type_id, inner_operand) => {
-            let inner_type = lower_operand_type(inner_operand, ctx.mir)?;
-            let inner_val = emit_operand(inner_operand, ctx, inner_type)?;
+            let inner_type = lower_operand_type(inner_operand, ctx.mir);
+            let inner_val = emit_operand(inner_operand, ctx, inner_type);
 
             let mir_type = ctx.mir.get_type(*type_id);
             let target_type = lower_type(mir_type).unwrap_or(types::I32);
@@ -1325,109 +1188,81 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                 is_operand_signed(inner_operand, ctx.mir),
                 ctx.builder,
             );
-            Ok(emit_type_conversion(
-                converted,
-                target_type,
-                expected_type,
-                mir_type.is_signed(),
-                ctx.builder,
-            ))
+            emit_type_conversion(converted, target_type, expected_type, mir_type.is_signed(), ctx.builder)
         }
         Operand::AddressOf(place) => {
-            // The value of an AddressOf operand is the address of the place.
-            let addr = emit_place_addr(place, ctx)?;
-            Ok(emit_type_conversion(
-                addr,
-                types::I64,
-                expected_type,
-                false,
-                ctx.builder,
-            ))
+            let addr = emit_place_addr(place, ctx);
+            emit_type_conversion(addr, types::I64, expected_type, false, ctx.builder)
         }
     }
 }
 
 /// Helper function to resolve a MIR place to a Cranelift value
-fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> Result<Value, String> {
+fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> Value {
     match place {
         Place::Local(local_id) => {
-            // A local place is resolved by loading from its stack slot
             if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
-                Ok(ctx.builder.ins().stack_load(expected_type, *stack_slot, 0))
+                ctx.builder.ins().stack_load(expected_type, *stack_slot, 0)
             } else {
-                // Zero-sized locals don't have stack slots. Return a dummy value.
-                // This can happen with flexible array members or zero-length arrays.
-                Ok(ctx.builder.ins().iconst(expected_type, 0))
+                ctx.builder.ins().iconst(expected_type, 0)
             }
         }
         Place::Global(_global_id) => {
-            // First, get the memory address of the global.
-            let addr = emit_place_addr(place, ctx)?;
-
-            // Then, load the value from that address.
-            Ok(ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0))
+            let addr = emit_place_addr(place, ctx);
+            ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
         }
         Place::Deref(operand) => {
-            // The address is the value of the operand, so we load from that value
-            let addr = emit_operand(operand, ctx, types::I64)?;
-            Ok(ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0))
+            let addr = emit_operand(operand, ctx, types::I64);
+            ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
         }
         Place::StructField(base_place, field_index) => {
-            // Get the address of the struct field
-            let addr = emit_place_addr(&Place::StructField(base_place.clone(), *field_index), ctx)?;
-            Ok(ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0))
+            let addr = emit_place_addr(&Place::StructField(base_place.clone(), *field_index), ctx);
+            ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
         }
         Place::ArrayIndex(base_place, index_operand) => {
-            // Get the address of the array element
-            let addr = emit_place_addr(&Place::ArrayIndex(base_place.clone(), index_operand.clone()), ctx)?;
-            Ok(ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0))
+            let addr = emit_place_addr(&Place::ArrayIndex(base_place.clone(), index_operand.clone()), ctx);
+            ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
         }
     }
 }
 
 /// Helper function to get the Cranelift Type of an operand
-fn lower_operand_type(operand: &Operand, mir: &MirProgram) -> Result<Type, String> {
+fn lower_operand_type(operand: &Operand, mir: &MirProgram) -> Type {
     match operand {
         Operand::Constant(const_id) => {
             let const_value = mir.constants.get(const_id).expect("constant id not found");
             let mir_type = mir.get_type(const_value.ty);
 
-            // If we have a specific type for the constant, use that to determine the Cranelift type
             if let Some(clif_type) = lower_type(mir_type) {
-                return Ok(clif_type);
+                return clif_type;
             }
 
-            // Fallback to kind-based determination if type is not convertible (e.g., struct/array)
             match &const_value.kind {
-                // Integer literals in MIR are typically used in integer-sized contexts
-                // Default to I32 so common small integer constants (like `4`) match i32
-                // places instead of being treated as 64-bit immediates.
-                ConstValueKind::Int(_) => Ok(types::I32),
-                ConstValueKind::Float(_) => Ok(types::F64),
-                ConstValueKind::Bool(_) => Ok(types::I32),
-                // Null/Zero/Global addresses are pointer-sized
-                ConstValueKind::Null | ConstValueKind::Zero | ConstValueKind::GlobalAddress(_) => Ok(types::I64),
-                ConstValueKind::FunctionAddress(_) => Ok(types::I64),
-                ConstValueKind::StructLiteral(_) => Ok(types::I32),
-                ConstValueKind::ArrayLiteral(_) => Ok(types::I32),
+                ConstValueKind::Int(_) => types::I32,
+                ConstValueKind::Float(_) => types::F64,
+                ConstValueKind::Bool(_) => types::I32,
+                ConstValueKind::Null | ConstValueKind::Zero | ConstValueKind::GlobalAddress(_) => types::I64,
+                ConstValueKind::FunctionAddress(_) => types::I64,
+                ConstValueKind::StructLiteral(_) => types::I32,
+                ConstValueKind::ArrayLiteral(_) => types::I32,
             }
         }
         Operand::Copy(place) => {
             let place_type_id = lower_place_type_id(place, mir);
             let place_type = mir.get_type(place_type_id);
             if place_type.is_aggregate() {
-                return Ok(types::I64);
+                return types::I64;
             }
-            lower_type(place_type).ok_or_else(|| format!("Unsupported place type: {:?}", place_type))
+            lower_type(place_type).unwrap_or_else(|| panic!("Unsupported place type: {:?}", place_type))
         }
         Operand::Cast(type_id, _) => {
             let mir_type = mir.get_type(*type_id);
             if mir_type.is_aggregate() {
-                return Ok(types::I64);
+                return types::I64;
             }
-            Ok(lower_type(mir_type).unwrap_or(types::I32))
+            lower_type(mir_type).unwrap_or(types::I32)
         }
-        Operand::AddressOf(_) => Ok(types::I64), // AddressOf always returns a pointer
+        Operand::AddressOf(_) => types::I64,
     }
 }
 
@@ -1445,29 +1280,24 @@ fn is_operand_signed(operand: &Operand, mir: &MirProgram) -> bool {
 }
 
 /// Helper function to get the TypeId of an operand
-fn lower_operand_type_id(operand: &Operand, mir: &MirProgram) -> Result<TypeId, String> {
+fn lower_operand_type_id(operand: &Operand, mir: &MirProgram) -> TypeId {
     match operand {
         Operand::Constant(const_id) => {
             let const_value = mir.constants.get(const_id).expect("constant id not found");
-            Ok(const_value.ty)
+            const_value.ty
         }
-        Operand::Copy(place) => Ok(lower_place_type_id(place, mir)),
-        Operand::Cast(type_id, _) => Ok(*type_id),
+        Operand::Copy(place) => lower_place_type_id(place, mir),
+        Operand::Cast(type_id, _) => *type_id,
         Operand::AddressOf(place) => {
-            // AddressOf returns a pointer to the place's type.
-            // We need to find or create this pointer type in MIR.
-            // Actually, for PtrAdd scaling, we only care about the base type of the pointer.
             let place_type_id = lower_place_type_id(place, mir);
-            // We need the TypeId for ptr<place_type_id>
-            // Let's see if we can find it in the type table.
             for (id, ty) in &mir.types {
                 if let MirType::Pointer { pointee } = ty
                     && *pointee == place_type_id
                 {
-                    return Ok(*id);
+                    return *id;
                 }
             }
-            Err("Pointer type not found in MIR types".to_string())
+            panic!("Pointer type not found in MIR types");
         }
     }
 }
@@ -1480,7 +1310,7 @@ fn lower_place_type_id(place: &Place, mir: &MirProgram) -> TypeId {
         Place::Deref(operand) => {
             // To get the type of a dereference, we need the type of the operand,
             // which should be a pointer. The resulting type is the pointee.
-            let operand_type_id = lower_operand_type_id(operand, mir).unwrap();
+            let operand_type_id = lower_operand_type_id(operand, mir);
             let operand_type = mir.get_type(operand_type_id);
             match operand_type {
                 MirType::Pointer { pointee } => *pointee,
@@ -1516,20 +1346,17 @@ fn lower_place_type_id(place: &Place, mir: &MirProgram) -> TypeId {
 }
 
 /// Helper function to resolve a MIR place to a memory address
-fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Result<Value, String> {
+fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Value {
     match place {
         Place::Local(local_id) => {
             if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
-                Ok(ctx.builder.ins().stack_addr(types::I64, *stack_slot, 0))
+                ctx.builder.ins().stack_addr(types::I64, *stack_slot, 0)
             } else {
-                // Zero-sized locals don't have stack slots. Return a null address.
-                // This can happen with flexible array members or zero-length arrays.
-                Ok(ctx.builder.ins().iconst(types::I64, 0))
+                ctx.builder.ins().iconst(types::I64, 0)
             }
         }
         Place::Global(global_id) => {
             let global = ctx.mir.get_global(*global_id);
-            // Use local linkage for string literals to avoid conflicts
             let linkage = if global.name.as_str().starts_with(".L.str") {
                 Linkage::Local
             } else if global.initial_value.is_some() {
@@ -1541,92 +1368,70 @@ fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Result<Value, St
             let global_val = ctx
                 .module
                 .declare_data(global.name.as_str(), linkage, true, false)
-                .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
+                .expect("Failed to declare global data");
             let local_id = ctx.module.declare_data_in_func(global_val, ctx.builder.func);
-            // Use I64 for addresses
-            Ok(ctx.builder.ins().global_value(types::I64, local_id))
+            ctx.builder.ins().global_value(types::I64, local_id)
         }
-        Place::Deref(operand) => {
-            // The address is the value of the operand itself (which should be a pointer).
-            emit_operand(operand, ctx, types::I64)
-        }
+        Place::Deref(operand) => emit_operand(operand, ctx, types::I64),
         Place::StructField(base_place, field_index) => {
-            // Get the base address of the struct
-            let base_addr = emit_place_addr(base_place, ctx)?;
+            let base_addr = emit_place_addr(base_place, ctx);
 
-            // We need to find the type of the base_place to get the pre-computed field offset
             let base_place_type_id = lower_place_type_id(base_place, ctx.mir);
             let base_type = ctx.mir.get_type(base_place_type_id);
 
             let (field_offset, is_pointer) = match base_type {
                 MirType::Record { layout, .. } => {
-                    let offset = layout
-                        .field_offsets
-                        .get(*field_index)
-                        .copied()
-                        .ok_or_else(|| format!("Field index {} out of bounds", field_index))?;
+                    let offset = layout.field_offsets[*field_index];
                     (offset, false)
                 }
                 MirType::Pointer { pointee } => {
                     let pointee_type = ctx.mir.get_type(*pointee);
                     if let MirType::Record { layout, .. } = pointee_type {
-                        let offset = layout
-                            .field_offsets
-                            .get(*field_index)
-                            .copied()
-                            .ok_or_else(|| format!("Field index {} out of bounds", field_index))?;
+                        let offset = layout.field_offsets[*field_index];
                         (offset, true)
                     } else {
-                        return Err("Base of StructField is not a struct type".to_string());
+                        panic!("Base of StructField is not a struct type");
                     }
                 }
-                _ => return Err("Base of StructField is not a struct type".to_string()),
+                _ => panic!("Base of StructField is not a struct type"),
             };
 
             let final_addr = if is_pointer {
-                // If the base is a pointer, we need to load the address it points to first
                 ctx.builder.ins().load(types::I64, MemFlags::new(), base_addr, 0)
             } else {
                 base_addr
             };
 
             let offset_val = ctx.builder.ins().iconst(types::I64, field_offset as i64);
-            Ok(ctx.builder.ins().iadd(final_addr, offset_val))
+            ctx.builder.ins().iadd(final_addr, offset_val)
         }
         Place::ArrayIndex(base_place, index_operand) => {
-            // Get the base address of the array/pointer
-            let base_addr = emit_place_addr(base_place, ctx)?;
+            let base_addr = emit_place_addr(base_place, ctx);
+            let index_val = emit_operand(index_operand, ctx, types::I64);
 
-            // Resolve the index operand to a value
-            let index_val = emit_operand(index_operand, ctx, types::I64)?;
-
-            // Determine the element size using pre-computed layout information
             let base_place_type_id = lower_place_type_id(base_place, ctx.mir);
             let base_type = ctx.mir.get_type(base_place_type_id);
 
-            // If the base is a pointer, we must load the pointer value from the base address
-            // before adding the element offset. For arrays, the base address is already
-            // the address of the first element.
             let (element_size, final_base_addr) = match base_type {
                 MirType::Array { layout, .. } => (layout.stride as u32, base_addr),
                 MirType::Pointer { pointee } => {
                     let pointee_type = ctx.mir.get_type(*pointee);
-                    let size = lower_type_size(pointee_type, ctx.mir)?;
+                    let size = lower_type_size(pointee_type, ctx.mir);
                     let loaded_ptr = ctx.builder.ins().load(types::I64, MemFlags::new(), base_addr, 0);
                     (size, loaded_ptr)
                 }
-                _ => return Err("Base of ArrayIndex is not an array or pointer".to_string()),
+                _ => panic!("Base of ArrayIndex is not an array or pointer"),
             };
 
             let element_size_val = ctx.builder.ins().iconst(types::I64, element_size as i64);
             let offset = ctx.builder.ins().imul(index_val, element_size_val);
 
-            Ok(ctx.builder.ins().iadd(final_base_addr, offset))
+            ctx.builder.ins().iadd(final_base_addr, offset)
         }
     }
 }
 /// Helper to lower a single MIR statement
-fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), String> {
+fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
     match stmt {
         MirStmt::Assign(place, rvalue) => {
             let place_type_id = lower_place_type_id(place, ctx.mir);
@@ -1634,19 +1439,18 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
             let expected_type = match lower_type(place_mir_type) {
                 Some(t) => t,
                 None if place_mir_type.is_aggregate() => types::I64,
-                None => return Err("Cannot assign to void type".to_string()),
+                None => panic!("Cannot assign to void type"),
             };
 
             // Process the rvalue to get a Cranelift value first
             let rvalue_result = match rvalue {
                 Rvalue::Use(operand) => emit_operand(operand, ctx, expected_type),
                 Rvalue::Cast(type_id, operand) => {
-                    let inner_clif_type = lower_operand_type(operand, ctx.mir)?;
-                    let inner_val = emit_operand(operand, ctx, inner_clif_type)?;
+                    let inner_clif_type = lower_operand_type(operand, ctx.mir);
+                    let inner_val = emit_operand(operand, ctx, inner_clif_type);
 
                     let target_mir_type = ctx.mir.get_type(*type_id);
-                    let target_clif_type =
-                        lower_type(target_mir_type).ok_or_else(|| "Cannot cast to void type".to_string())?;
+                    let target_clif_type = lower_type(target_mir_type).expect("Cannot cast to void type");
 
                     let converted = emit_type_conversion(
                         inner_val,
@@ -1656,48 +1460,48 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         ctx.builder,
                     );
 
-                    Ok(emit_type_conversion(
+                    emit_type_conversion(
                         converted,
                         target_clif_type,
                         expected_type,
                         target_mir_type.is_signed(),
                         ctx.builder,
-                    ))
+                    )
                 }
                 Rvalue::UnaryIntOp(op, operand) => {
-                    let operand_clif_type = lower_operand_type(operand, ctx.mir)?;
-                    let val = emit_operand(operand, ctx, operand_clif_type)?;
+                    let operand_clif_type = lower_operand_type(operand, ctx.mir);
+                    let val = emit_operand(operand, ctx, operand_clif_type);
 
                     match op {
-                        UnaryIntOp::Neg => Ok(ctx.builder.ins().ineg(val)),
-                        UnaryIntOp::BitwiseNot => Ok(ctx.builder.ins().bnot(val)),
+                        UnaryIntOp::Neg => ctx.builder.ins().ineg(val),
+                        UnaryIntOp::BitwiseNot => ctx.builder.ins().bnot(val),
                         UnaryIntOp::LogicalNot => {
                             let zero = ctx.builder.ins().iconst(operand_clif_type, 0i64);
                             let is_zero = ctx.builder.ins().icmp(IntCC::Equal, val, zero);
-                            Ok(emit_bool_to_int(is_zero, expected_type, ctx.builder))
+                            emit_bool_to_int(is_zero, expected_type, ctx.builder)
                         }
                     }
                 }
                 Rvalue::UnaryFloatOp(op, operand) => {
-                    let operand_clif_type = lower_operand_type(operand, ctx.mir)?;
-                    let val = emit_operand(operand, ctx, operand_clif_type)?;
+                    let operand_clif_type = lower_operand_type(operand, ctx.mir);
+                    let val = emit_operand(operand, ctx, operand_clif_type);
 
                     match op {
-                        UnaryFloatOp::Neg => Ok(ctx.builder.ins().fneg(val)),
+                        UnaryFloatOp::Neg => ctx.builder.ins().fneg(val),
                     }
                 }
                 Rvalue::PtrAdd(base, offset) => {
-                    let base_type_id = lower_operand_type_id(base, ctx.mir)?;
+                    let base_type_id = lower_operand_type_id(base, ctx.mir);
                     let base_type = ctx.mir.get_type(base_type_id);
                     let MirType::Pointer { pointee } = base_type else {
-                        return Err("PtrAdd base is not a pointer type".to_string());
+                        panic!("PtrAdd base is not a pointer type");
                     };
 
                     let pointee_type = ctx.mir.get_type(*pointee);
-                    let pointee_size = lower_type_size(pointee_type, ctx.mir)?;
+                    let pointee_size = lower_type_size(pointee_type, ctx.mir);
 
-                    let base_val = emit_operand(base, ctx, types::I64)?;
-                    let offset_val = emit_operand(offset, ctx, types::I64)?;
+                    let base_val = emit_operand(base, ctx, types::I64);
+                    let offset_val = emit_operand(offset, ctx, types::I64);
 
                     let scaled_offset = if pointee_size > 1 {
                         let size_val = ctx.builder.ins().iconst(types::I64, pointee_size as i64);
@@ -1706,20 +1510,20 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         offset_val
                     };
 
-                    Ok(ctx.builder.ins().iadd(base_val, scaled_offset))
+                    ctx.builder.ins().iadd(base_val, scaled_offset)
                 }
                 Rvalue::PtrSub(base, offset) => {
-                    let base_type_id = lower_operand_type_id(base, ctx.mir)?;
+                    let base_type_id = lower_operand_type_id(base, ctx.mir);
                     let base_type = ctx.mir.get_type(base_type_id);
                     let MirType::Pointer { pointee } = base_type else {
-                        return Err("PtrSub base is not a pointer type".to_string());
+                        panic!("PtrSub base is not a pointer type");
                     };
 
                     let pointee_type = ctx.mir.get_type(*pointee);
-                    let pointee_size = lower_type_size(pointee_type, ctx.mir)?;
+                    let pointee_size = lower_type_size(pointee_type, ctx.mir);
 
-                    let base_val = emit_operand(base, ctx, types::I64)?;
-                    let offset_val = emit_operand(offset, ctx, types::I64)?;
+                    let base_val = emit_operand(base, ctx, types::I64);
+                    let offset_val = emit_operand(offset, ctx, types::I64);
 
                     let scaled_offset = if pointee_size > 1 {
                         let size_val = ctx.builder.ins().iconst(types::I64, pointee_size as i64);
@@ -1728,39 +1532,37 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         offset_val
                     };
 
-                    Ok(ctx.builder.ins().isub(base_val, scaled_offset))
+                    ctx.builder.ins().isub(base_val, scaled_offset)
                 }
                 Rvalue::PtrDiff(left, right) => {
-                    let left_type_id = lower_operand_type_id(left, ctx.mir)?;
+                    let left_type_id = lower_operand_type_id(left, ctx.mir);
                     let left_type = ctx.mir.get_type(left_type_id);
                     let pointee_size = if let MirType::Pointer { pointee } = left_type {
                         let pointee_type = ctx.mir.get_type(*pointee);
-                        lower_type_size(pointee_type, ctx.mir)?
+                        lower_type_size(pointee_type, ctx.mir)
                     } else {
-                        return Err("PtrDiff left operand is not a pointer type".to_string());
+                        panic!("PtrDiff left operand is not a pointer type");
                     };
 
-                    let left_val = emit_operand(left, ctx, types::I64)?;
-                    let right_val = emit_operand(right, ctx, types::I64)?;
+                    let left_val = emit_operand(left, ctx, types::I64);
+                    let right_val = emit_operand(right, ctx, types::I64);
 
                     let diff = ctx.builder.ins().isub(left_val, right_val);
                     if pointee_size > 1 {
                         let size_val = ctx.builder.ins().iconst(types::I64, pointee_size as i64);
-                        Ok(ctx.builder.ins().sdiv(diff, size_val))
+                        ctx.builder.ins().sdiv(diff, size_val)
                     } else {
-                        Ok(diff)
+                        diff
                     }
                 }
                 Rvalue::Load(operand) => {
-                    let addr = emit_operand(operand, ctx, types::I64)?;
-                    Ok(ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0))
+                    let addr = emit_operand(operand, ctx, types::I64);
+                    ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
                 }
 
                 Rvalue::BinaryIntOp(op, left_operand, right_operand) => {
-                    let left_clif_type = lower_operand_type(left_operand, ctx.mir)
-                        .map_err(|e| format!("Failed to get left operand type: {}", e))?;
-                    let right_clif_type = lower_operand_type(right_operand, ctx.mir)
-                        .map_err(|e| format!("Failed to get right operand type: {}", e))?;
+                    let left_clif_type = lower_operand_type(left_operand, ctx.mir);
+                    let right_clif_type = lower_operand_type(right_operand, ctx.mir);
 
                     // Determine common type for the operation
                     // This handles mixing different integer widths (e.g. i8 + i32 literal)
@@ -1771,8 +1573,8 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         right_clif_type
                     };
 
-                    let left_val_raw = emit_operand(left_operand, ctx, left_clif_type)?;
-                    let right_val_raw = emit_operand(right_operand, ctx, right_clif_type)?;
+                    let left_val_raw = emit_operand(left_operand, ctx, left_clif_type);
+                    let right_val_raw = emit_operand(right_operand, ctx, right_clif_type);
 
                     let left_val = emit_type_conversion(
                         left_val_raw,
@@ -1867,16 +1669,14 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                             emit_bool_to_int(cond, expected_type, ctx.builder)
                         }
                     };
-                    Ok(result_val)
+                    result_val
                 }
                 Rvalue::BinaryFloatOp(op, left_operand, right_operand) => {
-                    let left_cranelift_type = lower_operand_type(left_operand, ctx.mir)
-                        .map_err(|e| format!("Failed to get left operand type: {}", e))?;
-                    let right_cranelift_type = lower_operand_type(right_operand, ctx.mir)
-                        .map_err(|e| format!("Failed to get right operand type: {}", e))?;
+                    let left_cranelift_type = lower_operand_type(left_operand, ctx.mir);
+                    let right_cranelift_type = lower_operand_type(right_operand, ctx.mir);
 
-                    let left_val = emit_operand(left_operand, ctx, left_cranelift_type)?;
-                    let right_val = emit_operand(right_operand, ctx, right_cranelift_type)?;
+                    let left_val = emit_operand(left_operand, ctx, left_cranelift_type);
+                    let right_val = emit_operand(right_operand, ctx, right_cranelift_type);
 
                     let result_val = match op {
                         BinaryFloatOp::Add => ctx.builder.ins().fadd(left_val, right_val),
@@ -1908,7 +1708,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                             emit_bool_to_int(cond, expected_type, ctx.builder)
                         }
                     };
-                    Ok(result_val)
+                    result_val
                 }
                 Rvalue::BuiltinVaArg(ap, type_id) => {
                     // X86_64 SysV va_arg implementation
@@ -1916,7 +1716,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     // For GP types: if gp_offset < 48, fetch from reg_save_area + gp_offset
                     //               else fetch from overflow_arg_area
 
-                    let ap_addr = emit_place_addr(ap, ctx)?;
+                    let ap_addr = emit_place_addr(ap, ctx);
 
                     // Load fields from va_list
                     let gp_offset = ctx.builder.ins().load(types::I32, MemFlags::new(), ap_addr, 0);
@@ -1931,7 +1731,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     // We ignore is_float and standard SystemV ABI register separation because our
                     // implementation flattens everything into a sequential spill slot pointed to by reg_save_area.
 
-                    let size = lower_type_size(mir_type, ctx.mir)? as u32;
+                    let size = lower_type_size(mir_type, ctx.mir) as u32;
                     let size = size.max(8);
 
                     let needed_slots = size.div_ceil(8);
@@ -1957,12 +1757,12 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     let next_gp_64 = ctx.builder.ins().uextend(types::I64, next_gp);
                     let next_overflow = ctx.builder.ins().iadd(reg_save_area, next_gp_64);
                     ctx.builder.ins().store(MemFlags::new(), next_overflow, ap_addr, 8);
-                    Ok(result)
+                    result
                 }
                 Rvalue::ArrayLiteral(elements) => {
-                    let dest_addr = emit_place_addr(place, ctx)?;
+                    let dest_addr = emit_place_addr(place, ctx);
                     let MirType::Array { element, layout, .. } = place_mir_type else {
-                        return Err("ArrayLiteral with non-array type".to_string());
+                        panic!("ArrayLiteral with non-array type");
                     };
                     let element_mir_type = ctx.mir.get_type(*element);
                     let element_clif_type = lower_type(element_mir_type);
@@ -1977,28 +1777,28 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         };
 
                         if element_mir_type.is_aggregate() {
-                            let src_addr = emit_operand(element_op, ctx, types::I64)?;
-                            let size = lower_type_size(element_mir_type, ctx.mir)? as i64;
-                            emit_memcpy(element_dest_addr, src_addr, size, ctx.builder, ctx.module)?;
+                            let src_addr = emit_operand(element_op, ctx, types::I64);
+                            let size = lower_type_size(element_mir_type, ctx.mir) as i64;
+                            emit_memcpy(element_dest_addr, src_addr, size, ctx.builder, ctx.module);
                         } else {
-                            let val = emit_operand(element_op, ctx, element_clif_type.unwrap())?;
+                            let val = emit_operand(element_op, ctx, element_clif_type.unwrap());
                             ctx.builder.ins().store(MemFlags::new(), val, element_dest_addr, 0);
                         }
                     }
-                    return Ok(());
+                    return;
                 }
                 Rvalue::StructLiteral(fields) => {
-                    let dest_addr = emit_place_addr(place, ctx)?;
+                    let dest_addr = emit_place_addr(place, ctx);
                     let MirType::Record {
                         layout, field_types, ..
                     } = place_mir_type
                     else {
-                        return Err("StructLiteral with non-record type".to_string());
+                        panic!("StructLiteral with non-record type");
                     };
 
                     // Zero-initialize the entire struct first to ensure uninitialized members are zero
                     let struct_size = layout.size as i64;
-                    emit_memset(dest_addr, 0, struct_size, ctx.builder, ctx.module)?;
+                    emit_memset(dest_addr, 0, struct_size, ctx.builder, ctx.module);
 
                     for (field_idx, element_op) in fields.iter() {
                         let offset = layout.field_offsets[*field_idx] as i64;
@@ -2010,44 +1810,42 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
 
                         let field_mir_type = ctx.mir.get_type(field_types[*field_idx]);
                         if field_mir_type.is_aggregate() {
-                            let src_addr = emit_operand(element_op, ctx, types::I64)?;
-                            let size = lower_type_size(field_mir_type, ctx.mir)? as i64;
-                            emit_memcpy(field_dest_addr, src_addr, size, ctx.builder, ctx.module)?;
+                            let src_addr = emit_operand(element_op, ctx, types::I64);
+                            let size = lower_type_size(field_mir_type, ctx.mir) as i64;
+                            emit_memcpy(field_dest_addr, src_addr, size, ctx.builder, ctx.module);
                         } else {
                             let field_clif_type = lower_type(field_mir_type).unwrap();
-                            let val = emit_operand(element_op, ctx, field_clif_type)?;
+                            let val = emit_operand(element_op, ctx, field_clif_type);
                             ctx.builder.ins().store(MemFlags::new(), val, field_dest_addr, 0);
                         }
                     }
-                    return Ok(());
+                    return;
                 }
                 Rvalue::AtomicLoad(ptr, _order) => {
-                    let ptr_val = emit_operand(ptr, ctx, types::I64)?;
-                    Ok(ctx.builder.ins().atomic_load(expected_type, MemFlags::new(), ptr_val))
+                    let ptr_val = emit_operand(ptr, ctx, types::I64);
+                    ctx.builder.ins().atomic_load(expected_type, MemFlags::new(), ptr_val)
                 }
                 Rvalue::AtomicExchange(ptr, val, _order) => {
-                    let ptr_val = emit_operand(ptr, ctx, types::I64)?;
-                    let val_type = lower_operand_type(val, ctx.mir)?;
-                    let val_op = emit_operand(val, ctx, val_type)?;
-                    Ok(ctx
-                        .builder
+                    let ptr_val = emit_operand(ptr, ctx, types::I64);
+                    let val_type = lower_operand_type(val, ctx.mir);
+                    let val_op = emit_operand(val, ctx, val_type);
+                    ctx.builder
                         .ins()
-                        .atomic_rmw(expected_type, MemFlags::new(), AtomicRmwOp::Xchg, ptr_val, val_op))
+                        .atomic_rmw(expected_type, MemFlags::new(), AtomicRmwOp::Xchg, ptr_val, val_op)
                 }
                 Rvalue::AtomicCompareExchange(ptr, expected, desired, _, _, _) => {
-                    let ptr_val = emit_operand(ptr, ctx, types::I64)?;
-                    let expected_val = emit_operand(expected, ctx, expected_type)?;
-                    let desired_val = emit_operand(desired, ctx, expected_type)?;
+                    let ptr_val = emit_operand(ptr, ctx, types::I64);
+                    let expected_val = emit_operand(expected, ctx, expected_type);
+                    let desired_val = emit_operand(desired, ctx, expected_type);
 
-                    Ok(ctx
-                        .builder
+                    ctx.builder
                         .ins()
-                        .atomic_cas(MemFlags::new(), ptr_val, expected_val, desired_val))
+                        .atomic_cas(MemFlags::new(), ptr_val, expected_val, desired_val)
                 }
                 Rvalue::AtomicFetchOp(op, ptr, val, _order) => {
-                    let ptr_val = emit_operand(ptr, ctx, types::I64)?;
-                    let val_type = lower_operand_type(val, ctx.mir)?;
-                    let val_op = emit_operand(val, ctx, val_type)?;
+                    let ptr_val = emit_operand(ptr, ctx, types::I64);
+                    let val_type = lower_operand_type(val, ctx.mir);
+                    let val_op = emit_operand(val, ctx, val_type);
 
                     let rmw_op = match op {
                         BinaryIntOp::Add => AtomicRmwOp::Add,
@@ -2055,25 +1853,25 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         BinaryIntOp::BitAnd => AtomicRmwOp::And,
                         BinaryIntOp::BitOr => AtomicRmwOp::Or,
                         BinaryIntOp::BitXor => AtomicRmwOp::Xor,
-                        _ => return Err(format!("Unsupported atomic fetch op: {:?}", op)),
+                        _ => panic!("Unsupported atomic fetch op: {:?}", op),
                     };
 
-                    Ok(ctx
-                        .builder
+                    ctx.builder
                         .ins()
-                        .atomic_rmw(expected_type, MemFlags::new(), rmw_op, ptr_val, val_op))
+                        .atomic_rmw(expected_type, MemFlags::new(), rmw_op, ptr_val, val_op)
                 }
             };
 
             // Now, assign the resolved value to the place
-            if let Ok(value) = rvalue_result {
+            let value = rvalue_result;
+            {
                 let place_type_id = lower_place_type_id(place, ctx.mir);
                 let mir_type = ctx.mir.get_type(place_type_id);
 
                 if mir_type.is_aggregate() {
-                    let dest_addr = emit_place_addr(place, ctx)?;
-                    let size = lower_type_size(mir_type, ctx.mir)? as i64;
-                    emit_memcpy(dest_addr, value, size, ctx.builder, ctx.module)?;
+                    let dest_addr = emit_place_addr(place, ctx);
+                    let size = lower_type_size(mir_type, ctx.mir) as i64;
+                    emit_memcpy(dest_addr, value, size, ctx.builder, ctx.module);
                 } else {
                     match place {
                         Place::Local(local_id) => {
@@ -2086,48 +1884,46 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                         }
                         _ => {
                             // This covers StructField, ArrayIndex, Deref, and Global assignments
-                            match emit_place_addr(place, ctx) {
-                                Ok(addr) => {
-                                    ctx.builder.ins().store(MemFlags::new(), value, addr, 0);
-                                }
-                                Err(e) => return Err(format!("Failed to resolve place address: {}", e)),
+                            {
+                                let addr = emit_place_addr(place, ctx);
+                                ctx.builder.ins().store(MemFlags::new(), value, addr, 0);
                             }
                         }
                     }
                 }
-            } else {
-                return Err(format!("Failed to resolve rvalue: {:?}", rvalue_result.err()));
             }
-            Ok(())
         }
 
         MirStmt::Store(operand, place) => {
             // We need to determine the correct type for the operand
             let place_type_id = lower_place_type_id(place, ctx.mir);
             let place_type = ctx.mir.get_type(place_type_id);
-            let cranelift_type = lower_type(place_type).ok_or_else(|| "Cannot store to a void type".to_string())?;
+            let cranelift_type = lower_type(place_type).expect("Cannot store to a void type");
 
-            let value = emit_operand(operand, ctx, cranelift_type)?;
+            let value = emit_operand(operand, ctx, cranelift_type);
 
             // Now, store the value into the place
             match place {
                 Place::Local(local_id) => {
-                    let stack_slot = ctx.stack_slots.get(local_id).ok_or_else(|| {
-                        format!(
-                            "Stack slot not found for local {} in function {}",
-                            local_id.get(),
-                            ctx.func.name
-                        )
-                    })?;
+                    let stack_slot = ctx
+                        .stack_slots
+                        .get(local_id)
+                        .ok_or_else(|| {
+                            format!(
+                                "Stack slot not found for local {} in function {}",
+                                local_id.get(),
+                                ctx.func.name
+                            )
+                        })
+                        .expect("Failed to declare data");
                     ctx.builder.ins().stack_store(value, *stack_slot, 0);
                 }
                 _ => {
                     // For other places, resolve to an address and store
-                    let addr = emit_place_addr(place, ctx)?;
+                    let addr = emit_place_addr(place, ctx);
                     ctx.builder.ins().store(MemFlags::new(), value, addr, 0);
                 }
             }
-            Ok(())
         }
         MirStmt::Call { target, args, dest } => {
             if let Some(dest_place) = dest {
@@ -2137,17 +1933,17 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                 let expected_type = match lower_type(dest_mir_type) {
                     Some(t) => t,
                     None if dest_mir_type.is_aggregate() => types::I64,
-                    None => return Err("Cannot assign to void type".to_string()),
+                    None => panic!("Cannot assign to void type"),
                 };
-                let result = emit_function_call(target, args, expected_type, ctx)?;
+                let result = emit_function_call(target, args, expected_type, ctx);
 
                 // Store the result in the destination place
                 let dest_mir_type = ctx.mir.get_type(dest_type_id);
                 if dest_mir_type.is_aggregate() {
                     // For aggregate types, result is an address, memcpy to dest
-                    let dest_addr = emit_place_addr(dest_place, ctx)?;
-                    let size = lower_type_size(dest_mir_type, ctx.mir)? as i64;
-                    emit_memcpy(dest_addr, result, size, ctx.builder, ctx.module)?;
+                    let dest_addr = emit_place_addr(dest_place, ctx);
+                    let size = lower_type_size(dest_mir_type, ctx.mir) as i64;
+                    emit_memcpy(dest_addr, result, size, ctx.builder, ctx.module);
                 } else {
                     match dest_place {
                         Place::Local(local_id) => {
@@ -2156,22 +1952,21 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                             }
                         }
                         _ => {
-                            let addr = emit_place_addr(dest_place, ctx)?;
+                            let addr = emit_place_addr(dest_place, ctx);
                             ctx.builder.ins().store(MemFlags::new(), result, addr, 0);
                         }
                     }
                 }
             } else {
                 // Call without destination - ignore return value (side-effect only)
-                let _ = emit_function_call(target, args, types::I32, ctx)?;
+                let _ = emit_function_call(target, args, types::I32, ctx);
             }
-            Ok(())
         }
 
         MirStmt::Alloc(place, type_id) => {
             // Get the size of the type to be allocated
             let alloc_type = ctx.mir.get_type(*type_id);
-            let size = lower_type_size(alloc_type, ctx.mir)?;
+            let size = lower_type_size(alloc_type, ctx.mir);
 
             // Define the `malloc` function signature (size_t -> void*)
             // In Cranelift, this would be (i64) -> i64 for a 64-bit target
@@ -2183,7 +1978,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
             let malloc_func = ctx
                 .module
                 .declare_function("malloc", Linkage::Import, &malloc_sig)
-                .map_err(|e| format!("Failed to declare malloc: {:?}", e))?;
+                .expect("module operation failed");
             let local_malloc = ctx.module.declare_func_in_func(malloc_func, ctx.builder.func);
 
             // Call `malloc` with the calculated size
@@ -2199,16 +1994,15 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     }
                 }
                 _ => {
-                    let addr = emit_place_addr(place, ctx)?;
+                    let addr = emit_place_addr(place, ctx);
                     ctx.builder.ins().store(MemFlags::new(), alloc_ptr, addr, 0);
                 }
             }
-            Ok(())
         }
 
         MirStmt::Dealloc(operand) => {
             // Resolve the operand to get the pointer to be freed
-            let ptr_val = emit_operand(operand, ctx, types::I64)?;
+            let ptr_val = emit_operand(operand, ctx, types::I64);
 
             // Define the `free` function signature (void* -> void)
             let mut free_sig = Signature::new(ctx.builder.func.signature.call_conv);
@@ -2218,15 +2012,14 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
             let free_func = ctx
                 .module
                 .declare_function("free", Linkage::Import, &free_sig)
-                .map_err(|e| format!("Failed to declare free: {:?}", e))?;
+                .expect("module operation failed");
             let local_free = ctx.module.declare_func_in_func(free_func, ctx.builder.func);
 
             // Call `free` with the pointer
             ctx.builder.ins().call(local_free, &[ptr_val]);
-            Ok(())
         }
         MirStmt::BuiltinVaStart(place, _operand) => {
-            let ap_addr = emit_place_addr(place, ctx)?;
+            let ap_addr = emit_place_addr(place, ctx);
 
             if let Some(spill_slot) = ctx.va_spill_slot {
                 let spill_addr = ctx.builder.ins().stack_addr(types::I64, spill_slot, 0);
@@ -2261,54 +2054,40 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                 ctx.builder.ins().store(MemFlags::new(), zero, ap_addr, 8); // overflow
                 ctx.builder.ins().store(MemFlags::new(), zero, ap_addr, 16); // reg_save
             }
-
-            Ok(())
         }
         MirStmt::AtomicStore(ptr, val, _order) => {
-            let ptr_val = emit_operand(ptr, ctx, types::I64)?;
-            let val_type = lower_operand_type(val, ctx.mir)?;
-            let val_op = emit_operand(val, ctx, val_type)?;
+            let ptr_val = emit_operand(ptr, ctx, types::I64);
+            let val_type = lower_operand_type(val, ctx.mir);
+            let val_op = emit_operand(val, ctx, val_type);
 
             ctx.builder.ins().atomic_store(MemFlags::new(), val_op, ptr_val);
-            Ok(())
         }
         MirStmt::BuiltinVaEnd(_place) => {
             // No-op for x86_64
-            Ok(())
         }
         MirStmt::BuiltinVaCopy(dest, src) => {
-            let dest_addr = emit_place_addr(dest, ctx)?;
-            let src_addr = emit_place_addr(src, ctx)?;
+            let dest_addr = emit_place_addr(dest, ctx);
+            let src_addr = emit_place_addr(src, ctx);
             // va_list is 24 bytes on x86_64
-            emit_memcpy(dest_addr, src_addr, 24, ctx.builder, ctx.module)?;
-            Ok(())
+            emit_memcpy(dest_addr, src_addr, 24, ctx.builder, ctx.module);
         }
     }
 }
 
 /// Helper to lower a terminator
-fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) -> Result<(), String> {
+fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
     match terminator {
         Terminator::Goto(target) => {
-            let target_cl_block = ctx
-                .clif_blocks
-                .get(target)
-                .ok_or_else(|| format!("Target block {} not found", target.get()))?;
+            let target_cl_block = ctx.clif_blocks.get(target).expect("Target block not found");
             ctx.builder.ins().jump(*target_cl_block, &[]);
             ctx.worklist.push(*target);
         }
 
         Terminator::If(cond, then_bb, else_bb) => {
-            let cond_val = emit_operand(cond, ctx, types::I32)?;
+            let cond_val = emit_operand(cond, ctx, types::I32);
 
-            let then_cl_block = ctx
-                .clif_blocks
-                .get(then_bb)
-                .ok_or_else(|| format!("'Then' block {} not found", then_bb.get()))?;
-            let else_cl_block = ctx
-                .clif_blocks
-                .get(else_bb)
-                .ok_or_else(|| format!("'Else' block {} not found", else_bb.get()))?;
+            let then_cl_block = ctx.clif_blocks.get(then_bb).expect("Then block not found");
+            let else_cl_block = ctx.clif_blocks.get(else_bb).expect("Else block not found");
 
             ctx.builder
                 .ins()
@@ -2321,10 +2100,10 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) -> Resul
         Terminator::Return(opt) => {
             if let Some(operand) = opt {
                 if let Some(ret_type) = ctx.return_type {
-                    let return_value = emit_operand(operand, ctx, ret_type)?;
+                    let return_value = emit_operand(operand, ctx, ret_type);
                     ctx.builder.ins().return_(&[return_value]);
                 } else {
-                    return Err("Returning a value from a void function".to_string());
+                    panic!("Returning a value from a void function");
                 }
             } else {
                 ctx.builder.ins().return_(&[]);
@@ -2342,14 +2121,13 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) -> Resul
             }
         }
     }
-    Ok(())
 }
 
 fn lower_function_signature(
     func: &MirFunction,
     mir: &MirProgram,
     func_ctx: &mut Signature,
-) -> Result<(Option<Type>, Vec<Type>), String> {
+) -> (Option<Type>, Vec<Type>) {
     // Set up function signature using the actual return type from MIR
     func_ctx.params.clear();
 
@@ -2394,7 +2172,7 @@ fn lower_function_signature(
         let param_type = match lower_type(mir_type) {
             Some(t) => t,
             None if mir_type.is_aggregate() => types::I64,
-            None => return Err(format!("Unsupported parameter type for local {}", param_id.get())),
+            None => panic!("Unsupported parameter type for local {}", param_id.get()),
         };
         func_ctx.params.push(AbiParam::new(param_type));
         param_types.push(param_type);
@@ -2417,7 +2195,7 @@ fn lower_function_signature(
         func_ctx.returns.push(AbiParam::new(return_type));
     }
 
-    Ok((return_type_opt, param_types))
+    (return_type_opt, param_types)
 }
 
 fn emit_stack_slots(
@@ -2425,7 +2203,7 @@ fn emit_stack_slots(
     mir: &MirProgram,
     builder: &mut FunctionBuilder,
     clif_stack_slots: &mut HashMap<LocalId, StackSlot>,
-) -> Result<(), String> {
+) {
     clif_stack_slots.clear(); // Clear for each function
 
     // Combine locals and params for slot allocation
@@ -2434,7 +2212,7 @@ fn emit_stack_slots(
     for &local_id in &all_locals {
         let local = mir.get_local(local_id);
         let local_type = mir.get_type(local.type_id);
-        let size = lower_type_size(local_type, mir)?;
+        let size = lower_type_size(local_type, mir);
 
         // Don't allocate space for zero-sized types
         if size > 0 {
@@ -2442,7 +2220,6 @@ fn emit_stack_slots(
             clif_stack_slots.insert(local_id, slot);
         }
     }
-    Ok(())
 }
 
 fn finalize_function_processing(
@@ -2451,19 +2228,17 @@ fn finalize_function_processing(
     func_ctx: &mut cranelift::codegen::Context,
     emit_kind: EmitKind,
     compiled_functions: &mut HashMap<String, String>,
-) -> Result<(), String> {
+) {
     // Now declare and define the function
-    let linkage = lower_linkage(func.kind, func.linkage);
+    let linkage = lower_linkage(func);
 
     let id = module
         .declare_function(func.name.as_str(), linkage, &func_ctx.func.signature)
-        .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
+        .expect("module operation failed");
 
     // Only define the function body if it's a defined function (not extern)
     if matches!(func.kind, MirFunctionKind::Defined) {
-        module
-            .define_function(id, func_ctx)
-            .map_err(|e| format!("Failed to define function {}: {:?}", func.name, e))?;
+        module.define_function(id, func_ctx).expect("module operation failed");
     }
 
     if emit_kind == EmitKind::Clif {
@@ -2471,8 +2246,6 @@ fn finalize_function_processing(
         let func_ir = func_ctx.func.to_string();
         compiled_functions.insert(func.name.to_string(), func_ir);
     }
-
-    Ok(())
 }
 
 /// MIR to Cranelift IR Lowerer
@@ -2530,7 +2303,7 @@ impl ClifGen {
         }
     }
 
-    pub(crate) fn visit_module(mut self, emit_kind: EmitKind) -> Result<ClifOutput, String> {
+    pub(crate) fn visit_module(mut self, emit_kind: EmitKind) -> ClifOutput {
         self.emit_kind = emit_kind;
 
         let (reachable_functions, reachable_globals) = self.analyze_reachability();
@@ -2553,7 +2326,7 @@ impl ClifGen {
             let data_id = self
                 .module
                 .declare_data(global.name.as_str(), linkage, true, false)
-                .map_err(|e| format!("Failed to declare global data: {:?}", e))?;
+                .expect("module operation failed");
 
             self.data_id_map.insert(global_id, data_id);
         }
@@ -2564,16 +2337,16 @@ impl ClifGen {
                 continue;
             }
             let func = self.mir.functions.get(&func_id).unwrap();
-            let linkage = lower_linkage(func.kind, func.linkage);
+            let linkage = lower_linkage(func);
 
             // Calculate signature for declaration
             let mut sig = self.module.make_signature();
-            lower_function_signature(func, &self.mir, &mut sig)?;
+            lower_function_signature(func, &self.mir, &mut sig);
 
             let clif_func_id = self
                 .module
                 .declare_function(func.name.as_str(), linkage, &sig)
-                .map_err(|e| format!("Failed to declare function {}: {:?}", func.name, e))?;
+                .expect("module operation failed");
 
             self.func_id_map.insert(func_id, clif_func_id);
         }
@@ -2591,7 +2364,7 @@ impl ClifGen {
                 let const_val = self.mir.constants.get(&const_id).unwrap();
                 if let ConstValueKind::Zero = const_val.kind {
                     let ty = self.mir.get_type(const_val.ty);
-                    let size = lower_type_size(ty, &self.mir).map_err(|e| e.clone())? as usize;
+                    let size = lower_type_size(ty, &self.mir) as usize;
                     data_description.define_zeroinit(size);
                 } else {
                     let mut initial_value_bytes = Vec::new();
@@ -2608,14 +2381,14 @@ impl ClifGen {
                         Some(&mut self.module),
                         Some(&mut data_description),
                         0,
-                    )?;
+                    );
 
                     data_description.define(initial_value_bytes.into_boxed_slice());
                 }
 
                 self.module
                     .define_data(data_id, &data_description)
-                    .map_err(|e| format!("Failed to define global data: {:?}", e))?;
+                    .expect("module operation failed");
             }
         }
 
@@ -2632,15 +2405,15 @@ impl ClifGen {
             if let Some(func) = self.mir.functions.get(&func_id)
                 && matches!(func.kind, MirFunctionKind::Defined)
             {
-                self.visit_function(func_id)?;
+                self.visit_function(func_id);
             }
         }
 
         // Finalize and return the compiled code
-        let code = crate::codegen::ObjectGen::finalize(self.module)?;
+        let code = crate::codegen::ObjectGen::finalize(self.module).expect("Failed to finalize module");
 
         if emit_kind == EmitKind::Object {
-            Ok(ClifOutput::ObjectFile(code))
+            ClifOutput::ObjectFile(code)
         } else {
             // For Clif dump, concatenate all function IRs
             let mut clif_dump = String::new();
@@ -2653,22 +2426,22 @@ impl ClifGen {
                 clif_dump.push_str(func_ir);
                 clif_dump.push_str("\n\n");
             }
-            Ok(ClifOutput::ClifDump(clif_dump))
+            ClifOutput::ClifDump(clif_dump)
         }
     }
 
     /// Lower a MIR function to Cranelift IR using 3-phase algorithm
-    fn visit_function(&mut self, func_id: MirFunctionId) -> Result<(), String> {
+    fn visit_function(&mut self, func_id: MirFunctionId) {
         let func = self.mir.get_function(func_id);
         // Create a fresh context for this function
         let mut func_ctx = self.module.make_context();
 
-        let (return_type_opt, param_types) = lower_function_signature(func, &self.mir, &mut func_ctx.func.signature)?;
+        let (return_type_opt, param_types) = lower_function_signature(func, &self.mir, &mut func_ctx.func.signature);
 
         // Create a function builder with the fresh context
         let mut builder = FunctionBuilder::new(&mut func_ctx.func, &mut self.builder_context);
 
-        emit_stack_slots(func, &self.mir, &mut builder, &mut self.clif_stack_slots)?;
+        emit_stack_slots(func, &self.mir, &mut builder, &mut self.clif_stack_slots);
 
         // PHASE 1️⃣ — Create all Cranelift blocks first (no instructions)
         let mut clif_blocks = HashMap::new();
@@ -2690,9 +2463,7 @@ impl ClifGen {
             }
             visited.insert(current_block_id);
 
-            let clif_block = clif_blocks
-                .get(&current_block_id)
-                .ok_or_else(|| format!("Block {} not found in mapping", current_block_id.get()))?;
+            let clif_block = clif_blocks.get(&current_block_id).expect("Block not found in mapping");
             builder.switch_to_block(*clif_block);
 
             // Setup entry block parameters
@@ -2725,7 +2496,7 @@ impl ClifGen {
                     // Check for struct packing
                     if let Some(count) = get_struct_packing(mir_type, &self.mir) {
                         if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
-                            let size = lower_type_size(mir_type, &self.mir).unwrap_or(8);
+                            let size = lower_type_size(mir_type, &self.mir);
                             for i in 0..count {
                                 let val = param_iter.next().unwrap();
                                 let offset = (i * 8) as i32;
@@ -2769,8 +2540,8 @@ impl ClifGen {
                         if mir_type.is_aggregate() {
                             // Passed by pointer (I64), copy to stack slot
                             let dest_addr = builder.ins().stack_addr(types::I64, *stack_slot, 0);
-                            let size = lower_type_size(mir_type, &self.mir)? as i64;
-                            emit_memcpy(dest_addr, param_value, size, &mut builder, &mut self.module)?;
+                            let size = lower_type_size(mir_type, &self.mir) as i64;
+                            emit_memcpy(dest_addr, param_value, size, &mut builder, &mut self.module);
                         } else {
                             builder.ins().stack_store(param_value, *stack_slot, 0);
                         }
@@ -2799,11 +2570,7 @@ impl ClifGen {
             }
 
             // Get the MIR block
-            let mir_block = self
-                .mir
-                .blocks
-                .get(&current_block_id)
-                .ok_or_else(|| format!("Block {} not found in MIR", current_block_id.get()))?;
+            let mir_block = self.mir.blocks.get(&current_block_id).expect("Block not found in MIR");
 
             // ========================================================================
             // SECTION 1: Process statements within this block
@@ -2832,13 +2599,13 @@ impl ClifGen {
 
             // Process statements
             for stmt in &statements_to_process {
-                visit_statement(stmt, &mut ctx)?;
+                visit_statement(stmt, &mut ctx);
             }
 
             // ========================================================================
             // SECTION 2: Process terminator (control flow)
             // ========================================================================
-            visit_terminator(&mir_block.terminator, &mut ctx)?;
+            visit_terminator(&mir_block.terminator, &mut ctx);
 
             va_spill_slot = ctx.va_spill_slot;
         }
@@ -2859,9 +2626,7 @@ impl ClifGen {
             &mut func_ctx,
             self.emit_kind,
             &mut self.compiled_functions,
-        )?;
-
-        Ok(())
+        );
     }
 
     fn analyze_reachability(&self) -> (HashSet<MirFunctionId>, HashSet<GlobalId>) {
@@ -3411,7 +3176,7 @@ impl ClifGen {
 }
 
 /// Internal helper for variadic calls on x86_64 SysV
-fn emit_cendol_set_al(module: &mut ObjectModule) -> Result<FuncId, String> {
+fn emit_cendol_set_al(module: &mut ObjectModule) -> FuncId {
     let mut sig = Signature::new(cranelift::codegen::isa::CallConv::SystemV);
     sig.params.push(AbiParam::new(types::I64)); // count
     sig.params.push(AbiParam::new(types::I64)); // addr
@@ -3420,7 +3185,7 @@ fn emit_cendol_set_al(module: &mut ObjectModule) -> Result<FuncId, String> {
 
     let func_id = module
         .declare_function("__cendol_set_al", Linkage::Local, &sig)
-        .map_err(|e| format!("Failed to declare __cendol_set_al: {:?}", e))?;
+        .expect("Failed to declare __cendol_set_al");
 
     let mut ctx = cranelift::codegen::Context::new();
     ctx.func.signature = sig;
@@ -3441,7 +3206,7 @@ fn emit_cendol_set_al(module: &mut ObjectModule) -> Result<FuncId, String> {
 
     module
         .define_function(func_id, &mut ctx)
-        .map_err(|e| format!("Failed to define __cendol_set_al: {:?}", e))?;
+        .expect("Failed to define __cendol_set_al");
 
-    Ok(func_id)
+    func_id
 }

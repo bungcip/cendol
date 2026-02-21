@@ -47,11 +47,11 @@ pub enum MirFunctionKind {
     Extern,
 }
 
-/// Linkage for functions
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+/// Linkage type for functions and globals
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum MirLinkage {
-    External,
     Internal,
+    External,
 }
 
 /// MIR Module - Top-level container for MIR
@@ -87,8 +87,8 @@ pub struct MirFunction {
     pub params: Vec<LocalId>,
 
     pub kind: MirFunctionKind,
-    pub linkage: MirLinkage,
-    pub is_variadic: bool, // Track if this function is variadic
+    pub linkage: MirLinkage, // Linkage type
+    pub is_variadic: bool,   // Track if this function is variadic
 
     // Only valid if kind is Defined
     pub locals: Vec<LocalId>,
@@ -118,7 +118,12 @@ impl MirFunction {
         }
     }
 
-    pub(crate) fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
+    pub(crate) fn new_defined(
+        id: MirFunctionId,
+        name: NameId,
+        return_type: TypeId,
+        linkage: MirLinkage,
+    ) -> Self {
         Self::new(id, name, return_type, MirFunctionKind::Defined, linkage)
     }
 

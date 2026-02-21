@@ -15,7 +15,13 @@ fn create_valid_mir() -> MirProgram {
 
     // Define a function: fn main() -> i32
     let func_name = NameId::new("main");
-    let func_id = builder.define_function(func_name, vec![], i32_ty, false, crate::mir::MirLinkage::External);
+    let func_id = builder.define_function(
+        func_name,
+        vec![],
+        i32_ty,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
 
     // Create a block
@@ -282,7 +288,13 @@ fn test_call_arg_type_mismatch() {
 
     // fn foo(a: i32) -> i32
     let func_name = NameId::new("foo");
-    let func_id = builder.define_function(func_name, vec![i32_ty], i32_ty, false, crate::mir::MirLinkage::External);
+    let func_id = builder.define_function(
+        func_name,
+        vec![i32_ty],
+        i32_ty,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
     let block_id = builder.create_block();
     builder.set_function_entry_block(func_id, block_id);
@@ -546,7 +558,13 @@ fn test_call_void_with_dest() {
 
     // fn foo() -> void
     let foo_name = NameId::new("foo");
-    let foo_id = builder.define_function(foo_name, vec![], void_ty, false, crate::mir::MirLinkage::External);
+    let foo_id = builder.define_function(
+        foo_name,
+        vec![],
+        void_ty,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(foo_id);
     let block_id = builder.create_block();
     builder.set_function_entry_block(foo_id, block_id);
@@ -558,7 +576,12 @@ fn test_call_void_with_dest() {
     // fn main() -> i32
     let main_name = NameId::new("main");
     let main_id = MirFunctionId::new(2).unwrap();
-    let main_func = MirFunction::new_defined(main_id, main_name, i32_ty, crate::mir::MirLinkage::External);
+    let main_func = MirFunction::new_defined(
+        main_id,
+        main_name,
+        i32_ty,
+        crate::mir::MirLinkage::External,
+    );
     mir.functions.insert(main_id, main_func.clone());
     mir.module.functions.push(main_id);
 
@@ -696,8 +719,20 @@ fn test_place_field_out_of_bounds() {
     };
     let struct_ty_id = builder.add_type(struct_ty);
 
-    let func_id = builder.define_function(NameId::new("main"), vec![], i32_ty, false, crate::mir::MirLinkage::External);
-    let func_id = builder.define_function(NameId::new("main"), vec![], i32_ty, false, crate::mir::MirLinkage::External);
+    let func_id = builder.define_function(
+        NameId::new("main"),
+        vec![],
+        i32_ty,
+        false,
+        crate::mir::MirLinkage::External,
+    );
+    let func_id = builder.define_function(
+        NameId::new("main"),
+        vec![],
+        i32_ty,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
     let block_id = builder.create_block();
     builder.set_function_entry_block(func_id, block_id);
@@ -746,7 +781,13 @@ fn test_rvalue_cast_aggregate_invalid() {
     };
     let struct_ty_id = builder.add_type(struct_ty);
 
-    let func_id = builder.define_function(NameId::new("main"), vec![], i32_ty, false, crate::mir::MirLinkage::External);
+    let func_id = builder.define_function(
+        NameId::new("main"),
+        vec![],
+        i32_ty,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
     let block_id = builder.create_block();
     builder.set_function_entry_block(func_id, block_id);

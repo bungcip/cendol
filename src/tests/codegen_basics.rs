@@ -45,7 +45,7 @@ fn test_emit_const_struct_literal() {
         func_id_map: &hashbrown::HashMap::new(),
         data_id_map: &hashbrown::HashMap::new(),
     };
-    emit_const(struct_const_id, &mut output, &ctx, None, None, 0).expect("emit_const failed");
+    emit_const(struct_const_id, &mut output, &ctx, None, None, 0);
 
     // 5. Verify Output
     insta::assert_yaml_snapshot!(output, @r"
@@ -75,7 +75,13 @@ fn test_store_statement_lowering() {
     let void_type_id = builder.add_type(MirType::Void);
 
     // 2. Set up Function and Block
-    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false, crate::mir::MirLinkage::External);
+    let func_id = builder.define_function(
+        NameId::new("main"),
+        vec![],
+        void_type_id,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
 
     let entry_block_id = builder.create_block();
@@ -101,7 +107,7 @@ fn test_store_statement_lowering() {
 
     // 7. Assert
     match result {
-        Ok(ClifOutput::ClifDump(clif_ir)) => {
+        ClifOutput::ClifDump(clif_ir) => {
             insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
@@ -115,8 +121,7 @@ fn test_store_statement_lowering() {
             }
             ");
         }
-        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump, got object file"),
-        Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
+        ClifOutput::ObjectFile(_) => panic!("Expected Clif dump, got object file"),
     }
 }
 
@@ -128,7 +133,13 @@ fn test_store_deref_pointer() {
     let ptr_type_id = builder.add_type(MirType::Pointer { pointee: int_type_id });
     let void_type_id = builder.add_type(MirType::Void);
 
-    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false, crate::mir::MirLinkage::External);
+    let func_id = builder.define_function(
+        NameId::new("main"),
+        vec![],
+        void_type_id,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
 
     let entry_block_id = builder.create_block();
@@ -166,7 +177,7 @@ fn test_store_deref_pointer() {
     let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
-        Ok(ClifOutput::ClifDump(clif_ir)) => {
+        ClifOutput::ClifDump(clif_ir) => {
             insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
@@ -188,8 +199,7 @@ fn test_store_deref_pointer() {
             }
             ");
         }
-        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump, got object file"),
-        Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
+        ClifOutput::ObjectFile(_) => panic!("Expected Clif dump, got object file"),
     }
 }
 
@@ -338,7 +348,13 @@ fn test_f128_constant_promotion() {
     let void_type_id = builder.add_type(MirType::Void);
 
     // Function
-    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false, crate::mir::MirLinkage::External);
+    let func_id = builder.define_function(
+        NameId::new("main"),
+        vec![],
+        void_type_id,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
     let block_id = builder.create_block();
     builder.set_current_block(block_id);
@@ -360,7 +376,7 @@ fn test_f128_constant_promotion() {
     let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
-        Ok(ClifOutput::ClifDump(clif_ir)) => {
+        ClifOutput::ClifDump(clif_ir) => {
             insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
@@ -376,8 +392,7 @@ fn test_f128_constant_promotion() {
             }
             ");
         }
-        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
-        Err(e) => panic!("Error: {}", e),
+        ClifOutput::ObjectFile(_) => panic!("Expected Clif dump"),
     }
 }
 

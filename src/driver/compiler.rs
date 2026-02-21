@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use crate::ast::dumper::AstDumper;
 use crate::ast::{Ast, NodeKind, ParsedAst, SourceId};
 use crate::codegen::{ClifGen, ClifOutput, EmitKind};
-use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
+use crate::diagnostic::DiagnosticEngine;
 use crate::driver::cli::PathOrBuffer;
 use crate::mir::validation::MirValidator;
 use crate::parser::{Lexer, Token};
@@ -288,17 +288,7 @@ impl CompilerDriver {
 
         // Use MIR codegen instead of AST codegen
         let mir_codegen = ClifGen::new(mir_program);
-        match mir_codegen.visit_module(emit_kind) {
-            Ok(output) => Ok(output),
-            Err(e) => {
-                self.diagnostics.report_diagnostic(Diagnostic {
-                    level: DiagnosticLevel::Error,
-                    message: e.to_string(),
-                    ..Default::default()
-                });
-                Err(PipelineError::Fatal)
-            }
-        }
+        Ok(mir_codegen.visit_module(emit_kind))
     }
 
     /// Check if there are any diagnostics errors and return PipelineError::Fatal if there are
@@ -434,7 +424,7 @@ impl CompilerDriver {
 
     /// Get diagnostics for testing
     #[cfg(test)]
-    pub(crate) fn get_diagnostics(&self) -> Vec<Diagnostic> {
+    pub(crate) fn get_diagnostics(&self) -> Vec<crate::diagnostic::Diagnostic> {
         self.diagnostics.diagnostics().to_vec()
     }
 

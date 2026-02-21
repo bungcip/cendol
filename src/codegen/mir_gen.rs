@@ -365,7 +365,7 @@ impl<'a> MirGen<'a> {
 
             if matches!(ret_ty, crate::mir::MirType::Void) {
                 self.mir_builder.set_terminator(crate::mir::Terminator::Return(None));
-            } else if func_name.to_string() == "main" && ret_ty.is_int() {
+            } else if func_name.as_str() == "main" && ret_ty.is_int() {
                 // main() implicitly returns 0
                 let zero = self.create_int_operand(0);
                 self.mir_builder
@@ -974,7 +974,8 @@ impl<'a> MirGen<'a> {
             BuiltinType::Double => MirType::F64,
             BuiltinType::LongDouble => {
                 if self.registry.target_triple.architecture == Architecture::X86_64 {
-                    MirType::F80
+                    // Temporarily lower to F64 because Cranelift doesn't support F80/F128 fully
+                    MirType::F64
                 } else {
                     MirType::F128
                 }
@@ -1549,13 +1550,13 @@ impl<'a> MirGen<'a> {
         params: Vec<TypeId>,
         ret: TypeId,
         variadic: bool,
-        func_linkage: crate::mir::MirLinkage,
+        linkage: crate::mir::MirLinkage,
         is_def: bool,
     ) {
         if is_def {
-            self.mir_builder.define_function(name, params, ret, variadic, func_linkage);
+            self.mir_builder.define_function(name, params, ret, variadic, linkage);
         } else {
-            self.mir_builder.declare_function(name, params, ret, variadic, func_linkage);
+            self.mir_builder.declare_function(name, params, ret, variadic, linkage);
         }
     }
 }

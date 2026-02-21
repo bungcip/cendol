@@ -428,8 +428,10 @@ impl CompilerDriver {
                     };
 
                     // Link using LinkGen
-                    crate::codegen::LinkGen::link(&object_files_to_link, &link_config)
-                        .map_err(|e| DriverError::IoError(e.to_string()))?;
+                    crate::codegen::LinkGen::link(&object_files_to_link, &link_config).map_err(|e| match e {
+                        crate::codegen::LinkError::IoError(msg) => DriverError::IoError(msg),
+                        crate::codegen::LinkError::LinkFailed => DriverError::LinkingFailed,
+                    })?;
                 }
             }
             Err(e) => match e {
@@ -468,6 +470,9 @@ pub enum DriverError {
 
     #[error("Compilation failed due to errors")]
     CompilationFailed,
+
+    #[error("Linking failed")]
+    LinkingFailed,
 }
 
 /// Error that will stop the compilation pipeline

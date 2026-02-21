@@ -2520,8 +2520,13 @@ impl ClifGen {
     pub(crate) fn visit_module(mut self, emit_kind: EmitKind) -> Result<ClifOutput, String> {
         self.emit_kind = emit_kind;
 
-        // Pass 1: Declare all global variables
+        let (reachable_functions, reachable_globals) = self.analyze_reachability();
+
+        // Pass 1: Declare reachable global variables
         for &global_id in &self.mir.module.globals {
+            if !reachable_globals.contains(&global_id) {
+                continue;
+            }
             let global = self.mir.globals.get(&global_id).unwrap();
             // Use local linkage for string literals to avoid multiple definition errors
             let linkage = if global.name.as_str().starts_with(".L.str") {
@@ -2540,8 +2545,11 @@ impl ClifGen {
             self.data_id_map.insert(global_id, data_id);
         }
 
-        // Pass 2: Declare all functions
+        // Pass 2: Declare reachable functions
         for &func_id in &self.mir.module.functions {
+            if !reachable_functions.contains(&func_id) {
+                continue;
+            }
             let func = self.mir.functions.get(&func_id).unwrap();
             let linkage = lower_linkage(func.kind);
 
@@ -2559,6 +2567,9 @@ impl ClifGen {
 
         // Pass 3: Define Global Variables (with relocations)
         for &global_id in &self.mir.module.globals {
+            if !reachable_globals.contains(&global_id) {
+                continue;
+            }
             let global = self.mir.globals.get(&global_id).unwrap();
             if let Some(const_id) = global.initial_value {
                 let data_id = *self.data_id_map.get(&global_id).unwrap();
@@ -2593,6 +2604,9 @@ impl ClifGen {
         // function list, which would cause a heap allocation.
         for i in 0..self.mir.module.functions.len() {
             let func_id = self.mir.module.functions[i];
+            if !reachable_functions.contains(&func_id) {
+                continue;
+            }
             // Only lower functions that are defined (have bodies)
             if let Some(func) = self.mir.functions.get(&func_id)
                 && matches!(func.kind, MirFunctionKind::Defined)
@@ -2827,6 +2841,551 @@ impl ClifGen {
         )?;
 
         Ok(())
+    }
+
+    fn analyze_reachability(&self) -> (HashSet<MirFunctionId>, HashSet<GlobalId>) {
+        let mut reachable_functions = HashSet::new();
+        let mut reachable_globals = HashSet::new();
+        let mut worklist_functions = Vec::new();
+        let mut worklist_globals = Vec::new();
+
+        // Roots for functions: all defined functions
+        for (&id, func) in &self.mir.functions {
+            if matches!(func.kind, MirFunctionKind::Defined) && reachable_functions.insert(id) {
+                worklist_functions.push(id);
+            }
+        }
+
+        // Roots for globals: all globals with initial values
+        for (&id, global) in &self.mir.globals {
+            if global.initial_value.is_some() && reachable_globals.insert(id) {
+                worklist_globals.push(id);
+            }
+        }
+
+        while !worklist_functions.is_empty() || !worklist_globals.is_empty() {
+            while let Some(func_id) = worklist_functions.pop() {
+                let func = self.mir.get_function(func_id);
+                for &block_id in &func.blocks {
+                    let block = self.mir.blocks.get(&block_id).unwrap();
+                    for &stmt_id in &block.statements {
+                        let stmt = self.mir.statements.get(&stmt_id).unwrap();
+                        match stmt {
+                            MirStmt::Assign(_, rvalue) => self.collect_rvalue_reachability(
+                                rvalue,
+                                &mut reachable_functions,
+                                &mut reachable_globals,
+                                &mut worklist_functions,
+                                &mut worklist_globals,
+                            ),
+                            MirStmt::Store(operand, place) => {
+                                self.collect_operand_reachability(
+                                    operand,
+                                    &mut reachable_functions,
+                                    &mut reachable_globals,
+                                    &mut worklist_functions,
+                                    &mut worklist_globals,
+                                );
+                                self.collect_place_reachability(
+                                    place,
+                                    &mut reachable_functions,
+                                    &mut reachable_globals,
+                                    &mut worklist_functions,
+                                    &mut worklist_globals,
+                                );
+                            }
+                            MirStmt::Call { target, args, dest } => {
+                                match target {
+                                    CallTarget::Direct(id) => {
+                                        if reachable_functions.insert(*id) {
+                                            worklist_functions.push(*id);
+                                        }
+                                    }
+                                    CallTarget::Indirect(operand) => self.collect_operand_reachability(
+                                        operand,
+                                        &mut reachable_functions,
+                                        &mut reachable_globals,
+                                        &mut worklist_functions,
+                                        &mut worklist_globals,
+                                    ),
+                                }
+                                for arg in args {
+                                    self.collect_operand_reachability(
+                                        arg,
+                                        &mut reachable_functions,
+                                        &mut reachable_globals,
+                                        &mut worklist_functions,
+                                        &mut worklist_globals,
+                                    );
+                                }
+                                if let Some(place) = dest {
+                                    self.collect_place_reachability(
+                                        place,
+                                        &mut reachable_functions,
+                                        &mut reachable_globals,
+                                        &mut worklist_functions,
+                                        &mut worklist_globals,
+                                    );
+                                }
+                            }
+                            MirStmt::Alloc(place, _) => self.collect_place_reachability(
+                                place,
+                                &mut reachable_functions,
+                                &mut reachable_globals,
+                                &mut worklist_functions,
+                                &mut worklist_globals,
+                            ),
+                            MirStmt::Dealloc(operand) => self.collect_operand_reachability(
+                                operand,
+                                &mut reachable_functions,
+                                &mut reachable_globals,
+                                &mut worklist_functions,
+                                &mut worklist_globals,
+                            ),
+                            MirStmt::BuiltinVaStart(place, operand) => {
+                                self.collect_place_reachability(
+                                    place,
+                                    &mut reachable_functions,
+                                    &mut reachable_globals,
+                                    &mut worklist_functions,
+                                    &mut worklist_globals,
+                                );
+                                self.collect_operand_reachability(
+                                    operand,
+                                    &mut reachable_functions,
+                                    &mut reachable_globals,
+                                    &mut worklist_functions,
+                                    &mut worklist_globals,
+                                );
+                            }
+                            MirStmt::BuiltinVaEnd(place) => self.collect_place_reachability(
+                                place,
+                                &mut reachable_functions,
+                                &mut reachable_globals,
+                                &mut worklist_functions,
+                                &mut worklist_globals,
+                            ),
+                            MirStmt::BuiltinVaCopy(dest, src) => {
+                                self.collect_place_reachability(
+                                    dest,
+                                    &mut reachable_functions,
+                                    &mut reachable_globals,
+                                    &mut worklist_functions,
+                                    &mut worklist_globals,
+                                );
+                                self.collect_place_reachability(
+                                    src,
+                                    &mut reachable_functions,
+                                    &mut reachable_globals,
+                                    &mut worklist_functions,
+                                    &mut worklist_globals,
+                                );
+                            }
+                            MirStmt::AtomicStore(ptr, val, _) => {
+                                self.collect_operand_reachability(
+                                    ptr,
+                                    &mut reachable_functions,
+                                    &mut reachable_globals,
+                                    &mut worklist_functions,
+                                    &mut worklist_globals,
+                                );
+                                self.collect_operand_reachability(
+                                    val,
+                                    &mut reachable_functions,
+                                    &mut reachable_globals,
+                                    &mut worklist_functions,
+                                    &mut worklist_globals,
+                                );
+                            }
+                        }
+                    }
+                    match &block.terminator {
+                        Terminator::If(cond, _, _) => self.collect_operand_reachability(
+                            cond,
+                            &mut reachable_functions,
+                            &mut reachable_globals,
+                            &mut worklist_functions,
+                            &mut worklist_globals,
+                        ),
+                        Terminator::Return(Some(operand)) => self.collect_operand_reachability(
+                            operand,
+                            &mut reachable_functions,
+                            &mut reachable_globals,
+                            &mut worklist_functions,
+                            &mut worklist_globals,
+                        ),
+                        _ => {}
+                    }
+                }
+            }
+
+            while let Some(global_id) = worklist_globals.pop() {
+                let global = self.mir.globals.get(&global_id).unwrap();
+                if let Some(const_id) = global.initial_value {
+                    self.collect_const_reachability(
+                        const_id,
+                        &mut reachable_functions,
+                        &mut reachable_globals,
+                        &mut worklist_functions,
+                        &mut worklist_globals,
+                    );
+                }
+            }
+        }
+
+        (reachable_functions, reachable_globals)
+    }
+
+    fn collect_operand_reachability(
+        &self,
+        operand: &Operand,
+        reachable_functions: &mut HashSet<MirFunctionId>,
+        reachable_globals: &mut HashSet<GlobalId>,
+        worklist_functions: &mut Vec<MirFunctionId>,
+        worklist_globals: &mut Vec<GlobalId>,
+    ) {
+        match operand {
+            Operand::Copy(place) => self.collect_place_reachability(
+                place,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+            Operand::Constant(const_id) => self.collect_const_reachability(
+                *const_id,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+            Operand::AddressOf(place) => self.collect_place_reachability(
+                place,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+            Operand::Cast(_, inner) => self.collect_operand_reachability(
+                inner,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+        }
+    }
+
+    fn collect_place_reachability(
+        &self,
+        place: &Place,
+        reachable_functions: &mut HashSet<MirFunctionId>,
+        reachable_globals: &mut HashSet<GlobalId>,
+        worklist_functions: &mut Vec<MirFunctionId>,
+        worklist_globals: &mut Vec<GlobalId>,
+    ) {
+        match place {
+            Place::Global(id) => {
+                if reachable_globals.insert(*id) {
+                    worklist_globals.push(*id);
+                }
+            }
+            Place::Deref(operand) => self.collect_operand_reachability(
+                operand,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+            Place::StructField(inner, _) => self.collect_place_reachability(
+                inner,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+            Place::ArrayIndex(inner, index) => {
+                self.collect_place_reachability(
+                    inner,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+                self.collect_operand_reachability(
+                    index,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+            }
+            Place::Local(_) => {}
+        }
+    }
+
+    fn collect_rvalue_reachability(
+        &self,
+        rvalue: &Rvalue,
+        reachable_functions: &mut HashSet<MirFunctionId>,
+        reachable_globals: &mut HashSet<GlobalId>,
+        worklist_functions: &mut Vec<MirFunctionId>,
+        worklist_globals: &mut Vec<GlobalId>,
+    ) {
+        match rvalue {
+            Rvalue::Use(operand) => self.collect_operand_reachability(
+                operand,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+            Rvalue::BinaryIntOp(_, lhs, rhs) => {
+                self.collect_operand_reachability(
+                    lhs,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+                self.collect_operand_reachability(
+                    rhs,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+            }
+            Rvalue::BinaryFloatOp(_, lhs, rhs) => {
+                self.collect_operand_reachability(
+                    lhs,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+                self.collect_operand_reachability(
+                    rhs,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+            }
+            Rvalue::UnaryIntOp(_, inner) => self.collect_operand_reachability(
+                inner,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+            Rvalue::UnaryFloatOp(_, inner) => self.collect_operand_reachability(
+                inner,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+            Rvalue::Cast(_, inner) => self.collect_operand_reachability(
+                inner,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+            Rvalue::PtrAdd(lhs, rhs) => {
+                self.collect_operand_reachability(
+                    lhs,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+                self.collect_operand_reachability(
+                    rhs,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+            }
+            Rvalue::PtrSub(lhs, rhs) => {
+                self.collect_operand_reachability(
+                    lhs,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+                self.collect_operand_reachability(
+                    rhs,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+            }
+            Rvalue::PtrDiff(lhs, rhs) => {
+                self.collect_operand_reachability(
+                    lhs,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+                self.collect_operand_reachability(
+                    rhs,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+            }
+            Rvalue::StructLiteral(fields) => {
+                for (_, arg) in fields {
+                    self.collect_operand_reachability(
+                        arg,
+                        reachable_functions,
+                        reachable_globals,
+                        worklist_functions,
+                        worklist_globals,
+                    );
+                }
+            }
+            Rvalue::ArrayLiteral(elements) => {
+                for arg in elements {
+                    self.collect_operand_reachability(
+                        arg,
+                        reachable_functions,
+                        reachable_globals,
+                        worklist_functions,
+                        worklist_globals,
+                    );
+                }
+            }
+            Rvalue::Load(operand) => self.collect_operand_reachability(
+                operand,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+            Rvalue::BuiltinVaArg(place, _) => self.collect_place_reachability(
+                place,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+            Rvalue::AtomicLoad(operand, _) => self.collect_operand_reachability(
+                operand,
+                reachable_functions,
+                reachable_globals,
+                worklist_functions,
+                worklist_globals,
+            ),
+            Rvalue::AtomicExchange(ptr, val, _) => {
+                self.collect_operand_reachability(
+                    ptr,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+                self.collect_operand_reachability(
+                    val,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+            }
+            Rvalue::AtomicCompareExchange(ptr, exp, val, _, _, _) => {
+                self.collect_operand_reachability(
+                    ptr,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+                self.collect_operand_reachability(
+                    exp,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+                self.collect_operand_reachability(
+                    val,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+            }
+            Rvalue::AtomicFetchOp(_, ptr, val, _) => {
+                self.collect_operand_reachability(
+                    ptr,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+                self.collect_operand_reachability(
+                    val,
+                    reachable_functions,
+                    reachable_globals,
+                    worklist_functions,
+                    worklist_globals,
+                );
+            }
+        }
+    }
+
+    fn collect_const_reachability(
+        &self,
+        const_id: ConstValueId,
+        reachable_functions: &mut HashSet<MirFunctionId>,
+        reachable_globals: &mut HashSet<GlobalId>,
+        worklist_functions: &mut Vec<MirFunctionId>,
+        worklist_globals: &mut Vec<GlobalId>,
+    ) {
+        let const_val = self.mir.constants.get(&const_id).unwrap();
+        match &const_val.kind {
+            ConstValueKind::StructLiteral(fields) => {
+                for (_, field_const_id) in fields {
+                    self.collect_const_reachability(
+                        *field_const_id,
+                        reachable_functions,
+                        reachable_globals,
+                        worklist_functions,
+                        worklist_globals,
+                    );
+                }
+            }
+            ConstValueKind::ArrayLiteral(elements) => {
+                for element_const_id in elements {
+                    self.collect_const_reachability(
+                        *element_const_id,
+                        reachable_functions,
+                        reachable_globals,
+                        worklist_functions,
+                        worklist_globals,
+                    );
+                }
+            }
+            ConstValueKind::GlobalAddress(id) => {
+                if reachable_globals.insert(*id) {
+                    worklist_globals.push(*id);
+                }
+            }
+            ConstValueKind::FunctionAddress(id) => {
+                if reachable_functions.insert(*id) {
+                    worklist_functions.push(*id);
+                }
+            }
+            _ => {}
+        }
     }
 }
 

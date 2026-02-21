@@ -457,24 +457,20 @@ impl<'a> SemanticAnalyzer<'a> {
             self.validate_and_record_assignment(target_ty, expr_ty, *expr_ref, span);
         }
 
-        if let Some(expr_ref) = expr {
-            if let NodeKind::UnaryOp(UnaryOp::AddrOf, operand) = self.ast.get_kind(*expr_ref) {
-                if let NodeKind::Ident(name, symbol_ref) = self.ast.get_kind(*operand) {
-                    let symbol = self.symbol_table.get_symbol(*symbol_ref);
-                    if let SymbolKind::Variable { storage, .. } = &symbol.kind {
-                        // Check if it's a local variable (not static/extern)
-                        let is_local = symbol.scope_id != crate::semantic::ScopeId::GLOBAL
-                            && *storage != Some(StorageClass::Static)
-                            && *storage != Some(StorageClass::Extern)
-                            && *storage != Some(StorageClass::ThreadLocal);
+        if let Some(expr_ref) = expr
+            && let NodeKind::UnaryOp(UnaryOp::AddrOf, operand) = self.ast.get_kind(*expr_ref)
+            && let NodeKind::Ident(name, symbol_ref) = self.ast.get_kind(*operand)
+        {
+            let symbol = self.symbol_table.get_symbol(*symbol_ref);
+            if let SymbolKind::Variable { storage, .. } = &symbol.kind {
+                // Check if it's a local variable (not static/extern)
+                let is_local = symbol.scope_id != crate::semantic::ScopeId::GLOBAL
+                    && *storage != Some(StorageClass::Static)
+                    && *storage != Some(StorageClass::Extern)
+                    && *storage != Some(StorageClass::ThreadLocal);
 
-                        if is_local {
-                            self.report_error(SemanticError::ReturnLocalAddress {
-                                name: *name,
-                                span,
-                            });
-                        }
-                    }
+                if is_local {
+                    self.report_error(SemanticError::ReturnLocalAddress { name: *name, span });
                 }
             }
         }

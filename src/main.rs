@@ -29,6 +29,7 @@ fn main() {
                     match e {
                         DriverError::IoError(e) => eprintln!("I/O error: {:?}", e),
                         DriverError::CompilationFailed => (), // diagnostic already printed by driver.run()
+                        DriverError::LinkingFailed => (),     // error already printed by LinkGen
                     };
                     std::process::exit(1);
                 }

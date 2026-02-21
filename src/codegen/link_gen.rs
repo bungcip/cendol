@@ -99,8 +99,9 @@ impl LinkGen {
             clang_cmd.arg("-lm");
         }
 
-        // Suppress linker warnings about deprecated libc functions
-        clang_cmd.arg("-Wl,-w");
+        // We no longer need to suppress linker warnings since we now use reachability
+        // analysis to only emit used symbols. This also ensures that "missing main"
+        // and other linker errors are correctly reported.
 
         // Set output path
         clang_cmd.arg("-o").arg(&config.output_path);
@@ -113,7 +114,12 @@ impl LinkGen {
             .status()
             .map_err(|e| LinkError::IoError(format!("Failed to execute clang for linking: {}", e)))?;
 
+        if config.verbose {
+            println!("Linker status: {:?}", status);
+        }
+
         if !status.success() {
+            eprintln!("cendol: error: linker exited with status {}", status);
             return Err(LinkError::LinkFailed);
         }
 

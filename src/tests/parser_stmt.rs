@@ -292,3 +292,23 @@ fn test_for_statement_with_declaration() {
       - CompoundStatement: []
     ");
 }
+#[test]
+fn test_for_statement_with_declaration_no_init() {
+    let source = "for (int i; i < 10; i++) {}";
+    let resolved = setup_statement(source);
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    For:
+      - Declaration:
+          specifiers:
+            - int
+          init_declarators:
+            - name: i
+      - BinaryOp:
+          - Less
+          - Ident: i
+          - LiteralInt: 10
+      - PostIncrement:
+          Ident: i
+      - CompoundStatement: []
+    ");
+}

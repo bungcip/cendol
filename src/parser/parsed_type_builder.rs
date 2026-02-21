@@ -460,24 +460,14 @@ fn parse_type_specifier_to_parsed_base(
 /// Build a ParsedDeclaratorNode from a ParsedDeclarator
 fn build_parsed_declarator(parser: &mut Parser, declarator: &ParsedDeclarator) -> Result<ParsedDeclRef, ParseError> {
     match declarator {
-        ParsedDeclarator::Identifier(name, qualifiers) => {
-            // Simple identifier with optional qualifiers
-            if qualifiers.is_empty() {
-                Ok(parser
-                    .ast
-                    .parsed_types
-                    .alloc_decl(ParsedDeclaratorNode::Identifier { name: Some(*name) }))
-            } else {
-                // Create a pointer declarator with the qualifiers
-                let inner = parser
-                    .ast
-                    .parsed_types
-                    .alloc_decl(ParsedDeclaratorNode::Identifier { name: Some(*name) });
-                Ok(parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Pointer {
-                    qualifiers: *qualifiers,
-                    inner,
-                }))
-            }
+        ParsedDeclarator::Identifier(name, _qualifiers) => {
+            // Simple identifier
+            // Note: qualifiers are part of specifiers or pointers, not directly on identifiers
+            // in the parser's logic for identifiers.
+            Ok(parser
+                .ast
+                .parsed_types
+                .alloc_decl(ParsedDeclaratorNode::Identifier { name: Some(*name) }))
         }
         ParsedDeclarator::Pointer(ptr_qualifiers, inner_decl) => {
             let inner_ref = if let Some(inner) = inner_decl {
@@ -547,15 +537,6 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &ParsedDeclarator) -
             // or maybe we need to represent it.
             // For types, a bitfield declarator resolves to the underlying type declarator.
             build_parsed_declarator(parser, inner)
-        }
-
-        ParsedDeclarator::AnonymousRecord(_is_union, _members) => {
-            // Anonymous records are handled elsewhere or ignored in type building
-            // as they declare types themselves, not just a declarator.
-            Ok(parser
-                .ast
-                .parsed_types
-                .alloc_decl(ParsedDeclaratorNode::Identifier { name: None }))
         }
     }
 }

@@ -944,26 +944,34 @@ impl<'a> SemanticAnalyzer<'a> {
             }
 
             // Resolve implicit decay for RHS to check compatibility
-            let rhs_pointer_base = if rhs_ty.is_array() {
-                self.registry.get_array_element(rhs_ty.ty())
+            let rhs_pointee = if rhs_ty.is_array() {
+                // Array qualifiers apply to the element type
+                self.registry
+                    .get_array_element(rhs_ty.ty())
+                    .map(|elem| QualType::new(elem, rhs_ty.qualifiers()))
             } else if rhs_ty.is_function() {
-                Some(rhs_ty.ty()) // Function decays to pointer
+                Some(rhs_ty) // Function decays to pointer to function (unqualified)
             } else if rhs_ty.is_pointer() {
-                self.registry.get_pointee(rhs_ty.ty()).map(|qt| qt.ty())
+                self.registry.get_pointee(rhs_ty.ty())
             } else {
                 None
             };
 
-            if let Some(rhs_base) = rhs_pointer_base {
+            if let Some(rhs_base) = rhs_pointee {
                 // Check compatibility
                 let lhs_base = self.registry.get_pointee(lhs_ty.ty()).unwrap();
 
                 // void* wildcard
-                if lhs_base.ty() == self.registry.type_void || rhs_base == self.registry.type_void {
+                if lhs_base.ty() == self.registry.type_void || rhs_base.ty() == self.registry.type_void {
                     return true;
                 }
 
-                return lhs_base.ty() == rhs_base;
+                // Check compatibility ignoring top-level qualifiers of the pointed-to type
+                // (e.g. char is compatible with char, even if one is const)
+                return self.registry.is_compatible(
+                    QualType::unqualified(lhs_base.ty()),
+                    QualType::unqualified(rhs_base.ty()),
+                );
             }
 
             return false;

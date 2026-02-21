@@ -243,7 +243,6 @@ pub enum ParsedDeclarator {
         params: ThinVec<ParsedParamData>,
         is_variadic: bool,
     }, // e.g., `(int x)`
-    AnonymousRecord(bool /* is_union */, ThinVec<ParsedNodeRef> /* members */), // C11 anonymous struct/union
     BitField(Box<ParsedDeclarator>, ParsedNodeRef /* bit width expression */), // e.g., `x : 8`
 }
 

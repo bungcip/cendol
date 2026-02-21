@@ -95,6 +95,7 @@ pub mod semantic_brace_elision;
 pub mod semantic_caserange;
 pub mod semantic_complex_types;
 pub mod semantic_const_recursive;
+pub mod semantic_enum_types;
 pub mod semantic_generic;
 pub mod semantic_integer_literals;
 pub mod semantic_mir_const_global;

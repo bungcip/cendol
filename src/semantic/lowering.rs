@@ -658,14 +658,67 @@ fn complete_record_symbol(
     Ok(())
 }
 
+fn choose_enum_type(registry: &TypeRegistry, enumerators: &[EnumConstant]) -> TypeRef {
+    if enumerators.is_empty() {
+        return registry.type_int;
+    }
+
+    let mut min = 0i64;
+    let mut max = 0i64;
+    let mut first = true;
+
+    for e in enumerators {
+        if first {
+            min = e.value;
+            max = e.value;
+            first = false;
+        } else {
+            if e.value < min {
+                min = e.value;
+            }
+            if e.value > max {
+                max = e.value;
+            }
+        }
+    }
+
+    // C11 6.7.2.2p4:
+    // Each enumerated type shall be compatible with char, a signed integer type, or an unsigned integer type.
+    // The choice of type is implementation-defined...
+
+    // We prioritize unsigned int if all values are non-negative and fit.
+    // This helps with strict pointer compatibility checks against unsigned int *.
+    let uint_max = 4294967295i64;
+    if min >= 0 && max <= uint_max {
+        return registry.type_int_unsigned;
+    }
+
+    // Default to int if it fits (or if min < 0)
+    let int_min = -2147483648i64;
+    let int_max = 2147483647i64;
+    if min >= int_min && max <= int_max {
+        return registry.type_int;
+    }
+
+    // For larger values, fallback to long long
+    if min >= 0 {
+        return registry.type_long_long_unsigned;
+    }
+
+    registry.type_long_long
+}
+
 fn complete_enum_symbol(
     ctx: &mut LowerCtx,
     tag: Option<NameId>,
     type_ref: TypeRef,
     enumerators: Vec<EnumConstant>,
 ) -> Result<(), SemanticError> {
+    // Determine the underlying type
+    let base_type = choose_enum_type(ctx.registry, &enumerators);
+
     // Update the type in AST and SymbolTable using the proper completion function
-    ctx.registry.complete_enum(type_ref, enumerators);
+    ctx.registry.complete_enum(type_ref, enumerators, base_type);
     ctx.registry.ensure_layout(type_ref)?;
 
     if let Some(tag_name) = tag

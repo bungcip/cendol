@@ -6,178 +6,77 @@ The preprocessor is responsible for transforming C source code before it reaches
 
 ### Key Components
 
-The preprocessor is organized into specialized modules for different aspects of preprocessing:
+The preprocessor is organized into specialized modules:
 
-1. **preprocessor.rs**: Main preprocessor orchestrator and pipeline management
-2. **pp_lexer.rs**: PPToken lexer for tokenizing preprocessor input
-3. **interpreter.rs**: Expression evaluation for `#if` directives
-4. **tests_pp_lexer.rs**: Testing utilities for the PP lexer
-5. **tests_preprocessor.rs**: Testing utilities for the main preprocessor
-
-### Responsibilities
-
-- **Macro Processing**: Define, undefine, and expand macros according to C standard rules
-- **File Inclusion**: Process `#include` directives with proper search path handling
-- **Conditional Compilation**: Evaluate `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif` directives
-- **Line Control**: Handle `#line` directives for source location management using LineMap
-- **Pragma Handling**: Process `#pragma` directives and `_Pragma` operators
-- **Token Stream Generation**: Produce a sequence of tokens for the lexer phase
+1. **preprocessor.rs**: Main orchestrator, directive handling, and macro expansion logic.
+2. **pp_lexer.rs**: Specialized lexer for preprocessing tokens (`PPToken`).
+3. **interpreter.rs**: Evaluation of `#if` and `#elif` expressions.
+4. **header_search.rs**: Logic for resolving `#include` paths.
+5. **dumper.rs**: Utility for emitting preprocessed output.
 
 ### Data Structures
 
 ```rust
-use hashbrown::HashMap;
-
-/// Language options affecting preprocessor behavior
-#[derive(Clone)]
-pub struct LangOptions {
-    pub c11: bool,              // C11 standard compliance
-    pub gnu_mode: bool,         // GNU extensions
-    pub ms_extensions: bool,    // Microsoft extensions
+/// Preprocessor Configuration
+#[derive(Debug, Clone)]
+pub struct PPConfig {
+    pub include_paths: Vec<PathBuf>,
+    pub system_include_paths: Vec<PathBuf>,
+    pub defines: Vec<(String, Option<String>)>,
+    pub standard: CStandard,
 }
 
-/// Target platform information
-/// Uses target-lexicon crate for cross-platform target information
-pub use target_lexicon::Triple as TargetTriple;
-
-/// Diagnostic engine for error and warning reporting
-pub struct DiagnosticEngine {
-    // Error and warning reporting interface
-    // Implementation details depend on overall compiler diagnostic system
-}
-
-/// Main preprocessor structure
-pub struct Preprocessor<'src> {
-    source_manager: &'src SourceManager,
-    diag: &'src DiagnosticEngine,
-    lang_opts: LangOptions,
-    target_tripple: TargetTriple,
-
-    // Macro management
-    macros: HashMap<Symbol, MacroInfo>,
-
-    // Conditional compilation state
-    conditional_stack: Vec<PPConditionalInfo>,
-
-    // Include handling
+/// Main Preprocessor
+pub struct Preprocessor<'a, 'src> {
+    source_manager: &'a mut SourceManager,
+    diagnostics: &'src mut DiagnosticEngine,
+    macros: HashMap<StringId, MacroInfo>,
+    conditionals: Vec<PPConditionalInfo>,
     include_stack: Vec<IncludeStackInfo>,
     header_search: HeaderSearch,
-
-    // Token management
-    cur_token_lexer: Option<Box<PPTokenLexer>>,
-    cur_lexer: Option<Box<PPLexer>>,
-
-    // State
-    in_main_file: bool,
-    is_parsing_main_file: bool,
+    directive_keywords: DirectiveKeywordTable,
+    // ...
 }
 
-/// Represents a macro definition
-#[derive(Clone)]
-pub struct MacroInfo {
-    pub location: SourceLoc,
-    pub flags: MacroFlags, // Packed boolean flags
-    pub tokens: Vec<PPToken>,
-    pub parameter_list: Vec<Symbol>,
-    pub variadic_arg: Option<Symbol>,
-}
-
-/// Packed boolean flags for macro properties
-bitflags::bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-    pub struct MacroFlags: u8 {
-        const FUNCTION_LIKE = 1 << 0;
-        const C99_VARARGS = 1 << 1;
-        const GNU_VARARGS = 1 << 2;
-        const BUILTIN = 1 << 3;
-        const DISABLED = 1 << 4;
-        const USED = 1 << 5;
-    }
-}
-
-/// Token structure for preprocessor tokens
-#[derive(Clone)]
+/// Preprocessing Token
+#[derive(Clone, Copy, Debug)]
 pub struct PPToken {
     pub kind: PPTokenKind,
     pub flags: PPTokenFlags,
-    pub location: SourceLoc, // Contains file ID and byte offset (from SourceLoc.offset())
-    pub length: u16, // Maximum token length (64KB should be sufficient for any token)
+    pub location: SourceLoc,
+    pub length: u16,
 }
 
-/// Token kinds for preprocessor tokens
+/// PPToken Kinds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PPTokenKind {
-    // Keywords
-    If, Ifdef, Ifndef, Elif, Else, Endif, Define, Undef, Include, Line, Pragma,
-    // Punctuation
-    LParen, RParen, Comma, Hash, HashHash,
+    // Punctuation and operators
+    Plus, Minus, Star, Slash, Percent,
+    And, Or, Xor, Not, Tilde,
+    Less, Greater, LessEqual, GreaterEqual, Equal, NotEqual,
+    LParen, RParen, LBracket, RBracket, LBrace, RBrace,
+    Dot, Arrow, Comma, Semicolon, Colon, Question,
+    Hash, HashHash, Ellipsis,
     // Literals and identifiers
-    Identifier(Symbol),    // Interned identifier
-    StringLiteral(Symbol), // Interned string literal
-    CharLiteral(u32),      // Unicode codepoint value
-    Number(i64),           // Parsed numeric value for preprocessor evaluation
+    Ident(StringId),
+    StringLiteral(StringId),
+    CharLiteral(u64, StringId),
+    Number(StringId),
     // Special
-    Eof, Unknown,
+    Eof, Eod, Unknown,
 }
 
-/// Packed token flags
+/// PPToken Flags
 bitflags::bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct PPTokenFlags: u8 {
-        const LEADING_SPACE = 1 << 0;  // Token has leading whitespace
-        const STARTS_PP_LINE = 1 << 1; // Token starts a preprocessing line
-        const NEEDS_CLEANUP = 1 << 2;  // Token needs cleanup after expansion
+        const LEADING_SPACE = 1 << 0;
+        const STARTS_LINE = 1 << 1;
+        const PREV_WAS_HASH = 1 << 2;
+        const MACRO_EXPANDED = 1 << 3;
+        const HAS_INVALID_UCN = 1 << 4;
     }
 }
-
-
-/// Manages source files and locations
-/// File size limit: 4 MiB per file (22-bit offset in SourceLoc)
-/// Maximum files: 1023 unique source files (10-bit file ID in SourceLoc)
-pub struct SourceManager {
-    files: Vec<SourceFile>,
-    buffers: Vec<Vec<u8>>, // Use Rust Vec<u8>
-    file_infos: HashMap<SourceId, FileInfo>,
-}
-
-/// File information for tracking source files
-pub struct FileInfo {
-    pub file_id: SourceId,
-    pub path: PathBuf,
-    pub size: u32,
-    pub buffer_index: usize, // Index into buffers Vec
-    pub line_starts: Vec<u32>, // Line start offsets for efficient line lookup
-}
-
-/// Represents conditional compilation state
-pub struct PPConditionalInfo {
-    if_loc: SourceLoc,
-    was_skipping: bool,
-    found_else: bool,
-    found_non_skipping: bool,
-}
-
-/// Manages header search paths and include resolution
-pub struct HeaderSearch {
-    search_path: Vec<SearchPath>,
-    system_path: Vec<SearchPath>,
-    framework_path: Vec<SearchPath>,
-    quoted_includes: Vec<String>,
-    angled_includes: Vec<String>,
-}
-
-/// Line mapping for #line directive support
-#[derive(Debug, Clone)]
-pub struct LineMap {
-    entries: Vec<LineDirective>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LineDirective {
-    pub physical_line: u32,
-    pub logical_line: u32,
-    pub logical_file: Option<String>,
-}
+```
 ```
 
 ### Processing Algorithm

@@ -36,63 +36,24 @@ Holds the analyzed and resolved program structure.
 
 ### `NodeKind` (Semantic Nodes)
 
-The `NodeKind` enum in `Ast` represents the semantically valid constructs. Key variants include:
+The `NodeKind` enum represents semantically resolved constructs. Key aspects include:
+- **Expressions**: `Ident`, `UnaryOp`, `BinaryOp`, `TernaryOp`, `Cast`, `SizeOfExpr`, `ImplicitCast`, `GenericSelection`, `FunctionCall`.
+- **Statements**: `CompoundStatement`, `If`, `While`, `DoWhile`, `For`, `Return`, `Break`, `Continue`, `Goto`, `Label`, `Switch`, `Case`, `Default`.
+- **Declarations**: `VarDecl`, `FunctionDecl`, `TypedefDecl`, `RecordDecl`, `FieldDecl`, `EnumDecl`, `EnumMember`, `Function`, `Param`.
+- **Infrastructure**: `TranslationUnit`, `InitializerList`, `InitializerItem`, `Designator`, `Dummy`.
 
-#### Literals
--   `Literal(Literal)`: Wraps a `Literal` enum (Integer, Float, String, Char).
-
-#### Expressions
--   `Ident(NameId, SymbolRef)`: Identifier with resolved symbol reference.
--   `UnaryOp(UnaryOp, NodeRef)`: Unary operation.
--   `BinaryOp(BinaryOp, NodeRef, NodeRef)`: Binary operation.
--   `TernaryOp(NodeRef, NodeRef, NodeRef)`: Conditional expression.
--   `FunctionCall(CallExpr)`: Function call with arguments.
--   `MemberAccess(NodeRef, NameId, bool)`: Member access.
--   `IndexAccess(NodeRef, NodeRef)`: Array indexing.
--   `Cast(QualType, NodeRef)`: Explicit cast with resolved type.
--   `SizeOfExpr(NodeRef)`: `sizeof` expression.
--   `SizeOfType(QualType)`: `sizeof` type.
--   `AlignOf(QualType)`: `_Alignof` type.
--   `GnuStatementExpression(NodeRef, NodeRef)`: GNU statement expression.
-
-#### Statements
--   `CompoundStatement(CompoundStmtData)`: Block with scope.
--   `If(IfStmt)`: If statement.
--   `While(WhileStmt)`: While loop.
--   `DoWhile(NodeRef, NodeRef)`: Do-while loop.
--   `For(ForStmt)`: For loop with scope.
--   `Return(Option<NodeRef>)`: Return statement.
--   `Goto(NameId, SymbolRef)`: Goto with resolved symbol.
--   `Label(NameId, NodeRef, SymbolRef)`: Label with resolved symbol.
--   `Switch(NodeRef, NodeRef)`: Switch statement.
--   `Case`, `Default`, `CaseRange`: Switch cases.
-
-#### Declarations (Semantic)
-The semantic AST uses specific declaration nodes instead of generic `Declaration` nodes:
--   `VarDecl(VarDeclData)`: Variable declaration.
--   `FunctionDecl(FunctionDeclData)`: Function declaration.
--   `TypedefDecl(TypedefDeclData)`: Typedef definition.
--   `RecordDecl(RecordDeclData)`: Struct/Union definition.
--   `EnumDecl(EnumDeclData)`: Enum definition.
--   `Function(FunctionData)`: Complete function definition including body.
+Large variants use auxiliary data structures (e.g., `FunctionData`, `IfStmt`) to keep `NodeKind` compact and cache-friendly.
 
 ### `ParsedNodeKind` (Syntactic Nodes)
 
-The `ParsedNodeKind` usually mirrors `NodeKind` but uses `ParsedNodeRef` and `ParsedType`. Differences include:
--   `Ident(NameId)`: No `SymbolRef`.
--   `Declaration(ParsedDeclarationData)`: Raw declaration specifiers and declarators.
--   `FunctionDef(ParsedFunctionDefData)`: Raw function definition.
--   `Cast(ParsedType, ParsedNodeRef)`: Cast with syntactic type.
-
-## Type System Integration
-
--   **Parsed Types**: `ParsedType` represents what the user wrote (e.g., `int *`). Stored in `ParsedTypeArena`.
--   **Semantic Types**: `QualType` represents the canonical type (e.g., `pointer to integer`).
--   **Resolution**: During lowering from `ParsedAst` to `Ast`, `ParsedType`s are resolved to `QualType`s.
--   **Side Tables**: `Ast` stores `type` and `value_category` for every node in `SemanticInfo`, indexed by `NodeRef`.
+`ParsedNodeKind` is purely syntactic and lacks semantic resolution:
+- **Declarations**: Uses generic `Declaration(ParsedDeclarationData)` and `FunctionDef(ParsedFunctionDefData)` instead of specific semantic variants.
+- **Types**: Uses `ParsedType` (syntactic representation) instead of `QualType`.
+- **Expressions**: Standard C operators, but without symbol or type resolution (e.g., `Ident(NameId)`).
 
 ## Memory Layout
 
--   Nodes are strictly ordered in `Vec`.
--   `NodeRef` and `ParsedNodeRef` are `NonZeroU32` indices.
--   Large data variants are boxed or stored in auxiliary structs (e.g., `FunctionData`, `IfStmt`) to keep `NodeKind` size uniform and small.
+- **Contiguous Storage**: Both `Ast` and `ParsedAst` use `Vec<NodeKind>` and `Vec<ParsedNodeKind>` for optimal cache performance.
+- **Index-based References**: `NodeRef` and `ParsedNodeRef` are `NonZeroU32` wrappers that index into these vectors.
+- **Compactness**: Shared data structures across nodes are boxed or stored as indices to minimize `NodeKind` size.
+- **Side Tables**: Any data that doesn't fit the uniform node structure is stored in side tables (e.g., `SemanticInfo`).

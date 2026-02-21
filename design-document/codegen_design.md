@@ -37,77 +37,26 @@ The code generation uses:
 
 ## Core Components
 
-### MIR-to-Cranelift Lowerer
-- `MirToCraneliftLowerer`: Main class for MIR to Cranelift conversion
-- Function compilation from MIR to Cranelift functions
-- Basic block and instruction mapping
-- Type and constant translation
+### `ClifGen`
+The main orchestrator that manages the Cranelift `ObjectModule` and iterates through the `MirModule`.
 
-### Code Generation Output
-- `ClifOutput`: Enum for different output types (Clif IR, Object files)
-- Object file generation for system linking
-- Clif IR dump for debugging and analysis
+### Emission Contexts
+- **`EmitContext`**: Handles global state, constants, and global variables.
+- **`BodyEmitContext`**: Managed within individual functions to track local variables, basic blocks, and the `FunctionBuilder`.
 
-### Validation
-- MIR validation before code generation
-- Generated code validation
-- Type consistency checks
+### Output Generation
+The code generator produces a `ClifOutput` enum:
+- `ObjectFile(Vec<u8>)`: Ready for linking.
+- `ClifDump(String)`: Human-readable Cranelift IR for debugging.
 
-## MIR-to-Cranelift Mapping
+## Implementation Details
 
-### Basic Operations
-- `MirStmt::Assign` maps to Cranelift move/copy instructions
-- `Rvalue` operations map to corresponding Cranelift instructions
-- `Terminator` operations map to Cranelift control flow instructions
+- **Type Mapping**: `lower_type` converts `MirType` to Cranelift types (e.g., `I64`, `F32`, or `I8` for various C sizes).
+- **Variadic Support**: Specialized logic for SysV x86_64 ABI, including register save areas and overflow buffers.
+- **Aggregate Handling**: Structs and arrays are handled via memory operations (`load`/`store`) or packed into registers for small structs.
+- **Optimization**: Leverages Cranelift's internal optimization passes and register allocator.
 
-### Control Flow
-- MIR basic blocks map to Cranelift blocks
-- `Terminator::Goto` maps to Cranelift jump
-- `Terminator::If` maps to Cranelift conditional branch
-- `Terminator::Return` maps to Cranelift return
+## Validation
 
-### Function Calls
-- `CallTarget::Direct` maps to direct Cranelift calls
-- `CallTarget::Indirect` maps to indirect Cranelift calls
-- Parameter passing and return value handling
-- **Variadic Support**: Special handling for x86_64 SysV variadic calls (reg save area, spill slots)
-
-### Memory Operations
-- `Place` operations map to Cranelift memory instructions
-- `MirStmt::Alloc` lowers to `malloc` calls
-- `MirStmt::Dealloc` lowers to `free` calls
-- `MirStmt::Store` maps to Cranelift store
-
-### Context Management
-- `MirToCraneliftLowerer`: Main driver for compilation
-- `BodyEmitContext`: Context for lowering function bodies
-- `EmitContext`: Context for constant emission
-
-
-## Output Generation
-
-### Object File Creation
-- Generation of platform-specific object files
-- Symbol table creation and management
-- Relocation information for linking
-- Debug information inclusion
-
-### Clif IR Output
-- Human-readable Clif IR for debugging
-- Intermediate representation for analysis
-- Optimization opportunity identification
-
-## Performance Optimizations
-
-- Target-specific optimization passes
-- Register allocation optimization
-- Dead code elimination
-- Instruction selection optimization
-- Function inlining opportunities
-
-## Error Handling
-
-- Comprehensive MIR validation before generation
-- Type consistency checking during mapping
-- Target-specific constraint validation
-- Diagnostic reporting for generation errors
+- **MIR Validation**: Pre-generation check of MIR invariants.
+- **Cranelift Verifier**: Mandatory verification of the generated Clif IR before object file emission.

@@ -37,13 +37,18 @@ graph TD
     PPTokenStream --> Lexer
     Lexer --> TokenStream[Token Stream]
     TokenStream --> Parser
-    Parser --> FlattenedAST[Flattened AST]
-    FlattenedAST --> SymbolResolver[Symbol Resolver]
-    SymbolResolver --> NameResolver[Name Resolver]
-    NameResolver --> SemanticAnalyzer[Semantic Analyzer]
-    SemanticAnalyzer --> MIRGen[MIR Generation]
-    MIRGen --> CodeGen[Code Generation]
-    CodeGen --> ObjectFile[Object File]
+    Parser --> ParsedAST[Parsed AST]
+    ParsedAST --> SemanticLowering[Semantic Lowering]
+    SemanticLowering --> Ast[Semantic AST]
+    SemanticLowering --> SymbolTable[Symbol Table]
+    SemanticLowering --> TypeRegistry[Type Registry]
+    Ast --> SemanticAnalyzer[Semantic Analyzer]
+    SemanticAnalyzer --> SemanticInfo[Semantic Info]
+    SemanticInfo --> MIRGen[MIR Generation]
+    MIRGen --> MIR[MIR Program]
+    MIR --> MIRValidator[MIR Validator]
+    MIRValidator --> CodeGen[Code Generation]
+    CodeGen --> ObjectFile[Object File/Executable]
 ```
 
 ### Key Design Decisions
@@ -60,89 +65,74 @@ graph TD
 ## Compiler Pipeline Phases
 
 ### 1. Preprocessor Phase
-Transforms C source code by handling macro expansion, conditional compilation, and file inclusion. Produces a stream of preprocessing tokens (`PPToken`) that represent the preprocessed source.
+Transforms C source code by handling macro expansion, conditional compilation, and file inclusion. Produces a stream of preprocessing tokens (`PPToken`).
 
 **Key Features:**
 - Modular architecture with separate lexer (`pp_lexer.rs`), expression parser (`expr_parser.rs`), and main preprocessor (`preprocessor.rs`)
-- Full macro expansion with argument rescanning, token pasting, and stringification
-- Include file resolution with header guard detection and system include paths
-- Conditional compilation with `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`
-- Built-in macro expansion for `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__`
-- Packed bit flags for token properties using `bitflags` crate
+- Full macro expansion including token pasting and stringification
+- Include file resolution with header search paths and include guard detection
+- Conditional compilation (`#if`, `#ifdef`, `#ifndef`, etc.)
 
 ### 2. Lexer Phase
-Tokenizes the preprocessing token stream into lexical tokens with pre-interned keywords. Converts `PPToken` stream to `Token` stream ready for parsing.
+Converts the `PPToken` stream into a lexical `Token` stream.
 
 **Key Features:**
-- UTF-8 only support with efficient character handling
-- Global symbol interning for identifiers using `symbol_table` crate
-- Pre-interned keyword table for O(1) keyword recognition
-- Integer and float literal parsing with C11 syntax support
-- String literal concatenation (C11 6.4.5)
-- Packed token flags for lexical properties
+- Buffers preprocessor output for efficient token consumption
+- Identifies C keywords and interned identifiers
+- Handles numeric and string literals according to C11 rules
 
 ### 3. Parser Phase
-Constructs a flattened Abstract Syntax Tree from the token stream using Pratt parsing for expressions and recursive descent for statements.
+Constructs a `ParsedAst` from the token stream using Pratt parsing for expressions and recursive descent for statements/declarations.
 
 **Key Features:**
-- Flattened AST storage in contiguous vectors for cache efficiency
-- Pratt parser with full C11 operator precedence and associativity
-- Index-based node references (`NodeRef`, `TypeRef`) for fast access
-- Complex declarator parsing for C's type system (pointers, arrays, functions)
-- Comprehensive error recovery with synchronization points
-- Support for all C11 syntax including generics, atomics, and compound literals
+- Produces a preliminary "flattened" AST representation (`ParsedAst`)
+- Pratt parser for efficient expression parsing with C11 precedence
+- Sophisticated disambiguation for C declarations and type names
+- Error recovery with synchronization points
 
-### 4. Symbol Resolver Phase
-Performs initial symbol collection and resolution, transforming parser-specific nodes to semantic nodes with resolved types.
+### 4. Semantic Lowering Phase
+Transforms `ParsedAst` into a semantic `Ast`, populates the `SymbolTable` and `TypeRegistry`, and constructs scopes.
 
 **Key Features:**
-- Symbol collection and scope establishment
-- Transformation of parser-only nodes to semantic nodes
-- Initial type resolution for basic types
-- Preparation of AST for full semantic analysis
-- Generation of scope mapping for each AST node
+- Declaration lowering (mapping C declarations to symbols)
+- Scope construction and name resolution
+- Initial type resolution and registry population
+- Transformation of parser-specific nodes into semantic-ready nodes
 
-### 5. Name Resolution Phase
-Resolves identifier names to their corresponding symbol table entries, handling C's complex scoping rules.
-
-**Key Features:**
-- Identifier-to-symbol mapping
-- Proper handling of C's scoping rules (block scope, function scope, etc.)
-- Resolution of function, variable, and type names
-- Handling of forward declarations and definitions
-- Validation of name uniqueness within scopes
-
-### 6. Semantic Analysis Phase
-Performs comprehensive type checking and semantic validation of the AST.
+### 5. Semantic Analysis Phase
+Performs type checking and validation on the semantic `Ast`, producing a `SemanticInfo` side table.
 
 **Key Features:**
-- Type checking and compatibility validation
-- Expression type resolution
-- Implicit conversion analysis
-- LValue/RValue categorization
-- Semantic validation of all C constructs
-- Generation of semantic information side table
+- Comprehensive type checking and compatibility validation
+- Expression type resolution (attaching types to all expressions)
+- Implicit conversion analysis (integer promotion, usual arithmetic conversions)
+- LValue/RValue and modifiability checks
+- Constant expression evaluation
 
-### 7. MIR Generation Phase
-Transforms the annotated AST into a typed, explicit Mid-level Intermediate Representation suitable for optimization and code generation.
+### 6. MIR Generation Phase
+Transforms the analyzed `Ast` (and its `SemanticInfo`) into a typed, explicit Mid-level Intermediate Representation (MIR).
 
 **Key Features:**
-- Typed MIR with explicit control flow
-- Non-SSA basic block structure
+- Typed MIR with explicit control flow and basic blocks
+- Lowering of C constructs to simple MIR operations
 - Explicit memory operations and type conversions
-- Cranelift-friendly representation
-- Comprehensive type information preserved
-- Validation of MIR correctness before code generation
+- Preservation of type information for downstream optimization
+
+### 7. MIR Validation Phase
+Ensures the correctness of the generated MIR before passing it to the code generator.
+
+**Key Features:**
+- Type consistency checks
+- Control flow graph validation
+- Invariant verification for MIR operations
 
 ### 8. Code Generation Phase
-Generates target code using the Cranelift backend, producing optimized object files.
+Generates target machine code using the Cranelift backend and handles linking.
 
 **Key Features:**
-- Cranelift-based code generation
-- Target-specific optimization
-- Object file generation
-- Linker integration for executable creation
-- Support for multiple target architectures
+- Cranelift-based code generation from MIR
+- Support for emitting Cranelift IR, object files, or executables
+- Integration with system linker (`LinkGen`) for final artifact creation
 
 ## Supporting Infrastructure
 

@@ -151,118 +151,27 @@ pub enum Rvalue {
 }
 ```
 
-## Type System
+### Simplified Data Structures
 
-The MIR type system uses explicit variants for primitives:
+MIR is built upon a few core enums and structs that ensure type safety and explicit behavior:
 
-```rust
-pub enum MirType {
-    Void,
-    Bool,
-    I8, I16, I32, I64,
-    U8, U16, U32, U64,
-    F32, F64,
-    Pointer {
-        pointee: TypeId,
-    },
-    Array {
-        element: TypeId,
-        size: usize,
-        layout: MirArrayLayout,
-    },
-    Function {
-        return_type: TypeId,
-        params: Vec<TypeId>,
-        is_variadic: bool,
-    },
-    Record {
-        name: NameId,
-        field_types: Vec<TypeId>,
-        field_names: Vec<NameId>,
-        is_union: bool,
-        layout: MirRecordLayout,
-    },
-}
-```
+- **`MirStmt`**: Assignments (`Assign`), stores (`Store`), function calls (`Call`), and variadic builtins (`BuiltinVaStart`, etc.).
+- **`Place`**: Represents memory or storage locations: `Local`, `Global`, `Deref`, `StructField`, `ArrayIndex`.
+- **`Operand`**: Values used in operations: `Copy(Place)`, `Constant`, `AddressOf(Place)`, `Cast`.
+- **`Rvalue`**: RHS values: `BinaryIntOp`, `BinaryFloatOp`, `UnaryIntOp`, `UnaryFloatOp`, `PtrAdd`/`PtrSub`/`PtrDiff`, `Load(Operand)`.
+- **`Terminator`**: Basic block exits: `Goto`, `If`, `Return`, `Unreachable`.
 
-## Constants
+### IR Invariants and Validation
 
-Constant values are represented with a struct separation:
+The MIR includes a strict validation pass (`src/mir/validation.rs`) that runs before code generation. It ensures:
+1. **Type Consistency**: Both sides of an assignment must have identical MIR types.
+2. **Explicit Conversions**: No implicit casts; all type changes must use `Operand::Cast`.
+3. **Control Flow Integrity**: All blocks must end with a valid terminator, and branch targets must exist.
+4. **Pointer Safety**: Address-of and dereference operations are checked for type correctness.
 
-```rust
-pub struct ConstValue {
-    pub ty: TypeId,
-    pub kind: ConstValueKind,
-}
+## MIR Generation
 
-pub enum ConstValueKind {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    Null,
-    Zero,
-    StructLiteral(Vec<(usize, ConstValueId)>),
-    ArrayLiteral(Vec<ConstValueId>),
-    GlobalAddress(GlobalId),
-    FunctionAddress(MirFunctionId),
-}
-```
-
-## Variables and Globals
-
-`Local` represents local variables and parameters:
-
-```rust
-pub struct Local {
-    pub id: LocalId,
-    pub name: Option<NameId>,
-    pub type_id: TypeId,
-    pub is_param: bool,
-    pub alignment: Option<u32>,
-}
-```
-
-`Global` represents global variables:
-
-```rust
-pub struct Global {
-    pub id: GlobalId,
-    pub name: NameId,
-    pub type_id: TypeId,
-    pub is_constant: bool,
-    pub initial_value: Option<ConstValueId>,
-    pub alignment: Option<u32>,
-}
-```
-
-## MIR Generation Process
-
-The MIR generation process transforms the annotated AST into MIR:
-
-1. **Function Lowering**: AST function definitions converted to MIR functions
-2. **Basic Block Creation**: Control flow structures converted to basic blocks
-3. **Expression Lowering**: Complex expressions broken down into simple operations
-4. **Memory Operations**: Explicit allocation and deallocation operations added
-5. **Type Checking**: MIR validated for type correctness
-6. **Optimization**: Basic optimizations applied to MIR
-
-## Cranelift Mapping
-
-The MIR design facilitates efficient mapping to Cranelift IR:
-
-- Basic blocks map directly to Cranelift blocks
-- Operations map to Cranelift instructions
-- Types map to Cranelift types
-- Memory operations map to Cranelift memory instructions
-- Function calls map to Cranelift call instructions
-
-## Validation
-
-MIR includes comprehensive validation to ensure correctness:
-
-- Type consistency validation
-- Control flow validation
-- Memory safety validation
-- Constant folding validation
-
-This MIR design provides a solid foundation for optimization and code generation while maintaining the semantics of the original C program.
+The `MirGen` component (`src/codegen/mir_gen.rs`) transforms the annotated `Ast` into `MirModule`. It performs:
+- **Expression Flattening**: Complex nested expressions are broken into sequences of `MirStmt`s.
+- **Explicit Casting**: Implicit conversions recorded during semantic analysis are turned into explicit `Rvalue::Cast` or `Operand::Cast` operations.
+- **Control Flow Lowering**: High-level loops and conditionals are lowered into basic blocks and terminators.

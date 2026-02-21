@@ -18,31 +18,22 @@ The lexer (or tokenizer) converts a preprocessor token stream into a lexical tok
 The lexer produces various token types including:
 
 ### Literals
-- `IntegerConstant(i64)`: Parsed integer literal value with C11 suffix support
-- `FloatConstant(f64)`: Parsed float literal value with C11 format support
-- `CharacterConstant(u8)`: Byte value of character constant
-- `StringLiteral(StringId)`: Interned string literal with quotes removed
+- `IntegerConstant(i64, Option<IntegerSuffix>, u32)`: Parsed value, suffix, and numeric base.
+- `FloatConstant(f64, Option<FloatSuffix>)`: Parsed value and suffix.
+- `CharLiteral(u64, StringId)`: Character value and raw text symbol.
+- `StringLiteral(StringId)`: Interned string literal.
 
 ### Identifiers
-- `Identifier(StringId)`: Interned identifier name
+- `Ident(StringId)`: Interned identifier name.
 
-### Keywords (Storage Class Specifiers)
-- `Auto`, `Extern`, `Register`, `Static`, `ThreadLocal`
+### Keywords
+The lexer recognizes all standard C11 keywords (storage class specifiers, type qualifiers, type specifiers, control flow) and maps them to specific `TokenKind` variants.
 
-### Keywords (Type Qualifiers)
-- `Const`, `Restrict`, `Volatile`, `Atomic`
-
-### Keywords (Type Specifiers)
-- `Bool`, `Char`, `Double`, `Float`, `Int`, `Long`, `Short`, `Signed`, `Unsigned`, `Void`, `Complex`
-
-### Keywords (Control Flow)
-- `Break`, `Case`, `Continue`, `Default`, `Do`, `Else`, `For`, `Goto`, `If`, `Return`, `Switch`, `While`
-
-### Keywords (Other)
-- `Alignas`, `Alignof`, `Generic`, `Inline`, `Noreturn`, `Pragma`, `Sizeof`, `StaticAssert`, `Typedef`, `Attribute`
-
-### Keywords (Builtin)
+### Keywords (Builtin & Extensions)
 - `BuiltinVaArg`, `BuiltinVaStart`, `BuiltinVaEnd`, `BuiltinVaCopy`
+- `BuiltinExpect`, `BuiltinOffsetof`
+- `BuiltinAtomic*` (various atomic operations)
+- `Asm` (GCC extension support)
 
 ### Special Tokens
 - `EndOfFile`, `Unknown`

@@ -15,27 +15,32 @@ Semantic analysis is a multi-phase process that checks the syntactically correct
 
 ## Multi-Phase Process
 
-The semantic analysis process involves multiple distinct phases:
+The semantic analysis process is split into two major phases, followed by MIR generation:
 
 ### 1. Semantic Lowering Phase
-- Converts `ParsedAst` (parse tree) to `Ast` (semantic tree)
-- Performs declaration lowering and symbol table construction
-- Handles scope construction and symbol definition
-- Resolves identifiers to symbol table entries
-- Stores scope information directly on AST nodes
+- **Entry point**: `visit_ast` in `lowering.rs`.
+- **Goal**: Transform syntactic `ParsedAst` into semantic `Ast`.
+- **Activities**:
+    - Build `SymbolTable` and `TypeRegistry`.
+    - Construct hierarchical `Scope` structure.
+    - Resolve declarations (variables, functions, typedefs, types).
+    - Map `ParsedNode`s to one or more `NodeRef`s in the semantic `Ast`.
+- **Details**: See [semantic_lowering_design.md](file:///home/bungcip/cendol/design-document/semantic_lowering_design.md).
 
 ### 2. Semantic Analysis Phase
-- Performs comprehensive type checking on the `Ast`
-- Resolves expression types and validates compatibility
-- Analyzes implicit conversions and value categories
-- Validates all C constructs semantically
-- Generates `SemanticInfo` side table
+- **Entry point**: `visit_ast` in `analyzer.rs`.
+- **Goal**: Perform type checking and semantic validation on the resolved `Ast`.
+- **Activities**:
+    - Verify type compatibility and safety.
+    - Analyze and record implicit conversions (e.g., integer promotion, array-to-pointer decay).
+    - Determine value categories (LValue/RValue).
+    - Populate `SemanticInfo` side tables.
+- **Details**: See [semantic_analysis_design.md](file:///home/bungcip/cendol/design-document/semantic_analysis_design.md).
 
 ### 3. MIR Generation Phase
-- Converts the fully annotated `Ast` (with `SemanticInfo`) to typed MIR
-- Creates explicit control flow and memory operations
-- Preserves comprehensive type information
-- Validates MIR correctness before code generation
+- **Entry point**: `MirGen::visit_module`.
+- **Goal**: Convert annotated `Ast` with `SemanticInfo` into MIR.
+- **Details**: See [mir_design.md](file:///home/bungcip/cendol/design-document/mir_design.md).
 
 ## Symbol Table Design
 

@@ -38,9 +38,6 @@ pub enum ParseError {
     #[error("Unexpected End of File")]
     UnexpectedEof { span: SourceSpan },
 
-    #[error("Invalid unary operator")]
-    InvalidUnaryOperator { span: SourceSpan },
-
     #[error("Declaration not allowed in this context")]
     DeclarationNotAllowed { span: SourceSpan },
 
@@ -53,7 +50,6 @@ impl ParseError {
         match self {
             ParseError::UnexpectedToken { span, .. } => *span,
             ParseError::UnexpectedEof { span } => *span,
-            ParseError::InvalidUnaryOperator { span } => *span,
             ParseError::DeclarationNotAllowed { span } => *span,
             ParseError::Custom { span, .. } => *span,
         }
@@ -226,8 +222,6 @@ pub enum SemanticError {
     NonConstantInitializer { span: SourceSpan },
     #[error("invalid initializer")]
     InvalidInitializer { span: SourceSpan },
-    #[error("Invalid use of void type in expression")]
-    InvalidUseOfVoid { span: SourceSpan },
     #[error("conflicting types for '{name}'")]
     ConflictingTypes {
         name: String,
@@ -396,8 +390,6 @@ pub enum SemanticError {
     NoreturnFunctionHasReturn { name: String, span: SourceSpan },
     #[error("function '{name}' declared '_Noreturn' can fall off the end")]
     NoreturnFunctionFallsOff { name: String, span: SourceSpan },
-    #[error("unreachable code")]
-    UnreachableCode { span: SourceSpan },
 
     #[error("alignment specifier cannot be used in a {context}")]
     AlignmentNotAllowed { context: String, span: SourceSpan },
@@ -458,7 +450,6 @@ impl SemanticError {
             SemanticError::InvalidUnaryOperand { span, .. } => *span,
             SemanticError::NonConstantInitializer { span } => *span,
             SemanticError::InvalidInitializer { span } => *span,
-            SemanticError::InvalidUseOfVoid { span } => *span,
             SemanticError::ConflictingTypes { span, .. } => *span,
             SemanticError::VoidReturnWithValue { span, .. } => *span,
             SemanticError::NonVoidReturnWithoutValue { span, .. } => *span,
@@ -515,7 +506,6 @@ impl SemanticError {
             SemanticError::FlexibleArrayInEmptyStruct { span } => *span,
             SemanticError::NoreturnFunctionHasReturn { span, .. } => *span,
             SemanticError::NoreturnFunctionFallsOff { span, .. } => *span,
-            SemanticError::UnreachableCode { span } => *span,
             SemanticError::AlignmentNotAllowed { span, .. } => *span,
             SemanticError::AlignmentTooLoose { span, .. } => *span,
             SemanticError::ArrayStaticOutsideParameter { span } => *span,
@@ -682,9 +672,6 @@ mod tests {
         let p1 = ParseError::UnexpectedEof { span };
         assert_eq!(p1.span(), span);
 
-        let p2 = ParseError::InvalidUnaryOperator { span };
-        assert_eq!(p2.span(), span);
-
         let p3 = ParseError::DeclarationNotAllowed { span };
         assert_eq!(p3.span(), span);
 
@@ -693,8 +680,5 @@ mod tests {
 
         let s2 = SemanticError::InvalidInitializer { span };
         assert_eq!(s2.span(), span);
-
-        let s3 = SemanticError::UnreachableCode { span };
-        assert_eq!(s3.span(), span);
     }
 }

@@ -27,7 +27,7 @@ pub type NameId = symbol_table::GlobalSymbol;
 pub type StringId = NameId;
 
 use crate::semantic::{QualType, ScopeId, SemanticInfo, SymbolRef, TypeRef, ValueCategory};
-pub use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
+pub use crate::source_manager::{SourceId, SourceSpan};
 
 // Submodules
 // Submodules

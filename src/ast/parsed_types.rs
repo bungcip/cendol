@@ -97,8 +97,6 @@ pub enum ParsedBaseTypeNode {
     },
 
     Typedef(NameId),
-
-    Error,
 }
 
 /// Parsed declarator node (the declarator structure)

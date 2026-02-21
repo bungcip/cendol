@@ -43,7 +43,6 @@ fn test_validation_error_display() {
     let name_id = NameId::new("test_func");
 
     let errors = vec![
-        ValidationError::LocalMissingType(local_id),
         ValidationError::IllegalOperation("test op".to_string()),
         ValidationError::TypeNotFound(type_id),
         ValidationError::LocalNotFound(local_id),
@@ -51,7 +50,6 @@ fn test_validation_error_display() {
         ValidationError::FunctionNotFound(func_id),
         ValidationError::BlockNotFound(block_id),
         ValidationError::StatementNotFound(stmt_id),
-        ValidationError::InvalidPointerArithmetic,
         ValidationError::InvalidCast(type_id, TypeId::new(2).unwrap()),
         ValidationError::FunctionCallArgTypeMismatch {
             func_name: name_id,

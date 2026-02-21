@@ -67,10 +67,12 @@ fn test_dump_parsed_ast_with_structs() {
     let output = dump_parsed_ast("struct Point { int x; int y; } p = {1, 2};");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2])
-    2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Record(false, Some("Point"), Some(ParsedRecordDefData { tag: Some("Point"), members: Some([ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032787) }] }, ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("y", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032794) }] }]), is_union: false })))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("p", TypeQualifiers(0x0)), initializer: Some(5), span: SourceSpan(2199191027743) }] })
-    3: LiteralInt(1, None, base=10)
-    4: LiteralInt(2, None, base=10)
-    5: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 3 }, ParsedDesignatedInitializer { designation: [], initializer: 4 }])
+    2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Record(false, Some("Point"), Some(ParsedRecordDefData { tag: Some("Point"), members: Some([3, 4]), is_union: false })))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("p", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199191027743) }] })
+    3: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032787) }] })
+    4: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("y", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032794) }] })
+    5: LiteralInt(1, None, base=10)
+    6: LiteralInt(2, None, base=10)
+    7: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 5 }, ParsedDesignatedInitializer { designation: [], initializer: 6 }])
     "#
     );
 }

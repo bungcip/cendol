@@ -3071,115 +3071,143 @@ fn extract_bit_field_width<'a>(
 
 /// Common logic for lowering struct members, used by both TypeSpecifier::Record lowering
 /// and Declarator::AnonymousRecord handling.
-fn visit_struct_members(members: &[ParsedDeclarationData], ctx: &mut LowerCtx, span: SourceSpan) -> Vec<StructMember> {
+fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span: SourceSpan) -> Vec<StructMember> {
     let mut struct_members = Vec::new();
 
-    for decl in members {
-        let spec_info = visit_decl_specifiers(&decl.specifiers, ctx, span);
+    for &node_ref in member_nodes {
+        let node = ctx.parsed_ast.get_node(node_ref);
+        match &node.kind {
+            ParsedNodeKind::StaticAssert(cond, msg) => {
+                let cond_node = ctx.visit_expression(*cond);
+                let msg_node = ctx.visit_expression(*msg);
 
-        // Check for illegal storage classes
-        if spec_info.storage.is_some() {
-            ctx.report_error(SemanticError::ConflictingStorageClasses { span });
-        }
+                let const_ctx = ctx.const_ctx();
+                match const_eval::eval_const_expr(&const_ctx, cond_node) {
+                    Some(0) => {
+                        let message = match ctx.ast.get_kind(msg_node) {
+                            NodeKind::Literal(literal::Literal::String(s)) => s.as_str().to_string(),
+                            _ => String::new(),
+                        };
 
-        // Handle anonymous struct/union members (C11 6.7.2.1p13)
-        if decl.init_declarators.is_empty() {
-            if let Some(type_ref) = spec_info.base_type {
-                let type_ref = ctx.merge_qualifiers_with_check(type_ref, spec_info.qualifiers, span);
-                if type_ref.is_record() {
-                    let is_anonymous = matches!(
-                        &ctx.registry.get(type_ref.ty()).kind,
-                        TypeKind::Record { tag: None, .. }
-                    );
-
-                    if is_anonymous {
-                        struct_members.push(StructMember {
-                            member_type: type_ref,
-                            alignment: spec_info.alignment,
-                            span,
-                            ..Default::default()
+                        ctx.report_error(SemanticError::StaticAssertFailed {
+                            message,
+                            span: node.span,
                         });
                     }
+                    None => ctx.report_error(SemanticError::StaticAssertNotConstant { span: node.span }),
+                    _ => {}
                 }
             }
-            continue;
-        }
+            ParsedNodeKind::Declaration(decl) => {
+                let spec_info = visit_decl_specifiers(&decl.specifiers, ctx, span);
 
-        for init_declarator in &decl.init_declarators {
-            let (bit_field_size, base_declarator) = extract_bit_field_width(&init_declarator.declarator, ctx);
+                // Check for illegal storage classes
+                if spec_info.storage.is_some() {
+                    ctx.report_error(SemanticError::ConflictingStorageClasses { span });
+                }
 
-            if bit_field_size.is_some() && spec_info.alignment.is_some() {
-                ctx.report_error(SemanticError::AlignmentNotAllowed {
-                    context: "bit-field".to_string(),
-                    span: init_declarator.span,
-                });
-            }
+                // Handle anonymous struct/union members (C11 6.7.2.1p13)
+                if decl.init_declarators.is_empty() {
+                    if let Some(type_ref) = spec_info.base_type {
+                        let type_ref = ctx.merge_qualifiers_with_check(type_ref, spec_info.qualifiers, span);
+                        if type_ref.is_record() {
+                            let is_anonymous = matches!(
+                                &ctx.registry.get(type_ref.ty()).kind,
+                                TypeKind::Record { tag: None, .. }
+                            );
 
-            ctx.check_function_specifiers(&spec_info, init_declarator.span);
+                            if is_anonymous {
+                                struct_members.push(StructMember {
+                                    member_type: type_ref,
+                                    alignment: spec_info.alignment,
+                                    span,
+                                    ..Default::default()
+                                });
+                            }
+                        }
+                    }
+                    continue;
+                }
 
-            let member_name = extract_name(base_declarator);
+                for init_declarator in &decl.init_declarators {
+                    let (bit_field_size, base_declarator) = extract_bit_field_width(&init_declarator.declarator, ctx);
 
-            let member_type = {
-                let base = spec_info
-                    .base_type
-                    .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
-                let qualified_base = ctx.merge_qualifiers_with_check(base, spec_info.qualifiers, init_declarator.span);
-                apply_declarator(
-                    qualified_base,
-                    base_declarator,
-                    ctx,
-                    init_declarator.span,
-                    &spec_info,
-                    DeclaratorContext { in_parameter: false },
-                )
-            };
-
-            // Validate bit-field
-            if let Some(width) = bit_field_size {
-                if !member_type.is_integer() {
-                    ctx.report_error(SemanticError::InvalidBitfieldType {
-                        ty: ctx.registry.display_qual_type(member_type),
-                        span: init_declarator.span,
-                    });
-                } else if let Ok(layout) = ctx.registry.ensure_layout(member_type.ty()) {
-                    let type_width = layout.size * 8;
-                    if (width as u64) > type_width {
-                        ctx.report_error(SemanticError::BitfieldWidthExceedsType {
-                            width,
-                            type_width,
+                    if bit_field_size.is_some() && spec_info.alignment.is_some() {
+                        ctx.report_error(SemanticError::AlignmentNotAllowed {
+                            context: "bit-field".to_string(),
                             span: init_declarator.span,
                         });
                     }
-                }
 
-                if width == 0 && member_name.is_some() {
-                    ctx.report_error(SemanticError::NamedZeroWidthBitfield {
+                    ctx.check_function_specifiers(&spec_info, init_declarator.span);
+
+                    let member_name = extract_name(base_declarator);
+
+                    let member_type = {
+                        let base = spec_info
+                            .base_type
+                            .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
+                        let qualified_base =
+                            ctx.merge_qualifiers_with_check(base, spec_info.qualifiers, init_declarator.span);
+                        apply_declarator(
+                            qualified_base,
+                            base_declarator,
+                            ctx,
+                            init_declarator.span,
+                            &spec_info,
+                            DeclaratorContext { in_parameter: false },
+                        )
+                    };
+
+                    // Validate bit-field
+                    if let Some(width) = bit_field_size {
+                        if !member_type.is_integer() {
+                            ctx.report_error(SemanticError::InvalidBitfieldType {
+                                ty: ctx.registry.display_qual_type(member_type),
+                                span: init_declarator.span,
+                            });
+                        } else if let Ok(layout) = ctx.registry.ensure_layout(member_type.ty()) {
+                            let type_width = layout.size * 8;
+                            if (width as u64) > type_width {
+                                ctx.report_error(SemanticError::BitfieldWidthExceedsType {
+                                    width,
+                                    type_width,
+                                    span: init_declarator.span,
+                                });
+                            }
+                        }
+
+                        if width == 0 && member_name.is_some() {
+                            ctx.report_error(SemanticError::NamedZeroWidthBitfield {
+                                span: init_declarator.span,
+                            });
+                        }
+                    }
+
+                    if bit_field_size.is_none()
+                        && let Ok(layout) = ctx.registry.ensure_layout(member_type.ty())
+                        && let Some(req_align) = spec_info.alignment
+                    {
+                        let natural_align = layout.alignment as u32;
+                        if req_align < natural_align {
+                            ctx.report_error(SemanticError::AlignmentTooLoose {
+                                requested: req_align,
+                                natural: natural_align,
+                                span: init_declarator.span,
+                            });
+                        }
+                    }
+
+                    struct_members.push(StructMember {
+                        name: member_name,
+                        member_type,
+                        bit_field_size,
+                        alignment: spec_info.alignment,
                         span: init_declarator.span,
                     });
                 }
             }
-
-            if bit_field_size.is_none()
-                && let Ok(layout) = ctx.registry.ensure_layout(member_type.ty())
-                && let Some(req_align) = spec_info.alignment
-            {
-                let natural_align = layout.alignment as u32;
-                if req_align < natural_align {
-                    ctx.report_error(SemanticError::AlignmentTooLoose {
-                        requested: req_align,
-                        natural: natural_align,
-                        span: init_declarator.span,
-                    });
-                }
-            }
-
-            struct_members.push(StructMember {
-                name: member_name,
-                member_type,
-                bit_field_size,
-                alignment: spec_info.alignment,
-                span: init_declarator.span,
-            });
+            _ => unreachable!("Unexpected node kind in struct member list"),
         }
     }
     struct_members

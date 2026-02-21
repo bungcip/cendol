@@ -365,7 +365,7 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
 }
 
 /// Parse static assert (C11)
-fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<ParsedNodeRef, ParseError> {
+pub(crate) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<ParsedNodeRef, ParseError> {
     // already consumed `_Static_assert`
     let start_loc = start_token.span.start();
     parser.expect(TokenKind::LeftParen)?;

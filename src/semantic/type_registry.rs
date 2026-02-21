@@ -1094,8 +1094,7 @@ impl TypeRegistry {
                 drop(type_a);
                 drop(type_b);
 
-                let composite_ret =
-                    self.composite_type(QualType::unqualified(ret_a), QualType::unqualified(ret_b))?;
+                let composite_ret = self.composite_type(QualType::unqualified(ret_a), QualType::unqualified(ret_b))?;
                 if params_a.len() != params_b.len() {
                     return None;
                 }

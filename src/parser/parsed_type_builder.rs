@@ -575,3 +575,121 @@ pub(crate) fn parse_parsed_type_name(parser: &mut Parser) -> Result<ParsedType, 
     // Build the ParsedType from specifiers and declarator
     build_parsed_type_from_specifiers(parser, &specifiers, declarator.as_ref())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::{ParsedAst, ParsedDeclarator, NameId, ParsedDeclaratorNode};
+    use crate::diagnostic::DiagnosticEngine;
+    use crate::parser::Parser;
+    use crate::semantic::TypeQualifiers;
+    use thin_vec::thin_vec;
+
+    fn setup_parser<'a>(
+        ast: &'a mut ParsedAst,
+        diag: &'a mut DiagnosticEngine,
+        tokens: &'a [crate::parser::Token],
+    ) -> Parser<'a, 'a> {
+        Parser::new(tokens, ast, diag)
+    }
+
+    #[test]
+    fn test_build_parsed_declarator_identifier_with_qualifiers() {
+        let mut ast = ParsedAst::new();
+        let mut diag = DiagnosticEngine::default();
+        let tokens = vec![];
+        let mut parser = setup_parser(&mut ast, &mut diag, &tokens);
+
+        let name = NameId::new("test_ident");
+        let qualifiers = TypeQualifiers::CONST;
+        let decl = ParsedDeclarator::Identifier(name, qualifiers);
+
+        let result = build_parsed_declarator(&mut parser, &decl);
+        assert!(result.is_ok());
+
+        let decl_ref = result.unwrap();
+        let node = parser.ast.parsed_types.get_decl(decl_ref);
+
+        if let ParsedDeclaratorNode::Pointer { qualifiers: q, inner } = node {
+            assert_eq!(q, qualifiers);
+            let inner_node = parser.ast.parsed_types.get_decl(inner);
+            if let ParsedDeclaratorNode::Identifier { name: Some(n) } = inner_node {
+                assert_eq!(n, name);
+            } else {
+                panic!("Expected inner to be Identifier");
+            }
+        } else {
+            panic!("Expected Pointer node, got {:?}", node);
+        }
+    }
+
+    #[test]
+    fn test_build_parsed_declarator_bitfield() {
+        let mut ast = ParsedAst::new();
+        let mut diag = DiagnosticEngine::default();
+        let tokens = vec![];
+        let mut parser = setup_parser(&mut ast, &mut diag, &tokens);
+
+        let name = NameId::new("field");
+        let inner_decl = Box::new(ParsedDeclarator::Identifier(name, TypeQualifiers::empty()));
+        let dummy_expr = parser.push_dummy();
+
+        let decl = ParsedDeclarator::BitField(inner_decl, dummy_expr);
+
+        let result = build_parsed_declarator(&mut parser, &decl);
+        assert!(result.is_ok());
+
+        let decl_ref = result.unwrap();
+        let node = parser.ast.parsed_types.get_decl(decl_ref);
+
+        if let ParsedDeclaratorNode::Identifier { name: Some(n) } = node {
+            assert_eq!(n, name);
+        } else {
+            panic!("Expected Identifier node for bitfield base, got {:?}", node);
+        }
+    }
+
+    #[test]
+    fn test_build_parsed_declarator_anonymous_record() {
+        let mut ast = ParsedAst::new();
+        let mut diag = DiagnosticEngine::default();
+        let tokens = vec![];
+        let mut parser = setup_parser(&mut ast, &mut diag, &tokens);
+
+        let decl = ParsedDeclarator::AnonymousRecord(false, thin_vec![]);
+
+        let result = build_parsed_declarator(&mut parser, &decl);
+        assert!(result.is_ok());
+
+        let decl_ref = result.unwrap();
+        let node = parser.ast.parsed_types.get_decl(decl_ref);
+
+        if let ParsedDeclaratorNode::Identifier { name: None } = node {
+            // Success
+        } else {
+            panic!("Expected Identifier node with None name, got {:?}", node);
+        }
+    }
+
+    #[test]
+    fn test_build_parsed_declarator_abstract() {
+        let mut ast = ParsedAst::new();
+        let mut diag = DiagnosticEngine::default();
+        let tokens = vec![];
+        let mut parser = setup_parser(&mut ast, &mut diag, &tokens);
+
+        let decl = ParsedDeclarator::Abstract;
+
+        let result = build_parsed_declarator(&mut parser, &decl);
+        assert!(result.is_ok());
+
+        let decl_ref = result.unwrap();
+        let node = parser.ast.parsed_types.get_decl(decl_ref);
+
+        if let ParsedDeclaratorNode::Identifier { name: None } = node {
+            // Success
+        } else {
+            panic!("Expected Identifier node with None name, got {:?}", node);
+        }
+    }
+}

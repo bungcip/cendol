@@ -95,5 +95,7 @@ pub mod semantic_integer_literals;
 pub mod semantic_mir_const_global;
 pub mod semantic_noreturn;
 pub mod semantic_parsed_types_coverage;
+pub mod semantic_return_check;
 pub mod semantic_scope_invariants;
 pub mod semantic_return_local_address;
+pub mod semantic_static_assert;

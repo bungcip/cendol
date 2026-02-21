@@ -22,7 +22,7 @@ fn test_has_builtin() {
 #endif
 "#;
     assert_yaml_snapshot!(setup_pp_snapshot(src), 
-    @r"
+    @"
     - kind: Identifier
       text: has_expect
     - kind: Identifier

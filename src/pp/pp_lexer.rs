@@ -199,9 +199,9 @@ impl PPLexer {
         }
     }
 
-    /// Get the next character, handling line splicing transparently
+    /// Get the next character and its position, handling line splicing transparently
     /// Line splicing: backslash followed by newline removes both characters
-    fn next_char(&mut self) -> Option<u8> {
+    fn next_char(&mut self) -> Option<(u8, u32)> {
         loop {
             let pos = self.position as usize;
             if pos >= self.buffer.len() {
@@ -215,13 +215,15 @@ impl PPLexer {
             // we can consume it immediately and skip the complex logic below.
             // This significantly improves performance as most characters fall into this case.
             if ch != b'?' && ch != b'\\' {
+                let char_pos = self.position;
                 self.position += 1;
                 if ch == b'\n' {
                     self.line_starts.push(self.position);
                 }
-                return Some(ch);
+                return Some((ch, char_pos));
             }
 
+            let start_pos = self.position;
             let mut consumed_len = 1;
 
             // Phase 1: Trigraphs
@@ -293,7 +295,7 @@ impl PPLexer {
                 self.line_starts.push(self.position);
             }
 
-            return Some(ch);
+            return Some((ch, start_pos));
         }
     }
 
@@ -324,7 +326,7 @@ impl PPLexer {
         self.position = saved_position;
         self.line_starts.truncate(saved_line_starts_len);
 
-        result
+        result.map(|(ch, _)| ch)
     }
 
     /// ⚡ Bolt: Consolidated operator lexing.
@@ -578,8 +580,8 @@ impl PPLexer {
             PPTokenFlags::empty()
         };
 
-        let start_pos = self.position;
-        let ch = self.next_char().unwrap_or(b' ');
+        // Get the next character and its starting position (which handles splicing)
+        let (ch, start_pos) = self.next_char().unwrap_or((b' ', self.position));
 
         // Check if this is a newline that ends a directive line
         // Only \n triggers Eod, \r is treated as whitespace (Windows \r\n support)
@@ -734,12 +736,12 @@ impl PPLexer {
             let saved_position = self.position;
             let saved_line_starts_len = self.line_starts.len();
 
-            let ch1 = self.next_char();
-            let ch2 = self.next_char();
+            let ch1 = self.next_char().map(|(c, _)| c);
+            let ch2 = self.next_char().map(|(c, _)| c);
 
             if ch1 == Some(b'/') && ch2 == Some(b'/') {
                 // Line comment, skip to end of line
-                while let Some(ch) = self.next_char() {
+                while let Some((ch, _)) = self.next_char() {
                     if ch == b'\n' {
                         break;
                     }
@@ -747,7 +749,7 @@ impl PPLexer {
                 // Continue loop
             } else if ch1 == Some(b'/') && ch2 == Some(b'*') {
                 // Block comment, skip to */
-                while let Some(ch) = self.next_char() {
+                while let Some((ch, _)) = self.next_char() {
                     if ch == b'*' && self.peek_char() == Some(b'/') {
                         self.next_char(); // consume '/'
                         break;
@@ -795,7 +797,7 @@ impl PPLexer {
             if let Some(ch) = self.peek_char()
                 && pred(&mut state, ch)
             {
-                chars.push(self.next_char().unwrap());
+                chars.push(self.next_char().unwrap().0);
                 continue;
             }
             break;
@@ -919,7 +921,7 @@ impl PPLexer {
                 let mut bytes = vec![first_ch];
                 while let Some(continuation_ch) = self.peek_char() {
                     if (0x80..0xC0).contains(&continuation_ch) {
-                        bytes.push(self.next_char().unwrap());
+                        bytes.push(self.next_char().unwrap().0);
                     } else {
                         break;
                     }
@@ -1005,7 +1007,7 @@ impl PPLexer {
                 let mut bytes = vec![ch];
                 while let Some(cont) = self.peek_char() {
                     if (0x80..0xC0).contains(&cont) {
-                        bytes.push(self.next_char().unwrap());
+                        bytes.push(self.next_char().unwrap().0);
                     } else {
                         break;
                     }
@@ -1068,7 +1070,7 @@ impl PPLexer {
     }
 
     fn lex_common_literal_body(&mut self, delimiter: u8, chars: &mut Vec<u8>, has_invalid_ucn: &mut bool) {
-        while let Some(ch) = self.next_char() {
+        while let Some((ch, _)) = self.next_char() {
             chars.push(ch);
             if ch == delimiter {
                 break; // End of literal
@@ -1096,7 +1098,7 @@ impl PPLexer {
                     }
                 }
 
-                if let Some(next_ch) = self.next_char() {
+                if let Some((next_ch, _)) = self.next_char() {
                     chars.push(next_ch);
                 }
             } else if ch >= 0x80 {
@@ -1105,7 +1107,7 @@ impl PPLexer {
                     // Consume continuation bytes for valid UTF-8 sequences
                     while let Some(continuation_ch) = self.peek_char() {
                         if (0x80..0xC0).contains(&continuation_ch) {
-                            chars.push(self.next_char().unwrap());
+                            chars.push(self.next_char().unwrap().0);
                         } else {
                             break;
                         }
@@ -1121,7 +1123,7 @@ impl PPLexer {
 
         if prefix.is_empty() || prefix.last() != Some(&delimiter) {
             // consume the quote
-            let quote = self.next_char().unwrap();
+            let (quote, _) = self.next_char().unwrap();
             chars.push(quote);
         }
 

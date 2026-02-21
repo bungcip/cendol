@@ -509,6 +509,26 @@ impl<'src> Preprocessor<'src> {
         // Other built-ins
         self.define_builtin_macro_one("__STDC__");
 
+        // Type limits
+        self.define_builtin_macro_with_val("__CHAR_BIT__", "8");
+        self.define_builtin_macro_with_val("__SCHAR_MAX__", "127");
+        self.define_builtin_macro_with_val("__SHRT_MAX__", "32767");
+        self.define_builtin_macro_with_val("__INT_MAX__", "2147483647");
+        self.define_builtin_macro_with_val("__LONG_LONG_MAX__", "9223372036854775807LL");
+
+        // Type sizes
+        self.define_builtin_macro_with_val("__SIZEOF_SHORT__", "2");
+        self.define_builtin_macro_with_val("__SIZEOF_INT__", "4");
+        self.define_builtin_macro_with_val("__SIZEOF_LONG_LONG__", "8");
+        self.define_builtin_macro_with_val("__SIZEOF_FLOAT__", "4");
+        self.define_builtin_macro_with_val("__SIZEOF_DOUBLE__", "8");
+        self.define_builtin_macro_with_val("__SIZEOF_LONG_DOUBLE__", "16");
+
+        // Float limits
+        self.define_builtin_macro_with_val("__FLT_MANT_DIG__", "24");
+        self.define_builtin_macro_with_val("__DBL_MANT_DIG__", "53");
+        self.define_builtin_macro_with_val("__LDBL_MANT_DIG__", "64");
+
         // Target specific macros
         // Architecture
         match self.target.architecture {
@@ -536,10 +556,16 @@ impl<'src> Preprocessor<'src> {
             for macro_name in &["__LP64__", "_LP64"] {
                 self.define_builtin_macro_one(macro_name);
             }
+            self.define_builtin_macro_with_val("__LONG_MAX__", "9223372036854775807L");
+            self.define_builtin_macro_with_val("__SIZEOF_LONG__", "8");
+            self.define_builtin_macro_with_val("__SIZEOF_POINTER__", "8");
         } else {
             for macro_name in &["__ILP32__", "_ILP32"] {
                 self.define_builtin_macro_one(macro_name);
             }
+            self.define_builtin_macro_with_val("__LONG_MAX__", "2147483647L");
+            self.define_builtin_macro_with_val("__SIZEOF_LONG__", "4");
+            self.define_builtin_macro_with_val("__SIZEOF_POINTER__", "4");
         }
 
         // OS

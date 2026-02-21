@@ -782,15 +782,9 @@ impl TypeRegistry {
             // Special handling for flexible array member (FAM)
             // Need to check if it is incomplete array
             // We can't use is_complete because that recurses. We check TypeKind directly.
-            let array_size = if member_ty.is_inline_array() {
-                None
-            } else if let TypeKind::Array { size, .. } = &self.get(member_ty).kind {
-                Some(size.clone())
-            } else {
-                None
-            };
-
-            if let Some(size) = array_size {
+            // Bolt ⚡: Optimized to match on reference to avoid cloning ArraySizeType.
+            let type_info = self.get(member_ty);
+            if let TypeKind::Array { element_type, size } = &type_info.kind {
                 if matches!(size, ArraySizeType::Variable(_)) {
                     return Err(SemanticError::UnsupportedFeature {
                         feature: "variably modified type (VLA) as struct member".to_string(),
@@ -799,6 +793,8 @@ impl TypeRegistry {
                 }
 
                 if matches!(size, ArraySizeType::Incomplete) {
+                    let elem_ty = *element_type;
+                    drop(type_info);
                     if is_union {
                         // Incomplete types not allowed in union (FAM is only for structures)
                         return Err(SemanticError::UnsupportedFeature {
@@ -823,10 +819,6 @@ impl TypeRegistry {
                     // Size of structure is as if FAM was omitted.
                     // But we must respect its alignment for the struct's alignment.
                     // We need to get the element type to find alignment.
-                    let elem_ty = match &self.get(member_ty).kind {
-                        TypeKind::Array { element_type, .. } => *element_type,
-                        _ => unreachable!(),
-                    };
                     let elem_layout = self.ensure_layout(elem_ty)?;
 
                     max_align = max_align.max(elem_layout.alignment);
@@ -857,6 +849,7 @@ impl TypeRegistry {
                     continue;
                 }
             }
+            drop(type_info);
 
             let layout = match self.ensure_layout(member_ty) {
                 Ok(l) => l,
@@ -912,21 +905,28 @@ impl TypeRegistry {
     }
 
     pub(crate) fn decay(&mut self, qt: QualType, ptr_qualifiers: TypeQualifiers) -> QualType {
-        let kind = self.get(qt.ty()).kind.clone();
-        match kind {
-            TypeKind::Array { element_type, .. } => {
-                // Correct logic: Array of T decays to Pointer to T.
-                // Qualifiers on Array apply to the element in the resulting pointer type.
-                let elem_qt = QualType::new(element_type, qt.qualifiers());
-                let ptr = self.pointer_to(elem_qt);
-                // Apply the extracted pointer qualifiers (e.g. from static/const inside [])
-                QualType::new(ptr, ptr_qualifiers)
+        let ty_ref = qt.ty();
+        let (element_type, is_array, is_function) = {
+            let type_info = self.get(ty_ref);
+            match &type_info.kind {
+                TypeKind::Array { element_type, .. } => (Some(*element_type), true, false),
+                TypeKind::Function { .. } => (None, false, true),
+                _ => (None, false, false),
             }
-            TypeKind::Function { .. } => {
-                let ptr = self.pointer_to(qt);
-                QualType::new(ptr, ptr_qualifiers)
-            }
-            _ => qt,
+        };
+
+        if is_array {
+            // Correct logic: Array of T decays to Pointer to T.
+            // Qualifiers on Array apply to the element in the resulting pointer type.
+            let elem_qt = QualType::new(element_type.unwrap(), qt.qualifiers());
+            let ptr = self.pointer_to(elem_qt);
+            // Apply the extracted pointer qualifiers (e.g. from static/const inside [])
+            QualType::new(ptr, ptr_qualifiers)
+        } else if is_function {
+            let ptr = self.pointer_to(qt);
+            QualType::new(ptr, ptr_qualifiers)
+        } else {
+            qt
         }
     }
 
@@ -954,12 +954,12 @@ impl TypeRegistry {
             return true;
         }
 
-        let kind_a = self.get(ty_a_ref).kind.clone();
-        let kind_b = self.get(ty_b_ref).kind.clone();
+        let type_a = self.get(ty_a_ref);
+        let type_b = self.get(ty_b_ref);
 
-        match (kind_a, kind_b) {
-            (TypeKind::Enum { base_type, .. }, _) => self.is_compatible(QualType::new(base_type, a.qualifiers()), b),
-            (_, TypeKind::Enum { base_type, .. }) => self.is_compatible(a, QualType::new(base_type, b.qualifiers())),
+        match (&type_a.kind, &type_b.kind) {
+            (TypeKind::Enum { base_type, .. }, _) => self.is_compatible(QualType::new(*base_type, a.qualifiers()), b),
+            (_, TypeKind::Enum { base_type, .. }) => self.is_compatible(a, QualType::new(*base_type, b.qualifiers())),
             (
                 TypeKind::Array {
                     element_type: elem_a,
@@ -970,7 +970,7 @@ impl TypeRegistry {
                     size: size_b,
                 },
             ) => {
-                if !self.is_compatible(QualType::unqualified(elem_a), QualType::unqualified(elem_b)) {
+                if !self.is_compatible(QualType::unqualified(*elem_a), QualType::unqualified(*elem_b)) {
                     return false;
                 }
                 match (size_a, size_b) {
@@ -999,7 +999,7 @@ impl TypeRegistry {
                 if var_a != var_b {
                     return false;
                 }
-                if !self.is_compatible(QualType::unqualified(ret_a), QualType::unqualified(ret_b)) {
+                if !self.is_compatible(QualType::unqualified(*ret_a), QualType::unqualified(*ret_b)) {
                     return false;
                 }
                 if params_a.len() != params_b.len() {
@@ -1015,7 +1015,7 @@ impl TypeRegistry {
                 }
                 true
             }
-            (TypeKind::Pointer { pointee: p_a }, TypeKind::Pointer { pointee: p_b }) => self.is_compatible(p_a, p_b),
+            (TypeKind::Pointer { pointee: p_a }, TypeKind::Pointer { pointee: p_b }) => self.is_compatible(*p_a, *p_b),
             _ => false,
         }
     }
@@ -1029,10 +1029,10 @@ impl TypeRegistry {
             return Some(a);
         }
 
-        let kind_a = self.get(a.ty()).kind.clone();
-        let kind_b = self.get(b.ty()).kind.clone();
+        let type_a = self.get(a.ty());
+        let type_b = self.get(b.ty());
 
-        match (kind_a, kind_b) {
+        match (&type_a.kind, &type_b.kind) {
             (
                 TypeKind::Array {
                     element_type: elem_a,
@@ -1043,6 +1043,14 @@ impl TypeRegistry {
                     size: size_b,
                 },
             ) => {
+                let elem_a = *elem_a;
+                let elem_b = *elem_b;
+                let size_a = size_a.clone();
+                let size_b = size_b.clone();
+
+                drop(type_a);
+                drop(type_b);
+
                 let composite_elem =
                     self.composite_type(QualType::unqualified(elem_a), QualType::unqualified(elem_b))?;
                 let composite_size = match (size_a, size_b) {
@@ -1075,7 +1083,19 @@ impl TypeRegistry {
                 if var_a != var_b {
                     return None;
                 }
-                let composite_ret = self.composite_type(QualType::unqualified(ret_a), QualType::unqualified(ret_b))?;
+                let ret_a = *ret_a;
+                let ret_b = *ret_b;
+                let params_a = params_a.clone();
+                let params_b = params_b.clone();
+                let var_a = *var_a;
+                let noreturn_a = *noreturn_a;
+                let noreturn_b = *noreturn_b;
+
+                drop(type_a);
+                drop(type_b);
+
+                let composite_ret =
+                    self.composite_type(QualType::unqualified(ret_a), QualType::unqualified(ret_b))?;
                 if params_a.len() != params_b.len() {
                     return None;
                 }
@@ -1097,6 +1117,11 @@ impl TypeRegistry {
                 Some(QualType::new(res_ty, a.qualifiers()))
             }
             (TypeKind::Pointer { pointee: p_a }, TypeKind::Pointer { pointee: p_b }) => {
+                let p_a = *p_a;
+                let p_b = *p_b;
+                drop(type_a);
+                drop(type_b);
+
                 let composite_pointee = self.composite_type(p_a, p_b)?;
                 let res_ty = self.pointer_to(composite_pointee);
                 Some(QualType::new(res_ty, a.qualifiers()))

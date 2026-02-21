@@ -42,9 +42,9 @@ fn test_parsed_ast_ternary() {
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
     4: CompoundStatement(stmts=[9])
-    5: LiteralInt(1, None)
-    6: LiteralInt(2, None)
-    7: LiteralInt(3, None)
+    5: LiteralInt(1, None, base=10)
+    6: LiteralInt(2, None, base=10)
+    7: LiteralInt(3, None, base=10)
     8: TernaryOp(5, 6, 7)
     9: Return(8)
     "#);
@@ -63,14 +63,14 @@ fn test_parsed_ast_access() {
     7: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Record(false, Some("S"), None))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("s", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032808) }] })
     8: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Record(false, Some("S"), None))], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Identifier("p", TypeQualifiers(0x0)))), initializer: None, span: SourceSpan(2199056810036) }] })
     9: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Array(Identifier("arr", TypeQualifiers(0x0)), Expression { expr: 10, qualifiers: TypeQualifiers(0x0) }), initializer: None, span: SourceSpan(2199140696124) }] })
-    10: LiteralInt(10, None)
+    10: LiteralInt(10, None, base=10)
     11: Ident(s)
     12: MemberAccess(11, a, .)
     13: Ident(p)
     14: MemberAccess(13, a, ->)
     15: BinaryOp(Add, 12, 14)
     16: Ident(arr)
-    17: LiteralInt(0, None)
+    17: LiteralInt(0, None, base=8)
     18: IndexAccess(16, 17)
     19: BinaryOp(Add, 15, 18)
     20: Return(19)
@@ -88,7 +88,7 @@ fn test_parsed_ast_sizeof_alignof() {
     6: Cast(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) }, 5)
     7: SizeOfType(ParsedType { base: 2, declarator: 2, qualifiers: TypeQualifiers(0x0) })
     8: BinaryOp(Add, 6, 7)
-    9: LiteralInt(1, None)
+    9: LiteralInt(1, None, base=10)
     10: SizeOfExpr(9)
     11: BinaryOp(Add, 8, 10)
     12: AlignOf(ParsedType { base: 3, declarator: 3, qualifiers: TypeQualifiers(0x0) })
@@ -105,7 +105,7 @@ fn test_parsed_ast_compound_literal() {
     3: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Record(false, Some("S"), Some(ParsedRecordDefData { tag: Some("S"), members: Some([ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("a", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032783) }] }]), is_union: false })))], init_declarators: [] })
     5: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 6 })
     6: CompoundStatement(stmts=[11])
-    7: LiteralInt(1, None)
+    7: LiteralInt(1, None, base=10)
     8: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 7 }])
     9: CompoundLiteral(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) }, 8)
     10: MemberAccess(9, a, .)
@@ -122,7 +122,7 @@ fn test_parsed_ast_gnu_stmt_expr() {
     4: CompoundStatement(stmts=[11])
     5: CompoundStatement(stmts=[6, 8])
     6: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199107141656) }] })
-    7: LiteralInt(1, None)
+    7: LiteralInt(1, None, base=10)
     8: ExpressionStatement(9)
     9: Ident(x)
     10: GnuStatementExpression(5, 9)
@@ -185,10 +185,10 @@ fn test_parsed_ast_generic() {
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
     4: CompoundStatement(stmts=[9])
-    5: LiteralInt(1, None)
+    5: LiteralInt(1, None, base=10)
     6: GenericSelection(5, [ParsedGenericAssociation { type_name: Some(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) }), result_expr: 7 }, ParsedGenericAssociation { type_name: None, result_expr: 8 }])
-    7: LiteralInt(1, None)
-    8: LiteralInt(0, None)
+    7: LiteralInt(1, None, base=10)
+    8: LiteralInt(0, None, base=8)
     9: Return(6)
     "#);
 }
@@ -210,7 +210,7 @@ fn test_parsed_ast_static_assert() {
     let output = dump_parsed_ast("_Static_assert(1, \"msg\");");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[5])
-    3: LiteralInt(1, None)
+    3: LiteralInt(1, None, base=10)
     4: LiteralString(""msg"")
     5: StaticAssert(3, ""msg"")
     "#);
@@ -230,7 +230,7 @@ fn test_parsed_ast_empty_stmt() {
 #[test]
 fn test_parser_ast_control_flow() {
     let output = dump_parser_ast("void f() { if (1) {} while(0) {} do {} while(0); for(;;) {} }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
@@ -239,12 +239,12 @@ fn test_parser_ast_control_flow() {
     6: While(condition=11, body=12)
     7: DoWhile(body=13, condition=14)
     8: For(init=none, condition=none, increment=none, body=15)
-    9: LiteralInt(1, None)
+    9: LiteralInt(1, None, base=10)
     10: CompoundStatement(stmts=[])
-    11: LiteralInt(0, None)
+    11: LiteralInt(0, None, base=8)
     12: CompoundStatement(stmts=[])
     13: CompoundStatement(stmts=[])
-    14: LiteralInt(0, None)
+    14: LiteralInt(0, None, base=8)
     15: CompoundStatement(stmts=[])
     ");
 }
@@ -252,17 +252,17 @@ fn test_parser_ast_control_flow() {
 #[test]
 fn test_parser_ast_switch() {
     let output = dump_parser_ast("void f() { switch(1) { case 1: break; default: continue; } }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
     4: CompoundStatement(stmts=5..5)
     5: Switch(condition=6, body=7)
-    6: LiteralInt(1, None)
+    6: LiteralInt(1, None, base=10)
     7: CompoundStatement(stmts=8..9)
     8: Case(10, 11)
     9: Default(12)
-    10: LiteralInt(1, None)
+    10: LiteralInt(1, None, base=10)
     11: Break
     12: Continue
     ");
@@ -272,7 +272,7 @@ fn test_parser_ast_switch() {
 fn test_parser_ast_ops() {
     let output =
         dump_parser_ast("void f() { int a = 1; int b = 2; int c; c = a + b; c = a > b ? a : b; c += 1; a++; ++b; }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
@@ -285,8 +285,8 @@ fn test_parser_ast_ops() {
     10: ExpressionStatement(28)
     11: ExpressionStatement(31)
     12: ExpressionStatement(33)
-    13: LiteralInt(1, None)
-    14: LiteralInt(2, None)
+    13: LiteralInt(1, None, base=10)
+    14: LiteralInt(2, None, base=10)
     15: Assignment(Assign, 16, 17)
     16: Ident(c)
     17: BinaryOp(Add, 18, 19)
@@ -302,7 +302,7 @@ fn test_parser_ast_ops() {
     27: Ident(b)
     28: Assignment(AssignAdd, 29, 30)
     29: Ident(c)
-    30: LiteralInt(1, None)
+    30: LiteralInt(1, None, base=10)
     31: PostIncrement(32)
     32: Ident(a)
     33: UnaryOp(PreIncrement, 34)
@@ -347,7 +347,7 @@ fn test_parser_ast_access() {
     8: VarDecl(name=p, ty=TypeRef(base=20, class=Pointer, ptr=1, arr=None), storage=None)
     9: VarDecl(name=arr, ty=TypeRef(base=8, class=Array, ptr=0, arr=Some(10)), storage=None)
     10: VarDecl(name=x, ty=Int, storage=None)
-    11: LiteralInt(10, None)
+    11: LiteralInt(10, None, base=10)
     12: BinaryOp(Add, 13, 18)
     13: BinaryOp(Add, 14, 16)
     14: MemberAccess(15, a, .)
@@ -356,7 +356,7 @@ fn test_parser_ast_access() {
     17: Ident(p)
     18: IndexAccess(19, 20)
     19: Ident(arr)
-    20: LiteralInt(0, None)
+    20: LiteralInt(0, None, base=8)
     "#);
 }
 
@@ -374,32 +374,32 @@ fn test_parser_ast_compound_literal() {
     8: CompoundLiteral(TypeRef(base=20, class=Record, ptr=0, arr=None), 9)
     9: InitializerList(inits=10..10)
     10: InitializerItem(11)
-    11: LiteralInt(1, None)
+    11: LiteralInt(1, None, base=10)
     "#);
 }
 
 #[test]
 fn test_parser_ast_generic() {
     let output = dump_parser_ast("void f() { int x = _Generic(1, int: 1, default: 0); }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
     4: CompoundStatement(stmts=5..5)
     5: VarDecl(name=x, ty=Int, storage=None)
     6: GenericSelection(control=7, associations=8..9)
-    7: LiteralInt(1, None)
+    7: LiteralInt(1, None, base=10)
     8: GenericAssociation(ty=Some(QualType(8)), result_expr=10)
     9: GenericAssociation(ty=None, result_expr=11)
-    10: LiteralInt(1, None)
-    11: LiteralInt(0, None)
+    10: LiteralInt(1, None, base=10)
+    11: LiteralInt(0, None, base=8)
     ");
 }
 
 #[test]
 fn test_parser_ast_gnu_stmt_expr() {
     let output = dump_parser_ast("void f() { int x = ({ int y = 1; y; }); }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
@@ -409,7 +409,7 @@ fn test_parser_ast_gnu_stmt_expr() {
     7: CompoundStatement(stmts=8..9)
     8: VarDecl(name=y, ty=Int, storage=None)
     9: ExpressionStatement(11)
-    10: LiteralInt(1, None)
+    10: LiteralInt(1, None, base=10)
     11: Ident(y)
     ");
 }
@@ -436,7 +436,7 @@ fn test_parser_ast_static_assert() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: StaticAssert(condition=3, message=""msg"")
-    3: LiteralInt(1, None)
+    3: LiteralInt(1, None, base=10)
     4: LiteralString("msg")
     "#);
 }
@@ -500,16 +500,16 @@ fn test_atomic_ops_and_case_range() {
     3: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Void)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
     4: CompoundStatement(stmts=[5, 7, 18])
     5: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("a", TypeQualifiers(0x0)), initializer: Some(6), span: SourceSpan(2199107141668) }] })
-    6: LiteralInt(0, None)
+    6: LiteralInt(0, None, base=8)
     7: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("b", TypeQualifiers(0x0)), initializer: Some(11), span: SourceSpan(2199459463227) }] })
     8: Ident(a)
     9: UnaryOp(AddrOf, 8)
-    10: LiteralInt(0, None)
+    10: LiteralInt(0, None, base=8)
     11: AtomicOp(LoadN, args=[9, 10])
     12: Ident(a)
     13: CompoundStatement(stmts=[17])
-    14: LiteralInt(1, None)
-    15: LiteralInt(5, None)
+    14: LiteralInt(1, None, base=10)
+    15: LiteralInt(5, None, base=10)
     16: Break
     17: CaseRange(14, 15, 16)
     18: Switch(12, 13)
@@ -527,19 +527,19 @@ fn test_atomic_ops_and_case_range() {
         }
     ",
     );
-    insta::assert_snapshot!(output_parser, @r"
+    insta::assert_snapshot!(output_parser, @"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(f)
     4: CompoundStatement(stmts=5..6)
     5: VarDecl(name=a, ty=Int, storage=None)
     6: Switch(condition=8, body=9)
-    7: LiteralInt(0, None)
+    7: LiteralInt(0, None, base=8)
     8: Ident(a)
     9: CompoundStatement(stmts=10..10)
     10: CaseRange(11, 12, 13)
-    11: LiteralInt(1, None)
-    12: LiteralInt(5, None)
+    11: LiteralInt(1, None, base=10)
+    12: LiteralInt(5, None, base=10)
     13: Break
     ");
 }

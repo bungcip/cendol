@@ -83,7 +83,7 @@ fn rejects_variable_as_typedef_in_cast() {
             (my_var) 1;
         }
     "#,
-        "Unexpected token: expected Semicolon, found IntegerConstant(1, None)",
+        "Unexpected token: expected Semicolon, found IntegerConstant(1, None, 10)",
     );
 }
 

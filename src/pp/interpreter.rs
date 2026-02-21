@@ -549,7 +549,7 @@ impl<'a> Interpreter<'a> {
         match &token.kind {
             PPTokenKind::Number(sym) => {
                 let text = sym.as_str();
-                let (val, suffix) = literal_parsing::parse_c11_integer_literal(text).ok_or_else(|| self.error())?;
+                let (val, suffix, _) = literal_parsing::parse_c11_integer_literal(text).ok_or_else(|| self.error())?;
                 let mut is_unsigned = matches!(suffix, Some(IntegerSuffix::U | IntegerSuffix::UL | IntegerSuffix::ULL));
                 if !is_unsigned && val > i64::MAX as u64 {
                     is_unsigned = true;

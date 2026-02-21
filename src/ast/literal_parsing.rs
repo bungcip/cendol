@@ -24,8 +24,8 @@ fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
 }
 
 /// Parse C11 integer literal syntax
-/// Returns (value, suffix)
-pub(crate) fn parse_c11_integer_literal(text: &str) -> Option<(u64, Option<IntegerSuffix>)> {
+/// Returns (value, suffix, base)
+pub(crate) fn parse_c11_integer_literal(text: &str) -> Option<(u64, Option<IntegerSuffix>, u32)> {
     let (number_part, suffix) = strip_integer_suffix(text);
 
     if number_part.is_empty() {
@@ -38,7 +38,7 @@ pub(crate) fn parse_c11_integer_literal(text: &str) -> Option<(u64, Option<Integ
         (16, stripped)
     } else if let Some(stripped) = number_part.strip_prefix('0') {
         if stripped.is_empty() {
-            return Some((0, suffix));
+            return Some((0, suffix, 8));
         }
         (8, stripped)
     } else {
@@ -51,7 +51,7 @@ pub(crate) fn parse_c11_integer_literal(text: &str) -> Option<(u64, Option<Integ
 
     // Use built-in radix parsing which is robust and handles overflow checks
     let val = u64::from_str_radix(digits, base).ok()?;
-    Some((val, suffix))
+    Some((val, suffix, base))
 }
 
 /// Parse C11 floating-point literal syntax
@@ -341,7 +341,7 @@ mod tests {
     #[test]
     fn test_uppercase_hex_literals() {
         // Test 0X integer prefix
-        assert_eq!(parse_c11_integer_literal("0X10"), Some((16, None)));
+        assert_eq!(parse_c11_integer_literal("0X10"), Some((16, None, 16)));
 
         // Test 0X float prefix
         // 0X1p0 -> 1.0 * 2^0 = 1.0

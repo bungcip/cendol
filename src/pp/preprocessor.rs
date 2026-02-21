@@ -2661,27 +2661,13 @@ impl<'src> Preprocessor<'src> {
     /// Helper to report error diagnostics
     fn report_error(&mut self, message: impl Into<String>, loc: SourceLoc) {
         let span = SourceSpan::new(loc, loc);
-        self.report_diagnostic(
-            DiagnosticLevel::Error,
-            message,
-            span,
-            None,
-            Vec::new(),
-            Vec::new(),
-        );
+        self.report_diagnostic(DiagnosticLevel::Error, message, span, None, Vec::new(), Vec::new());
     }
 
     /// Helper to report warning diagnostics
     fn report_warning(&mut self, message: impl Into<String>, loc: SourceLoc) {
         let span = SourceSpan::new(loc, loc);
-        self.report_diagnostic(
-            DiagnosticLevel::Warning,
-            message,
-            span,
-            None,
-            Vec::new(),
-            Vec::new(),
-        );
+        self.report_diagnostic(DiagnosticLevel::Warning, message, span, None, Vec::new(), Vec::new());
     }
 
     fn parse_macro_definition_params(

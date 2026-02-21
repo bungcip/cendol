@@ -172,7 +172,6 @@ fn extract_array_param_qualifiers(decl: &ParsedDeclarator) -> TypeQualifiers {
         }
         ParsedDeclarator::Function { .. } => TypeQualifiers::empty(),
         ParsedDeclarator::BitField(inner, _) => extract_array_param_qualifiers(inner),
-        ParsedDeclarator::AnonymousRecord(..) => TypeQualifiers::empty(),
     }
 }
 
@@ -1376,7 +1375,6 @@ fn apply_declarator(
                     base.as_ref(),
                     ParsedDeclarator::Identifier(..)
                         | ParsedDeclarator::Abstract
-                        | ParsedDeclarator::AnonymousRecord(..)
                 );
 
                 if !decl_ctx.in_parameter {
@@ -1421,15 +1419,6 @@ fn apply_declarator(
                 .registry
                 .function_type(base_type.ty(), parameters, *is_variadic, spec_info.is_noreturn);
             apply_declarator(QualType::unqualified(ty), base, ctx, span, spec_info, decl_ctx)
-        }
-        ParsedDeclarator::AnonymousRecord(is_union, members) => {
-            // Use struct_lowering helper
-            let ty = ctx.registry.declare_record(None, *is_union);
-            let struct_members = visit_struct_members(members, ctx, span);
-            if let Err(e) = complete_record_symbol(ctx, None, ty, struct_members) {
-                ctx.report_error(e);
-            }
-            QualType::unqualified(ty)
         }
         ParsedDeclarator::BitField(base, _) => {
             // Bitfield logic handled in struct lowering usually. Here just type application.

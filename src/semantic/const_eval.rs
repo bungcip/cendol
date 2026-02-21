@@ -15,6 +15,16 @@ pub(crate) struct ConstEvalCtx<'a> {
     pub(crate) semantic_info: Option<&'a SemanticInfo>,
 }
 
+impl<'a> ConstEvalCtx<'a> {
+    fn get_resolved_type(&self, node_ref: NodeRef) -> Option<QualType> {
+        if let Some(info) = self.semantic_info {
+            info.types[node_ref.index()]
+        } else {
+            self.ast.get_resolved_type(node_ref)
+        }
+    }
+}
+
 /// Evaluate a constant expression node to an i64 value
 pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Option<i64> {
     let node_kind = ctx.ast.get_kind(expr_node_ref);
@@ -92,7 +102,7 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
             }
         }
         NodeKind::SizeOfExpr(expr) => {
-            let ty = ctx.ast.get_resolved_type(*expr).expect("Type not resolved");
+            let ty = ctx.get_resolved_type(*expr)?;
             let layout = ctx.registry.get_layout(ty.ty());
             Some(layout.size as i64)
         }

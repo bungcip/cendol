@@ -1253,8 +1253,28 @@ impl<'a> SemanticAnalyzer<'a> {
         let obj_ty = self.visit_node(obj_ref)?;
 
         let (record_ty_ref, base_quals) = if is_arrow {
-            let pointee = self.registry.get_pointee(obj_ty.ty())?;
-            (pointee.ty(), pointee.qualifiers())
+            // Decay array/function to pointer if needed
+            let actual_ty = if obj_ty.is_array() || obj_ty.is_function() {
+                let decayed = self.registry.decay(obj_ty, TypeQualifiers::empty());
+                self.push_conversion(obj_ref, Conversion::PointerDecay { to: decayed.ty() });
+                decayed
+            } else {
+                obj_ty
+            };
+
+            let pointee = self.registry.get_pointee(actual_ty.ty());
+
+            match pointee {
+                Some(p) => (p.ty(), p.qualifiers()),
+                None => {
+                    let ty_str = self.registry.display_qual_type(obj_ty);
+                    self.report_error(SemanticError::MemberAccessOnNonRecord {
+                        ty: ty_str,
+                        span,
+                    });
+                    return None;
+                }
+            }
         } else {
             (obj_ty.ty(), obj_ty.qualifiers())
         };

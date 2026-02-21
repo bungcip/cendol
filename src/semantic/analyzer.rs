@@ -1950,41 +1950,100 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_literal(&mut self, literal: &literal::Literal) -> Option<QualType> {
         match literal {
-            literal::Literal::Int { val, suffix } => {
-                let ty = match suffix {
-                    Some(literal::IntegerSuffix::L) => self.registry.type_long,
-                    Some(literal::IntegerSuffix::LL) => self.registry.type_long_long,
-                    Some(literal::IntegerSuffix::U) => self.registry.type_int_unsigned,
-                    Some(literal::IntegerSuffix::UL) => self.registry.type_long_unsigned,
-                    Some(literal::IntegerSuffix::ULL) => self.registry.type_long_long_unsigned,
+            literal::Literal::Int { val, suffix, base } => {
+                let val_u64 = *val as u64;
+                let is_decimal = *base == 10;
+
+                let candidates = match suffix {
                     None => {
-                        let _ = self.registry.ensure_layout(self.registry.type_int);
-                        let _ = self.registry.ensure_layout(self.registry.type_long);
-
-                        let int_layout = self.registry.get_layout(self.registry.type_int);
-                        let int_max = if int_layout.size >= 8 {
-                            i64::MAX
+                        if is_decimal {
+                            vec![
+                                self.registry.type_int,
+                                self.registry.type_long,
+                                self.registry.type_long_long,
+                            ]
                         } else {
-                            (1i64 << (int_layout.size * 8 - 1)) - 1
-                        };
-
-                        let long_layout = self.registry.get_layout(self.registry.type_long);
-                        let long_max = if long_layout.size >= 8 {
-                            i64::MAX
-                        } else {
-                            (1i64 << (long_layout.size * 8 - 1)) - 1
-                        };
-
-                        if *val >= 0 && *val <= int_max {
-                            self.registry.type_int
-                        } else if *val >= 0 && *val <= long_max {
-                            self.registry.type_long
-                        } else {
-                            self.registry.type_long_long
+                            vec![
+                                self.registry.type_int,
+                                self.registry.type_int_unsigned,
+                                self.registry.type_long,
+                                self.registry.type_long_unsigned,
+                                self.registry.type_long_long,
+                                self.registry.type_long_long_unsigned,
+                            ]
                         }
                     }
+                    Some(literal::IntegerSuffix::U) => vec![
+                        self.registry.type_int_unsigned,
+                        self.registry.type_long_unsigned,
+                        self.registry.type_long_long_unsigned,
+                    ],
+                    Some(literal::IntegerSuffix::L) => {
+                        if is_decimal {
+                            vec![self.registry.type_long, self.registry.type_long_long]
+                        } else {
+                            vec![
+                                self.registry.type_long,
+                                self.registry.type_long_unsigned,
+                                self.registry.type_long_long,
+                                self.registry.type_long_long_unsigned,
+                            ]
+                        }
+                    }
+                    Some(literal::IntegerSuffix::UL) => {
+                        vec![self.registry.type_long_unsigned, self.registry.type_long_long_unsigned]
+                    }
+                    Some(literal::IntegerSuffix::LL) => {
+                        if is_decimal {
+                            vec![self.registry.type_long_long]
+                        } else {
+                            vec![self.registry.type_long_long, self.registry.type_long_long_unsigned]
+                        }
+                    }
+                    Some(literal::IntegerSuffix::ULL) => vec![self.registry.type_long_long_unsigned],
                 };
-                Some(QualType::unqualified(ty))
+
+                for ty in candidates {
+                    let _ = self.registry.ensure_layout(ty);
+                    let layout = self.registry.get_layout(ty);
+                    let size_bits = layout.size * 8;
+                    let is_unsigned = match &self.registry.get(ty).kind {
+                        TypeKind::Builtin(b) => matches!(
+                            b,
+                            BuiltinType::Bool
+                                | BuiltinType::UChar
+                                | BuiltinType::UShort
+                                | BuiltinType::UInt
+                                | BuiltinType::ULong
+                                | BuiltinType::ULongLong
+                        ),
+                        _ => false,
+                    };
+
+                    let fits = if is_unsigned {
+                        if size_bits >= 64 {
+                            true
+                        } else {
+                            val_u64 < (1u64 << size_bits)
+                        }
+                    } else {
+                        // Signed max is 2^(n-1) - 1
+                        if size_bits > 64 {
+                            true
+                        } else {
+                            let max = (1u64 << (size_bits - 1)) - 1;
+                            val_u64 <= max
+                        }
+                    };
+
+                    if fits {
+                        return Some(QualType::unqualified(ty));
+                    }
+                }
+
+                // If no type fits, use the widest unsigned type as fallback (C11 allows implementation-defined behavior here,
+                // but usually it's the widest supported type)
+                Some(QualType::unqualified(self.registry.type_long_long_unsigned))
             }
             literal::Literal::Float { suffix, .. } => {
                 let ty = match suffix {

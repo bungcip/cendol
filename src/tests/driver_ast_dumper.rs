@@ -42,7 +42,7 @@ fn test_dump_parsed_ast_simple() {
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("main", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
     4: CompoundStatement(stmts=[6])
-    5: LiteralInt(0, None)
+    5: LiteralInt(0, None, base=8)
     6: Return(5)
     "#);
 }
@@ -53,10 +53,10 @@ fn test_dump_parsed_ast_with_variables() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2, 4])
     2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(3), span: SourceSpan(2199123918852) }] })
-    3: LiteralInt(42, None)
+    3: LiteralInt(42, None, base=10)
     4: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("y", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199174250512) }] })
     5: Ident(x)
-    6: LiteralInt(5, None)
+    6: LiteralInt(5, None, base=10)
     7: BinaryOp(Add, 5, 6)
     "#
     );
@@ -68,8 +68,8 @@ fn test_dump_parsed_ast_with_structs() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2])
     2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Record(false, Some("Point"), Some(ParsedRecordDefData { tag: Some("Point"), members: Some([ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032787) }] }, ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("y", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032794) }] }]), is_union: false })))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("p", TypeQualifiers(0x0)), initializer: Some(5), span: SourceSpan(2199191027743) }] })
-    3: LiteralInt(1, None)
-    4: LiteralInt(2, None)
+    3: LiteralInt(1, None, base=10)
+    4: LiteralInt(2, None, base=10)
     5: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 3 }, ParsedDesignatedInitializer { designation: [], initializer: 4 }])
     "#
     );
@@ -82,7 +82,7 @@ fn test_dump_parsed_ast_with_enums() {
     1: TranslationUnit(decls=[2])
     2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Enum(Some("Color"), Some([3, 5, 6])))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("c", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199140696100) }] })
     3: EnumConstant(RED, auto)
-    4: LiteralInt(2, None)
+    4: LiteralInt(2, None, base=10)
     5: EnumConstant(GREEN, 4)
     6: EnumConstant(BLUE, auto)
     7: Ident(RED)
@@ -131,7 +131,7 @@ fn test_dump_parsed_ast_with_pointers() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2, 4, 7])
     2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(3), span: SourceSpan(2199123918852) }] })
-    3: LiteralInt(10, None)
+    3: LiteralInt(10, None, base=10)
     4: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Identifier("ptr", TypeQualifiers(0x0)))), initializer: Some(6), span: SourceSpan(2199191027727) }] })
     5: Ident(x)
     6: UnaryOp(AddrOf, 5)
@@ -147,15 +147,15 @@ fn test_dump_parsed_ast_with_arrays() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2, 10])
     2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Array(Identifier("arr", TypeQualifiers(0x0)), Expression { expr: 3, qualifiers: TypeQualifiers(0x0) }), initializer: Some(9), span: SourceSpan(2199425908740) }] })
-    3: LiteralInt(5, None)
-    4: LiteralInt(1, None)
-    5: LiteralInt(2, None)
-    6: LiteralInt(3, None)
-    7: LiteralInt(4, None)
-    8: LiteralInt(5, None)
+    3: LiteralInt(5, None, base=10)
+    4: LiteralInt(1, None, base=10)
+    5: LiteralInt(2, None, base=10)
+    6: LiteralInt(3, None, base=10)
+    7: LiteralInt(4, None, base=10)
+    8: LiteralInt(5, None, base=10)
     9: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 4 }, ParsedDesignatedInitializer { designation: [], initializer: 5 }, ParsedDesignatedInitializer { designation: [], initializer: 6 }, ParsedDesignatedInitializer { designation: [], initializer: 7 }, ParsedDesignatedInitializer { designation: [], initializer: 8 }])
     10: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Array(Identifier("ptr_arr", TypeQualifiers(0x0)), Expression { expr: 11, qualifiers: TypeQualifiers(0x0) }))), initializer: None, span: SourceSpan(2199224582177) }] })
-    11: LiteralInt(3, None)
+    11: LiteralInt(3, None, base=10)
     "#);
 }
 
@@ -169,9 +169,9 @@ fn test_dump_parsed_ast_with_loops() {
     3: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("main", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
     4: CompoundStatement(stmts=[5, 14, 15, 36, 38])
     5: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("i", TypeQualifiers(0x0)), initializer: Some(6), span: SourceSpan(2199107141649) }] })
-    6: LiteralInt(0, None)
+    6: LiteralInt(0, None, base=8)
     7: Ident(i)
-    8: LiteralInt(10, None)
+    8: LiteralInt(10, None, base=10)
     9: BinaryOp(Less, 7, 8)
     10: CompoundStatement(stmts=[11])
     11: ExpressionStatement(13)
@@ -179,10 +179,10 @@ fn test_dump_parsed_ast_with_loops() {
     13: PostIncrement(12)
     14: While(ParsedWhileStmt { condition: 9, body: 10 })
     15: For(ParsedForStmt { init: Some(17), condition: Some(20), increment: Some(22), body: 23 })
-    16: LiteralInt(0, None)
+    16: LiteralInt(0, None, base=8)
     17: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("j", TypeQualifiers(0x0)), initializer: Some(16), span: SourceSpan(2199107141689) }] })
     18: Ident(j)
-    19: LiteralInt(5, None)
+    19: LiteralInt(5, None, base=10)
     20: BinaryOp(Less, 18, 19)
     21: Ident(j)
     22: PostIncrement(21)
@@ -197,10 +197,10 @@ fn test_dump_parsed_ast_with_loops() {
     31: Ident(i)
     32: PostDecrement(31)
     33: Ident(i)
-    34: LiteralInt(0, None)
+    34: LiteralInt(0, None, base=8)
     35: BinaryOp(Greater, 33, 34)
     36: DoWhile(body=29, cond=35)
-    37: LiteralInt(0, None)
+    37: LiteralInt(0, None, base=8)
     38: Return(37)
     "#);
 }
@@ -215,9 +215,9 @@ fn test_dump_parsed_ast_with_conditional() {
     3: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("main", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
     4: CompoundStatement(stmts=[5, 29, 31])
     5: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(6), span: SourceSpan(2199123918865) }] })
-    6: LiteralInt(10, None)
+    6: LiteralInt(10, None, base=10)
     7: Ident(x)
-    8: LiteralInt(5, None)
+    8: LiteralInt(5, None, base=10)
     9: BinaryOp(Greater, 7, 8)
     10: CompoundStatement(stmts=[11])
     11: ExpressionStatement(14)
@@ -225,7 +225,7 @@ fn test_dump_parsed_ast_with_conditional() {
     13: LiteralString(""x is greater than 5"")
     14: FunctionCall(callee=12, args=[13])
     15: Ident(x)
-    16: LiteralInt(5, None)
+    16: LiteralInt(5, None, base=10)
     17: BinaryOp(Less, 15, 16)
     18: CompoundStatement(stmts=[19])
     19: ExpressionStatement(22)
@@ -239,7 +239,7 @@ fn test_dump_parsed_ast_with_conditional() {
     27: FunctionCall(callee=25, args=[26])
     28: If(ParsedIfStmt { condition: 17, then_branch: 18, else_branch: Some(23) })
     29: If(ParsedIfStmt { condition: 9, then_branch: 10, else_branch: Some(28) })
-    30: LiteralInt(0, None)
+    30: LiteralInt(0, None, base=8)
     31: Return(30)
     "#);
 }
@@ -254,17 +254,17 @@ fn test_dump_parsed_ast_with_switch() {
     3: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("main", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
     4: CompoundStatement(stmts=[5, 28, 30])
     5: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(6), span: SourceSpan(2199107141649) }] })
-    6: LiteralInt(2, None)
+    6: LiteralInt(2, None, base=10)
     7: Ident(x)
     8: CompoundStatement(stmts=[14, 15, 21, 22, 27])
-    9: LiteralInt(1, None)
+    9: LiteralInt(1, None, base=10)
     10: ExpressionStatement(13)
     11: Ident(printf)
     12: LiteralString(""1"")
     13: FunctionCall(callee=11, args=[12])
     14: Case(9, 10)
     15: Break
-    16: LiteralInt(2, None)
+    16: LiteralInt(2, None, base=10)
     17: ExpressionStatement(20)
     18: Ident(printf)
     19: LiteralString(""2"")
@@ -277,7 +277,7 @@ fn test_dump_parsed_ast_with_switch() {
     26: FunctionCall(callee=24, args=[25])
     27: Default(23)
     28: Switch(7, 8)
-    29: LiteralInt(0, None)
+    29: LiteralInt(0, None, base=8)
     30: Return(29)
     "#);
 }
@@ -285,20 +285,20 @@ fn test_dump_parsed_ast_with_switch() {
 #[test]
 fn test_dump_parser_ast() {
     let output = dump_parser_ast("int main() { return 0; }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=main, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString(main)
     4: CompoundStatement(stmts=5..5)
     5: Return(6)
-    6: LiteralInt(0, None)
+    6: LiteralInt(0, None, base=8)
     ");
 }
 
 #[test]
 fn test_dump_parser_ast_with_functions() {
     let output = dump_parser_ast("int add(int a, int b) { return a + b; } int main() { return add(2, 3); }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=2..3) (parser kind)
     2: Function(name=add, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=5..6, body=7)
     3: Function(name=main, symbol=6, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=13)
@@ -315,8 +315,8 @@ fn test_dump_parser_ast_with_functions() {
     14: Return(15)
     15: FunctionCall(callee=16, args=17..18)
     16: Ident(add)
-    17: LiteralInt(2, None)
-    18: LiteralInt(3, None)
+    17: LiteralInt(2, None, base=10)
+    18: LiteralInt(3, None, base=10)
     ");
 }
 
@@ -365,21 +365,21 @@ fn test_dump_parser_ast_with_designated_initializers() {
     11: InitializerList(inits=12..13)
     12: InitializerItem(.x = 14)
     13: InitializerItem(.y = 16)
-    14: LiteralInt(1, None)
+    14: LiteralInt(1, None, base=10)
     15: Designator(.x)
-    16: LiteralInt(2, None)
+    16: LiteralInt(2, None, base=10)
     17: Designator(.y)
-    18: LiteralInt(5, None)
+    18: LiteralInt(5, None, base=10)
     19: InitializerList(inits=20..21)
     20: InitializerItem([24] = 22)
     21: InitializerItem([27] = 25)
-    22: LiteralInt(10, None)
+    22: LiteralInt(10, None, base=10)
     23: Designator([24])
-    24: LiteralInt(1, None)
-    25: LiteralInt(30, None)
+    24: LiteralInt(1, None, base=10)
+    25: LiteralInt(30, None, base=10)
     26: Designator([27])
-    27: LiteralInt(3, None)
-    28: LiteralInt(0, None)
+    27: LiteralInt(3, None, base=10)
+    28: LiteralInt(0, None, base=8)
     "#);
 }
 

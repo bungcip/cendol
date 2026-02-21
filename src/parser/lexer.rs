@@ -9,10 +9,10 @@ use serde::Serialize;
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum TokenKind {
     // === LITERALS ===
-    IntegerConstant(i64, Option<IntegerSuffix>), // Parsed integer literal value
-    FloatConstant(f64, Option<FloatSuffix>),     // Parsed float literal value
-    CharacterConstant(u64),                      // Value of character constant
-    StringLiteral(StringId),                     // Interned string literal
+    IntegerConstant(i64, Option<IntegerSuffix>, u32), // Parsed integer literal value, suffix, base
+    FloatConstant(f64, Option<FloatSuffix>),          // Parsed float literal value
+    CharacterConstant(u64),                           // Value of character constant
+    StringLiteral(StringId),                          // Interned string literal
 
     // === IDENTIFIERS ===
     Identifier(StringId), // Interned identifier
@@ -460,8 +460,8 @@ impl<'src> Lexer<'src> {
             PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint),
             PPTokenKind::Number(value) => {
                 // Try to parse as integer first, then float, then unknown
-                if let Some((int_val, suffix)) = literal_parsing::parse_c11_integer_literal(value.as_str()) {
-                    TokenKind::IntegerConstant(int_val as i64, suffix)
+                if let Some((int_val, suffix, base)) = literal_parsing::parse_c11_integer_literal(value.as_str()) {
+                    TokenKind::IntegerConstant(int_val as i64, suffix, base)
                 } else if let Some((float_val, suffix)) = literal_parsing::parse_c11_float_literal(value.as_str()) {
                     TokenKind::FloatConstant(float_val, suffix)
                 } else {

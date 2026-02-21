@@ -250,8 +250,8 @@ impl AstDumper {
     fn dump_parsed_node_kind(f: &mut fmt::Formatter<'_>, kind: &ParsedNodeKind, ast: &ParsedAst) -> fmt::Result {
         match kind {
             ParsedNodeKind::Literal(literal) => match literal {
-                crate::ast::literal::Literal::Int { val, suffix } => {
-                    writeln!(f, "LiteralInt({:?}, {:?})", val, suffix)
+                crate::ast::literal::Literal::Int { val, suffix, base } => {
+                    writeln!(f, "LiteralInt({:?}, {:?}, base={})", val, suffix, base)
                 }
                 crate::ast::literal::Literal::Float { val, suffix } => {
                     writeln!(f, "LiteralFloat({}, {:?})", val, suffix)
@@ -413,8 +413,8 @@ impl AstDumper {
                 }
             }
             NodeKind::Literal(literal) => match literal {
-                crate::ast::literal::Literal::Int { val, suffix } => {
-                    writeln!(f, "LiteralInt({:?}, {:?})", val, suffix)
+                crate::ast::literal::Literal::Int { val, suffix, base } => {
+                    writeln!(f, "LiteralInt({:?}, {:?}, base={})", val, suffix, base)
                 }
                 crate::ast::literal::Literal::Float { val, suffix } => {
                     writeln!(f, "LiteralFloat({}, {:?})", val, suffix)

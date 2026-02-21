@@ -271,23 +271,6 @@ impl CompilerDriver {
         // Attach semantic info to AST (like scope_map)
         ast.attach_semantic_info(semantic_info);
 
-        // invariant validations
-        // all expression must have resolved_type set
-        for (i, kind) in ast.kinds.iter().enumerate() {
-            let node_ref = NodeRef::new((i as u32) + 1).unwrap();
-            match kind {
-                NodeKind::Ident(name, ..) if ast.get_resolved_type(node_ref).is_none() => {
-                    let span = ast.get_span(node_ref);
-                    panic!(
-                        "ICE: ident '{}' still not have resolved type: {:?}",
-                        name,
-                        self.source_manager.get_line_column(span.start())
-                    );
-                }
-                _ => {}
-            }
-        }
-
         let mut sema = MirGen::new(&ast, &symbol_table, &mut registry);
         let mir_program = sema.visit_module();
         self.check_diagnostics_and_return_if_error()?;

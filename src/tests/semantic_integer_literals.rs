@@ -67,6 +67,19 @@ fn test_suffixed_literals() {
 }
 
 #[test]
+fn test_hex_suffixed_literals() {
+    // Hex literals with L suffix (non-decimal path)
+    check_literal_type("void f() { 0x1L; }", "long");
+    // 0x8000000000000000 (2^63) fits in unsigned long but not long (on 64-bit)
+    check_literal_type("void f() { 0x8000000000000000L; }", "unsigned long");
+
+    // Hex literals with LL suffix (non-decimal path)
+    check_literal_type("void f() { 0x1LL; }", "long long");
+    // 0x8000000000000000 (2^63) fits in unsigned long long but not long long
+    check_literal_type("void f() { 0x8000000000000000LL; }", "unsigned long long");
+}
+
+#[test]
 fn test_octal_literals() {
     // 037777777777 (0xffffffff)
     // Same as hex, should be unsigned int.

@@ -123,6 +123,12 @@ test 'int a[2](void); int main() { return 0; }'
 test 'int(*a)[2](void); int main() { a; return 0; }'
 test 'int(test())(void); int main() { return 0; }'
 test 'int test()[3]; int main() { return 0; }'
+test 'struct A {'
+test 'struct A { int a;'
+test 'union U {'
+test 'union U { int a;'
+test 'int a[] = {'
+test 'int a[] = { 1, 2'
 
 # Summary
 echo ""

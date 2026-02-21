@@ -56,7 +56,10 @@ pub(crate) fn parse_record_specifier_with_context(
 fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseError> {
     let mut declarations = Vec::new();
 
-    while !parser.is_token(TokenKind::RightBrace) {
+    while !parser.is_token(TokenKind::RightBrace)
+        && !parser.is_token(TokenKind::EndOfFile)
+        && parser.try_current_token().is_some()
+    {
         let declaration = parse_struct_declaration(parser)?;
         declarations.push(declaration);
     }

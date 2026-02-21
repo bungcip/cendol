@@ -64,3 +64,8 @@ Action: Always combine condition analysis with internal control-flow jump detect
 
 Learning: C11 6.7.2.1p3 requires that structure/union members must not have incomplete or function types (with the exception of FAM in structs). Incomplete type layout computation must be robust against recursion and errors to prevent "leaked" state in tracking sets like `layout_in_progress`, which could otherwise cause false "recursive type definition" errors for subsequent valid types. Mapping general layout errors (like `SizeOfIncompleteType`) to member-specific diagnostics (like `IncompleteType` or `MemberHasFunctionType`) with correct spans significantly improves compiler quality.
 Action: Implement robust internal/external function splits for stateful semantic checks (like layout) and prioritize context-specific re-mapping of lower-level errors to provide precise diagnostics.
+
+2025-05-27 - [Atomic Bit-fields Prohibition]
+
+Learning: C11 6.7.2.4p4 explicitly prohibits bit-fields from having an atomic type, which is a subtle semantic constraint that is distinct from standard integer type checks. This constraint applies to both named and unnamed bit-fields. Prohibiting it during the lowering phase prevents potential backend failures or miscompilations when generating atomic instructions for non-byte-aligned memory locations.
+Action: Always verify that qualifiers (especially _Atomic) are checked alongside base types when validating member-specific constraints like bit-fields.

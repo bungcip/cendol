@@ -28,3 +28,77 @@ fn test_named_bitfield_zero_width() {
         "zero-width bit-field shall not specify a declarator",
     );
 }
+
+#[test]
+fn test_atomic_bitfield_prohibited() {
+    // C11 6.7.2.4p4: "A bit-field shall not have an atomic type."
+    run_fail_with_message(
+        r#"
+        struct S {
+            _Atomic int x : 1;
+        };
+        "#,
+        "bit-field shall not have an atomic type",
+    );
+}
+
+#[test]
+fn test_atomic_specifier_bitfield_prohibited() {
+    run_fail_with_message(
+        r#"
+        struct S {
+            _Atomic(int) x : 1;
+        };
+        "#,
+        "bit-field shall not have an atomic type",
+    );
+}
+
+#[test]
+fn test_unnamed_atomic_bitfield_prohibited() {
+    run_fail_with_message(
+        r#"
+        struct S {
+            _Atomic int : 1;
+        };
+        "#,
+        "bit-field shall not have an atomic type",
+    );
+}
+
+#[test]
+fn test_atomic_typedef_bitfield_prohibited() {
+    run_fail_with_message(
+        r#"
+        typedef _Atomic int atomic_int;
+        struct S {
+            atomic_int x : 1;
+        };
+        "#,
+        "bit-field shall not have an atomic type",
+    );
+}
+
+#[test]
+fn test_atomic_volatile_bitfield_prohibited() {
+    run_fail_with_message(
+        r#"
+        struct S {
+            _Atomic volatile int x : 1;
+        };
+        "#,
+        "bit-field shall not have an atomic type",
+    );
+}
+
+#[test]
+fn test_volatile_bitfield_allowed() {
+    run_pass(
+        r#"
+        struct S {
+            volatile int x : 1;
+        };
+        "#,
+        CompilePhase::Mir,
+    );
+}

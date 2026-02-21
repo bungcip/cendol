@@ -3207,6 +3207,10 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                                 ty: ctx.registry.display_qual_type(member_type),
                                 span: init_declarator.span,
                             });
+                        } else if member_type.qualifiers().contains(TypeQualifiers::ATOMIC) {
+                            ctx.report_error(SemanticError::BitfieldHasAtomicType {
+                                span: init_declarator.span,
+                            });
                         } else if let Ok(layout) = ctx.registry.ensure_layout(member_type.ty()) {
                             let type_width = layout.size * 8;
                             if (width as u64) > type_width {

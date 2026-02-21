@@ -1,5 +1,5 @@
-use crate::pp::{PPToken, PPTokenKind, PPTokenFlags, dumper::PPDumper};
-use crate::source_manager::{SourceManager, SourceLoc};
+use crate::pp::{PPToken, PPTokenFlags, PPTokenKind, dumper::PPDumper};
+use crate::source_manager::{SourceLoc, SourceManager};
 
 #[test]
 fn test_dumper_with_includes() {
@@ -15,10 +15,25 @@ fn test_dumper_with_includes() {
 
     // Construct tokens
     // File 1: int x;
-    let t1 = PPToken::new(PPTokenKind::Identifier("int".into()), PPTokenFlags::empty(), SourceLoc::new(id1, 0), 3);
+    let t1 = PPToken::new(
+        PPTokenKind::Identifier("int".into()),
+        PPTokenFlags::empty(),
+        SourceLoc::new(id1, 0),
+        3,
+    );
     // Switch to File 2: int y;
-    let t2 = PPToken::new(PPTokenKind::Identifier("int".into()), PPTokenFlags::empty(), SourceLoc::new(id2, 0), 3);
-    let t3 = PPToken::new(PPTokenKind::Identifier("y".into()), PPTokenFlags::empty(), SourceLoc::new(id2, 4), 1);
+    let t2 = PPToken::new(
+        PPTokenKind::Identifier("int".into()),
+        PPTokenFlags::empty(),
+        SourceLoc::new(id2, 0),
+        3,
+    );
+    let t3 = PPToken::new(
+        PPTokenKind::Identifier("y".into()),
+        PPTokenFlags::empty(),
+        SourceLoc::new(id2, 4),
+        1,
+    );
     let t4 = PPToken::new(PPTokenKind::Semicolon, PPTokenFlags::empty(), SourceLoc::new(id2, 5), 1);
     // Switch back to File 1: ;
     // "int x;" -> ';' is at offset 5

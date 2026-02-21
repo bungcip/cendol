@@ -428,7 +428,7 @@ pub(crate) fn emit_const(
         ConstValueKind::Zero => {
             // Emit zeros for the entire type size
             let size = lower_type_size(ty, ctx.mir)? as usize;
-            output.extend_from_slice(&vec![0u8; size]);
+            output.extend(std::iter::repeat(0).take(size));
             Ok(())
         }
         ConstValueKind::GlobalAddress(global_id) => {
@@ -1142,25 +1142,29 @@ fn emit_constant_to_memory(const_id: ConstValueId, ctx: &mut BodyEmitContext) ->
     let ty = ctx.mir.get_type(const_value.ty);
     let size = lower_type_size(ty, ctx.mir)? as usize;
 
-    let mut bytes = Vec::with_capacity(size);
-    let emit_ctx = EmitContext {
-        mir: ctx.mir,
-        func_id_map: ctx.func_id_map,
-        data_id_map: ctx.data_id_map,
-    };
-
     let mut data_description = DataDescription::new();
 
-    emit_const(
-        const_id,
-        &mut bytes,
-        &emit_ctx,
-        Some(&mut *ctx.module),
-        Some(&mut data_description),
-        0,
-    )?;
+    if let ConstValueKind::Zero = const_value.kind {
+        data_description.define_zeroinit(size);
+    } else {
+        let mut bytes = Vec::with_capacity(size);
+        let emit_ctx = EmitContext {
+            mir: ctx.mir,
+            func_id_map: ctx.func_id_map,
+            data_id_map: ctx.data_id_map,
+        };
 
-    data_description.define(bytes.into_boxed_slice());
+        emit_const(
+            const_id,
+            &mut bytes,
+            &emit_ctx,
+            Some(&mut *ctx.module),
+            Some(&mut data_description),
+            0,
+        )?;
+
+        data_description.define(bytes.into_boxed_slice());
+    }
 
     let data_id = ctx
         .module
@@ -2574,23 +2578,31 @@ impl ClifGen {
             if let Some(const_id) = global.initial_value {
                 let data_id = *self.data_id_map.get(&global_id).unwrap();
                 let mut data_description = DataDescription::new();
-                let mut initial_value_bytes = Vec::new();
-                // Enable relocations by passing data_description and maps
-                let ctx = EmitContext {
-                    mir: &self.mir,
-                    func_id_map: &self.func_id_map,
-                    data_id_map: &self.data_id_map,
-                };
-                emit_const(
-                    const_id,
-                    &mut initial_value_bytes,
-                    &ctx,
-                    Some(&mut self.module),
-                    Some(&mut data_description),
-                    0,
-                )?;
 
-                data_description.define(initial_value_bytes.into_boxed_slice());
+                let const_val = self.mir.constants.get(&const_id).unwrap();
+                if let ConstValueKind::Zero = const_val.kind {
+                    let ty = self.mir.get_type(const_val.ty);
+                    let size = lower_type_size(ty, &self.mir).map_err(|e| e.clone())? as usize;
+                    data_description.define_zeroinit(size);
+                } else {
+                    let mut initial_value_bytes = Vec::new();
+                    // Enable relocations by passing data_description and maps
+                    let ctx = EmitContext {
+                        mir: &self.mir,
+                        func_id_map: &self.func_id_map,
+                        data_id_map: &self.data_id_map,
+                    };
+                    emit_const(
+                        const_id,
+                        &mut initial_value_bytes,
+                        &ctx,
+                        Some(&mut self.module),
+                        Some(&mut data_description),
+                        0,
+                    )?;
+
+                    data_description.define(initial_value_bytes.into_boxed_slice());
+                }
 
                 self.module
                     .define_data(data_id, &data_description)

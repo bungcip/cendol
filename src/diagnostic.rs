@@ -221,6 +221,8 @@ pub enum SemanticError {
     },
     #[error("Invalid operand for unary operation: have '{ty}'")]
     InvalidUnaryOperand { ty: String, span: SourceSpan },
+    #[error("indirection requires pointer operand ('{ty}' invalid)")]
+    IndirectionRequiresPointer { ty: String, span: SourceSpan },
     #[error("Initializer element is not a compile-time constant")]
     NonConstantInitializer { span: SourceSpan },
     #[error("invalid initializer")]
@@ -455,6 +457,7 @@ impl SemanticError {
             SemanticError::NotAnLvalue { span } => *span,
             SemanticError::InvalidBinaryOperands { span, .. } => *span,
             SemanticError::InvalidUnaryOperand { span, .. } => *span,
+            SemanticError::IndirectionRequiresPointer { span, .. } => *span,
             SemanticError::NonConstantInitializer { span } => *span,
             SemanticError::InvalidInitializer { span } => *span,
             SemanticError::ConflictingTypes { span, .. } => *span,

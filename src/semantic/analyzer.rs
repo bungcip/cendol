@@ -512,6 +512,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 if actual_ty.is_pointer() {
                     self.registry.get_pointee(actual_ty.ty())
                 } else {
+                    let type_kind = &self.registry.get(actual_ty.ty()).kind;
+                    self.report_error(SemanticError::IndirectionRequiresPointer {
+                        ty: type_kind.to_string(),
+                        span,
+                    });
                     None
                 }
             }

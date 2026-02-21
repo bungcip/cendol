@@ -2878,8 +2878,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let mut current_index: i64 = 0;
                 let eval = |e| const_eval::eval_const_expr(&self.const_ctx(), e);
 
-                for item_ref in list.init_start.range(list.init_len) {
+                let mut iter = list.init_start.range(list.init_len).peekable();
+
+                while let Some(item_ref) = iter.peek().copied() {
                     let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
+                        iter.next();
                         continue;
                     };
 
@@ -2895,11 +2898,26 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                 }
                                 current_index = e_v;
                             }
-                            _ => return None,
+                            _ => {} // Field designator at top level? invalid for array but let consume_initializers handle/skip
                         }
                     }
 
                     max_index = max_index.max(current_index);
+
+                    // Safety: record current position to prevent infinite loops if element_type consumes nothing
+                    // (e.g. empty struct/array) but initializers remain.
+                    let start_item = iter.peek().map(|n| n.get());
+
+                    // Consume initializers for one element
+                    self.consume_initializers(element_type, &mut iter, true);
+
+                    let end_item = iter.peek().map(|n| n.get());
+                    if start_item.is_some() && start_item == end_item {
+                        // We made no progress, but there are still items.
+                        // Force consume one item to avoid infinite loop.
+                        iter.next();
+                    }
+
                     current_index += 1;
                 }
 
@@ -2910,6 +2928,119 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 Some(parsed.size)
             }
             _ => None,
+        }
+    }
+
+    fn consume_initializers<I>(
+        &self,
+        element_type: TypeRef,
+        iter: &mut std::iter::Peekable<I>,
+        allow_array_designator: bool,
+    ) where
+        I: Iterator<Item = NodeRef>,
+    {
+        // Check if there are more items
+        let Some(item_ref) = iter.peek().copied() else {
+            return;
+        };
+
+        let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
+            // Should not happen in valid AST
+            return;
+        };
+
+        if init.designator_len > 0 {
+            // Check for array designators
+            match self.ast.get_kind(init.designator_start) {
+                NodeKind::Designator(Designator::ArrayIndex(_))
+                | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
+                    if !allow_array_designator {
+                        return;
+                    }
+                    // If allowed, we proceed to consume this item (and potentially others)
+                }
+                _ => {
+                    // Field designator.
+                    // For now, we assume field designators consume one item from the list.
+                    // (Strictly we should check if it belongs to current struct, but for size counting
+                    // we assume valid C code).
+                    iter.next();
+                    return;
+                }
+            }
+        }
+
+        // Check braced initializer
+        if let NodeKind::InitializerList(_) = self.ast.get_kind(init.initializer) {
+            iter.next();
+            return;
+        }
+
+        // Brace elision logic
+        let type_kind = &self.registry.get(element_type).kind;
+        match type_kind {
+            TypeKind::Record { members, .. } => {
+                let mut is_first_member = true;
+                for member in members.iter() {
+                    let allow = allow_array_designator && is_first_member;
+                    self.consume_initializers(member.member_type.ty(), iter, allow);
+                    is_first_member = false;
+
+                    // If we stopped consuming, we should also stop for this record
+                    if iter.peek().is_none() {
+                        return;
+                    }
+                    // Check if next item is an array designator (stopper)
+                    if let Some(next_ref) = iter.peek() {
+                        if let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next_ref)
+                            && next_init.designator_len > 0
+                        {
+                            match self.ast.get_kind(next_init.designator_start) {
+                                NodeKind::Designator(Designator::ArrayIndex(_))
+                                | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
+                                    return;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+            TypeKind::Array { element_type, size } => {
+                if let ArraySizeType::Constant(len) = size {
+                    let mut is_first = true;
+                    for _ in 0..*len {
+                        let allow = allow_array_designator && is_first;
+                        self.consume_initializers(*element_type, iter, allow);
+                        is_first = false;
+
+                        if iter.peek().is_none() {
+                            return;
+                        }
+                        // Check stopper
+                        if let Some(next_ref) = iter.peek() {
+                            if let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next_ref)
+                                && next_init.designator_len > 0
+                            {
+                                match self.ast.get_kind(next_init.designator_start) {
+                                    NodeKind::Designator(Designator::ArrayIndex(_))
+                                    | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
+                                        return;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Variable/Incomplete array. Consume 1 item for safety.
+                    iter.next();
+                }
+            }
+            _ => {
+                // Scalar
+                iter.next();
+            }
         }
     }
 }

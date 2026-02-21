@@ -1414,7 +1414,27 @@ impl<'a> MirGen<'a> {
                     let inner_const = self.mir_builder.get_constants().get(&inner_const_id).unwrap().clone();
                     let mir_type = self.mir_builder.get_type(*ty);
                     let truncated_kind = match inner_const.kind {
-                        ConstValueKind::Int(val) => ConstValueKind::Int(mir_type.truncate_int(val)),
+                        ConstValueKind::Int(val) => {
+                            if mir_type.is_float() {
+                                ConstValueKind::Float(val as f64)
+                            } else {
+                                ConstValueKind::Int(mir_type.truncate_int(val))
+                            }
+                        }
+                        ConstValueKind::Float(val) => {
+                            if mir_type.is_int() {
+                                ConstValueKind::Int(mir_type.truncate_int(val as i64))
+                            } else {
+                                ConstValueKind::Float(val)
+                            }
+                        }
+                        ConstValueKind::Bool(val) => {
+                            if mir_type.is_float() {
+                                ConstValueKind::Float(if val { 1.0 } else { 0.0 })
+                            } else {
+                                ConstValueKind::Int(if val { 1 } else { 0 })
+                            }
+                        }
                         kind => kind,
                     };
                     // Create a new constant with the target type but same kind

@@ -276,6 +276,9 @@ pub enum SemanticError {
     #[error("bit-field type '{ty}' is invalid")]
     InvalidBitfieldType { ty: String, span: SourceSpan },
 
+    #[error("bit-field shall not have an atomic type")]
+    BitfieldHasAtomicType { span: SourceSpan },
+
     // Errors related to declaration specifiers
     #[error("conflicting storage class specifiers")]
     ConflictingStorageClasses { span: SourceSpan },
@@ -471,6 +474,7 @@ impl SemanticError {
             SemanticError::InvalidBitfieldWidth { span } => *span,
             SemanticError::NonConstantBitfieldWidth { span } => *span,
             SemanticError::InvalidBitfieldType { span, .. } => *span,
+            SemanticError::BitfieldHasAtomicType { span } => *span,
             SemanticError::BitfieldWidthExceedsType { span, .. } => *span,
             SemanticError::NamedZeroWidthBitfield { span } => *span,
             SemanticError::ConflictingStorageClasses { span } => *span,

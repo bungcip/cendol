@@ -21,7 +21,15 @@ fn test_has_builtin() {
     has_expect_macro
 #endif
 "#;
-    assert_yaml_snapshot!(setup_pp_snapshot(src));
+    assert_yaml_snapshot!(setup_pp_snapshot(src), 
+    @r"
+        - kind: Identifier
+        text: has_expect
+        - kind: Identifier
+        text: no_non_existent
+        - kind: Identifier
+        text: has_expect_macro
+    ");
 }
 
 #[test]
@@ -41,7 +49,14 @@ fn test_has_feature() {
     no_non_existent
 #endif
 "#;
-    assert_yaml_snapshot!(setup_pp_snapshot(src));
+    assert_yaml_snapshot!(setup_pp_snapshot(src), @r"
+    - kind: Identifier
+      text: has_static_assert
+    - kind: Identifier
+      text: has_generic_selection
+    - kind: Identifier
+      text: no_non_existent
+    ");
 }
 
 #[test]
@@ -53,7 +68,10 @@ fn test_has_attribute() {
     no_aligned
 #endif
 "#;
-    assert_yaml_snapshot!(setup_pp_snapshot(src));
+    assert_yaml_snapshot!(setup_pp_snapshot(src), @r"
+    - kind: Identifier
+      text: no_aligned
+    ");
 }
 
 #[test]
@@ -109,5 +127,10 @@ fn test_has_include_next() {
         .map(DebugToken::from)
         .collect();
 
-    assert_yaml_snapshot!(debug_tokens);
+    assert_yaml_snapshot!(debug_tokens, @r"
+    - kind: Identifier
+      text: found_next
+    - kind: Identifier
+      text: final_header
+    ");
 }

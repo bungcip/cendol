@@ -23,12 +23,12 @@ fn test_has_builtin() {
 "#;
     assert_yaml_snapshot!(setup_pp_snapshot(src), 
     @r"
-        - kind: Identifier
-        text: has_expect
-        - kind: Identifier
-        text: no_non_existent
-        - kind: Identifier
-        text: has_expect_macro
+    - kind: Identifier
+      text: has_expect
+    - kind: Identifier
+      text: no_non_existent
+    - kind: Identifier
+      text: has_expect_macro
     ");
 }
 

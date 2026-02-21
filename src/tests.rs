@@ -109,3 +109,4 @@ pub mod semantic_scope_invariants;
 pub mod semantic_shift_float;
 pub mod semantic_static_assert;
 pub mod semantic_valist;
+pub mod parser_expect_name_coverage;

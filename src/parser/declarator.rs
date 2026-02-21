@@ -337,7 +337,6 @@ pub(crate) fn get_declarator_name(declarator: &ParsedDeclarator) -> Option<NameI
         ParsedDeclarator::Array(inner, _) => get_declarator_name(inner),
         ParsedDeclarator::Function { inner, .. } => get_declarator_name(inner),
         ParsedDeclarator::BitField(inner, _) => get_declarator_name(inner),
-        ParsedDeclarator::AnonymousRecord(_, _) => None,
         ParsedDeclarator::Abstract => None,
         ParsedDeclarator::Pointer(_, None) => None,
     }

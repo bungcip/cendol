@@ -88,6 +88,7 @@ pub mod mir_gen_sizeof;
 pub mod mir_unit;
 pub mod mir_validation;
 pub mod parser_attributes_declarator;
+pub mod parser_builder_coverage;
 pub mod pp_dumper_coverage;
 pub mod semantic_assignment_coverage;
 pub mod semantic_atomic;

@@ -355,7 +355,6 @@ fn extract_declarator_name(declarator: &ParsedDeclarator) -> Option<String> {
         ParsedDeclarator::Function { inner, .. } => extract_declarator_name(inner),
         ParsedDeclarator::BitField(next, _) => extract_declarator_name(next),
         ParsedDeclarator::Abstract => None,
-        _ => None,
     }
 }
 
@@ -453,13 +452,6 @@ fn extract_declarator_kind(declarator: &ParsedDeclarator) -> String {
             format!("bitfield {}", inner_kind)
         }
         ParsedDeclarator::Abstract => "abstract".to_string(),
-        ParsedDeclarator::AnonymousRecord(is_union, _) => {
-            if *is_union {
-                "union".to_string()
-            } else {
-                "struct".to_string()
-            }
-        }
     }
 }
 

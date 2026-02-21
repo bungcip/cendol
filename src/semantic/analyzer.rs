@@ -698,6 +698,16 @@ impl<'a> SemanticAnalyzer<'a> {
 
             // Shift operations
             BinaryOp::LShift | BinaryOp::RShift => {
+                if !lhs_promoted.is_integer() || !rhs_promoted.is_integer() {
+                    let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                    let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                    self.report_error(SemanticError::InvalidBinaryOperands {
+                        left_ty: lhs_str,
+                        right_ty: rhs_str,
+                        span,
+                    });
+                    return None;
+                }
                 // C11 6.5.7: result is type of promoted left operand
                 Some((lhs_promoted, lhs_promoted))
             }

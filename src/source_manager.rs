@@ -453,27 +453,29 @@ impl SourceManager {
     pub(crate) fn set_line_starts(&mut self, source_id: SourceId, line_starts: Vec<u32>) {
         let id = source_id.to_u32();
         if id >= 2
-            && let Some(file_info) = self.file_infos.get_mut(id as usize - 2) {
-                file_info.line_starts = line_starts;
-            }
+            && let Some(file_info) = self.file_infos.get_mut(id as usize - 2)
+        {
+            file_info.line_starts = line_starts;
+        }
     }
 
     /// Calculate line starts for a given source ID
     pub(crate) fn calculate_line_starts(&mut self, source_id: SourceId) {
         let id = source_id.to_u32();
         if id >= 2
-            && let Some(file_info) = self.file_infos.get_mut(id as usize - 2) {
-                let buffer = &file_info.buffer;
-                let mut line_starts = vec![0]; // First line starts at offset 0
+            && let Some(file_info) = self.file_infos.get_mut(id as usize - 2)
+        {
+            let buffer = &file_info.buffer;
+            let mut line_starts = vec![0]; // First line starts at offset 0
 
-                for (i, &byte) in buffer.iter().enumerate() {
-                    if byte == b'\n' {
-                        line_starts.push((i + 1) as u32);
-                    }
+            for (i, &byte) in buffer.iter().enumerate() {
+                if byte == b'\n' {
+                    line_starts.push((i + 1) as u32);
                 }
-
-                file_info.line_starts = line_starts;
             }
+
+            file_info.line_starts = line_starts;
+        }
     }
 
     /// Get the source text for a given span

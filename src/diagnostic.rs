@@ -174,7 +174,10 @@ impl IntoDiagnostic for SemanticError {
         }
 
         // Handle warnings
-        if matches!(self, SemanticError::IncompatiblePointerComparison { .. }) {
+        if matches!(
+            self,
+            SemanticError::IncompatiblePointerComparison { .. } | SemanticError::ReturnLocalAddress { .. }
+        ) {
             diagnostics[0].level = DiagnosticLevel::Warning;
         }
 
@@ -430,11 +433,15 @@ pub enum SemanticError {
 
     #[error("invalid designator in 'offsetof'")]
     InvalidOffsetofDesignator { span: SourceSpan },
+
+    #[error("address of stack memory associated with local variable '{name}' returned")]
+    ReturnLocalAddress { name: NameId, span: SourceSpan },
 }
 
 impl SemanticError {
     pub(crate) fn span(&self) -> SourceSpan {
         match self {
+            SemanticError::ReturnLocalAddress { span, .. } => *span,
             SemanticError::InvalidAtomicQualifier { span, .. } => *span,
             SemanticError::InvalidAtomicSpecifier { span, .. } => *span,
             SemanticError::VariableOfVoidType { span } => *span,

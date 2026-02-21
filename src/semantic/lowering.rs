@@ -2991,8 +2991,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         return;
                     }
                     // Check if next item is an array designator (stopper)
-                    if let Some(next_ref) = iter.peek() {
-                        if let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next_ref)
+                    if let Some(next_ref) = iter.peek()
+                        && let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next_ref)
                             && next_init.designator_len > 0
                         {
                             match self.ast.get_kind(next_init.designator_start) {
@@ -3003,7 +3003,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                 _ => {}
                             }
                         }
-                    }
                 }
             }
             TypeKind::Array { element_type, size } => {
@@ -3018,8 +3017,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             return;
                         }
                         // Check stopper
-                        if let Some(next_ref) = iter.peek() {
-                            if let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next_ref)
+                        if let Some(next_ref) = iter.peek()
+                            && let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next_ref)
                                 && next_init.designator_len > 0
                             {
                                 match self.ast.get_kind(next_init.designator_start) {
@@ -3030,7 +3029,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                     _ => {}
                                 }
                             }
-                        }
                     }
                 } else {
                     // Variable/Incomplete array. Consume 1 item for safety.

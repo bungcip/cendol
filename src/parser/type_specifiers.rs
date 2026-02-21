@@ -19,9 +19,7 @@ fn parse_type_specifier_with_context(
     parser: &mut Parser,
     in_struct_member: bool,
 ) -> Result<ParsedTypeSpecifier, ParseError> {
-    let token = parser.try_current_token().ok_or_else(|| ParseError::UnexpectedEof {
-        span: parser.previous_token_span(),
-    })?;
+    let token = parser.current_token()?;
 
     match token.kind {
         TokenKind::Void => {
@@ -43,20 +41,16 @@ fn parse_type_specifier_with_context(
         TokenKind::Long => {
             parser.advance();
             // Check for long long or long double
-            if let Some(next_token) = parser.try_current_token() {
-                match next_token.kind {
-                    TokenKind::Long => {
-                        parser.advance();
-                        Ok(ParsedTypeSpecifier::LongLong)
-                    }
-                    TokenKind::Double => {
-                        parser.advance();
-                        Ok(ParsedTypeSpecifier::LongDouble)
-                    }
-                    _ => Ok(ParsedTypeSpecifier::Long),
+            match parser.current_token_kind() {
+                Some(TokenKind::Long) => {
+                    parser.advance();
+                    Ok(ParsedTypeSpecifier::LongLong)
                 }
-            } else {
-                Ok(ParsedTypeSpecifier::Long)
+                Some(TokenKind::Double) => {
+                    parser.advance();
+                    Ok(ParsedTypeSpecifier::LongDouble)
+                }
+                _ => Ok(ParsedTypeSpecifier::Long),
             }
         }
         TokenKind::Float => {

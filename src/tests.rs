@@ -51,6 +51,7 @@ pub mod parser_utils;
 
 pub mod codegen_ternary_array_size;
 pub mod parser_gcc_extensions;
+pub mod parser_type_spec_coverage;
 
 pub mod semantic_alignment;
 pub mod semantic_alignment_constraints;

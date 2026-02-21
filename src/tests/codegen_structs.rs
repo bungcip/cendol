@@ -126,7 +126,7 @@ fn test_alloc_dealloc_codegen() {
     let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
-        Ok(ClifOutput::ClifDump(clif_ir)) => {
+        ClifOutput::ClifDump(clif_ir) => {
             insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
@@ -148,8 +148,7 @@ fn test_alloc_dealloc_codegen() {
             }
             ");
         }
-        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump, got object file"),
-        Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
+        ClifOutput::ObjectFile(_) => panic!("Expected Clif dump, got object file"),
     }
 }
 

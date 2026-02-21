@@ -345,7 +345,7 @@ impl<'a> MirGen<'a> {
 
             if matches!(ret_ty, crate::mir::MirType::Void) {
                 self.mir_builder.set_terminator(crate::mir::Terminator::Return(None));
-            } else if func_name.to_string() == "main" && ret_ty.is_int() {
+            } else if func_name.as_str() == "main" && ret_ty.is_int() {
                 // main() implicitly returns 0
                 let zero = self.create_int_operand(0);
                 self.mir_builder

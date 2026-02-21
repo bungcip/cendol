@@ -45,7 +45,7 @@ fn test_emit_const_struct_literal() {
         func_id_map: &hashbrown::HashMap::new(),
         data_id_map: &hashbrown::HashMap::new(),
     };
-    emit_const(struct_const_id, &mut output, &ctx, None, None, 0).expect("emit_const failed");
+    emit_const(struct_const_id, &mut output, &ctx, None, None, 0);
 
     // 5. Verify Output
     insta::assert_yaml_snapshot!(output, @r"
@@ -101,7 +101,7 @@ fn test_store_statement_lowering() {
 
     // 7. Assert
     match result {
-        Ok(ClifOutput::ClifDump(clif_ir)) => {
+        ClifOutput::ClifDump(clif_ir) => {
             insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
@@ -115,8 +115,7 @@ fn test_store_statement_lowering() {
             }
             ");
         }
-        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump, got object file"),
-        Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
+        ClifOutput::ObjectFile(_) => panic!("Expected Clif dump, got object file"),
     }
 }
 
@@ -166,7 +165,7 @@ fn test_store_deref_pointer() {
     let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
-        Ok(ClifOutput::ClifDump(clif_ir)) => {
+        ClifOutput::ClifDump(clif_ir) => {
             insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
@@ -188,8 +187,7 @@ fn test_store_deref_pointer() {
             }
             ");
         }
-        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump, got object file"),
-        Err(e) => panic!("MIR to Cranelift lowering failed: {}", e),
+        ClifOutput::ObjectFile(_) => panic!("Expected Clif dump, got object file"),
     }
 }
 
@@ -360,7 +358,7 @@ fn test_f128_constant_promotion() {
     let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
-        Ok(ClifOutput::ClifDump(clif_ir)) => {
+        ClifOutput::ClifDump(clif_ir) => {
             insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
@@ -376,8 +374,7 @@ fn test_f128_constant_promotion() {
             }
             ");
         }
-        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
-        Err(e) => panic!("Error: {}", e),
+        ClifOutput::ObjectFile(_) => panic!("Expected Clif dump"),
     }
 }
 

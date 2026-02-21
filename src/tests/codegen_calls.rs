@@ -88,7 +88,7 @@ fn test_indirect_function_call() {
     let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
-        Ok(ClifOutput::ClifDump(clif_ir)) => {
+        ClifOutput::ClifDump(clif_ir) => {
             insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @r"
             ; Function: main
             function u0:0() -> i32 system_v {
@@ -126,8 +126,7 @@ fn test_indirect_function_call() {
             }
             ");
         }
-        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
-        Err(e) => panic!("Error: {}", e),
+        ClifOutput::ObjectFile(_) => panic!("Expected Clif dump"),
     }
 }
 
@@ -168,7 +167,7 @@ fn test_global_function_pointer_init() {
     let result = lowerer.visit_module(EmitKind::Clif);
 
     match result {
-        Ok(ClifOutput::ClifDump(clif_ir)) => {
+        ClifOutput::ClifDump(clif_ir) => {
             insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @r"
             ; Function: target
             function u0:0(i32) -> i32 system_v {
@@ -182,7 +181,6 @@ fn test_global_function_pointer_init() {
             }
             ");
         }
-        Ok(ClifOutput::ObjectFile(_)) => panic!("Expected Clif dump"),
-        Err(e) => panic!("Compilation failed: {}", e),
+        ClifOutput::ObjectFile(_) => panic!("Expected Clif dump"),
     }
 }

@@ -25,6 +25,7 @@ pub mod pp_macros;
 pub mod semantic_arrays;
 pub mod semantic_builtins;
 pub mod semantic_control_flow;
+pub mod semantic_deref_check;
 pub mod semantic_enums;
 pub mod semantic_expr;
 pub mod semantic_float_init;

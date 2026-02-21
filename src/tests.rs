@@ -29,6 +29,7 @@ pub mod semantic_deref_check;
 pub mod semantic_enums;
 pub mod semantic_expr;
 pub mod semantic_float_init;
+pub mod semantic_function_arg_check;
 pub mod semantic_functions;
 pub mod semantic_init;
 pub mod semantic_scope;

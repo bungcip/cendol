@@ -317,7 +317,7 @@ fn test_assign_incompatible_pointers() {
     Diagnostics count: 1
 
     Level: Error
-    Message: type mismatch: expected <pointer>, found <pointer>
+    Message: type mismatch: expected float*, found int*
     Span: SourceSpan(source_id=SourceId(2), start=105, end=110)
     ");
 }
@@ -336,7 +336,7 @@ fn test_assign_int_to_pointer() {
     Diagnostics count: 1
 
     Level: Error
-    Message: type mismatch: expected <pointer>, found int
+    Message: type mismatch: expected int*, found int
     Span: SourceSpan(source_id=SourceId(2), start=54, end=59)
     ");
 }
@@ -356,7 +356,7 @@ fn test_assign_pointer_to_int() {
     Diagnostics count: 1
 
     Level: Error
-    Message: type mismatch: expected int, found <pointer>
+    Message: type mismatch: expected int, found int*
     Span: SourceSpan(source_id=SourceId(2), start=73, end=78)
     ");
 }

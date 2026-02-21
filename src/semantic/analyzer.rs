@@ -372,11 +372,11 @@ impl<'a> SemanticAnalyzer<'a> {
             self.record_implicit_conversions(lhs_ty, rhs_ty, rhs_ref);
             true
         } else {
-            let lhs_kind = &self.registry.get(lhs_ty.ty()).kind;
-            let rhs_kind = &self.registry.get(rhs_ty.ty()).kind;
+            let lhs_str = self.registry.display_qual_type(lhs_ty);
+            let rhs_str = self.registry.display_qual_type(rhs_ty);
             self.report_error(SemanticError::TypeMismatch {
-                expected: lhs_kind.to_string(),
-                found: rhs_kind.to_string(),
+                expected: lhs_str,
+                found: rhs_str,
                 span,
             });
             false
@@ -887,12 +887,12 @@ impl<'a> SemanticAnalyzer<'a> {
         // but for type checks it uses `common_ty` (which is the effective RHS).
         // The previous code passed `effective_rhs_ty` which was `common_ty`.
         if !self.check_assignment_constraints(lhs_ty, common_ty, rhs_ref) {
-            let lhs_kind = &self.registry.get(lhs_ty.ty()).kind;
-            let rhs_kind = &self.registry.get(common_ty.ty()).kind;
+            let lhs_str = self.registry.display_qual_type(lhs_ty);
+            let rhs_str = self.registry.display_qual_type(common_ty);
 
             self.report_error(SemanticError::TypeMismatch {
-                expected: lhs_kind.to_string(),
-                found: rhs_kind.to_string(),
+                expected: lhs_str,
+                found: rhs_str,
                 span,
             });
             return None;
@@ -1032,13 +1032,13 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn check_assignment_and_record(&mut self, target_ty: QualType, init_ty: QualType, init_ref: NodeRef) {
         if !self.check_assignment_constraints(target_ty, init_ty, init_ref) {
-            let lhs_kind = &self.registry.get(target_ty.ty()).kind;
-            let rhs_kind = &self.registry.get(init_ty.ty()).kind;
+            let lhs_str = self.registry.display_qual_type(target_ty);
+            let rhs_str = self.registry.display_qual_type(init_ty);
             let span = self.ast.get_span(init_ref);
 
             self.report_error(SemanticError::TypeMismatch {
-                expected: lhs_kind.to_string(),
-                found: rhs_kind.to_string(),
+                expected: lhs_str,
+                found: rhs_str,
                 span,
             });
         } else {
@@ -1080,8 +1080,8 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.record_implicit_conversions(target_ty, init_ty, init_ref);
                 } else {
                     self.report_error(SemanticError::TypeMismatch {
-                        expected: self.registry.get(target_ty.ty()).kind.to_string(),
-                        found: self.registry.get(init_ty.ty()).kind.to_string(),
+                        expected: self.registry.display_qual_type(target_ty),
+                        found: self.registry.display_qual_type(init_ty),
                         span: self.ast.get_span(init_ref),
                     });
                 }
@@ -1231,7 +1231,9 @@ impl<'a> SemanticAnalyzer<'a> {
                         actual_arg_ty = self.registry.decay(arg_ty, TypeQualifiers::empty());
                         self.push_conversion(arg_node_ref, Conversion::PointerDecay { to: actual_arg_ty.ty() });
                     }
-                    self.record_implicit_conversions(parameters[i].param_type, actual_arg_ty, arg_node_ref);
+
+                    let span = self.ast.get_span(arg_node_ref);
+                    self.validate_and_record_assignment(parameters[i].param_type, actual_arg_ty, arg_node_ref, span);
                 } else if is_variadic {
                     let mut actual_arg_ty = arg_ty;
                     if arg_ty.is_array() || arg_ty.is_function() {

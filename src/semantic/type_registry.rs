@@ -1140,23 +1140,29 @@ impl TypeRegistry {
         }
 
         let ty_ref = qt.ty();
-        if ty_ref.is_record()
-            && let TypeKind::Record { members, is_union, .. } = &self.get(ty_ref).kind
-        {
-            if *is_union {
-                // For unions, the entire union is not "const" just because one member is.
-                // Only the specific const member access is restricted, handled in check_lvalue.
-                return false;
-            }
+        match &self.get(ty_ref).kind {
+            TypeKind::Record { members, is_union, .. } => {
+                if *is_union {
+                    // For unions, the entire union is not "const" just because one member is.
+                    // Only the specific const member access is restricted, handled in check_lvalue.
+                    return false;
+                }
 
-            for member in members.iter() {
-                // Pointers are only const if the pointer itself is const,
-                // not if the pointee is const.
-                // Arrays and nested structs incur recursive constness if they contain const elements/members.
-                if !member.member_type.is_pointer() && self.is_const_recursive(member.member_type) {
+                for member in members.iter() {
+                    // Pointers are only const if the pointer itself is const (checked by member.member_type.is_const() in recursive call),
+                    // not if the pointee is const.
+                    if self.is_const_recursive(member.member_type) {
+                        return true;
+                    }
+                }
+            }
+            TypeKind::Array { element_type, .. } => {
+                // Check if element type has recursive constness (e.g. array of structs with const members)
+                if self.is_const_recursive(QualType::unqualified(*element_type)) {
                     return true;
                 }
             }
+            _ => {}
         }
         false
     }

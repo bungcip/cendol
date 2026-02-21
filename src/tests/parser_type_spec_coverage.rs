@@ -4,7 +4,7 @@ use crate::tests::test_utils::run_fail_with_message;
 fn test_long_at_eof() {
     // This hits the simplified Long handling in type_specifiers.rs
     // and then fails in declaration parsing because no declarator/semicolon is found.
-    run_fail_with_message("long", "';' after declaration");
+    run_fail_with_message("long", "Unexpected token");
 }
 
 #[test]

@@ -454,7 +454,8 @@ impl<'a> SemanticAnalyzer<'a> {
         if let Some(expr_ty) = self.visit_node(*expr_ref)
             && let Some(target_ty) = ret_ty
         {
-            self.record_implicit_conversions(target_ty, expr_ty, *expr_ref);
+            let expr_span = self.ast.get_span(*expr_ref);
+            self.validate_and_record_assignment(target_ty, expr_ty, *expr_ref, expr_span);
         }
     }
 

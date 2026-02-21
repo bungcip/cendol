@@ -1268,10 +1268,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(p) => (p.ty(), p.qualifiers()),
                 None => {
                     let ty_str = self.registry.display_qual_type(obj_ty);
-                    self.report_error(SemanticError::MemberAccessOnNonRecord {
-                        ty: ty_str,
-                        span,
-                    });
+                    self.report_error(SemanticError::MemberAccessOnNonRecord { ty: ty_str, span });
                     return None;
                 }
             }

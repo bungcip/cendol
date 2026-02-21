@@ -71,22 +71,20 @@ impl Type {
         flat_offsets: &mut Vec<u64>,
         base_offset: u64,
     ) {
-        #[allow(clippy::collapsible_if)]
-        if let TypeKind::Record { members, .. } = &self.kind {
-            if let Some(TypeLayout {
+        if let TypeKind::Record { members, .. } = &self.kind
+            && let Some(TypeLayout {
                 kind: LayoutKind::Record { fields, .. },
                 ..
             }) = &self.layout
-            {
-                for (i, member) in members.iter().enumerate() {
-                    let offset = base_offset + fields[i].offset;
-                    if member.name.is_none() {
-                        let inner_type = registry.get(member.member_type.ty());
-                        inner_type.flatten_members_with_layouts(registry, flat_members, flat_offsets, offset);
-                    } else {
-                        flat_members.push(*member);
-                        flat_offsets.push(offset);
-                    }
+        {
+            for (i, member) in members.iter().enumerate() {
+                let offset = base_offset + fields[i].offset;
+                if member.name.is_none() {
+                    let inner_type = registry.get(member.member_type.ty());
+                    inner_type.flatten_members_with_layouts(registry, flat_members, flat_offsets, offset);
+                } else {
+                    flat_members.push(*member);
+                    flat_offsets.push(offset);
                 }
             }
         }

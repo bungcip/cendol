@@ -342,7 +342,6 @@ fn emit_const_struct(
 }
 
 /// Helper to emit array constants
-#[allow(clippy::manual_saturating_arithmetic, clippy::manual_repeat_n)]
 fn emit_const_array(
     elements: &[ConstValueId],
     ty: &MirType,
@@ -364,7 +363,7 @@ fn emit_const_array(
     let element_type = ctx.mir.get_type(*element);
     let element_size = lower_type_size(element_type, ctx.mir).expect("valid type") as usize;
     let stride = array_layout.stride as usize;
-    let padding = stride.checked_sub(element_size).unwrap_or(0);
+    let padding = stride.saturating_sub(element_size);
 
     for (i, element_const_id) in elements.iter().take(*size).enumerate() {
         let element_offset = (i * stride) as u32;
@@ -380,7 +379,7 @@ fn emit_const_array(
         .expect("emit_const failed");
 
         if padding > 0 {
-            output.extend(std::iter::repeat(0).take(padding));
+            output.extend(std::iter::repeat_n(0, padding));
         }
     }
 
@@ -391,7 +390,7 @@ fn emit_const_array(
 
     if emitted_size < total_size {
         let remaining = total_size - emitted_size;
-        output.extend(std::iter::repeat(0).take(remaining));
+        output.extend(std::iter::repeat_n(0, remaining));
     }
 }
 

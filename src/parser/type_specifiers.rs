@@ -19,87 +19,65 @@ fn parse_type_specifier_with_context(
     parser: &mut Parser,
     in_struct_member: bool,
 ) -> Result<ParsedTypeSpecifier, ParseError> {
-    let token = parser.current_token()?;
+    use ParsedTypeSpecifier as PTS;
+    use TokenKind as TK;
 
+    let token = parser.current_token()?;
     match token.kind {
-        TokenKind::Void => {
+        TK::Void
+        | TK::Char
+        | TK::Short
+        | TK::Int
+        | TK::Float
+        | TK::Double
+        | TK::Signed
+        | TK::Unsigned
+        | TK::Bool
+        | TK::Complex
+        | TK::BuiltinVaList => {
             parser.advance();
-            Ok(ParsedTypeSpecifier::Void)
+            Ok(match token.kind {
+                TK::Void => PTS::Void,
+                TK::Char => PTS::Char,
+                TK::Short => PTS::Short,
+                TK::Int => PTS::Int,
+                TK::Float => PTS::Float,
+                TK::Double => PTS::Double,
+                TK::Signed => PTS::Signed,
+                TK::Unsigned => PTS::Unsigned,
+                TK::Bool => PTS::Bool,
+                TK::Complex => PTS::Complex,
+                TK::BuiltinVaList => PTS::VaList,
+                _ => unreachable!(),
+            })
         }
-        TokenKind::Char => {
+        TK::Long => {
             parser.advance();
-            Ok(ParsedTypeSpecifier::Char)
-        }
-        TokenKind::Short => {
-            parser.advance();
-            Ok(ParsedTypeSpecifier::Short)
-        }
-        TokenKind::Int => {
-            parser.advance();
-            Ok(ParsedTypeSpecifier::Int)
-        }
-        TokenKind::Long => {
-            parser.advance();
-            // Check for long long or long double
             match parser.current_token_kind() {
-                Some(TokenKind::Long) => {
+                Some(TK::Long) => {
                     parser.advance();
-                    Ok(ParsedTypeSpecifier::LongLong)
+                    Ok(PTS::LongLong)
                 }
-                Some(TokenKind::Double) => {
+                Some(TK::Double) => {
                     parser.advance();
-                    Ok(ParsedTypeSpecifier::LongDouble)
+                    Ok(PTS::LongDouble)
                 }
-                _ => Ok(ParsedTypeSpecifier::Long),
+                _ => Ok(PTS::Long),
             }
         }
-        TokenKind::Float => {
+        TK::Struct | TK::Union => {
             parser.advance();
-            Ok(ParsedTypeSpecifier::Float)
+            let is_union = token.kind == TK::Union;
+            super::struct_parsing::parse_record_specifier_with_context(parser, is_union, in_struct_member)
         }
-        TokenKind::Double => {
-            parser.advance();
-            Ok(ParsedTypeSpecifier::Double)
-        }
-        TokenKind::Signed => {
-            parser.advance();
-            Ok(ParsedTypeSpecifier::Signed)
-        }
-        TokenKind::Unsigned => {
-            parser.advance();
-            Ok(ParsedTypeSpecifier::Unsigned)
-        }
-        TokenKind::Bool => {
-            parser.advance();
-            Ok(ParsedTypeSpecifier::Bool)
-        }
-        TokenKind::Complex => {
-            parser.advance();
-            Ok(ParsedTypeSpecifier::Complex)
-        }
-        TokenKind::Struct => {
-            parser.advance();
-            super::struct_parsing::parse_record_specifier_with_context(parser, false, in_struct_member)
-        }
-        TokenKind::Union => {
-            parser.advance();
-            super::struct_parsing::parse_record_specifier_with_context(parser, true, in_struct_member)
-        }
-        TokenKind::Enum => {
+        TK::Enum => {
             parser.advance();
             super::enum_parsing::parse_enum_specifier(parser)
         }
-        TokenKind::Identifier(symbol) => {
+        TK::Identifier(symbol) => {
             parser.advance();
-            Ok(ParsedTypeSpecifier::TypedefName(symbol))
+            Ok(PTS::TypedefName(symbol))
         }
-        TokenKind::BuiltinVaList => {
-            parser.advance();
-            Ok(ParsedTypeSpecifier::VaList)
-        }
-        _ => unreachable!(
-            "ICE: Token {:?} should have been validated as a type specifier by the caller",
-            token.kind
-        ),
+        _ => unreachable!("ICE: Token {:?} should have been validated", token.kind),
     }
 }

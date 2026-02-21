@@ -6,7 +6,6 @@
 
 use crate::ast::*;
 use crate::diagnostic::ParseError;
-use log::debug;
 
 use super::expressions::BindingPower;
 use super::{Parser, ParserState, TokenKind};
@@ -17,7 +16,6 @@ pub(crate) mod expr_patterns {
 
     /// Parse a parenthesized expression: (expression)
     pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-        debug!("parse_parenthesized_expr: parsing parenthesized expression");
         parser.expect(TokenKind::LeftParen)?;
         let expr = parser.parse_expr_min()?;
         parser.expect(TokenKind::RightParen)?;
@@ -29,21 +27,16 @@ pub(crate) mod expr_patterns {
         parser: &mut Parser,
         binding_power: BindingPower,
     ) -> Result<Vec<ParsedNodeRef>, ParseError> {
-        debug!("parse_expr_list: parsing expression list");
         let mut args = Vec::new();
-
         if parser.is_token(TokenKind::RightParen) {
             return Ok(args);
         }
 
         loop {
-            let arg = parser.parse_expression(binding_power)?;
-            args.push(arg);
-
-            if !parser.is_token(TokenKind::Comma) {
+            args.push(parser.parse_expression(binding_power)?);
+            if parser.accept(TokenKind::Comma).is_none() {
                 break;
             }
-            parser.advance(); // consume comma
         }
 
         Ok(args)

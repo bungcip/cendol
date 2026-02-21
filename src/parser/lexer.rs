@@ -167,61 +167,46 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
-    /// Check if the token is a storage class specifier
-    fn is_storage_class_specifier(&self) -> bool {
+    pub(crate) fn is_storage_class_specifier(&self) -> bool {
+        use TokenKind::*;
+        matches!(self, Typedef | Extern | Static | ThreadLocal | Auto | Register)
+    }
+
+    pub(crate) fn is_type_specifier(&self) -> bool {
+        use TokenKind::*;
         matches!(
             self,
-            TokenKind::Typedef
-                | TokenKind::Extern
-                | TokenKind::Static
-                | TokenKind::ThreadLocal
-                | TokenKind::Auto
-                | TokenKind::Register
+            Void | Char
+                | Short
+                | Int
+                | Long
+                | Float
+                | Double
+                | Signed
+                | Unsigned
+                | Bool
+                | Complex
+                | Atomic
+                | Struct
+                | Union
+                | Enum
+                | BuiltinVaList
         )
     }
 
-    /// Check if the token is a type specifier
-    fn is_type_specifier(&self) -> bool {
-        matches!(
-            self,
-            TokenKind::Void
-                | TokenKind::Char
-                | TokenKind::Short
-                | TokenKind::Int
-                | TokenKind::Long
-                | TokenKind::Float
-                | TokenKind::Double
-                | TokenKind::Signed
-                | TokenKind::Unsigned
-                | TokenKind::Bool
-                | TokenKind::Complex
-                | TokenKind::Atomic
-                | TokenKind::Struct
-                | TokenKind::Union
-                | TokenKind::Enum
-                | TokenKind::BuiltinVaList
-        )
+    pub(crate) fn is_type_qualifier(&self) -> bool {
+        use TokenKind::*;
+        matches!(self, Const | Restrict | Volatile | Atomic)
     }
 
-    /// Check if the token is a type qualifier
-    fn is_type_qualifier(&self) -> bool {
-        matches!(
-            self,
-            TokenKind::Const | TokenKind::Restrict | TokenKind::Volatile | TokenKind::Atomic
-        )
-    }
-
-    /// Check if the token is a function specifier
-    fn is_function_specifier(&self) -> bool {
+    pub(crate) fn is_function_specifier(&self) -> bool {
         matches!(self, TokenKind::Inline | TokenKind::Noreturn)
     }
 
-    /// Check if the token is an alignment specifier
-    fn is_alignment_specifier(&self) -> bool {
+    pub(crate) fn is_alignment_specifier(&self) -> bool {
         matches!(self, TokenKind::Alignas)
     }
 
-    /// Check if the token can start a declaration specifier
     pub(crate) fn is_declaration_specifier_start(&self) -> bool {
         self.is_storage_class_specifier()
             || self.is_type_specifier()
@@ -231,17 +216,10 @@ impl TokenKind {
             || matches!(self, TokenKind::Attribute)
     }
 
-    /// Check if the token can start a declaration (including typedefs)
     pub(crate) fn is_declaration_start(&self, is_typedef: bool) -> bool {
-        if self.is_declaration_specifier_start() || *self == TokenKind::StaticAssert {
-            return true;
-        }
-
-        if let TokenKind::Identifier(_) = self {
-            return is_typedef;
-        }
-
-        false
+        self.is_declaration_specifier_start()
+            || *self == TokenKind::StaticAssert
+            || matches!(self, TokenKind::Identifier(_) if is_typedef)
     }
 }
 
@@ -485,13 +463,13 @@ impl<'src> Lexer<'src> {
 
         while let Some(pptoken) = current_token_iter.next() {
             if let PPTokenKind::StringLiteral(symbol) = pptoken.kind {
-                // ⚡ Bolt: Optimized string literal handling.
-                // This introduces a fast path for single string literals, which are the
-                // most common case. By peeking ahead, we avoid the overhead of the
-                // two-pass concatenation logic unless it's actually needed. This
-                // reduces overhead and improves lexer performance.
+                let start_span = SourceSpan::new_with_length(
+                    pptoken.location.source_id(),
+                    pptoken.location.offset(),
+                    pptoken.length as u32,
+                );
 
-                // --- Fast path for single string literals ---
+                // Fast path for single string literals
                 if !matches!(
                     current_token_iter.peek(),
                     Some(PPToken {
@@ -501,69 +479,37 @@ impl<'src> Lexer<'src> {
                 ) {
                     tokens.push(Token {
                         kind: self.classify_token(pptoken),
-                        span: SourceSpan::new_with_length(
-                            pptoken.location.source_id(),
-                            pptoken.location.offset(),
-                            pptoken.length as u32,
-                        ),
+                        span: start_span,
                     });
                     continue;
                 }
 
-                // --- Slow path: Concatenate adjacent string literals ---
-                let start_span = SourceSpan::new_with_length(
-                    pptoken.location.source_id(),
-                    pptoken.location.offset(),
-                    pptoken.length as u32,
-                );
+                // Slow path: Concatenate adjacent string literals
+                let (mut prefix, first_content) = Self::extract_literal_parts(symbol.as_str()).unwrap_or(("", ""));
+                let mut content = String::from(first_content);
                 let mut final_span = start_span;
 
-                // --- Phase 1: Determine final prefix and total size ---
-                let (mut prefix, first_content) = Self::extract_literal_parts(symbol.as_str()).unwrap_or(("", ""));
-
-                // Concatenate raw content (inside quotes)
-                let mut concatenated_content = String::with_capacity(first_content.len() * 2);
-                concatenated_content.push_str(first_content);
-
-                let mut adjacent_literals = 0;
-                let next_token_idx = self.tokens.len() - current_token_iter.len();
-
-                while let Some(next_pptoken) = self.tokens.get(next_token_idx + adjacent_literals) {
-                    if let PPTokenKind::StringLiteral(next_symbol) = next_pptoken.kind {
+                while let Some(next) = current_token_iter.peek() {
+                    if let PPTokenKind::StringLiteral(next_symbol) = next.kind {
                         let (next_prefix, next_content) =
                             Self::extract_literal_parts(next_symbol.as_str()).unwrap_or(("", ""));
-
-                        if prefix.is_empty() && !next_prefix.is_empty() {
+                        if prefix.is_empty() {
                             prefix = next_prefix;
                         }
-
-                        concatenated_content.push_str(next_content);
-
+                        content.push_str(next_content);
                         final_span = SourceSpan::new_with_length(
-                            next_pptoken.location.source_id(),
-                            next_pptoken.location.offset(),
-                            next_pptoken.length as u32,
+                            next.location.source_id(),
+                            next.location.offset(),
+                            next.length as u32,
                         );
-                        adjacent_literals += 1;
+                        current_token_iter.next();
                     } else {
                         break;
                     }
                 }
 
-                // --- Phase 2: Consume tokens ---
-                for _ in 0..adjacent_literals {
-                    current_token_iter.next();
-                }
-
-                // Construct final literal: prefix + " + content + "
-                let mut final_literal = String::with_capacity(concatenated_content.len() + prefix.len() + 2);
-                final_literal.push_str(prefix);
-                final_literal.push('"');
-                final_literal.push_str(&concatenated_content);
-                final_literal.push('"');
-
                 tokens.push(Token {
-                    kind: TokenKind::StringLiteral(StringId::new(final_literal)),
+                    kind: TokenKind::StringLiteral(StringId::new(format!("{}\"{}\"", prefix, content))),
                     span: start_span.merge(final_span),
                 });
                 continue;
@@ -591,25 +537,14 @@ impl<'src> Lexer<'src> {
 
     /// Extract parts from a string literal symbol: (prefix, content_without_quotes)
     fn extract_literal_parts(s: &str) -> Option<(&str, &str)> {
-        if let Some(rest) = s.strip_prefix("L\"") {
-            if let Some(inner) = rest.strip_suffix('"') {
-                return Some(("L", inner));
+        for prefix in ["L", "u8", "u", "U"] {
+            if let Some(rest) = s.strip_prefix(prefix) {
+                if let Some(inner) = rest.strip_prefix('"')?.strip_suffix('"') {
+                    return Some((prefix, inner));
+                }
             }
-        } else if let Some(rest) = s.strip_prefix("u\"") {
-            if let Some(inner) = rest.strip_suffix('"') {
-                return Some(("u", inner));
-            }
-        } else if let Some(rest) = s.strip_prefix("U\"") {
-            if let Some(inner) = rest.strip_suffix('"') {
-                return Some(("U", inner));
-            }
-        } else if let Some(rest) = s.strip_prefix("u8\"") {
-            if let Some(inner) = rest.strip_suffix('"') {
-                return Some(("u8", inner));
-            }
-        } else if let Some(rest) = s.strip_prefix("\"")
-            && let Some(inner) = rest.strip_suffix('"')
-        {
+        }
+        if let Some(inner) = s.strip_prefix('"')?.strip_suffix('"') {
             return Some(("", inner));
         }
         None

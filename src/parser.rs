@@ -60,9 +60,7 @@ impl TypeDefContext {
 
     /// Check if a symbol is a typedef name
     pub(crate) fn is_type_name(&self, symbol: NameId) -> bool {
-        let result = self.typedef_names.contains(&symbol);
-        debug!("is_type_name({:?}) = {}", symbol, result);
-        result
+        self.typedef_names.contains(&symbol)
     }
 
     /// Add a typedef name
@@ -134,22 +132,15 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Get the location of the previous token, or an empty span if not available.
     pub(crate) fn previous_token_span(&self) -> SourceSpan {
-        if self.current_idx > 0 {
-            self.tokens
-                .get(self.current_idx - 1)
-                .map_or(SourceSpan::empty(), |token| token.span)
-        } else {
-            SourceSpan::empty()
-        }
+        self.last_token_span().unwrap_or_default()
     }
 
-    /// Get the span of the last token (synonym for previous_token_span)
+    /// Get the span of the last token
     pub(crate) fn last_token_span(&self) -> Option<SourceSpan> {
-        if self.current_idx > 0 {
-            self.tokens.get(self.current_idx - 1).map(|token| token.span)
-        } else {
-            None
-        }
+        self.current_idx
+            .checked_sub(1)
+            .and_then(|i| self.tokens.get(i))
+            .map(|t| t.span)
     }
 
     /// Get the span of a token at a specific index
@@ -319,33 +310,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Check if the given token can start a type name.
     pub(crate) fn is_type_name_start_token(&self, token: &Token) -> bool {
         match token.kind {
-            // Basic type specifiers
-            TokenKind::Void
-            | TokenKind::Char
-            | TokenKind::Short
-            | TokenKind::Int
-            | TokenKind::Long
-            | TokenKind::Float
-            | TokenKind::Double
-            | TokenKind::Signed
-            | TokenKind::Unsigned
-            | TokenKind::Bool
-            | TokenKind::Complex
-            // Struct/union/enum specifiers
-            | TokenKind::Struct
-            | TokenKind::Union
-            | TokenKind::Enum
-            // Type qualifiers that can start a type name
-            | TokenKind::Const
-            | TokenKind::Volatile
-            | TokenKind::Restrict
-            | TokenKind::Atomic
-            // GCC attribute and builtin extensions
-            | TokenKind::Attribute
-            | TokenKind::BuiltinVaList => true,
-            // Check for typedef'd identifiers
+            TokenKind::Attribute => true,
             TokenKind::Identifier(symbol) => self.is_type_name(symbol),
-            _ => false,
+            kind => kind.is_type_specifier() || kind.is_type_qualifier(),
         }
     }
 
@@ -379,9 +346,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// parse and accept an identifier name
     fn accept_name(&mut self) -> Option<NameId> {
-        if let Some(token) = self.try_current_token()
-            && let TokenKind::Identifier(symbol) = token.kind
-        {
+        if let Some(TokenKind::Identifier(symbol)) = self.current_token_kind() {
             self.advance();
             return Some(symbol);
         }
@@ -427,16 +392,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if the current token can start a declaration
     pub(crate) fn starts_declaration(&self) -> bool {
-        if let Some(token) = self.try_current_token() {
-            let is_typedef = if let TokenKind::Identifier(symbol) = token.kind {
-                self.is_type_name(symbol)
-            } else {
-                false
-            };
+        self.try_current_token().map_or(false, |token| {
+            let is_typedef = matches!(token.kind, TokenKind::Identifier(s) if self.is_type_name(s));
             token.kind.is_declaration_start(is_typedef)
-        } else {
-            false
-        }
+        })
     }
 }
 

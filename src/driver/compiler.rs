@@ -7,7 +7,7 @@
 use indexmap::IndexMap;
 
 use crate::ast::dumper::AstDumper;
-use crate::ast::{Ast, NodeKind, NodeRef, ParsedAst, SourceId};
+use crate::ast::{Ast, NodeKind, ParsedAst, SourceId};
 use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::driver::cli::PathOrBuffer;

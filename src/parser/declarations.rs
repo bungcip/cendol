@@ -171,8 +171,6 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
     let start_loc = parser.current_token()?.span.start();
     let mut end_loc = SourceLoc::builtin();
     let mut top_level_declarations = Vec::new();
-    let mut iteration_count = 0;
-    const MAX_ITERATIONS: usize = 1000000; // Prevent infinite loops
 
     let dummy = parser.push_dummy();
 

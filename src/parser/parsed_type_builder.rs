@@ -125,75 +125,55 @@ fn parse_base_type_and_qualifiers(
 
     for spec in specifiers {
         match spec {
-            ParsedDeclSpecifier::TypeSpecifier(ts) => {
-                match ts {
-                    // Collect mergeable basic types
-                    ParsedTypeSpecifier::Void
-                    | ParsedTypeSpecifier::Char
-                    | ParsedTypeSpecifier::Short
-                    | ParsedTypeSpecifier::Int
-                    | ParsedTypeSpecifier::Long
-                    | ParsedTypeSpecifier::LongLong
-                    | ParsedTypeSpecifier::Float
-                    | ParsedTypeSpecifier::Double
-                    | ParsedTypeSpecifier::LongDouble
-                    | ParsedTypeSpecifier::Signed
-                    | ParsedTypeSpecifier::Unsigned
-                    | ParsedTypeSpecifier::Bool
-                    | ParsedTypeSpecifier::Complex => {
-                        if other_base_type_node.is_some() {
-                            return Err(ParseError::UnexpectedToken {
-                                expected_tokens: "single type specifier".to_string(),
-                                found: crate::parser::TokenKind::Unknown,
-                                span: crate::ast::SourceSpan::default(),
-                            });
-                        }
-                        if let Some(current) = base_type_specifier {
-                            // Merge
-                            // We don't have span for specifiers in ThinVec directly?
-                            // We can use parser.current_span() but that's wrong.
-                            // ParsedDeclSpecifier doesn't store span.
-                            // We will assume dummy span for now or fix this later.
-                            base_type_specifier = Some(merge_parsed_type_specifiers(
-                                current,
-                                ts.clone(),
-                                crate::ast::SourceSpan::default(),
-                            )?);
-                        } else {
-                            base_type_specifier = Some(ts.clone());
-                        }
+            ParsedDeclSpecifier::TypeSpecifier(ts) => match ts {
+                ParsedTypeSpecifier::Void
+                | ParsedTypeSpecifier::Char
+                | ParsedTypeSpecifier::Short
+                | ParsedTypeSpecifier::Int
+                | ParsedTypeSpecifier::Long
+                | ParsedTypeSpecifier::LongLong
+                | ParsedTypeSpecifier::Float
+                | ParsedTypeSpecifier::Double
+                | ParsedTypeSpecifier::LongDouble
+                | ParsedTypeSpecifier::Signed
+                | ParsedTypeSpecifier::Unsigned
+                | ParsedTypeSpecifier::Bool
+                | ParsedTypeSpecifier::Complex => {
+                    if other_base_type_node.is_some() {
+                        return Err(ParseError::UnexpectedToken {
+                            expected_tokens: "single type specifier".to_string(),
+                            found: crate::parser::TokenKind::Unknown,
+                            span: crate::ast::SourceSpan::default(),
+                        });
                     }
-                    _ => {
-                        // Non-mergeable types (struct, enum, typedef, atomic)
-                        // Should error if we already have a type
-                        if base_type_specifier.is_some() || other_base_type_node.is_some() {
-                            // Error: multiple types
-                            // Since we don't have easy error here, we might just overwrite or error?
-                            // Let's error.
-                            return Err(ParseError::UnexpectedToken {
-                                expected_tokens: "single type specifier".to_string(),
-                                found: crate::parser::TokenKind::Unknown,
-                                span: crate::ast::SourceSpan::default(),
-                            });
+                    base_type_specifier = Some(match base_type_specifier {
+                        Some(current) => {
+                            merge_parsed_type_specifiers(current, ts.clone(), crate::ast::SourceSpan::default())?
                         }
-                        let parsed_base = parse_type_specifier_to_parsed_base(parser, ts)?;
-                        other_base_type_node = Some(parsed_base);
-                    }
+                        None => ts.clone(),
+                    });
                 }
-            }
+                _ => {
+                    if base_type_specifier.is_some() || other_base_type_node.is_some() {
+                        return Err(ParseError::UnexpectedToken {
+                            expected_tokens: "single type specifier".to_string(),
+                            found: crate::parser::TokenKind::Unknown,
+                            span: crate::ast::SourceSpan::default(),
+                        });
+                    }
+                    let parsed_base = parse_type_specifier_to_parsed_base(parser, ts)?;
+                    other_base_type_node = Some(parsed_base);
+                }
+            },
             ParsedDeclSpecifier::TypeQualifier(q) => {
-                let qualifier = match q {
+                qualifiers |= match q {
                     crate::ast::nodes::TypeQualifier::Const => TypeQualifiers::CONST,
                     crate::ast::nodes::TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
                     crate::ast::nodes::TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
                     crate::ast::nodes::TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
                 };
-                qualifiers |= qualifier;
             }
-            _ => {
-                // Other specifiers (storage class, function specifiers, etc.)
-                // are handled elsewhere and don't affect the base type
-            }
+            _ => {}
         }
     }
 
@@ -219,106 +199,14 @@ fn parse_type_specifier_to_parsed_base(
     parser: &mut Parser,
     ts: &ParsedTypeSpecifier,
 ) -> Result<ParsedBaseTypeRef, ParseError> {
+    use ParsedTypeSpecifier::*;
     match ts {
-        ParsedTypeSpecifier::Void => Ok(parser
+        Void | Char | Short | Int | Long | LongLong | UnsignedLong | UnsignedLongLong | UnsignedShort
+        | UnsignedChar | SignedChar | SignedShort | SignedLong | SignedLongLong | Float | Double | LongDouble
+        | ComplexFloat | ComplexDouble | ComplexLongDouble | Signed | Unsigned | Bool | Complex | VaList => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Void))),
-        ParsedTypeSpecifier::Char => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Char))),
-        ParsedTypeSpecifier::Short => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Short))),
-        ParsedTypeSpecifier::Int => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Int))),
-        ParsedTypeSpecifier::Long => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Long))),
-        ParsedTypeSpecifier::LongLong => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::LongLong))),
-
-        // New variants
-        ParsedTypeSpecifier::UnsignedLong => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::UnsignedLong))),
-        ParsedTypeSpecifier::UnsignedLongLong => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::UnsignedLongLong))),
-        ParsedTypeSpecifier::UnsignedShort => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::UnsignedShort))),
-        ParsedTypeSpecifier::UnsignedChar => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::UnsignedChar))),
-        ParsedTypeSpecifier::SignedChar => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::SignedChar))),
-        ParsedTypeSpecifier::SignedShort => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::SignedShort))),
-        ParsedTypeSpecifier::SignedLong => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::SignedLong))),
-        ParsedTypeSpecifier::SignedLongLong => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::SignedLongLong))),
-
-        ParsedTypeSpecifier::Float => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Float))),
-        ParsedTypeSpecifier::Double => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Double))),
-        ParsedTypeSpecifier::LongDouble => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::LongDouble))),
-        ParsedTypeSpecifier::ComplexFloat => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::ComplexFloat))),
-        ParsedTypeSpecifier::ComplexDouble => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::ComplexDouble))),
-        ParsedTypeSpecifier::ComplexLongDouble => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::ComplexLongDouble))),
-        ParsedTypeSpecifier::Signed => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Signed))),
-        ParsedTypeSpecifier::Unsigned => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Unsigned))),
-        ParsedTypeSpecifier::Bool => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Bool))),
-        ParsedTypeSpecifier::Complex => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Complex))),
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ts.clone()))),
         ParsedTypeSpecifier::Atomic(parsed_type) => {
             // C11 6.7.2.4p3: "The type name in an atomic type specifier shall not designate
             // an array type, a function type, an atomic type, or an incomplete type."
@@ -446,14 +334,10 @@ fn parse_type_specifier_to_parsed_base(
                 enumerators: parsed_enumerators,
             }))
         }
-        ParsedTypeSpecifier::TypedefName(name) => Ok(parser
+        TypedefName(name) => Ok(parser
             .ast
             .parsed_types
             .alloc_base_type(ParsedBaseTypeNode::Typedef(*name))),
-        ParsedTypeSpecifier::VaList => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::VaList))),
     }
 }
 

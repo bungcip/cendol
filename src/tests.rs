@@ -100,4 +100,5 @@ pub mod semantic_parsed_types_coverage;
 pub mod semantic_return_check;
 pub mod semantic_return_local_address;
 pub mod semantic_scope_invariants;
+pub mod semantic_shift_float;
 pub mod semantic_static_assert;

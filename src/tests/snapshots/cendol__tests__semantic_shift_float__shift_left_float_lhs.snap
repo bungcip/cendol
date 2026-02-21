@@ -1,0 +1,9 @@
+---
+source: src/tests/semantic_shift_float.rs
+expression: output
+---
+Diagnostics count: 1
+
+Level: Error
+Message: Invalid operands for binary operation: have 'float' and 'int'
+Span: SourceSpan(source_id=SourceId(2), start=69, end=75)

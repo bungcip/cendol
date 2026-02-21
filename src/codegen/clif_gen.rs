@@ -428,7 +428,7 @@ pub(crate) fn emit_const(
         ConstValueKind::Zero => {
             // Emit zeros for the entire type size
             let size = lower_type_size(ty, ctx.mir)? as usize;
-            output.extend(std::iter::repeat(0).take(size));
+            output.extend(std::iter::repeat_n(0, size));
             Ok(())
         }
         ConstValueKind::GlobalAddress(global_id) => {

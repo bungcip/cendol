@@ -38,8 +38,8 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         .iter()
         .any(|s| matches!(s, ParsedDeclSpecifier::StorageClass(_)));
 
-    if has_record_enum_type && !has_storage_class {
-        if let Some(semi) = trx.parser.accept(TokenKind::Semicolon) {
+    if has_record_enum_type && !has_storage_class
+        && let Some(semi) = trx.parser.accept(TokenKind::Semicolon) {
             let declaration_data = ParsedDeclarationData {
                 specifiers,
                 init_declarators: ThinVec::new(),
@@ -51,7 +51,6 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
             trx.commit();
             return Ok(node);
         }
-    }
 
     if !trx.parser.is_token(TokenKind::Semicolon)
         && !matches!(

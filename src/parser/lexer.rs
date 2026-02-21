@@ -538,11 +538,10 @@ impl<'src> Lexer<'src> {
     /// Extract parts from a string literal symbol: (prefix, content_without_quotes)
     fn extract_literal_parts(s: &str) -> Option<(&str, &str)> {
         for prefix in ["L", "u8", "u", "U"] {
-            if let Some(rest) = s.strip_prefix(prefix) {
-                if let Some(inner) = rest.strip_prefix('"')?.strip_suffix('"') {
+            if let Some(rest) = s.strip_prefix(prefix)
+                && let Some(inner) = rest.strip_prefix('"')?.strip_suffix('"') {
                     return Some((prefix, inner));
                 }
-            }
         }
         if let Some(inner) = s.strip_prefix('"')?.strip_suffix('"') {
             return Some(("", inner));

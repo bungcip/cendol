@@ -35,12 +35,6 @@ pub(crate) struct TypeDefContext {
     typedef_names: HashSet<NameId>,
 }
 
-impl Default for TypeDefContext {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl TypeDefContext {
     /// Create a new type context with builtin typedefs
     pub(crate) fn new() -> Self {
@@ -392,7 +386,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if the current token can start a declaration
     pub(crate) fn starts_declaration(&self) -> bool {
-        self.try_current_token().map_or(false, |token| {
+        self.try_current_token().is_some_and(|token| {
             let is_typedef = matches!(token.kind, TokenKind::Identifier(s) if self.is_type_name(s));
             token.kind.is_declaration_start(is_typedef)
         })

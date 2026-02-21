@@ -1,4 +1,4 @@
-use crate::tests::test_utils::setup_diagnostics_output;
+use crate::tests::test_utils::run_fail_with_message;
 
 #[test]
 fn test_return_struct_in_int_function() {
@@ -11,12 +11,5 @@ fn test_return_struct_in_int_function() {
         return s;
     }
     "#;
-    let output = setup_diagnostics_output(code);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: type mismatch: expected int, found struct (anonymous)
-    Span: SourceSpan(source_id=SourceId(2), start=77, end=78)
-    ");
+    run_fail_with_message(code, "type mismatch: expected int, found struct (anonymous)");
 }

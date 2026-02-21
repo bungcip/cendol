@@ -9,7 +9,7 @@ int f() {
     return &x;
 }
 "#;
-    run_fail_with_message(source, "type mismatch: expected int, found <pointer>");
+    run_fail_with_message(source, "type mismatch: expected int, found int*");
 }
 
 #[test]

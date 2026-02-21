@@ -1761,24 +1761,32 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) -> Result<(), Stri
                     let right_clif_type = lower_operand_type(right_operand, ctx.mir)
                         .map_err(|e| format!("Failed to get right operand type: {}", e))?;
 
-                    // For Add/Sub operations on Pointers, we treat them as I64
-                    let (final_left_type, final_right_type) = match op {
-                        BinaryIntOp::Add | BinaryIntOp::Sub => {
-                            if left_clif_type == types::I64 && right_clif_type == types::I32 {
-                                // Pointer + int constant
-                                (types::I64, types::I64)
-                            } else if left_clif_type == types::I32 && right_clif_type == types::I64 {
-                                // int constant + pointer
-                                (types::I64, types::I64)
-                            } else {
-                                (left_clif_type, right_clif_type)
-                            }
-                        }
-                        _ => (left_clif_type, right_clif_type),
+                    // Determine common type for the operation
+                    // This handles mixing different integer widths (e.g. i8 + i32 literal)
+                    // and pointer arithmetic (i64 + i32 literal)
+                    let common_type = if left_clif_type.bits() > right_clif_type.bits() {
+                        left_clif_type
+                    } else {
+                        right_clif_type
                     };
 
-                    let left_val = emit_operand(left_operand, ctx, final_left_type)?;
-                    let right_val = emit_operand(right_operand, ctx, final_right_type)?;
+                    let left_val_raw = emit_operand(left_operand, ctx, left_clif_type)?;
+                    let right_val_raw = emit_operand(right_operand, ctx, right_clif_type)?;
+
+                    let left_val = emit_type_conversion(
+                        left_val_raw,
+                        left_clif_type,
+                        common_type,
+                        is_operand_signed(left_operand, ctx.mir),
+                        ctx.builder,
+                    );
+                    let right_val = emit_type_conversion(
+                        right_val_raw,
+                        right_clif_type,
+                        common_type,
+                        is_operand_signed(right_operand, ctx.mir),
+                        ctx.builder,
+                    );
 
                     let result_val = match op {
                         BinaryIntOp::Add => ctx.builder.ins().iadd(left_val, right_val),

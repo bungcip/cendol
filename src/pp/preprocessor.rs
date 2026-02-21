@@ -423,6 +423,7 @@ impl<'src> Preprocessor<'src> {
         built_in_headers.insert("stdarg.h", include_str!("../../custom-include/stdarg.h"));
         built_in_headers.insert("stdbool.h", include_str!("../../custom-include/stdbool.h"));
         built_in_headers.insert("limits.h", include_str!("../../custom-include/limits.h"));
+        built_in_headers.insert("float.h", include_str!("../../custom-include/float.h"));
 
         let mut preprocessor = Preprocessor {
             sm: source_manager,
@@ -1829,7 +1830,7 @@ impl<'src> Preprocessor<'src> {
         }
 
         if let Some(m) = self.macros.get_mut(&symbol) {
-            m.flags |= MacroFlags::USED | MacroFlags::DISABLED;
+            m.flags |= MacroFlags::USED;
         }
 
         let result = if macro_info.flags.contains(MacroFlags::FUNCTION_LIKE) {
@@ -1837,10 +1838,6 @@ impl<'src> Preprocessor<'src> {
         } else {
             self.expand_object_macro(&macro_info, &symbol, token)
         };
-
-        if let Some(m) = self.macros.get_mut(&symbol) {
-            m.flags.remove(MacroFlags::DISABLED);
-        }
 
         result.map(Some)
     }
@@ -1883,7 +1880,17 @@ impl<'src> Preprocessor<'src> {
         symbol: &StringId,
         token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
-        self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), token.location)
+        if let Some(m) = self.macros.get_mut(symbol) {
+            m.flags |= MacroFlags::DISABLED;
+        }
+
+        let result = self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), token.location);
+
+        if let Some(m) = self.macros.get_mut(symbol) {
+            m.flags.remove(MacroFlags::DISABLED);
+        }
+
+        result
     }
 
     /// Expand a function-like macro
@@ -1916,7 +1923,17 @@ impl<'src> Preprocessor<'src> {
         // Substitute parameters in macro body
         let substituted = self.substitute_macro(macro_info, &args, &expanded_args)?;
 
-        self.expand_virtual_buffer(&substituted, symbol.as_str(), token.location)
+        if let Some(m) = self.macros.get_mut(symbol) {
+            m.flags |= MacroFlags::DISABLED;
+        }
+
+        let result = self.expand_virtual_buffer(&substituted, symbol.as_str(), token.location);
+
+        if let Some(m) = self.macros.get_mut(symbol) {
+            m.flags.remove(MacroFlags::DISABLED);
+        }
+
+        result
     }
 
     /// Parse macro arguments from the current lexer

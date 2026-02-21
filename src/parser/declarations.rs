@@ -313,7 +313,7 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
 
     let mut top_level_declarations = Vec::new();
     let mut iteration_count = 0;
-    const MAX_ITERATIONS: usize = 1000; // Prevent infinite loops
+    const MAX_ITERATIONS: usize = 1000000; // Prevent infinite loops
 
     // TU must be placed as first node so reserve it place with dummy node before placing it last
     let dummy = parser.push_dummy();

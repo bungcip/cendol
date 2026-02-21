@@ -922,6 +922,11 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn check_assignment_constraints(&self, lhs_ty: QualType, rhs_ty: QualType, rhs_ref: NodeRef) -> bool {
+        // 0. Identical types
+        if lhs_ty.ty() == rhs_ty.ty() {
+            return true;
+        }
+
         // 1. Arithmetic types
         if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
             return true;
@@ -1790,7 +1795,22 @@ impl<'a> SemanticAnalyzer<'a> {
         let then_ty = self.visit_node(then);
         let else_ty = self.visit_node(else_expr);
 
-        if let (Some(t), Some(e)) = (then_ty, else_ty) {
+        if let (Some(mut t), Some(mut e)) = (then_ty, else_ty) {
+            // C11 6.5.15p5: If both the second and third operands have arithmetic type, the result type that would be determined by the usual arithmetic conversions...
+            // But array-to-pointer decay happens before that (lvalue conversion).
+
+            if t.is_array() || t.is_function() {
+                let decayed = self.registry.decay(t, TypeQualifiers::empty());
+                self.push_conversion(then, Conversion::PointerDecay { to: decayed.ty() });
+                t = decayed;
+            }
+
+            if e.is_array() || e.is_function() {
+                let decayed = self.registry.decay(e, TypeQualifiers::empty());
+                self.push_conversion(else_expr, Conversion::PointerDecay { to: decayed.ty() });
+                e = decayed;
+            }
+
             let result_ty = match (t, e) {
                 (t, e) if t.is_arithmetic() && e.is_arithmetic() => usual_arithmetic_conversions(self.registry, t, e),
                 (t, e) if t.ty() == e.ty() => Some(t),
@@ -1818,6 +1838,14 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 return Some(res);
             }
+
+            let t_str = self.registry.display_qual_type(t);
+            let e_str = self.registry.display_qual_type(e);
+            self.report_error(SemanticError::TypeMismatch {
+                expected: format!("compatible types for ternary operator ({} and {})", t_str, e_str),
+                found: "incompatible types".to_string(),
+                span: self.ast.get_span(cond), // Ideally use span of whole expression, but we only have cond?
+            });
             None
         } else {
             None

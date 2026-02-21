@@ -490,15 +490,22 @@ impl TypeRegistry {
         }))
     }
 
-    pub(crate) fn complete_enum(&mut self, enum_ty: TypeRef, enumerators: Vec<EnumConstant>) {
+    pub(crate) fn complete_enum(
+        &mut self,
+        enum_ty: TypeRef,
+        enumerators: Vec<EnumConstant>,
+        base_type: TypeRef,
+    ) {
         let ty = self.get_mut(enum_ty);
         match &mut ty.kind {
             TypeKind::Enum {
                 is_complete,
                 enumerators: slot,
+                base_type: base_slot,
                 ..
             } => {
                 *slot = Arc::from(enumerators);
+                *base_slot = base_type;
                 *is_complete = true;
             }
             _ => unreachable!("complete_enum on non-enum"),
@@ -956,6 +963,12 @@ impl TypeRegistry {
         let kind_b = self.get(ty_b_ref).kind.clone();
 
         match (kind_a, kind_b) {
+            (TypeKind::Enum { base_type, .. }, _) => {
+                self.is_compatible(QualType::new(base_type, a.qualifiers()), b)
+            }
+            (_, TypeKind::Enum { base_type, .. }) => {
+                self.is_compatible(a, QualType::new(base_type, b.qualifiers()))
+            }
             (
                 TypeKind::Array {
                     element_type: elem_a,

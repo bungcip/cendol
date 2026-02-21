@@ -2993,16 +2993,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     // Check if next item is an array designator (stopper)
                     if let Some(next_ref) = iter.peek()
                         && let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next_ref)
-                            && next_init.designator_len > 0
-                        {
-                            match self.ast.get_kind(next_init.designator_start) {
-                                NodeKind::Designator(Designator::ArrayIndex(_))
-                                | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
-                                    return;
-                                }
-                                _ => {}
+                        && next_init.designator_len > 0
+                    {
+                        match self.ast.get_kind(next_init.designator_start) {
+                            NodeKind::Designator(Designator::ArrayIndex(_))
+                            | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
+                                return;
                             }
+                            _ => {}
                         }
+                    }
                 }
             }
             TypeKind::Array { element_type, size } => {
@@ -3019,16 +3019,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         // Check stopper
                         if let Some(next_ref) = iter.peek()
                             && let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next_ref)
-                                && next_init.designator_len > 0
-                            {
-                                match self.ast.get_kind(next_init.designator_start) {
-                                    NodeKind::Designator(Designator::ArrayIndex(_))
-                                    | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
-                                        return;
-                                    }
-                                    _ => {}
+                            && next_init.designator_len > 0
+                        {
+                            match self.ast.get_kind(next_init.designator_start) {
+                                NodeKind::Designator(Designator::ArrayIndex(_))
+                                | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
+                                    return;
                                 }
+                                _ => {}
                             }
+                        }
                     }
                 } else {
                     // Variable/Incomplete array. Consume 1 item for safety.

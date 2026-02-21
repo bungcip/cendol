@@ -1228,12 +1228,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
 
                     let span = self.ast.get_span(arg_node_ref);
-                    self.validate_and_record_assignment(
-                        parameters[i].param_type,
-                        actual_arg_ty,
-                        arg_node_ref,
-                        span,
-                    );
+                    self.validate_and_record_assignment(parameters[i].param_type, actual_arg_ty, arg_node_ref, span);
                 } else if is_variadic {
                     let mut actual_arg_ty = arg_ty;
                     if arg_ty.is_array() || arg_ty.is_function() {

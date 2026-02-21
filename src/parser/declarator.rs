@@ -101,74 +101,52 @@ fn validate_declarator_combination(
     Ok(())
 }
 
-/// Parse declarator
 pub(crate) fn parse_declarator(parser: &mut Parser) -> Result<ParsedDeclarator, ParseError> {
-    // Check for __attribute__ before declarator (GCC extension)
     while parser.is_token(TokenKind::Attribute) {
-        if let Err(_e) = super::declaration_core::parse_attribute(parser) {}
+        let _ = super::declaration_core::parse_attribute(parser);
     }
 
-    // Parse leading pointers and their qualifiers
-    let declarator_chain = parse_leading_pointers(parser)?;
+    let pointers = parse_leading_pointers(parser)?;
 
-    // Parse direct declarator (identifier or parenthesized declarator)
-    let base_declarator = if parser.accept(TokenKind::LeftParen).is_some() {
-        let inner_declarator = parse_declarator(parser)?;
-
-        parser.expect(TokenKind::RightParen)?; // Consume ')'
-        inner_declarator
+    let base = if parser.accept(TokenKind::LeftParen).is_some() {
+        let inner = parse_declarator(parser)?;
+        parser.expect(TokenKind::RightParen)?;
+        inner
     } else if let Some(token) = parser.try_current_token() {
-        if let TokenKind::Identifier(symbol) = token.kind {
-            parser.advance(); // Consume identifier
-            ParsedDeclarator::Identifier(symbol, TypeQualifiers::empty())
-        } else if parser.is_abstract_declarator_start() {
-            parse_abstract_declarator(parser)?
-        } else {
-            // For abstract declarator, if nothing matches, it's just abstract
-            ParsedDeclarator::Abstract
+        match token.kind {
+            TokenKind::Identifier(symbol) => {
+                parser.advance();
+                ParsedDeclarator::Identifier(symbol, TypeQualifiers::empty())
+            }
+            _ if parser.is_abstract_declarator_start() => parse_abstract_declarator(parser)?,
+            _ => ParsedDeclarator::Abstract,
         }
     } else {
-        // For abstract declarator, if no token, it's abstract
         ParsedDeclarator::Abstract
     };
 
-    // Parse trailing array and function declarators
-    let current_base = parse_trailing_declarators(parser, base_declarator)?;
-
-    // Reconstruct the declarator chain in reverse order
-    let final_declarator = reconstruct_declarator_chain(declarator_chain, current_base);
-
-    Ok(final_declarator)
+    Ok(reconstruct_declarator_chain(
+        pointers,
+        parse_trailing_declarators(parser, base)?,
+    ))
 }
 
-/// Helper to parse type qualifiers
 fn parse_type_qualifiers(parser: &mut Parser) -> Result<TypeQualifiers, ParseError> {
     let mut qualifiers = TypeQualifiers::empty();
     while let Some(token) = parser.try_current_token() {
-        match token.kind {
-            TokenKind::Const => {
-                qualifiers.insert(TypeQualifiers::CONST);
-                parser.advance();
-            }
-            TokenKind::Volatile => {
-                qualifiers.insert(TypeQualifiers::VOLATILE);
-                parser.advance();
-            }
-            TokenKind::Restrict => {
-                qualifiers.insert(TypeQualifiers::RESTRICT);
-                parser.advance();
-            }
-            TokenKind::Atomic => {
-                qualifiers.insert(TypeQualifiers::ATOMIC);
-                parser.advance();
-            }
+        let q = match token.kind {
+            TokenKind::Const => TypeQualifiers::CONST,
+            TokenKind::Volatile => TypeQualifiers::VOLATILE,
+            TokenKind::Restrict => TypeQualifiers::RESTRICT,
+            TokenKind::Atomic => TypeQualifiers::ATOMIC,
             _ => break,
-        }
+        };
+        qualifiers.insert(q);
+        parser.advance();
     }
     Ok(qualifiers)
 }
 
-/// Helper to parse array size
 fn parse_array_size(parser: &mut Parser) -> Result<ParsedArraySize, ParseError> {
     let is_static = parser.accept(TokenKind::Static).is_some();
     let qualifiers = parse_type_qualifiers(parser)?;
@@ -176,232 +154,161 @@ fn parse_array_size(parser: &mut Parser) -> Result<ParsedArraySize, ParseError> 
     if parser.accept(TokenKind::Star).is_some() {
         Ok(ParsedArraySize::Star { qualifiers })
     } else if parser.is_token(TokenKind::RightBracket) {
-        // Empty []
         Ok(ParsedArraySize::Incomplete)
     } else {
-        // Assume it's an expression for the size
-        let expr_node = parser.parse_expr_min()?;
+        let expr = parser.parse_expr_min()?;
         if is_static || !qualifiers.is_empty() {
             Ok(ParsedArraySize::VlaSpecifier {
                 is_static,
                 qualifiers,
-                size: Some(expr_node),
+                size: Some(expr),
             })
         } else {
-            Ok(ParsedArraySize::Expression {
-                expr: expr_node,
-                qualifiers,
-            })
+            Ok(ParsedArraySize::Expression { expr, qualifiers })
         }
     }
 }
 
-/// Parse leading pointers and their qualifiers, building a declarator component chain
 fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<DeclaratorComponent>, ParseError> {
-    let mut declarator_chain: Vec<DeclaratorComponent> = Vec::new();
-
+    let mut pointers = Vec::new();
     while parser.accept(TokenKind::Star).is_some() {
-        let current_qualifiers = parse_type_qualifiers(parser)?;
-        declarator_chain.push(DeclaratorComponent::Pointer(current_qualifiers));
+        pointers.push(DeclaratorComponent::Pointer(parse_type_qualifiers(parser)?));
     }
-
-    Ok(declarator_chain)
+    Ok(pointers)
 }
 
-/// Parse trailing declarators (arrays, functions) that follow the base declarator
-/// This is used for abstract declarators in type names where bit-fields are not allowed
 fn parse_trailing_declarators_for_type_names(
     parser: &mut Parser,
-    mut current_base: ParsedDeclarator,
+    mut base: ParsedDeclarator,
 ) -> Result<ParsedDeclarator, ParseError> {
-    loop {
-        let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.span);
-        if parser.accept(TokenKind::LeftBracket).is_some() {
-            // Array declarator
-            validate_declarator_combination(&current_base, "array", current_token_span)?;
-            let array_size = parse_array_size(parser)?;
-            parser.expect(TokenKind::RightBracket)?; // Consume ']'
-            current_base = ParsedDeclarator::Array(Box::new(current_base), array_size);
-        } else if parser.accept(TokenKind::LeftParen).is_some() {
-            // Function declarator
-            validate_declarator_combination(&current_base, "function", current_token_span)?;
-            let (parameters, is_variadic) = parse_function_parameters(parser)?;
-            parser.expect(TokenKind::RightParen)?; // Consume ')'
-            current_base = ParsedDeclarator::Function {
-                inner: Box::new(current_base),
-                params: parameters,
-                is_variadic,
-            };
-        } else {
-            break;
-        }
-    }
-
-    Ok(current_base)
-}
-
-/// Parse trailing declarators (arrays, functions, bit-fields) that follow the base declarator
-fn parse_trailing_declarators(
-    parser: &mut Parser,
-    mut current_base: ParsedDeclarator,
-) -> Result<ParsedDeclarator, ParseError> {
-    loop {
-        let current_token_span = parser.try_current_token().map_or(SourceSpan::empty(), |t| t.span);
-        if parser.accept(TokenKind::LeftBracket).is_some() {
-            // Array declarator
-            validate_declarator_combination(&current_base, "array", current_token_span)?;
-            let array_size = parse_array_size(parser)?;
-            parser.expect(TokenKind::RightBracket)?; // Consume ']'
-            current_base = ParsedDeclarator::Array(Box::new(current_base), array_size);
-        } else if parser.accept(TokenKind::LeftParen).is_some() {
-            // Function declarator
-            validate_declarator_combination(&current_base, "function", current_token_span)?;
-            let (parameters, is_variadic) = parse_function_parameters(parser)?;
-            parser.expect(TokenKind::RightParen)?; // Consume ')'
-            current_base = ParsedDeclarator::Function {
-                inner: Box::new(current_base),
-                params: parameters,
-                is_variadic,
-            };
-        } else if parser.accept(TokenKind::Colon).is_some() {
-            // Bit-field declarator: name : width
-            let bit_width_expr = parser.parse_expr_min()?;
-            current_base = ParsedDeclarator::BitField(Box::new(current_base), bit_width_expr);
-        } else {
-            break;
-        }
-    }
-
-    Ok(current_base)
-}
-
-/// Reconstruct the declarator chain by applying pointer qualifiers in reverse order
-fn reconstruct_declarator_chain(
-    declarator_chain: Vec<DeclaratorComponent>,
-    base_declarator: ParsedDeclarator,
-) -> ParsedDeclarator {
-    let mut final_declarator = base_declarator;
-    for component in declarator_chain.into_iter().rev() {
-        final_declarator = match component {
-            DeclaratorComponent::Pointer(qualifiers) => {
-                ParsedDeclarator::Pointer(qualifiers, Some(Box::new(final_declarator)))
+    while let Some(token) = parser.try_current_token() {
+        match token.kind {
+            TokenKind::LeftBracket => {
+                parser.advance();
+                validate_declarator_combination(&base, "array", token.span)?;
+                let size = parse_array_size(parser)?;
+                parser.expect(TokenKind::RightBracket)?;
+                base = ParsedDeclarator::Array(Box::new(base), size);
             }
-        };
+            TokenKind::LeftParen => {
+                parser.advance();
+                validate_declarator_combination(&base, "function", token.span)?;
+                let (params, is_variadic) = parse_function_parameters(parser)?;
+                parser.expect(TokenKind::RightParen)?;
+                base = ParsedDeclarator::Function {
+                    inner: Box::new(base),
+                    params,
+                    is_variadic,
+                };
+            }
+            _ => break,
+        }
     }
-    final_declarator
+    Ok(base)
 }
 
-/// Helper to parse function parameters
+fn parse_trailing_declarators(parser: &mut Parser, mut base: ParsedDeclarator) -> Result<ParsedDeclarator, ParseError> {
+    while let Some(token) = parser.try_current_token() {
+        match token.kind {
+            TokenKind::LeftBracket => {
+                parser.advance();
+                validate_declarator_combination(&base, "array", token.span)?;
+                let size = parse_array_size(parser)?;
+                parser.expect(TokenKind::RightBracket)?;
+                base = ParsedDeclarator::Array(Box::new(base), size);
+            }
+            TokenKind::LeftParen => {
+                parser.advance();
+                validate_declarator_combination(&base, "function", token.span)?;
+                let (params, is_variadic) = parse_function_parameters(parser)?;
+                parser.expect(TokenKind::RightParen)?;
+                base = ParsedDeclarator::Function {
+                    inner: Box::new(base),
+                    params,
+                    is_variadic,
+                };
+            }
+            TokenKind::Colon => {
+                parser.advance();
+                base = ParsedDeclarator::BitField(Box::new(base), parser.parse_expr_min()?);
+            }
+            _ => break,
+        }
+    }
+    Ok(base)
+}
+
+fn reconstruct_declarator_chain(chain: Vec<DeclaratorComponent>, mut base: ParsedDeclarator) -> ParsedDeclarator {
+    for component in chain.into_iter().rev() {
+        match component {
+            DeclaratorComponent::Pointer(q) => base = ParsedDeclarator::Pointer(q, Some(Box::new(base))),
+        }
+    }
+    base
+}
+
 fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParamData>, bool), ParseError> {
     let mut params = ThinVec::new();
     let mut is_variadic = false;
 
-    if !parser.is_token(TokenKind::RightParen) {
-        if parser.is_token(TokenKind::Void) && parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::RightParen) {
-            // void parameter list (only if followed effectively by ')')
-            parser.expect(TokenKind::Void)?;
-        } else {
-            loop {
-                if parser.accept(TokenKind::Ellipsis).is_some() {
-                    is_variadic = true;
-                    break;
-                }
+    if parser.is_token(TokenKind::RightParen) {
+        return Ok((params, is_variadic));
+    }
 
-                // Check if we have a valid start for parameter declaration
-                if !parser.starts_declaration() {
-                    break;
-                }
+    if parser.is_token(TokenKind::Void) && parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::RightParen) {
+        parser.advance();
+        return Ok((params, is_variadic));
+    }
 
-                let start_idx = parser.current_idx;
+    while !parser.is_token(TokenKind::RightParen) {
+        if parser.accept(TokenKind::Ellipsis).is_some() {
+            is_variadic = true;
+            break;
+        }
 
-                // Parse declaration specifiers for this parameter
-                let specifiers_start_idx = parser.current_idx;
-                let saved_diagnostic_count = parser.diag.diagnostics.len();
+        if !parser.starts_declaration() {
+            break;
+        }
 
-                let specifiers = match parse_declaration_specifiers(parser) {
-                    Ok(specifiers) => specifiers,
-                    Err(_e) => {
-                        // If specifier parsing fails, we might be at a position where we need
-                        // to fall back to parsing without a proper declarator
-
-                        parser.current_idx = specifiers_start_idx;
-                        parser.diag.diagnostics.truncate(saved_diagnostic_count);
-
-                        // Create a simple default specifier
-                        thin_vec![ParsedDeclSpecifier::TypeSpecifier(ParsedTypeSpecifier::Int)]
-                    }
-                };
-
-                // Try to parse declarator, but be more careful about failures
-                let declarator = if !parser.is_token(TokenKind::Comma)
-                    && !parser.is_token(TokenKind::RightParen)
-                    && !parser.is_token(TokenKind::Ellipsis)
-                {
-                    // Special handling for abstract declarators in parameter context
-                    if parser.is_token(TokenKind::LeftParen) {
-                        let start_idx = parser.current_idx;
-                        match parse_abstract_declarator(parser) {
-                            Ok(abstract_decl) => Some(abstract_decl),
-                            Err(_e) => {
-                                parser.current_idx = start_idx;
-                                // Try regular declarator parsing as fallback
-                                match parse_declarator(parser) {
-                                    Ok(decl) => Some(decl),
-                                    Err(_) => {
-                                        // Skip until next comma or paren
-                                        while let Some(t) = parser.try_current_token() {
-                                            if t.kind == TokenKind::Comma || t.kind == TokenKind::RightParen {
-                                                break;
-                                            }
-                                            parser.advance();
-                                        }
-                                        None
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // Regular declarator parsing for other cases
-                        match parse_declarator(parser) {
-                            Ok(declarator) => Some(declarator),
-                            Err(_e) => {
-                                // Skip until next comma or paren
-                                while let Some(t) = parser.try_current_token() {
-                                    if t.kind == TokenKind::Comma || t.kind == TokenKind::RightParen {
-                                        break;
-                                    }
-                                    parser.advance();
-                                }
-                                None
-                            }
-                        }
-                    }
-                } else {
-                    None
-                };
-
-                // Calculate span for the parameter
-                let end_span = parser
-                    .last_token_span()
-                    .unwrap_or_else(|| parser.current_token_span_or_empty());
-                let start_token_span = parser.get_token_span(start_idx).unwrap_or_default();
-                let span = start_token_span.merge(end_span);
-
-                params.push(ParsedParamData {
-                    specifiers,
-                    declarator,
-                    span,
-                });
-
-                if parser.accept(TokenKind::Comma).is_none() {
-                    break;
-                }
-
-                // After consuming comma, verify we're in a good state to continue
-                if parser.is_token(TokenKind::RightParen) {
-                    break;
-                }
+        let start_idx = parser.current_idx;
+        let spec_idx = parser.current_idx;
+        let saved_diags = parser.diag.diagnostics.len();
+        let specifiers = match parse_declaration_specifiers(parser) {
+            Ok(s) => s,
+            Err(_) => {
+                parser.current_idx = spec_idx;
+                parser.diag.diagnostics.truncate(saved_diags);
+                thin_vec![ParsedDeclSpecifier::TypeSpecifier(ParsedTypeSpecifier::Int)]
             }
+        };
+
+        let declarator = if !parser.matches(&[TokenKind::Comma, TokenKind::RightParen, TokenKind::Ellipsis]) {
+            let decl_idx = parser.current_idx;
+            let res = if parser.is_token(TokenKind::LeftParen) {
+                parse_abstract_declarator(parser).or_else(|_| {
+                    parser.current_idx = decl_idx;
+                    parse_declarator(parser)
+                })
+            } else {
+                parse_declarator(parser)
+            };
+            res.ok()
+        } else {
+            None
+        };
+
+        let span = parser
+            .get_token_span(start_idx)
+            .unwrap_or_default()
+            .merge(parser.last_token_span().unwrap_or_default());
+        params.push(ParsedParamData {
+            specifiers,
+            declarator,
+            span,
+        });
+
+        if parser.accept(TokenKind::Comma).is_none() {
+            break;
         }
     }
 
@@ -436,137 +343,97 @@ pub(crate) fn get_declarator_name(declarator: &ParsedDeclarator) -> Option<NameI
     }
 }
 
-/// Parse abstract declarator (for type names without identifiers)
 pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDeclarator, ParseError> {
-    // Check for __attribute__ at the beginning (GCC extension)
     while parser.is_token(TokenKind::Attribute) {
-        if let Err(_e) = super::declaration_core::parse_attribute(parser) {}
+        let _ = super::declaration_core::parse_attribute(parser);
     }
 
-    // Parse leading pointers and their qualifiers
-    let declarator_chain = parse_leading_pointers(parser)?;
-
-    // Parse direct abstract declarator (parenthesized or array/function)
-    let base_declarator = if let Some(token) = parser.try_current_token() {
+    let pointers = parse_leading_pointers(parser)?;
+    let base = if let Some(token) = parser.try_current_token() {
         match token.kind {
-            TokenKind::Identifier(symbol) => {
-                if parser.is_type_name(symbol) {
-                    parser.advance(); // consume type name
-                    // Check if next is identifier for named abstract declarator
-                    if let Some(next_token) = parser.try_current_token() {
-                        if let TokenKind::Identifier(name) = next_token.kind {
-                            parser.advance(); // consume identifier
-                            ParsedDeclarator::Identifier(name, TypeQualifiers::empty())
-                        } else {
-                            ParsedDeclarator::Abstract
-                        }
-                    } else {
-                        unreachable!("ICE: EOF inside parenthesized abstract declarator after type name");
-                    }
-                } else {
-                    parser.advance(); // consume invalid identifier
-                    ParsedDeclarator::Abstract
-                }
-            }
-            TokenKind::Int => {
-                parser.advance(); // consume int
-                // Check if next is identifier
-                if let Some(next_token) = parser.try_current_token() {
-                    if let TokenKind::Identifier(name) = next_token.kind {
-                        parser.advance(); // consume identifier
+            TokenKind::Identifier(symbol) if parser.is_type_name(symbol) => {
+                parser.advance();
+                if let Some(token) = parser.peek_token(0) {
+                    if let TokenKind::Identifier(name) = token.kind {
+                        parser.advance();
                         ParsedDeclarator::Identifier(name, TypeQualifiers::empty())
                     } else {
                         ParsedDeclarator::Abstract
                     }
                 } else {
-                    unreachable!("ICE: EOF inside parenthesized abstract declarator after int");
+                    ParsedDeclarator::Abstract
+                }
+            }
+            TokenKind::Int => {
+                parser.advance();
+                if let Some(token) = parser.peek_token(0) {
+                    if let TokenKind::Identifier(name) = token.kind {
+                        parser.advance();
+                        ParsedDeclarator::Identifier(name, TypeQualifiers::empty())
+                    } else {
+                        ParsedDeclarator::Abstract
+                    }
+                } else {
+                    ParsedDeclarator::Abstract
                 }
             }
             TokenKind::LeftParen => {
-                // Check if this is likely a function parameter list start, e.g. `(int...)` or `(char...)`
-                // If so, we treat it as a function declarator applied to an empty abstract declarator,
-                // instead of consuming the paren as a parenthesized declarator.
-                // We also check for `()` which is an empty parameter list.
-                let is_param_list_start = if let Some(next_token) = parser.peek_token(0) {
-                    if next_token.kind == TokenKind::Attribute {
-                        // Disambiguate between `(ATTR *)` (parenthesized declarator) and `(ATTR int)` (param list).
-                        // If Attribute is followed by *, it's likely a parenthesized declarator.
-                        if let Some(after_attr) = peek_past_attribute(parser, 0) {
-                            after_attr.kind != TokenKind::Star
-                        } else {
-                            // Fallback if attribute syntax is weird
-                            true
-                        }
+                let is_param = if let Some(next) = parser.peek_token(0) {
+                    if next.kind == TokenKind::Attribute {
+                        peek_past_attribute(parser, 0).is_some_and(|t| t.kind != TokenKind::Star)
                     } else {
-                        parser.is_type_name_start_token(next_token) || next_token.kind == TokenKind::RightParen
+                        parser.is_type_name_start_token(next) || next.kind == TokenKind::RightParen
                     }
                 } else {
                     false
                 };
 
-                if is_param_list_start {
-                    // It's a suffix, e.g. `(int)` in `int (int)`.
-                    // We return Abstract so the trailing declarator parser picks it up as a function declarator.
+                if is_param {
                     ParsedDeclarator::Abstract
                 } else {
-                    parser.advance(); // Consume '('
+                    parser.advance(); // consume '('
                     if parser.accept(TokenKind::RightParen).is_some() {
-                        // This case is actually covered by is_param_list_start above,
-                        // but if we somehow got here (maybe peek failed?), handle it.
-                        // Although if peek failed, we probably hit EOF soon.
                         ParsedDeclarator::Function {
                             inner: Box::new(ParsedDeclarator::Abstract),
                             params: ThinVec::new(),
                             is_variadic: false,
                         }
                     } else {
-                        let start_idx = parser.current_idx;
-                        let inner_declarator = parse_abstract_declarator(parser)?;
-
+                        let inner = parse_abstract_declarator(parser)?;
                         if parser.accept(TokenKind::RightParen).is_some() {
-                            inner_declarator
-                        } else {
-                            // Check if we're dealing with a function parameter syntax like "int (int)"
-                            // In this case, the closing paren might be part of the parameter list context
-
-                            // Try to parse as function declarator if we see another LeftParen
-                            if parser.accept(TokenKind::LeftParen).is_some() {
-                                let (parameters, is_variadic) = parse_function_parameters(parser)?;
-                                parser.expect(TokenKind::RightParen)?; // Consume ')'
-                                ParsedDeclarator::Function {
-                                    inner: Box::new(inner_declarator),
-                                    params: parameters,
-                                    is_variadic,
-                                }
-                            } else {
-                                // Roll back and try a different approach
-                                parser.current_idx = start_idx;
-                                ParsedDeclarator::Abstract
+                            inner
+                        } else if parser.accept(TokenKind::LeftParen).is_some() {
+                            let (params, is_variadic) = parse_function_parameters(parser)?;
+                            parser.expect(TokenKind::RightParen)?;
+                            ParsedDeclarator::Function {
+                                inner: Box::new(inner),
+                                params,
+                                is_variadic,
                             }
+                        } else {
+                            return Err(ParseError::UnexpectedToken {
+                                expected_tokens: "')'".to_string(),
+                                found: parser.current_token_kind().unwrap_or(TokenKind::EndOfFile),
+                                span: parser.current_token_span_or_empty(),
+                            });
                         }
                     }
                 }
             }
             TokenKind::LeftBracket => {
-                parser.advance(); // Consume '['
-                let array_size = parse_array_size(parser)?;
-                parser.expect(TokenKind::RightBracket)?; // Consume ']'
-                ParsedDeclarator::Array(Box::new(ParsedDeclarator::Abstract), array_size)
+                parser.advance();
+                let size = parse_array_size(parser)?;
+                parser.expect(TokenKind::RightBracket)?;
+                ParsedDeclarator::Array(Box::new(ParsedDeclarator::Abstract), size)
             }
-            _ => {
-                // invalid token, don't consume
-                ParsedDeclarator::Abstract
-            }
+            _ => ParsedDeclarator::Abstract,
         }
     } else {
         ParsedDeclarator::Abstract
     };
 
-    // Parse trailing array and function declarators
-    let current_base = parse_trailing_declarators_for_type_names(parser, base_declarator)?;
-
-    // Reconstruct the declarator chain in reverse order
-    let final_declarator = reconstruct_declarator_chain(declarator_chain, current_base);
-
-    Ok(final_declarator)
+    Ok(reconstruct_declarator_chain(
+        pointers,
+        parse_trailing_declarators_for_type_names(parser, base)?,
+    ))
 }

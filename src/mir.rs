@@ -47,6 +47,13 @@ pub enum MirFunctionKind {
     Extern,
 }
 
+/// Linkage for functions
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub enum MirLinkage {
+    External,
+    Internal,
+}
+
 /// MIR Module - Top-level container for MIR
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirModule {
@@ -80,6 +87,7 @@ pub struct MirFunction {
     pub params: Vec<LocalId>,
 
     pub kind: MirFunctionKind,
+    pub linkage: MirLinkage,
     pub is_variadic: bool, // Track if this function is variadic
 
     // Only valid if kind is Defined
@@ -89,13 +97,20 @@ pub struct MirFunction {
 }
 
 impl MirFunction {
-    pub(crate) fn new(id: MirFunctionId, name: NameId, return_type: TypeId, kind: MirFunctionKind) -> Self {
+    pub(crate) fn new(
+        id: MirFunctionId,
+        name: NameId,
+        return_type: TypeId,
+        kind: MirFunctionKind,
+        linkage: MirLinkage,
+    ) -> Self {
         Self {
             id,
             name,
             return_type,
             params: Vec::new(),
             kind,
+            linkage,
             is_variadic: false,
             locals: Vec::new(),
             blocks: Vec::new(),
@@ -103,12 +118,12 @@ impl MirFunction {
         }
     }
 
-    pub(crate) fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
-        Self::new(id, name, return_type, MirFunctionKind::Defined)
+    pub(crate) fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
+        Self::new(id, name, return_type, MirFunctionKind::Defined, linkage)
     }
 
-    fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
-        Self::new(id, name, return_type, MirFunctionKind::Extern)
+    fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
+        Self::new(id, name, return_type, MirFunctionKind::Extern, linkage)
     }
 }
 
@@ -691,9 +706,10 @@ impl MirBuilder {
         param_types: Vec<TypeId>,
         return_type: TypeId,
         is_variadic: bool,
+        linkage: MirLinkage,
     ) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
-        let mut func = MirFunction::new_extern(func_id, name, return_type);
+        let mut func = MirFunction::new_extern(func_id, name, return_type, linkage);
         func.is_variadic = is_variadic;
 
         // Create locals for each parameter
@@ -716,9 +732,10 @@ impl MirBuilder {
         param_types: Vec<TypeId>,
         return_type: TypeId,
         is_variadic: bool,
+        linkage: MirLinkage,
     ) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
-        let mut func = MirFunction::new_defined(func_id, name, return_type);
+        let mut func = MirFunction::new_defined(func_id, name, return_type, linkage);
         func.is_variadic = is_variadic;
 
         // Create locals for each parameter

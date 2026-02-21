@@ -104,7 +104,7 @@ fn test_alloc_dealloc_codegen() {
     let ptr_type_id = builder.add_type(MirType::Pointer { pointee: int_type_id });
     let void_type_id = builder.add_type(MirType::Void);
 
-    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false);
+    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false, crate::mir::MirLinkage::External);
     builder.set_current_function(func_id);
 
     let entry_block_id = builder.create_block();

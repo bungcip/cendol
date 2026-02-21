@@ -70,6 +70,7 @@ pub enum SymbolKind {
     },
     Function {
         storage: Option<StorageClass>,
+        is_inline: bool,
     },
     Typedef {
         aliased_type: QualType,
@@ -331,6 +332,7 @@ impl SymbolTable {
         name: NameId,
         ty: TypeRef,
         storage: Option<StorageClass>,
+        is_inline: bool,
         is_definition: bool,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
@@ -343,7 +345,7 @@ impl SymbolTable {
 
         let symbol_entry = Symbol {
             name,
-            kind: SymbolKind::Function { storage },
+            kind: SymbolKind::Function { storage, is_inline },
             type_info: QualType::unqualified(ty),
             scope_id: self.current_scope_id,
             def_span: span,

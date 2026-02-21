@@ -1,0 +1,22 @@
+Already up to date.
+/app/target/debug/cendol -Wall -Wshadow -O2 -o repl repl.o tinyexpr.o -lm
+/usr/bin/ld: tinyexpr.o: in function `__uint16_identity':
+main:(.text+0x37c0): multiple definition of `__uint16_identity'; repl.o:main:(.text+0x460): first defined here
+/usr/bin/ld: tinyexpr.o: in function `__uint32_identity':
+main:(.text+0x458f): multiple definition of `__uint32_identity'; repl.o:main:(.text+0x47a): first defined here
+/usr/bin/ld: tinyexpr.o: in function `__bswap_32':
+main:(.text+0x45dd): multiple definition of `__bswap_32'; repl.o:main:(.text+0x491): first defined here
+/usr/bin/ld: tinyexpr.o: in function `__uint64_identity':
+main:(.text+0x469b): multiple definition of `__uint64_identity'; repl.o:main:(.text+0x54f): first defined here
+/usr/bin/ld: tinyexpr.o: in function `__bswap_64':
+main:(.text+0x4a50): multiple definition of `__bswap_64'; repl.o:main:(.text+0x568): first defined here
+/usr/bin/ld: tinyexpr.o: in function `__bswap_16':
+main:(.text+0x56b8): multiple definition of `__bswap_16'; repl.o:main:(.text+0x775): first defined here
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+cendol: error: linker exited with status exit status: 1
+make: *** [Makefile:19: repl] Error 1
+Updating tinyexpr...
+Running: git pull in /app/realworld/tinyexpr
+Running: make CC=/app/target/debug/cendol in /app/realworld/tinyexpr
+Error: Command failed with return code 2
+EXIT CODE: 1

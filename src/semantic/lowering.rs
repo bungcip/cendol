@@ -1647,7 +1647,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let existing_has_linkage = existing.has_linkage();
         let existing_storage = match &existing.kind {
             SymbolKind::Variable { storage, .. } => Some(*storage),
-            SymbolKind::Function { storage } => Some(*storage),
+            SymbolKind::Function { storage, .. } => Some(*storage),
             _ => None,
         };
 
@@ -1773,7 +1773,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) = self
             .symbol_table
-            .define_function(func_name, final_ty.ty(), spec_info.storage, true, span)
+            .define_function(
+                func_name,
+                final_ty.ty(),
+                spec_info.storage,
+                spec_info.is_inline,
+                true,
+                span,
+            )
         {
             let entry = self.symbol_table.get_symbol(existing);
             if entry.def_state == DefinitionState::Defined {
@@ -2090,7 +2097,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) = self
             .symbol_table
-            .define_function(name, final_ty.ty(), spec_info.storage, false, span)
+            .define_function(
+                name,
+                final_ty.ty(),
+                spec_info.storage,
+                spec_info.is_inline,
+                false,
+                span,
+            )
         {
             let first_def = self.symbol_table.get_symbol(existing).def_span;
             self.report_error(SemanticError::Redefinition { name, first_def, span });
@@ -2699,7 +2713,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // Save current scope and switch to global for implicit decl
         let old_scope = self.symbol_table.current_scope();
         self.symbol_table.set_current_scope(ScopeId::GLOBAL);
-        let result = self.symbol_table.define_function(name, func_ty, None, false, span).ok();
+        let result = self
+            .symbol_table
+            .define_function(name, func_ty, None, false, false, span)
+            .ok();
         self.symbol_table.set_current_scope(old_scope);
         result
     }

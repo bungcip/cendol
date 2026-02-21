@@ -28,6 +28,7 @@ fn test_indirect_function_call() {
         vec![int_type_id], // param types
         int_type_id,       // return type
         false,             // not variadic
+        crate::mir::MirLinkage::External,
     );
 
     builder.set_current_function(target_func_id);
@@ -46,7 +47,7 @@ fn test_indirect_function_call() {
     ))))));
 
     // Setup Function 2 (Main): fn main() -> i32
-    let main_func_id = builder.define_function(NameId::new("main"), vec![], int_type_id, false);
+    let main_func_id = builder.define_function(NameId::new("main"), vec![], int_type_id, false, crate::mir::MirLinkage::External);
 
     builder.set_current_function(main_func_id);
     let main_block_id = builder.create_block();
@@ -145,7 +146,7 @@ fn test_global_function_pointer_init() {
     let func_ptr_type_id = builder.add_type(MirType::Pointer { pointee: func_type_id });
 
     // Define target function
-    let target_func_id = builder.define_function(NameId::new("target"), vec![int_type_id], int_type_id, false);
+    let target_func_id = builder.define_function(NameId::new("target"), vec![int_type_id], int_type_id, false, crate::mir::MirLinkage::External);
     builder.set_current_function(target_func_id);
     let block_id = builder.create_block();
     builder.set_current_block(block_id);

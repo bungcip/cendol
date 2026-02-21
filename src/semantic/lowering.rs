@@ -1373,8 +1373,7 @@ fn apply_declarator(
             if has_static || has_quals {
                 let is_outermost = matches!(
                     base.as_ref(),
-                    ParsedDeclarator::Identifier(..)
-                        | ParsedDeclarator::Abstract
+                    ParsedDeclarator::Identifier(..) | ParsedDeclarator::Abstract
                 );
 
                 if !decl_ctx.in_parameter {

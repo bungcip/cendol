@@ -538,7 +538,6 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &ParsedDeclarator) -
             // For types, a bitfield declarator resolves to the underlying type declarator.
             build_parsed_declarator(parser, inner)
         }
-
     }
 }
 

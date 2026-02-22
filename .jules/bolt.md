@@ -53,3 +53,7 @@
 ## 2026-02-18 - Avoiding Redundant Clones in Vector Extension
 **Learning:** Using `result.extend(vec.clone())` on a `Vec<T>` where `T: Copy` is a major performance anti-pattern. It creates a temporary heap-allocated `Vec`, copies elements into it, and then moves them into the result before dropping the temporary.
 **Action:** Always use `result.extend_from_slice(vec)` or `result.extend(vec.iter().copied())` for `Copy` types. For non-`Copy` types where you need to keep the original, `result.extend(vec.iter().cloned())` is preferred as it avoids the intermediate `Vec` allocation.
+
+## 2026-02-22 - Fast-path Guards for State-Heavy Operations
+**Learning:** Operations that involve saving and restoring state (like backtracking in a lexer) should always be guarded by a fast-path check that skips the expensive setup if the work is not needed. In our lexer, the comment-skipping logic was saving state for every single token, even though comments can only start with a specific character ('/').
+**Action:** Always use a simple guard (like `peek_char()`) before performing any state-heavy or potentially redundant operations in hot loops.

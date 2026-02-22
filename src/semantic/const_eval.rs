@@ -133,10 +133,28 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
         }
         NodeKind::Cast(target_ty, expr) => {
             let kind = ctx.ast.get_kind(*expr);
+
+            if target_ty.ty().builtin() == Some(crate::semantic::BuiltinType::Bool) {
+                if let Some(val) = eval_const_expr(ctx, *expr) {
+                    return Some((val != 0) as i64);
+                } else if let NodeKind::Literal(literal::Literal::Float { val: f_val, .. }) = kind {
+                    return Some((*f_val != 0.0) as i64);
+                } else {
+                    return None;
+                }
+            }
+
             let val = if let Some(val) = eval_const_expr(ctx, *expr) {
                 val
-            } else if let NodeKind::Literal(literal::Literal::Float { val, .. }) = kind {
-                *val as i64
+            } else if let NodeKind::Literal(literal::Literal::Float { val: f_val, .. }) = kind {
+                if !f_val.is_finite() {
+                    return None;
+                }
+                let truncated = f_val.trunc();
+                if truncated < -9223372036854775808.0 || truncated >= 9223372036854775808.0 {
+                    return None;
+                }
+                truncated as i64
             } else {
                 return None;
             };

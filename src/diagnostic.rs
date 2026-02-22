@@ -61,6 +61,7 @@ pub struct DiagnosticEngine {
     pub diagnostics: Vec<Diagnostic>,
     pub warnings_as_errors: bool,
     pub disable_all_warnings: bool,
+    pub error_limit: Option<usize>,
 }
 
 impl DiagnosticEngine {
@@ -71,10 +72,35 @@ impl DiagnosticEngine {
             diagnostics: Vec::new(),
             warnings_as_errors,
             disable_all_warnings,
+            error_limit: None,
         }
     }
 
+    pub(crate) fn set_error_limit(&mut self, limit: usize) {
+        self.error_limit = Some(limit);
+    }
+
     pub(crate) fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
+        if let Some(limit) = self.error_limit {
+            let error_count = self
+                .diagnostics
+                .iter()
+                .filter(|d| d.level == DiagnosticLevel::Error)
+                .count();
+            if error_count >= limit {
+                if error_count == limit {
+                    // Report that we reached the limit
+                    // Use the span of the current error to avoid <unknown> source if possible
+                    self.diagnostics.push(Diagnostic {
+                        level: DiagnosticLevel::Note,
+                        message: format!("too many errors emitted, stopping after {} errors", limit),
+                        span: diagnostic.span,
+                        ..Default::default()
+                    });
+                }
+                return;
+            }
+        }
         self.diagnostics.push(diagnostic);
     }
 

@@ -104,6 +104,10 @@ pub struct Cli {
     /// Use a specific linker
     #[clap(long = "fuse-ld", value_name = "LINKER")]
     pub fuse_ld: Option<String>,
+
+    /// Maximum number of errors to report (default: 1)
+    #[clap(long = "fmax-errors", value_name = "N")]
+    pub fmax_errors: Option<usize>,
 }
 
 #[derive(Args, Debug)]
@@ -141,6 +145,7 @@ pub struct CompileConfig {
     pub compile_only: bool,
     pub debug_info: bool,
     pub fuse_ld: Option<String>,
+    pub fmax_errors: Option<usize>,
 }
 
 impl Default for CompileConfig {
@@ -162,6 +167,7 @@ impl Default for CompileConfig {
             compile_only: false,
             debug_info: false,
             fuse_ld: None,
+            fmax_errors: None,
         }
     }
 }
@@ -312,6 +318,7 @@ impl Cli {
             compile_only: self.compile_only,
             debug_info: self.debug_info,
             fuse_ld: self.fuse_ld,
+            fmax_errors: self.fmax_errors,
         })
     }
 }
@@ -348,11 +355,13 @@ mod tests {
             compile_only: true,
             debug_info: true,
             fuse_ld: Some("lld".to_string()),
+            fmax_errors: Some(5),
         };
 
         let config = cli.into_config().expect("Failed to create config");
 
         assert_eq!(config.fuse_ld, Some("lld".to_string()));
+        assert_eq!(config.fmax_errors, Some(5));
         assert_eq!(config.stop_after, CompilePhase::Mir);
         assert!(config.verbose);
         assert!(config.suppress_line_markers);
@@ -388,6 +397,7 @@ mod tests {
             compile_only: false,
             debug_info: false,
             fuse_ld: None,
+            fmax_errors: None,
         };
 
         let err = cli_error.into_config().unwrap_err();
@@ -421,6 +431,7 @@ mod tests {
             compile_only: false,
             debug_info: false,
             fuse_ld: None,
+            fmax_errors: None,
         };
 
         // This tests testing the default bounds, pedantic bounds, and dump priorities

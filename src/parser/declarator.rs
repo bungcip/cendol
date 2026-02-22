@@ -260,7 +260,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParam
         return Ok((params, is_variadic));
     }
 
-    while !parser.is_token(TokenKind::RightParen) {
+    while !parser.at_eof() && !parser.is_token(TokenKind::RightParen) {
         if parser.accept(TokenKind::Ellipsis).is_some() {
             is_variadic = true;
             break;

@@ -192,13 +192,34 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.current_token_kind() == Some(kind)
     }
 
-    /// Skip tokens until we find a synchronization point
+    /// Check if we are at the end of the token stream
+    fn at_eof(&self) -> bool {
+        self.current_token_kind() == Some(TokenKind::EndOfFile) || self.current_token_kind().is_none()
+    }
+
+    /// Skip tokens until we find a synchronization point.
+    /// Default behavior: skip aggressively until `;` at depth 0, unmatched delimiter, or EOF.
     fn synchronize(&mut self) {
-        let mut brace_depth = 0;
-        let mut paren_depth = 0;
+        self.synchronize_until(&[]);
+    }
+
+    /// Skip tokens until we find a synchronization point, but stop **before** any
+    /// token in `stop_before` when at balanced depth. This lets the caller's loop
+    /// see the delimiter it needs (e.g. `}` for compound statements).
+    fn synchronize_until(&mut self, stop_before: &[TokenKind]) {
+        let mut brace_depth: i32 = 0;
+        let mut paren_depth: i32 = 0;
         let mut any_advance = false;
+        let mut stopped_at_stop_token = false;
 
         while let Some(token) = self.try_current_token() {
+            // If we're at balanced depth and the current token is one the caller
+            // wants to handle, stop WITHOUT consuming it.
+            if brace_depth <= 0 && paren_depth <= 0 && stop_before.contains(&token.kind) {
+                stopped_at_stop_token = true;
+                break;
+            }
+
             match token.kind {
                 TokenKind::LeftBrace => {
                     brace_depth += 1;
@@ -245,8 +266,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             }
         }
 
-        // If we didn't advance at all, force advance to avoid infinite loop
-        if !any_advance {
+        // Force advance only if we didn't advance AND didn't stop at a designated stop token
+        if !any_advance && !stopped_at_stop_token {
             self.advance();
         }
     }

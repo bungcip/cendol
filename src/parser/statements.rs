@@ -46,7 +46,7 @@ pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(ParsedNod
     let dummy = parser.push_dummy();
     let mut items = Vec::new();
 
-    while !parser.is_token(TokenKind::RightBrace) {
+    while !parser.at_eof() && !parser.is_token(TokenKind::RightBrace) {
         let mut decl_error = None;
         if parser.starts_declaration() {
             let trx = parser.start_transaction();
@@ -64,7 +64,7 @@ pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(ParsedNod
             Ok(stmt) => items.push(stmt),
             Err(stmt_err) => {
                 parser.diag.report(decl_error.unwrap_or(stmt_err));
-                parser.synchronize();
+                parser.synchronize_until(&[TokenKind::RightBrace]);
             }
         }
     }

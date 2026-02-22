@@ -381,10 +381,11 @@ pub(crate) fn emit_const(
         }
         ConstValueKind::FunctionAddress(func_id) => {
             if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module)
-                && let Some(&clif_func_id) = ctx.func_id_map.get(func_id) {
-                    let func_ref = mod_obj.declare_func_in_data(clif_func_id, dd);
-                    dd.write_function_addr(offset, func_ref);
-                }
+                && let Some(&clif_func_id) = ctx.func_id_map.get(func_id)
+            {
+                let func_ref = mod_obj.declare_func_in_data(clif_func_id, dd);
+                dd.write_function_addr(offset, func_ref);
+            }
             output.extend_from_slice(&0i64.to_le_bytes());
         }
         ConstValueKind::StructLiteral(fields) => {
@@ -1587,7 +1588,6 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                         ctx.builder,
                     );
 
-                    
                     match op {
                         BinaryIntOp::Add => ctx.builder.ins().iadd(left_val, right_val),
                         BinaryIntOp::Sub => ctx.builder.ins().isub(left_val, right_val),
@@ -1674,7 +1674,6 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let left_val = emit_operand(left_operand, ctx, left_cranelift_type);
                     let right_val = emit_operand(right_operand, ctx, right_cranelift_type);
 
-                    
                     match op {
                         BinaryFloatOp::Add => ctx.builder.ins().fadd(left_val, right_val),
                         BinaryFloatOp::Sub => ctx.builder.ins().fsub(left_val, right_val),

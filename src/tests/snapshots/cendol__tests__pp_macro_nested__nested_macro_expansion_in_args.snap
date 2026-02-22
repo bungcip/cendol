@@ -1,6 +1,5 @@
 ---
 source: src/tests/pp_macro_nested.rs
-assertion_line: 12
 expression: tokens
 ---
 - kind: LeftParen

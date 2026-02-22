@@ -160,7 +160,7 @@ pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
     if parser.accept(TokenKind::LeftBrace).is_some() {
         let mut initializers = Vec::new();
 
-        while !parser.is_token(TokenKind::RightBrace) {
+        while !parser.at_eof() && !parser.is_token(TokenKind::RightBrace) {
             let initializer = if parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
                 parse_designated_initializer(parser)?
             } else {

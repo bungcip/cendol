@@ -41,7 +41,9 @@ impl CompilerDriver {
 
     /// Create a new compiler driver from configuration
     pub(crate) fn from_config(config: CompileConfig) -> Self {
-        let diagnostics = DiagnosticEngine::from_warnings(&config.warnings);
+        let mut diagnostics = DiagnosticEngine::from_warnings(&config.warnings);
+        // Default to one error report as requested, or use the configured limit
+        diagnostics.set_error_limit(config.fmax_errors.unwrap_or(20));
         CompilerDriver {
             diagnostics,
             source_manager: SourceManager::new(),

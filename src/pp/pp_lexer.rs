@@ -208,13 +208,13 @@ impl PPLexer {
                 return None;
             }
 
-            let mut ch = self.buffer[pos];
+            let ch = self.buffer[pos];
 
             // ⚡ Bolt: Fast path for common characters.
-            // If the character is not the start of a trigraph ('?') or a line splice ('\'),
+            // If the character is not a line splice ('\'),
             // we can consume it immediately and skip the complex logic below.
             // This significantly improves performance as most characters fall into this case.
-            if ch != b'?' && ch != b'\\' {
+            if ch != b'\\' {
                 let char_pos = self.position;
                 self.position += 1;
                 if ch == b'\n' {
@@ -224,30 +224,9 @@ impl PPLexer {
             }
 
             let start_pos = self.position;
-            let mut consumed_len = 1;
+            let consumed_len = 1;
 
-            // Phase 1: Trigraphs
-            if ch == b'?' && pos + 2 < self.buffer.len() && self.buffer[pos + 1] == b'?' {
-                let replacement = match self.buffer[pos + 2] {
-                    b'=' => Some(b'#'),
-                    b'(' => Some(b'['),
-                    b'/' => Some(b'\\'),
-                    b')' => Some(b']'),
-                    b'\'' => Some(b'^'),
-                    b'<' => Some(b'{'),
-                    b'!' => Some(b'|'),
-                    b'>' => Some(b'}'),
-                    b'-' => Some(b'~'),
-                    _ => None,
-                };
-
-                if let Some(r) = replacement {
-                    ch = r;
-                    consumed_len = 3;
-                }
-            }
-
-            // Phase 2: Line Splicing
+            // Phase 1: Line Splicing
             if ch == b'\\' {
                 let mut check_pos = pos + consumed_len;
                 let mut found_splice = false;
@@ -304,11 +283,11 @@ impl PPLexer {
         let pos = self.position as usize;
 
         // ⚡ Bolt: Fast path for peeking common characters.
-        // If the next character is not the start of a trigraph or line splice,
+        // If the next character is not a line splice,
         // we can return it directly without the overhead of saving/restoring state.
         if pos < self.buffer.len() {
             let ch = self.buffer[pos];
-            if ch != b'?' && ch != b'\\' {
+            if ch != b'\\' {
                 return Some(ch);
             }
         }
@@ -779,7 +758,7 @@ impl PPLexer {
         let mut chars = Vec::with_capacity(32);
         chars.push(first_ch);
         loop {
-            // ⚡ Bolt: Fast path for direct buffer access when no line splicing or trigraphs are present.
+            // ⚡ Bolt: Fast path for direct buffer access when no line splicing is present.
             let pos = self.position as usize;
             if pos < self.buffer.len() {
                 let ch = self.buffer[pos];
@@ -953,11 +932,11 @@ impl PPLexer {
         loop {
             // ⚡ Bolt: Fast path for common ASCII identifier characters.
             // We directly access the buffer to avoid the overhead of `peek_char` and `next_char`
-            // when there are no trigraphs ('?') or line splices ('\') to handle.
+            // when there are no line splices ('\') to handle.
             let pos = self.position as usize;
             if pos < self.buffer.len() {
                 let ch = self.buffer[pos];
-                if ch != b'?' && ch != b'\\' {
+                if ch != b'\\' {
                     if ch.is_ascii_alphanumeric() || ch == b'_' {
                         self.position += 1;
                         text.push(ch as char);
@@ -970,7 +949,7 @@ impl PPLexer {
                 }
             }
 
-            // Fallback for tricky cases (Trigraphs, Splices, UCNs, UTF-8)
+            // Fallback for tricky cases (Splices, UCNs, UTF-8)
             let ch = match self.peek_char() {
                 Some(c) => c,
                 None => break,

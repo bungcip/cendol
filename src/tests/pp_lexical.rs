@@ -303,43 +303,6 @@ fn test_digraph_hashhash_no_starts_line() {
     assert!(!token.flags.contains(PPTokenFlags::STARTS_PP_LINE));
 }
 
-// Trigraphs
-#[test]
-fn test_all_trigraphs() {
-    let source = "??= ??( ??/ ??/ ??) ??' ??< ??! ??> ??-";
-    let mut lexer = create_test_pp_lexer(source);
-
-    test_tokens!(
-        lexer,
-        ("#", PPTokenKind::Hash),
-        ("[", PPTokenKind::LeftBracket),
-        ("?", PPTokenKind::Unknown),
-        ("?", PPTokenKind::Unknown),
-        ("]", PPTokenKind::RightBracket),
-        ("^", PPTokenKind::Xor),
-        ("{", PPTokenKind::LeftBrace),
-        ("|", PPTokenKind::Or),
-        ("}", PPTokenKind::RightBrace),
-        ("~", PPTokenKind::Tilde),
-    );
-}
-
-#[test]
-fn test_trigraph_line_splice() {
-    let source = "abc??/\ndef";
-    let mut lexer = create_test_pp_lexer(source);
-    let t = lexer.next_token().unwrap();
-    assert_eq!(t.kind, PPTokenKind::Identifier(StringId::new("abcdef")));
-}
-
-#[test]
-fn test_trigraph_in_string() {
-    let source = "\"??=\"";
-    let mut lexer = create_test_pp_lexer(source);
-    let t = lexer.next_token().unwrap();
-    assert_eq!(t.kind, PPTokenKind::StringLiteral(StringId::new("\"#\"")));
-}
-
 // UCNs
 #[test]
 fn test_ucn_identifier() {

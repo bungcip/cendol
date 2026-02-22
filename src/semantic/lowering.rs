@@ -2498,6 +2498,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.ast.kinds[node.index()] = NodeKind::BuiltinExpect(e, expected);
                 smallvec![node]
             }
+            ParsedNodeKind::BuiltinTypesCompatibleP(ty1, ty2) => {
+                let node = self.get_or_push_slot(target_slots, span);
+                let t1 = convert_to_qual_type(self, *ty1, span, false)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                let t2 = convert_to_qual_type(self, *ty2, span, false)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                self.ast.kinds[node.index()] = NodeKind::BuiltinTypesCompatibleP(t1, t2);
+                smallvec![node]
+            }
             ParsedNodeKind::AtomicOp(op, args) => {
                 let node = self.get_or_push_slot(target_slots, span);
 

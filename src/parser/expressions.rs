@@ -224,6 +224,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinVaCopy => parse_builtin_va_copy(parser),
         TokenKind::BuiltinExpect => parse_builtin_expect(parser),
         TokenKind::BuiltinOffsetof => parse_builtin_offsetof(parser),
+        TokenKind::BuiltinTypesCompatibleP => parse_builtin_types_compatible_p(parser),
 
         TokenKind::BuiltinAtomicLoadN => parse_atomic_op(parser, AtomicOp::LoadN),
         TokenKind::BuiltinAtomicStoreN => parse_atomic_op(parser, AtomicOp::StoreN),
@@ -572,6 +573,19 @@ fn parse_builtin_offsetof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErr
 
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(ParsedNodeKind::BuiltinOffsetof(ty, node), SourceSpan::new(start, end)))
+}
+
+fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let start = parser.expect(TokenKind::BuiltinTypesCompatibleP)?.span.start();
+    parser.expect(TokenKind::LeftParen)?;
+    let ty1 = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+    parser.expect(TokenKind::Comma)?;
+    let ty2 = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+    let end = parser.expect(TokenKind::RightParen)?.span.end();
+    Ok(parser.push_node(
+        ParsedNodeKind::BuiltinTypesCompatibleP(ty1, ty2),
+        SourceSpan::new(start, end),
+    ))
 }
 
 fn parse_atomic_op(parser: &mut Parser, op: AtomicOp) -> Result<ParsedNodeRef, ParseError> {

@@ -85,6 +85,7 @@ pub enum ParsedNodeKind {
     BuiltinVaEnd(ParsedNodeRef),
     BuiltinVaCopy(ParsedNodeRef, ParsedNodeRef),
     BuiltinExpect(ParsedNodeRef, ParsedNodeRef),
+    BuiltinTypesCompatibleP(ParsedType, ParsedType),
     AtomicOp(AtomicOp, Vec<ParsedNodeRef>),
     SizeOfExpr(ParsedNodeRef),
     SizeOfType(ParsedType),

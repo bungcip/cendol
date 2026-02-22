@@ -2015,6 +2015,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 ty
             }
             NodeKind::BuiltinOffsetof(ty, expr) => self.visit_builtin_offsetof(*ty, *expr, node_ref),
+            NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
+                self.visit_type_expressions(*t1);
+                self.visit_type_expressions(*t2);
+                Some(QualType::unqualified(self.registry.type_int))
+            }
             NodeKind::AtomicOp(op, args_start, args_len) => {
                 let span = self.ast.get_span(node_ref);
                 self.visit_atomic_op(*op, *args_start, *args_len, span)

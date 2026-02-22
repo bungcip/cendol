@@ -89,6 +89,11 @@ impl<'a> MirGen<'a> {
                 let val = eval_const_expr(&self.const_ctx(), expr_ref).expect("offsetof should be constant");
                 self.create_size_t_operand(val as u64)
             }
+            NodeKind::BuiltinTypesCompatibleP(..) => {
+                let val = eval_const_expr(&self.const_ctx(), expr_ref)
+                    .expect("__builtin_types_compatible_p should be constant");
+                self.create_int_operand(val)
+            }
             NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, need_value, expr_ref),
             NodeKind::GnuStatementExpression(stmt, result_expr) => {
                 self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value)

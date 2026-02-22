@@ -133,6 +133,11 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
         }
         NodeKind::Cast(_, expr) => eval_const_expr(ctx, *expr),
         NodeKind::BuiltinOffsetof(ty, expr) => eval_offsetof(ctx, *ty, *expr),
+        NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
+            let t1_unqual = ctx.registry.strip_all(*t1);
+            let t2_unqual = ctx.registry.strip_all(*t2);
+            Some(ctx.registry.is_compatible(t1_unqual, t2_unqual) as i64)
+        }
         _ => None,
     }
 }

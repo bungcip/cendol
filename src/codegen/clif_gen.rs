@@ -109,6 +109,13 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub pointee_to_pointer: &'a HashMap<TypeId, TypeId>,
 }
 
+/// Context for lowering call signatures
+pub(crate) struct SignatureLoweringContext<'a> {
+    pub mir: &'a MirProgram,
+    pub triple: &'a Triple,
+    pub pointee_to_pointer: &'a HashMap<TypeId, TypeId>,
+}
+
 /// Helper to emit integer constants
 fn emit_const_int(val: i64, layout: &MirType, output: &mut Vec<u8>) {
     match layout {
@@ -432,17 +439,15 @@ fn lower_call_signature(
     return_type_id: TypeId,
     param_types: &[TypeId],
     args: &[Operand],
-    mir: &MirProgram,
     is_variadic: bool,
     use_variadic_hack: bool,
-    triple: &Triple,
-    pointee_to_pointer: &HashMap<TypeId, TypeId>,
+    ctx: &SignatureLoweringContext,
 ) -> Signature {
     let mut sig = Signature::new(call_conv);
     // sig.set_is_variadic(is_variadic); // Try if this method exists
 
     // Return type
-    let return_mir_type = mir.get_type(return_type_id);
+    let return_mir_type = ctx.mir.get_type(return_type_id);
     let return_type_opt = match lower_type(return_mir_type) {
         Some(t) => Some(t),
         None if return_mir_type.is_aggregate() => Some(types::I64),
@@ -460,14 +465,14 @@ fn lower_call_signature(
 
     // Fixed parameters
     for &param_type_id in param_types {
-        let mir_type = mir.get_type(param_type_id);
+        let mir_type = ctx.mir.get_type(param_type_id);
 
         if is_xmm_argument(mir_type) {
             xmm_used += 1;
         }
 
         // Check for struct packing (HFA workaround: pass as I64s in GPRs)
-        if let Some(count) = get_struct_packing(mir_type, mir) {
+        if let Some(count) = get_struct_packing(mir_type, ctx.mir) {
             for _ in 0..count {
                 sig.params.push(AbiParam::new(types::I64));
             }
@@ -490,13 +495,13 @@ fn lower_call_signature(
 
     // Variadic arguments (if any) - structs are expanded to multiple I64 slots
     for arg in args.iter().skip(param_types.len()) {
-        let arg_type_id = lower_operand_type_id(arg, mir, pointee_to_pointer);
+        let arg_type_id = lower_operand_type_id(arg, ctx.mir, ctx.pointee_to_pointer);
         {
             let type_id = arg_type_id;
-            let mir_type = mir.get_type(type_id);
+            let mir_type = ctx.mir.get_type(type_id);
             if mir_type.is_aggregate() {
                 // For structs/arrays, calculate how many I64 slots we need
-                let size = lower_type_size(mir_type, mir);
+                let size = lower_type_size(mir_type, ctx.mir);
                 let num_slots = size.div_ceil(8) as usize; // Round up to nearest 8 bytes
                 for _ in 0..num_slots {
                     sig.params.push(AbiParam::new(types::I64));
@@ -513,7 +518,7 @@ fn lower_call_signature(
             // HACK: For x86_64 SystemV extern calls, force long double (F80/F128) to stack
             // by exhausting XMM registers if they are not already full.
             if !split_f128
-                && triple.architecture == target_lexicon::Architecture::X86_64
+                && ctx.triple.architecture == target_lexicon::Architecture::X86_64
                 && matches!(mir_type, MirType::F80 | MirType::F128)
             {
                 let needed_padding = 8usize.saturating_sub(xmm_used);
@@ -528,7 +533,7 @@ fn lower_call_signature(
                 xmm_used += 1;
             }
         }
-        let mut arg_type = lower_operand_type(arg, mir, pointee_to_pointer);
+        let mut arg_type = lower_operand_type(arg, ctx.mir, ctx.pointee_to_pointer);
 
         if is_variadic && arg_type == types::F32 {
             arg_type = types::F64;
@@ -823,16 +828,20 @@ fn emit_function_call(
     };
 
     // 2. Prepare call site signature and resolve arguments
+    let lower_ctx = SignatureLoweringContext {
+        mir: ctx.mir,
+        triple: ctx.triple,
+        pointee_to_pointer: ctx.pointee_to_pointer,
+    };
+
     let sig = lower_call_signature(
         ctx.builder.func.signature.call_conv,
         return_type_id,
         &param_types,
         args,
-        ctx.mir,
         is_variadic,
         use_variadic_hack,
-        ctx.triple,
-        ctx.pointee_to_pointer,
+        &lower_ctx,
     );
 
     let split_f128 = use_variadic_hack;
@@ -847,11 +856,9 @@ fn emit_function_call(
                 return_type_id,
                 &param_types,
                 &[],
-                ctx.mir,
                 is_variadic,
                 use_variadic_hack,
-                ctx.triple,
-                ctx.pointee_to_pointer,
+                &lower_ctx,
             );
             let decl = ctx
                 .module

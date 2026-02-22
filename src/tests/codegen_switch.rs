@@ -115,3 +115,90 @@ fn test_switch_unreachable_cases() {
     }
     ");
 }
+
+#[test]
+fn test_switch_case_overflow_regression() {
+    let source = r#"
+        int main(void){
+            char a = 0;
+            switch(a){
+                case 0: a = 1;
+                break;
+                case 256: a = 3;
+                break;
+                default: a = 5;
+                break;
+            }
+            return a;
+        }
+    "#;
+
+    // Verify it doesn't crash and produces the warning
+    // 256 is in range for promoted type 'int', so it's not a duplicate of '0'.
+    let (driver, result) = test_utils::run_pipeline(source, crate::driver::artifact::CompilePhase::Mir);
+    assert!(
+        result.is_ok(),
+        "Compilation should have succeeded even with 'case 256' when switch is on 'char'"
+    );
+    test_utils::check_diagnostic_message_only(
+        &driver,
+        "overflow converting case value to switch condition type (256 to 0)",
+    );
+}
+
+#[test]
+fn test_switch_case_duplicate_after_promotion() {
+    let source = r#"
+        int main(void){
+            char a = 0;
+            switch(a){
+                case 256: a = 1; break;
+                case 256: a = 2; break;
+            }
+            return a;
+        }
+    "#;
+
+    // Should still fail due to actual duplicate in 'int'
+    let (driver, result) = test_utils::run_pipeline(source, crate::driver::artifact::CompilePhase::Mir);
+    assert!(result.is_err(), "Compilation should fail due to duplicate case 256");
+    test_utils::check_diagnostic_message_only(&driver, "duplicate case value '256'");
+}
+
+#[test]
+fn test_implicit_constant_conversion_warning() {
+    let source = r#"
+        int main() {
+            char a = 174;
+            return a;
+        }
+    "#;
+    let (driver, result) = test_utils::run_pipeline(source, crate::driver::artifact::CompilePhase::Mir);
+    assert!(result.is_ok(), "Compilation should have succeeded");
+    test_utils::check_diagnostic_message_only(
+        &driver,
+        "implicit conversion from 'int' to 'char' changes value from 174 to -82",
+    );
+}
+
+#[test]
+fn test_switch_case_duplicate_after_truncation() {
+    let source = r#"
+        int main(void) {
+            char a = 0;
+            switch(a) {
+                case 0: break;
+                case 256: break;
+            }
+            return 0;
+        }
+    "#;
+    // Matching Clang behavior: 256 is NOT a duplicate of 0 because of integer promotion to int.
+    // It's allowed with a warning.
+    let (driver, result) = test_utils::run_pipeline(source, crate::driver::artifact::CompilePhase::Mir);
+    assert!(result.is_ok(), "Compilation should succeed as per Clang behavior");
+    test_utils::check_diagnostic_message_only(
+        &driver,
+        "overflow converting case value to switch condition type (256 to 0)",
+    );
+}

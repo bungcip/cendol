@@ -89,6 +89,8 @@ pub(crate) fn visit_ast(
         switch_depth: 0,
         switch_cases: SmallVec::new(),
         switch_default_seen: SmallVec::new(),
+        switch_cond_types: SmallVec::new(),
+        switch_orig_cond_types: SmallVec::new(),
         checked_types: HashSet::new(),
     };
     let root = ast.get_root();
@@ -116,6 +118,8 @@ struct SemanticAnalyzer<'a> {
     // Bolt ⚡: Use SmallVec for switch state to avoid heap allocations for nested switches.
     switch_cases: SmallVec<[HashSet<i64>; 4]>,
     switch_default_seen: SmallVec<[bool; 4]>,
+    switch_cond_types: SmallVec<[QualType; 4]>,
+    switch_orig_cond_types: SmallVec<[QualType; 4]>,
     checked_types: HashSet<TypeRef>,
 }
 
@@ -624,38 +628,38 @@ impl<'a> SemanticAnalyzer<'a> {
                     right_ty: rhs_str,
                     span,
                 });
-                return None;
+                None
             }
             // Pointer + integer = pointer
             BinaryOp::Add if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => {
                 // Void pointer arithmetic is invalid (C11 6.5.6)
-                if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty()) {
-                    if pointee.is_void() {
-                        let lhs_str = self.registry.display_qual_type(lhs_promoted);
-                        let rhs_str = self.registry.display_qual_type(rhs_promoted);
-                        self.report_error(SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_str,
-                            right_ty: rhs_str,
-                            span,
-                        });
-                        return None;
-                    }
+                if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty())
+                    && pointee.is_void()
+                {
+                    let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                    let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                    self.report_error(SemanticError::InvalidBinaryOperands {
+                        left_ty: lhs_str,
+                        right_ty: rhs_str,
+                        span,
+                    });
+                    return None;
                 }
                 Some((lhs_promoted, lhs_promoted))
             }
             BinaryOp::Add if lhs_promoted.is_integer() && rhs_promoted.is_pointer() => {
                 // Void pointer arithmetic is invalid (C11 6.5.6)
-                if let Some(pointee) = self.registry.get_pointee(rhs_promoted.ty()) {
-                    if pointee.is_void() {
-                        let lhs_str = self.registry.display_qual_type(lhs_promoted);
-                        let rhs_str = self.registry.display_qual_type(rhs_promoted);
-                        self.report_error(SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_str,
-                            right_ty: rhs_str,
-                            span,
-                        });
-                        return None;
-                    }
+                if let Some(pointee) = self.registry.get_pointee(rhs_promoted.ty())
+                    && pointee.is_void()
+                {
+                    let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                    let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                    self.report_error(SemanticError::InvalidBinaryOperands {
+                        left_ty: lhs_str,
+                        right_ty: rhs_str,
+                        span,
+                    });
+                    return None;
                 }
                 Some((rhs_promoted, rhs_promoted))
             }
@@ -663,17 +667,17 @@ impl<'a> SemanticAnalyzer<'a> {
             // Pointer - integer = pointer
             BinaryOp::Sub if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => {
                 // Void pointer arithmetic is invalid (C11 6.5.6)
-                if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty()) {
-                    if pointee.is_void() {
-                        let lhs_str = self.registry.display_qual_type(lhs_promoted);
-                        let rhs_str = self.registry.display_qual_type(rhs_promoted);
-                        self.report_error(SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_str,
-                            right_ty: rhs_str,
-                            span,
-                        });
-                        return None;
-                    }
+                if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty())
+                    && pointee.is_void()
+                {
+                    let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                    let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                    self.report_error(SemanticError::InvalidBinaryOperands {
+                        left_ty: lhs_str,
+                        right_ty: rhs_str,
+                        span,
+                    });
+                    return None;
                 }
                 Some((lhs_promoted, lhs_promoted))
             }
@@ -1100,6 +1104,25 @@ impl<'a> SemanticAnalyzer<'a> {
                     to: lhs_ty.ty(),
                 }
             } else {
+                // If it's a literal, check if conversion changes value
+                if is_literal {
+                    let from_val = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), rhs_ref);
+                    if let Some(val) = from_val {
+                        let to_ty = self.registry.get(lhs_ty.ty());
+                        let truncated = to_ty.as_ref().truncate_int(val);
+                        if truncated != val {
+                            let span = self.ast.get_span(rhs_ref);
+                            self.report_error(SemanticError::ImplicitConstantConversion {
+                                from: self.registry.display_qual_type(current_rhs_ty),
+                                to: self.registry.display_qual_type(lhs_ty),
+                                from_val: val.to_string(),
+                                to_val: truncated.to_string(),
+                                span,
+                            });
+                        }
+                    }
+                }
+
                 Conversion::IntegerCast {
                     from: current_rhs_ty.ty(),
                     to: lhs_ty.ty(),
@@ -1670,11 +1693,25 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_switch_statement(&mut self, cond: NodeRef, body: NodeRef) -> Option<QualType> {
-        self.visit_node(cond);
+        let cond_ty = self.visit_node(cond);
         self.switch_depth += 1;
         self.switch_cases.push(HashSet::new());
         self.switch_default_seen.push(false);
+
+        if let Some(ty) = cond_ty {
+            self.switch_orig_cond_types.push(ty);
+            let promoted = self.apply_and_record_integer_promotion(cond, ty);
+            self.switch_cond_types.push(promoted);
+        } else {
+            let int_ty = QualType::unqualified(self.registry.type_int);
+            self.switch_orig_cond_types.push(int_ty);
+            self.switch_cond_types.push(int_ty);
+        }
+
         self.visit_node(body);
+
+        self.switch_cond_types.pop();
+        self.switch_orig_cond_types.pop();
         self.switch_default_seen.pop();
         self.switch_cases.pop();
         self.switch_depth -= 1;
@@ -1691,12 +1728,56 @@ impl<'a> SemanticAnalyzer<'a> {
         if self.switch_depth == 0 {
             self.report_error(SemanticError::CaseNotInSwitch { span });
         } else if let Some(start_ref) = start {
-            let start_val = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), start_ref);
-            let end_val = if let Some(end_ref) = end {
+            let mut start_val = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), start_ref);
+            let mut end_val = if let Some(end_ref) = end {
                 crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), end_ref)
             } else {
                 start_val
             };
+
+            // Perform duplicate check using promoted type, but warn on unreachability using original type
+            let promoted_ty = self.switch_cond_types.last().cloned();
+            let orig_ty = self.switch_orig_cond_types.last().cloned();
+
+            if let Some(ty) = promoted_ty {
+                let ty_ref = ty.ty();
+                if let Some(v) = start_val {
+                    let truncated = self.registry.get(ty_ref).as_ref().truncate_int(v);
+                    start_val = Some(truncated);
+
+                    // Warning check against original type
+                    if let Some(orig) = orig_ty {
+                        let orig_truncated = self.registry.get(orig.ty()).as_ref().truncate_int(v);
+                        if orig_truncated != v {
+                            self.report_error(SemanticError::SwitchCaseOverflow {
+                                from: v.to_string(),
+                                to: orig_truncated.to_string(),
+                                span,
+                            });
+                        }
+                    }
+                }
+                if let Some(e_ref) = end {
+                    if let Some(v) = end_val {
+                        let truncated = self.registry.get(ty_ref).as_ref().truncate_int(v);
+                        end_val = Some(truncated);
+
+                        // Warning check against original type
+                        if let Some(orig) = orig_ty {
+                            let orig_truncated = self.registry.get(orig.ty()).as_ref().truncate_int(v);
+                            if orig_truncated != v {
+                                self.report_error(SemanticError::SwitchCaseOverflow {
+                                    from: v.to_string(),
+                                    to: orig_truncated.to_string(),
+                                    span: self.ast.get_span(e_ref),
+                                });
+                            }
+                        }
+                    }
+                } else {
+                    end_val = start_val;
+                }
+            }
 
             if let (Some(start_v), Some(end_v)) = (start_val, end_val) {
                 let mut duplicate_val = None;

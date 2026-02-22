@@ -101,6 +101,62 @@ impl Type {
             false
         }
     }
+
+    pub(crate) fn is_int(&self) -> bool {
+        matches!(self.kind, TypeKind::Builtin(b) if b.is_integer()) || matches!(self.kind, TypeKind::Enum { .. })
+    }
+
+    pub(crate) fn is_pointer(&self) -> bool {
+        matches!(self.kind, TypeKind::Pointer { .. })
+    }
+
+    pub(crate) fn is_signed(&self) -> bool {
+        match &self.kind {
+            TypeKind::Builtin(b) => b.is_signed(),
+            TypeKind::Enum { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn truncate_int(&self, val: i64) -> i64 {
+        if !self.is_int() && !self.is_pointer() {
+            return val;
+        }
+
+        let width = if let Some(layout) = &self.layout {
+            layout.size * 8
+        } else {
+            // Fallback for builtin types if layout is not yet computed
+            match &self.kind {
+                TypeKind::Builtin(b) => match b {
+                    BuiltinType::Bool => 1,
+                    BuiltinType::Char | BuiltinType::SChar | BuiltinType::UChar => 8,
+                    BuiltinType::Short | BuiltinType::UShort => 16,
+                    BuiltinType::Int | BuiltinType::UInt | BuiltinType::Signed => 32,
+                    _ => 64,
+                },
+                TypeKind::Pointer { .. } => 64,
+                TypeKind::Enum { .. } => 32,
+                _ => 64,
+            }
+        };
+
+        if width >= 64 {
+            return val;
+        }
+
+        let mask = (1u64 << width) - 1;
+        let truncated = (val as u64) & mask;
+
+        if self.is_signed() {
+            let sign_bit = 1u64 << (width - 1);
+            if (truncated & sign_bit) != 0 {
+                return (truncated | !mask) as i64;
+            }
+        }
+
+        truncated as i64
+    }
 }
 
 #[repr(u8)]

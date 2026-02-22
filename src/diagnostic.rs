@@ -202,7 +202,10 @@ impl IntoDiagnostic for SemanticError {
         // Handle warnings
         if matches!(
             self,
-            SemanticError::IncompatiblePointerComparison { .. } | SemanticError::ReturnLocalAddress { .. }
+            SemanticError::IncompatiblePointerComparison { .. }
+                | SemanticError::ReturnLocalAddress { .. }
+                | SemanticError::ImplicitConstantConversion { .. }
+                | SemanticError::SwitchCaseOverflow { .. }
         ) {
             diagnostics[0].level = DiagnosticLevel::Warning;
         }
@@ -467,12 +470,26 @@ pub enum SemanticError {
 
     #[error("address of stack memory associated with local variable '{name}' returned")]
     ReturnLocalAddress { name: NameId, span: SourceSpan },
+
+    #[error("implicit conversion from '{from}' to '{to}' changes value from {from_val} to {to_val}")]
+    ImplicitConstantConversion {
+        from: String,
+        to: String,
+        from_val: String,
+        to_val: String,
+        span: SourceSpan,
+    },
+
+    #[error("overflow converting case value to switch condition type ({from} to {to})")]
+    SwitchCaseOverflow { from: String, to: String, span: SourceSpan },
 }
 
 impl SemanticError {
     pub(crate) fn span(&self) -> SourceSpan {
         match self {
             SemanticError::ReturnLocalAddress { span, .. } => *span,
+            SemanticError::ImplicitConstantConversion { span, .. } => *span,
+            SemanticError::SwitchCaseOverflow { span, .. } => *span,
             SemanticError::InvalidAtomicQualifier { span, .. } => *span,
             SemanticError::InvalidAtomicSpecifier { span, .. } => *span,
             SemanticError::VariableOfVoidType { span } => *span,

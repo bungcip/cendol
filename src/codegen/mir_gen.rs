@@ -612,10 +612,10 @@ impl<'a> MirGen<'a> {
 
     fn visit_switch_stmt(&mut self, cond: NodeRef, body: NodeRef) {
         let cond_op = self.visit_expression(cond, true);
+        let cond_ty = self.ast.get_resolved_type(cond).unwrap();
+        let mir_ty = self.lower_qual_type(cond_ty);
+        let cond_op = self.apply_conversions(cond_op, cond, mir_ty);
 
-        // Integer promotions on controlling expression are handled by visit_expression if sema did it?
-        // Semantic analysis should have inserted implicit conversions.
-        // But we might need to cast case values to this type.
         let cond_ty_id = self.get_operand_type(&cond_op);
 
         let merge_block = self.mir_builder.create_block();

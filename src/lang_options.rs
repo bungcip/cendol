@@ -40,4 +40,13 @@ mod tests {
         assert!(!CStandard::C99.is_c11());
         assert!(!CStandard::C89.is_c11());
     }
+
+    #[test]
+    fn test_c_standard_from_str() {
+        assert_eq!(CStandard::from("c89"), CStandard::C89);
+        assert_eq!(CStandard::from("c90"), CStandard::C89);
+        assert_eq!(CStandard::from("c99"), CStandard::C99);
+        assert_eq!(CStandard::from("c11"), CStandard::C11);
+        assert_eq!(CStandard::from("invalid"), CStandard::C11);
+    }
 }

@@ -671,6 +671,14 @@ impl PPLexer {
                 break;
             }
 
+            // ⚡ Bolt: Fast-path for skipping comment check.
+            // If the next character is not '/', it cannot be the start of a comment.
+            // We peek first to avoid the overhead of saving state and multi-character
+            // consumption for the vast majority of tokens.
+            if self.peek_char() != Some(b'/') {
+                break;
+            }
+
             // Check for comments by temporarily consuming
             let saved_position = self.position;
             let saved_line_starts_len = self.line_starts.len();

@@ -25,6 +25,12 @@ fn test_builtin_types_compatible_p_pointers() {
         _Static_assert(!__builtin_types_compatible_p(int*, char*), "int* should not be compatible with char*");
         _Static_assert(__builtin_types_compatible_p(void*, void*), "void* should be compatible with void*");
 
+        _Static_assert(__builtin_types_compatible_p(int * const, int *), "int * const should be compatible with int * (top-level qualifier ignored)");
+        _Static_assert(!__builtin_types_compatible_p(const int *, int *), "const int * should not be compatible with int * (not a top-level qualifier)");
+
+        _Static_assert(__builtin_types_compatible_p(volatile int, int), "volatile int should be compatible with int");
+        _Static_assert(__builtin_types_compatible_p(const volatile int, int), "const volatile int should be compatible with int");
+
         int main() { return 0; }
         "#,
         CompilePhase::Cranelift,

@@ -14,6 +14,12 @@ Cendol is a C11 compiler implemented in Rust. It is a learning project to unders
 * **Linker Integration**: Automatic invocation of system linker (clang) to produce executables
 * **Rich Diagnostics**: Error reporting with source location tracking
 
+## Limitations
+
+* **No Trigraph Support**: Trigraphs (three-character sequences like `??=`, `??<`, etc.) are not supported for simplicity and modern C usage.
+* **No Digraph Support**: Digraphs (two-character sequences like `<:`, `:>`, `<%`, `%>`, `%:`, `%:%:`) are not supported. This compiler targets modern C and does not implement legacy digraph tokens.
+* **No K&R Function Declarations**: Functions declared with empty parameter list (e.g., `int foo()`) are treated as having no parameters (equivalent to `int foo(void)`), not as unprototyped functions that accept any number of arguments. Calling such functions with arguments will result in a semantic error. This removes support for K&R (Kernighan & Ritchie) no-prototype semantics.
+
 ## Architecture
 
 Cendol follows a traditional multi-phase compiler architecture optimized for performance:

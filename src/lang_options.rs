@@ -1,10 +1,10 @@
 /// supported C standards
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum CStandard {
-    C89,
-    C99,
     #[default]
     C11,
+    C17,
+    C23,
 }
 
 impl CStandard {
@@ -17,9 +17,9 @@ impl CStandard {
 impl From<&str> for CStandard {
     fn from(s: &str) -> Self {
         match s {
-            "c89" | "c90" => CStandard::C89,
-            "c99" => CStandard::C99,
             "c11" => CStandard::C11,
+            "c17" => CStandard::C17,
+            "c23" => CStandard::C23,
             _ => CStandard::C11, // default to C11
         }
     }
@@ -37,15 +37,10 @@ mod tests {
     #[test]
     fn test_c_standard_is_c11() {
         assert!(CStandard::C11.is_c11());
-        assert!(!CStandard::C99.is_c11());
-        assert!(!CStandard::C89.is_c11());
     }
 
     #[test]
     fn test_c_standard_from_str() {
-        assert_eq!(CStandard::from("c89"), CStandard::C89);
-        assert_eq!(CStandard::from("c90"), CStandard::C89);
-        assert_eq!(CStandard::from("c99"), CStandard::C99);
         assert_eq!(CStandard::from("c11"), CStandard::C11);
         assert_eq!(CStandard::from("invalid"), CStandard::C11);
     }

@@ -268,41 +268,6 @@ fn test_char_literal_escapes() {
     );
 }
 
-// Digraphs
-#[test]
-fn test_digraphs_basic() {
-    let source = "<: :> <% %> %: %:%:";
-    let mut lexer = create_test_pp_lexer(source);
-
-    test_tokens!(
-        lexer,
-        ("[", PPTokenKind::LeftBracket),
-        ("]", PPTokenKind::RightBracket),
-        ("{", PPTokenKind::LeftBrace),
-        ("}", PPTokenKind::RightBrace),
-        ("#", PPTokenKind::Hash),
-        ("##", PPTokenKind::HashHash),
-    );
-}
-
-#[test]
-fn test_digraph_hash_starts_line() {
-    let source = "%: define";
-    let mut lexer = create_test_pp_lexer(source);
-    let token = lexer.next_token().unwrap();
-    assert_eq!(token.kind, PPTokenKind::Hash);
-    assert!(token.flags.contains(PPTokenFlags::STARTS_PP_LINE));
-}
-
-#[test]
-fn test_digraph_hashhash_no_starts_line() {
-    let source = "%:%:";
-    let mut lexer = create_test_pp_lexer(source);
-    let token = lexer.next_token().unwrap();
-    assert_eq!(token.kind, PPTokenKind::HashHash);
-    assert!(!token.flags.contains(PPTokenFlags::STARTS_PP_LINE));
-}
-
 // UCNs
 #[test]
 fn test_ucn_identifier() {

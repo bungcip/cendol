@@ -1303,6 +1303,18 @@ impl<'a> SemanticAnalyzer<'a> {
         } = &func_kind
         {
             let is_variadic = *is_variadic;
+            let arg_count = call_expr.arg_len as usize;
+
+            // Check argument count validity upfront (no-prototype semantics removed)
+            if !is_variadic && arg_count != parameters.len() {
+                let span = self.ast.get_span(call_expr.callee);
+                self.report_error(SemanticError::InvalidNumberOfArguments {
+                    expected: parameters.len(),
+                    found: arg_count,
+                    span,
+                });
+            }
+
             for (i, arg_node_ref) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
                 let Some(arg_ty) = self.visit_node(arg_node_ref) else {
                     continue;

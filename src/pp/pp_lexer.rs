@@ -316,7 +316,7 @@ impl PPLexer {
     fn lex_operator(&mut self, start_pos: u32, ch: u8, flags: PPTokenFlags) -> PPToken {
         let loc = SourceLoc::new(self.source_id, start_pos);
         // ⚡ Bolt: Check if we're at the beginning of a line (ignoring whitespace).
-        // This is crucial for identifying the '#' or '%:' that starts a preprocessor directive.
+        // This is crucial for identifying the '#' that starts a preprocessor directive.
         let is_at_start_of_line = self.at_start_of_line;
 
         // Helper macro to reduce boilerplate when creating a token.
@@ -391,36 +391,6 @@ impl PPLexer {
             b'%' => {
                 if consume_if!(b'=') {
                     token!(PPTokenKind::ModAssign, 2)
-                } else if consume_if!(b'>') {
-                    token!(PPTokenKind::RightBrace, 2)
-                } else if consume_if!(b':') {
-                    // Check for %:%: (##)
-                    let saved_pos = self.position;
-                    let saved_lines_len = self.line_starts.len();
-
-                    if consume_if!(b'%') {
-                        if consume_if!(b':') {
-                            token!(PPTokenKind::HashHash, 4)
-                        } else {
-                            // Backtrack to after %:
-                            self.position = saved_pos;
-                            self.line_starts.truncate(saved_lines_len);
-                            let mut token_flags = flags;
-                            if is_at_start_of_line {
-                                token_flags |= PPTokenFlags::STARTS_PP_LINE;
-                                self.in_directive_line = true;
-                            }
-                            token!(PPTokenKind::Hash, 2, token_flags)
-                        }
-                    } else {
-                        // %: -> Hash
-                        let mut token_flags = flags;
-                        if is_at_start_of_line {
-                            token_flags |= PPTokenFlags::STARTS_PP_LINE;
-                            self.in_directive_line = true;
-                        }
-                        token!(PPTokenKind::Hash, 2, token_flags)
-                    }
                 } else {
                     token!(PPTokenKind::Percent, 1)
                 }
@@ -448,10 +418,6 @@ impl PPLexer {
                     }
                 } else if consume_if!(b'=') {
                     token!(PPTokenKind::LessEqual, 2)
-                } else if consume_if!(b':') {
-                    token!(PPTokenKind::LeftBracket, 2)
-                } else if consume_if!(b'%') {
-                    token!(PPTokenKind::LeftBrace, 2)
                 } else {
                     token!(PPTokenKind::Less, 1)
                 }
@@ -511,13 +477,7 @@ impl PPLexer {
                 token!(PPTokenKind::Dot, 1)
             }
             b'?' => token!(PPTokenKind::Question, 1),
-            b':' => {
-                if consume_if!(b'>') {
-                    token!(PPTokenKind::RightBracket, 2)
-                } else {
-                    token!(PPTokenKind::Colon, 1)
-                }
-            }
+            b':' => token!(PPTokenKind::Colon, 1),
             b',' => token!(PPTokenKind::Comma, 1),
             b';' => token!(PPTokenKind::Semicolon, 1),
             b'(' => token!(PPTokenKind::LeftParen, 1),

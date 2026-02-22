@@ -499,11 +499,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.report_error(SemanticError::AddressOfRegister { span });
                     return None;
                 }
-                if operand_ty.is_array() || operand_ty.is_function() {
-                    let decayed = self.registry.decay(operand_ty, TypeQualifiers::empty());
-                    self.push_conversion(operand_ref, Conversion::PointerDecay { to: decayed.ty() });
-                    return Some(decayed);
-                }
+                // Taking address of array or function: result is pointer to array/function (no decay)
                 Some(QualType::unqualified(self.registry.pointer_to(operand_ty)))
             }
             UnaryOp::Deref => {

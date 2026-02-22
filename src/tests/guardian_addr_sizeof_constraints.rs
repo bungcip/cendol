@@ -1,4 +1,5 @@
-use crate::tests::test_utils::run_fail_with_message;
+use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn test_address_of_bitfield_prohibited() {
@@ -72,5 +73,44 @@ fn test_sizeof_bitfield_in_generic_prohibited() {
         }
         "#,
         "cannot apply 'sizeof' to a bit-field",
+    );
+}
+
+#[test]
+fn test_address_of_array_member() {
+    // Regression test: taking address of array member should give pointer to array, not decay first
+    // &s.k where s.k is int[15] should give int(*)[15], not int*
+    run_pass(
+        r#"
+        struct A
+        {
+            int k[15];
+        };
+        int main()
+        {
+            struct A s;
+            int (*p)[15] = &s.k;
+            return 35;
+        }
+        "#,
+        CompilePhase::Cranelift,
+    );
+}
+
+#[test]
+fn test_address_of_array_member_of_different_type() {
+    // Another test with different array type
+    run_pass(
+        r#"
+        struct S {
+            double values[5];
+        };
+        int main() {
+            struct S s;
+            double (*p)[5] = &s.values;
+            return 0;
+        }
+        "#,
+        CompilePhase::Cranelift,
     );
 }

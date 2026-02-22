@@ -120,6 +120,44 @@ fn test_pointer_comparison_incompatible() {
     );
 }
 
+#[test]
+fn test_incompatible_struct_pointer_argument() {
+    use crate::tests::test_utils::{run_pass, setup_driver};
+
+    // Should warn but proceed - similar to clang's behavior
+    let source = r#"
+        struct TWO_INTS {int a;int b;};
+        int add_two_ints(struct TWO_INTS *p);
+        struct A{int a; int b;};
+        int main(){
+            struct A a;
+            a.a = 100;
+            a.b = 74;
+            struct A b = a;
+            return add_two_ints(&b);
+        }
+    "#;
+
+    run_pass(source, CompilePhase::Mir);
+
+    // Verify the warning was emitted
+    let driver = setup_driver(source, CompilePhase::Mir);
+    let mut driver = driver;
+    let _ = driver.run_pipeline(CompilePhase::Mir);
+
+    let diagnostics = driver.get_diagnostics();
+    let found = diagnostics.iter().any(|d| {
+        d.message.contains("incompatible pointer types")
+            && d.message.contains("struct A*")
+            && d.message.contains("struct TWO_INTS*")
+    });
+    assert!(
+        found,
+        "Expected warning about incompatible struct pointer types. Got: {:?}",
+        diagnostics
+    );
+}
+
 // D. Struct / Union Rules
 #[test]
 fn test_duplicate_member() {

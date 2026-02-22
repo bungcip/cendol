@@ -203,6 +203,7 @@ impl IntoDiagnostic for SemanticError {
         if matches!(
             self,
             SemanticError::IncompatiblePointerComparison { .. }
+                | SemanticError::IncompatiblePointerTypes { .. }
                 | SemanticError::ReturnLocalAddress { .. }
                 | SemanticError::ImplicitConstantConversion { .. }
                 | SemanticError::SwitchCaseOverflow { .. }
@@ -405,6 +406,13 @@ pub enum SemanticError {
     #[error("comparison of incompatible pointer types '{lhs}' and '{rhs}'")]
     IncompatiblePointerComparison { lhs: String, rhs: String, span: SourceSpan },
 
+    #[error("incompatible pointer types passing '{found}' to parameter of type '{expected}'")]
+    IncompatiblePointerTypes {
+        expected: String,
+        found: String,
+        span: SourceSpan,
+    },
+
     #[error("'case' or 'default' label not in switch statement")]
     CaseNotInSwitch { span: SourceSpan },
 
@@ -559,6 +567,7 @@ impl SemanticError {
             SemanticError::AssignmentToReadOnly { span } => *span,
             SemanticError::IncompleteType { span, .. } => *span,
             SemanticError::IncompatiblePointerComparison { span, .. } => *span,
+            SemanticError::IncompatiblePointerTypes { span, .. } => *span,
             SemanticError::IncompleteReturnType { span } => *span,
             SemanticError::CaseNotInSwitch { span } => *span,
             SemanticError::DuplicateCase { span, .. } => *span,

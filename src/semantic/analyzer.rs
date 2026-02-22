@@ -375,6 +375,18 @@ impl<'a> SemanticAnalyzer<'a> {
         if self.check_assignment_constraints(lhs_ty, rhs_ty, rhs_ref) {
             self.record_implicit_conversions(lhs_ty, rhs_ty, rhs_ref);
             true
+        } else if self.is_incompatible_struct_pointer_types(lhs_ty, rhs_ty) {
+            // Incompatible struct pointer types - report as warning but allow the assignment
+            let lhs_str = self.registry.display_qual_type(lhs_ty);
+            let rhs_str = self.registry.display_qual_type(rhs_ty);
+            self.report_error(SemanticError::IncompatiblePointerTypes {
+                expected: lhs_str,
+                found: rhs_str,
+                span,
+            });
+            // Still record conversions so the assignment works
+            self.record_implicit_conversions(lhs_ty, rhs_ty, rhs_ref);
+            true
         } else {
             let lhs_str = self.registry.display_qual_type(lhs_ty);
             let rhs_str = self.registry.display_qual_type(rhs_ty);
@@ -385,6 +397,31 @@ impl<'a> SemanticAnalyzer<'a> {
             });
             false
         }
+    }
+
+    /// Check if the mismatch is between pointers to different struct types
+    fn is_incompatible_struct_pointer_types(&self, lhs_ty: QualType, rhs_ty: QualType) -> bool {
+        // Both must be pointers
+        if !lhs_ty.is_pointer() || !rhs_ty.is_pointer() {
+            return false;
+        }
+
+        // Get the pointed-to types
+        let lhs_pointee = self.registry.get_pointee(lhs_ty.ty());
+        let rhs_pointee = self.registry.get_pointee(rhs_ty.ty());
+
+        if let (Some(lhs_p), Some(rhs_p)) = (lhs_pointee, rhs_pointee) {
+            // Both pointees must be struct/union types (Record with different types)
+            let lhs_pointee_ty = self.registry.get(lhs_p.ty());
+            let rhs_pointee_ty = self.registry.get(rhs_p.ty());
+
+            if let (TypeKind::Record { .. }, TypeKind::Record { .. }) = (&lhs_pointee_ty.kind, &rhs_pointee_ty.kind) {
+                // They must be different types (not compatible)
+                return lhs_p.ty() != rhs_p.ty();
+            }
+        }
+
+        false
     }
 
     fn check_scalar_condition(&mut self, condition: NodeRef) {
@@ -1148,7 +1185,22 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn check_assignment_and_record(&mut self, target_ty: QualType, init_ty: QualType, init_ref: NodeRef) {
-        if !self.check_assignment_constraints(target_ty, init_ty, init_ref) {
+        if self.check_assignment_constraints(target_ty, init_ty, init_ref) {
+            self.record_implicit_conversions(target_ty, init_ty, init_ref);
+        } else if self.is_incompatible_struct_pointer_types(target_ty, init_ty) {
+            // Incompatible struct pointer types - report as warning but allow the assignment
+            let lhs_str = self.registry.display_qual_type(target_ty);
+            let rhs_str = self.registry.display_qual_type(init_ty);
+            let span = self.ast.get_span(init_ref);
+
+            self.report_error(SemanticError::IncompatiblePointerTypes {
+                expected: lhs_str,
+                found: rhs_str,
+                span,
+            });
+            // Still record conversions so the assignment works
+            self.record_implicit_conversions(target_ty, init_ty, init_ref);
+        } else {
             let lhs_str = self.registry.display_qual_type(target_ty);
             let rhs_str = self.registry.display_qual_type(init_ty);
             let span = self.ast.get_span(init_ref);
@@ -1158,8 +1210,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 found: rhs_str,
                 span,
             });
-        } else {
-            self.record_implicit_conversions(target_ty, init_ty, init_ref);
         }
     }
 

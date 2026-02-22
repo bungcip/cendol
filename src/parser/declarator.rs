@@ -193,12 +193,13 @@ fn parse_trailing_declarators_for_type_names(
             TokenKind::LeftParen => {
                 parser.advance();
                 validate_declarator_combination(&base, "function", token.span)?;
-                let (params, is_variadic) = parse_function_parameters(parser)?;
+                let (params, is_variadic, has_proto) = parse_function_parameters(parser)?;
                 parser.expect(TokenKind::RightParen)?;
                 base = ParsedDeclarator::Function {
                     inner: Box::new(base),
                     params,
                     is_variadic,
+                    has_proto,
                 };
             }
             _ => break,
@@ -220,12 +221,13 @@ fn parse_trailing_declarators(parser: &mut Parser, mut base: ParsedDeclarator) -
             TokenKind::LeftParen => {
                 parser.advance();
                 validate_declarator_combination(&base, "function", token.span)?;
-                let (params, is_variadic) = parse_function_parameters(parser)?;
+                let (params, is_variadic, has_proto) = parse_function_parameters(parser)?;
                 parser.expect(TokenKind::RightParen)?;
                 base = ParsedDeclarator::Function {
                     inner: Box::new(base),
                     params,
                     is_variadic,
+                    has_proto,
                 };
             }
             TokenKind::Colon => {
@@ -247,17 +249,22 @@ fn reconstruct_declarator_chain(chain: Vec<DeclaratorComponent>, mut base: Parse
     base
 }
 
-fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParamData>, bool), ParseError> {
+// Returns (params, is_variadic, has_proto)
+fn parse_function_parameters(
+    parser: &mut Parser,
+) -> Result<(ThinVec<ParsedParamData>, bool, bool), ParseError> {
     let mut params = ThinVec::new();
     let mut is_variadic = false;
 
     if parser.is_token(TokenKind::RightParen) {
-        return Ok((params, is_variadic));
+        // () -> no parameters, no prototype (unspecified arguments in C)
+        return Ok((params, is_variadic, false));
     }
 
     if parser.is_token(TokenKind::Void) && parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::RightParen) {
+        // (void) -> no parameters, yes prototype
         parser.advance();
-        return Ok((params, is_variadic));
+        return Ok((params, is_variadic, true));
     }
 
     while !parser.at_eof() && !parser.is_token(TokenKind::RightParen) {
@@ -312,7 +319,8 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParam
         }
     }
 
-    Ok((params, is_variadic))
+    // If we parsed some parameters, it's a prototype
+    Ok((params, is_variadic, true))
 }
 
 /// Check if current token starts an abstract declarator
@@ -396,18 +404,20 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDec
                             inner: Box::new(ParsedDeclarator::Abstract),
                             params: ThinVec::new(),
                             is_variadic: false,
+                            has_proto: false, // ()
                         }
                     } else {
                         let inner = parse_abstract_declarator(parser)?;
                         if parser.accept(TokenKind::RightParen).is_some() {
                             inner
                         } else if parser.accept(TokenKind::LeftParen).is_some() {
-                            let (params, is_variadic) = parse_function_parameters(parser)?;
+                            let (params, is_variadic, has_proto) = parse_function_parameters(parser)?;
                             parser.expect(TokenKind::RightParen)?;
                             ParsedDeclarator::Function {
                                 inner: Box::new(inner),
                                 params,
                                 is_variadic,
+                                has_proto,
                             }
                         } else {
                             return Err(ParseError::UnexpectedToken {

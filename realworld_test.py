@@ -20,7 +20,7 @@ PROJECTS = {
     "c-testsuite": {
         "repo": "https://github.com/c-testsuite/c-testsuite",
         "build_cmd": ["true"],
-        "patch_cmd": ["rm", "-f", "tests/single-exec/00209.c"],
+        "patch_cmd": ["true"],
         "test_cmd": ["sh", "-c", "for t in tests/single-exec/*.c; do CC={CC} CFLAGS='' ./runners/single-exec/posix $t || exit 1; done"],
     },
     "lua": {

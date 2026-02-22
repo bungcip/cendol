@@ -243,6 +243,7 @@ pub enum ParsedDeclarator {
         inner: Box<ParsedDeclarator>,
         params: ThinVec<ParsedParamData>,
         is_variadic: bool,
+        has_proto: bool,
     }, // e.g., `(int x)`
     BitField(Box<ParsedDeclarator>, ParsedNodeRef /* bit width expression */), // e.g., `x : 8`
 }

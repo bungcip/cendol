@@ -380,6 +380,7 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &ParsedDeclarator) -
             inner,
             params,
             is_variadic,
+            has_proto,
         } => {
             let inner_ref = build_parsed_declarator(parser, inner)?;
 
@@ -405,6 +406,7 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &ParsedDeclarator) -
                 params: param_range,
                 flags: FunctionFlags {
                     is_variadic: *is_variadic,
+                    has_proto: *has_proto,
                 },
                 inner: inner_ref,
             }))

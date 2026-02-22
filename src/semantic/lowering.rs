@@ -127,6 +127,7 @@ fn apply_parsed_declarator(
                 processed_params,
                 flags.is_variadic,
                 false, // `_Noreturn` is a specifier, not part of declarator
+                flags.has_proto,
             );
             apply_parsed_declarator(QualType::unqualified(function_type_ref), inner, ctx, span, decl_ctx)
         }
@@ -1412,11 +1413,12 @@ fn apply_declarator(
             inner: base,
             params,
             is_variadic,
+            has_proto,
         } => {
             let parameters = visit_function_parameters(params, ctx, false);
             let ty = ctx
                 .registry
-                .function_type(base_type.ty(), parameters, *is_variadic, spec_info.is_noreturn);
+                .function_type(base_type.ty(), parameters, *is_variadic, spec_info.is_noreturn, *has_proto);
             apply_declarator(QualType::unqualified(ty), base, ctx, span, spec_info, decl_ctx)
         }
         ParsedDeclarator::BitField(base, _) => {
@@ -2709,7 +2711,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             _ => return None,
         };
 
-        let func_ty = self.registry.function_type(ret_ty, params, false, false);
+        let func_ty = self.registry.function_type(ret_ty, params, false, false, true);
 
         // Save current scope and switch to global for implicit decl
         let old_scope = self.symbol_table.current_scope();

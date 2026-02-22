@@ -1383,14 +1383,16 @@ impl<'a> SemanticAnalyzer<'a> {
         if let TypeKind::Function {
             parameters,
             is_variadic,
+            has_proto,
             ..
         } = &func_kind
         {
             let is_variadic = *is_variadic;
+            let has_proto = *has_proto;
             let arg_count = call_expr.arg_len as usize;
 
             // Check argument count validity upfront (no-prototype semantics removed)
-            if !is_variadic && arg_count != parameters.len() {
+            if has_proto && !is_variadic && arg_count != parameters.len() {
                 let span = self.ast.get_span(call_expr.callee);
                 self.report_error(SemanticError::InvalidNumberOfArguments {
                     expected: parameters.len(),
@@ -1404,7 +1406,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     continue;
                 };
 
-                if i < parameters.len() {
+                if has_proto && i < parameters.len() {
                     let mut actual_arg_ty = arg_ty;
                     if arg_ty.is_array() || arg_ty.is_function() {
                         actual_arg_ty = self.registry.decay(arg_ty, TypeQualifiers::empty());
@@ -1413,7 +1415,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
                     let span = self.ast.get_span(arg_node_ref);
                     self.validate_and_record_assignment(parameters[i].param_type, actual_arg_ty, arg_node_ref, span);
-                } else if is_variadic {
+                } else if is_variadic || !has_proto {
                     let mut actual_arg_ty = arg_ty;
                     if arg_ty.is_array() || arg_ty.is_function() {
                         actual_arg_ty = self.registry.decay(arg_ty, TypeQualifiers::empty());

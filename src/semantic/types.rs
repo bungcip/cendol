@@ -651,6 +651,7 @@ pub enum TypeKind {
         parameters: Arc<[FunctionParameter]>,
         is_variadic: bool,
         is_noreturn: bool,
+        has_proto: bool,
     },
     Record {
         tag: Option<NameId>,

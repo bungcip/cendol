@@ -417,6 +417,7 @@ impl TypeRegistry {
         params: Vec<FunctionParameter>,
         is_variadic: bool,
         is_noreturn: bool,
+        has_proto: bool,
     ) -> TypeRef {
         // Bolt ⚡: Collect into SmallVec to avoid heap allocation for the lookup key
         // in the common case (<= 8 parameters).
@@ -425,6 +426,7 @@ impl TypeRegistry {
             params: params.iter().map(|p| p.param_type).collect(),
             is_variadic,
             is_noreturn,
+            has_proto,
         };
 
         if let Some(&f) = self.function_cache.get(&key) {
@@ -436,6 +438,7 @@ impl TypeRegistry {
             parameters: Arc::from(params),
             is_variadic,
             is_noreturn,
+            has_proto,
         }));
 
         self.function_cache.insert(key, f);
@@ -1072,12 +1075,14 @@ impl TypeRegistry {
                     parameters: params_a,
                     is_variadic: var_a,
                     is_noreturn: noreturn_a,
+                    has_proto: proto_a,
                 },
                 TypeKind::Function {
                     return_type: ret_b,
                     parameters: params_b,
                     is_variadic: var_b,
                     is_noreturn: noreturn_b,
+                    has_proto: proto_b,
                 },
             ) => {
                 if var_a != var_b {
@@ -1090,29 +1095,48 @@ impl TypeRegistry {
                 let var_a = *var_a;
                 let noreturn_a = *noreturn_a;
                 let noreturn_b = *noreturn_b;
+                let proto_a = *proto_a;
+                let proto_b = *proto_b;
 
                 drop(type_a);
                 drop(type_b);
 
                 let composite_ret = self.composite_type(QualType::unqualified(ret_a), QualType::unqualified(ret_b))?;
-                if params_a.len() != params_b.len() {
-                    return None;
-                }
-                let mut composite_params = Vec::with_capacity(params_a.len());
-                for (p_a, p_b) in params_a.iter().zip(params_b.iter()) {
-                    // C11 6.7.6.3p15: each parameter declared with qualified type is taken as
-                    // having the unqualified version of its declared type.
-                    let type_a = QualType::unqualified(p_a.param_type.ty());
-                    let type_b = QualType::unqualified(p_b.param_type.ty());
-                    let cp = self.composite_type(type_a, type_b)?;
 
-                    composite_params.push(FunctionParameter {
-                        param_type: cp,
-                        name: p_b.name.or(p_a.name),
-                        storage: p_b.storage.or(p_a.storage),
-                    });
-                }
-                let res_ty = self.function_type(composite_ret.ty(), composite_params, var_a, noreturn_a || noreturn_b);
+                // If one has no prototype, we use the parameters from the one that does (if they are compatible)
+                // If both have prototypes, they must match.
+                // If neither has prototype, parameters are empty anyway.
+
+                let (final_params, final_proto) = if proto_a && proto_b {
+                    if params_a.len() != params_b.len() {
+                        return None;
+                    }
+                    let mut composite_params = Vec::with_capacity(params_a.len());
+                    for (p_a, p_b) in params_a.iter().zip(params_b.iter()) {
+                        // C11 6.7.6.3p15: each parameter declared with qualified type is taken as
+                        // having the unqualified version of its declared type.
+                        let type_a = QualType::unqualified(p_a.param_type.ty());
+                        let type_b = QualType::unqualified(p_b.param_type.ty());
+                        let cp = self.composite_type(type_a, type_b)?;
+
+                        composite_params.push(FunctionParameter {
+                            param_type: cp,
+                            name: p_b.name.or(p_a.name),
+                            storage: p_b.storage.or(p_a.storage),
+                        });
+                    }
+                    (composite_params, true)
+                } else if proto_a {
+                    // Check compatibility with b (no proto) logic if needed, but for now we assume compatible if return type matches
+                    // and we just take the prototype
+                    (params_a.to_vec(), true)
+                } else if proto_b {
+                    (params_b.to_vec(), true)
+                } else {
+                    (Vec::new(), false)
+                };
+
+                let res_ty = self.function_type(composite_ret.ty(), final_params, var_a, noreturn_a || noreturn_b, final_proto);
                 Some(QualType::new(res_ty, a.qualifiers()))
             }
             (TypeKind::Pointer { pointee: p_a }, TypeKind::Pointer { pointee: p_b }) => {
@@ -1331,4 +1355,5 @@ struct FnSigKey {
     params: SmallVec<[QualType; 8]>,
     is_variadic: bool,
     is_noreturn: bool,
+    has_proto: bool,
 }

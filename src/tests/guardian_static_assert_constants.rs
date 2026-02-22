@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_pass, run_fail_with_message};
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn static_assert_accepts_float_cast_to_int() {
@@ -26,8 +26,8 @@ fn static_assert_rejects_uncast_float() {
 
 #[test]
 fn static_assert_rejects_float_expression_in_cast() {
-     // C11 6.6p6: "floating constants that are the immediate operands of casts"
-     run_fail_with_message(
+    // C11 6.6p6: "floating constants that are the immediate operands of casts"
+    run_fail_with_message(
         r#"
         _Static_assert((int)(1.0 + 1.0), "should fail");
         "#,

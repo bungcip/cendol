@@ -25,7 +25,7 @@ PROJECTS = {
     },
     "lua": {
         "repo": "https://github.com/lua/lua",
-        "build_cmd": ["make", "CC={CC}", "CFLAGS=-O2 -DLUA_USE_LINUX", "MYCFLAGS=", "MYLDFLAGS=", "MYLIBS=-lm"],
+        "build_cmd": ["make", "CC={CC}", "CFLAGS=-O2 -DLUA_USE_LINUX -DLUA_USE_JUMPTABLE=0", "MYCFLAGS=", "MYLDFLAGS=", "MYLIBS=-lm"],
         "test_cmd": ["./lua", "-e", "print('hello from lua built with cendol')"],
     }
 }

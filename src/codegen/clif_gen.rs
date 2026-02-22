@@ -1088,15 +1088,42 @@ fn emit_constant_to_memory(const_id: ConstValueId, ctx: &mut BodyEmitContext) ->
     ctx.builder.ins().global_value(types::I64, global_val)
 }
 
+fn truncate_const(val: i64, ty: Type) -> i64 {
+    match ty {
+        types::I8 => val as i8 as i64,
+        types::I16 => val as i16 as i64,
+        types::I32 => val as i32 as i64,
+        _ => val,
+    }
+}
+
 /// Helper function to resolve a MIR operand to a Cranelift value
 fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Type) -> Value {
     match operand {
         Operand::Constant(const_id) => {
             let const_value = ctx.mir.constants.get(const_id).expect("constant id not found");
             match &const_value.kind {
-                ConstValueKind::Int(val) => ctx.builder.ins().iconst(expected_type, *val),
+                ConstValueKind::Int(val) => {
+                    if expected_type.is_float() {
+                        if expected_type == types::F64 {
+                            ctx.builder.ins().f64const(*val as f64)
+                        } else if expected_type == types::F32 {
+                            ctx.builder.ins().f32const(*val as f32)
+                        } else {
+                            // F128 or other float types - might need better handling but for now fallback to f64 logic or panic
+                            panic!("Implicit int-to-float constant conversion for type {:?}", expected_type);
+                        }
+                    } else {
+                        let truncated = truncate_const(*val, expected_type);
+                        ctx.builder.ins().iconst(expected_type, truncated)
+                    }
+                }
                 ConstValueKind::Float(val) => {
-                    if expected_type == types::F64 {
+                    if expected_type.is_int() {
+                        let int_val = *val as i64;
+                        let truncated = truncate_const(int_val, expected_type);
+                        ctx.builder.ins().iconst(expected_type, truncated)
+                    } else if expected_type == types::F64 {
                         ctx.builder.ins().f64const(*val)
                     } else if expected_type == types::F32 {
                         ctx.builder.ins().f32const(*val as f32)

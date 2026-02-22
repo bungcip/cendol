@@ -400,7 +400,11 @@ impl<'a> MirGen<'a> {
             unreachable!()
         };
 
+        // Static locals must be evaluated as constants, even if we are inside a function.
+        // We temporarily unset current_function to force constant evaluation mode.
+        let saved_func = self.current_function.take();
         let initial_value_id = init.and_then(|init_ref| self.eval_initializer_to_const(init_ref, ty));
+        self.current_function = saved_func;
 
         let final_init = initial_value_id.or_else(|| {
             if symbol.def_state == DefinitionState::Tentative {

@@ -628,38 +628,38 @@ impl<'a> SemanticAnalyzer<'a> {
                     right_ty: rhs_str,
                     span,
                 });
-                return None;
+                None
             }
             // Pointer + integer = pointer
             BinaryOp::Add if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => {
                 // Void pointer arithmetic is invalid (C11 6.5.6)
-                if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty()) {
-                    if pointee.is_void() {
-                        let lhs_str = self.registry.display_qual_type(lhs_promoted);
-                        let rhs_str = self.registry.display_qual_type(rhs_promoted);
-                        self.report_error(SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_str,
-                            right_ty: rhs_str,
-                            span,
-                        });
-                        return None;
-                    }
+                if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty())
+                    && pointee.is_void()
+                {
+                    let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                    let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                    self.report_error(SemanticError::InvalidBinaryOperands {
+                        left_ty: lhs_str,
+                        right_ty: rhs_str,
+                        span,
+                    });
+                    return None;
                 }
                 Some((lhs_promoted, lhs_promoted))
             }
             BinaryOp::Add if lhs_promoted.is_integer() && rhs_promoted.is_pointer() => {
                 // Void pointer arithmetic is invalid (C11 6.5.6)
-                if let Some(pointee) = self.registry.get_pointee(rhs_promoted.ty()) {
-                    if pointee.is_void() {
-                        let lhs_str = self.registry.display_qual_type(lhs_promoted);
-                        let rhs_str = self.registry.display_qual_type(rhs_promoted);
-                        self.report_error(SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_str,
-                            right_ty: rhs_str,
-                            span,
-                        });
-                        return None;
-                    }
+                if let Some(pointee) = self.registry.get_pointee(rhs_promoted.ty())
+                    && pointee.is_void()
+                {
+                    let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                    let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                    self.report_error(SemanticError::InvalidBinaryOperands {
+                        left_ty: lhs_str,
+                        right_ty: rhs_str,
+                        span,
+                    });
+                    return None;
                 }
                 Some((rhs_promoted, rhs_promoted))
             }
@@ -667,17 +667,17 @@ impl<'a> SemanticAnalyzer<'a> {
             // Pointer - integer = pointer
             BinaryOp::Sub if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => {
                 // Void pointer arithmetic is invalid (C11 6.5.6)
-                if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty()) {
-                    if pointee.is_void() {
-                        let lhs_str = self.registry.display_qual_type(lhs_promoted);
-                        let rhs_str = self.registry.display_qual_type(rhs_promoted);
-                        self.report_error(SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_str,
-                            right_ty: rhs_str,
-                            span,
-                        });
-                        return None;
-                    }
+                if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty())
+                    && pointee.is_void()
+                {
+                    let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                    let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                    self.report_error(SemanticError::InvalidBinaryOperands {
+                        left_ty: lhs_str,
+                        right_ty: rhs_str,
+                        span,
+                    });
+                    return None;
                 }
                 Some((lhs_promoted, lhs_promoted))
             }
@@ -1862,6 +1862,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 ty
             }
             NodeKind::BuiltinOffsetof(ty, expr) => self.visit_builtin_offsetof(*ty, *expr, node_ref),
+            NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
+                self.visit_type_expressions(*t1);
+                self.visit_type_expressions(*t2);
+                Some(QualType::unqualified(self.registry.type_int))
+            }
             NodeKind::AtomicOp(op, args_start, args_len) => {
                 let span = self.ast.get_span(node_ref);
                 self.visit_atomic_op(*op, *args_start, *args_len, span)

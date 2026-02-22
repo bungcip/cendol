@@ -126,6 +126,10 @@ impl AstDumper {
             NodeKind::Cast(qual_type, _) => {
                 type_refs.insert(qual_type.ty());
             }
+            NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
+                type_refs.insert(t1.ty());
+                type_refs.insert(t2.ty());
+            }
             NodeKind::SizeOfType(qual_type) => {
                 type_refs.insert(qual_type.ty());
             }
@@ -320,6 +324,9 @@ impl AstDumper {
             ParsedNodeKind::BuiltinOffsetof(ty, expr) => {
                 writeln!(f, "BuiltinOffsetof({:?}, {})", ty, expr.get())
             }
+            ParsedNodeKind::BuiltinTypesCompatibleP(t1, t2) => {
+                writeln!(f, "BuiltinTypesCompatibleP({:?}, {:?})", t1, t2)
+            }
             ParsedNodeKind::AtomicOp(op, args) => {
                 let args_str = args.iter().map(|a| a.get().to_string()).collect::<Vec<_>>().join(", ");
                 writeln!(f, "AtomicOp({:?}, args=[{}])", op, args_str)
@@ -489,6 +496,9 @@ impl AstDumper {
             }
             NodeKind::BuiltinOffsetof(ty, expr) => {
                 writeln!(f, "BuiltinOffsetof({}, {})", ty, expr.get())
+            }
+            NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
+                writeln!(f, "BuiltinTypesCompatibleP({}, {})", t1, t2)
             }
             NodeKind::AtomicOp(op, args_start, args_len) => {
                 let start = args_start.get();

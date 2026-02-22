@@ -24,6 +24,7 @@ pub mod pp_lexical;
 pub mod pp_macros;
 
 pub mod semantic_arrays;
+pub mod semantic_builtin_types_compatible;
 pub mod semantic_builtins;
 pub mod semantic_control_flow;
 pub mod semantic_deref_check;

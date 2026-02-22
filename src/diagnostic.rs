@@ -206,6 +206,7 @@ impl IntoDiagnostic for SemanticError {
                 | SemanticError::ReturnLocalAddress { .. }
                 | SemanticError::ImplicitConstantConversion { .. }
                 | SemanticError::SwitchCaseOverflow { .. }
+                | SemanticError::AddressOfArrayAlwaysTrue { .. }
         ) {
             diagnostics[0].level = DiagnosticLevel::Warning;
         }
@@ -482,6 +483,9 @@ pub enum SemanticError {
 
     #[error("overflow converting case value to switch condition type ({from} to {to})")]
     SwitchCaseOverflow { from: String, to: String, span: SourceSpan },
+
+    #[error("address of array '{name}' will always evaluate to 'true'")]
+    AddressOfArrayAlwaysTrue { name: NameId, span: SourceSpan },
 }
 
 impl SemanticError {
@@ -573,6 +577,7 @@ impl SemanticError {
             SemanticError::ContinueNotInLoop { span } => *span,
             SemanticError::ExpectedArrayType { span, .. } => *span,
             SemanticError::InvalidOffsetofDesignator { span } => *span,
+            SemanticError::AddressOfArrayAlwaysTrue { span, .. } => *span,
         }
     }
 }

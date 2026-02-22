@@ -388,16 +388,31 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn check_scalar_condition(&mut self, condition: NodeRef) {
-        if let Some(cond_ty) = self.visit_node(condition)
-            && !cond_ty.is_scalar()
-        {
-            let span = self.ast.get_span(condition);
-            let ty_str = self.registry.display_qual_type(cond_ty);
-            self.report_error(SemanticError::TypeMismatch {
-                expected: "scalar type".to_string(),
-                found: ty_str,
-                span,
-            });
+        if let Some(mut cond_ty) = self.visit_node(condition) {
+            if cond_ty.is_array() || cond_ty.is_function() {
+                if cond_ty.is_array()
+                    && let NodeKind::Ident(name, _) = self.ast.get_kind(condition)
+                {
+                    self.report_error(SemanticError::AddressOfArrayAlwaysTrue {
+                        name: *name,
+                        span: self.ast.get_span(condition),
+                    });
+                }
+                let decayed = self.registry.decay(cond_ty, TypeQualifiers::empty());
+                self.push_conversion(condition, Conversion::PointerDecay { to: decayed.ty() });
+                cond_ty = decayed;
+                self.semantic_info.types[condition.index()] = Some(cond_ty);
+            }
+
+            if !cond_ty.is_scalar() {
+                let span = self.ast.get_span(condition);
+                let ty_str = self.registry.display_qual_type(cond_ty);
+                self.report_error(SemanticError::TypeMismatch {
+                    expected: "scalar type".to_string(),
+                    found: ty_str,
+                    span,
+                });
+            }
         }
     }
 

@@ -94,6 +94,7 @@ pub mod parser_builder_coverage;
 pub mod parser_expect_name_coverage;
 pub mod pp_dumper_coverage;
 pub mod pp_macro_nested;
+pub mod semantic_array_warning;
 pub mod semantic_assignment_coverage;
 pub mod semantic_atomic;
 pub mod semantic_brace_elision;

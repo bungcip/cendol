@@ -125,3 +125,25 @@ fn test_deref_hang_regression() {
     "#;
     setup_cranelift(source);
 }
+
+#[test]
+fn test_array_in_condition_fix() {
+    let source = r#"
+        int main() {
+            int a[5];
+            if (a) {
+                return 174;
+            }
+            return 0;
+        }
+    "#;
+
+    // This should not panic during compilation and should generate valid IR
+    let clif_dump = setup_cranelift(source);
+
+    // We expect the array 'a' to decay to a pointer, which is then handled in 'if'
+    assert!(
+        clif_dump.contains("stack_addr.i64"),
+        "Expected stack_addr for array 'a' in condition"
+    );
+}

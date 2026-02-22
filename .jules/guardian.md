@@ -69,3 +69,8 @@ Action: Implement robust internal/external function splits for stateful semantic
 
 Learning: C11 6.7.2.4p4 explicitly prohibits bit-fields from having an atomic type, which is a subtle semantic constraint that is distinct from standard integer type checks. This constraint applies to both named and unnamed bit-fields. Prohibiting it during the lowering phase prevents potential backend failures or miscompilations when generating atomic instructions for non-byte-aligned memory locations.
 Action: Always verify that qualifiers (especially _Atomic) are checked alongside base types when validating member-specific constraints like bit-fields.
+
+2025-05-28 - [Integer Constant Expression Cast Restrictions]
+
+Learning: C11 6.6p6 defines integer constant expressions very strictly: floating constants are ONLY allowed as the immediate operands of casts. This means `(int)1.0` is valid, but `(int)(1.0 + 1.0)` is not. Furthermore, constant evaluator `Cast` nodes must apply semantic truncation/masking according to the target type (e.g. `(char)257` is 1) to ensure correctness in contexts like `_Static_assert` and array sizes.
+Action: Enforce "immediacy" for floating constants in integer constant evaluation and ensure all casts in the constant evaluator perform proper integer range limiting based on the target type's layout.

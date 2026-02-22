@@ -131,7 +131,41 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
                 eval_const_expr(ctx, *else_ref)
             }
         }
-        NodeKind::Cast(_, expr) => eval_const_expr(ctx, *expr),
+        NodeKind::Cast(target_ty, expr) => {
+            let kind = ctx.ast.get_kind(*expr);
+
+            if target_ty.ty().builtin() == Some(crate::semantic::BuiltinType::Bool) {
+                if let Some(val) = eval_const_expr(ctx, *expr) {
+                    return Some((val != 0) as i64);
+                } else if let NodeKind::Literal(literal::Literal::Float { val: f_val, .. }) = kind {
+                    return Some((*f_val != 0.0) as i64);
+                } else {
+                    return None;
+                }
+            }
+
+            let val = if let Some(val) = eval_const_expr(ctx, *expr) {
+                val
+            } else if let NodeKind::Literal(literal::Literal::Float { val: f_val, .. }) = kind {
+                if !f_val.is_finite() {
+                    return None;
+                }
+                let truncated = f_val.trunc();
+                if truncated < -9223372036854775808.0 || truncated >= 9223372036854775808.0 {
+                    return None;
+                }
+                truncated as i64
+            } else {
+                return None;
+            };
+
+            if !target_ty.is_integer() && !target_ty.is_pointer() {
+                return None;
+            }
+
+            let target_type_obj = ctx.registry.get(target_ty.ty());
+            Some(target_type_obj.truncate_int(val))
+        }
         NodeKind::BuiltinOffsetof(ty, expr) => eval_offsetof(ctx, *ty, *expr),
         NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
             let t1_unqual = ctx.registry.strip_all(*t1);

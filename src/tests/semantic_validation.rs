@@ -180,3 +180,67 @@ fn test_const_eval_negative_numbers() {
         CompilePhase::Mir,
     );
 }
+
+#[test]
+fn rejects_pointer_plus_pointer() {
+    run_fail_with_message(
+        "int main(){int *x; int *y; x+y;}",
+        "Invalid operands for binary operation",
+    );
+}
+
+#[test]
+fn rejects_struct_in_if_condition() {
+    run_fail_with_message(
+        "struct A{int a; int b;}; int main(){struct A a; if(a){return 12;} return 3;}",
+        "type mismatch: expected scalar type",
+    );
+}
+
+#[test]
+fn rejects_struct_in_for_condition() {
+    run_fail_with_message(
+        "struct A{int a; int b;}; int main(){struct A a; for(;a;){return 12;} return 3;}",
+        "type mismatch: expected scalar type",
+    );
+}
+
+#[test]
+fn rejects_struct_in_while_condition() {
+    run_fail_with_message(
+        "struct A{int a; int b;}; int main(){struct A a; while(a){return 12;} return 3;}",
+        "type mismatch: expected scalar type",
+    );
+}
+
+#[test]
+fn rejects_struct_in_do_while_condition() {
+    run_fail_with_message(
+        "struct A{int a; int b;}; int main(){struct A a; do{return 12;}while(a); return 3;}",
+        "type mismatch: expected scalar type",
+    );
+}
+
+#[test]
+fn rejects_void_pointer_arithmetic() {
+    run_fail_with_message(
+        "int main(void){void *p = 0; p += 3;}",
+        "Invalid operands for binary operation",
+    );
+}
+
+#[test]
+fn rejects_struct_compound_assignment() {
+    run_fail_with_message(
+        "struct A{int a; int b;}; int main(){struct A a; struct A b; b *= a; return 3;}",
+        "Invalid operands for binary operation",
+    );
+}
+
+#[test]
+fn rejects_struct_logical_or() {
+    run_fail_with_message(
+        "struct A{int a; int b;}; int main(){struct A a; struct A b; b || a; return 3;}",
+        "Invalid operands for binary operation",
+    );
+}

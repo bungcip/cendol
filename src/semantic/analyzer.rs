@@ -387,7 +387,13 @@ impl<'a> SemanticAnalyzer<'a> {
         if let Some(cond_ty) = self.visit_node(condition)
             && !cond_ty.is_scalar()
         {
-            // report error
+            let span = self.ast.get_span(condition);
+            let ty_str = self.registry.display_qual_type(cond_ty);
+            self.report_error(SemanticError::TypeMismatch {
+                expected: "scalar type".to_string(),
+                found: ty_str,
+                span,
+            });
         }
     }
 
@@ -613,16 +619,66 @@ impl<'a> SemanticAnalyzer<'a> {
         span: SourceSpan,
     ) -> Option<(QualType, QualType)> {
         match op {
+            // Pointer + pointer is invalid (C11 6.5.6)
+            BinaryOp::Add if lhs_promoted.is_pointer() && rhs_promoted.is_pointer() => {
+                let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                self.report_error(SemanticError::InvalidBinaryOperands {
+                    left_ty: lhs_str,
+                    right_ty: rhs_str,
+                    span,
+                });
+                return None;
+            }
             // Pointer + integer = pointer
             BinaryOp::Add if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => {
+                // Void pointer arithmetic is invalid (C11 6.5.6)
+                if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty()) {
+                    if pointee.is_void() {
+                        let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                        let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                        self.report_error(SemanticError::InvalidBinaryOperands {
+                            left_ty: lhs_str,
+                            right_ty: rhs_str,
+                            span,
+                        });
+                        return None;
+                    }
+                }
                 Some((lhs_promoted, lhs_promoted))
             }
             BinaryOp::Add if lhs_promoted.is_integer() && rhs_promoted.is_pointer() => {
+                // Void pointer arithmetic is invalid (C11 6.5.6)
+                if let Some(pointee) = self.registry.get_pointee(rhs_promoted.ty()) {
+                    if pointee.is_void() {
+                        let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                        let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                        self.report_error(SemanticError::InvalidBinaryOperands {
+                            left_ty: lhs_str,
+                            right_ty: rhs_str,
+                            span,
+                        });
+                        return None;
+                    }
+                }
                 Some((rhs_promoted, rhs_promoted))
             }
 
             // Pointer - integer = pointer
             BinaryOp::Sub if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => {
+                // Void pointer arithmetic is invalid (C11 6.5.6)
+                if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty()) {
+                    if pointee.is_void() {
+                        let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                        let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                        self.report_error(SemanticError::InvalidBinaryOperands {
+                            left_ty: lhs_str,
+                            right_ty: rhs_str,
+                            span,
+                        });
+                        return None;
+                    }
+                }
                 Some((lhs_promoted, lhs_promoted))
             }
 
@@ -692,6 +748,17 @@ impl<'a> SemanticAnalyzer<'a> {
 
             // Logical operations
             BinaryOp::LogicAnd | BinaryOp::LogicOr => {
+                // C11 6.5.13/6.5.14: Each operand shall have scalar type
+                if !lhs_promoted.is_scalar() || !rhs_promoted.is_scalar() {
+                    let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                    let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                    self.report_error(SemanticError::InvalidBinaryOperands {
+                        left_ty: lhs_str,
+                        right_ty: rhs_str,
+                        span,
+                    });
+                    return None;
+                }
                 // Result has type int (C11 6.5.13/6.5.14)
                 Some((QualType::unqualified(self.registry.type_int), lhs_promoted))
             }
@@ -714,8 +781,28 @@ impl<'a> SemanticAnalyzer<'a> {
 
             // For other operations, use usual arithmetic conversions
             _ => {
-                let ty = usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted)?;
-                Some((ty, ty))
+                if !lhs_promoted.is_arithmetic() || !rhs_promoted.is_arithmetic() {
+                    let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                    let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                    self.report_error(SemanticError::InvalidBinaryOperands {
+                        left_ty: lhs_str,
+                        right_ty: rhs_str,
+                        span,
+                    });
+                    return None;
+                }
+                if let Some(ty) = usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted) {
+                    Some((ty, ty))
+                } else {
+                    let lhs_str = self.registry.display_qual_type(lhs_promoted);
+                    let rhs_str = self.registry.display_qual_type(rhs_promoted);
+                    self.report_error(SemanticError::InvalidBinaryOperands {
+                        left_ty: lhs_str,
+                        right_ty: rhs_str,
+                        span,
+                    });
+                    None
+                }
             }
         }
     }
@@ -1520,7 +1607,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.loop_depth += 1;
                 self.visit_node(*body);
                 self.loop_depth -= 1;
-                self.visit_node(*condition);
+                self.check_scalar_condition(*condition);
                 None
             }
             NodeKind::Switch(cond, body) => self.visit_switch_statement(*cond, *body),

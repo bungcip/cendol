@@ -380,12 +380,11 @@ pub(crate) fn emit_const(
             output.extend_from_slice(&0i64.to_le_bytes());
         }
         ConstValueKind::FunctionAddress(func_id) => {
-            if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module) {
-                if let Some(&clif_func_id) = ctx.func_id_map.get(func_id) {
+            if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module)
+                && let Some(&clif_func_id) = ctx.func_id_map.get(func_id) {
                     let func_ref = mod_obj.declare_func_in_data(clif_func_id, dd);
                     dd.write_function_addr(offset, func_ref);
                 }
-            }
             output.extend_from_slice(&0i64.to_le_bytes());
         }
         ConstValueKind::StructLiteral(fields) => {
@@ -1588,7 +1587,8 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                         ctx.builder,
                     );
 
-                    let result_val = match op {
+                    
+                    match op {
                         BinaryIntOp::Add => ctx.builder.ins().iadd(left_val, right_val),
                         BinaryIntOp::Sub => ctx.builder.ins().isub(left_val, right_val),
                         BinaryIntOp::Mul => ctx.builder.ins().imul(left_val, right_val),
@@ -1665,8 +1665,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             };
                             emit_bool_to_int(cond, expected_type, ctx.builder)
                         }
-                    };
-                    result_val
+                    }
                 }
                 Rvalue::BinaryFloatOp(op, left_operand, right_operand) => {
                     let left_cranelift_type = lower_operand_type(left_operand, ctx.mir);
@@ -1675,7 +1674,8 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let left_val = emit_operand(left_operand, ctx, left_cranelift_type);
                     let right_val = emit_operand(right_operand, ctx, right_cranelift_type);
 
-                    let result_val = match op {
+                    
+                    match op {
                         BinaryFloatOp::Add => ctx.builder.ins().fadd(left_val, right_val),
                         BinaryFloatOp::Sub => ctx.builder.ins().fsub(left_val, right_val),
                         BinaryFloatOp::Mul => ctx.builder.ins().fmul(left_val, right_val),
@@ -1704,8 +1704,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             let cond = ctx.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, left_val, right_val);
                             emit_bool_to_int(cond, expected_type, ctx.builder)
                         }
-                    };
-                    result_val
+                    }
                 }
                 Rvalue::BuiltinVaArg(ap, type_id) => {
                     // X86_64 SysV va_arg implementation
@@ -1728,7 +1727,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     // We ignore is_float and standard SystemV ABI register separation because our
                     // implementation flattens everything into a sequential spill slot pointed to by reg_save_area.
 
-                    let size = lower_type_size(mir_type, ctx.mir) as u32;
+                    let size = lower_type_size(mir_type, ctx.mir);
                     let size = size.max(8);
 
                     let needed_slots = size.div_ceil(8);

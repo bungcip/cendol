@@ -136,8 +136,14 @@ impl IntoDiagnostic for ParseError {
 
 impl IntoDiagnostic for SemanticError {
     fn into_diagnostic(self) -> Vec<Diagnostic> {
+        // Determine if this should be a warning or error
+        let level = match &self {
+            SemanticError::EmptyDeclaration { .. } => DiagnosticLevel::Warning,
+            _ => DiagnosticLevel::Error,
+        };
+
         let mut diagnostics = vec![Diagnostic {
-            level: DiagnosticLevel::Error,
+            level,
             message: self.to_string(),
             span: self.span(),
             ..Default::default()
@@ -494,6 +500,9 @@ pub enum SemanticError {
 
     #[error("address of array '{name}' will always evaluate to 'true'")]
     AddressOfArrayAlwaysTrue { name: NameId, span: SourceSpan },
+
+    #[error("declaration does not declare anything")]
+    EmptyDeclaration { span: SourceSpan },
 }
 
 impl SemanticError {
@@ -587,6 +596,7 @@ impl SemanticError {
             SemanticError::ExpectedArrayType { span, .. } => *span,
             SemanticError::InvalidOffsetofDesignator { span } => *span,
             SemanticError::AddressOfArrayAlwaysTrue { span, .. } => *span,
+            SemanticError::EmptyDeclaration { span } => *span,
         }
     }
 }

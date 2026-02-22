@@ -2007,7 +2007,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             spec_info,
             DeclaratorContext { in_parameter: false },
         );
-        let name = extract_name(&init.declarator).expect("Declarator must have identifier");
+
+        // Check if declarator has an identifier
+        let Some(name) = extract_name(&init.declarator) else {
+            // Declaration without identifier (e.g., "int;") - emit warning and skip
+            self.report_error(SemanticError::EmptyDeclaration { span: init.span });
+            return None;
+        };
 
         let node = if let Some(slot) = target_slot {
             self.ast.spans[slot.index()] = span;

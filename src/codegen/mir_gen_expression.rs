@@ -337,7 +337,12 @@ impl<'a> MirGen<'a> {
                 })
             )
         {
-            Operand::Constant(const_id)
+            // Function address constant has FunctionType, but &func results in Pointer(FunctionType).
+            let func_ty = self.get_operand_type(&operand);
+            let ptr_ty = self
+                .mir_builder
+                .add_type(crate::mir::MirType::Pointer { pointee: func_ty });
+            Operand::Cast(ptr_ty, Box::new(operand))
         } else {
             panic!("Cannot take address of a non-lvalue");
         }

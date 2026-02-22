@@ -102,6 +102,7 @@ impl std::fmt::Display for ValidationError {
 pub struct MirValidator<'a> {
     mir: &'a MirProgram,
     errors: Vec<ValidationError>,
+    pointee_to_pointer: hashbrown::HashMap<TypeId, TypeId>,
 }
 
 impl<'a> MirValidator<'a> {
@@ -110,6 +111,7 @@ impl<'a> MirValidator<'a> {
         Self {
             mir: mir_program,
             errors: Vec::new(),
+            pointee_to_pointer: hashbrown::HashMap::new(),
         }
     }
 
@@ -138,9 +140,14 @@ impl<'a> MirValidator<'a> {
 
         // Validate each type - module.types is a Vec<MirType>, not HashMap<TypeId, MirType>
         // So we validate that each type in the module is accessible via the types HashMap
+        // While we are at it, build the pointee_to_pointer map.
         for (index, _) in self.mir.module.types.iter().enumerate() {
             let type_id = TypeId::new((index + 1) as u32).unwrap(); // Types are 1-indexed
-            if !self.mir.types.contains_key(&type_id) {
+            if let Some(ty) = self.mir.types.get(&type_id) {
+                if let MirType::Pointer { pointee } = ty {
+                    self.pointee_to_pointer.insert(*pointee, type_id);
+                }
+            } else {
                 self.errors.push(ValidationError::TypeNotFound(type_id));
             }
         }
@@ -402,7 +409,6 @@ impl<'a> MirValidator<'a> {
                 Some(local.type_id)
             }
             Place::Deref(op) => {
-                self.validate_operand(op);
                 let op_ty = self.operand_type(op)?;
                 let Some(ty) = self.mir.types.get(&op_ty) else {
                     self.errors.push(ValidationError::TypeNotFound(op_ty));
@@ -469,15 +475,7 @@ impl<'a> MirValidator<'a> {
             }
             Operand::AddressOf(place) => {
                 if let Some(base_ty) = self.validate_place(place) {
-                    // create or lookup a pointer type for base_ty is non-trivial; try to find existing pointer type
-                    for (tid, ty) in &self.mir.types {
-                        if let MirType::Pointer { pointee } = ty
-                            && *pointee == base_ty
-                        {
-                            return Some(*tid);
-                        }
-                    }
-                    None
+                    self.pointee_to_pointer.get(&base_ty).copied()
                 } else {
                     None
                 }

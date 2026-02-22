@@ -111,3 +111,17 @@ fn test_long_double_size() {
         clif_dump
     );
 }
+
+#[test]
+fn test_deref_hang_regression() {
+    // must be fast
+    let source = r#"
+        void f() {}
+        void (*p)() = f;
+        int main() {
+            (************************************************************************************************************************************************************f)();
+            return 0;
+        }
+    "#;
+    setup_cranelift(source);
+}

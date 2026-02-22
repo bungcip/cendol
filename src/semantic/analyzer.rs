@@ -735,6 +735,28 @@ impl<'a> SemanticAnalyzer<'a> {
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
 
+        if op == BinaryOp::Comma {
+            let mut rhs_decayed = rhs_ty;
+            if rhs_ty.is_array() || rhs_ty.is_function() {
+                rhs_decayed = self.registry.decay(rhs_ty, TypeQualifiers::empty());
+                self.push_conversion(rhs_ref, Conversion::PointerDecay { to: rhs_decayed.ty() });
+            }
+            return Some(rhs_decayed);
+        }
+
+        let (result_ty, _) = self.resolve_binary_operation_types(op, lhs_ref, rhs_ref, lhs_ty, rhs_ty, span)?;
+        Some(result_ty)
+    }
+
+    fn resolve_binary_operation_types(
+        &mut self,
+        op: BinaryOp,
+        lhs_ref: NodeRef,
+        rhs_ref: NodeRef,
+        lhs_ty: QualType,
+        rhs_ty: QualType,
+        span: SourceSpan,
+    ) -> Option<(QualType, QualType)> {
         // Perform array/function decay first
         let mut lhs_decayed = lhs_ty;
         if lhs_ty.is_array() || lhs_ty.is_function() {
@@ -746,10 +768,6 @@ impl<'a> SemanticAnalyzer<'a> {
         if rhs_ty.is_array() || rhs_ty.is_function() {
             rhs_decayed = self.registry.decay(rhs_ty, TypeQualifiers::empty());
             self.push_conversion(rhs_ref, Conversion::PointerDecay { to: rhs_decayed.ty() });
-        }
-
-        if op == BinaryOp::Comma {
-            return Some(rhs_decayed);
         }
 
         // Perform integer promotions and record them
@@ -801,7 +819,7 @@ impl<'a> SemanticAnalyzer<'a> {
             );
         }
 
-        Some(result_ty)
+        Some((result_ty, common_ty))
     }
 
     fn visit_assignment(
@@ -847,55 +865,10 @@ impl<'a> SemanticAnalyzer<'a> {
         rhs_ty: QualType,
         span: SourceSpan,
     ) -> Option<QualType> {
-        // Reuse visit_binary_op logic conceptually, but for compound assignment operands.
-        // For p += 1, LHS is pointer, RHS is integer.
-        let lhs_promoted = self.apply_and_record_integer_promotion(lhs_ref, lhs_ty);
-        let rhs_promoted = self.apply_and_record_integer_promotion(rhs_ref, rhs_ty);
-
-        let (common_ty, target_ty) = if let Some((_, common_ty)) =
-            self.analyze_binary_operation_types(arithmetic_op, lhs_promoted, rhs_promoted, span)
-        {
-            // Record conversions from promoted operands to the common type.
-            // This is what the binary operation will actually work with.
-            if lhs_promoted.ty() != common_ty.ty() {
-                self.push_conversion(
-                    lhs_ref,
-                    Conversion::IntegerCast {
-                        from: lhs_promoted.ty(),
-                        to: common_ty.ty(),
-                    },
-                );
-            }
-            if rhs_promoted.ty() != common_ty.ty() {
-                self.push_conversion(
-                    rhs_ref,
-                    Conversion::IntegerCast {
-                        from: rhs_promoted.ty(),
-                        to: common_ty.ty(),
-                    },
-                );
-            }
-
-            // For compound assignment, the result of (lhs op rhs) is converted back to lhs type.
-            // We record this conversion on the assignment node itself.
-            (common_ty, lhs_ty)
-        } else {
-            let lhs_kind = &self.registry.get(lhs_promoted.ty()).kind;
-            let rhs_kind = &self.registry.get(rhs_promoted.ty()).kind;
-            self.report_error(SemanticError::InvalidBinaryOperands {
-                left_ty: lhs_kind.to_string(),
-                right_ty: rhs_kind.to_string(),
-                span,
-            });
-            return None;
-        };
+        let (_, common_ty) =
+            self.resolve_binary_operation_types(arithmetic_op, lhs_ref, rhs_ref, lhs_ty, rhs_ty, span)?;
 
         // Check assignment constraints (C11 6.5.16.1)
-        // Note: For compound assignment, the RHS is the result of the binary operation (common_ty).
-        // BUT, `check_assignment_constraints` expects the RHS expression ref for some specific checks (like NULL pointer constants).
-        // Here, rhs_ref is the original RHS of the +=. This might be slightly inaccurate if check_assignment_constraints relies heavily on the node structure for value checks,
-        // but for type checks it uses `common_ty` (which is the effective RHS).
-        // The previous code passed `effective_rhs_ty` which was `common_ty`.
         if !self.check_assignment_constraints(lhs_ty, common_ty, rhs_ref) {
             let lhs_str = self.registry.display_qual_type(lhs_ty);
             let rhs_str = self.registry.display_qual_type(common_ty);
@@ -908,12 +881,12 @@ impl<'a> SemanticAnalyzer<'a> {
             return None;
         }
 
-        if target_ty.ty() != common_ty.ty() {
+        if lhs_ty.ty() != common_ty.ty() {
             self.push_conversion(
                 node_ref,
                 Conversion::IntegerCast {
                     from: common_ty.ty(),
-                    to: target_ty.ty(),
+                    to: lhs_ty.ty(),
                 },
             );
         }
@@ -1912,9 +1885,6 @@ impl<'a> SemanticAnalyzer<'a> {
         args_len: u16,
         span: SourceSpan,
     ) -> Option<QualType> {
-        // Bolt ⚡: Optimized argument processing by using SmallVec and a single pass.
-        // This avoids three Vec allocations and multiple iterations over the arguments.
-        // Atomic operations have at most 6 arguments (CompareExchangeN).
         let mut args = SmallVec::<[NodeRef; 6]>::new();
         let mut arg_tys = SmallVec::<[QualType; 6]>::new();
         let mut has_error = false;
@@ -1973,25 +1943,17 @@ impl<'a> SemanticAnalyzer<'a> {
                 ty: ty_str,
                 span: self.ast.get_span(args[0]),
             });
-            return None; // Cannot proceed without valid pointer
+            return None;
         };
 
         match op {
             AtomicOp::LoadN => Some(pointee),
             AtomicOp::StoreN => {
-                if !self.check_assignment_constraints(pointee, arg_tys[1], args[1]) {
-                    let ty_str = self.registry.display_qual_type(arg_tys[1]);
-                    self.report_error(SemanticError::InvalidAtomicArgument {
-                        ty: ty_str,
-                        span: self.ast.get_span(args[1]),
-                    });
-                } else {
-                    self.record_implicit_conversions(pointee, arg_tys[1], args[1]);
-                }
+                self.check_assignment_and_record(pointee, arg_tys[1], args[1]);
                 Some(QualType::unqualified(self.registry.type_void))
             }
             AtomicOp::ExchangeN => {
-                self.record_implicit_conversions(pointee, arg_tys[1], args[1]);
+                self.check_assignment_and_record(pointee, arg_tys[1], args[1]);
                 Some(pointee)
             }
             AtomicOp::CompareExchangeN => {
@@ -2016,7 +1978,7 @@ impl<'a> SemanticAnalyzer<'a> {
                         span: self.ast.get_span(args[1]),
                     });
                 }
-                self.record_implicit_conversions(pointee, desired_ty, args[2]);
+                self.check_assignment_and_record(pointee, desired_ty, args[2]);
                 Some(QualType::unqualified(self.registry.type_bool))
             }
             AtomicOp::FetchAdd | AtomicOp::FetchSub | AtomicOp::FetchAnd | AtomicOp::FetchOr | AtomicOp::FetchXor => {
@@ -2029,7 +1991,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
 
                 if pointee.is_integer() {
-                    self.record_implicit_conversions(pointee, arg_tys[1], args[1]);
+                    self.check_assignment_and_record(pointee, arg_tys[1], args[1]);
                 }
                 Some(pointee)
             }
@@ -2042,89 +2004,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 let val_u64 = *val as u64;
                 let is_decimal = *base == 10;
 
-                let candidates = match suffix {
-                    None => {
-                        if is_decimal {
-                            vec![
-                                self.registry.type_int,
-                                self.registry.type_long,
-                                self.registry.type_long_long,
-                            ]
-                        } else {
-                            vec![
-                                self.registry.type_int,
-                                self.registry.type_int_unsigned,
-                                self.registry.type_long,
-                                self.registry.type_long_unsigned,
-                                self.registry.type_long_long,
-                                self.registry.type_long_long_unsigned,
-                            ]
-                        }
-                    }
-                    Some(literal::IntegerSuffix::U) => vec![
-                        self.registry.type_int_unsigned,
-                        self.registry.type_long_unsigned,
-                        self.registry.type_long_long_unsigned,
-                    ],
-                    Some(literal::IntegerSuffix::L) => {
-                        if is_decimal {
-                            vec![self.registry.type_long, self.registry.type_long_long]
-                        } else {
-                            vec![
-                                self.registry.type_long,
-                                self.registry.type_long_unsigned,
-                                self.registry.type_long_long,
-                                self.registry.type_long_long_unsigned,
-                            ]
-                        }
-                    }
-                    Some(literal::IntegerSuffix::UL) => {
-                        vec![self.registry.type_long_unsigned, self.registry.type_long_long_unsigned]
-                    }
-                    Some(literal::IntegerSuffix::LL) => {
-                        if is_decimal {
-                            vec![self.registry.type_long_long]
-                        } else {
-                            vec![self.registry.type_long_long, self.registry.type_long_long_unsigned]
-                        }
-                    }
-                    Some(literal::IntegerSuffix::ULL) => vec![self.registry.type_long_long_unsigned],
-                };
-
-                for ty in candidates {
+                for ty in self.integer_constant_candidates(*suffix, is_decimal) {
                     let _ = self.registry.ensure_layout(ty);
-                    let layout = self.registry.get_layout(ty);
-                    let size_bits = layout.size * 8;
-                    let is_unsigned = match &self.registry.get(ty).kind {
-                        TypeKind::Builtin(b) => matches!(
-                            b,
-                            BuiltinType::Bool
-                                | BuiltinType::UChar
-                                | BuiltinType::UShort
-                                | BuiltinType::UInt
-                                | BuiltinType::ULong
-                                | BuiltinType::ULongLong
-                        ),
-                        _ => false,
-                    };
-
-                    let fits = if is_unsigned {
-                        if size_bits >= 64 {
-                            true
-                        } else {
-                            val_u64 < (1u64 << size_bits)
-                        }
-                    } else {
-                        // Signed max is 2^(n-1) - 1
-                        if size_bits > 64 {
-                            true
-                        } else {
-                            let max = (1u64 << (size_bits - 1)) - 1;
-                            val_u64 <= max
-                        }
-                    };
-
-                    if fits {
+                    if self.fits_in_type(val_u64, ty) {
                         return Some(QualType::unqualified(ty));
                     }
                 }
@@ -2249,6 +2131,94 @@ impl<'a> SemanticAnalyzer<'a> {
                 span: self.ast.get_span(node_ref),
             }),
             _ => {}
+        }
+    }
+
+    fn integer_constant_candidates(
+        &self,
+        suffix: Option<literal::IntegerSuffix>,
+        is_decimal: bool,
+    ) -> SmallVec<[TypeRef; 6]> {
+        match suffix {
+            None => {
+                if is_decimal {
+                    smallvec![
+                        self.registry.type_int,
+                        self.registry.type_long,
+                        self.registry.type_long_long
+                    ]
+                } else {
+                    smallvec![
+                        self.registry.type_int,
+                        self.registry.type_int_unsigned,
+                        self.registry.type_long,
+                        self.registry.type_long_unsigned,
+                        self.registry.type_long_long,
+                        self.registry.type_long_long_unsigned,
+                    ]
+                }
+            }
+            Some(literal::IntegerSuffix::U) => smallvec![
+                self.registry.type_int_unsigned,
+                self.registry.type_long_unsigned,
+                self.registry.type_long_long_unsigned,
+            ],
+            Some(literal::IntegerSuffix::L) => {
+                if is_decimal {
+                    smallvec![self.registry.type_long, self.registry.type_long_long]
+                } else {
+                    smallvec![
+                        self.registry.type_long,
+                        self.registry.type_long_unsigned,
+                        self.registry.type_long_long,
+                        self.registry.type_long_long_unsigned,
+                    ]
+                }
+            }
+            Some(literal::IntegerSuffix::UL) => {
+                smallvec![self.registry.type_long_unsigned, self.registry.type_long_long_unsigned]
+            }
+            Some(literal::IntegerSuffix::LL) => {
+                if is_decimal {
+                    smallvec![self.registry.type_long_long]
+                } else {
+                    smallvec![self.registry.type_long_long, self.registry.type_long_long_unsigned]
+                }
+            }
+            Some(literal::IntegerSuffix::ULL) => smallvec![self.registry.type_long_long_unsigned],
+        }
+    }
+
+    fn fits_in_type(&self, val: u64, ty: TypeRef) -> bool {
+        let layout = self.registry.get_layout(ty);
+        let size_bits = layout.size * 8;
+        let is_unsigned = match &self.registry.get(ty).kind {
+            TypeKind::Builtin(b) => matches!(
+                b,
+                BuiltinType::Bool
+                    | BuiltinType::UChar
+                    | BuiltinType::UShort
+                    | BuiltinType::UInt
+                    | BuiltinType::ULong
+                    | BuiltinType::ULongLong
+            ),
+            _ => false,
+        };
+
+        if is_unsigned {
+            if size_bits >= 64 {
+                true
+            } else {
+                val < (1u64 << size_bits)
+            }
+        } else {
+            // Signed max is 2^(n-1) - 1
+            if size_bits >= 64 {
+                val <= i64::MAX as u64
+            } else {
+                let max = (1u64 << (size_bits - 1)) - 1;
+                val <= max
+            }
         }
     }
 

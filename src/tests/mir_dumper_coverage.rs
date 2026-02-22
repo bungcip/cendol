@@ -22,7 +22,7 @@ fn test_mir_dumper_manual_coverage() {
         vec![i32_ty],
         void_ty,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
     builder.set_current_function(func_id);
 

@@ -20,7 +20,7 @@ fn create_valid_mir() -> MirProgram {
         vec![],
         i32_ty,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
     builder.set_current_function(func_id);
 
@@ -293,7 +293,7 @@ fn test_call_arg_type_mismatch() {
         vec![i32_ty],
         i32_ty,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
     builder.set_current_function(func_id);
     let block_id = builder.create_block();
@@ -563,7 +563,7 @@ fn test_call_void_with_dest() {
         vec![],
         void_ty,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
     builder.set_current_function(foo_id);
     let block_id = builder.create_block();
@@ -580,7 +580,7 @@ fn test_call_void_with_dest() {
         main_id,
         main_name,
         i32_ty,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
     mir.functions.insert(main_id, main_func.clone());
     mir.module.functions.push(main_id);
@@ -719,16 +719,16 @@ fn test_place_field_out_of_bounds() {
     };
     let struct_ty_id = builder.add_type(struct_ty);
 
-    let func_id = builder.define_function(
+    let _func_id = builder.define_function(
         NameId::new("main"),
         vec![],
         i32_ty,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
-    builder.set_current_function(func_id);
+    builder.set_current_function(_func_id);
     let block_id = builder.create_block();
-    builder.set_function_entry_block(func_id, block_id);
+    builder.set_function_entry_block(_func_id, block_id);
     builder.set_current_block(block_id);
 
     let local_id = builder.create_local(None, struct_ty_id, false);
@@ -779,7 +779,7 @@ fn test_rvalue_cast_aggregate_invalid() {
         vec![],
         i32_ty,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
     builder.set_current_function(func_id);
     let block_id = builder.create_block();

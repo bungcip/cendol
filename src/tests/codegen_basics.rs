@@ -80,7 +80,7 @@ fn test_store_statement_lowering() {
         vec![],
         void_type_id,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
     builder.set_current_function(func_id);
 
@@ -138,7 +138,7 @@ fn test_store_deref_pointer() {
         vec![],
         void_type_id,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
     builder.set_current_function(func_id);
 
@@ -353,7 +353,7 @@ fn test_f128_constant_promotion() {
         vec![],
         void_type_id,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
     builder.set_current_function(func_id);
     let block_id = builder.create_block();

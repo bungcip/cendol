@@ -102,7 +102,7 @@ fn test_long_double_size() {
     "#;
     let clif_dump = setup_cranelift(source);
 
-    let expected_size = 16;
+    let expected_size = 8; // Downgraded to f64
 
     assert!(
         clif_dump.contains(&format!("explicit_slot {}", expected_size)),

@@ -232,15 +232,19 @@ impl<'a> MirGen<'a> {
                 }
 
                 let symbol = self.symbol_table.get_symbol(sym_ref);
-                let linkage = match symbol.kind {
-                    SymbolKind::Function { storage, is_inline } => {
-                        if storage == Some(StorageClass::Static) || is_inline {
-                            crate::mir::MirLinkage::Internal
-                        } else {
-                            crate::mir::MirLinkage::External
+                let kind = if has_definition {
+                    match symbol.kind {
+                        SymbolKind::Function { storage, is_inline } => {
+                            if storage == Some(StorageClass::Static) || is_inline {
+                                crate::mir::MirFunctionKind::DefinedInternal
+                            } else {
+                                crate::mir::MirFunctionKind::DefinedExternal
+                            }
                         }
+                        _ => crate::mir::MirFunctionKind::DefinedExternal,
                     }
-                    _ => crate::mir::MirLinkage::External,
+                } else {
+                    crate::mir::MirFunctionKind::Extern
                 };
 
                 let func_type_kind = self.registry.get(symbol_type_info.ty()).kind.clone();
@@ -259,8 +263,7 @@ impl<'a> MirGen<'a> {
                         param_mir_types,
                         return_mir_type,
                         *is_variadic,
-                        linkage,
-                        has_definition,
+                        kind,
                     );
                 } else {
                     // This case should ideally not be reached for a SymbolKind::Function
@@ -270,8 +273,7 @@ impl<'a> MirGen<'a> {
                         vec![],
                         return_mir_type,
                         false,
-                        linkage,
-                        has_definition,
+                        kind,
                     );
                 }
             }
@@ -1550,13 +1552,15 @@ impl<'a> MirGen<'a> {
         params: Vec<TypeId>,
         ret: TypeId,
         variadic: bool,
-        linkage: crate::mir::MirLinkage,
-        is_def: bool,
+        kind: crate::mir::MirFunctionKind,
     ) {
-        if is_def {
-            self.mir_builder.define_function(name, params, ret, variadic, linkage);
+        if matches!(
+            kind,
+            crate::mir::MirFunctionKind::DefinedInternal | crate::mir::MirFunctionKind::DefinedExternal
+        ) {
+            self.mir_builder.define_function(name, params, ret, variadic, kind);
         } else {
-            self.mir_builder.declare_function(name, params, ret, variadic, linkage);
+            self.mir_builder.declare_function(name, params, ret, variadic);
         }
     }
 }

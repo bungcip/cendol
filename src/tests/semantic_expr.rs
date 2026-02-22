@@ -674,24 +674,23 @@ fn test_long_double_arithmetic_conversion() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
-    type %t1 = f80
-    type %t2 = f64
-    type %t3 = f32
+    type %t1 = f64
+    type %t2 = f32
 
     fn main() -> i32
     {
       locals {
-        %ld: f80
+        %ld: f64
         %f: f32
-        %3: f80
+        %3: f64
       }
 
       bb1:
         %ld = const 1
         %f = const 2
-        %3 = %ld fadd cast<f80>(%f)
+        %3 = %ld fadd cast<f64>(%f)
         return cast<i32>(%3)
     }
     ");

@@ -28,7 +28,7 @@ fn test_indirect_function_call() {
         vec![int_type_id], // param types
         int_type_id,       // return type
         false,             // not variadic
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
 
     builder.set_current_function(target_func_id);
@@ -52,7 +52,7 @@ fn test_indirect_function_call() {
         vec![],
         int_type_id,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
 
     builder.set_current_function(main_func_id);
@@ -156,14 +156,21 @@ fn test_global_function_pointer_init() {
         vec![],
         int_type_id,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
+    builder.set_current_function(main_func_id);
+    let main_block_id = builder.create_block();
+    builder.set_current_block(main_block_id);
+    builder.set_function_entry_block(main_func_id, main_block_id);
+    let const_zero = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(0));
+    builder.set_terminator(Terminator::Return(Some(Operand::Constant(const_zero))));
+
     let target_func_id = builder.define_function(
         NameId::new("target"),
         vec![int_type_id],
         int_type_id,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
     builder.set_current_function(target_func_id);
     let block_id = builder.create_block();
@@ -188,7 +195,18 @@ fn test_global_function_pointer_init() {
 
     match result {
         ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @r"
+            insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @"
+            ; Function: main
+            function u0:0(i32) -> i32 system_v {
+                ss0 = explicit_slot 4
+
+            block0(v0: i32):
+                v2 = stack_addr.i64 ss0
+                store notrap v0, v2
+                v1 = iconst.i32 0
+                return v1  ; v1 = 0
+            }
+
             ; Function: target
             function u0:0(i32) -> i32 system_v {
                 ss0 = explicit_slot 4

@@ -205,7 +205,10 @@ impl<'a> MirValidator<'a> {
         }
 
         // Validate items within blocks for defined functions
-        if func.kind == MirFunctionKind::Defined {
+        if matches!(
+            func.kind,
+            MirFunctionKind::DefinedInternal | MirFunctionKind::DefinedExternal
+        ) {
             for block_id in &func.blocks {
                 let Some(block) = self.mir.blocks.get(block_id) else {
                     continue;

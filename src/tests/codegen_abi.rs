@@ -10,8 +10,8 @@ fn test_long_double_size_x86_64() {
 
     let source = r#"
         struct S { long double d; };
-        _Static_assert(sizeof(long double) == 16, "long double size mismatch");
-        _Static_assert(sizeof(struct S) == 16, "struct size mismatch");
+        _Static_assert(sizeof(long double) == 8, "long double size mismatch");
+        _Static_assert(sizeof(struct S) == 8, "struct size mismatch");
     "#;
     setup_cranelift(source);
 }

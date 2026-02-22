@@ -109,7 +109,7 @@ fn test_alloc_dealloc_codegen() {
         vec![],
         void_type_id,
         false,
-        crate::mir::MirLinkage::External,
+        crate::mir::MirFunctionKind::DefinedExternal,
     );
     builder.set_current_function(func_id);
 

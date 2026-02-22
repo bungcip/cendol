@@ -60,10 +60,8 @@ fn lower_type(mir_type: &MirType) -> Option<Type> {
 fn lower_linkage(func: &MirFunction) -> Linkage {
     match func.kind {
         MirFunctionKind::Extern => Linkage::Import,
-        MirFunctionKind::Defined => match func.linkage {
-            crate::mir::MirLinkage::Internal => Linkage::Local,
-            crate::mir::MirLinkage::External => Linkage::Export,
-        },
+        MirFunctionKind::DefinedInternal => Linkage::Local,
+        MirFunctionKind::DefinedExternal => Linkage::Export,
     }
 }
 
@@ -383,11 +381,12 @@ pub(crate) fn emit_const(
             output.extend_from_slice(&0i64.to_le_bytes());
         }
         ConstValueKind::FunctionAddress(func_id) => {
-            if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module)
-                && let Some(&clif_func_id) = ctx.func_id_map.get(func_id) {
+            if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module) {
+                if let Some(&clif_func_id) = ctx.func_id_map.get(func_id) {
                     let func_ref = mod_obj.declare_func_in_data(clif_func_id, dd);
                     dd.write_function_addr(offset, func_ref);
                 }
+            }
             output.extend_from_slice(&0i64.to_le_bytes());
         }
         ConstValueKind::StructLiteral(fields) => {
@@ -769,7 +768,10 @@ fn emit_function_call(
             let func = ctx.mir.get_function(*func_id);
             let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
             let name_linkage = Some((func.name.as_str(), lower_linkage(func)));
-            let is_defined = matches!(func.kind, MirFunctionKind::Defined);
+            let is_defined = matches!(
+                func.kind,
+                MirFunctionKind::DefinedInternal | MirFunctionKind::DefinedExternal
+            );
             (
                 func.return_type,
                 param_types,
@@ -1590,8 +1592,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                         ctx.builder,
                     );
 
-                    
-                    match op {
+                    let result_val = match op {
                         BinaryIntOp::Add => ctx.builder.ins().iadd(left_val, right_val),
                         BinaryIntOp::Sub => ctx.builder.ins().isub(left_val, right_val),
                         BinaryIntOp::Mul => ctx.builder.ins().imul(left_val, right_val),
@@ -1668,7 +1669,8 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             };
                             emit_bool_to_int(cond, expected_type, ctx.builder)
                         }
-                    }
+                    };
+                    result_val
                 }
                 Rvalue::BinaryFloatOp(op, left_operand, right_operand) => {
                     let left_cranelift_type = lower_operand_type(left_operand, ctx.mir);
@@ -1677,8 +1679,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let left_val = emit_operand(left_operand, ctx, left_cranelift_type);
                     let right_val = emit_operand(right_operand, ctx, right_cranelift_type);
 
-                    
-                    match op {
+                    let result_val = match op {
                         BinaryFloatOp::Add => ctx.builder.ins().fadd(left_val, right_val),
                         BinaryFloatOp::Sub => ctx.builder.ins().fsub(left_val, right_val),
                         BinaryFloatOp::Mul => ctx.builder.ins().fmul(left_val, right_val),
@@ -1707,7 +1708,8 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             let cond = ctx.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, left_val, right_val);
                             emit_bool_to_int(cond, expected_type, ctx.builder)
                         }
-                    }
+                    };
+                    result_val
                 }
                 Rvalue::BuiltinVaArg(ap, type_id) => {
                     // X86_64 SysV va_arg implementation
@@ -1730,7 +1732,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     // We ignore is_float and standard SystemV ABI register separation because our
                     // implementation flattens everything into a sequential spill slot pointed to by reg_save_area.
 
-                    let size = lower_type_size(mir_type, ctx.mir);
+                    let size = lower_type_size(mir_type, ctx.mir) as u32;
                     let size = size.max(8);
 
                     let needed_slots = size.div_ceil(8);
@@ -2177,7 +2179,12 @@ fn lower_function_signature(
         param_types.push(param_type);
     }
 
-    if func.is_variadic && matches!(func.kind, MirFunctionKind::Defined) {
+    if func.is_variadic
+        && matches!(
+            func.kind,
+            MirFunctionKind::DefinedInternal | MirFunctionKind::DefinedExternal
+        )
+    {
         // Add 32 total I64 parameters to capture variadic arguments (6 GPRs + 26 stack slots)
         // This allows variadic functions to receive many struct args that expand to multiple I64s
         let fixed_params_count = func.params.len();
@@ -2236,7 +2243,10 @@ fn finalize_function_processing(
         .expect("module operation failed");
 
     // Only define the function body if it's a defined function (not extern)
-    if matches!(func.kind, MirFunctionKind::Defined) {
+    if matches!(
+        func.kind,
+        MirFunctionKind::DefinedInternal | MirFunctionKind::DefinedExternal
+    ) {
         module.define_function(id, func_ctx).expect("module operation failed");
     }
 
@@ -2402,7 +2412,10 @@ impl ClifGen {
             }
             // Only lower functions that are defined (have bodies)
             if let Some(func) = self.mir.functions.get(&func_id)
-                && matches!(func.kind, MirFunctionKind::Defined)
+                && matches!(
+                    func.kind,
+                    MirFunctionKind::DefinedInternal | MirFunctionKind::DefinedExternal
+                )
             {
                 self.visit_function(func_id);
             }
@@ -2636,7 +2649,11 @@ impl ClifGen {
 
         // Roots for functions: all defined functions
         for (&id, func) in &self.mir.functions {
-            if matches!(func.kind, MirFunctionKind::Defined) && reachable_functions.insert(id) {
+            if matches!(
+                func.kind,
+                MirFunctionKind::DefinedInternal | MirFunctionKind::DefinedExternal
+            ) && reachable_functions.insert(id)
+            {
                 worklist_functions.push(id);
             }
         }

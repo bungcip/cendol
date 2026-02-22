@@ -84,7 +84,7 @@ impl<'a> MirDumper<'a> {
         let return_type = self.type_to_string(func.return_type);
         let fn_keyword = match func.kind {
             MirFunctionKind::Extern => "extern fn",
-            MirFunctionKind::Defined => "fn",
+            MirFunctionKind::DefinedInternal | MirFunctionKind::DefinedExternal => "fn",
         };
         write!(output, "{} {}(", fn_keyword, func.name)?;
 

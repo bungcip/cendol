@@ -43,15 +43,9 @@ pub type ConstValueId = NonZeroU32;
 /// Function kind - distinguishes between defined and extern functions
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum MirFunctionKind {
-    Defined,
     Extern,
-}
-
-/// Linkage type for functions and globals
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub enum MirLinkage {
-    Internal,
-    External,
+    DefinedInternal,
+    DefinedExternal,
 }
 
 /// MIR Module - Top-level container for MIR
@@ -87,8 +81,7 @@ pub struct MirFunction {
     pub params: Vec<LocalId>,
 
     pub kind: MirFunctionKind,
-    pub linkage: MirLinkage, // Linkage type
-    pub is_variadic: bool,   // Track if this function is variadic
+    pub is_variadic: bool, // Track if this function is variadic
 
     // Only valid if kind is Defined
     pub locals: Vec<LocalId>,
@@ -102,7 +95,6 @@ impl MirFunction {
         name: NameId,
         return_type: TypeId,
         kind: MirFunctionKind,
-        linkage: MirLinkage,
     ) -> Self {
         Self {
             id,
@@ -110,7 +102,6 @@ impl MirFunction {
             return_type,
             params: Vec::new(),
             kind,
-            linkage,
             is_variadic: false,
             locals: Vec::new(),
             blocks: Vec::new(),
@@ -122,13 +113,17 @@ impl MirFunction {
         id: MirFunctionId,
         name: NameId,
         return_type: TypeId,
-        linkage: MirLinkage,
+        kind: MirFunctionKind,
     ) -> Self {
-        Self::new(id, name, return_type, MirFunctionKind::Defined, linkage)
+        debug_assert!(matches!(
+            kind,
+            MirFunctionKind::DefinedInternal | MirFunctionKind::DefinedExternal
+        ));
+        Self::new(id, name, return_type, kind)
     }
 
-    fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
-        Self::new(id, name, return_type, MirFunctionKind::Extern, linkage)
+    fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
+        Self::new(id, name, return_type, MirFunctionKind::Extern)
     }
 }
 
@@ -636,7 +631,10 @@ impl MirBuilder {
         let func = self.functions.get(&func_id).unwrap();
 
         assert!(
-            matches!(func.kind, MirFunctionKind::Defined),
+            matches!(
+                func.kind,
+                MirFunctionKind::DefinedInternal | MirFunctionKind::DefinedExternal
+            ),
             "cannot create blocks for extern function"
         );
 
@@ -711,10 +709,9 @@ impl MirBuilder {
         param_types: Vec<TypeId>,
         return_type: TypeId,
         is_variadic: bool,
-        linkage: MirLinkage,
     ) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
-        let mut func = MirFunction::new_extern(func_id, name, return_type, linkage);
+        let mut func = MirFunction::new_extern(func_id, name, return_type);
         func.is_variadic = is_variadic;
 
         // Create locals for each parameter
@@ -737,10 +734,10 @@ impl MirBuilder {
         param_types: Vec<TypeId>,
         return_type: TypeId,
         is_variadic: bool,
-        linkage: MirLinkage,
+        kind: MirFunctionKind,
     ) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
-        let mut func = MirFunction::new_defined(func_id, name, return_type, linkage);
+        let mut func = MirFunction::new_defined(func_id, name, return_type, kind);
         func.is_variadic = is_variadic;
 
         // Create locals for each parameter
@@ -880,7 +877,10 @@ impl MirBuilder {
     /// Set the entry block for a function
     pub(crate) fn set_function_entry_block(&mut self, func_id: MirFunctionId, block_id: MirBlockId) {
         if let Some(func) = self.functions.get_mut(&func_id) {
-            assert!(matches!(func.kind, MirFunctionKind::Defined));
+            assert!(matches!(
+                func.kind,
+                MirFunctionKind::DefinedInternal | MirFunctionKind::DefinedExternal
+            ));
             func.entry_block = Some(block_id);
         }
     }

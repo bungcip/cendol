@@ -84,6 +84,7 @@ pub mod guardian_type_limits;
 pub mod guardian_typedef_constraints;
 pub mod mir_dumper_coverage;
 pub mod mir_gen_compound_assignment;
+pub mod mir_gen_function_address;
 pub mod mir_gen_function_calls;
 pub mod mir_gen_sizeof;
 pub mod mir_unit;

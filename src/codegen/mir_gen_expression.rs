@@ -935,17 +935,23 @@ impl<'a> MirGen<'a> {
 
     fn visit_index_access(&mut self, arr_ref: NodeRef, idx_ref: NodeRef) -> Operand {
         let arr_ty = self.ast.get_resolved_type(arr_ref).unwrap();
+        let idx_ty = self.ast.get_resolved_type(idx_ref).unwrap();
 
-        // Handle both array and pointer types for index access
-        // In C, arr[idx] is equivalent to *(arr + idx)
-        if arr_ty.is_array() || arr_ty.is_pointer() {
-            let arr_place = self.visit_expression_as_place(arr_ref);
-            let idx_operand = self.visit_expression(idx_ref, true);
-
-            Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
+        // Handle both arr[idx] and idx[arr] (subscripting is commutative in C)
+        // One must be a pointer/array, the other must be an integer
+        let (sequence_ref, index_ref) = if arr_ty.is_array() || arr_ty.is_pointer() {
+            (arr_ref, idx_ref)
+        } else if idx_ty.is_array() || idx_ty.is_pointer() {
+            (idx_ref, arr_ref)
         } else {
-            panic!("Index access on non-array, non-pointer type");
-        }
+            panic!("Index access: neither operand is an array or pointer type");
+        };
+
+        // In C, arr[idx] is equivalent to *(arr + idx)
+        let arr_place = self.visit_expression_as_place(sequence_ref);
+        let idx_operand = self.visit_expression(index_ref, true);
+
+        Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
     }
 
     fn visit_inc_dec_expression(

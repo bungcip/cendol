@@ -1089,3 +1089,19 @@ fn test_comma_operator_loop() {
     }
     ");
 }
+
+#[test]
+fn test_reverse_subscript_with_pointer() {
+    let src = r#"
+        int main() {
+            int a[5][6];
+            int (*p)[6];
+            p = a;
+            int *q;
+            q = p[1];
+            2[q] = 174;
+            return 1[a][2];
+        }
+    "#;
+    run_pass(src, CompilePhase::Mir);
+}

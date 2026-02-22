@@ -1546,16 +1546,27 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_index_access(&mut self, arr_ref: NodeRef, idx_ref: NodeRef) -> Option<QualType> {
-        self.visit_node(idx_ref);
         let arr_ty = self.visit_node(arr_ref)?;
+        let idx_ty = self.visit_node(idx_ref)?;
 
-        if arr_ty.is_array() {
-            // Ensure layout is computed for array type
-            let _ = self.registry.ensure_layout(arr_ty.ty());
-            let element_type = self.registry.get_array_element(arr_ty.ty()).unwrap();
-            Some(QualType::new(element_type, arr_ty.qualifiers()))
+        // Handle both arr[idx] and idx[arr] (subscripting is commutative in C)
+        // One must be a pointer/array, the other must be an integer
+        let (sequence_ty, _index_ty) = if arr_ty.is_pointer() || arr_ty.is_array() {
+            (arr_ty, idx_ty)
+        } else if idx_ty.is_pointer() || idx_ty.is_array() {
+            (idx_ty, arr_ty)
         } else {
-            self.registry.get_pointee(arr_ty.ty())
+            // Neither is a pointer/array, this is an error - but visit_node already processed both
+            return None;
+        };
+
+        if sequence_ty.is_array() {
+            // Ensure layout is computed for array type
+            let _ = self.registry.ensure_layout(sequence_ty.ty());
+            let element_type = self.registry.get_array_element(sequence_ty.ty()).unwrap();
+            Some(QualType::new(element_type, sequence_ty.qualifiers()))
+        } else {
+            self.registry.get_pointee(sequence_ty.ty())
         }
     }
 

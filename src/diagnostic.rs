@@ -425,6 +425,12 @@ pub enum SemanticError {
     #[error("duplicate case value '{value}'")]
     DuplicateCase { value: String, span: SourceSpan },
 
+    #[error("expression in 'case' label is not an integer constant expression")]
+    NonConstantCaseValue { span: SourceSpan },
+
+    #[error("switch condition has non-integer type '{ty}'")]
+    InvalidSwitchCondition { ty: String, span: SourceSpan },
+
     #[error("multiple default labels in one switch")]
     MultipleDefaultLabels { span: SourceSpan },
 
@@ -580,6 +586,8 @@ impl SemanticError {
             SemanticError::IncompleteReturnType { span } => *span,
             SemanticError::CaseNotInSwitch { span } => *span,
             SemanticError::DuplicateCase { span, .. } => *span,
+            SemanticError::NonConstantCaseValue { span } => *span,
+            SemanticError::InvalidSwitchCondition { span, .. } => *span,
             SemanticError::MultipleDefaultLabels { span } => *span,
             SemanticError::FlexibleArrayNotLast { span } => *span,
             SemanticError::FlexibleArrayInEmptyStruct { span } => *span,

@@ -52,7 +52,7 @@ fn format_const_eval_batch(exprs: &[&str]) -> String {
 #[test]
 fn test_arithmetic() {
     let output = format_const_eval_batch(&["1 + 2", "10 - 5", "2 * 3", "10 / 2", "10 % 3"]);
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     Expression: 1 + 2
     Result: 3
     ---
@@ -66,7 +66,7 @@ fn test_arithmetic() {
     Result: 5
     ---
     Expression: 10 % 3
-    Result: None
+    Result: 1
     ---
     ");
 }

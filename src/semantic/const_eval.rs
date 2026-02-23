@@ -23,6 +23,19 @@ impl<'a> ConstEvalCtx<'a> {
             self.ast.get_resolved_type(node_ref)
         }
     }
+
+    fn is_unsigned_int(&self, node_ref: NodeRef) -> bool {
+        if let Some(qual_ty) = self.get_resolved_type(node_ref) {
+            let ty = self.registry.get(qual_ty.ty());
+            if let crate::semantic::TypeKind::Enum { base_type, .. } = &ty.kind {
+                 let base = self.registry.get(*base_type);
+                 return base.is_int() && !base.is_signed();
+            }
+            ty.is_int() && !ty.is_signed()
+        } else {
+            false
+        }
+    }
 }
 
 /// Evaluate a constant expression node to an i64 value
@@ -67,18 +80,69 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
                 BinaryOp::Sub => Some(left_val.wrapping_sub(right_val)),
                 BinaryOp::Mul => Some(left_val.wrapping_mul(right_val)),
                 BinaryOp::Div => {
-                    if right_val != 0 {
-                        Some(left_val.wrapping_div(right_val))
+                    if ctx.is_unsigned_int(expr_node_ref) {
+                        let l = left_val as u64;
+                        let r = right_val as u64;
+                        if r != 0 {
+                            Some((l / r) as i64)
+                        } else {
+                            None
+                        }
                     } else {
-                        None
+                        if right_val != 0 {
+                            Some(left_val.wrapping_div(right_val))
+                        } else {
+                            None
+                        }
+                    }
+                }
+                BinaryOp::Mod => {
+                    if ctx.is_unsigned_int(expr_node_ref) {
+                        let l = left_val as u64;
+                        let r = right_val as u64;
+                        if r != 0 {
+                            Some((l % r) as i64)
+                        } else {
+                            None
+                        }
+                    } else {
+                        if right_val != 0 {
+                            Some(left_val.wrapping_rem(right_val))
+                        } else {
+                            None
+                        }
                     }
                 }
                 BinaryOp::Equal => Some((left_val == right_val) as i64),
                 BinaryOp::NotEqual => Some((left_val != right_val) as i64),
-                BinaryOp::Less => Some((left_val < right_val) as i64),
-                BinaryOp::LessEqual => Some((left_val <= right_val) as i64),
-                BinaryOp::Greater => Some((left_val > right_val) as i64),
-                BinaryOp::GreaterEqual => Some((left_val >= right_val) as i64),
+                BinaryOp::Less => {
+                    if ctx.is_unsigned_int(*left_ref) {
+                        Some(((left_val as u64) < (right_val as u64)) as i64)
+                    } else {
+                        Some((left_val < right_val) as i64)
+                    }
+                }
+                BinaryOp::LessEqual => {
+                    if ctx.is_unsigned_int(*left_ref) {
+                        Some(((left_val as u64) <= (right_val as u64)) as i64)
+                    } else {
+                        Some((left_val <= right_val) as i64)
+                    }
+                }
+                BinaryOp::Greater => {
+                    if ctx.is_unsigned_int(*left_ref) {
+                        Some(((left_val as u64) > (right_val as u64)) as i64)
+                    } else {
+                        Some((left_val > right_val) as i64)
+                    }
+                }
+                BinaryOp::GreaterEqual => {
+                    if ctx.is_unsigned_int(*left_ref) {
+                        Some(((left_val as u64) >= (right_val as u64)) as i64)
+                    } else {
+                        Some((left_val >= right_val) as i64)
+                    }
+                }
                 // LogicAnd/LogicOr handled above
                 BinaryOp::BitOr => Some(left_val | right_val),
                 BinaryOp::BitAnd => Some(left_val & right_val),
@@ -87,7 +151,13 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
                     // Safe shift, handle overflow or large shift count by wrapping or masking
                     Some(left_val.wrapping_shl(right_val as u32))
                 }
-                BinaryOp::RShift => Some(left_val.wrapping_shr(right_val as u32)),
+                BinaryOp::RShift => {
+                    if ctx.is_unsigned_int(*left_ref) {
+                        Some((left_val as u64).wrapping_shr(right_val as u32) as i64)
+                    } else {
+                        Some(left_val.wrapping_shr(right_val as u32))
+                    }
+                }
                 _ => None,
             }
         }

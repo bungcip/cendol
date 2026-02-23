@@ -62,23 +62,68 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
             }
 
             let right_val = eval_const_expr(ctx, *right_ref)?;
+
+            // Determine if operation should be unsigned
+            let (is_unsigned, is_unsigned_cmp) = if let Some(left_ty) = ctx.get_resolved_type(*left_ref) {
+                let ty_obj = ctx.registry.get(left_ty.ty());
+                let is_unsigned = !ty_obj.is_signed() && ty_obj.is_int();
+                (is_unsigned, is_unsigned || ty_obj.is_pointer())
+            } else {
+                (false, false)
+            };
+
             match op {
                 BinaryOp::Add => Some(left_val.wrapping_add(right_val)),
                 BinaryOp::Sub => Some(left_val.wrapping_sub(right_val)),
                 BinaryOp::Mul => Some(left_val.wrapping_mul(right_val)),
                 BinaryOp::Div => {
-                    if right_val != 0 {
-                        Some(left_val.wrapping_div(right_val))
-                    } else {
+                    if right_val == 0 {
                         None
+                    } else if is_unsigned {
+                        Some((left_val as u64).wrapping_div(right_val as u64) as i64)
+                    } else {
+                        Some(left_val.wrapping_div(right_val))
+                    }
+                }
+                BinaryOp::Mod => {
+                    if right_val == 0 {
+                        None
+                    } else if is_unsigned {
+                        Some((left_val as u64).wrapping_rem(right_val as u64) as i64)
+                    } else {
+                        Some(left_val.wrapping_rem(right_val))
                     }
                 }
                 BinaryOp::Equal => Some((left_val == right_val) as i64),
                 BinaryOp::NotEqual => Some((left_val != right_val) as i64),
-                BinaryOp::Less => Some((left_val < right_val) as i64),
-                BinaryOp::LessEqual => Some((left_val <= right_val) as i64),
-                BinaryOp::Greater => Some((left_val > right_val) as i64),
-                BinaryOp::GreaterEqual => Some((left_val >= right_val) as i64),
+                BinaryOp::Less => {
+                    if is_unsigned_cmp {
+                        Some(((left_val as u64) < (right_val as u64)) as i64)
+                    } else {
+                        Some((left_val < right_val) as i64)
+                    }
+                }
+                BinaryOp::LessEqual => {
+                    if is_unsigned_cmp {
+                        Some(((left_val as u64) <= (right_val as u64)) as i64)
+                    } else {
+                        Some((left_val <= right_val) as i64)
+                    }
+                }
+                BinaryOp::Greater => {
+                    if is_unsigned_cmp {
+                        Some(((left_val as u64) > (right_val as u64)) as i64)
+                    } else {
+                        Some((left_val > right_val) as i64)
+                    }
+                }
+                BinaryOp::GreaterEqual => {
+                    if is_unsigned_cmp {
+                        Some(((left_val as u64) >= (right_val as u64)) as i64)
+                    } else {
+                        Some((left_val >= right_val) as i64)
+                    }
+                }
                 // LogicAnd/LogicOr handled above
                 BinaryOp::BitOr => Some(left_val | right_val),
                 BinaryOp::BitAnd => Some(left_val & right_val),
@@ -87,7 +132,13 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
                     // Safe shift, handle overflow or large shift count by wrapping or masking
                     Some(left_val.wrapping_shl(right_val as u32))
                 }
-                BinaryOp::RShift => Some(left_val.wrapping_shr(right_val as u32)),
+                BinaryOp::RShift => {
+                    if is_unsigned {
+                        Some((left_val as u64).wrapping_shr(right_val as u32) as i64)
+                    } else {
+                        Some(left_val.wrapping_shr(right_val as u32))
+                    }
+                }
                 _ => None,
             }
         }

@@ -139,3 +139,17 @@ impl LinkGen {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_link_error_display() {
+        let err = LinkError::IoError("test error".to_string());
+        assert_eq!(format!("{}", err), "IO error: test error");
+
+        let err = LinkError::LinkFailed;
+        assert_eq!(format!("{}", err), "Linking failed");
+    }
+}

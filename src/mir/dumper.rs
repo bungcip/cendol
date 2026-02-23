@@ -769,6 +769,9 @@ impl<'a> MirDumper<'a> {
             super::UnaryIntOp::Neg => "-".to_string(),
             super::UnaryIntOp::BitwiseNot => "~".to_string(),
             super::UnaryIntOp::LogicalNot => "!".to_string(),
+            super::UnaryIntOp::Popcount => "popcount".to_string(),
+            super::UnaryIntOp::Clz => "clz".to_string(),
+            super::UnaryIntOp::Ctz => "ctz".to_string(),
         }
     }
 

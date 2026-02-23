@@ -53,6 +53,9 @@ pub enum NodeKind {
     BuiltinVaCopy(NodeRef, NodeRef),
     BuiltinExpect(NodeRef, NodeRef),
     BuiltinTypesCompatibleP(QualType, QualType),
+    BuiltinPopcount(NodeRef),
+    BuiltinClz(NodeRef),
+    BuiltinCtz(NodeRef),
     AtomicOp(AtomicOp, NodeRef /* args start */, u16 /* arg count */),
     SizeOfExpr(NodeRef),
     SizeOfType(QualType),
@@ -124,6 +127,9 @@ impl NodeKind {
             | NodeKind::SizeOfType(_)
             | NodeKind::AlignOf(_)
             | NodeKind::BuiltinTypesCompatibleP(..)
+            | NodeKind::BuiltinPopcount(..)
+            | NodeKind::BuiltinClz(..)
+            | NodeKind::BuiltinCtz(..)
             | NodeKind::Break
             | NodeKind::Continue
             | NodeKind::Goto(..)

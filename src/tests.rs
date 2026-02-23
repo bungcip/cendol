@@ -26,6 +26,7 @@ pub mod pp_macros;
 pub mod semantic_arrays;
 pub mod semantic_builtin_types_compatible;
 pub mod semantic_builtins;
+pub mod semantic_builtins_bitwise;
 pub mod semantic_control_flow;
 pub mod semantic_deref_check;
 pub mod semantic_empty_decl;
@@ -66,6 +67,7 @@ pub mod test_utils;
 
 pub mod ast_dumper_coverage;
 
+pub mod codegen_builtins_bitwise;
 pub mod codegen_cast_init;
 pub mod codegen_regr;
 pub mod driver_defines;

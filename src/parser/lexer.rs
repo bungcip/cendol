@@ -84,6 +84,15 @@ pub enum TokenKind {
     BuiltinExpect,
     BuiltinOffsetof,
     BuiltinTypesCompatibleP,
+    BuiltinPopcount,
+    BuiltinPopcountL,
+    BuiltinPopcountLL,
+    BuiltinClz,
+    BuiltinClzL,
+    BuiltinClzLL,
+    BuiltinCtz,
+    BuiltinCtzL,
+    BuiltinCtzLL,
     Asm,
 
     // Atomic builtins
@@ -387,6 +396,15 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
             StringId::new("__builtin_types_compatible_p"),
             TokenKind::BuiltinTypesCompatibleP,
         );
+        m.insert(StringId::new("__builtin_popcount"), TokenKind::BuiltinPopcount);
+        m.insert(StringId::new("__builtin_popcountl"), TokenKind::BuiltinPopcountL);
+        m.insert(StringId::new("__builtin_popcountll"), TokenKind::BuiltinPopcountLL);
+        m.insert(StringId::new("__builtin_clz"), TokenKind::BuiltinClz);
+        m.insert(StringId::new("__builtin_clzl"), TokenKind::BuiltinClzL);
+        m.insert(StringId::new("__builtin_clzll"), TokenKind::BuiltinClzLL);
+        m.insert(StringId::new("__builtin_ctz"), TokenKind::BuiltinCtz);
+        m.insert(StringId::new("__builtin_ctzl"), TokenKind::BuiltinCtzL);
+        m.insert(StringId::new("__builtin_ctzll"), TokenKind::BuiltinCtzLL);
         m.insert(StringId::new("__atomic_load_n"), TokenKind::BuiltinAtomicLoadN);
         m.insert(StringId::new("__atomic_store_n"), TokenKind::BuiltinAtomicStoreN);
         m.insert(StringId::new("__atomic_exchange_n"), TokenKind::BuiltinAtomicExchangeN);

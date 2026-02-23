@@ -1518,6 +1518,19 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     match op {
                         UnaryIntOp::Neg => ctx.builder.ins().ineg(val),
                         UnaryIntOp::BitwiseNot => ctx.builder.ins().bnot(val),
+                        UnaryIntOp::Popcount => {
+                            let res = ctx.builder.ins().popcnt(val);
+                            // popcnt returns the same type as input, but builtins return int (I32)
+                            emit_type_conversion(res, operand_clif_type, expected_type, false, ctx.builder)
+                        }
+                        UnaryIntOp::Clz => {
+                            let res = ctx.builder.ins().clz(val);
+                            emit_type_conversion(res, operand_clif_type, expected_type, false, ctx.builder)
+                        }
+                        UnaryIntOp::Ctz => {
+                            let res = ctx.builder.ins().ctz(val);
+                            emit_type_conversion(res, operand_clif_type, expected_type, false, ctx.builder)
+                        }
                         UnaryIntOp::LogicalNot => {
                             let zero = ctx.builder.ins().iconst(operand_clif_type, 0i64);
                             let is_zero = ctx.builder.ins().icmp(IntCC::Equal, val, zero);

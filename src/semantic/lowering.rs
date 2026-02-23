@@ -2498,6 +2498,24 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.ast.kinds[node.index()] = NodeKind::BuiltinExpect(e, expected);
                 smallvec![node]
             }
+            ParsedNodeKind::BuiltinPopcount(expr) => {
+                let node = self.get_or_push_slot(target_slots, span);
+                let e = self.visit_expression(*expr);
+                self.ast.kinds[node.index()] = NodeKind::BuiltinPopcount(e);
+                smallvec![node]
+            }
+            ParsedNodeKind::BuiltinClz(expr) => {
+                let node = self.get_or_push_slot(target_slots, span);
+                let e = self.visit_expression(*expr);
+                self.ast.kinds[node.index()] = NodeKind::BuiltinClz(e);
+                smallvec![node]
+            }
+            ParsedNodeKind::BuiltinCtz(expr) => {
+                let node = self.get_or_push_slot(target_slots, span);
+                let e = self.visit_expression(*expr);
+                self.ast.kinds[node.index()] = NodeKind::BuiltinCtz(e);
+                smallvec![node]
+            }
             ParsedNodeKind::BuiltinTypesCompatibleP(ty1, ty2) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let t1 = convert_to_qual_type(self, *ty1, span, false)
@@ -3137,15 +3155,14 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                 let cond_node = ctx.visit_expression(*cond);
                 let msg_node = ctx.visit_expression(*msg);
 
-                if let Some(cond_ty) = ctx.ast.get_resolved_type(cond_node) {
-                    if !cond_ty.is_integer() {
+                if let Some(cond_ty) = ctx.ast.get_resolved_type(cond_node)
+                    && !cond_ty.is_integer() {
                         ctx.report_error(SemanticError::TypeMismatch {
                             expected: "integer type".to_string(),
                             found: ctx.registry.display_qual_type(cond_ty),
                             span: node.span,
                         });
                     }
-                }
 
                 let const_ctx = ctx.const_ctx();
                 match const_eval::eval_const_expr(&const_ctx, cond_node) {

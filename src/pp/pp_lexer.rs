@@ -177,7 +177,6 @@ pub(crate) struct PPLexer {
     buffer: Arc<[u8]>,
     pub(crate) position: u32, // its okay to use u32 here since source files are limited to 4 MB
     line_starts: Vec<u32>,
-    put_back_token: Option<PPToken>,
     pub(crate) line_offset: u32,
     pub(crate) in_directive_line: bool, // Whether we are currently processing tokens on a directive line
     pub(crate) at_start_of_line: bool,  // Whether we are at the beginning of a line (only whitespace/comments seen)
@@ -192,7 +191,6 @@ impl PPLexer {
             buffer,
             position: 0,
             line_starts,
-            put_back_token: None,
             line_offset: 0,
             in_directive_line: false,
             at_start_of_line: true,
@@ -491,10 +489,6 @@ impl PPLexer {
     }
 
     pub(crate) fn next_token(&mut self) -> Option<PPToken> {
-        if let Some(token) = self.put_back_token.take() {
-            return Some(token);
-        }
-
         let saved_position = self.position;
         self.skip_whitespace_and_comments();
         let had_leading_space = self.position > saved_position;

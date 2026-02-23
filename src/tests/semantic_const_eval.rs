@@ -66,7 +66,7 @@ fn test_arithmetic() {
     Result: 5
     ---
     Expression: 10 % 3
-    Result: None
+    Result: 1
     ---
     ");
 }
@@ -279,6 +279,34 @@ fn test_div_by_zero() {
     insta::assert_snapshot!(output, @r"
     Expression: 1 / 0
     Result: None
+    ---
+    ");
+}
+
+#[test]
+fn test_unsigned_arithmetic() {
+    let output = format_const_eval_batch(&[
+        "((unsigned long)-1) / 25",
+        "((unsigned long)-1) % 25",
+        "((unsigned long)-1) >> 1",
+        "((unsigned long)-1) > 10",
+        "((unsigned long)-1) < 10",
+    ]);
+    insta::assert_snapshot!(output, @r"
+    Expression: ((unsigned long)-1) / 25
+    Result: 737869762948382064
+    ---
+    Expression: ((unsigned long)-1) % 25
+    Result: 15
+    ---
+    Expression: ((unsigned long)-1) >> 1
+    Result: 9223372036854775807
+    ---
+    Expression: ((unsigned long)-1) > 10
+    Result: 1
+    ---
+    Expression: ((unsigned long)-1) < 10
+    Result: 0
     ---
     ");
 }

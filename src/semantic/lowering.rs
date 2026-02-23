@@ -3137,14 +3137,14 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                 let cond_node = ctx.visit_expression(*cond);
                 let msg_node = ctx.visit_expression(*msg);
 
-                if let Some(cond_ty) = ctx.ast.get_resolved_type(cond_node) {
-                    if !cond_ty.is_integer() {
-                        ctx.report_error(SemanticError::TypeMismatch {
-                            expected: "integer type".to_string(),
-                            found: ctx.registry.display_qual_type(cond_ty),
-                            span: node.span,
-                        });
-                    }
+                if let Some(cond_ty) = ctx.ast.get_resolved_type(cond_node)
+                    && !cond_ty.is_integer()
+                {
+                    ctx.report_error(SemanticError::TypeMismatch {
+                        expected: "integer type".to_string(),
+                        found: ctx.registry.display_qual_type(cond_ty),
+                        span: node.span,
+                    });
                 }
 
                 let const_ctx = ctx.const_ctx();

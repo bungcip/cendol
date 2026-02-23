@@ -340,14 +340,7 @@ impl SourceManager {
         include_loc: Option<SourceLoc>,
         kind: FileKind,
     ) -> SourceId {
-        // Calculate line starts for the virtual buffer immediately
-        let mut line_starts = vec![0];
-        for (i, &byte) in buffer.iter().enumerate() {
-            if byte == b'\n' {
-                line_starts.push((i + 1) as u32);
-            }
-        }
-
+        let line_starts = compute_line_starts(&buffer);
         let path_buf = PathBuf::from(format!("<{}>", name));
         self.add_file_entry(Arc::from(buffer), path_buf, line_starts, include_loc, kind)
     }
@@ -465,16 +458,7 @@ impl SourceManager {
         if id >= 2
             && let Some(file_info) = self.file_infos.get_mut(id as usize - 2)
         {
-            let buffer = &file_info.buffer;
-            let mut line_starts = vec![0]; // First line starts at offset 0
-
-            for (i, &byte) in buffer.iter().enumerate() {
-                if byte == b'\n' {
-                    line_starts.push((i + 1) as u32);
-                }
-            }
-
-            file_info.line_starts = line_starts;
+            file_info.line_starts = compute_line_starts(&file_info.buffer);
         }
     }
 
@@ -532,6 +516,22 @@ impl SourceManager {
 
         Some((logical_line, column, filename))
     }
+}
+
+/// ⚡ Bolt: Two-pass optimization to avoid multiple reallocations of line_starts vector.
+fn compute_line_starts(buffer: &[u8]) -> Vec<u32> {
+    // First pass: count newlines to determine required capacity.
+    let newline_count = buffer.iter().filter(|&&b| b == b'\n').count();
+    let mut line_starts = Vec::with_capacity(newline_count + 1);
+    line_starts.push(0); // First line starts at offset 0
+
+    // Second pass: populate line starts.
+    for (i, &byte) in buffer.iter().enumerate() {
+        if byte == b'\n' {
+            line_starts.push((i + 1) as u32);
+        }
+    }
+    line_starts
 }
 
 #[cfg(test)]

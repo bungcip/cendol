@@ -202,7 +202,7 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
                     return None;
                 }
                 let truncated = f_val.trunc();
-                if truncated < -9223372036854775808.0 || truncated >= 9223372036854775808.0 {
+                if !(-9223372036854775808.0..9223372036854775808.0).contains(&truncated) {
                     return None;
                 }
                 truncated as i64

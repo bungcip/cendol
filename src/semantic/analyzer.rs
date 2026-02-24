@@ -255,6 +255,9 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    /// ⚡ Bolt: Checks if the node is an LValue.
+    /// This function is optimized to avoid $O(N^2)$ behavior in nested expressions
+    /// by using already-computed value categories from sub-expressions.
     fn is_lvalue(&self, node_ref: NodeRef) -> bool {
         let node_kind = self.ast.get_kind(node_ref);
         match node_kind {
@@ -264,12 +267,17 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::UnaryOp(op, _) => matches!(*op, UnaryOp::Deref),
             NodeKind::IndexAccess(..) => true,
-            NodeKind::MemberAccess(obj_ref, _, is_arrow) => *is_arrow || self.is_lvalue(*obj_ref),
+            NodeKind::MemberAccess(obj_ref, _, is_arrow) => {
+                // Bolt ⚡: Use cached value category for the object expression.
+                // Sub-expressions are always visited before their parents in visit_node.
+                *is_arrow || self.semantic_info.value_categories[obj_ref.index()] == ValueCategory::LValue
+            }
             NodeKind::Literal(literal::Literal::String(_)) => true,
             NodeKind::CompoundLiteral(..) => true,
             NodeKind::GenericSelection(_) => {
+                // Bolt ⚡: Use cached value category for the selected expression.
                 if let Some(&selected) = self.semantic_info.generic_selections.get(&node_ref.index()) {
-                    self.is_lvalue(selected)
+                    self.semantic_info.value_categories[selected.index()] == ValueCategory::LValue
                 } else {
                     false
                 }

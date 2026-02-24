@@ -515,6 +515,7 @@ impl<'a> MirValidator<'a> {
                     UnaryIntOp::Neg => ta,
                     UnaryIntOp::BitwiseNot => ta,
                     UnaryIntOp::LogicalNot => self.find_bool_type(),
+                    UnaryIntOp::Popcount | UnaryIntOp::Clz | UnaryIntOp::Ctz => self.find_i32_type(),
                 }
             }
             Rvalue::UnaryFloatOp(u, a) => {
@@ -642,6 +643,15 @@ impl<'a> MirValidator<'a> {
     fn find_bool_type(&self) -> Option<TypeId> {
         for (id, ty) in &self.mir.types {
             if matches!(ty, MirType::Bool) {
+                return Some(*id);
+            }
+        }
+        None
+    }
+
+    fn find_i32_type(&self) -> Option<TypeId> {
+        for (id, ty) in &self.mir.types {
+            if matches!(ty, MirType::I32) {
                 return Some(*id);
             }
         }

@@ -105,6 +105,17 @@ impl<'a> MirGen<'a> {
                 let _ = self.visit_expression(*c, true); // lower 'c' for side effects or just to process it
                 self.visit_expression(*exp, need_value)
             }
+            NodeKind::BuiltinPopcount(exp) | NodeKind::BuiltinClz(exp) | NodeKind::BuiltinCtz(exp) => {
+                let op = match node_kind {
+                    NodeKind::BuiltinPopcount(_) => crate::mir::UnaryIntOp::Popcount,
+                    NodeKind::BuiltinClz(_) => crate::mir::UnaryIntOp::Clz,
+                    NodeKind::BuiltinCtz(_) => crate::mir::UnaryIntOp::Ctz,
+                    _ => unreachable!(),
+                };
+                let operand = self.visit_expression(*exp, true);
+                let rval = crate::mir::Rvalue::UnaryIntOp(op, operand);
+                self.emit_rvalue_to_operand(rval, mir_ty)
+            }
             NodeKind::AtomicOp(op, args_start, args_len) => self.visit_atomic_op(*op, *args_start, *args_len, mir_ty),
             NodeKind::BuiltinVaStart(..) | NodeKind::BuiltinVaEnd(..) | NodeKind::BuiltinVaCopy(..) => {
                 self.visit_builtin_void(&node_kind)

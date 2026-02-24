@@ -145,6 +145,9 @@ impl AstDumper {
             NodeKind::BuiltinVaStart(_, _)
             | NodeKind::BuiltinVaEnd(_)
             | NodeKind::BuiltinVaCopy(_, _)
+            | NodeKind::BuiltinPopcount(_)
+            | NodeKind::BuiltinClz(_)
+            | NodeKind::BuiltinCtz(_)
             | NodeKind::BuiltinExpect(_, _)
             | NodeKind::AtomicOp(..) => {}
             NodeKind::VarDecl(var_decl) => {
@@ -321,6 +324,15 @@ impl AstDumper {
             ParsedNodeKind::BuiltinExpect(exp, c) => {
                 writeln!(f, "BuiltinExpect({}, {})", exp.get(), c.get())
             }
+            ParsedNodeKind::BuiltinPopcount(exp) => {
+                writeln!(f, "BuiltinPopcount({})", exp.get())
+            }
+            ParsedNodeKind::BuiltinClz(exp) => {
+                writeln!(f, "BuiltinClz({})", exp.get())
+            }
+            ParsedNodeKind::BuiltinCtz(exp) => {
+                writeln!(f, "BuiltinCtz({})", exp.get())
+            }
             ParsedNodeKind::BuiltinOffsetof(ty, expr) => {
                 writeln!(f, "BuiltinOffsetof({:?}, {})", ty, expr.get())
             }
@@ -493,6 +505,15 @@ impl AstDumper {
             }
             NodeKind::BuiltinExpect(exp, c) => {
                 writeln!(f, "BuiltinExpect({}, {})", exp.get(), c.get())
+            }
+            NodeKind::BuiltinPopcount(exp) => {
+                writeln!(f, "BuiltinPopcount({})", exp.get())
+            }
+            NodeKind::BuiltinClz(exp) => {
+                writeln!(f, "BuiltinClz({})", exp.get())
+            }
+            NodeKind::BuiltinCtz(exp) => {
+                writeln!(f, "BuiltinCtz({})", exp.get())
             }
             NodeKind::BuiltinOffsetof(ty, expr) => {
                 writeln!(f, "BuiltinOffsetof({}, {})", ty, expr.get())

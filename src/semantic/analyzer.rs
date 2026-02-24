@@ -2014,6 +2014,25 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*c);
                 ty
             }
+            NodeKind::BuiltinPopcount(exp) | NodeKind::BuiltinClz(exp) | NodeKind::BuiltinCtz(exp) => {
+                let ty = self.visit_node(*exp);
+                if let Some(t) = ty {
+                    let mut actual_ty = t;
+                    if t.is_array() || t.is_function() {
+                        actual_ty = self.registry.decay(t, TypeQualifiers::empty());
+                        self.push_conversion(*exp, Conversion::PointerDecay { to: actual_ty.ty() });
+                    }
+
+                    if !actual_ty.is_integer() {
+                        self.report_error(SemanticError::TypeMismatch {
+                            expected: "integer type".to_string(),
+                            found: self.registry.display_qual_type(actual_ty),
+                            span: self.ast.get_span(*exp),
+                        });
+                    }
+                }
+                Some(QualType::unqualified(self.registry.type_int))
+            }
             NodeKind::BuiltinOffsetof(ty, expr) => self.visit_builtin_offsetof(*ty, *expr, node_ref),
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
                 self.visit_type_expressions(*t1);
@@ -2370,14 +2389,14 @@ impl<'a> SemanticAnalyzer<'a> {
             return;
         };
 
-        if let Some(cond_ty) = self.visit_node(cond) {
-            if !cond_ty.is_integer() {
-                self.report_error(SemanticError::TypeMismatch {
-                    expected: "integer type".to_string(),
-                    found: self.registry.display_qual_type(cond_ty),
-                    span: self.ast.get_span(cond),
-                });
-            }
+        if let Some(cond_ty) = self.visit_node(cond)
+            && !cond_ty.is_integer()
+        {
+            self.report_error(SemanticError::TypeMismatch {
+                expected: "integer type".to_string(),
+                found: self.registry.display_qual_type(cond_ty),
+                span: self.ast.get_span(cond),
+            });
         }
 
         match crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), cond) {

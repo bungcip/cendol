@@ -225,6 +225,15 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinExpect => parse_builtin_expect(parser),
         TokenKind::BuiltinOffsetof => parse_builtin_offsetof(parser),
         TokenKind::BuiltinTypesCompatibleP => parse_builtin_types_compatible_p(parser),
+        TokenKind::BuiltinPopcount
+        | TokenKind::BuiltinPopcountL
+        | TokenKind::BuiltinPopcountLL
+        | TokenKind::BuiltinClz
+        | TokenKind::BuiltinClzL
+        | TokenKind::BuiltinClzLL
+        | TokenKind::BuiltinCtz
+        | TokenKind::BuiltinCtzL
+        | TokenKind::BuiltinCtzLL => parse_builtin_bitwise(parser),
 
         TokenKind::BuiltinAtomicLoadN => parse_atomic_op(parser, AtomicOp::LoadN),
         TokenKind::BuiltinAtomicStoreN => parse_atomic_op(parser, AtomicOp::StoreN),
@@ -532,6 +541,27 @@ fn parse_builtin_va_copy(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErro
     let src = parser.parse_expr_assignment()?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(ParsedNodeKind::BuiltinVaCopy(dst, src), SourceSpan::new(start, end)))
+}
+
+fn parse_builtin_bitwise(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let token = parser.advance().unwrap();
+    let start = token.span.start();
+    let kind = token.kind;
+
+    parser.expect(TokenKind::LeftParen)?;
+    let expr = parser.parse_expr_min()?;
+    let end = parser.expect(TokenKind::RightParen)?.span.end();
+
+    let node_kind = match kind {
+        TokenKind::BuiltinPopcount | TokenKind::BuiltinPopcountL | TokenKind::BuiltinPopcountLL => {
+            ParsedNodeKind::BuiltinPopcount(expr)
+        }
+        TokenKind::BuiltinClz | TokenKind::BuiltinClzL | TokenKind::BuiltinClzLL => ParsedNodeKind::BuiltinClz(expr),
+        TokenKind::BuiltinCtz | TokenKind::BuiltinCtzL | TokenKind::BuiltinCtzLL => ParsedNodeKind::BuiltinCtz(expr),
+        _ => unreachable!(),
+    };
+
+    Ok(parser.push_node(node_kind, SourceSpan::new(start, end)))
 }
 
 fn parse_builtin_expect(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {

@@ -280,6 +280,9 @@ pub enum UnaryIntOp {
     Neg,
     BitwiseNot,
     LogicalNot,
+    Popcount,
+    Clz,
+    Ctz,
 }
 
 /// Floating-point unary operations

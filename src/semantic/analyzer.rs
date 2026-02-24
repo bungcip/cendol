@@ -2390,13 +2390,14 @@ impl<'a> SemanticAnalyzer<'a> {
         };
 
         if let Some(cond_ty) = self.visit_node(cond)
-            && !cond_ty.is_integer() {
-                self.report_error(SemanticError::TypeMismatch {
-                    expected: "integer type".to_string(),
-                    found: self.registry.display_qual_type(cond_ty),
-                    span: self.ast.get_span(cond),
-                });
-            }
+            && !cond_ty.is_integer()
+        {
+            self.report_error(SemanticError::TypeMismatch {
+                expected: "integer type".to_string(),
+                found: self.registry.display_qual_type(cond_ty),
+                span: self.ast.get_span(cond),
+            });
+        }
 
         match crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), cond) {
             Some(0) => {

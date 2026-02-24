@@ -72,5 +72,10 @@ Action: Always verify that qualifiers (especially _Atomic) are checked alongside
 
 2025-05-28 - [Integer Constant Expression Cast Restrictions]
 
-Learning: C11 6.6p6 defines integer constant expressions very strictly: floating constants are ONLY allowed as the immediate operands of casts. This means `(int)1.0` is valid, but `(int)(1.0 + 1.0)` is not. Furthermore, constant evaluator `Cast` nodes must apply semantic truncation/masking according to the target type (e.g. `(char)257` is 1) to ensure correctness in contexts like `_Static_assert` and array sizes.
+Learning: C11 6.6p6 defines integer constant expressions very strictly: floating constants are ONLY allowed as the immediate operands of casts. This means `(int)1.0` is valid, but `(int)(1.0 + 1.0)` is not. Furthermore, constant evaluator `Cast` nodes must apply semantic truncation/masking according to the target type (e.g. `(char)257` is 1) as mandated by target layout.
 Action: Enforce "immediacy" for floating constants in integer constant evaluation and ensure all casts in the constant evaluator perform proper integer range limiting based on the target type's layout.
+
+2025-05-29 - [Enumeration Constant Range Constraints]
+
+Learning: C11 6.7.2.2p2 requires that enumeration constants shall be representable as an 'int'. While many compilers allow larger values as an extension (supporting 'long' or 'unsigned long' underlying types for the enum itself), strict compliance requires diagnosing values outside the 'int' range. Implementing this as a warning preserves compatibility with existing extensions while meeting the C standard's requirement for a diagnostic on constraint violations.
+Action: Enforce 'int' range checks for all enumeration constants during semantic lowering and ensure that both explicit values and implicit incremented values are validated.

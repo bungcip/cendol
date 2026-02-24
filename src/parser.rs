@@ -5,7 +5,7 @@
 //! different language constructs.
 
 use crate::ast::*;
-use crate::diagnostic::{DiagnosticEngine, ParseError};
+use crate::diagnostic::{DiagnosticEngine, ParseError, ParseErrorKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 use log::debug;
 use std::collections::HashSet;
@@ -105,7 +105,10 @@ impl<'arena, 'src> Parser<'arena, 'src> {
                 Some(token) => token.span,
                 None => SourceSpan::empty(),
             };
-            ParseError::UnexpectedEof { span }
+            ParseError {
+                span,
+                kind: ParseErrorKind::UnexpectedEof,
+            }
         })
     }
 
@@ -174,10 +177,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             self.advance();
             Ok(token)
         } else {
-            Err(ParseError::UnexpectedToken {
-                expected_tokens: format!("{:?}", expected),
-                found: token.kind,
+            Err(ParseError {
                 span: token.span,
+                kind: ParseErrorKind::UnexpectedToken {
+                    expected_tokens: format!("{:?}", expected),
+                    found: token.kind,
+                },
             })
         }
     }
@@ -375,10 +380,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             self.advance();
             Ok((symbol, token.span))
         } else {
-            Err(ParseError::UnexpectedToken {
-                expected_tokens: "identifier".to_string(),
-                found: token.kind,
+            Err(ParseError {
                 span: token.span,
+                kind: ParseErrorKind::UnexpectedToken {
+                    expected_tokens: "identifier".to_string(),
+                    found: token.kind,
+                },
             })
         }
     }

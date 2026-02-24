@@ -13,7 +13,7 @@ use crate::ast::parsed::{
     ParsedAlignmentSpecifier, ParsedDeclSpecifier, ParsedDesignatedInitializer, ParsedDesignator, ParsedNodeKind,
     ParsedNodeRef, ParsedTypeSpecifier,
 };
-use crate::diagnostic::ParseError;
+use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::parser::TokenKind;
 use thin_vec::ThinVec;
 
@@ -143,10 +143,12 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
 
     if specifiers.is_empty() {
         let current_token = parser.current_token()?;
-        return Err(ParseError::UnexpectedToken {
-            expected_tokens: "declaration specifiers".to_string(),
-            found: current_token.kind,
+        return Err(ParseError {
             span: current_token.span,
+            kind: ParseErrorKind::UnexpectedToken {
+                expected_tokens: "declaration specifiers".to_string(),
+                found: current_token.kind,
+            },
         });
     }
 

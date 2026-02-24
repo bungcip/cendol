@@ -4,7 +4,7 @@
 //! part of C's declaration syntax. Declarators can be nested and include pointers,
 //! arrays, and functions.
 
-use crate::diagnostic::ParseError;
+use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::parser::declaration_core::parse_declaration_specifiers;
 use crate::parser::{Token, TokenKind};
 use crate::{ast::*, semantic::TypeQualifiers};
@@ -85,15 +85,24 @@ fn validate_declarator_combination(
     match base {
         ParsedDeclarator::Function { .. } => {
             if new_kind == "array" {
-                return Err(ParseError::DeclarationNotAllowed { span });
+                return Err(ParseError {
+                    span,
+                    kind: ParseErrorKind::DeclarationNotAllowed,
+                });
             }
             if new_kind == "function" {
-                return Err(ParseError::DeclarationNotAllowed { span });
+                return Err(ParseError {
+                    span,
+                    kind: ParseErrorKind::DeclarationNotAllowed,
+                });
             }
         }
         ParsedDeclarator::Array(..) => {
             if new_kind == "function" {
-                return Err(ParseError::DeclarationNotAllowed { span });
+                return Err(ParseError {
+                    span,
+                    kind: ParseErrorKind::DeclarationNotAllowed,
+                });
             }
         }
         _ => {}
@@ -410,10 +419,12 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDec
                                 is_variadic,
                             }
                         } else {
-                            return Err(ParseError::UnexpectedToken {
-                                expected_tokens: "')'".to_string(),
-                                found: parser.current_token_kind().unwrap_or(TokenKind::EndOfFile),
+                            return Err(ParseError {
                                 span: parser.current_token_span_or_empty(),
+                                kind: ParseErrorKind::UnexpectedToken {
+                                    expected_tokens: "')'".to_string(),
+                                    found: parser.current_token_kind().unwrap_or(TokenKind::EndOfFile),
+                                },
                             });
                         }
                     }

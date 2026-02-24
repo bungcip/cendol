@@ -5,7 +5,7 @@
 
 use crate::ast::literal::Literal;
 use crate::ast::{parsed::*, *};
-use crate::diagnostic::ParseError;
+use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::parser::{Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 
@@ -244,10 +244,12 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinAtomicFetchAnd => parse_atomic_op(parser, AtomicOp::FetchAnd),
         TokenKind::BuiltinAtomicFetchOr => parse_atomic_op(parser, AtomicOp::FetchOr),
         TokenKind::BuiltinAtomicFetchXor => parse_atomic_op(parser, AtomicOp::FetchXor),
-        _ => Err(ParseError::UnexpectedToken {
-            expected_tokens: "identifier, literal, or '('".to_string(),
-            found: token.kind,
+        _ => Err(ParseError {
             span: token.span,
+            kind: ParseErrorKind::UnexpectedToken {
+                expected_tokens: "identifier, literal, or '('".to_string(),
+                found: token.kind,
+            },
         }),
     }
 }

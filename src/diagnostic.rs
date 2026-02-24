@@ -1,9 +1,12 @@
-use crate::ast::NameId;
-use crate::parser::TokenKind;
-use crate::semantic::TypeRef;
-use crate::source_manager::{SourceManager, SourceSpan};
+use crate::{
+    ast::NameId,
+    parser::TokenKind,
+    semantic::TypeRef,
+    source_manager::{SourceManager, SourceSpan},
+};
 use annotate_snippets::renderer::DecorStyle;
 use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
+use thiserror::Error;
 
 /// Diagnostic severity levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -26,35 +29,29 @@ pub struct Diagnostic {
 }
 
 /// Parse errors
-#[derive(Debug, thiserror::Error)]
-pub enum ParseError {
+#[derive(Debug, Error)]
+#[error("{kind}")]
+pub struct ParseError {
+    pub span: SourceSpan,
+    pub kind: ParseErrorKind,
+}
+
+/// Parse error kinds
+#[derive(Debug, Error)]
+pub enum ParseErrorKind {
     #[error("Unexpected token: expected {expected_tokens}, found {found:?}")]
-    UnexpectedToken {
-        expected_tokens: String,
-        found: TokenKind,
-        span: SourceSpan,
-    },
+    UnexpectedToken { expected_tokens: String, found: TokenKind },
 
     #[error("Unexpected End of File")]
-    UnexpectedEof { span: SourceSpan },
+    UnexpectedEof,
 
     #[error("Declaration not allowed in this context")]
-    DeclarationNotAllowed { span: SourceSpan },
+    DeclarationNotAllowed,
 
     #[error("{message}")]
-    Custom { message: String, span: SourceSpan },
+    Custom { message: String },
 }
 
-impl ParseError {
-    pub(crate) fn span(&self) -> SourceSpan {
-        match self {
-            ParseError::UnexpectedToken { span, .. } => *span,
-            ParseError::UnexpectedEof { span } => *span,
-            ParseError::DeclarationNotAllowed { span } => *span,
-            ParseError::Custom { span, .. } => *span,
-        }
-    }
-}
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
 #[derive(Default)]
 pub struct DiagnosticEngine {
@@ -128,7 +125,7 @@ impl IntoDiagnostic for ParseError {
         vec![Diagnostic {
             level: DiagnosticLevel::Error,
             message: self.to_string(),
-            span: self.span(),
+            span: self.span,
             ..Default::default()
         }]
     }
@@ -137,83 +134,80 @@ impl IntoDiagnostic for ParseError {
 impl IntoDiagnostic for SemanticError {
     fn into_diagnostic(self) -> Vec<Diagnostic> {
         // Determine if this should be a warning or error
-        let level = match &self {
-            SemanticError::EmptyDeclaration { .. } => DiagnosticLevel::Warning,
+        let level = match &self.kind {
+            SemanticErrorKind::EmptyDeclaration { .. } => DiagnosticLevel::Warning,
             _ => DiagnosticLevel::Error,
         };
 
         let mut diagnostics = vec![Diagnostic {
             level,
             message: self.to_string(),
-            span: self.span(),
+            span: self.span,
             ..Default::default()
         }];
 
-        if let SemanticError::Redefinition { first_def, .. }
-        | SemanticError::RedefinitionWithDifferentType { first_def, .. } = &self
-        {
-            diagnostics.push(Diagnostic {
-                level: DiagnosticLevel::Note,
-                message: "previous definition is here".to_string(),
-                span: *first_def,
-                ..Default::default()
-            });
-        }
-
-        if let SemanticError::GenericMultipleDefault { first_def, .. } = &self {
-            diagnostics.push(Diagnostic {
-                level: DiagnosticLevel::Note,
-                message: "previous default association is here".to_string(),
-                span: *first_def,
-                ..Default::default()
-            });
-        }
-
-        if let SemanticError::GenericDuplicateMatch { first_def, .. } = &self {
-            diagnostics.push(Diagnostic {
-                level: DiagnosticLevel::Note,
-                message: "previous association is here".to_string(),
-                span: *first_def,
-                ..Default::default()
-            });
-        }
-
-        if let SemanticError::ConflictingLinkage { first_def, .. } = &self {
-            diagnostics.push(Diagnostic {
-                level: DiagnosticLevel::Note,
-                message: "previous declaration is here".to_string(),
-                span: *first_def,
-                ..Default::default()
-            });
-        }
-
-        if let SemanticError::DuplicateMember { first_def, .. } = &self {
-            diagnostics.push(Diagnostic {
-                level: DiagnosticLevel::Note,
-                message: "previous declaration is here".to_string(),
-                span: *first_def,
-                ..Default::default()
-            });
-        }
-
-        if let SemanticError::ConflictingTypes { first_def, .. } = &self {
-            diagnostics.push(Diagnostic {
-                level: DiagnosticLevel::Note,
-                message: "previous declaration is here".to_string(),
-                span: *first_def,
-                ..Default::default()
-            });
+        match &self.kind {
+            SemanticErrorKind::Redefinition { first_def, .. }
+            | SemanticErrorKind::RedefinitionWithDifferentType { first_def, .. } => {
+                diagnostics.push(Diagnostic {
+                    level: DiagnosticLevel::Note,
+                    message: "previous definition is here".to_string(),
+                    span: *first_def,
+                    ..Default::default()
+                });
+            }
+            SemanticErrorKind::GenericMultipleDefault { first_def, .. } => {
+                diagnostics.push(Diagnostic {
+                    level: DiagnosticLevel::Note,
+                    message: "previous default association is here".to_string(),
+                    span: *first_def,
+                    ..Default::default()
+                });
+            }
+            SemanticErrorKind::GenericDuplicateMatch { first_def, .. } => {
+                diagnostics.push(Diagnostic {
+                    level: DiagnosticLevel::Note,
+                    message: "previous association is here".to_string(),
+                    span: *first_def,
+                    ..Default::default()
+                });
+            }
+            SemanticErrorKind::ConflictingLinkage { first_def, .. } => {
+                diagnostics.push(Diagnostic {
+                    level: DiagnosticLevel::Note,
+                    message: "previous declaration is here".to_string(),
+                    span: *first_def,
+                    ..Default::default()
+                });
+            }
+            SemanticErrorKind::DuplicateMember { first_def, .. } => {
+                diagnostics.push(Diagnostic {
+                    level: DiagnosticLevel::Note,
+                    message: "previous declaration is here".to_string(),
+                    span: *first_def,
+                    ..Default::default()
+                });
+            }
+            SemanticErrorKind::ConflictingTypes { first_def, .. } => {
+                diagnostics.push(Diagnostic {
+                    level: DiagnosticLevel::Note,
+                    message: "previous declaration is here".to_string(),
+                    span: *first_def,
+                    ..Default::default()
+                });
+            }
+            _ => {}
         }
 
         // Handle warnings
         if matches!(
-            self,
-            SemanticError::IncompatiblePointerComparison { .. }
-                | SemanticError::IncompatiblePointerTypes { .. }
-                | SemanticError::ReturnLocalAddress { .. }
-                | SemanticError::ImplicitConstantConversion { .. }
-                | SemanticError::SwitchCaseOverflow { .. }
-                | SemanticError::AddressOfArrayAlwaysTrue { .. }
+            self.kind,
+            SemanticErrorKind::IncompatiblePointerComparison { .. }
+                | SemanticErrorKind::IncompatiblePointerTypes { .. }
+                | SemanticErrorKind::ReturnLocalAddress { .. }
+                | SemanticErrorKind::ImplicitConstantConversion { .. }
+                | SemanticErrorKind::SwitchCaseOverflow { .. }
+                | SemanticErrorKind::AddressOfArrayAlwaysTrue { .. }
         ) {
             diagnostics[0].level = DiagnosticLevel::Warning;
         }
@@ -221,276 +215,238 @@ impl IntoDiagnostic for SemanticError {
         diagnostics
     }
 }
+#[derive(Debug, Error)]
+#[error("{kind}")]
+pub struct SemanticError {
+    pub span: SourceSpan,
+    pub kind: SemanticErrorKind,
+}
+
 /// Semantic errors
-#[derive(Debug, thiserror::Error)]
-pub enum SemanticError {
+#[derive(Debug, Error)]
+pub enum SemanticErrorKind {
     #[error("variable has incomplete type 'void'")]
-    VariableOfVoidType { span: SourceSpan },
+    VariableOfVoidType,
     #[error("called object type '{ty}' is not a function or function pointer")]
-    CalledNonFunctionType { ty: String, span: SourceSpan },
+    CalledNonFunctionType { ty: String },
     #[error("Undeclared identifier '{name}'")]
-    UndeclaredIdentifier { name: NameId, span: SourceSpan },
+    UndeclaredIdentifier { name: NameId },
     #[error("redefinition of '{name}'")]
-    Redefinition {
-        name: NameId,
-        first_def: SourceSpan,
-        span: SourceSpan,
-    },
+    Redefinition { name: NameId, first_def: SourceSpan },
     #[error("redefinition of '{name}' with a different type")]
-    RedefinitionWithDifferentType {
-        name: NameId,
-        first_def: SourceSpan,
-        span: SourceSpan,
-    },
+    RedefinitionWithDifferentType { name: NameId, first_def: SourceSpan },
     #[error("type mismatch: expected {expected}, found {found}")]
-    TypeMismatch {
-        expected: String,
-        found: String,
-        span: SourceSpan,
-    },
+    TypeMismatch { expected: String, found: String },
     #[error("Expression is not assignable (not an lvalue)")]
-    NotAnLvalue { span: SourceSpan },
+    NotAnLvalue,
     #[error("Invalid operands for binary operation: have '{left_ty}' and '{right_ty}'")]
-    InvalidBinaryOperands {
-        left_ty: String,
-        right_ty: String,
-        span: SourceSpan,
-    },
+    InvalidBinaryOperands { left_ty: String, right_ty: String },
     #[error("Invalid operand for unary operation: have '{ty}'")]
-    InvalidUnaryOperand { ty: String, span: SourceSpan },
+    InvalidUnaryOperand { ty: String },
     #[error("indirection requires pointer operand ('{ty}' invalid)")]
-    IndirectionRequiresPointer { ty: String, span: SourceSpan },
+    IndirectionRequiresPointer { ty: String },
     #[error("Initializer element is not a compile-time constant")]
-    NonConstantInitializer { span: SourceSpan },
+    NonConstantInitializer,
     #[error("invalid initializer")]
-    InvalidInitializer { span: SourceSpan },
+    InvalidInitializer,
     #[error("conflicting types for '{name}'")]
-    ConflictingTypes {
-        name: String,
-        span: SourceSpan,
-        first_def: SourceSpan,
-    },
+    ConflictingTypes { name: String, first_def: SourceSpan },
     #[error("void function '{name}' should not return a value")]
-    VoidReturnWithValue { name: String, span: SourceSpan },
+    VoidReturnWithValue { name: String },
     #[error("non-void function '{name}' should return a value")]
-    NonVoidReturnWithoutValue { name: String, span: SourceSpan },
+    NonVoidReturnWithoutValue { name: String },
 
     #[error("invalid number of arguments: expected {expected}, found {found}")]
-    InvalidNumberOfArguments {
-        expected: usize,
-        found: usize,
-        span: SourceSpan,
-    },
+    InvalidNumberOfArguments { expected: usize, found: usize },
 
     #[error("invalid argument type for atomic builtin: {ty}")]
-    InvalidAtomicArgument { ty: String, span: SourceSpan },
+    InvalidAtomicArgument { ty: String },
 
     #[error("excess elements in {kind} initializer")]
-    ExcessElements { kind: String, span: SourceSpan },
+    ExcessElements { kind: String },
 
     #[error("Unsupported feature: {feature}")]
-    UnsupportedFeature { feature: String, span: SourceSpan },
+    UnsupportedFeature { feature: String },
 
     #[error("size of array has non-positive value")]
-    InvalidArraySize { span: SourceSpan },
+    InvalidArraySize,
 
     #[error("invalid bit-field width")]
-    InvalidBitfieldWidth { span: SourceSpan },
+    InvalidBitfieldWidth,
 
     #[error("bit-field width is not a constant expression")]
-    NonConstantBitfieldWidth { span: SourceSpan },
+    NonConstantBitfieldWidth,
 
     #[error("width of bit-field ({width} bits) exceeds width of its type ({type_width} bits)")]
-    BitfieldWidthExceedsType {
-        width: u16,
-        type_width: u64,
-        span: SourceSpan,
-    },
+    BitfieldWidthExceedsType { width: u16, type_width: u64 },
 
     #[error("zero-width bit-field shall not specify a declarator")]
-    NamedZeroWidthBitfield { span: SourceSpan },
+    NamedZeroWidthBitfield,
 
     #[error("bit-field type '{ty}' is invalid")]
-    InvalidBitfieldType { ty: String, span: SourceSpan },
+    InvalidBitfieldType { ty: String },
 
     #[error("bit-field shall not have an atomic type")]
-    BitfieldHasAtomicType { span: SourceSpan },
+    BitfieldHasAtomicType,
 
     // Errors related to declaration specifiers
     #[error("conflicting storage class specifiers")]
-    ConflictingStorageClasses { span: SourceSpan },
+    ConflictingStorageClasses,
     #[error("conflicting linkage for '{name}'")]
-    ConflictingLinkage {
-        name: String,
-        span: SourceSpan,
-        first_def: SourceSpan,
-    },
+    ConflictingLinkage { name: String, first_def: SourceSpan },
     #[error("cannot combine with previous '{prev}' declaration specifier")]
-    ConflictingTypeSpecifiers { prev: String, span: SourceSpan },
+    ConflictingTypeSpecifiers { prev: String },
     #[error("'{spec}' function specifier appears on non-function declaration")]
-    InvalidFunctionSpecifier { spec: String, span: SourceSpan },
+    InvalidFunctionSpecifier { spec: String },
     #[error("duplicate member '{name}'")]
-    DuplicateMember {
-        name: NameId,
-        span: SourceSpan,
-        first_def: SourceSpan,
-    },
+    DuplicateMember { name: NameId, first_def: SourceSpan },
     #[error("member reference base type '{ty}' is not a structure or union")]
-    MemberAccessOnNonRecord { ty: String, span: SourceSpan },
+    MemberAccessOnNonRecord { ty: String },
     #[error("member '{name}' has function type")]
-    MemberHasFunctionType { name: NameId, span: SourceSpan },
+    MemberHasFunctionType { name: NameId },
     #[error("no member named '{name}' in '{ty}'")]
-    MemberNotFound { name: NameId, ty: String, span: SourceSpan },
+    MemberNotFound { name: NameId, ty: String },
     #[error("expected a typedef name, found {found}")]
-    ExpectedTypedefName { found: String, span: SourceSpan },
+    ExpectedTypedefName { found: String },
     #[error("missing type specifier in declaration")]
-    MissingTypeSpecifier { span: SourceSpan },
+    MissingTypeSpecifier,
     #[error("static assertion failed: {message}")]
-    StaticAssertFailed { message: String, span: SourceSpan },
+    StaticAssertFailed { message: String },
     #[error("expression in static assertion is not constant")]
-    StaticAssertNotConstant { span: SourceSpan },
+    StaticAssertNotConstant,
     #[error("recursive type definition")]
     RecursiveType { ty: TypeRef },
     #[error("Invalid application of 'sizeof' to an incomplete type")]
-    SizeOfIncompleteType { ty: TypeRef, span: SourceSpan },
+    SizeOfIncompleteType { ty: TypeRef },
     #[error("Invalid application of 'sizeof' to a function type")]
-    SizeOfFunctionType { span: SourceSpan },
+    SizeOfFunctionType,
     #[error("Invalid application of '_Alignof' to an incomplete type")]
-    AlignOfIncompleteType { ty: TypeRef, span: SourceSpan },
+    AlignOfIncompleteType { ty: TypeRef },
     #[error("Invalid application of '_Alignof' to a function type")]
-    AlignOfFunctionType { span: SourceSpan },
+    AlignOfFunctionType,
     #[error("controlling expression type '{ty}' not compatible with any generic association")]
-    GenericNoMatch { ty: String, span: SourceSpan },
+    GenericNoMatch { ty: String },
 
     #[error("generic association specifies function type '{ty}'")]
-    GenericFunctionAssociation { ty: String, span: SourceSpan },
+    GenericFunctionAssociation { ty: String },
 
     #[error("generic association specifies variably modified type '{ty}'")]
-    GenericVlaAssociation { ty: String, span: SourceSpan },
+    GenericVlaAssociation { ty: String },
 
     #[error("cannot take address of bit-field")]
-    AddressOfBitfield { span: SourceSpan },
+    AddressOfBitfield,
 
     #[error("cannot take address of 'register' variable")]
-    AddressOfRegister { span: SourceSpan },
+    AddressOfRegister,
 
     #[error("cannot apply 'sizeof' to a bit-field")]
-    SizeOfBitfield { span: SourceSpan },
+    SizeOfBitfield,
 
     #[error("controlling expression type '{ty}' is an incomplete type")]
-    GenericIncompleteControl { ty: String, span: SourceSpan },
+    GenericIncompleteControl { ty: String },
 
     #[error("generic association specifies incomplete type '{ty}'")]
-    GenericIncompleteAssociation { ty: String, span: SourceSpan },
+    GenericIncompleteAssociation { ty: String },
 
     #[error("duplicate default association in generic selection")]
-    GenericMultipleDefault { span: SourceSpan, first_def: SourceSpan },
+    GenericMultipleDefault { first_def: SourceSpan },
 
     #[error("type '{ty}' in generic association compatible with previously specified type '{prev_ty}'")]
     GenericDuplicateMatch {
         ty: String,
         prev_ty: String,
-        span: SourceSpan,
         first_def: SourceSpan,
     },
 
     #[error("requested alignment is not a positive power of 2")]
-    InvalidAlignment { value: i64, span: SourceSpan },
+    InvalidAlignment { value: i64 },
 
     #[error("requested alignment is not a constant expression")]
-    NonConstantAlignment { span: SourceSpan },
+    NonConstantAlignment,
 
     #[error("cannot assign to read-only location")]
-    AssignmentToReadOnly { span: SourceSpan },
+    AssignmentToReadOnly,
 
     #[error("incomplete type '{ty}'")]
-    IncompleteType { ty: String, span: SourceSpan },
+    IncompleteType { ty: String },
 
     #[error("function has incomplete return type")]
-    IncompleteReturnType { span: SourceSpan },
+    IncompleteReturnType,
 
     #[error("comparison of incompatible pointer types '{lhs}' and '{rhs}'")]
-    IncompatiblePointerComparison { lhs: String, rhs: String, span: SourceSpan },
+    IncompatiblePointerComparison { lhs: String, rhs: String },
 
     #[error("incompatible pointer types passing '{found}' to parameter of type '{expected}'")]
-    IncompatiblePointerTypes {
-        expected: String,
-        found: String,
-        span: SourceSpan,
-    },
+    IncompatiblePointerTypes { expected: String, found: String },
 
     #[error("'case' or 'default' label not in switch statement")]
-    CaseNotInSwitch { span: SourceSpan },
+    CaseNotInSwitch,
 
     #[error("duplicate case value '{value}'")]
-    DuplicateCase { value: String, span: SourceSpan },
+    DuplicateCase { value: String },
 
     #[error("expression in 'case' label is not an integer constant expression")]
-    NonConstantCaseValue { span: SourceSpan },
+    NonConstantCaseValue,
 
     #[error("switch condition has non-integer type '{ty}'")]
-    InvalidSwitchCondition { ty: String, span: SourceSpan },
+    InvalidSwitchCondition { ty: String },
 
     #[error("multiple default labels in one switch")]
-    MultipleDefaultLabels { span: SourceSpan },
+    MultipleDefaultLabels,
 
     #[error("flexible array member must be the last member of a structure")]
-    FlexibleArrayNotLast { span: SourceSpan },
+    FlexibleArrayNotLast,
 
     #[error("flexible array member in otherwise empty structure")]
-    FlexibleArrayInEmptyStruct { span: SourceSpan },
+    FlexibleArrayInEmptyStruct,
 
     #[error("restrict requires a pointer type")]
-    InvalidRestrict { span: SourceSpan },
+    InvalidRestrict,
     #[error("invalid storage class for function parameter")]
-    InvalidStorageClassForParameter { span: SourceSpan },
+    InvalidStorageClassForParameter,
     #[error("function '{name}' declared '_Noreturn' contains a return statement")]
-    NoreturnFunctionHasReturn { name: String, span: SourceSpan },
+    NoreturnFunctionHasReturn { name: String },
     #[error("function '{name}' declared '_Noreturn' can fall off the end")]
-    NoreturnFunctionFallsOff { name: String, span: SourceSpan },
+    NoreturnFunctionFallsOff { name: String },
 
     #[error("alignment specifier cannot be used in a {context}")]
-    AlignmentNotAllowed { context: String, span: SourceSpan },
+    AlignmentNotAllowed { context: String },
 
     #[error("alignment specifier specifies {requested}-byte alignment, but {natural}-byte alignment is required")]
-    AlignmentTooLoose {
-        requested: u32,
-        natural: u32,
-        span: SourceSpan,
-    },
+    AlignmentTooLoose { requested: u32, natural: u32 },
 
     #[error("_Atomic qualifier cannot be used with {type_kind} type")]
-    InvalidAtomicQualifier { type_kind: String, span: SourceSpan },
+    InvalidAtomicQualifier { type_kind: String },
 
     #[error("_Atomic(type-name) specifier cannot be used with {reason}")]
-    InvalidAtomicSpecifier { reason: String, span: SourceSpan },
+    InvalidAtomicSpecifier { reason: String },
 
     #[error("static in array declarator only allowed in function parameters")]
-    ArrayStaticOutsideParameter { span: SourceSpan },
+    ArrayStaticOutsideParameter,
 
     #[error("type qualifiers in array declarator only allowed in function parameters")]
-    ArrayQualifierOutsideParameter { span: SourceSpan },
+    ArrayQualifierOutsideParameter,
 
     #[error("static in array declarator only allowed in outermost array type")]
-    ArrayStaticNotOutermost { span: SourceSpan },
+    ArrayStaticNotOutermost,
 
     #[error("type qualifiers in array declarator only allowed in outermost array type")]
-    ArrayQualifierNotOutermost { span: SourceSpan },
+    ArrayQualifierNotOutermost,
 
     #[error("break statement not in loop or switch")]
-    BreakNotInLoop { span: SourceSpan },
+    BreakNotInLoop,
 
     #[error("continue statement not in loop statement")]
-    ContinueNotInLoop { span: SourceSpan },
+    ContinueNotInLoop,
 
     #[error("subscripted value is not an array (have '{found}')")]
-    ExpectedArrayType { found: String, span: SourceSpan },
+    ExpectedArrayType { found: String },
 
     #[error("invalid designator in 'offsetof'")]
-    InvalidOffsetofDesignator { span: SourceSpan },
+    InvalidOffsetofDesignator,
 
     #[error("address of stack memory associated with local variable '{name}' returned")]
-    ReturnLocalAddress { name: NameId, span: SourceSpan },
+    ReturnLocalAddress { name: NameId },
 
     #[error("implicit conversion from '{from}' to '{to}' changes value from {from_val} to {to_val}")]
     ImplicitConstantConversion {
@@ -498,115 +454,16 @@ pub enum SemanticError {
         to: String,
         from_val: String,
         to_val: String,
-        span: SourceSpan,
     },
 
     #[error("overflow converting case value to switch condition type ({from} to {to})")]
-    SwitchCaseOverflow { from: String, to: String, span: SourceSpan },
+    SwitchCaseOverflow { from: String, to: String },
 
     #[error("address of array '{name}' will always evaluate to 'true'")]
-    AddressOfArrayAlwaysTrue { name: NameId, span: SourceSpan },
+    AddressOfArrayAlwaysTrue { name: NameId },
 
     #[error("declaration does not declare anything")]
-    EmptyDeclaration { span: SourceSpan },
-}
-
-impl SemanticError {
-    pub(crate) fn span(&self) -> SourceSpan {
-        match self {
-            SemanticError::ReturnLocalAddress { span, .. } => *span,
-            SemanticError::ImplicitConstantConversion { span, .. } => *span,
-            SemanticError::SwitchCaseOverflow { span, .. } => *span,
-            SemanticError::InvalidAtomicQualifier { span, .. } => *span,
-            SemanticError::InvalidAtomicSpecifier { span, .. } => *span,
-            SemanticError::VariableOfVoidType { span } => *span,
-            SemanticError::CalledNonFunctionType { span, .. } => *span,
-            SemanticError::InvalidRestrict { span } => *span,
-            SemanticError::InvalidStorageClassForParameter { span } => *span,
-            SemanticError::UndeclaredIdentifier { span, .. } => *span,
-            SemanticError::Redefinition { span, .. } => *span,
-            SemanticError::RedefinitionWithDifferentType { span, .. } => *span,
-            SemanticError::TypeMismatch { span, .. } => *span,
-            SemanticError::NotAnLvalue { span } => *span,
-            SemanticError::InvalidBinaryOperands { span, .. } => *span,
-            SemanticError::InvalidUnaryOperand { span, .. } => *span,
-            SemanticError::IndirectionRequiresPointer { span, .. } => *span,
-            SemanticError::NonConstantInitializer { span } => *span,
-            SemanticError::InvalidInitializer { span } => *span,
-            SemanticError::ConflictingTypes { span, .. } => *span,
-            SemanticError::VoidReturnWithValue { span, .. } => *span,
-            SemanticError::NonVoidReturnWithoutValue { span, .. } => *span,
-            SemanticError::InvalidNumberOfArguments { span, .. } => *span,
-            SemanticError::InvalidAtomicArgument { span, .. } => *span,
-            SemanticError::ExcessElements { span, .. } => *span,
-            SemanticError::UnsupportedFeature { span, .. } => *span,
-            SemanticError::InvalidArraySize { span } => *span,
-            SemanticError::InvalidBitfieldWidth { span } => *span,
-            SemanticError::NonConstantBitfieldWidth { span } => *span,
-            SemanticError::InvalidBitfieldType { span, .. } => *span,
-            SemanticError::BitfieldHasAtomicType { span } => *span,
-            SemanticError::BitfieldWidthExceedsType { span, .. } => *span,
-            SemanticError::NamedZeroWidthBitfield { span } => *span,
-            SemanticError::ConflictingStorageClasses { span } => *span,
-            SemanticError::ConflictingLinkage { span, .. } => *span,
-            SemanticError::ConflictingTypeSpecifiers { span, .. } => *span,
-            SemanticError::InvalidFunctionSpecifier { span, .. } => *span,
-            SemanticError::DuplicateMember { span, .. } => *span,
-            SemanticError::MemberAccessOnNonRecord { span, .. } => *span,
-            SemanticError::MemberHasFunctionType { span, .. } => *span,
-            SemanticError::MemberNotFound { span, .. } => *span,
-            SemanticError::ExpectedTypedefName { span, .. } => *span,
-            SemanticError::MissingTypeSpecifier { span } => *span,
-            SemanticError::StaticAssertFailed { span, .. } => *span,
-            SemanticError::StaticAssertNotConstant { span } => *span,
-            SemanticError::RecursiveType { .. } => {
-                // For recursive types, we don't have a specific span, so use a dummy span
-                SourceSpan::dummy()
-            }
-            SemanticError::SizeOfIncompleteType { span, .. } => *span,
-            SemanticError::SizeOfFunctionType { span } => *span,
-            SemanticError::AlignOfIncompleteType { span, .. } => *span,
-            SemanticError::AlignOfFunctionType { span } => *span,
-            SemanticError::GenericNoMatch { span, .. } => *span,
-            SemanticError::GenericFunctionAssociation { span, .. } => *span,
-            SemanticError::GenericVlaAssociation { span, .. } => *span,
-            SemanticError::AddressOfBitfield { span } => *span,
-            SemanticError::AddressOfRegister { span } => *span,
-            SemanticError::SizeOfBitfield { span } => *span,
-            SemanticError::GenericIncompleteControl { span, .. } => *span,
-            SemanticError::GenericIncompleteAssociation { span, .. } => *span,
-            SemanticError::GenericMultipleDefault { span, .. } => *span,
-            SemanticError::GenericDuplicateMatch { span, .. } => *span,
-            SemanticError::InvalidAlignment { span, .. } => *span,
-            SemanticError::NonConstantAlignment { span } => *span,
-            SemanticError::AssignmentToReadOnly { span } => *span,
-            SemanticError::IncompleteType { span, .. } => *span,
-            SemanticError::IncompatiblePointerComparison { span, .. } => *span,
-            SemanticError::IncompatiblePointerTypes { span, .. } => *span,
-            SemanticError::IncompleteReturnType { span } => *span,
-            SemanticError::CaseNotInSwitch { span } => *span,
-            SemanticError::DuplicateCase { span, .. } => *span,
-            SemanticError::NonConstantCaseValue { span } => *span,
-            SemanticError::InvalidSwitchCondition { span, .. } => *span,
-            SemanticError::MultipleDefaultLabels { span } => *span,
-            SemanticError::FlexibleArrayNotLast { span } => *span,
-            SemanticError::FlexibleArrayInEmptyStruct { span } => *span,
-            SemanticError::NoreturnFunctionHasReturn { span, .. } => *span,
-            SemanticError::NoreturnFunctionFallsOff { span, .. } => *span,
-            SemanticError::AlignmentNotAllowed { span, .. } => *span,
-            SemanticError::AlignmentTooLoose { span, .. } => *span,
-            SemanticError::ArrayStaticOutsideParameter { span } => *span,
-            SemanticError::ArrayQualifierOutsideParameter { span } => *span,
-            SemanticError::ArrayStaticNotOutermost { span } => *span,
-            SemanticError::ArrayQualifierNotOutermost { span } => *span,
-            SemanticError::BreakNotInLoop { span } => *span,
-            SemanticError::ContinueNotInLoop { span } => *span,
-            SemanticError::ExpectedArrayType { span, .. } => *span,
-            SemanticError::InvalidOffsetofDesignator { span } => *span,
-            SemanticError::AddressOfArrayAlwaysTrue { span, .. } => *span,
-            SemanticError::EmptyDeclaration { span } => *span,
-        }
-    }
+    EmptyDeclaration,
 }
 
 /// Configurable error formatter using annotate_snippets
@@ -758,16 +615,28 @@ mod tests {
     fn test_error_spans() {
         let span = SourceSpan::dummy();
 
-        let p1 = ParseError::UnexpectedEof { span };
-        assert_eq!(p1.span(), span);
+        let p1 = ParseError {
+            span,
+            kind: ParseErrorKind::UnexpectedEof,
+        };
+        assert_eq!(p1.span, span);
 
-        let p3 = ParseError::DeclarationNotAllowed { span };
-        assert_eq!(p3.span(), span);
+        let p3 = ParseError {
+            span,
+            kind: ParseErrorKind::DeclarationNotAllowed,
+        };
+        assert_eq!(p3.span, span);
 
-        let s1 = SemanticError::NonConstantInitializer { span };
-        assert_eq!(s1.span(), span);
+        let s1 = SemanticError {
+            span,
+            kind: SemanticErrorKind::NonConstantInitializer,
+        };
+        assert_eq!(s1.span, span);
 
-        let s2 = SemanticError::InvalidInitializer { span };
-        assert_eq!(s2.span(), span);
+        let s2 = SemanticError {
+            span,
+            kind: SemanticErrorKind::InvalidInitializer,
+        };
+        assert_eq!(s2.span, span);
     }
 }

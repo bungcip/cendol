@@ -5,7 +5,7 @@
 //! and translation units.
 
 use crate::ast::{parsed::*, *};
-use crate::diagnostic::ParseError;
+use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::parser::declaration_core::parse_declaration_specifiers;
 use crate::parser::{Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
@@ -71,10 +71,12 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         };
 
         let current_token = trx.parser.current_token()?;
-        return Err(ParseError::UnexpectedToken {
-            expected_tokens: message.to_string(),
-            found: current_token.kind,
+        return Err(ParseError {
             span: current_token.span,
+            kind: ParseErrorKind::UnexpectedToken {
+                expected_tokens: message.to_string(),
+                found: current_token.kind,
+            },
         });
     }
 
@@ -116,10 +118,12 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         token
     } else {
         let current_token = trx.parser.current_token()?;
-        return Err(ParseError::UnexpectedToken {
-            expected_tokens: "';' after declaration".to_string(),
-            found: current_token.kind,
+        return Err(ParseError {
             span: current_token.span,
+            kind: ParseErrorKind::UnexpectedToken {
+                expected_tokens: "';' after declaration".to_string(),
+                found: current_token.kind,
+            },
         });
     };
 
@@ -220,10 +224,12 @@ pub(crate) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
             )
         }
         _ => {
-            return Err(ParseError::UnexpectedToken {
-                expected_tokens: "string literal".to_string(),
-                found: token.kind,
+            return Err(ParseError {
                 span: token.span,
+                kind: ParseErrorKind::UnexpectedToken {
+                    expected_tokens: "string literal".to_string(),
+                    found: token.kind,
+                },
             });
         }
     };

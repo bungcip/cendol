@@ -43,7 +43,7 @@ impl<'a> PPDumper<'a> {
                 break;
             }
         }
-        let mut current_buffer = self.source_manager.get_buffer(current_file_id);
+        let mut current_buffer = self.source_manager.get_buffer_safe(current_file_id).unwrap_or(&[]);
         let mut last_pos = 0u32;
         let mut last_was_macro_expanded = false;
 
@@ -101,7 +101,7 @@ impl<'a> PPDumper<'a> {
                 }
 
                 current_file_id = token.location.source_id();
-                current_buffer = self.source_manager.get_buffer(current_file_id);
+                current_buffer = self.source_manager.get_buffer_safe(current_file_id).unwrap_or(&[]);
                 last_pos = token.location.offset();
             }
 
@@ -109,7 +109,8 @@ impl<'a> PPDumper<'a> {
             let token_end = token_start + token.length as u32;
 
             // Print all bytes between last_pos and token_start (whitespace, comments)
-            if token_start > last_pos {
+            // Only if we have a valid buffer!
+            if !current_buffer.is_empty() && token_start > last_pos {
                 let slice = &current_buffer[last_pos as usize..token_start as usize];
                 // Convert to string, assuming UTF-8 (preprocessor should ensure this)
                 if let Ok(text) = std::str::from_utf8(slice) {
@@ -121,9 +122,14 @@ impl<'a> PPDumper<'a> {
             }
 
             // Print the token's raw bytes from source
-            let token_slice = token.get_raw_slice(current_buffer);
-            if let Ok(text) = std::str::from_utf8(token_slice) {
-                write!(writer, "{}", text)?;
+            if !current_buffer.is_empty() {
+                let token_slice = token.get_raw_slice(current_buffer);
+                if let Ok(text) = std::str::from_utf8(token_slice) {
+                    write!(writer, "{}", text)?;
+                }
+            } else {
+                // Fallback to canonical spelling for builtins/unknown sources
+                write!(writer, "{}", token.get_text())?;
             }
 
             last_pos = token_end;

@@ -122,7 +122,7 @@ impl<'a> MirDumper<'a> {
         writeln!(output, "{{")?;
 
         // Dump locals section
-        if func.locals.is_empty() == false {
+        if !func.locals.is_empty() {
             writeln!(output, "  locals {{")?;
             for &local_id in &func.locals {
                 if let Some(local) = self.mir.locals.get(&local_id) {

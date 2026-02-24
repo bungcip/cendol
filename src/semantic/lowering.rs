@@ -423,7 +423,18 @@ fn convert_parsed_base_type_to_qual_type(
 
                 for parsed_enum in parsed_enums {
                     let value = parsed_enum.value.unwrap_or(next_value);
-                    next_value = value + 1;
+
+                    if value < (i32::MIN as i64) || value > (i32::MAX as i64) {
+                        ctx.report_error(SemanticError {
+                            span: parsed_enum.span,
+                            kind: SemanticErrorKind::EnumeratorValueNotRepresentable {
+                                name: parsed_enum.name,
+                                value,
+                            },
+                        });
+                    }
+
+                    next_value = value.wrapping_add(1);
 
                     let enum_constant = EnumConstant {
                         name: parsed_enum.name,
@@ -896,7 +907,18 @@ fn resolve_type_specifier(
                         } else {
                             (next_value, None)
                         };
-                        next_value = value + 1;
+
+                        if value < (i32::MIN as i64) || value > (i32::MAX as i64) {
+                            ctx.report_error(SemanticError {
+                                span: enum_node.span,
+                                kind: SemanticErrorKind::EnumeratorValueNotRepresentable {
+                                    name: *name,
+                                    value,
+                                },
+                            });
+                        }
+
+                        next_value = value.wrapping_add(1);
 
                         let enum_constant = EnumConstant {
                             name: *name,

@@ -200,6 +200,7 @@ impl IntoDiagnostic for SemanticError {
                 | SemanticErrorKind::ImplicitConstantConversion { .. }
                 | SemanticErrorKind::SwitchCaseOverflow { .. }
                 | SemanticErrorKind::AddressOfArrayAlwaysTrue { .. }
+                | SemanticErrorKind::EnumeratorValueNotRepresentable { .. }
         ) {
             diagnostics[0].level = DiagnosticLevel::Warning;
         }
@@ -456,6 +457,9 @@ pub enum SemanticErrorKind {
 
     #[error("declaration does not declare anything")]
     EmptyDeclaration,
+
+    #[error("enumerator value {value} for '{name}' is not representable as 'int'")]
+    EnumeratorValueNotRepresentable { name: NameId, value: i64 },
 }
 
 /// Configurable error formatter using annotate_snippets

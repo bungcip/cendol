@@ -573,3 +573,11 @@ fn test_reserved_source_id_behavior() {
     assert!(sm.get_file_info(reserved_id).is_none());
     assert!(sm.get_buffer_safe(reserved_id).is_none());
 }
+
+#[test]
+#[should_panic(expected = "Line directives must be added in sorted order")]
+fn test_line_map_add_entry_unsorted() {
+    let mut line_map = LineMap::new();
+    line_map.add_entry(LineDirective::new(20, 200, None));
+    line_map.add_entry(LineDirective::new(10, 100, None));
+}

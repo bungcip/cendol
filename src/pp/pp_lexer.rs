@@ -81,10 +81,10 @@ pub enum PPTokenKind {
 /// Token structure for preprocessor tokens
 #[derive(Clone, Copy, Debug)]
 pub struct PPToken {
-    pub kind: PPTokenKind,
-    pub flags: PPTokenFlags,
-    pub location: SourceLoc, // Contains file ID and byte offset
-    pub length: u16,         // Maximum token length (64KB should be sufficient for any token)
+    pub(crate) kind: PPTokenKind,
+    pub(crate) flags: PPTokenFlags,
+    pub(crate) location: SourceLoc, // Contains file ID and byte offset
+    pub(crate) length: u16,         // Maximum token length (64KB should be sufficient for any token)
 }
 
 impl PPToken {

@@ -1,13 +1,13 @@
-pub mod ast;
-pub mod codegen;
-pub mod diagnostic;
+pub(crate) mod ast;
+pub(crate) mod codegen;
+pub(crate) mod diagnostic;
 pub mod driver;
 mod lang_options;
-pub mod mir;
+pub(crate) mod mir;
 
 mod parser;
 mod pp;
 mod semantic;
-pub mod source_manager;
+pub(crate) mod source_manager;
 #[cfg(test)]
 pub mod tests;

@@ -40,7 +40,7 @@ fn rejects_non_constant_case_label() {
         CompilePhase::Mir,
         "expression in 'case' label is not an integer constant expression",
         6,
-22,
+        22,
     );
 }
 
@@ -60,7 +60,7 @@ fn rejects_non_integer_case_label() {
         CompilePhase::Mir,
         "expression in 'case' label is not an integer constant expression",
         4,
-22,
+        22,
     );
 }
 
@@ -75,11 +75,5 @@ fn visits_case_expressions_outside_switch() {
 
     // Even if outside switch, we should still catch undeclared identifier in the case expression
     // because we visit the node.
-    run_fail_with_diagnostic(
-        source,
-        CompilePhase::Mir,
-        "Undeclared identifier 'undeclared'",
-        3,
-18,
-    );
+    run_fail_with_diagnostic(source, CompilePhase::Mir, "Undeclared identifier 'undeclared'", 3, 18);
 }

@@ -31,8 +31,8 @@ impl SourceId {
 /// Source ID and byte offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct SourceLoc {
-    pub source_id: SourceId,
-    pub offset: u32,
+    pub(crate) source_id: SourceId,
+    pub(crate) offset: u32,
 }
 
 impl Default for SourceLoc {
@@ -195,9 +195,9 @@ impl std::fmt::Display for SourceSpan {
 /// Represents a single #line directive entry
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineDirective {
-    pub physical_line: u32,
-    pub logical_line: u32,
-    pub logical_file: Option<String>,
+    pub(crate) physical_line: u32,
+    pub(crate) logical_line: u32,
+    pub(crate) logical_file: Option<String>,
 }
 
 impl LineDirective {
@@ -278,9 +278,9 @@ impl LineMap {
 /// File information for tracking source files
 #[derive(Debug)]
 pub struct FileInfo {
-    pub file_id: SourceId,
-    pub path: PathBuf,
-    pub size: u32,
+    pub(crate) file_id: SourceId,
+    pub(crate) path: PathBuf,
+    pub(crate) size: u32,
     pub(crate) buffer: Arc<[u8]>,
     pub(crate) kind: FileKind,
     pub line_starts: Vec<u32>,          // Line start offsets for efficient line lookup

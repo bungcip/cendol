@@ -258,7 +258,7 @@ impl SymbolTable {
     }
 
     /// find a symbol in exact scope without looking to parent scope if not exist
-    pub(crate) fn fetch(&self, name: NameId, scope_id: ScopeId, ns: Namespace) -> Option<SymbolRef> {
+    fn fetch(&self, name: NameId, scope_id: ScopeId, ns: Namespace) -> Option<SymbolRef> {
         let scope = self.get_scope(scope_id);
         match ns {
             Namespace::Ordinary => scope.symbols.get(&name).copied(),

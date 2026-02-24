@@ -36,7 +36,7 @@ pub enum DirectiveKind {
 
 /// Table of pre-interned preprocessor directive names for O(1) keyword recognition
 #[derive(Clone)]
-pub(crate) struct DirectiveKeywordTable {
+struct DirectiveKeywordTable {
     define: StringId,
     undef: StringId,
     include: StringId,
@@ -71,7 +71,7 @@ impl Default for DirectiveKeywordTable {
 }
 
 impl DirectiveKeywordTable {
-    pub(crate) fn new() -> Self {
+    fn new() -> Self {
         DirectiveKeywordTable {
             define: StringId::new("define"),
             undef: StringId::new("undef"),
@@ -136,37 +136,37 @@ impl DirectiveKeywordTable {
     }
 
     /// Get the interned symbol for the "defined" operator
-    pub(crate) fn defined_symbol(&self) -> StringId {
+    fn defined_symbol(&self) -> StringId {
         self.defined
     }
 
     /// Get the interned symbol for the "__has_include" operator
-    pub(crate) fn has_include_symbol(&self) -> StringId {
+    fn has_include_symbol(&self) -> StringId {
         self.has_include
     }
 
     /// Get the interned symbol for the "__has_include_next" operator
-    pub(crate) fn has_include_next_symbol(&self) -> StringId {
+    fn has_include_next_symbol(&self) -> StringId {
         self.has_include_next
     }
 
     /// Get the interned symbol for the "__has_builtin" operator
-    pub(crate) fn has_builtin_symbol(&self) -> StringId {
+    fn has_builtin_symbol(&self) -> StringId {
         self.has_builtin
     }
 
     /// Get the interned symbol for the "__has_attribute" operator
-    pub(crate) fn has_attribute_symbol(&self) -> StringId {
+    fn has_attribute_symbol(&self) -> StringId {
         self.has_attribute
     }
 
     /// Get the interned symbol for the "__has_feature" operator
-    pub(crate) fn has_feature_symbol(&self) -> StringId {
+    fn has_feature_symbol(&self) -> StringId {
         self.has_feature
     }
 
     /// Get the interned symbol for the "__has_extension" operator
-    pub(crate) fn has_extension_symbol(&self) -> StringId {
+    fn has_extension_symbol(&self) -> StringId {
         self.has_extension
     }
 }

@@ -168,7 +168,7 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
-    pub(crate) fn is_storage_class_specifier(&self) -> bool {
+    fn is_storage_class_specifier(&self) -> bool {
         use TokenKind::*;
         matches!(self, Typedef | Extern | Static | ThreadLocal | Auto | Register)
     }
@@ -200,11 +200,11 @@ impl TokenKind {
         matches!(self, Const | Restrict | Volatile | Atomic)
     }
 
-    pub(crate) fn is_function_specifier(&self) -> bool {
+    fn is_function_specifier(&self) -> bool {
         matches!(self, TokenKind::Inline | TokenKind::Noreturn)
     }
 
-    pub(crate) fn is_alignment_specifier(&self) -> bool {
+    fn is_alignment_specifier(&self) -> bool {
         matches!(self, TokenKind::Alignas)
     }
 

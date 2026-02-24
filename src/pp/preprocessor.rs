@@ -2672,22 +2672,12 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Helper to report diagnostics
-    fn report_diagnostic(
-        &mut self,
-        level: DiagnosticLevel,
-        message: impl Into<String>,
-        span: SourceSpan,
-        code: Option<String>,
-        hints: Vec<String>,
-        related: Vec<SourceSpan>,
-    ) {
+    fn report_diagnostic(&mut self, level: DiagnosticLevel, message: impl Into<String>, span: SourceSpan) {
         let diag = Diagnostic {
             level,
             message: message.into(),
             span,
-            code,
-            hints,
-            related,
+            hints: Vec::new(),
         };
         self.diag.report_diagnostic(diag);
     }
@@ -2704,13 +2694,13 @@ impl<'src> Preprocessor<'src> {
     /// Helper to report error diagnostics
     fn report_error(&mut self, message: impl Into<String>, loc: SourceLoc) {
         let span = SourceSpan::new(loc, loc);
-        self.report_diagnostic(DiagnosticLevel::Error, message, span, None, Vec::new(), Vec::new());
+        self.report_diagnostic(DiagnosticLevel::Error, message, span);
     }
 
     /// Helper to report warning diagnostics
     fn report_warning(&mut self, message: impl Into<String>, loc: SourceLoc) {
         let span = SourceSpan::new(loc, loc);
-        self.report_diagnostic(DiagnosticLevel::Warning, message, span, None, Vec::new(), Vec::new());
+        self.report_diagnostic(DiagnosticLevel::Warning, message, span);
     }
 
     fn parse_macro_definition_params(

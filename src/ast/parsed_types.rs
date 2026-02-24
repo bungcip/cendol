@@ -102,10 +102,7 @@ pub enum ParsedBaseTypeNode {
 /// Parsed declarator node (the declarator structure)
 #[derive(Debug, Clone)]
 pub enum ParsedDeclaratorNode {
-    Identifier {
-        name: Option<NameId>,
-    },
-
+    Identifier,
     Pointer {
         qualifiers: TypeQualifiers,
         inner: ParsedDeclRef,

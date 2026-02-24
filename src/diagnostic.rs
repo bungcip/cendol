@@ -23,9 +23,7 @@ pub struct Diagnostic {
     pub level: DiagnosticLevel,
     pub message: String,
     pub span: SourceSpan,
-    pub code: Option<String>,     // Error code like "E001"
-    pub hints: Vec<String>,       // Suggestions for fixing
-    pub related: Vec<SourceSpan>, // Related locations
+    pub hints: Vec<String>, // Suggestions for fixing
 }
 
 /// Parse errors
@@ -56,19 +54,13 @@ pub enum ParseErrorKind {
 #[derive(Default)]
 pub struct DiagnosticEngine {
     pub diagnostics: Vec<Diagnostic>,
-    pub warnings_as_errors: bool,
-    pub disable_all_warnings: bool,
     pub error_limit: Option<usize>,
 }
 
 impl DiagnosticEngine {
-    pub(crate) fn from_warnings(warnings: &[String]) -> Self {
-        let warnings_as_errors = warnings.iter().any(|w| w == "error");
-        let disable_all_warnings = warnings.iter().any(|w| w == "no-warnings");
+    pub(crate) fn from_warnings(_warnings: &[String]) -> Self {
         Self {
             diagnostics: Vec::new(),
-            warnings_as_errors,
-            disable_all_warnings,
             error_limit: None,
         }
     }
@@ -135,7 +127,7 @@ impl IntoDiagnostic for SemanticError {
     fn into_diagnostic(self) -> Vec<Diagnostic> {
         // Determine if this should be a warning or error
         let level = match &self.kind {
-            SemanticErrorKind::EmptyDeclaration { .. } => DiagnosticLevel::Warning,
+            SemanticErrorKind::EmptyDeclaration => DiagnosticLevel::Warning,
             _ => DiagnosticLevel::Error,
         };
 
@@ -405,9 +397,9 @@ pub enum SemanticErrorKind {
     #[error("invalid storage class for function parameter")]
     InvalidStorageClassForParameter,
     #[error("function '{name}' declared '_Noreturn' contains a return statement")]
-    NoreturnFunctionHasReturn { name: String },
+    NoreturnFunctionHasReturn { name: NameId },
     #[error("function '{name}' declared '_Noreturn' can fall off the end")]
-    NoreturnFunctionFallsOff { name: String },
+    NoreturnFunctionFallsOff { name: NameId },
 
     #[error("alignment specifier cannot be used in a {context}")]
     AlignmentNotAllowed { context: String },
@@ -468,20 +460,12 @@ pub enum SemanticErrorKind {
 
 /// Configurable error formatter using annotate_snippets
 pub struct ErrorFormatter {
-    pub show_source: bool,
-    pub show_hints: bool,
     pub use_colors: bool,
-    pub max_context: usize,
 }
 
 impl Default for ErrorFormatter {
     fn default() -> Self {
-        ErrorFormatter {
-            show_source: true,
-            show_hints: true,
-            use_colors: true,
-            max_context: 3,
-        }
+        ErrorFormatter { use_colors: true }
     }
 }
 

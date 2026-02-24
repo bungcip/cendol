@@ -3,6 +3,7 @@ use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[repr(u8)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum IntegerSuffix {
     L,
     LL,

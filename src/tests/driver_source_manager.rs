@@ -155,8 +155,6 @@ fn test_source_manager_get_file_info() {
 
     let info = sm.get_file_info(file_id).unwrap();
     assert_eq!(info.path, std::path::PathBuf::from("test.c"));
-    assert_eq!(info.file_id, file_id);
-    assert_eq!(info.size, 4);
 }
 
 #[test]
@@ -180,8 +178,6 @@ fn test_source_manager_empty_file() {
 
     let info = sm.get_file_info(file_id).unwrap();
     assert_eq!(info.path, std::path::PathBuf::from("empty.c"));
-    assert_eq!(info.file_id, file_id);
-    assert_eq!(info.size, 0);
 }
 
 #[test]
@@ -192,8 +188,6 @@ fn test_source_manager_file_without_newlines() {
 
     let info = sm.get_file_info(file_id).unwrap();
     assert_eq!(info.path, std::path::PathBuf::from("no_nl.c"));
-    assert_eq!(info.file_id, file_id);
-    assert_eq!(info.size, content.len() as u32);
 }
 
 #[test]

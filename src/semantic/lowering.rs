@@ -46,7 +46,7 @@ fn apply_parsed_declarator(
     let declarator_node = ctx.parsed_ast.parsed_types.get_decl(declarator_ref);
 
     match declarator_node {
-        ParsedDeclaratorNode::Identifier { .. } => current_type,
+        ParsedDeclaratorNode::Identifier => current_type,
         ParsedDeclaratorNode::Pointer { qualifiers, inner } => {
             // Pointer
             // Apply Pointer modifier to the current type first (Top-Down)
@@ -73,31 +73,31 @@ fn apply_parsed_declarator(
 
             if has_static || has_quals {
                 let inner_node = ctx.parsed_ast.parsed_types.get_decl(inner);
-                let is_outermost = matches!(inner_node, ParsedDeclaratorNode::Identifier { .. });
+                let is_outermost = matches!(inner_node, ParsedDeclaratorNode::Identifier);
 
                 if !decl_ctx.in_parameter {
                     if has_static {
                         ctx.report_error(SemanticError {
-                            span: span,
+                            span,
                             kind: SemanticErrorKind::ArrayStaticOutsideParameter,
                         });
                     }
                     if has_quals {
                         ctx.report_error(SemanticError {
-                            span: span,
+                            span,
                             kind: SemanticErrorKind::ArrayQualifierOutsideParameter,
                         });
                     }
                 } else if !is_outermost {
                     if has_static {
                         ctx.report_error(SemanticError {
-                            span: span,
+                            span,
                             kind: SemanticErrorKind::ArrayStaticNotOutermost,
                         });
                     }
                     if has_quals {
                         ctx.report_error(SemanticError {
-                            span: span,
+                            span,
                             kind: SemanticErrorKind::ArrayQualifierNotOutermost,
                         });
                     }
@@ -148,7 +148,7 @@ fn apply_parsed_declarator(
 fn extract_array_param_qualifiers_from_ref(decl_ref: ParsedDeclRef, ctx: &LowerCtx) -> TypeQualifiers {
     let decl = ctx.parsed_ast.parsed_types.get_decl(decl_ref);
     match decl {
-        ParsedDeclaratorNode::Identifier { .. } => TypeQualifiers::empty(),
+        ParsedDeclaratorNode::Identifier => TypeQualifiers::empty(),
         ParsedDeclaratorNode::Pointer { .. } => TypeQualifiers::empty(),
         ParsedDeclaratorNode::Function { .. } => TypeQualifiers::empty(),
         ParsedDeclaratorNode::Array { size, inner } => {
@@ -263,7 +263,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn check_function_specifiers(&mut self, info: &DeclSpecInfo, span: SourceSpan) {
         if info.is_inline {
             self.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::InvalidFunctionSpecifier {
                     spec: "inline".to_string(),
                 },
@@ -271,7 +271,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
         if info.is_noreturn {
             self.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::InvalidFunctionSpecifier {
                     spec: "_Noreturn".to_string(),
                 },
@@ -289,7 +289,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             if !is_valid {
                 self.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::InvalidRestrict,
                 });
             }
@@ -297,14 +297,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if add.contains(TypeQualifiers::ATOMIC) {
             if base.is_array() {
                 self.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::InvalidAtomicQualifier {
                         type_kind: "array".to_string(),
                     },
                 });
             } else if base.is_function() {
                 self.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::InvalidAtomicQualifier {
                         type_kind: "function".to_string(),
                     },
@@ -530,7 +530,7 @@ fn resolve_record_tag(
 
             if is_completed {
                 ctx.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::Redefinition {
                         name: tag_name,
                         first_def: def_span,
@@ -579,7 +579,7 @@ fn resolve_enum_tag(
                 };
                 if is_completed {
                     ctx.report_error(SemanticError {
-                        span: span,
+                        span,
                         kind: SemanticErrorKind::Redefinition {
                             name: tag_name,
                             first_def,
@@ -817,28 +817,28 @@ fn resolve_type_specifier(
             // a function type, an atomic type, or a qualified type.
             if qt.is_array() {
                 ctx.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::InvalidAtomicSpecifier {
                         reason: "array type".to_string(),
                     },
                 });
             } else if qt.is_function() {
                 ctx.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::InvalidAtomicSpecifier {
                         reason: "function type".to_string(),
                     },
                 });
             } else if qt.qualifiers().contains(TypeQualifiers::ATOMIC) {
                 ctx.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::InvalidAtomicSpecifier {
                         reason: "atomic type".to_string(),
                     },
                 });
             } else if !qt.qualifiers().is_empty() {
                 ctx.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::InvalidAtomicSpecifier {
                         reason: "qualified type".to_string(),
                     },
@@ -1099,7 +1099,7 @@ fn merge_base_type(
                         // Error for other combinations (e.g. double int)
                         _ => {
                             ctx.report_error(SemanticError {
-                                span: span,
+                                span,
                                 kind: SemanticErrorKind::ConflictingTypeSpecifiers {
                                     prev: ctx.registry.display_qual_type(existing_ref),
                                 },
@@ -1110,7 +1110,7 @@ fn merge_base_type(
                 }
                 _ => {
                     ctx.report_error(SemanticError {
-                        span: span,
+                        span,
                         kind: SemanticErrorKind::ConflictingTypeSpecifiers {
                             prev: ctx.registry.display_qual_type(existing_ref),
                         },
@@ -1127,7 +1127,7 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
     // Check typedef with other storage classes
     if info.is_typedef && (info.storage.is_some_and(|s| s != StorageClass::Typedef) || info.is_thread_local) {
         ctx.report_error(SemanticError {
-            span: span,
+            span,
             kind: SemanticErrorKind::ConflictingStorageClasses,
         });
     }
@@ -1135,7 +1135,7 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
     // _Alignas constraints (C11 6.7.5p3)
     if info.alignment.is_some() && info.storage == Some(StorageClass::Register) {
         ctx.report_error(SemanticError {
-            span: span,
+            span,
             kind: SemanticErrorKind::AlignmentNotAllowed {
                 context: "register object".to_string(),
             },
@@ -1150,7 +1150,7 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
             && s != StorageClass::Extern
         {
             ctx.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::ConflictingStorageClasses,
             });
         }
@@ -1159,7 +1159,7 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
     // Check for missing required specifiers (type specifier)
     if info.base_type.is_none() {
         ctx.report_error(SemanticError {
-            span: span,
+            span,
             kind: SemanticErrorKind::MissingTypeSpecifier,
         });
     }
@@ -1176,7 +1176,7 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                     if info.is_thread_local {
                         // duplicate _Thread_local
                         ctx.report_error(SemanticError {
-                            span: span,
+                            span,
                             kind: SemanticErrorKind::ConflictingStorageClasses,
                         });
                     }
@@ -1184,7 +1184,7 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                 } else {
                     if info.storage.is_some() {
                         ctx.report_error(SemanticError {
-                            span: span,
+                            span,
                             kind: SemanticErrorKind::ConflictingStorageClasses,
                         });
                     }
@@ -1233,14 +1233,14 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                                 None
                             } else {
                                 ctx.report_error(SemanticError {
-                                    span: span,
+                                    span,
                                     kind: SemanticErrorKind::InvalidAlignment { value: val },
                                 });
                                 None
                             }
                         } else {
                             ctx.report_error(SemanticError {
-                                span: span,
+                                span,
                                 kind: SemanticErrorKind::NonConstantAlignment,
                             });
                             None
@@ -1326,7 +1326,7 @@ fn visit_function_parameters(
                 let is_void_param_list = params.len() == 1 && decayed_ty.is_void() && pname.is_none();
                 if !is_void_param_list {
                     ctx.report_error(SemanticError {
-                        span: span,
+                        span,
                         kind: SemanticErrorKind::IncompleteType {
                             ty: ctx.registry.display_qual_type(decayed_ty),
                         },
@@ -1337,7 +1337,7 @@ fn visit_function_parameters(
             if let Some(name) = pname {
                 if let Some(&first_def) = seen_names.get(&name) {
                     ctx.report_error(SemanticError {
-                        span: span,
+                        span,
                         kind: SemanticErrorKind::Redefinition { name, first_def },
                     });
                 } else {
@@ -1347,7 +1347,7 @@ fn visit_function_parameters(
 
             if spec_info.alignment.is_some() {
                 ctx.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::AlignmentNotAllowed {
                         context: "function parameter".to_string(),
                     },
@@ -1359,13 +1359,13 @@ fn visit_function_parameters(
                 && sc != StorageClass::Register
             {
                 ctx.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::InvalidStorageClassForParameter,
                 });
             }
             if spec_info.is_thread_local {
                 ctx.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::InvalidStorageClassForParameter,
                 });
             }
@@ -1439,7 +1439,7 @@ fn apply_declarator(
             if !ctx.registry.is_complete(base_type.ty()) || base_type.ty().is_function() {
                 let ty_str = ctx.registry.display_type(base_type.ty());
                 ctx.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::IncompleteType { ty: ty_str },
                 });
             }
@@ -1463,26 +1463,26 @@ fn apply_declarator(
                 if !decl_ctx.in_parameter {
                     if has_static {
                         ctx.report_error(SemanticError {
-                            span: span,
+                            span,
                             kind: SemanticErrorKind::ArrayStaticOutsideParameter,
                         });
                     }
                     if has_quals {
                         ctx.report_error(SemanticError {
-                            span: span,
+                            span,
                             kind: SemanticErrorKind::ArrayQualifierOutsideParameter,
                         });
                     }
                 } else if !is_outermost {
                     if has_static {
                         ctx.report_error(SemanticError {
-                            span: span,
+                            span,
                             kind: SemanticErrorKind::ArrayStaticNotOutermost,
                         });
                     }
                     if has_quals {
                         ctx.report_error(SemanticError {
-                            span: span,
+                            span,
                             kind: SemanticErrorKind::ArrayQualifierNotOutermost,
                         });
                     }
@@ -1765,7 +1765,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // extern/plain followed by static is an error.
             if !existing_is_static && new_is_static {
                 self.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::ConflictingLinkage {
                         name: name.to_string(),
 
@@ -1779,7 +1779,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // in the same scope and name space.
         if existing_scope == current_scope && (!existing_has_linkage || !new_has_linkage) {
             self.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::Redefinition {
                     name,
                     first_def: existing_def_span,
@@ -1791,7 +1791,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let composite = self.registry.composite_type(existing_type_info, new_ty);
         if composite.is_none() {
             self.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::ConflictingTypes {
                     name: name.to_string(),
 
@@ -1835,7 +1835,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if existing_is_noreturn != new_is_noreturn {
             self.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::ConflictingTypes {
                     name: name.to_string(),
 
@@ -1886,7 +1886,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             if entry.def_state == DefinitionState::Defined {
                 let first_def = entry.def_span;
                 self.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::Redefinition {
                         name: func_name,
                         first_def,
@@ -2153,7 +2153,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 if let SymbolKind::Typedef { aliased_type } = existing_symbol.kind {
                     if aliased_type != final_ty {
                         self.report_error(SemanticError {
-                            span: span,
+                            span,
                             kind: SemanticErrorKind::RedefinitionWithDifferentType {
                                 name,
                                 first_def: existing_symbol.def_span,
@@ -2162,7 +2162,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
                 } else {
                     self.report_error(SemanticError {
-                        span: span,
+                        span,
                         kind: SemanticErrorKind::Redefinition {
                             name,
                             first_def: existing_symbol.def_span,
@@ -2199,7 +2199,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     ) {
         if spec_info.alignment.is_some() {
             self.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::AlignmentNotAllowed {
                     context: "function".to_string(),
                 },
@@ -2220,7 +2220,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         {
             let first_def = self.symbol_table.get_symbol(existing).def_span;
             self.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::Redefinition { name, first_def },
             });
         }
@@ -2264,7 +2264,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if (has_internal_linkage || has_no_linkage) && !self.registry.is_complete(final_ty.ty()) {
             self.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::IncompleteType {
                     ty: self.registry.display_qual_type(final_ty),
                 },
@@ -2285,7 +2285,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         {
             let first_def = self.symbol_table.get_symbol(existing).def_span;
             self.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::Redefinition { name, first_def },
             });
         }
@@ -2296,7 +2296,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let natural_align = layout.alignment as u32;
             if req_align < natural_align {
                 self.report_error(SemanticError {
-                    span: span,
+                    span,
                     kind: SemanticErrorKind::AlignmentTooLoose {
                         requested: req_align,
                         natural: natural_align,
@@ -2825,7 +2825,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 return sym_ref;
             }
             self.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::UndeclaredIdentifier { name },
             });
             SymbolRef::new(1).expect("SymbolRef 1 creation failed")
@@ -2890,7 +2890,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // Forward references are okay because of pre-scan
             // But if NOT even in pre-scan, then it's undeclared
             self.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::UndeclaredIdentifier { name },
             });
             SymbolRef::new(1).unwrap()
@@ -3268,14 +3268,14 @@ fn extract_bit_field_width<'a>(
         Some(val) if (0..=65535).contains(&val) => Some(val as u16),
         Some(_) => {
             ctx.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::InvalidBitfieldWidth,
             });
             None
         }
         None => {
             ctx.report_error(SemanticError {
-                span: span,
+                span,
                 kind: SemanticErrorKind::NonConstantBitfieldWidth,
             });
             None
@@ -3335,7 +3335,7 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                 // Check for illegal storage classes
                 if spec_info.storage.is_some() {
                     ctx.report_error(SemanticError {
-                        span: span,
+                        span,
                         kind: SemanticErrorKind::ConflictingStorageClasses,
                     });
                 }

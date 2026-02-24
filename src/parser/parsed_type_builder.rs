@@ -23,10 +23,7 @@ pub(crate) fn build_parsed_type_from_specifiers(
     let declarator_ref = if let Some(d) = declarator {
         build_parsed_declarator(parser, d)?
     } else {
-        parser
-            .ast
-            .parsed_types
-            .alloc_decl(ParsedDeclaratorNode::Identifier { name: None })
+        parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Identifier)
     };
 
     Ok(ParsedType {
@@ -356,23 +353,17 @@ fn parse_type_specifier_to_parsed_base(
 /// Build a ParsedDeclaratorNode from a ParsedDeclarator
 fn build_parsed_declarator(parser: &mut Parser, declarator: &ParsedDeclarator) -> Result<ParsedDeclRef, ParseError> {
     match declarator {
-        ParsedDeclarator::Identifier(name, _qualifiers) => {
+        ParsedDeclarator::Identifier(_name, _qualifiers) => {
             // Simple identifier
             // Note: qualifiers are part of specifiers or pointers, not directly on identifiers
             // in the parser's logic for identifiers.
-            Ok(parser
-                .ast
-                .parsed_types
-                .alloc_decl(ParsedDeclaratorNode::Identifier { name: Some(*name) }))
+            Ok(parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Identifier))
         }
         ParsedDeclarator::Pointer(ptr_qualifiers, inner_decl) => {
             let inner_ref = if let Some(inner) = inner_decl {
                 build_parsed_declarator(parser, inner)?
             } else {
-                parser
-                    .ast
-                    .parsed_types
-                    .alloc_decl(ParsedDeclaratorNode::Identifier { name: None })
+                parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Identifier)
             };
 
             Ok(parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Pointer {
@@ -421,10 +412,7 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &ParsedDeclarator) -
                 inner: inner_ref,
             }))
         }
-        ParsedDeclarator::Abstract => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_decl(ParsedDeclaratorNode::Identifier { name: None })),
+        ParsedDeclarator::Abstract => Ok(parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Identifier)),
 
         ParsedDeclarator::BitField(inner, _width_expr) => {
             // BitFields inside structs are usually handled by struct parsing,

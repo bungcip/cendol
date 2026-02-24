@@ -278,9 +278,7 @@ impl LineMap {
 /// File information for tracking source files
 #[derive(Debug)]
 pub struct FileInfo {
-    pub(crate) file_id: SourceId,
     pub(crate) path: PathBuf,
-    pub(crate) size: u32,
     pub(crate) buffer: Arc<[u8]>,
     pub(crate) kind: FileKind,
     pub line_starts: Vec<u32>,          // Line start offsets for efficient line lookup
@@ -357,8 +355,6 @@ impl SourceManager {
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
-        let size = buffer.len() as u32;
-
         if kind == FileKind::Real {
             // Only map path for real files (not virtual ones usually).
             // This avoids unnecessary map insertions for short-lived virtual buffers.
@@ -366,9 +362,7 @@ impl SourceManager {
         }
 
         let file_info = FileInfo {
-            file_id,
             path,
-            size,
             buffer,
             kind,
             line_starts,

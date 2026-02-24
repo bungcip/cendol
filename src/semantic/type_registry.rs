@@ -883,7 +883,7 @@ impl TypeRegistry {
                                 ty: self.display_type(member_ty),
                             },
                         },
-                        SemanticErrorKind::SizeOfFunctionType { .. } => {
+                        SemanticErrorKind::SizeOfFunctionType => {
                             if let Some(name) = member.name {
                                 SemanticError {
                                     span: member.span,

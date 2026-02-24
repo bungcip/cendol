@@ -223,6 +223,26 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
             let t2_unqual = ctx.registry.strip_all(*t2);
             Some(ctx.registry.is_compatible(t1_unqual, t2_unqual) as i64)
         }
+        NodeKind::BuiltinPopcount(exp) => {
+            let val = eval_const_expr(ctx, *exp)?;
+            Some(val.count_ones() as i64)
+        }
+        NodeKind::BuiltinClz(exp) => {
+            let val = eval_const_expr(ctx, *exp)?;
+            if val == 0 {
+                None // Undefined behavior for 0, return None
+            } else {
+                Some(val.leading_zeros() as i64)
+            }
+        }
+        NodeKind::BuiltinCtz(exp) => {
+            let val = eval_const_expr(ctx, *exp)?;
+            if val == 0 {
+                None // Undefined behavior for 0, return None
+            } else {
+                Some(val.trailing_zeros() as i64)
+            }
+        }
         _ => None,
     }
 }

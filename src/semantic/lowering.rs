@@ -911,10 +911,7 @@ fn resolve_type_specifier(
                         if value < (i32::MIN as i64) || value > (i32::MAX as i64) {
                             ctx.report_error(SemanticError {
                                 span: enum_node.span,
-                                kind: SemanticErrorKind::EnumeratorValueNotRepresentable {
-                                    name: *name,
-                                    value,
-                                },
+                                kind: SemanticErrorKind::EnumeratorValueNotRepresentable { name: *name, value },
                             });
                         }
 

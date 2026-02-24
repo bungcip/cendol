@@ -84,6 +84,7 @@ pub mod guardian_pointer_arithmetic;
 pub mod guardian_restrict_constraints;
 pub mod guardian_static_assert_constants;
 pub mod guardian_struct_member_constraints;
+pub mod guardian_switch_constraints;
 pub mod guardian_tentative_definitions;
 pub mod guardian_type_limits;
 pub mod guardian_typedef_constraints;

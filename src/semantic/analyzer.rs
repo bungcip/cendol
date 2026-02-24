@@ -1775,8 +1775,17 @@ impl<'a> SemanticAnalyzer<'a> {
         self.switch_default_seen.push(false);
 
         if let Some(ty) = cond_ty {
-            self.switch_orig_cond_types.push(ty);
-            let promoted = self.apply_and_record_integer_promotion(cond, ty);
+            let effective_ty = if !ty.is_integer() {
+                self.report_error(SemanticError::InvalidSwitchCondition {
+                    ty: self.registry.display_qual_type(ty),
+                    span: self.ast.get_span(cond),
+                });
+                QualType::unqualified(self.registry.type_int)
+            } else {
+                ty
+            };
+            self.switch_orig_cond_types.push(effective_ty);
+            let promoted = self.apply_and_record_integer_promotion(cond, effective_ty);
             self.switch_cond_types.push(promoted);
         } else {
             let int_ty = QualType::unqualified(self.registry.type_int);
@@ -1803,14 +1812,34 @@ impl<'a> SemanticAnalyzer<'a> {
     ) -> Option<QualType> {
         if self.switch_depth == 0 {
             self.report_error(SemanticError::CaseNotInSwitch { span });
-        } else if let Some(start_ref) = start {
-            let mut start_val = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), start_ref);
-            let mut end_val = if let Some(end_ref) = end {
-                crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), end_ref)
-            } else {
-                start_val
-            };
+        }
 
+        let mut start_val = None;
+        if let Some(start_ref) = start {
+            let start_ty = self.visit_node(start_ref);
+            start_val = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), start_ref);
+
+            if self.switch_depth > 0 && (start_val.is_none() || start_ty.is_none_or(|ty| !ty.is_integer())) {
+                self.report_error(SemanticError::NonConstantCaseValue {
+                    span: self.ast.get_span(start_ref),
+                });
+            }
+        }
+
+        let mut end_val = if let Some(end_ref) = end {
+            let end_ty = self.visit_node(end_ref);
+            let val = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), end_ref);
+            if self.switch_depth > 0 && (val.is_none() || end_ty.is_none_or(|ty| !ty.is_integer())) {
+                self.report_error(SemanticError::NonConstantCaseValue {
+                    span: self.ast.get_span(end_ref),
+                });
+            }
+            val
+        } else {
+            start_val
+        };
+
+        if self.switch_depth > 0 && start.is_some() {
             // Perform duplicate check using promoted type, but warn on unreachability using original type
             let promoted_ty = self.switch_cond_types.last().cloned();
             let orig_ty = self.switch_orig_cond_types.last().cloned();
@@ -1874,12 +1903,6 @@ impl<'a> SemanticAnalyzer<'a> {
             }
         }
 
-        if let Some(s) = start {
-            self.visit_node(s);
-        }
-        if let Some(e) = end {
-            self.visit_node(e);
-        }
         self.visit_node(stmt);
         None
     }

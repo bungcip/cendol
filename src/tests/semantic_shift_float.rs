@@ -10,7 +10,13 @@ fn test_shift_left_float_lhs() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: Invalid operands for binary operation: have 'float' and 'int'
+    Span: SourceSpan(source_id=SourceId(2), start=69, end=75)
+    ");
 }
 
 #[test]
@@ -24,7 +30,13 @@ fn test_shift_left_float_rhs() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: Invalid operands for binary operation: have 'int' and 'float'
+    Span: SourceSpan(source_id=SourceId(2), start=92, end=98)
+    ");
 }
 
 #[test]
@@ -37,7 +49,13 @@ fn test_shift_right_float_lhs() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: Invalid operands for binary operation: have 'float' and 'int'
+    Span: SourceSpan(source_id=SourceId(2), start=69, end=75)
+    ");
 }
 
 #[test]
@@ -51,7 +69,13 @@ fn test_shift_right_float_rhs() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: Invalid operands for binary operation: have 'int' and 'float'
+    Span: SourceSpan(source_id=SourceId(2), start=92, end=98)
+    ");
 }
 
 #[test]
@@ -64,7 +88,13 @@ fn test_compound_shift_float() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: Invalid operands for binary operation: have 'float' and 'int'
+    Span: SourceSpan(source_id=SourceId(2), start=61, end=68)
+    ");
 }
 
 #[test]
@@ -78,5 +108,11 @@ fn test_compound_shift_int_float() {
         }
     "#;
     let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 1
+
+    Level: Error
+    Message: Invalid operands for binary operation: have 'int' and 'float'
+    Span: SourceSpan(source_id=SourceId(2), start=84, end=91)
+    ");
 }

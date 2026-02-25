@@ -962,7 +962,8 @@ impl<'src> Preprocessor<'src> {
 
     /// Parse a conditional expression for #if and #elif
     fn parse_conditional_expression(&mut self) -> Result<Vec<PPToken>, PPError> {
-        let mut tokens = Vec::new();
+        // ⚡ Bolt: Use a small initial capacity to avoid reallocations for common short expressions.
+        let mut tokens = Vec::with_capacity(16);
         while let Some(token) = self.lex_token() {
             if token.kind == PPTokenKind::Eod {
                 break;
@@ -1580,7 +1581,8 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn collect_tokens_until_eod(&mut self) -> Vec<PPToken> {
-        let mut tokens = Vec::new();
+        // ⚡ Bolt: Use a small initial capacity to avoid reallocations for common macro bodies and directives.
+        let mut tokens = Vec::with_capacity(32);
         while let Some(token) = self.lex_token() {
             if token.kind == PPTokenKind::Eod {
                 break;

@@ -103,6 +103,8 @@ pub struct MirValidator<'a> {
     mir: &'a MirProgram,
     errors: Vec<ValidationError>,
     pointee_to_pointer: hashbrown::HashMap<TypeId, TypeId>,
+    bool_type: Option<TypeId>,
+    i32_type: Option<TypeId>,
 }
 
 impl<'a> MirValidator<'a> {
@@ -112,6 +114,8 @@ impl<'a> MirValidator<'a> {
             mir: mir_program,
             errors: Vec::new(),
             pointee_to_pointer: hashbrown::HashMap::new(),
+            bool_type: None,
+            i32_type: None,
         }
     }
 
@@ -140,12 +144,16 @@ impl<'a> MirValidator<'a> {
 
         // Validate each type - module.types is a Vec<MirType>, not HashMap<TypeId, MirType>
         // So we validate that each type in the module is accessible via the types HashMap
-        // While we are at it, build the pointee_to_pointer map.
+        // While we are at it, build the pointee_to_pointer map and cache common types.
         for (index, _) in self.mir.module.types.iter().enumerate() {
             let type_id = TypeId::new((index + 1) as u32).unwrap(); // Types are 1-indexed
             if let Some(ty) = self.mir.types.get(&type_id) {
                 if let MirType::Pointer { pointee } = ty {
                     self.pointee_to_pointer.insert(*pointee, type_id);
+                } else if matches!(ty, MirType::Bool) {
+                    self.bool_type = Some(type_id);
+                } else if matches!(ty, MirType::I32) {
+                    self.i32_type = Some(type_id);
                 }
             } else {
                 self.errors.push(ValidationError::TypeNotFound(type_id));
@@ -641,21 +649,11 @@ impl<'a> MirValidator<'a> {
     }
 
     fn find_bool_type(&self) -> Option<TypeId> {
-        for (id, ty) in &self.mir.types {
-            if matches!(ty, MirType::Bool) {
-                return Some(*id);
-            }
-        }
-        None
+        self.bool_type
     }
 
     fn find_i32_type(&self) -> Option<TypeId> {
-        for (id, ty) in &self.mir.types {
-            if matches!(ty, MirType::I32) {
-                return Some(*id);
-            }
-        }
-        None
+        self.i32_type
     }
 
     fn are_types_compatible(&self, t1: TypeId, t2: TypeId) -> bool {

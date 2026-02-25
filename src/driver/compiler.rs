@@ -456,3 +456,25 @@ pub enum PipelineError {
     Fatal,
     IoError(std::io::Error),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_external_object_handling() {
+        let mut config = CompileConfig::default();
+        let obj_path = PathBuf::from("test.o");
+        config.input_files.push(PathOrBuffer::Path(obj_path.clone()));
+
+        let mut driver = CompilerDriver::from_config(config);
+        // Using CompilePhase::Parse to ensure we stop early, but for external object handling
+        // it shouldn't matter as it bypasses the pipeline loop.
+        let outputs = driver.run_pipeline(CompilePhase::Parse).expect("Pipeline failed");
+
+        assert_eq!(outputs.external_object_files.len(), 1);
+        assert_eq!(outputs.external_object_files[0], obj_path);
+        assert!(outputs.units.is_empty());
+    }
+}

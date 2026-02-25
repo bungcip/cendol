@@ -53,7 +53,7 @@ fn test_variadic_al_setup() {
     "#;
     let clif_dump = setup_cranelift(source);
 
-    // Check for the helper function signature: (i64, i64) -> i64, i64
+    // Check for the helper function signature: (i64, i64) -> i64, i64 system_v
     assert!(
         clif_dump.contains("(i64, i64) -> i64, i64 system_v"),
         "Missing or incorrect __cendol_set_al signature in CLIF"
@@ -217,4 +217,57 @@ int main() {
 "#;
     let output = run_c_code_with_output(code);
     assert_eq!(output.trim(), "42 42");
+}
+
+#[test]
+fn test_local_va_list() {
+    let code = r#"
+#include <stdarg.h>
+int printf(const char *fmt, ...);
+
+void test_va(int count, ...) {
+    va_list ap;
+    va_start(ap, count);
+    for (int i = 0; i < count; i++) {
+        int val = va_arg(ap, int);
+        printf("%d ", val);
+    }
+    va_end(ap);
+    printf("\n");
+}
+
+int main() {
+    test_va(3, 10, 20, 30);
+    return 0;
+}
+"#;
+    let output = run_c_code_with_output(code);
+    assert_eq!(output.trim(), "10 20 30");
+}
+
+#[test]
+fn test_pass_va_list() {
+    let code = r#"
+#include <stdarg.h>
+int printf(const char *fmt, ...);
+
+void vtest(va_list ap) {
+    int val = va_arg(ap, int);
+    printf("%d\n", val);
+}
+
+void test(int x, ...) {
+    va_list ap;
+    va_start(ap, x);
+    vtest(ap);
+    va_end(ap);
+}
+
+int main() {
+    test(1, 42);
+    return 0;
+}
+"#;
+    let output = run_c_code_with_output(code);
+    assert_eq!(output.trim(), "42");
 }

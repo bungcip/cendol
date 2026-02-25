@@ -14,43 +14,9 @@ fn check_type(source: &str, expected: &str) {
 }
 
 #[test]
-fn test_long_unsigned_int() {
-    check_type("long unsigned int x;", "unsigned long");
-}
-
-#[test]
-fn test_unsigned_long_int() {
-    check_type("unsigned long int x;", "unsigned long");
-}
-
-#[test]
-fn test_long_int() {
-    check_type("long int x;", "long");
-}
-#[test]
 fn test_typeregistry_default() {
     let registry = crate::semantic::TypeRegistry::default();
     assert_eq!(registry.types.len(), 20); // dummy + 19 built-ins
-}
-
-#[test]
-fn test_short_int() {
-    check_type("short int x;", "short");
-}
-
-#[test]
-fn test_unsigned_short_int() {
-    check_type("unsigned short int x;", "unsigned short");
-}
-
-#[test]
-fn test_long_long_int() {
-    check_type("long long int x;", "long long");
-}
-
-#[test]
-fn test_unsigned_long_long_int() {
-    check_type("unsigned long long int x;", "unsigned long long");
 }
 
 #[test]

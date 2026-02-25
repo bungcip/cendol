@@ -184,7 +184,11 @@ pub(crate) struct PPLexer {
 
 impl PPLexer {
     pub(crate) fn new(source_id: SourceId, buffer: Arc<[u8]>) -> Self {
-        let line_starts = vec![0]; // First line starts at offset 0
+        // ⚡ Bolt: Pre-calculate capacity for line_starts to avoid multiple reallocations.
+        // Counting newlines is efficient and allows for a single allocation.
+        let newline_count = buffer.iter().filter(|&&b| b == b'\n').count();
+        let mut line_starts = Vec::with_capacity(newline_count + 1);
+        line_starts.push(0); // First line starts at offset 0
 
         PPLexer {
             source_id,

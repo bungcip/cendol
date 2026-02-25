@@ -1065,8 +1065,20 @@ impl<'a> MirGen<'a> {
         }
     }
 
+    fn ensure_valist_place(&mut self, op: Operand) -> Place {
+        let ty_id = self.get_operand_type(&op);
+        let ty = self.mir_builder.get_type(ty_id);
+
+        if ty.is_aggregate() {
+            self.ensure_place(op, ty_id)
+        } else {
+            self.deref_operand(op)
+        }
+    }
+
     fn visit_builtin_va_arg(&mut self, ty: QualType, expr_ref: NodeRef) -> Operand {
-        let ap = self.visit_expression_as_place(expr_ref);
+        let ap_op = self.visit_expression(expr_ref, true);
+        let ap = self.ensure_valist_place(ap_op);
         let mir_ty = self.lower_qual_type(ty);
         let rval = Rvalue::BuiltinVaArg(ap, mir_ty);
         self.emit_rvalue_to_operand(rval, mir_ty)
@@ -1075,17 +1087,21 @@ impl<'a> MirGen<'a> {
     fn visit_builtin_void(&mut self, kind: &NodeKind) -> Operand {
         let stmt = match kind {
             NodeKind::BuiltinVaStart(ap_ref, last_ref) => {
-                let ap = self.visit_expression_as_place(*ap_ref);
+                let ap_op = self.visit_expression(*ap_ref, true);
+                let ap = self.ensure_valist_place(ap_op);
                 let last = self.visit_expression(*last_ref, true);
                 MirStmt::BuiltinVaStart(ap, last)
             }
             NodeKind::BuiltinVaEnd(ap_ref) => {
-                let ap = self.visit_expression_as_place(*ap_ref);
+                let ap_op = self.visit_expression(*ap_ref, true);
+                let ap = self.ensure_valist_place(ap_op);
                 MirStmt::BuiltinVaEnd(ap)
             }
             NodeKind::BuiltinVaCopy(dst_ref, src_ref) => {
-                let dst = self.visit_expression_as_place(*dst_ref);
-                let src = self.visit_expression_as_place(*src_ref);
+                let dst_op = self.visit_expression(*dst_ref, true);
+                let dst = self.ensure_valist_place(dst_op);
+                let src_op = self.visit_expression(*src_ref, true);
+                let src = self.ensure_valist_place(src_op);
                 MirStmt::BuiltinVaCopy(dst, src)
             }
             _ => unreachable!(),

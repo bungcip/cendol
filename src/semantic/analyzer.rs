@@ -787,7 +787,10 @@ impl<'a> SemanticAnalyzer<'a> {
 
                     if lhs_base.ty() == self.registry.type_void || rhs_base.ty() == self.registry.type_void {
                         QualType::unqualified(self.registry.type_void_ptr)
-                    } else if lhs_base == rhs_base {
+                    } else if self
+                        .registry
+                        .is_compatible(self.registry.strip_all(lhs_base), self.registry.strip_all(rhs_base))
+                    {
                         lhs_promoted
                     } else {
                         let lhs_str = self.registry.display_type(lhs_promoted.ty());

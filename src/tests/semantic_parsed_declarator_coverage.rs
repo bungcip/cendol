@@ -50,7 +50,10 @@ fn test_array_qualifier_valid() {
 #[test]
 fn test_nested_array_valid() {
     // int[static 10][5] is valid in parameter (outermost has static)
-    run_pass("void f(void (*p)(int[static 10][5])) { }", CompilePhase::SemanticLowering);
+    run_pass(
+        "void f(void (*p)(int[static 10][5])) { }",
+        CompilePhase::SemanticLowering,
+    );
 }
 
 #[test]

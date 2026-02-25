@@ -9,6 +9,7 @@ use crate::{
     },
 };
 
+use crate::semantic::const_eval::eval_const_expr;
 use smallvec::{SmallVec, smallvec};
 use std::collections::{HashMap, HashSet};
 
@@ -200,7 +201,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn is_always_true(&self, expr: NodeRef) -> bool {
-        crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), expr).is_some_and(|v| v != 0)
+        eval_const_expr(&self.const_ctx(), expr).is_some_and(|v| v != 0)
     }
 
     fn contains_break(&self, node_ref: NodeRef) -> bool {
@@ -441,33 +442,32 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn check_scalar_condition(&mut self, condition: NodeRef) {
-        if let Some(mut cond_ty) = self.visit_node(condition) {
-            if cond_ty.is_array() || cond_ty.is_function() {
-                if cond_ty.is_array()
-                    && let NodeKind::Ident(name, _) = self.ast.get_kind(condition)
-                {
-                    self.report_warning(
-                        self.ast.get_span(condition),
-                        SemanticErrorKind::AddressOfArrayAlwaysTrue { name: *name },
-                    );
-                }
-                let decayed = self.registry.decay(cond_ty, TypeQualifiers::empty());
-                self.push_conversion(condition, Conversion::PointerDecay { to: decayed.ty() });
-                cond_ty = decayed;
-                self.semantic_info.types[condition.index()] = Some(cond_ty);
-            }
+        let Some(mut cond_ty) = self.visit_node(condition) else {
+            return;
+        };
 
-            if !cond_ty.is_scalar() {
-                let span = self.ast.get_span(condition);
-                let ty_str = self.registry.display_qual_type(cond_ty);
-                self.report_error(
-                    span,
-                    SemanticErrorKind::TypeMismatch {
-                        expected: "scalar type".to_string(),
-                        found: ty_str,
-                    },
+        if cond_ty.is_array() || cond_ty.is_function() {
+            if cond_ty.is_array()
+                && let NodeKind::Ident(name, _) = self.ast.get_kind(condition)
+            {
+                self.report_warning(
+                    self.ast.get_span(condition),
+                    SemanticErrorKind::AddressOfArrayAlwaysTrue { name: *name },
                 );
             }
+            cond_ty = self.registry.decay(cond_ty, TypeQualifiers::empty());
+            self.push_conversion(condition, Conversion::PointerDecay { to: cond_ty.ty() });
+            self.semantic_info.types[condition.index()] = Some(cond_ty);
+        }
+
+        if !cond_ty.is_scalar() {
+            self.report_error(
+                self.ast.get_span(condition),
+                SemanticErrorKind::TypeMismatch {
+                    expected: "scalar type".to_string(),
+                    found: self.registry.display_qual_type(cond_ty),
+                },
+            );
         }
     }
 
@@ -1219,7 +1219,7 @@ impl<'a> SemanticAnalyzer<'a> {
             } else {
                 // If it's a literal, check if conversion changes value
                 if is_literal {
-                    let from_val = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), rhs_ref);
+                    let from_val = eval_const_expr(&self.const_ctx(), rhs_ref);
                     if let Some(val) = from_val {
                         let to_ty = self.registry.get(lhs_ty.ty());
                         let truncated = to_ty.as_ref().truncate_int(val);
@@ -1897,24 +1897,21 @@ impl<'a> SemanticAnalyzer<'a> {
 
         let mut start_val = None;
         if let Some(start_ref) = start {
-            let start_ty = self.visit_node(start_ref);
-            start_val = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), start_ref);
-
-            if self.switch_depth > 0 && (start_val.is_none() || start_ty.is_none_or(|ty| !ty.is_integer())) {
+            let ty = self.visit_node(start_ref);
+            start_val = eval_const_expr(&self.const_ctx(), start_ref);
+            if self.switch_depth > 0 && (start_val.is_none() || ty.is_none_or(|t| !t.is_integer())) {
                 self.report_error(self.ast.get_span(start_ref), SemanticErrorKind::NonConstantCaseValue);
             }
         }
 
-        let mut end_val = if let Some(end_ref) = end {
-            let end_ty = self.visit_node(end_ref);
-            let val = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), end_ref);
-            if self.switch_depth > 0 && (val.is_none() || end_ty.is_none_or(|ty| !ty.is_integer())) {
+        let mut end_val = start_val;
+        if let Some(end_ref) = end {
+            let ty = self.visit_node(end_ref);
+            end_val = eval_const_expr(&self.const_ctx(), end_ref);
+            if self.switch_depth > 0 && (end_val.is_none() || ty.is_none_or(|t| !t.is_integer())) {
                 self.report_error(self.ast.get_span(end_ref), SemanticErrorKind::NonConstantCaseValue);
             }
-            val
-        } else {
-            start_val
-        };
+        }
 
         if self.switch_depth > 0 && start.is_some() {
             // Perform duplicate check using promoted type, but warn on unreachability using original type
@@ -1923,61 +1920,44 @@ impl<'a> SemanticAnalyzer<'a> {
 
             if let Some(ty) = promoted_ty {
                 let ty_ref = ty.ty();
-                if let Some(v) = start_val {
-                    let truncated = self.registry.get(ty_ref).as_ref().truncate_int(v);
-                    start_val = Some(truncated);
+                let start_span = span;
+                let end_span = end.map(|e| self.ast.get_span(e));
 
-                    // Warning check against original type
+                let truncate = |this: &mut Self, val: i64, err_span: SourceSpan| -> i64 {
+                    let truncated = this.registry.get(ty_ref).as_ref().truncate_int(val);
                     if let Some(orig) = orig_ty {
-                        let orig_truncated = self.registry.get(orig.ty()).as_ref().truncate_int(v);
-                        if orig_truncated != v {
-                            self.report_warning(
-                                span,
+                        let orig_truncated = this.registry.get(orig.ty()).as_ref().truncate_int(val);
+                        if orig_truncated != val {
+                            this.report_warning(
+                                err_span,
                                 SemanticErrorKind::SwitchCaseOverflow {
-                                    from: v.to_string(),
+                                    from: val.to_string(),
                                     to: orig_truncated.to_string(),
                                 },
                             );
                         }
                     }
-                }
-                if let Some(e_ref) = end {
-                    if let Some(v) = end_val {
-                        let truncated = self.registry.get(ty_ref).as_ref().truncate_int(v);
-                        end_val = Some(truncated);
+                    truncated
+                };
 
-                        // Warning check against original type
-                        if let Some(orig) = orig_ty {
-                            let orig_truncated = self.registry.get(orig.ty()).as_ref().truncate_int(v);
-                            if orig_truncated != v {
-                                self.report_warning(
-                                    self.ast.get_span(e_ref),
-                                    SemanticErrorKind::SwitchCaseOverflow {
-                                        from: v.to_string(),
-                                        to: orig_truncated.to_string(),
-                                    },
-                                );
-                            }
-                        }
-                    }
+                start_val = start_val.map(|v| truncate(self, v, start_span));
+                if let Some(s) = end_span {
+                    end_val = end_val.map(|v| truncate(self, v, s));
                 } else {
                     end_val = start_val;
                 }
             }
 
-            if let (Some(start_v), Some(end_v)) = (start_val, end_val) {
-                let mut duplicate_val = None;
-                if let Some(cases) = self.switch_cases.last_mut() {
-                    for val in start_v..=end_v {
-                        if !cases.insert(val) {
-                            duplicate_val = Some(val);
-                            break;
-                        }
-                    }
-                }
-                if let Some(val) = duplicate_val {
-                    self.report_error(span, SemanticErrorKind::DuplicateCase { value: val.to_string() });
-                }
+            if let (Some(start_v), Some(end_v)) = (start_val, end_val)
+                && let Some(cases) = self.switch_cases.last_mut()
+                && let Some(duplicate_val) = (start_v..=end_v).find(|&val| !cases.insert(val))
+            {
+                self.report_error(
+                    span,
+                    SemanticErrorKind::DuplicateCase {
+                        value: duplicate_val.to_string(),
+                    },
+                );
             }
         }
 
@@ -2508,7 +2488,7 @@ impl<'a> SemanticAnalyzer<'a> {
             );
         }
 
-        match crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), cond) {
+        match eval_const_expr(&self.const_ctx(), cond) {
             Some(0) => {
                 let message = match self.ast.get_kind(msg_ref) {
                     NodeKind::Literal(literal::Literal::String(s)) => s.as_str().to_string(),
@@ -2848,7 +2828,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 };
 
                 self.visit_node(index);
-                let index_val = crate::semantic::const_eval::eval_const_expr(&self.const_ctx(), index);
+                let index_val = eval_const_expr(&self.const_ctx(), index);
                 let Some(index_val) = index_val else {
                     // C11 7.19p3: "integer constant expression"
                     self.report_error(self.ast.get_span(index), SemanticErrorKind::NonConstantInitializer);

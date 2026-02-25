@@ -1193,13 +1193,7 @@ impl TypeRegistry {
 
         let ty_ref = qt.ty();
         match &self.get(ty_ref).kind {
-            TypeKind::Record { members, is_union, .. } => {
-                if *is_union {
-                    // For unions, the entire union is not "const" just because one member is.
-                    // Only the specific const member access is restricted, handled in check_lvalue.
-                    return false;
-                }
-
+            TypeKind::Record { members, .. } => {
                 for member in members.iter() {
                     // Pointers are only const if the pointer itself is const (checked by member.member_type.is_const() in recursive call),
                     // not if the pointee is const.

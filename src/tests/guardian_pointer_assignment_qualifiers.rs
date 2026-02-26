@@ -1,5 +1,5 @@
-use crate::tests::test_utils::{run_pass, run_pass_with_diagnostic_message};
 use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils::{run_pass, run_pass_with_diagnostic_message};
 
 #[test]
 fn test_pointer_assignment_discards_const() {

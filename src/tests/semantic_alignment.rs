@@ -129,3 +129,77 @@ fn test_alignas_constraints() {
         "alignment specifier specifies 1-byte alignment, but 4-byte alignment is required",
     );
 }
+#[test]
+fn test_sizeof_function_type_name() {
+    // C11 6.5.3.4p1: The sizeof operator shall not be applied to ... the parenthesized name of [function type].
+    run_fail_with_message(
+        r#"
+        int main() {
+            return sizeof(int(int));
+        }
+        "#,
+        "Invalid application of 'sizeof' to a function type",
+    );
+}
+
+#[test]
+fn test_alignof_function_type_name() {
+    // C11 6.5.3.4p1: The _Alignof operator shall not be applied to a function type or an incomplete type.
+    run_fail_with_message(
+        r#"
+        int main() {
+            return _Alignof(int(int));
+        }
+        "#,
+        "Invalid application of '_Alignof' to a function type",
+    );
+}
+
+#[test]
+fn test_alignof_incomplete_type_name() {
+    // C11 6.5.3.4p1: The _Alignof operator shall not be applied to a function type or an incomplete type.
+    run_fail_with_message(
+        r#"
+        int main() {
+            return _Alignof(void);
+        }
+        "#,
+        "Invalid application of '_Alignof' to an incomplete type",
+    );
+}
+
+#[test]
+fn test_alignof_incomplete_struct_name() {
+    run_fail_with_message(
+        r#"
+        struct S;
+        int main() {
+            return _Alignof(struct S);
+        }
+        "#,
+        "Invalid application of '_Alignof' to an incomplete type",
+    );
+}
+
+#[test]
+fn test_non_constant_alignment() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            int x = 8;
+            _Alignas(x) int arr[10];
+        }
+        "#,
+        "not a constant expression",
+    );
+}
+
+#[test]
+fn test_invalid_alignas_non_power_of_two() {
+    run_fail_with_message(
+        r#"
+        _Alignas(3) int x;
+        "#,
+        "requested alignment is not a positive power of 2",
+    );
+}

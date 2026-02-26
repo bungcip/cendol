@@ -1,6 +1,6 @@
 use crate::driver::artifact::CompilePhase;
 use crate::tests::semantic_common::{setup_lowering, setup_mir};
-use crate::tests::test_utils::run_pass;
+use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pass_with_diagnostic_message};
 
 fn find_var_type(ast: &crate::ast::Ast, target_name: &str) -> crate::semantic::types::QualType {
     crate::tests::semantic_common::find_var_decl(ast, target_name).ty
@@ -143,4 +143,111 @@ fn test_vla_in_block_scope() {
         return
     }
     ");
+}
+
+#[test]
+fn test_array_in_condition_warning() {
+    let source = r#"
+        int main() {
+            int a[5];
+            if (a) {
+                return 0;
+            }
+            return 1;
+        }
+    "#;
+    run_pass_with_diagnostic_message(
+        source,
+        CompilePhase::Mir,
+        "address of array 'a' will always evaluate to 'true'",
+    );
+}
+
+#[test]
+fn test_array_parameter_qualifiers_pass() {
+    // C11 6.7.6.3p7: a[const] is adjusted to * const a
+    run_fail_with_message(
+        "void f(int a[const 10]) { a = 0; }",
+        "cannot assign to read-only location",
+    );
+}
+
+#[test]
+fn test_array_parameter_static_pass() {
+    run_pass("void f(int a[static 10]) { }", CompilePhase::Mir);
+}
+
+#[test]
+fn test_array_of_pointers_static_pass() {
+    // int *a[static 10] -> array 10 of pointer to int.
+    // Adjusted to: int ** const a (or similar)
+    // Dimension 10 is outermost.
+    run_pass("void f(int *a[static 10]) { }", CompilePhase::Mir);
+}
+
+#[test]
+fn test_array_qualifiers_outside_parameter_fail() {
+    run_fail_with_message(
+        "int a[const 10];",
+        "type qualifiers in array declarator only allowed in function parameters",
+    );
+}
+
+#[test]
+fn test_array_static_outside_parameter_fail() {
+    run_fail_with_message(
+        "int a[static 10];",
+        "static in array declarator only allowed in function parameters",
+    );
+}
+
+#[test]
+fn test_array_static_not_outermost_fail() {
+    run_fail_with_message(
+        "void f(int a[10][static 5]) { }",
+        "static in array declarator only allowed in outermost array type",
+    );
+}
+
+#[test]
+fn test_array_qualifier_not_outermost_fail() {
+    run_fail_with_message(
+        "void f(int a[10][const 5]) { }",
+        "type qualifiers in array declarator only allowed in outermost array type",
+    );
+}
+
+#[test]
+fn test_pointer_to_array_static_fail() {
+    // int (*a)[static 10] -> pointer to array 10 of int.
+    // Top level is Pointer. Array is NOT outermost derivation of the parameter.
+    run_fail_with_message(
+        "void f(int (*a)[static 10]) { }",
+        "static in array declarator only allowed in outermost array type",
+    );
+}
+
+#[test]
+fn test_array_of_incomplete_type() {
+    run_fail_with_message(
+        r#"
+        struct A;
+        int main() {
+            struct A arr[10];
+        }
+        "#,
+        "incomplete type",
+    );
+}
+
+#[test]
+fn test_negative_array_size() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            int a[-1];
+        }
+        "#,
+        "size of array has non-positive value",
+    );
 }

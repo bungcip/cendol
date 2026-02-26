@@ -1,5 +1,6 @@
 use crate::driver::artifact::CompilePhase;
 use crate::tests::semantic_common::{find_enum_constant, setup_lowering};
+use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pass_with_diagnostic};
 
 #[test]
 fn test_enum_constant_expression_basic() {
@@ -32,7 +33,158 @@ fn test_enum_constant_expression_reference() {
     // This is expected to fail or be incorrect with current implementation
     assert_eq!(find_enum_constant(&symbol_table, "B"), 15, "Enum B should be 15");
 }
-use crate::tests::test_utils::run_pass;
+
+#[test]
+fn test_enum_int_negative() {
+    // Enum fits in signed int (min < 0, but within i32 range)
+    let code = r#"
+        enum E { A = -1 };
+        int main() {
+            _Static_assert(_Generic((enum E)0, int: 1, default: 0), "expected int");
+            return 0;
+        }
+    "#;
+    run_pass(code, CompilePhase::Mir);
+}
+
+#[test]
+fn test_enum_unsigned_long_long() {
+    // Enum > u32 max. Should be unsigned long long.
+    // 4294967296 is 2^32.
+    let code = r#"
+        enum E { A = 4294967296 };
+        int main() {
+            // Depending on platform, this might be unsigned long or unsigned long long.
+            // On 64-bit Linux, long is 64-bit, so it might fit there too.
+            // But my implementation logic:
+            // if min >= 0:
+            //   if max <= u32_max: uint
+            //   else: ulonglong (hardcoded fallback)
+            _Static_assert(_Generic((enum E)0, unsigned long long: 1, default: 0), "expected unsigned long long");
+            return 0;
+        }
+    "#;
+    run_pass(code, CompilePhase::Mir);
+}
+
+#[test]
+fn test_enum_long_long_too_small() {
+    // Enum < i32 min. Should be long long.
+    // -2147483649
+    let code = r#"
+        enum E { A = -2147483649 };
+        int main() {
+            // Implementation logic:
+            // min < 0 -> not uint.
+            // min < int_min -> not int.
+            // Fallback: long long.
+            _Static_assert(_Generic((enum E)0, long long: 1, default: 0), "expected long long");
+            return 0;
+        }
+    "#;
+    run_pass(code, CompilePhase::Mir);
+}
+
+#[test]
+fn test_enum_long_long_mixed_range() {
+    // Enum has negative value AND positive value > i32 max.
+    // Cannot be int (too big). Cannot be uint (negative).
+    // Should be long long.
+    let code = r#"
+        enum E { A = -1, B = 2147483648 };
+        int main() {
+            _Static_assert(_Generic((enum E)0, long long: 1, default: 0), "expected long long");
+            return 0;
+        }
+    "#;
+    run_pass(code, CompilePhase::Mir);
+}
+
+#[test]
+fn warns_on_large_enum_constant() {
+    let source = "enum T { A = 4294967296LL };";
+    run_pass_with_diagnostic(
+        source,
+        CompilePhase::Mir,
+        "enumerator value 4294967296 for 'A' is not representable as 'int'",
+        1,
+        10,
+    );
+}
+
+#[test]
+fn accepts_boundary_enum_constants() {
+    let source = "
+        enum T {
+            MAX_INT = 2147483647,
+            MIN_INT = -2147483648
+        };
+    ";
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn warns_on_overflow_next_value() {
+    let source = "enum T { A = 2147483647, B };";
+    run_pass_with_diagnostic(
+        source,
+        CompilePhase::Mir,
+        "enumerator value 2147483648 for 'B' is not representable as 'int'",
+        1,
+        26,
+    );
+}
+
+#[test]
+fn warns_on_underflow_large_negative() {
+    let source = "enum T { A = -2147483649LL };";
+    run_pass_with_diagnostic(
+        source,
+        CompilePhase::Mir,
+        "enumerator value -2147483649 for 'A' is not representable as 'int'",
+        1,
+        10,
+    );
+}
+
+#[test]
+fn warns_on_extreme_i64_values() {
+    let source = "enum T { A = 9223372036854775807LL };";
+    run_pass_with_diagnostic(
+        source,
+        CompilePhase::Mir,
+        "enumerator value 9223372036854775807 for 'A' is not representable as 'int'",
+        1,
+        10,
+    );
+}
+
+#[test]
+fn test_enum_redefinition_enumerator() {
+    run_fail_with_message(
+        r#"
+        enum E {
+            A,
+            B,
+            A
+        };
+        "#,
+        "redefinition",
+    );
+}
+
+#[test]
+fn test_enumerator_outside_enum() {
+    run_fail_with_message(
+        r#"
+        enum E { A, B };
+        int main() {
+            int x = C;
+        }
+        "#,
+        "Undeclared",
+    );
+}
 
 #[test]
 fn test_enum_init_with_other_enum() {

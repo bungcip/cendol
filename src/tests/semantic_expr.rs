@@ -903,3 +903,99 @@ fn test_reverse_subscript_with_pointer() {
     "#;
     run_pass(src, CompilePhase::Mir);
 }
+
+// Consolidated from guardian_addr_sizeof_constraints.rs, guardian_pointer_arithmetic.rs, and guardian_type_limits.rs
+#[test]
+fn test_address_of_bitfield_prohibited() {
+    run_fail_with_message(
+        r#"
+        struct S { int x : 1; };
+        int main() {
+            struct S s;
+            int *p = &s.x;
+            return 0;
+        }
+        "#,
+        "cannot take address of bit-field",
+    );
+}
+
+#[test]
+fn test_address_of_register_prohibited() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            register int x = 0;
+            int *p = &x;
+            return 0;
+        }
+        "#,
+        "cannot take address of 'register' variable",
+    );
+}
+
+#[test]
+fn test_sizeof_bitfield_prohibited() {
+    run_fail_with_message(
+        r#"
+        struct S { int x : 1; };
+        int main() {
+            struct S s;
+            return sizeof(s.x);
+        }
+        "#,
+        "cannot apply 'sizeof' to a bit-field",
+    );
+}
+
+#[test]
+fn test_address_of_array_member_identity() {
+    run_pass(
+        r#"
+        struct A
+        {
+            int k[15];
+        };
+        int main()
+        {
+            struct A s;
+            int (*p)[15] = &s.k;
+            return 35;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_pointer_arithmetic_correctness() {
+    use crate::tests::codegen_common::run_c_code_with_output;
+    let source = r#"
+        int printf(const char* format, ...);
+        typedef struct { long a, b, c, d; } MyStruct;
+        static const MyStruct arr[] = { {1, 1, 1, 1}, {2, 2, 2, 2} };
+        int main() {
+            const MyStruct* p_index = &arr[1];
+            const MyStruct* p_arith = arr + 1;
+            if (p_arith != p_index) return 1;
+            printf("PASSED\n");
+            return 0;
+        }
+    "#;
+    let output = run_c_code_with_output(source);
+    assert!(output.contains("PASSED"));
+}
+
+#[test]
+fn test_type_limits_and_token_pasting() {
+    let source = r#"
+        _Static_assert(__INT_MAX__ == 2147483647, "INT_MAX");
+        #define PASTE(x, y) x ## y
+        int PASTE(test_, \
+var) = 42;
+        int main() {
+            return test_var - 42;
+        }
+    "#;
+    run_pass(source, CompilePhase::EmitObject);
+}

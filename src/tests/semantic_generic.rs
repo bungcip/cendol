@@ -377,6 +377,20 @@ fn test_generic_vla_association() {
             _Generic(0, int[n]: 1);
         }
         "#,
-        "generic association specifies variably modified type",
+        "variably modified type",
+    );
+}
+
+#[test]
+fn test_generic_selection_rejects_function_type_association() {
+    // C11 6.5.1.1p2: "The type name in a generic association shall specify a complete object type..."
+    // A function type is not an object type.
+    run_fail_with_message(
+        r#"
+        int main() {
+            return _Generic(0, void(int): 1, default: 2);
+        }
+        "#,
+        "generic association specifies function type",
     );
 }

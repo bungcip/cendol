@@ -191,3 +191,165 @@ extern int T;
         "redefinition of 'T'",
     );
 }
+
+// Consolidated from guardian_typedef_constraints.rs and semantic_negative.rs
+#[test]
+fn test_typedef_redefinition_compatible_but_not_same() {
+    run_fail_with_message(
+        r#"
+        typedef int A[];
+        typedef int A[10];
+        "#,
+        "redefinition of 'A' with a different type",
+    );
+}
+
+#[test]
+fn test_typedef_redefinition_defines_new_struct() {
+    run_fail_with_message(
+        r#"
+        typedef struct { int x; } S;
+        typedef struct { int x; } S;
+        "#,
+        "redefinition of 'S'",
+    );
+}
+
+#[test]
+fn test_typedef_redefinition_using_same_tag_ok() {
+    run_pass(
+        r#"
+        struct s { int x; };
+        typedef struct s S;
+        typedef struct s S;
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_typedef_redefinition_function_params_ok() {
+    run_pass(
+        r#"
+        typedef int (*F)(int a);
+        typedef int (*F)(int b);
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_typedef_redefinition_function_params_different_type_rejects() {
+    run_fail_with_message(
+        r#"
+        typedef int (*F)(int a);
+        typedef int (*F)(float b);
+        "#,
+        "redefinition of 'F' with a different type",
+    );
+}
+
+#[test]
+fn test_undeclared_variable() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            x = 5;
+        }
+        "#,
+        "Undeclared",
+    );
+}
+
+// Consolidated from guardian_linkage.rs and guardian_tentative_definitions.rs
+#[test]
+fn test_static_followed_by_extern_variable_ok() {
+    run_pass(
+        r#"
+        static int x;
+        extern int x;
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_block_scope_static_shadowing_global_is_ok() {
+    run_pass(
+        r#"
+        int x;
+        void f(void) {
+            static int x; // Shadows global x, no linkage conflict
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_block_scope_extern_refers_to_global_static() {
+    run_pass(
+        r#"
+        static int x;
+        void f(void) {
+            extern int x;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_static_followed_by_plain_variable_ok() {
+    run_pass(
+        r#"
+        static int x;
+        int x;
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_static_followed_by_extern_function_ok() {
+    run_pass(
+        r#"
+        static void f(void);
+        extern void f(void);
+        void f(void) {}
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_file_scope_tentative_external_linkage_ok() {
+    run_pass("int arr[]; int main() { return 0; }", CompilePhase::Mir);
+}
+
+#[test]
+fn test_extern_incomplete_array_ok() {
+    run_pass("extern int arr[];", CompilePhase::Mir);
+    run_pass("void f() { extern int arr[]; }", CompilePhase::Mir);
+}
+
+#[test]
+fn test_void_parameter_ok() {
+    run_pass("void f(void) {}", CompilePhase::Mir);
+}
+
+#[test]
+fn test_array_parameter_decay_ok() {
+    run_pass("void f(int arr[]) {}", CompilePhase::Mir);
+}
+
+#[test]
+fn test_incomplete_type_in_prototype_ok() {
+    run_pass("struct S; void f(struct S s);", CompilePhase::Mir);
+    run_pass("void f(int arr[]);", CompilePhase::Mir);
+}
+
+#[test]
+fn test_initialized_array_block_scope_ok() {
+    run_pass("void f() { int a[] = {1, 2, 3}; }", CompilePhase::Mir);
+}

@@ -74,3 +74,17 @@ fn test_atomic_specifier_success() {
         "_Atomic(type-name) specifier cannot be used with atomic type",
     );
 }
+
+// Consolidated from guardian_atomic_void_constraints.rs
+#[test]
+fn test_atomic_specifier_on_void_prohibited() {
+    run_fail_with_message(
+        "typedef _Atomic(void) av;",
+        "_Atomic(type-name) specifier cannot be used with void type",
+    );
+}
+
+#[test]
+fn test_atomic_qualifier_on_void_prohibited() {
+    run_fail_with_message("_Atomic void *p;", "_Atomic qualifier cannot be used with void type");
+}

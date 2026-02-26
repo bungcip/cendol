@@ -1,4 +1,4 @@
-use crate::tests::test_utils::{run_fail_with_message};
+use crate::tests::test_utils::run_fail_with_message;
 
 #[test]
 fn test_offsetof_member_on_non_record_base() {
@@ -11,10 +11,7 @@ fn test_offsetof_member_on_non_record_base() {
         }
     "#;
     // Error: "member reference base type 'int' is not a structure or union"
-    run_fail_with_message(
-        source,
-        "member reference base type 'int' is not a structure or union",
-    );
+    run_fail_with_message(source, "member reference base type 'int' is not a structure or union");
 }
 
 #[test]
@@ -71,8 +68,5 @@ fn test_offsetof_member_on_pointer_with_dot() {
         }
     "#;
     // Error: "member reference base type 'int*' is not a structure or union"
-    run_fail_with_message(
-        source,
-        "member reference base type 'int*' is not a structure or union",
-    );
+    run_fail_with_message(source, "member reference base type 'int*' is not a structure or union");
 }

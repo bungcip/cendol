@@ -270,6 +270,8 @@ fn test_unsigned_arithmetic() {
         "((unsigned long)-1) >> 1",
         "((unsigned long)-1) > 10",
         "((unsigned long)-1) < 10",
+        "((unsigned long)-1) >= 10",
+        "((unsigned long)-1) <= 10",
     ]);
     insta::assert_snapshot!(output, @r"
     Expression: ((unsigned long)-1) / 25
@@ -285,6 +287,12 @@ fn test_unsigned_arithmetic() {
     Result: 1
     ---
     Expression: ((unsigned long)-1) < 10
+    Result: 0
+    ---
+    Expression: ((unsigned long)-1) >= 10
+    Result: 1
+    ---
+    Expression: ((unsigned long)-1) <= 10
     Result: 0
     ---
     ");

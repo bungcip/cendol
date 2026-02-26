@@ -1917,9 +1917,16 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             };
 
             // Now, assign the resolved value to the place
-            let value = rvalue_result;
+            let value_type = ctx.builder.func.dfg.value_type(rvalue_result);
+            // Ensure value matches expected type (truncating if necessary)
+            let value = emit_type_conversion(
+                rvalue_result,
+                value_type,
+                expected_type,
+                place_mir_type.is_signed(),
+                ctx.builder,
+            );
             {
-                let place_type_id = lower_place_type_id(place, ctx.mir, ctx.pointee_to_pointer);
                 let mir_type = ctx.mir.get_type(place_type_id);
 
                 if mir_type.is_aggregate() {

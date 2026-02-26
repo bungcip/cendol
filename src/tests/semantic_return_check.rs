@@ -13,3 +13,13 @@ fn test_return_struct_in_int_function() {
     "#;
     run_fail_with_message(code, "type mismatch: expected int, found struct (anonymous)");
 }
+
+#[test]
+fn test_return_missing_value() {
+    let code = r#"
+    int foo() {
+        return;
+    }
+    "#;
+    run_fail_with_message(code, "non-void function 'foo' should return a value");
+}

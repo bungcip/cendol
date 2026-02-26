@@ -309,6 +309,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         type_kind: "function".to_string(),
                     },
                 });
+            } else if base.is_void() {
+                self.report_error(SemanticError {
+                    span,
+                    kind: SemanticErrorKind::InvalidAtomicQualifier {
+                        type_kind: "void".to_string(),
+                    },
+                });
             }
         }
         self.registry.merge_qualifiers(base, add)
@@ -838,6 +845,13 @@ fn resolve_type_specifier(
                     span,
                     kind: SemanticErrorKind::InvalidAtomicSpecifier {
                         reason: "function type".to_string(),
+                    },
+                });
+            } else if qt.is_void() {
+                ctx.report_error(SemanticError {
+                    span,
+                    kind: SemanticErrorKind::InvalidAtomicSpecifier {
+                        reason: "void type".to_string(),
                     },
                 });
             } else if qt.qualifiers().contains(TypeQualifiers::ATOMIC) {

@@ -74,6 +74,7 @@ pub mod driver_defines;
 pub mod guardian_addr_sizeof_constraints;
 pub mod guardian_alignof_sizeof_function;
 pub mod guardian_array_parameter_qualifiers;
+pub mod guardian_atomic_void_constraints;
 pub mod guardian_bitfields;
 pub mod guardian_enum_constants;
 pub mod guardian_function_specifiers;

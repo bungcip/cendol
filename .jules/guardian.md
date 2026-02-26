@@ -79,3 +79,8 @@ Action: Enforce "immediacy" for floating constants in integer constant evaluatio
 
 Learning: C11 6.7.2.2p2 requires that enumeration constants shall be representable as an 'int'. While many compilers allow larger values as an extension (supporting 'long' or 'unsigned long' underlying types for the enum itself), strict compliance requires diagnosing values outside the 'int' range. Implementing this as a warning preserves compatibility with existing extensions while meeting the C standard's requirement for a diagnostic on constraint violations.
 Action: Enforce 'int' range checks for all enumeration constants during semantic lowering and ensure that both explicit values and implicit incremented values are validated.
+
+2025-05-30 - [_Atomic Void Prohibition]
+
+Learning: C11 _Atomic constraints (6.7.2.4p3 for specifiers and 6.7.3p5 for qualifiers) require that it only be applied to an object type that is not an array. While incomplete types (like 'struct S;') are object types, 'void' is explicitly NOT an object type per 6.2.5p1. Therefore, both _Atomic(void) and _Atomic void are constraint violations and must be rejected by the compiler.
+Action: Enforce "object type" constraints by specifically rejecting the 'void' type in both qualifier merging and specifier resolution phases of semantic lowering.

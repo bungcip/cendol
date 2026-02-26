@@ -582,3 +582,16 @@ fn test_undeclared_function() {
         "Undeclared",
     );
 }
+
+#[test]
+fn test_void_pointer_sub_int() {
+    run_fail_with_message(
+        r#"
+        int main() {
+            void *p;
+            p - 1;
+        }
+        "#,
+        "Invalid operands for binary operation",
+    );
+}

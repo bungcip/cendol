@@ -1,6 +1,6 @@
 use crate::driver::artifact::CompilePhase;
 use crate::tests::semantic_common::setup_mir;
-use crate::tests::test_utils::{run_fail_with_message, run_pass};
+use crate::tests::test_utils::{check_diagnostic_message_only, run_fail, run_fail_with_message, run_pass};
 
 #[test]
 fn test_array_param_qualifiers_decay() {
@@ -231,4 +231,44 @@ fn test_pretty_function_identifier() {
         }
     "#;
     run_pass(code, CompilePhase::SemanticLowering);
+}
+
+#[test]
+fn test_array_argument_to_int_parameter() {
+    let source = r#"
+        void takes_int(int x) { (void)x; }
+        void test() {
+            int arr[10];
+            takes_int(arr);
+        }
+    "#;
+    let driver = run_fail(source, CompilePhase::Mir);
+    check_diagnostic_message_only(&driver, "expected int, found int*");
+}
+
+#[test]
+fn test_struct_argument_to_int_parameter() {
+    let source = r#"
+        struct S { int x; };
+        void takes_int(int x) { (void)x; }
+        void test() {
+            struct S s;
+            takes_int(s);
+        }
+    "#;
+    let driver = run_fail(source, CompilePhase::Mir);
+    check_diagnostic_message_only(&driver, "expected int, found struct S");
+}
+
+#[test]
+fn test_pointer_argument_to_int_parameter() {
+    let source = r#"
+        void takes_int(int x) { (void)x; }
+        void test() {
+            int *ptr;
+            takes_int(ptr);
+        }
+    "#;
+    let driver = run_fail(source, CompilePhase::Mir);
+    check_diagnostic_message_only(&driver, "expected int, found int*");
 }

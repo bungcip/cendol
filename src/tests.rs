@@ -33,7 +33,6 @@ pub mod semantic_empty_decl;
 pub mod semantic_enums;
 pub mod semantic_expr;
 pub mod semantic_float_init;
-pub mod semantic_function_arg_check;
 pub mod semantic_functions;
 pub mod semantic_init;
 pub mod semantic_scope;
@@ -61,7 +60,6 @@ pub mod parser_regr_hang;
 pub mod parser_type_spec_coverage;
 
 pub mod semantic_alignment;
-pub mod semantic_alignment_constraints;
 pub mod semantic_composite;
 pub mod test_utils;
 

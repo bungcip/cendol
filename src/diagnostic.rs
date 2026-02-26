@@ -51,10 +51,20 @@ pub enum ParseErrorKind {
 }
 
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
-#[derive(Default)]
 pub struct DiagnosticEngine {
     pub diagnostics: Vec<Diagnostic>,
     pub error_limit: Option<usize>,
+    pub use_colors: bool,
+}
+
+impl Default for DiagnosticEngine {
+    fn default() -> Self {
+        Self {
+            diagnostics: Vec::new(),
+            error_limit: None,
+            use_colors: true,
+        }
+    }
 }
 
 impl DiagnosticEngine {
@@ -62,6 +72,7 @@ impl DiagnosticEngine {
         Self {
             diagnostics: Vec::new(),
             error_limit: None,
+            use_colors: true,
         }
     }
 
@@ -97,13 +108,128 @@ impl DiagnosticEngine {
         self.diagnostics.iter().any(|d| d.level == DiagnosticLevel::Error)
     }
 
-    pub(crate) fn diagnostics(&self) -> &[Diagnostic] {
-        &self.diagnostics
-    }
-
     pub(crate) fn report<T: IntoDiagnostic>(&mut self, error: T) {
         for diagnostic in error.into_diagnostic() {
             self.report_diagnostic(diagnostic);
+        }
+    }
+
+    fn format_location(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
+        let path = source_manager
+            .get_file_info(diag.span.source_id())
+            .map(|fi| fi.path.to_str().unwrap_or("<unknown>"))
+            .unwrap_or("<unknown>");
+
+        // Get line and column information
+        let line_col = source_manager.get_line_column(diag.span.start());
+        if let Some((line, col)) = line_col {
+            format!("{}:{}:{}", path, line, col)
+        } else {
+            path.to_string()
+        }
+    }
+
+    fn level<'a>(&self, diag: &Diagnostic) -> Level<'a> {
+        match diag.level {
+            DiagnosticLevel::Error => Level::ERROR,
+            DiagnosticLevel::Warning => Level::WARNING,
+            DiagnosticLevel::Note => Level::NOTE,
+        }
+    }
+
+    fn create_snippet<'a>(
+        &self,
+        span: SourceSpan,
+        message: &'a str,
+        source_manager: &'a SourceManager,
+    ) -> Snippet<'a, annotate_snippets::Annotation<'a>> {
+        let source_buffer = source_manager.get_buffer(span.source_id());
+        let source = std::str::from_utf8(source_buffer).unwrap_or("");
+        let path = source_manager
+            .get_file_info(span.source_id())
+            .map(|fi| fi.path.to_str().unwrap_or("<unknown>"))
+            .unwrap_or("<unknown>");
+
+        let mut snippet = Snippet::source(source).line_start(1).path(path);
+
+        let annotation_kind = AnnotationKind::Primary;
+
+        snippet = snippet.annotation(
+            annotation_kind
+                .span(span.start().offset() as usize..span.end().offset() as usize)
+                .label(message),
+        );
+
+        snippet
+    }
+
+    /// Format a single diagnostic with rich source code context
+    fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
+        let renderer = if self.use_colors {
+            Renderer::styled().decor_style(DecorStyle::Unicode)
+        } else {
+            Renderer::plain()
+        };
+
+        // If it's a built-in source ID (e.g. command line define), simple print
+        if diag.span.is_source_id_builtin() {
+            return format!("{}: {}", self.format_location(diag, source_manager), diag.message);
+        }
+
+        // Primary error snippet
+        let snippet = self.create_snippet(diag.span, &diag.message, source_manager);
+        // Use primary_title instead of title
+        let mut group = self.level(diag).primary_title(&diag.message).element(snippet);
+
+        for hint in &diag.hints {
+            group = group.element(Level::HELP.message(hint));
+        }
+
+        // Handle macro expansion history
+        // We must collect strings first to ensure they live long enough for the snippets
+        let mut expansion_history = Vec::new();
+        let mut current_id = diag.span.source_id();
+
+        while let Some(file_info) = source_manager.get_file_info(current_id) {
+            if let Some(include_loc) = file_info.include_loc {
+                // Determine if this is a macro expansion (virtual file) or an include
+                let is_macro = file_info.path.to_str().is_some_and(|s| s.starts_with("<macro_"));
+                let note_msg = if is_macro {
+                    let macro_name = file_info
+                        .path
+                        .to_str()
+                        .unwrap()
+                        .trim_start_matches("<macro_")
+                        .trim_end_matches('>');
+                    format!("expanded from macro '{}'", macro_name)
+                } else {
+                    "included from here".to_string()
+                };
+
+                // For visualization, use a 1-char span at the include/expansion location
+                let exp_span = SourceSpan::new_with_length(include_loc.source_id(), include_loc.offset(), 1);
+                expansion_history.push((exp_span, note_msg));
+
+                current_id = include_loc.source_id();
+            } else {
+                break;
+            }
+        }
+
+        for (span, msg) in &expansion_history {
+            let exp_snippet = self.create_snippet(*span, msg, source_manager);
+            group = group.element(exp_snippet);
+        }
+
+        let report = &[group];
+        renderer.render(report).to_string()
+    }
+
+    /// Print all diagnostics to stderr
+    pub(crate) fn print_diagnostics(&self, source_manager: &SourceManager) {
+        for diag in &self.diagnostics {
+            let formatted = self.format_diagnostic(diag, source_manager);
+            eprintln!("{}", formatted);
         }
     }
 }
@@ -125,9 +251,16 @@ impl IntoDiagnostic for ParseError {
 
 impl IntoDiagnostic for SemanticError {
     fn into_diagnostic(self) -> Vec<Diagnostic> {
-        // Determine if this should be a warning or error
         let level = match &self.kind {
-            SemanticErrorKind::EmptyDeclaration => DiagnosticLevel::Warning,
+            SemanticErrorKind::EmptyDeclaration
+            | SemanticErrorKind::IncompatiblePointerComparison { .. }
+            | SemanticErrorKind::IncompatiblePointerTypes { .. }
+            | SemanticErrorKind::PointerAssignmentDiscardsQualifiers { .. }
+            | SemanticErrorKind::ReturnLocalAddress { .. }
+            | SemanticErrorKind::ImplicitConstantConversion { .. }
+            | SemanticErrorKind::SwitchCaseOverflow { .. }
+            | SemanticErrorKind::AddressOfArrayAlwaysTrue { .. }
+            | SemanticErrorKind::EnumeratorValueNotRepresentable { .. } => DiagnosticLevel::Warning,
             _ => DiagnosticLevel::Error,
         };
 
@@ -138,72 +271,30 @@ impl IntoDiagnostic for SemanticError {
             ..Default::default()
         }];
 
-        match &self.kind {
+        if let Some((message, span)) = match &self.kind {
             SemanticErrorKind::Redefinition { first_def, .. }
             | SemanticErrorKind::RedefinitionWithDifferentType { first_def, .. } => {
-                diagnostics.push(Diagnostic {
-                    level: DiagnosticLevel::Note,
-                    message: "previous definition is here".to_string(),
-                    span: *first_def,
-                    ..Default::default()
-                });
+                Some(("previous definition is here", *first_def))
             }
             SemanticErrorKind::GenericMultipleDefault { first_def, .. } => {
-                diagnostics.push(Diagnostic {
-                    level: DiagnosticLevel::Note,
-                    message: "previous default association is here".to_string(),
-                    span: *first_def,
-                    ..Default::default()
-                });
+                Some(("previous default association is here", *first_def))
             }
             SemanticErrorKind::GenericDuplicateMatch { first_def, .. } => {
-                diagnostics.push(Diagnostic {
-                    level: DiagnosticLevel::Note,
-                    message: "previous association is here".to_string(),
-                    span: *first_def,
-                    ..Default::default()
-                });
+                Some(("previous association is here", *first_def))
             }
-            SemanticErrorKind::ConflictingLinkage { first_def, .. } => {
-                diagnostics.push(Diagnostic {
-                    level: DiagnosticLevel::Note,
-                    message: "previous declaration is here".to_string(),
-                    span: *first_def,
-                    ..Default::default()
-                });
+            SemanticErrorKind::ConflictingLinkage { first_def, .. }
+            | SemanticErrorKind::DuplicateMember { first_def, .. }
+            | SemanticErrorKind::ConflictingTypes { first_def, .. } => {
+                Some(("previous declaration is here", *first_def))
             }
-            SemanticErrorKind::DuplicateMember { first_def, .. } => {
-                diagnostics.push(Diagnostic {
-                    level: DiagnosticLevel::Note,
-                    message: "previous declaration is here".to_string(),
-                    span: *first_def,
-                    ..Default::default()
-                });
-            }
-            SemanticErrorKind::ConflictingTypes { first_def, .. } => {
-                diagnostics.push(Diagnostic {
-                    level: DiagnosticLevel::Note,
-                    message: "previous declaration is here".to_string(),
-                    span: *first_def,
-                    ..Default::default()
-                });
-            }
-            _ => {}
-        }
-
-        // Handle warnings
-        if matches!(
-            self.kind,
-            SemanticErrorKind::IncompatiblePointerComparison { .. }
-                | SemanticErrorKind::IncompatiblePointerTypes { .. }
-                | SemanticErrorKind::PointerAssignmentDiscardsQualifiers { .. }
-                | SemanticErrorKind::ReturnLocalAddress { .. }
-                | SemanticErrorKind::ImplicitConstantConversion { .. }
-                | SemanticErrorKind::SwitchCaseOverflow { .. }
-                | SemanticErrorKind::AddressOfArrayAlwaysTrue { .. }
-                | SemanticErrorKind::EnumeratorValueNotRepresentable { .. }
-        ) {
-            diagnostics[0].level = DiagnosticLevel::Warning;
+            _ => None,
+        } {
+            diagnostics.push(Diagnostic {
+                level: DiagnosticLevel::Note,
+                message: message.to_string(),
+                span,
+                ..Default::default()
+            });
         }
 
         diagnostics
@@ -464,138 +555,6 @@ pub enum SemanticErrorKind {
 
     #[error("enumerator value {value} for '{name}' is not representable as 'int'")]
     EnumeratorValueNotRepresentable { name: NameId, value: i64 },
-}
-
-/// Configurable error formatter using annotate_snippets
-pub struct ErrorFormatter {
-    pub use_colors: bool,
-}
-
-impl Default for ErrorFormatter {
-    fn default() -> Self {
-        ErrorFormatter { use_colors: true }
-    }
-}
-
-impl ErrorFormatter {
-    fn format_location(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
-        let path = source_manager
-            .get_file_info(diag.span.source_id())
-            .map(|fi| fi.path.to_str().unwrap_or("<unknown>"))
-            .unwrap_or("<unknown>");
-
-        // Get line and column information
-        let line_col = source_manager.get_line_column(diag.span.start());
-        if let Some((line, col)) = line_col {
-            format!("{}:{}:{}", path, line, col)
-        } else {
-            path.to_string()
-        }
-    }
-
-    fn level<'a>(&self, diag: &Diagnostic) -> Level<'a> {
-        match diag.level {
-            DiagnosticLevel::Error => Level::ERROR,
-            DiagnosticLevel::Warning => Level::WARNING,
-            DiagnosticLevel::Note => Level::NOTE,
-        }
-    }
-
-    fn create_snippet<'a>(
-        &self,
-        span: SourceSpan,
-        message: &'a str,
-        source_manager: &'a SourceManager,
-    ) -> Snippet<'a, annotate_snippets::Annotation<'a>> {
-        let source_buffer = source_manager.get_buffer(span.source_id());
-        let source = std::str::from_utf8(source_buffer).unwrap_or("");
-        let path = source_manager
-            .get_file_info(span.source_id())
-            .map(|fi| fi.path.to_str().unwrap_or("<unknown>"))
-            .unwrap_or("<unknown>");
-
-        let mut snippet = Snippet::source(source).line_start(1).path(path);
-
-        let annotation_kind = AnnotationKind::Primary;
-
-        snippet = snippet.annotation(
-            annotation_kind
-                .span(span.start().offset() as usize..span.end().offset() as usize)
-                .label(message),
-        );
-
-        snippet
-    }
-
-    /// Format a single diagnostic with rich source code context
-    fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
-        let renderer = if self.use_colors {
-            Renderer::styled().decor_style(DecorStyle::Unicode)
-        } else {
-            Renderer::plain()
-        };
-
-        // If it's a built-in source ID (e.g. command line define), simple print
-        if diag.span.is_source_id_builtin() {
-            return format!("{}: {}", self.format_location(diag, source_manager), diag.message);
-        }
-
-        // Primary error snippet
-        let snippet = self.create_snippet(diag.span, &diag.message, source_manager);
-        // Use primary_title instead of title
-        let mut group = self.level(diag).primary_title(&diag.message).element(snippet);
-
-        for hint in &diag.hints {
-            group = group.element(Level::HELP.message(hint));
-        }
-
-        // Handle macro expansion history
-        // We must collect strings first to ensure they live long enough for the snippets
-        let mut expansion_history = Vec::new();
-        let mut current_id = diag.span.source_id();
-
-        while let Some(file_info) = source_manager.get_file_info(current_id) {
-            if let Some(include_loc) = file_info.include_loc {
-                // Determine if this is a macro expansion (virtual file) or an include
-                let is_macro = file_info.path.to_str().is_some_and(|s| s.starts_with("<macro_"));
-                let note_msg = if is_macro {
-                    let macro_name = file_info
-                        .path
-                        .to_str()
-                        .unwrap()
-                        .trim_start_matches("<macro_")
-                        .trim_end_matches('>');
-                    format!("expanded from macro '{}'", macro_name)
-                } else {
-                    "included from here".to_string()
-                };
-
-                // For visualization, use a 1-char span at the include/expansion location
-                let exp_span = SourceSpan::new_with_length(include_loc.source_id(), include_loc.offset(), 1);
-                expansion_history.push((exp_span, note_msg));
-
-                current_id = include_loc.source_id();
-            } else {
-                break;
-            }
-        }
-
-        for (span, msg) in &expansion_history {
-            let exp_snippet = self.create_snippet(*span, msg, source_manager);
-            group = group.element(exp_snippet);
-        }
-
-        let report = &[group];
-        renderer.render(report).to_string()
-    }
-
-    /// Print all diagnostics to stderr
-    pub(crate) fn print_diagnostics(&self, diagnostics: &[Diagnostic], source_manager: &SourceManager) {
-        for diag in diagnostics {
-            let formatted = self.format_diagnostic(diag, source_manager);
-            eprintln!("{}", formatted);
-        }
-    }
 }
 
 #[cfg(test)]

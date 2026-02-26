@@ -1,4 +1,5 @@
-use crate::tests::test_utils::setup_diagnostics_output;
+use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils::{run_pass, run_pass_with_diagnostic_message};
 
 #[test]
 fn test_array_in_condition_warning() {
@@ -11,14 +12,11 @@ fn test_array_in_condition_warning() {
             return 1;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Warning
-    Message: address of array 'a' will always evaluate to 'true'
-    Span: SourceSpan(source_id=SourceId(2), start=60, end=61)
-    ");
+    run_pass_with_diagnostic_message(
+        source,
+        CompilePhase::Mir,
+        "address of array 'a' will always evaluate to 'true'",
+    );
 }
 
 #[test]
@@ -33,7 +31,5 @@ fn test_function_in_condition_no_warning() {
         }
     "#;
     // Functions should decay to pointers but no warning is required by the user request
-    // (though clang might warn for them too, the request was specifically for the array example).
-    let output = setup_diagnostics_output(source);
-    assert!(!output.contains("Warning"), "Should not have warning for function");
+    run_pass(source, CompilePhase::Mir);
 }

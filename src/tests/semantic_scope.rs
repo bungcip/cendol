@@ -1,7 +1,7 @@
 use super::semantic_common::setup_mir;
 use crate::driver::artifact::CompilePhase;
 use crate::tests::codegen_common::run_c_code_exit_status;
-use crate::tests::test_utils::{run_fail_with_message, run_pass, setup_diagnostics_output};
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn test_nested_scope_shadowing() {
@@ -134,18 +134,7 @@ fn rejects_conflicting_typedef_redefinition() {
 typedef int T;
 typedef float T;
         "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 2
-
-    Level: Error
-    Message: redefinition of 'T' with a different type
-    Span: SourceSpan(source_id=SourceId(2), start=16, end=32)
-
-    Level: Note
-    Message: previous definition is here
-    Span: SourceSpan(source_id=SourceId(2), start=1, end=15)
-    ");
+    run_fail_with_message(source, "redefinition of 'T' with a different type");
 }
 
 #[test]

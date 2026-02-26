@@ -1,4 +1,4 @@
-use crate::tests::test_utils::setup_diagnostics_output;
+use crate::tests::test_utils::run_fail_with_message;
 
 #[test]
 fn test_shift_left_float_lhs() {
@@ -9,14 +9,7 @@ fn test_shift_left_float_lhs() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Invalid operands for binary operation: have 'float' and 'int'
-    Span: SourceSpan(source_id=SourceId(2), start=69, end=75)
-    ");
+    run_fail_with_message(source, "Invalid operands for binary operation: have 'float' and 'int'");
 }
 
 #[test]
@@ -29,14 +22,7 @@ fn test_shift_left_float_rhs() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Invalid operands for binary operation: have 'int' and 'float'
-    Span: SourceSpan(source_id=SourceId(2), start=92, end=98)
-    ");
+    run_fail_with_message(source, "Invalid operands for binary operation: have 'int' and 'float'");
 }
 
 #[test]
@@ -48,14 +34,7 @@ fn test_shift_right_float_lhs() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Invalid operands for binary operation: have 'float' and 'int'
-    Span: SourceSpan(source_id=SourceId(2), start=69, end=75)
-    ");
+    run_fail_with_message(source, "Invalid operands for binary operation: have 'float' and 'int'");
 }
 
 #[test]
@@ -68,14 +47,7 @@ fn test_shift_right_float_rhs() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Invalid operands for binary operation: have 'int' and 'float'
-    Span: SourceSpan(source_id=SourceId(2), start=92, end=98)
-    ");
+    run_fail_with_message(source, "Invalid operands for binary operation: have 'int' and 'float'");
 }
 
 #[test]
@@ -87,14 +59,7 @@ fn test_compound_shift_float() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Invalid operands for binary operation: have 'float' and 'int'
-    Span: SourceSpan(source_id=SourceId(2), start=61, end=68)
-    ");
+    run_fail_with_message(source, "Invalid operands for binary operation: have 'float' and 'int'");
 }
 
 #[test]
@@ -107,12 +72,5 @@ fn test_compound_shift_int_float() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Invalid operands for binary operation: have 'int' and 'float'
-    Span: SourceSpan(source_id=SourceId(2), start=84, end=91)
-    ");
+    run_fail_with_message(source, "Invalid operands for binary operation: have 'int' and 'float'");
 }

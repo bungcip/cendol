@@ -427,13 +427,12 @@ impl CompilerDriver {
     /// Get diagnostics for testing
     #[cfg(test)]
     pub(crate) fn get_diagnostics(&self) -> Vec<crate::diagnostic::Diagnostic> {
-        self.diagnostics.diagnostics().to_vec()
+        self.diagnostics.diagnostics.clone()
     }
 
     /// Print accumulated diagnostics without returning an error
     pub(crate) fn print_diagnostics(&self) {
-        let formatter = crate::diagnostic::ErrorFormatter::default();
-        formatter.print_diagnostics(self.diagnostics.diagnostics(), &self.source_manager);
+        self.diagnostics.print_diagnostics(&self.source_manager);
     }
 }
 

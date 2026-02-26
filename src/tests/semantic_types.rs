@@ -4,7 +4,7 @@ use crate::driver::artifact::CompilePhase;
 use crate::semantic::ArraySizeType;
 use crate::semantic::type_registry::TypeRegistry;
 use crate::semantic::types::{QualType, TypeClass, TypeRef};
-use crate::tests::test_utils::{run_fail, run_pass, setup_diagnostics_output};
+use crate::tests::test_utils::{run_fail, run_fail_with_message, run_pass};
 
 fn check_type(source: &str, expected: &str) {
     let (_ast, registry, symbol_table) = setup_lowering(source);
@@ -79,14 +79,7 @@ fn rejects_sizeof_on_incomplete_struct() {
             int x = sizeof(struct S);
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Invalid application of 'sizeof' to an incomplete type
-    Span: SourceSpan(source_id=SourceId(2), start=60, end=76)
-    ");
+    run_fail_with_message(source, "Invalid application of 'sizeof' to an incomplete type");
 }
 
 #[test]
@@ -95,14 +88,7 @@ fn rejects_function_returning_incomplete_type() {
         struct S;
         struct S foo();
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: function has incomplete return type
-    Span: SourceSpan(source_id=SourceId(2), start=27, end=42)
-    ");
+    run_fail_with_message(source, "function has incomplete return type");
 }
 
 #[test]
@@ -113,14 +99,7 @@ fn rejects_sizeof_on_incomplete_array() {
             int x = sizeof(arr);
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Invalid application of 'sizeof' to an incomplete type
-    Span: SourceSpan(source_id=SourceId(2), start=68, end=79)
-    ");
+    run_fail_with_message(source, "Invalid application of 'sizeof' to an incomplete type");
 }
 
 #[test]

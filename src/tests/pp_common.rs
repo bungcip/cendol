@@ -115,7 +115,7 @@ pub(crate) fn setup_multi_file_pp_with_diagnostics_raw(
     let mut preprocessor = Preprocessor::new(&mut sm, &mut diag, &config);
 
     let tokens = preprocessor.process(main_id, &config)?;
-    Ok((tokens, diag.diagnostics().to_vec()))
+    Ok((tokens, diag.diagnostics))
 }
 
 pub struct TestLexer {

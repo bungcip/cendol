@@ -72,6 +72,19 @@ fn test_arithmetic() {
 }
 
 #[test]
+fn test_arithmethic_with_predence() {
+    let output = format_const_eval_batch(&["1 + 2 * 3", "(1 + 2) * 3"]);
+    insta::assert_snapshot!(output, @r"
+    Expression: 1 + 2 * 3
+    Result: 7
+    ---
+    Expression: (1 + 2) * 3
+    Result: 9
+    ---
+    ");
+}
+
+#[test]
 fn test_bitwise() {
     let output = format_const_eval_batch(&["1 << 2", "8 >> 1", "0x0F & 0xF0", "0x0F | 0xF0", "0x0F ^ 0xFF", "~0"]);
     insta::assert_snapshot!(output, @r"
@@ -161,12 +174,7 @@ fn test_ternary() {
 
 #[test]
 fn test_sizeof() {
-    let output = format_const_eval_batch(&[
-        "sizeof(int)",
-        "sizeof(long)",
-        "sizeof(long long)",
-        // "sizeof(1 + 1)", // Fails because operand type is not resolved in AST for unevaluated operands in this test setup
-    ]);
+    let output = format_const_eval_batch(&["sizeof(int)", "sizeof(long)", "sizeof(long long)", "sizeof(1 + 1)"]);
     insta::assert_snapshot!(output, @r"
     Expression: sizeof(int)
     Result: 4
@@ -177,18 +185,8 @@ fn test_sizeof() {
     Expression: sizeof(long long)
     Result: 8
     ---
-    ");
-}
-
-#[test]
-fn test_complex() {
-    let output = format_const_eval_batch(&["1 + 2 * 3", "(1 + 2) * 3"]);
-    insta::assert_snapshot!(output, @r"
-    Expression: 1 + 2 * 3
-    Result: 7
-    ---
-    Expression: (1 + 2) * 3
-    Result: 9
+    Expression: sizeof(1 + 1)
+    Result: 4
     ---
     ");
 }
@@ -232,16 +230,6 @@ fn test_enum_constants() {
 }
 
 #[test]
-fn test_sizeof_expression() {
-    let output = format_const_eval_batch(&["sizeof(1 + 1)"]);
-    insta::assert_snapshot!(output, @r"
-    Expression: sizeof(1 + 1)
-    Result: 4
-    ---
-    ");
-}
-
-#[test]
 fn test_alignof() {
     let output = format_const_eval_batch(&["_Alignof(int)"]);
     insta::assert_snapshot!(output, @r"
@@ -252,21 +240,12 @@ fn test_alignof() {
 }
 
 #[test]
-fn test_logical_short_circuit_or() {
-    // Should result in 1 and not divide by zero error
-    let output = format_const_eval_batch(&["1 || (1 / 0)"]);
+fn test_logical_short_circuit() {
+    let output = format_const_eval_batch(&["1 || (1 / 0)", "0 && (1 / 0)"]);
     insta::assert_snapshot!(output, @r"
     Expression: 1 || (1 / 0)
     Result: 1
     ---
-    ");
-}
-
-#[test]
-fn test_logical_short_circuit_and() {
-    // Should result in 0 and not divide by zero error
-    let output = format_const_eval_batch(&["0 && (1 / 0)"]);
-    insta::assert_snapshot!(output, @r"
     Expression: 0 && (1 / 0)
     Result: 0
     ---

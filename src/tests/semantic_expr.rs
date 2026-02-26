@@ -1,8 +1,7 @@
 use crate::driver::artifact::CompilePhase;
+use crate::tests::codegen_common::run_c_code_exit_status;
 use crate::tests::semantic_common::setup_mir;
-use crate::tests::test_utils::{run_fail, run_pass, setup_diagnostics_output};
-use std::process::Command;
-use tempfile::NamedTempFile;
+use crate::tests::test_utils::{run_fail, run_fail_with_message, run_pass};
 
 #[test]
 fn test_sizeof_logic_not_is_int_size() {
@@ -87,72 +86,40 @@ fn test_sizeof_logic_or_is_int_size() {
     }
     ");
 }
-// tests_compound_assign.rs - End-to-end tests for compound assignment operators.
-//
-// This module contains tests that compile and run C code with compound assignment
-// operators to verify their correctness in the generated executable.
-
-fn run_c_code(source: &str) -> i32 {
-    let temp_file = NamedTempFile::new().unwrap();
-    let temp_path = temp_file.into_temp_path();
-    let exe_path = temp_path.to_path_buf();
-
-    let config = crate::driver::cli::CompileConfig {
-        input_files: vec![crate::driver::cli::PathOrBuffer::Buffer(
-            "test.c".into(),
-            source.as_bytes().to_vec(),
-        )],
-        output_path: Some(exe_path.clone()),
-        ..Default::default()
-    };
-
-    let mut driver = crate::driver::compiler::CompilerDriver::from_config(config);
-    let result = driver.run();
-
-    // Check for compilation errors
-    if result.is_err() || driver.source_manager.get_file_id("test.c").is_none() {
-        driver.print_diagnostics();
-        panic!("Compilation failed");
-    }
-
-    let run_output = Command::new(exe_path).output().expect("Failed to execute");
-
-    run_output.status.code().unwrap_or(-1)
-}
 
 #[test]
 fn test_compound_add_assign() {
-    let exit_code = run_c_code("int main() { int x = 5; x += 3; return x; }");
+    let exit_code = run_c_code_exit_status("int main() { int x = 5; x += 3; return x; }");
     assert_eq!(exit_code, 8, "Expected exit code 8 for x += 3");
 }
 
 #[test]
 fn test_compound_sub_assign() {
-    let exit_code = run_c_code("int main() { int x = 5; x -= 3; return x; }");
+    let exit_code = run_c_code_exit_status("int main() { int x = 5; x -= 3; return x; }");
     assert_eq!(exit_code, 2, "Expected exit code 2 for x -= 3");
 }
 
 #[test]
 fn test_compound_mul_assign() {
-    let exit_code = run_c_code("int main() { int x = 5; x *= 3; return x; }");
+    let exit_code = run_c_code_exit_status("int main() { int x = 5; x *= 3; return x; }");
     assert_eq!(exit_code, 15, "Expected exit code 15 for x *= 3");
 }
 
 #[test]
 fn test_compound_div_assign() {
-    let exit_code = run_c_code("int main() { int x = 10; x /= 2; return x; }");
+    let exit_code = run_c_code_exit_status("int main() { int x = 10; x /= 2; return x; }");
     assert_eq!(exit_code, 5, "Expected exit code 5 for x /= 2");
 }
 
 #[test]
 fn test_compound_mod_assign() {
-    let exit_code = run_c_code("int main() { int x = 10; x %= 3; return x; }");
+    let exit_code = run_c_code_exit_status("int main() { int x = 10; x %= 3; return x; }");
     assert_eq!(exit_code, 1, "Expected exit code 1 for x %= 3");
 }
 
 #[test]
 fn test_compound_mixed_types() {
-    let exit_code = run_c_code(
+    let exit_code = run_c_code_exit_status(
         r#"
         int main() {
             short s = 10;
@@ -167,7 +134,7 @@ fn test_compound_mixed_types() {
 
 #[test]
 fn test_compound_unsigned_mixed_types() {
-    let exit_code = run_c_code(
+    let exit_code = run_c_code_exit_status(
         r#"
         int main() {
             unsigned char c = 5;
@@ -178,31 +145,6 @@ fn test_compound_unsigned_mixed_types() {
     "#,
     );
     assert_eq!(exit_code, 7, "Expected exit code 7 for unsigned char += int");
-}
-
-fn run_c_code_result(source: &str) -> Result<i32, String> {
-    let temp_file = NamedTempFile::new().unwrap();
-    let temp_path = temp_file.into_temp_path();
-    let exe_path = temp_path.to_path_buf();
-
-    let config = crate::driver::cli::CompileConfig {
-        input_files: vec![crate::driver::cli::PathOrBuffer::Buffer(
-            "test.c".into(),
-            source.as_bytes().to_vec(),
-        )],
-        output_path: Some(exe_path.clone()),
-        ..Default::default()
-    };
-
-    let mut driver = crate::driver::compiler::CompilerDriver::from_config(config);
-    let result = driver.run();
-
-    if result.is_err() {
-        return Err("Compilation failed".into());
-    }
-
-    let run_output = Command::new(exe_path).output().expect("Failed to execute");
-    Ok(run_output.status.code().unwrap_or(-1))
 }
 
 #[test]
@@ -216,9 +158,8 @@ int main() {
     return 1;
 }
 "#;
-    let result = run_c_code_result(code);
-    assert!(result.is_ok(), "Pointer add-assign should compile and run");
-    assert_eq!(result.unwrap(), 0, "Pointer should point to the second element");
+    let result = run_c_code_exit_status(code);
+    assert_eq!(result, 0, "Pointer should point to the second element");
 }
 
 #[test]
@@ -232,9 +173,8 @@ int main() {
     return 1;
 }
 "#;
-    let result = run_c_code_result(code);
-    assert!(result.is_ok(), "Pointer sub-assign should compile and run");
-    assert_eq!(result.unwrap(), 0, "Pointer should point to the first element");
+    let result = run_c_code_exit_status(code);
+    assert_eq!(result, 0, "Pointer should point to the first element");
 }
 
 #[test]
@@ -248,14 +188,7 @@ fn test_assign_struct_to_int() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: type mismatch: expected int, found struct A
-    Span: SourceSpan(source_id=SourceId(2), start=106, end=111)
-    ");
+    run_fail_with_message(source, "type mismatch: expected int, found struct A");
 }
 
 #[test]
@@ -268,14 +201,7 @@ fn test_assign_int_to_struct() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: type mismatch: expected struct A, found int
-    Span: SourceSpan(source_id=SourceId(2), start=87, end=93)
-    ");
+    run_fail_with_message(source, "type mismatch: expected struct A, found int");
 }
 
 #[test]
@@ -291,14 +217,7 @@ fn test_assign_incompatible_struct() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: type mismatch: expected struct A, found struct B
-    Span: SourceSpan(source_id=SourceId(2), start=141, end=146)
-    ");
+    run_fail_with_message(source, "type mismatch: expected struct A, found struct B");
 }
 
 #[test]
@@ -312,14 +231,7 @@ fn test_assign_incompatible_pointers() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: type mismatch: expected float*, found int*
-    Span: SourceSpan(source_id=SourceId(2), start=105, end=110)
-    ");
+    run_fail_with_message(source, "type mismatch: expected float*, found int*");
 }
 
 #[test]
@@ -331,14 +243,7 @@ fn test_assign_int_to_pointer() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: type mismatch: expected int*, found int
-    Span: SourceSpan(source_id=SourceId(2), start=54, end=59)
-    ");
+    run_fail_with_message(source, "type mismatch: expected int*, found int");
 }
 
 #[test]
@@ -351,14 +256,7 @@ fn test_assign_pointer_to_int() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: type mismatch: expected int, found int*
-    Span: SourceSpan(source_id=SourceId(2), start=73, end=78)
-    ");
+    run_fail_with_message(source, "type mismatch: expected int, found int*");
 }
 
 #[test]
@@ -373,14 +271,7 @@ fn test_assign_struct_mismatch() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: type mismatch: expected struct A, found struct B
-    Span: SourceSpan(source_id=SourceId(2), start=140, end=145)
-    ");
+    run_fail_with_message(source, "type mismatch: expected struct A, found struct B");
 }
 
 #[test]
@@ -522,14 +413,7 @@ fn test_void_init_variable() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: type mismatch: expected int, found void
-    Span: SourceSpan(source_id=SourceId(2), start=65, end=70)
-    ");
+    run_fail_with_message(source, "type mismatch: expected int, found void");
 }
 
 #[test]
@@ -543,14 +427,7 @@ fn test_void_assign_variable() {
             return 0;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: type mismatch: expected int, found void
-    Span: SourceSpan(source_id=SourceId(2), start=76, end=85)
-    ");
+    run_fail_with_message(source, "type mismatch: expected int, found void");
 }
 
 #[test]
@@ -706,14 +583,7 @@ fn test_lvalue_assign_to_literal() {
             1 = 2;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Expression is not assignable (not an lvalue)
-    Span: SourceSpan(source_id=SourceId(2), start=34, end=39)
-    ");
+    run_fail_with_message(source, "Expression is not assignable (not an lvalue)");
 }
 
 #[test]
@@ -724,14 +594,7 @@ fn test_lvalue_assign_to_arithmetic_expr() {
             x + 1 = 5;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Expression is not assignable (not an lvalue)
-    Span: SourceSpan(source_id=SourceId(2), start=53, end=62)
-    ");
+    run_fail_with_message(source, "Expression is not assignable (not an lvalue)");
 }
 
 #[test]
@@ -741,14 +604,7 @@ fn test_lvalue_pre_inc_literal() {
             ++1;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Expression is not assignable (not an lvalue)
-    Span: SourceSpan(source_id=SourceId(2), start=34, end=37)
-    ");
+    run_fail_with_message(source, "Expression is not assignable (not an lvalue)");
 }
 
 #[test]
@@ -758,14 +614,7 @@ fn test_lvalue_post_inc_literal() {
             1++;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Expression is not assignable (not an lvalue)
-    Span: SourceSpan(source_id=SourceId(2), start=34, end=37)
-    ");
+    run_fail_with_message(source, "Expression is not assignable (not an lvalue)");
 }
 
 #[test]
@@ -776,14 +625,7 @@ fn test_lvalue_pre_dec_rvalue() {
             --(x + y);
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Expression is not assignable (not an lvalue)
-    Span: SourceSpan(source_id=SourceId(2), start=56, end=64)
-    ");
+    run_fail_with_message(source, "Expression is not assignable (not an lvalue)");
 }
 
 #[test]
@@ -794,14 +636,7 @@ fn test_lvalue_post_dec_rvalue() {
             (x + y)--;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Expression is not assignable (not an lvalue)
-    Span: SourceSpan(source_id=SourceId(2), start=57, end=65)
-    ");
+    run_fail_with_message(source, "Expression is not assignable (not an lvalue)");
 }
 
 #[test]
@@ -812,14 +647,7 @@ fn test_lvalue_addr_of_rvalue() {
             &(x + 1);
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Expression is not assignable (not an lvalue)
-    Span: SourceSpan(source_id=SourceId(2), start=53, end=60)
-    ");
+    run_fail_with_message(source, "Expression is not assignable (not an lvalue)");
 }
 
 #[test]
@@ -831,14 +659,7 @@ fn test_lvalue_assign_struct_rvalue_member() {
             f().x = 1;
         }
     "#;
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: Expression is not assignable (not an lvalue)
-    Span: SourceSpan(source_id=SourceId(2), start=110, end=119)
-    ");
+    run_fail_with_message(source, "Expression is not assignable (not an lvalue)");
 }
 use crate::tests::test_utils;
 
@@ -924,14 +745,7 @@ fn test_nested_const_pointer() {
             *p = 20;
         }
     ";
-    let output = setup_diagnostics_output(code);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: cannot assign to read-only location
-    Span: SourceSpan(source_id=SourceId(2), start=88, end=95)
-    ");
+    run_fail_with_message(code, "cannot assign to read-only location");
 }
 
 #[test]
@@ -944,14 +758,7 @@ fn test_const_pointer_to_int() {
             p = 0;   // This should fail
         }
     ";
-    let output = setup_diagnostics_output(code);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 1
-
-    Level: Error
-    Message: cannot assign to read-only location
-    Span: SourceSpan(source_id=SourceId(2), start=125, end=130)
-    ");
+    run_fail_with_message(code, "cannot assign to read-only location");
 }
 
 #[test]
@@ -964,18 +771,9 @@ fn test_nested_qualifier_preservation() {
             p = 0;   // Should fail (pointer is const)
         }
     ";
-    let output = setup_diagnostics_output(code);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 2
-
-    Level: Error
-    Message: cannot assign to read-only location
-    Span: SourceSpan(source_id=SourceId(2), start=95, end=102)
-
-    Level: Error
-    Message: cannot assign to read-only location
-    Span: SourceSpan(source_id=SourceId(2), start=150, end=155)
-    ");
+    let driver = run_fail(code, CompilePhase::Mir);
+    crate::tests::test_utils::check_diagnostic_message_only(&driver, "cannot assign to read-only location");
+    assert_eq!(driver.get_diagnostics().len(), 2);
 }
 
 // Comma Operator Tests

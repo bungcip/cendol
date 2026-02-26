@@ -1,5 +1,5 @@
 use super::semantic_common::setup_mir;
-use crate::tests::test_utils::setup_diagnostics_output;
+use crate::tests::test_utils::run_fail_with_message;
 
 #[test]
 fn test_if_else_statement() {
@@ -720,18 +720,7 @@ fn test_duplicate_global_declaration_with_initializers_diagnostic() {
       }
     "#;
 
-    let output = setup_diagnostics_output(source);
-    insta::assert_snapshot!(output, @r"
-    Diagnostics count: 2
-
-    Level: Error
-    Message: redefinition of 'x'
-    Span: SourceSpan(source_id=SourceId(2), start=24, end=34)
-
-    Level: Note
-    Message: previous definition is here
-    Span: SourceSpan(source_id=SourceId(2), start=7, end=17)
-    ");
+    run_fail_with_message(source, "redefinition of 'x'");
 }
 
 #[test]

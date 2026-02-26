@@ -60,11 +60,12 @@ pub(crate) fn sort_clif_ir(ir: &str) -> String {
     functions.join("\n\n")
 }
 
-pub(crate) fn run_pass(source: &str, phase: CompilePhase) {
+pub(crate) fn run_pass(source: &str, phase: CompilePhase) -> CompilerDriver {
     let (driver, result) = run_pipeline(source, phase);
     if result.is_err() {
         panic!("Compilation failed unexpectedly: {:?}", driver.get_diagnostics());
     }
+    driver
 }
 
 pub(crate) fn run_fail(source: &str, phase: CompilePhase) -> CompilerDriver {
@@ -110,24 +111,6 @@ pub(crate) fn check_diagnostic_message_only(driver: &CompilerDriver, message: &s
         "Expected diagnostic message containing '{}' not found.\nActual diagnostics: {:?}",
         message, diagnostics
     );
-}
-
-pub(crate) fn setup_diagnostics_output(source: &str) -> String {
-    let (driver, _) = run_pipeline(source, CompilePhase::Mir);
-    let diagnostics = driver.get_diagnostics();
-
-    format!(
-        "Diagnostics count: {}\n\n{}",
-        diagnostics.len(),
-        diagnostics
-            .iter()
-            .map(|diag| format!(
-                "Level: {:?}\nMessage: {}\nSpan: {}",
-                diag.level, diag.message, diag.span
-            ))
-            .collect::<Vec<_>>()
-            .join("\n\n")
-    )
 }
 
 pub(crate) fn run_pass_with_diagnostic(source: &str, phase: CompilePhase, message: &str, line: u32, col: u32) {

@@ -1,12 +1,13 @@
 //! Common utilities for semantic analysis tests.
-use crate::ast::Ast;
+use crate::ast::{Ast, NodeKind, VarDeclData};
+use crate::diagnostic::DiagnosticEngine;
 use crate::driver::artifact::CompilePhase;
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
-use crate::semantic::TypeRegistry;
-use crate::tests::test_utils;
+use crate::semantic::{SymbolKind, SymbolTable, Type, TypeKind, TypeLayout, TypeRegistry};
+use crate::tests::test_utils::run_pipeline;
 
 pub(crate) fn setup_mir(source: &str) -> String {
-    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::Mir);
+    let (driver, result) = run_pipeline(source, CompilePhase::Mir);
     let mut out = match result {
         Ok(out) => out,
         Err(_) => panic!("failed to run: {:?}", driver.get_diagnostics()),
@@ -22,8 +23,8 @@ pub(crate) fn setup_mir(source: &str) -> String {
     dumper.generate_mir_dump().expect("Failed to generate MIR dump")
 }
 
-pub(crate) fn setup_lowering(source: &str) -> (Ast, TypeRegistry, crate::semantic::SymbolTable) {
-    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::SemanticLowering);
+pub(crate) fn setup_lowering(source: &str) -> (Ast, TypeRegistry, SymbolTable) {
+    let (driver, result) = run_pipeline(source, CompilePhase::SemanticLowering);
     let out = match result {
         Ok(out) => out,
         Err(_) => panic!("failed to run: {:?}", driver.get_diagnostics()),
@@ -37,8 +38,8 @@ pub(crate) fn setup_lowering(source: &str) -> (Ast, TypeRegistry, crate::semanti
     )
 }
 
-pub(crate) fn setup_analysis(source: &str) -> (Ast, TypeRegistry, crate::semantic::SymbolTable) {
-    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::SemanticLowering);
+pub(crate) fn setup_analysis(source: &str) -> (Ast, TypeRegistry, SymbolTable) {
+    let (driver, result) = run_pipeline(source, CompilePhase::SemanticLowering);
     let out = match result {
         Ok(out) => out,
         Err(_) => panic!("failed to run: {:?}", driver.get_diagnostics()),
@@ -49,11 +50,11 @@ pub(crate) fn setup_analysis(source: &str) -> (Ast, TypeRegistry, crate::semanti
     let mut registry = unit.type_registry.expect("No TypeRegistry available");
     let symbol_table = unit.symbol_table.expect("No SymbolTable available");
 
-    let mut diagnostics = crate::diagnostic::DiagnosticEngine::from_warnings(&[]);
-    let semantic_info = crate::semantic::analyzer::visit_ast(&ast, &mut diagnostics, &symbol_table, &mut registry);
+    let mut diag = DiagnosticEngine::from_warnings(&[]);
+    let semantic_info = crate::semantic::analyzer::visit_ast(&ast, &mut diag, &symbol_table, &mut registry);
 
-    if diagnostics.has_errors() {
-        panic!("Semantic analysis failed: {:?}", diagnostics.diagnostics());
+    if diag.has_errors() {
+        panic!("Semantic analysis failed: {:?}", diag.diagnostics);
     }
 
     ast.attach_semantic_info(semantic_info);
@@ -61,17 +62,17 @@ pub(crate) fn setup_analysis(source: &str) -> (Ast, TypeRegistry, crate::semanti
     (ast, registry, symbol_table)
 }
 
-pub(crate) fn find_layout<'a>(registry: &'a TypeRegistry, name: &str) -> &'a crate::semantic::types::TypeLayout {
+pub(crate) fn find_layout<'a>(registry: &'a TypeRegistry, name: &str) -> &'a TypeLayout {
     let s_ty = find_record_type(registry, name);
     s_ty.layout.as_ref().expect("Layout not computed for S")
 }
 
-pub(crate) fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'a crate::semantic::Type {
+pub(crate) fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'a Type {
     registry
         .types
         .iter()
         .find(|ty| {
-            if let crate::semantic::TypeKind::Record {
+            if let TypeKind::Record {
                 tag: Some(tag_name), ..
             } = &ty.kind
             {
@@ -83,11 +84,11 @@ pub(crate) fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'
         .unwrap_or_else(|| panic!("Record type '{}' not found in registry", name))
 }
 
-pub(crate) fn find_var_decl<'a>(ast: &'a Ast, name: &str) -> &'a crate::ast::VarDeclData {
+pub(crate) fn find_var_decl<'a>(ast: &'a Ast, name: &str) -> &'a VarDeclData {
     ast.kinds
         .iter()
         .find_map(|kind| {
-            if let crate::ast::NodeKind::VarDecl(data) = kind
+            if let NodeKind::VarDecl(data) = kind
                 && data.name.as_str() == name
             {
                 Some(data)
@@ -98,13 +99,13 @@ pub(crate) fn find_var_decl<'a>(ast: &'a Ast, name: &str) -> &'a crate::ast::Var
         .unwrap_or_else(|| panic!("Variable declaration '{}' not found in AST", name))
 }
 
-pub(crate) fn find_enum_constant(symbol_table: &crate::semantic::SymbolTable, name: &str) -> i64 {
+pub(crate) fn find_enum_constant(symbol_table: &SymbolTable, name: &str) -> i64 {
     symbol_table
         .entries
         .iter()
         .find_map(|entry| {
             if entry.name.as_str() == name {
-                if let crate::semantic::SymbolKind::EnumConstant { value } = entry.kind {
+                if let SymbolKind::EnumConstant { value } = entry.kind {
                     Some(value)
                 } else {
                     None

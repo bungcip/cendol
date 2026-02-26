@@ -71,7 +71,7 @@ impl<'a> MirGen<'a> {
             ast: self.ast,
             symbol_table: self.symbol_table,
             registry: self.registry,
-            semantic_info: None,
+            semantic_info: self.ast.semantic_info.as_ref(),
         }
     }
 

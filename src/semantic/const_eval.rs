@@ -217,7 +217,14 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
             let target_type_obj = ctx.registry.get(target_ty.ty());
             Some(target_type_obj.truncate_int(val))
         }
-        NodeKind::BuiltinOffsetof(ty, expr) => eval_offsetof(ctx, *ty, *expr),
+        NodeKind::BuiltinOffsetof(ty, expr) => {
+            if let Some(info) = ctx.semantic_info
+                && let Some(&offset) = info.offsetof_results.get(&expr_node_ref.index())
+            {
+                return Some(offset);
+            }
+            eval_offsetof(ctx, *ty, *expr)
+        }
         NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
             let t1_unqual = ctx.registry.strip_all(*t1);
             let t2_unqual = ctx.registry.strip_all(*t2);
@@ -255,19 +262,14 @@ fn eval_offsetof(ctx: &ConstEvalCtx, ty: QualType, expr_ref: NodeRef) -> Option<
         match *ctx.ast.get_kind(node_ref) {
             NodeKind::Dummy => true,
             NodeKind::MemberAccess(base, member_name, is_arrow) => {
+                debug_assert!(!is_arrow, "offsetof does not support arrow operator");
+
                 if !walk(ctx, base, current_ty, offset) {
                     return false;
                 }
 
-                let record_ty = if is_arrow {
-                    ctx.registry.get_pointee(current_ty.ty()).map(|qt| qt.ty())
-                } else {
-                    Some(current_ty.ty())
-                };
+                let record_ty = current_ty.ty();
 
-                let Some(record_ty) = record_ty else {
-                    return false;
-                };
                 if !record_ty.is_record() {
                     return false;
                 }

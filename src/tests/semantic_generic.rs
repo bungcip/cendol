@@ -368,3 +368,15 @@ fn test_generic_selection_lvalue_struct() {
         CompilePhase::Mir,
     );
 }
+
+#[test]
+fn test_generic_vla_association() {
+    run_fail_with_message(
+        r#"
+        void f(int n) {
+            _Generic(0, int[n]: 1);
+        }
+        "#,
+        "generic association specifies variably modified type",
+    );
+}

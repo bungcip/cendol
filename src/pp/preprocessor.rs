@@ -2586,6 +2586,12 @@ impl<'src> Preprocessor<'src> {
         })
         .take(100)
         .any(|info| {
+            // Bolt ⚡: Fast-path: Only macro expansion buffers can be recursive.
+            // This avoids expensive path-to-string conversions for real source files.
+            if info.kind != FileKind::MacroExpansion {
+                return false;
+            }
+
             let path_str = info.path.to_str().unwrap_or("");
             // Bolt ⚡: Prefix "<macro_" is 7 chars, suffix ">" is 1 char. Total 8.
             path_str.len() == macro_name.len() + 8

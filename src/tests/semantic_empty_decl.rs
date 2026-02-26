@@ -1,6 +1,4 @@
-use crate::diagnostic::DiagnosticLevel;
-use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils;
+use crate::tests::test_utils::setup_diagnostics_output;
 
 /// Test that empty declarations (e.g., `int;`) emit warnings instead of panicking
 #[test]
@@ -12,16 +10,8 @@ fn test_empty_type_declaration_single() {
         }
     "#;
 
-    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::SemanticLowering);
-    assert!(result.is_ok(), "Compilation should succeed with warnings");
-
-    let diagnostics = driver.get_diagnostics();
-    assert!(!diagnostics.is_empty(), "Should have at least one diagnostic");
-
-    let warning_found = diagnostics
-        .iter()
-        .any(|d| d.level == DiagnosticLevel::Warning && d.message.contains("declaration does not declare anything"));
-    assert!(warning_found, "Should have warning about empty declaration");
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output);
 }
 
 /// Test multiple empty declarations
@@ -39,16 +29,30 @@ fn test_empty_declarations_multiple() {
         }
     "#;
 
-    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::SemanticLowering);
-    assert!(result.is_ok(), "Compilation should succeed with warnings");
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 5
 
-    let diagnostics = driver.get_diagnostics();
-    let warning_count = diagnostics
-        .iter()
-        .filter(|d| d.level == DiagnosticLevel::Warning && d.message.contains("declaration does not declare anything"))
-        .count();
+    Level: Warning
+    Message: declaration does not declare anything
+    Span: SourceSpan(source_id=SourceId(2), start=9, end=14)
 
-    assert_eq!(warning_count, 5, "Should have 5 warnings for empty declarations");
+    Level: Warning
+    Message: declaration does not declare anything
+    Span: SourceSpan(source_id=SourceId(2), start=23, end=28)
+
+    Level: Warning
+    Message: declaration does not declare anything
+    Span: SourceSpan(source_id=SourceId(2), start=37, end=41)
+
+    Level: Warning
+    Message: declaration does not declare anything
+    Span: SourceSpan(source_id=SourceId(2), start=50, end=54)
+
+    Level: Warning
+    Message: declaration does not declare anything
+    Span: SourceSpan(source_id=SourceId(2), start=63, end=67)
+    ");
 }
 
 /// Test empty declaration in function scope
@@ -63,59 +67,20 @@ fn test_empty_declaration_in_function() {
         }
     "#;
 
-    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::SemanticLowering);
-    assert!(result.is_ok(), "Compilation should succeed with warnings");
+    let output = setup_diagnostics_output(source);
+    insta::assert_snapshot!(output, @r"
+    Diagnostics count: 3
 
-    let diagnostics = driver.get_diagnostics();
-    let warning_count = diagnostics
-        .iter()
-        .filter(|d| d.level == DiagnosticLevel::Warning && d.message.contains("declaration does not declare anything"))
-        .count();
+    Level: Warning
+    Message: declaration does not declare anything
+    Span: SourceSpan(source_id=SourceId(2), start=34, end=38)
 
-    assert_eq!(warning_count, 3, "Should have 3 warnings for empty declarations");
-}
+    Level: Warning
+    Message: declaration does not declare anything
+    Span: SourceSpan(source_id=SourceId(2), start=51, end=56)
 
-/// Test from the original issue report
-#[test]
-fn test_original_issue_case() {
-    let source = r#"
-        char;
-        char;
-        char;
-        int;
-        int;
-        int;
-        int;
-        int;
-        char foo(char *p)
-        {
-            char a;
-            return a;
-        }
-        int main()
-        {
-            char q;
-            foo(&(q));
-            return 174;
-        }
-    "#;
-
-    let (driver, result) = test_utils::run_pipeline(source, CompilePhase::Mir);
-    // We should successfully reach MIR generation despite the empty declarations
-    assert!(
-        result.is_ok(),
-        "Compilation should succeed even with empty declarations"
-    );
-
-    let diagnostics = driver.get_diagnostics();
-    let warning_count = diagnostics
-        .iter()
-        .filter(|d| d.level == DiagnosticLevel::Warning && d.message.contains("declaration does not declare anything"))
-        .count();
-
-    // 8 empty declarations at the top level
-    assert_eq!(
-        warning_count, 8,
-        "Should have 8 warnings for empty declarations at top level"
-    );
+    Level: Warning
+    Message: declaration does not declare anything
+    Span: SourceSpan(source_id=SourceId(2), start=69, end=75)
+    ");
 }

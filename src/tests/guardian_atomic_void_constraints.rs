@@ -13,8 +13,5 @@ fn test_atomic_specifier_on_void_prohibited() {
 #[test]
 fn test_atomic_qualifier_on_void_prohibited() {
     // C11 6.7.3p5: The _Atomic qualifier shall be applied only to an object type ...
-    run_fail_with_message(
-        "_Atomic void *p;",
-        "_Atomic qualifier cannot be used with void type",
-    );
+    run_fail_with_message("_Atomic void *p;", "_Atomic qualifier cannot be used with void type");
 }

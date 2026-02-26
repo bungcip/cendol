@@ -70,6 +70,7 @@ pub mod ast_dumper_coverage;
 pub mod codegen_builtins_bitwise;
 pub mod codegen_cast_init;
 pub mod codegen_regr;
+pub mod codegen_store_truncation;
 pub mod driver_defines;
 pub mod guardian_addr_sizeof_constraints;
 pub mod guardian_alignof_sizeof_function;

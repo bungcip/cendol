@@ -2834,25 +2834,13 @@ impl<'a> SemanticAnalyzer<'a> {
         match kind {
             NodeKind::Dummy => true,
             NodeKind::MemberAccess(base, member_name, is_arrow) => {
+                debug_assert!(!is_arrow, "offsetof does not support arrow operator");
+
                 if !self.compute_offsetof_recursive(base, current_ty, offset) {
                     return false;
                 }
 
-                let record_ty = if is_arrow {
-                    self.registry.get_pointee(current_ty.ty()).map(|qt| qt.ty())
-                } else {
-                    Some(current_ty.ty())
-                };
-
-                let Some(record_ty) = record_ty else {
-                    self.report_error(
-                        self.ast.get_span(node_ref),
-                        SemanticErrorKind::MemberAccessOnNonRecord {
-                            ty: self.registry.display_qual_type(*current_ty),
-                        },
-                    );
-                    return false;
-                };
+                let record_ty = current_ty.ty();
 
                 if !record_ty.is_record() {
                     self.report_error(

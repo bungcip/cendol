@@ -12,7 +12,7 @@ use std::fmt::Write;
 
 use super::{
     BinaryFloatOp, CallTarget, ConstValueId, ConstValueKind, Global, GlobalId, LocalId, MirBlock, MirBlockId,
-    MirFunction, MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    MirFunction, MirFunctionId, MirLinkage, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
     UnaryFloatOp,
 };
 use crate::mir::MirProgram;
@@ -82,9 +82,9 @@ impl<'a> MirDumper<'a> {
     fn dump_function(&self, output: &mut String, func: &MirFunction) -> Result<(), std::fmt::Error> {
         // Function signature
         let return_type = self.type_to_string(func.return_type);
-        let fn_keyword = match func.kind {
-            MirFunctionKind::Extern => "extern fn",
-            MirFunctionKind::Defined => "fn",
+        let fn_keyword = match func.linkage {
+            MirLinkage::Import => "extern fn",
+            _ => "fn",
         };
         write!(output, "{} {}(", fn_keyword, func.name)?;
 
@@ -111,7 +111,7 @@ impl<'a> MirDumper<'a> {
         write!(output, ") -> {}", return_type)?;
 
         // For extern functions, don't output any body
-        if matches!(func.kind, MirFunctionKind::Extern) {
+        if matches!(func.linkage, MirLinkage::Import) {
             writeln!(output)?;
             return Ok(());
         }

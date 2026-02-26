@@ -11,8 +11,8 @@ use crate::{
     ast::NameId,
     mir::{
         BinaryFloatOp, BinaryIntOp, CallTarget, ConstValue, ConstValueId, ConstValueKind, GlobalId, LocalId,
-        MirBlockId, MirFunction, MirFunctionId, MirFunctionKind, MirProgram, MirStmt, MirStmtId, MirType, Operand,
-        Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
+        MirBlockId, MirFunction, MirFunctionId, MirLinkage, MirProgram, MirStmt, MirStmtId, MirType, Operand, Place,
+        Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
     },
 };
 
@@ -220,7 +220,7 @@ impl<'a> MirValidator<'a> {
         }
 
         // Validate items within blocks for defined functions
-        if func.kind == MirFunctionKind::Defined {
+        if func.linkage != MirLinkage::Import {
             for block_id in &func.blocks {
                 let Some(block) = self.mir.blocks.get(block_id) else {
                     continue;

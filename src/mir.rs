@@ -40,11 +40,12 @@ pub type TypeId = NonZeroU32;
 /// Unique identifier for MIR constant values
 pub type ConstValueId = NonZeroU32;
 
-/// Function kind - distinguishes between defined and extern functions
+/// Function linkage - distinguishes between internal, external, and imported functions
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub enum MirFunctionKind {
-    Defined,
-    Extern,
+pub enum MirLinkage {
+    Internal, // Defined in this module, not exported
+    External, // Defined in this module, exported
+    Import,   // Declared but defined elsewhere
 }
 
 /// MIR Module - Top-level container for MIR
@@ -79,23 +80,28 @@ pub struct MirFunction {
     pub return_type: TypeId,
     pub params: Vec<LocalId>,
 
-    pub kind: MirFunctionKind,
+    pub linkage: MirLinkage,
     pub is_variadic: bool, // Track if this function is variadic
 
-    // Only valid if kind is Defined
+    // Only valid if linkage is Defined (Internal or External)
     pub locals: Vec<LocalId>,
     pub blocks: Vec<MirBlockId>,
     pub entry_block: Option<MirBlockId>,
 }
 
 impl MirFunction {
-    pub(crate) fn new(id: MirFunctionId, name: NameId, return_type: TypeId, kind: MirFunctionKind) -> Self {
+    pub(crate) fn new(
+        id: MirFunctionId,
+        name: NameId,
+        return_type: TypeId,
+        linkage: MirLinkage,
+    ) -> Self {
         Self {
             id,
             name,
             return_type,
             params: Vec::new(),
-            kind,
+            linkage,
             is_variadic: false,
             locals: Vec::new(),
             blocks: Vec::new(),
@@ -103,12 +109,21 @@ impl MirFunction {
         }
     }
 
-    pub(crate) fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
-        Self::new(id, name, return_type, MirFunctionKind::Defined)
+    pub(crate) fn new_defined(
+        id: MirFunctionId,
+        name: NameId,
+        return_type: TypeId,
+        linkage: MirLinkage,
+    ) -> Self {
+        assert!(
+            linkage != MirLinkage::Import,
+            "Cannot create defined function with Import linkage"
+        );
+        Self::new(id, name, return_type, linkage)
     }
 
     fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
-        Self::new(id, name, return_type, MirFunctionKind::Extern)
+        Self::new(id, name, return_type, MirLinkage::Import)
     }
 }
 
@@ -619,7 +634,7 @@ impl MirBuilder {
         let func = self.functions.get(&func_id).unwrap();
 
         assert!(
-            matches!(func.kind, MirFunctionKind::Defined),
+            func.linkage != MirLinkage::Import,
             "cannot create blocks for extern function"
         );
 
@@ -719,9 +734,10 @@ impl MirBuilder {
         param_types: Vec<TypeId>,
         return_type: TypeId,
         is_variadic: bool,
+        linkage: MirLinkage,
     ) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
-        let mut func = MirFunction::new_defined(func_id, name, return_type);
+        let mut func = MirFunction::new_defined(func_id, name, return_type, linkage);
         func.is_variadic = is_variadic;
 
         // Create locals for each parameter
@@ -861,7 +877,7 @@ impl MirBuilder {
     /// Set the entry block for a function
     pub(crate) fn set_function_entry_block(&mut self, func_id: MirFunctionId, block_id: MirBlockId) {
         if let Some(func) = self.functions.get_mut(&func_id) {
-            assert!(matches!(func.kind, MirFunctionKind::Defined));
+            assert!(func.linkage != MirLinkage::Import);
             func.entry_block = Some(block_id);
         }
     }

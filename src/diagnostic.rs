@@ -340,6 +340,8 @@ pub enum SemanticErrorKind {
     VoidReturnWithValue { name: String },
     #[error("non-void function '{name}' should return a value")]
     NonVoidReturnWithoutValue { name: String },
+    #[error("declaration does not declare anything")]
+    EmptyDeclaration,
 
     #[error("invalid number of arguments: expected {expected}, found {found}")]
     InvalidNumberOfArguments { expected: usize, found: usize },
@@ -478,6 +480,8 @@ pub enum SemanticErrorKind {
 
     #[error("switch condition has non-integer type '{ty}'")]
     InvalidSwitchCondition { ty: String },
+    #[error("_Thread_local is not allowed here")]
+    ThreadLocalNotAllowed,
 
     #[error("multiple default labels in one switch")]
     MultipleDefaultLabels,
@@ -549,9 +553,6 @@ pub enum SemanticErrorKind {
 
     #[error("address of array '{name}' will always evaluate to 'true'")]
     AddressOfArrayAlwaysTrue { name: NameId },
-
-    #[error("declaration does not declare anything")]
-    EmptyDeclaration,
 
     #[error("enumerator value {value} for '{name}' is not representable as 'int'")]
     EnumeratorValueNotRepresentable { name: NameId, value: i64 },

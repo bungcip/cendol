@@ -1,7 +1,7 @@
 //! SemanticLowering
 //!
 //! Responsibility
-//! - Declaration Lowering (Declaration -> VarDecl/RecordDecl/EnumDecl/TypedefDecl, FunctionDef -> Function)
+//! -> VarDecl/RecordDecl/EnumDecl/TypedefDecl, FunctionDef -> Function)
 //! - Scope Construction
 //! - Symbol Insertion to Symbol Table
 //! - Name lookup
@@ -77,29 +77,17 @@ fn apply_parsed_declarator(
 
                 if !decl_ctx.in_parameter {
                     if has_static {
-                        ctx.report_error(SemanticError {
-                            span,
-                            kind: SemanticErrorKind::ArrayStaticOutsideParameter,
-                        });
+                        ctx.report_error(span, SemanticErrorKind::ArrayStaticOutsideParameter);
                     }
                     if has_quals {
-                        ctx.report_error(SemanticError {
-                            span,
-                            kind: SemanticErrorKind::ArrayQualifierOutsideParameter,
-                        });
+                        ctx.report_error(span, SemanticErrorKind::ArrayQualifierOutsideParameter);
                     }
                 } else if !is_outermost {
                     if has_static {
-                        ctx.report_error(SemanticError {
-                            span,
-                            kind: SemanticErrorKind::ArrayStaticNotOutermost,
-                        });
+                        ctx.report_error(span, SemanticErrorKind::ArrayStaticNotOutermost);
                     }
                     if has_quals {
-                        ctx.report_error(SemanticError {
-                            span,
-                            kind: SemanticErrorKind::ArrayQualifierNotOutermost,
-                        });
+                        ctx.report_error(span, SemanticErrorKind::ArrayQualifierNotOutermost);
                     }
                 }
             }
@@ -203,10 +191,7 @@ fn resolve_array_size(size: Option<ParsedNodeRef>, ctx: &mut LowerCtx) -> ArrayS
         let expr_ref = ctx.visit_expression(parsed_ref);
         if let Some(val) = const_eval::eval_const_expr(&ctx.const_ctx(), expr_ref) {
             if val < 0 {
-                ctx.report_error(SemanticError {
-                    span: ctx.ast.get_span(expr_ref),
-                    kind: SemanticErrorKind::InvalidArraySize,
-                });
+                ctx.report_error(ctx.ast.get_span(expr_ref), SemanticErrorKind::InvalidArraySize);
                 return ArraySizeType::Incomplete;
             }
             return ArraySizeType::Constant(val as usize);
@@ -227,7 +212,6 @@ pub(crate) struct LowerCtx<'a, 'src> {
     pub(crate) ast: &'a mut Ast,
     pub(crate) diag: &'src mut DiagnosticEngine,
     pub(crate) symbol_table: &'a mut SymbolTable,
-    pub(crate) has_errors: bool,
     pub(crate) registry: &'a mut TypeRegistry,
     /// If Some, the next CompoundStatement lowering will use this scope instead of pushing a new one.
     /// This is used for function bodies to share the parameter scope.
@@ -248,34 +232,33 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ast,
             diag,
             symbol_table,
-            has_errors: false,
             registry,
             next_compound_uses_scope: None,
         }
     }
 
     /// Report a semantic error and mark context as having errors
-    pub(crate) fn report_error(&mut self, error: SemanticError) {
-        self.has_errors = true;
-        self.diag.report(error);
+    /// Report a semantic error
+    pub(crate) fn report_error(&mut self, span: SourceSpan, kind: SemanticErrorKind) {
+        self.diag.report(SemanticError { span, kind });
     }
 
     fn check_function_specifiers(&mut self, info: &DeclSpecInfo, span: SourceSpan) {
         if info.is_inline {
-            self.report_error(SemanticError {
+            self.report_error(
                 span,
-                kind: SemanticErrorKind::InvalidFunctionSpecifier {
+                SemanticErrorKind::InvalidFunctionSpecifier {
                     spec: "inline".to_string(),
                 },
-            });
+            );
         }
         if info.is_noreturn {
-            self.report_error(SemanticError {
+            self.report_error(
                 span,
-                kind: SemanticErrorKind::InvalidFunctionSpecifier {
+                SemanticErrorKind::InvalidFunctionSpecifier {
                     spec: "_Noreturn".to_string(),
                 },
-            });
+            );
         }
     }
 
@@ -288,34 +271,31 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             };
 
             if !is_valid {
-                self.report_error(SemanticError {
-                    span,
-                    kind: SemanticErrorKind::InvalidRestrict,
-                });
+                self.report_error(span, SemanticErrorKind::InvalidRestrict);
             }
         }
         if add.contains(TypeQualifiers::ATOMIC) {
             if base.is_array() {
-                self.report_error(SemanticError {
+                self.report_error(
                     span,
-                    kind: SemanticErrorKind::InvalidAtomicQualifier {
+                    SemanticErrorKind::InvalidAtomicQualifier {
                         type_kind: "array".to_string(),
                     },
-                });
+                );
             } else if base.is_function() {
-                self.report_error(SemanticError {
+                self.report_error(
                     span,
-                    kind: SemanticErrorKind::InvalidAtomicQualifier {
+                    SemanticErrorKind::InvalidAtomicQualifier {
                         type_kind: "function".to_string(),
                     },
-                });
+                );
             } else if base.is_void() {
-                self.report_error(SemanticError {
+                self.report_error(
                     span,
-                    kind: SemanticErrorKind::InvalidAtomicQualifier {
+                    SemanticErrorKind::InvalidAtomicQualifier {
                         type_kind: "void".to_string(),
                     },
-                });
+                );
             }
         }
         self.registry.merge_qualifiers(base, add)
@@ -432,13 +412,13 @@ fn convert_parsed_base_type_to_qual_type(
                     let value = parsed_enum.value.unwrap_or(next_value);
 
                     if value < (i32::MIN as i64) || value > (i32::MAX as i64) {
-                        ctx.report_error(SemanticError {
-                            span: parsed_enum.span,
-                            kind: SemanticErrorKind::EnumeratorValueNotRepresentable {
+                        ctx.report_error(
+                            parsed_enum.span,
+                            SemanticErrorKind::EnumeratorValueNotRepresentable {
                                 name: parsed_enum.name,
                                 value,
                             },
-                        });
+                        );
                     }
 
                     next_value = value.wrapping_add(1);
@@ -547,13 +527,13 @@ fn resolve_record_tag(
             };
 
             if is_completed {
-                ctx.report_error(SemanticError {
+                ctx.report_error(
                     span,
-                    kind: SemanticErrorKind::Redefinition {
+                    SemanticErrorKind::Redefinition {
                         name: tag_name,
                         first_def: def_span,
                     },
-                });
+                );
             }
             return Ok(ty);
         }
@@ -596,13 +576,13 @@ fn resolve_enum_tag(
                     (entry.is_completed, entry.def_span, entry.type_info)
                 };
                 if is_completed {
-                    ctx.report_error(SemanticError {
+                    ctx.report_error(
                         span,
-                        kind: SemanticErrorKind::Redefinition {
+                        SemanticErrorKind::Redefinition {
                             name: tag_name,
                             first_def,
                         },
-                    });
+                    );
                 }
                 Ok(type_info.ty())
             } else {
@@ -679,7 +659,7 @@ fn complete_record_symbol(
     let mut seen_names = HashMap::new();
     let validation_errors = validate_record_members(ctx.registry, &members, &mut seen_names);
     for error in validation_errors {
-        ctx.report_error(error);
+        ctx.report_error(error.span, error.kind);
     }
 
     // Update the type in AST and SymbolTable
@@ -834,40 +814,40 @@ fn resolve_type_specifier(
             // C11 6.7.2.4p3: shall not be used if the type-name is an array type,
             // a function type, an atomic type, or a qualified type.
             if qt.is_array() {
-                ctx.report_error(SemanticError {
+                ctx.report_error(
                     span,
-                    kind: SemanticErrorKind::InvalidAtomicSpecifier {
+                    SemanticErrorKind::InvalidAtomicSpecifier {
                         reason: "array type".to_string(),
                     },
-                });
+                );
             } else if qt.is_function() {
-                ctx.report_error(SemanticError {
+                ctx.report_error(
                     span,
-                    kind: SemanticErrorKind::InvalidAtomicSpecifier {
+                    SemanticErrorKind::InvalidAtomicSpecifier {
                         reason: "function type".to_string(),
                     },
-                });
+                );
             } else if qt.is_void() {
-                ctx.report_error(SemanticError {
+                ctx.report_error(
                     span,
-                    kind: SemanticErrorKind::InvalidAtomicSpecifier {
+                    SemanticErrorKind::InvalidAtomicSpecifier {
                         reason: "void type".to_string(),
                     },
-                });
+                );
             } else if qt.qualifiers().contains(TypeQualifiers::ATOMIC) {
-                ctx.report_error(SemanticError {
+                ctx.report_error(
                     span,
-                    kind: SemanticErrorKind::InvalidAtomicSpecifier {
+                    SemanticErrorKind::InvalidAtomicSpecifier {
                         reason: "atomic type".to_string(),
                     },
-                });
+                );
             } else if !qt.qualifiers().is_empty() {
-                ctx.report_error(SemanticError {
+                ctx.report_error(
                     span,
-                    kind: SemanticErrorKind::InvalidAtomicSpecifier {
+                    SemanticErrorKind::InvalidAtomicSpecifier {
                         reason: "qualified type".to_string(),
                     },
-                });
+                );
             }
 
             Ok(ctx.registry.merge_qualifiers(qt, TypeQualifiers::ATOMIC))
@@ -912,10 +892,7 @@ fn resolve_type_specifier(
                             if let Some(val) = const_eval::eval_const_expr(&ctx.const_ctx(), expr_ref) {
                                 (val, Some(expr_ref))
                             } else {
-                                ctx.report_error(SemanticError {
-                                    span: enum_node.span,
-                                    kind: SemanticErrorKind::NonConstantInitializer,
-                                });
+                                ctx.report_error(enum_node.span, SemanticErrorKind::NonConstantInitializer);
                                 (0, Some(expr_ref))
                             }
                         } else {
@@ -923,10 +900,10 @@ fn resolve_type_specifier(
                         };
 
                         if value < (i32::MIN as i64) || value > (i32::MAX as i64) {
-                            ctx.report_error(SemanticError {
-                                span: enum_node.span,
-                                kind: SemanticErrorKind::EnumeratorValueNotRepresentable { name: *name, value },
-                            });
+                            ctx.report_error(
+                                enum_node.span,
+                                SemanticErrorKind::EnumeratorValueNotRepresentable { name: *name, value },
+                            );
                         }
 
                         next_value = value.wrapping_add(1);
@@ -945,10 +922,10 @@ fn resolve_type_specifier(
                             .define_enum_constant(*name, value, type_ref_to_use, enum_node.span)
                         {
                             let first_def = ctx.symbol_table.get_symbol(existing).def_span;
-                            ctx.report_error(SemanticError {
-                                span: enum_node.span,
-                                kind: SemanticErrorKind::Redefinition { name: *name, first_def },
-                            });
+                            ctx.report_error(
+                                enum_node.span,
+                                SemanticErrorKind::Redefinition { name: *name, first_def },
+                            );
                         }
                     }
                 }
@@ -1131,23 +1108,23 @@ fn merge_base_type(
 
                         // Error for other combinations (e.g. double int)
                         _ => {
-                            ctx.report_error(SemanticError {
+                            ctx.report_error(
                                 span,
-                                kind: SemanticErrorKind::ConflictingTypeSpecifiers {
+                                SemanticErrorKind::ConflictingTypeSpecifiers {
                                     prev: ctx.registry.display_qual_type(existing_ref),
                                 },
-                            });
+                            );
                             Some(QualType::unqualified(ctx.registry.type_error))
                         }
                     }
                 }
                 _ => {
-                    ctx.report_error(SemanticError {
+                    ctx.report_error(
                         span,
-                        kind: SemanticErrorKind::ConflictingTypeSpecifiers {
+                        SemanticErrorKind::ConflictingTypeSpecifiers {
                             prev: ctx.registry.display_qual_type(existing_ref),
                         },
-                    });
+                    );
                     Some(QualType::unqualified(ctx.registry.type_error))
                 }
             }
@@ -1159,20 +1136,17 @@ fn merge_base_type(
 fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span: SourceSpan) {
     // Check typedef with other storage classes
     if info.is_typedef && (info.storage.is_some_and(|s| s != StorageClass::Typedef) || info.is_thread_local) {
-        ctx.report_error(SemanticError {
-            span,
-            kind: SemanticErrorKind::ConflictingStorageClasses,
-        });
+        ctx.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
     }
 
     // _Alignas constraints (C11 6.7.5p3)
     if info.alignment.is_some() && info.storage == Some(StorageClass::Register) {
-        ctx.report_error(SemanticError {
+        ctx.report_error(
             span,
-            kind: SemanticErrorKind::AlignmentNotAllowed {
+            SemanticErrorKind::AlignmentNotAllowed {
                 context: "register object".to_string(),
             },
-        });
+        );
     }
 
     // _Thread_local constraints (C11 6.7.1p3)
@@ -1182,19 +1156,13 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
             && s != StorageClass::Static
             && s != StorageClass::Extern
         {
-            ctx.report_error(SemanticError {
-                span,
-                kind: SemanticErrorKind::ConflictingStorageClasses,
-            });
+            ctx.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
         }
     }
 
     // Check for missing required specifiers (type specifier)
     if info.base_type.is_none() {
-        ctx.report_error(SemanticError {
-            span,
-            kind: SemanticErrorKind::MissingTypeSpecifier,
-        });
+        ctx.report_error(span, SemanticErrorKind::MissingTypeSpecifier);
     }
 }
 
@@ -1208,18 +1176,12 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                 if *sc == StorageClass::ThreadLocal {
                     if info.is_thread_local {
                         // duplicate _Thread_local
-                        ctx.report_error(SemanticError {
-                            span,
-                            kind: SemanticErrorKind::ConflictingStorageClasses,
-                        });
+                        ctx.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
                     }
                     info.is_thread_local = true;
                 } else {
                     if info.storage.is_some() {
-                        ctx.report_error(SemanticError {
-                            span,
-                            kind: SemanticErrorKind::ConflictingStorageClasses,
-                        });
+                        ctx.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
                     }
                     if *sc == StorageClass::Typedef {
                         info.is_typedef = true;
@@ -1238,7 +1200,7 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
             }
             ParsedDeclSpecifier::TypeSpecifier(ts) => {
                 let ty = resolve_type_specifier(ts, ctx, span).unwrap_or_else(|e| {
-                    ctx.report_error(e);
+                    ctx.report_error(e.span, e.kind);
                     QualType::unqualified(ctx.registry.type_error)
                 });
                 info.base_type = merge_base_type(info.base_type, ty, ctx, span);
@@ -1251,7 +1213,7 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                         match ctx.registry.ensure_layout(qt.ty()) {
                             Ok(layout) => Some(layout.alignment as u32),
                             Err(e) => {
-                                ctx.report_error(e);
+                                ctx.report_error(e.span, e.kind);
                                 None
                             }
                         }
@@ -1265,17 +1227,11 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                             } else if val == 0 {
                                 None
                             } else {
-                                ctx.report_error(SemanticError {
-                                    span,
-                                    kind: SemanticErrorKind::InvalidAlignment { value: val },
-                                });
+                                ctx.report_error(span, SemanticErrorKind::InvalidAlignment { value: val });
                                 None
                             }
                         } else {
-                            ctx.report_error(SemanticError {
-                                span,
-                                kind: SemanticErrorKind::NonConstantAlignment,
-                            });
+                            ctx.report_error(span, SemanticErrorKind::NonConstantAlignment);
                             None
                         }
                     }
@@ -1327,7 +1283,7 @@ fn visit_function_parameters(
             let mut base_ty = spec_info
                 .base_type
                 .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
-            base_ty = ctx.registry.merge_qualifiers(base_ty, spec_info.qualifiers);
+            base_ty = ctx.merge_qualifiers_with_check(base_ty, spec_info.qualifiers, span);
 
             let final_ty = if let Some(declarator) = &param.declarator {
                 apply_declarator(
@@ -1358,49 +1314,40 @@ fn visit_function_parameters(
             if is_definition && !ctx.registry.is_complete(decayed_ty.ty()) {
                 let is_void_param_list = params.len() == 1 && decayed_ty.is_void() && pname.is_none();
                 if !is_void_param_list {
-                    ctx.report_error(SemanticError {
+                    ctx.report_error(
                         span,
-                        kind: SemanticErrorKind::IncompleteType {
+                        SemanticErrorKind::IncompleteType {
                             ty: ctx.registry.display_qual_type(decayed_ty),
                         },
-                    });
+                    );
                 }
             }
 
             if let Some(name) = pname {
                 if let Some(&first_def) = seen_names.get(&name) {
-                    ctx.report_error(SemanticError {
-                        span,
-                        kind: SemanticErrorKind::Redefinition { name, first_def },
-                    });
+                    ctx.report_error(span, SemanticErrorKind::Redefinition { name, first_def });
                 } else {
                     seen_names.insert(name, span);
                 }
             }
 
             if spec_info.alignment.is_some() {
-                ctx.report_error(SemanticError {
+                ctx.report_error(
                     span,
-                    kind: SemanticErrorKind::AlignmentNotAllowed {
+                    SemanticErrorKind::AlignmentNotAllowed {
                         context: "function parameter".to_string(),
                     },
-                });
+                );
             }
 
             // C11 6.7.6.3p2: "The only storage-class specifier that shall occur in a parameter declaration is register."
             if let Some(sc) = spec_info.storage
                 && sc != StorageClass::Register
             {
-                ctx.report_error(SemanticError {
-                    span,
-                    kind: SemanticErrorKind::InvalidStorageClassForParameter,
-                });
+                ctx.report_error(span, SemanticErrorKind::InvalidStorageClassForParameter);
             }
             if spec_info.is_thread_local {
-                ctx.report_error(SemanticError {
-                    span,
-                    kind: SemanticErrorKind::InvalidStorageClassForParameter,
-                });
+                ctx.report_error(span, SemanticErrorKind::ThreadLocalNotAllowed);
             }
 
             // Function specifiers are only allowed for functions
@@ -1471,10 +1418,7 @@ fn apply_declarator(
             // "The element type shall not be an incomplete or function type."
             if !ctx.registry.is_complete(base_type.ty()) || base_type.ty().is_function() {
                 let ty_str = ctx.registry.display_type(base_type.ty());
-                ctx.report_error(SemanticError {
-                    span,
-                    kind: SemanticErrorKind::IncompleteType { ty: ty_str },
-                });
+                ctx.report_error(span, SemanticErrorKind::IncompleteType { ty: ty_str });
             }
 
             // C11 6.7.6.2p1: qualifiers and static in array declarator only allowed in function parameters
@@ -1495,29 +1439,17 @@ fn apply_declarator(
 
                 if !decl_ctx.in_parameter {
                     if has_static {
-                        ctx.report_error(SemanticError {
-                            span,
-                            kind: SemanticErrorKind::ArrayStaticOutsideParameter,
-                        });
+                        ctx.report_error(span, SemanticErrorKind::ArrayStaticOutsideParameter);
                     }
                     if has_quals {
-                        ctx.report_error(SemanticError {
-                            span,
-                            kind: SemanticErrorKind::ArrayQualifierOutsideParameter,
-                        });
+                        ctx.report_error(span, SemanticErrorKind::ArrayQualifierOutsideParameter);
                     }
                 } else if !is_outermost {
                     if has_static {
-                        ctx.report_error(SemanticError {
-                            span,
-                            kind: SemanticErrorKind::ArrayStaticNotOutermost,
-                        });
+                        ctx.report_error(span, SemanticErrorKind::ArrayStaticNotOutermost);
                     }
                     if has_quals {
-                        ctx.report_error(SemanticError {
-                            span,
-                            kind: SemanticErrorKind::ArrayQualifierNotOutermost,
-                        });
+                        ctx.report_error(span, SemanticErrorKind::ArrayQualifierNotOutermost);
                     }
                 }
             }
@@ -1797,40 +1729,40 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // static followed by extern/plain is OK and inherits internal linkage.
             // extern/plain followed by static is an error.
             if !existing_is_static && new_is_static {
-                self.report_error(SemanticError {
+                self.report_error(
                     span,
-                    kind: SemanticErrorKind::ConflictingLinkage {
+                    SemanticErrorKind::ConflictingLinkage {
                         name: name.to_string(),
 
                         first_def: existing_def_span,
                     },
-                });
+                );
             }
         }
 
         // C11 6.7p3: If an identifier has no linkage, there shall be no more than one declaration
         // in the same scope and name space.
         if existing_scope == current_scope && (!existing_has_linkage || !new_has_linkage) {
-            self.report_error(SemanticError {
+            self.report_error(
                 span,
-                kind: SemanticErrorKind::Redefinition {
+                SemanticErrorKind::Redefinition {
                     name,
                     first_def: existing_def_span,
                 },
-            });
+            );
             return new_ty;
         }
 
         let composite = self.registry.composite_type(existing_type_info, new_ty);
         if composite.is_none() {
-            self.report_error(SemanticError {
+            self.report_error(
                 span,
-                kind: SemanticErrorKind::ConflictingTypes {
+                SemanticErrorKind::ConflictingTypes {
                     name: name.to_string(),
 
                     first_def: existing_def_span,
                 },
-            });
+            );
             return new_ty;
         }
         let composite = composite.unwrap();
@@ -1867,14 +1799,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let new_is_noreturn = get_noreturn(new_ty, self.registry);
 
         if existing_is_noreturn != new_is_noreturn {
-            self.report_error(SemanticError {
+            self.report_error(
                 span,
-                kind: SemanticErrorKind::ConflictingTypes {
+                SemanticErrorKind::ConflictingTypes {
                     name: name.to_string(),
 
                     first_def,
                 },
-            });
+            );
         }
     }
 
@@ -1918,13 +1850,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let entry = self.symbol_table.get_symbol(existing);
             if entry.def_state == DefinitionState::Defined {
                 let first_def = entry.def_span;
-                self.report_error(SemanticError {
+                self.report_error(
                     span,
-                    kind: SemanticErrorKind::Redefinition {
+                    SemanticErrorKind::Redefinition {
                         name: func_name,
                         first_def,
                     },
-                });
+                );
             }
         }
         let func_sym_ref = self.symbol_table.lookup_symbol(func_name).map(|(s, _)| s).unwrap();
@@ -2153,10 +2085,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // Check if declarator has an identifier
         let Some(name) = extract_name(&init.declarator) else {
             // Declaration without identifier (e.g., "int;") - emit warning and skip
-            self.report_error(SemanticError {
-                span: init.span,
-                kind: SemanticErrorKind::EmptyDeclaration,
-            });
+            self.report_error(init.span, SemanticErrorKind::EmptyDeclaration);
             return None;
         };
 
@@ -2169,12 +2098,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if spec_info.is_typedef {
             if spec_info.alignment.is_some() {
-                self.report_error(SemanticError {
-                    span: init.span,
-                    kind: SemanticErrorKind::AlignmentNotAllowed {
+                self.report_error(
+                    init.span,
+                    SemanticErrorKind::AlignmentNotAllowed {
                         context: "typedef".to_string(),
                     },
-                });
+                );
             }
 
             self.check_function_specifiers(spec_info, init.span);
@@ -2185,22 +2114,22 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let existing_symbol = self.symbol_table.get_symbol(existing);
                 if let SymbolKind::Typedef { aliased_type } = existing_symbol.kind {
                     if aliased_type != final_ty {
-                        self.report_error(SemanticError {
+                        self.report_error(
                             span,
-                            kind: SemanticErrorKind::RedefinitionWithDifferentType {
+                            SemanticErrorKind::RedefinitionWithDifferentType {
                                 name,
                                 first_def: existing_symbol.def_span,
                             },
-                        });
+                        );
                     }
                 } else {
-                    self.report_error(SemanticError {
+                    self.report_error(
                         span,
-                        kind: SemanticErrorKind::Redefinition {
+                        SemanticErrorKind::Redefinition {
                             name,
                             first_def: existing_symbol.def_span,
                         },
-                    });
+                    );
                 }
             }
             self.ast.kinds[node.index()] = NodeKind::TypedefDecl(TypedefDeclData { name, ty: final_ty });
@@ -2231,12 +2160,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
     ) {
         if spec_info.alignment.is_some() {
-            self.report_error(SemanticError {
+            self.report_error(
                 span,
-                kind: SemanticErrorKind::AlignmentNotAllowed {
+                SemanticErrorKind::AlignmentNotAllowed {
                     context: "function".to_string(),
                 },
-            });
+            );
         }
 
         let final_ty = self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
@@ -2252,10 +2181,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .define_function(name, final_ty.ty(), spec_info.storage, false, span)
         {
             let first_def = self.symbol_table.get_symbol(existing).def_span;
-            self.report_error(SemanticError {
-                span,
-                kind: SemanticErrorKind::Redefinition { name, first_def },
-            });
+            self.report_error(span, SemanticErrorKind::Redefinition { name, first_def });
         }
         self.ast.kinds[node.index()] = NodeKind::FunctionDecl(func_decl);
     }
@@ -2296,12 +2222,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let has_no_linkage = !is_global && spec_info.storage != Some(StorageClass::Extern);
 
         if (has_internal_linkage || has_no_linkage) && !self.registry.is_complete(final_ty.ty()) {
-            self.report_error(SemanticError {
+            self.report_error(
                 span,
-                kind: SemanticErrorKind::IncompleteType {
+                SemanticErrorKind::IncompleteType {
                     ty: self.registry.display_qual_type(final_ty),
                 },
-            });
+            );
         }
 
         let var_decl = VarDeclData {
@@ -2317,10 +2243,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 .define_variable(name, final_ty, spec_info.storage, init_expr, spec_info.alignment, span)
         {
             let first_def = self.symbol_table.get_symbol(existing).def_span;
-            self.report_error(SemanticError {
-                span,
-                kind: SemanticErrorKind::Redefinition { name, first_def },
-            });
+            self.report_error(span, SemanticErrorKind::Redefinition { name, first_def });
         }
 
         if let Ok(layout) = self.registry.ensure_layout(final_ty.ty())
@@ -2328,13 +2251,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         {
             let natural_align = layout.alignment as u32;
             if req_align < natural_align {
-                self.report_error(SemanticError {
+                self.report_error(
                     span,
-                    kind: SemanticErrorKind::AlignmentTooLoose {
+                    SemanticErrorKind::AlignmentTooLoose {
                         requested: req_align,
                         natural: natural_align,
                     },
-                });
+                );
             }
         }
 
@@ -2857,10 +2780,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             {
                 return sym_ref;
             }
-            self.report_error(SemanticError {
-                span,
-                kind: SemanticErrorKind::UndeclaredIdentifier { name },
-            });
+            self.report_error(span, SemanticErrorKind::UndeclaredIdentifier { name });
             SymbolRef::new(1).expect("SymbolRef 1 creation failed")
         }
     }
@@ -2922,10 +2842,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         } else {
             // Forward references are okay because of pre-scan
             // But if NOT even in pre-scan, then it's undeclared
-            self.report_error(SemanticError {
-                span,
-                kind: SemanticErrorKind::UndeclaredIdentifier { name },
-            });
+            self.report_error(span, SemanticErrorKind::UndeclaredIdentifier { name });
             SymbolRef::new(1).unwrap()
         }
     }
@@ -3300,17 +3217,11 @@ fn extract_bit_field_width<'a>(
     let width = match const_eval::eval_const_expr(&ctx.const_ctx(), width_expr) {
         Some(val) if (0..=65535).contains(&val) => Some(val as u16),
         Some(_) => {
-            ctx.report_error(SemanticError {
-                span,
-                kind: SemanticErrorKind::InvalidBitfieldWidth,
-            });
+            ctx.report_error(span, SemanticErrorKind::InvalidBitfieldWidth);
             None
         }
         None => {
-            ctx.report_error(SemanticError {
-                span,
-                kind: SemanticErrorKind::NonConstantBitfieldWidth,
-            });
+            ctx.report_error(span, SemanticErrorKind::NonConstantBitfieldWidth);
             None
         }
     };
@@ -3333,13 +3244,13 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                 if let Some(cond_ty) = ctx.ast.get_resolved_type(cond_node)
                     && !cond_ty.is_integer()
                 {
-                    ctx.report_error(SemanticError {
-                        span: node.span,
-                        kind: SemanticErrorKind::TypeMismatch {
+                    ctx.report_error(
+                        node.span,
+                        SemanticErrorKind::TypeMismatch {
                             expected: "integer type".to_string(),
                             found: ctx.registry.display_qual_type(cond_ty),
                         },
-                    });
+                    );
                 }
 
                 let const_ctx = ctx.const_ctx();
@@ -3350,15 +3261,9 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                             _ => String::new(),
                         };
 
-                        ctx.report_error(SemanticError {
-                            span: node.span,
-                            kind: SemanticErrorKind::StaticAssertFailed { message },
-                        });
+                        ctx.report_error(node.span, SemanticErrorKind::StaticAssertFailed { message });
                     }
-                    None => ctx.report_error(SemanticError {
-                        span: node.span,
-                        kind: SemanticErrorKind::StaticAssertNotConstant,
-                    }),
+                    None => ctx.report_error(node.span, SemanticErrorKind::StaticAssertNotConstant),
                     _ => {}
                 }
             }
@@ -3367,10 +3272,7 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
 
                 // Check for illegal storage classes
                 if spec_info.storage.is_some() {
-                    ctx.report_error(SemanticError {
-                        span,
-                        kind: SemanticErrorKind::ConflictingStorageClasses,
-                    });
+                    ctx.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
                 }
 
                 // Handle anonymous struct/union members (C11 6.7.2.1p13)
@@ -3400,12 +3302,12 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                     let (bit_field_size, base_declarator) = extract_bit_field_width(&init_declarator.declarator, ctx);
 
                     if bit_field_size.is_some() && spec_info.alignment.is_some() {
-                        ctx.report_error(SemanticError {
-                            span: init_declarator.span,
-                            kind: SemanticErrorKind::AlignmentNotAllowed {
+                        ctx.report_error(
+                            init_declarator.span,
+                            SemanticErrorKind::AlignmentNotAllowed {
                                 context: "bit-field".to_string(),
                             },
-                        });
+                        );
                     }
 
                     ctx.check_function_specifiers(&spec_info, init_declarator.span);
@@ -3431,32 +3333,26 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                     // Validate bit-field
                     if let Some(width) = bit_field_size {
                         if !member_type.is_integer() {
-                            ctx.report_error(SemanticError {
-                                span: init_declarator.span,
-                                kind: SemanticErrorKind::InvalidBitfieldType {
+                            ctx.report_error(
+                                init_declarator.span,
+                                SemanticErrorKind::InvalidBitfieldType {
                                     ty: ctx.registry.display_qual_type(member_type),
                                 },
-                            });
+                            );
                         } else if member_type.qualifiers().contains(TypeQualifiers::ATOMIC) {
-                            ctx.report_error(SemanticError {
-                                span: init_declarator.span,
-                                kind: SemanticErrorKind::BitfieldHasAtomicType,
-                            });
+                            ctx.report_error(init_declarator.span, SemanticErrorKind::BitfieldHasAtomicType);
                         } else if let Ok(layout) = ctx.registry.ensure_layout(member_type.ty()) {
                             let type_width = layout.size * 8;
                             if (width as u64) > type_width {
-                                ctx.report_error(SemanticError {
-                                    span: init_declarator.span,
-                                    kind: SemanticErrorKind::BitfieldWidthExceedsType { width, type_width },
-                                });
+                                ctx.report_error(
+                                    init_declarator.span,
+                                    SemanticErrorKind::BitfieldWidthExceedsType { width, type_width },
+                                );
                             }
                         }
 
                         if width == 0 && member_name.is_some() {
-                            ctx.report_error(SemanticError {
-                                span: init_declarator.span,
-                                kind: SemanticErrorKind::NamedZeroWidthBitfield,
-                            });
+                            ctx.report_error(init_declarator.span, SemanticErrorKind::NamedZeroWidthBitfield);
                         }
                     }
 
@@ -3466,13 +3362,13 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                     {
                         let natural_align = layout.alignment as u32;
                         if req_align < natural_align {
-                            ctx.report_error(SemanticError {
-                                span: init_declarator.span,
-                                kind: SemanticErrorKind::AlignmentTooLoose {
+                            ctx.report_error(
+                                init_declarator.span,
+                                SemanticErrorKind::AlignmentTooLoose {
                                     requested: req_align,
                                     natural: natural_align,
                                 },
-                            });
+                            );
                         }
                     }
 

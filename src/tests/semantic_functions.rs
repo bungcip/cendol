@@ -370,10 +370,7 @@ fn test_parameter_storage_typedef_prohibited() {
 
 #[test]
 fn test_parameter_storage_thread_local_prohibited() {
-    run_fail_with_message(
-        "void f(_Thread_local int x) {}",
-        "invalid storage class for function parameter",
-    );
+    run_fail_with_message("void f(_Thread_local int x) {}", "_Thread_local is not allowed here");
 }
 
 #[test]

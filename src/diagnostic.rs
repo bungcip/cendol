@@ -196,6 +196,7 @@ impl IntoDiagnostic for SemanticError {
             self.kind,
             SemanticErrorKind::IncompatiblePointerComparison { .. }
                 | SemanticErrorKind::IncompatiblePointerTypes { .. }
+                | SemanticErrorKind::PointerAssignmentDiscardsQualifiers { .. }
                 | SemanticErrorKind::ReturnLocalAddress { .. }
                 | SemanticErrorKind::ImplicitConstantConversion { .. }
                 | SemanticErrorKind::SwitchCaseOverflow { .. }
@@ -371,6 +372,9 @@ pub enum SemanticErrorKind {
 
     #[error("incompatible pointer types passing '{found}' to parameter of type '{expected}'")]
     IncompatiblePointerTypes { expected: String, found: String },
+
+    #[error("assignment discards qualifiers from pointer target type (passing '{found}' to '{expected}')")]
+    PointerAssignmentDiscardsQualifiers { expected: String, found: String },
 
     #[error("'case' or 'default' label not in switch statement")]
     CaseNotInSwitch,

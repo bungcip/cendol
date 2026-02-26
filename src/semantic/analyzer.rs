@@ -402,6 +402,18 @@ impl<'a> SemanticAnalyzer<'a> {
             // Still record conversions so the assignment works
             self.record_implicit_conversions(lhs_ty, rhs_ty, rhs_ref);
             true
+        } else if self.is_discarding_pointer_qualifiers(lhs_ty, rhs_ty, rhs_ref) {
+            let lhs_str = self.registry.display_qual_type(lhs_ty);
+            let rhs_str = self.registry.display_qual_type(rhs_ty);
+            self.report_warning(
+                span,
+                SemanticErrorKind::PointerAssignmentDiscardsQualifiers {
+                    expected: lhs_str,
+                    found: rhs_str,
+                },
+            );
+            self.record_implicit_conversions(lhs_ty, rhs_ty, rhs_ref);
+            true
         } else {
             let lhs_str = self.registry.display_qual_type(lhs_ty);
             let rhs_str = self.registry.display_qual_type(rhs_ty);
@@ -414,6 +426,50 @@ impl<'a> SemanticAnalyzer<'a> {
             );
             false
         }
+    }
+
+    /// Check if the assignment is between pointers where target qualifiers are discarded
+    fn is_discarding_pointer_qualifiers(&self, lhs_ty: QualType, rhs_ty: QualType, _rhs_ref: NodeRef) -> bool {
+        // Both must be pointers (or array/function that decay to pointers)
+        if !lhs_ty.is_pointer() {
+            return false;
+        }
+
+        // Resolve implicit decay for RHS
+        let rhs_pointee = if rhs_ty.is_array() {
+            // Array qualifiers apply to the element type
+            self.registry
+                .get_array_element(rhs_ty.ty())
+                .map(|elem| QualType::new(elem, rhs_ty.qualifiers()))
+        } else if rhs_ty.is_function() {
+            Some(rhs_ty) // Function decays to pointer to function (unqualified)
+        } else if rhs_ty.is_pointer() {
+            self.registry.get_pointee(rhs_ty.ty())
+        } else {
+            None
+        };
+
+        if let Some(rhs_base) = rhs_pointee {
+            let lhs_base = self.registry.get_pointee(lhs_ty.ty()).unwrap();
+
+            // Check compatibility ignoring top-level qualifiers of the pointed-to type
+            let compatible_ignoring_quals =
+                if lhs_base.ty() == self.registry.type_void || rhs_base.ty() == self.registry.type_void {
+                    true
+                } else {
+                    self.registry.is_compatible(
+                        QualType::unqualified(lhs_base.ty()),
+                        QualType::unqualified(rhs_base.ty()),
+                    )
+                };
+
+            if compatible_ignoring_quals {
+                // Return true if qualifiers are DISCARDED (rhs has something lhs doesn't)
+                return !lhs_base.qualifiers().contains(rhs_base.qualifiers());
+            }
+        }
+
+        false
     }
 
     /// Check if the mismatch is between pointers to different struct types
@@ -1136,15 +1192,19 @@ impl<'a> SemanticAnalyzer<'a> {
 
                 // void* wildcard
                 if lhs_base.ty() == self.registry.type_void || rhs_base.ty() == self.registry.type_void {
-                    return true;
+                    return lhs_base.qualifiers().contains(rhs_base.qualifiers());
                 }
 
                 // Check compatibility ignoring top-level qualifiers of the pointed-to type
                 // (e.g. char is compatible with char, even if one is const)
-                return self.registry.is_compatible(
+                if !self.registry.is_compatible(
                     QualType::unqualified(lhs_base.ty()),
                     QualType::unqualified(rhs_base.ty()),
-                );
+                ) {
+                    return false;
+                }
+
+                return lhs_base.qualifiers().contains(rhs_base.qualifiers());
             }
 
             return false;
@@ -1264,6 +1324,19 @@ impl<'a> SemanticAnalyzer<'a> {
                 },
             );
             // Still record conversions so the assignment works
+            self.record_implicit_conversions(target_ty, init_ty, init_ref);
+        } else if self.is_discarding_pointer_qualifiers(target_ty, init_ty, init_ref) {
+            let lhs_str = self.registry.display_qual_type(target_ty);
+            let rhs_str = self.registry.display_qual_type(init_ty);
+            let span = self.ast.get_span(init_ref);
+
+            self.report_warning(
+                span,
+                SemanticErrorKind::PointerAssignmentDiscardsQualifiers {
+                    expected: lhs_str,
+                    found: rhs_str,
+                },
+            );
             self.record_implicit_conversions(target_ty, init_ty, init_ref);
         } else {
             let lhs_str = self.registry.display_qual_type(target_ty);

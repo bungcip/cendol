@@ -135,3 +135,9 @@ pub(crate) fn run_pass_with_diagnostic(source: &str, phase: CompilePhase, messag
     assert!(result.is_ok(), "Compilation should have succeeded");
     check_diagnostic(&driver, message, line, col);
 }
+
+pub(crate) fn run_pass_with_diagnostic_message(source: &str, phase: CompilePhase, message: &str) {
+    let (driver, result) = run_pipeline(source, phase);
+    assert!(result.is_ok(), "Compilation should have succeeded");
+    check_diagnostic_message_only(&driver, message);
+}

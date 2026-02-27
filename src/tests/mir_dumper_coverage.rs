@@ -16,7 +16,13 @@ fn test_dump_basic_module() {
     let global_id = builder.create_global_with_init(NameId::new("g_val"), i32_ty, false, None);
 
     // Function
-    let func_id = builder.define_function(NameId::new("test_func"), vec![i32_ty], void_ty, false, crate::mir::MirLinkage::External);
+    let func_id = builder.define_function(
+        NameId::new("test_func"),
+        vec![i32_ty],
+        void_ty,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
 
     let block_id = builder.create_block();

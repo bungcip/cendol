@@ -696,7 +696,13 @@ fn test_place_field_out_of_bounds() {
     };
     let struct_ty_id = builder.add_type(struct_ty);
 
-    let func_id = builder.define_function(NameId::new("main"), vec![], i32_ty, false, crate::mir::MirLinkage::External);
+    let func_id = builder.define_function(
+        NameId::new("main"),
+        vec![],
+        i32_ty,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
     let block_id = builder.create_block();
     builder.set_function_entry_block(func_id, block_id);
@@ -745,7 +751,13 @@ fn test_rvalue_cast_aggregate_invalid() {
     };
     let struct_ty_id = builder.add_type(struct_ty);
 
-    let func_id = builder.define_function(NameId::new("main"), vec![], i32_ty, false, crate::mir::MirLinkage::External);
+    let func_id = builder.define_function(
+        NameId::new("main"),
+        vec![],
+        i32_ty,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
     let block_id = builder.create_block();
     builder.set_function_entry_block(func_id, block_id);

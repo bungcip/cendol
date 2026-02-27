@@ -90,12 +90,7 @@ pub struct MirFunction {
 }
 
 impl MirFunction {
-    pub(crate) fn new(
-        id: MirFunctionId,
-        name: NameId,
-        return_type: TypeId,
-        linkage: MirLinkage,
-    ) -> Self {
+    pub(crate) fn new(id: MirFunctionId, name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
         Self {
             id,
             name,
@@ -109,12 +104,7 @@ impl MirFunction {
         }
     }
 
-    pub(crate) fn new_defined(
-        id: MirFunctionId,
-        name: NameId,
-        return_type: TypeId,
-        linkage: MirLinkage,
-    ) -> Self {
+    pub(crate) fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
         assert!(
             linkage != MirLinkage::Import,
             "Cannot create defined function with Import linkage"

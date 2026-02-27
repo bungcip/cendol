@@ -12,8 +12,7 @@ use std::fmt::Write;
 
 use super::{
     BinaryFloatOp, CallTarget, ConstValueId, ConstValueKind, Global, GlobalId, LocalId, MirBlock, MirBlockId,
-    MirFunction, MirFunctionId, MirLinkage, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
-    UnaryFloatOp,
+    MirFunction, MirFunctionId, MirLinkage, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
 };
 use crate::mir::MirProgram;
 

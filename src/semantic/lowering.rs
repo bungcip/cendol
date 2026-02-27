@@ -2849,191 +2849,58 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn collect_labels(&mut self, node: ParsedNodeRef) {
         let parsed_node = self.parsed_ast.get_node(node);
-        match &parsed_node.kind {
-            ParsedNodeKind::Label(name, inner) => {
-                let _ = self.define_label(*name, parsed_node.span);
-                self.collect_labels(*inner);
+        if let ParsedNodeKind::Label(name, _) = &parsed_node.kind {
+            let _ = self.define_label(*name, parsed_node.span);
+        }
+        let mut f = |child| self.collect_labels(child);
+        parsed_node.kind.for_each_child(&mut f);
+    }
+
+    fn get_builtin_type_ref(&self, builtin: BuiltinType) -> TypeRef {
+        match builtin {
+            BuiltinType::Char => self.registry.type_char,
+            BuiltinType::Int => self.registry.type_int,
+            BuiltinType::UShort => self.registry.type_short_unsigned,
+            BuiltinType::UInt => self.registry.type_int_unsigned,
+            _ => self.registry.type_char,
+        }
+    }
+
+    fn try_deduce_string_initializer_size(&self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
+        match self.ast.get_kind(init_node) {
+            NodeKind::Literal(literal::Literal::String(s)) => {
+                let parsed = crate::semantic::literal_utils::parse_string_literal(*s);
+                Some(parsed.size)
             }
-            ParsedNodeKind::CompoundStatement(stmts) => {
-                for stmt in stmts {
-                    self.collect_labels(*stmt);
-                }
-            }
-            ParsedNodeKind::If(stmt) => {
-                self.collect_labels(stmt.condition);
-                self.collect_labels(stmt.then_branch);
-                if let Some(eb) = stmt.else_branch {
-                    self.collect_labels(eb);
-                }
-            }
-            ParsedNodeKind::While(stmt) => {
-                self.collect_labels(stmt.condition);
-                self.collect_labels(stmt.body);
-            }
-            ParsedNodeKind::DoWhile(body, cond) => {
-                self.collect_labels(*body);
-                self.collect_labels(*cond);
-            }
-            ParsedNodeKind::For(stmt) => {
-                if let Some(init) = stmt.init {
-                    self.collect_labels(init);
-                }
-                if let Some(cond) = stmt.condition {
-                    self.collect_labels(cond);
-                }
-                if let Some(inc) = stmt.increment {
-                    self.collect_labels(inc);
-                }
-                self.collect_labels(stmt.body);
-            }
-            ParsedNodeKind::Switch(cond, body) => {
-                self.collect_labels(*cond);
-                self.collect_labels(*body);
-            }
-            ParsedNodeKind::Case(expr, stmt) => {
-                self.collect_labels(*expr);
-                self.collect_labels(*stmt);
-            }
-            ParsedNodeKind::CaseRange(start, end, stmt) => {
-                self.collect_labels(*start);
-                self.collect_labels(*end);
-                self.collect_labels(*stmt);
-            }
-            ParsedNodeKind::Default(stmt) => {
-                self.collect_labels(*stmt);
-            }
-            ParsedNodeKind::ExpressionStatement(Some(e)) => {
-                self.collect_labels(*e);
-            }
-            ParsedNodeKind::Return(Some(e)) => {
-                self.collect_labels(*e);
-            }
-            ParsedNodeKind::GnuStatementExpression(stmt, _) => {
-                self.collect_labels(*stmt);
-            }
-            ParsedNodeKind::BinaryOp(_, lhs, rhs) => {
-                self.collect_labels(*lhs);
-                self.collect_labels(*rhs);
-            }
-            ParsedNodeKind::UnaryOp(_, operand) => {
-                self.collect_labels(*operand);
-            }
-            ParsedNodeKind::FunctionCall(callee, args) => {
-                self.collect_labels(*callee);
-                for arg in args {
-                    self.collect_labels(*arg);
-                }
-            }
-            ParsedNodeKind::TernaryOp(cond, then_branch, else_branch) => {
-                self.collect_labels(*cond);
-                self.collect_labels(*then_branch);
-                self.collect_labels(*else_branch);
-            }
-            ParsedNodeKind::Assignment(_, lhs, rhs) => {
-                self.collect_labels(*lhs);
-                self.collect_labels(*rhs);
-            }
-            ParsedNodeKind::Cast(_, expr) => {
-                self.collect_labels(*expr);
-            }
-            ParsedNodeKind::IndexAccess(base, index) => {
-                self.collect_labels(*base);
-                self.collect_labels(*index);
-            }
-            ParsedNodeKind::MemberAccess(base, _, _) => {
-                self.collect_labels(*base);
-            }
-            ParsedNodeKind::PostIncrement(operand) | ParsedNodeKind::PostDecrement(operand) => {
-                self.collect_labels(*operand);
-            }
-            ParsedNodeKind::SizeOfExpr(expr) => {
-                self.collect_labels(*expr);
-            }
-            ParsedNodeKind::Declaration(decl) => {
-                for init in &decl.init_declarators {
-                    if let Some(e) = init.initializer {
-                        self.collect_labels(e);
+            NodeKind::InitializerList(list) if list.init_len > 0 => {
+                let first_item_ref = list.init_start;
+                if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item_ref)
+                    && item.designator_len == 0
+                    && let NodeKind::Literal(literal::Literal::String(s)) = self.ast.get_kind(item.initializer)
+                {
+                    let parsed = crate::semantic::literal_utils::parse_string_literal(*s);
+                    let string_elem_type = self.get_builtin_type_ref(parsed.builtin_type);
+
+                    if self.registry.is_compatible(
+                        QualType::unqualified(element_type),
+                        QualType::unqualified(string_elem_type),
+                    ) {
+                        return Some(parsed.size);
                     }
                 }
+                None
             }
-            ParsedNodeKind::CompoundLiteral(_, init) => {
-                self.collect_labels(*init);
-            }
-            ParsedNodeKind::InitializerList(inits) => {
-                for init in inits {
-                    self.collect_labels(init.initializer);
-                    for d in &init.designation {
-                        match d {
-                            ParsedDesignator::ArrayIndex(idx) => self.collect_labels(*idx),
-                            ParsedDesignator::GnuArrayRange(s, e) => {
-                                self.collect_labels(*s);
-                                self.collect_labels(*e);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            ParsedNodeKind::GenericSelection(control, assocs) => {
-                self.collect_labels(*control);
-                for a in assocs {
-                    self.collect_labels(a.result_expr);
-                }
-            }
-            ParsedNodeKind::BuiltinVaArg(_, expr) => {
-                self.collect_labels(*expr);
-            }
-            ParsedNodeKind::BuiltinOffsetof(_, expr) => {
-                self.collect_labels(*expr);
-            }
-            ParsedNodeKind::BuiltinVaStart(ap, last) => {
-                self.collect_labels(*ap);
-                self.collect_labels(*last);
-            }
-            ParsedNodeKind::BuiltinVaEnd(ap) => {
-                self.collect_labels(*ap);
-            }
-            ParsedNodeKind::BuiltinVaCopy(dst, src) => {
-                self.collect_labels(*dst);
-                self.collect_labels(*src);
-            }
-            ParsedNodeKind::AtomicOp(_, args) => {
-                for arg in args {
-                    self.collect_labels(*arg);
-                }
-            }
-            _ => {}
+            _ => None,
         }
     }
 
     fn deduce_array_size_full(&self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
+        if let Some(size) = self.try_deduce_string_initializer_size(init_node, element_type) {
+            return Some(size);
+        }
+
         match self.ast.get_kind(init_node) {
             NodeKind::InitializerList(list) => {
-                // Special case: array of character type initialized by { "string" }
-                if list.init_len > 0 {
-                    let first_item_ref = list.init_start;
-                    if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item_ref)
-                        && item.designator_len == 0
-                        && let NodeKind::Literal(literal::Literal::String(s)) = self.ast.get_kind(item.initializer)
-                    {
-                        let parsed = crate::semantic::literal_utils::parse_string_literal(*s);
-                        let string_elem_type = match parsed.builtin_type {
-                            BuiltinType::Char => self.registry.type_char,
-                            BuiltinType::Int => self.registry.type_int,
-                            BuiltinType::UShort => self.registry.type_short_unsigned,
-                            BuiltinType::UInt => self.registry.type_int_unsigned,
-                            _ => self.registry.type_char,
-                        };
-
-                        if self.registry.is_compatible(
-                            QualType::unqualified(element_type),
-                            QualType::unqualified(string_elem_type),
-                        ) {
-                            return Some(parsed.size);
-                        }
-                    }
-                }
-
                 let mut max_index: i64 = -1;
                 let mut current_index: i64 = 0;
                 let eval = |e| const_eval::eval_const_expr(&self.const_ctx(), e);
@@ -3058,23 +2925,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                 }
                                 current_index = e_v;
                             }
-                            _ => {} // Field designator at top level? invalid for array but let consume_initializers handle/skip
+                            _ => {}
                         }
                     }
 
                     max_index = max_index.max(current_index);
 
-                    // Safety: record current position to prevent infinite loops if element_type consumes nothing
-                    // (e.g. empty struct/array) but initializers remain.
                     let start_item = iter.peek().map(|n| n.get());
-
-                    // Consume initializers for one element
                     self.consume_initializers(element_type, &mut iter, true);
 
-                    let end_item = iter.peek().map(|n| n.get());
-                    if start_item.is_some() && start_item == end_item {
-                        // We made no progress, but there are still items.
-                        // Force consume one item to avoid infinite loop.
+                    if let Some(end_item) = iter.peek().map(|n| n.get())
+                        && start_item == Some(end_item)
+                    {
                         iter.next();
                     }
 
@@ -3082,10 +2944,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
 
                 Some((max_index + 1) as usize)
-            }
-            NodeKind::Literal(literal::Literal::String(s)) => {
-                let parsed = crate::semantic::literal_utils::parse_string_literal(*s);
-                Some(parsed.size)
             }
             _ => None,
         }

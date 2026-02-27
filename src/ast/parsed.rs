@@ -303,3 +303,246 @@ pub enum ParsedDesignator {
     ArrayIndex(ParsedNodeRef),
     GnuArrayRange(ParsedNodeRef, ParsedNodeRef),
 }
+impl ParsedDeclSpecifier {
+    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+        match self {
+            ParsedDeclSpecifier::AlignmentSpecifier(aspec) => aspec.for_each_child(f),
+            ParsedDeclSpecifier::TypeSpecifier(ts) => ts.for_each_child(f),
+            _ => {}
+        }
+    }
+}
+
+impl ParsedTypeSpecifier {
+    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+        match self {
+            ParsedTypeSpecifier::Enum(_, Some(enumerators)) => {
+                for &e in enumerators {
+                    f(e);
+                }
+            }
+            ParsedTypeSpecifier::Record(_, _, Some(def)) => {
+                if let Some(members) = &def.members {
+                    for &m in members {
+                        f(m);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl ParsedAlignmentSpecifier {
+    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+        match self {
+            ParsedAlignmentSpecifier::Expr(e) => f(*e),
+            _ => {}
+        }
+    }
+}
+
+impl ParsedDeclarator {
+    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+        match self {
+            ParsedDeclarator::Pointer(_, inner) => {
+                if let Some(inner) = inner {
+                    inner.for_each_child(f);
+                }
+            }
+            ParsedDeclarator::Array(inner, size) => {
+                inner.for_each_child(f);
+                size.for_each_child(f);
+            }
+            ParsedDeclarator::Function { inner, params, .. } => {
+                inner.for_each_child(f);
+                for p in params {
+                    p.for_each_child(f);
+                }
+            }
+            ParsedDeclarator::BitField(inner, size_expr) => {
+                inner.for_each_child(f);
+                f(*size_expr);
+            }
+            _ => {}
+        }
+    }
+}
+
+impl ParsedParamData {
+    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+        for spec in &self.specifiers {
+            spec.for_each_child(f);
+        }
+        if let Some(decl) = &self.declarator {
+            decl.for_each_child(f);
+        }
+    }
+}
+
+impl ParsedArraySize {
+    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+        match self {
+            ParsedArraySize::Expression { expr, .. } => f(*expr),
+            ParsedArraySize::VlaSpecifier { size: Some(s), .. } => f(*s),
+            _ => {}
+        }
+    }
+}
+
+impl ParsedInitDeclarator {
+    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+        self.declarator.for_each_child(f);
+        if let Some(init) = self.initializer {
+            f(init);
+        }
+    }
+}
+
+impl ParsedDeclarationData {
+    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+        for spec in &self.specifiers {
+            spec.for_each_child(f);
+        }
+        for init in &self.init_declarators {
+            init.for_each_child(f);
+        }
+    }
+}
+
+impl ParsedFunctionDefData {
+    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+        for spec in &self.specifiers {
+            spec.for_each_child(f);
+        }
+        self.declarator.for_each_child(f);
+        f(self.body);
+    }
+}
+
+impl ParsedNodeKind {
+    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+        match self {
+            ParsedNodeKind::Literal(_)
+            | ParsedNodeKind::Ident(_)
+            | ParsedNodeKind::BuiltinTypesCompatibleP(_, _)
+            | ParsedNodeKind::SizeOfType(_)
+            | ParsedNodeKind::AlignOf(_)
+            | ParsedNodeKind::Break
+            | ParsedNodeKind::Continue
+            | ParsedNodeKind::Goto(_)
+            | ParsedNodeKind::EmptyStatement
+            | ParsedNodeKind::Dummy => {}
+            ParsedNodeKind::UnaryOp(_, e)
+            | ParsedNodeKind::PostIncrement(e)
+            | ParsedNodeKind::PostDecrement(e)
+            | ParsedNodeKind::MemberAccess(e, _, _)
+            | ParsedNodeKind::Cast(_, e)
+            | ParsedNodeKind::BuiltinVaArg(_, e)
+            | ParsedNodeKind::BuiltinOffsetof(_, e)
+            | ParsedNodeKind::BuiltinVaEnd(e)
+            | ParsedNodeKind::BuiltinPopcount(e)
+            | ParsedNodeKind::BuiltinClz(e)
+            | ParsedNodeKind::BuiltinCtz(e)
+            | ParsedNodeKind::SizeOfExpr(e)
+            | ParsedNodeKind::CompoundLiteral(_, e)
+            | ParsedNodeKind::Label(_, e)
+            | ParsedNodeKind::Default(e)
+            | ParsedNodeKind::GnuStatementExpression(e, _) => f(*e),
+            ParsedNodeKind::BinaryOp(_, l, r)
+            | ParsedNodeKind::Assignment(_, l, r)
+            | ParsedNodeKind::IndexAccess(l, r)
+            | ParsedNodeKind::BuiltinVaStart(l, r)
+            | ParsedNodeKind::BuiltinVaCopy(l, r)
+            | ParsedNodeKind::BuiltinExpect(l, r)
+            | ParsedNodeKind::DoWhile(l, r)
+            | ParsedNodeKind::Switch(l, r)
+            | ParsedNodeKind::Case(l, r)
+            | ParsedNodeKind::StaticAssert(l, r) => {
+                f(*l);
+                f(*r);
+            }
+            ParsedNodeKind::TernaryOp(c, t, e) | ParsedNodeKind::CaseRange(c, t, e) => {
+                f(*c);
+                f(*t);
+                f(*e);
+            }
+            ParsedNodeKind::FunctionCall(c, args) => {
+                f(*c);
+                for a in args {
+                    f(*a);
+                }
+            }
+            ParsedNodeKind::AtomicOp(_, args) => {
+                for a in args {
+                    f(*a);
+                }
+            }
+            ParsedNodeKind::GenericSelection(c, assocs) => {
+                f(*c);
+                for a in assocs {
+                    f(a.result_expr);
+                }
+            }
+            ParsedNodeKind::CompoundStatement(stmts) | ParsedNodeKind::TranslationUnit(stmts) => {
+                for s in stmts {
+                    f(*s);
+                }
+            }
+            ParsedNodeKind::If(stmt) => {
+                f(stmt.condition);
+                f(stmt.then_branch);
+                if let Some(e) = stmt.else_branch {
+                    f(e);
+                }
+            }
+            ParsedNodeKind::While(stmt) => {
+                f(stmt.condition);
+                f(stmt.body);
+            }
+            ParsedNodeKind::For(stmt) => {
+                if let Some(i) = stmt.init {
+                    f(i);
+                }
+                if let Some(c) = stmt.condition {
+                    f(c);
+                }
+                if let Some(i) = stmt.increment {
+                    f(i);
+                }
+                f(stmt.body);
+            }
+            ParsedNodeKind::Return(e) | ParsedNodeKind::ExpressionStatement(e) => {
+                if let Some(e) = e {
+                    f(*e);
+                }
+            }
+            ParsedNodeKind::EnumConstant(_, e) => {
+                if let Some(e) = e {
+                    f(*e);
+                }
+            }
+            ParsedNodeKind::Declaration(decl) => {
+                decl.for_each_child(f);
+            }
+            ParsedNodeKind::FunctionDef(data) => {
+                data.for_each_child(f);
+            }
+            ParsedNodeKind::InitializerList(inits) => {
+                for init in inits {
+                    f(init.initializer);
+                    for d in &init.designation {
+                        match d {
+                            ParsedDesignator::ArrayIndex(idx) => f(*idx),
+                            ParsedDesignator::GnuArrayRange(s, e) => {
+                                f(*s);
+                                f(*e);
+                            }
+                            ParsedDesignator::FieldName(_) => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

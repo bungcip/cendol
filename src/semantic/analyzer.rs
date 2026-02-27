@@ -2462,13 +2462,7 @@ impl<'a> SemanticAnalyzer<'a> {
             literal::Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
             literal::Literal::String(name) => {
                 let parsed = crate::semantic::literal_utils::parse_string_literal(*name);
-                let element_type = match parsed.builtin_type {
-                    BuiltinType::Char => self.registry.type_char,
-                    BuiltinType::Int => self.registry.type_int,
-                    BuiltinType::UShort => self.registry.type_short_unsigned,
-                    BuiltinType::UInt => self.registry.type_int_unsigned,
-                    _ => self.registry.type_char,
-                };
+                let element_type = self.registry.get_builtin_type(parsed.builtin_type);
 
                 let array_type = self
                     .registry

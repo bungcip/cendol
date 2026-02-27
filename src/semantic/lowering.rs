@@ -2856,16 +2856,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         parsed_node.kind.for_each_child(&mut f);
     }
 
-    fn get_builtin_type_ref(&self, builtin: BuiltinType) -> TypeRef {
-        match builtin {
-            BuiltinType::Char => self.registry.type_char,
-            BuiltinType::Int => self.registry.type_int,
-            BuiltinType::UShort => self.registry.type_short_unsigned,
-            BuiltinType::UInt => self.registry.type_int_unsigned,
-            _ => self.registry.type_char,
-        }
-    }
-
     fn try_deduce_string_initializer_size(&self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
         match self.ast.get_kind(init_node) {
             NodeKind::Literal(literal::Literal::String(s)) => {
@@ -2879,7 +2869,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     && let NodeKind::Literal(literal::Literal::String(s)) = self.ast.get_kind(item.initializer)
                 {
                     let parsed = crate::semantic::literal_utils::parse_string_literal(*s);
-                    let string_elem_type = self.get_builtin_type_ref(parsed.builtin_type);
+                    let string_elem_type = self.registry.get_builtin_type(parsed.builtin_type);
 
                     if self.registry.is_compatible(
                         QualType::unqualified(element_type),

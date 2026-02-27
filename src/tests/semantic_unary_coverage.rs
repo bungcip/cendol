@@ -24,7 +24,7 @@ fn test_unary_plus_on_pointer() {
             +p;
         }
         "#,
-        "Invalid operand for unary operation: have '<pointer>'",
+        "Invalid operand for unary operation: have 'int*'",
     );
 }
 

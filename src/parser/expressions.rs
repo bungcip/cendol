@@ -224,6 +224,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinVaCopy => parse_builtin_va_copy(parser),
         TokenKind::BuiltinExpect => parse_builtin_expect(parser),
         TokenKind::BuiltinOffsetof => parse_builtin_offsetof(parser),
+        TokenKind::BuiltinChooseExpr => parse_builtin_choose_expr(parser),
         TokenKind::BuiltinTypesCompatibleP => parse_builtin_types_compatible_p(parser),
         TokenKind::BuiltinPopcount
         | TokenKind::BuiltinPopcountL
@@ -574,6 +575,21 @@ fn parse_builtin_expect(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError
     let c = parser.parse_expr_assignment()?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(ParsedNodeKind::BuiltinExpect(exp, c), SourceSpan::new(start, end)))
+}
+
+fn parse_builtin_choose_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let start = parser.expect(TokenKind::BuiltinChooseExpr)?.span.start();
+    parser.expect(TokenKind::LeftParen)?;
+    let cond = parser.parse_expr_assignment()?;
+    parser.expect(TokenKind::Comma)?;
+    let expr1 = parser.parse_expr_assignment()?;
+    parser.expect(TokenKind::Comma)?;
+    let expr2 = parser.parse_expr_assignment()?;
+    let end = parser.expect(TokenKind::RightParen)?.span.end();
+    Ok(parser.push_node(
+        ParsedNodeKind::BuiltinChooseExpr(cond, expr1, expr2),
+        SourceSpan::new(start, end),
+    ))
 }
 
 fn parse_builtin_offsetof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {

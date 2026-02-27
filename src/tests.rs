@@ -65,6 +65,7 @@ pub mod test_utils;
 
 pub mod ast_dumper_coverage;
 
+pub mod codegen_builtin_choose_expr;
 pub mod codegen_builtins_bitwise;
 pub mod codegen_cast_init;
 pub mod codegen_regr;
@@ -85,6 +86,7 @@ pub mod pp_macro_nested;
 pub mod semantic_assignment_coverage;
 pub mod semantic_atomic;
 pub mod semantic_brace_elision;
+pub mod semantic_builtin_choose_expr;
 pub mod semantic_caserange;
 pub mod semantic_complex_types;
 pub mod semantic_const_recursive;

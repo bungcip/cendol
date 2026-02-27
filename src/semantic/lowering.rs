@@ -2557,6 +2557,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.ast.kinds[node.index()] = NodeKind::BuiltinOffsetof(ty, e);
                 smallvec![node]
             }
+            ParsedNodeKind::BuiltinChooseExpr(cond, e1, e2) => {
+                let node = self.get_or_push_slot(target_slots, span);
+                let c = self.visit_expression(*cond);
+                let first = self.visit_expression(*e1);
+                let second = self.visit_expression(*e2);
+                self.ast.kinds[node.index()] = NodeKind::BuiltinChooseExpr(c, first, second);
+                smallvec![node]
+            }
             ParsedNodeKind::BuiltinVaStart(ap, last) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let a = self.visit_expression(*ap);
@@ -2985,6 +2993,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::BuiltinOffsetof(_, expr) => {
                 self.collect_labels(*expr);
+            }
+            ParsedNodeKind::BuiltinChooseExpr(cond, e1, e2) => {
+                self.collect_labels(*cond);
+                self.collect_labels(*e1);
+                self.collect_labels(*e2);
             }
             ParsedNodeKind::BuiltinVaStart(ap, last) => {
                 self.collect_labels(*ap);

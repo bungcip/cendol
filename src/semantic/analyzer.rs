@@ -21,6 +21,7 @@ pub struct SemanticInfo {
     pub conversions: Vec<SmallVec<[Conversion; 1]>>,
     pub value_categories: Vec<ValueCategory>,
     pub generic_selections: HashMap<usize, NodeRef>, // Maps NodeIndex of GenericSelection to selected result_expr
+    pub choose_expressions: HashMap<usize, NodeRef>, // Maps NodeIndex of BuiltinChooseExpr to selected expression
     pub offsetof_results: HashMap<usize, i64>,       // Maps NodeIndex of BuiltinOffsetof to computed offset
 }
 
@@ -31,6 +32,7 @@ impl SemanticInfo {
             conversions: vec![SmallVec::new(); n],
             value_categories: vec![ValueCategory::RValue; n],
             generic_selections: HashMap::new(),
+            choose_expressions: HashMap::new(),
             offsetof_results: HashMap::new(),
         }
     }
@@ -283,6 +285,13 @@ impl<'a> SemanticAnalyzer<'a> {
                     false
                 }
             }
+            NodeKind::BuiltinChooseExpr(..) => {
+                if let Some(&selected) = self.semantic_info.choose_expressions.get(&node_ref.index()) {
+                    self.semantic_info.value_categories[selected.index()] == ValueCategory::LValue
+                } else {
+                    false
+                }
+            }
             _ => false,
         }
     }
@@ -326,6 +335,13 @@ impl<'a> SemanticAnalyzer<'a> {
                     false
                 }
             }
+            NodeKind::BuiltinChooseExpr(..) => {
+                if let Some(&selected) = self.semantic_info.choose_expressions.get(&node_ref.index()) {
+                    self.is_bitfield(selected)
+                } else {
+                    false
+                }
+            }
             _ => false,
         }
     }
@@ -342,6 +358,13 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::GenericSelection(_) => {
                 if let Some(&selected) = self.semantic_info.generic_selections.get(&node_ref.index()) {
+                    self.is_register_variable(selected)
+                } else {
+                    false
+                }
+            }
+            NodeKind::BuiltinChooseExpr(..) => {
+                if let Some(&selected) = self.semantic_info.choose_expressions.get(&node_ref.index()) {
                     self.is_register_variable(selected)
                 } else {
                     false
@@ -2190,6 +2213,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.type_int))
             }
             NodeKind::BuiltinOffsetof(ty, expr) => self.visit_builtin_offsetof(*ty, *expr, node_ref),
+            NodeKind::BuiltinChooseExpr(cond, e1, e2) => self.visit_builtin_choose_expr(*cond, *e1, *e2, node_ref),
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
                 self.visit_type_expressions(*t1);
                 self.visit_type_expressions(*t2);
@@ -2809,6 +2833,43 @@ impl<'a> SemanticAnalyzer<'a> {
                     ty: self.registry.display_qual_type(ctrl_ty),
                 },
             );
+            None
+        }
+    }
+
+    fn visit_builtin_choose_expr(
+        &mut self,
+        cond_ref: NodeRef,
+        e1_ref: NodeRef,
+        e2_ref: NodeRef,
+        node_ref: NodeRef,
+    ) -> Option<QualType> {
+        let cond_ty = self.visit_node(cond_ref);
+        if let Some(ty) = cond_ty
+            && !ty.is_integer()
+        {
+            self.report_error(
+                self.ast.get_span(cond_ref),
+                SemanticErrorKind::TypeMismatch {
+                    expected: "integer constant expression".to_string(),
+                    found: self.registry.display_qual_type(ty),
+                },
+            );
+        }
+
+        let cond_val = eval_const_expr(&self.const_ctx(), cond_ref);
+        if cond_val.is_none() {
+            self.report_error(self.ast.get_span(cond_ref), SemanticErrorKind::NonConstantInitializer);
+        }
+
+        let ty1 = self.visit_node(e1_ref);
+        let ty2 = self.visit_node(e2_ref);
+
+        if let Some(val) = cond_val {
+            let selected = if val != 0 { e1_ref } else { e2_ref };
+            self.semantic_info.choose_expressions.insert(node_ref.index(), selected);
+            if val != 0 { ty1 } else { ty2 }
+        } else {
             None
         }
     }

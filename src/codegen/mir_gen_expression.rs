@@ -89,6 +89,7 @@ impl<'a> MirGen<'a> {
                 let val = eval_const_expr(&self.const_ctx(), expr_ref).expect("offsetof should be constant");
                 self.create_size_t_operand(val as u64)
             }
+            NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(expr_ref, need_value, mir_ty),
             NodeKind::BuiltinTypesCompatibleP(..) => {
                 let val = eval_const_expr(&self.const_ctx(), expr_ref)
                     .expect("__builtin_types_compatible_p should be constant");
@@ -220,6 +221,24 @@ impl<'a> MirGen<'a> {
             Operand::Copy(Box::new(Place::Local(local)))
         } else {
             self.create_dummy_operand()
+        }
+    }
+
+    fn visit_builtin_choose_expr(&mut self, expr_ref: NodeRef, need_value: bool, mir_ty: TypeId) -> Operand {
+        let selected_expr = *self
+            .ast
+            .semantic_info
+            .as_ref()
+            .unwrap()
+            .choose_expressions
+            .get(&expr_ref.index())
+            .expect("__builtin_choose_expr selection missing");
+
+        let op = self.visit_expression(selected_expr, need_value);
+        if need_value {
+            self.apply_conversions(op, expr_ref, mir_ty)
+        } else {
+            op
         }
     }
 

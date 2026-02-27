@@ -83,6 +83,7 @@ pub enum TokenKind {
     BuiltinVaCopy,
     BuiltinExpect,
     BuiltinOffsetof,
+    BuiltinChooseExpr,
     BuiltinTypesCompatibleP,
     BuiltinPopcount,
     BuiltinPopcountL,
@@ -392,6 +393,7 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__builtin_va_copy"), TokenKind::BuiltinVaCopy);
         m.insert(StringId::new("__builtin_expect"), TokenKind::BuiltinExpect);
         m.insert(StringId::new("__builtin_offsetof"), TokenKind::BuiltinOffsetof);
+        m.insert(StringId::new("__builtin_choose_expr"), TokenKind::BuiltinChooseExpr);
         m.insert(
             StringId::new("__builtin_types_compatible_p"),
             TokenKind::BuiltinTypesCompatibleP,

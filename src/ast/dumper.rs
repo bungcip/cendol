@@ -145,6 +145,7 @@ impl AstDumper {
             NodeKind::BuiltinVaStart(_, _)
             | NodeKind::BuiltinVaEnd(_)
             | NodeKind::BuiltinVaCopy(_, _)
+            | NodeKind::BuiltinChooseExpr(..)
             | NodeKind::BuiltinPopcount(_)
             | NodeKind::BuiltinClz(_)
             | NodeKind::BuiltinCtz(_)
@@ -336,6 +337,9 @@ impl AstDumper {
             ParsedNodeKind::BuiltinOffsetof(ty, expr) => {
                 writeln!(f, "BuiltinOffsetof({:?}, {})", ty, expr.get())
             }
+            ParsedNodeKind::BuiltinChooseExpr(cond, e1, e2) => {
+                writeln!(f, "BuiltinChooseExpr({}, {}, {})", cond.get(), e1.get(), e2.get())
+            }
             ParsedNodeKind::BuiltinTypesCompatibleP(t1, t2) => {
                 writeln!(f, "BuiltinTypesCompatibleP({:?}, {:?})", t1, t2)
             }
@@ -517,6 +521,9 @@ impl AstDumper {
             }
             NodeKind::BuiltinOffsetof(ty, expr) => {
                 writeln!(f, "BuiltinOffsetof({}, {})", ty, expr.get())
+            }
+            NodeKind::BuiltinChooseExpr(cond, e1, e2) => {
+                writeln!(f, "BuiltinChooseExpr({}, {}, {})", cond.get(), e1.get(), e2.get())
             }
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
                 writeln!(f, "BuiltinTypesCompatibleP({}, {})", t1, t2)

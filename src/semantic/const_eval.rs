@@ -174,6 +174,15 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node_ref: NodeRef) -> Opt
             }
             None
         }
+        NodeKind::BuiltinChooseExpr(..) => {
+            let info = ctx.semantic_info.or(ctx.ast.semantic_info.as_ref());
+            if let Some(info) = info
+                && let Some(selected_expr) = info.choose_expressions.get(&expr_node_ref.index())
+            {
+                return eval_const_expr(ctx, *selected_expr);
+            }
+            None
+        }
         NodeKind::TernaryOp(cond, then_ref, else_ref) => {
             let cond_val = eval_const_expr(ctx, *cond)?;
             if cond_val != 0 {

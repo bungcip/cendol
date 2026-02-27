@@ -48,6 +48,7 @@ pub enum NodeKind {
     Cast(QualType, NodeRef),
     BuiltinVaArg(QualType, NodeRef),
     BuiltinOffsetof(QualType, NodeRef),
+    BuiltinChooseExpr(NodeRef, NodeRef, NodeRef),
     BuiltinVaStart(NodeRef, NodeRef),
     BuiltinVaEnd(NodeRef),
     BuiltinVaCopy(NodeRef, NodeRef),
@@ -167,7 +168,9 @@ impl NodeKind {
                 f(*rhs);
             }
 
-            NodeKind::TernaryOp(c1, c2, c3) | NodeKind::CaseRange(c1, c2, c3) => {
+            NodeKind::TernaryOp(c1, c2, c3)
+            | NodeKind::BuiltinChooseExpr(c1, c2, c3)
+            | NodeKind::CaseRange(c1, c2, c3) => {
                 f(*c1);
                 f(*c2);
                 f(*c3);

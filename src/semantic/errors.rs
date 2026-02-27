@@ -141,7 +141,7 @@ pub enum SemanticErrorKind {
         prev: String,
     },
     InvalidFunctionSpecifier {
-        spec: String,
+        spec: &'static str,
     },
     DuplicateMember {
         name: NameId,
@@ -244,17 +244,17 @@ pub enum SemanticErrorKind {
         name: NameId,
     },
     AlignmentNotAllowed {
-        context: String,
+        context: &'static str,
     },
     AlignmentTooLoose {
         requested: u32,
         natural: u32,
     },
     InvalidAtomicQualifier {
-        type_kind: String,
+        type_kind: &'static str,
     },
     InvalidAtomicSpecifier {
-        reason: String,
+        reason: &'static str,
     },
     ArrayStaticOutsideParameter,
     ArrayQualifierOutsideParameter,

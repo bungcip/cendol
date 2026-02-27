@@ -254,7 +254,6 @@ impl BuiltinType {
                 | Self::Signed // signed int
         )
     }
-
     pub(crate) fn is_char(self) -> bool {
         matches!(self, Self::Char | Self::SChar | Self::UChar)
     }

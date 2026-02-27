@@ -249,20 +249,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn check_function_specifiers(&mut self, info: &DeclSpecInfo, span: SourceSpan) {
         if info.is_inline {
-            self.report_error(
-                span,
-                SemanticErrorKind::InvalidFunctionSpecifier {
-                    spec: "inline".to_string(),
-                },
-            );
+            self.report_error(span, SemanticErrorKind::InvalidFunctionSpecifier { spec: "inline" });
         }
         if info.is_noreturn {
-            self.report_error(
-                span,
-                SemanticErrorKind::InvalidFunctionSpecifier {
-                    spec: "_Noreturn".to_string(),
-                },
-            );
+            self.report_error(span, SemanticErrorKind::InvalidFunctionSpecifier { spec: "_Noreturn" });
         }
     }
 
@@ -280,29 +270,113 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
         if add.contains(TypeQualifiers::ATOMIC) {
             if base.is_array() {
-                self.report_error(
-                    span,
-                    SemanticErrorKind::InvalidAtomicQualifier {
-                        type_kind: "array".to_string(),
-                    },
-                );
+                self.report_error(span, SemanticErrorKind::InvalidAtomicQualifier { type_kind: "array" });
             } else if base.is_function() {
                 self.report_error(
                     span,
-                    SemanticErrorKind::InvalidAtomicQualifier {
-                        type_kind: "function".to_string(),
-                    },
+                    SemanticErrorKind::InvalidAtomicQualifier { type_kind: "function" },
                 );
             } else if base.is_void() {
+                self.report_error(span, SemanticErrorKind::InvalidAtomicQualifier { type_kind: "void" });
+            }
+        }
+        self.registry.merge_qualifiers(base, add)
+    }
+
+    fn check_static_assert(&mut self, cond: ParsedNodeRef, msg: ParsedNodeRef, span: SourceSpan) {
+        let cond_node = self.visit_expression(cond);
+        let msg_node = self.visit_expression(msg);
+
+        if let Some(cond_ty) = self.ast.get_resolved_type(cond_node)
+            && !cond_ty.is_integer()
+        {
+            self.report_error(span, SemanticErrorKind::ExpectedIntegerType { found: cond_ty });
+        }
+
+        let const_ctx = self.const_ctx();
+        match const_eval::eval_const_expr(&const_ctx, cond_node) {
+            Some(0) => {
+                let message = match self.ast.get_kind(msg_node) {
+                    NodeKind::Literal(literal::Literal::String(s)) => s.as_str().to_string(),
+                    _ => String::new(),
+                };
+
+                self.report_error(span, SemanticErrorKind::StaticAssertFailed { message });
+            }
+            None => self.report_error(span, SemanticErrorKind::StaticAssertNotConstant),
+            _ => {}
+        }
+    }
+
+    fn validate_member_layout(
+        &mut self,
+        member_type: QualType,
+        bit_field_size: Option<u16>,
+        alignment: Option<u32>,
+        name: Option<NameId>,
+        span: SourceSpan,
+    ) {
+        if let Some(width) = bit_field_size {
+            if !member_type.is_integer() {
+                self.report_error(span, SemanticErrorKind::InvalidBitfieldType { ty: member_type });
+            } else if member_type.qualifiers().contains(TypeQualifiers::ATOMIC) {
+                self.report_error(span, SemanticErrorKind::BitfieldHasAtomicType);
+            } else if let Ok(layout) = self.registry.ensure_layout(member_type.ty()) {
+                let type_width = layout.size * 8;
+                if (width as u64) > type_width {
+                    self.report_error(span, SemanticErrorKind::BitfieldWidthExceedsType { width, type_width });
+                }
+            }
+            if width == 0 && name.is_some() {
+                self.report_error(span, SemanticErrorKind::NamedZeroWidthBitfield);
+            }
+        } else if let Ok(layout) = self.registry.ensure_layout(member_type.ty())
+            && let Some(req_align) = alignment
+        {
+            let natural_align = layout.alignment as u32;
+            if req_align < natural_align {
                 self.report_error(
                     span,
-                    SemanticErrorKind::InvalidAtomicQualifier {
-                        type_kind: "void".to_string(),
+                    SemanticErrorKind::AlignmentTooLoose {
+                        requested: req_align,
+                        natural: natural_align,
                     },
                 );
             }
         }
-        self.registry.merge_qualifiers(base, add)
+    }
+
+    fn resolve_alignment(&mut self, align: &ParsedAlignmentSpecifier, span: SourceSpan) -> Option<u32> {
+        match align {
+            ParsedAlignmentSpecifier::Type(parsed_ty) => {
+                let qt = convert_to_qual_type(self, *parsed_ty, span, false)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                match self.registry.ensure_layout(qt.ty()) {
+                    Ok(layout) => Some(layout.alignment as u32),
+                    Err(e) => {
+                        self.report_error(e.span, e.kind);
+                        None
+                    }
+                }
+            }
+            ParsedAlignmentSpecifier::Expr(expr_ref) => {
+                let lowered_expr = self.visit_expression(*expr_ref);
+                let const_ctx = self.const_ctx();
+                if let Some(val) = const_eval::eval_const_expr(&const_ctx, lowered_expr) {
+                    if val > 0 && (val as u64).is_power_of_two() {
+                        Some(val as u32)
+                    } else if val == 0 {
+                        None
+                    } else {
+                        self.report_error(span, SemanticErrorKind::InvalidAlignment { value: val });
+                        None
+                    }
+                } else {
+                    self.report_error(span, SemanticErrorKind::NonConstantAlignment);
+                    None
+                }
+            }
+        }
     }
 
     fn push_dummy(&mut self, span: SourceSpan) -> NodeRef {
@@ -367,103 +441,77 @@ fn convert_parsed_base_type_to_qual_type(
     match parsed_base {
         ParsedBaseTypeNode::Builtin(ts) => resolve_type_specifier(ts, ctx, span),
         ParsedBaseTypeNode::Record { tag, members, is_union } => {
-            // Handle struct/union from parsed types
             let is_definition = members.is_some();
             let type_ref = resolve_record_tag(ctx, *tag, *is_union, is_definition, span)?;
 
-            // Now handle members if it's a definition
             if let Some(members_range) = members {
-                // Get the parsed members first to avoid borrowing conflicts
-                let parsed_members: Vec<_> = ctx.parsed_ast.parsed_types.get_struct_members(*members_range).to_vec();
-
-                // Process member types separately to avoid borrowing conflicts
-                let mut member_types = Vec::new();
-                for parsed_member in &parsed_members {
-                    let member_type_ref = convert_to_qual_type(ctx, parsed_member.ty, span, false)?;
-                    member_types.push(member_type_ref);
-                }
-
-                // Now create struct members with the processed types
-                let mut struct_members = Vec::new();
-
-                for (i, parsed_member) in parsed_members.iter().enumerate() {
-                    struct_members.push(StructMember {
-                        name: parsed_member.name,
-                        member_type: member_types[i],
-                        bit_field_size: parsed_member.bit_field_size,
-                        alignment: parsed_member.alignment,
-                        span: parsed_member.span,
-                    });
-                }
+                let parsed_members = ctx.parsed_ast.parsed_types.get_struct_members(*members_range).to_vec();
+                let struct_members = parsed_members
+                    .into_iter()
+                    .map(|m| {
+                        Ok(StructMember {
+                            name: m.name,
+                            member_type: convert_to_qual_type(ctx, m.ty, span, false)?,
+                            bit_field_size: m.bit_field_size,
+                            alignment: m.alignment,
+                            span: m.span,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, SemanticError>>()?;
 
                 complete_record_symbol(ctx, *tag, type_ref, struct_members)?;
             }
-
             Ok(QualType::unqualified(type_ref))
         }
         ParsedBaseTypeNode::Enum { tag, enumerators } => {
-            // Handle enum from parsed types
             let is_definition = enumerators.is_some();
             let type_ref = resolve_enum_tag(ctx, *tag, is_definition, span)?;
 
-            // Process enumerators if it's a definition
             if let Some(enum_range) = enumerators {
-                let parsed_enums = ctx.parsed_ast.parsed_types.get_enum_constants(*enum_range);
+                let parsed_enums = ctx.parsed_ast.parsed_types.get_enum_constants(*enum_range).to_vec();
                 let mut next_value = 0i64;
-                let mut enumerators_list = Vec::new();
-
-                for parsed_enum in parsed_enums {
-                    let value = parsed_enum.value.unwrap_or(next_value);
-
-                    if value < (i32::MIN as i64) || value > (i32::MAX as i64) {
-                        ctx.report_error(
-                            parsed_enum.span,
-                            SemanticErrorKind::EnumeratorValueNotRepresentable {
-                                name: parsed_enum.name,
-                                value,
-                            },
-                        );
-                    }
-
-                    next_value = value.wrapping_add(1);
-
-                    let enum_constant = EnumConstant {
-                        name: parsed_enum.name,
-                        value,
-                        span: parsed_enum.span,
-                        // We don't have the expression here as ParsedEnumConstant only stores the value.
-                        // This path is used for nested enum definitions where resolution differs.
-                        init_expr: None,
-                    };
-                    enumerators_list.push(enum_constant);
-
-                    // Register constant in symbol table
-                    let _ = ctx
-                        .symbol_table
-                        .define_enum_constant(parsed_enum.name, value, type_ref, parsed_enum.span);
-                }
+                let enumerators_list = parsed_enums
+                    .into_iter()
+                    .map(|m| {
+                        let value = m.value.unwrap_or(next_value);
+                        if !(i32::MIN as i64..=i32::MAX as i64).contains(&value) {
+                            ctx.report_error(
+                                m.span,
+                                SemanticErrorKind::EnumeratorValueNotRepresentable { name: m.name, value },
+                            );
+                        }
+                        next_value = value.wrapping_add(1);
+                        let _ = ctx.symbol_table.define_enum_constant(m.name, value, type_ref, m.span);
+                        Ok(EnumConstant {
+                            name: m.name,
+                            value,
+                            span: m.span,
+                            init_expr: None,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, SemanticError>>()?;
 
                 complete_enum_symbol(ctx, *tag, type_ref, enumerators_list)?;
             }
-
             Ok(QualType::unqualified(type_ref))
         }
         ParsedBaseTypeNode::Typedef(name) => {
-            // Lookup typedef in symbol table
-            if let Some((entry_ref, _scope_id)) = ctx.symbol_table.lookup_symbol(*name) {
-                let entry = ctx.symbol_table.get_symbol(entry_ref);
-                if let SymbolKind::Typedef { aliased_type } = entry.kind {
-                    Ok(aliased_type)
-                } else {
-                    Err(SemanticError {
-                        span,
-                        kind: SemanticErrorKind::ExpectedTypedefName { found: *name },
-                    })
+            match ctx
+                .symbol_table
+                .lookup_symbol(*name)
+                .map(|(r, _)| ctx.symbol_table.get_symbol(r))
+            {
+                Some(entry) => {
+                    if let SymbolKind::Typedef { aliased_type } = entry.kind {
+                        Ok(aliased_type)
+                    } else {
+                        Err(SemanticError {
+                            span,
+                            kind: SemanticErrorKind::ExpectedTypedefName { found: *name },
+                        })
+                    }
                 }
-            } else {
-                // Typedef not found during semantic lowering - this is expected
-                // when typedefs are defined later in the same scope.
-                Ok(QualType::unqualified(ctx.registry.declare_record(Some(*name), false)))
+                None => Ok(QualType::unqualified(ctx.registry.declare_record(Some(*name), false))),
             }
         }
     }
@@ -507,49 +555,33 @@ fn resolve_record_tag(
     span: SourceSpan,
 ) -> Result<TypeRef, SemanticError> {
     let Some(tag_name) = tag else {
-        // Anonymous struct/union definition
         return Ok(ctx.registry.declare_record(None, is_union));
     };
 
     let existing = ctx.symbol_table.lookup_tag(tag_name);
 
-    if is_definition {
-        // DEFINITION: struct T { ... }
-        // Check if defined in CURRENT scope
-        if let Some((entry_ref, scope_id)) = existing
-            && scope_id == ctx.symbol_table.current_scope()
-        {
-            let (is_completed, def_span, ty) = {
-                let entry = ctx.symbol_table.get_symbol(entry_ref);
-                (entry.is_completed, entry.def_span, entry.type_info.ty())
-            };
+    if let Some((entry_ref, scope_id)) = existing
+        && (!is_definition || scope_id == ctx.symbol_table.current_scope())
+    {
+        let entry = ctx.symbol_table.get_symbol(entry_ref);
+        let type_info = entry.type_info;
+        let is_completed = entry.is_completed;
+        let def_span = entry.def_span;
 
-            if is_completed {
-                ctx.report_error(
-                    span,
-                    SemanticErrorKind::Redefinition {
-                        name: tag_name,
-                        first_def: def_span,
-                    },
-                );
-            }
-            return Ok(ty);
+        if is_definition && is_completed {
+            ctx.report_error(
+                span,
+                SemanticErrorKind::Redefinition {
+                    name: tag_name,
+                    first_def: def_span,
+                },
+            );
         }
-
-        // Not in current scope OR shadowing outer scope -> Create new record
+        Ok(type_info.ty())
+    } else {
         let ty = ctx.registry.declare_record(Some(tag_name), is_union);
         ctx.symbol_table.define_record(tag_name, ty, false, span);
         Ok(ty)
-    } else {
-        // USAGE or FORWARD DECL: struct T;
-        if let Some((entry_ref, _)) = existing {
-            Ok(ctx.symbol_table.get_symbol(entry_ref).type_info.ty())
-        } else {
-            // Implicit forward declaration in current scope
-            let ty = ctx.registry.declare_record(Some(tag_name), is_union);
-            ctx.symbol_table.define_record(tag_name, ty, false, span);
-            Ok(ty)
-        }
     }
 }
 
@@ -560,51 +592,34 @@ fn resolve_enum_tag(
     is_definition: bool,
     span: SourceSpan,
 ) -> Result<TypeRef, SemanticError> {
-    let existing_entry = tag.and_then(|tag_name| ctx.symbol_table.lookup_tag(tag_name));
+    let Some(tag_name) = tag else {
+        return Ok(ctx.registry.declare_enum(None, ctx.registry.type_int));
+    };
 
-    if let Some(tag_name) = tag {
-        if is_definition {
-            // This is a DEFINITION: enum T { ... };
-            if let Some((entry_ref, scope_id)) = existing_entry
-                && scope_id == ctx.symbol_table.current_scope()
-            {
-                // Found in current scope, check if completed
-                let (is_completed, first_def, type_info) = {
-                    let entry = ctx.symbol_table.get_symbol(entry_ref);
-                    (entry.is_completed, entry.def_span, entry.type_info)
-                };
-                if is_completed {
-                    ctx.report_error(
-                        span,
-                        SemanticErrorKind::Redefinition {
-                            name: tag_name,
-                            first_def,
-                        },
-                    );
-                }
-                Ok(type_info.ty())
-            } else {
-                // Not found in current scope, create new entry
-                let new_type_ref = ctx.registry.declare_enum(Some(tag_name), ctx.registry.type_int);
-                ctx.symbol_table.define_enum(tag_name, new_type_ref, span);
-                Ok(new_type_ref)
-            }
-        } else {
-            // This is a USAGE or FORWARD DECL: enum T; or enum T e;
-            if let Some((entry_ref, _)) = existing_entry {
-                let entry = ctx.symbol_table.get_symbol(entry_ref);
-                Ok(entry.type_info.ty())
-            } else {
-                // Implicit forward declaration
-                let forward_ref = ctx.registry.declare_enum(Some(tag_name), ctx.registry.type_int);
+    let existing = ctx.symbol_table.lookup_tag(tag_name);
 
-                ctx.symbol_table.define_enum(tag_name, forward_ref, span);
-                Ok(forward_ref)
-            }
+    if let Some((entry_ref, scope_id)) = existing
+        && (!is_definition || scope_id == ctx.symbol_table.current_scope())
+    {
+        let entry = ctx.symbol_table.get_symbol(entry_ref);
+        let type_info = entry.type_info;
+        let is_completed = entry.is_completed;
+        let def_span = entry.def_span;
+
+        if is_definition && is_completed {
+            ctx.report_error(
+                span,
+                SemanticErrorKind::Redefinition {
+                    name: tag_name,
+                    first_def: def_span,
+                },
+            );
         }
+        Ok(type_info.ty())
     } else {
-        // Anonymous enum definition
-        Ok(ctx.registry.declare_enum(None, ctx.registry.type_int))
+        let ty = ctx.registry.declare_enum(Some(tag_name), ctx.registry.type_int);
+        ctx.symbol_table.define_enum(tag_name, ty, span);
+        Ok(ty)
     }
 }
 
@@ -632,16 +647,12 @@ fn validate_record_members(
             } else {
                 seen_names.insert(name, member.span);
             }
-        } else {
+        } else if let TypeKind::Record {
+            members: inner_members, ..
+        } = &registry.get(member.member_type.ty()).kind
+        {
             // Anonymous member, recurse
-            let member_ty = member.member_type;
-            if member_ty.is_record()
-                && let TypeKind::Record {
-                    members: inner_members, ..
-                } = &registry.get(member_ty.ty()).kind
-            {
-                errors.extend(validate_record_members(registry, inner_members, seen_names));
-            }
+            errors.extend(validate_record_members(registry, inner_members, seen_names));
         }
     }
     errors
@@ -806,67 +817,38 @@ fn resolve_type_specifier(
         ParsedTypeSpecifier::Bool => Ok(QualType::unqualified(ctx.registry.type_bool)),
         ParsedTypeSpecifier::Complex => Ok(QualType::unqualified(ctx.registry.type_complex_marker)),
         ParsedTypeSpecifier::Atomic(parsed_type) => {
-            // Convert the ParsedType to a TypeRef by applying the declarator to the base type
             let qt = convert_to_qual_type(ctx, *parsed_type, span, false)?;
 
-            // C11 6.7.2.4p3: shall not be used if the type-name is an array type,
-            // a function type, an atomic type, or a qualified type.
-            if qt.is_array() {
-                ctx.report_error(
-                    span,
-                    SemanticErrorKind::InvalidAtomicSpecifier {
-                        reason: "array type".to_string(),
-                    },
-                );
+            let reason = if qt.is_array() {
+                Some("array type")
             } else if qt.is_function() {
-                ctx.report_error(
-                    span,
-                    SemanticErrorKind::InvalidAtomicSpecifier {
-                        reason: "function type".to_string(),
-                    },
-                );
+                Some("function type")
             } else if qt.is_void() {
-                ctx.report_error(
-                    span,
-                    SemanticErrorKind::InvalidAtomicSpecifier {
-                        reason: "void type".to_string(),
-                    },
-                );
+                Some("void type")
             } else if qt.qualifiers().contains(TypeQualifiers::ATOMIC) {
-                ctx.report_error(
-                    span,
-                    SemanticErrorKind::InvalidAtomicSpecifier {
-                        reason: "atomic type".to_string(),
-                    },
-                );
+                Some("atomic type")
             } else if !qt.qualifiers().is_empty() {
-                ctx.report_error(
-                    span,
-                    SemanticErrorKind::InvalidAtomicSpecifier {
-                        reason: "qualified type".to_string(),
-                    },
-                );
+                Some("qualified type")
+            } else {
+                None
+            };
+
+            if let Some(reason) = reason {
+                ctx.report_error(span, SemanticErrorKind::InvalidAtomicSpecifier { reason });
             }
 
             Ok(ctx.registry.merge_qualifiers(qt, TypeQualifiers::ATOMIC))
         }
         ParsedTypeSpecifier::Record(is_union, tag, definition) => {
-            // ... resolve_record_tag works same args ...
             let is_definition = definition.is_some();
             let type_ref = resolve_record_tag(ctx, *tag, *is_union, is_definition, span)?;
 
-            // Now handle members if it's a definition
             if let Some(def) = definition {
-                // def is ParsedRecordDefData. members is Option<Vec<ParsedDeclarationData>>.
-                // visit_struct_members expects Vec<ParsedDeclarationData>?
-                // It expects &[DeclarationData] before.
-                // I need to update visit_struct_members as well.
                 let members = def
                     .members
                     .as_ref()
                     .map(|decls| visit_struct_members(decls, ctx, span))
                     .unwrap_or_default();
-
                 complete_record_symbol(ctx, *tag, type_ref, members)?;
             }
 
@@ -874,79 +856,76 @@ fn resolve_type_specifier(
         }
         ParsedTypeSpecifier::Enum(tag, enumerators) => {
             let is_definition = enumerators.is_some();
-            let type_ref_to_use = resolve_enum_tag(ctx, *tag, is_definition, span)?;
+            let type_ref = resolve_enum_tag(ctx, *tag, is_definition, span)?;
 
-            // 2. Process enumerators if it's a definition
             if let Some(enums) = enumerators {
                 let mut next_value = 0i64;
-                let mut enumerators_list = Vec::new();
-
-                for &enum_ref in enums {
-                    // Get node from PARSED ast
-                    let enum_node = ctx.parsed_ast.get_node(enum_ref);
-                    if let ParsedNodeKind::EnumConstant(name, value_expr_ref) = &enum_node.kind {
-                        let (value, init_expr) = if let Some(v_ref) = value_expr_ref {
-                            let expr_ref = ctx.visit_expression(*v_ref);
-                            if let Some(val) = const_eval::eval_const_expr(&ctx.const_ctx(), expr_ref) {
-                                (val, Some(expr_ref))
-                            } else {
-                                ctx.report_error(enum_node.span, SemanticErrorKind::NonConstantInitializer);
-                                (0, Some(expr_ref))
-                            }
-                        } else {
-                            (next_value, None)
+                let enumerators_list = enums
+                    .iter()
+                    .map(|&enum_ref| {
+                        let node = ctx.parsed_ast.get_node(enum_ref);
+                        let ParsedNodeKind::EnumConstant(name, value_expr_ref) = &node.kind else {
+                            unreachable!()
                         };
 
-                        if value < (i32::MIN as i64) || value > (i32::MAX as i64) {
+                        let (value, init_expr) = value_expr_ref
+                            .map(|v_ref| {
+                                let expr_ref = ctx.visit_expression(v_ref);
+                                let val =
+                                    const_eval::eval_const_expr(&ctx.const_ctx(), expr_ref).unwrap_or_else(|| {
+                                        ctx.report_error(node.span, SemanticErrorKind::NonConstantInitializer);
+                                        0
+                                    });
+                                (val, Some(expr_ref))
+                            })
+                            .unwrap_or((next_value, None));
+
+                        if !(i32::MIN as i64..=i32::MAX as i64).contains(&value) {
                             ctx.report_error(
-                                enum_node.span,
+                                node.span,
                                 SemanticErrorKind::EnumeratorValueNotRepresentable { name: *name, value },
                             );
                         }
 
                         next_value = value.wrapping_add(1);
 
-                        let enum_constant = EnumConstant {
-                            name: *name,
-                            value,
-                            span: enum_node.span,
-                            init_expr,
-                        };
-                        enumerators_list.push(enum_constant);
-
-                        // Register constant in symbol table
-                        if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) = ctx
-                            .symbol_table
-                            .define_enum_constant(*name, value, type_ref_to_use, enum_node.span)
+                        if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
+                            ctx.symbol_table.define_enum_constant(*name, value, type_ref, node.span)
                         {
                             let first_def = ctx.symbol_table.get_symbol(existing).def_span;
-                            ctx.report_error(
-                                enum_node.span,
-                                SemanticErrorKind::Redefinition { name: *name, first_def },
-                            );
+                            ctx.report_error(node.span, SemanticErrorKind::Redefinition { name: *name, first_def });
                         }
-                    }
-                }
 
-                complete_enum_symbol(ctx, *tag, type_ref_to_use, enumerators_list)?;
+                        Ok(EnumConstant {
+                            name: *name,
+                            value,
+                            span: node.span,
+                            init_expr,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, SemanticError>>()?;
+
+                complete_enum_symbol(ctx, *tag, type_ref, enumerators_list)?;
             }
-
-            Ok(QualType::unqualified(type_ref_to_use))
+            Ok(QualType::unqualified(type_ref))
         }
         ParsedTypeSpecifier::TypedefName(name) => {
-            // Lookup typedef in symbol table
-            if let Some((entry_ref, _scope_id)) = ctx.symbol_table.lookup_symbol(*name) {
-                let entry = ctx.symbol_table.get_symbol(entry_ref);
-                if let SymbolKind::Typedef { aliased_type } = entry.kind {
-                    Ok(aliased_type)
-                } else {
-                    Err(SemanticError {
-                        span,
-                        kind: SemanticErrorKind::ExpectedTypedefName { found: *name },
-                    })
+            match ctx
+                .symbol_table
+                .lookup_symbol(*name)
+                .map(|(r, _)| ctx.symbol_table.get_symbol(r))
+            {
+                Some(entry) => {
+                    if let SymbolKind::Typedef { aliased_type } = entry.kind {
+                        Ok(aliased_type)
+                    } else {
+                        Err(SemanticError {
+                            span,
+                            kind: SemanticErrorKind::ExpectedTypedefName { found: *name },
+                        })
+                    }
                 }
-            } else {
-                Ok(QualType::unqualified(ctx.registry.declare_record(Some(*name), false)))
+                None => Ok(QualType::unqualified(ctx.registry.declare_record(Some(*name), false))),
             }
         }
         ParsedTypeSpecifier::VaList => Ok(QualType::unqualified(ctx.registry.type_valist)),
@@ -967,140 +946,54 @@ fn merge_base_type(
             let new_type_info = ctx.registry.get(new_type.ty());
 
             match (&existing_type.kind, &new_type_info.kind) {
-                (TypeKind::Builtin(existing_builtin), TypeKind::Builtin(new_builtin)) => {
-                    match (existing_builtin, new_builtin) {
-                        // 1. Same types (redundancy)
-                        (a, b) if a == b => {
-                            // C99/C11: int int is NOT allowed, but long long is.
-                            // However, many compilers allow redundant specifiers.
-                            // In Cendol, we'll allow it if they are identical,
-                            // EXCEPT for types that already have a combined form (like long long).
-                            if *a == BuiltinType::Long {
-                                Some(QualType::unqualified(ctx.registry.type_long_long))
+                (TypeKind::Builtin(e), TypeKind::Builtin(n)) => {
+                    let (&a, &b) = if (*e as u8) <= (*n as u8) { (e, n) } else { (n, e) };
+                    let ty = match (a, b) {
+                        (x, y) if x == y => {
+                            if x == BuiltinType::Long {
+                                ctx.registry.type_long_long
                             } else {
-                                Some(existing_ref)
+                                existing_ref.ty()
                             }
                         }
+                        // Signed modifier (Signed = 17)
+                        (BuiltinType::Char, BuiltinType::Signed) => ctx.registry.type_schar,
+                        (x, BuiltinType::Signed) if x.is_integer() => ctx.registry.get_builtin_type(x),
 
-                        // 2. Handle Signed as a modifier
-                        (BuiltinType::Signed, BuiltinType::Int) => Some(new_type),
-                        (BuiltinType::Int, BuiltinType::Signed) => Some(existing_ref),
+                        // Unsigned modifier (UInt = 9)
+                        (BuiltinType::Char, BuiltinType::UInt) => ctx.registry.type_char_unsigned,
+                        (BuiltinType::Short, BuiltinType::UInt) => ctx.registry.type_short_unsigned,
+                        (BuiltinType::Int, BuiltinType::UInt) => ctx.registry.type_int_unsigned,
+                        (BuiltinType::UInt, BuiltinType::Long) => ctx.registry.type_long_unsigned,
+                        (BuiltinType::UInt, BuiltinType::LongLong) => ctx.registry.type_long_long_unsigned,
+                        (BuiltinType::UInt, BuiltinType::Signed) => ctx.registry.type_int_unsigned,
 
-                        (BuiltinType::Signed, BuiltinType::Char) => {
-                            Some(QualType::unqualified(ctx.registry.type_schar))
+                        // Int redundant specifier (Int = 8)
+                        (BuiltinType::Short, BuiltinType::Int) => ctx.registry.type_short,
+                        (BuiltinType::UShort, BuiltinType::Int) => ctx.registry.type_short_unsigned,
+                        (BuiltinType::Int, BuiltinType::Long) => ctx.registry.type_long,
+                        (BuiltinType::Int, BuiltinType::ULong) => ctx.registry.type_long_unsigned,
+                        (BuiltinType::Int, BuiltinType::LongLong) => ctx.registry.type_long_long,
+                        (BuiltinType::Int, BuiltinType::ULongLong) => ctx.registry.type_long_long_unsigned,
+
+                        // Long upgrades (Long = 10, ULong = 11, LongLong = 12, ULongLong = 13)
+                        (BuiltinType::Long, BuiltinType::LongLong) => ctx.registry.type_long_long,
+                        (BuiltinType::Long, BuiltinType::ULong) => ctx.registry.type_long_long_unsigned,
+                        (BuiltinType::Long, BuiltinType::ULongLong) => ctx.registry.type_long_long_unsigned,
+
+                        // Float/Double combinations (Double = 15)
+                        (BuiltinType::Long, BuiltinType::Double) => ctx.registry.type_long_double,
+
+                        // Complex combinations (Complex = 19)
+                        (BuiltinType::Float, BuiltinType::Complex) => {
+                            ctx.registry.complex_type(ctx.registry.type_float)
                         }
-                        (BuiltinType::Char, BuiltinType::Signed) => {
-                            Some(QualType::unqualified(ctx.registry.type_schar))
+                        (BuiltinType::Double, BuiltinType::Complex) => {
+                            ctx.registry.complex_type(ctx.registry.type_double)
                         }
-
-                        (BuiltinType::Signed, BuiltinType::Short) => Some(new_type),
-                        (BuiltinType::Short, BuiltinType::Signed) => Some(existing_ref),
-
-                        (BuiltinType::Signed, BuiltinType::Long) => Some(new_type),
-                        (BuiltinType::Long, BuiltinType::Signed) => Some(existing_ref),
-
-                        (BuiltinType::Signed, BuiltinType::LongLong) => Some(new_type),
-                        (BuiltinType::LongLong, BuiltinType::Signed) => Some(existing_ref),
-
-                        // 3. Unsigned overrides signed/marker
-                        (BuiltinType::Int, BuiltinType::UInt) => Some(new_type),
-                        (BuiltinType::UInt, BuiltinType::Int) => Some(existing_ref),
-
-                        (BuiltinType::Signed, BuiltinType::UInt) => Some(new_type),
-                        (BuiltinType::UInt, BuiltinType::Signed) => Some(existing_ref),
-
-                        // Char + Unsigned -> UChar
-                        (BuiltinType::Char, BuiltinType::UInt) => {
-                            Some(QualType::unqualified(ctx.registry.type_char_unsigned))
+                        (BuiltinType::LongDouble, BuiltinType::Complex) => {
+                            ctx.registry.complex_type(ctx.registry.type_long_double)
                         }
-                        (BuiltinType::UInt, BuiltinType::Char) => {
-                            Some(QualType::unqualified(ctx.registry.type_char_unsigned))
-                        }
-
-                        // Short + Unsigned -> UShort
-                        (BuiltinType::Short, BuiltinType::UInt) => {
-                            Some(QualType::unqualified(ctx.registry.type_short_unsigned))
-                        }
-                        (BuiltinType::UInt, BuiltinType::Short) => {
-                            Some(QualType::unqualified(ctx.registry.type_short_unsigned))
-                        }
-
-                        // Long + Unsigned -> ULong
-                        (BuiltinType::Long, BuiltinType::UInt) => {
-                            Some(QualType::unqualified(ctx.registry.type_long_unsigned))
-                        }
-                        (BuiltinType::UInt, BuiltinType::Long) => {
-                            Some(QualType::unqualified(ctx.registry.type_long_unsigned))
-                        }
-
-                        // LongLong + Unsigned -> ULongLong
-                        (BuiltinType::LongLong, BuiltinType::UInt) => {
-                            Some(QualType::unqualified(ctx.registry.type_long_long_unsigned))
-                        }
-                        (BuiltinType::UInt, BuiltinType::LongLong) => {
-                            Some(QualType::unqualified(ctx.registry.type_long_long_unsigned))
-                        }
-
-                        // 4. Redundant 'int' combined with other specifiers
-                        (BuiltinType::Short, BuiltinType::Int) => Some(existing_ref),
-                        (BuiltinType::Int, BuiltinType::Short) => Some(new_type),
-                        (BuiltinType::UShort, BuiltinType::Int) => Some(existing_ref),
-                        (BuiltinType::Int, BuiltinType::UShort) => Some(new_type),
-
-                        (BuiltinType::Long, BuiltinType::Int) => Some(existing_ref),
-                        (BuiltinType::Int, BuiltinType::Long) => Some(new_type),
-                        (BuiltinType::ULong, BuiltinType::Int) => Some(existing_ref),
-                        (BuiltinType::Int, BuiltinType::ULong) => Some(new_type),
-
-                        (BuiltinType::LongLong, BuiltinType::Int) => Some(existing_ref),
-                        (BuiltinType::Int, BuiltinType::LongLong) => Some(new_type),
-                        (BuiltinType::ULongLong, BuiltinType::Int) => Some(existing_ref),
-                        (BuiltinType::Int, BuiltinType::ULongLong) => Some(new_type),
-
-                        // 5. Long + Long -> LongLong (handled by case 1 above partially, but let's be explicit if needed)
-                        // (BuiltinType::Long, BuiltinType::Long) is already handled in case 1.
-
-                        // Long + LongLong -> LongLong
-                        (BuiltinType::Long, BuiltinType::LongLong) => Some(new_type),
-                        (BuiltinType::LongLong, BuiltinType::Long) => Some(existing_ref),
-
-                        // ULong + Long -> ULongLong
-                        (BuiltinType::ULong, BuiltinType::Long) => {
-                            Some(QualType::unqualified(ctx.registry.type_long_long_unsigned))
-                        }
-                        (BuiltinType::Long, BuiltinType::ULong) => {
-                            Some(QualType::unqualified(ctx.registry.type_long_long_unsigned))
-                        }
-
-                        // Long + ULongLong -> ULongLong
-                        (BuiltinType::Long, BuiltinType::ULongLong) => Some(new_type),
-                        (BuiltinType::ULongLong, BuiltinType::Long) => Some(existing_ref),
-
-                        // Long + Double -> LongDouble
-                        (BuiltinType::Double, BuiltinType::Long) => {
-                            Some(QualType::unqualified(ctx.registry.type_long_double))
-                        }
-                        (BuiltinType::Long, BuiltinType::Double) => {
-                            Some(QualType::unqualified(ctx.registry.type_long_double))
-                        }
-
-                        // Complex combinations
-                        (BuiltinType::Complex, BuiltinType::Float) | (BuiltinType::Float, BuiltinType::Complex) => {
-                            Some(QualType::unqualified(
-                                ctx.registry.complex_type(ctx.registry.type_float),
-                            ))
-                        }
-                        (BuiltinType::Complex, BuiltinType::Double) | (BuiltinType::Double, BuiltinType::Complex) => {
-                            Some(QualType::unqualified(
-                                ctx.registry.complex_type(ctx.registry.type_double),
-                            ))
-                        }
-                        (BuiltinType::Complex, BuiltinType::LongDouble)
-                        | (BuiltinType::LongDouble, BuiltinType::Complex) => Some(QualType::unqualified(
-                            ctx.registry.complex_type(ctx.registry.type_long_double),
-                        )),
-
-                        // Error for other combinations (e.g. double int)
                         _ => {
                             ctx.report_error(
                                 span,
@@ -1108,9 +1001,10 @@ fn merge_base_type(
                                     prev: ctx.registry.display_qual_type(existing_ref),
                                 },
                             );
-                            Some(QualType::unqualified(ctx.registry.type_error))
+                            ctx.registry.type_error
                         }
-                    }
+                    };
+                    Some(QualType::unqualified(ty))
                 }
                 _ => {
                     ctx.report_error(
@@ -1128,8 +1022,17 @@ fn merge_base_type(
 
 /// Validate specifier combinations for semantic correctness
 fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span: SourceSpan) {
-    // Check typedef with other storage classes
-    if info.is_typedef && (info.storage.is_some_and(|s| s != StorageClass::Typedef) || info.is_thread_local) {
+    // Storage class constraints (C11 6.7.1)
+    let storage_conflict = if info.is_typedef {
+        info.storage.is_some_and(|s| s != StorageClass::Typedef) || info.is_thread_local
+    } else if info.is_thread_local {
+        info.storage
+            .is_some_and(|s| s != StorageClass::Static && s != StorageClass::Extern)
+    } else {
+        false
+    };
+
+    if storage_conflict {
         ctx.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
     }
 
@@ -1138,23 +1041,11 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
         ctx.report_error(
             span,
             SemanticErrorKind::AlignmentNotAllowed {
-                context: "register object".to_string(),
+                context: "register object",
             },
         );
     }
 
-    // _Thread_local constraints (C11 6.7.1p3)
-    if info.is_thread_local {
-        // Can only be used alone or with static/extern
-        if let Some(s) = info.storage
-            && s != StorageClass::Static
-            && s != StorageClass::Extern
-        {
-            ctx.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
-        }
-    }
-
-    // Check for missing required specifiers (type specifier)
     if info.base_type.is_none() {
         ctx.report_error(span, SemanticErrorKind::MissingTypeSpecifier);
     }
@@ -1169,7 +1060,6 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
             ParsedDeclSpecifier::StorageClass(sc) => {
                 if *sc == StorageClass::ThreadLocal {
                     if info.is_thread_local {
-                        // duplicate _Thread_local
                         ctx.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
                     }
                     info.is_thread_local = true;
@@ -1177,20 +1067,17 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                     if info.storage.is_some() {
                         ctx.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
                     }
-                    if *sc == StorageClass::Typedef {
-                        info.is_typedef = true;
-                    }
                     info.storage = Some(*sc);
+                    info.is_typedef |= *sc == StorageClass::Typedef;
                 }
             }
             ParsedDeclSpecifier::TypeQualifier(tq) => {
-                let mask = match tq {
+                info.qualifiers.insert(match tq {
                     TypeQualifier::Const => TypeQualifiers::CONST,
                     TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
                     TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
                     TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
-                };
-                info.qualifiers.insert(mask);
+                });
             }
             ParsedDeclSpecifier::TypeSpecifier(ts) => {
                 let ty = resolve_type_specifier(ts, ctx, span).unwrap_or_else(|e| {
@@ -1200,38 +1087,7 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                 info.base_type = merge_base_type(info.base_type, ty, ctx, span);
             }
             ParsedDeclSpecifier::AlignmentSpecifier(align) => {
-                let align_val: Option<u32> = match align {
-                    ParsedAlignmentSpecifier::Type(parsed_ty) => {
-                        let qt = convert_to_qual_type(ctx, *parsed_ty, span, false)
-                            .unwrap_or(QualType::unqualified(ctx.registry.type_error));
-                        match ctx.registry.ensure_layout(qt.ty()) {
-                            Ok(layout) => Some(layout.alignment as u32),
-                            Err(e) => {
-                                ctx.report_error(e.span, e.kind);
-                                None
-                            }
-                        }
-                    }
-                    ParsedAlignmentSpecifier::Expr(expr_ref) => {
-                        let lowered_expr = ctx.visit_expression(*expr_ref);
-                        let const_ctx = ctx.const_ctx();
-                        if let Some(val) = const_eval::eval_const_expr(&const_ctx, lowered_expr) {
-                            if val > 0 && (val as u64).is_power_of_two() {
-                                Some(val as u32)
-                            } else if val == 0 {
-                                None
-                            } else {
-                                ctx.report_error(span, SemanticErrorKind::InvalidAlignment { value: val });
-                                None
-                            }
-                        } else {
-                            ctx.report_error(span, SemanticErrorKind::NonConstantAlignment);
-                            None
-                        }
-                    }
-                };
-
-                if let Some(val) = align_val {
+                if let Some(val) = ctx.resolve_alignment(align, span) {
                     info.alignment = Some(std::cmp::max(info.alignment.unwrap_or(0), val));
                 }
             }
@@ -1239,18 +1095,15 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                 FunctionSpecifier::Inline => info.is_inline = true,
                 FunctionSpecifier::Noreturn => info.is_noreturn = true,
             },
-            ParsedDeclSpecifier::Attribute => {
-                // Ignore attributes for now
-            }
+            ParsedDeclSpecifier::Attribute => {}
         }
     }
 
-    // Finalize base type: 'signed' without anything else defaults to 'int'
     if let Some(base) = info.base_type {
-        if base.ty() == ctx.registry.type_signed {
+        let ty = base.ty();
+        if ty == ctx.registry.type_signed {
             info.base_type = Some(QualType::unqualified(ctx.registry.type_int));
-        } else if base.ty() == ctx.registry.type_complex_marker {
-            // Standalone _Complex defaults to double _Complex
+        } else if ty == ctx.registry.type_complex_marker {
             info.base_type = Some(QualType::unqualified(
                 ctx.registry.complex_type(ctx.registry.type_double),
             ));
@@ -1324,7 +1177,7 @@ fn visit_function_parameters(
                 ctx.report_error(
                     span,
                     SemanticErrorKind::AlignmentNotAllowed {
-                        context: "function parameter".to_string(),
+                        context: "function parameter",
                     },
                 );
             }
@@ -2077,12 +1930,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if spec_info.is_typedef {
             if spec_info.alignment.is_some() {
-                self.report_error(
-                    init.span,
-                    SemanticErrorKind::AlignmentNotAllowed {
-                        context: "typedef".to_string(),
-                    },
-                );
+                self.report_error(init.span, SemanticErrorKind::AlignmentNotAllowed { context: "typedef" });
             }
 
             self.check_function_specifiers(spec_info, init.span);
@@ -2139,12 +1987,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
     ) {
         if spec_info.alignment.is_some() {
-            self.report_error(
-                span,
-                SemanticErrorKind::AlignmentNotAllowed {
-                    context: "function".to_string(),
-                },
-            );
+            self.report_error(span, SemanticErrorKind::AlignmentNotAllowed { context: "function" });
         }
 
         let final_ty = self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
@@ -3060,138 +2903,64 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
         let node = ctx.parsed_ast.get_node(node_ref);
         match &node.kind {
             ParsedNodeKind::StaticAssert(cond, msg) => {
-                let cond_node = ctx.visit_expression(*cond);
-                let msg_node = ctx.visit_expression(*msg);
-
-                if let Some(cond_ty) = ctx.ast.get_resolved_type(cond_node)
-                    && !cond_ty.is_integer()
-                {
-                    ctx.report_error(node.span, SemanticErrorKind::ExpectedIntegerType { found: cond_ty });
-                }
-
-                let const_ctx = ctx.const_ctx();
-                match const_eval::eval_const_expr(&const_ctx, cond_node) {
-                    Some(0) => {
-                        let message = match ctx.ast.get_kind(msg_node) {
-                            NodeKind::Literal(literal::Literal::String(s)) => s.as_str().to_string(),
-                            _ => String::new(),
-                        };
-
-                        ctx.report_error(node.span, SemanticErrorKind::StaticAssertFailed { message });
-                    }
-                    None => ctx.report_error(node.span, SemanticErrorKind::StaticAssertNotConstant),
-                    _ => {}
-                }
+                ctx.check_static_assert(*cond, *msg, node.span);
             }
             ParsedNodeKind::Declaration(decl) => {
                 let spec_info = visit_decl_specifiers(&decl.specifiers, ctx, span);
 
-                // Check for illegal storage classes
                 if spec_info.storage.is_some() {
                     ctx.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
                 }
 
-                // Handle anonymous struct/union members (C11 6.7.2.1p13)
                 if decl.init_declarators.is_empty() {
-                    if let Some(type_ref) = spec_info.base_type {
-                        let type_ref = ctx.merge_qualifiers_with_check(type_ref, spec_info.qualifiers, span);
-                        if type_ref.is_record() {
-                            let is_anonymous = matches!(
-                                &ctx.registry.get(type_ref.ty()).kind,
-                                TypeKind::Record { tag: None, .. }
-                            );
-
-                            if is_anonymous {
-                                struct_members.push(StructMember {
-                                    member_type: type_ref,
-                                    alignment: spec_info.alignment,
-                                    span,
-                                    ..Default::default()
-                                });
-                            }
+                    if let Some(base) = spec_info.base_type {
+                        let ty = ctx.merge_qualifiers_with_check(base, spec_info.qualifiers, span);
+                        if ty.is_record()
+                            && matches!(&ctx.registry.get(ty.ty()).kind, TypeKind::Record { tag: None, .. })
+                        {
+                            struct_members.push(StructMember {
+                                member_type: ty,
+                                alignment: spec_info.alignment,
+                                span,
+                                ..Default::default()
+                            });
                         }
                     }
                     continue;
                 }
 
-                for init_declarator in &decl.init_declarators {
-                    let (bit_field_size, base_declarator) = extract_bit_field_width(&init_declarator.declarator, ctx);
+                for id in &decl.init_declarators {
+                    let (bit_field_size, base_decl) = extract_bit_field_width(&id.declarator, ctx);
 
                     if bit_field_size.is_some() && spec_info.alignment.is_some() {
-                        ctx.report_error(
-                            init_declarator.span,
-                            SemanticErrorKind::AlignmentNotAllowed {
-                                context: "bit-field".to_string(),
-                            },
-                        );
+                        ctx.report_error(id.span, SemanticErrorKind::AlignmentNotAllowed { context: "bit-field" });
                     }
 
-                    ctx.check_function_specifiers(&spec_info, init_declarator.span);
+                    ctx.check_function_specifiers(&spec_info, id.span);
 
-                    let member_name = extract_name(base_declarator);
+                    let name = extract_name(base_decl);
+                    let base = spec_info
+                        .base_type
+                        .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
+                    let qualified_base = ctx.merge_qualifiers_with_check(base, spec_info.qualifiers, id.span);
 
-                    let member_type = {
-                        let base = spec_info
-                            .base_type
-                            .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
-                        let qualified_base =
-                            ctx.merge_qualifiers_with_check(base, spec_info.qualifiers, init_declarator.span);
-                        apply_declarator(
-                            qualified_base,
-                            base_declarator,
-                            ctx,
-                            init_declarator.span,
-                            &spec_info,
-                            DeclaratorContext { in_parameter: false },
-                        )
-                    };
+                    let member_type = apply_declarator(
+                        qualified_base,
+                        base_decl,
+                        ctx,
+                        id.span,
+                        &spec_info,
+                        DeclaratorContext { in_parameter: false },
+                    );
 
-                    // Validate bit-field
-                    if let Some(width) = bit_field_size {
-                        if !member_type.is_integer() {
-                            ctx.report_error(
-                                init_declarator.span,
-                                SemanticErrorKind::InvalidBitfieldType { ty: member_type },
-                            );
-                        } else if member_type.qualifiers().contains(TypeQualifiers::ATOMIC) {
-                            ctx.report_error(init_declarator.span, SemanticErrorKind::BitfieldHasAtomicType);
-                        } else if let Ok(layout) = ctx.registry.ensure_layout(member_type.ty()) {
-                            let type_width = layout.size * 8;
-                            if (width as u64) > type_width {
-                                ctx.report_error(
-                                    init_declarator.span,
-                                    SemanticErrorKind::BitfieldWidthExceedsType { width, type_width },
-                                );
-                            }
-                        }
-
-                        if width == 0 && member_name.is_some() {
-                            ctx.report_error(init_declarator.span, SemanticErrorKind::NamedZeroWidthBitfield);
-                        }
-                    }
-
-                    if bit_field_size.is_none()
-                        && let Ok(layout) = ctx.registry.ensure_layout(member_type.ty())
-                        && let Some(req_align) = spec_info.alignment
-                    {
-                        let natural_align = layout.alignment as u32;
-                        if req_align < natural_align {
-                            ctx.report_error(
-                                init_declarator.span,
-                                SemanticErrorKind::AlignmentTooLoose {
-                                    requested: req_align,
-                                    natural: natural_align,
-                                },
-                            );
-                        }
-                    }
+                    ctx.validate_member_layout(member_type, bit_field_size, spec_info.alignment, name, id.span);
 
                     struct_members.push(StructMember {
-                        name: member_name,
+                        name,
                         member_type,
                         bit_field_size,
                         alignment: spec_info.alignment,
-                        span: init_declarator.span,
+                        span: id.span,
                     });
                 }
             }

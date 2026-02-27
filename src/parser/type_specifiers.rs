@@ -11,14 +11,6 @@ use super::Parser;
 
 /// Parse type specifier
 pub(crate) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpecifier, ParseError> {
-    parse_type_specifier_with_context(parser, false)
-}
-
-/// Parse type specifier with context
-fn parse_type_specifier_with_context(
-    parser: &mut Parser,
-    in_struct_member: bool,
-) -> Result<ParsedTypeSpecifier, ParseError> {
     use ParsedTypeSpecifier as PTS;
     use TokenKind as TK;
 
@@ -68,7 +60,7 @@ fn parse_type_specifier_with_context(
         TK::Struct | TK::Union => {
             parser.advance();
             let is_union = token.kind == TK::Union;
-            super::struct_parsing::parse_record_specifier_with_context(parser, is_union, in_struct_member)
+            super::struct_parsing::parse_record_specifier_with_context(parser, is_union)
         }
         TK::Enum => {
             parser.advance();

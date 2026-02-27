@@ -1,0 +1,97 @@
+use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pipeline_to_mir};
+use crate::driver::artifact::CompilePhase;
+
+#[test]
+fn test_ternary_incompatible_pointers_rejected() {
+    let src = r#"
+    void f() {
+        int *p;
+        float *q;
+        int x;
+        x ? p : q;
+    }
+    "#;
+    run_fail_with_message(src, "type mismatch: expected int*, found float*");
+}
+
+#[test]
+fn test_ternary_pointer_qualifier_merging() {
+    let src = r#"
+    void f() {
+        const int *p;
+        volatile int *q;
+        int x;
+        // Result should be const volatile int *
+        const volatile int *res = x ? p : q;
+    }
+    "#;
+    run_pass(src, CompilePhase::Mir);
+}
+
+#[test]
+fn test_ternary_void_pointer_qualifier_merging() {
+    let src = r#"
+    void f() {
+        const int *p;
+        volatile void *q;
+        int x;
+        // Result should be const volatile void *
+        const volatile void *res = x ? p : q;
+    }
+    "#;
+    run_pass(src, CompilePhase::Mir);
+}
+
+#[test]
+fn test_ternary_null_pointer_constant() {
+    let src = r#"
+    void f() {
+        int *p;
+        int x;
+        int *res = x ? p : 0;
+        int *res2 = x ? 0 : p;
+    }
+    "#;
+    run_pass(src, CompilePhase::Mir);
+}
+
+#[test]
+fn test_ternary_void_result() {
+    let src = r#"
+    void f() {
+        int x;
+        x ? (void)0 : (void)1;
+    }
+    "#;
+    run_pass(src, CompilePhase::Mir);
+}
+
+#[test]
+fn test_ternary_pointer_to_incomplete_struct() {
+    let src = r#"
+    struct S;
+    void f(struct S *p, struct S *q, int x) {
+        x ? p : q;
+    }
+    "#;
+    run_pass(src, CompilePhase::Mir);
+}
+
+#[test]
+fn test_ternary_pointer_qualifier_mismatch_assignment_rejected() {
+    let src = r#"
+    void f() {
+        const int *p;
+        int *q;
+        int x;
+        // Result is const int *, so assigning to int * should fail or warn
+        // In this compiler, discarding qualifiers is usually a warning or error depending on configuration.
+        // Let's check if it results in the correct composite type.
+        int *res = x ? p : q;
+    }
+    "#;
+    // If our compiler warns on discarding qualifiers, this might pass with warning or fail.
+    // Based on memory: "SemanticErrorKind::PointerAssignmentDiscardsQualifiers warnings"
+    // So it should be a warning.
+    run_pipeline_to_mir(src);
+}

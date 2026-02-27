@@ -138,7 +138,7 @@ pub enum SemanticErrorKind {
         first_def: SourceSpan,
     },
     ConflictingTypeSpecifiers {
-        prev: String,
+        prev: QualType,
     },
     InvalidFunctionSpecifier {
         spec: &'static str,
@@ -372,7 +372,10 @@ impl SemanticErrorKind {
                 format!("conflicting linkage for '{}'", name)
             }
             SemanticErrorKind::ConflictingTypeSpecifiers { prev } => {
-                format!("cannot combine with previous '{}' declaration specifier", prev)
+                format!(
+                    "cannot combine with previous '{}' declaration specifier",
+                    registry.display_qual_type(*prev)
+                )
             }
             SemanticErrorKind::InvalidFunctionSpecifier { spec } => {
                 format!("'{}' function specifier appears on non-function declaration", spec)

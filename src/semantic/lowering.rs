@@ -379,6 +379,59 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
+    fn lower_array_declarator(
+        &mut self,
+        base: &ParsedDeclarator,
+        size: &ParsedArraySize,
+        element_ty: QualType,
+        span: SourceSpan,
+        decl_ctx: DeclaratorContext,
+    ) -> QualType {
+        // C11 6.7.6.2 Array declarators
+        if !self.registry.is_complete(element_ty.ty()) || element_ty.ty().is_function() {
+            self.report_error(span, SemanticErrorKind::IncompleteType { ty: element_ty });
+        }
+
+        let (has_static, quals) = match size {
+            ParsedArraySize::Expression { qualifiers, .. } => (false, qualifiers),
+            ParsedArraySize::Star { qualifiers } => (false, qualifiers),
+            ParsedArraySize::VlaSpecifier {
+                is_static, qualifiers, ..
+            } => (*is_static, qualifiers),
+            ParsedArraySize::Incomplete => (false, &TypeQualifiers::empty()),
+        };
+
+        if has_static || !quals.is_empty() {
+            let is_outermost = matches!(base, ParsedDeclarator::Identifier(..) | ParsedDeclarator::Abstract);
+
+            if !decl_ctx.in_parameter {
+                if has_static {
+                    self.report_error(span, SemanticErrorKind::ArrayStaticOutsideParameter);
+                }
+                if !quals.is_empty() {
+                    self.report_error(span, SemanticErrorKind::ArrayQualifierOutsideParameter);
+                }
+            } else if !is_outermost {
+                if has_static {
+                    self.report_error(span, SemanticErrorKind::ArrayStaticNotOutermost);
+                }
+                if !quals.is_empty() {
+                    self.report_error(span, SemanticErrorKind::ArrayQualifierNotOutermost);
+                }
+            }
+        }
+
+        let array_size = match size {
+            ParsedArraySize::Expression { expr, .. } => resolve_array_size(Some(*expr), self),
+            ParsedArraySize::Star { .. } => ArraySizeType::Star,
+            ParsedArraySize::Incomplete => ArraySizeType::Incomplete,
+            ParsedArraySize::VlaSpecifier { size, .. } => resolve_array_size(*size, self),
+        };
+
+        let ty = self.registry.array_of(element_ty.ty(), array_size);
+        QualType::new(ty, element_ty.qualifiers())
+    }
+
     fn push_dummy(&mut self, span: SourceSpan) -> NodeRef {
         self.ast.push_dummy(span)
     }
@@ -939,83 +992,68 @@ fn merge_base_type(
     ctx: &mut LowerCtx,
     span: SourceSpan,
 ) -> Option<QualType> {
-    match existing {
-        None => Some(new_type),
-        Some(existing_ref) => {
-            let existing_type = ctx.registry.get(existing_ref.ty());
-            let new_type_info = ctx.registry.get(new_type.ty());
+    let Some(existing) = existing else {
+        return Some(new_type);
+    };
 
-            match (&existing_type.kind, &new_type_info.kind) {
-                (TypeKind::Builtin(e), TypeKind::Builtin(n)) => {
-                    let (&a, &b) = if (*e as u8) <= (*n as u8) { (e, n) } else { (n, e) };
-                    let ty = match (a, b) {
-                        (x, y) if x == y => {
-                            if x == BuiltinType::Long {
-                                ctx.registry.type_long_long
-                            } else {
-                                existing_ref.ty()
-                            }
-                        }
-                        // Signed modifier (Signed = 17)
-                        (BuiltinType::Char, BuiltinType::Signed) => ctx.registry.type_schar,
-                        (x, BuiltinType::Signed) if x.is_integer() => ctx.registry.get_builtin_type(x),
+    let existing_type = ctx.registry.get(existing.ty());
+    let new_type = ctx.registry.get(new_type.ty());
 
-                        // Unsigned modifier (UInt = 9)
-                        (BuiltinType::Char, BuiltinType::UInt) => ctx.registry.type_char_unsigned,
-                        (BuiltinType::Short, BuiltinType::UInt) => ctx.registry.type_short_unsigned,
-                        (BuiltinType::Int, BuiltinType::UInt) => ctx.registry.type_int_unsigned,
-                        (BuiltinType::UInt, BuiltinType::Long) => ctx.registry.type_long_unsigned,
-                        (BuiltinType::UInt, BuiltinType::LongLong) => ctx.registry.type_long_long_unsigned,
-                        (BuiltinType::UInt, BuiltinType::Signed) => ctx.registry.type_int_unsigned,
+    match (&existing_type.kind, &new_type.kind) {
+        (TypeKind::Builtin(e), TypeKind::Builtin(n)) => {
+            let (&a, &b) = if (*e as u8) <= (*n as u8) { (e, n) } else { (n, e) };
+            let ty = match (a, b) {
+                (x, y) if x == y => {
+                    if x == BuiltinType::Long {
+                        ctx.registry.type_long_long
+                    } else {
+                        existing.ty()
+                    }
+                }
+                // Signed modifier (Signed = 17)
+                (BuiltinType::Char, BuiltinType::Signed) => ctx.registry.type_schar,
+                (x, BuiltinType::Signed) if x.is_integer() => ctx.registry.get_builtin_type(x),
 
-                        // Int redundant specifier (Int = 8)
-                        (BuiltinType::Short, BuiltinType::Int) => ctx.registry.type_short,
-                        (BuiltinType::UShort, BuiltinType::Int) => ctx.registry.type_short_unsigned,
-                        (BuiltinType::Int, BuiltinType::Long) => ctx.registry.type_long,
-                        (BuiltinType::Int, BuiltinType::ULong) => ctx.registry.type_long_unsigned,
-                        (BuiltinType::Int, BuiltinType::LongLong) => ctx.registry.type_long_long,
-                        (BuiltinType::Int, BuiltinType::ULongLong) => ctx.registry.type_long_long_unsigned,
+                // Unsigned modifier (UInt = 9)
+                (BuiltinType::Char, BuiltinType::UInt) => ctx.registry.type_char_unsigned,
+                (BuiltinType::Short, BuiltinType::UInt) => ctx.registry.type_short_unsigned,
+                (BuiltinType::Int, BuiltinType::UInt) => ctx.registry.type_int_unsigned,
+                (BuiltinType::UInt, BuiltinType::Long) => ctx.registry.type_long_unsigned,
+                (BuiltinType::UInt, BuiltinType::LongLong) => ctx.registry.type_long_long_unsigned,
+                (BuiltinType::UInt, BuiltinType::Signed) => ctx.registry.type_int_unsigned,
 
-                        // Long upgrades (Long = 10, ULong = 11, LongLong = 12, ULongLong = 13)
-                        (BuiltinType::Long, BuiltinType::LongLong) => ctx.registry.type_long_long,
-                        (BuiltinType::Long, BuiltinType::ULong) => ctx.registry.type_long_long_unsigned,
-                        (BuiltinType::Long, BuiltinType::ULongLong) => ctx.registry.type_long_long_unsigned,
+                // Int redundant specifier (Int = 8)
+                (BuiltinType::Short, BuiltinType::Int) => ctx.registry.type_short,
+                (BuiltinType::UShort, BuiltinType::Int) => ctx.registry.type_short_unsigned,
+                (BuiltinType::Int, BuiltinType::Long) => ctx.registry.type_long,
+                (BuiltinType::Int, BuiltinType::ULong) => ctx.registry.type_long_unsigned,
+                (BuiltinType::Int, BuiltinType::LongLong) => ctx.registry.type_long_long,
+                (BuiltinType::Int, BuiltinType::ULongLong) => ctx.registry.type_long_long_unsigned,
 
-                        // Float/Double combinations (Double = 15)
-                        (BuiltinType::Long, BuiltinType::Double) => ctx.registry.type_long_double,
+                // Long upgrades (Long = 10, ULong = 11, LongLong = 12, ULongLong = 13)
+                (BuiltinType::Long, BuiltinType::LongLong) => ctx.registry.type_long_long,
+                (BuiltinType::Long, BuiltinType::ULong) => ctx.registry.type_long_long_unsigned,
+                (BuiltinType::Long, BuiltinType::ULongLong) => ctx.registry.type_long_long_unsigned,
 
-                        // Complex combinations (Complex = 19)
-                        (BuiltinType::Float, BuiltinType::Complex) => {
-                            ctx.registry.complex_type(ctx.registry.type_float)
-                        }
-                        (BuiltinType::Double, BuiltinType::Complex) => {
-                            ctx.registry.complex_type(ctx.registry.type_double)
-                        }
-                        (BuiltinType::LongDouble, BuiltinType::Complex) => {
-                            ctx.registry.complex_type(ctx.registry.type_long_double)
-                        }
-                        _ => {
-                            ctx.report_error(
-                                span,
-                                SemanticErrorKind::ConflictingTypeSpecifiers {
-                                    prev: ctx.registry.display_qual_type(existing_ref),
-                                },
-                            );
-                            ctx.registry.type_error
-                        }
-                    };
-                    Some(QualType::unqualified(ty))
+                // Float/Double combinations (Double = 15)
+                (BuiltinType::Long, BuiltinType::Double) => ctx.registry.type_long_double,
+
+                // Complex combinations (Complex = 19)
+                (BuiltinType::Float, BuiltinType::Complex) => ctx.registry.complex_type(ctx.registry.type_float),
+                (BuiltinType::Double, BuiltinType::Complex) => ctx.registry.complex_type(ctx.registry.type_double),
+                (BuiltinType::LongDouble, BuiltinType::Complex) => {
+                    ctx.registry.complex_type(ctx.registry.type_long_double)
                 }
                 _ => {
-                    ctx.report_error(
-                        span,
-                        SemanticErrorKind::ConflictingTypeSpecifiers {
-                            prev: ctx.registry.display_qual_type(existing_ref),
-                        },
-                    );
-                    Some(QualType::unqualified(ctx.registry.type_error))
+                    ctx.report_error(span, SemanticErrorKind::ConflictingTypeSpecifiers { prev: existing });
+                    ctx.registry.type_error
                 }
-            }
+            };
+            Some(QualType::unqualified(ty))
+        }
+        _ => {
+            ctx.report_error(span, SemanticErrorKind::ConflictingTypeSpecifiers { prev: existing });
+            Some(QualType::unqualified(ctx.registry.type_error))
         }
     }
 }
@@ -1246,72 +1284,19 @@ fn apply_declarator(
     match declarator {
         ParsedDeclarator::Pointer(qualifiers, next) => {
             let ty = ctx.registry.pointer_to(base_type);
-            // Checked merge
-            let modified_ty = ctx.merge_qualifiers_with_check(QualType::unqualified(ty), *qualifiers, span);
-            if let Some(next_decl) = next {
-                apply_declarator(modified_ty, next_decl, ctx, span, spec_info, decl_ctx)
-            } else {
-                modified_ty
+            let modified = ctx.merge_qualifiers_with_check(QualType::unqualified(ty), *qualifiers, span);
+            match next {
+                Some(next) => apply_declarator(modified, next, ctx, span, spec_info, decl_ctx),
+                None => modified,
             }
         }
         ParsedDeclarator::Identifier(_, qualifiers) => ctx.merge_qualifiers_with_check(base_type, *qualifiers, span),
-        ParsedDeclarator::Array(base, size) => {
-            // C11 6.7.6.2 Array declarators
-            // "The element type shall not be an incomplete or function type."
-            if !ctx.registry.is_complete(base_type.ty()) || base_type.ty().is_function() {
-                ctx.report_error(span, SemanticErrorKind::IncompleteType { ty: base_type });
-            }
-
-            // C11 6.7.6.2p1: qualifiers and static in array declarator only allowed in function parameters
-            // and only in the outermost array type derivation.
-            let has_quals = match &size {
-                ParsedArraySize::Expression { qualifiers, .. } => !qualifiers.is_empty(),
-                ParsedArraySize::Star { qualifiers } => !qualifiers.is_empty(),
-                ParsedArraySize::VlaSpecifier { qualifiers, .. } => !qualifiers.is_empty(),
-                ParsedArraySize::Incomplete => false,
-            };
-            let has_static = matches!(size, ParsedArraySize::VlaSpecifier { is_static: true, .. });
-
-            if has_static || has_quals {
-                let is_outermost = matches!(
-                    base.as_ref(),
-                    ParsedDeclarator::Identifier(..) | ParsedDeclarator::Abstract
-                );
-
-                if !decl_ctx.in_parameter {
-                    if has_static {
-                        ctx.report_error(span, SemanticErrorKind::ArrayStaticOutsideParameter);
-                    }
-                    if has_quals {
-                        ctx.report_error(span, SemanticErrorKind::ArrayQualifierOutsideParameter);
-                    }
-                } else if !is_outermost {
-                    if has_static {
-                        ctx.report_error(span, SemanticErrorKind::ArrayStaticNotOutermost);
-                    }
-                    if has_quals {
-                        ctx.report_error(span, SemanticErrorKind::ArrayQualifierNotOutermost);
-                    }
-                }
-            }
-
-            let array_size = match size {
-                ParsedArraySize::Expression { expr, qualifiers: _ } => resolve_array_size(Some(*expr), ctx),
-                ParsedArraySize::Star { qualifiers: _ } => ArraySizeType::Star,
-                ParsedArraySize::Incomplete => ArraySizeType::Incomplete,
-                ParsedArraySize::VlaSpecifier {
-                    is_static: _,
-                    qualifiers: _,
-                    size,
-                } => resolve_array_size(*size, ctx),
-            };
-
-            let ty = ctx.registry.array_of(base_type.ty(), array_size);
-            let array_qt = QualType::new(ty, base_type.qualifiers());
-            apply_declarator(array_qt, base, ctx, span, spec_info, decl_ctx)
+        ParsedDeclarator::Array(inner, size) => {
+            let array_qt = ctx.lower_array_declarator(inner, size, base_type, span, decl_ctx);
+            apply_declarator(array_qt, inner, ctx, span, spec_info, decl_ctx)
         }
         ParsedDeclarator::Function {
-            inner: base,
+            inner,
             params,
             is_variadic,
         } => {
@@ -1319,12 +1304,9 @@ fn apply_declarator(
             let ty = ctx
                 .registry
                 .function_type(base_type.ty(), parameters, *is_variadic, spec_info.is_noreturn);
-            apply_declarator(QualType::unqualified(ty), base, ctx, span, spec_info, decl_ctx)
+            apply_declarator(QualType::unqualified(ty), inner, ctx, span, spec_info, decl_ctx)
         }
-        ParsedDeclarator::BitField(base, _) => {
-            // Bitfield logic handled in struct lowering usually. Here just type application.
-            apply_declarator(base_type, base, ctx, span, spec_info, decl_ctx)
-        }
+        ParsedDeclarator::BitField(inner, _) => apply_declarator(base_type, inner, ctx, span, spec_info, decl_ctx),
         ParsedDeclarator::Abstract => base_type,
     }
 }

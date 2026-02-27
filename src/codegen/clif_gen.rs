@@ -1163,8 +1163,10 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                     let global = ctx.mir.get_global(*global_id);
                     let linkage = if global.name.as_str().starts_with(".L.str") {
                         Linkage::Local
-                    } else {
+                    } else if global.initial_value.is_some() {
                         Linkage::Export
+                    } else {
+                        Linkage::Import
                     };
                     let global_val = ctx
                         .module

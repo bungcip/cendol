@@ -19,8 +19,9 @@ use crate::ast::parsed::{
     ParsedDeclarationData, ParsedDeclarator, ParsedFunctionDefData, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpecifier,
 };
 use crate::ast::*;
-use crate::diagnostic::{DiagnosticEngine, SemanticError, SemanticErrorKind};
+use crate::diagnostic::DiagnosticEngine;
 use crate::semantic::const_eval::{self, ConstEvalCtx};
+use crate::semantic::errors::{SemanticError, SemanticErrorKind};
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, BuiltinType, EnumConstant, ScopeId, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind,
@@ -240,7 +241,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     /// Report a semantic error and mark context as having errors
     /// Report a semantic error
     pub(crate) fn report_error(&mut self, span: SourceSpan, kind: SemanticErrorKind) {
-        self.diag.report(SemanticError { span, kind });
+        let error = SemanticError { span, kind };
+        for diag in error.into_diagnostic(self.registry) {
+            self.diag.report_diagnostic(diag);
+        }
     }
 
     fn check_function_specifiers(&mut self, info: &DeclSpecInfo, span: SourceSpan) {
@@ -451,15 +455,9 @@ fn convert_parsed_base_type_to_qual_type(
                 if let SymbolKind::Typedef { aliased_type } = entry.kind {
                     Ok(aliased_type)
                 } else {
-                    // Get the kind of the symbol as a string for the error message
-                    let kind_string = format!("{:?}", entry.kind);
-                    let found_kind_str = kind_string.split_whitespace().next().unwrap_or("symbol");
                     Err(SemanticError {
                         span,
-                        kind: SemanticErrorKind::TypeMismatch {
-                            expected: "a typedef name".to_string(),
-                            found: format!("a {}", found_kind_str.to_lowercase()),
-                        },
+                        kind: SemanticErrorKind::ExpectedTypedefName { found: *name },
                     })
                 }
             } else {
@@ -942,13 +940,9 @@ fn resolve_type_specifier(
                 if let SymbolKind::Typedef { aliased_type } = entry.kind {
                     Ok(aliased_type)
                 } else {
-                    let kind_string = format!("{:?}", entry.kind);
-                    let found_kind_str = kind_string.split_whitespace().next().unwrap_or("symbol");
                     Err(SemanticError {
                         span,
-                        kind: SemanticErrorKind::ExpectedTypedefName {
-                            found: format!("a {}", found_kind_str.to_lowercase()),
-                        },
+                        kind: SemanticErrorKind::ExpectedTypedefName { found: *name },
                     })
                 }
             } else {
@@ -1314,12 +1308,7 @@ fn visit_function_parameters(
             if is_definition && !ctx.registry.is_complete(decayed_ty.ty()) {
                 let is_void_param_list = params.len() == 1 && decayed_ty.is_void() && pname.is_none();
                 if !is_void_param_list {
-                    ctx.report_error(
-                        span,
-                        SemanticErrorKind::IncompleteType {
-                            ty: ctx.registry.display_qual_type(decayed_ty),
-                        },
-                    );
+                    ctx.report_error(span, SemanticErrorKind::IncompleteType { ty: decayed_ty });
                 }
             }
 
@@ -1417,8 +1406,7 @@ fn apply_declarator(
             // C11 6.7.6.2 Array declarators
             // "The element type shall not be an incomplete or function type."
             if !ctx.registry.is_complete(base_type.ty()) || base_type.ty().is_function() {
-                let ty_str = ctx.registry.display_type(base_type.ty());
-                ctx.report_error(span, SemanticErrorKind::IncompleteType { ty: ty_str });
+                ctx.report_error(span, SemanticErrorKind::IncompleteType { ty: base_type });
             }
 
             // C11 6.7.6.2p1: qualifiers and static in array declarator only allowed in function parameters
@@ -1732,8 +1720,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.report_error(
                     span,
                     SemanticErrorKind::ConflictingLinkage {
-                        name: name.to_string(),
-
+                        name,
                         first_def: existing_def_span,
                     },
                 );
@@ -1758,8 +1745,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(
                 span,
                 SemanticErrorKind::ConflictingTypes {
-                    name: name.to_string(),
-
+                    name,
                     first_def: existing_def_span,
                 },
             );
@@ -1799,14 +1785,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let new_is_noreturn = get_noreturn(new_ty, self.registry);
 
         if existing_is_noreturn != new_is_noreturn {
-            self.report_error(
-                span,
-                SemanticErrorKind::ConflictingTypes {
-                    name: name.to_string(),
-
-                    first_def,
-                },
-            );
+            self.report_error(span, SemanticErrorKind::ConflictingTypes { name, first_def });
         }
     }
 
@@ -2222,12 +2201,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let has_no_linkage = !is_global && spec_info.storage != Some(StorageClass::Extern);
 
         if (has_internal_linkage || has_no_linkage) && !self.registry.is_complete(final_ty.ty()) {
-            self.report_error(
-                span,
-                SemanticErrorKind::IncompleteType {
-                    ty: self.registry.display_qual_type(final_ty),
-                },
-            );
+            self.report_error(span, SemanticErrorKind::IncompleteType { ty: final_ty });
         }
 
         let var_decl = VarDeclData {
@@ -3092,13 +3066,7 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                 if let Some(cond_ty) = ctx.ast.get_resolved_type(cond_node)
                     && !cond_ty.is_integer()
                 {
-                    ctx.report_error(
-                        node.span,
-                        SemanticErrorKind::TypeMismatch {
-                            expected: "integer type".to_string(),
-                            found: ctx.registry.display_qual_type(cond_ty),
-                        },
-                    );
+                    ctx.report_error(node.span, SemanticErrorKind::ExpectedIntegerType { found: cond_ty });
                 }
 
                 let const_ctx = ctx.const_ctx();
@@ -3183,9 +3151,7 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                         if !member_type.is_integer() {
                             ctx.report_error(
                                 init_declarator.span,
-                                SemanticErrorKind::InvalidBitfieldType {
-                                    ty: ctx.registry.display_qual_type(member_type),
-                                },
+                                SemanticErrorKind::InvalidBitfieldType { ty: member_type },
                             );
                         } else if member_type.qualifiers().contains(TypeQualifiers::ATOMIC) {
                             ctx.report_error(init_declarator.span, SemanticErrorKind::BitfieldHasAtomicType);

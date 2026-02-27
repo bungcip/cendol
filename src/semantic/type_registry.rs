@@ -9,8 +9,8 @@ use std::sync::Arc;
 use crate::source_manager::SourceSpan;
 use crate::{
     ast::NameId,
-    diagnostic::{SemanticError, SemanticErrorKind},
     semantic::QualType,
+    semantic::errors::{SemanticError, SemanticErrorKind},
 };
 use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
@@ -880,7 +880,7 @@ impl TypeRegistry {
                         SemanticErrorKind::SizeOfIncompleteType { .. } => SemanticError {
                             span: member.span,
                             kind: SemanticErrorKind::IncompleteType {
-                                ty: self.display_type(member_ty),
+                                ty: QualType::unqualified(member_ty),
                             },
                         },
                         SemanticErrorKind::SizeOfFunctionType => {

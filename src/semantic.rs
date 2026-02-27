@@ -13,6 +13,7 @@
 pub mod analyzer;
 pub mod const_eval;
 pub mod conversions;
+pub mod errors;
 pub(crate) mod literal_utils;
 pub mod lowering;
 pub mod symbol_table;

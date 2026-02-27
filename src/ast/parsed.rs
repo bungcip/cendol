@@ -335,9 +335,8 @@ impl ParsedTypeSpecifier {
 
 impl ParsedAlignmentSpecifier {
     pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
-        match self {
-            ParsedAlignmentSpecifier::Expr(e) => f(*e),
-            _ => {}
+        if let ParsedAlignmentSpecifier::Expr(e) = self {
+            f(*e)
         }
     }
 }
@@ -345,11 +344,10 @@ impl ParsedAlignmentSpecifier {
 impl ParsedDeclarator {
     pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
-            ParsedDeclarator::Pointer(_, inner) => {
-                if let Some(inner) = inner {
-                    inner.for_each_child(f);
-                }
+            ParsedDeclarator::Pointer(_, Some(inner)) => {
+                inner.for_each_child(f);
             }
+            ParsedDeclarator::Pointer(_, None) => {}
             ParsedDeclarator::Array(inner, size) => {
                 inner.for_each_child(f);
                 size.for_each_child(f);

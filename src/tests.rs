@@ -44,6 +44,7 @@ pub mod semantic_lowering;
 pub mod semantic_mir;
 pub mod semantic_negative;
 pub mod semantic_regr_unary_promotion;
+pub mod semantic_unary_coverage;
 pub mod semantic_validation;
 
 pub mod parser_decl;

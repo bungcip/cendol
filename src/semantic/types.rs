@@ -168,7 +168,6 @@ pub enum TypeClass {
     Function = 3,
     Record = 4,
     Enum = 5,
-    Typedef = 6,
     Complex = 7,
 }
 
@@ -181,7 +180,6 @@ impl TypeClass {
             3 => Self::Function,
             4 => Self::Record,
             5 => Self::Enum,
-            6 => Self::Typedef,
             7 => Self::Complex,
             _ => unreachable!("Invalid TypeClass value: {}", v),
         }
@@ -358,7 +356,7 @@ impl TypeRef {
                     return None;
                 }
             }
-            TypeClass::Function | TypeClass::Record | TypeClass::Enum | TypeClass::Typedef | TypeClass::Complex => {
+            TypeClass::Function | TypeClass::Record | TypeClass::Enum | TypeClass::Complex => {
                 if ptr_depth != 0 || arr_len != 0 {
                     return None;
                 }

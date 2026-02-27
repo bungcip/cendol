@@ -16,7 +16,6 @@ use super::Parser;
 pub(crate) fn parse_record_specifier_with_context(
     parser: &mut Parser,
     is_union: bool,
-    in_struct_member: bool,
 ) -> Result<ParsedTypeSpecifier, ParseError> {
     // Check for __attribute__ after struct/union keyword (GCC extension)
     if parser.is_token(TokenKind::Attribute)
@@ -27,9 +26,7 @@ pub(crate) fn parse_record_specifier_with_context(
 
     let tag = parser.accept_name();
 
-    // In struct member context, only parse members if we have a specific tag
-    // to avoid confusion with anonymous nested structs
-    let definition = if parser.accept(TokenKind::LeftBrace).is_some() && (!in_struct_member || tag.is_some()) {
+    let definition = if parser.accept(TokenKind::LeftBrace).is_some() {
         let members = parse_struct_declaration_list(parser)?;
         parser.expect(TokenKind::RightBrace)?;
 

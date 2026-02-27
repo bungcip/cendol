@@ -4,8 +4,8 @@ use crate::mir::MirArrayLayout;
 use crate::mir::MirProgram;
 use crate::mir::MirRecordLayout;
 use crate::mir::{
-    self, BinaryIntOp, ConstValueId, ConstValueKind, LocalId, MirBlockId, MirBuilder, MirFunctionId, MirStmt, MirType,
-    Operand, Place, Rvalue, Terminator, TypeId,
+    self, BinaryIntOp, ConstValueId, ConstValueKind, LocalId, MirBlockId, MirBuilder, MirFunctionId, MirLinkage,
+    MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
@@ -211,13 +211,19 @@ impl<'a> MirGen<'a> {
         global_symbols.sort_by_key(|s| self.symbol_table.get_symbol(*s).name);
 
         for sym_ref in global_symbols {
-            let (symbol_name, symbol_type_info, is_function, has_definition) = {
+            let (symbol_name, symbol_type_info, is_function, has_definition, storage) = {
                 let symbol = self.symbol_table.get_symbol(sym_ref);
+                let (is_func, storage) = if let SymbolKind::Function { storage } = &symbol.kind {
+                    (true, *storage)
+                } else {
+                    (false, None)
+                };
                 (
                     symbol.name,
                     symbol.type_info,
-                    matches!(symbol.kind, SymbolKind::Function { .. }),
+                    is_func,
                     symbol.def_state == DefinitionState::Defined,
+                    storage,
                 )
             };
 
@@ -230,6 +236,12 @@ impl<'a> MirGen<'a> {
                 {
                     continue;
                 }
+
+                let linkage = if storage == Some(StorageClass::Static) {
+                    MirLinkage::Internal
+                } else {
+                    MirLinkage::External
+                };
 
                 let func_type_kind = self.registry.get(symbol_type_info.ty()).kind.clone();
                 if let TypeKind::Function {
@@ -248,11 +260,19 @@ impl<'a> MirGen<'a> {
                         return_mir_type,
                         *is_variadic,
                         has_definition,
+                        linkage,
                     );
                 } else {
                     // This case should ideally not be reached for a SymbolKind::Function
                     let return_mir_type = self.get_int_type();
-                    self.define_or_declare_function(symbol_name, vec![], return_mir_type, false, has_definition);
+                    self.define_or_declare_function(
+                        symbol_name,
+                        vec![],
+                        return_mir_type,
+                        false,
+                        has_definition,
+                        linkage,
+                    );
                 }
             }
         }
@@ -1534,9 +1554,10 @@ impl<'a> MirGen<'a> {
         ret: TypeId,
         variadic: bool,
         is_def: bool,
+        linkage: MirLinkage,
     ) {
         if is_def {
-            self.mir_builder.define_function(name, params, ret, variadic);
+            self.mir_builder.define_function(name, params, ret, variadic, linkage);
         } else {
             self.mir_builder.declare_function(name, params, ret, variadic);
         }

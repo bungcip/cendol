@@ -8,8 +8,7 @@
 use crate::mir::MirProgram;
 use crate::mir::{
     BinaryFloatOp, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, GlobalId, LocalId, MirBlockId, MirFunction,
-    MirFunctionId, MirFunctionKind, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
-    UnaryIntOp,
+    MirFunctionId, MirLinkage, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
 };
 use cranelift::codegen::ir::{AtomicRmwOp, Inst, StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
@@ -56,11 +55,12 @@ fn lower_type(mir_type: &MirType) -> Option<Type> {
     }
 }
 
-/// Helper function to convert MIR function kind to Cranelift linkage
-fn lower_linkage(kind: MirFunctionKind) -> Linkage {
-    match kind {
-        MirFunctionKind::Extern => Linkage::Import,
-        MirFunctionKind::Defined => Linkage::Export,
+/// Helper function to convert MIR function linkage to Cranelift linkage
+fn lower_linkage(func: &MirFunction) -> Linkage {
+    match func.linkage {
+        MirLinkage::Internal => Linkage::Local,
+        MirLinkage::External => Linkage::Export,
+        MirLinkage::Import => Linkage::Import,
     }
 }
 
@@ -773,8 +773,8 @@ fn emit_function_call(
         CallTarget::Direct(func_id) => {
             let func = ctx.mir.get_function(*func_id);
             let param_types: Vec<TypeId> = func.params.iter().map(|&p| ctx.mir.get_local(p).type_id).collect();
-            let name_linkage = Some((func.name.as_str(), lower_linkage(func.kind)));
-            let is_defined = matches!(func.kind, MirFunctionKind::Defined);
+            let name_linkage = Some((func.name.as_str(), lower_linkage(func)));
+            let is_defined = func.linkage != MirLinkage::Import;
             (
                 func.return_type,
                 param_types,
@@ -2239,7 +2239,7 @@ fn lower_function_signature(
         param_types.push(param_type);
     }
 
-    if func.is_variadic && matches!(func.kind, MirFunctionKind::Defined) {
+    if func.is_variadic && func.linkage != MirLinkage::Import {
         // Add 32 total I64 parameters to capture variadic arguments (6 GPRs + 26 stack slots)
         // This allows variadic functions to receive many struct args that expand to multiple I64s
         let fixed_params_count = func.params.len();
@@ -2291,14 +2291,14 @@ fn finalize_function_processing(
     compiled_functions: &mut HashMap<String, String>,
 ) {
     // Now declare and define the function
-    let linkage = lower_linkage(func.kind);
+    let linkage = lower_linkage(func);
 
     let id = module
         .declare_function(func.name.as_str(), linkage, &func_ctx.func.signature)
         .expect("module operation failed");
 
     // Only define the function body if it's a defined function (not extern)
-    if matches!(func.kind, MirFunctionKind::Defined) {
+    if func.linkage != MirLinkage::Import {
         module.define_function(id, func_ctx).expect("module operation failed");
     }
 
@@ -2410,7 +2410,7 @@ impl ClifGen {
                 continue;
             }
             let func = self.mir.functions.get(&func_id).unwrap();
-            let linkage = lower_linkage(func.kind);
+            let linkage = lower_linkage(func);
 
             // Calculate signature for declaration
             let mut sig = self.module.make_signature();
@@ -2476,7 +2476,7 @@ impl ClifGen {
             }
             // Only lower functions that are defined (have bodies)
             if let Some(func) = self.mir.functions.get(&func_id)
-                && matches!(func.kind, MirFunctionKind::Defined)
+                && func.linkage != MirLinkage::Import
             {
                 self.visit_function(func_id);
             }
@@ -2711,7 +2711,7 @@ impl ClifGen {
 
         // Roots for functions: all defined functions
         for (&id, func) in &self.mir.functions {
-            if matches!(func.kind, MirFunctionKind::Defined) && reachable_functions.insert(id) {
+            if func.linkage != MirLinkage::Import && reachable_functions.insert(id) {
                 worklist_functions.push(id);
             }
         }

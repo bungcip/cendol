@@ -75,7 +75,13 @@ fn test_store_statement_lowering() {
     let void_type_id = builder.add_type(MirType::Void);
 
     // 2. Set up Function and Block
-    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false);
+    let func_id = builder.define_function(
+        NameId::new("main"),
+        vec![],
+        void_type_id,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
 
     let entry_block_id = builder.create_block();
@@ -127,7 +133,13 @@ fn test_store_deref_pointer() {
     let ptr_type_id = builder.add_type(MirType::Pointer { pointee: int_type_id });
     let void_type_id = builder.add_type(MirType::Void);
 
-    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false);
+    let func_id = builder.define_function(
+        NameId::new("main"),
+        vec![],
+        void_type_id,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
 
     let entry_block_id = builder.create_block();
@@ -336,7 +348,13 @@ fn test_f128_constant_promotion() {
     let void_type_id = builder.add_type(MirType::Void);
 
     // Function
-    let func_id = builder.define_function(NameId::new("main"), vec![], void_type_id, false);
+    let func_id = builder.define_function(
+        NameId::new("main"),
+        vec![],
+        void_type_id,
+        false,
+        crate::mir::MirLinkage::External,
+    );
     builder.set_current_function(func_id);
     let block_id = builder.create_block();
     builder.set_current_block(block_id);

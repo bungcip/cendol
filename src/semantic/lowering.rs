@@ -432,6 +432,136 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         QualType::new(ty, element_ty.qualifiers())
     }
 
+    fn resolve_atomic_specifier(
+        &mut self,
+        parsed_type: ParsedType,
+        span: SourceSpan,
+    ) -> Result<QualType, SemanticError> {
+        let qt = convert_to_qual_type(self, parsed_type, span, false)?;
+
+        let reason = if qt.is_array() {
+            Some("array type")
+        } else if qt.is_function() {
+            Some("function type")
+        } else if qt.is_void() {
+            Some("void type")
+        } else if qt.qualifiers().contains(TypeQualifiers::ATOMIC) {
+            Some("atomic type")
+        } else if !qt.qualifiers().is_empty() {
+            Some("qualified type")
+        } else {
+            None
+        };
+
+        if let Some(reason) = reason {
+            self.report_error(span, SemanticErrorKind::InvalidAtomicSpecifier { reason });
+        }
+
+        Ok(self.registry.merge_qualifiers(qt, TypeQualifiers::ATOMIC))
+    }
+
+    fn resolve_record_specifier(
+        &mut self,
+        is_union: bool,
+        tag: Option<NameId>,
+        definition: &Option<ParsedRecordDefData>,
+        span: SourceSpan,
+    ) -> Result<QualType, SemanticError> {
+        let is_definition = definition.is_some();
+        let type_ref = resolve_record_tag(self, tag, is_union, is_definition, span)?;
+
+        if let Some(def) = definition {
+            let members = def
+                .members
+                .as_ref()
+                .map(|decls| visit_struct_members(decls, self, span))
+                .unwrap_or_default();
+            complete_record_symbol(self, tag, type_ref, members)?;
+        }
+
+        Ok(QualType::unqualified(type_ref))
+    }
+
+    fn resolve_enum_specifier(
+        &mut self,
+        tag: Option<NameId>,
+        enumerators: &Option<Vec<ParsedNodeRef>>,
+        span: SourceSpan,
+    ) -> Result<QualType, SemanticError> {
+        let is_definition = enumerators.is_some();
+        let type_ref = resolve_enum_tag(self, tag, is_definition, span)?;
+
+        if let Some(enums) = enumerators {
+            let mut next_value = 0i64;
+            let mut enumerators_list = Vec::with_capacity(enums.len());
+
+            for &enum_ref in enums {
+                let node = self.parsed_ast.get_node(enum_ref);
+                let ParsedNodeKind::EnumConstant(name, value_expr_ref) = &node.kind else {
+                    unreachable!()
+                };
+
+                let (value, init_expr) = value_expr_ref
+                    .map(|v_ref| {
+                        let expr_ref = self.visit_expression(v_ref);
+                        let val = const_eval::eval_const_expr(&self.const_ctx(), expr_ref).unwrap_or_else(|| {
+                            self.report_error(node.span, SemanticErrorKind::NonConstantInitializer);
+                            0
+                        });
+                        (val, Some(expr_ref))
+                    })
+                    .unwrap_or((next_value, None));
+
+                if !(i32::MIN as i64..=i32::MAX as i64).contains(&value) {
+                    self.report_error(
+                        node.span,
+                        SemanticErrorKind::EnumeratorValueNotRepresentable { name: *name, value },
+                    );
+                }
+
+                next_value = value.wrapping_add(1);
+
+                if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) = self
+                    .symbol_table
+                    .define_enum_constant(*name, value, type_ref, node.span)
+                {
+                    let first_def = self.symbol_table.get_symbol(existing).def_span;
+                    self.report_error(node.span, SemanticErrorKind::Redefinition { name: *name, first_def });
+                }
+
+                enumerators_list.push(EnumConstant {
+                    name: *name,
+                    value,
+                    span: node.span,
+                    init_expr,
+                });
+            }
+
+            complete_enum_symbol(self, tag, type_ref, enumerators_list)?;
+        }
+        Ok(QualType::unqualified(type_ref))
+    }
+
+    fn resolve_typedef_name(&mut self, name: NameId, span: SourceSpan) -> Result<QualType, SemanticError> {
+        match self
+            .symbol_table
+            .lookup_symbol(name)
+            .map(|(r, _)| self.symbol_table.get_symbol(r))
+        {
+            Some(entry) => {
+                if let SymbolKind::Typedef { aliased_type } = entry.kind {
+                    Ok(aliased_type)
+                } else {
+                    Err(SemanticError {
+                        span,
+                        kind: SemanticErrorKind::ExpectedTypedefName { found: name },
+                    })
+                }
+            }
+            None => Ok(QualType::unqualified(self.registry.declare_record(Some(name), false))),
+        }
+    }
+
     fn push_dummy(&mut self, span: SourceSpan) -> NodeRef {
         self.ast.push_dummy(span)
     }
@@ -578,24 +708,17 @@ fn convert_to_qual_type(
     in_parameter: bool,
 ) -> Result<QualType, SemanticError> {
     let base_type_node = {
-        // borrow immutable hanya di dalam block ini
         let parsed_types = &ctx.parsed_ast.parsed_types;
         parsed_types.get_base_type(parsed_type.base)
     };
 
-    let declarator_ref = parsed_type.declarator;
+    let declarator = parsed_type.declarator;
     let qualifiers = parsed_type.qualifiers;
 
-    let base_type_ref = convert_parsed_base_type_to_qual_type(ctx, &base_type_node, span)?;
-    let qualified_base = ctx.merge_qualifiers_with_check(base_type_ref, qualifiers, span);
+    let base = convert_parsed_base_type_to_qual_type(ctx, &base_type_node, span)?;
+    let qbase = ctx.merge_qualifiers_with_check(base, qualifiers, span);
 
-    let final_type = apply_parsed_declarator(
-        qualified_base,
-        declarator_ref,
-        ctx,
-        span,
-        DeclaratorContext { in_parameter },
-    );
+    let final_type = apply_parsed_declarator(qbase, declarator, ctx, span, DeclaratorContext { in_parameter });
     Ok(final_type)
 }
 
@@ -751,40 +874,25 @@ fn choose_enum_type(registry: &TypeRegistry, enumerators: &[EnumConstant]) -> Ty
         return registry.type_int;
     }
 
-    let mut min = 0i64;
-    let mut max = 0i64;
-    let mut first = true;
-
-    for e in enumerators {
-        if first {
-            min = e.value;
-            max = e.value;
-            first = false;
-        } else {
-            if e.value < min {
-                min = e.value;
-            }
-            if e.value > max {
-                max = e.value;
-            }
-        }
-    }
+    let min = enumerators.iter().map(|e| e.value).min().unwrap_or(0);
+    let max = enumerators.iter().map(|e| e.value).max().unwrap_or(0);
 
     // C11 6.7.2.2p4:
     // Each enumerated type shall be compatible with char, a signed integer type, or an unsigned integer type.
     // The choice of type is implementation-defined...
 
+    const UINT_MAX: i64 = u32::MAX as i64;
+    const INT_MAX: i64 = i32::MAX as i64;
+    const INT_MIN: i64 = i32::MIN as i64;
+
     // We prioritize unsigned int if all values are non-negative and fit.
     // This helps with strict pointer compatibility checks against unsigned int *.
-    let uint_max = 4294967295i64;
-    if min >= 0 && max <= uint_max {
+    if min >= 0 && max <= UINT_MAX {
         return registry.type_int_unsigned;
     }
 
     // Default to int if it fits (or if min < 0)
-    let int_min = -2147483648i64;
-    let int_max = 2147483647i64;
-    if min >= int_min && max <= int_max {
+    if min >= INT_MIN && max <= INT_MAX {
         return registry.type_int;
     }
 
@@ -827,161 +935,44 @@ fn resolve_type_specifier(
     ctx: &mut LowerCtx,
     span: SourceSpan,
 ) -> Result<QualType, SemanticError> {
+    use ParsedTypeSpecifier::*;
     match ts {
-        ParsedTypeSpecifier::Void => Ok(QualType::unqualified(ctx.registry.type_void)),
-        ParsedTypeSpecifier::Char => Ok(QualType::unqualified(ctx.registry.type_char)),
-        ParsedTypeSpecifier::Short => Ok(QualType::unqualified(ctx.registry.type_short)),
-        ParsedTypeSpecifier::Int => Ok(QualType::unqualified(ctx.registry.type_int)),
-        ParsedTypeSpecifier::Long => Ok(QualType::unqualified(ctx.registry.type_long)),
-        ParsedTypeSpecifier::LongLong => Ok(QualType::unqualified(ctx.registry.type_long_long)),
-        // New variants
-        ParsedTypeSpecifier::UnsignedLong => Ok(QualType::unqualified(ctx.registry.type_long_unsigned)),
-        ParsedTypeSpecifier::UnsignedLongLong => Ok(QualType::unqualified(ctx.registry.type_long_long_unsigned)),
-        ParsedTypeSpecifier::UnsignedShort => Ok(QualType::unqualified(ctx.registry.type_short_unsigned)),
-        ParsedTypeSpecifier::UnsignedChar => Ok(QualType::unqualified(ctx.registry.type_char_unsigned)),
-        ParsedTypeSpecifier::SignedChar => Ok(QualType::unqualified(ctx.registry.type_schar)),
-        ParsedTypeSpecifier::SignedShort => Ok(QualType::unqualified(ctx.registry.type_short)),
-        ParsedTypeSpecifier::SignedLong => Ok(QualType::unqualified(ctx.registry.type_long)),
-        ParsedTypeSpecifier::SignedLongLong => Ok(QualType::unqualified(ctx.registry.type_long_long)),
+        Void => Ok(QualType::unqualified(ctx.registry.type_void)),
+        Char => Ok(QualType::unqualified(ctx.registry.type_char)),
+        Short => Ok(QualType::unqualified(ctx.registry.type_short)),
+        Int => Ok(QualType::unqualified(ctx.registry.type_int)),
+        Long => Ok(QualType::unqualified(ctx.registry.type_long)),
+        LongLong => Ok(QualType::unqualified(ctx.registry.type_long_long)),
+        UnsignedLong => Ok(QualType::unqualified(ctx.registry.type_long_unsigned)),
+        UnsignedLongLong => Ok(QualType::unqualified(ctx.registry.type_long_long_unsigned)),
+        UnsignedShort => Ok(QualType::unqualified(ctx.registry.type_short_unsigned)),
+        UnsignedChar => Ok(QualType::unqualified(ctx.registry.type_char_unsigned)),
+        SignedChar => Ok(QualType::unqualified(ctx.registry.type_schar)),
+        SignedShort => Ok(QualType::unqualified(ctx.registry.type_short)),
+        SignedLong => Ok(QualType::unqualified(ctx.registry.type_long)),
+        SignedLongLong => Ok(QualType::unqualified(ctx.registry.type_long_long)),
 
-        ParsedTypeSpecifier::Float => Ok(QualType::unqualified(ctx.registry.type_float)),
-        ParsedTypeSpecifier::Double => Ok(QualType::unqualified(ctx.registry.type_double)),
-        ParsedTypeSpecifier::LongDouble => Ok(QualType::unqualified(ctx.registry.type_long_double)),
-        ParsedTypeSpecifier::ComplexFloat => {
-            let complex_type = ctx.registry.complex_type(ctx.registry.type_float);
-            Ok(QualType::unqualified(complex_type))
-        }
-        ParsedTypeSpecifier::ComplexDouble => {
-            let complex_type = ctx.registry.complex_type(ctx.registry.type_double);
-            Ok(QualType::unqualified(complex_type))
-        }
-        ParsedTypeSpecifier::ComplexLongDouble => {
-            let complex_type = ctx.registry.complex_type(ctx.registry.type_long_double);
-            Ok(QualType::unqualified(complex_type))
-        }
-        ParsedTypeSpecifier::Signed => {
-            // Signed modifier
-            Ok(QualType::unqualified(ctx.registry.type_signed))
-        }
-        ParsedTypeSpecifier::Unsigned => {
-            // Unsigned modifier - return a special marker type that will be handled in merge_base_type
-            Ok(QualType::unqualified(ctx.registry.type_int_unsigned))
-        }
-        ParsedTypeSpecifier::Bool => Ok(QualType::unqualified(ctx.registry.type_bool)),
-        ParsedTypeSpecifier::Complex => Ok(QualType::unqualified(ctx.registry.type_complex_marker)),
-        ParsedTypeSpecifier::Atomic(parsed_type) => {
-            let qt = convert_to_qual_type(ctx, *parsed_type, span, false)?;
-
-            let reason = if qt.is_array() {
-                Some("array type")
-            } else if qt.is_function() {
-                Some("function type")
-            } else if qt.is_void() {
-                Some("void type")
-            } else if qt.qualifiers().contains(TypeQualifiers::ATOMIC) {
-                Some("atomic type")
-            } else if !qt.qualifiers().is_empty() {
-                Some("qualified type")
-            } else {
-                None
-            };
-
-            if let Some(reason) = reason {
-                ctx.report_error(span, SemanticErrorKind::InvalidAtomicSpecifier { reason });
-            }
-
-            Ok(ctx.registry.merge_qualifiers(qt, TypeQualifiers::ATOMIC))
-        }
-        ParsedTypeSpecifier::Record(is_union, tag, definition) => {
-            let is_definition = definition.is_some();
-            let type_ref = resolve_record_tag(ctx, *tag, *is_union, is_definition, span)?;
-
-            if let Some(def) = definition {
-                let members = def
-                    .members
-                    .as_ref()
-                    .map(|decls| visit_struct_members(decls, ctx, span))
-                    .unwrap_or_default();
-                complete_record_symbol(ctx, *tag, type_ref, members)?;
-            }
-
-            Ok(QualType::unqualified(type_ref))
-        }
-        ParsedTypeSpecifier::Enum(tag, enumerators) => {
-            let is_definition = enumerators.is_some();
-            let type_ref = resolve_enum_tag(ctx, *tag, is_definition, span)?;
-
-            if let Some(enums) = enumerators {
-                let mut next_value = 0i64;
-                let enumerators_list = enums
-                    .iter()
-                    .map(|&enum_ref| {
-                        let node = ctx.parsed_ast.get_node(enum_ref);
-                        let ParsedNodeKind::EnumConstant(name, value_expr_ref) = &node.kind else {
-                            unreachable!()
-                        };
-
-                        let (value, init_expr) = value_expr_ref
-                            .map(|v_ref| {
-                                let expr_ref = ctx.visit_expression(v_ref);
-                                let val =
-                                    const_eval::eval_const_expr(&ctx.const_ctx(), expr_ref).unwrap_or_else(|| {
-                                        ctx.report_error(node.span, SemanticErrorKind::NonConstantInitializer);
-                                        0
-                                    });
-                                (val, Some(expr_ref))
-                            })
-                            .unwrap_or((next_value, None));
-
-                        if !(i32::MIN as i64..=i32::MAX as i64).contains(&value) {
-                            ctx.report_error(
-                                node.span,
-                                SemanticErrorKind::EnumeratorValueNotRepresentable { name: *name, value },
-                            );
-                        }
-
-                        next_value = value.wrapping_add(1);
-
-                        if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
-                            ctx.symbol_table.define_enum_constant(*name, value, type_ref, node.span)
-                        {
-                            let first_def = ctx.symbol_table.get_symbol(existing).def_span;
-                            ctx.report_error(node.span, SemanticErrorKind::Redefinition { name: *name, first_def });
-                        }
-
-                        Ok(EnumConstant {
-                            name: *name,
-                            value,
-                            span: node.span,
-                            init_expr,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, SemanticError>>()?;
-
-                complete_enum_symbol(ctx, *tag, type_ref, enumerators_list)?;
-            }
-            Ok(QualType::unqualified(type_ref))
-        }
-        ParsedTypeSpecifier::TypedefName(name) => {
-            match ctx
-                .symbol_table
-                .lookup_symbol(*name)
-                .map(|(r, _)| ctx.symbol_table.get_symbol(r))
-            {
-                Some(entry) => {
-                    if let SymbolKind::Typedef { aliased_type } = entry.kind {
-                        Ok(aliased_type)
-                    } else {
-                        Err(SemanticError {
-                            span,
-                            kind: SemanticErrorKind::ExpectedTypedefName { found: *name },
-                        })
-                    }
-                }
-                None => Ok(QualType::unqualified(ctx.registry.declare_record(Some(*name), false))),
-            }
-        }
-        ParsedTypeSpecifier::VaList => Ok(QualType::unqualified(ctx.registry.type_valist)),
+        Float => Ok(QualType::unqualified(ctx.registry.type_float)),
+        Double => Ok(QualType::unqualified(ctx.registry.type_double)),
+        LongDouble => Ok(QualType::unqualified(ctx.registry.type_long_double)),
+        ComplexFloat => Ok(QualType::unqualified(
+            ctx.registry.complex_type(ctx.registry.type_float),
+        )),
+        ComplexDouble => Ok(QualType::unqualified(
+            ctx.registry.complex_type(ctx.registry.type_double),
+        )),
+        ComplexLongDouble => Ok(QualType::unqualified(
+            ctx.registry.complex_type(ctx.registry.type_long_double),
+        )),
+        Signed => Ok(QualType::unqualified(ctx.registry.type_signed)),
+        Unsigned => Ok(QualType::unqualified(ctx.registry.type_int_unsigned)),
+        Bool => Ok(QualType::unqualified(ctx.registry.type_bool)),
+        Complex => Ok(QualType::unqualified(ctx.registry.type_complex_marker)),
+        Atomic(p) => ctx.resolve_atomic_specifier(*p, span),
+        Record(u, t, d) => ctx.resolve_record_specifier(*u, *t, d, span),
+        Enum(t, e) => ctx.resolve_enum_specifier(*t, e, span),
+        TypedefName(n) => ctx.resolve_typedef_name(*n, span),
+        VaList => Ok(QualType::unqualified(ctx.registry.type_valist)),
     }
 }
 

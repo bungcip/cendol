@@ -2688,11 +2688,11 @@ impl<'src> Preprocessor<'src> {
         let mut buffer = Vec::with_capacity(total_upper_bound);
 
         // Metadata to avoid re-calculating things in the final mapping pass.
-        // (is_pasted, offset_in_new_buffer, length_in_new_buffer)
+        // (preserve_original_loc, offset_in_new_buffer, length_in_new_buffer)
         let mut token_metadata = Vec::with_capacity(tokens.len());
 
-        let mut last_is_pasted_sid = None;
-        let mut last_is_pasted_val = false;
+        let mut last_preserve_sid = None;
+        let mut last_preserve_val = false;
 
         {
             let mut cache = SourceBufferCache::new(self.sm);
@@ -2700,16 +2700,19 @@ impl<'src> Preprocessor<'src> {
             for t in tokens {
                 let sid = t.location.source_id();
 
-                // Optimized is_pasted check with caching.
-                let is_pasted = if Some(sid) == last_is_pasted_sid {
-                    last_is_pasted_val
+                // Optimized check for whether to preserve original location.
+                // We preserve location for tokens from PastedToken sources (original behavior)
+                // AND for tokens from MacroExpansion sources (to fix recursive expansion detection).
+                // This ensures that tokens produced by macro expansion keep their original
+                // source location so is_recursive_expansion can properly detect them.
+                let preserve_original_loc = if Some(sid) == last_preserve_sid {
+                    last_preserve_val
                 } else {
-                    let val = self
-                        .sm
-                        .get_file_info(sid)
-                        .is_some_and(|info| info.kind == FileKind::PastedToken);
-                    last_is_pasted_sid = Some(sid);
-                    last_is_pasted_val = val;
+                    let val = self.sm.get_file_info(sid).is_some_and(|info| {
+                        info.kind == FileKind::PastedToken || info.kind == FileKind::MacroExpansion
+                    });
+                    last_preserve_sid = Some(sid);
+                    last_preserve_val = val;
                     val
                 };
 
@@ -2720,7 +2723,7 @@ impl<'src> Preprocessor<'src> {
                 buffer.extend_from_slice(bytes);
 
                 let len = (buffer.len() as u32 - start_offset) as u16;
-                token_metadata.push((is_pasted, start_offset, len));
+                token_metadata.push((preserve_original_loc, start_offset, len));
             }
         }
 
@@ -2735,8 +2738,8 @@ impl<'src> Preprocessor<'src> {
         tokens
             .iter()
             .zip(token_metadata)
-            .map(|(t, (is_pasted, offset, len))| {
-                let loc = if is_pasted {
+            .map(|(t, (preserve_original_loc, offset, len))| {
+                let loc = if preserve_original_loc {
                     t.location
                 } else {
                     SourceLoc::new(virtual_id, offset)

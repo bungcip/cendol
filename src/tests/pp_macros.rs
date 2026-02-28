@@ -575,3 +575,29 @@ foo(X)(Y)(Z)
       text: bar
     "#);
 }
+
+// Regression test for nested macro expansion with self-referential macros
+// f(f(z)) should expand to "z[0]", not "z[0][0][0]"
+// The bug was that when z expands to z[0] during argument prescan,
+// the resulting z token in z[0] was being re-expanded during rescan
+// because the hide-set (recursive expansion check) was not properly
+// handling tokens that came from macro expansions.
+#[test]
+fn test_nested_macro_expansion_self_referential() {
+    let src = r#"
+#define f(a) a
+#define z z[0]
+f(f(z))
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: z
+    - kind: LeftBracket
+      text: "["
+    - kind: Number
+      text: "0"
+    - kind: RightBracket
+      text: "]"
+    "#);
+}

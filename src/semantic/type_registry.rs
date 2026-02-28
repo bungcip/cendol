@@ -6,12 +6,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::source_manager::SourceSpan;
-use crate::{
-    ast::NameId,
-    semantic::QualType,
-    semantic::errors::{SemanticError, SemanticErrorKind},
-};
+use crate::{ast::NameId, semantic::QualType};
 use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
 use target_lexicon::{PointerWidth, Triple};
@@ -22,6 +17,60 @@ use super::{
     ArraySizeType, BuiltinType, EnumConstant, FunctionParameter, StructMember, Type, TypeKind, TypeLayout,
     TypeQualifiers, TypeRef,
 };
+
+/// Errors that can occur during type layout computation in the TypeRegistry.
+/// These are internal type system errors without source location information.
+/// The caller is responsible for adding span context when converting to diagnostics.
+#[derive(Debug, Clone)]
+pub(crate) enum TypeRegistryError {
+    /// Recursive type definition detected during layout computation
+    RecursiveType { ty: TypeRef },
+    /// Sizeof applied to an incomplete type (void, incomplete struct/union, etc.)
+    SizeOfIncompleteType { ty: TypeRef },
+    /// Sizeof applied to a function type
+    SizeOfFunctionType,
+    /// Variably modified type as struct member (VLA)
+    VlaAsStructMember,
+    /// Incomplete/VLA array in union (FAM is only for structures)
+    IncompleteArrayInUnion,
+    /// Flexible array member is not the last member
+    FlexibleArrayNotLast,
+    /// Flexible array member in otherwise empty structure
+    FlexibleArrayInEmptyStruct,
+    /// Member has function type
+    MemberHasFunctionType { name: NameId },
+    /// Incomplete type used as struct member
+    IncompleteMemberType { ty: QualType },
+    /// Unsupported feature
+    UnsupportedFeature { feature: &'static str },
+}
+
+impl TypeRegistryError {
+    /// Convert this type registry error to a SemanticErrorKind with an optional span.
+    /// This allows the TypeRegistry to remain decoupled from source location tracking
+    /// while still providing rich error information to the semantic analyzer.
+    pub(crate) fn to_semantic_kind(&self) -> super::errors::SemanticErrorKind {
+        use super::errors::SemanticErrorKind;
+        match self {
+            TypeRegistryError::RecursiveType { ty } => SemanticErrorKind::RecursiveType { ty: *ty },
+            TypeRegistryError::SizeOfIncompleteType { ty } => SemanticErrorKind::SizeOfIncompleteType { ty: *ty },
+            TypeRegistryError::SizeOfFunctionType => SemanticErrorKind::SizeOfFunctionType,
+            TypeRegistryError::VlaAsStructMember => SemanticErrorKind::UnsupportedFeature {
+                feature: "variably modified type (VLA) as struct member",
+            },
+            TypeRegistryError::IncompleteArrayInUnion => SemanticErrorKind::UnsupportedFeature {
+                feature: "incomplete/VLA array in union",
+            },
+            TypeRegistryError::FlexibleArrayNotLast => SemanticErrorKind::FlexibleArrayNotLast,
+            TypeRegistryError::FlexibleArrayInEmptyStruct => SemanticErrorKind::FlexibleArrayInEmptyStruct,
+            TypeRegistryError::MemberHasFunctionType { name } => {
+                SemanticErrorKind::MemberHasFunctionType { name: *name }
+            }
+            TypeRegistryError::IncompleteMemberType { ty } => SemanticErrorKind::IncompleteType { ty: *ty },
+            TypeRegistryError::UnsupportedFeature { feature } => SemanticErrorKind::UnsupportedFeature { feature },
+        }
+    }
+}
 
 /// Central arena & factory for semantic types.
 ///
@@ -550,7 +599,7 @@ impl TypeRegistry {
         }
     }
 
-    pub(crate) fn ensure_layout(&mut self, ty: TypeRef) -> Result<Cow<'_, TypeLayout>, SemanticError> {
+    pub(crate) fn ensure_layout(&mut self, ty: TypeRef) -> Result<Cow<'_, TypeLayout>, TypeRegistryError> {
         if ty.is_inline_pointer() {
             return Ok(Cow::Owned(TypeLayout {
                 size: 8,
@@ -584,12 +633,9 @@ impl TypeRegistry {
         Ok(Cow::Borrowed(self.types[idx].layout.as_ref().unwrap()))
     }
 
-    fn compute_layout(&mut self, ty: TypeRef) -> Result<TypeLayout, SemanticError> {
+    fn compute_layout(&mut self, ty: TypeRef) -> Result<TypeLayout, TypeRegistryError> {
         if self.layout_in_progress.contains(&ty) {
-            return Err(SemanticError {
-                span: SourceSpan::dummy(),
-                kind: SemanticErrorKind::RecursiveType { ty },
-            });
+            return Err(TypeRegistryError::RecursiveType { ty });
         }
 
         self.layout_in_progress.insert(ty);
@@ -598,17 +644,14 @@ impl TypeRegistry {
         result
     }
 
-    fn compute_layout_internal(&mut self, ty: TypeRef) -> Result<TypeLayout, SemanticError> {
+    fn compute_layout_internal(&mut self, ty: TypeRef) -> Result<TypeLayout, TypeRegistryError> {
         // We clone Kind to release borrow on self
         let type_kind = self.get(ty).kind.clone();
 
         let layout = match type_kind {
             TypeKind::Builtin(b) => match b {
                 BuiltinType::Void => {
-                    return Err(SemanticError {
-                        span: SourceSpan::dummy(),
-                        kind: SemanticErrorKind::SizeOfIncompleteType { ty },
-                    });
+                    return Err(TypeRegistryError::SizeOfIncompleteType { ty });
                 }
                 BuiltinType::Bool | BuiltinType::Char | BuiltinType::SChar | BuiltinType::UChar => TypeLayout {
                     size: 1,
@@ -673,10 +716,7 @@ impl TypeRegistry {
                     },
                 },
                 BuiltinType::Complex => {
-                    return Err(SemanticError {
-                        span: SourceSpan::dummy(),
-                        kind: SemanticErrorKind::SizeOfIncompleteType { ty },
-                    });
+                    return Err(TypeRegistryError::SizeOfIncompleteType { ty });
                 }
             },
 
@@ -717,20 +757,14 @@ impl TypeRegistry {
                     }
                 }
                 _ => {
-                    return Err(SemanticError {
-                        span: SourceSpan::dummy(),
-                        kind: SemanticErrorKind::UnsupportedFeature {
-                            feature: "incomplete/VLA array layout".to_string(),
-                        },
+                    return Err(TypeRegistryError::UnsupportedFeature {
+                        feature: "incomplete/VLA array layout",
                     });
                 }
             },
 
             TypeKind::Function { .. } => {
-                return Err(SemanticError {
-                    span: SourceSpan::dummy(),
-                    kind: SemanticErrorKind::SizeOfFunctionType,
-                });
+                return Err(TypeRegistryError::SizeOfFunctionType);
             }
 
             TypeKind::Record {
@@ -741,10 +775,7 @@ impl TypeRegistry {
             } => {
                 if !is_complete {
                     // This is the correct error when sizeof is used on an incomplete type.
-                    return Err(SemanticError {
-                        span: SourceSpan::dummy(),
-                        kind: SemanticErrorKind::SizeOfIncompleteType { ty },
-                    });
+                    return Err(TypeRegistryError::SizeOfIncompleteType { ty });
                 }
                 self.compute_record_layout(&members, is_union)?
             }
@@ -753,22 +784,16 @@ impl TypeRegistry {
                 base_type, is_complete, ..
             } => {
                 if !is_complete {
-                    return Err(SemanticError {
-                        span: SourceSpan::dummy(),
-                        kind: SemanticErrorKind::UnsupportedFeature {
-                            feature: "incomplete enum type layout".to_string(),
-                        },
+                    return Err(TypeRegistryError::UnsupportedFeature {
+                        feature: "incomplete enum type layout",
                     });
                 }
                 self.ensure_layout(base_type)?.into_owned()
             }
 
             TypeKind::Error => {
-                return Err(SemanticError {
-                    span: SourceSpan::dummy(),
-                    kind: SemanticErrorKind::UnsupportedFeature {
-                        feature: "error layout".to_string(),
-                    },
+                return Err(TypeRegistryError::UnsupportedFeature {
+                    feature: "error layout",
                 });
             }
         };
@@ -776,7 +801,11 @@ impl TypeRegistry {
         Ok(layout)
     }
 
-    fn compute_record_layout(&mut self, members: &[StructMember], is_union: bool) -> Result<TypeLayout, SemanticError> {
+    fn compute_record_layout(
+        &mut self,
+        members: &[StructMember],
+        is_union: bool,
+    ) -> Result<TypeLayout, TypeRegistryError> {
         let mut max_align = 1;
         let mut current_size = 0;
         let mut field_layouts = Vec::with_capacity(members.len());
@@ -798,12 +827,7 @@ impl TypeRegistry {
             let type_info = self.get(member_ty);
             if let TypeKind::Array { element_type, size } = &type_info.kind {
                 if matches!(size, ArraySizeType::Variable(_)) {
-                    return Err(SemanticError {
-                        span: member.span,
-                        kind: SemanticErrorKind::UnsupportedFeature {
-                            feature: "variably modified type (VLA) as struct member".to_string(),
-                        },
-                    });
+                    return Err(TypeRegistryError::VlaAsStructMember);
                 }
 
                 if matches!(size, ArraySizeType::Incomplete) {
@@ -811,30 +835,19 @@ impl TypeRegistry {
                     drop(type_info);
                     if is_union {
                         // Incomplete types not allowed in union (FAM is only for structures)
-                        return Err(SemanticError {
-                            span: member.span,
-                            kind: SemanticErrorKind::UnsupportedFeature {
-                                feature: "incomplete/VLA array in union".to_string(),
-                            },
-                        });
+                        return Err(TypeRegistryError::IncompleteArrayInUnion);
                     }
 
                     // Must be last member
                     if i != member_count - 1 {
-                        return Err(SemanticError {
-                            span: member.span,
-                            kind: SemanticErrorKind::FlexibleArrayNotLast,
-                        });
+                        return Err(TypeRegistryError::FlexibleArrayNotLast);
                     }
 
                     // Must have at least one other named member.
                     // Or rather, "structure with more than one named member".
                     // If this is the only member, it's invalid.
                     if member_count < 2 {
-                        return Err(SemanticError {
-                            span: member.span,
-                            kind: SemanticErrorKind::FlexibleArrayInEmptyStruct,
-                        });
+                        return Err(TypeRegistryError::FlexibleArrayInEmptyStruct);
                     }
 
                     // If valid FAM:
@@ -876,19 +889,13 @@ impl TypeRegistry {
             let layout = match self.ensure_layout(member_ty) {
                 Ok(l) => l,
                 Err(e) => {
-                    let new_e = match e.kind {
-                        SemanticErrorKind::SizeOfIncompleteType { .. } => SemanticError {
-                            span: member.span,
-                            kind: SemanticErrorKind::IncompleteType {
-                                ty: QualType::unqualified(member_ty),
-                            },
+                    let new_e = match e {
+                        TypeRegistryError::SizeOfIncompleteType { .. } => TypeRegistryError::IncompleteMemberType {
+                            ty: QualType::unqualified(member_ty),
                         },
-                        SemanticErrorKind::SizeOfFunctionType => {
+                        TypeRegistryError::SizeOfFunctionType => {
                             if let Some(name) = member.name {
-                                SemanticError {
-                                    span: member.span,
-                                    kind: SemanticErrorKind::MemberHasFunctionType { name },
-                                }
+                                TypeRegistryError::MemberHasFunctionType { name }
                             } else {
                                 e
                             }

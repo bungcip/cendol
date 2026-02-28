@@ -126,10 +126,6 @@ impl SourceSpan {
         Self::new(SourceLoc::builtin(), SourceLoc::builtin())
     }
 
-    pub(crate) fn dummy() -> Self {
-        Self::empty()
-    }
-
     pub(crate) fn start(&self) -> SourceLoc {
         let offset = (self.0 & Self::OFFSET_MASK) as u32;
         SourceLoc {
@@ -533,17 +529,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_empty_and_dummy() {
+    fn test_empty() {
         let span = SourceSpan::empty();
         assert_eq!(span.start(), SourceLoc::builtin());
         assert_eq!(span.end(), SourceLoc::builtin());
         assert_eq!(span.source_id().to_u32(), 1);
-
-        let dummy = SourceSpan::dummy();
-        assert_eq!(dummy, span);
-
-        let merged = span.merge(dummy);
-        assert_eq!(merged, span);
     }
 
     #[test]

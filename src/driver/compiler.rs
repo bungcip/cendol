@@ -111,12 +111,10 @@ impl CompilerDriver {
                 continue;
             }
 
-            if !is_source_file {
-                if let PathOrBuffer::Path(path) = &input_file {
-                    log::warn!("skipping unrecognized file: {}", path.display());
-                    eprintln!("cendol: warning: skipping unrecognized file: {}", path.display());
-                    continue;
-                }
+            if !is_source_file && let PathOrBuffer::Path(path) = &input_file {
+                log::warn!("skipping unrecognized file: {}", path.display());
+                eprintln!("cendol: warning: skipping unrecognized file: {}", path.display());
+                continue;
             }
 
             let source_id = match input_file {

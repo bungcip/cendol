@@ -354,7 +354,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 match self.registry.ensure_layout(qt.ty()) {
                     Ok(layout) => Some(layout.alignment as u32),
                     Err(e) => {
-                        self.report_error(e.span, e.kind);
+                        self.report_error(span, e.to_semantic_kind());
                         None
                     }
                 }
@@ -476,7 +476,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 .as_ref()
                 .map(|decls| visit_struct_members(decls, self, span))
                 .unwrap_or_default();
-            complete_record_symbol(self, tag, type_ref, members)?;
+            complete_record_symbol(self, tag, type_ref, members, span)?;
         }
 
         Ok(QualType::unqualified(type_ref))
@@ -537,7 +537,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 });
             }
 
-            complete_enum_symbol(self, tag, type_ref, enumerators_list)?;
+            complete_enum_symbol(self, tag, type_ref, enumerators_list, span)?;
         }
         Ok(QualType::unqualified(type_ref))
     }
@@ -642,7 +642,7 @@ fn convert_parsed_base_type_to_qual_type(
                     })
                     .collect::<Result<Vec<_>, SemanticError>>()?;
 
-                complete_record_symbol(ctx, *tag, type_ref, struct_members)?;
+                complete_record_symbol(ctx, *tag, type_ref, struct_members, span)?;
             }
             Ok(QualType::unqualified(type_ref))
         }
@@ -674,7 +674,7 @@ fn convert_parsed_base_type_to_qual_type(
                     })
                     .collect::<Result<Vec<_>, SemanticError>>()?;
 
-                complete_enum_symbol(ctx, *tag, type_ref, enumerators_list)?;
+                complete_enum_symbol(ctx, *tag, type_ref, enumerators_list, span)?;
             }
             Ok(QualType::unqualified(type_ref))
         }
@@ -839,6 +839,7 @@ fn complete_record_symbol(
     tag: Option<NameId>,
     type_ref: TypeRef,
     members: Vec<StructMember>,
+    span: SourceSpan,
 ) -> Result<(), SemanticError> {
     // New: Validate for name conflicts across anonymous members
     let mut seen_names = HashMap::new();
@@ -849,7 +850,12 @@ fn complete_record_symbol(
 
     // Update the type in AST and SymbolTable
     ctx.registry.complete_record(type_ref, members.clone());
-    ctx.registry.ensure_layout(type_ref)?;
+    if let Err(e) = ctx.registry.ensure_layout(type_ref) {
+        return Err(SemanticError {
+            span,
+            kind: e.to_semantic_kind(),
+        });
+    }
 
     if let Some(tag_name) = tag
         && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(tag_name)
@@ -909,13 +915,19 @@ fn complete_enum_symbol(
     tag: Option<NameId>,
     type_ref: TypeRef,
     enumerators: Vec<EnumConstant>,
+    span: SourceSpan,
 ) -> Result<(), SemanticError> {
     // Determine the underlying type
     let base_type = choose_enum_type(ctx.registry, &enumerators);
 
     // Update the type in AST and SymbolTable using the proper completion function
     ctx.registry.complete_enum(type_ref, enumerators, base_type);
-    ctx.registry.ensure_layout(type_ref)?;
+    if let Err(e) = ctx.registry.ensure_layout(type_ref) {
+        return Err(SemanticError {
+            span,
+            kind: e.to_semantic_kind(),
+        });
+    }
 
     if let Some(tag_name) = tag
         && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(tag_name)

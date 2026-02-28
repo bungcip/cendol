@@ -118,7 +118,7 @@ pub enum SemanticErrorKind {
         kind: String,
     },
     UnsupportedFeature {
-        feature: String,
+        feature: &'static str,
     },
     InvalidArraySize,
     InvalidBitfieldWidth,

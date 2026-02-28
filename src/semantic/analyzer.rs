@@ -684,6 +684,17 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+fn lvalue_conversion(&mut self, node: NodeRef, mut ty: QualType) -> QualType {
+        if ty.is_array() || ty.is_function() {
+            ty = self.registry.decay(ty, TypeQualifiers::empty());
+            self.push_conversion(node, Conversion::PointerDecay { to: ty.ty() });
+        } else if self.is_lvalue(node) {
+            ty = self.registry.strip_all(ty);
+            self.push_conversion(node, Conversion::LValueToRValue);
+        }
+        ty
+    }
+
     fn apply_and_record_integer_promotion(&mut self, node: NodeRef, ty: QualType) -> QualType {
         let promoted = integer_promotion(self.registry, ty);
         if promoted.ty() != ty.ty() {
@@ -907,12 +918,8 @@ impl<'a> SemanticAnalyzer<'a> {
         let rhs_ty = self.visit_node(rhs_ref)?;
 
         if op == BinaryOp::Comma {
-            let mut rhs_decayed = rhs_ty;
-            if rhs_ty.is_array() || rhs_ty.is_function() {
-                rhs_decayed = self.registry.decay(rhs_ty, TypeQualifiers::empty());
-                self.push_conversion(rhs_ref, Conversion::PointerDecay { to: rhs_decayed.ty() });
-            }
-            return Some(rhs_decayed);
+            let rhs_conv = self.lvalue_conversion(rhs_ref, rhs_ty);
+            return Some(rhs_conv);
         }
 
         let (result_ty, _) = self.resolve_binary_operation_types(op, lhs_ref, rhs_ref, lhs_ty, rhs_ty)?;
@@ -2057,23 +2064,15 @@ impl<'a> SemanticAnalyzer<'a> {
         let then_ty = self.visit_node(then);
         let else_ty = self.visit_node(else_expr);
 
-        if let (Some(mut t), Some(mut e)) = (then_ty, else_ty) {
+        if let (Some(t), Some(e)) = (then_ty, else_ty) {
             // C11 6.5.15p5: If both the second and third operands have arithmetic type, the result type that would be determined by the usual arithmetic conversions...
-            // But array-to-pointer decay happens before that (lvalue conversion).
+            // Array-to-pointer decay and lvalue-to-rvalue conversion happen before that (lvalue conversion).
 
-            if t.is_array() || t.is_function() {
-                let decayed = self.registry.decay(t, TypeQualifiers::empty());
-                self.push_conversion(then, Conversion::PointerDecay { to: decayed.ty() });
-                t = decayed;
-            }
-
-            if e.is_array() || e.is_function() {
-                let decayed = self.registry.decay(e, TypeQualifiers::empty());
-                self.push_conversion(else_expr, Conversion::PointerDecay { to: decayed.ty() });
-                e = decayed;
-            }
+            let t = self.lvalue_conversion(then, t);
+            let e = self.lvalue_conversion(else_expr, e);
 
             let result_ty = match (t, e) {
+
                 (t, e) if t.is_arithmetic() && e.is_arithmetic() => usual_arithmetic_conversions(self.registry, t, e),
                 (t, e) if t.ty() == e.ty() => self.registry.composite_type(t, e),
                 (t, _) if t.ty() == self.registry.type_void => Some(t),
@@ -2123,6 +2122,14 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.record_implicit_conversions(res, e, else_expr);
                 }
                 return Some(res);
+            }
+
+
+
+
+            if t.is_pointer() && e.is_pointer() {
+                let _p_t = self.registry.get_pointee(t.ty()).unwrap();
+                let _p_e = self.registry.get_pointee(e.ty()).unwrap();
             }
 
             self.report_error(cond, SemanticErrorKind::TypeMismatch { expected: t, found: e });

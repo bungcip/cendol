@@ -365,7 +365,7 @@ impl<'a> SemanticAnalyzer<'a> {
     /// Checks if the node is an LValue and is not const-qualified.
     /// Reports errors if check fails.
     fn check_lvalue_and_modifiable(&mut self, node: NodeRef, ty: QualType) -> bool {
-        if !self.is_lvalue(node) {
+        if !self.is_lvalue(node) || ty.is_array() || ty.is_function() {
             self.report_error(node, SemanticErrorKind::NotAnLvalue);
             false
         } else if self.registry.is_const_recursive(ty) {
@@ -2030,9 +2030,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
                 self.visit_builtin_choose_expr(*cond, *true_expr, *false_expr, node)
             }
-            NodeKind::BuiltinConstantP(expr) => {
-                self.visit_builtin_constant_p(*expr, node)
-            }
+            NodeKind::BuiltinConstantP(expr) => self.visit_builtin_constant_p(*expr, node),
             _ => None,
         }
     }

@@ -2582,26 +2582,83 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn is_recursive_expansion(&self, location: SourceLoc, macro_name: &str) -> bool {
-        // Bolt ⚡: Optimization: avoid format! and Path allocation in a hot loop.
-        // We check the path directly by string prefix/suffix which is much faster.
-        std::iter::successors(self.sm.get_file_info(location.source_id()), |info| {
-            info.include_loc.and_then(|loc| self.sm.get_file_info(loc.source_id()))
-        })
-        .take(100)
-        .any(|info| {
-            // Bolt ⚡: Fast-path: Only macro expansion buffers can be recursive.
-            // This avoids expensive path-to-string conversions for real source files.
-            if info.kind != FileKind::MacroExpansion && info.kind != FileKind::PastedToken {
-                return false;
-            }
+        // Bolt ⚡: Check if the token came from an expansion of the same macro.
+        //
+        // The key insight is that we should only block expansion if the token
+        // was PRODUCED BY expanding that macro, not if it merely appears in
+        // a buffer created during expansion.
+        //
+        // For example:
+        //   #define foo(X) 1 bar
+        //   #define bar(X) 2 foo
+        //   foo(X)(Y)(Z)
+        //
+        // When expanding foo(X), we create macro_foo buffer with "1 bar".
+        // When expanding bar(Y), we create macro_bar buffer with "2 foo".
+        // The "foo" in macro_bar came from bar's body, not from expanding foo.
+        // So it should be allowed to expand.
+        //
+        // However, for pasted tokens like:
+        //   #define CAT(a,b) a ## b
+        //   #define foobar CAT(foo, bar)
+        //   foobar
+        //
+        // The pasted "foobar" IS produced by expanding foobar, so we need to
+        // check the chain for pasted tokens.
 
+        let Some(info) = self.sm.get_file_info(location.source_id()) else {
+            return false;
+        };
+
+        // For MacroExpansion buffers, only check the immediate buffer.
+        // The token came from this macro's body, which is fine.
+        if info.kind == FileKind::MacroExpansion {
             let path_str = info.path.to_str().unwrap_or("");
             // Bolt ⚡: Prefix "<macro_" is 7 chars, suffix ">" is 1 char. Total 8.
-            path_str.len() == macro_name.len() + 8
+            return path_str.len() == macro_name.len() + 8
                 && path_str.starts_with("<macro_")
                 && path_str.ends_with('>')
-                && &path_str[7..path_str.len() - 1] == macro_name
-        })
+                && &path_str[7..path_str.len() - 1] == macro_name;
+        }
+
+        // For PastedToken buffers, we need to walk the chain.
+        // The pasted token inherits the expansion history of its components.
+        if info.kind == FileKind::PastedToken {
+            // Walk the chain starting from the include_loc
+            let mut current_loc = info.include_loc;
+            let mut depth = 0;
+
+            while let Some(loc) = current_loc {
+                if depth >= 100 {
+                    break;
+                }
+                depth += 1;
+
+                let Some(parent_info) = self.sm.get_file_info(loc.source_id()) else {
+                    break;
+                };
+
+                if parent_info.kind == FileKind::MacroExpansion {
+                    let path_str = parent_info.path.to_str().unwrap_or("");
+                    if path_str.len() == macro_name.len() + 8
+                        && path_str.starts_with("<macro_")
+                        && path_str.ends_with('>')
+                        && &path_str[7..path_str.len() - 1] == macro_name
+                    {
+                        return true;
+                    }
+                }
+
+                // Don't traverse through another pasted token
+                if parent_info.kind == FileKind::PastedToken {
+                    break;
+                }
+
+                current_loc = parent_info.include_loc;
+            }
+        }
+
+        false
     }
 
     fn create_virtual_buffer_tokens(

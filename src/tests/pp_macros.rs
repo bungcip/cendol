@@ -540,6 +540,7 @@ __STDC_IEC_559__
 
 #[test]
 fn test_macro_recursive_pasting() {
+    // should not hanging on recursive pasting
     let source = r#"
 #define CAT(a,b) a ## b
 #define foobar CAT(foo, bar)
@@ -548,4 +549,29 @@ foobar
 
     let (_, result) = crate::tests::test_utils::run_pipeline(source, crate::driver::artifact::CompilePhase::Preprocess);
     assert!(result.is_ok());
+}
+
+// Regression test for macro expansion chain bug
+// foo(X)(Y)(Z) should expand to "1 2 1 bar", not "1 2 foo(Z)"
+// The bug was that is_recursive_expansion walked the entire include stack,
+// blocking expansion of a macro just because it appeared somewhere in the
+// expansion history, even when the current token is a fresh invocation.
+#[test]
+fn test_macro_expansion_chain_not_blocked() {
+    let src = r#"
+#define foo(X) 1 bar
+#define bar(X) 2 foo
+foo(X)(Y)(Z)
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Number
+      text: "1"
+    - kind: Number
+      text: "2"
+    - kind: Number
+      text: "1"
+    - kind: Identifier
+      text: bar
+    "#);
 }

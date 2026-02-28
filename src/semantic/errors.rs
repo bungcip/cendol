@@ -10,7 +10,7 @@ pub struct SemanticError {
 }
 
 impl SemanticError {
-    pub fn into_diagnostic(self, registry: &TypeRegistry) -> Vec<Diagnostic> {
+    pub(crate) fn into_diagnostic(self, registry: &TypeRegistry) -> Vec<Diagnostic> {
         let level = match &self.kind {
             SemanticErrorKind::EmptyDeclaration
             | SemanticErrorKind::IncompatiblePointerComparison { .. }
@@ -295,7 +295,7 @@ pub enum SemanticErrorKind {
 }
 
 impl SemanticErrorKind {
-    pub fn display(&self, registry: &TypeRegistry) -> String {
+    pub(crate) fn display(&self, registry: &TypeRegistry) -> String {
         match self {
             SemanticErrorKind::VariableOfVoidType => "variable has incomplete type 'void'".to_string(),
             SemanticErrorKind::CalledNonFunctionType { ty } => format!(

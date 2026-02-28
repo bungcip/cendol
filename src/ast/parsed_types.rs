@@ -97,6 +97,8 @@ pub enum ParsedBaseTypeNode {
     },
 
     Typedef(NameId),
+    Typeof(ParsedType),
+    TypeofExpr(crate::ast::ParsedNodeRef),
 }
 
 /// Parsed declarator node (the declarator structure)

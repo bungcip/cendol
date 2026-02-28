@@ -1,0 +1,9 @@
+---
+source: src/tests/parser_typeof.rs
+expression: decl
+---
+Declaration:
+  specifiers:
+    - TypeofExpr(5)
+  init_declarators:
+    - name: x

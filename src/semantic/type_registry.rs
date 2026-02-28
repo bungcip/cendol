@@ -297,7 +297,7 @@ impl TypeRegistry {
     }
 
     /// Allocate a new canonical type and return its TypeRef.
-    fn alloc(&mut self, ty: Type) -> TypeRef {
+    pub(crate) fn alloc(&mut self, ty: Type) -> TypeRef {
         let idx = self.types.len() as u32;
         self.types.push(ty);
         let kind_ref = &self.types[idx as usize].kind;
@@ -309,51 +309,65 @@ impl TypeRegistry {
     /// Resolve a TypeRef to a Type.
     /// Returns Cow because inline types are constructed on the fly.
     #[inline]
-    pub(crate) fn get(&self, r: TypeRef) -> Cow<'_, Type> {
-        if r.is_inline_pointer() {
-            // Reconstruct Pointer Type
-            // We need to know the TypeRef of the pointee.
-            let pointee = self.reconstruct_pointee(r);
+    pub(crate) fn get(&self, mut r: TypeRef) -> Cow<'_, Type> {
+        loop {
+            if r.is_inline_pointer() {
+                // Reconstruct Pointer Type
+                // We need to know the TypeRef of the pointee.
+                let pointee = self.reconstruct_pointee(r);
 
-            // Pointer layout is always fixed
-            let layout = TypeLayout {
-                size: 8,
-                alignment: 8,
-                kind: LayoutKind::Scalar,
-            };
+                // Pointer layout is always fixed
+                let layout = TypeLayout {
+                    size: 8,
+                    alignment: 8,
+                    kind: LayoutKind::Scalar,
+                };
 
-            Cow::Owned(Type {
-                kind: TypeKind::Pointer {
-                    pointee: QualType::unqualified(pointee),
-                },
-                layout: Some(layout),
-            })
-        } else if r.is_inline_array() {
-            // Reconstruct Array Type
-            let element = self.reconstruct_element(r);
-            let len = r.array_len().unwrap() as u64;
+                return Cow::Owned(Type {
+                    kind: TypeKind::Pointer {
+                        pointee: QualType::unqualified(pointee),
+                    },
+                    layout: Some(layout),
+                });
+            } else if r.is_inline_array() {
+                // Reconstruct Array Type
+                let element = self.reconstruct_element(r);
+                let len = r.array_len().unwrap() as u64;
 
-            Cow::Owned(Type {
-                kind: TypeKind::Array {
-                    element_type: element,
-                    size: ArraySizeType::Constant(len as usize),
-                },
-                layout: None,
-            })
-        } else {
-            // Registry type
-            Cow::Borrowed(&self.types[r.index()])
+                return Cow::Owned(Type {
+                    kind: TypeKind::Array {
+                        element_type: element,
+                        size: ArraySizeType::Constant(len as usize),
+                    },
+                    layout: None,
+                });
+            } else {
+                // Registry type
+                let ty = &self.types[r.index()];
+                if let TypeKind::Alias(inner) = ty.kind {
+                    r = inner;
+                } else {
+                    return Cow::Borrowed(ty);
+                }
+            }
         }
     }
 
     /// Helper to get the pointee type if the given type is a pointer.
-    pub(crate) fn get_pointee(&self, ty: TypeRef) -> Option<QualType> {
-        if ty.is_inline_pointer() {
-            Some(QualType::unqualified(self.reconstruct_pointee(ty)))
-        } else {
-            match &self.get(ty).kind {
-                TypeKind::Pointer { pointee } => Some(*pointee),
-                _ => None,
+    pub(crate) fn get_pointee(&self, mut ty: TypeRef) -> Option<QualType> {
+        loop {
+            if ty.is_inline_pointer() {
+                return Some(QualType::unqualified(self.reconstruct_pointee(ty)));
+            } else {
+                let t = &self.types[ty.index()];
+                if let TypeKind::Alias(inner) = t.kind {
+                    ty = inner;
+                    continue;
+                }
+                match &t.kind {
+                    TypeKind::Pointer { pointee } => return Some(*pointee),
+                    _ => return None,
+                }
             }
         }
     }
@@ -564,30 +578,39 @@ impl TypeRegistry {
     // Layout
     // ============================================================
 
-    pub(crate) fn get_layout(&self, ty: TypeRef) -> Cow<'_, TypeLayout> {
-        if ty.is_inline_pointer() {
-            return Cow::Owned(TypeLayout {
-                size: 8,
-                alignment: 8,
-                kind: LayoutKind::Scalar,
-            });
-        }
+    pub(crate) fn get_layout(&self, mut ty: TypeRef) -> Cow<'_, TypeLayout> {
+        loop {
+            if ty.is_inline_pointer() {
+                return Cow::Owned(TypeLayout {
+                    size: 8,
+                    alignment: 8,
+                    kind: LayoutKind::Scalar,
+                });
+            }
 
-        if ty.is_inline_array() {
-            let elem = self.reconstruct_element(ty);
-            let elem_layout = self.get_layout(elem);
-            let len = ty.array_len().unwrap() as u64;
-            return Cow::Owned(TypeLayout {
-                size: elem_layout.size * len, // Potential overflow if not careful, but C rules apply
-                alignment: elem_layout.alignment,
-                kind: LayoutKind::Array { element: elem, len },
-            });
-        }
+            if ty.is_inline_array() {
+                let elem = self.reconstruct_element(ty);
+                let elem_layout = self.get_layout(elem);
+                let len = ty.array_len().unwrap() as u64;
+                return Cow::Owned(TypeLayout {
+                    size: elem_layout.size * len, // Potential overflow if not careful, but C rules apply
+                    alignment: elem_layout.alignment,
+                    kind: LayoutKind::Array { element: elem, len },
+                });
+            }
 
-        let idx = ty.index();
-        match self.types[idx].layout.as_ref() {
-            Some(x) => Cow::Borrowed(x),
-            None => panic!("ICE: TypeRef {ty} layout not computed. make sure layout is computed in previous phase"),
+            let idx = ty.index();
+            let ty_data = &self.types[idx];
+            if let TypeKind::Alias(inner) = ty_data.kind {
+                ty = inner;
+            } else {
+                match ty_data.layout.as_ref() {
+                    Some(x) => return Cow::Borrowed(x),
+                    None => {
+                        panic!("ICE: TypeRef {ty} layout not computed. make sure layout is computed in previous phase")
+                    }
+                }
+            }
         }
     }
 
@@ -791,6 +814,12 @@ impl TypeRegistry {
                 self.ensure_layout(base_type)?.into_owned()
             }
 
+            TypeKind::Alias(inner) => self.ensure_layout(inner)?.into_owned(),
+            TypeKind::TypeofExpr(_) => {
+                return Err(TypeRegistryError::UnsupportedFeature {
+                    feature: "typeof expr layout",
+                });
+            }
             TypeKind::Error => {
                 return Err(TypeRegistryError::UnsupportedFeature {
                     feature: "error layout",
@@ -961,7 +990,25 @@ impl TypeRegistry {
         }
     }
 
-    pub(crate) fn is_compatible(&self, a: QualType, b: QualType) -> bool {
+    pub(crate) fn canonical_qual_type(&self, qt: QualType) -> QualType {
+        let mut ty = qt.ty();
+        loop {
+            if ty.is_inline_pointer() || ty.is_inline_array() {
+                break;
+            }
+            if let TypeKind::Alias(inner) = self.types[ty.index()].kind {
+                ty = inner;
+            } else {
+                break;
+            }
+        }
+        QualType::new(ty, qt.qualifiers())
+    }
+
+    pub(crate) fn is_compatible(&self, mut a: QualType, mut b: QualType) -> bool {
+        a = self.canonical_qual_type(a);
+        b = self.canonical_qual_type(b);
+
         if a == b {
             return true;
         }

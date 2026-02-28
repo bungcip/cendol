@@ -207,6 +207,15 @@ impl<'a> SemanticAnalyzer<'a> {
             TypeKind::Complex { base_type } => {
                 self.visit_type_expressions(QualType::unqualified(base_type));
             }
+            TypeKind::TypeofExpr(expr) => {
+                let resolved_ty = self
+                    .visit_node(expr)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                self.registry.types[ty.index()].kind = TypeKind::Alias(resolved_ty.ty());
+            }
+            TypeKind::Alias(inner) => {
+                self.visit_type_expressions(QualType::unqualified(inner));
+            }
             // For Records and Enums, we don't need to traverse members because
             // they cannot contain VLAs (C11 6.7.2.1).
             // Even if they did, the members would be visited during their declaration processing.
@@ -1053,8 +1062,11 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn check_assignment_constraints(&self, lhs_ty: QualType, rhs_ty: QualType, rhs: NodeRef) -> bool {
+        let lhs_ty_canon = self.registry.canonical_qual_type(lhs_ty);
+        let rhs_ty_canon = self.registry.canonical_qual_type(rhs_ty);
+
         // 0. Identical types
-        if lhs_ty.ty() == rhs_ty.ty() {
+        if lhs_ty_canon.ty() == rhs_ty_canon.ty() {
             return true;
         }
 
@@ -1065,7 +1077,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // 2. Structure or Union types
         if lhs_ty.is_record() || rhs_ty.is_record() {
-            return lhs_ty.is_record() && rhs_ty.is_record() && lhs_ty.ty() == rhs_ty.ty();
+            return lhs_ty.is_record() && rhs_ty.is_record() && lhs_ty_canon.ty() == rhs_ty_canon.ty();
         }
 
         // 3. Pointers

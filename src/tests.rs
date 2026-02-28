@@ -38,6 +38,7 @@ pub mod semantic_float_init;
 pub mod semantic_functions;
 pub mod semantic_init;
 pub mod semantic_scope;
+pub mod semantic_typeof;
 pub mod semantic_types;
 
 pub mod semantic_common;
@@ -61,6 +62,7 @@ pub mod codegen_ternary_array_size;
 pub mod parser_gcc_extensions;
 pub mod parser_regr_hang;
 pub mod parser_type_spec_coverage;
+pub mod parser_typeof;
 
 pub mod semantic_alignment;
 pub mod semantic_composite;

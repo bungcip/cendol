@@ -288,6 +288,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if let Some(cond_ty) = self.ast.get_resolved_type(cond_node)
             && !cond_ty.is_integer()
         {
+            // The condition of _Static_assert must be an integer constant expression.
+            // Wait, an integer constant expression is one that has integer type.
+            // If the type is not integer, we report error, but we still try to evaluate it for better diagnostics.
             self.report_error(span, SemanticErrorKind::ExpectedIntegerType { found: cond_ty });
         }
 

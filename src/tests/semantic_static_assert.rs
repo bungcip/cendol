@@ -218,3 +218,14 @@ fn static_assert_bool_cast() {
         CompilePhase::Mir,
     );
 }
+
+#[test]
+fn test_static_assert_float_logical_and_comparison() {
+    let code = r#"
+        _Static_assert(2.0 || (2.0 == 2.0), "");
+        _Static_assert(0.0 || 1.0, "");
+        _Static_assert(1.5 != 2.5, "");
+        _Static_assert(3.14 > 3.0, "");
+    "#;
+    run_pass(code, CompilePhase::Mir);
+}

@@ -837,7 +837,7 @@ fn validate_record_members(
 fn complete_record_symbol(
     ctx: &mut LowerCtx,
     tag: Option<NameId>,
-    type_ref: TypeRef,
+    ty: TypeRef,
     members: Vec<StructMember>,
     span: SourceSpan,
 ) -> Result<(), SemanticError> {
@@ -849,8 +849,8 @@ fn complete_record_symbol(
     }
 
     // Update the type in AST and SymbolTable
-    ctx.registry.complete_record(type_ref, members.clone());
-    if let Err(e) = ctx.registry.ensure_layout(type_ref) {
+    ctx.registry.complete_record(ty, members.clone());
+    if let Err(e) = ctx.registry.ensure_layout(ty) {
         return Err(SemanticError {
             span,
             kind: e.to_semantic_kind(),
@@ -858,9 +858,9 @@ fn complete_record_symbol(
     }
 
     if let Some(tag_name) = tag
-        && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(tag_name)
+        && let Some((entry, _)) = ctx.symbol_table.lookup_tag(tag_name)
     {
-        let entry = ctx.symbol_table.get_symbol_mut(entry_ref);
+        let entry = ctx.symbol_table.get_symbol_mut(entry);
         entry.is_completed = true;
         if let SymbolKind::Record {
             is_complete,
@@ -913,7 +913,7 @@ fn choose_enum_type(registry: &TypeRegistry, enumerators: &[EnumConstant]) -> Ty
 fn complete_enum_symbol(
     ctx: &mut LowerCtx,
     tag: Option<NameId>,
-    type_ref: TypeRef,
+    ty: TypeRef,
     enumerators: Vec<EnumConstant>,
     span: SourceSpan,
 ) -> Result<(), SemanticError> {
@@ -921,8 +921,8 @@ fn complete_enum_symbol(
     let base_type = choose_enum_type(ctx.registry, &enumerators);
 
     // Update the type in AST and SymbolTable using the proper completion function
-    ctx.registry.complete_enum(type_ref, enumerators, base_type);
-    if let Err(e) = ctx.registry.ensure_layout(type_ref) {
+    ctx.registry.complete_enum(ty, enumerators, base_type);
+    if let Err(e) = ctx.registry.ensure_layout(ty) {
         return Err(SemanticError {
             span,
             kind: e.to_semantic_kind(),
@@ -930,9 +930,9 @@ fn complete_enum_symbol(
     }
 
     if let Some(tag_name) = tag
-        && let Some((entry_ref, _)) = ctx.symbol_table.lookup_tag(tag_name)
+        && let Some((entry, _)) = ctx.symbol_table.lookup_tag(tag_name)
     {
-        let entry = ctx.symbol_table.get_symbol_mut(entry_ref);
+        let entry = ctx.symbol_table.get_symbol_mut(entry);
         entry.is_completed = true;
         if let SymbolKind::EnumTag { is_complete } = &mut entry.kind {
             *is_complete = true;
@@ -1346,16 +1346,12 @@ pub(crate) fn visit_ast(
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {
-    pub(crate) fn visit_node(&mut self, parsed_ref: ParsedNodeRef) -> SmallVec<[NodeRef; 1]> {
-        self.visit_node_entry(parsed_ref, None)
+    pub(crate) fn visit_node(&mut self, node: ParsedNodeRef) -> SmallVec<[NodeRef; 1]> {
+        self.visit_node_entry(node, None)
     }
 
-    fn visit_node_entry(
-        &mut self,
-        parsed_ref: ParsedNodeRef,
-        target_slots: Option<&[NodeRef]>,
-    ) -> SmallVec<[NodeRef; 1]> {
-        let parsed_node = self.parsed_ast.get_node(parsed_ref);
+    fn visit_node_entry(&mut self, node: ParsedNodeRef, target_slots: Option<&[NodeRef]>) -> SmallVec<[NodeRef; 1]> {
+        let parsed_node = self.parsed_ast.get_node(node);
         let span = parsed_node.span;
         let kind = parsed_node.kind.clone();
 
@@ -1373,7 +1369,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             // ... other top level kinds ...
-            _ => self.visit_node_rest(parsed_ref, target_slots),
+            _ => self.visit_node_rest(node, target_slots),
         }
     }
 
@@ -1384,8 +1380,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let mut semantic_node_counts = Vec::with_capacity(children.len());
         let mut total_semantic_nodes = 0;
 
-        for &child_ref in children {
-            let child = self.parsed_ast.get_node(child_ref);
+        for &child in children {
+            let child = self.parsed_ast.get_node(child);
             let count = match &child.kind {
                 ParsedNodeKind::FunctionDef(..) | ParsedNodeKind::StaticAssert(..) => 1,
                 ParsedNodeKind::Declaration(decl) => {
@@ -1418,11 +1414,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         let mut current_slot_idx = 0;
-        for (i, child_ref) in children.iter().enumerate() {
+        for (i, child) in children.iter().enumerate() {
             let count = semantic_node_counts[i];
             if count > 0 {
                 let target_slots = &reserved_slots[current_slot_idx..current_slot_idx + count];
-                self.visit_top_level_node(*child_ref, target_slots);
+                self.visit_top_level_node(*child, target_slots);
                 current_slot_idx += count;
             }
         }
@@ -1451,8 +1447,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let node = self.get_or_push_slot(target_slots, span);
 
         let mut total_stmt_nodes = 0;
-        for &stmt_ref in stmts {
-            total_stmt_nodes += self.count_semantic_nodes(stmt_ref);
+        for &stmt in stmts {
+            total_stmt_nodes += self.count_semantic_nodes(stmt);
         }
 
         let mut stmt_slots = Vec::with_capacity(total_stmt_nodes);
@@ -1467,11 +1463,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.symbol_table.set_current_scope(scope_id);
 
         let mut current_slot_idx = 0;
-        for &stmt_ref in stmts {
-            let count = self.count_semantic_nodes(stmt_ref);
+        for &stmt in stmts {
+            let count = self.count_semantic_nodes(stmt);
             if count > 0 {
                 let target = &stmt_slots[current_slot_idx..current_slot_idx + count];
-                self.visit_node_entry(stmt_ref, Some(target));
+                self.visit_node_entry(stmt, Some(target));
                 current_slot_idx += count;
             }
         }
@@ -1490,11 +1486,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         node
     }
 
-    fn visit_top_level_node(&mut self, parsed_ref: ParsedNodeRef, target_slots: &[NodeRef]) {
-        let parsed_node = self.parsed_ast.get_node(parsed_ref);
-        let span = parsed_node.span;
+    fn visit_top_level_node(&mut self, node: ParsedNodeRef, target_slots: &[NodeRef]) {
+        let node = self.parsed_ast.get_node(node);
+        let span = node.span;
 
-        match &parsed_node.kind {
+        match &node.kind {
             ParsedNodeKind::Declaration(decl) => {
                 self.visit_declaration(decl, span, Some(target_slots));
             }
@@ -1504,7 +1500,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
             }
             _ => {
-                if let ParsedNodeKind::StaticAssert(expr, msg) = &parsed_node.kind
+                if let ParsedNodeKind::StaticAssert(expr, msg) = &node.kind
                     && let Some(target) = target_slots.first()
                 {
                     let lowered_expr = self.visit_expression(*expr);
@@ -1676,8 +1672,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 );
             }
         }
-        let func_sym_ref = self.symbol_table.lookup_symbol(func_name).map(|(s, _)| s).unwrap();
-
+        let func_sym = self.symbol_table.lookup_symbol(func_name).map(|(s, _)| s).unwrap();
         let scope_id = self.symbol_table.push_scope();
 
         // Implement __func__ (C11 6.4.2.2)
@@ -1737,8 +1732,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     self.symbol_table
                         .define_variable(pname, param.param_type, param.storage, None, None, span)
                 {
-                    let param_ref = param_dummies[i];
-                    self.ast.kinds[param_ref.index()] = NodeKind::Param(ParamData {
+                    let param_dummy = param_dummies[i];
+                    self.ast.kinds[param_dummy.index()] = NodeKind::Param(ParamData {
                         symbol: sym,
                         ty: param.param_type,
                     });
@@ -1757,7 +1752,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.symbol_table.pop_scope();
 
         self.ast.kinds[node.index()] = NodeKind::Function(FunctionData {
-            symbol: func_sym_ref,
+            symbol: func_sym,
             ty: final_ty.ty(),
             is_noreturn: final_is_noreturn,
             param_start,
@@ -1810,8 +1805,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             Enum(Option<NameId>, Arc<[EnumConstant]>),
         }
 
-        let type_ref = qual_ty.ty();
-        let type_info = self.registry.get(type_ref);
+        let type_info = self.registry.get(qual_ty.ty());
         let type_data = match &type_info.kind {
             TypeKind::Record {
                 tag, members, is_union, ..
@@ -1822,7 +1816,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if let Some(data) = type_data {
             let node = self.get_or_push_slot(target_slots, span);
-
             self.check_function_specifiers(spec_info, span);
 
             match data {
@@ -2066,14 +2059,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.ast.kinds[node.index()] = NodeKind::VarDecl(var_decl);
     }
 
-    fn visit_node_rest(
-        &mut self,
-        parsed_ref: ParsedNodeRef,
-        target_slots: Option<&[NodeRef]>,
-    ) -> SmallVec<[NodeRef; 1]> {
-        let parsed_node = self.parsed_ast.get_node(parsed_ref);
-        let span = parsed_node.span;
-        match &parsed_node.kind {
+    fn visit_node_rest(&mut self, node: ParsedNodeRef, target_slots: Option<&[NodeRef]>) -> SmallVec<[NodeRef; 1]> {
+        let node = self.parsed_ast.get_node(node);
+        let span = node.span;
+        match &node.kind {
             ParsedNodeKind::Declaration(decl) => self.visit_declaration(decl, span, target_slots),
             ParsedNodeKind::StaticAssert(expr, msg) => {
                 let node = self.get_or_push_slot(target_slots, span);
@@ -2239,8 +2228,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
 
                 // Lower arguments into reserved slots
-                for (i, &arg_parsed_ref) in args.iter().enumerate() {
-                    self.visit_expression_into(arg_parsed_ref, arg_dummies[i]);
+                for (i, &arg) in args.iter().enumerate() {
+                    self.visit_expression_into(arg, arg_dummies[i]);
                 }
 
                 let arg_start = if !arg_dummies.is_empty() {
@@ -2423,8 +2412,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
 
                 // Lower arguments into reserved slots
-                for (i, &arg_parsed_ref) in args.iter().enumerate() {
-                    self.visit_expression_into(arg_parsed_ref, arg_dummies[i]);
+                for (i, &arg) in args.iter().enumerate() {
+                    self.visit_expression_into(arg, arg_dummies[i]);
                 }
 
                 let arg_start = if !arg_dummies.is_empty() {
@@ -2476,8 +2465,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             .unwrap_or(QualType::unqualified(self.registry.type_error))
                     });
                     let expr = self.visit_expression(a.result_expr);
-                    let assoc_ref = assoc_dummies[i];
-                    self.ast.kinds[assoc_ref.index()] =
+                    let assoc_dummy = assoc_dummies[i];
+                    self.ast.kinds[assoc_dummy.index()] =
                         NodeKind::GenericAssociation(GenericAssociationData { ty, result_expr: expr });
                 }
 
@@ -2517,8 +2506,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                 Designator::GnuArrayRange(self.visit_expression(*start), self.visit_expression(*end))
                             }
                         };
-                        let d_ref = designator_dummies[j];
-                        self.ast.kinds[d_ref.index()] = NodeKind::Designator(node_kind);
+                        let d_dummy = designator_dummies[j];
+                        self.ast.kinds[d_dummy.index()] = NodeKind::Designator(node_kind);
                     }
 
                     let designator_start = if designator_count > 0 {
@@ -2533,8 +2522,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         initializer: expr,
                     };
 
-                    let item_ref = init_dummies[i];
-                    self.ast.kinds[item_ref.index()] = NodeKind::InitializerItem(di);
+                    let item_dummy = init_dummies[i];
+                    self.ast.kinds[item_dummy.index()] = NodeKind::InitializerItem(di);
                 }
 
                 let init_len = init_dummies.len() as u16;
@@ -2665,8 +2654,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 Some(parsed.size)
             }
             NodeKind::InitializerList(list) if list.init_len > 0 => {
-                let first_item_ref = list.init_start;
-                if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item_ref)
+                let first_item = list.init_start;
+                if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item)
                     && item.designator_len == 0
                     && let NodeKind::Literal(literal::Literal::String(s)) = self.ast.get_kind(item.initializer)
                 {
@@ -2699,8 +2688,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 let mut iter = list.init_start.range(list.init_len).peekable();
 
-                while let Some(item_ref) = iter.peek().copied() {
-                    let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
+                while let Some(item) = iter.peek().copied() {
+                    let NodeKind::InitializerItem(init) = self.ast.get_kind(item) else {
                         iter.next();
                         continue;
                     };
@@ -2750,11 +2739,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         I: Iterator<Item = NodeRef>,
     {
         // Check if there are more items
-        let Some(item_ref) = iter.peek().copied() else {
+        let Some(item) = iter.peek().copied() else {
             return;
         };
 
-        let NodeKind::InitializerItem(init) = self.ast.get_kind(item_ref) else {
+        let NodeKind::InitializerItem(init) = self.ast.get_kind(item) else {
             // Should not happen in valid AST
             return;
         };
@@ -2801,8 +2790,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         return;
                     }
                     // Check if next item is an array designator (stopper)
-                    if let Some(next_ref) = iter.peek()
-                        && let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next_ref)
+                    if let Some(next) = iter.peek()
+                        && let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next)
                         && next_init.designator_len > 0
                     {
                         match self.ast.get_kind(next_init.designator_start) {
@@ -2827,8 +2816,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             return;
                         }
                         // Check stopper
-                        if let Some(next_ref) = iter.peek()
-                            && let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next_ref)
+                        if let Some(next) = iter.peek()
+                            && let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next)
                             && next_init.designator_len > 0
                         {
                             match self.ast.get_kind(next_init.designator_start) {
@@ -2857,11 +2846,11 @@ fn extract_bit_field_width<'a>(
     declarator: &'a ParsedDeclarator,
     ctx: &mut LowerCtx,
 ) -> (Option<u16>, &'a ParsedDeclarator) {
-    let ParsedDeclarator::BitField(base, expr_ref) = declarator else {
+    let ParsedDeclarator::BitField(base, expr) = declarator else {
         return (None, declarator);
     };
 
-    let width_expr = ctx.visit_expression(*expr_ref);
+    let width_expr = ctx.visit_expression(*expr);
     let span = ctx.ast.get_span(width_expr);
 
     let width = match const_eval::eval_const_expr(&ctx.const_ctx(), width_expr) {
@@ -2884,8 +2873,8 @@ fn extract_bit_field_width<'a>(
 fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span: SourceSpan) -> Vec<StructMember> {
     let mut struct_members = Vec::new();
 
-    for &node_ref in member_nodes {
-        let node = ctx.parsed_ast.get_node(node_ref);
+    for &node in member_nodes {
+        let node = ctx.parsed_ast.get_node(node);
         match &node.kind {
             ParsedNodeKind::StaticAssert(cond, msg) => {
                 ctx.check_static_assert(*cond, *msg, node.span);

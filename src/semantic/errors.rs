@@ -115,7 +115,7 @@ pub enum SemanticErrorKind {
         ty: QualType,
     },
     ExcessElements {
-        kind: String,
+        kind: &'static str,
     },
     UnsupportedFeature {
         feature: &'static str,
@@ -225,7 +225,7 @@ pub enum SemanticErrorKind {
     },
     CaseNotInSwitch,
     DuplicateCase {
-        value: String,
+        value: i64,
     },
     NonConstantCaseValue,
     InvalidSwitchCondition {
@@ -272,12 +272,12 @@ pub enum SemanticErrorKind {
     ImplicitConstantConversion {
         from: QualType,
         to: QualType,
-        from_val: String,
-        to_val: String,
+        from_val: i64,
+        to_val: i64,
     },
     SwitchCaseOverflow {
-        from_val: String,
-        to_val: String,
+        from_val: i64,
+        to_val: i64,
     },
     ExpectedScalarType {
         found: QualType,

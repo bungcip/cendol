@@ -999,3 +999,38 @@ var) = 42;
     "#;
     run_pass(source, CompilePhase::EmitObject);
 }
+
+#[test]
+fn test_usual_arithmetic_conversions_signed_wins() {
+    let source = r#"
+        int main() {
+            unsigned int u = 1;
+            long long s = -1;
+            long long r = u + s;
+            return (int)r;
+        }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir, @"
+    type %t0 = i32
+    type %t1 = u32
+    type %t2 = i64
+
+    fn main() -> i32
+    {
+      locals {
+        %u: u32
+        %s: i64
+        %r: i64
+        %4: i64
+      }
+
+      bb1:
+        %u = const 1
+        %s = const -1
+        %4 = cast<i64>(%u) + %s
+        %r = %4
+        return cast<i32>(%r)
+    }
+    ");
+}

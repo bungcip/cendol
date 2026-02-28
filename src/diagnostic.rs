@@ -175,7 +175,7 @@ impl DiagnosticEngine {
         }
 
         // Primary error snippet
-        let snippet = self.create_snippet(diag.span, &diag.message, source_manager);
+        let snippet = self.create_snippet(diag.span, "", source_manager);
         // Use primary_title instead of title
         let mut group = self.level(diag).primary_title(&diag.message).element(snippet);
 

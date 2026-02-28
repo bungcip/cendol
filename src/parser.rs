@@ -7,7 +7,6 @@
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError, ParseErrorKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
-use log::debug;
 use std::collections::HashSet;
 
 pub mod declaration_core;
@@ -392,7 +391,6 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Add a typedef name to the type context
     pub(crate) fn add_typedef(&mut self, symbol: NameId) {
-        debug!("add_typedef: adding {:?} to typedef_names", symbol);
         self.type_context.add_typedef(symbol);
     }
 

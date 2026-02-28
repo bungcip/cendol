@@ -19,7 +19,6 @@ use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::{Conversion, Namespace, ScopeId};
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use hashbrown::{HashMap, HashSet};
-use log::debug;
 use target_lexicon::Architecture;
 
 use crate::mir::GlobalId;
@@ -81,10 +80,8 @@ impl<'a> MirGen<'a> {
     }
 
     pub(crate) fn visit_module(&mut self) -> MirProgram {
-        debug!("Starting semantic analysis and MIR construction (complete)");
         let root = self.ast.get_root();
         self.visit_node(root);
-        debug!("Semantic analysis complete");
 
         // Take ownership of the builder to consume it, replacing it with a dummy.
         let builder = std::mem::replace(

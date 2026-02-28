@@ -2075,19 +2075,41 @@ impl<'a> SemanticAnalyzer<'a> {
         let else_ty = self.visit_node(else_expr);
 
         if let (Some(mut t), Some(mut e)) = (then_ty, else_ty) {
-            // C11 6.5.15p5: If both the second and third operands have arithmetic type, the result type that would be determined by the usual arithmetic conversions...
-            // But array-to-pointer decay happens before that (lvalue conversion).
+            // C11 6.5.15p3: The second and third operands undergo the usual unary conversions.
+            // This includes lvalue-to-rvalue conversion which strips top-level qualifiers.
+            // For arrays and functions, this means array-to-pointer/function-to-pointer decay.
+            // For other types, we simply strip the qualifiers.
 
             if t.is_array() || t.is_function() {
                 let decayed = self.registry.decay(t, TypeQualifiers::empty());
                 self.push_conversion(then, Conversion::PointerDecay { to: decayed.ty() });
                 t = decayed;
+            } else if !t.qualifiers().is_empty() {
+                // LValue to RValue conversion: strip top-level qualifiers
+                self.push_conversion(
+                    then,
+                    Conversion::QualifierAdjust {
+                        from: t.qualifiers(),
+                        to: TypeQualifiers::empty(),
+                    },
+                );
+                t = t.strip_all();
             }
 
             if e.is_array() || e.is_function() {
                 let decayed = self.registry.decay(e, TypeQualifiers::empty());
                 self.push_conversion(else_expr, Conversion::PointerDecay { to: decayed.ty() });
                 e = decayed;
+            } else if !e.qualifiers().is_empty() {
+                // LValue to RValue conversion: strip top-level qualifiers
+                self.push_conversion(
+                    else_expr,
+                    Conversion::QualifierAdjust {
+                        from: e.qualifiers(),
+                        to: TypeQualifiers::empty(),
+                    },
+                );
+                e = e.strip_all();
             }
 
             let result_ty = match (t, e) {

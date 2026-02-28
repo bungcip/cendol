@@ -95,3 +95,39 @@ fn test_ternary_pointer_qualifier_mismatch_assignment_rejected() {
     // So it should be a warning.
     run_pipeline_to_mir(src);
 }
+
+#[test]
+fn test_ternary_lvalue_to_rvalue_strips_top_level_quals() {
+    // Regression test: ternary operands should undergo lvalue-to-rvalue conversion
+    // which strips top-level qualifiers. This is required by C11 6.5.15p3.
+    let src = r#"
+    struct TString {
+        int shrlen;
+        char *contents;
+    };
+
+    void bar(const struct TString *ts1) {
+        long rl1;
+        char *a;
+        // The result should be char* because lvalue-to-rvalue conversion
+        // strips the const qualifier from the lvalue ts1->contents
+        char *s = ((ts1->shrlen >= 0) ? (((void)((rl1) = ts1->shrlen)), a) : (((void)((rl1) = ts1->shrlen)), ts1->contents));
+    }
+    "#;
+    run_pass(src, CompilePhase::Mir);
+}
+
+#[test]
+fn test_ternary_lvalue_to_rvalue_with_comma_operator() {
+    // Test that comma operator result in ternary gets proper lvalue-to-rvalue conversion
+    let src = r#"
+    void f() {
+        const int x = 5;
+        int y = 1;
+        // (void)0, x should be int (const stripped by lvalue-to-rvalue)
+        int a = y ? ((void)0, x) : 0;
+        int b = y ? 0 : ((void)0, x);
+    }
+    "#;
+    run_pass(src, CompilePhase::Mir);
+}

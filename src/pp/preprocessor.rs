@@ -947,17 +947,9 @@ impl<'src> Preprocessor<'src> {
 
     /// Check if we are currently skipping tokens
     fn is_currently_skipping(&self) -> bool {
-        // Check if any conditional in the stack is currently skipping
-        self.conditional_stack.iter().any(|info| info.was_skipping)
-    }
-
-    /// Set the skipping state for the current conditional level
-    fn set_skipping(&mut self, skipping: bool) {
-        if let Some(info) = self.conditional_stack.last_mut() {
-            info.was_skipping = skipping;
-        } else {
-            // No conditionals, don't skip
-        }
+        // Bolt ⚡: Optimized to O(1) by checking only the top of the stack.
+        // The skipping state is propagated downwards to ensure this is sufficient.
+        self.conditional_stack.last().is_some_and(|info| info.was_skipping)
     }
 
     /// Parse a conditional expression for #if and #elif
@@ -1513,8 +1505,10 @@ impl<'src> Preprocessor<'src> {
         self.emit_error_loc(PPErrorKind::FileNotFound { path: path.to_string() }, loc)
     }
     fn handle_if_directive(&mut self, condition: bool) -> Result<(), PPError> {
+        // Bolt ⚡: Ensure the skipping state is propagated downward.
+        let was_skipping = self.is_currently_skipping() || !condition;
         self.conditional_stack.push(PPConditionalInfo {
-            was_skipping: !condition,
+            was_skipping,
             found_else: false,
             found_non_skipping: condition,
         });
@@ -1541,6 +1535,14 @@ impl<'src> Preprocessor<'src> {
         if self.conditional_stack.is_empty() {
             return self.emit_error_loc(PPErrorKind::ElifWithoutIf, location);
         }
+
+        // Bolt ⚡: Check parent's skipping state to propagate it downward.
+        let parent_skipping = if self.conditional_stack.len() > 1 {
+            self.conditional_stack[self.conditional_stack.len() - 2].was_skipping
+        } else {
+            false
+        };
+
         let current = self.conditional_stack.last_mut().unwrap();
 
         if current.found_else {
@@ -1551,7 +1553,7 @@ impl<'src> Preprocessor<'src> {
         if should_process {
             current.found_non_skipping = true;
         }
-        current.was_skipping = !should_process;
+        current.was_skipping = parent_skipping || !should_process;
 
         Ok(())
     }
@@ -1560,6 +1562,14 @@ impl<'src> Preprocessor<'src> {
         if self.conditional_stack.is_empty() {
             return self.emit_error_loc(PPErrorKind::ElseWithoutIf, location);
         }
+
+        // Bolt ⚡: Check parent's skipping state to propagate it downward.
+        let parent_skipping = if self.conditional_stack.len() > 1 {
+            self.conditional_stack[self.conditional_stack.len() - 2].was_skipping
+        } else {
+            false
+        };
+
         let current = self.conditional_stack.last_mut().unwrap();
 
         if current.found_else {
@@ -1568,7 +1578,7 @@ impl<'src> Preprocessor<'src> {
 
         current.found_else = true;
         let should_process = !current.found_non_skipping;
-        current.was_skipping = !should_process;
+        current.was_skipping = parent_skipping || !should_process;
 
         self.expect_eod()
     }
@@ -2549,15 +2559,13 @@ impl<'src> Preprocessor<'src> {
 
     /// Push a conditional that is lazily skipped (nested in a skipped block)
     fn push_skipped_conditional(&mut self) {
-        // Equivalent to handle_if_directive(false)
+        // Bolt ⚡: Optimized to avoid redundant set_skipping call.
         let info = PPConditionalInfo {
-            was_skipping: self.is_currently_skipping(),
+            was_skipping: true,
             found_else: false,
             found_non_skipping: false, // Condition treated as false
         };
         self.conditional_stack.push(info);
-        // Force skipping for this level
-        self.set_skipping(true);
     }
 
     /// Check if we should evaluate conditional expression (e.g. for #elif)

@@ -64,6 +64,23 @@ impl Type {
         }
     }
 
+    pub(crate) fn find_member(&self, registry: &super::TypeRegistry, name: NameId) -> Option<StructMember> {
+        if let TypeKind::Record { members, .. } = &self.kind {
+            if let Some(member) = members.iter().find(|m| m.name == Some(name)) {
+                return Some(*member);
+            }
+            for member in members.iter() {
+                if member.name.is_none() {
+                    let inner_type = registry.get(member.member_type.ty());
+                    if let Some(found) = inner_type.find_member(registry, name) {
+                        return Some(found);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     pub(crate) fn flatten_members_with_layouts(
         &self,
         registry: &super::TypeRegistry,

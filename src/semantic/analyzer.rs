@@ -140,15 +140,15 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn push_conversion(&mut self, node_ref: NodeRef, conv: Conversion) {
-        self.semantic_info.conversions[node_ref.index()].push(conv);
+    fn push_conversion(&mut self, node: NodeRef, conv: Conversion) {
+        self.semantic_info.conversions[node.index()].push(conv);
     }
 
-    fn unwrap_initializer_item(&self, node_ref: NodeRef) -> (NodeRef, NodeRef, u16) {
-        if let NodeKind::InitializerItem(item) = self.ast.get_kind(node_ref) {
+    fn unwrap_initializer_item(&self, node: NodeRef) -> (NodeRef, NodeRef, u16) {
+        if let NodeKind::InitializerItem(item) = self.ast.get_kind(node) {
             (item.initializer, item.designator_start, item.designator_len)
         } else {
-            (node_ref, NodeRef::new(1).unwrap(), 0)
+            (node, NodeRef::new(1).unwrap(), 0)
         }
     }
 
@@ -211,8 +211,8 @@ impl<'a> SemanticAnalyzer<'a> {
         eval_const_expr(&self.const_ctx(), expr).is_some_and(|v| v != 0)
     }
 
-    fn contains_break(&self, node_ref: NodeRef) -> bool {
-        match self.ast.get_kind(node_ref) {
+    fn contains_break(&self, node: NodeRef) -> bool {
+        match self.ast.get_kind(node) {
             NodeKind::Break => true,
             NodeKind::CompoundStatement(cs) => cs.stmt_start.range(cs.stmt_len).any(|s| self.contains_break(s)),
             NodeKind::If(if_stmt) => {
@@ -225,8 +225,8 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn can_fall_through(&self, node_ref: NodeRef) -> bool {
-        match self.ast.get_kind(node_ref) {
+    fn can_fall_through(&self, node: NodeRef) -> bool {
+        match self.ast.get_kind(node) {
             NodeKind::Return(_) | NodeKind::Break | NodeKind::Continue | NodeKind::Goto(_, _) => false,
             NodeKind::If(if_stmt) => {
                 let then_ft = self.can_fall_through(if_stmt.then_branch);
@@ -266,8 +266,8 @@ impl<'a> SemanticAnalyzer<'a> {
     /// ⚡ Bolt: Checks if the node is an LValue.
     /// This function is optimized to avoid $O(N^2)$ behavior in nested expressions
     /// by using already-computed value categories from sub-expressions.
-    fn is_lvalue(&self, node_ref: NodeRef) -> bool {
-        let node_kind = self.ast.get_kind(node_ref);
+    fn is_lvalue(&self, node: NodeRef) -> bool {
+        let node_kind = self.ast.get_kind(node);
         match node_kind {
             NodeKind::Ident(_, symbol_ref) => {
                 let symbol = self.symbol_table.get_symbol(*symbol_ref);
@@ -284,7 +284,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::CompoundLiteral(..) => true,
             NodeKind::GenericSelection(_) => {
                 // Bolt ⚡: Use cached value category for the selected expression.
-                if let Some(&selected) = self.semantic_info.generic_selections.get(&node_ref.index()) {
+                if let Some(&selected) = self.semantic_info.generic_selections.get(&node.index()) {
                     self.semantic_info.value_categories[selected.index()] == ValueCategory::LValue
                 } else {
                     false
@@ -294,51 +294,37 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn is_bitfield(&self, node_ref: NodeRef) -> bool {
-        let node_kind = self.ast.get_kind(node_ref);
-        match node_kind {
+    fn is_bitfield(&self, node: NodeRef) -> bool {
+        match self.ast.get_kind(node) {
             NodeKind::MemberAccess(obj_ref, field_name, is_arrow) => {
                 let Some(obj_ty) = self.semantic_info.types[obj_ref.index()] else {
                     return false;
                 };
-                let record_ty_ref = if *is_arrow {
-                    let Some(pointee) = self.registry.get_pointee(obj_ty.ty()) else {
-                        return false;
-                    };
-                    pointee.ty()
+
+                let record_ty = if *is_arrow {
+                    self.registry.get_pointee(obj_ty.ty()).map(|p| p.ty())
                 } else {
-                    obj_ty.ty()
+                    Some(obj_ty.ty())
                 };
 
-                fn find_bitfield(registry: &TypeRegistry, record_ty: TypeRef, name: NameId) -> bool {
-                    if let TypeKind::Record { members, .. } = &registry.get(record_ty).kind {
-                        if let Some(member) = members.iter().find(|m| m.name == Some(name)) {
-                            return member.bit_field_size.is_some();
-                        }
-                        for member in members.iter() {
-                            if member.name.is_none() && find_bitfield(registry, member.member_type.ty(), name) {
-                                return true;
-                            }
-                        }
-                    }
-                    false
-                }
-
-                find_bitfield(self.registry, record_ty_ref, *field_name)
+                record_ty.is_some_and(|rt| {
+                    self.registry
+                        .get(rt)
+                        .find_member(self.registry, *field_name)
+                        .is_some_and(|m| m.bit_field_size.is_some())
+                })
             }
-            NodeKind::GenericSelection(_) => {
-                if let Some(&selected) = self.semantic_info.generic_selections.get(&node_ref.index()) {
-                    self.is_bitfield(selected)
-                } else {
-                    false
-                }
-            }
+            NodeKind::GenericSelection(_) => self
+                .semantic_info
+                .generic_selections
+                .get(&node.index())
+                .is_some_and(|&selected| self.is_bitfield(selected)),
             _ => false,
         }
     }
 
-    fn is_register_variable(&self, node_ref: NodeRef) -> bool {
-        let node_kind = self.ast.get_kind(node_ref);
+    fn is_register_variable(&self, node: NodeRef) -> bool {
+        let node_kind = self.ast.get_kind(node);
         match node_kind {
             NodeKind::Ident(_, symbol_ref) => {
                 let symbol = self.symbol_table.get_symbol(*symbol_ref);
@@ -348,7 +334,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 false
             }
             NodeKind::GenericSelection(_) => {
-                if let Some(&selected) = self.semantic_info.generic_selections.get(&node_ref.index()) {
+                if let Some(&selected) = self.semantic_info.generic_selections.get(&node.index()) {
                     self.is_register_variable(selected)
                 } else {
                     false
@@ -358,8 +344,8 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn is_null_pointer_constant(&self, node_ref: NodeRef) -> bool {
-        let node_kind = self.ast.get_kind(node_ref);
+    fn is_null_pointer_constant(&self, node: NodeRef) -> bool {
+        let node_kind = self.ast.get_kind(node);
         match node_kind {
             NodeKind::Literal(literal::Literal::Int { val: 0, .. }) => true,
             NodeKind::Cast(ty, inner) if ty.ty() == self.registry.type_void_ptr => {
@@ -371,8 +357,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
     /// Checks if the node is an LValue and is not const-qualified.
     /// Reports errors if check fails.
-    fn check_lvalue_and_modifiable(&mut self, node_ref: NodeRef, ty: QualType, span: SourceSpan) -> bool {
-        if !self.is_lvalue(node_ref) {
+    fn check_lvalue_and_modifiable(&mut self, node: NodeRef, ty: QualType, span: SourceSpan) -> bool {
+        if !self.is_lvalue(node) {
             self.report_error(span, SemanticErrorKind::NotAnLvalue);
             false
         } else if self.registry.is_const_recursive(ty) {
@@ -701,11 +687,11 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn apply_and_record_integer_promotion(&mut self, node_ref: NodeRef, ty: QualType) -> QualType {
+    fn apply_and_record_integer_promotion(&mut self, node: NodeRef, ty: QualType) -> QualType {
         let promoted = integer_promotion(self.registry, ty);
         if promoted.ty() != ty.ty() {
             self.push_conversion(
-                node_ref,
+                node,
                 Conversion::IntegerPromotion {
                     from: ty.ty(),
                     to: promoted.ty(),
@@ -1018,7 +1004,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_assignment(
         &mut self,
-        node_ref: NodeRef,
+        node: NodeRef,
         op: BinaryOp,
         lhs_ref: NodeRef,
         rhs_ref: NodeRef,
@@ -1038,7 +1024,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         if let Some(arithmetic_op) = op.without_assignment() {
-            return self.visit_compound_assignment(node_ref, arithmetic_op, lhs_ref, rhs_ref, lhs_ty, rhs_ty, span);
+            return self.visit_compound_assignment(node, arithmetic_op, lhs_ref, rhs_ref, lhs_ty, rhs_ty, span);
         }
 
         // Simple assignment
@@ -1051,7 +1037,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_compound_assignment(
         &mut self,
-        node_ref: NodeRef,
+        node: NodeRef,
         arithmetic_op: BinaryOp,
         lhs_ref: NodeRef,
         rhs_ref: NodeRef,
@@ -1076,7 +1062,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if lhs_ty.ty() != common_ty.ty() {
             self.push_conversion(
-                node_ref,
+                node,
                 Conversion::IntegerCast {
                     from: common_ty.ty(),
                     to: lhs_ty.ty(),
@@ -1476,8 +1462,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 );
             }
 
-            for (i, arg_node_ref) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
-                let Some(arg_ty) = self.visit_node(arg_node_ref) else {
+            for (i, arg_node) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
+                let Some(arg_ty) = self.visit_node(arg_node) else {
                     continue;
                 };
 
@@ -1485,23 +1471,23 @@ impl<'a> SemanticAnalyzer<'a> {
                     let mut actual_arg_ty = arg_ty;
                     if arg_ty.is_array() || arg_ty.is_function() {
                         actual_arg_ty = self.registry.decay(arg_ty, TypeQualifiers::empty());
-                        self.push_conversion(arg_node_ref, Conversion::PointerDecay { to: actual_arg_ty.ty() });
+                        self.push_conversion(arg_node, Conversion::PointerDecay { to: actual_arg_ty.ty() });
                     }
 
-                    let span = self.ast.get_span(arg_node_ref);
-                    self.validate_and_record_assignment(parameters[i].param_type, actual_arg_ty, arg_node_ref, span);
+                    let span = self.ast.get_span(arg_node);
+                    self.validate_and_record_assignment(parameters[i].param_type, actual_arg_ty, arg_node, span);
                 } else if is_variadic {
                     let mut actual_arg_ty = arg_ty;
                     if arg_ty.is_array() || arg_ty.is_function() {
                         actual_arg_ty = self.registry.decay(arg_ty, TypeQualifiers::empty());
-                        self.push_conversion(arg_node_ref, Conversion::PointerDecay { to: actual_arg_ty.ty() });
+                        self.push_conversion(arg_node, Conversion::PointerDecay { to: actual_arg_ty.ty() });
                     }
 
                     let promoted_ty =
                         crate::semantic::conversions::default_argument_promotions(self.registry, actual_arg_ty);
 
                     if promoted_ty.ty() != actual_arg_ty.ty() {
-                        self.record_implicit_conversions(promoted_ty, actual_arg_ty, arg_node_ref);
+                        self.record_implicit_conversions(promoted_ty, actual_arg_ty, arg_node);
                     }
                 }
             }
@@ -1516,8 +1502,8 @@ impl<'a> SemanticAnalyzer<'a> {
             );
 
             // Still visit arguments to catch other potential errors within them.
-            for arg_node_ref in call_expr.arg_start.range(call_expr.arg_len) {
-                self.visit_node(arg_node_ref);
+            for arg_node in call_expr.arg_start.range(call_expr.arg_len) {
+                self.visit_node(arg_node);
             }
             return None; // Return None as the call is invalid
         }
@@ -1658,7 +1644,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_declaration_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
+    fn visit_declaration_node(&mut self, node: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
             NodeKind::TranslationUnit(tu_data) => {
                 for decl_ref in tu_data.decl_start.range(tu_data.decl_len) {
@@ -1666,12 +1652,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 None
             }
-            NodeKind::Function(data) => self.visit_function_definition(data, node_ref),
+            NodeKind::Function(data) => self.visit_function_definition(data, node),
             NodeKind::Param(data) => {
                 self.visit_type_expressions(data.ty);
                 Some(data.ty)
             }
-            NodeKind::VarDecl(data) => self.visit_var_declaration(data, node_ref),
+            NodeKind::VarDecl(data) => self.visit_var_declaration(data, node),
             NodeKind::EnumConstant(_, value_expr) => {
                 if let Some(expr) = value_expr {
                     self.visit_node(*expr);
@@ -1709,7 +1695,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 } = func_type
                 {
                     if !self.registry.is_complete(return_type) && return_type != self.registry.type_void {
-                        let span = self.ast.get_span(node_ref);
+                        let span = self.ast.get_span(node);
                         self.report_error(span, SemanticErrorKind::IncompleteReturnType);
                     }
 
@@ -1723,7 +1709,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_function_definition(&mut self, data: &FunctionData, node_ref: NodeRef) -> Option<QualType> {
+    fn visit_function_definition(&mut self, data: &FunctionData, node: NodeRef) -> Option<QualType> {
         let func_ty = self.registry.get(data.ty).kind.clone();
         if let TypeKind::Function { return_type, .. } = func_ty {
             self.current_function_ret_type = Some(QualType::unqualified(return_type));
@@ -1741,7 +1727,7 @@ impl<'a> SemanticAnalyzer<'a> {
         self.visit_node(data.body);
 
         if self.current_function_is_noreturn && self.can_fall_through(data.body) {
-            let span = self.ast.get_span(node_ref);
+            let span = self.ast.get_span(node);
             self.report_error(
                 span,
                 SemanticErrorKind::NoreturnFunctionFallsOff {
@@ -1756,9 +1742,9 @@ impl<'a> SemanticAnalyzer<'a> {
         None
     }
 
-    fn visit_var_declaration(&mut self, data: &VarDeclData, node_ref: NodeRef) -> Option<QualType> {
+    fn visit_var_declaration(&mut self, data: &VarDeclData, node: NodeRef) -> Option<QualType> {
         if data.ty.ty() == self.registry.type_void {
-            let span = self.ast.get_span(node_ref);
+            let span = self.ast.get_span(node);
             self.report_error(span, SemanticErrorKind::VariableOfVoidType);
         }
         self.visit_type_expressions(data.ty);
@@ -1767,7 +1753,7 @@ impl<'a> SemanticAnalyzer<'a> {
             && matches!(data.storage, Some(StorageClass::Extern))
             && self.current_function_name.is_some()
         {
-            let span = self.ast.get_span(node_ref);
+            let span = self.ast.get_span(node);
             self.report_error(span, SemanticErrorKind::InvalidInitializer);
         }
 
@@ -1777,8 +1763,7 @@ impl<'a> SemanticAnalyzer<'a> {
         Some(data.ty)
     }
 
-    fn visit_statement_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
-        // let node = self.ast.get_node(node_ref); // For span access if needed
+    fn visit_statement_node(&mut self, node: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
             NodeKind::CompoundStatement(cs) => {
                 for item_ref in cs.stmt_start.range(cs.stmt_len) {
@@ -1809,19 +1794,19 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::Switch(cond, body) => self.visit_switch_statement(*cond, *body),
             NodeKind::Case(expr, stmt) => {
-                let span = self.ast.get_span(node_ref);
+                let span = self.ast.get_span(node);
                 self.visit_case_statement(Some(*expr), None, *stmt, span)
             }
             NodeKind::CaseRange(start, end, stmt) => {
-                let span = self.ast.get_span(node_ref);
+                let span = self.ast.get_span(node);
                 self.visit_case_statement(Some(*start), Some(*end), *stmt, span)
             }
             NodeKind::Default(stmt) => {
-                let span = self.ast.get_span(node_ref);
+                let span = self.ast.get_span(node);
                 self.visit_default_statement(*stmt, span)
             }
             NodeKind::Return(expr) => {
-                let span = self.ast.get_span(node_ref);
+                let span = self.ast.get_span(node);
                 self.visit_return_statement(expr, span);
                 None
             }
@@ -1832,19 +1817,19 @@ impl<'a> SemanticAnalyzer<'a> {
                 None
             }
             NodeKind::StaticAssert(..) => {
-                self.deferred_checks.push(DeferredCheck::StaticAssert(node_ref));
+                self.deferred_checks.push(DeferredCheck::StaticAssert(node));
                 None
             }
             NodeKind::Break => {
                 if self.loop_depth == 0 && self.switch_depth == 0 {
-                    let span = self.ast.get_span(node_ref);
+                    let span = self.ast.get_span(node);
                     self.report_error(span, SemanticErrorKind::BreakNotInLoop);
                 }
                 None
             }
             NodeKind::Continue => {
                 if self.loop_depth == 0 {
-                    let span = self.ast.get_span(node_ref);
+                    let span = self.ast.get_span(node);
                     self.report_error(span, SemanticErrorKind::ContinueNotInLoop);
                 }
                 None
@@ -1990,7 +1975,7 @@ impl<'a> SemanticAnalyzer<'a> {
         None
     }
 
-    fn visit_expression_node(&mut self, node_ref: NodeRef, kind: &NodeKind) -> Option<QualType> {
+    fn visit_expression_node(&mut self, node: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
             NodeKind::Literal(literal) => self.visit_literal(literal),
             NodeKind::Ident(_, symbol_ref) => {
@@ -2001,11 +1986,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             NodeKind::UnaryOp(op, operand) => {
-                let span = self.ast.get_span(node_ref);
+                let span = self.ast.get_span(node);
                 self.visit_unary_op(*op, *operand, span)
             }
             NodeKind::BinaryOp(op, lhs, rhs) => {
-                let span = self.ast.get_span(node_ref);
+                let span = self.ast.get_span(node);
                 self.visit_binary_op(*op, *lhs, *rhs, span)
             }
             NodeKind::TernaryOp(cond, then, else_expr) => self.visit_ternary_op(*cond, *then, *else_expr),
@@ -2020,18 +2005,18 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::PostIncrement(expr) | NodeKind::PostDecrement(expr) => {
                 let ty = self.visit_node(*expr);
-                if self.check_lvalue_and_modifiable(*expr, ty.unwrap(), self.ast.get_span(node_ref)) {
+                if self.check_lvalue_and_modifiable(*expr, ty.unwrap(), self.ast.get_span(node)) {
                     // ok
                 }
                 ty
             }
             NodeKind::Assignment(op, lhs, rhs) => {
-                let span = self.ast.get_span(node_ref);
-                self.visit_assignment(node_ref, *op, *lhs, *rhs, span)
+                let span = self.ast.get_span(node);
+                self.visit_assignment(node, *op, *lhs, *rhs, span)
             }
             NodeKind::FunctionCall(call_expr) => self.visit_function_call(call_expr),
             NodeKind::MemberAccess(obj, field_name, is_arrow) => {
-                let span = self.ast.get_span(node_ref);
+                let span = self.ast.get_span(node);
                 self.visit_member_access(*obj, *field_name, *is_arrow, span)
             }
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
@@ -2040,16 +2025,16 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*expr);
                 Some(*ty)
             }
-            NodeKind::SizeOfExpr(expr) => self.visit_sizeof_alignof(Some(*expr), None, false, node_ref),
-            NodeKind::SizeOfType(ty) => self.visit_sizeof_alignof(None, Some(*ty), false, node_ref),
-            NodeKind::AlignOf(ty) => self.visit_sizeof_alignof(None, Some(*ty), true, node_ref),
+            NodeKind::SizeOfExpr(expr) => self.visit_sizeof_alignof(Some(*expr), None, false, node),
+            NodeKind::SizeOfType(ty) => self.visit_sizeof_alignof(None, Some(*ty), false, node),
+            NodeKind::AlignOf(ty) => self.visit_sizeof_alignof(None, Some(*ty), true, node),
             NodeKind::CompoundLiteral(ty, init) => {
                 self.visit_type_expressions(*ty);
                 let _ = self.registry.ensure_layout(ty.ty());
                 self.visit_initializer(*init, *ty);
                 Some(*ty)
             }
-            NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, node_ref),
+            NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, node),
             NodeKind::GenericAssociation(ga) => {
                 if let Some(ty) = ga.ty {
                     self.visit_type_expressions(ty);
@@ -2122,14 +2107,14 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 Some(QualType::unqualified(self.registry.type_int))
             }
-            NodeKind::BuiltinOffsetof(ty, expr) => self.visit_builtin_offsetof(*ty, *expr, node_ref),
+            NodeKind::BuiltinOffsetof(ty, expr) => self.visit_builtin_offsetof(*ty, *expr, node),
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
                 self.visit_type_expressions(*t1);
                 self.visit_type_expressions(*t2);
                 Some(QualType::unqualified(self.registry.type_int))
             }
             NodeKind::AtomicOp(op, args_start, args_len) => {
-                let span = self.ast.get_span(node_ref);
+                let span = self.ast.get_span(node);
                 self.visit_atomic_op(*op, *args_start, *args_len, span)
             }
             _ => None,
@@ -2200,7 +2185,7 @@ impl<'a> SemanticAnalyzer<'a> {
         expr: Option<NodeRef>,
         ty: Option<QualType>,
         is_alignof: bool,
-        node_ref: NodeRef,
+        node: NodeRef,
     ) -> Option<QualType> {
         let type_ref = if let Some(t) = ty {
             self.visit_type_expressions(t);
@@ -2216,21 +2201,21 @@ impl<'a> SemanticAnalyzer<'a> {
             let is_function = matches!(self.registry.get(type_ref).kind, TypeKind::Function { .. });
 
             if is_function {
-                let span = self.ast.get_span(node_ref);
+                let span = self.ast.get_span(node);
                 if is_alignof {
                     self.report_error(span, SemanticErrorKind::AlignOfFunctionType);
                 } else {
                     self.report_error(span, SemanticErrorKind::SizeOfFunctionType);
                 }
             } else if !self.registry.is_complete(type_ref) {
-                let span = self.ast.get_span(node_ref);
+                let span = self.ast.get_span(node);
                 if is_alignof {
                     self.report_error(span, SemanticErrorKind::AlignOfIncompleteType { ty: type_ref });
                 } else {
                     self.report_error(span, SemanticErrorKind::SizeOfIncompleteType { ty: type_ref });
                 }
             } else if !is_alignof && expr.is_some() && self.is_bitfield(expr.unwrap()) {
-                let span = self.ast.get_span(node_ref);
+                let span = self.ast.get_span(node);
                 self.report_error(span, SemanticErrorKind::SizeOfBitfield);
             } else {
                 let _ = self.registry.ensure_layout(type_ref);
@@ -2395,8 +2380,8 @@ impl<'a> SemanticAnalyzer<'a> {
             }
         }
     }
-    fn visit_node(&mut self, node_ref: NodeRef) -> Option<QualType> {
-        let node_kind = self.ast.get_kind(node_ref);
+    fn visit_node(&mut self, node: NodeRef) -> Option<QualType> {
+        let node_kind = self.ast.get_kind(node);
         let result_type = match node_kind {
             // Declarations
             NodeKind::TranslationUnit(_)
@@ -2409,7 +2394,7 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::TypedefDecl(_)
             | NodeKind::EnumConstant(..)
             | NodeKind::Param(_)
-            | NodeKind::FunctionDecl(_) => self.visit_declaration_node(node_ref, node_kind),
+            | NodeKind::FunctionDecl(_) => self.visit_declaration_node(node, node_kind),
 
             // Statements
             NodeKind::CompoundStatement(_)
@@ -2427,17 +2412,17 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::Break
             | NodeKind::Continue
             | NodeKind::Goto(..)
-            | NodeKind::Label(..) => self.visit_statement_node(node_ref, node_kind),
+            | NodeKind::Label(..) => self.visit_statement_node(node, node_kind),
 
             // Expressions (Catch-all)
-            _ => self.visit_expression_node(node_ref, node_kind),
+            _ => self.visit_expression_node(node, node_kind),
         };
 
         if let Some(ty) = result_type {
             // set resolved type and value category for this node
-            let idx = node_ref.index();
+            let idx = node.index();
             self.semantic_info.types[idx] = Some(ty);
-            let vc = if self.is_lvalue(node_ref) {
+            let vc = if self.is_lvalue(node) {
                 ValueCategory::LValue
             } else {
                 ValueCategory::RValue
@@ -2456,13 +2441,13 @@ impl<'a> SemanticAnalyzer<'a> {
         let checks = std::mem::take(&mut self.deferred_checks);
         for check in checks {
             match check {
-                DeferredCheck::StaticAssert(node_ref) => self.visit_static_assert(node_ref),
+                DeferredCheck::StaticAssert(node) => self.visit_static_assert(node),
             }
         }
     }
 
-    fn visit_static_assert(&mut self, node_ref: NodeRef) {
-        let NodeKind::StaticAssert(cond, msg_ref) = *self.ast.get_kind(node_ref) else {
+    fn visit_static_assert(&mut self, node: NodeRef) {
+        let NodeKind::StaticAssert(cond, msg_ref) = *self.ast.get_kind(node) else {
             return;
         };
 
@@ -2483,11 +2468,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 };
 
                 self.report_error(
-                    self.ast.get_span(node_ref),
+                    self.ast.get_span(node),
                     SemanticErrorKind::StaticAssertFailed { message },
                 );
             }
-            None => self.report_error(self.ast.get_span(node_ref), SemanticErrorKind::StaticAssertNotConstant),
+            None => self.report_error(self.ast.get_span(node), SemanticErrorKind::StaticAssertNotConstant),
             _ => {}
         }
     }
@@ -2580,60 +2565,61 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_generic_selection(&mut self, gs: &GenericSelectionData, node_ref: NodeRef) -> Option<QualType> {
+    fn visit_generic_selection(&mut self, gs: &GenericSelectionData, node: NodeRef) -> Option<QualType> {
         // First, visit the controlling expression to determine its type.
-        let ctrl_ty = self.visit_node(gs.control)?;
+        let ctrl = self.visit_node(gs.control)?;
 
         // C11 6.5.1.1p3: The controlling expression of a generic selection is not evaluated.
         // C11 6.5.1.1p2: The type of the controlling expression is compared with the type name of each generic
         // association. Before comparison, array and function types decay to pointers.
-        let decayed_ctrl_ty = if ctrl_ty.is_array() || ctrl_ty.is_function() {
+        let decayed_ctrl = if ctrl.is_array() || ctrl.is_function() {
             // Qualifiers on the array/function type itself are discarded during decay.
-            self.registry.decay(ctrl_ty, TypeQualifiers::empty())
+            self.registry.decay(ctrl, TypeQualifiers::empty())
         } else {
-            ctrl_ty
+            ctrl
         };
 
         // After decay, top-level qualifiers are removed for the compatibility check.
-        let unqualified_ctrl_ty = self.registry.strip_all(decayed_ctrl_ty);
+        let unqualified_ctrl = self.registry.strip_all(decayed_ctrl);
 
         // C11 6.5.1.1p2: The controlling expression shall be an expression of a complete object type,
         // or the void type.
-        if !self.registry.is_complete(decayed_ctrl_ty.ty()) && decayed_ctrl_ty.ty() != self.registry.type_void {
+        let decayed_ctrl_ty = decayed_ctrl.ty();
+        if !self.registry.is_complete(decayed_ctrl_ty) && decayed_ctrl_ty != self.registry.type_void {
             self.report_error(
                 self.ast.get_span(gs.control),
-                SemanticErrorKind::GenericIncompleteControl { ty: ctrl_ty },
+                SemanticErrorKind::GenericIncompleteControl { ty: ctrl },
             );
         }
 
         // It's crucial to visit *all* result expressions to ensure they are
         // fully type-checked, even if they are not the selected branch.
         // This resolves all identifier types within them.
-        let mut selected_expr_ref = None;
-        let mut default_expr_ref = None;
+        let mut selected_expr = None;
+        let mut default_expr = None;
         let mut default_first_span = None;
         // Bolt ⚡: Use SmallVec to avoid heap allocation for small generic selection lists.
         let mut seen_types: SmallVec<[(QualType, SourceSpan); 8]> = SmallVec::new();
 
-        for assoc_node_ref in gs.assoc_start.range(gs.assoc_len) {
-            let NodeKind::GenericAssociation(ga) = *self.ast.get_kind(assoc_node_ref) else {
+        for assoc_node in gs.assoc_start.range(gs.assoc_len) {
+            let NodeKind::GenericAssociation(ga) = *self.ast.get_kind(assoc_node) else {
                 continue;
             };
 
-            let assoc_span = self.ast.get_span(assoc_node_ref);
-            self.visit_node(assoc_node_ref);
+            let span = self.ast.get_span(assoc_node);
+            self.visit_node(assoc_node);
 
             let Some(assoc_ty) = ga.ty else {
                 // This is the 'default' association.
                 // Constraint 2: If a generic selection has a default association, there shall be only one such association.
                 if let Some(first_span) = default_first_span {
                     self.report_error(
-                        assoc_span,
+                        span,
                         SemanticErrorKind::GenericMultipleDefault { first_def: first_span },
                     );
                 } else {
-                    default_first_span = Some(assoc_span);
-                    default_expr_ref = Some(ga.result_expr);
+                    default_first_span = Some(span);
+                    default_expr = Some(ga.result_expr);
                 }
                 continue;
             };
@@ -2642,17 +2628,11 @@ impl<'a> SemanticAnalyzer<'a> {
             // other than a variably modified type.
             let assoc_ty_kind = &self.registry.get(assoc_ty.ty()).kind;
             if matches!(assoc_ty_kind, TypeKind::Function { .. }) {
-                self.report_error(
-                    assoc_span,
-                    SemanticErrorKind::GenericFunctionAssociation { ty: assoc_ty },
-                );
+                self.report_error(span, SemanticErrorKind::GenericFunctionAssociation { ty: assoc_ty });
             } else if !self.registry.is_complete(assoc_ty.ty()) {
-                self.report_error(
-                    assoc_span,
-                    SemanticErrorKind::GenericIncompleteAssociation { ty: assoc_ty },
-                );
+                self.report_error(span, SemanticErrorKind::GenericIncompleteAssociation { ty: assoc_ty });
             } else if self.registry.is_variably_modified(assoc_ty.ty()) {
-                self.report_error(assoc_span, SemanticErrorKind::GenericVlaAssociation { ty: assoc_ty });
+                self.report_error(span, SemanticErrorKind::GenericVlaAssociation { ty: assoc_ty });
             }
 
             // C11 6.5.1.1p2: The controlling expression... shall have type compatible with at most one...
@@ -2663,11 +2643,10 @@ impl<'a> SemanticAnalyzer<'a> {
             for (prev_ty, prev_span) in &seen_types {
                 if self.registry.is_compatible(assoc_ty, *prev_ty) {
                     self.report_error(
-                        assoc_span,
+                        span,
                         SemanticErrorKind::GenericDuplicateMatch {
                             ty: assoc_ty,
                             prev_ty: *prev_ty,
-
                             first_def: *prev_span,
                         },
                     );
@@ -2677,44 +2656,41 @@ impl<'a> SemanticAnalyzer<'a> {
             }
 
             if !duplicate {
-                seen_types.push((assoc_ty, assoc_span));
+                seen_types.push((assoc_ty, span));
             }
 
             // Constraint 1: The controlling expression... shall have type compatible with at most one...
             // unqualified_ctrl_ty is the controlling expression type after lvalue conversion (which strips qualifiers).
             // It is compared against the association type (which keeps qualifiers).
-            if self.registry.is_compatible(unqualified_ctrl_ty, assoc_ty) && selected_expr_ref.is_none() {
-                selected_expr_ref = Some(ga.result_expr);
+            if self.registry.is_compatible(unqualified_ctrl, assoc_ty) && selected_expr.is_none() {
+                selected_expr = Some(ga.result_expr);
                 self.semantic_info
                     .generic_selections
-                    .insert(node_ref.index(), ga.result_expr);
+                    .insert(node.index(), ga.result_expr);
             }
         }
 
         // If no specific type matches, use the default association if it exists.
-        if selected_expr_ref.is_none() {
-            selected_expr_ref = default_expr_ref;
-            if let Some(expr) = default_expr_ref {
-                self.semantic_info.generic_selections.insert(node_ref.index(), expr);
+        if selected_expr.is_none() {
+            selected_expr = default_expr;
+            if let Some(expr) = default_expr {
+                self.semantic_info.generic_selections.insert(node.index(), expr);
             }
         }
 
         // The type of the _Generic expression is the type of the selected result expression.
-        if let Some(expr_ref) = selected_expr_ref {
+        if let Some(expr) = selected_expr {
             // The type should already be resolved from the earlier pass.
-            let idx = expr_ref.index();
+            let idx = expr.index();
             self.semantic_info.types.get(idx).and_then(|t| *t)
         } else {
             // If no match is found and there's no default, it's a semantic error.
-            self.report_error(
-                self.ast.get_span(node_ref),
-                SemanticErrorKind::GenericNoMatch { ty: ctrl_ty },
-            );
+            self.report_error(self.ast.get_span(node), SemanticErrorKind::GenericNoMatch { ty: ctrl });
             None
         }
     }
 
-    fn visit_builtin_offsetof(&mut self, ty: QualType, expr_ref: NodeRef, node_ref: NodeRef) -> Option<QualType> {
+    fn visit_builtin_offsetof(&mut self, ty: QualType, expr_ref: NodeRef, node: NodeRef) -> Option<QualType> {
         self.visit_type_expressions(ty);
 
         let mut current_ty = ty;
@@ -2725,88 +2701,97 @@ impl<'a> SemanticAnalyzer<'a> {
             return Some(res_ty);
         }
 
-        self.semantic_info.offsetof_results.insert(node_ref.index(), offset);
+        self.semantic_info.offsetof_results.insert(node.index(), offset);
         let res_ty = QualType::unqualified(self.registry.type_long_unsigned);
         Some(res_ty)
     }
 
-    fn compute_offsetof_recursive(&mut self, node_ref: NodeRef, current_ty: &mut QualType, offset: &mut i64) -> bool {
-        let kind = *self.ast.get_kind(node_ref);
+    fn compute_offsetof_recursive(&mut self, node: NodeRef, current_ty: &mut QualType, offset: &mut i64) -> bool {
+        let kind = *self.ast.get_kind(node);
         match kind {
             NodeKind::Dummy => true,
             NodeKind::MemberAccess(base, member_name, is_arrow) => {
                 debug_assert!(!is_arrow, "offsetof does not support arrow operator");
-
-                if !self.compute_offsetof_recursive(base, current_ty, offset) {
-                    return false;
-                }
-
-                let record_ty = current_ty.ty();
-
-                if !record_ty.is_record() {
-                    self.report_error(
-                        self.ast.get_span(node_ref),
-                        SemanticErrorKind::MemberAccessOnNonRecord {
-                            ty: QualType::unqualified(record_ty),
-                        },
-                    );
-                    return false;
-                }
-
-                let mut flat_members = Vec::new();
-                let mut flat_offsets = Vec::new();
-                let ty_obj = self.registry.get(record_ty);
-                ty_obj.flatten_members_with_layouts(self.registry, &mut flat_members, &mut flat_offsets, 0);
-
-                if let Some(idx) = flat_members.iter().position(|m| m.name == Some(member_name)) {
-                    *offset += flat_offsets[idx] as i64;
-                    *current_ty = flat_members[idx].member_type;
-                    true
-                } else {
-                    self.report_error(
-                        self.ast.get_span(node_ref),
-                        SemanticErrorKind::MemberNotFound {
-                            name: member_name,
-                            ty: QualType::unqualified(record_ty),
-                        },
-                    );
-                    false
-                }
+                self.compute_offsetof_recursive(base, current_ty, offset)
+                    && self.apply_offsetof_member(node, member_name, current_ty, offset)
             }
             NodeKind::IndexAccess(base, index) => {
-                if !self.compute_offsetof_recursive(base, current_ty, offset) {
-                    return false;
-                }
-
-                let elem_ty = self.registry.get_array_element(current_ty.ty());
-                let Some(elem_ty) = elem_ty else {
-                    self.report_error(
-                        self.ast.get_span(node_ref),
-                        SemanticErrorKind::ExpectedArrayType { found: *current_ty },
-                    );
-                    return false;
-                };
-
-                self.visit_node(index);
-                let index_val = eval_const_expr(&self.const_ctx(), index);
-                let Some(index_val) = index_val else {
-                    // C11 7.19p3: "integer constant expression"
-                    self.report_error(self.ast.get_span(index), SemanticErrorKind::NonConstantInitializer);
-                    return false;
-                };
-
-                let layout = self.registry.get_layout(elem_ty);
-                *offset += index_val * (layout.size as i64);
-                *current_ty = QualType::unqualified(elem_ty);
-                true
+                self.compute_offsetof_recursive(base, current_ty, offset)
+                    && self.apply_offsetof_index(node, index, current_ty, offset)
             }
             _ => {
-                self.report_error(
-                    self.ast.get_span(node_ref),
-                    SemanticErrorKind::InvalidOffsetofDesignator,
-                );
+                self.report_error(self.ast.get_span(node), SemanticErrorKind::InvalidOffsetofDesignator);
                 false
             }
         }
+    }
+
+    fn apply_offsetof_member(
+        &mut self,
+        node: NodeRef,
+        member_name: NameId,
+        current_ty: &mut QualType,
+        offset: &mut i64,
+    ) -> bool {
+        let record_ty = current_ty.ty();
+
+        if !record_ty.is_record() {
+            self.report_error(
+                self.ast.get_span(node),
+                SemanticErrorKind::MemberAccessOnNonRecord {
+                    ty: QualType::unqualified(record_ty),
+                },
+            );
+            return false;
+        }
+
+        let mut flat_members = Vec::new();
+        let mut flat_offsets = Vec::new();
+        let ty_obj = self.registry.get(record_ty);
+        ty_obj.flatten_members_with_layouts(self.registry, &mut flat_members, &mut flat_offsets, 0);
+
+        if let Some(idx) = flat_members.iter().position(|m| m.name == Some(member_name)) {
+            *offset += flat_offsets[idx] as i64;
+            *current_ty = flat_members[idx].member_type;
+            true
+        } else {
+            self.report_error(
+                self.ast.get_span(node),
+                SemanticErrorKind::MemberNotFound {
+                    name: member_name,
+                    ty: QualType::unqualified(record_ty),
+                },
+            );
+            false
+        }
+    }
+
+    fn apply_offsetof_index(
+        &mut self,
+        node: NodeRef,
+        index: NodeRef,
+        current_ty: &mut QualType,
+        offset: &mut i64,
+    ) -> bool {
+        let elem_ty = self.registry.get_array_element(current_ty.ty());
+        let Some(elem_ty) = elem_ty else {
+            self.report_error(
+                self.ast.get_span(node),
+                SemanticErrorKind::ExpectedArrayType { found: *current_ty },
+            );
+            return false;
+        };
+
+        self.visit_node(index);
+        let Some(index_val) = eval_const_expr(&self.const_ctx(), index) else {
+            // C11 7.19p3: "integer constant expression"
+            self.report_error(self.ast.get_span(index), SemanticErrorKind::NonConstantInitializer);
+            return false;
+        };
+
+        let layout = self.registry.get_layout(elem_ty);
+        *offset += index_val * (layout.size as i64);
+        *current_ty = QualType::unqualified(elem_ty);
+        true
     }
 }

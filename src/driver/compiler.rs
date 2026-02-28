@@ -53,6 +53,14 @@ impl CompilerDriver {
             );
         }
 
+        for flag in &config.ignored_m_flags {
+            log::warn!("ignoring unrecognized command-line option '-M{}'", flag);
+            eprintln!(
+                "cendol: warning: ignoring unrecognized command-line option '-M{}'",
+                flag
+            );
+        }
+
         CompilerDriver {
             diagnostics,
             source_manager: SourceManager::new(),
@@ -86,9 +94,29 @@ impl CompilerDriver {
                 PathOrBuffer::Buffer(_, _) => false,
             };
 
+            // Check if input file is a recognized source file
+            let is_source_file = match &input_file {
+                PathOrBuffer::Path(path) => {
+                    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                        matches!(ext, "c" | "i")
+                    } else {
+                        false
+                    }
+                }
+                PathOrBuffer::Buffer(_, _) => true,
+            };
+
             if is_external_object && let PathOrBuffer::Path(path) = input_file {
                 outputs.external_object_files.push(path);
                 continue;
+            }
+
+            if !is_source_file {
+                if let PathOrBuffer::Path(path) = &input_file {
+                    log::warn!("skipping unrecognized file: {}", path.display());
+                    eprintln!("cendol: warning: skipping unrecognized file: {}", path.display());
+                    continue;
+                }
             }
 
             let source_id = match input_file {

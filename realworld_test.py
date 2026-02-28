@@ -37,6 +37,12 @@ PROJECTS = {
         "build_cmd": ["sh", "-c", "./configure && make CC={CC}"],
         "test_cmd": ["make", "test", "CC={CC}"],
         "clean_cmd": ["make", "clean"],
+    },
+    "libpng": {
+        "repo": "https://github.com/pnggroup/libpng",
+        "build_cmd": ["sh", "-c", "autoreconf -f -i && CPPFLAGS='-I../zlib' LDFLAGS='-L../zlib' ./configure --disable-dependency-tracking && make CC={CC}"],
+        "test_cmd": ["make", "test", "CC={CC}"],
+        "clean_cmd": ["make", "clean"],
     }
 }
 

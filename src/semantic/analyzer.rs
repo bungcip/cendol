@@ -126,14 +126,17 @@ struct SemanticAnalyzer<'a> {
 }
 
 impl<'a> SemanticAnalyzer<'a> {
-    fn report_error(&mut self, span: SourceSpan, kind: SemanticErrorKind) {
+    fn report_error(&mut self, node: NodeRef, kind: SemanticErrorKind) {
+        // compute the span lazily inside the helper
+        let span = self.ast.get_span(node);
         let error = SemanticError { span, kind };
         for diag in error.into_diagnostic(self.registry) {
             self.diag.report_diagnostic(diag);
         }
     }
 
-    fn report_warning(&mut self, span: SourceSpan, kind: SemanticErrorKind) {
+    fn report_warning(&mut self, node: NodeRef, kind: SemanticErrorKind) {
+        let span = self.ast.get_span(node);
         let error = SemanticError { span, kind };
         for diag in error.into_diagnostic(self.registry) {
             self.diag.report_diagnostic(diag);
@@ -357,12 +360,12 @@ impl<'a> SemanticAnalyzer<'a> {
 
     /// Checks if the node is an LValue and is not const-qualified.
     /// Reports errors if check fails.
-    fn check_lvalue_and_modifiable(&mut self, node: NodeRef, ty: QualType, span: SourceSpan) -> bool {
+    fn check_lvalue_and_modifiable(&mut self, node: NodeRef, ty: QualType) -> bool {
         if !self.is_lvalue(node) {
-            self.report_error(span, SemanticErrorKind::NotAnLvalue);
+            self.report_error(node, SemanticErrorKind::NotAnLvalue);
             false
         } else if self.registry.is_const_recursive(ty) {
-            self.report_error(span, SemanticErrorKind::AssignmentToReadOnly);
+            self.report_error(node, SemanticErrorKind::AssignmentToReadOnly);
             false
         } else {
             true
@@ -373,10 +376,10 @@ impl<'a> SemanticAnalyzer<'a> {
     /// Returns true if assignment is valid, false otherwise.
     fn validate_and_record_assignment(
         &mut self,
+        node: NodeRef,
         lhs_ty: QualType,
         rhs_ty: QualType,
         rhs_ref: NodeRef,
-        span: SourceSpan,
     ) -> bool {
         if self.check_assignment_constraints(lhs_ty, rhs_ty, rhs_ref) {
             self.record_implicit_conversions(lhs_ty, rhs_ty, rhs_ref);
@@ -384,7 +387,7 @@ impl<'a> SemanticAnalyzer<'a> {
         } else if self.is_incompatible_struct_pointer_types(lhs_ty, rhs_ty) {
             // Incompatible struct pointer types - report as warning but allow the assignment
             self.report_warning(
-                span,
+                node,
                 SemanticErrorKind::IncompatiblePointerTypes {
                     expected: lhs_ty,
                     found: rhs_ty,
@@ -395,7 +398,7 @@ impl<'a> SemanticAnalyzer<'a> {
             true
         } else if self.is_discarding_pointer_qualifiers(lhs_ty, rhs_ty, rhs_ref) {
             self.report_warning(
-                span,
+                node,
                 SemanticErrorKind::PointerAssignmentDiscardsQualifiers {
                     expected: lhs_ty,
                     found: rhs_ty,
@@ -405,7 +408,7 @@ impl<'a> SemanticAnalyzer<'a> {
             true
         } else {
             self.report_error(
-                span,
+                node,
                 SemanticErrorKind::TypeMismatch {
                     expected: lhs_ty,
                     found: rhs_ty,
@@ -493,10 +496,7 @@ impl<'a> SemanticAnalyzer<'a> {
             if cond_ty.is_array()
                 && let NodeKind::Ident(name, _) = self.ast.get_kind(condition)
             {
-                self.report_warning(
-                    self.ast.get_span(condition),
-                    SemanticErrorKind::AddressOfArrayAlwaysTrue { name: *name },
-                );
+                self.report_warning(condition, SemanticErrorKind::AddressOfArrayAlwaysTrue { name: *name });
             }
             cond_ty = self.registry.decay(cond_ty, TypeQualifiers::empty());
             self.push_conversion(condition, Conversion::PointerDecay { to: cond_ty.ty() });
@@ -504,10 +504,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         if !cond_ty.is_scalar() {
-            self.report_error(
-                self.ast.get_span(condition),
-                SemanticErrorKind::ExpectedScalarType { found: cond_ty },
-            );
+            self.report_error(condition, SemanticErrorKind::ExpectedScalarType { found: cond_ty });
         }
     }
 
@@ -541,10 +538,10 @@ impl<'a> SemanticAnalyzer<'a> {
         self.loop_depth -= 1;
     }
 
-    fn visit_return_statement(&mut self, expr: &Option<NodeRef>, span: SourceSpan) {
+    fn visit_return_statement(&mut self, node: NodeRef, expr: &Option<NodeRef>) {
         if self.current_function_is_noreturn {
             self.report_error(
-                span,
+                node,
                 SemanticErrorKind::NoreturnFunctionHasReturn {
                     name: self.current_function_name.unwrap(),
                 },
@@ -557,20 +554,20 @@ impl<'a> SemanticAnalyzer<'a> {
 
         let Some(expr_ref) = expr else {
             if !is_void_func {
-                self.report_error(span, SemanticErrorKind::NonVoidReturnWithoutValue { name: func_name });
+                self.report_error(node, SemanticErrorKind::NonVoidReturnWithoutValue { name: func_name });
             }
             return;
         };
 
         if is_void_func {
-            let err_span = self.ast.get_span(*expr_ref);
-            self.report_error(err_span, SemanticErrorKind::VoidReturnWithValue { name: func_name });
+            // highlight the expression itself when returning a value from void
+            self.report_error(*expr_ref, SemanticErrorKind::VoidReturnWithValue { name: func_name });
         }
 
         if let Some(expr_ty) = self.visit_node(*expr_ref)
             && let Some(target_ty) = ret_ty
         {
-            self.validate_and_record_assignment(target_ty, expr_ty, *expr_ref, span);
+            self.validate_and_record_assignment(node, target_ty, expr_ty, *expr_ref);
         }
 
         if let Some(expr_ref) = expr
@@ -586,27 +583,27 @@ impl<'a> SemanticAnalyzer<'a> {
                     && *storage != Some(StorageClass::ThreadLocal);
 
                 if is_local {
-                    self.report_warning(span, SemanticErrorKind::ReturnLocalAddress { name: *name });
+                    self.report_warning(node, SemanticErrorKind::ReturnLocalAddress { name: *name });
                 }
             }
         }
     }
 
-    fn visit_unary_op(&mut self, op: UnaryOp, operand_ref: NodeRef, span: SourceSpan) -> Option<QualType> {
+    fn visit_unary_op(&mut self, node: NodeRef, op: UnaryOp, operand_ref: NodeRef) -> Option<QualType> {
         let operand_ty = self.visit_node(operand_ref)?;
 
         match op {
             UnaryOp::AddrOf => {
                 if !self.is_lvalue(operand_ref) {
-                    self.report_error(span, SemanticErrorKind::NotAnLvalue);
+                    self.report_error(node, SemanticErrorKind::NotAnLvalue);
                     return None;
                 }
                 if self.is_bitfield(operand_ref) {
-                    self.report_error(span, SemanticErrorKind::AddressOfBitfield);
+                    self.report_error(node, SemanticErrorKind::AddressOfBitfield);
                     return None;
                 }
                 if self.is_register_variable(operand_ref) {
-                    self.report_error(span, SemanticErrorKind::AddressOfRegister);
+                    self.report_error(node, SemanticErrorKind::AddressOfRegister);
                     return None;
                 }
                 // Taking address of array or function: result is pointer to array/function (no decay)
@@ -624,7 +621,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 if actual_ty.is_pointer() {
                     self.registry.get_pointee(actual_ty.ty())
                 } else {
-                    self.report_error(span, SemanticErrorKind::IndirectionRequiresPointer { ty: actual_ty });
+                    self.report_error(node, SemanticErrorKind::IndirectionRequiresPointer { ty: actual_ty });
                     None
                 }
             }
@@ -639,12 +636,12 @@ impl<'a> SemanticAnalyzer<'a> {
                         Some(self.registry.strip_all(operand_ty))
                     }
                 } else {
-                    self.report_error(span, SemanticErrorKind::InvalidUnaryOperand { ty: operand_ty });
+                    self.report_error(node, SemanticErrorKind::InvalidUnaryOperand { ty: operand_ty });
                     None
                 }
             }
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
-                self.check_lvalue_and_modifiable(operand_ref, operand_ty, span);
+                self.check_lvalue_and_modifiable(operand_ref, operand_ty);
                 if operand_ty.is_scalar() { Some(operand_ty) } else { None }
             }
             UnaryOp::Plus | UnaryOp::Minus => {
@@ -666,7 +663,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                     Some(stripped)
                 } else {
-                    self.report_error(span, SemanticErrorKind::InvalidUnaryOperand { ty: operand_ty });
+                    self.report_error(node, SemanticErrorKind::InvalidUnaryOperand { ty: operand_ty });
                     None
                 }
             }
@@ -680,7 +677,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 } else if operand_ty.is_complex() {
                     Some(operand_ty)
                 } else {
-                    self.report_error(span, SemanticErrorKind::InvalidUnaryOperand { ty: operand_ty });
+                    self.report_error(node, SemanticErrorKind::InvalidUnaryOperand { ty: operand_ty });
                     None
                 }
             }
@@ -703,16 +700,16 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn analyze_binary_operation_types(
         &mut self,
+        node: NodeRef,
         op: BinaryOp,
         lhs_promoted: QualType,
         rhs_promoted: QualType,
-        span: SourceSpan,
     ) -> Option<(QualType, QualType)> {
         match op {
             // Pointer + pointer is invalid (C11 6.5.6)
             BinaryOp::Add if lhs_promoted.is_pointer() && rhs_promoted.is_pointer() => {
                 self.report_error(
-                    span,
+                    node,
                     SemanticErrorKind::InvalidBinaryOperands {
                         left_ty: lhs_promoted,
                         right_ty: rhs_promoted,
@@ -727,7 +724,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     && pointee.is_void()
                 {
                     self.report_error(
-                        span,
+                        node,
                         SemanticErrorKind::InvalidBinaryOperands {
                             left_ty: lhs_promoted,
                             right_ty: rhs_promoted,
@@ -743,7 +740,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     && pointee.is_void()
                 {
                     self.report_error(
-                        span,
+                        node,
                         SemanticErrorKind::InvalidBinaryOperands {
                             left_ty: lhs_promoted,
                             right_ty: rhs_promoted,
@@ -761,7 +758,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     && pointee.is_void()
                 {
                     self.report_error(
-                        span,
+                        node,
                         SemanticErrorKind::InvalidBinaryOperands {
                             left_ty: lhs_promoted,
                             right_ty: rhs_promoted,
@@ -792,7 +789,7 @@ impl<'a> SemanticAnalyzer<'a> {
                         lhs_promoted
                     } else {
                         self.report_warning(
-                            span,
+                            node,
                             SemanticErrorKind::IncompatiblePointerComparison {
                                 lhs: lhs_promoted,
                                 rhs: rhs_promoted,
@@ -816,7 +813,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     let rhs_base = self.registry.get_pointee(rhs_promoted.ty()).unwrap();
                     if lhs_base != rhs_base {
                         self.report_warning(
-                            span,
+                            node,
                             SemanticErrorKind::IncompatiblePointerComparison {
                                 lhs: lhs_promoted,
                                 rhs: rhs_promoted,
@@ -828,7 +825,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted)?
                 } else {
                     self.report_error(
-                        span,
+                        node,
                         SemanticErrorKind::InvalidBinaryOperands {
                             left_ty: lhs_promoted,
                             right_ty: rhs_promoted,
@@ -844,7 +841,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 // C11 6.5.13/6.5.14: Each operand shall have scalar type
                 if !lhs_promoted.is_scalar() || !rhs_promoted.is_scalar() {
                     self.report_error(
-                        span,
+                        node,
                         SemanticErrorKind::InvalidBinaryOperands {
                             left_ty: lhs_promoted,
                             right_ty: rhs_promoted,
@@ -860,7 +857,7 @@ impl<'a> SemanticAnalyzer<'a> {
             BinaryOp::LShift | BinaryOp::RShift => {
                 if !lhs_promoted.is_integer() || !rhs_promoted.is_integer() {
                     self.report_error(
-                        span,
+                        node,
                         SemanticErrorKind::InvalidBinaryOperands {
                             left_ty: lhs_promoted,
                             right_ty: rhs_promoted,
@@ -876,7 +873,7 @@ impl<'a> SemanticAnalyzer<'a> {
             _ => {
                 if !lhs_promoted.is_arithmetic() || !rhs_promoted.is_arithmetic() {
                     self.report_error(
-                        span,
+                        node,
                         SemanticErrorKind::InvalidBinaryOperands {
                             left_ty: lhs_promoted,
                             right_ty: rhs_promoted,
@@ -888,7 +885,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     Some((ty, ty))
                 } else {
                     self.report_error(
-                        span,
+                        node,
                         SemanticErrorKind::InvalidBinaryOperands {
                             left_ty: lhs_promoted,
                             right_ty: rhs_promoted,
@@ -900,13 +897,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_binary_op(
-        &mut self,
-        op: BinaryOp,
-        lhs_ref: NodeRef,
-        rhs_ref: NodeRef,
-        span: SourceSpan,
-    ) -> Option<QualType> {
+    fn visit_binary_op(&mut self, op: BinaryOp, lhs_ref: NodeRef, rhs_ref: NodeRef) -> Option<QualType> {
         debug_assert!(
             !op.is_assignment(),
             "visit_binary_op called with assignment operator: {:?}",
@@ -924,7 +915,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return Some(rhs_decayed);
         }
 
-        let (result_ty, _) = self.resolve_binary_operation_types(op, lhs_ref, rhs_ref, lhs_ty, rhs_ty, span)?;
+        let (result_ty, _) = self.resolve_binary_operation_types(op, lhs_ref, rhs_ref, lhs_ty, rhs_ty)?;
         Some(result_ty)
     }
 
@@ -935,7 +926,6 @@ impl<'a> SemanticAnalyzer<'a> {
         rhs_ref: NodeRef,
         lhs_ty: QualType,
         rhs_ty: QualType,
-        span: SourceSpan,
     ) -> Option<(QualType, QualType)> {
         // Perform array/function decay first
         let mut lhs_decayed = lhs_ty;
@@ -956,7 +946,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if op == BinaryOp::Mod && (!lhs_promoted.is_integer() || !rhs_promoted.is_integer()) {
             self.report_error(
-                span,
+                lhs_ref,
                 SemanticErrorKind::InvalidBinaryOperands {
                     left_ty: lhs_promoted,
                     right_ty: rhs_promoted,
@@ -965,7 +955,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return None;
         }
 
-        let (result_ty, common_ty) = self.analyze_binary_operation_types(op, lhs_promoted, rhs_promoted, span)?;
+        let (result_ty, common_ty) = self.analyze_binary_operation_types(lhs_ref, op, lhs_promoted, rhs_promoted)?;
 
         // For arithmetic/comparison operations, operands should be converted to a common type.
         let lhs_kind = self.ast.get_kind(lhs_ref);
@@ -1008,7 +998,6 @@ impl<'a> SemanticAnalyzer<'a> {
         op: BinaryOp,
         lhs_ref: NodeRef,
         rhs_ref: NodeRef,
-        span: SourceSpan,
     ) -> Option<QualType> {
         debug_assert!(
             op.is_assignment(),
@@ -1019,16 +1008,16 @@ impl<'a> SemanticAnalyzer<'a> {
         let lhs_ty = self.visit_node(lhs_ref)?;
         let rhs_ty = self.visit_node(rhs_ref)?;
 
-        if !self.check_lvalue_and_modifiable(lhs_ref, lhs_ty, span) {
+        if !self.check_lvalue_and_modifiable(lhs_ref, lhs_ty) {
             return None;
         }
 
         if let Some(arithmetic_op) = op.without_assignment() {
-            return self.visit_compound_assignment(node, arithmetic_op, lhs_ref, rhs_ref, lhs_ty, rhs_ty, span);
+            return self.visit_compound_assignment(node, arithmetic_op, lhs_ref, rhs_ref, lhs_ty, rhs_ty);
         }
 
         // Simple assignment
-        if !self.validate_and_record_assignment(lhs_ty, rhs_ty, rhs_ref, span) {
+        if !self.validate_and_record_assignment(node, lhs_ty, rhs_ty, rhs_ref) {
             return None;
         }
 
@@ -1043,15 +1032,13 @@ impl<'a> SemanticAnalyzer<'a> {
         rhs_ref: NodeRef,
         lhs_ty: QualType,
         rhs_ty: QualType,
-        span: SourceSpan,
     ) -> Option<QualType> {
-        let (_, common_ty) =
-            self.resolve_binary_operation_types(arithmetic_op, lhs_ref, rhs_ref, lhs_ty, rhs_ty, span)?;
+        let (_, common_ty) = self.resolve_binary_operation_types(arithmetic_op, lhs_ref, rhs_ref, lhs_ty, rhs_ty)?;
 
         // Check assignment constraints (C11 6.5.16.1)
         if !self.check_assignment_constraints(lhs_ty, common_ty, rhs_ref) {
             self.report_error(
-                span,
+                node,
                 SemanticErrorKind::TypeMismatch {
                     expected: lhs_ty,
                     found: common_ty,
@@ -1207,9 +1194,8 @@ impl<'a> SemanticAnalyzer<'a> {
                         let to_ty = self.registry.get(lhs_ty.ty());
                         let truncated = to_ty.as_ref().truncate_int(val);
                         if truncated != val {
-                            let span = self.ast.get_span(rhs_ref);
                             self.report_warning(
-                                span,
+                                rhs_ref,
                                 SemanticErrorKind::ImplicitConstantConversion {
                                     from: current_rhs_ty,
                                     to: lhs_ty,
@@ -1235,10 +1221,8 @@ impl<'a> SemanticAnalyzer<'a> {
             self.record_implicit_conversions(target_ty, init_ty, init_ref);
         } else if self.is_incompatible_struct_pointer_types(target_ty, init_ty) {
             // Incompatible struct pointer types - report as warning but allow the assignment
-            let span = self.ast.get_span(init_ref);
-
             self.report_warning(
-                span,
+                init_ref,
                 SemanticErrorKind::IncompatiblePointerTypes {
                     expected: target_ty,
                     found: init_ty,
@@ -1247,10 +1231,8 @@ impl<'a> SemanticAnalyzer<'a> {
             // Still record conversions so the assignment works
             self.record_implicit_conversions(target_ty, init_ty, init_ref);
         } else if self.is_discarding_pointer_qualifiers(target_ty, init_ty, init_ref) {
-            let span = self.ast.get_span(init_ref);
-
             self.report_warning(
-                span,
+                init_ref,
                 SemanticErrorKind::PointerAssignmentDiscardsQualifiers {
                     expected: target_ty,
                     found: init_ty,
@@ -1258,9 +1240,8 @@ impl<'a> SemanticAnalyzer<'a> {
             );
             self.record_implicit_conversions(target_ty, init_ty, init_ref);
         } else {
-            let span = self.ast.get_span(init_ref);
             self.report_error(
-                span,
+                init_ref,
                 SemanticErrorKind::TypeMismatch {
                     expected: target_ty,
                     found: init_ty,
@@ -1303,7 +1284,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.record_implicit_conversions(target_ty, init_ty, init_ref);
                 } else {
                     self.report_error(
-                        self.ast.get_span(init_ref),
+                        init_ref,
                         SemanticErrorKind::TypeMismatch {
                             expected: target_ty,
                             found: init_ty,
@@ -1333,7 +1314,7 @@ impl<'a> SemanticAnalyzer<'a> {
             for (i, item_ref) in items.enumerate() {
                 if i == 0 {
                     self.report_error(
-                        self.ast.get_span(item_ref),
+                        item_ref,
                         SemanticErrorKind::ExcessElements {
                             kind: "scalar".to_string(),
                         },
@@ -1390,9 +1371,8 @@ impl<'a> SemanticAnalyzer<'a> {
                     let found = members.iter().any(|m| m.name == Some(*name));
 
                     if !found {
-                        let span = self.ast.get_span(first_des_ref);
                         self.report_error(
-                            span,
+                            first_des_ref,
                             SemanticErrorKind::MemberNotFound {
                                 name: *name,
                                 ty: record_ty,
@@ -1452,9 +1432,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
             // Check argument count validity upfront (no-prototype semantics removed)
             if !is_variadic && arg_count != parameters.len() {
-                let span = self.ast.get_span(call_expr.callee);
                 self.report_error(
-                    span,
+                    call_expr.callee,
                     SemanticErrorKind::InvalidNumberOfArguments {
                         expected: parameters.len(),
                         found: arg_count,
@@ -1474,8 +1453,7 @@ impl<'a> SemanticAnalyzer<'a> {
                         self.push_conversion(arg_node, Conversion::PointerDecay { to: actual_arg_ty.ty() });
                     }
 
-                    let span = self.ast.get_span(arg_node);
-                    self.validate_and_record_assignment(parameters[i].param_type, actual_arg_ty, arg_node, span);
+                    self.validate_and_record_assignment(arg_node, parameters[i].param_type, actual_arg_ty, arg_node);
                 } else if is_variadic {
                     let mut actual_arg_ty = arg_ty;
                     if arg_ty.is_array() || arg_ty.is_function() {
@@ -1493,9 +1471,8 @@ impl<'a> SemanticAnalyzer<'a> {
             }
         } else {
             // This is not a function or function pointer, report an error.
-            let span = self.ast.get_span(call_expr.callee);
             self.report_error(
-                span,
+                call_expr.callee,
                 SemanticErrorKind::CalledNonFunctionType {
                     ty: QualType::unqualified(actual_func_ty_ref),
                 },
@@ -1514,13 +1491,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_member_access(
-        &mut self,
-        obj_ref: NodeRef,
-        field_name: NameId,
-        is_arrow: bool,
-        span: SourceSpan,
-    ) -> Option<QualType> {
+    fn visit_member_access(&mut self, obj_ref: NodeRef, field_name: NameId, is_arrow: bool) -> Option<QualType> {
         let obj_ty = self.visit_node(obj_ref)?;
 
         let (record_ty_ref, base_quals) = if is_arrow {
@@ -1538,7 +1509,7 @@ impl<'a> SemanticAnalyzer<'a> {
             match pointee {
                 Some(p) => (p.ty(), p.qualifiers()),
                 None => {
-                    self.report_error(span, SemanticErrorKind::MemberAccessOnNonRecord { ty: obj_ty });
+                    self.report_error(obj_ref, SemanticErrorKind::MemberAccessOnNonRecord { ty: obj_ty });
                     return None;
                 }
             }
@@ -1582,7 +1553,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if !record_ty_ref.is_record() {
             self.report_error(
-                span,
+                obj_ref,
                 SemanticErrorKind::MemberAccessOnNonRecord {
                     ty: QualType::unqualified(record_ty_ref),
                 },
@@ -1592,7 +1563,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if let TypeKind::Record { is_complete: false, .. } = &self.registry.get(record_ty_ref).kind {
             self.report_error(
-                span,
+                obj_ref,
                 SemanticErrorKind::IncompleteType {
                     ty: QualType::unqualified(record_ty_ref),
                 },
@@ -1610,7 +1581,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         self.report_error(
-            span,
+            obj_ref,
             SemanticErrorKind::MemberNotFound {
                 name: field_name,
                 ty: QualType::unqualified(record_ty_ref),
@@ -1695,8 +1666,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 } = func_type
                 {
                     if !self.registry.is_complete(return_type) && return_type != self.registry.type_void {
-                        let span = self.ast.get_span(node);
-                        self.report_error(span, SemanticErrorKind::IncompleteReturnType);
+                        self.report_error(node, SemanticErrorKind::IncompleteReturnType);
                     }
 
                     for param in parameters.iter() {
@@ -1727,9 +1697,8 @@ impl<'a> SemanticAnalyzer<'a> {
         self.visit_node(data.body);
 
         if self.current_function_is_noreturn && self.can_fall_through(data.body) {
-            let span = self.ast.get_span(node);
             self.report_error(
-                span,
+                node,
                 SemanticErrorKind::NoreturnFunctionFallsOff {
                     name: self.current_function_name.unwrap(),
                 },
@@ -1744,8 +1713,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_var_declaration(&mut self, data: &VarDeclData, node: NodeRef) -> Option<QualType> {
         if data.ty.ty() == self.registry.type_void {
-            let span = self.ast.get_span(node);
-            self.report_error(span, SemanticErrorKind::VariableOfVoidType);
+            self.report_error(node, SemanticErrorKind::VariableOfVoidType);
         }
         self.visit_type_expressions(data.ty);
         let _ = self.registry.ensure_layout(data.ty.ty());
@@ -1753,8 +1721,7 @@ impl<'a> SemanticAnalyzer<'a> {
             && matches!(data.storage, Some(StorageClass::Extern))
             && self.current_function_name.is_some()
         {
-            let span = self.ast.get_span(node);
-            self.report_error(span, SemanticErrorKind::InvalidInitializer);
+            self.report_error(node, SemanticErrorKind::InvalidInitializer);
         }
 
         if let Some(init_ref) = data.init {
@@ -1793,21 +1760,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 None
             }
             NodeKind::Switch(cond, body) => self.visit_switch_statement(*cond, *body),
-            NodeKind::Case(expr, stmt) => {
-                let span = self.ast.get_span(node);
-                self.visit_case_statement(Some(*expr), None, *stmt, span)
-            }
-            NodeKind::CaseRange(start, end, stmt) => {
-                let span = self.ast.get_span(node);
-                self.visit_case_statement(Some(*start), Some(*end), *stmt, span)
-            }
-            NodeKind::Default(stmt) => {
-                let span = self.ast.get_span(node);
-                self.visit_default_statement(*stmt, span)
-            }
+            NodeKind::Case(expr, stmt) => self.visit_case_statement(Some(*expr), None, *stmt),
+            NodeKind::CaseRange(start, end, stmt) => self.visit_case_statement(Some(*start), Some(*end), *stmt),
+            NodeKind::Default(stmt) => self.visit_default_statement(*stmt, node),
             NodeKind::Return(expr) => {
-                let span = self.ast.get_span(node);
-                self.visit_return_statement(expr, span);
+                self.visit_return_statement(node, expr);
                 None
             }
             NodeKind::ExpressionStatement(expr) => {
@@ -1822,15 +1779,13 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::Break => {
                 if self.loop_depth == 0 && self.switch_depth == 0 {
-                    let span = self.ast.get_span(node);
-                    self.report_error(span, SemanticErrorKind::BreakNotInLoop);
+                    self.report_error(node, SemanticErrorKind::BreakNotInLoop);
                 }
                 None
             }
             NodeKind::Continue => {
                 if self.loop_depth == 0 {
-                    let span = self.ast.get_span(node);
-                    self.report_error(span, SemanticErrorKind::ContinueNotInLoop);
+                    self.report_error(node, SemanticErrorKind::ContinueNotInLoop);
                 }
                 None
             }
@@ -1851,10 +1806,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if let Some(ty) = cond_ty {
             let effective_ty = if !ty.is_integer() {
-                self.report_error(
-                    self.ast.get_span(cond),
-                    SemanticErrorKind::InvalidSwitchCondition { ty },
-                );
+                self.report_error(cond, SemanticErrorKind::InvalidSwitchCondition { ty });
                 QualType::unqualified(self.registry.type_int)
             } else {
                 ty
@@ -1883,10 +1835,9 @@ impl<'a> SemanticAnalyzer<'a> {
         start: Option<NodeRef>,
         end: Option<NodeRef>,
         stmt: NodeRef,
-        span: SourceSpan,
     ) -> Option<QualType> {
         if self.switch_depth == 0 {
-            self.report_error(span, SemanticErrorKind::CaseNotInSwitch);
+            self.report_error(stmt, SemanticErrorKind::CaseNotInSwitch);
         }
 
         let mut start_val = None;
@@ -1894,7 +1845,7 @@ impl<'a> SemanticAnalyzer<'a> {
             let ty = self.visit_node(start_ref);
             start_val = eval_const_expr(&self.const_ctx(), start_ref);
             if self.switch_depth > 0 && (start_val.is_none() || ty.is_none_or(|t| !t.is_integer())) {
-                self.report_error(self.ast.get_span(start_ref), SemanticErrorKind::NonConstantCaseValue);
+                self.report_error(start_ref, SemanticErrorKind::NonConstantCaseValue);
             }
         }
 
@@ -1903,7 +1854,7 @@ impl<'a> SemanticAnalyzer<'a> {
             let ty = self.visit_node(end_ref);
             end_val = eval_const_expr(&self.const_ctx(), end_ref);
             if self.switch_depth > 0 && (end_val.is_none() || ty.is_none_or(|t| !t.is_integer())) {
-                self.report_error(self.ast.get_span(end_ref), SemanticErrorKind::NonConstantCaseValue);
+                self.report_error(end_ref, SemanticErrorKind::NonConstantCaseValue);
             }
         }
 
@@ -1914,16 +1865,14 @@ impl<'a> SemanticAnalyzer<'a> {
 
             if let Some(ty) = promoted_ty {
                 let ty_ref = ty.ty();
-                let start_span = span;
-                let end_span = end.map(|e| self.ast.get_span(e));
 
-                let truncate = |this: &mut Self, val: i64, err_span: SourceSpan| -> i64 {
+                let truncate = |this: &mut Self, val: i64, err_node: NodeRef| -> i64 {
                     let truncated = this.registry.get(ty_ref).as_ref().truncate_int(val);
                     if let Some(orig) = orig_ty {
                         let orig_truncated = this.registry.get(orig.ty()).as_ref().truncate_int(val);
                         if orig_truncated != val {
                             this.report_warning(
-                                err_span,
+                                err_node,
                                 SemanticErrorKind::SwitchCaseOverflow {
                                     from_val: val.to_string(),
                                     to_val: orig_truncated.to_string(),
@@ -1934,9 +1883,9 @@ impl<'a> SemanticAnalyzer<'a> {
                     truncated
                 };
 
-                start_val = start_val.map(|v| truncate(self, v, start_span));
-                if let Some(s) = end_span {
-                    end_val = end_val.map(|v| truncate(self, v, s));
+                start_val = start_val.map(|v| truncate(self, v, start.unwrap()));
+                if let Some(end_ref) = end {
+                    end_val = end_val.map(|v| truncate(self, v, end_ref));
                 } else {
                     end_val = start_val;
                 }
@@ -1947,7 +1896,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 && let Some(duplicate_val) = (start_v..=end_v).find(|&val| !cases.insert(val))
             {
                 self.report_error(
-                    span,
+                    stmt,
                     SemanticErrorKind::DuplicateCase {
                         value: duplicate_val.to_string(),
                     },
@@ -1959,16 +1908,16 @@ impl<'a> SemanticAnalyzer<'a> {
         None
     }
 
-    fn visit_default_statement(&mut self, stmt: NodeRef, span: SourceSpan) -> Option<QualType> {
+    fn visit_default_statement(&mut self, stmt: NodeRef, node: NodeRef) -> Option<QualType> {
         if self.switch_depth == 0 {
-            self.report_error(span, SemanticErrorKind::CaseNotInSwitch);
+            self.report_error(node, SemanticErrorKind::CaseNotInSwitch);
         } else {
             let is_duplicate = self
                 .switch_default_seen
                 .last_mut()
                 .is_some_and(|seen| std::mem::replace(seen, true));
             if is_duplicate {
-                self.report_error(span, SemanticErrorKind::MultipleDefaultLabels);
+                self.report_error(node, SemanticErrorKind::MultipleDefaultLabels);
             }
         }
         self.visit_node(stmt);
@@ -1985,14 +1934,8 @@ impl<'a> SemanticAnalyzer<'a> {
                     _ => Some(symbol.type_info),
                 }
             }
-            NodeKind::UnaryOp(op, operand) => {
-                let span = self.ast.get_span(node);
-                self.visit_unary_op(*op, *operand, span)
-            }
-            NodeKind::BinaryOp(op, lhs, rhs) => {
-                let span = self.ast.get_span(node);
-                self.visit_binary_op(*op, *lhs, *rhs, span)
-            }
+            NodeKind::UnaryOp(op, operand) => self.visit_unary_op(node, *op, *operand),
+            NodeKind::BinaryOp(op, lhs, rhs) => self.visit_binary_op(*op, *lhs, *rhs),
             NodeKind::TernaryOp(cond, then, else_expr) => self.visit_ternary_op(*cond, *then, *else_expr),
             NodeKind::GnuStatementExpression(stmt, result_expr) => {
                 self.visit_node(*stmt);
@@ -2005,20 +1948,14 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::PostIncrement(expr) | NodeKind::PostDecrement(expr) => {
                 let ty = self.visit_node(*expr);
-                if self.check_lvalue_and_modifiable(*expr, ty.unwrap(), self.ast.get_span(node)) {
-                    // ok
+                if let Some(t) = ty {
+                    self.check_lvalue_and_modifiable(*expr, t);
                 }
                 ty
             }
-            NodeKind::Assignment(op, lhs, rhs) => {
-                let span = self.ast.get_span(node);
-                self.visit_assignment(node, *op, *lhs, *rhs, span)
-            }
+            NodeKind::Assignment(op, lhs, rhs) => self.visit_assignment(node, *op, *lhs, *rhs),
             NodeKind::FunctionCall(call_expr) => self.visit_function_call(call_expr),
-            NodeKind::MemberAccess(obj, field_name, is_arrow) => {
-                let span = self.ast.get_span(node);
-                self.visit_member_access(*obj, *field_name, *is_arrow, span)
-            }
+            NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
             NodeKind::Cast(ty, expr) => {
                 self.visit_type_expressions(*ty);
@@ -2099,10 +2036,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
 
                     if !actual_ty.is_integer() {
-                        self.report_error(
-                            self.ast.get_span(*exp),
-                            SemanticErrorKind::ExpectedIntegerType { found: actual_ty },
-                        );
+                        self.report_error(*exp, SemanticErrorKind::ExpectedIntegerType { found: actual_ty });
                     }
                 }
                 Some(QualType::unqualified(self.registry.type_int))
@@ -2113,10 +2047,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_type_expressions(*t2);
                 Some(QualType::unqualified(self.registry.type_int))
             }
-            NodeKind::AtomicOp(op, args_start, args_len) => {
-                let span = self.ast.get_span(node);
-                self.visit_atomic_op(*op, *args_start, *args_len, span)
-            }
+            NodeKind::AtomicOp(op, args_start, args_len) => self.visit_atomic_op(*op, *args_start, *args_len),
             _ => None,
         }
     }
@@ -2194,10 +2125,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 return Some(res);
             }
 
-            self.report_error(
-                self.ast.get_span(cond),
-                SemanticErrorKind::TypeMismatch { expected: t, found: e },
-            );
+            self.report_error(cond, SemanticErrorKind::TypeMismatch { expected: t, found: e });
             None
         } else {
             None
@@ -2225,22 +2153,19 @@ impl<'a> SemanticAnalyzer<'a> {
             let is_function = matches!(self.registry.get(type_ref).kind, TypeKind::Function { .. });
 
             if is_function {
-                let span = self.ast.get_span(node);
                 if is_alignof {
-                    self.report_error(span, SemanticErrorKind::AlignOfFunctionType);
+                    self.report_error(node, SemanticErrorKind::AlignOfFunctionType);
                 } else {
-                    self.report_error(span, SemanticErrorKind::SizeOfFunctionType);
+                    self.report_error(node, SemanticErrorKind::SizeOfFunctionType);
                 }
             } else if !self.registry.is_complete(type_ref) {
-                let span = self.ast.get_span(node);
                 if is_alignof {
-                    self.report_error(span, SemanticErrorKind::AlignOfIncompleteType { ty: type_ref });
+                    self.report_error(node, SemanticErrorKind::AlignOfIncompleteType { ty: type_ref });
                 } else {
-                    self.report_error(span, SemanticErrorKind::SizeOfIncompleteType { ty: type_ref });
+                    self.report_error(node, SemanticErrorKind::SizeOfIncompleteType { ty: type_ref });
                 }
             } else if !is_alignof && expr.is_some() && self.is_bitfield(expr.unwrap()) {
-                let span = self.ast.get_span(node);
-                self.report_error(span, SemanticErrorKind::SizeOfBitfield);
+                self.report_error(node, SemanticErrorKind::SizeOfBitfield);
             } else {
                 let _ = self.registry.ensure_layout(type_ref);
             }
@@ -2249,13 +2174,7 @@ impl<'a> SemanticAnalyzer<'a> {
         Some(QualType::unqualified(self.registry.type_long_unsigned))
     }
 
-    fn visit_atomic_op(
-        &mut self,
-        op: AtomicOp,
-        args_start: NodeRef,
-        args_len: u16,
-        span: SourceSpan,
-    ) -> Option<QualType> {
+    fn visit_atomic_op(&mut self, op: AtomicOp, args_start: NodeRef, args_len: u16) -> Option<QualType> {
         let mut args = SmallVec::<[NodeRef; 6]>::new();
         let mut arg_tys = SmallVec::<[QualType; 6]>::new();
         let mut has_error = false;
@@ -2281,7 +2200,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if args.len() != expected_args {
             self.report_error(
-                span,
+                args[0],
                 SemanticErrorKind::InvalidNumberOfArguments {
                     expected: expected_args,
                     found: args.len(),
@@ -2299,10 +2218,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         for &idx in &memorder_indices {
             if !arg_tys[idx].is_integer() {
-                self.report_error(
-                    self.ast.get_span(args[idx]),
-                    SemanticErrorKind::InvalidAtomicArgument { ty: arg_tys[idx] },
-                );
+                self.report_error(args[idx], SemanticErrorKind::InvalidAtomicArgument { ty: arg_tys[idx] });
             }
         }
 
@@ -2310,10 +2226,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let pointee = if let Some(pointee) = self.registry.get_pointee(arg_tys[0].ty()) {
             pointee
         } else {
-            self.report_error(
-                self.ast.get_span(args[0]),
-                SemanticErrorKind::InvalidAtomicArgument { ty: arg_tys[0] },
-            );
+            self.report_error(args[0], SemanticErrorKind::InvalidAtomicArgument { ty: arg_tys[0] });
             return None;
         };
 
@@ -2337,13 +2250,13 @@ impl<'a> SemanticAnalyzer<'a> {
                         .is_compatible(QualType::unqualified(pointee.ty()), expected_pointee)
                     {
                         self.report_error(
-                            self.ast.get_span(args[1]),
+                            args[1],
                             SemanticErrorKind::InvalidAtomicArgument { ty: expected_pointee },
                         );
                     }
                 } else {
                     self.report_error(
-                        self.ast.get_span(args[1]),
+                        args[1],
                         SemanticErrorKind::InvalidAtomicArgument { ty: expected_ptr_ty },
                     );
                 }
@@ -2352,10 +2265,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             AtomicOp::FetchAdd | AtomicOp::FetchSub | AtomicOp::FetchAnd | AtomicOp::FetchOr | AtomicOp::FetchXor => {
                 if matches!(op, AtomicOp::FetchAnd | AtomicOp::FetchOr | AtomicOp::FetchXor) && !pointee.is_integer() {
-                    self.report_error(
-                        self.ast.get_span(args[0]),
-                        SemanticErrorKind::InvalidAtomicArgument { ty: pointee },
-                    );
+                    self.report_error(args[0], SemanticErrorKind::InvalidAtomicArgument { ty: pointee });
                 }
 
                 if pointee.is_integer() {
@@ -2478,10 +2388,7 @@ impl<'a> SemanticAnalyzer<'a> {
         if let Some(cond_ty) = self.visit_node(cond)
             && !cond_ty.is_integer()
         {
-            self.report_error(
-                self.ast.get_span(cond),
-                SemanticErrorKind::ExpectedIntegerType { found: cond_ty },
-            );
+            self.report_error(cond, SemanticErrorKind::ExpectedIntegerType { found: cond_ty });
         }
 
         match eval_const_expr(&self.const_ctx(), cond) {
@@ -2491,12 +2398,9 @@ impl<'a> SemanticAnalyzer<'a> {
                     _ => String::new(),
                 };
 
-                self.report_error(
-                    self.ast.get_span(node),
-                    SemanticErrorKind::StaticAssertFailed { message },
-                );
+                self.report_error(node, SemanticErrorKind::StaticAssertFailed { message });
             }
-            None => self.report_error(self.ast.get_span(node), SemanticErrorKind::StaticAssertNotConstant),
+            None => self.report_error(node, SemanticErrorKind::StaticAssertNotConstant),
             _ => {}
         }
     }
@@ -2610,10 +2514,7 @@ impl<'a> SemanticAnalyzer<'a> {
         // or the void type.
         let decayed_ctrl_ty = decayed_ctrl.ty();
         if !self.registry.is_complete(decayed_ctrl_ty) && decayed_ctrl_ty != self.registry.type_void {
-            self.report_error(
-                self.ast.get_span(gs.control),
-                SemanticErrorKind::GenericIncompleteControl { ty: ctrl },
-            );
+            self.report_error(gs.control, SemanticErrorKind::GenericIncompleteControl { ty: ctrl });
         }
 
         // It's crucial to visit *all* result expressions to ensure they are
@@ -2638,7 +2539,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 // Constraint 2: If a generic selection has a default association, there shall be only one such association.
                 if let Some(first_span) = default_first_span {
                     self.report_error(
-                        span,
+                        assoc_node,
                         SemanticErrorKind::GenericMultipleDefault { first_def: first_span },
                     );
                 } else {
@@ -2652,11 +2553,17 @@ impl<'a> SemanticAnalyzer<'a> {
             // other than a variably modified type.
             let assoc_ty_kind = &self.registry.get(assoc_ty.ty()).kind;
             if matches!(assoc_ty_kind, TypeKind::Function { .. }) {
-                self.report_error(span, SemanticErrorKind::GenericFunctionAssociation { ty: assoc_ty });
+                self.report_error(
+                    assoc_node,
+                    SemanticErrorKind::GenericFunctionAssociation { ty: assoc_ty },
+                );
             } else if !self.registry.is_complete(assoc_ty.ty()) {
-                self.report_error(span, SemanticErrorKind::GenericIncompleteAssociation { ty: assoc_ty });
+                self.report_error(
+                    assoc_node,
+                    SemanticErrorKind::GenericIncompleteAssociation { ty: assoc_ty },
+                );
             } else if self.registry.is_variably_modified(assoc_ty.ty()) {
-                self.report_error(span, SemanticErrorKind::GenericVlaAssociation { ty: assoc_ty });
+                self.report_error(assoc_node, SemanticErrorKind::GenericVlaAssociation { ty: assoc_ty });
             }
 
             // C11 6.5.1.1p2: The controlling expression... shall have type compatible with at most one...
@@ -2667,7 +2574,7 @@ impl<'a> SemanticAnalyzer<'a> {
             for (prev_ty, prev_span) in &seen_types {
                 if self.registry.is_compatible(assoc_ty, *prev_ty) {
                     self.report_error(
-                        span,
+                        assoc_node,
                         SemanticErrorKind::GenericDuplicateMatch {
                             ty: assoc_ty,
                             prev_ty: *prev_ty,
@@ -2709,7 +2616,7 @@ impl<'a> SemanticAnalyzer<'a> {
             self.semantic_info.types.get(idx).and_then(|t| *t)
         } else {
             // If no match is found and there's no default, it's a semantic error.
-            self.report_error(self.ast.get_span(node), SemanticErrorKind::GenericNoMatch { ty: ctrl });
+            self.report_error(node, SemanticErrorKind::GenericNoMatch { ty: ctrl });
             None
         }
     }
@@ -2744,7 +2651,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     && self.apply_offsetof_index(node, index, current_ty, offset)
             }
             _ => {
-                self.report_error(self.ast.get_span(node), SemanticErrorKind::InvalidOffsetofDesignator);
+                self.report_error(node, SemanticErrorKind::InvalidOffsetofDesignator);
                 false
             }
         }
@@ -2761,7 +2668,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if !record_ty.is_record() {
             self.report_error(
-                self.ast.get_span(node),
+                node,
                 SemanticErrorKind::MemberAccessOnNonRecord {
                     ty: QualType::unqualified(record_ty),
                 },
@@ -2780,7 +2687,7 @@ impl<'a> SemanticAnalyzer<'a> {
             true
         } else {
             self.report_error(
-                self.ast.get_span(node),
+                node,
                 SemanticErrorKind::MemberNotFound {
                     name: member_name,
                     ty: QualType::unqualified(record_ty),
@@ -2799,17 +2706,14 @@ impl<'a> SemanticAnalyzer<'a> {
     ) -> bool {
         let elem_ty = self.registry.get_array_element(current_ty.ty());
         let Some(elem_ty) = elem_ty else {
-            self.report_error(
-                self.ast.get_span(node),
-                SemanticErrorKind::ExpectedArrayType { found: *current_ty },
-            );
+            self.report_error(node, SemanticErrorKind::ExpectedArrayType { found: *current_ty });
             return false;
         };
 
         self.visit_node(index);
         let Some(index_val) = eval_const_expr(&self.const_ctx(), index) else {
             // C11 7.19p3: "integer constant expression"
-            self.report_error(self.ast.get_span(index), SemanticErrorKind::NonConstantInitializer);
+            self.report_error(index, SemanticErrorKind::NonConstantInitializer);
             return false;
         };
 

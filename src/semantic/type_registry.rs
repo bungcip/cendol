@@ -1276,27 +1276,6 @@ impl TypeRegistry {
 
         let type_kind = &self.types[ty.index()].kind;
         match type_kind {
-            TypeKind::Builtin(b) => match b {
-                BuiltinType::Void => "void".to_string(),
-                BuiltinType::Bool => "_Bool".to_string(),
-                BuiltinType::Char => "char".to_string(),
-                BuiltinType::SChar => "signed char".to_string(),
-                BuiltinType::UChar => "unsigned char".to_string(),
-                BuiltinType::Short => "short".to_string(),
-                BuiltinType::UShort => "unsigned short".to_string(),
-                BuiltinType::Int => "int".to_string(),
-                BuiltinType::UInt => "unsigned int".to_string(),
-                BuiltinType::Long => "long".to_string(),
-                BuiltinType::ULong => "unsigned long".to_string(),
-                BuiltinType::LongLong => "long long".to_string(),
-                BuiltinType::ULongLong => "unsigned long long".to_string(),
-                BuiltinType::Float => "float".to_string(),
-                BuiltinType::Double => "double".to_string(),
-                BuiltinType::LongDouble => "long double".to_string(),
-                BuiltinType::Signed => "signed".to_string(),
-                BuiltinType::VaList => "__builtin_va_list".to_string(),
-                BuiltinType::Complex => "_Complex (marker)".to_string(),
-            },
             TypeKind::Complex { base_type } => format!("_Complex {}", self.display_type(*base_type)),
             TypeKind::Pointer { pointee } => format!("{}*", self.display_qual_type(*pointee)),
             TypeKind::Array { element_type, size } => {
@@ -1323,22 +1302,7 @@ impl TypeRegistry {
                 let var_str = if *is_variadic { ", ..." } else { "" };
                 format!("{}({}{})", ret_str, params_str, var_str)
             }
-            TypeKind::Record { tag, is_union, .. } => {
-                let kind_str = if *is_union { "union" } else { "struct" };
-                if let Some(tag_name) = tag {
-                    format!("{} {}", kind_str, tag_name)
-                } else {
-                    format!("{} (anonymous)", kind_str)
-                }
-            }
-            TypeKind::Enum { tag, .. } => {
-                if let Some(tag_name) = tag {
-                    format!("enum {}", tag_name)
-                } else {
-                    "enum (anonymous)".to_string()
-                }
-            }
-            TypeKind::Error => "<error>".to_string(),
+            _ => format!("{}", type_kind),
         }
     }
 }

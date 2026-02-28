@@ -1,0 +1,6 @@
+---
+source: src/tests/parser_stmt.rs
+assertion_line: 325
+expression: "&resolved"
+---
+Empty

@@ -203,6 +203,33 @@ fn test_noreturn_function_can_fall_through() {
 }
 
 #[test]
+fn test_noreturn_function_contains_break_in_if() {
+    let code = r#"
+    _Noreturn void foo() {
+        while (1) {
+            if (1) {
+            } else {
+                break;
+            }
+        }
+    }
+    "#;
+    run_fail_with_message(code, "function 'foo' declared '_Noreturn' can fall off the end");
+}
+
+#[test]
+fn test_noreturn_function_contains_break_in_label() {
+    let code = r#"
+    _Noreturn void foo() {
+        while (1) {
+            L: break;
+        }
+    }
+    "#;
+    run_fail_with_message(code, "function 'foo' declared '_Noreturn' can fall off the end");
+}
+
+#[test]
 fn test_noreturn_function_returns() {
     let code = r#"
     _Noreturn int foo() {

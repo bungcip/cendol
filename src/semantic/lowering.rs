@@ -1555,7 +1555,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         // C11 6.7p3: If an identifier has no linkage, there shall be no more than one declaration
         // in the same scope and name space.
-        if existing_scope == current_scope && (!existing_has_linkage || !new_has_linkage) && existing_def_span != span {
+        if existing_scope == current_scope && (!existing_has_linkage || !new_has_linkage) {
             self.report_error(
                 span,
                 SemanticErrorKind::Redefinition {
@@ -1936,7 +1936,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return Some(node);
         }
 
+        let init_expr = init.initializer.map(|init_node| self.visit_expression(init_node));
         let is_func = final_ty.is_function();
+
         if !is_func {
             self.check_function_specifiers(spec_info, span);
         }
@@ -1944,18 +1946,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if is_func {
             self.visit_function_decl(node, name, final_ty, spec_info, span)
         } else {
-            // Early declaration for recursive scope (e.g. sizeof *p in p's initializer)
-            if init.initializer.is_some() {
-                let _ = self.symbol_table.define_variable(
-                    name,
-                    final_ty,
-                    spec_info.storage,
-                    None,
-                    spec_info.alignment,
-                    span,
-                );
-            }
-            let init_expr = init.initializer.map(|init_node| self.visit_expression(init_node));
             self.visit_variable_decl(node, name, final_ty, spec_info, init_expr, span)
         }
         Some(node)

@@ -208,11 +208,6 @@ impl<'a> SemanticAnalyzer<'a> {
             // Even if they did, the members would be visited during their declaration processing.
             _ => {}
         }
-
-        // Proactively ensure layout for record and array types if they are complete.
-        if (ty.is_record() || ty.is_array()) && self.registry.is_complete(ty) {
-            let _ = self.registry.ensure_layout(ty);
-        }
     }
 
     fn is_always_true(&self, expr: NodeRef) -> bool {
@@ -572,10 +567,6 @@ impl<'a> SemanticAnalyzer<'a> {
         if let Some(expr_ty) = self.visit_node(*expr_ref)
             && let Some(target_ty) = ret_ty
         {
-            if (target_ty.ty().is_record() || target_ty.ty().is_array()) && self.registry.is_complete(target_ty.ty()) {
-                let _ = self.registry.ensure_layout(target_ty.ty());
-            }
-
             self.validate_and_record_assignment(node, target_ty, expr_ty, *expr_ref);
         }
 
@@ -1433,19 +1424,11 @@ impl<'a> SemanticAnalyzer<'a> {
         if let TypeKind::Function {
             parameters,
             is_variadic,
-            return_type,
             ..
         } = &func_kind
         {
             let is_variadic = *is_variadic;
-            let return_type = *return_type;
             let arg_count = call_expr.arg_len as usize;
-
-            // Ensure layout for return type if it is a record/array and complete.
-            let return_ty_ref = return_type;
-            if (return_ty_ref.is_record() || return_ty_ref.is_array()) && self.registry.is_complete(return_ty_ref) {
-                let _ = self.registry.ensure_layout(return_ty_ref);
-            }
 
             // Check argument count validity upfront (no-prototype semantics removed)
             if !is_variadic && arg_count != parameters.len() {
@@ -1464,20 +1447,13 @@ impl<'a> SemanticAnalyzer<'a> {
                 };
 
                 if i < parameters.len() {
-                    let param_ty = parameters[i].param_type;
-                    if (param_ty.ty().is_record() || param_ty.ty().is_array())
-                        && self.registry.is_complete(param_ty.ty())
-                    {
-                        let _ = self.registry.ensure_layout(param_ty.ty());
-                    }
-
                     let mut actual_arg_ty = arg_ty;
                     if arg_ty.is_array() || arg_ty.is_function() {
                         actual_arg_ty = self.registry.decay(arg_ty, TypeQualifiers::empty());
                         self.push_conversion(arg_node, Conversion::PointerDecay { to: actual_arg_ty.ty() });
                     }
 
-                    self.validate_and_record_assignment(arg_node, param_ty, actual_arg_ty, arg_node);
+                    self.validate_and_record_assignment(arg_node, parameters[i].param_type, actual_arg_ty, arg_node);
                 } else if is_variadic {
                     let mut actual_arg_ty = arg_ty;
                     if arg_ty.is_array() || arg_ty.is_function() {
@@ -2097,11 +2073,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 e = decayed;
             }
 
-            // C11 6.3.2.1p2: lvalue-to-rvalue conversion strips qualifiers.
-            // Ternary operands are used as values.
-            t = self.registry.strip_all(t);
-            e = self.registry.strip_all(e);
-
             let result_ty = match (t, e) {
                 (t, e) if t.is_arithmetic() && e.is_arithmetic() => usual_arithmetic_conversions(self.registry, t, e),
                 (t, e) if t.ty() == e.ty() => self.registry.composite_type(t, e),
@@ -2391,12 +2362,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 ValueCategory::RValue
             };
             self.semantic_info.value_categories[idx] = vc;
-
-            // Proactively ensure layout for record and array types if they are complete.
-            // This avoids "LAYOUT NOT COMPUTED" ICEs in later phases like MIR lowering.
-            if (ty.is_record() || ty.is_array()) && self.registry.is_complete(ty.ty()) {
-                let _ = self.registry.ensure_layout(ty.ty());
-            }
         }
         result_type
     }
@@ -2658,7 +2623,6 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_builtin_offsetof(&mut self, ty: QualType, expr_ref: NodeRef, node: NodeRef) -> Option<QualType> {
         self.visit_type_expressions(ty);
-        let _ = self.registry.ensure_layout(ty.ty());
 
         let mut current_ty = ty;
         let mut offset = 0i64;
@@ -2753,14 +2717,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return false;
         };
 
-        let layout = match self.registry.ensure_layout(elem_ty) {
-            Ok(l) => l,
-            Err(e) => {
-                self.diag
-                    .report_diagnostic(e.into_diagnostic(self.registry).pop().unwrap());
-                return false;
-            }
-        };
+        let layout = self.registry.get_layout(elem_ty);
         *offset += index_val * (layout.size as i64);
         *current_ty = QualType::unqualified(elem_ty);
         true

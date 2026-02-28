@@ -94,6 +94,7 @@ impl<'a> MirGen<'a> {
                     .expect("__builtin_types_compatible_p should be constant");
                 self.create_int_operand(val)
             }
+            NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(need_value, expr_ref),
             NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, need_value, expr_ref),
             NodeKind::GnuStatementExpression(stmt, result_expr) => {
                 self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value)
@@ -243,6 +244,18 @@ impl<'a> MirGen<'a> {
             .generic_selections
             .get(&node_ref.index())
             .expect("Generic selection failed (should be caught by Analyzer)");
+        self.visit_expression(expr_to_lower, need_value)
+    }
+
+    fn visit_builtin_choose_expr(&mut self, need_value: bool, node_ref: NodeRef) -> Operand {
+        let expr_to_lower = *self
+            .ast
+            .semantic_info
+            .as_ref()
+            .unwrap()
+            .choose_expressions
+            .get(&node_ref.index())
+            .expect("__builtin_choose_expr failed (should be caught by Analyzer)");
         self.visit_expression(expr_to_lower, need_value)
     }
 

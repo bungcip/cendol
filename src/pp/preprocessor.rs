@@ -999,8 +999,8 @@ impl<'src> Preprocessor<'src> {
             Err(_e) => {
                 // If macro expansion fails, emit diagnostic and treat as false
                 self.report_warning(
-                    "Failed to expand macros in conditional expression",
                     self.get_current_location(),
+                    "Failed to expand macros in conditional expression",
                 );
                 return Ok(false);
             }
@@ -1024,8 +1024,8 @@ impl<'src> Preprocessor<'src> {
             Err(_) => {
                 // For complex expressions that can't be parsed, emit a warning and treat as false
                 self.report_warning(
-                    "Invalid conditional expression in preprocessor directive",
                     self.get_current_location(),
+                    "Invalid conditional expression in preprocessor directive",
                 );
                 // Return false for unparseable expressions to allow compilation to continue
                 Ok(false)
@@ -1276,8 +1276,8 @@ impl<'src> Preprocessor<'src> {
             if existing.flags.contains(MacroFlags::BUILTIN) {
                 if is_different {
                     self.report_warning(
-                        format!("Redefinition of built-in macro '{}'", name),
                         name_token.location,
+                        format!("Redefinition of built-in macro '{}'", name),
                     );
                 }
                 // Return false to block overwriting the built-in macro,
@@ -1287,8 +1287,8 @@ impl<'src> Preprocessor<'src> {
 
             if is_different {
                 self.report_warning(
-                    format!("Redefinition of macro '{}'", name.as_str()),
                     name_token.location,
+                    format!("Redefinition of macro '{}'", name.as_str()),
                 );
             }
         }
@@ -1326,8 +1326,8 @@ impl<'src> Preprocessor<'src> {
             && existing.flags.contains(MacroFlags::BUILTIN)
         {
             self.report_warning(
-                format!("Undefining built-in macro '{}'", name.as_str()),
                 name_token.location,
+                format!("Undefining built-in macro '{}'", name.as_str()),
             );
             self.expect_eod()?;
             return Ok(());
@@ -1774,9 +1774,9 @@ impl<'src> Preprocessor<'src> {
         };
 
         if is_error {
-            self.report_error(formatted_message, directive_location);
+            self.report_error(directive_location, formatted_message);
         } else {
-            self.report_warning(formatted_message, directive_location);
+            self.report_warning(directive_location, formatted_message);
         }
 
         if is_error {
@@ -2700,13 +2700,13 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Helper to report error diagnostics
-    fn report_error(&mut self, message: impl Into<String>, loc: SourceLoc) {
+    fn report_error(&mut self, loc: SourceLoc, message: impl Into<String>) {
         let span = SourceSpan::new(loc, loc);
         self.report_diagnostic(DiagnosticLevel::Error, message, span);
     }
 
     /// Helper to report warning diagnostics
-    fn report_warning(&mut self, message: impl Into<String>, loc: SourceLoc) {
+    fn report_warning(&mut self, loc: SourceLoc, message: impl Into<String>) {
         let span = SourceSpan::new(loc, loc);
         self.report_diagnostic(DiagnosticLevel::Warning, message, span);
     }
@@ -2760,8 +2760,8 @@ impl<'src> Preprocessor<'src> {
                 }
                 _ => {
                     self.report_warning(
-                        format!("Invalid macro parameter token in #define '{}'", macro_name),
                         param_token.location,
+                        format!("Invalid macro parameter token in #define '{}'", macro_name),
                     );
 
                     // Skip to the next divider

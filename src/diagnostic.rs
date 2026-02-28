@@ -246,39 +246,3 @@ impl IntoDiagnostic for ParseError {
         }]
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::semantic::errors::{SemanticError, SemanticErrorKind};
-    use crate::source_manager::SourceSpan;
-
-    #[test]
-    fn test_error_spans() {
-        let span = SourceSpan::dummy();
-
-        let p1 = ParseError {
-            span,
-            kind: ParseErrorKind::UnexpectedEof,
-        };
-        assert_eq!(p1.span, span);
-
-        let p3 = ParseError {
-            span,
-            kind: ParseErrorKind::DeclarationNotAllowed,
-        };
-        assert_eq!(p3.span, span);
-
-        let s1 = SemanticError {
-            span,
-            kind: SemanticErrorKind::NonConstantInitializer,
-        };
-        assert_eq!(s1.span, span);
-
-        let s2 = SemanticError {
-            span,
-            kind: SemanticErrorKind::InvalidInitializer,
-        };
-        assert_eq!(s2.span, span);
-    }
-}

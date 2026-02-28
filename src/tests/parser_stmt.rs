@@ -318,3 +318,9 @@ fn test_for_multiple_declarations() {
     let resolved = setup_statement("for (int i = 2, b = 4; i + 2; i = 2) {}");
     insta::assert_yaml_snapshot!(&resolved);
 }
+
+#[test]
+fn test_attribute_statement() {
+    let resolved = setup_statement("__attribute__((fallthrough));");
+    insta::assert_yaml_snapshot!(&resolved);
+}

@@ -11,6 +11,10 @@ use crate::parser::utils::expr_patterns::parse_parenthesized_expr;
 use crate::source_manager::SourceLoc;
 
 pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    while parser.is_token(TokenKind::Attribute) {
+        super::declaration_core::parse_attribute(parser)?;
+    }
+
     let token = parser.current_token()?;
 
     if let TokenKind::Identifier(name) = token.kind

@@ -54,7 +54,10 @@ fn test_semantic_choose_expr_not_constant() {
             return a;
         }
     ";
-    run_fail_with_message(source, "condition in '__builtin_choose_expr' is not a constant expression");
+    run_fail_with_message(
+        source,
+        "condition in '__builtin_choose_expr' is not a constant expression",
+    );
 }
 
 #[test]

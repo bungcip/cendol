@@ -330,7 +330,6 @@ impl SymbolTable {
         is_definition: bool,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
-
         let mut symbol = self.create_symbol(name, SymbolKind::Function { storage }, QualType::unqualified(ty), span);
 
         // Function declarations are "DeclaredOnly" by default, or "Defined" if it's a function definition

@@ -357,15 +357,21 @@ impl CompilerDriver {
                 let mut temp_files = Vec::new();
 
                 // Process outputs if needed
-                for (_source_id, artifact) in outputs.units {
+                for (source_id, artifact) in outputs.units {
                     if let Some(object_file) = artifact.object_file {
                         if self.config.compile_only {
                             // Write directly to output path when compile_only is set
                             let output_path = if let Some(ref path) = self.config.output_path {
                                 path.clone()
                             } else {
-                                // Default output name when -c but no -o
-                                std::path::PathBuf::from("a.o")
+                                // Default output name when -c but no -o: derive from input filename
+                                let file_info = self
+                                    .source_manager
+                                    .get_file_info(source_id)
+                                    .expect("Source file should exist");
+                                let mut path = file_info.path.clone();
+                                path.set_extension("o");
+                                path
                             };
                             use std::io::Write;
                             let mut file = std::fs::File::create(&output_path)

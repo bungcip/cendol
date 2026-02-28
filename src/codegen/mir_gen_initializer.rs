@@ -181,10 +181,10 @@ impl<'a> MirGen<'a> {
             return false;
         }
 
-        let is_compatible = self.ast.get_resolved_type(initializer).is_some_and(|ty| {
-            self.registry
-                .is_compatible(QualType::unqualified(ty.ty()), QualType::unqualified(target_ty.ty()))
-        });
+        let is_compatible = self
+            .ast
+            .get_resolved_type(initializer)
+            .is_some_and(|ty| self.registry.is_compatible(ty.strip_all(), target_ty.strip_all()));
 
         !is_compatible
     }

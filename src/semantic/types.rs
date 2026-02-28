@@ -582,6 +582,12 @@ impl QualType {
         unsafe { TypeRef::from_raw_unchecked(self.0 & Self::TY_MASK) }
     }
 
+    /// Strip all qualifiers and return an unqualified type with the same TypeRef.
+    #[inline]
+    pub(crate) fn strip_all(self) -> Self {
+        Self::unqualified(self.ty())
+    }
+
     #[inline]
     pub(crate) fn qualifiers(self) -> TypeQualifiers {
         TypeQualifiers::from_bits_truncate((self.0 >> Self::QUAL_SHIFT) as u8)

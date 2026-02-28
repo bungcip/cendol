@@ -68,21 +68,21 @@ pub(crate) fn usual_arithmetic_conversions(ctx: &mut TypeRegistry, lhs: QualType
 }
 
 /// Performs integer promotions as specified in C11 6.3.1.1.
-pub(crate) fn integer_promotion(ctx: &TypeRegistry, ty: QualType) -> QualType {
-    let t = ty.ty();
-    if t.is_enum() {
+pub(crate) fn integer_promotion(ctx: &TypeRegistry, qt: QualType) -> QualType {
+    let ty = qt.ty();
+    if ty.is_enum() {
         return QualType::unqualified(ctx.type_int);
     }
-    match t.builtin() {
+    match ty.builtin() {
         Some(b) if b.is_integer() && b.rank() < BuiltinType::Int.rank() => QualType::unqualified(ctx.type_int),
-        _ => ty,
+        _ => qt,
     }
 }
 
 /// Performs default argument promotions as specified in C11 6.5.2.2.
-pub(crate) fn default_argument_promotions(ctx: &TypeRegistry, ty: QualType) -> QualType {
-    match ty.ty().builtin() {
+pub(crate) fn default_argument_promotions(ctx: &TypeRegistry, qt: QualType) -> QualType {
+    match qt.ty().builtin() {
         Some(BuiltinType::Float) => QualType::unqualified(ctx.type_double),
-        _ => integer_promotion(ctx, ty),
+        _ => integer_promotion(ctx, qt),
     }
 }

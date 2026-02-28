@@ -7,8 +7,6 @@
 use hashbrown::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
-
-use log::debug;
 use thiserror::Error;
 
 use crate::{
@@ -169,10 +167,6 @@ impl SymbolTable {
 
         self.scopes.push(new_scope);
         self.current_scope_id = new_scope_id;
-        debug!(
-            "SymbolTable: Pushed new scope. New current_scope_id: {}",
-            self.current_scope_id.get()
-        );
         new_scope_id
     }
 
@@ -181,14 +175,8 @@ impl SymbolTable {
         let current_scope = &self.scopes[current_scope_id_before_pop.get() as usize - 1];
         if let Some(parent) = current_scope.parent {
             self.current_scope_id = parent;
-            debug!(
-                "SymbolTable: Popped scope. Old current_scope_id: {}, New current_scope_id: {}",
-                current_scope_id_before_pop.get(),
-                self.current_scope_id.get()
-            );
             Some(parent)
         } else {
-            debug!("SymbolTable: Attempted to pop global scope. No change.");
             None
         }
     }
@@ -199,7 +187,6 @@ impl SymbolTable {
 
     pub(crate) fn set_current_scope(&mut self, scope_id: ScopeId) {
         self.current_scope_id = scope_id;
-        debug!("SymbolTable: Set current_scope_id to {}", self.current_scope_id.get());
     }
 
     pub(crate) fn get_scope(&self, scope_id: ScopeId) -> &Scope {
@@ -211,21 +198,21 @@ impl SymbolTable {
     }
 
     fn add_symbol(&mut self, name: NameId, entry: Symbol) -> SymbolRef {
-        let entry_ref = self.push_symbol(entry);
+        let sym = self.push_symbol(entry);
         let current_scope = self.get_scope_mut(self.current_scope_id);
-        current_scope.symbols.insert(name, entry_ref);
-        entry_ref
+        current_scope.symbols.insert(name, sym);
+        sym
     }
 
     fn add_symbol_in_namespace(&mut self, name: NameId, entry: Symbol, ns: Namespace) -> SymbolRef {
-        let entry_ref = self.push_symbol(entry);
+        let sym = self.push_symbol(entry);
         let current_scope = self.get_scope_mut(self.current_scope_id);
         match ns {
-            Namespace::Ordinary => current_scope.symbols.insert(name, entry_ref),
-            Namespace::Tag => current_scope.tags.insert(name, entry_ref),
-            Namespace::Label => current_scope.labels.insert(name, entry_ref),
+            Namespace::Ordinary => current_scope.symbols.insert(name, sym),
+            Namespace::Tag => current_scope.tags.insert(name, sym),
+            Namespace::Label => current_scope.labels.insert(name, sym),
         };
-        entry_ref
+        sym
     }
 
     pub(crate) fn lookup_symbol(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
@@ -245,8 +232,8 @@ impl SymbolTable {
                 Namespace::Tag => scope.tags.get(&name),
                 Namespace::Label => scope.labels.get(&name),
             };
-            if let Some(&entry_ref) = result {
-                return Some((entry_ref, scope_id));
+            if let Some(&sym) = result {
+                return Some((sym, scope_id));
             }
             if let Some(parent) = scope.parent {
                 scope_id = parent;
@@ -376,11 +363,8 @@ impl SymbolTable {
         };
 
         // Check for redefinition in the SAME scope
-        if let Some(existing_ref) = self.fetch(name, self.current_scope_id, Namespace::Ordinary) {
-            return Err(SymbolTableError::InvalidRedefinition {
-                name,
-                existing: existing_ref,
-            });
+        if let Some(existing) = self.fetch(name, self.current_scope_id, Namespace::Ordinary) {
+            return Err(SymbolTableError::InvalidRedefinition { name, existing });
         }
 
         Ok(self.add_symbol(name, symbol_entry))
@@ -404,11 +388,8 @@ impl SymbolTable {
             is_completed: true,
         };
 
-        if let Some(existing_ref) = self.fetch(name, self.current_scope_id, Namespace::Ordinary) {
-            return Err(SymbolTableError::InvalidRedefinition {
-                name,
-                existing: existing_ref,
-            });
+        if let Some(existing) = self.fetch(name, self.current_scope_id, Namespace::Ordinary) {
+            return Err(SymbolTableError::InvalidRedefinition { name, existing });
         }
 
         Ok(self.add_symbol(name, symbol_entry))
@@ -481,8 +462,8 @@ impl SymbolTable {
         let global_scope = ScopeId::GLOBAL;
 
         // Check if symbol already exists in global scope
-        if let Some(existing_ref) = self.fetch(name, global_scope, Namespace::Ordinary) {
-            let existing = self.get_symbol_mut(existing_ref);
+        if let Some(sym) = self.fetch(name, global_scope, Namespace::Ordinary) {
+            let existing = self.get_symbol_mut(sym);
 
             // Verify kinds match
             match (&existing.kind, &new_entry.kind) {
@@ -490,11 +471,7 @@ impl SymbolTable {
                 (SymbolKind::Function { .. }, SymbolKind::Function { .. }) => {}
                 _ => {
                     // Mismatched kinds
-                    debug!("Symbol '{}' redefinition: different kinds", name);
-                    return Err(SymbolTableError::InvalidRedefinition {
-                        name,
-                        existing: existing_ref,
-                    });
+                    return Err(SymbolTableError::InvalidRedefinition { name, existing: sym });
                 }
             }
 
@@ -509,10 +486,7 @@ impl SymbolTable {
             {
                 match (existing_align, new_align) {
                     (Some(a), Some(b)) if a != b => {
-                        return Err(SymbolTableError::InvalidRedefinition {
-                            name,
-                            existing: existing_ref,
-                        });
+                        return Err(SymbolTableError::InvalidRedefinition { name, existing: sym });
                     }
                     (None, Some(b)) => {
                         // Inherit alignment from new declaration
@@ -528,21 +502,15 @@ impl SymbolTable {
             match (existing.def_state, new_entry.def_state) {
                 (DefinitionState::Defined, DefinitionState::Defined) => {
                     // Multiple actual definitions - error
-                    debug!("Multiple definitions of '{}'", name);
-                    return Err(SymbolTableError::InvalidRedefinition {
-                        name,
-                        existing: existing_ref,
-                    });
+                    return Err(SymbolTableError::InvalidRedefinition { name, existing: sym });
                 }
 
                 (DefinitionState::Defined, _) => {
                     // Already defined, ignore new declaration/tentative definition
-                    debug!("Ignoring redundant declaration for already-defined '{}'", name);
                 }
 
                 (_, DefinitionState::Defined) => {
                     // Upgrade to defined
-                    debug!("Upgrading to defined for '{}'", name);
                     existing.def_state = DefinitionState::Defined;
                     if let SymbolKind::Variable { initializer, .. } = &mut new_entry.kind
                         && let SymbolKind::Variable {
@@ -558,23 +526,17 @@ impl SymbolTable {
                 | (DefinitionState::Tentative, DefinitionState::DeclaredOnly)
                 | (DefinitionState::DeclaredOnly, DefinitionState::DeclaredOnly) => {
                     // No change to def_state
-                    debug!("Merging similar or weaker definition for '{}'", name);
                 }
 
                 (DefinitionState::DeclaredOnly, DefinitionState::Tentative) => {
                     // Upgrade to tentative
-                    debug!("Upgrading extern declaration to tentative for '{}'", name);
                     existing.def_state = DefinitionState::Tentative;
                 }
             }
 
-            Ok(existing_ref)
+            Ok(sym)
         } else {
             // Symbol doesn't exist, add it
-            debug!(
-                "Adding new global symbol '{}' with def_state {:?}",
-                name, new_entry.def_state
-            );
             Ok(self.add_symbol(name, new_entry))
         }
     }

@@ -39,12 +39,12 @@ struct DeclaratorContext {
 /// Recursively apply parsed declarator to base type
 fn apply_parsed_declarator(
     current_type: QualType,
-    declarator_ref: ParsedDeclRef,
+    declarator: ParsedDeclRef,
     ctx: &mut LowerCtx,
     span: SourceSpan,
     decl_ctx: DeclaratorContext,
 ) -> QualType {
-    let declarator_node = ctx.parsed_ast.parsed_types.get_decl(declarator_ref);
+    let declarator_node = ctx.parsed_ast.parsed_types.get_decl(declarator);
 
     match declarator_node {
         ParsedDeclaratorNode::Identifier => current_type,
@@ -94,10 +94,10 @@ fn apply_parsed_declarator(
             }
 
             let array_size = convert_parsed_array_size(&size, ctx);
-            let array_type_ref = ctx.registry.array_of(current_type.ty(), array_size);
+            let array_type = ctx.registry.array_of(current_type.ty(), array_size);
             let qualified_array = ctx
                 .registry
-                .merge_qualifiers(QualType::unqualified(array_type_ref), current_type.qualifiers());
+                .merge_qualifiers(QualType::unqualified(array_type), current_type.qualifiers());
             apply_parsed_declarator(qualified_array, inner, ctx, span, decl_ctx)
         }
         ParsedDeclaratorNode::Function { params, flags, inner } => {
@@ -123,19 +123,19 @@ fn apply_parsed_declarator(
             }
 
             // Apply Function modifier to the current type
-            let function_type_ref = ctx.registry.function_type(
+            let function_type = ctx.registry.function_type(
                 current_type.ty(),
                 processed_params,
                 flags.is_variadic,
                 false, // `_Noreturn` is a specifier, not part of declarator
             );
-            apply_parsed_declarator(QualType::unqualified(function_type_ref), inner, ctx, span, decl_ctx)
+            apply_parsed_declarator(QualType::unqualified(function_type), inner, ctx, span, decl_ctx)
         }
     }
 }
 
-fn extract_array_param_qualifiers_from_ref(decl_ref: ParsedDeclRef, ctx: &LowerCtx) -> TypeQualifiers {
-    let decl = ctx.parsed_ast.parsed_types.get_decl(decl_ref);
+fn extract_array_param_qualifiers_from_ref(decl: ParsedDeclRef, ctx: &LowerCtx) -> TypeQualifiers {
+    let decl = ctx.parsed_ast.parsed_types.get_decl(decl);
     match decl {
         ParsedDeclaratorNode::Identifier => TypeQualifiers::empty(),
         ParsedDeclaratorNode::Pointer { .. } => TypeQualifiers::empty(),
@@ -188,11 +188,11 @@ fn convert_parsed_array_size(size: &ParsedArraySize, ctx: &mut LowerCtx) -> Arra
 
 /// Helper function to resolve array size logic
 fn resolve_array_size(size: Option<ParsedNodeRef>, ctx: &mut LowerCtx) -> ArraySizeType {
-    if let Some(parsed_ref) = size {
-        let expr_ref = ctx.visit_expression(parsed_ref);
-        if let Some(val) = const_eval::eval_const_expr(&ctx.const_ctx(), expr_ref) {
+    if let Some(node) = size {
+        let expr = ctx.visit_expression(node);
+        if let Some(val) = const_eval::eval_const_expr(&ctx.const_ctx(), expr) {
             if val < 0 {
-                ctx.report_error(ctx.ast.get_span(expr_ref), SemanticErrorKind::InvalidArraySize);
+                ctx.report_error(ctx.ast.get_span(expr), SemanticErrorKind::InvalidArraySize);
                 return ArraySizeType::Incomplete;
             }
             return ArraySizeType::Constant(val as usize);
@@ -201,7 +201,7 @@ fn resolve_array_size(size: Option<ParsedNodeRef>, ctx: &mut LowerCtx) -> ArrayS
             // Or maybe we should return Variable(expr_ref) and let ensure_layout fail?
             // But verify what Variable does.
             // ensure_layout returns "incomplete/VLA array layout" error.
-            return ArraySizeType::Variable(expr_ref);
+            return ArraySizeType::Variable(expr);
         }
     }
     ArraySizeType::Incomplete
@@ -359,8 +359,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
                 }
             }
-            ParsedAlignmentSpecifier::Expr(expr_ref) => {
-                let lowered_expr = self.visit_expression(*expr_ref);
+            ParsedAlignmentSpecifier::Expr(expr) => {
+                let lowered_expr = self.visit_expression(*expr);
                 let const_ctx = self.const_ctx();
                 if let Some(val) = const_eval::eval_const_expr(&const_ctx, lowered_expr) {
                     if val > 0 && (val as u64).is_power_of_two() {
@@ -468,7 +468,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
     ) -> Result<QualType, SemanticError> {
         let is_definition = definition.is_some();
-        let type_ref = resolve_record_tag(self, tag, is_union, is_definition, span)?;
+        let ty = resolve_record_tag(self, tag, is_union, is_definition, span)?;
 
         if let Some(def) = definition {
             let members = def
@@ -476,10 +476,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 .as_ref()
                 .map(|decls| visit_struct_members(decls, self, span))
                 .unwrap_or_default();
-            complete_record_symbol(self, tag, type_ref, members, span)?;
+            complete_record_symbol(self, tag, ty, members, span)?;
         }
 
-        Ok(QualType::unqualified(type_ref))
+        Ok(QualType::unqualified(ty))
     }
 
     fn resolve_enum_specifier(
@@ -489,7 +489,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
     ) -> Result<QualType, SemanticError> {
         let is_definition = enumerators.is_some();
-        let type_ref = resolve_enum_tag(self, tag, is_definition, span)?;
+        let ty = resolve_enum_tag(self, tag, is_definition, span)?;
 
         if let Some(enums) = enumerators {
             let mut next_value = 0i64;
@@ -497,18 +497,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             for &enum_ref in enums {
                 let node = self.parsed_ast.get_node(enum_ref);
-                let ParsedNodeKind::EnumConstant(name, value_expr_ref) = &node.kind else {
+                let ParsedNodeKind::EnumConstant(name, value_expr) = &node.kind else {
                     unreachable!()
                 };
 
-                let (value, init_expr) = value_expr_ref
-                    .map(|v_ref| {
-                        let expr_ref = self.visit_expression(v_ref);
-                        let val = const_eval::eval_const_expr(&self.const_ctx(), expr_ref).unwrap_or_else(|| {
+                let (value, init_expr) = value_expr
+                    .map(|v| {
+                        let expr = self.visit_expression(v);
+                        let val = const_eval::eval_const_expr(&self.const_ctx(), expr).unwrap_or_else(|| {
                             self.report_error(node.span, SemanticErrorKind::NonConstantInitializer);
                             0
                         });
-                        (val, Some(expr_ref))
+                        (val, Some(expr))
                     })
                     .unwrap_or((next_value, None));
 
@@ -521,9 +521,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 next_value = value.wrapping_add(1);
 
-                if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) = self
-                    .symbol_table
-                    .define_enum_constant(*name, value, type_ref, node.span)
+                if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
+                    self.symbol_table.define_enum_constant(*name, value, ty, node.span)
                 {
                     let first_def = self.symbol_table.get_symbol(existing).def_span;
                     self.report_error(node.span, SemanticErrorKind::Redefinition { name: *name, first_def });
@@ -537,9 +536,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 });
             }
 
-            complete_enum_symbol(self, tag, type_ref, enumerators_list, span)?;
+            complete_enum_symbol(self, tag, ty, enumerators_list, span)?;
         }
-        Ok(QualType::unqualified(type_ref))
+        Ok(QualType::unqualified(ty))
     }
 
     fn resolve_typedef_name(&mut self, name: NameId, span: SourceSpan) -> Result<QualType, SemanticError> {
@@ -577,8 +576,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn count_semantic_nodes(&self, node_ref: ParsedNodeRef) -> usize {
-        let node = self.parsed_ast.get_node(node_ref);
+    fn count_semantic_nodes(&self, node: ParsedNodeRef) -> usize {
+        let node = self.parsed_ast.get_node(node);
         match &node.kind {
             ParsedNodeKind::Declaration(decl) => {
                 if decl.init_declarators.is_empty() {
@@ -625,7 +624,7 @@ fn convert_parsed_base_type_to_qual_type(
         ParsedBaseTypeNode::Builtin(ts) => resolve_type_specifier(ts, ctx, span),
         ParsedBaseTypeNode::Record { tag, members, is_union } => {
             let is_definition = members.is_some();
-            let type_ref = resolve_record_tag(ctx, *tag, *is_union, is_definition, span)?;
+            let ty = resolve_record_tag(ctx, *tag, *is_union, is_definition, span)?;
 
             if let Some(members_range) = members {
                 let parsed_members = ctx.parsed_ast.parsed_types.get_struct_members(*members_range).to_vec();
@@ -642,13 +641,13 @@ fn convert_parsed_base_type_to_qual_type(
                     })
                     .collect::<Result<Vec<_>, SemanticError>>()?;
 
-                complete_record_symbol(ctx, *tag, type_ref, struct_members, span)?;
+                complete_record_symbol(ctx, *tag, ty, struct_members, span)?;
             }
-            Ok(QualType::unqualified(type_ref))
+            Ok(QualType::unqualified(ty))
         }
         ParsedBaseTypeNode::Enum { tag, enumerators } => {
             let is_definition = enumerators.is_some();
-            let type_ref = resolve_enum_tag(ctx, *tag, is_definition, span)?;
+            let ty = resolve_enum_tag(ctx, *tag, is_definition, span)?;
 
             if let Some(enum_range) = enumerators {
                 let parsed_enums = ctx.parsed_ast.parsed_types.get_enum_constants(*enum_range).to_vec();
@@ -664,7 +663,7 @@ fn convert_parsed_base_type_to_qual_type(
                             );
                         }
                         next_value = value.wrapping_add(1);
-                        let _ = ctx.symbol_table.define_enum_constant(m.name, value, type_ref, m.span);
+                        let _ = ctx.symbol_table.define_enum_constant(m.name, value, ty, m.span);
                         Ok(EnumConstant {
                             name: m.name,
                             value,
@@ -674,9 +673,9 @@ fn convert_parsed_base_type_to_qual_type(
                     })
                     .collect::<Result<Vec<_>, SemanticError>>()?;
 
-                complete_enum_symbol(ctx, *tag, type_ref, enumerators_list, span)?;
+                complete_enum_symbol(ctx, *tag, ty, enumerators_list, span)?;
             }
-            Ok(QualType::unqualified(type_ref))
+            Ok(QualType::unqualified(ty))
         }
         ParsedBaseTypeNode::Typedef(name) => {
             match ctx
@@ -736,10 +735,10 @@ fn resolve_record_tag(
 
     let existing = ctx.symbol_table.lookup_tag(tag_name);
 
-    if let Some((entry_ref, scope_id)) = existing
+    if let Some((entry, scope_id)) = existing
         && (!is_definition || scope_id == ctx.symbol_table.current_scope())
     {
-        let entry = ctx.symbol_table.get_symbol(entry_ref);
+        let entry = ctx.symbol_table.get_symbol(entry);
         let type_info = entry.type_info;
         let is_completed = entry.is_completed;
         let def_span = entry.def_span;
@@ -774,13 +773,13 @@ fn resolve_enum_tag(
 
     let existing = ctx.symbol_table.lookup_tag(tag_name);
 
-    if let Some((entry_ref, scope_id)) = existing
+    if let Some((sym, scope_id)) = existing
         && (!is_definition || scope_id == ctx.symbol_table.current_scope())
     {
-        let entry = ctx.symbol_table.get_symbol(entry_ref);
-        let type_info = entry.type_info;
-        let is_completed = entry.is_completed;
-        let def_span = entry.def_span;
+        let symbol = ctx.symbol_table.get_symbol(sym);
+        let type_info = symbol.type_info;
+        let is_completed = symbol.is_completed;
+        let def_span = symbol.def_span;
 
         if is_definition && is_completed {
             ctx.report_error(
@@ -1519,16 +1518,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
         storage: Option<StorageClass>,
     ) -> QualType {
-        let Some((existing_ref, existing_scope)) = self.symbol_table.lookup_symbol(name) else {
+        let Some((sym, existing_scope)) = self.symbol_table.lookup_symbol(name) else {
             return new_ty;
         };
 
         let current_scope = self.symbol_table.current_scope();
-        let existing = self.symbol_table.get_symbol(existing_ref);
-        let existing_type_info = existing.type_info;
-        let existing_def_span = existing.def_span;
-        let existing_has_linkage = existing.has_linkage();
-        let existing_storage = match &existing.kind {
+        let symbol = self.symbol_table.get_symbol(sym);
+        let symbol_type_info = symbol.type_info;
+        let symbol_def_span = symbol.def_span;
+        let symbol_has_linkage = symbol.has_linkage();
+        let symbol_storage = match &symbol.kind {
             SymbolKind::Variable { storage, .. } => Some(*storage),
             SymbolKind::Function { storage } => Some(*storage),
             _ => None,
@@ -1537,14 +1536,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let is_global = current_scope == ScopeId::GLOBAL;
         let is_func = new_ty.is_function();
         let new_has_linkage = is_global || storage == Some(StorageClass::Extern) || is_func;
-        let is_conflict = (existing_scope == current_scope) || (new_has_linkage && existing_has_linkage);
+        let is_conflict = (existing_scope == current_scope) || (new_has_linkage && symbol_has_linkage);
 
         if !is_conflict {
             return new_ty;
         }
 
         // Check for linkage conflict (C11 6.2.2)
-        if let Some(existing_s) = existing_storage {
+        if let Some(existing_s) = symbol_storage {
             let existing_is_static = existing_s == Some(StorageClass::Static);
             let new_is_static = storage == Some(StorageClass::Static);
 
@@ -1555,7 +1554,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     span,
                     SemanticErrorKind::ConflictingLinkage {
                         name,
-                        first_def: existing_def_span,
+                        first_def: symbol_def_span,
                     },
                 );
             }
@@ -1563,24 +1562,24 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         // C11 6.7p3: If an identifier has no linkage, there shall be no more than one declaration
         // in the same scope and name space.
-        if existing_scope == current_scope && (!existing_has_linkage || !new_has_linkage) {
+        if existing_scope == current_scope && (!symbol_has_linkage || !new_has_linkage) {
             self.report_error(
                 span,
                 SemanticErrorKind::Redefinition {
                     name,
-                    first_def: existing_def_span,
+                    first_def: symbol_def_span,
                 },
             );
             return new_ty;
         }
 
-        let composite = self.registry.composite_type(existing_type_info, new_ty);
+        let composite = self.registry.composite_type(symbol_type_info, new_ty);
         if composite.is_none() {
             self.report_error(
                 span,
                 SemanticErrorKind::ConflictingTypes {
                     name,
-                    first_def: existing_def_span,
+                    first_def: symbol_def_span,
                 },
             );
             return new_ty;
@@ -1588,11 +1587,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let composite = composite.unwrap();
 
         // Update the existing symbol's type with the composite type
-        let existing_mut = self.symbol_table.get_symbol_mut(existing_ref);
+        let existing_mut = self.symbol_table.get_symbol_mut(sym);
         existing_mut.type_info = composite;
 
         if new_ty.is_function() {
-            self.check_function_redeclaration(name, new_ty, span, existing_def_span, existing_type_info);
+            self.check_function_redeclaration(name, new_ty, span, symbol_def_span, symbol_type_info);
         }
 
         composite
@@ -1643,8 +1642,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         final_ty = self.check_redeclaration_compatibility(func_name, final_ty, span, spec_info.storage);
 
         // Check for _Noreturn on existing declarations
-        let existing_symbol_is_noreturn = if let Some((existing_ref, _)) = self.symbol_table.lookup_symbol(func_name) {
-            let existing = self.symbol_table.get_symbol(existing_ref);
+        let existing_symbol_is_noreturn = if let Some((sym, _)) = self.symbol_table.lookup_symbol(func_name) {
+            let existing = self.symbol_table.get_symbol(sym);
             if let TypeKind::Function { is_noreturn, .. } = &self.registry.get(existing.type_info.ty()).kind {
                 *is_noreturn
             } else {
@@ -1656,9 +1655,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let final_is_noreturn = spec_info.is_noreturn || existing_symbol_is_noreturn;
 
-        if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) = self
-            .symbol_table
-            .define_function(func_name, final_ty.ty(), spec_info.storage, true, span)
+        if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
+            self.symbol_table
+                .define_function(func_name, final_ty.ty(), spec_info.storage, true, span)
         {
             let entry = self.symbol_table.get_symbol(existing);
             if entry.def_state == DefinitionState::Defined {
@@ -1681,7 +1680,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let name_len = func_name_str.len();
 
             // Create string literal for initializer
-            let func_name_id = crate::ast::StringId::new(&func_name_str);
+            let func_name_id = NameId::new(&func_name_str);
             let init_literal = literal::Literal::String(func_name_id);
             let init_node = self.push_dummy(span);
             self.ast.kinds[init_node.index()] = NodeKind::Literal(init_literal);
@@ -1695,7 +1694,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let _ = self.registry.ensure_layout(array_type);
 
             // Define __func__
-            let func_id = crate::ast::StringId::new("__func__");
+            let func_id = NameId::new("__func__");
             let storage = Some(StorageClass::Static);
 
             // We define it in the current scope (function body).
@@ -1706,7 +1705,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 .define_variable(func_id, qt, storage, Some(init_node), None, span);
 
             // Also define __PRETTY_FUNCTION__ (GCC extension)
-            let pretty_func_id = crate::ast::StringId::new("__PRETTY_FUNCTION__");
+            let pretty_func_id = NameId::new("__PRETTY_FUNCTION__");
             let _ = self
                 .symbol_table
                 .define_variable(pretty_func_id, qt, storage, Some(init_node), None, span);
@@ -1848,7 +1847,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     let member_len = enumerators.len() as u16;
 
                     for (i, e) in enumerators.iter().enumerate() {
-                        let member_ref = self.ast.push_node(
+                        let member = self.ast.push_node(
                             NodeKind::EnumMember(EnumMemberData {
                                 name: e.name,
                                 value: e.value,
@@ -1857,7 +1856,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             e.span,
                         );
                         if i == 0 {
-                            member_start = member_ref;
+                            member_start = member;
                         }
                     }
 
@@ -2562,14 +2561,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn resolve_ident(&mut self, name: NameId, span: SourceSpan) -> SymbolRef {
-        if let Some((sym_ref, _)) = self.symbol_table.lookup_symbol(name) {
-            sym_ref
+        if let Some((sym, _)) = self.symbol_table.lookup_symbol(name) {
+            sym
         } else {
             let name_str = name.as_str();
             if name_str.starts_with("__builtin_")
-                && let Some(sym_ref) = self.handle_builtin_implicit_decl(name, name_str, span)
+                && let Some(sym) = self.handle_builtin_implicit_decl(name, name_str, span)
             {
-                return sym_ref;
+                return sym;
             }
             self.report_error(span, SemanticErrorKind::UndeclaredIdentifier { name });
             SymbolRef::new(1).expect("SymbolRef 1 creation failed")
@@ -2628,8 +2627,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn resolve_label(&mut self, name: NameId, span: SourceSpan) -> SymbolRef {
-        if let Some((sym_ref, _)) = self.symbol_table.lookup_label(name) {
-            sym_ref
+        if let Some((sym, _)) = self.symbol_table.lookup_label(name) {
+            sym
         } else {
             // Forward references are okay because of pre-scan
             // But if NOT even in pre-scan, then it's undeclared
@@ -2938,7 +2937,7 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                     });
                 }
             }
-            _ => unreachable!("Unexpected node kind in struct member list"),
+            _ => unreachable!(),
         }
     }
     struct_members

@@ -447,10 +447,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 if lhs_base.ty() == self.registry.type_void || rhs_base.ty() == self.registry.type_void {
                     true
                 } else {
-                    self.registry.is_compatible(
-                        QualType::unqualified(lhs_base.ty()),
-                        QualType::unqualified(rhs_base.ty()),
-                    )
+                    self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all())
                 };
 
             if compatible_ignoring_quals {
@@ -2226,10 +2223,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let desired_ty = arg_tys[2];
 
                 if let Some(expected_pointee) = self.registry.get_pointee(expected_ptr_ty.ty()) {
-                    if !self
-                        .registry
-                        .is_compatible(QualType::unqualified(pointee.ty()), expected_pointee)
-                    {
+                    if !self.registry.is_compatible(pointee.strip_all(), expected_pointee) {
                         self.report_error(
                             args[1],
                             SemanticErrorKind::InvalidAtomicArgument { ty: expected_pointee },
@@ -2607,14 +2601,13 @@ impl<'a> SemanticAnalyzer<'a> {
 
         let mut current_ty = ty;
         let mut offset = 0i64;
+        let res_ty = QualType::unqualified(self.registry.type_long_unsigned);
 
         if !self.compute_offsetof_recursive(expr, &mut current_ty, &mut offset) {
-            let res_ty = QualType::unqualified(self.registry.type_long_unsigned);
             return Some(res_ty);
         }
 
         self.semantic_info.offsetof_results.insert(node.index(), offset);
-        let res_ty = QualType::unqualified(self.registry.type_long_unsigned);
         Some(res_ty)
     }
 
@@ -2622,8 +2615,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let kind = *self.ast.get_kind(node);
         match kind {
             NodeKind::Dummy => true,
-            NodeKind::MemberAccess(base, member_name, is_arrow) => {
-                debug_assert!(!is_arrow, "offsetof does not support arrow operator");
+            NodeKind::MemberAccess(base, member_name, _is_arrow) => {
                 self.compute_offsetof_recursive(base, current_ty, offset)
                     && self.apply_offsetof_member(node, member_name, current_ty, offset)
             }

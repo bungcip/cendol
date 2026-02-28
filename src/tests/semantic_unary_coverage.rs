@@ -42,3 +42,67 @@ fn test_unary_minus_on_struct() {
         "Invalid operand for unary operation: have 'struct S'",
     );
 }
+
+#[test]
+fn test_invalid_inc_dec_on_arrays() {
+    run_fail_with_message(
+        r#"
+        void test() {
+            int arr[5];
+            ++arr;
+        }
+        "#,
+        "Expression is not assignable (not an lvalue)",
+    );
+
+    run_fail_with_message(
+        r#"
+        void test() {
+            int arr[5];
+            arr++;
+        }
+        "#,
+        "Expression is not assignable (not an lvalue)",
+    );
+
+    run_fail_with_message(
+        r#"
+        void test() {
+            ++"crash";
+        }
+        "#,
+        "Expression is not assignable (not an lvalue)",
+    );
+
+    run_fail_with_message(
+        r#"
+        void test() {
+            "crash"++;
+        }
+        "#,
+        "Expression is not assignable (not an lvalue)",
+    );
+}
+
+#[test]
+fn test_invalid_inc_dec_on_functions() {
+    run_fail_with_message(
+        r#"
+        void foo(void) {}
+        void test() {
+            ++foo;
+        }
+        "#,
+        "Expression is not assignable (not an lvalue)",
+    );
+
+    run_fail_with_message(
+        r#"
+        void foo(void) {}
+        void test() {
+            foo++;
+        }
+        "#,
+        "Expression is not assignable (not an lvalue)",
+    );
+}

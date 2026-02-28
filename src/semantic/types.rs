@@ -691,6 +691,8 @@ pub enum TypeKind {
         enumerators: Arc<[EnumConstant]>,
         is_complete: bool,
     },
+    TypeofExpr(crate::ast::NodeRef),
+    Alias(TypeRef),
     #[default]
     Error,
 }
@@ -705,7 +707,7 @@ impl TypeKind {
 
     pub(crate) fn to_class(&self) -> TypeClass {
         match self {
-            TypeKind::Builtin(_) | TypeKind::Error => TypeClass::Builtin,
+            TypeKind::Builtin(_) | TypeKind::Error | TypeKind::TypeofExpr(_) | TypeKind::Alias(_) => TypeClass::Builtin,
             TypeKind::Complex { .. } => TypeClass::Complex,
             TypeKind::Pointer { .. } => TypeClass::Pointer,
             TypeKind::Array { .. } => TypeClass::Array,
@@ -759,6 +761,8 @@ impl Display for TypeKind {
                     write!(f, "enum (anonymous)")
                 }
             }
+            TypeKind::TypeofExpr(_) => write!(f, "typeof(<expr>)"),
+            TypeKind::Alias(inner) => write!(f, "alias({:?})", inner),
             TypeKind::Error => write!(f, "<error>"),
         }
     }

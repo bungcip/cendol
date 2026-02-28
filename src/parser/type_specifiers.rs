@@ -57,6 +57,20 @@ pub(crate) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
                 _ => Ok(PTS::Long),
             }
         }
+        TK::Typeof => {
+            parser.advance();
+            parser.expect(TK::LeftParen)?;
+            let is_type = parser.is_type_name_start();
+            let ts = if is_type {
+                let ty = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+                PTS::Typeof(ty)
+            } else {
+                let expr = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN)?;
+                PTS::TypeofExpr(expr)
+            };
+            parser.expect(TK::RightParen)?;
+            Ok(ts)
+        }
         TK::Struct | TK::Union => {
             parser.advance();
             let is_union = token.kind == TK::Union;

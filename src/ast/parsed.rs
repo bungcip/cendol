@@ -228,6 +228,8 @@ pub enum ParsedTypeSpecifier {
     ),
     TypedefName(NameId),
     VaList,
+    Typeof(ParsedType),
+    TypeofExpr(ParsedNodeRef),
 }
 
 // Alignment specifiers
@@ -329,6 +331,10 @@ impl ParsedTypeSpecifier {
                         f(m);
                     }
                 }
+            }
+            ParsedTypeSpecifier::Typeof(_) => {}
+            ParsedTypeSpecifier::TypeofExpr(expr) => {
+                f(*expr);
             }
             _ => {}
         }

@@ -98,7 +98,8 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             | TokenKind::Struct
             | TokenKind::Union
             | TokenKind::Enum
-            | TokenKind::BuiltinVaList => {
+            | TokenKind::BuiltinVaList
+            | TokenKind::Typeof => {
                 specifiers.push(ParsedDeclSpecifier::TypeSpecifier(
                     super::type_specifiers::parse_type_specifier(parser)?,
                 ));

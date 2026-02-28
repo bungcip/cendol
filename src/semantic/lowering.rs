@@ -697,6 +697,16 @@ fn convert_parsed_base_type_to_qual_type(
                 None => Ok(QualType::unqualified(ctx.registry.declare_record(Some(*name), false))),
             }
         }
+        ParsedBaseTypeNode::Typeof(ty) => convert_to_qual_type(ctx, *ty, span, false),
+        ParsedBaseTypeNode::TypeofExpr(expr) => {
+            let expr_node = ctx.visit_expression(*expr);
+            let tr = ctx
+                .registry
+                .alloc(crate::semantic::Type::new(crate::semantic::TypeKind::TypeofExpr(
+                    expr_node,
+                )));
+            Ok(QualType::unqualified(tr))
+        }
     }
 }
 
@@ -985,6 +995,16 @@ fn resolve_type_specifier(
         Enum(t, e) => ctx.resolve_enum_specifier(*t, e, span),
         TypedefName(n) => ctx.resolve_typedef_name(*n, span),
         VaList => Ok(QualType::unqualified(ctx.registry.type_valist)),
+        ParsedTypeSpecifier::Typeof(ty) => convert_to_qual_type(ctx, *ty, span, false),
+        ParsedTypeSpecifier::TypeofExpr(expr) => {
+            let expr_node = ctx.visit_expression(*expr);
+            let tr = ctx
+                .registry
+                .alloc(crate::semantic::Type::new(crate::semantic::TypeKind::TypeofExpr(
+                    expr_node,
+                )));
+            Ok(QualType::unqualified(tr))
+        }
     }
 }
 

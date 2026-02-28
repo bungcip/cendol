@@ -7,11 +7,8 @@ use super::Parser;
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::parser::TokenKind;
-use crate::parser::declaration_core::parse_declaration_specifiers;
-use crate::parser::declarator::parse_declarator;
 use crate::parser::utils::expr_patterns::parse_parenthesized_expr;
 use crate::source_manager::SourceLoc;
-use thin_vec::thin_vec;
 
 pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let token = parser.current_token()?;
@@ -134,30 +131,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError>
     let init = if parser.accept(TokenKind::Semicolon).is_some() {
         None
     } else if parser.starts_declaration() {
-        let specifiers = parse_declaration_specifiers(parser)?;
-        let start_span = parser.current_token_span_or_empty();
-        let declarator = parse_declarator(parser)?;
-        let initializer = if parser.accept(TokenKind::Assign).is_some() {
-            Some(super::declaration_core::parse_initializer(parser)?)
-        } else {
-            None
-        };
-
-        let span = start_span.merge(parser.last_token_span().unwrap_or(start_span));
-        let decl = ParsedDeclarationData {
-            specifiers,
-            init_declarators: thin_vec![ParsedInitDeclarator {
-                declarator,
-                initializer,
-                span
-            }],
-        };
-        let node = parser.push_node(
-            ParsedNodeKind::Declaration(decl),
-            start.merge(parser.current_token_span()?),
-        );
-        parser.expect(TokenKind::Semicolon)?;
-        Some(node)
+        Some(super::declarations::parse_declaration(parser)?)
     } else {
         let expr = parser.parse_expr_min()?;
         parser.expect(TokenKind::Semicolon)?;

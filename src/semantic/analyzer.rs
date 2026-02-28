@@ -630,7 +630,7 @@ impl<'a> SemanticAnalyzer<'a> {
                         Some(operand_ty)
                     } else {
                         // __imag__ on real type returns zero of that type
-                        Some(self.registry.strip_all(operand_ty))
+                        Some(operand_ty.strip_all())
                     }
                 } else {
                     self.report_error(node, SemanticErrorKind::InvalidUnaryOperand { ty: operand_ty });
@@ -648,7 +648,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     let promoted = self.apply_and_record_integer_promotion(expr, operand_ty);
 
                     // Strip all qualifiers for unary plus/minus operations
-                    let stripped = self.registry.strip_all(promoted);
+                    let stripped = promoted.strip_all();
                     if stripped.qualifiers() != promoted.qualifiers() {
                         self.push_conversion(
                             expr,
@@ -779,10 +779,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
                     if lhs_base.ty() == self.registry.type_void || rhs_base.ty() == self.registry.type_void {
                         QualType::unqualified(self.registry.type_void_ptr)
-                    } else if self
-                        .registry
-                        .is_compatible(self.registry.strip_all(lhs_base), self.registry.strip_all(rhs_base))
-                    {
+                    } else if self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all()) {
                         lhs_promoted
                     } else {
                         self.report_warning(
@@ -2071,20 +2068,14 @@ impl<'a> SemanticAnalyzer<'a> {
                             .registry
                             .pointer_to(QualType::new(self.registry.type_void, res_quals));
                         Some(QualType::unqualified(void_ptr))
-                    } else if self
-                        .registry
-                        .is_compatible(self.registry.strip_all(p_t), self.registry.strip_all(p_e))
-                    {
+                    } else if self.registry.is_compatible(p_t.strip_all(), p_e.strip_all()) {
                         // Differently qualified versions of compatible types
                         // C11 6.5.15p6: the result has the composite type, which itself is a pointer
                         // to a qualified version of the type pointed to by either operand.
                         // The qualifiers of the result pointed-to type are the union of the
                         // qualifiers of the pointed-to types of both operands.
                         let res_p_quals = p_t.qualifiers() | p_e.qualifiers();
-                        let p_composite = self
-                            .registry
-                            .composite_type(self.registry.strip_all(p_t), self.registry.strip_all(p_e))
-                            .unwrap();
+                        let p_composite = self.registry.composite_type(p_t.strip_all(), p_e.strip_all()).unwrap();
                         let res_p_ty = QualType::new(p_composite.ty(), res_p_quals);
                         Some(QualType::unqualified(self.registry.pointer_to(res_p_ty)))
                     } else {
@@ -2483,7 +2474,7 @@ impl<'a> SemanticAnalyzer<'a> {
         };
 
         // After decay, top-level qualifiers are removed for the compatibility check.
-        let unqualified_ctrl = self.registry.strip_all(decayed_ctrl);
+        let unqualified_ctrl = decayed_ctrl.strip_all();
 
         // C11 6.5.1.1p2: The controlling expression shall be an expression of a complete object type,
         // or the void type.

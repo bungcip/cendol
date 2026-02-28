@@ -961,10 +961,6 @@ impl TypeRegistry {
         }
     }
 
-    pub(crate) fn strip_all(&self, qt: QualType) -> QualType {
-        QualType::unqualified(qt.ty())
-    }
-
     pub(crate) fn merge_qualifiers(&self, base: QualType, add: TypeQualifiers) -> QualType {
         QualType::new(base.ty(), base.qualifiers() | add)
     }

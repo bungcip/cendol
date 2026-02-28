@@ -227,8 +227,8 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
             eval_offsetof(ctx, *ty, *expr)
         }
         NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
-            let t1_unqual = ctx.registry.strip_all(*t1);
-            let t2_unqual = ctx.registry.strip_all(*t2);
+            let t1_unqual = t1.strip_all();
+            let t2_unqual = t2.strip_all();
             Some(ctx.registry.is_compatible(t1_unqual, t2_unqual) as i64)
         }
         NodeKind::BuiltinPopcount(exp) => {

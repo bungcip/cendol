@@ -25,6 +25,7 @@ pub mod pp_macros;
 
 pub mod semantic_arrays;
 pub mod semantic_builtin_choose_expr;
+pub mod semantic_builtin_constant_p;
 pub mod semantic_builtin_types_compatible;
 pub mod semantic_builtins;
 pub mod semantic_builtins_bitwise;
@@ -68,6 +69,7 @@ pub mod test_utils;
 pub mod ast_dumper_coverage;
 
 pub mod codegen_builtin_choose_expr;
+pub mod codegen_builtin_constant_p;
 pub mod codegen_builtins_bitwise;
 pub mod codegen_cast_init;
 pub mod codegen_func_ptr_global;

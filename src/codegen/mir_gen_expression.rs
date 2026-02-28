@@ -94,6 +94,11 @@ impl<'a> MirGen<'a> {
                     .expect("__builtin_types_compatible_p should be constant");
                 self.create_int_operand(val)
             }
+            NodeKind::BuiltinConstantP(..) => {
+                let val = eval_const_expr(&self.const_ctx(), expr_ref)
+                    .expect("__builtin_constant_p should evaluate to constant");
+                self.create_int_operand(val)
+            }
             NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(need_value, expr_ref),
             NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, need_value, expr_ref),
             NodeKind::GnuStatementExpression(stmt, result_expr) => {

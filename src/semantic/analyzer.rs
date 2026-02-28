@@ -2030,8 +2030,17 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
                 self.visit_builtin_choose_expr(*cond, *true_expr, *false_expr, node)
             }
+            NodeKind::BuiltinConstantP(expr) => {
+                self.visit_builtin_constant_p(*expr, node)
+            }
             _ => None,
         }
+    }
+
+    fn visit_builtin_constant_p(&mut self, expr: NodeRef, _node: NodeRef) -> Option<QualType> {
+        self.visit_node(expr);
+        // __builtin_constant_p always evaluates to an int
+        Some(QualType::unqualified(self.registry.type_int))
     }
 
     fn visit_builtin_choose_expr(

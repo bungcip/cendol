@@ -65,6 +65,7 @@ pub enum NodeKind {
     GenericSelection(GenericSelectionData),
     GenericAssociation(GenericAssociationData),
     BuiltinChooseExpr(NodeRef, NodeRef, NodeRef),
+    BuiltinConstantP(NodeRef),
 
     // --- Statements (Complex statements are separate structs) ---
     CompoundStatement(CompoundStmtData),
@@ -131,6 +132,7 @@ impl NodeKind {
             | NodeKind::BuiltinPopcount(..)
             | NodeKind::BuiltinClz(..)
             | NodeKind::BuiltinCtz(..)
+            | NodeKind::BuiltinConstantP(..)
             | NodeKind::Break
             | NodeKind::Continue
             | NodeKind::Goto(..)

@@ -175,6 +175,13 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
             }
             None
         }
+        NodeKind::BuiltinConstantP(expr) => {
+            if eval_const_expr(ctx, *expr).is_some() {
+                Some(1)
+            } else {
+                Some(0)
+            }
+        }
         NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
             let info = ctx.semantic_info.or(ctx.ast.semantic_info.as_ref());
             if let Some(info) = info

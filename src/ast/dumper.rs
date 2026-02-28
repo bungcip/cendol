@@ -165,6 +165,7 @@ impl AstDumper {
                 }
             }
             NodeKind::BuiltinChooseExpr(_, _, _) => {}
+            NodeKind::BuiltinConstantP(_) => {}
 
             // Literal nodes - don't contain TypeRefs
             NodeKind::Literal(_) | NodeKind::Ident(_, _) => {
@@ -349,6 +350,9 @@ impl AstDumper {
             }
             ParsedNodeKind::BuiltinChooseExpr(c, t, e) => {
                 writeln!(f, "BuiltinChooseExpr({}, {}, {})", c.get(), t.get(), e.get())
+            }
+            ParsedNodeKind::BuiltinConstantP(exp) => {
+                writeln!(f, "BuiltinConstantP({})", exp.get())
             }
 
             // Statements
@@ -560,6 +564,9 @@ impl AstDumper {
             }
             NodeKind::BuiltinChooseExpr(c, t, e) => {
                 writeln!(f, "BuiltinChooseExpr({}, {}, {})", c.get(), t.get(), e.get())
+            }
+            NodeKind::BuiltinConstantP(exp) => {
+                writeln!(f, "BuiltinConstantP({})", exp.get())
             }
             NodeKind::GnuStatementExpression(compound_stmt, result_expr) => {
                 writeln!(

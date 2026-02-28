@@ -97,6 +97,7 @@ pub enum ParsedNodeKind {
     CompoundLiteral(ParsedType, ParsedNodeRef),
     GenericSelection(ParsedNodeRef, Vec<ParsedGenericAssociation>),
     BuiltinChooseExpr(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
+    BuiltinConstantP(ParsedNodeRef),
 
     // --- Statements ---
     CompoundStatement(Vec<ParsedNodeRef>),
@@ -442,6 +443,7 @@ impl ParsedNodeKind {
             | ParsedNodeKind::BuiltinVaEnd(e)
             | ParsedNodeKind::BuiltinPopcount(e)
             | ParsedNodeKind::BuiltinClz(e)
+            | ParsedNodeKind::BuiltinConstantP(e)
             | ParsedNodeKind::BuiltinCtz(e)
             | ParsedNodeKind::SizeOfExpr(e)
             | ParsedNodeKind::CompoundLiteral(_, e)

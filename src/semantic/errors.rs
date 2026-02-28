@@ -285,6 +285,7 @@ pub enum SemanticErrorKind {
     ExpectedIntegerType {
         found: QualType,
     },
+    BuiltinChooseExprNotConstant,
     AddressOfArrayAlwaysTrue {
         name: NameId,
     },
@@ -503,6 +504,9 @@ impl SemanticErrorKind {
                     "type mismatch: expected integer type, found {}",
                     registry.display_qual_type(*found)
                 )
+            }
+            SemanticErrorKind::BuiltinChooseExprNotConstant => {
+                "condition in '__builtin_choose_expr' is not a constant expression".to_string()
             }
             SemanticErrorKind::ThreadLocalNotAllowed => "_Thread_local is not allowed here".to_string(),
             SemanticErrorKind::MultipleDefaultLabels => "multiple default labels in one switch".to_string(),

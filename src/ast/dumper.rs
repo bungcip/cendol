@@ -164,6 +164,7 @@ impl AstDumper {
                     type_refs.insert(qual_type.ty());
                 }
             }
+            NodeKind::BuiltinChooseExpr(_, _, _) => {}
 
             // Literal nodes - don't contain TypeRefs
             NodeKind::Literal(_) | NodeKind::Ident(_, _) => {
@@ -345,6 +346,9 @@ impl AstDumper {
             }
             ParsedNodeKind::GenericSelection(ctrl, assocs) => {
                 writeln!(f, "GenericSelection({}, {:?})", ctrl.get(), assocs)
+            }
+            ParsedNodeKind::BuiltinChooseExpr(c, t, e) => {
+                writeln!(f, "BuiltinChooseExpr({}, {}, {})", c.get(), t.get(), e.get())
             }
 
             // Statements
@@ -553,6 +557,9 @@ impl AstDumper {
                     ga.ty,
                     ga.result_expr.get()
                 )
+            }
+            NodeKind::BuiltinChooseExpr(c, t, e) => {
+                writeln!(f, "BuiltinChooseExpr({}, {}, {})", c.get(), t.get(), e.get())
             }
             NodeKind::GnuStatementExpression(compound_stmt, result_expr) => {
                 writeln!(

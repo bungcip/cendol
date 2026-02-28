@@ -64,6 +64,7 @@ pub enum NodeKind {
     CompoundLiteral(QualType, NodeRef),
     GenericSelection(GenericSelectionData),
     GenericAssociation(GenericAssociationData),
+    BuiltinChooseExpr(NodeRef, NodeRef, NodeRef),
 
     // --- Statements (Complex statements are separate structs) ---
     CompoundStatement(CompoundStmtData),
@@ -178,6 +179,12 @@ impl NodeKind {
                 for child in call.arg_start.range(call.arg_len) {
                     f(child);
                 }
+            }
+
+            NodeKind::BuiltinChooseExpr(c, t, e) => {
+                f(*c);
+                f(*t);
+                f(*e);
             }
 
             NodeKind::AtomicOp(_, args_start, args_len) => {

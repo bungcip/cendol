@@ -2446,6 +2446,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.ast.kinds[node.index()] = NodeKind::CompoundLiteral(ty, i);
                 smallvec![node]
             }
+            ParsedNodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
+                let node = self.get_or_push_slot(target_slots, span);
+                let c = self.visit_expression(*cond);
+                let t = self.visit_expression(*true_expr);
+                let e = self.visit_expression(*false_expr);
+                self.ast.kinds[node.index()] = NodeKind::BuiltinChooseExpr(c, t, e);
+                smallvec![node]
+            }
             ParsedNodeKind::GenericSelection(control, associations) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let c = self.visit_expression(*control);

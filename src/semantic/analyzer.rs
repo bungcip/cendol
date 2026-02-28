@@ -22,6 +22,7 @@ pub struct SemanticInfo {
     pub conversions: Vec<SmallVec<[Conversion; 1]>>,
     pub value_categories: Vec<ValueCategory>,
     pub generic_selections: HashMap<usize, NodeRef>, // Maps NodeIndex of GenericSelection to selected result_expr
+    pub choose_expressions: HashMap<usize, NodeRef>, // Maps NodeIndex of BuiltinChooseExpr to selected branch
     pub offsetof_results: HashMap<usize, i64>,       // Maps NodeIndex of BuiltinOffsetof to computed offset
 }
 
@@ -32,6 +33,7 @@ impl SemanticInfo {
             conversions: vec![SmallVec::new(); n],
             value_categories: vec![ValueCategory::RValue; n],
             generic_selections: HashMap::new(),
+            choose_expressions: HashMap::new(),
             offsetof_results: HashMap::new(),
         }
     }
@@ -97,6 +99,8 @@ pub(crate) fn visit_ast(
     };
     let root = ast.get_root();
     resolver.visit_node(root);
+    // Important: process deferred checks BEFORE returning so static asserts
+    // see the results of choose_expr and other semantic info.
     resolver.process_deferred_checks();
     semantic_info
 }
@@ -2023,8 +2027,39 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.type_int))
             }
             NodeKind::AtomicOp(op, args_start, args_len) => self.visit_atomic_op(*op, *args_start, *args_len),
+            NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
+                self.visit_builtin_choose_expr(*cond, *true_expr, *false_expr, node)
+            }
             _ => None,
         }
+    }
+
+    fn visit_builtin_choose_expr(
+        &mut self,
+        cond: NodeRef,
+        true_expr: NodeRef,
+        false_expr: NodeRef,
+        node: NodeRef,
+    ) -> Option<QualType> {
+        self.visit_node(cond);
+
+        let const_ctx = self.const_ctx();
+        let cond_val = eval_const_expr(&const_ctx, cond);
+
+        if cond_val.is_none() {
+            self.report_error(cond, SemanticErrorKind::BuiltinChooseExprNotConstant);
+        }
+
+        let selected = if cond_val.is_some_and(|v| v != 0) {
+            true_expr
+        } else {
+            false_expr
+        };
+
+        self.semantic_info.choose_expressions.insert(node.index(), selected);
+
+        // GCC behavior: only the selected branch is semantically analyzed
+        self.visit_node(selected)
     }
 
     fn visit_ternary_op(&mut self, cond: NodeRef, then: NodeRef, else_expr: NodeRef) -> Option<QualType> {

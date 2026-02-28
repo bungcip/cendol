@@ -268,6 +268,19 @@ impl SymbolTable {
         &mut self.entries[(index.get() - 1) as usize]
     }
 
+    /// helper method to create symbol
+    fn create_symbol(&mut self, name: NameId, kind: SymbolKind, ty: QualType, span: SourceSpan) -> Symbol {
+        Symbol {
+            name,
+            kind,
+            type_info: ty,
+            scope_id: self.current_scope_id,
+            def_span: span,
+            def_state: DefinitionState::Defined,
+            is_completed: true,
+        }
+    }
+
     /// Define a new variable in the current scope.
     /// Handles global variable merging and local variable insertion.
     pub(crate) fn define_variable(
@@ -280,8 +293,19 @@ impl SymbolTable {
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
         let is_global = self.current_scope_id == ScopeId::GLOBAL;
+        let mut symbol = self.create_symbol(
+            name,
+            SymbolKind::Variable {
+                is_global,
+                storage,
+                initializer,
+                alignment,
+            },
+            ty,
+            span,
+        );
 
-        let def_state = if initializer.is_some() {
+        symbol.def_state = if initializer.is_some() {
             DefinitionState::Defined
         } else if storage == Some(StorageClass::Extern) {
             DefinitionState::DeclaredOnly
@@ -289,25 +313,10 @@ impl SymbolTable {
             DefinitionState::Tentative
         };
 
-        let symbol_entry = Symbol {
-            name,
-            kind: SymbolKind::Variable {
-                is_global,
-                storage,
-                initializer,
-                alignment,
-            },
-            type_info: ty,
-            scope_id: self.current_scope_id,
-            def_span: span,
-            def_state,
-            is_completed: true,
-        };
-
         if is_global {
-            self.merge_global_symbol(name, symbol_entry)
+            self.merge_global_symbol(name, symbol)
         } else {
-            Ok(self.add_symbol(name, symbol_entry))
+            Ok(self.add_symbol(name, symbol))
         }
     }
 
@@ -321,27 +330,20 @@ impl SymbolTable {
         is_definition: bool,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
+
+        let mut symbol = self.create_symbol(name, SymbolKind::Function { storage }, QualType::unqualified(ty), span);
+
         // Function declarations are "DeclaredOnly" by default, or "Defined" if it's a function definition
-        let def_state = if is_definition {
+        symbol.def_state = if is_definition {
             DefinitionState::Defined
         } else {
             DefinitionState::DeclaredOnly
         };
 
-        let symbol_entry = Symbol {
-            name,
-            kind: SymbolKind::Function { storage },
-            type_info: QualType::unqualified(ty),
-            scope_id: self.current_scope_id,
-            def_span: span,
-            def_state,
-            is_completed: true,
-        };
-
         if self.current_scope_id == ScopeId::GLOBAL {
-            self.merge_global_symbol(name, symbol_entry)
+            self.merge_global_symbol(name, symbol)
         } else {
-            Ok(self.add_symbol(name, symbol_entry))
+            Ok(self.add_symbol(name, symbol))
         }
     }
 
@@ -352,22 +354,14 @@ impl SymbolTable {
         ty: QualType,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
-        let symbol_entry = Symbol {
-            name,
-            kind: SymbolKind::Typedef { aliased_type: ty },
-            type_info: ty,
-            scope_id: self.current_scope_id,
-            def_span: span,
-            def_state: DefinitionState::Defined,
-            is_completed: true,
-        };
+        let symbol = self.create_symbol(name, SymbolKind::Typedef { aliased_type: ty }, ty, span);
 
         // Check for redefinition in the SAME scope
         if let Some(existing) = self.fetch(name, self.current_scope_id, Namespace::Ordinary) {
             return Err(SymbolTableError::InvalidRedefinition { name, existing });
         }
 
-        Ok(self.add_symbol(name, symbol_entry))
+        Ok(self.add_symbol(name, symbol))
     }
 
     /// Define an enum constant in the current scope.
@@ -378,21 +372,17 @@ impl SymbolTable {
         ty: TypeRef,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
-        let symbol_entry = Symbol {
+        let symbol = self.create_symbol(
             name,
-            kind: SymbolKind::EnumConstant { value },
-            type_info: QualType::unqualified(ty),
-            scope_id: self.current_scope_id,
-            def_span: span,
-            def_state: DefinitionState::Defined,
-            is_completed: true,
-        };
-
+            SymbolKind::EnumConstant { value },
+            QualType::unqualified(ty),
+            span,
+        );
         if let Some(existing) = self.fetch(name, self.current_scope_id, Namespace::Ordinary) {
             return Err(SymbolTableError::InvalidRedefinition { name, existing });
         }
 
-        Ok(self.add_symbol(name, symbol_entry))
+        Ok(self.add_symbol(name, symbol))
     }
 
     /// Define a record (struct/union) tag in the current scope.
@@ -403,33 +393,29 @@ impl SymbolTable {
         is_complete: bool,
         span: SourceSpan,
     ) -> SymbolRef {
-        let symbol_entry = Symbol {
+        let mut symbol = self.create_symbol(
             name,
-            kind: SymbolKind::Record {
+            SymbolKind::Record {
                 is_complete,
-                members: Arc::from([]),
+                members: Arc::new([]),
             },
-            type_info: QualType::unqualified(ty),
-            scope_id: self.current_scope_id,
-            def_span: span,
-            def_state: DefinitionState::Defined,
-            is_completed: false,
-        };
-        self.add_symbol_in_namespace(name, symbol_entry, Namespace::Tag)
+            QualType::unqualified(ty),
+            span,
+        );
+        symbol.is_completed = false;
+        self.add_symbol_in_namespace(name, symbol, Namespace::Tag)
     }
 
     /// Define an enum tag in the current scope.
     pub(crate) fn define_enum(&mut self, name: NameId, ty: TypeRef, span: SourceSpan) -> SymbolRef {
-        let symbol_entry = Symbol {
+        let mut symbol = self.create_symbol(
             name,
-            kind: SymbolKind::EnumTag { is_complete: false },
-            type_info: QualType::unqualified(ty),
-            scope_id: self.current_scope_id,
-            def_span: span,
-            def_state: DefinitionState::Defined,
-            is_completed: false,
-        };
-        self.add_symbol_in_namespace(name, symbol_entry, Namespace::Tag)
+            SymbolKind::EnumTag { is_complete: false },
+            QualType::unqualified(ty),
+            span,
+        );
+        symbol.is_completed = false;
+        self.add_symbol_in_namespace(name, symbol, Namespace::Tag)
     }
 
     /// Define a label in the current scope.
@@ -439,16 +425,8 @@ impl SymbolTable {
         ty: TypeRef,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
-        let symbol_entry = Symbol {
-            name,
-            kind: SymbolKind::Label,
-            type_info: QualType::unqualified(ty),
-            scope_id: self.current_scope_id,
-            def_span: span,
-            def_state: DefinitionState::Defined,
-            is_completed: true,
-        };
-        Ok(self.add_symbol_in_namespace(name, symbol_entry, Namespace::Label))
+        let symbol = self.create_symbol(name, SymbolKind::Label, QualType::unqualified(ty), span);
+        Ok(self.add_symbol_in_namespace(name, symbol, Namespace::Label))
     }
 
     /// Lookup a label in the current scope.

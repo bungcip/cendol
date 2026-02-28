@@ -2246,9 +2246,12 @@ impl<'src> Preprocessor<'src> {
         let mut virtual_buffer = Vec::with_capacity(left_text.len() + right_text.len());
         virtual_buffer.extend_from_slice(left_text.as_bytes());
         virtual_buffer.extend_from_slice(right_text.as_bytes());
-        let virtual_id = self
-            .sm
-            .add_virtual_buffer(virtual_buffer, "pasted-tokens", Some(left.location), FileKind::PastedToken);
+        let virtual_id = self.sm.add_virtual_buffer(
+            virtual_buffer,
+            "pasted-tokens",
+            Some(left.location),
+            FileKind::PastedToken,
+        );
 
         // Create a temporary lexer to lex the pasted text
         let buffer = self.sm.get_buffer_arc(virtual_id);

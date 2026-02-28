@@ -108,6 +108,10 @@ pub struct Cli {
     /// Maximum number of errors to report (default: 1)
     #[clap(long = "fmax-errors", value_name = "N")]
     pub fmax_errors: Option<usize>,
+
+    /// GCC/Clang compatible flags to ignore (e.g., -fPIC, -fno-stack-protector)
+    #[clap(short = 'f', action = clap::ArgAction::Append)]
+    pub ignored_f_flags: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -146,6 +150,7 @@ pub struct CompileConfig {
     pub debug_info: bool,
     pub fuse_ld: Option<String>,
     pub fmax_errors: Option<usize>,
+    pub ignored_f_flags: Vec<String>,
 }
 
 impl Default for CompileConfig {
@@ -168,6 +173,7 @@ impl Default for CompileConfig {
             debug_info: false,
             fuse_ld: None,
             fmax_errors: None,
+            ignored_f_flags: Vec::new(),
         }
     }
 }
@@ -319,6 +325,7 @@ impl Cli {
             debug_info: self.debug_info,
             fuse_ld: self.fuse_ld,
             fmax_errors: self.fmax_errors,
+            ignored_f_flags: self.ignored_f_flags,
         })
     }
 }
@@ -356,6 +363,7 @@ mod tests {
             debug_info: true,
             fuse_ld: Some("lld".to_string()),
             fmax_errors: Some(5),
+            ignored_f_flags: vec![],
         };
 
         let config = cli.into_config().expect("Failed to create config");
@@ -398,6 +406,7 @@ mod tests {
             debug_info: false,
             fuse_ld: None,
             fmax_errors: None,
+            ignored_f_flags: vec![],
         };
 
         let err = cli_error.into_config().unwrap_err();
@@ -432,6 +441,7 @@ mod tests {
             debug_info: false,
             fuse_ld: None,
             fmax_errors: None,
+            ignored_f_flags: vec![],
         };
 
         // This tests testing the default bounds, pedantic bounds, and dump priorities

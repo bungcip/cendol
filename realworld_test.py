@@ -11,22 +11,32 @@ PROJECTS = {
         "repo": "https://github.com/codeplea/tinyexpr",
         "build_cmd": ["make", "CC={CC}"],
         "test_cmd": ["make", "smoke", "CC={CC}"],
+        "clean_cmd": ["make", "clean"],
     },
     "sds": {
         "repo": "https://github.com/antirez/sds",
         "build_cmd": ["make", "CC={CC}"],
         "test_cmd": ["./sds-test"],
+        "clean_cmd": ["make", "clean"],
     },
     "c-testsuite": {
         "repo": "https://github.com/c-testsuite/c-testsuite",
         "build_cmd": ["true"],
         "patch_cmd": ["rm", "-f", "tests/single-exec/00209.c"],
         "test_cmd": ["sh", "-c", "for t in tests/single-exec/*.c; do CC={CC} CFLAGS='' ./runners/single-exec/posix $t || exit 1; done"],
+        "clean_cmd": ["true"],
     },
     "lua": {
         "repo": "https://github.com/lua/lua",
         "build_cmd": ["make", "CC={CC}", "CFLAGS=-O2 -DLUA_USE_LINUX -DLUA_USE_JUMPTABLE=0", "MYCFLAGS=", "MYLDFLAGS=", "MYLIBS=-lm"],
         "test_cmd": ["./lua", "-e", "print('hello from lua built with cendol')"],
+        "clean_cmd": ["make", "clean"],
+    },
+    "zlib": {
+        "repo": "https://github.com/madler/zlib",
+        "build_cmd": ["sh", "-c", "./configure && make CC={CC}"],
+        "test_cmd": ["make", "test", "CC={CC}"],
+        "clean_cmd": ["make", "clean"],
     }
 }
 
@@ -38,12 +48,13 @@ def run_command(cmd, cwd=None):
         sys.exit(1)
 
 def print_usage():
-    print("Usage: ./realworld_test.py <nama-project>|clean")
+    print("Usage: ./realworld_test.py <nama-project>|clean|nuke")
     print("\nAvailable projects:")
     for name in PROJECTS:
         print(f"  - {name}")
     print("\nSubcommands:")
-    print("  clean    Removes the 'realworld' directory containing all cloned projects.")
+    print("  clean    Runs 'make clean' (or equivalent) in each cloned project directory.")
+    print("  nuke     Removes the 'realworld' directory containing all cloned projects.")
 
 def main():
     if len(sys.argv) < 2:
@@ -56,13 +67,25 @@ def main():
     cendol_root = os.path.dirname(os.path.abspath(__file__))
     realworld_dir = os.path.join(cendol_root, "realworld")
 
-    if project_name == "clean":
+    if project_name == "nuke":
         if os.path.exists(realworld_dir):
-            print(f"Cleaning {realworld_dir}...")
+            print(f"Nuking {realworld_dir}...")
             shutil.rmtree(realworld_dir)
-            print("Cleaned successfully.")
+            print("Nuked successfully.")
         else:
             print("Already clean.")
+        return
+
+    if project_name == "clean":
+        if not os.path.exists(realworld_dir):
+            print("Nothing to clean.")
+            return
+        
+        for name, config in PROJECTS.items():
+            p_dir = os.path.join(realworld_dir, name)
+            if os.path.exists(p_dir):
+                print(f"Cleaning {name}...")
+                run_command(config["clean_cmd"], cwd=p_dir)
         return
 
     if project_name not in PROJECTS:
@@ -92,6 +115,10 @@ def main():
     if "patch_cmd" in config:
         print(f"Patching {project_name}...")
         run_command(config["patch_cmd"], cwd=project_dir)
+
+    # Ensure compiler is built
+    print("Building cendol...")
+    run_command(["cargo", "build"], cwd=cendol_root)
 
     # 3. Build
     build_cmd = [arg.format(CC=cendol_bin) for arg in config["build_cmd"]]

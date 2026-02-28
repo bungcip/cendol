@@ -44,6 +44,15 @@ impl CompilerDriver {
         let mut diagnostics = DiagnosticEngine::from_warnings(&config.warnings);
         // Default to one error report as requested, or use the configured limit
         diagnostics.set_error_limit(config.fmax_errors.unwrap_or(20));
+
+        for flag in &config.ignored_f_flags {
+            log::warn!("ignoring unrecognized command-line option '-f{}'", flag);
+            eprintln!(
+                "cendol: warning: ignoring unrecognized command-line option '-f{}'",
+                flag
+            );
+        }
+
         CompilerDriver {
             diagnostics,
             source_manager: SourceManager::new(),
@@ -64,7 +73,12 @@ impl CompilerDriver {
             let is_external_object = match &input_file {
                 PathOrBuffer::Path(path) => {
                     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                        matches!(ext, "o" | "obj" | "a" | "so" | "dylib" | "dll")
+                        let is_known_ext = matches!(ext, "o" | "obj" | "a" | "so" | "dylib" | "dll");
+                        let is_versioned_so = || {
+                            let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                            filename.contains(".so.") || filename.contains(".dylib.")
+                        };
+                        is_known_ext || is_versioned_so()
                     } else {
                         false
                     }

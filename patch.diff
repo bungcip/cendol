@@ -1,0 +1,105 @@
+--- src/semantic/const_eval.rs
++++ src/semantic/const_eval.rs
+@@ -42,6 +42,35 @@
+             }
+         }
+         NodeKind::BinaryOp(op, left, right) => {
++            let is_cmp_or_logic = matches!(op, BinaryOp::Equal | BinaryOp::NotEqual | BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual | BinaryOp::LogicAnd | BinaryOp::LogicOr);
++
++            if is_cmp_or_logic {
++                let left_is_float = ctx.get_resolved_type(*left).map_or(false, |ty| ty.is_floating_point());
++                let right_is_float = ctx.get_resolved_type(*right).map_or(false, |ty| ty.is_floating_point());
++                if left_is_float || right_is_float {
++                    if let Some(left_f) = eval_const_expr_float(ctx, *left) {
++                        if op == BinaryOp::LogicAnd {
++                            if left_f == 0.0 {
++                                return Some(0);
++                            }
++                            if let Some(right_f) = eval_const_expr_float(ctx, *right) {
++                                return Some((right_f != 0.0) as i64);
++                            }
++                        } else if op == BinaryOp::LogicOr {
++                            if left_f != 0.0 {
++                                return Some(1);
++                            }
++                            if let Some(right_f) = eval_const_expr_float(ctx, *right) {
++                                return Some((right_f != 0.0) as i64);
++                            }
++                        } else if let Some(right_f) = eval_const_expr_float(ctx, *right) {
++                            return match op {
++                                BinaryOp::Equal => Some((left_f == right_f) as i64),
++                                BinaryOp::NotEqual => Some((left_f != right_f) as i64),
++                                BinaryOp::Less => Some((left_f < right_f) as i64),
++                                BinaryOp::LessEqual => Some((left_f <= right_f) as i64),
++                                BinaryOp::Greater => Some((left_f > right_f) as i64),
++                                BinaryOp::GreaterEqual => Some((left_f >= right_f) as i64),
++                                _ => None,
++                            };
++                        }
++                    }
++                }
++            }
++
+             let left_val = eval_const_expr(ctx, *left)?;
+
+             // Short-circuiting logic
+@@ -277,6 +306,121 @@
+     }
+ }
+
++pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<f64> {
++    let node_kind = ctx.ast.get_kind(expr_node);
++    match node_kind {
++        NodeKind::Literal(literal::Literal::Float { val, .. }) => Some(*val),
++        NodeKind::Literal(literal::Literal::Int { val, .. }) => Some(*val as f64),
++        NodeKind::Literal(literal::Literal::Char(val)) => Some(*val as f64),
++        NodeKind::BinaryOp(op, left, right) => {
++            let left_val = eval_const_expr_float(ctx, *left)?;
++            let right_val = eval_const_expr_float(ctx, *right)?;
++            match op {
++                BinaryOp::Add => Some(left_val + right_val),
++                BinaryOp::Sub => Some(left_val - right_val),
++                BinaryOp::Mul => Some(left_val * right_val),
++                BinaryOp::Div => Some(left_val / right_val),
++                _ => None,
++            }
++        }
++        NodeKind::UnaryOp(op, expr) => {
++            let operand_val = eval_const_expr_float(ctx, *expr)?;
++            match op {
++                UnaryOp::Plus => Some(operand_val),
++                UnaryOp::Minus => Some(-operand_val),
++                UnaryOp::LogicNot => Some((operand_val == 0.0) as i64 as f64),
++                _ => None,
++            }
++        }
++        NodeKind::Cast(target_ty, expr) => {
++            if target_ty.is_floating_point() {
++                if let Some(val) = eval_const_expr_float(ctx, *expr) {
++                    Some(val)
++                } else {
++                    None
++                }
++            } else if target_ty.is_integer() {
++                if let Some(val) = eval_const_expr(ctx, *expr) {
++                    Some(val as f64)
++                } else if let Some(val) = eval_const_expr_float(ctx, *expr) {
++                    Some(val.trunc()) // Need truncation rules according to cast semantics? Wait, cast to int means we should just eval_const_expr, which we just did? This function evaluates float. If it's a cast to int, it's not a float anymore, but if someone asks for a float value of an int cast expression... it should work.
++                } else {
++                    None
++                }
++            } else {
++                None
++            }
++        }
++        _ => {
++            if let Some(val) = eval_const_expr(ctx, expr_node) {
++                Some(val as f64)
++            } else {
++                None
++            }
++        }
++    }
++}
++
+ fn eval_offsetof(ctx: &ConstEvalCtx, qt: QualType, expr: NodeRef) -> Option<i64> {

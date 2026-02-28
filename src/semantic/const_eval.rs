@@ -41,7 +41,72 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
             }
         }
         NodeKind::BinaryOp(op, left, right) => {
-            let left_val = eval_const_expr(ctx, *left)?;
+            let is_cmp_or_logic = matches!(
+                *op,
+                BinaryOp::Equal
+                    | BinaryOp::NotEqual
+                    | BinaryOp::Less
+                    | BinaryOp::LessEqual
+                    | BinaryOp::Greater
+                    | BinaryOp::GreaterEqual
+                    | BinaryOp::LogicAnd
+                    | BinaryOp::LogicOr
+            );
+
+            if is_cmp_or_logic {
+                let is_float_op = ctx.get_resolved_type(*left).map_or(false, |ty| ty.ty().is_floating())
+                    || ctx.get_resolved_type(*right).map_or(false, |ty| ty.ty().is_floating());
+                if is_float_op {
+                    if let (Some(left_f), Some(right_f)) =
+                        (eval_const_expr_float(ctx, *left), eval_const_expr_float(ctx, *right))
+                    {
+                        return match op {
+                            BinaryOp::Equal => Some((left_f == right_f) as i64),
+                            BinaryOp::NotEqual => Some((left_f != right_f) as i64),
+                            BinaryOp::Less => Some((left_f < right_f) as i64),
+                            BinaryOp::LessEqual => Some((left_f <= right_f) as i64),
+                            BinaryOp::Greater => Some((left_f > right_f) as i64),
+                            BinaryOp::GreaterEqual => Some((left_f >= right_f) as i64),
+                            BinaryOp::LogicAnd => Some(((left_f != 0.0) && (right_f != 0.0)) as i64),
+                            BinaryOp::LogicOr => Some(((left_f != 0.0) || (right_f != 0.0)) as i64),
+                            _ => None,
+                        };
+                    }
+                }
+            }
+
+            // If the operator is logic and/or, try fallback to float evaluation if it doesn't evaluate as an integer
+            let left_val = match eval_const_expr(ctx, *left) {
+                Some(v) => v,
+                None => {
+                    if matches!(op, BinaryOp::LogicAnd | BinaryOp::LogicOr) {
+                        let is_float_op = ctx.get_resolved_type(*left).map_or(false, |ty| ty.ty().is_floating())
+                            || ctx.get_resolved_type(*right).map_or(false, |ty| ty.ty().is_floating());
+                        if is_float_op {
+                            if *op == BinaryOp::LogicAnd {
+                                if let Some(left_f) = eval_const_expr_float(ctx, *left) {
+                                    if left_f == 0.0 {
+                                        return Some(0);
+                                    }
+                                    if let Some(right_f) = eval_const_expr_float(ctx, *right) {
+                                        return Some((right_f != 0.0) as i64);
+                                    }
+                                }
+                            } else {
+                                if let Some(left_f) = eval_const_expr_float(ctx, *left) {
+                                    if left_f != 0.0 {
+                                        return Some(1);
+                                    }
+                                    if let Some(right_f) = eval_const_expr_float(ctx, *right) {
+                                        return Some((right_f != 0.0) as i64);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return None;
+                }
+            };
 
             // Short-circuiting logic
             match op {
@@ -277,6 +342,46 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
     }
 }
 
+pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<f64> {
+    let node_kind = ctx.ast.get_kind(expr_node);
+    match node_kind {
+        NodeKind::Literal(literal::Literal::Float { val, .. }) => Some(*val),
+        NodeKind::Literal(literal::Literal::Int { val, .. }) => Some(*val as f64),
+        NodeKind::Literal(literal::Literal::Char(val)) => Some(*val as f64),
+        NodeKind::BinaryOp(op, left, right) => {
+            let left_val = eval_const_expr_float(ctx, *left)?;
+            let right_val = eval_const_expr_float(ctx, *right)?;
+            match op {
+                BinaryOp::Add => Some(left_val + right_val),
+                BinaryOp::Sub => Some(left_val - right_val),
+                BinaryOp::Mul => Some(left_val * right_val),
+                BinaryOp::Div => Some(left_val / right_val),
+                _ => None,
+            }
+        }
+        NodeKind::UnaryOp(op, expr) => {
+            let operand_val = eval_const_expr_float(ctx, *expr)?;
+            match op {
+                UnaryOp::Plus => Some(operand_val),
+                UnaryOp::Minus => Some(-operand_val),
+                UnaryOp::LogicNot => Some((operand_val == 0.0) as i64 as f64),
+                _ => None,
+            }
+        }
+        NodeKind::Cast(target_ty, expr) => {
+            if let Some(val) = eval_const_expr_float(ctx, *expr) {
+                if target_ty.is_integer() {
+                    Some(val.trunc())
+                } else {
+                    Some(val)
+                }
+            } else {
+                None
+            }
+        }
+        _ => eval_const_expr(ctx, expr_node).map(|v| v as f64),
+    }
+}
 fn eval_offsetof(ctx: &ConstEvalCtx, qt: QualType, expr: NodeRef) -> Option<i64> {
     let mut current_qt = qt;
     let mut offset = 0i64;

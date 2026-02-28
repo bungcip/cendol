@@ -2853,30 +2853,29 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 }
 /// Extracts the bit-field width from a declarator if it exists.
-fn extract_bit_field_width<'a>(
-    declarator: &'a ParsedDeclarator,
-    ctx: &mut LowerCtx,
-) -> (Option<u16>, &'a ParsedDeclarator) {
-    let ParsedDeclarator::BitField(base, expr) = declarator else {
-        return (None, declarator);
-    };
+fn extract_bit_field_width(declarator: &ParsedDeclarator, ctx: &mut LowerCtx) -> Option<u16> {
+    match declarator {
+        ParsedDeclarator::BitField(_, expr) => {
+            let width_expr = ctx.visit_expression(*expr);
+            let span = ctx.ast.get_span(width_expr);
 
-    let width_expr = ctx.visit_expression(*expr);
-    let span = ctx.ast.get_span(width_expr);
-
-    let width = match const_eval::eval_const_expr(&ctx.const_ctx(), width_expr) {
-        Some(val) if (0..=65535).contains(&val) => Some(val as u16),
-        Some(_) => {
-            ctx.report_error(span, SemanticErrorKind::InvalidBitfieldWidth);
-            None
+            match const_eval::eval_const_expr(&ctx.const_ctx(), width_expr) {
+                Some(val) if (0..=65535).contains(&val) => Some(val as u16),
+                Some(_) => {
+                    ctx.report_error(span, SemanticErrorKind::InvalidBitfieldWidth);
+                    None
+                }
+                None => {
+                    ctx.report_error(span, SemanticErrorKind::NonConstantBitfieldWidth);
+                    None
+                }
+            }
         }
-        None => {
-            ctx.report_error(span, SemanticErrorKind::NonConstantBitfieldWidth);
-            None
-        }
-    };
-
-    (width, base)
+        ParsedDeclarator::Pointer(_, Some(inner)) => extract_bit_field_width(inner, ctx),
+        ParsedDeclarator::Array(inner, _) => extract_bit_field_width(inner, ctx),
+        ParsedDeclarator::Function { inner, .. } => extract_bit_field_width(inner, ctx),
+        _ => None,
+    }
 }
 
 /// Common logic for lowering struct members, used by both TypeSpecifier::Record lowering
@@ -2915,7 +2914,7 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                 }
 
                 for id in &decl.init_declarators {
-                    let (bit_field_size, base_decl) = extract_bit_field_width(&id.declarator, ctx);
+                    let bit_field_size = extract_bit_field_width(&id.declarator, ctx);
 
                     if bit_field_size.is_some() && spec_info.alignment.is_some() {
                         ctx.report_error(id.span, SemanticErrorKind::AlignmentNotAllowed { context: "bit-field" });
@@ -2923,7 +2922,7 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
 
                     ctx.check_function_specifiers(&spec_info, id.span);
 
-                    let name = extract_name(base_decl);
+                    let name = extract_name(&id.declarator);
                     let base = spec_info
                         .base_type
                         .unwrap_or_else(|| QualType::unqualified(ctx.registry.type_int));
@@ -2931,7 +2930,7 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
 
                     let member_type = apply_declarator(
                         qualified_base,
-                        base_decl,
+                        &id.declarator,
                         ctx,
                         id.span,
                         &spec_info,

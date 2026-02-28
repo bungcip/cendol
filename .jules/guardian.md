@@ -89,3 +89,8 @@ Action: Enforce "object type" constraints by specifically rejecting the 'void' t
 
 Learning: C11 6.5.15p6 requires the result of a conditional operator with pointer operands to have a type that is a pointer to a qualified version of the type pointed to by either operand. Crucially, the qualifiers of the pointed-to type in the result must be the UNION of the qualifiers of the pointed-to types of both operands. Since 'TypeRegistry::composite_type' enforces qualifier identity for compatibility, the semantic analyzer must manually compute this qualifier union before constructing the result pointer type.
 Action: When implementing language features that allow merging of differently qualified versions of compatible types (like ternary or certain assignments), explicitly compute the qualifier union for the resulting pointed-to types instead of relying on standard composite type helpers.
+
+2025-06-01 - [Bit-field Declarator Recursion]
+
+Learning: Bit-field widths in C can be part of complex declarators (e.g., `int *x : 1`). If the semantic analyzer only checks for `BitField` at the top level of a declarator, it will miss these cases, potentially silently accepting invalid types (like pointers or floats) that are prohibited for bit-fields by C11 6.7.2.1p5 and 6.7.2.4p4.
+Action: Always use recursive extraction for declarator-specific attributes like bit-field widths to ensure they are consistently validated regardless of declarator complexity.

@@ -59,19 +59,19 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
                 if is_float_op
                     && let (Some(left_f), Some(right_f)) =
                         (eval_const_expr_float(ctx, *left), eval_const_expr_float(ctx, *right))
-                    {
-                        return match op {
-                            BinaryOp::Equal => Some((left_f == right_f) as i64),
-                            BinaryOp::NotEqual => Some((left_f != right_f) as i64),
-                            BinaryOp::Less => Some((left_f < right_f) as i64),
-                            BinaryOp::LessEqual => Some((left_f <= right_f) as i64),
-                            BinaryOp::Greater => Some((left_f > right_f) as i64),
-                            BinaryOp::GreaterEqual => Some((left_f >= right_f) as i64),
-                            BinaryOp::LogicAnd => Some(((left_f != 0.0) && (right_f != 0.0)) as i64),
-                            BinaryOp::LogicOr => Some(((left_f != 0.0) || (right_f != 0.0)) as i64),
-                            _ => None,
-                        };
-                    }
+                {
+                    return match op {
+                        BinaryOp::Equal => Some((left_f == right_f) as i64),
+                        BinaryOp::NotEqual => Some((left_f != right_f) as i64),
+                        BinaryOp::Less => Some((left_f < right_f) as i64),
+                        BinaryOp::LessEqual => Some((left_f <= right_f) as i64),
+                        BinaryOp::Greater => Some((left_f > right_f) as i64),
+                        BinaryOp::GreaterEqual => Some((left_f >= right_f) as i64),
+                        BinaryOp::LogicAnd => Some(((left_f != 0.0) && (right_f != 0.0)) as i64),
+                        BinaryOp::LogicOr => Some(((left_f != 0.0) || (right_f != 0.0)) as i64),
+                        _ => None,
+                    };
+                }
             }
 
             // If the operator is logic and/or, try fallback to float evaluation if it doesn't evaluate as an integer

@@ -1869,20 +1869,16 @@ impl<'src> Preprocessor<'src> {
         result
     }
 
-    /// Helper to create a virtual buffer and expand tokens within it
+    /// Helper to create a virtual buffer for macro expansion.
+    /// Does NOT rescan — the caller is responsible for rescanning.
+    /// This prevents double-rescan bugs (e.g. deferred macro patterns).
     fn expand_virtual_buffer(
         &mut self,
         tokens: &[PPToken],
         name: &str,
         location: SourceLoc,
     ) -> Result<Vec<PPToken>, PPError> {
-        // For Level B: Create a virtual buffer containing the replacement text
-        let mut expanded = self.create_virtual_buffer_tokens(tokens, name, location);
-
-        // Recursively expand any macros in the replacement
-        self.expand_tokens(&mut expanded, false)?;
-
-        Ok(expanded)
+        Ok(self.create_virtual_buffer_tokens(tokens, name, location))
     }
 
     /// Expand an object-like macro
@@ -1892,17 +1888,9 @@ impl<'src> Preprocessor<'src> {
         symbol: &StringId,
         token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
-        if let Some(m) = self.macros.get_mut(symbol) {
-            m.flags |= MacroFlags::DISABLED;
-        }
-
-        let result = self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), token.location);
-
-        if let Some(m) = self.macros.get_mut(symbol) {
-            m.flags.remove(MacroFlags::DISABLED);
-        }
-
-        result
+        // No DISABLED flag needed — is_recursive_expansion() detects self-reference
+        // via the virtual buffer's source location (<macro_NAME>).
+        self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), token.location)
     }
 
     /// Expand a function-like macro
@@ -1935,17 +1923,9 @@ impl<'src> Preprocessor<'src> {
         // Substitute parameters in macro body
         let substituted = self.substitute_macro(macro_info, &args, &expanded_args)?;
 
-        if let Some(m) = self.macros.get_mut(symbol) {
-            m.flags |= MacroFlags::DISABLED;
-        }
-
-        let result = self.expand_virtual_buffer(&substituted, symbol.as_str(), token.location);
-
-        if let Some(m) = self.macros.get_mut(symbol) {
-            m.flags.remove(MacroFlags::DISABLED);
-        }
-
-        result
+        // No DISABLED flag needed — is_recursive_expansion() detects self-reference
+        // via the virtual buffer's source location (<macro_NAME>).
+        self.expand_virtual_buffer(&substituted, symbol.as_str(), token.location)
     }
 
     /// Parse macro arguments from the current lexer
@@ -2532,9 +2512,28 @@ impl<'src> Preprocessor<'src> {
                 continue;
             }
 
-            if let Some(expanded) = self.expand_macro(&tokens[i])? {
-                tokens.splice(i..i + 1, expanded);
-                continue;
+            // Expand object-like macros inline. We must NOT call expand_macro()
+            // here because it uses self.lex_token() for function-like macro
+            // lookahead, which reads from the lexer/pending_tokens — the wrong
+            // source when operating on an in-memory token array. Function-like
+            // macros are already handled by try_expand_function_macro_in_tokens.
+            if let PPTokenKind::Identifier(symbol) = tokens[i].kind {
+                let macro_info = self
+                    .macros
+                    .get(&symbol)
+                    .filter(|m| !m.flags.contains(MacroFlags::FUNCTION_LIKE) && !m.flags.contains(MacroFlags::DISABLED))
+                    .cloned();
+                if let Some(macro_info) = macro_info {
+                    if !self.is_recursive_expansion(tokens[i].location, symbol.as_str()) {
+                        if let Some(m) = self.macros.get_mut(&symbol) {
+                            m.flags |= MacroFlags::USED;
+                        }
+                        let expanded =
+                            self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), tokens[i].location)?;
+                        tokens.splice(i..i + 1, expanded);
+                        continue;
+                    }
+                }
             }
 
             if self.try_handle_pragma_operator(tokens, i) {

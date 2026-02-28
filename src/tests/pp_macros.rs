@@ -601,3 +601,23 @@ f(f(z))
       text: "]"
     "#);
 }
+
+#[test]
+fn test_deferred_macro_expansion() {
+    let src = r#"
+#define EMPTY
+#define DEFER(x) x EMPTY
+#define EXPAND() 42
+
+DEFER(EXPAND)()
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r"
+    - kind: Identifier
+      text: EXPAND
+    - kind: LeftParen
+      text: (
+    - kind: RightParen
+      text: )
+    ");
+}

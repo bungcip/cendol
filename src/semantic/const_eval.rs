@@ -54,10 +54,10 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
             );
 
             if is_cmp_or_logic {
-                let is_float_op = ctx.get_resolved_type(*left).map_or(false, |ty| ty.ty().is_floating())
-                    || ctx.get_resolved_type(*right).map_or(false, |ty| ty.ty().is_floating());
-                if is_float_op {
-                    if let (Some(left_f), Some(right_f)) =
+                let is_float_op = ctx.get_resolved_type(*left).is_some_and(|ty| ty.ty().is_floating())
+                    || ctx.get_resolved_type(*right).is_some_and(|ty| ty.ty().is_floating());
+                if is_float_op
+                    && let (Some(left_f), Some(right_f)) =
                         (eval_const_expr_float(ctx, *left), eval_const_expr_float(ctx, *right))
                     {
                         return match op {
@@ -72,7 +72,6 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
                             _ => None,
                         };
                     }
-                }
             }
 
             // If the operator is logic and/or, try fallback to float evaluation if it doesn't evaluate as an integer
@@ -80,8 +79,8 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
                 Some(v) => v,
                 None => {
                     if matches!(op, BinaryOp::LogicAnd | BinaryOp::LogicOr) {
-                        let is_float_op = ctx.get_resolved_type(*left).map_or(false, |ty| ty.ty().is_floating())
-                            || ctx.get_resolved_type(*right).map_or(false, |ty| ty.ty().is_floating());
+                        let is_float_op = ctx.get_resolved_type(*left).is_some_and(|qt| qt.ty().is_floating())
+                            || ctx.get_resolved_type(*right).is_some_and(|qt| qt.ty().is_floating());
                         if is_float_op {
                             if *op == BinaryOp::LogicAnd {
                                 if let Some(left_f) = eval_const_expr_float(ctx, *left) {
@@ -92,14 +91,12 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
                                         return Some((right_f != 0.0) as i64);
                                     }
                                 }
-                            } else {
-                                if let Some(left_f) = eval_const_expr_float(ctx, *left) {
-                                    if left_f != 0.0 {
-                                        return Some(1);
-                                    }
-                                    if let Some(right_f) = eval_const_expr_float(ctx, *right) {
-                                        return Some((right_f != 0.0) as i64);
-                                    }
+                            } else if let Some(left_f) = eval_const_expr_float(ctx, *left) {
+                                if left_f != 0.0 {
+                                    return Some(1);
+                                }
+                                if let Some(right_f) = eval_const_expr_float(ctx, *right) {
+                                    return Some((right_f != 0.0) as i64);
                                 }
                             }
                         }
@@ -219,16 +216,16 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
             }
         }
         NodeKind::SizeOfExpr(expr) => {
-            let ty = ctx.get_resolved_type(*expr)?;
-            let layout = ctx.registry.get_layout(ty.ty());
+            let qt = ctx.get_resolved_type(*expr)?;
+            let layout = ctx.registry.get_layout(qt.ty());
             Some(layout.size as i64)
         }
-        NodeKind::AlignOf(ty) => {
-            let layout = ctx.registry.get_layout(ty.ty());
+        NodeKind::AlignOf(qt) => {
+            let layout = ctx.registry.get_layout(qt.ty());
             Some(layout.alignment as i64)
         }
-        NodeKind::SizeOfType(ty) => {
-            let layout = ctx.registry.get_layout(ty.ty());
+        NodeKind::SizeOfType(qt) => {
+            let layout = ctx.registry.get_layout(qt.ty());
             Some(layout.size as i64)
         }
         NodeKind::GenericSelection(_) => {

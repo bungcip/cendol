@@ -313,14 +313,14 @@ impl<'a> SemanticAnalyzer<'a> {
     fn is_bitfield(&self, node: NodeRef) -> bool {
         match self.ast.get_kind(node) {
             NodeKind::MemberAccess(obj, field_name, is_arrow) => {
-                let Some(obj_ty) = self.semantic_info.types[obj.index()] else {
+                let Some(obj_qt) = self.semantic_info.types[obj.index()] else {
                     return false;
                 };
 
                 let record_ty = if *is_arrow {
-                    self.registry.get_pointee(obj_ty.ty()).map(|p| p.ty())
+                    self.registry.get_pointee(obj_qt.ty()).map(|p| p.ty())
                 } else {
-                    Some(obj_ty.ty())
+                    Some(obj_qt.ty())
                 };
 
                 record_ty.is_some_and(|rt| {
@@ -364,7 +364,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let node_kind = self.ast.get_kind(node);
         match node_kind {
             NodeKind::Literal(literal::Literal::Int { val: 0, .. }) => true,
-            NodeKind::Cast(ty, inner) if ty.ty() == self.registry.type_void_ptr => {
+            NodeKind::Cast(qt, inner) if qt.ty() == self.registry.type_void_ptr => {
                 self.is_null_pointer_constant(*inner)
             }
             _ => false,
@@ -373,11 +373,11 @@ impl<'a> SemanticAnalyzer<'a> {
 
     /// Checks if the node is an LValue and is not const-qualified.
     /// Reports errors if check fails.
-    fn check_lvalue_and_modifiable(&mut self, node: NodeRef, ty: QualType) -> bool {
-        if !self.is_lvalue(node) || ty.is_array() || ty.is_function() {
+    fn check_lvalue_and_modifiable(&mut self, node: NodeRef, qt: QualType) -> bool {
+        if !self.is_lvalue(node) || qt.is_array() || qt.is_function() {
             self.report_error(node, SemanticErrorKind::NotAnLvalue);
             false
-        } else if self.registry.is_const_recursive(ty) {
+        } else if self.registry.is_const_recursive(qt) {
             self.report_error(node, SemanticErrorKind::AssignmentToReadOnly);
             false
         } else {
@@ -694,13 +694,13 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn apply_and_record_integer_promotion(&mut self, node: NodeRef, ty: QualType) -> QualType {
-        let promoted = integer_promotion(self.registry, ty);
-        if promoted.ty() != ty.ty() {
+    fn apply_and_record_integer_promotion(&mut self, node: NodeRef, qt: QualType) -> QualType {
+        let promoted = integer_promotion(self.registry, qt);
+        if promoted.ty() != qt.ty() {
             self.push_conversion(
                 node,
                 Conversion::IntegerPromotion {
-                    from: ty.ty(),
+                    from: qt.ty(),
                     to: promoted.ty(),
                 },
             );

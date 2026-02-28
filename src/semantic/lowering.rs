@@ -1815,7 +1815,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
         target_slots: Option<&[NodeRef]>,
     ) -> SmallVec<[NodeRef; 1]> {
-        let Some(qual_ty) = spec_info.base_type else {
+        let Some(qt) = spec_info.base_type else {
             return smallvec![];
         };
 
@@ -1825,7 +1825,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             Enum(Option<NameId>, Arc<[EnumConstant]>),
         }
 
-        let type_info = self.registry.get(qual_ty.ty());
+        let type_info = self.registry.get(qt.ty());
         let type_data = match &type_info.kind {
             TypeKind::Record {
                 tag, members, is_union, ..
@@ -1857,7 +1857,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                     self.ast.kinds[node.index()] = NodeKind::RecordDecl(RecordDeclData {
                         name: tag,
-                        ty: qual_ty.ty(),
+                        ty: qt.ty(),
                         member_start,
                         member_len,
                         is_union,
@@ -1883,7 +1883,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                     self.ast.kinds[node.index()] = NodeKind::EnumDecl(EnumDeclData {
                         name: tag,
-                        ty: qual_ty.ty(),
+                        ty: qt.ty(),
                         member_start,
                         member_len,
                     });
@@ -1988,17 +1988,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticErrorKind::AlignmentNotAllowed { context: "function" });
         }
 
-        let final_ty = self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
+        let final_qt = self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
         let func_decl = FunctionDeclData {
             name,
-            ty: final_ty.ty(),
+            ty: final_qt.ty(),
             storage: spec_info.storage,
             scope_id: self.symbol_table.current_scope(),
         };
 
         if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) = self
             .symbol_table
-            .define_function(name, final_ty.ty(), spec_info.storage, false, span)
+            .define_function(name, final_qt.ty(), spec_info.storage, false, span)
         {
             let first_def = self.symbol_table.get_symbol(existing).def_span;
             self.report_error(span, SemanticErrorKind::Redefinition { name, first_def });
@@ -2010,7 +2010,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         &mut self,
         node: NodeRef,
         name: NameId,
-        mut final_ty: QualType,
+        mut qt: QualType,
         spec_info: &DeclSpecInfo,
         init_expr: Option<NodeRef>,
         span: SourceSpan,
@@ -2019,18 +2019,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             && let TypeKind::Array {
                 element_type,
                 size: ArraySizeType::Incomplete,
-            } = &self.registry.get(final_ty.ty()).kind
+            } = &self.registry.get(qt.ty()).kind
         {
             let element_type = *element_type;
             if let Some(deduced_size) = self.deduce_array_size_full(ie, element_type) {
                 let new_ty = self
                     .registry
                     .array_of(element_type, ArraySizeType::Constant(deduced_size));
-                final_ty = QualType::new(new_ty, final_ty.qualifiers());
+                qt = QualType::new(new_ty, qt.qualifiers());
             }
         }
 
-        final_ty = self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
+        qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);
 
         // C11 6.7p7: If an identifier for an object is declared with no linkage, the type for the object
         // shall be complete by the end of its declarator...
@@ -2041,13 +2041,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let has_internal_linkage = is_global && spec_info.storage == Some(StorageClass::Static);
         let has_no_linkage = !is_global && spec_info.storage != Some(StorageClass::Extern);
 
-        if (has_internal_linkage || has_no_linkage) && !self.registry.is_complete(final_ty.ty()) {
-            self.report_error(span, SemanticErrorKind::IncompleteType { ty: final_ty });
+        if (has_internal_linkage || has_no_linkage) && !self.registry.is_complete(qt.ty()) {
+            self.report_error(span, SemanticErrorKind::IncompleteType { ty: qt });
         }
 
         let var_decl = VarDeclData {
             name,
-            ty: final_ty,
+            ty: qt,
             storage: spec_info.storage,
             init: init_expr,
             alignment: spec_info.alignment.map(|a| a as u16),
@@ -2055,13 +2055,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
             self.symbol_table
-                .define_variable(name, final_ty, spec_info.storage, init_expr, spec_info.alignment, span)
+                .define_variable(name, qt, spec_info.storage, init_expr, spec_info.alignment, span)
         {
             let first_def = self.symbol_table.get_symbol(existing).def_span;
             self.report_error(span, SemanticErrorKind::Redefinition { name, first_def });
         }
 
-        if let Ok(layout) = self.registry.ensure_layout(final_ty.ty())
+        if let Ok(layout) = self.registry.ensure_layout(qt.ty())
             && let Some(req_align) = spec_info.alignment
         {
             let natural_align = layout.alignment as u32;
@@ -2448,25 +2448,25 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::CompoundLiteral(ty_name, init) => {
                 let node = self.get_or_push_slot(target_slots, span);
-                let mut ty = convert_to_qual_type(self, *ty_name, span, false)
+                let mut qt = convert_to_qual_type(self, *ty_name, span, false)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
                 let i = self.visit_expression(*init);
 
                 if let TypeKind::Array {
                     element_type,
                     size: ArraySizeType::Incomplete,
-                } = &self.registry.get(ty.ty()).kind
+                } = &self.registry.get(qt.ty()).kind
                 {
                     let element_type = *element_type;
                     if let Some(deduced_size) = self.deduce_array_size_full(i, element_type) {
                         let new_ty = self
                             .registry
                             .array_of(element_type, ArraySizeType::Constant(deduced_size));
-                        ty = QualType::new(new_ty, ty.qualifiers());
+                        qt = QualType::new(new_ty, qt.qualifiers());
                     }
                 }
 
-                self.ast.kinds[node.index()] = NodeKind::CompoundLiteral(ty, i);
+                self.ast.kinds[node.index()] = NodeKind::CompoundLiteral(qt, i);
                 smallvec![node]
             }
             ParsedNodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {

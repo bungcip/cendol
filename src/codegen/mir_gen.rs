@@ -818,8 +818,8 @@ impl<'a> MirGen<'a> {
         self.mir_builder.add_statement(stmt);
     }
 
-    pub(crate) fn lower_qual_type(&mut self, ty: QualType) -> TypeId {
-        self.lower_type(ty.ty())
+    pub(crate) fn lower_qual_type(&mut self, qt: QualType) -> TypeId {
+        self.lower_type(qt.ty())
     }
 
     pub(crate) fn lower_type(&mut self, type_ref: TypeRef) -> TypeId {

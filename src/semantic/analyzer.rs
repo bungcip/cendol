@@ -2144,18 +2144,42 @@ impl<'a> SemanticAnalyzer<'a> {
 
             let result_ty = match (t, e) {
                 (t, e) if t.is_arithmetic() && e.is_arithmetic() => usual_arithmetic_conversions(self.registry, t, e),
-                (t, e) if t.ty() == e.ty() => Some(t),
+                (t, e) if t.ty() == e.ty() => self.registry.composite_type(t, e),
                 (t, _) if t.ty() == self.registry.type_void => Some(t),
                 (_, e) if e.ty() == self.registry.type_void => Some(e),
                 (t, _) if t.is_pointer() && self.is_null_pointer_constant(else_expr) => Some(t),
                 (_, e) if e.is_pointer() && self.is_null_pointer_constant(then) => Some(e),
                 (t, e) if t.is_pointer() && e.is_pointer() => {
-                    // C11 6.5.15: pointer to void and pointer to object -> pointer to void
-                    if t.ty() == self.registry.type_void_ptr || e.ty() == self.registry.type_void_ptr {
-                        Some(QualType::unqualified(self.registry.type_void_ptr))
+                    let p_t = self.registry.get_pointee(t.ty()).unwrap();
+                    let p_e = self.registry.get_pointee(e.ty()).unwrap();
+
+                    if p_t.ty() == self.registry.type_void || p_e.ty() == self.registry.type_void {
+                        // C11 6.5.15p6: one is a pointer to void... result is a pointer to a
+                        // qualified version of void. The attributes of the result are those of
+                        // BOTH pointed-to types.
+                        let res_quals = p_t.qualifiers() | p_e.qualifiers();
+                        let void_ptr = self
+                            .registry
+                            .pointer_to(QualType::new(self.registry.type_void, res_quals));
+                        Some(QualType::unqualified(void_ptr))
+                    } else if self
+                        .registry
+                        .is_compatible(self.registry.strip_all(p_t), self.registry.strip_all(p_e))
+                    {
+                        // Differently qualified versions of compatible types
+                        // C11 6.5.15p6: the result has the composite type, which itself is a pointer
+                        // to a qualified version of the type pointed to by either operand.
+                        // The qualifiers of the result pointed-to type are the union of the
+                        // qualifiers of the pointed-to types of both operands.
+                        let res_p_quals = p_t.qualifiers() | p_e.qualifiers();
+                        let p_composite = self
+                            .registry
+                            .composite_type(self.registry.strip_all(p_t), self.registry.strip_all(p_e))
+                            .unwrap();
+                        let res_p_ty = QualType::new(p_composite.ty(), res_p_quals);
+                        Some(QualType::unqualified(self.registry.pointer_to(res_p_ty)))
                     } else {
-                        // Should check compatibility, for now just use one or common
-                        Some(t)
+                        None
                     }
                 }
                 _ => usual_arithmetic_conversions(self.registry, t, e),

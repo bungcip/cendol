@@ -84,3 +84,8 @@ Action: Enforce 'int' range checks for all enumeration constants during semantic
 
 Learning: C11 _Atomic constraints (6.7.2.4p3 for specifiers and 6.7.3p5 for qualifiers) require that it only be applied to an object type that is not an array. While incomplete types (like 'struct S;') are object types, 'void' is explicitly NOT an object type per 6.2.5p1. Therefore, both _Atomic(void) and _Atomic void are constraint violations and must be rejected by the compiler.
 Action: Enforce "object type" constraints by specifically rejecting the 'void' type in both qualifier merging and specifier resolution phases of semantic lowering.
+
+2025-05-31 - [Ternary Operator Pointer Qualifier Merging]
+
+Learning: C11 6.5.15p6 requires the result of a conditional operator with pointer operands to have a type that is a pointer to a qualified version of the type pointed to by either operand. Crucially, the qualifiers of the pointed-to type in the result must be the UNION of the qualifiers of the pointed-to types of both operands. Since 'TypeRegistry::composite_type' enforces qualifier identity for compatibility, the semantic analyzer must manually compute this qualifier union before constructing the result pointer type.
+Action: When implementing language features that allow merging of differently qualified versions of compatible types (like ternary or certain assignments), explicitly compute the qualifier union for the resulting pointed-to types instead of relying on standard composite type helpers.

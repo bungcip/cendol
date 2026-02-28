@@ -72,6 +72,7 @@ pub mod codegen_func_ptr_global;
 pub mod codegen_regr;
 pub mod codegen_store_truncation;
 pub mod driver_defines;
+pub mod guardian_ternary_pointer_constraints;
 pub mod mir_dumper_coverage;
 pub mod mir_gen_compound_assignment;
 pub mod mir_gen_function_address;

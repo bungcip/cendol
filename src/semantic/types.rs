@@ -638,6 +638,13 @@ impl QualType {
     pub(crate) fn is_scalar(self) -> bool {
         self.ty().is_scalar()
     }
+
+    /// Merge additional qualifiers into this qualified type.
+    /// Returns a new QualType with the combined qualifiers.
+    #[inline]
+    pub(crate) fn merge_qualifiers(self, additional: TypeQualifiers) -> Self {
+        Self::new(self.ty(), self.qualifiers() | additional)
+    }
 }
 
 impl Display for QualType {

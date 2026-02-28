@@ -961,10 +961,6 @@ impl TypeRegistry {
         }
     }
 
-    pub(crate) fn merge_qualifiers(&self, base: QualType, add: TypeQualifiers) -> QualType {
-        QualType::new(base.ty(), base.qualifiers() | add)
-    }
-
     pub(crate) fn is_compatible(&self, a: QualType, b: QualType) -> bool {
         if a == b {
             return true;

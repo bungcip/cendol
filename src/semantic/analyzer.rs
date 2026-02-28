@@ -1555,7 +1555,7 @@ impl<'a> SemanticAnalyzer<'a> {
             // C11 6.5.2.3p4: if the first expression has qualified type, the result has the so-qualified
             // version of the type of the designated member.
             if !base_quals.is_empty() {
-                ty = self.registry.merge_qualifiers(ty, base_quals);
+                ty = ty.merge_qualifiers(base_quals);
             }
             return Some(ty);
         }

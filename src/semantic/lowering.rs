@@ -95,9 +95,7 @@ fn apply_parsed_declarator(
 
             let array_size = convert_parsed_array_size(&size, ctx);
             let array_type = ctx.registry.array_of(current_type.ty(), array_size);
-            let qualified_array = ctx
-                .registry
-                .merge_qualifiers(QualType::unqualified(array_type), current_type.qualifiers());
+            let qualified_array = QualType::unqualified(array_type).merge_qualifiers(current_type.qualifiers());
             apply_parsed_declarator(qualified_array, inner, ctx, span, decl_ctx)
         }
         ParsedDeclaratorNode::Function { params, flags, inner } => {
@@ -280,7 +278,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.report_error(span, SemanticErrorKind::InvalidAtomicQualifier { type_kind: "void" });
             }
         }
-        self.registry.merge_qualifiers(base, add)
+        base.merge_qualifiers(add)
     }
 
     fn check_static_assert(&mut self, cond: ParsedNodeRef, msg: ParsedNodeRef, span: SourceSpan) {
@@ -457,7 +455,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticErrorKind::InvalidAtomicSpecifier { reason });
         }
 
-        Ok(self.registry.merge_qualifiers(qt, TypeQualifiers::ATOMIC))
+        Ok(qt.merge_qualifiers(TypeQualifiers::ATOMIC))
     }
 
     fn resolve_record_specifier(

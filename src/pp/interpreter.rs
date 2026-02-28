@@ -31,14 +31,15 @@ impl ExprValue {
 #[derive(Debug)]
 pub(crate) enum PPExpr {
     Number(ExprValue),
-    Identifier(String),
-    Defined(Box<PPExpr>),
+    #[allow(dead_code)]
+    Identifier(StringId),
+    Defined(StringId),
     HasInclude(String, bool),
     HasIncludeNext(String, bool),
-    HasBuiltin(String),
-    HasAttribute(String),
-    HasFeature(String),
-    HasExtension(String),
+    HasBuiltin(StringId),
+    HasAttribute(StringId),
+    HasFeature(StringId),
+    HasExtension(StringId),
     Binary(BinaryOp, Box<PPExpr>, Box<PPExpr>),
     Unary(UnaryOp, Box<PPExpr>),
     Conditional(Box<PPExpr>, Box<PPExpr>, Box<PPExpr>),
@@ -49,20 +50,16 @@ impl PPExpr {
         match self {
             PPExpr::Number(n) => Ok(*n),
             PPExpr::Identifier(_) => Ok(ExprValue::new(0, false)), // C11 6.10.1p4: All remaining identifiers are replaced with 0
-            PPExpr::Defined(ident) => {
-                if let PPExpr::Identifier(s) = &**ident {
-                    Ok(ExprValue::from_bool(pp.is_macro_defined(&StringId::new(s))))
-                } else {
-                    Err(Self::expr_error(span))
-                }
-            }
+            PPExpr::Defined(sym) => Ok(ExprValue::from_bool(pp.is_macro_defined(sym))),
             PPExpr::HasInclude(path, is_angled) => Ok(ExprValue::from_bool(pp.check_header_exists(path, *is_angled))),
             PPExpr::HasIncludeNext(path, is_angled) => {
                 Ok(ExprValue::from_bool(pp.check_next_header_exists(path, *is_angled)))
             }
-            PPExpr::HasBuiltin(s) => Ok(ExprValue::from_bool(Self::is_builtin_supported(s))),
-            PPExpr::HasAttribute(s) => Ok(ExprValue::from_bool(Self::is_attribute_supported(s))),
-            PPExpr::HasFeature(s) | PPExpr::HasExtension(s) => Ok(ExprValue::from_bool(Self::is_feature_supported(s))),
+            PPExpr::HasBuiltin(s) => Ok(ExprValue::from_bool(Self::is_builtin_supported(s.as_str()))),
+            PPExpr::HasAttribute(s) => Ok(ExprValue::from_bool(Self::is_attribute_supported(s.as_str()))),
+            PPExpr::HasFeature(s) | PPExpr::HasExtension(s) => {
+                Ok(ExprValue::from_bool(Self::is_feature_supported(s.as_str())))
+            }
             PPExpr::Binary(op, left, right) => Self::eval_binary(*op, left, right, pp, span),
             PPExpr::Unary(op, operand) => Self::eval_unary(*op, operand, pp, span),
             PPExpr::Conditional(cond, true_e, false_e) => Self::eval_conditional(cond, true_e, false_e, pp, span),
@@ -431,15 +428,15 @@ impl<'a> Interpreter<'a> {
         // Handle `defined`
         if matches!(token.kind, PPTokenKind::Identifier(sym) if sym == self.preprocessor.defined_symbol()) {
             self.advance();
-            let ident = if self.peek() == Some(&PPTokenKind::LeftParen) {
+            let sym = if self.peek() == Some(&PPTokenKind::LeftParen) {
                 self.advance();
-                let ident = self.parse_primary()?;
+                let sym = self.expect_identifier()?;
                 self.expect(PPTokenKind::RightParen)?;
-                ident
+                sym
             } else {
-                self.parse_primary()?
+                self.expect_identifier()?
             };
-            return Ok(PPExpr::Defined(Box::new(ident)));
+            return Ok(PPExpr::Defined(sym));
         }
 
         // Handle `__has_include`
@@ -458,7 +455,7 @@ impl<'a> Interpreter<'a> {
         let checks = [
             (
                 self.preprocessor.has_builtin_symbol(),
-                PPExpr::HasBuiltin as fn(String) -> PPExpr,
+                PPExpr::HasBuiltin as fn(StringId) -> PPExpr,
             ),
             (self.preprocessor.has_attribute_symbol(), PPExpr::HasAttribute),
             (self.preprocessor.has_feature_symbol(), PPExpr::HasFeature),
@@ -532,15 +529,19 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn parse_has_builtin_style(&mut self, f: impl FnOnce(String) -> PPExpr) -> Result<PPExpr, PPError> {
+    fn parse_has_builtin_style(&mut self, f: impl FnOnce(StringId) -> PPExpr) -> Result<PPExpr, PPError> {
         self.expect(PPTokenKind::LeftParen)?;
-        let token = self.next()?;
-        let name = match &token.kind {
-            PPTokenKind::Identifier(sym) => sym.as_str().to_string(),
-            _ => return Err(self.error()),
-        };
+        let sym = self.expect_identifier()?;
         self.expect(PPTokenKind::RightParen)?;
-        Ok(f(name))
+        Ok(f(sym))
+    }
+
+    fn expect_identifier(&mut self) -> Result<StringId, PPError> {
+        let token = self.next()?;
+        match &token.kind {
+            PPTokenKind::Identifier(sym) => Ok(*sym),
+            _ => Err(self.error()),
+        }
     }
 
     fn parse_primary(&mut self) -> Result<PPExpr, PPError> {
@@ -557,7 +558,7 @@ impl<'a> Interpreter<'a> {
                 Ok(PPExpr::Number(ExprValue::new(val, is_unsigned)))
             }
             PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(ExprValue::new(*codepoint, false))),
-            PPTokenKind::Identifier(sym) => Ok(PPExpr::Identifier(sym.as_str().to_string())),
+            PPTokenKind::Identifier(sym) => Ok(PPExpr::Identifier(*sym)),
             PPTokenKind::LeftParen => {
                 let result = self.parse_conditional()?;
                 self.expect(PPTokenKind::RightParen)?;

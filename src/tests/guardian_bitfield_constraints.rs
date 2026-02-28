@@ -36,40 +36,22 @@ fn test_bitfield_invalid_types() {
     // _Bool, signed int, unsigned int, or some other implementation-defined addressable storage unit.
 
     // 1. Float bit-field
-    run_fail_with_message(
-        "struct S { float x : 1; };",
-        "bit-field type 'float' is invalid",
-    );
+    run_fail_with_message("struct S { float x : 1; };", "bit-field type 'float' is invalid");
 
     // 2. Double bit-field
-    run_fail_with_message(
-        "struct S { double x : 1; };",
-        "bit-field type 'double' is invalid",
-    );
+    run_fail_with_message("struct S { double x : 1; };", "bit-field type 'double' is invalid");
 
     // 3. Pointer bit-field
-    run_fail_with_message(
-        "struct S { int *x : 1; };",
-        "bit-field type 'int*' is invalid",
-    );
+    run_fail_with_message("struct S { int *x : 1; };", "bit-field type 'int*' is invalid");
 
     // 4. Void bit-field
-    run_fail_with_message(
-        "struct S { void x : 1; };",
-        "bit-field type 'void' is invalid",
-    );
+    run_fail_with_message("struct S { void x : 1; };", "bit-field type 'void' is invalid");
 
     // 5. Array bit-field
-    run_fail_with_message(
-        "struct S { int x[10] : 1; };",
-        "bit-field type 'int[10]' is invalid",
-    );
+    run_fail_with_message("struct S { int x[10] : 1; };", "bit-field type 'int[10]' is invalid");
 
     // 6. Function bit-field
-    run_fail_with_message(
-        "struct S { void f(void) : 1; };",
-        "bit-field type 'void()' is invalid",
-    );
+    run_fail_with_message("struct S { void f(void) : 1; };", "bit-field type 'void()' is invalid");
 }
 
 #[test]
@@ -80,10 +62,7 @@ fn test_bitfield_width_constraints() {
     // expression omitted.
 
     // 1. Negative width
-    run_fail_with_message(
-        "struct S { int x : -1; };",
-        "invalid bit-field width",
-    );
+    run_fail_with_message("struct S { int x : -1; };", "invalid bit-field width");
 
     // 2. Width exceeds type width (char is 8 bits in this compiler)
     run_fail_with_message(

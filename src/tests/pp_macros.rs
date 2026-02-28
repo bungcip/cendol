@@ -537,3 +537,15 @@ __STDC_IEC_559__
     - []
     "#);
 }
+
+#[test]
+fn test_macro_recursive_pasting() {
+    let source = r#"
+#define CAT(a,b) a ## b
+#define foobar CAT(foo, bar)
+foobar
+"#;
+
+    let (_, result) = crate::tests::test_utils::run_pipeline(source, crate::driver::artifact::CompilePhase::Preprocess);
+    assert!(result.is_ok());
+}

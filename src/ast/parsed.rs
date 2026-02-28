@@ -304,7 +304,7 @@ pub enum ParsedDesignator {
     GnuArrayRange(ParsedNodeRef, ParsedNodeRef),
 }
 impl ParsedDeclSpecifier {
-    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
             ParsedDeclSpecifier::AlignmentSpecifier(aspec) => aspec.for_each_child(f),
             ParsedDeclSpecifier::TypeSpecifier(ts) => ts.for_each_child(f),
@@ -314,7 +314,7 @@ impl ParsedDeclSpecifier {
 }
 
 impl ParsedTypeSpecifier {
-    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
             ParsedTypeSpecifier::Enum(_, Some(enumerators)) => {
                 for &e in enumerators {
@@ -334,7 +334,7 @@ impl ParsedTypeSpecifier {
 }
 
 impl ParsedAlignmentSpecifier {
-    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         if let ParsedAlignmentSpecifier::Expr(e) = self {
             f(*e)
         }
@@ -342,7 +342,7 @@ impl ParsedAlignmentSpecifier {
 }
 
 impl ParsedDeclarator {
-    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
             ParsedDeclarator::Pointer(_, Some(inner)) => {
                 inner.for_each_child(f);
@@ -368,7 +368,7 @@ impl ParsedDeclarator {
 }
 
 impl ParsedParamData {
-    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         for spec in &self.specifiers {
             spec.for_each_child(f);
         }
@@ -379,7 +379,7 @@ impl ParsedParamData {
 }
 
 impl ParsedArraySize {
-    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
             ParsedArraySize::Expression { expr, .. } => f(*expr),
             ParsedArraySize::VlaSpecifier { size: Some(s), .. } => f(*s),
@@ -389,7 +389,7 @@ impl ParsedArraySize {
 }
 
 impl ParsedInitDeclarator {
-    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         self.declarator.for_each_child(f);
         if let Some(init) = self.initializer {
             f(init);
@@ -398,7 +398,7 @@ impl ParsedInitDeclarator {
 }
 
 impl ParsedDeclarationData {
-    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         for spec in &self.specifiers {
             spec.for_each_child(f);
         }
@@ -409,7 +409,7 @@ impl ParsedDeclarationData {
 }
 
 impl ParsedFunctionDefData {
-    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         for spec in &self.specifiers {
             spec.for_each_child(f);
         }
@@ -419,7 +419,7 @@ impl ParsedFunctionDefData {
 }
 
 impl ParsedNodeKind {
-    pub fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
             ParsedNodeKind::Literal(_)
             | ParsedNodeKind::Ident(_)

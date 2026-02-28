@@ -312,3 +312,9 @@ fn test_for_statement_with_declaration_no_init() {
       - CompoundStatement: []
     ");
 }
+
+#[test]
+fn test_for_multiple_declarations() {
+    let resolved = setup_statement("for (int i = 2, b = 4; i + 2; i = 2) {}");
+    insta::assert_yaml_snapshot!(&resolved);
+}

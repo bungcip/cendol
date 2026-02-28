@@ -1,5 +1,5 @@
-use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pipeline_to_mir};
 use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pipeline_to_mir};
 
 #[test]
 fn test_ternary_incompatible_pointers_rejected() {

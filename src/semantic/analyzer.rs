@@ -2158,12 +2158,14 @@ impl<'a> SemanticAnalyzer<'a> {
                         // qualified version of void. The attributes of the result are those of
                         // BOTH pointed-to types.
                         let res_quals = p_t.qualifiers() | p_e.qualifiers();
-                        let void_ptr = self.registry.pointer_to(QualType::new(self.registry.type_void, res_quals));
+                        let void_ptr = self
+                            .registry
+                            .pointer_to(QualType::new(self.registry.type_void, res_quals));
                         Some(QualType::unqualified(void_ptr))
-                    } else if self.registry.is_compatible(
-                        self.registry.strip_all(p_t),
-                        self.registry.strip_all(p_e),
-                    ) {
+                    } else if self
+                        .registry
+                        .is_compatible(self.registry.strip_all(p_t), self.registry.strip_all(p_e))
+                    {
                         // Differently qualified versions of compatible types
                         // C11 6.5.15p6: the result has the composite type, which itself is a pointer
                         // to a qualified version of the type pointed to by either operand.

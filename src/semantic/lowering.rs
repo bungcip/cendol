@@ -1961,7 +1961,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return Some(node);
         }
 
-        let init_expr = init.initializer.map(|init_node| self.visit_expression(init_node));
         let is_func = final_ty.is_function();
 
         if !is_func {
@@ -1971,7 +1970,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if is_func {
             self.visit_function_decl(node, name, final_ty, spec_info, span)
         } else {
-            self.visit_variable_decl(node, name, final_ty, spec_info, init_expr, span)
+            self.visit_variable_decl(node, name, final_ty, spec_info, init.initializer, span)
         }
         Some(node)
     }
@@ -2012,9 +2011,30 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         name: NameId,
         mut qt: QualType,
         spec_info: &DeclSpecInfo,
-        init_expr: Option<NodeRef>,
+        init: Option<ParsedNodeRef>,
         span: SourceSpan,
     ) {
+        qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);
+
+        // Define variable in symbol table early so it's visible in its own initializer
+        let sym_res = self
+            .symbol_table
+            .define_variable(name, qt, spec_info.storage, None, spec_info.alignment, span);
+
+        let mut init_expr = None;
+        if let Some(init_node) = init {
+            init_expr = Some(self.visit_expression(init_node));
+
+            // Update symbol entry with the actual initializer
+            if let Ok(sym) = sym_res {
+                let symbol = self.symbol_table.get_symbol_mut(sym);
+                if let SymbolKind::Variable { initializer, .. } = &mut symbol.kind {
+                    *initializer = init_expr;
+                }
+                symbol.def_state = DefinitionState::Defined;
+            }
+        }
+
         if let Some(ie) = init_expr
             && let TypeKind::Array {
                 element_type,
@@ -2027,10 +2047,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     .registry
                     .array_of(element_type, ArraySizeType::Constant(deduced_size));
                 qt = QualType::new(new_ty, qt.qualifiers());
+
+                // Update type in symbol table as well
+                if let Ok(sym) = sym_res {
+                    self.symbol_table.get_symbol_mut(sym).type_info = qt;
+                }
             }
         }
-
-        qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);
 
         // C11 6.7p7: If an identifier for an object is declared with no linkage, the type for the object
         // shall be complete by the end of its declarator...
@@ -2053,10 +2076,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             alignment: spec_info.alignment.map(|a| a as u16),
         };
 
-        if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
-            self.symbol_table
-                .define_variable(name, qt, spec_info.storage, init_expr, spec_info.alignment, span)
-        {
+        if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) = sym_res {
             let first_def = self.symbol_table.get_symbol(existing).def_span;
             self.report_error(span, SemanticErrorKind::Redefinition { name, first_def });
         }

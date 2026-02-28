@@ -407,6 +407,10 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_global_symbol(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
+        if self.global_map.contains_key(&entry_ref) {
+            return;
+        }
+
         let symbol = self.symbol_table.get_symbol(entry_ref);
         let (init, alignment, name, ty) = if let SymbolKind::Variable {
             initializer, alignment, ..
@@ -416,6 +420,23 @@ impl<'a> MirGen<'a> {
         } else {
             unreachable!()
         };
+
+        let global_name = if symbol.scope_id == ScopeId::GLOBAL {
+            name
+        } else {
+            // Mangle name for static local to avoid collision
+            crate::ast::NameId::new(format!("{}.{}", name, entry_ref.get()))
+        };
+
+        let global_id = self
+            .mir_builder
+            .create_global_with_init(global_name, mir_type_id, symbol.is_const(), None);
+
+        if let Some(align) = alignment {
+            self.mir_builder.set_global_alignment(global_id, align);
+        }
+
+        self.global_map.insert(entry_ref, global_id);
 
         // Static locals must be evaluated as constants, even if we are inside a function.
         // We temporarily unset current_function to force constant evaluation mode.
@@ -431,27 +452,8 @@ impl<'a> MirGen<'a> {
             }
         });
 
-        if let Some(global_id) = self.global_map.get(&entry_ref).copied() {
-            if let Some(init_id) = final_init {
-                self.mir_builder.set_global_initializer(global_id, init_id);
-            }
-        } else {
-            let global_name = if symbol.scope_id == ScopeId::GLOBAL {
-                name
-            } else {
-                // Mangle name for static local to avoid collision
-                crate::ast::NameId::new(format!("{}.{}", name, entry_ref.get()))
-            };
-
-            let global_id =
-                self.mir_builder
-                    .create_global_with_init(global_name, mir_type_id, symbol.is_const(), final_init);
-
-            if let Some(align) = alignment {
-                self.mir_builder.set_global_alignment(global_id, align);
-            }
-
-            self.global_map.insert(entry_ref, global_id);
+        if let Some(init_id) = final_init {
+            self.mir_builder.set_global_initializer(global_id, init_id);
         }
     }
 

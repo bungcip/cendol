@@ -353,3 +353,29 @@ fn test_incomplete_type_in_prototype_ok() {
 fn test_initialized_array_block_scope_ok() {
     run_pass("void f() { int a[] = {1, 2, 3}; }", CompilePhase::Mir);
 }
+
+#[test]
+fn test_variable_visible_in_its_own_initializer() {
+    run_pass(
+        r#"
+        int main() {
+            int x = sizeof(x);
+            void *p = &p;
+            return 0;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_global_variable_visible_in_its_own_initializer() {
+    run_pass(
+        r#"
+        int x = sizeof(x);
+        void *p = &p;
+        int main() { return 0; }
+        "#,
+        CompilePhase::Mir,
+    );
+}

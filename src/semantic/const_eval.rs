@@ -342,6 +342,10 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
     }
 }
 
+/// Evaluate a constant expression node to an f64 value
+///
+/// This function handles floating-point operations specifically and falls back to integer evaluation
+/// for other types, converting the result to f64.
 pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<f64> {
     let node_kind = ctx.ast.get_kind(expr_node);
     match node_kind {

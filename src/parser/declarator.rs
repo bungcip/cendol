@@ -351,6 +351,22 @@ pub(crate) fn get_declarator_name(declarator: &ParsedDeclarator) -> Option<NameI
     }
 }
 
+/// Extract the parameters from a function declarator, if any
+pub(crate) fn get_declarator_params(declarator: &ParsedDeclarator) -> Option<&ThinVec<ParsedParamData>> {
+    match declarator {
+        ParsedDeclarator::Function { inner, params, .. } => {
+            if let Some(inner_params) = get_declarator_params(inner) {
+                Some(inner_params)
+            } else {
+                Some(params)
+            }
+        },
+        ParsedDeclarator::Pointer(_, Some(inner)) => get_declarator_params(inner),
+        ParsedDeclarator::Array(inner, _) => get_declarator_params(inner),
+        _ => None,
+    }
+}
+
 pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDeclarator, ParseError> {
     while parser.is_token(TokenKind::Attribute) {
         let _ = super::declaration_core::parse_attribute(parser);

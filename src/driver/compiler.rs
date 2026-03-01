@@ -420,9 +420,18 @@ impl CompilerDriver {
                     } else if let Some(preprocessed) = artifact.preprocessed {
                         let dumper =
                             PPDumper::new(&preprocessed, &self.source_manager, self.config.suppress_line_markers);
-                        dumper
-                            .dump(&mut std::io::stdout())
-                            .map_err(|e| DriverError::IoError(e.to_string()))?;
+
+                        if let Some(ref output_path) = self.config.output_path {
+                            let mut file = std::fs::File::create(output_path)
+                                .map_err(|e| DriverError::IoError(format!("Failed to create output file: {}", e)))?;
+                            dumper
+                                .dump(&mut file)
+                                .map_err(|e| DriverError::IoError(e.to_string()))?;
+                        } else {
+                            dumper
+                                .dump(&mut std::io::stdout())
+                                .map_err(|e| DriverError::IoError(e.to_string()))?;
+                        }
                     }
                 }
 

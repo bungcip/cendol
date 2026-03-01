@@ -313,7 +313,7 @@ impl CompilerDriver {
         // Attach semantic info to AST (like scope_map)
         ast.attach_semantic_info(semantic_info);
 
-        let mut sema = MirGen::new(&ast, &symbol_table, &mut registry);
+        let mut sema = MirGen::new(&ast, &symbol_table, &mut registry, &self.source_manager);
         let mir_program = sema.visit_module();
         self.check_diagnostics_and_return_if_error()?;
 

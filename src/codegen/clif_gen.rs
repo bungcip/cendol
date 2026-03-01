@@ -7,8 +7,9 @@
 
 use crate::mir::MirProgram;
 use crate::mir::{
-    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, GlobalId, LocalId, MirBlockId, MirFunction,
-    MirFunctionId, MirLinkage, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
+    BinaryFloatOp, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, Global, GlobalId, LocalId, MirBlockId,
+    MirFunction, MirFunctionId, MirLinkage, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp,
+    UnaryIntOp,
 };
 use cranelift::codegen::ir::{AtomicRmwOp, Inst, StackSlot, StackSlotData, StackSlotKind};
 use cranelift::prelude::{
@@ -58,6 +59,14 @@ fn lower_type(mir_type: &MirType) -> Option<Type> {
 /// Helper function to convert MIR function linkage to Cranelift linkage
 fn lower_linkage(func: &MirFunction) -> Linkage {
     match func.linkage {
+        MirLinkage::Internal => Linkage::Local,
+        MirLinkage::External => Linkage::Export,
+        MirLinkage::Import => Linkage::Import,
+    }
+}
+
+fn lower_global_linkage(global: &Global) -> Linkage {
+    match global.linkage {
         MirLinkage::Internal => Linkage::Local,
         MirLinkage::External => Linkage::Export,
         MirLinkage::Import => Linkage::Import,
@@ -1161,13 +1170,7 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                 ConstValueKind::Null => ctx.builder.ins().iconst(expected_type, 0i64),
                 ConstValueKind::GlobalAddress(global_id) => {
                     let global = ctx.mir.get_global(*global_id);
-                    let linkage = if global.name.as_str().starts_with(".L.str") {
-                        Linkage::Local
-                    } else if global.initial_value.is_some() {
-                        Linkage::Export
-                    } else {
-                        Linkage::Import
-                    };
+                    let linkage = lower_global_linkage(global);
                     let global_val = ctx
                         .module
                         .declare_data(global.name.as_str(), linkage, true, false)
@@ -1402,13 +1405,7 @@ fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Value {
         }
         Place::Global(global_id) => {
             let global = ctx.mir.get_global(*global_id);
-            let linkage = if global.name.as_str().starts_with(".L.str") {
-                Linkage::Local
-            } else if global.initial_value.is_some() {
-                Linkage::Export
-            } else {
-                Linkage::Import
-            };
+            let linkage = lower_global_linkage(global);
 
             let global_val = ctx
                 .module
@@ -2389,14 +2386,7 @@ impl ClifGen {
                 continue;
             }
             let global = self.mir.globals.get(&global_id).unwrap();
-            // Use local linkage for string literals to avoid multiple definition errors
-            let linkage = if global.name.as_str().starts_with(".L.str") {
-                Linkage::Local
-            } else if global.initial_value.is_some() {
-                Linkage::Export
-            } else {
-                Linkage::Import
-            };
+            let linkage = lower_global_linkage(global);
 
             let data_id = self
                 .module

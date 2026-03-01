@@ -11,7 +11,13 @@ fn test_dump_basic_module() {
     let void_ty = builder.add_type(MirType::Void);
 
     // Global
-    let global_id = builder.create_global_with_init(NameId::new("g_val"), i32_ty, false, None);
+    let global_id = builder.create_global_with_init(
+        NameId::new("g_val"),
+        i32_ty,
+        false,
+        crate::mir::MirLinkage::External,
+        None,
+    );
 
     // Function
     let func_id = builder.define_function(

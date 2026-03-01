@@ -492,8 +492,8 @@ fn test_struct_copy_init() {
     type %t5 = fn() -> %t1
 
     global @global: i32 = const zero
-    global @.L.str0: %t2 = const struct_literal { 0: const inc_global }
     global @global_wrap: [2]%t2 = const array_literal [const struct_literal { 0: const inc_global }, const struct_literal { 0: const inc_global }]
+    global @.L.str0: %t2 = const struct_literal { 0: const inc_global }
 
     fn main() -> i32
     {

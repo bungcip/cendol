@@ -43,3 +43,40 @@ fn test_offsetof_return_type() {
         CompilePhase::Cranelift,
     );
 }
+
+/// Regression test: sizeof(a)/sizeof(a)[0] pattern used by ARRAY_SIZE macro.
+/// sizeof(a)[0] must parse as sizeof((a)[0]), not (sizeof(a))[0].
+#[test]
+fn test_sizeof_array_size_macro() {
+    run_pass(
+        r#"
+        #define ARRAY_SIZE(a) ((unsigned int)((sizeof (a))/(sizeof (a)[0])))
+        int arr[5];
+        int x = ARRAY_SIZE(arr);
+        int main() {
+            return x == 5 ? 0 : 1;
+        }
+        "#,
+        CompilePhase::Cranelift,
+    );
+}
+
+/// Regression test: float constant folding in global struct initializers.
+/// Expressions like 1/2.2 must be constant-folded at compile time.
+#[test]
+fn test_float_constant_folding_in_global_init() {
+    run_pass(
+        r#"
+        struct S { double a; double b; };
+        static const struct S vals[] = {
+            { 1/2.2, 0.5 },
+            { 1/1.6, 0.25 },
+            { 1/(2+51./256), 0.125 },
+        };
+        int main() {
+            return 0;
+        }
+        "#,
+        CompilePhase::Cranelift,
+    );
+}

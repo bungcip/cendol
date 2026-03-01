@@ -809,7 +809,16 @@ impl<'a> SemanticAnalyzer<'a> {
                 } else if rhs_promoted.is_pointer() {
                     rhs_promoted
                 } else {
-                    usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted)?
+                    usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted).or_else(|| {
+                        self.report_error(
+                            node,
+                            SemanticErrorKind::InvalidBinaryOperands {
+                                left_ty: lhs_promoted,
+                                right_ty: rhs_promoted,
+                            },
+                        );
+                        None
+                    })?
                 };
                 Some((QualType::unqualified(self.registry.type_int), common))
             }
@@ -829,7 +838,16 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                     lhs_promoted
                 } else if lhs_promoted.is_real() && rhs_promoted.is_real() {
-                    usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted)?
+                    usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted).or_else(|| {
+                        self.report_error(
+                            node,
+                            SemanticErrorKind::InvalidBinaryOperands {
+                                left_ty: lhs_promoted,
+                                right_ty: rhs_promoted,
+                            },
+                        );
+                        None
+                    })?
                 } else {
                     self.report_error(
                         node,
@@ -2502,7 +2520,8 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn fits_in_type(&self, val: u64, ty: TypeRef) -> bool {
+    fn fits_in_type(&mut self, val: u64, ty: TypeRef) -> bool {
+        let _ = self.registry.ensure_layout(ty);
         let layout = self.registry.get_layout(ty);
         let size_bits = layout.size * 8;
         let is_unsigned = match &self.registry.get(ty).kind {
@@ -2757,6 +2776,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return false;
         };
 
+        let _ = self.registry.ensure_layout(elem_ty);
         let layout = self.registry.get_layout(elem_ty);
         *offset += index_val * (layout.size as i64);
         *current_ty = QualType::unqualified(elem_ty);

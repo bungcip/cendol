@@ -468,16 +468,24 @@ fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let start = parser.expect(TokenKind::Sizeof)?.span.start();
 
     let (kind, end) = if parser.accept(TokenKind::LeftParen).is_some() {
-        let (kind, end) = if parser.is_type_name_start() {
+        if parser.is_type_name_start() {
             let ty = super::parsed_type_builder::parse_parsed_type_name(parser)?;
             let end = parser.expect(TokenKind::RightParen)?.span.end();
             (ParsedNodeKind::SizeOfType(ty), end)
         } else {
-            let expr = parser.parse_expr_min()?;
-            let end = parser.expect(TokenKind::RightParen)?.span.end();
+            // sizeof(expr) - the parens are part of the expression, NOT sizeof syntax.
+            // Parse inner expression, close paren, then continue parsing postfix
+            // operators so that sizeof(a)[0] correctly parses as sizeof((a)[0]).
+            let mut expr = parser.parse_expr_min()?;
+            parser.expect(TokenKind::RightParen)?;
+
+            // Continue consuming postfix operators ([], ., ->, (), ++, --)
+            // that attach to the parenthesized expression, not to sizeof.
+            expr = parse_postfix_tail(parser, expr)?;
+
+            let end = parser.ast.get_node(expr).span.end();
             (ParsedNodeKind::SizeOfExpr(expr), end)
-        };
-        (kind, end)
+        }
     } else {
         let expr = parser.parse_expr_bp(BindingPower::UNARY)?;
         let end = parser.ast.get_node(expr).span.end();
@@ -485,6 +493,44 @@ fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     };
 
     Ok(parser.push_node(kind, SourceSpan::new(start, end)))
+}
+
+/// Parse trailing postfix operators ([], ., ->, (), ++, --) after a primary expression.
+/// This is used by sizeof and alignof to correctly handle cases like sizeof(a)[0].
+fn parse_postfix_tail(parser: &mut Parser, mut left: ParsedNodeRef) -> Result<ParsedNodeRef, ParseError> {
+    loop {
+        let Some(token) = parser.try_current_token() else {
+            break;
+        };
+        match token.kind {
+            TokenKind::LeftBracket => {
+                parser.advance();
+                left = parse_index_access(parser, left)?;
+            }
+            TokenKind::Dot => {
+                parser.advance();
+                left = parse_member_access(parser, left, false)?;
+            }
+            TokenKind::Arrow => {
+                parser.advance();
+                left = parse_member_access(parser, left, true)?;
+            }
+            TokenKind::LeftParen => {
+                parser.advance();
+                left = parse_function_call(parser, left)?;
+            }
+            TokenKind::Increment => {
+                let token = parser.advance().unwrap();
+                left = parse_postfix_increment(parser, left, token)?;
+            }
+            TokenKind::Decrement => {
+                let token = parser.advance().unwrap();
+                left = parse_postfix_decrement(parser, left, token)?;
+            }
+            _ => break,
+        }
+    }
+    Ok(left)
 }
 
 fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {

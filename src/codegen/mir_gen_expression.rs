@@ -6,7 +6,7 @@ use crate::mir::{
     AtomicMemOrder, BinaryIntOp, CallTarget, ConstValue, ConstValueKind, MirStmt, Operand, Place, Rvalue, Terminator,
     TypeId,
 };
-use crate::semantic::const_eval::eval_const_expr;
+use crate::semantic::const_eval::{eval_const_expr, eval_const_expr_float};
 use crate::semantic::{QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
 use crate::{ast, semantic};
 
@@ -22,7 +22,15 @@ impl<'a> MirGen<'a> {
         let ty = self.ast.get_resolved_type(expr_ref).unwrap_or_else(|| {
             let node_kind = self.ast.get_kind(expr_ref);
             let node_span = self.ast.get_span(expr_ref);
-            panic!("Type not resolved for node {:?} at {:?}", node_kind, node_span);
+            let (line, col, file) = self
+                .source_manager
+                .get_presumed_location(node_span.start())
+                .map(|(l, c, f)| (l, c, f.unwrap_or("<unknown>")))
+                .unwrap_or((0, 0, "<unknown>"));
+            panic!(
+                "Type not resolved for node {:?} at {}:{}:{} (span: {:?})",
+                node_kind, file, line, col, node_span
+            );
         });
         let node_kind = *self.ast.get_kind(expr_ref);
 
@@ -135,11 +143,26 @@ impl<'a> MirGen<'a> {
 
     fn try_constant_fold(&mut self, expr_ref: NodeRef, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
         // Attempt constant folding for arithmetic/logical operations that are not simple literals
-        if matches!(
+        if !matches!(
             node_kind,
             NodeKind::BinaryOp(..) | NodeKind::UnaryOp(..) | NodeKind::TernaryOp(..)
-        ) && let Some(val) = eval_const_expr(&self.const_ctx(), expr_ref)
-        {
+        ) {
+            return None;
+        }
+
+        // Try floating-point constant folding first for float types
+        if ty.ty().is_floating() {
+            if let Some(val) = eval_const_expr_float(&self.const_ctx(), expr_ref) {
+                let ty_id = self.lower_qual_type(ty);
+                return Some(Operand::Constant(
+                    self.create_constant(ty_id, ConstValueKind::Float(val)),
+                ));
+            }
+            return None;
+        }
+
+        // Integer constant folding
+        if let Some(val) = eval_const_expr(&self.const_ctx(), expr_ref) {
             let ty_id = self.lower_qual_type(ty);
             let mir_type = self.mir_builder.get_type(ty_id);
             let truncated_val = mir_type.truncate_int(val);
@@ -230,6 +253,7 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
+        let _ = self.registry.ensure_layout(ty);
         let layout = self.registry.get_layout(ty);
         let val = if is_size { layout.size } else { layout.alignment };
         self.create_size_t_operand(val)

@@ -119,6 +119,49 @@ fn test_sizeof_expression() {
     ");
 }
 
+/// Regression test: sizeof(a)[0] must parse as sizeof((a)[0]), not (sizeof(a))[0].
+/// The parens in sizeof(expr) are part of the expression, not sizeof syntax.
+/// Postfix operators like [0] attach to the parenthesized expression.
+#[test]
+fn test_sizeof_expr_with_postfix_index() {
+    let resolved = setup_expr("sizeof(a)[0]");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    SizeOfExpr:
+      IndexAccess:
+        - Ident: a
+        - LiteralInt: 0
+    ");
+}
+
+/// Regression test: sizeof(a).b must parse as sizeof((a).b).
+#[test]
+fn test_sizeof_expr_with_postfix_member() {
+    let resolved = setup_expr("sizeof(a).b");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    SizeOfExpr:
+      MemberAccess:
+        - Ident: a
+        - b
+        - false
+    ");
+}
+
+/// sizeof(a)/sizeof(a)[0] should parse as sizeof(a) / sizeof((a)[0])
+#[test]
+fn test_sizeof_array_size_macro_pattern() {
+    let resolved = setup_expr("sizeof(a)/sizeof(a)[0]");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    BinaryOp:
+      - Div
+      - SizeOfExpr:
+          Ident: a
+      - SizeOfExpr:
+          IndexAccess:
+            - Ident: a
+            - LiteralInt: 0
+    ");
+}
+
 #[test]
 fn test_complex_expression() {
     let resolved = setup_expr("a + b * c[d] - e.f");

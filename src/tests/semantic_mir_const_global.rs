@@ -24,11 +24,13 @@ fn test_const_global_mir() {
       is_constant: true
       initial_value: 1
       alignment: ~
+      linkage: External
     - id: 2
       name: y
       type_id: 1
       is_constant: false
       initial_value: 2
       alignment: ~
+      linkage: External
     ");
 }

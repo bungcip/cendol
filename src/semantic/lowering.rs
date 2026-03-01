@@ -2027,6 +2027,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             // Update symbol entry with the actual initializer
             if let Ok(sym) = sym_res {
+                // Check for redefinition: if the symbol was already Defined
+                // (i.e. had an initializer from a previous declaration), this
+                // is a duplicate definition error.
+                let already_defined = self.symbol_table.get_symbol(sym).def_state == DefinitionState::Defined;
+                if already_defined {
+                    let first_def = self.symbol_table.get_symbol(sym).def_span;
+                    self.report_error(span, SemanticErrorKind::Redefinition { name, first_def });
+                }
+
                 let symbol = self.symbol_table.get_symbol_mut(sym);
                 if let SymbolKind::Variable { initializer, .. } = &mut symbol.kind {
                     *initializer = init_expr;

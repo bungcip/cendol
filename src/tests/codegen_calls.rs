@@ -171,8 +171,13 @@ fn test_global_function_pointer_init() {
         func_ptr_type_id,
         crate::mir::ConstValueKind::FunctionAddress(target_func_id),
     );
-    let _global_id =
-        builder.create_global_with_init(NameId::new("ptr"), func_ptr_type_id, false, Some(func_addr_const_id));
+    let _global_id = builder.create_global_with_init(
+        NameId::new("ptr"),
+        func_ptr_type_id,
+        false,
+        crate::mir::MirLinkage::External,
+        Some(func_addr_const_id),
+    );
 
     // Compile
     let mir = builder.consume();

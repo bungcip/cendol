@@ -111,8 +111,8 @@ fn test_initializer_list_crash_regression() {
     type %t2 = struct anonymous {  }
     type %t3 = i32
 
-    global @.L.str0: %t2 = const struct_literal {  }
     global @ce: %t0 = const struct_literal { 0: const 1, 1: const struct_literal {  }, 2: const 18 }
+    global @.L.str0: %t2 = const struct_literal {  }
     ");
 }
 

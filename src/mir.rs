@@ -485,10 +485,11 @@ pub struct Global {
     pub is_constant: bool,
     pub initial_value: Option<ConstValueId>,
     pub alignment: Option<u32>, // Max alignment in bytes
+    pub linkage: MirLinkage,
 }
 
 impl Global {
-    pub(crate) fn new(id: GlobalId, name: NameId, type_id: TypeId, is_constant: bool) -> Self {
+    pub(crate) fn new(id: GlobalId, name: NameId, type_id: TypeId, is_constant: bool, linkage: MirLinkage) -> Self {
         Self {
             id,
             name,
@@ -496,6 +497,7 @@ impl Global {
             is_constant,
             initial_value: None,
             alignment: None,
+            linkage,
         }
     }
 }
@@ -759,12 +761,13 @@ impl MirBuilder {
         name: NameId,
         type_id: TypeId,
         is_constant: bool,
+        linkage: MirLinkage,
         initial_value: Option<ConstValueId>,
     ) -> GlobalId {
         let global_id = GlobalId::new(self.next_global_id).unwrap();
         self.next_global_id += 1;
 
-        let mut global = Global::new(global_id, name, type_id, is_constant);
+        let mut global = Global::new(global_id, name, type_id, is_constant, linkage);
         global.initial_value = initial_value;
         self.globals.insert(global_id, global);
         self.module.globals.push(global_id);

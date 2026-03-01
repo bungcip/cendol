@@ -22,6 +22,7 @@ use hashbrown::{HashMap, HashSet};
 use target_lexicon::Architecture;
 
 use crate::mir::GlobalId;
+use crate::source_manager::SourceManager;
 
 pub(crate) struct MirGen<'a> {
     pub(crate) ast: &'a Ast,
@@ -40,10 +41,16 @@ pub(crate) struct MirGen<'a> {
     pub(crate) continue_target: Option<MirBlockId>,
     pub(crate) switch_case_map: HashMap<NodeRef, MirBlockId>,
     pub(crate) valist_mir_id: Option<TypeId>,
+    pub(crate) source_manager: &'a SourceManager,
 }
 
 impl<'a> MirGen<'a> {
-    pub(crate) fn new(ast: &'a Ast, symbol_table: &'a SymbolTable, registry: &'a mut TypeRegistry) -> Self {
+    pub(crate) fn new(
+        ast: &'a Ast,
+        symbol_table: &'a SymbolTable,
+        registry: &'a mut TypeRegistry,
+        source_manager: &'a SourceManager,
+    ) -> Self {
         let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap(), 8);
         Self {
             ast,
@@ -62,6 +69,7 @@ impl<'a> MirGen<'a> {
             continue_target: None,
             switch_case_map: HashMap::new(),
             valist_mir_id: None,
+            source_manager,
         }
     }
 
@@ -412,11 +420,14 @@ impl<'a> MirGen<'a> {
         }
 
         let symbol = self.symbol_table.get_symbol(entry_ref);
-        let (init, alignment, name, ty) = if let SymbolKind::Variable {
-            initializer, alignment, ..
+        let (init, alignment, name, ty, storage) = if let SymbolKind::Variable {
+            initializer,
+            alignment,
+            storage,
+            ..
         } = &symbol.kind
         {
-            (*initializer, *alignment, symbol.name, symbol.type_info)
+            (*initializer, *alignment, symbol.name, symbol.type_info, *storage)
         } else {
             unreachable!()
         };
@@ -428,9 +439,17 @@ impl<'a> MirGen<'a> {
             crate::ast::NameId::new(format!("{}.{}", name, entry_ref.get()))
         };
 
-        let global_id = self
-            .mir_builder
-            .create_global_with_init(global_name, mir_type_id, symbol.is_const(), None);
+        let linkage = if storage == Some(StorageClass::Static) {
+            MirLinkage::Internal
+        } else if storage == Some(StorageClass::Extern) && init.is_none() {
+            MirLinkage::Import
+        } else {
+            MirLinkage::External
+        };
+
+        let global_id =
+            self.mir_builder
+                .create_global_with_init(global_name, mir_type_id, symbol.is_const(), linkage, None);
 
         if let Some(align) = alignment {
             self.mir_builder.set_global_alignment(global_id, align);
@@ -829,6 +848,8 @@ impl<'a> MirGen<'a> {
             return *type_id;
         }
 
+        let _ = self.registry.ensure_layout(type_ref);
+
         // Return placeholder if already converting this type (recursion loop)
         if self.type_conversion_in_progress.contains(&type_ref) {
             return *self
@@ -999,6 +1020,7 @@ impl<'a> MirGen<'a> {
 
         match size {
             ArraySizeType::Constant(s) => {
+                let _ = self.registry.ensure_layout(type_ref);
                 let (layout_size, layout_align, element_ref, _) = self.registry.get_array_layout(type_ref);
                 let element_layout = self.registry.get_layout(element_ref);
 

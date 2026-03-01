@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use crate::ast;
 use crate::ast::{Designator, NodeKind, NodeRef, literal};
 use crate::codegen::mir_gen::MirGen;
-use crate::mir::{ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue};
+use crate::mir::{ConstValueKind, MirArrayLayout, MirLinkage, MirType, Operand, Place, Rvalue};
 use crate::semantic::{ArraySizeType, QualType, StructMember, TypeKind};
 
 impl<'a> MirGen<'a> {
@@ -532,13 +532,14 @@ impl<'a> MirGen<'a> {
         let size = fixed_size.unwrap_or(parsed.size);
 
         let (mir_elem_ty, layout) = if let Some(qt) = elem_ty {
-            (self.lower_qual_type(qt), self.registry.get_layout(qt.ty()).into_owned())
+            let mir_elem_ty = self.lower_qual_type(qt);
+            let _ = self.registry.ensure_layout(qt.ty());
+            (mir_elem_ty, self.registry.get_layout(qt.ty()).into_owned())
         } else {
             let ty_ref = self.registry.get_builtin_type(parsed.builtin_type);
-            (
-                self.lower_qual_type(QualType::unqualified(ty_ref)),
-                self.registry.get_layout(ty_ref).into_owned(),
-            )
+            let mir_elem_ty = self.lower_qual_type(QualType::unqualified(ty_ref));
+            let _ = self.registry.ensure_layout(ty_ref);
+            (mir_elem_ty, self.registry.get_layout(ty_ref).into_owned())
         };
 
         let constants = (0..size)
@@ -570,11 +571,11 @@ impl<'a> MirGen<'a> {
 
         let array_const = self.create_array_const_from_string(val, None, Some(QualType::unqualified(elem_ty)));
         let name = self.mir_builder.get_next_anonymous_global_name();
-        let global = self
-            .mir_builder
-            .create_global_with_init(name, mir_ty, true, Some(array_const));
+        let global_id =
+            self.mir_builder
+                .create_global_with_init(name, mir_ty, true, MirLinkage::Internal, Some(array_const));
 
-        Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global)))
+        Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global_id)))
     }
 
     pub(crate) fn visit_compound_literal(&mut self, ty: QualType, init_ref: NodeRef) -> Operand {
@@ -585,10 +586,10 @@ impl<'a> MirGen<'a> {
                 .eval_initializer_to_const(init_ref, ty)
                 .expect("Global compound literal init must be const");
             let name = self.mir_builder.get_next_anonymous_global_name();
-            let global = self
-                .mir_builder
-                .create_global_with_init(name, mir_ty, false, Some(init_const));
-            Operand::Copy(Box::new(Place::Global(global)))
+            let global_id =
+                self.mir_builder
+                    .create_global_with_init(name, mir_ty, false, MirLinkage::Internal, Some(init_const));
+            Operand::Copy(Box::new(Place::Global(global_id)))
         } else {
             let (_, place) = self.create_temp_local(mir_ty);
             let init_op = self.visit_initializer(init_ref, ty, Some(place.clone()));

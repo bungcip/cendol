@@ -621,3 +621,15 @@ DEFER(EXPAND)()
       text: )
     ");
 }
+
+#[test]
+fn test_empty_macro_arg() {
+    let src = r#"
+#define M(x) x
+int y = M();
+"#;
+    let Ok((_, diags)) = setup_preprocessor_test_with_diagnostics(src, None) else {
+        panic!("PP Error");
+    };
+    assert!(diags.is_empty(), "Expected no diagnostics, got: {:?}", diags);
+}

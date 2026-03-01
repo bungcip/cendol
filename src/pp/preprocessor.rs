@@ -1954,6 +1954,11 @@ impl<'src> Preprocessor<'src> {
                 PPTokenKind::RightParen => {
                     if !current_arg.is_empty() || !args.is_empty() {
                         args.push(current_arg);
+                    } else if macro_info.parameter_list.len() == 1 || macro_info.variadic_arg.is_some() {
+                        // Empty arguments are allowed in C99/C11.
+                        // For a macro taking 1 argument or variadic args, an empty list of tokens
+                        // between parentheses represents 1 empty argument.
+                        args.push(Vec::new());
                     }
 
                     let expected = macro_info.parameter_list.len();

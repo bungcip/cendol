@@ -92,6 +92,15 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         };
 
         let span = start_span.merge(trx.parser.last_token_span().unwrap_or(start_span));
+
+        if specifiers
+            .iter()
+            .any(|s| matches!(s, ParsedDeclSpecifier::StorageClass(StorageClass::Typedef)))
+            && let Some(name) = trx.parser.get_declarator_name(&declarator)
+        {
+            trx.parser.add_typedef(name);
+        }
+
         init_declarators.push(ParsedInitDeclarator {
             declarator,
             initializer,
@@ -126,17 +135,6 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
             },
         });
     };
-
-    if specifiers
-        .iter()
-        .any(|s| matches!(s, ParsedDeclSpecifier::StorageClass(StorageClass::Typedef)))
-    {
-        for init_decl in &init_declarators {
-            if let Some(name) = trx.parser.get_declarator_name(&init_decl.declarator) {
-                trx.parser.add_typedef(name);
-            }
-        }
-    }
 
     let declaration_data = ParsedDeclarationData {
         specifiers,

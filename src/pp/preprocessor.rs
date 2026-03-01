@@ -5,7 +5,7 @@ use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use hashbrown::HashMap;
 use std::borrow::Cow;
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::pp_lexer::PPLexer;
@@ -264,7 +264,12 @@ pub struct Preprocessor<'src> {
 
     // Token management
     lexer_stack: Vec<PPLexer>,
-    pending_tokens: VecDeque<PPToken>,
+    // Bolt ⚡: Use a Vec instead of a VecDeque for the pending tokens stack.
+    // The preprocessor uses this exclusively as a LIFO stack (push/pop).
+    // Vec is more efficient than VecDeque as it avoids ring-buffer overhead,
+    // provides better cache locality, and allows for efficient batch pushes
+    // using `.extend()` with reversed iterators during macro expansion.
+    pending_tokens: Vec<PPToken>,
 
     // State
     include_depth: usize,
@@ -439,7 +444,7 @@ impl<'src> Preprocessor<'src> {
             built_in_headers,
             built_in_file_ids: HashMap::new(),
             lexer_stack: Vec::new(),
-            pending_tokens: VecDeque::new(),
+            pending_tokens: Vec::new(),
             include_depth: 0,
             max_include_depth: config.max_include_depth,
             target: config.target.clone(),
@@ -881,9 +886,10 @@ impl<'src> Preprocessor<'src> {
                     } else if symbol == self.directive_keywords.pragma_operator {
                         self.handle_pragma_operator()?;
                     } else if let Some(expanded) = self.expand_macro(&token)? {
-                        for t in expanded.into_iter().rev() {
-                            self.pending_tokens.push_front(t);
-                        }
+                        // Bolt ⚡: Efficiently push expanded tokens onto the stack.
+                        // Using `.extend()` with a reversed iterator is significantly faster than
+                        // a manual loop of individual `push_front` calls on a VecDeque.
+                        self.pending_tokens.extend(expanded.into_iter().rev());
                     } else {
                         result_tokens.push(token);
                     }
@@ -1049,7 +1055,7 @@ impl<'src> Preprocessor<'src> {
 
     /// Lex the next token
     fn lex_token(&mut self) -> Option<PPToken> {
-        if let Some(token) = self.pending_tokens.pop_front() {
+        if let Some(token) = self.pending_tokens.pop() {
             return Some(token);
         }
 
@@ -1203,10 +1209,9 @@ impl<'src> Preprocessor<'src> {
     fn perform_pragma(&mut self, pragma_content: &str) {
         let tokens = self.tokenize_pragma_content(pragma_content);
 
-        // Push to pending_tokens in reverse order so they come out in correct order
-        for token in tokens.into_iter().rev() {
-            self.pending_tokens.push_front(token);
-        }
+        // Bolt ⚡: Use batch insertion to efficiently push pragma tokens onto the stack.
+        // This avoids individual allocation checks for each token.
+        self.pending_tokens.extend(tokens.into_iter().rev());
 
         // Execute pragma handler
         // handle_pragma will consume tokens from pending_tokens
@@ -1234,16 +1239,16 @@ impl<'src> Preprocessor<'src> {
                 first_param.kind,
                 PPTokenKind::RightParen | PPTokenKind::Identifier(_) | PPTokenKind::Ellipsis
             ) {
-                self.pending_tokens.push_front(first_param);
+                self.pending_tokens.push(first_param);
                 return self.parse_macro_definition_params(name);
             }
 
-            self.pending_tokens.push_front(first_param);
-            self.pending_tokens.push_front(token);
+            self.pending_tokens.push(first_param);
+            self.pending_tokens.push(token);
             return Ok((MacroFlags::empty(), Vec::new(), None));
         }
 
-        self.pending_tokens.push_front(token);
+        self.pending_tokens.push(token);
         Ok((MacroFlags::empty(), Vec::new(), None))
     }
 
@@ -1834,7 +1839,7 @@ impl<'src> Preprocessor<'src> {
             let next = self.lex_token();
             let is_call = matches!(next, Some(ref t) if t.kind == PPTokenKind::LeftParen);
             if let Some(t) = next {
-                self.pending_tokens.push_front(t);
+                self.pending_tokens.push(t);
             }
             if !is_call {
                 return Ok(None);
@@ -1932,7 +1937,7 @@ impl<'src> Preprocessor<'src> {
     fn parse_macro_args_from_lexer(&mut self, macro_info: &MacroInfo) -> Result<Vec<Vec<PPToken>>, PPError> {
         let token = self.expect_token()?;
         if token.kind != PPTokenKind::LeftParen {
-            self.pending_tokens.push_front(token);
+            self.pending_tokens.push(token);
             return self.emit_error_loc(PPErrorKind::InvalidMacroParameter, token.location);
         }
 
@@ -2827,8 +2832,8 @@ impl<'src> Preprocessor<'src> {
                         _ => {
                             // Not a standard parameter list separator; treat as start of body.
                             // This pushes back both the separator and the identifier.
-                            self.pending_tokens.push_front(sep);
-                            self.pending_tokens.push_front(param_token);
+                            self.pending_tokens.push(sep);
+                            self.pending_tokens.push(param_token);
                             break 'param_parsing;
                         }
                     }
@@ -2842,7 +2847,7 @@ impl<'src> Preprocessor<'src> {
                     // Skip to the next divider
                     while let Some(t) = self.lex_token() {
                         if matches!(t.kind, PPTokenKind::Comma | PPTokenKind::RightParen) {
-                            self.pending_tokens.push_front(t);
+                            self.pending_tokens.push(t);
                             break;
                         }
                     }

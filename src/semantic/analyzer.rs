@@ -2473,50 +2473,50 @@ impl<'a> SemanticAnalyzer<'a> {
         match suffix {
             None => {
                 if is_decimal {
-                    smallvec![
+                    SmallVec::from_slice(&[
                         self.registry.type_int,
                         self.registry.type_long,
-                        self.registry.type_long_long
-                    ]
+                        self.registry.type_long_long,
+                    ])
                 } else {
-                    smallvec![
+                    SmallVec::from_slice(&[
                         self.registry.type_int,
                         self.registry.type_int_unsigned,
                         self.registry.type_long,
                         self.registry.type_long_unsigned,
                         self.registry.type_long_long,
                         self.registry.type_long_long_unsigned,
-                    ]
+                    ])
                 }
             }
-            Some(literal::IntegerSuffix::U) => smallvec![
+            Some(literal::IntegerSuffix::U) => SmallVec::from_slice(&[
                 self.registry.type_int_unsigned,
                 self.registry.type_long_unsigned,
                 self.registry.type_long_long_unsigned,
-            ],
+            ]),
             Some(literal::IntegerSuffix::L) => {
                 if is_decimal {
-                    smallvec![self.registry.type_long, self.registry.type_long_long]
+                    SmallVec::from_slice(&[self.registry.type_long, self.registry.type_long_long])
                 } else {
-                    smallvec![
+                    SmallVec::from_slice(&[
                         self.registry.type_long,
                         self.registry.type_long_unsigned,
                         self.registry.type_long_long,
                         self.registry.type_long_long_unsigned,
-                    ]
+                    ])
                 }
             }
             Some(literal::IntegerSuffix::UL) => {
-                smallvec![self.registry.type_long_unsigned, self.registry.type_long_long_unsigned]
+                SmallVec::from_slice(&[self.registry.type_long_unsigned, self.registry.type_long_long_unsigned])
             }
             Some(literal::IntegerSuffix::LL) => {
                 if is_decimal {
-                    smallvec![self.registry.type_long_long]
+                    SmallVec::from_slice(&[self.registry.type_long_long])
                 } else {
-                    smallvec![self.registry.type_long_long, self.registry.type_long_long_unsigned]
+                    SmallVec::from_slice(&[self.registry.type_long_long, self.registry.type_long_long_unsigned])
                 }
             }
-            Some(literal::IntegerSuffix::ULL) => smallvec![self.registry.type_long_long_unsigned],
+            Some(literal::IntegerSuffix::ULL) => SmallVec::from_slice(&[self.registry.type_long_long_unsigned]),
         }
     }
 

@@ -104,6 +104,7 @@ mod semantic_conversions;
 pub mod semantic_generic;
 pub mod semantic_implicit_builtins;
 pub mod semantic_integer_literals;
+pub mod semantic_issue_test;
 pub mod semantic_mir_const_global;
 pub mod semantic_noreturn;
 pub mod semantic_offsetof;

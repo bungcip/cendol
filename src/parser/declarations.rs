@@ -93,12 +93,15 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
 
         let span = start_span.merge(trx.parser.last_token_span().unwrap_or(start_span));
 
-        if specifiers
-            .iter()
-            .any(|s| matches!(s, ParsedDeclSpecifier::StorageClass(StorageClass::Typedef)))
-            && let Some(name) = trx.parser.get_declarator_name(&declarator)
-        {
-            trx.parser.add_typedef(name);
+        if let Some(name) = trx.parser.get_declarator_name(&declarator) {
+            if specifiers
+                .iter()
+                .any(|s| matches!(s, ParsedDeclSpecifier::StorageClass(StorageClass::Typedef)))
+            {
+                trx.parser.add_typedef(name);
+            } else {
+                trx.parser.type_context.add_non_typedef(name);
+            }
         }
 
         init_declarators.push(ParsedInitDeclarator {
@@ -155,7 +158,24 @@ fn parse_function_definition(parser: &mut Parser) -> Result<ParsedNodeRef, Parse
 
     let specifiers = parse_declaration_specifiers(parser)?;
     let declarator = super::declarator::parse_declarator(parser)?;
-    let (body, body_end_loc) = super::statements::parse_compound_statement(parser)?;
+
+    parser.type_context.push_scope();
+
+    if let Some(params) = super::declarator::get_declarator_params(&declarator) {
+        for param in params {
+            if let Some(ref decl) = param.declarator {
+                if let Some(name) = super::declarator::get_declarator_name(decl) {
+                    parser.type_context.add_non_typedef(name);
+                }
+            }
+        }
+    }
+
+    let res = super::statements::parse_compound_statement(parser);
+
+    parser.type_context.pop_scope();
+
+    let (body, body_end_loc) = res?;
 
     let function_def = ParsedFunctionDefData {
         specifiers,

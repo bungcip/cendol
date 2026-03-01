@@ -7,7 +7,6 @@
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError, ParseErrorKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
-use std::collections::HashSet;
 
 pub mod declaration_core;
 pub mod declarations;
@@ -30,35 +29,65 @@ use expressions::parse_expression;
 /// Type context for tracking typedef names and other type-related state
 #[derive(Debug)]
 pub(crate) struct TypeDefContext {
-    /// Set of typedef names for disambiguation
-    typedef_names: HashSet<NameId>,
+    /// Stack of scopes, each containing a list of (NameId, is_typedef) for disambiguation
+    scopes: Vec<Vec<(NameId, bool)>>,
 }
 
 impl TypeDefContext {
     /// Create a new type context with builtin typedefs
     pub(crate) fn new() -> Self {
-        let mut typedef_names = HashSet::new();
+        let mut globals = Vec::new();
         // Add builtin typedefs
-        typedef_names.insert(NameId::new("int8_t"));
-        typedef_names.insert(NameId::new("int16_t"));
-        typedef_names.insert(NameId::new("int32_t"));
-        typedef_names.insert(NameId::new("int64_t"));
-        typedef_names.insert(NameId::new("uint8_t"));
-        typedef_names.insert(NameId::new("uint16_t"));
-        typedef_names.insert(NameId::new("uint32_t"));
-        typedef_names.insert(NameId::new("uint64_t"));
+        globals.push((NameId::new("int8_t"), true));
+        globals.push((NameId::new("int16_t"), true));
+        globals.push((NameId::new("int32_t"), true));
+        globals.push((NameId::new("int64_t"), true));
+        globals.push((NameId::new("uint8_t"), true));
+        globals.push((NameId::new("uint16_t"), true));
+        globals.push((NameId::new("uint32_t"), true));
+        globals.push((NameId::new("uint64_t"), true));
 
-        TypeDefContext { typedef_names }
+        TypeDefContext { scopes: vec![globals] }
     }
 
     /// Check if a symbol is a typedef name
     pub(crate) fn is_type_name(&self, symbol: NameId) -> bool {
-        self.typedef_names.contains(&symbol)
+        for scope in self.scopes.iter().rev() {
+            for &(name, is_typedef) in scope.iter().rev() {
+                if name == symbol {
+                    return is_typedef;
+                }
+            }
+        }
+        false
     }
 
     /// Add a typedef name
     pub(crate) fn add_typedef(&mut self, symbol: NameId) {
-        self.typedef_names.insert(symbol);
+        self.scopes.last_mut().unwrap().push((symbol, true));
+    }
+
+    /// Add a non-typedef name (e.g. variable or function) that shadows outer typedefs
+    pub(crate) fn add_non_typedef(&mut self, symbol: NameId) {
+        self.scopes.last_mut().unwrap().push((symbol, false));
+    }
+
+    pub(crate) fn push_scope(&mut self) {
+        self.scopes.push(Vec::new());
+    }
+
+    pub(crate) fn pop_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    pub(crate) fn get_last_scope_len(&self) -> usize {
+        self.scopes.last().map(|s| s.len()).unwrap_or(0)
+    }
+
+    pub(crate) fn truncate_last_scope(&mut self, len: usize) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.truncate(len);
+        }
     }
 }
 
@@ -66,6 +95,7 @@ impl TypeDefContext {
 pub(crate) struct ParserState {
     current_idx: usize,
     diag_len: usize,
+    type_context_last_scope_len: usize,
 }
 
 /// Main parser structure
@@ -398,12 +428,14 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         ParserState {
             current_idx: self.current_idx,
             diag_len: self.diag.diagnostics.len(),
+            type_context_last_scope_len: self.type_context.get_last_scope_len(),
         }
     }
 
     fn restore_state(&mut self, state: ParserState) {
         self.current_idx = state.current_idx;
         self.diag.diagnostics.truncate(state.diag_len);
+        self.type_context.truncate_last_scope(state.type_context_last_scope_len);
     }
 
     pub(crate) fn start_transaction(&mut self) -> utils::ParserTransaction<'_, 'arena, 'src> {

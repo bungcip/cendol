@@ -43,6 +43,13 @@ pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, Pars
 }
 
 pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(ParsedNodeRef, SourceLoc), ParseError> {
+    parser.type_context.push_scope();
+    let res = parse_compound_statement_inner(parser);
+    parser.type_context.pop_scope();
+    res
+}
+
+fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef, SourceLoc), ParseError> {
     let start = parser.expect(TokenKind::LeftBrace)?.span;
     let dummy = parser.push_dummy();
     let mut items = Vec::new();

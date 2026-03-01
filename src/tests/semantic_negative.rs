@@ -317,3 +317,32 @@ fn test_void_pointer_sub_int() {
         "Invalid operands for binary operation",
     );
 }
+
+#[test]
+fn test_pointer_sub_incompatible() {
+    run_fail_with_message(
+        r#"
+        int main(void) {
+            int *p1 = 0;
+            float *p2 = 0;
+            return p1 - p2;
+        }
+        "#,
+        "Invalid operands for binary operation",
+    );
+}
+
+#[test]
+fn test_pointer_sub_incomplete() {
+    run_fail_with_message(
+        r#"
+        struct A;
+        int main(void) {
+            struct A *p1 = 0;
+            struct A *p2 = 0;
+            return p1 - p2;
+        }
+        "#,
+        "Invalid operands for binary operation",
+    );
+}

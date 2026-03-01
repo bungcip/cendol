@@ -360,7 +360,7 @@ pub(crate) fn get_declarator_params(declarator: &ParsedDeclarator) -> Option<&Th
             } else {
                 Some(params)
             }
-        },
+        }
         ParsedDeclarator::Pointer(_, Some(inner)) => get_declarator_params(inner),
         ParsedDeclarator::Array(inner, _) => get_declarator_params(inner),
         _ => None,

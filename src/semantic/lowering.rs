@@ -1661,9 +1661,21 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let func_name = extract_name(&func_def.declarator).expect("Function definition must have a name");
 
         if spec_info.storage == Some(StorageClass::Auto) {
-            self.report_error(span, SemanticErrorKind::InvalidStorageClassForFunction { name: func_name, specifier: "auto" });
+            self.report_error(
+                span,
+                SemanticErrorKind::InvalidStorageClassForFunction {
+                    name: func_name,
+                    specifier: "auto",
+                },
+            );
         } else if spec_info.storage == Some(StorageClass::Register) {
-            self.report_error(span, SemanticErrorKind::InvalidStorageClassForFunction { name: func_name, specifier: "register" });
+            self.report_error(
+                span,
+                SemanticErrorKind::InvalidStorageClassForFunction {
+                    name: func_name,
+                    specifier: "register",
+                },
+            );
         }
 
         final_ty = self.check_redeclaration_compatibility(func_name, final_ty, span, spec_info.storage);
@@ -1990,9 +2002,21 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
     ) {
         if spec_info.storage == Some(StorageClass::Auto) {
-            self.report_error(span, SemanticErrorKind::InvalidStorageClassForFunction { name, specifier: "auto" });
+            self.report_error(
+                span,
+                SemanticErrorKind::InvalidStorageClassForFunction {
+                    name,
+                    specifier: "auto",
+                },
+            );
         } else if spec_info.storage == Some(StorageClass::Register) {
-            self.report_error(span, SemanticErrorKind::InvalidStorageClassForFunction { name, specifier: "register" });
+            self.report_error(
+                span,
+                SemanticErrorKind::InvalidStorageClassForFunction {
+                    name,
+                    specifier: "register",
+                },
+            );
         }
 
         if spec_info.alignment.is_some() {
@@ -2031,9 +2055,21 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if is_global {
             if spec_info.storage == Some(StorageClass::Auto) {
-                self.report_error(span, SemanticErrorKind::FileScopeSpecifiesStorageClass { name, specifier: "auto" });
+                self.report_error(
+                    span,
+                    SemanticErrorKind::FileScopeSpecifiesStorageClass {
+                        name,
+                        specifier: "auto",
+                    },
+                );
             } else if spec_info.storage == Some(StorageClass::Register) {
-                self.report_error(span, SemanticErrorKind::FileScopeSpecifiesStorageClass { name, specifier: "register" });
+                self.report_error(
+                    span,
+                    SemanticErrorKind::FileScopeSpecifiesStorageClass {
+                        name,
+                        specifier: "register",
+                    },
+                );
             }
         }
 

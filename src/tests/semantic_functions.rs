@@ -396,9 +396,15 @@ fn test_auto_at_file_scope_prohibited() {
 #[test]
 fn test_auto_register_on_function_prohibited() {
     run_fail_with_message("auto int foo();", "invalid storage class 'auto' for function 'foo'");
-    run_fail_with_message("register int bar();", "invalid storage class 'register' for function 'bar'");
+    run_fail_with_message(
+        "register int bar();",
+        "invalid storage class 'register' for function 'bar'",
+    );
     run_fail_with_message("auto int baz() {}", "invalid storage class 'auto' for function 'baz'");
-    run_fail_with_message("register int qux() {}", "invalid storage class 'register' for function 'qux'");
+    run_fail_with_message(
+        "register int qux() {}",
+        "invalid storage class 'register' for function 'qux'",
+    );
 }
 
 #[test]

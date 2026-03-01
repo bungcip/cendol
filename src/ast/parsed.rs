@@ -98,6 +98,7 @@ pub enum ParsedNodeKind {
     GenericSelection(ParsedNodeRef, Vec<ParsedGenericAssociation>),
     BuiltinChooseExpr(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinConstantP(ParsedNodeRef),
+    BuiltinUnreachable,
 
     // --- Statements ---
     CompoundStatement(Vec<ParsedNodeRef>),
@@ -434,6 +435,7 @@ impl ParsedNodeKind {
             | ParsedNodeKind::BuiltinTypesCompatibleP(_, _)
             | ParsedNodeKind::SizeOfType(_)
             | ParsedNodeKind::AlignOf(_)
+            | ParsedNodeKind::BuiltinUnreachable
             | ParsedNodeKind::Break
             | ParsedNodeKind::Continue
             | ParsedNodeKind::Goto(_)

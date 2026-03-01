@@ -166,6 +166,7 @@ impl AstDumper {
             }
             NodeKind::BuiltinChooseExpr(_, _, _) => {}
             NodeKind::BuiltinConstantP(_) => {}
+            NodeKind::BuiltinUnreachable => {}
 
             // Literal nodes - don't contain TypeRefs
             NodeKind::Literal(_) | NodeKind::Ident(_, _) => {
@@ -354,6 +355,7 @@ impl AstDumper {
             ParsedNodeKind::BuiltinConstantP(exp) => {
                 writeln!(f, "BuiltinConstantP({})", exp.get())
             }
+            ParsedNodeKind::BuiltinUnreachable => writeln!(f, "BuiltinUnreachable"),
 
             // Statements
             ParsedNodeKind::CompoundStatement(stmts) => {
@@ -568,6 +570,7 @@ impl AstDumper {
             NodeKind::BuiltinConstantP(exp) => {
                 writeln!(f, "BuiltinConstantP({})", exp.get())
             }
+            NodeKind::BuiltinUnreachable => writeln!(f, "BuiltinUnreachable"),
             NodeKind::GnuStatementExpression(compound_stmt, result_expr) => {
                 writeln!(
                     f,

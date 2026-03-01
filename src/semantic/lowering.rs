@@ -2512,6 +2512,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.ast.kinds[node.index()] = NodeKind::BuiltinConstantP(e);
                 smallvec![node]
             }
+            ParsedNodeKind::BuiltinUnreachable => {
+                let node = self.get_or_push_slot(target_slots, span);
+                self.ast.kinds[node.index()] = NodeKind::BuiltinUnreachable;
+                smallvec![node]
+            }
             ParsedNodeKind::GenericSelection(control, associations) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let c = self.visit_expression(*control);

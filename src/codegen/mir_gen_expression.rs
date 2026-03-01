@@ -107,6 +107,10 @@ impl<'a> MirGen<'a> {
                     .expect("__builtin_constant_p should evaluate to constant");
                 self.create_int_operand(val)
             }
+            NodeKind::BuiltinUnreachable => {
+                self.mir_builder.set_terminator(crate::mir::Terminator::Unreachable);
+                self.create_dummy_operand()
+            }
             NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(need_value, expr_ref),
             NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, need_value, expr_ref),
             NodeKind::GnuStatementExpression(stmt, result_expr) => {

@@ -250,7 +250,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 then_ft || else_ft
             }
             NodeKind::ExpressionStatement(Some(expr)) => {
-                if let NodeKind::FunctionCall(call) = self.ast.get_kind(*expr)
+                let kind = self.ast.get_kind(*expr);
+                if matches!(kind, NodeKind::BuiltinUnreachable) {
+                    return false;
+                }
+                if let NodeKind::FunctionCall(call) = kind
                     && let Some(callee_type) = self.semantic_info.types[call.callee.index()]
                     && let TypeKind::Function { is_noreturn, .. } = &self.registry.get(callee_type.ty()).kind
                 {
@@ -266,13 +270,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 for_stmt.condition.is_some_and(|c| !self.is_always_true(c)) || self.contains_break(for_stmt.body)
             }
             NodeKind::CompoundStatement(cs) => {
-                if cs.stmt_len > 0 {
-                    let last_item_idx = cs.stmt_start.get() + (cs.stmt_len - 1) as u32;
-                    let last_item = NodeRef::new(last_item_idx).unwrap();
-                    self.can_fall_through(last_item)
-                } else {
-                    true
+                for stmt in cs.stmt_start.range(cs.stmt_len) {
+                    if !self.can_fall_through(stmt) {
+                        return false;
+                    }
                 }
+                true
             }
             NodeKind::Label(_, stmt, _) => self.can_fall_through(*stmt),
             _ => true,
@@ -2061,6 +2064,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_builtin_choose_expr(*cond, *true_expr, *false_expr, node)
             }
             NodeKind::BuiltinConstantP(expr) => self.visit_builtin_constant_p(*expr, node),
+            NodeKind::BuiltinUnreachable => Some(QualType::unqualified(self.registry.type_void)),
             _ => None,
         }
     }

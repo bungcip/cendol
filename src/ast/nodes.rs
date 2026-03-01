@@ -66,6 +66,7 @@ pub enum NodeKind {
     GenericAssociation(GenericAssociationData),
     BuiltinChooseExpr(NodeRef, NodeRef, NodeRef),
     BuiltinConstantP(NodeRef),
+    BuiltinUnreachable,
 
     // --- Statements (Complex statements are separate structs) ---
     CompoundStatement(CompoundStmtData),
@@ -133,6 +134,7 @@ impl NodeKind {
             | NodeKind::BuiltinClz(..)
             | NodeKind::BuiltinCtz(..)
             | NodeKind::BuiltinConstantP(..)
+            | NodeKind::BuiltinUnreachable
             | NodeKind::Break
             | NodeKind::Continue
             | NodeKind::Goto(..)

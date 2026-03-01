@@ -1660,6 +1660,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         );
         let func_name = extract_name(&func_def.declarator).expect("Function definition must have a name");
 
+        if spec_info.storage == Some(StorageClass::Auto) {
+            self.report_error(span, SemanticErrorKind::InvalidStorageClassForFunction { name: func_name, specifier: "auto" });
+        } else if spec_info.storage == Some(StorageClass::Register) {
+            self.report_error(span, SemanticErrorKind::InvalidStorageClassForFunction { name: func_name, specifier: "register" });
+        }
+
         final_ty = self.check_redeclaration_compatibility(func_name, final_ty, span, spec_info.storage);
 
         // Check for _Noreturn on existing declarations
@@ -1983,6 +1989,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         spec_info: &DeclSpecInfo,
         span: SourceSpan,
     ) {
+        if spec_info.storage == Some(StorageClass::Auto) {
+            self.report_error(span, SemanticErrorKind::InvalidStorageClassForFunction { name, specifier: "auto" });
+        } else if spec_info.storage == Some(StorageClass::Register) {
+            self.report_error(span, SemanticErrorKind::InvalidStorageClassForFunction { name, specifier: "register" });
+        }
+
         if spec_info.alignment.is_some() {
             self.report_error(span, SemanticErrorKind::AlignmentNotAllowed { context: "function" });
         }
@@ -2014,6 +2026,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         init: Option<ParsedNodeRef>,
         span: SourceSpan,
     ) {
+        let current_scope = self.symbol_table.current_scope();
+        let is_global = current_scope == ScopeId::GLOBAL;
+
+        if is_global {
+            if spec_info.storage == Some(StorageClass::Auto) {
+                self.report_error(span, SemanticErrorKind::FileScopeSpecifiesStorageClass { name, specifier: "auto" });
+            } else if spec_info.storage == Some(StorageClass::Register) {
+                self.report_error(span, SemanticErrorKind::FileScopeSpecifiesStorageClass { name, specifier: "register" });
+            }
+        }
+
         qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);
 
         // Define variable in symbol table early so it's visible in its own initializer
@@ -2068,8 +2091,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // shall be complete by the end of its declarator...
         // C11 6.9.2p3: If the declaration of an identifier for an object is a tentative definition
         // and has internal linkage, the declared type shall not be an incomplete type.
-        let current_scope = self.symbol_table.current_scope();
-        let is_global = current_scope == ScopeId::GLOBAL;
         let has_internal_linkage = is_global && spec_info.storage == Some(StorageClass::Static);
         let has_no_linkage = !is_global && spec_info.storage != Some(StorageClass::Extern);
 

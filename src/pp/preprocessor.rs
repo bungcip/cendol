@@ -2622,20 +2622,19 @@ impl<'src> Preprocessor<'src> {
             return false;
         };
 
-        // For MacroExpansion buffers, only check the immediate buffer.
-        // The token came from this macro's body, which is fine.
-        if info.kind == FileKind::MacroExpansion {
-            let path_str = info.path.to_str().unwrap_or("");
-            // Bolt ⚡: Prefix "<macro_" is 7 chars, suffix ">" is 1 char. Total 8.
-            return path_str.len() == macro_name.len() + 8
-                && path_str.starts_with("<macro_")
-                && path_str.ends_with('>')
-                && &path_str[7..path_str.len() - 1] == macro_name;
-        }
+        if info.kind == FileKind::MacroExpansion || info.kind == FileKind::PastedToken {
+            // First check the immediate buffer if it's a macro expansion
+            if info.kind == FileKind::MacroExpansion {
+                let path_str = info.path.to_str().unwrap_or("");
+                if path_str.len() == macro_name.len() + 8
+                    && path_str.starts_with("<macro_")
+                    && path_str.ends_with('>')
+                    && &path_str[7..path_str.len() - 1] == macro_name
+                {
+                    return true;
+                }
+            }
 
-        // For PastedToken buffers, we need to walk the chain.
-        // The pasted token inherits the expansion history of its components.
-        if info.kind == FileKind::PastedToken {
             // Walk the chain starting from the include_loc
             let mut current_loc = info.include_loc;
             let mut depth = 0;
@@ -2661,8 +2660,8 @@ impl<'src> Preprocessor<'src> {
                     }
                 }
 
-                // Don't traverse through another pasted token
-                if parent_info.kind == FileKind::PastedToken {
+                // Continue traversing for both MacroExpansion and PastedToken
+                if parent_info.kind != FileKind::MacroExpansion && parent_info.kind != FileKind::PastedToken {
                     break;
                 }
 

@@ -293,6 +293,14 @@ pub enum SemanticErrorKind {
         name: NameId,
         value: i64,
     },
+    FileScopeSpecifiesStorageClass {
+        name: NameId,
+        specifier: &'static str,
+    },
+    InvalidStorageClassForFunction {
+        name: NameId,
+        specifier: &'static str,
+    },
 }
 
 impl SemanticErrorKind {
@@ -589,6 +597,12 @@ impl SemanticErrorKind {
                 "enumerator value {} for '{}' is not representable as 'int'",
                 value, name
             ),
+            SemanticErrorKind::FileScopeSpecifiesStorageClass { name, specifier } => {
+                format!("file-scope declaration of '{}' specifies '{}'", name, specifier)
+            }
+            SemanticErrorKind::InvalidStorageClassForFunction { name, specifier } => {
+                format!("invalid storage class '{}' for function '{}'", specifier, name)
+            }
         }
     }
 }

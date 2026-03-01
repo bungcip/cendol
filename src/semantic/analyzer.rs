@@ -2610,12 +2610,14 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut seen_types: SmallVec<[(QualType, SourceSpan); 8]> = SmallVec::new();
 
         for assoc_node in gs.assoc_start.range(gs.assoc_len) {
+            let span = self.ast.get_span(assoc_node);
+            // It's crucial to visit the association node first to resolve any types (like typeof)
+            // before we access ga.ty for compatibility checks.
+            self.visit_node(assoc_node);
+
             let NodeKind::GenericAssociation(ga) = *self.ast.get_kind(assoc_node) else {
                 continue;
             };
-
-            let span = self.ast.get_span(assoc_node);
-            self.visit_node(assoc_node);
 
             let Some(assoc_ty) = ga.ty else {
                 // This is the 'default' association.
@@ -2656,6 +2658,10 @@ impl<'a> SemanticAnalyzer<'a> {
             let mut duplicate = false;
             for (prev_ty, prev_span) in &seen_types {
                 if self.registry.is_compatible(assoc_ty, *prev_ty) {
+                    // C11 6.7.2.2p4: "Each enumerated type shall be compatible with char, a signed integer type, or an unsigned integer type."
+                    // However, 6.5.1.1p2 says generic association type-name shall specify a complete object type.
+                    // For _Generic specifically, if we have 'int' and an enum that is compatible with 'int',
+                    // they are compatible types and thus a constraint violation.
                     self.report_error(
                         assoc_node,
                         SemanticErrorKind::GenericDuplicateMatch {

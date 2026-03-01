@@ -94,3 +94,8 @@ Action: When implementing language features that allow merging of differently qu
 
 Learning: Bit-field widths in C can be part of complex declarators (e.g., `int *x : 1`). If the semantic analyzer only checks for `BitField` at the top level of a declarator, it will miss these cases, potentially silently accepting invalid types (like pointers or floats) that are prohibited for bit-fields by C11 6.7.2.1p5 and 6.7.2.4p4.
 Action: Always use recursive extraction for declarator-specific attributes like bit-field widths to ensure they are consistently validated regardless of declarator complexity.
+
+2025-06-02 - [Generic Selection Association Compatibility]
+
+Learning: C11 6.5.1.1p2 prohibits any two associations in a `_Generic` selection from having compatible types (e.g., `int` vs `enum` with `int` base, or `int[10]` vs `int[]`). During semantic analysis, it is critical to visit the association nodes *before* performing compatibility checks, as types like `typeof(expr)` or complex declarators might not be fully resolved otherwise. Failing to do so can lead to false negatives where compatible types are silently accepted due to unresolved type information.
+Action: Enforce phase ordering in `visit_generic_selection` where each association is visited to resolve types before it is checked for compatibility against previously seen associations and the controlling expression.

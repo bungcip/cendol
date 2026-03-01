@@ -24,6 +24,48 @@ impl<'a> ConstEvalCtx<'a> {
             self.ast.get_resolved_type(node)
         }
     }
+
+    /// Infer the type of an expression node from its AST kind and symbol table,
+    /// without relying on semantic_info. Used during lowering when semantic_info
+    /// isn't available yet (e.g., for evaluating sizeof in array sizes).
+    fn infer_type_from_node(&self, node: NodeRef) -> Option<QualType> {
+        match self.ast.get_kind(node) {
+            NodeKind::Ident(_, sym_ref) => {
+                let symbol = self.symbol_table.get_symbol(*sym_ref);
+                Some(symbol.type_info)
+            }
+            NodeKind::IndexAccess(base, _) => {
+                // array[index] -> element type
+                let base_qt = self
+                    .get_resolved_type(*base)
+                    .or_else(|| self.infer_type_from_node(*base))?;
+                let elem_ty = self.registry.get_array_element(base_qt.ty())?;
+                Some(QualType::unqualified(elem_ty))
+            }
+            NodeKind::MemberAccess(base, member_name, _) => {
+                let base_qt = self
+                    .get_resolved_type(*base)
+                    .or_else(|| self.infer_type_from_node(*base))?;
+                let mut ty = base_qt.ty();
+                // Dereference pointer for arrow operator
+                if ty.is_pointer() {
+                    ty = self.registry.get_pointee(ty)?.ty();
+                }
+                let type_info = self.registry.get(ty);
+                let member = type_info.find_member(self.registry, *member_name)?;
+                Some(member.member_type)
+            }
+            NodeKind::UnaryOp(UnaryOp::Deref, expr) => {
+                let qt = self
+                    .get_resolved_type(*expr)
+                    .or_else(|| self.infer_type_from_node(*expr))?;
+                let pointee = self.registry.get_pointee(qt.ty())?;
+                Some(pointee)
+            }
+            NodeKind::Cast(target_ty, _) => Some(*target_ty),
+            _ => None,
+        }
+    }
 }
 
 /// Evaluate a constant expression node to an i64 value
@@ -216,16 +258,18 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
             }
         }
         NodeKind::SizeOfExpr(expr) => {
-            let qt = ctx.get_resolved_type(*expr)?;
-            let layout = ctx.registry.get_layout(qt.ty());
+            let qt = ctx
+                .get_resolved_type(*expr)
+                .or_else(|| ctx.infer_type_from_node(*expr))?;
+            let layout = ctx.registry.try_get_layout(qt.ty())?;
             Some(layout.size as i64)
         }
         NodeKind::AlignOf(qt) => {
-            let layout = ctx.registry.get_layout(qt.ty());
+            let layout = ctx.registry.try_get_layout(qt.ty())?;
             Some(layout.alignment as i64)
         }
         NodeKind::SizeOfType(qt) => {
-            let layout = ctx.registry.get_layout(qt.ty());
+            let layout = ctx.registry.try_get_layout(qt.ty())?;
             Some(layout.size as i64)
         }
         NodeKind::GenericSelection(_) => {

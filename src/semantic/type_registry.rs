@@ -614,6 +614,39 @@ impl TypeRegistry {
         }
     }
 
+    /// Safe version of get_layout that returns None instead of panicking when layout is missing.
+    /// Used during lowering phase when layouts may not yet be computed.
+    pub(crate) fn try_get_layout(&self, mut ty: TypeRef) -> Option<Cow<'_, TypeLayout>> {
+        loop {
+            if ty.is_inline_pointer() {
+                return Some(Cow::Owned(TypeLayout {
+                    size: 8,
+                    alignment: 8,
+                    kind: LayoutKind::Scalar,
+                }));
+            }
+
+            if ty.is_inline_array() {
+                let elem = self.reconstruct_element(ty);
+                let elem_layout = self.try_get_layout(elem)?;
+                let len = ty.array_len().unwrap() as u64;
+                return Some(Cow::Owned(TypeLayout {
+                    size: elem_layout.size * len,
+                    alignment: elem_layout.alignment,
+                    kind: LayoutKind::Array { element: elem, len },
+                }));
+            }
+
+            let idx = ty.index();
+            let ty_data = &self.types[idx];
+            if let TypeKind::Alias(inner) = ty_data.kind {
+                ty = inner;
+            } else {
+                return ty_data.layout.as_ref().map(Cow::Borrowed);
+            }
+        }
+    }
+
     pub(crate) fn get_array_layout(&self, ty: TypeRef) -> (u64, u64, TypeRef, u64) {
         let layout = self.get_layout(ty);
         match layout.kind {

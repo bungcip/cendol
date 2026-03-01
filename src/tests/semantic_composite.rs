@@ -296,3 +296,25 @@ fn test_volatile_bitfield_allowed() {
         CompilePhase::Mir,
     );
 }
+
+#[test]
+fn test_sizeof_based_array_size_in_struct() {
+    // Regression test: sizeof-based array sizes in structs should be treated as constants,
+    // not VLAs. This pattern is used in libpng's pngcp.c.
+    run_pass(
+        r#"
+        struct option { const char *name; int value; };
+        static const struct option options[] = { {"a", 1}, {"b", 2}, {"c", 3} };
+        #define option_count ((sizeof options)/(sizeof options[0]))
+        struct display {
+            int entry[option_count];
+            int value[option_count];
+        };
+        int main() {
+            struct display d;
+            return sizeof(d) - 6 * sizeof(int);
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}

@@ -784,6 +784,24 @@ impl<'a> SemanticAnalyzer<'a> {
 
             // Pointer - pointer = integer (ptrdiff_t)
             BinaryOp::Sub if lhs_promoted.is_pointer() && rhs_promoted.is_pointer() => {
+                let lhs_base = self.registry.get_pointee(lhs_promoted.ty()).unwrap();
+                let rhs_base = self.registry.get_pointee(rhs_promoted.ty()).unwrap();
+
+                let compatible = self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all());
+                let complete_lhs = self.registry.is_complete(lhs_base.ty());
+                let complete_rhs = self.registry.is_complete(rhs_base.ty());
+
+                if !compatible || !complete_lhs || !complete_rhs {
+                    self.report_error(
+                        node,
+                        SemanticErrorKind::InvalidBinaryOperands {
+                            left_ty: lhs_promoted,
+                            right_ty: rhs_promoted,
+                        },
+                    );
+                    return None;
+                }
+
                 Some((QualType::unqualified(self.registry.type_int), lhs_promoted))
             }
 

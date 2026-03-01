@@ -4,6 +4,9 @@ import os
 import subprocess
 import sys
 import shutil
+import urllib.request
+import zipfile
+import tempfile
 
 # Project configurations
 PROJECTS = {
@@ -43,6 +46,12 @@ PROJECTS = {
         "build_cmd": ["sh", "-c", "autoreconf -f -i && CPPFLAGS='-I../zlib' LDFLAGS='-L../zlib' ./configure --disable-dependency-tracking && make CC={CC}"],
         "test_cmd": ["make", "test", "CC={CC}"],
         "clean_cmd": ["make", "clean"],
+    },
+    "sqlite": {
+        "download_url": "https://www.sqlite.org/2025/sqlite-amalgamation-3480000.zip",
+        "build_cmd": ["sh", "-c", "{CC} -O2 -DSQLITE_THREADSAFE=0 -o sqlite3 shell.c sqlite3.c -lm"],
+        "test_cmd": ["./sqlite3", ":memory:", "SELECT 'hello from sqlite built with cendol';"],
+        "clean_cmd": ["rm", "-f", "sqlite3"],
     }
 }
 
@@ -100,20 +109,34 @@ def main():
         sys.exit(1)
 
     config = PROJECTS[project_name]
-    repo_url = config["repo"]
     project_dir = os.path.join(realworld_dir, project_name)
     cendol_bin = os.path.join(cendol_root, "target/debug/cendol")
 
     if not os.path.exists(realworld_dir):
         os.makedirs(realworld_dir)
 
-    # 1. Clone or Pull
+    # 1. Clone/Download
     if not os.path.exists(project_dir):
-        print(f"Cloning {project_name}...")
-        run_command(["git", "clone", repo_url, project_name], cwd=realworld_dir)
+        if "repo" in config:
+            print(f"Cloning {project_name}...")
+            run_command(["git", "clone", config["repo"], project_name], cwd=realworld_dir)
+        elif "download_url" in config:
+            print(f"Downloading {project_name}...")
+            zip_path = os.path.join(realworld_dir, f"{project_name}.zip")
+            urllib.request.urlretrieve(config["download_url"], zip_path)
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                zf.extractall(realworld_dir)
+            os.remove(zip_path)
+            # The zip extracts to a subdirectory, rename it
+            extracted = [d for d in os.listdir(realworld_dir) if d.startswith("sqlite-") and os.path.isdir(os.path.join(realworld_dir, d))]
+            if extracted:
+                os.rename(os.path.join(realworld_dir, extracted[0]), project_dir)
     else:
-        print(f"Updating {project_name}...")
-        run_command(["git", "pull"], cwd=project_dir)
+        if "repo" in config:
+            print(f"Updating {project_name}...")
+            run_command(["git", "pull"], cwd=project_dir)
+        else:
+            print(f"{project_name} already downloaded.")
 
     # 2. Patching (Usually works by passing CC to make)
     # If specific patching is needed, it can be added here.

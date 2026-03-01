@@ -2523,16 +2523,16 @@ impl<'src> Preprocessor<'src> {
                     .get(&symbol)
                     .filter(|m| !m.flags.contains(MacroFlags::FUNCTION_LIKE) && !m.flags.contains(MacroFlags::DISABLED))
                     .cloned();
-                if let Some(macro_info) = macro_info {
-                    if !self.is_recursive_expansion(tokens[i].location, symbol.as_str()) {
-                        if let Some(m) = self.macros.get_mut(&symbol) {
-                            m.flags |= MacroFlags::USED;
-                        }
-                        let expanded =
-                            self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), tokens[i].location)?;
-                        tokens.splice(i..i + 1, expanded);
-                        continue;
+                if let Some(macro_info) = macro_info
+                    && !self.is_recursive_expansion(tokens[i].location, symbol.as_str())
+                {
+                    if let Some(m) = self.macros.get_mut(&symbol) {
+                        m.flags |= MacroFlags::USED;
                     }
+                    let expanded =
+                        self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), tokens[i].location)?;
+                    tokens.splice(i..i + 1, expanded);
+                    continue;
                 }
             }
 

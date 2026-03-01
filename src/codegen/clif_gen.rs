@@ -1018,17 +1018,17 @@ fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, build
             // Cranelift x64 backend doesn't support fcvt_to_sint/uint for < 32-bit targets
             // Convert to I32 first, then reduce
             let intermediate = if is_signed {
-                builder.ins().fcvt_to_sint(types::I32, val)
+                builder.ins().fcvt_to_sint_sat(types::I32, val)
             } else {
-                builder.ins().fcvt_to_uint(types::I32, val)
+                builder.ins().fcvt_to_uint_sat(types::I32, val)
             };
             return builder.ins().ireduce(to, intermediate);
         }
 
         return if is_signed {
-            builder.ins().fcvt_to_sint(to, val)
+            builder.ins().fcvt_to_sint_sat(to, val)
         } else {
-            builder.ins().fcvt_to_uint(to, val)
+            builder.ins().fcvt_to_uint_sat(to, val)
         };
     }
 

@@ -569,10 +569,14 @@ foo(X)(Y)(Z)
       text: "1"
     - kind: Number
       text: "2"
-    - kind: Number
-      text: "1"
     - kind: Identifier
-      text: bar
+      text: foo
+    - kind: LeftParen
+      text: (
+    - kind: Identifier
+      text: Z
+    - kind: RightParen
+      text: )
     "#);
 }
 
@@ -632,4 +636,39 @@ int y = M();
         panic!("PP Error");
     };
     assert!(diags.is_empty(), "Expected no diagnostics, got: {:?}", diags);
+}
+
+#[test]
+fn test_recursive_expansion_issue() {
+    let src = r#"
+#define SELF SELF
+int x = SELF;
+
+#define A B
+#define B A
+int y = A;
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Identifier
+      text: SELF
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: y
+    - kind: Assign
+      text: "="
+    - kind: Identifier
+      text: A
+    - kind: Semicolon
+      text: ;
+    "#);
 }

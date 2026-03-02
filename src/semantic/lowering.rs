@@ -14,7 +14,7 @@
 use hashbrown::HashMap;
 use smallvec::{SmallVec, smallvec};
 
-use crate::ast::literal;
+use crate::ast::literal::Literal;
 use crate::ast::parsed::{
     ParsedDeclarationData, ParsedDeclarator, ParsedFunctionDefData, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpecifier,
 };
@@ -22,10 +22,11 @@ use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::semantic::const_eval::{self, ConstEvalCtx};
 use crate::semantic::errors::{SemanticError, SemanticErrorKind};
+use crate::semantic::literal_utils::parse_string_literal;
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
-    ArraySizeType, BuiltinType, EnumConstant, ScopeId, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind,
-    TypeQualifiers, TypeRef, TypeRegistry,
+    ArraySizeType, BuiltinType, EnumConstant, ScopeId, StructMember, SymbolKind, SymbolRef, SymbolTable, Type,
+    TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
 };
 use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
@@ -298,7 +299,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         match const_eval::eval_const_expr(&const_ctx, cond_node) {
             Some(0) => {
                 let message = match self.ast.get_kind(msg_node) {
-                    NodeKind::Literal(literal::Literal::String(s)) => s.as_str().to_string(),
+                    NodeKind::Literal(Literal::String(s)) => s.as_str().to_string(),
                     _ => String::new(),
                 };
 
@@ -700,11 +701,7 @@ fn convert_parsed_base_type_to_qual_type(
         ParsedBaseTypeNode::Typeof(ty) => convert_to_qual_type(ctx, *ty, span, false),
         ParsedBaseTypeNode::TypeofExpr(expr) => {
             let expr_node = ctx.visit_expression(*expr);
-            let tr = ctx
-                .registry
-                .alloc(crate::semantic::Type::new(crate::semantic::TypeKind::TypeofExpr(
-                    expr_node,
-                )));
+            let tr = ctx.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)));
             Ok(QualType::unqualified(tr))
         }
     }
@@ -998,11 +995,7 @@ fn resolve_type_specifier(
         ParsedTypeSpecifier::Typeof(ty) => convert_to_qual_type(ctx, *ty, span, false),
         ParsedTypeSpecifier::TypeofExpr(expr) => {
             let expr_node = ctx.visit_expression(*expr);
-            let tr = ctx
-                .registry
-                .alloc(crate::semantic::Type::new(crate::semantic::TypeKind::TypeofExpr(
-                    expr_node,
-                )));
+            let tr = ctx.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)));
             Ok(QualType::unqualified(tr))
         }
     }
@@ -1384,9 +1377,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::Declaration(decl_data) => self.visit_declaration(&decl_data, span, target_slots),
             ParsedNodeKind::FunctionDef(func_def) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                self.visit_function_definition(&func_def, node, span);
-                smallvec![node]
+                let res_node = self.get_or_push_slot(target_slots, span);
+                self.visit_function_definition(&func_def, res_node, span);
+                smallvec![res_node]
             }
             // ... other top level kinds ...
             _ => self.visit_node_rest(node, target_slots),
@@ -1720,7 +1713,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             // Create string literal for initializer
             let func_name_id = NameId::new(&func_name_str);
-            let init_literal = literal::Literal::String(func_name_id);
+            let init_literal = Literal::String(func_name_id);
             let init_node = self.push_dummy(span);
             self.ast.kinds[init_node.index()] = NodeKind::Literal(init_literal);
 
@@ -1915,7 +1908,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_single_declarator(
         &mut self,
-        init: &crate::ast::parsed::ParsedInitDeclarator,
+        init: &ParsedInitDeclarator,
         base_ty: QualType,
         spec_info: &DeclSpecInfo,
         span: SourceSpan,
@@ -2031,9 +2024,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             scope_id: self.symbol_table.current_scope(),
         };
 
-        if let Err(crate::semantic::symbol_table::SymbolTableError::InvalidRedefinition { existing, .. }) = self
-            .symbol_table
-            .define_function(name, final_qt.ty(), spec_info.storage, false, span)
+        if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
+            self.symbol_table
+                .define_function(name, final_qt.ty(), spec_info.storage, false, span)
         {
             let first_def = self.symbol_table.get_symbol(existing).def_span;
             self.report_error(span, SemanticErrorKind::Redefinition { name, first_def });
@@ -2168,153 +2161,92 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn visit_node_rest(&mut self, node: ParsedNodeRef, target_slots: Option<&[NodeRef]>) -> SmallVec<[NodeRef; 1]> {
         let node = self.parsed_ast.get_node(node);
         let span = node.span;
+        macro_rules! lower_simple {
+            ($kind:expr) => {{
+                let res_node = self.get_or_push_slot(target_slots, span);
+                self.ast.kinds[res_node.index()] = $kind;
+                smallvec![res_node]
+            }};
+        }
+
         match &node.kind {
             ParsedNodeKind::Declaration(decl) => self.visit_declaration(decl, span, target_slots),
             ParsedNodeKind::StaticAssert(expr, msg) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let lowered_expr = self.visit_expression(*expr);
-                let lowered_msg = self.visit_expression(*msg);
-                self.ast.kinds[node.index()] = NodeKind::StaticAssert(lowered_expr, lowered_msg);
-                smallvec![node]
+                lower_simple!(NodeKind::StaticAssert(
+                    self.visit_expression(*expr),
+                    self.visit_expression(*msg)
+                ))
             }
-            ParsedNodeKind::If(stmt) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let cond = self.visit_expression(stmt.condition);
-                let then = self.visit_single_statement(stmt.then_branch);
-                let else_branch = stmt.else_branch.map(|b| self.visit_single_statement(b));
-                self.ast.kinds[node.index()] = NodeKind::If(IfStmt {
-                    condition: cond,
-                    then_branch: then,
-                    else_branch,
-                });
-                smallvec![node]
-            }
-            ParsedNodeKind::While(stmt) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let cond = self.visit_expression(stmt.condition);
-                let body = self.visit_single_statement(stmt.body);
-                self.ast.kinds[node.index()] = NodeKind::While(WhileStmt { condition: cond, body });
-                smallvec![node]
-            }
-            ParsedNodeKind::DoWhile(body, cond) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let b = self.visit_single_statement(*body);
-                let c = self.visit_expression(*cond);
-                self.ast.kinds[node.index()] = NodeKind::DoWhile(b, c);
-                smallvec![node]
-            }
+            ParsedNodeKind::If(stmt) => lower_simple!(NodeKind::If(IfStmt {
+                condition: self.visit_expression(stmt.condition),
+                then_branch: self.visit_single_statement(stmt.then_branch),
+                else_branch: stmt.else_branch.map(|b| self.visit_single_statement(b)),
+            })),
+            ParsedNodeKind::While(stmt) => lower_simple!(NodeKind::While(WhileStmt {
+                condition: self.visit_expression(stmt.condition),
+                body: self.visit_single_statement(stmt.body),
+            })),
+            ParsedNodeKind::DoWhile(body, cond) => lower_simple!(NodeKind::DoWhile(
+                self.visit_single_statement(*body),
+                self.visit_expression(*cond)
+            )),
             ParsedNodeKind::For(stmt) => {
-                let node = self.get_or_push_slot(target_slots, span);
                 let scope_id = self.symbol_table.push_scope();
-
-                let init = stmt.init.map(|i| self.visit_node(i).first().cloned().unwrap());
-                let cond = stmt.condition.map(|c| self.visit_expression(c));
-                let inc = stmt.increment.map(|i| self.visit_expression(i));
-                let body = self.visit_single_statement(stmt.body);
-                self.symbol_table.pop_scope();
-
-                self.ast.kinds[node.index()] = NodeKind::For(crate::ast::ForStmt {
-                    init,
-                    condition: cond,
-                    increment: inc,
-                    body,
+                let res = lower_simple!(NodeKind::For(ForStmt {
+                    init: stmt.init.map(|i| self.visit_node(i).first().cloned().unwrap()),
+                    condition: stmt.condition.map(|c| self.visit_expression(c)),
+                    increment: stmt.increment.map(|i| self.visit_expression(i)),
+                    body: self.visit_single_statement(stmt.body),
                     scope_id,
-                });
-                smallvec![node]
+                }));
+                self.symbol_table.pop_scope();
+                res
             }
-            ParsedNodeKind::Switch(cond, body) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let c = self.visit_expression(*cond);
-                let b = self.visit_single_statement(*body);
-                self.ast.kinds[node.index()] = NodeKind::Switch(c, b);
-                smallvec![node]
-            }
-            ParsedNodeKind::Case(expr, stmt) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let e = self.visit_expression(*expr);
-                let s = self.visit_single_statement(*stmt);
-                self.ast.kinds[node.index()] = NodeKind::Case(e, s);
-                smallvec![node]
-            }
-            ParsedNodeKind::CaseRange(start, end, stmt) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let s_expr = self.visit_expression(*start);
-                let e_expr = self.visit_expression(*end);
-                let s_stmt = self.visit_single_statement(*stmt);
-                self.ast.kinds[node.index()] = NodeKind::CaseRange(s_expr, e_expr, s_stmt);
-                smallvec![node]
-            }
+            ParsedNodeKind::Switch(cond, body) => lower_simple!(NodeKind::Switch(
+                self.visit_expression(*cond),
+                self.visit_single_statement(*body)
+            )),
+            ParsedNodeKind::Case(expr, stmt) => lower_simple!(NodeKind::Case(
+                self.visit_expression(*expr),
+                self.visit_single_statement(*stmt)
+            )),
+            ParsedNodeKind::CaseRange(start, end, stmt) => lower_simple!(NodeKind::CaseRange(
+                self.visit_expression(*start),
+                self.visit_expression(*end),
+                self.visit_single_statement(*stmt)
+            )),
             ParsedNodeKind::Default(stmt) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let s = self.visit_single_statement(*stmt);
-                self.ast.kinds[node.index()] = NodeKind::Default(s);
-                smallvec![node]
+                lower_simple!(NodeKind::Default(self.visit_single_statement(*stmt)))
             }
-            ParsedNodeKind::Break => {
-                let node = self.get_or_push_slot(target_slots, span);
-                self.ast.kinds[node.index()] = NodeKind::Break;
-                smallvec![node]
-            }
-            ParsedNodeKind::Continue => {
-                let node = self.get_or_push_slot(target_slots, span);
-                self.ast.kinds[node.index()] = NodeKind::Continue;
-                smallvec![node]
-            }
-            ParsedNodeKind::Goto(name) => {
-                let sym = self.resolve_label(*name, span);
-                let node = self.get_or_push_slot(target_slots, span);
-                self.ast.kinds[node.index()] = NodeKind::Goto(*name, sym);
-                smallvec![node]
-            }
+            ParsedNodeKind::Break => lower_simple!(NodeKind::Break),
+            ParsedNodeKind::Continue => lower_simple!(NodeKind::Continue),
+            ParsedNodeKind::Goto(name) => lower_simple!(NodeKind::Goto(*name, self.resolve_label(*name, span))),
             ParsedNodeKind::Label(name, inner) => {
-                let node = self.get_or_push_slot(target_slots, span);
                 let sym = self.define_label(*name, span);
-                let s = self.visit_single_statement(*inner);
-                self.ast.kinds[node.index()] = NodeKind::Label(*name, s, sym);
-                smallvec![node]
+                lower_simple!(NodeKind::Label(*name, self.visit_single_statement(*inner), sym))
             }
             ParsedNodeKind::Return(expr) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let e = expr.map(|x| self.visit_expression(x));
-                self.ast.kinds[node.index()] = NodeKind::Return(e);
-                smallvec![node]
+                lower_simple!(NodeKind::Return(expr.map(|x| self.visit_expression(x))))
             }
             ParsedNodeKind::ExpressionStatement(expr) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let e = expr.map(|x| self.visit_expression(x));
-                self.ast.kinds[node.index()] = NodeKind::ExpressionStatement(e);
-                smallvec![node]
+                lower_simple!(NodeKind::ExpressionStatement(expr.map(|x| self.visit_expression(x))))
             }
-            ParsedNodeKind::BinaryOp(op, lhs, rhs) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let l = self.visit_expression(*lhs);
-                let r = self.visit_expression(*rhs);
-                self.ast.kinds[node.index()] = NodeKind::BinaryOp(*op, l, r);
-                smallvec![node]
-            }
-            ParsedNodeKind::Assignment(op, lhs, rhs) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let l = self.visit_expression(*lhs);
-                let r = self.visit_expression(*rhs);
-                self.ast.kinds[node.index()] = NodeKind::Assignment(*op, l, r);
-                smallvec![node]
-            }
+            ParsedNodeKind::BinaryOp(op, lhs, rhs) => lower_simple!(NodeKind::BinaryOp(
+                *op,
+                self.visit_expression(*lhs),
+                self.visit_expression(*rhs)
+            )),
+            ParsedNodeKind::Assignment(op, lhs, rhs) => lower_simple!(NodeKind::Assignment(
+                *op,
+                self.visit_expression(*lhs),
+                self.visit_expression(*rhs)
+            )),
             ParsedNodeKind::UnaryOp(op, operand) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let o = self.visit_expression(*operand);
-                self.ast.kinds[node.index()] = NodeKind::UnaryOp(*op, o);
-                smallvec![node]
+                lower_simple!(NodeKind::UnaryOp(*op, self.visit_expression(*operand)))
             }
-            ParsedNodeKind::Literal(literal) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                self.ast.kinds[node.index()] = NodeKind::Literal(*literal);
-                smallvec![node]
-            }
+            ParsedNodeKind::Literal(literal) => lower_simple!(NodeKind::Literal(*literal)),
             ParsedNodeKind::Ident(name) => {
-                let sym = self.resolve_ident(*name, span);
-                let node = self.get_or_push_slot(target_slots, span);
-                self.ast.kinds[node.index()] = NodeKind::Ident(*name, sym);
-                smallvec![node]
+                lower_simple!(NodeKind::Ident(*name, self.resolve_ident(*name, span)))
             }
             ParsedNodeKind::FunctionCall(func, args) => {
                 // Reserve a slot for the FunctionCall node to ensure parent < child index (when necessary)
@@ -2355,46 +2287,28 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![call_node_idx]
             }
             ParsedNodeKind::MemberAccess(base, member, is_arrow) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let b = self.visit_expression(*base);
-                self.ast.kinds[node.index()] = NodeKind::MemberAccess(b, *member, *is_arrow);
-                smallvec![node]
+                lower_simple!(NodeKind::MemberAccess(self.visit_expression(*base), *member, *is_arrow))
             }
-            ParsedNodeKind::Cast(ty_name, expr) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let e = self.visit_expression(*expr);
-                let ty = convert_to_qual_type(self, *ty_name, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
-                self.ast.kinds[node.index()] = NodeKind::Cast(ty, e);
-                smallvec![node]
-            }
+            ParsedNodeKind::Cast(ty_name, expr) => lower_simple!(NodeKind::Cast(
+                convert_to_qual_type(self, *ty_name, span, false)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error)),
+                self.visit_expression(*expr)
+            )),
             ParsedNodeKind::PostIncrement(operand) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let o = self.visit_expression(*operand);
-                self.ast.kinds[node.index()] = NodeKind::PostIncrement(o);
-                smallvec![node]
+                lower_simple!(NodeKind::PostIncrement(self.visit_expression(*operand)))
             }
             ParsedNodeKind::PostDecrement(operand) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let o = self.visit_expression(*operand);
-                self.ast.kinds[node.index()] = NodeKind::PostDecrement(o);
-                smallvec![node]
+                lower_simple!(NodeKind::PostDecrement(self.visit_expression(*operand)))
             }
-            ParsedNodeKind::IndexAccess(base, index) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let b = self.visit_expression(*base);
-                let i = self.visit_expression(*index);
-                self.ast.kinds[node.index()] = NodeKind::IndexAccess(b, i);
-                smallvec![node]
-            }
-            ParsedNodeKind::TernaryOp(cond, then_branch, else_branch) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let c = self.visit_expression(*cond);
-                let t = self.visit_expression(*then_branch);
-                let e = self.visit_expression(*else_branch);
-                self.ast.kinds[node.index()] = NodeKind::TernaryOp(c, t, e);
-                smallvec![node]
-            }
+            ParsedNodeKind::IndexAccess(base, index) => lower_simple!(NodeKind::IndexAccess(
+                self.visit_expression(*base),
+                self.visit_expression(*index)
+            )),
+            ParsedNodeKind::TernaryOp(cond, then_branch, else_branch) => lower_simple!(NodeKind::TernaryOp(
+                self.visit_expression(*cond),
+                self.visit_expression(*then_branch),
+                self.visit_expression(*else_branch)
+            )),
             ParsedNodeKind::GnuStatementExpression(stmt, _expr) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let s = self.visit_single_statement(*stmt);
@@ -2419,95 +2333,56 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             ParsedNodeKind::SizeOfExpr(expr) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let e = self.visit_expression(*expr);
-                self.ast.kinds[node.index()] = NodeKind::SizeOfExpr(e);
-                smallvec![node]
+                lower_simple!(NodeKind::SizeOfExpr(self.visit_expression(*expr)))
             }
-            ParsedNodeKind::SizeOfType(ty_name) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let ty = convert_to_qual_type(self, *ty_name, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
-                self.ast.kinds[node.index()] = NodeKind::SizeOfType(ty);
-                smallvec![node]
-            }
-            ParsedNodeKind::AlignOf(ty_name) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let ty = convert_to_qual_type(self, *ty_name, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
-                self.ast.kinds[node.index()] = NodeKind::AlignOf(ty);
-                smallvec![node]
-            }
-            ParsedNodeKind::BuiltinVaArg(ty_name, expr) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let e = self.visit_expression(*expr);
-                let ty = convert_to_qual_type(self, *ty_name, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
-                self.ast.kinds[node.index()] = NodeKind::BuiltinVaArg(ty, e);
-                smallvec![node]
-            }
-            ParsedNodeKind::BuiltinOffsetof(ty_name, expr) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let e = self.visit_expression(*expr);
-                let ty = convert_to_qual_type(self, *ty_name, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
-                self.ast.kinds[node.index()] = NodeKind::BuiltinOffsetof(ty, e);
-                smallvec![node]
-            }
-            ParsedNodeKind::BuiltinVaStart(ap, last) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let a = self.visit_expression(*ap);
-                let l = self.visit_expression(*last);
-                self.ast.kinds[node.index()] = NodeKind::BuiltinVaStart(a, l);
-                smallvec![node]
-            }
+            ParsedNodeKind::SizeOfType(ty_name) => lower_simple!(NodeKind::SizeOfType(
+                convert_to_qual_type(self, *ty_name, span, false)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error))
+            )),
+            ParsedNodeKind::AlignOf(ty_name) => lower_simple!(NodeKind::AlignOf(
+                convert_to_qual_type(self, *ty_name, span, false)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error))
+            )),
+            ParsedNodeKind::BuiltinVaArg(ty_name, expr) => lower_simple!(NodeKind::BuiltinVaArg(
+                convert_to_qual_type(self, *ty_name, span, false)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error)),
+                self.visit_expression(*expr)
+            )),
+            ParsedNodeKind::BuiltinOffsetof(ty_name, expr) => lower_simple!(NodeKind::BuiltinOffsetof(
+                convert_to_qual_type(self, *ty_name, span, false)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error)),
+                self.visit_expression(*expr)
+            )),
+            ParsedNodeKind::BuiltinVaStart(ap, last) => lower_simple!(NodeKind::BuiltinVaStart(
+                self.visit_expression(*ap),
+                self.visit_expression(*last)
+            )),
             ParsedNodeKind::BuiltinVaEnd(ap) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let a = self.visit_expression(*ap);
-                self.ast.kinds[node.index()] = NodeKind::BuiltinVaEnd(a);
-                smallvec![node]
+                lower_simple!(NodeKind::BuiltinVaEnd(self.visit_expression(*ap)))
             }
-            ParsedNodeKind::BuiltinVaCopy(dst, src) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let d = self.visit_expression(*dst);
-                let s = self.visit_expression(*src);
-                self.ast.kinds[node.index()] = NodeKind::BuiltinVaCopy(d, s);
-                smallvec![node]
-            }
-            ParsedNodeKind::BuiltinExpect(exp, c) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let e = self.visit_expression(*exp);
-                let expected = self.visit_expression(*c);
-                self.ast.kinds[node.index()] = NodeKind::BuiltinExpect(e, expected);
-                smallvec![node]
-            }
+            ParsedNodeKind::BuiltinVaCopy(dst, src) => lower_simple!(NodeKind::BuiltinVaCopy(
+                self.visit_expression(*dst),
+                self.visit_expression(*src)
+            )),
+            ParsedNodeKind::BuiltinExpect(exp, c) => lower_simple!(NodeKind::BuiltinExpect(
+                self.visit_expression(*exp),
+                self.visit_expression(*c)
+            )),
             ParsedNodeKind::BuiltinPopcount(expr) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let e = self.visit_expression(*expr);
-                self.ast.kinds[node.index()] = NodeKind::BuiltinPopcount(e);
-                smallvec![node]
+                lower_simple!(NodeKind::BuiltinPopcount(self.visit_expression(*expr)))
             }
             ParsedNodeKind::BuiltinClz(expr) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let e = self.visit_expression(*expr);
-                self.ast.kinds[node.index()] = NodeKind::BuiltinClz(e);
-                smallvec![node]
+                lower_simple!(NodeKind::BuiltinClz(self.visit_expression(*expr)))
             }
             ParsedNodeKind::BuiltinCtz(expr) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let e = self.visit_expression(*expr);
-                self.ast.kinds[node.index()] = NodeKind::BuiltinCtz(e);
-                smallvec![node]
+                lower_simple!(NodeKind::BuiltinCtz(self.visit_expression(*expr)))
             }
-            ParsedNodeKind::BuiltinTypesCompatibleP(ty1, ty2) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let t1 = convert_to_qual_type(self, *ty1, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
-                let t2 = convert_to_qual_type(self, *ty2, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
-                self.ast.kinds[node.index()] = NodeKind::BuiltinTypesCompatibleP(t1, t2);
-                smallvec![node]
-            }
+            ParsedNodeKind::BuiltinTypesCompatibleP(ty1, ty2) => lower_simple!(NodeKind::BuiltinTypesCompatibleP(
+                convert_to_qual_type(self, *ty1, span, false)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error)),
+                convert_to_qual_type(self, *ty2, span, false)
+                    .unwrap_or(QualType::unqualified(self.registry.type_error))
+            )),
             ParsedNodeKind::AtomicOp(op, args) => {
                 let node = self.get_or_push_slot(target_slots, span);
 
@@ -2556,24 +2431,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 smallvec![node]
             }
             ParsedNodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let c = self.visit_expression(*cond);
-                let t = self.visit_expression(*true_expr);
-                let e = self.visit_expression(*false_expr);
-                self.ast.kinds[node.index()] = NodeKind::BuiltinChooseExpr(c, t, e);
-                smallvec![node]
+                lower_simple!(NodeKind::BuiltinChooseExpr(
+                    self.visit_expression(*cond),
+                    self.visit_expression(*true_expr),
+                    self.visit_expression(*false_expr)
+                ))
             }
             ParsedNodeKind::BuiltinConstantP(expr) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let e = self.visit_expression(*expr);
-                self.ast.kinds[node.index()] = NodeKind::BuiltinConstantP(e);
-                smallvec![node]
+                lower_simple!(NodeKind::BuiltinConstantP(self.visit_expression(*expr)))
             }
-            ParsedNodeKind::BuiltinUnreachable => {
-                let node = self.get_or_push_slot(target_slots, span);
-                self.ast.kinds[node.index()] = NodeKind::BuiltinUnreachable;
-                smallvec![node]
-            }
+            ParsedNodeKind::BuiltinUnreachable => lower_simple!(NodeKind::BuiltinUnreachable),
             ParsedNodeKind::GenericSelection(control, associations) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let c = self.visit_expression(*control);
@@ -2774,17 +2641,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn try_deduce_string_initializer_size(&self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
         match self.ast.get_kind(init_node) {
-            NodeKind::Literal(literal::Literal::String(s)) => {
-                let parsed = crate::semantic::literal_utils::parse_string_literal(*s);
+            NodeKind::Literal(Literal::String(s)) => {
+                let parsed = parse_string_literal(*s);
                 Some(parsed.size)
             }
             NodeKind::InitializerList(list) if list.init_len > 0 => {
                 let first_item = list.init_start;
                 if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item)
                     && item.designator_len == 0
-                    && let NodeKind::Literal(literal::Literal::String(s)) = self.ast.get_kind(item.initializer)
+                    && let NodeKind::Literal(Literal::String(s)) = self.ast.get_kind(item.initializer)
                 {
-                    let parsed = crate::semantic::literal_utils::parse_string_literal(*s);
+                    let parsed = parse_string_literal(*s);
                     let string_elem_type = self.registry.get_builtin_type(parsed.builtin_type);
 
                     if self.registry.is_compatible(

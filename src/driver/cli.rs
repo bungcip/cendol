@@ -3,6 +3,7 @@
 //! This module handles command-line argument parsing using clap and
 //! provides configuration structures for the compiler driver.
 
+use clap::Parser;
 use clap::{Args, Parser as CliParser};
 use std::path::PathBuf;
 use target_lexicon::Triple;
@@ -340,6 +341,7 @@ impl Cli {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
     use std::path::PathBuf;
 
     #[test]
@@ -460,5 +462,25 @@ mod tests {
         assert!(config.warnings.contains(&"pedantic".to_string()));
         assert!(config.warnings.contains(&"pedantic-errors".to_string()));
         assert_eq!(config.target, Triple::host());
+    }
+
+    #[test]
+    fn test_cli_dump_flags_coverage() {
+        use clap::Parser;
+
+        let cli1 = Cli::parse_from(&["cendol", "dummy.c", "--dump-ast-after-parser"]);
+        assert_eq!(cli1.into_config().unwrap().stop_after, CompilePhase::Parse);
+
+        let cli2 = Cli::parse_from(&["cendol", "dummy.c", "--dump-ast-after-semantic-lowering"]);
+        assert_eq!(cli2.into_config().unwrap().stop_after, CompilePhase::SemanticLowering);
+
+        let cli3 = Cli::parse_from(&["cendol", "dummy.c", "--dump-mir"]);
+        assert_eq!(cli3.into_config().unwrap().stop_after, CompilePhase::Mir);
+
+        let cli4 = Cli::parse_from(&["cendol", "dummy.c", "--dump-cranelift"]);
+        assert_eq!(cli4.into_config().unwrap().stop_after, CompilePhase::Cranelift);
+
+        let cli5 = Cli::parse_from(&["cendol", "dummy.c"]);
+        assert_eq!(cli5.into_config().unwrap().stop_after, CompilePhase::EmitObject);
     }
 }

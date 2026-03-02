@@ -80,11 +80,11 @@ impl TypeDefContext {
         self.scopes.pop();
     }
 
-    pub(crate) fn get_last_scope_len(&self) -> usize {
+    fn get_last_scope_len(&self) -> usize {
         self.scopes.last().map(|s| s.len()).unwrap_or(0)
     }
 
-    pub(crate) fn truncate_last_scope(&mut self, len: usize) {
+    fn truncate_last_scope(&mut self, len: usize) {
         if let Some(scope) = self.scopes.last_mut() {
             scope.truncate(len);
         }

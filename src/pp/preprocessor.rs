@@ -695,37 +695,37 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Get the interned symbol for the "defined" operator
-    pub(crate) fn defined_symbol(&self) -> StringId {
+    pub(super) fn defined_symbol(&self) -> StringId {
         self.directive_keywords.defined_symbol()
     }
 
     /// Get the interned symbol for the "__has_include" operator
-    pub(crate) fn has_include_symbol(&self) -> StringId {
+    pub(super) fn has_include_symbol(&self) -> StringId {
         self.directive_keywords.has_include_symbol()
     }
 
     /// Get the interned symbol for the "__has_include_next" operator
-    pub(crate) fn has_include_next_symbol(&self) -> StringId {
+    pub(super) fn has_include_next_symbol(&self) -> StringId {
         self.directive_keywords.has_include_next_symbol()
     }
 
     /// Get the interned symbol for the "__has_builtin" operator
-    pub(crate) fn has_builtin_symbol(&self) -> StringId {
+    pub(super) fn has_builtin_symbol(&self) -> StringId {
         self.directive_keywords.has_builtin_symbol()
     }
 
     /// Get the interned symbol for the "__has_attribute" operator
-    pub(crate) fn has_attribute_symbol(&self) -> StringId {
+    pub(super) fn has_attribute_symbol(&self) -> StringId {
         self.directive_keywords.has_attribute_symbol()
     }
 
     /// Get the interned symbol for the "__has_feature" operator
-    pub(crate) fn has_feature_symbol(&self) -> StringId {
+    pub(super) fn has_feature_symbol(&self) -> StringId {
         self.directive_keywords.has_feature_symbol()
     }
 
     /// Get the interned symbol for the "__has_extension" operator
-    pub(crate) fn has_extension_symbol(&self) -> StringId {
+    pub(super) fn has_extension_symbol(&self) -> StringId {
         self.directive_keywords.has_extension_symbol()
     }
 

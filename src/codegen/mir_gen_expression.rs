@@ -798,12 +798,21 @@ impl<'a> MirGen<'a> {
 
         let rhs_op = self.visit_expression(right_ref, true);
 
+        let lhs_ty = self.ast.get_resolved_type(left_ref).unwrap();
+
         if let Some(compound_op) = op.without_assignment() {
             self.visit_compound_assignment(node_ref, compound_op, place, rhs_op, left_ref, right_ref, mir_ty)
         } else {
             // Simple assignment, just use the RHS
             let final_rhs = self.apply_conversions(rhs_op, right_ref, mir_ty);
-            self.emit_assignment(place, final_rhs.clone());
+
+            if lhs_ty.is_atomic() {
+                let ptr = Operand::AddressOf(Box::new(place));
+                self.mir_builder
+                    .add_statement(MirStmt::AtomicStore(ptr, final_rhs.clone(), AtomicMemOrder::SeqCst));
+            } else {
+                self.emit_assignment(place, final_rhs.clone());
+            }
             final_rhs // C assignment expressions evaluate to the assigned value
         }
     }
@@ -818,6 +827,30 @@ impl<'a> MirGen<'a> {
         right_ref: NodeRef,
         mir_ty: TypeId,
     ) -> Operand {
+        let lhs_ty = self.ast.get_resolved_type(left_ref).unwrap();
+
+        if lhs_ty.is_atomic() {
+            let ptr = Operand::AddressOf(Box::new(place.clone()));
+            let mir_op = match compound_op {
+                BinaryOp::Add => Some(BinaryIntOp::Add),
+                BinaryOp::Sub => Some(BinaryIntOp::Sub),
+                BinaryOp::BitAnd => Some(BinaryIntOp::BitAnd),
+                BinaryOp::BitOr => Some(BinaryIntOp::BitOr),
+                BinaryOp::BitXor => Some(BinaryIntOp::BitXor),
+                _ => None,
+            };
+
+            if let Some(op) = mir_op {
+                let rval = Rvalue::AtomicFetchOp(op, ptr, rhs_op.clone(), AtomicMemOrder::SeqCst);
+                let old_val = self.emit_rvalue_to_operand(rval, mir_ty);
+                // AtomicFetchOp returns old value. Compound assignment evaluates to NEW value.
+                // Re-apply operation to old value to get new value for the expression result.
+                let (new_val_rval, _) =
+                    self.visit_binary_arithmetic_logic(&compound_op, old_val, rhs_op, left_ref, right_ref, mir_ty);
+                return self.emit_rvalue_to_operand(new_val_rval, mir_ty);
+            }
+        }
+
         // This is a compound assignment, e.g., a += b
         // Use the already-evaluated place to read the current value.
         let lhs_copy = Operand::Copy(Box::new(place.clone()));
@@ -1036,6 +1069,23 @@ impl<'a> MirGen<'a> {
         } else {
             panic!("Inc/Dec operand is not a place");
         };
+
+        if operand_ty.is_atomic() {
+            let ptr = Operand::AddressOf(place.clone());
+            let op = if is_inc { BinaryIntOp::Add } else { BinaryIntOp::Sub };
+            let step = self.create_int_operand(1);
+            let rval = Rvalue::AtomicFetchOp(op, ptr, step.clone(), AtomicMemOrder::SeqCst);
+            let old_val = self.emit_rvalue_to_operand(rval, mir_ty);
+
+            if is_post {
+                return old_val;
+            } else {
+                let bin_op = if is_inc { BinaryOp::Add } else { BinaryOp::Sub };
+                let (new_val_rval, _) =
+                    self.visit_binary_arithmetic_logic(&bin_op, old_val, step, operand_ref, operand_ref, mir_ty);
+                return self.emit_rvalue_to_operand(new_val_rval, mir_ty);
+            }
+        }
 
         // If it's post-inc/dec and we need the value, save the old value
         let old_value = if is_post && need_value {

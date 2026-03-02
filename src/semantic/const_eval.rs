@@ -63,6 +63,31 @@ impl<'a> ConstEvalCtx<'a> {
                 Some(pointee)
             }
             NodeKind::Cast(target_ty, _) => Some(*target_ty),
+            NodeKind::Literal(crate::ast::literal::Literal::String(val)) => {
+                // To get the correct size, we must parse the string literal just like codegen/analyzer does.
+                let parsed_str = crate::semantic::literal_utils::parse_string_literal(*val);
+                let len = parsed_str.values.len() + 1; // +1 for null terminator
+
+                // We cannot allocate a new type here since ConstEvalCtx has a read-only registry.
+                // We can just use one of the standard builtin types.
+                let builtin_base = match parsed_str.builtin_type {
+                    crate::semantic::BuiltinType::Char => self.registry.type_char,
+                    crate::semantic::BuiltinType::Int => self.registry.type_int,
+                    crate::semantic::BuiltinType::UShort => self.registry.type_short_unsigned,
+                    crate::semantic::BuiltinType::UInt => self.registry.type_int_unsigned,
+                    _ => self.registry.type_char,
+                };
+
+                Some(crate::semantic::QualType::unqualified(
+                    crate::semantic::TypeRef::new(
+                        builtin_base.base(),
+                        crate::semantic::types::TypeClass::Array,
+                        0,
+                        len as u32,
+                    )
+                    .unwrap(),
+                ))
+            }
             _ => None,
         }
     }

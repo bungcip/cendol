@@ -78,7 +78,15 @@ impl<'a> ConstEvalCtx<'a> {
                     _ => self.registry.type_char,
                 };
 
-                Some(crate::semantic::QualType::unqualified(crate::semantic::TypeRef::new(builtin_base.base(), crate::semantic::types::TypeClass::Array, 0, len as u32).unwrap()))
+                Some(crate::semantic::QualType::unqualified(
+                    crate::semantic::TypeRef::new(
+                        builtin_base.base(),
+                        crate::semantic::types::TypeClass::Array,
+                        0,
+                        len as u32,
+                    )
+                    .unwrap(),
+                ))
             }
             _ => None,
         }

@@ -2252,12 +2252,7 @@ impl<'a> SemanticAnalyzer<'a> {
             } else if !is_alignof && expr.is_some() && self.is_bitfield(expr.unwrap()) {
                 self.report_error(node, SemanticErrorKind::SizeOfBitfield);
             } else if self.registry.is_variably_modified(ty) {
-                self.report_error(
-                    node,
-                    SemanticErrorKind::UnsupportedFeature {
-                        feature: "sizeof VLA",
-                    },
-                );
+                self.report_error(node, SemanticErrorKind::UnsupportedFeature { feature: "sizeof VLA" });
             } else {
                 if let Err(e) = self.registry.ensure_layout(ty) {
                     if let crate::semantic::type_registry::TypeRegistryError::UnsupportedFeature { feature } = e {

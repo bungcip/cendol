@@ -1,5 +1,5 @@
-use crate::tests::test_utils::{run_fail_with_message, run_pass};
 use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn test_sizeof_vla_unsupported() {

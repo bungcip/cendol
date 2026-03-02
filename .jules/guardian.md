@@ -99,3 +99,8 @@ Action: Always use recursive extraction for declarator-specific attributes like 
 
 Learning: C11 6.5.1.1p2 prohibits any two associations in a `_Generic` selection from having compatible types (e.g., `int` vs `enum` with `int` base, or `int[10]` vs `int[]`). During semantic analysis, it is critical to visit the association nodes *before* performing compatibility checks, as types like `typeof(expr)` or complex declarators might not be fully resolved otherwise. Failing to do so can lead to false negatives where compatible types are silently accepted due to unresolved type information.
 Action: Enforce phase ordering in `visit_generic_selection` where each association is visited to resolve types before it is checked for compatibility against previously seen associations and the controlling expression.
+
+2025-06-03 - [Generic Selection Qualifier Distinctness]
+
+Learning: C11 6.5.1.1p2 mandates that generic association type names specify complete object types and that no two associations specify compatible types. Crucially, 'int' and 'const int' are NOT compatible types. While the controlling expression undergoes lvalue conversion (stripping top-level qualifiers), the associations maintain their qualifiers for type matching. A compiler must correctly distinguish these qualified types as non-compatible to allow them as distinct associations, while still rejecting truly compatible duplicates.
+Action: Implement regression tests that verify the distinction between qualified and unqualified types in generic associations to prevent incorrect duplicate detection or matching.

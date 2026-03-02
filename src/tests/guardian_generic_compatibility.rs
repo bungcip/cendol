@@ -1,4 +1,5 @@
-use crate::tests::test_utils::run_fail_with_message;
+use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn test_generic_selection_rejects_compatible_array_types() {
@@ -48,5 +49,31 @@ fn test_generic_selection_rejects_compatible_function_pointers() {
         }
         "#,
         "compatible with previously specified type",
+    );
+}
+
+#[test]
+fn test_generic_selection_qualifier_compatibility_constraints() {
+    // C11 6.5.1.1p2: "No two generic associations in the same generic selection
+    // shall specify compatible types."
+
+    // 1. int and const int are NOT compatible types and can both be present.
+    run_pass(
+        r#"
+        int main() {
+            return _Generic(0, int: 1, const int: 2);
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+
+    // 2. Exact same types are compatible and must be rejected.
+    run_fail_with_message(
+        r#"
+        int main() {
+            return _Generic(0, int: 1, int: 2);
+        }
+        "#,
+        "compatible with previously specified type 'int'",
     );
 }

@@ -163,10 +163,10 @@ fn parse_function_definition(parser: &mut Parser) -> Result<ParsedNodeRef, Parse
 
     if let Some(params) = super::declarator::get_declarator_params(&declarator) {
         for param in params {
-            if let Some(ref decl) = param.declarator {
-                if let Some(name) = super::declarator::get_declarator_name(decl) {
-                    parser.type_context.add_non_typedef(name);
-                }
+            if let Some(ref decl) = param.declarator
+                && let Some(name) = super::declarator::get_declarator_name(decl)
+            {
+                parser.type_context.add_non_typedef(name);
             }
         }
     }

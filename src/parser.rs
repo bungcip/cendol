@@ -36,16 +36,16 @@ pub(crate) struct TypeDefContext {
 impl TypeDefContext {
     /// Create a new type context with builtin typedefs
     pub(crate) fn new() -> Self {
-        let mut globals = Vec::new();
-        // Add builtin typedefs
-        globals.push((NameId::new("int8_t"), true));
-        globals.push((NameId::new("int16_t"), true));
-        globals.push((NameId::new("int32_t"), true));
-        globals.push((NameId::new("int64_t"), true));
-        globals.push((NameId::new("uint8_t"), true));
-        globals.push((NameId::new("uint16_t"), true));
-        globals.push((NameId::new("uint32_t"), true));
-        globals.push((NameId::new("uint64_t"), true));
+        let globals = vec![
+            (NameId::new("int8_t"), true),
+            (NameId::new("int16_t"), true),
+            (NameId::new("int32_t"), true),
+            (NameId::new("int64_t"), true),
+            (NameId::new("uint8_t"), true),
+            (NameId::new("uint16_t"), true),
+            (NameId::new("uint32_t"), true),
+            (NameId::new("uint64_t"), true),
+        ];
 
         TypeDefContext { scopes: vec![globals] }
     }

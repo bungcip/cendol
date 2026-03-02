@@ -257,6 +257,10 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
+        if self.registry.is_variably_modified(ty) {
+            // Error was already reported by semantic analyzer, so we just return a dummy operand.
+            return self.create_dummy_operand();
+        }
         let _ = self.registry.ensure_layout(ty);
         let layout = self.registry.get_layout(ty);
         let val = if is_size { layout.size } else { layout.alignment };

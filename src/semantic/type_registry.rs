@@ -642,7 +642,47 @@ impl TypeRegistry {
             if let TypeKind::Alias(inner) = ty_data.kind {
                 ty = inner;
             } else {
-                return ty_data.layout.as_ref().map(Cow::Borrowed);
+                if let Some(layout) = ty_data.layout.as_ref() {
+                    return Some(Cow::Borrowed(layout));
+                }
+
+                // Fallback for types that don't need mutation to compute
+                return match &ty_data.kind {
+                    TypeKind::Builtin(b) => match b {
+                        BuiltinType::Void => None,
+                        BuiltinType::Bool | BuiltinType::Char | BuiltinType::SChar | BuiltinType::UChar => Some(Cow::Owned(TypeLayout { size: 1, alignment: 1, kind: LayoutKind::Scalar })),
+                        BuiltinType::Short | BuiltinType::UShort => Some(Cow::Owned(TypeLayout { size: 2, alignment: 2, kind: LayoutKind::Scalar })),
+                        BuiltinType::Int | BuiltinType::UInt | BuiltinType::Float => Some(Cow::Owned(TypeLayout { size: 4, alignment: 4, kind: LayoutKind::Scalar })),
+                        BuiltinType::Long | BuiltinType::ULong => {
+                            let size = match self.target_triple.pointer_width() {
+                                Ok(target_lexicon::PointerWidth::U16) => 2,
+                                Ok(target_lexicon::PointerWidth::U32) => 4,
+                                Ok(target_lexicon::PointerWidth::U64) => 8,
+                                Err(_) => 8,
+                            };
+                            Some(Cow::Owned(TypeLayout { size, alignment: size, kind: LayoutKind::Scalar }))
+                        },
+                        BuiltinType::LongLong | BuiltinType::ULongLong | BuiltinType::Double => Some(Cow::Owned(TypeLayout { size: 8, alignment: 8, kind: LayoutKind::Scalar })),
+                        BuiltinType::LongDouble => Some(Cow::Owned(TypeLayout { size: 16, alignment: 16, kind: LayoutKind::Scalar })),
+                        BuiltinType::Signed => Some(Cow::Owned(TypeLayout { size: 4, alignment: 4, kind: LayoutKind::Scalar })),
+                        BuiltinType::VaList => Some(Cow::Owned(TypeLayout { size: 24, alignment: 8, kind: LayoutKind::Scalar })), // x86_64 sysv va_list is 24 bytes
+                        BuiltinType::Complex => None, // Complex layout handled via TypeKind::Complex
+                    },
+                    TypeKind::Pointer { .. } => Some(Cow::Owned(TypeLayout { size: 8, alignment: 8, kind: LayoutKind::Scalar })),
+                    TypeKind::Array { element_type, size: ArraySizeType::Constant(len) } => {
+                        let elem_layout = self.try_get_layout(*element_type)?;
+                        Some(Cow::Owned(TypeLayout {
+                            size: elem_layout.size * (*len as u64),
+                            alignment: elem_layout.alignment,
+                            kind: LayoutKind::Array { element: *element_type, len: *len as u64 },
+                        }))
+                    },
+                    TypeKind::Complex { base_type } => {
+                        let base_layout = self.try_get_layout(*base_type)?;
+                        Some(Cow::Owned(TypeLayout { size: base_layout.size * 2, alignment: base_layout.alignment, kind: LayoutKind::Scalar }))
+                    },
+                    _ => None,
+                };
             }
         }
     }

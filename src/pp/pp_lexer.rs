@@ -715,16 +715,46 @@ impl PPLexer {
     /// The predicate receives the current state and the character.
     /// It should return `true` to consume the character, or `false` to stop.
     /// The closure can modify state (e.g., tracking scientific notation 'e').
-    fn consume_while<F, S>(&mut self, mut state: S, first_ch: u8, mut pred: F) -> String
+    fn consume_while<F, S>(
+        &mut self,
+        mut state: S,
+        first_ch: u8,
+        start_pos: u32,
+        mut pred: F,
+    ) -> std::borrow::Cow<'_, str>
     where
         F: FnMut(&mut S, u8) -> bool,
     {
-        // ⚡ Bolt: Pre-allocate the vector with a reasonable capacity to avoid
-        // multiple reallocations during identifier/number lexing.
+        // Try fast path first — borrow from buffer if the entire token consists of simple ASCII.
+        // This avoids heap allocation for a String and the overhead of the fallback loop.
+        let mut end = self.position as usize;
+        // Ensure first_ch is simple ASCII and wasn't produced by a splice/trigraph (pos == start + 1).
+        let mut simple = first_ch < 0x80 && first_ch != b'\\' && first_ch != b'?' && self.position == start_pos + 1;
+
+        while simple && end < self.buffer.len() {
+            let ch = self.buffer[end];
+            if ch >= 0x80 || ch == b'\\' || ch == b'?' {
+                simple = false;
+                break;
+            }
+            if pred(&mut state, ch) {
+                end += 1;
+            } else {
+                break;
+            }
+        }
+
+        if simple {
+            self.position = end as u32;
+            let bytes = &self.buffer[start_pos as usize..end];
+            // Safety: verified all bytes are ASCII < 0x80.
+            return std::borrow::Cow::Borrowed(unsafe { std::str::from_utf8_unchecked(bytes) });
+        }
+
+        // Slow path: build an owned String to handle splices, trigraphs, and UTF-8.
         let mut chars = Vec::with_capacity(32);
         chars.push(first_ch);
         loop {
-            // ⚡ Bolt: Fast path for direct buffer access when no line splicing is present.
             let pos = self.position as usize;
             if pos < self.buffer.len() {
                 let ch = self.buffer[pos];
@@ -747,8 +777,8 @@ impl PPLexer {
             }
             break;
         }
-        // Safety: We assume the caller only consumes valid UTF-8 characters (identifiers/numbers).
-        String::from_utf8(chars).unwrap()
+        // Safety: identifiers and numbers are guaranteed valid UTF-8 by caller predicates.
+        std::borrow::Cow::Owned(String::from_utf8(chars).expect("invalid utf-8 in textual token"))
     }
 
     /// Generic helper for lexing textual tokens (identifiers, numbers)
@@ -765,13 +795,14 @@ impl PPLexer {
         F: FnMut(&mut S, u8) -> bool,
         K: FnOnce(StringId) -> PPTokenKind,
     {
-        let text = self.consume_while(state, first_ch, pred);
-        let symbol = StringId::new(&text);
-        PPToken::text(
+        let text = self.consume_while(state, first_ch, start_pos, pred);
+        let symbol = StringId::new(text.as_ref());
+        let length = text.len() as u16;
+        PPToken::new(
             kind_ctor(symbol),
             flags,
             SourceLoc::new(self.source_id, start_pos),
-            &text,
+            length,
         )
     }
 

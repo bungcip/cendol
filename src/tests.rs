@@ -1,5 +1,6 @@
 pub mod codegen_abi;
 pub mod codegen_abi_compat;
+mod codegen_atomic;
 pub mod codegen_basics;
 pub mod codegen_calls;
 pub mod codegen_common;

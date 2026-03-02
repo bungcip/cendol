@@ -599,6 +599,11 @@ impl QualType {
     }
 
     #[inline]
+    pub(crate) fn is_atomic(self) -> bool {
+        self.qualifiers().contains(TypeQualifiers::ATOMIC)
+    }
+
+    #[inline]
     pub(crate) fn is_pointer(self) -> bool {
         self.ty().is_pointer()
     }

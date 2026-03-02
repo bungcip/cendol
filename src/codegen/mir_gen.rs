@@ -4,8 +4,8 @@ use crate::mir::MirArrayLayout;
 use crate::mir::MirProgram;
 use crate::mir::MirRecordLayout;
 use crate::mir::{
-    self, BinaryIntOp, ConstValueId, ConstValueKind, LocalId, MirBlockId, MirBuilder, MirFunctionId, MirLinkage,
-    MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    self, AtomicMemOrder, BinaryIntOp, ConstValueId, ConstValueKind, LocalId, MirBlockId, MirBuilder, MirFunctionId,
+    MirLinkage, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
@@ -1169,7 +1169,13 @@ impl<'a> MirGen<'a> {
         Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val as i64)))
     }
 
-    fn emit_conversion(&mut self, operand: Operand, conv: &Conversion, target_type_id: TypeId) -> Operand {
+    fn emit_conversion(
+        &mut self,
+        operand: Operand,
+        conv: &Conversion,
+        target_type_id: TypeId,
+        node_ref: NodeRef,
+    ) -> Operand {
         let to_ty_ref = match conv {
             Conversion::IntegerCast { to, .. }
             | Conversion::IntegerPromotion { to, .. }
@@ -1209,6 +1215,19 @@ impl<'a> MirGen<'a> {
             Conversion::LValueToRValue => target_type_id,
             Conversion::QualifierAdjust { .. } => target_type_id,
         };
+
+        if matches!(conv, Conversion::LValueToRValue) {
+            let ast_ty = self.ast.get_resolved_type(node_ref).unwrap();
+            if ast_ty.is_atomic() {
+                // Perform atomic load
+                let ptr_operand = match operand {
+                    Operand::Copy(ref p) => Operand::AddressOf(p.clone()),
+                    _ => operand.clone(),
+                };
+                let rval = Rvalue::AtomicLoad(ptr_operand, AtomicMemOrder::SeqCst);
+                return self.emit_rvalue_to_operand(rval, target_type_id);
+            }
+        }
 
         // Optimization: skip if already same type
         let current_ty = self.get_operand_type(&operand);
@@ -1334,7 +1353,7 @@ impl<'a> MirGen<'a> {
             if idx < semantic_info.conversions.len() {
                 let mut result = operand;
                 for conv in &semantic_info.conversions[idx] {
-                    result = self.emit_conversion(result, conv, target_type_id);
+                    result = self.emit_conversion(result, conv, target_type_id, node_ref);
                 }
                 return result;
             }

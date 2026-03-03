@@ -423,6 +423,8 @@ pub enum PPErrorKind {
     UnclosedConditional,
     #[error("Invalid universal character name")]
     InvalidUniversalCharacterName,
+    #[error("Macro '{name}' redefined with different value")]
+    MacroRedefined { name: String },
 }
 
 #[derive(Debug)]
@@ -1385,10 +1387,13 @@ impl<'src> Preprocessor<'src> {
             }
 
             if is_different {
-                self.report_warning(
+                let err = self.error_loc(
+                    PPErrorKind::MacroRedefined {
+                        name: name.as_str().to_string(),
+                    },
                     name_token.location,
-                    format!("Redefinition of macro '{}'", name.as_str()),
                 );
+                self.report_pp_error(err);
             }
         }
         true

@@ -475,7 +475,7 @@ FOO
     insta::assert_yaml_snapshot!((tokens, diags), @r#"
     - - kind: Number
         text: "43"
-    - - "Warning: Redefinition of macro 'FOO'"
+    - - "Error: Macro 'FOO' redefined with different value"
     "#);
 }
 

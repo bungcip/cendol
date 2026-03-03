@@ -24,10 +24,10 @@ fn test_switch_unreachable_cases() {
     "#;
 
     let clif_ir = setup_cranelift(source);
-    insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @r"
+    insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @"
     ; Function: main
     function u0:0() -> i32 system_v {
-        ss0 = explicit_slot 4
+        ss0 = explicit_slot 4, align = 4
         ss1 = explicit_slot 1
         ss2 = explicit_slot 1
         gv0 = symbol colocated userextname0

@@ -2630,17 +2630,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn collect_labels(&mut self, node: ParsedNodeRef) {
         let parsed_node = self.parsed_ast.get_node(node);
-        if let ParsedNodeKind::Label(name, _) = &parsed_node.kind {
-            if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
+        if let ParsedNodeKind::Label(name, _) = &parsed_node.kind
+            && let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
                 self.symbol_table
                     .define_label(*name, self.registry.type_void, parsed_node.span)
-            {
-                let first_def = self.symbol_table.get_symbol(existing).def_span;
-                self.report_error(
-                    parsed_node.span,
-                    SemanticErrorKind::Redefinition { name: *name, first_def },
-                );
-            }
+        {
+            let first_def = self.symbol_table.get_symbol(existing).def_span;
+            self.report_error(
+                parsed_node.span,
+                SemanticErrorKind::Redefinition { name: *name, first_def },
+            );
         }
         let mut f = |child| self.collect_labels(child);
         parsed_node.kind.for_each_child(&mut f);

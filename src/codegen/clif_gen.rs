@@ -2276,7 +2276,24 @@ fn emit_stack_slots(
 
         // Don't allocate space for zero-sized types
         if size > 0 {
-            let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, 0));
+            // Use explicit alignment if provided, otherwise default to natural alignment of the type
+            let mir_type = mir.get_type(local.type_id);
+            let natural_align = match mir_type {
+                MirType::I8 | MirType::U8 | MirType::Bool => 1,
+                MirType::I16 | MirType::U16 => 2,
+                MirType::I32 | MirType::U32 | MirType::F32 => 4,
+                MirType::I64 | MirType::U64 | MirType::F64 | MirType::Pointer { .. } | MirType::Function { .. } => 8,
+                MirType::F80 | MirType::F128 => 16,
+                MirType::Record { layout, .. } => layout.alignment,
+                MirType::Array { layout, .. } => layout.align,
+                MirType::Void => 1,
+            };
+
+            let alignment = local.alignment.map(|a| a as u64).unwrap_or(natural_align);
+            let align_shift = alignment.max(1).trailing_zeros() as u8;
+
+            let slot_data = StackSlotData::new(StackSlotKind::ExplicitSlot, size, align_shift);
+            let slot = builder.create_sized_stack_slot(slot_data);
             clif_stack_slots.insert(local_id, slot);
         }
     }

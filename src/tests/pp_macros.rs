@@ -569,14 +569,10 @@ foo(X)(Y)(Z)
       text: "1"
     - kind: Number
       text: "2"
+    - kind: Number
+      text: "1"
     - kind: Identifier
-      text: foo
-    - kind: LeftParen
-      text: (
-    - kind: Identifier
-      text: Z
-    - kind: RightParen
-      text: )
+      text: bar
     "#);
 }
 
@@ -668,6 +664,34 @@ int y = A;
       text: "="
     - kind: Identifier
       text: A
+    - kind: Semicolon
+      text: ;
+    "#);
+}
+
+#[test]
+fn test_indirect_recursion_prosser() {
+    let src = r#"
+#define A(x) x B
+#define B(y) y A
+int x = A(1)(2)(3);
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: x
+    - kind: Assign
+      text: "="
+    - kind: Number
+      text: "1"
+    - kind: Number
+      text: "2"
+    - kind: Number
+      text: "3"
+    - kind: Identifier
+      text: B
     - kind: Semicolon
       text: ;
     "#);

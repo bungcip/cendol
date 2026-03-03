@@ -85,6 +85,7 @@ pub struct PPToken {
     pub(crate) flags: PPTokenFlags,
     pub(crate) location: SourceLoc, // Contains file ID and byte offset
     pub(crate) length: u16,         // Maximum token length (64KB should be sufficient for any token)
+    pub(crate) hide_set: u32,       // Index into HideSetTable, 0 = empty hide set
 }
 
 impl PPToken {
@@ -95,6 +96,7 @@ impl PPToken {
             flags,
             location,
             length,
+            hide_set: 0,
         }
     }
 

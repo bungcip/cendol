@@ -184,6 +184,106 @@ bitflags::bitflags! {
     }
 }
 
+/// Interned table of hide sets for Dave Prosser's macro expansion algorithm
+#[derive(Debug, Clone)]
+pub(crate) struct HideSetTable {
+    sets: Vec<Vec<StringId>>,
+}
+
+impl Default for HideSetTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl HideSetTable {
+    pub(crate) fn new() -> Self {
+        // Index 0 is the empty hide set
+        Self { sets: vec![Vec::new()] }
+    }
+
+    pub(crate) fn intern(&mut self, mut set: Vec<StringId>) -> u32 {
+        if set.is_empty() {
+            return 0;
+        }
+        set.sort();
+        set.dedup();
+
+        for (i, existing) in self.sets.iter().enumerate() {
+            if *existing == set {
+                return i as u32;
+            }
+        }
+
+        let id = self.sets.len() as u32;
+        self.sets.push(set);
+        id
+    }
+
+    pub(crate) fn intersection(&mut self, id1: u32, id2: u32) -> u32 {
+        if id1 == 0 || id2 == 0 {
+            return 0;
+        }
+        if id1 == id2 {
+            return id1;
+        }
+        let set1 = &self.sets[id1 as usize];
+        let set2 = &self.sets[id2 as usize];
+
+        let mut result = Vec::with_capacity(std::cmp::min(set1.len(), set2.len()));
+        for &s1 in set1 {
+            if set2.contains(&s1) {
+                result.push(s1);
+            }
+        }
+
+        self.intern(result)
+    }
+
+    pub(crate) fn union(&mut self, id1: u32, id2: u32) -> u32 {
+        if id1 == 0 {
+            return id2;
+        }
+        if id2 == 0 {
+            return id1;
+        }
+        if id1 == id2 {
+            return id1;
+        }
+        let set1 = &self.sets[id1 as usize];
+        let set2 = &self.sets[id2 as usize];
+
+        let mut result = Vec::with_capacity(set1.len() + set2.len());
+        result.extend_from_slice(set1);
+        for &s2 in set2 {
+            if !result.contains(&s2) {
+                result.push(s2);
+            }
+        }
+
+        self.intern(result)
+    }
+
+    pub(crate) fn insert(&mut self, id: u32, symbol: StringId) -> u32 {
+        let existing = &self.sets[id as usize];
+        if existing.contains(&symbol) {
+            return id;
+        }
+        let mut new_set = Vec::with_capacity(existing.len() + 1);
+        new_set.extend_from_slice(existing);
+        new_set.push(symbol);
+        // Note: intern will sort it
+        self.intern(new_set)
+    }
+
+    pub(crate) fn contains(&self, id: u32, symbol: StringId) -> bool {
+        if id == 0 {
+            return false;
+        }
+        self.sets[id as usize].contains(&symbol)
+    }
+}
+
 /// Represents a macro definition
 #[derive(Clone)]
 pub(crate) struct MacroInfo {
@@ -248,6 +348,7 @@ pub struct Preprocessor<'src> {
 
     // Macro management
     macros: HashMap<StringId, MacroInfo>,
+    pub(crate) hide_sets: HideSetTable,
     macro_stack: HashMap<StringId, Vec<Option<MacroInfo>>>,
 
     // Include management
@@ -436,6 +537,7 @@ impl<'src> Preprocessor<'src> {
             c_standard: config.c_standard,
             directive_keywords: DirectiveKeywordTable::new(),
             macros: HashMap::new(),
+            hide_sets: HideSetTable::new(),
             macro_stack: HashMap::new(),
             once_included: HashSet::new(),
             conditional_stack: Vec::new(),
@@ -1831,7 +1933,8 @@ impl<'src> Preprocessor<'src> {
         };
 
         // Bolt ⚡: Check for recursive expansion here to avoid walking include stack for non-macros.
-        if self.is_recursive_expansion(token.location, symbol.as_str()) {
+        // using Dave Prosser's hide sets intersection approach
+        if self.hide_sets.contains(token.hide_set, symbol) {
             return Ok(None);
         }
 
@@ -1893,9 +1996,15 @@ impl<'src> Preprocessor<'src> {
         symbol: &StringId,
         token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
-        // No DISABLED flag needed — is_recursive_expansion() detects self-reference
+        let new_hs = self.hide_sets.insert(token.hide_set, *symbol);
+
+        // No DISABLED flag needed — hide_sets.contains detects self-reference
         // via the virtual buffer's source location (<macro_NAME>).
-        self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), token.location)
+        let mut tokens = self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), token.location)?;
+        for t in &mut tokens {
+            t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+        }
+        Ok(tokens)
     }
 
     /// Expand a function-like macro
@@ -1905,8 +2014,7 @@ impl<'src> Preprocessor<'src> {
         symbol: &StringId,
         token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
-        // Parse arguments from lexer
-        let args = match self.parse_macro_args_from_lexer(macro_info) {
+        let (args, rparen_token) = match self.parse_macro_args_from_lexer(macro_info) {
             Ok(args) => args,
             Err(PPError {
                 kind: PPErrorKind::InvalidMacroParameter,
@@ -1925,8 +2033,12 @@ impl<'src> Preprocessor<'src> {
             expanded_args.push(arg_clone);
         }
 
+        // Compute new hide set for expanded tokens.
+        let intersect_hs = self.hide_sets.intersection(token.hide_set, rparen_token.hide_set);
+        let new_hs = self.hide_sets.insert(intersect_hs, *symbol);
+
         // Substitute parameters in macro body
-        let substituted = self.substitute_macro(macro_info, &args, &expanded_args)?;
+        let substituted = self.substitute_macro(macro_info, &args, &expanded_args, new_hs)?;
 
         // No DISABLED flag needed — is_recursive_expansion() detects self-reference
         // via the virtual buffer's source location (<macro_NAME>).
@@ -1934,7 +2046,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Parse macro arguments from the current lexer
-    fn parse_macro_args_from_lexer(&mut self, macro_info: &MacroInfo) -> Result<Vec<Vec<PPToken>>, PPError> {
+    fn parse_macro_args_from_lexer(&mut self, macro_info: &MacroInfo) -> Result<(Vec<Vec<PPToken>>, PPToken), PPError> {
         let token = self.expect_token()?;
         if token.kind != PPTokenKind::LeftParen {
             self.pending_tokens.push(token);
@@ -1974,7 +2086,7 @@ impl<'src> Preprocessor<'src> {
                     };
 
                     if valid {
-                        return Ok(args);
+                        return Ok((args, t));
                     }
 
                     return self.emit_error_loc(PPErrorKind::InvalidMacroParameter, macro_info.location);
@@ -2065,6 +2177,7 @@ impl<'src> Preprocessor<'src> {
         macro_info: &MacroInfo,
         args: &[Vec<PPToken>],
         expanded_args: &[Vec<PPToken>],
+        new_hs: u32,
     ) -> Result<Vec<PPToken>, PPError> {
         // Bolt ⚡: Pre-allocate result vector to minimize reallocations during substitution.
         let mut result = Vec::with_capacity(macro_info.tokens.len());
@@ -2080,7 +2193,8 @@ impl<'src> Preprocessor<'src> {
                     if let PPTokenKind::Identifier(sym) = next.kind
                         && let Some(arg) = self.get_macro_param_tokens(macro_info, sym, args, token.location)
                     {
-                        let stringified = self.stringify_tokens(&arg, token.location)?;
+                        let mut stringified = self.stringify_tokens(&arg, token.location)?;
+                        stringified.hide_set = self.hide_sets.union(stringified.hide_set, new_hs);
                         result.push(stringified);
                         last_token_produced_output = true;
                         i += 2;
@@ -2106,7 +2220,10 @@ impl<'src> Preprocessor<'src> {
                         if param_tokens.is_empty() {
                             last_token_produced_output = false;
                         } else {
-                            result.extend(param_tokens.iter().copied());
+                            for mut t in param_tokens.iter().copied() {
+                                t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+                                result.push(t);
+                            }
                             last_token_produced_output = true;
                         }
                     } else {
@@ -2114,7 +2231,9 @@ impl<'src> Preprocessor<'src> {
                     }
                 }
                 _ => {
-                    result.push(*token);
+                    let mut t = *token;
+                    t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+                    result.push(t);
                     last_token_produced_output = true;
                 }
             }
@@ -2157,6 +2276,10 @@ impl<'src> Preprocessor<'src> {
         } else if let Some(l) = left {
             // Right is not empty, Left is not empty: paste left with right[0].
             let mut pasted = self.paste_tokens(&l, &right_tokens[0])?;
+            let pasted_hs = self.hide_sets.intersection(l.hide_set, right_tokens[0].hide_set);
+            for t in &mut pasted {
+                t.hide_set = pasted_hs;
+            }
             let pasted_count = pasted.len();
             pasted.extend(right_tokens.iter().skip(1).copied());
             Ok((pasted, pasted_count > 0 || right_tokens.len() > 1))
@@ -2428,8 +2551,9 @@ impl<'src> Preprocessor<'src> {
             return Ok(false);
         };
 
-        // Bolt ⚡: Check for recursive expansion here to avoid walking include stack for non-macros.
-        if self.is_recursive_expansion(symbol_token.location, symbol.as_str()) {
+        // Bolt ⚡: Check for recursive expansion here avoiding walking include stack for non-macros
+        // using Dave Prosser hide set algorithm.
+        if self.hide_sets.contains(symbol_token.hide_set, symbol) {
             return Ok(false);
         }
 
@@ -2461,7 +2585,12 @@ impl<'src> Preprocessor<'src> {
             expanded_args.push(arg_clone);
         }
 
-        let substituted = self.substitute_macro(&macro_info, &args, &expanded_args)?;
+        let intersect_hs = self
+            .hide_sets
+            .intersection(symbol_token.hide_set, tokens[end_j - 1].hide_set);
+        let new_hs = self.hide_sets.insert(intersect_hs, symbol);
+
+        let substituted = self.substitute_macro(&macro_info, &args, &expanded_args, new_hs)?;
         let substituted = self.create_virtual_buffer_tokens(&substituted, symbol.as_str(), symbol_token.location);
 
         if substituted.len() > 10000 {
@@ -2518,6 +2647,16 @@ impl<'src> Preprocessor<'src> {
                 continue;
             }
 
+            if let PPTokenKind::Identifier(sym) = token.kind {
+                println!(
+                    "expand_tokens at index {}: process '{}' (hide_set: {} contains={})",
+                    i,
+                    sym.as_str(),
+                    token.hide_set,
+                    self.hide_sets.contains(token.hide_set, sym)
+                );
+            }
+
             if self.try_expand_function_macro_in_tokens(tokens, i, in_conditional)? {
                 continue;
             }
@@ -2534,13 +2673,17 @@ impl<'src> Preprocessor<'src> {
                     .filter(|m| !m.flags.contains(MacroFlags::FUNCTION_LIKE) && !m.flags.contains(MacroFlags::DISABLED))
                     .cloned();
                 if let Some(macro_info) = macro_info
-                    && !self.is_recursive_expansion(tokens[i].location, symbol.as_str())
+                    && !self.hide_sets.contains(tokens[i].hide_set, symbol)
                 {
                     if let Some(m) = self.macros.get_mut(&symbol) {
                         m.flags |= MacroFlags::USED;
                     }
-                    let expanded =
+                    let new_hs = self.hide_sets.insert(tokens[i].hide_set, symbol);
+                    let mut expanded =
                         self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), tokens[i].location)?;
+                    for t in &mut expanded {
+                        t.hide_set = new_hs;
+                    }
                     tokens.splice(i..i + 1, expanded);
                     continue;
                 }
@@ -2596,85 +2739,6 @@ impl<'src> Preprocessor<'src> {
         } else {
             false
         }
-    }
-
-    fn is_recursive_expansion(&self, location: SourceLoc, macro_name: &str) -> bool {
-        // Bolt ⚡: Check if the token came from an expansion of the same macro.
-        //
-        // The key insight is that we should only block expansion if the token
-        // was PRODUCED BY expanding that macro, not if it merely appears in
-        // a buffer created during expansion.
-        //
-        // For example:
-        //   #define foo(X) 1 bar
-        //   #define bar(X) 2 foo
-        //   foo(X)(Y)(Z)
-        //
-        // When expanding foo(X), we create macro_foo buffer with "1 bar".
-        // When expanding bar(Y), we create macro_bar buffer with "2 foo".
-        // The "foo" in macro_bar came from bar's body, not from expanding foo.
-        // So it should be allowed to expand.
-        //
-        // However, for pasted tokens like:
-        //   #define CAT(a,b) a ## b
-        //   #define foobar CAT(foo, bar)
-        //   foobar
-        //
-        // The pasted "foobar" IS produced by expanding foobar, so we need to
-        // check the chain for pasted tokens.
-
-        let Some(info) = self.sm.get_file_info(location.source_id()) else {
-            return false;
-        };
-
-        if info.kind == FileKind::MacroExpansion || info.kind == FileKind::PastedToken {
-            // First check the immediate buffer if it's a macro expansion
-            if info.kind == FileKind::MacroExpansion {
-                let path_str = info.path.to_str().unwrap_or("");
-                if path_str.len() == macro_name.len() + 8
-                    && path_str.starts_with("<macro_")
-                    && path_str.ends_with('>')
-                    && &path_str[7..path_str.len() - 1] == macro_name
-                {
-                    return true;
-                }
-            }
-
-            // Walk the chain starting from the include_loc
-            let mut current_loc = info.include_loc;
-            let mut depth = 0;
-
-            while let Some(loc) = current_loc {
-                if depth >= 100 {
-                    break;
-                }
-                depth += 1;
-
-                let Some(parent_info) = self.sm.get_file_info(loc.source_id()) else {
-                    break;
-                };
-
-                if parent_info.kind == FileKind::MacroExpansion {
-                    let path_str = parent_info.path.to_str().unwrap_or("");
-                    if path_str.len() == macro_name.len() + 8
-                        && path_str.starts_with("<macro_")
-                        && path_str.ends_with('>')
-                        && &path_str[7..path_str.len() - 1] == macro_name
-                    {
-                        return true;
-                    }
-                }
-
-                // Continue traversing for both MacroExpansion and PastedToken
-                if parent_info.kind != FileKind::MacroExpansion && parent_info.kind != FileKind::PastedToken {
-                    break;
-                }
-
-                current_loc = parent_info.include_loc;
-            }
-        }
-
-        false
     }
 
     fn create_virtual_buffer_tokens(
@@ -2753,7 +2817,9 @@ impl<'src> Preprocessor<'src> {
                     SourceLoc::new(virtual_id, offset)
                 };
 
-                PPToken::new(t.kind, t.flags | PPTokenFlags::MACRO_EXPANDED, loc, len)
+                let mut token = PPToken::new(t.kind, t.flags | PPTokenFlags::MACRO_EXPANDED, loc, len);
+                token.hide_set = t.hide_set;
+                token
             })
             .collect()
     }

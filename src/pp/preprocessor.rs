@@ -2300,10 +2300,16 @@ impl<'src> Preprocessor<'src> {
                 total_len += 1;
             }
             let bytes = cache.get_token_bytes(token);
+            let should_escape = matches!(
+                token.kind,
+                PPTokenKind::StringLiteral(_) | PPTokenKind::CharLiteral(_, _)
+            );
+
             for &b in bytes {
-                match b {
-                    b'"' | b'\\' => total_len += 2,
-                    _ => total_len += 1,
+                if should_escape && (b == b'"' || b == b'\\') {
+                    total_len += 2;
+                } else {
+                    total_len += 1;
                 }
             }
         }
@@ -2318,9 +2324,14 @@ impl<'src> Preprocessor<'src> {
             }
 
             let bytes = cache.get_token_bytes(token);
+            let should_escape = matches!(
+                token.kind,
+                PPTokenKind::StringLiteral(_) | PPTokenKind::CharLiteral(_, _)
+            );
+
             let mut last_start = 0;
             for (j, &b) in bytes.iter().enumerate() {
-                if b == b'"' || b == b'\\' {
+                if should_escape && (b == b'"' || b == b'\\') {
                     if j > last_start {
                         result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..j]) });
                     }
@@ -2647,15 +2658,16 @@ impl<'src> Preprocessor<'src> {
                 continue;
             }
 
-            if let PPTokenKind::Identifier(sym) = token.kind {
-                println!(
-                    "expand_tokens at index {}: process '{}' (hide_set: {} contains={})",
-                    i,
-                    sym.as_str(),
-                    token.hide_set,
-                    self.hide_sets.contains(token.hide_set, sym)
-                );
-            }
+            // -- for debugging
+            // if let PPTokenKind::Identifier(sym) = token.kind {
+            // println!(
+            //     "expand_tokens at index {}: process '{}' (hide_set: {} contains={})",
+            //     i,
+            //     sym.as_str(),
+            //     token.hide_set,
+            //     self.hide_sets.contains(token.hide_set, sym)
+            // );
+            // }
 
             if self.try_expand_function_macro_in_tokens(tokens, i, in_conditional)? {
                 continue;

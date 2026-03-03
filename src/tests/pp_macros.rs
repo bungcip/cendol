@@ -696,3 +696,52 @@ int x = A(1)(2)(3);
       text: ;
     "#);
 }
+
+#[test]
+fn test_stringification_escaping_literal() {
+    let src = r#"
+#define STR(x) #x
+char *s1 = STR(  a    b  );
+char *s2 = STR("quote");
+char *s3 = STR(  a  \n  b  );
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: char
+    - kind: Star
+      text: "*"
+    - kind: Identifier
+      text: s1
+    - kind: Assign
+      text: "="
+    - kind: StringLiteral
+      text: "\"a b\""
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: char
+    - kind: Star
+      text: "*"
+    - kind: Identifier
+      text: s2
+    - kind: Assign
+      text: "="
+    - kind: StringLiteral
+      text: "\"\\\"quote\\\"\""
+    - kind: Semicolon
+      text: ;
+    - kind: Identifier
+      text: char
+    - kind: Star
+      text: "*"
+    - kind: Identifier
+      text: s3
+    - kind: Assign
+      text: "="
+    - kind: StringLiteral
+      text: "\"a \\n b\""
+    - kind: Semicolon
+      text: ;
+    "#);
+}

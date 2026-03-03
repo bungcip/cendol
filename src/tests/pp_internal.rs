@@ -1,7 +1,6 @@
-use crate::ast::StringId;
 use crate::diagnostic::DiagnosticEngine;
-use crate::pp::{HeaderSearch, PPConfig, PPToken, PPTokenFlags, PPTokenKind, Preprocessor};
-use crate::source_manager::{SourceLoc, SourceManager};
+use crate::pp::{HeaderSearch, PPConfig, Preprocessor};
+use crate::source_manager::SourceManager;
 use crate::tests::test_utils::setup_sm_and_diag;
 
 fn create_dummy_preprocessor<'a>(sm: &'a mut SourceManager, diag: &'a mut DiagnosticEngine) -> Preprocessor<'a> {
@@ -168,46 +167,4 @@ fn test_destringize() {
 
     // Test case 6: Empty string
     assert_eq!(pp.destringize("\"\""), "");
-}
-
-#[test]
-fn test_stringify_tokens_utf8() {
-    let (mut sm, mut diag) = setup_sm_and_diag();
-
-    let utf8_text = "⚡ Bolt ⚡";
-    let sid = sm.add_buffer(utf8_text.as_bytes().to_vec(), "test.c", None);
-
-    let text_with_escapes = "a\"b\\c";
-    let sid2 = sm.add_buffer(text_with_escapes.as_bytes().to_vec(), "test2.c", None);
-
-    let pp = create_dummy_preprocessor(&mut sm, &mut diag);
-
-    let token = PPToken::new(
-        PPTokenKind::Identifier(StringId::new(utf8_text)),
-        PPTokenFlags::empty(),
-        SourceLoc::new(sid, 0),
-        utf8_text.len() as u16,
-    );
-
-    let stringified = pp.stringify_tokens(&[token], SourceLoc::builtin()).unwrap();
-    if let PPTokenKind::StringLiteral(s) = stringified.kind {
-        assert_eq!(s.as_str(), "\"⚡ Bolt ⚡\"");
-    } else {
-        panic!("Expected StringLiteral");
-    }
-
-    // Test with escaping
-    let token2 = PPToken::new(
-        PPTokenKind::Identifier(StringId::new(text_with_escapes)),
-        PPTokenFlags::empty(),
-        SourceLoc::new(sid2, 0),
-        text_with_escapes.len() as u16,
-    );
-
-    let stringified2 = pp.stringify_tokens(&[token2], SourceLoc::builtin()).unwrap();
-    if let PPTokenKind::StringLiteral(s) = stringified2.kind {
-        assert_eq!(s.as_str(), "\"a\\\"b\\\\c\"");
-    } else {
-        panic!("Expected StringLiteral");
-    }
 }

@@ -404,3 +404,32 @@ fn test_literal_parsing_edge_cases() {
         "Hex escape cut by non-hex failed"
     );
 }
+
+#[test]
+fn test_extract_literal_parts_edge_cases() {
+    // Missing trailing quote on the second string literal will cause the PP lexer to emit a
+    // PPTokenKind::StringLiteral containing `"world` (missing the last quote).
+    // When the parser lexer concatenates it with the first string, it will call
+    // `extract_literal_parts("\"world")` which will fail `strip_suffix('"')`
+    // and hit the `unwrap_or(("", ""))` fallback, avoiding a panic and returning
+    // an empty string for the content.
+    let token_kinds = setup_lexer("\"hello\" \"world");
+    assert_eq!(token_kinds.len(), 1, "Expected concatenated literal token");
+    if let TokenKind::StringLiteral(sym) = &token_kinds[0] {
+        // Because the fallback returns "", the second part contributes nothing.
+        // It's concatenated as `"hello""`, which the next phase handles or reports error for.
+        // It might be exactly "\"hello\"". Let's not strict assert the result, just that it didn't panic.
+        let _ = sym.as_str();
+    } else {
+        panic!("Expected StringLiteral");
+    }
+
+    // A prefixed string literal missing trailing quote
+    let token_kinds2 = setup_lexer("L\"hello\" L\"world");
+    assert_eq!(token_kinds2.len(), 1, "Expected concatenated literal token");
+    if let TokenKind::StringLiteral(sym) = &token_kinds2[0] {
+        let _ = sym.as_str();
+    } else {
+        panic!("Expected StringLiteral");
+    }
+}

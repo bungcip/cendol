@@ -105,10 +105,7 @@ fn apply_parsed_declarator(
             let parsed_params: Vec<_> = ctx.parsed_ast.parsed_types.get_params(params).to_vec();
             let mut processed_params = Vec::new();
             for param in parsed_params {
-                let param_type = convert_to_qual_type(ctx, param.ty, param.span, true).unwrap_or_else(|_| {
-                    // Create an error type if conversion fails
-                    QualType::unqualified(ctx.registry.type_int)
-                });
+                let param_type = convert_to_qual_type_or_type_error(ctx, param.ty, param.span, true);
 
                 // Apply array-to-pointer decay for function parameters
                 let ptr_quals = extract_array_param_qualifiers_from_ref(param.ty.declarator, ctx);
@@ -351,8 +348,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn resolve_alignment(&mut self, align: &ParsedAlignmentSpecifier, span: SourceSpan) -> Option<u32> {
         match align {
             ParsedAlignmentSpecifier::Type(parsed_ty) => {
-                let qt = convert_to_qual_type(self, *parsed_ty, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                let qt = convert_to_qual_type_or_type_error(self, *parsed_ty, span, false);
                 match self.registry.ensure_layout(qt.ty()) {
                     Ok(layout) => Some(layout.alignment as u32),
                     Err(e) => {
@@ -727,6 +723,17 @@ fn convert_to_qual_type(
 
     let final_type = apply_parsed_declarator(qbase, declarator, ctx, span, DeclaratorContext { in_parameter });
     Ok(final_type)
+}
+
+/// convert to qual type, if error, we convert it to type error
+fn convert_to_qual_type_or_type_error(
+    ctx: &mut LowerCtx,
+    parsed_type: ParsedType,
+    span: SourceSpan,
+    in_parameter: bool,
+) -> QualType {
+    convert_to_qual_type(ctx, parsed_type, span, in_parameter)
+        .unwrap_or_else(|_| QualType::unqualified(ctx.registry.type_error))
 }
 
 /// Helper to resolve struct/union tags (lookup, forward decl, or definition validation)
@@ -2290,8 +2297,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 lower_simple!(NodeKind::MemberAccess(self.visit_expression(*base), *member, *is_arrow))
             }
             ParsedNodeKind::Cast(ty_name, expr) => lower_simple!(NodeKind::Cast(
-                convert_to_qual_type(self, *ty_name, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error)),
+                convert_to_qual_type_or_type_error(self, *ty_name, span, false),
                 self.visit_expression(*expr)
             )),
             ParsedNodeKind::PostIncrement(operand) => {
@@ -2336,21 +2342,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 lower_simple!(NodeKind::SizeOfExpr(self.visit_expression(*expr)))
             }
             ParsedNodeKind::SizeOfType(ty_name) => lower_simple!(NodeKind::SizeOfType(
-                convert_to_qual_type(self, *ty_name, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error))
+                convert_to_qual_type_or_type_error(self, *ty_name, span, false)
             )),
-            ParsedNodeKind::AlignOf(ty_name) => lower_simple!(NodeKind::AlignOf(
-                convert_to_qual_type(self, *ty_name, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error))
-            )),
+            ParsedNodeKind::AlignOf(ty_name) => lower_simple!(NodeKind::AlignOf(convert_to_qual_type_or_type_error(
+                self, *ty_name, span, false
+            ))),
             ParsedNodeKind::BuiltinVaArg(ty_name, expr) => lower_simple!(NodeKind::BuiltinVaArg(
-                convert_to_qual_type(self, *ty_name, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error)),
+                convert_to_qual_type_or_type_error(self, *ty_name, span, false),
                 self.visit_expression(*expr)
             )),
             ParsedNodeKind::BuiltinOffsetof(ty_name, expr) => lower_simple!(NodeKind::BuiltinOffsetof(
-                convert_to_qual_type(self, *ty_name, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error)),
+                convert_to_qual_type_or_type_error(self, *ty_name, span, false),
                 self.visit_expression(*expr)
             )),
             ParsedNodeKind::BuiltinVaStart(ap, last) => lower_simple!(NodeKind::BuiltinVaStart(
@@ -2378,10 +2380,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 lower_simple!(NodeKind::BuiltinCtz(self.visit_expression(*expr)))
             }
             ParsedNodeKind::BuiltinTypesCompatibleP(ty1, ty2) => lower_simple!(NodeKind::BuiltinTypesCompatibleP(
-                convert_to_qual_type(self, *ty1, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error)),
-                convert_to_qual_type(self, *ty2, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error))
+                convert_to_qual_type_or_type_error(self, *ty1, span, false),
+                convert_to_qual_type_or_type_error(self, *ty2, span, false)
             )),
             ParsedNodeKind::AtomicOp(op, args) => {
                 let node = self.get_or_push_slot(target_slots, span);
@@ -2409,8 +2409,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::CompoundLiteral(ty_name, init) => {
                 let node = self.get_or_push_slot(target_slots, span);
-                let mut qt = convert_to_qual_type(self, *ty_name, span, false)
-                    .unwrap_or(QualType::unqualified(self.registry.type_error));
+                let mut qt = convert_to_qual_type_or_type_error(self, *ty_name, span, false);
                 let i = self.visit_expression(*init);
 
                 if let TypeKind::Array {
@@ -2452,10 +2451,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
 
                 for (i, a) in associations.iter().enumerate() {
-                    let ty = a.type_name.map(|t| {
-                        convert_to_qual_type(self, t, span, false)
-                            .unwrap_or(QualType::unqualified(self.registry.type_error))
-                    });
+                    let ty = a
+                        .type_name
+                        .map(|t| convert_to_qual_type_or_type_error(self, t, span, false));
                     let expr = self.visit_expression(a.result_expr);
                     let assoc_dummy = assoc_dummies[i];
                     self.ast.kinds[assoc_dummy.index()] =

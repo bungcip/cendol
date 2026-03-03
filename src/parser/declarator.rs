@@ -18,6 +18,12 @@ enum DeclaratorComponent {
     Pointer(TypeQualifiers),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeclaratorKind {
+    Array,
+    Function,
+}
+
 /// Look ahead past a GCC-style `__attribute__((...))` construct without consuming tokens.
 /// Returns the token immediately following the attribute if the structure is valid, or None.
 ///
@@ -79,33 +85,20 @@ fn peek_past_attribute(parser: &Parser, mut start_offset: u32) -> Option<Token> 
 /// Validate declarator combinations
 fn validate_declarator_combination(
     base: &ParsedDeclarator,
-    new_kind: &str,
+    new_kind: DeclaratorKind,
     span: SourceSpan,
 ) -> Result<(), ParseError> {
-    match base {
-        ParsedDeclarator::Function { .. } => {
-            if new_kind == "array" {
-                return Err(ParseError {
-                    span,
-                    kind: ParseErrorKind::DeclarationNotAllowed,
-                });
-            }
-            if new_kind == "function" {
-                return Err(ParseError {
-                    span,
-                    kind: ParseErrorKind::DeclarationNotAllowed,
-                });
-            }
-        }
-        ParsedDeclarator::Array(..) => {
-            if new_kind == "function" {
-                return Err(ParseError {
-                    span,
-                    kind: ParseErrorKind::DeclarationNotAllowed,
-                });
-            }
-        }
-        _ => {}
+    if matches!(
+        (base, new_kind),
+        (
+            ParsedDeclarator::Function { .. },
+            DeclaratorKind::Array | DeclaratorKind::Function
+        ) | (ParsedDeclarator::Array(..), DeclaratorKind::Function)
+    ) {
+        return Err(ParseError {
+            span,
+            kind: ParseErrorKind::DeclarationNotAllowed,
+        });
     }
     Ok(())
 }
@@ -194,14 +187,14 @@ fn parse_trailing_declarators_for_type_names(
         match token.kind {
             TokenKind::LeftBracket => {
                 parser.advance();
-                validate_declarator_combination(&base, "array", token.span)?;
+                validate_declarator_combination(&base, DeclaratorKind::Array, token.span)?;
                 let size = parse_array_size(parser)?;
                 parser.expect(TokenKind::RightBracket)?;
                 base = ParsedDeclarator::Array(Box::new(base), size);
             }
             TokenKind::LeftParen => {
                 parser.advance();
-                validate_declarator_combination(&base, "function", token.span)?;
+                validate_declarator_combination(&base, DeclaratorKind::Function, token.span)?;
                 let (params, is_variadic) = parse_function_parameters(parser)?;
                 parser.expect(TokenKind::RightParen)?;
                 base = ParsedDeclarator::Function {
@@ -221,14 +214,14 @@ fn parse_trailing_declarators(parser: &mut Parser, mut base: ParsedDeclarator) -
         match token.kind {
             TokenKind::LeftBracket => {
                 parser.advance();
-                validate_declarator_combination(&base, "array", token.span)?;
+                validate_declarator_combination(&base, DeclaratorKind::Array, token.span)?;
                 let size = parse_array_size(parser)?;
                 parser.expect(TokenKind::RightBracket)?;
                 base = ParsedDeclarator::Array(Box::new(base), size);
             }
             TokenKind::LeftParen => {
                 parser.advance();
-                validate_declarator_combination(&base, "function", token.span)?;
+                validate_declarator_combination(&base, DeclaratorKind::Function, token.span)?;
                 let (params, is_variadic) = parse_function_parameters(parser)?;
                 parser.expect(TokenKind::RightParen)?;
                 base = ParsedDeclarator::Function {

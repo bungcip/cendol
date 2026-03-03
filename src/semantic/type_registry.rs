@@ -1329,19 +1329,8 @@ impl TypeRegistry {
     }
 
     pub(crate) fn is_complete(&self, ty: TypeRef) -> bool {
-        if ty.is_inline_pointer() {
-            return true;
-        }
-        if ty.is_inline_array() {
-            // Array is complete if element is complete
-            // But strict C says array valid if element type is complete (except local VLA which is complete at runtime allocation point?)
-            // Here we just check element kind.
-            let elem = self.reconstruct_element(ty);
-            return self.is_complete(elem);
-        }
-
-        let kind = &self.types[ty.index()].kind;
-        match kind {
+        let type_info = self.get(ty);
+        match &type_info.kind {
             TypeKind::Record { is_complete, .. } => *is_complete,
             TypeKind::Enum { is_complete, .. } => *is_complete,
             TypeKind::Array { element_type, size } => {
@@ -1383,15 +1372,8 @@ impl TypeRegistry {
     }
 
     pub(crate) fn is_variably_modified(&self, ty: TypeRef) -> bool {
-        if ty.is_inline_pointer() {
-            return self.is_variably_modified(self.reconstruct_pointee(ty));
-        }
-        if ty.is_inline_array() {
-            return self.is_variably_modified(self.reconstruct_element(ty));
-        }
-
-        let kind = &self.types[ty.index()].kind;
-        match kind {
+        let type_info = self.get(ty);
+        match &type_info.kind {
             TypeKind::Array { element_type, size } => {
                 if matches!(size, ArraySizeType::Variable(_)) {
                     return true;

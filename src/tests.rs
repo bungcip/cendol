@@ -83,6 +83,7 @@ pub mod codegen_func_ptr_global;
 pub mod codegen_regr;
 pub mod codegen_store_truncation;
 pub mod driver_defines;
+pub mod guardian_alias_completeness;
 pub mod guardian_bitfield_constraints;
 pub mod guardian_generic_compatibility;
 pub mod guardian_ternary_pointer_constraints;

@@ -122,3 +122,5 @@ pub mod semantic_shift_float;
 pub mod semantic_sizeof_vla;
 pub mod semantic_static_assert;
 pub mod semantic_valist;
+mod semantic_label_duplicate;
+mod semantic_label_goto;

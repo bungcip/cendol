@@ -424,6 +424,9 @@ impl SymbolTable {
         ty: TypeRef,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
+        if let Some(existing) = self.fetch(name, self.current_scope_id, Namespace::Label) {
+            return Err(SymbolTableError::InvalidRedefinition { name, existing });
+        }
         let symbol = self.create_symbol(name, SymbolKind::Label, QualType::unqualified(ty), span);
         Ok(self.add_symbol_in_namespace(name, symbol, Namespace::Label))
     }

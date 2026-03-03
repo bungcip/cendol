@@ -490,7 +490,7 @@ impl<'src> Preprocessor<'src> {
             return None;
         };
 
-        Some(PPToken::text(kind, PPTokenFlags::empty(), token.location, &text))
+        Some(PPToken::text(kind, PPTokenFlags::MACRO_EXPANDED, token.location, &text))
     }
 
     /// Get the next value for __COUNTER__

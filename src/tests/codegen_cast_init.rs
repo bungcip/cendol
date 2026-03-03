@@ -11,11 +11,11 @@ fn test_struct_identity_cast_cranelift_ir() {
     ";
 
     let clif_output = setup_cranelift(src);
-    insta::assert_snapshot!(clif_output, @r"
+    insta::assert_snapshot!(clif_output, @"
     ; Function: foo
     function u0:0() system_v {
-        ss0 = explicit_slot 4
-        ss1 = explicit_slot 4
+        ss0 = explicit_slot 4, align = 4
+        ss1 = explicit_slot 4, align = 4
         sig0 = (i64, i64, i64) -> i64 system_v
         fn0 = u0:1 sig0
 

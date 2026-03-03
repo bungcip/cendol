@@ -108,10 +108,10 @@ fn test_store_statement_lowering() {
     // 7. Assert
     match result {
         ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(clif_ir, @r"
+            insta::assert_snapshot!(clif_ir, @"
             ; Function: main
             function u0:0() system_v {
-                ss0 = explicit_slot 4
+                ss0 = explicit_slot 4, align = 4
 
             block0:
                 v0 = iconst.i32 42
@@ -178,11 +178,11 @@ fn test_store_deref_pointer() {
 
     match result {
         ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(clif_ir, @r"
+            insta::assert_snapshot!(clif_ir, @"
             ; Function: main
             function u0:0() system_v {
-                ss0 = explicit_slot 4
-                ss1 = explicit_slot 8
+                ss0 = explicit_slot 4, align = 4
+                ss1 = explicit_slot 8, align = 8
 
             block0:
                 v0 = iconst.i32 10
@@ -216,15 +216,15 @@ fn test_boolean_logic_lowering() {
         "#;
     // Verify it compiles without crashing
     let clif_dump = setup_cranelift(source);
-    insta::assert_snapshot!(clif_dump, @r"
+    insta::assert_snapshot!(clif_dump, @"
     ; Function: main
     function u0:0() -> i32 system_v {
-        ss0 = explicit_slot 4
-        ss1 = explicit_slot 4
-        ss2 = explicit_slot 4
-        ss3 = explicit_slot 4
-        ss4 = explicit_slot 4
-        ss5 = explicit_slot 4
+        ss0 = explicit_slot 4, align = 4
+        ss1 = explicit_slot 4, align = 4
+        ss2 = explicit_slot 4, align = 4
+        ss3 = explicit_slot 4, align = 4
+        ss4 = explicit_slot 4, align = 4
+        ss5 = explicit_slot 4, align = 4
 
     block0:
         v0 = iconst.i32 4
@@ -320,7 +320,7 @@ fn test_float_to_char_conversion() {
     ; Function: main
     function u0:0() -> i32 system_v {
         ss0 = explicit_slot 1
-        ss1 = explicit_slot 2
+        ss1 = explicit_slot 2, align = 2
 
     block0:
         v0 = f64const 0x1.8400000000000p6
@@ -377,10 +377,10 @@ fn test_f128_constant_promotion() {
 
     match result {
         ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(clif_ir, @r"
+            insta::assert_snapshot!(clif_ir, @"
             ; Function: main
             function u0:0() system_v {
-                ss0 = explicit_slot 16
+                ss0 = explicit_slot 16, align = 16
                 gv0 = symbol colocated userextname0
 
             block0:

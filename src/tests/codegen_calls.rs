@@ -96,11 +96,11 @@ fn test_indirect_function_call() {
 
     match result {
         ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @r"
+            insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @"
             ; Function: main
             function u0:0() -> i32 system_v {
-                ss0 = explicit_slot 8
-                ss1 = explicit_slot 4
+                ss0 = explicit_slot 8, align = 8
+                ss1 = explicit_slot 4, align = 4
                 sig0 = (i32) -> i32 system_v
                 sig1 = (i32) -> i32 system_v
                 fn0 = colocated u0:0 sig0
@@ -122,7 +122,7 @@ fn test_indirect_function_call() {
 
             ; Function: target
             function u0:0(i32) -> i32 system_v {
-                ss0 = explicit_slot 4
+                ss0 = explicit_slot 4, align = 4
 
             block0(v0: i32):
                 v3 = stack_addr.i64 ss0
@@ -186,10 +186,10 @@ fn test_global_function_pointer_init() {
 
     match result {
         ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @r"
+            insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @"
             ; Function: target
             function u0:0(i32) -> i32 system_v {
-                ss0 = explicit_slot 4
+                ss0 = explicit_slot 4, align = 4
 
             block0(v0: i32):
                 v2 = stack_addr.i64 ss0

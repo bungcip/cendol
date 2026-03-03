@@ -404,3 +404,52 @@ fn test_literal_parsing_edge_cases() {
         "Hex escape cut by non-hex failed"
     );
 }
+
+#[test]
+fn test_extract_literal_parts_edge_cases() {
+    use crate::parser::lexer::Lexer;
+    use crate::pp::{PPToken, PPTokenKind, PPTokenFlags};
+    use crate::source_manager::{SourceId, SourceLoc};
+    use crate::tests::parser_lexical::StringId;
+
+    // We can simulate malformed string literal PPTokens that the lexer needs to concatenate
+
+    // 1. String literal missing trailing quote (fails strip_suffix('"'))
+    // Should fallback to unwrap_or(("", "")) and safely concatenate
+    let pp_tokens = vec![
+        PPToken {
+            kind: PPTokenKind::StringLiteral(StringId::new("\"hello")),
+            location: SourceLoc::new(SourceId::new(1), 0),
+            length: 6,
+            flags: PPTokenFlags::empty(),
+        },
+        PPToken {
+            kind: PPTokenKind::StringLiteral(StringId::new("\"world")),
+            location: SourceLoc::new(SourceId::new(1), 0),
+            length: 6,
+            flags: PPTokenFlags::empty(),
+        },
+    ];
+    let mut lexer = Lexer::new(&pp_tokens);
+    let tokens = lexer.tokenize_all();
+    assert_eq!(tokens.len(), 1, "Expected concatenated literal");
+
+    // 2. String literal with prefix but missing quotes (fails strip_prefix('"'))
+    let pp_tokens2 = vec![
+        PPToken {
+            kind: PPTokenKind::StringLiteral(StringId::new("L\"hello")),
+            location: SourceLoc::new(SourceId::new(1), 0),
+            length: 7,
+            flags: PPTokenFlags::empty(),
+        },
+        PPToken {
+            kind: PPTokenKind::StringLiteral(StringId::new("Lworld\"")),
+            location: SourceLoc::new(SourceId::new(1), 0),
+            length: 7,
+            flags: PPTokenFlags::empty(),
+        },
+    ];
+    let mut lexer2 = Lexer::new(&pp_tokens2);
+    let tokens2 = lexer2.tokenize_all();
+    assert_eq!(tokens2.len(), 1, "Expected concatenated literal");
+}

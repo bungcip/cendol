@@ -49,7 +49,7 @@ impl TypeRegistryError {
     /// Convert this type registry error to a SemanticErrorKind with an optional span.
     /// This allows the TypeRegistry to remain decoupled from source location tracking
     /// while still providing rich error information to the semantic analyzer.
-    pub(crate) fn to_semantic_kind(&self) -> super::errors::SemanticErrorKind {
+    pub(super) fn to_semantic_kind(&self) -> super::errors::SemanticErrorKind {
         use super::errors::SemanticErrorKind;
         match self {
             TypeRegistryError::RecursiveType { ty } => SemanticErrorKind::RecursiveType { ty: *ty },
@@ -377,7 +377,7 @@ impl TypeRegistry {
     }
 
     /// Helper to get the element type if the given type is an array.
-    pub(crate) fn get_array_element(&self, ty: TypeRef) -> Option<TypeRef> {
+    pub(super) fn get_array_element(&self, ty: TypeRef) -> Option<TypeRef> {
         if ty.is_inline_array() {
             Some(self.reconstruct_element(ty))
         } else {
@@ -524,7 +524,7 @@ impl TypeRegistry {
     // Record / enum handling
     // ============================================================
 
-    pub(crate) fn declare_record(&mut self, tag: Option<NameId>, is_union: bool) -> TypeRef {
+    pub(super) fn declare_record(&mut self, tag: Option<NameId>, is_union: bool) -> TypeRef {
         self.alloc(Type::new(TypeKind::Record {
             tag,
             members: Arc::from([]),
@@ -548,7 +548,7 @@ impl TypeRegistry {
         }
     }
 
-    pub(crate) fn declare_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> TypeRef {
+    pub(super) fn declare_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> TypeRef {
         self.alloc(Type::new(TypeKind::Enum {
             tag,
             base_type,
@@ -557,7 +557,7 @@ impl TypeRegistry {
         }))
     }
 
-    pub(crate) fn complete_enum(&mut self, enum_ty: TypeRef, enumerators: Vec<EnumConstant>, base_type: TypeRef) {
+    pub(super) fn complete_enum(&mut self, enum_ty: TypeRef, enumerators: Vec<EnumConstant>, base_type: TypeRef) {
         let ty = self.get_mut(enum_ty);
         match &mut ty.kind {
             TypeKind::Enum {
@@ -616,7 +616,7 @@ impl TypeRegistry {
 
     /// Safe version of get_layout that returns None instead of panicking when layout is missing.
     /// Used during lowering phase when layouts may not yet be computed.
-    pub(crate) fn try_get_layout(&self, mut ty: TypeRef) -> Option<Cow<'_, TypeLayout>> {
+    pub(super) fn try_get_layout(&self, mut ty: TypeRef) -> Option<Cow<'_, TypeLayout>> {
         loop {
             if ty.is_inline_pointer() {
                 return Some(Cow::Owned(TypeLayout {
@@ -1113,7 +1113,7 @@ impl TypeRegistry {
         }
     }
 
-    pub(crate) fn canonical_qual_type(&self, qt: QualType) -> QualType {
+    pub(super) fn canonical_qual_type(&self, qt: QualType) -> QualType {
         let mut ty = qt.ty();
         loop {
             if ty.is_inline_pointer() || ty.is_inline_array() {
@@ -1213,7 +1213,7 @@ impl TypeRegistry {
         }
     }
 
-    pub(crate) fn composite_type(&mut self, a: QualType, b: QualType) -> Option<QualType> {
+    pub(super) fn composite_type(&mut self, a: QualType, b: QualType) -> Option<QualType> {
         if a.qualifiers() != b.qualifiers() {
             return None;
         }
@@ -1355,7 +1355,7 @@ impl TypeRegistry {
         }
     }
 
-    pub(crate) fn is_const_recursive(&self, qt: QualType) -> bool {
+    pub(super) fn is_const_recursive(&self, qt: QualType) -> bool {
         if qt.is_const() {
             return true;
         }

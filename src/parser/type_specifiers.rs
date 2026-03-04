@@ -10,7 +10,7 @@ use crate::parser::TokenKind;
 use super::Parser;
 
 /// Parse type specifier
-pub(crate) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpecifier, ParseError> {
+pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpecifier, ParseError> {
     use ParsedTypeSpecifier as PTS;
     use TokenKind as TK;
 

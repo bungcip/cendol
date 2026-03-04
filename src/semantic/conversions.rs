@@ -4,7 +4,7 @@
 use crate::semantic::{BuiltinType, QualType, TypeKind, TypeRef, TypeRegistry};
 
 /// Performs the "usual arithmetic conversions" as specified in C11 6.3.1.8.
-pub(crate) fn usual_arithmetic_conversions(ctx: &mut TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
+pub(super) fn usual_arithmetic_conversions(ctx: &mut TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
     let lt = lhs.ty();
     let rt = rhs.ty();
 
@@ -68,7 +68,7 @@ pub(crate) fn usual_arithmetic_conversions(ctx: &mut TypeRegistry, lhs: QualType
 }
 
 /// Performs integer promotions as specified in C11 6.3.1.1.
-pub(crate) fn integer_promotion(ctx: &TypeRegistry, qt: QualType) -> QualType {
+pub(super) fn integer_promotion(ctx: &TypeRegistry, qt: QualType) -> QualType {
     let ty = qt.ty();
     if ty.is_enum() {
         return QualType::unqualified(ctx.type_int);
@@ -80,7 +80,7 @@ pub(crate) fn integer_promotion(ctx: &TypeRegistry, qt: QualType) -> QualType {
 }
 
 /// Performs default argument promotions as specified in C11 6.5.2.2.
-pub(crate) fn default_argument_promotions(ctx: &TypeRegistry, qt: QualType) -> QualType {
+pub(super) fn default_argument_promotions(ctx: &TypeRegistry, qt: QualType) -> QualType {
     match qt.ty().builtin() {
         Some(BuiltinType::Float) => QualType::unqualified(ctx.type_double),
         _ => integer_promotion(ctx, qt),

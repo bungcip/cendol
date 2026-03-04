@@ -562,7 +562,7 @@ impl<'a> MirGen<'a> {
         self.create_constant(array_ty, ConstValueKind::ArrayLiteral(constants))
     }
 
-    pub(crate) fn visit_literal_string(&mut self, val: &ast::NameId, ty: QualType) -> Operand {
+    pub(super) fn visit_literal_string(&mut self, val: &ast::NameId, ty: QualType) -> Operand {
         let mir_ty = self.lower_qual_type(ty);
         let elem_ty = match &self.registry.get(ty.ty()).kind {
             TypeKind::Array { element_type, .. } => *element_type,
@@ -578,7 +578,7 @@ impl<'a> MirGen<'a> {
         Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global_id)))
     }
 
-    pub(crate) fn visit_compound_literal(&mut self, ty: QualType, init_ref: NodeRef) -> Operand {
+    pub(super) fn visit_compound_literal(&mut self, ty: QualType, init_ref: NodeRef) -> Operand {
         let mir_ty = self.lower_qual_type(ty);
 
         if self.current_function.is_none() {
@@ -598,7 +598,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn eval_initializer_to_const(
+    pub(super) fn eval_initializer_to_const(
         &mut self,
         init_ref: NodeRef,
         ty: QualType,

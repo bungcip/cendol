@@ -251,7 +251,7 @@ pub enum BinaryIntOp {
 }
 
 impl BinaryIntOp {
-    pub(crate) fn is_comparison(&self) -> bool {
+    pub(super) fn is_comparison(&self) -> bool {
         matches!(self, Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge)
     }
 }
@@ -273,7 +273,7 @@ pub enum BinaryFloatOp {
 }
 
 impl BinaryFloatOp {
-    pub(crate) fn is_comparison(&self) -> bool {
+    pub(super) fn is_comparison(&self) -> bool {
         matches!(self, Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge)
     }
 }
@@ -341,27 +341,27 @@ pub enum MirType {
     },
 }
 impl MirType {
-    pub(crate) fn is_signed(&self) -> bool {
+    pub(super) fn is_signed(&self) -> bool {
         matches!(self, MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64)
     }
 
-    pub(crate) fn is_void(&self) -> bool {
+    pub(super) fn is_void(&self) -> bool {
         matches!(self, MirType::Void)
     }
 
-    pub(crate) fn is_pointer(&self) -> bool {
+    pub(super) fn is_pointer(&self) -> bool {
         matches!(self, MirType::Pointer { .. })
     }
 
-    pub(crate) fn is_float(&self) -> bool {
+    pub(super) fn is_float(&self) -> bool {
         matches!(self, MirType::F32 | MirType::F64 | MirType::F80 | MirType::F128)
     }
 
-    pub(crate) fn is_aggregate(&self) -> bool {
+    pub(super) fn is_aggregate(&self) -> bool {
         matches!(self, MirType::Record { .. } | MirType::Array { .. })
     }
 
-    pub(crate) fn is_int(&self) -> bool {
+    pub(super) fn is_int(&self) -> bool {
         matches!(
             self,
             MirType::I8
@@ -376,7 +376,7 @@ impl MirType {
         )
     }
 
-    pub(crate) fn width(&self) -> u32 {
+    pub(super) fn width(&self) -> u32 {
         match self {
             MirType::I8 | MirType::U8 | MirType::Bool => 8,
             MirType::I16 | MirType::U16 => 16,
@@ -390,7 +390,7 @@ impl MirType {
 
     /// Truncate an integer value to the width of this type.
     /// Handles sign extension if this is a signed type.
-    pub(crate) fn truncate_int(&self, val: i64) -> i64 {
+    pub(super) fn truncate_int(&self, val: i64) -> i64 {
         if !self.is_int() && !self.is_pointer() {
             return val;
         }

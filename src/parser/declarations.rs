@@ -226,7 +226,7 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
     ))
 }
 
-pub(crate) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<ParsedNodeRef, ParseError> {
+pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<ParsedNodeRef, ParseError> {
     let start_loc = start_token.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let condition = parser.parse_expr_assignment()?;

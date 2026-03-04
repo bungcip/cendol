@@ -14,7 +14,7 @@ pub(crate) struct ObjectGen;
 
 impl ObjectGen {
     /// Finalize an ObjectModule and produce the raw object file bytes.
-    pub(crate) fn finalize(module: ObjectModule) -> Result<Vec<u8>, String> {
+    pub(super) fn finalize(module: ObjectModule) -> Result<Vec<u8>, String> {
         let product = module.finish();
         product
             .object

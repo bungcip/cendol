@@ -157,7 +157,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
 }
 
 /// Parse initializer
-pub(crate) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let span = parser.current_token_span()?;
 
     if parser.accept(TokenKind::LeftBrace).is_some() {
@@ -262,7 +262,7 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
 }
 
 /// Parse GCC __asm__ syntax: __asm__ ( string-literal )
-pub(crate) fn parse_asm(parser: &mut Parser) -> Result<(), ParseError> {
+pub(super) fn parse_asm(parser: &mut Parser) -> Result<(), ParseError> {
     parser.expect(TokenKind::Asm)?;
     parser.expect(TokenKind::LeftParen)?;
 

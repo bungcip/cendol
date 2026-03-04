@@ -352,7 +352,7 @@ pub(crate) fn get_declarator_name(declarator: &ParsedDeclarator) -> Option<NameI
 }
 
 /// Extract the parameters from a function declarator, if any
-pub(crate) fn get_declarator_params(declarator: &ParsedDeclarator) -> Option<&ThinVec<ParsedParamData>> {
+pub(super) fn get_declarator_params(declarator: &ParsedDeclarator) -> Option<&ThinVec<ParsedParamData>> {
     match declarator {
         ParsedDeclarator::Function { inner, params, .. } => {
             if let Some(inner_params) = get_declarator_params(inner) {

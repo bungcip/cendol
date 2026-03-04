@@ -187,7 +187,8 @@ bitflags::bitflags! {
 /// Interned table of hide sets for Dave Prosser's macro expansion algorithm
 #[derive(Debug, Clone)]
 pub(crate) struct HideSetTable {
-    sets: Vec<Vec<StringId>>,
+    sets: Vec<Arc<[StringId]>>,
+    map: HashMap<Arc<[StringId]>, u32>,
 }
 
 impl Default for HideSetTable {
@@ -199,7 +200,13 @@ impl Default for HideSetTable {
 impl HideSetTable {
     pub(crate) fn new() -> Self {
         // Index 0 is the empty hide set
-        Self { sets: vec![Vec::new()] }
+        let empty: Arc<[StringId]> = Arc::from([]);
+        let mut map = HashMap::new();
+        map.insert(empty.clone(), 0);
+        Self {
+            sets: vec![empty],
+            map,
+        }
     }
 
     pub(crate) fn intern(&mut self, mut set: Vec<StringId>) -> u32 {
@@ -209,14 +216,16 @@ impl HideSetTable {
         set.sort();
         set.dedup();
 
-        for (i, existing) in self.sets.iter().enumerate() {
-            if *existing == set {
-                return i as u32;
-            }
+        // Bolt ⚡: Optimized to O(1) using the hash map.
+        // Arc<[T]> implements Borrow<[T]>, enabling zero-allocation lookup using a slice.
+        if let Some(&id) = self.map.get(set.as_slice()) {
+            return id;
         }
 
         let id = self.sets.len() as u32;
-        self.sets.push(set);
+        let arc_set: Arc<[StringId]> = Arc::from(set);
+        self.sets.push(arc_set.clone());
+        self.map.insert(arc_set, id);
         id
     }
 
@@ -230,10 +239,18 @@ impl HideSetTable {
         let set1 = &self.sets[id1 as usize];
         let set2 = &self.sets[id2 as usize];
 
+        // Bolt ⚡: Optimized two-pointer merge algorithm for sorted sets ($O(M+K)$).
         let mut result = Vec::with_capacity(std::cmp::min(set1.len(), set2.len()));
-        for &s1 in set1 {
-            if set2.contains(&s1) {
-                result.push(s1);
+        let (mut i, mut j) = (0, 0);
+        while i < set1.len() && j < set2.len() {
+            if set1[i] == set2[j] {
+                result.push(set1[i]);
+                i += 1;
+                j += 1;
+            } else if set1[i] < set2[j] {
+                i += 1;
+            } else {
+                j += 1;
             }
         }
 
@@ -253,20 +270,32 @@ impl HideSetTable {
         let set1 = &self.sets[id1 as usize];
         let set2 = &self.sets[id2 as usize];
 
+        // Bolt ⚡: Optimized two-pointer merge algorithm for sorted sets ($O(M+K)$).
         let mut result = Vec::with_capacity(set1.len() + set2.len());
-        result.extend_from_slice(set1);
-        for &s2 in set2 {
-            if !result.contains(&s2) {
-                result.push(s2);
+        let (mut i, mut j) = (0, 0);
+        while i < set1.len() && j < set2.len() {
+            if set1[i] == set2[j] {
+                result.push(set1[i]);
+                i += 1;
+                j += 1;
+            } else if set1[i] < set2[j] {
+                result.push(set1[i]);
+                i += 1;
+            } else {
+                result.push(set2[j]);
+                j += 1;
             }
         }
+        result.extend_from_slice(&set1[i..]);
+        result.extend_from_slice(&set2[j..]);
 
         self.intern(result)
     }
 
     pub(crate) fn insert(&mut self, id: u32, symbol: StringId) -> u32 {
         let existing = &self.sets[id as usize];
-        if existing.contains(&symbol) {
+        // Bolt ⚡: Optimized existence check using binary search on the sorted slice ($O(\log M)$).
+        if existing.binary_search(&symbol).is_ok() {
             return id;
         }
         let mut new_set = Vec::with_capacity(existing.len() + 1);
@@ -280,7 +309,8 @@ impl HideSetTable {
         if id == 0 {
             return false;
         }
-        self.sets[id as usize].contains(&symbol)
+        // Bolt ⚡: Optimized lookup using binary search on the sorted slice ($O(\log M)$).
+        self.sets[id as usize].binary_search(&symbol).is_ok()
     }
 }
 

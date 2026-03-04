@@ -57,3 +57,7 @@
 ## 2026-02-22 - Fast-path Guards for State-Heavy Operations
 **Learning:** Operations that involve saving and restoring state (like backtracking in a lexer) should always be guarded by a fast-path check that skips the expensive setup if the work is not needed. In our lexer, the comment-skipping logic was saving state for every single token, even though comments can only start with a specific character ('/').
 **Action:** Always use a simple guard (like `peek_char()`) before performing any state-heavy or potentially redundant operations in hot loops.
+
+## 2026-02-23 - Optimized HideSetTable with HashMap and Merge Algorithms
+**Learning:** The macro expansion algorithm (Dave Prosser's) relies heavily on hide set operations. The original implementation used a linear scan for interning sets and $O(N \times M)$ set operations. Refactoring to a `HashMap<Arc<[T]>, u32>` for interning and leveraging the sorted invariant of interned sets allows for $O(N+M)$ merge-based operations and $O(\log N)$ binary search lookups.
+**Action:** When dealing with sets of interned items in hot paths, maintain a sorted invariant to enable efficient merge-based algorithms and use hash-based interning to avoid $O(S \times N)$ scans.

@@ -649,7 +649,7 @@ impl MirBuilder {
         self.next_stmt_id += 1;
 
         // Store statement in the HashMap
-        self.statements.insert(stmt_id, stmt.clone());
+        self.statements.insert(stmt_id, stmt);
 
         if let Some(block_id) = self.current_block
             && let Some(block) = self.blocks.get_mut(&block_id)

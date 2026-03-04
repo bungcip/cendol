@@ -220,7 +220,7 @@ impl DiagnosticEngine {
         }
 
         let report = &[group];
-        renderer.render(report).to_string()
+        renderer.render(report)
     }
 
     /// Print all diagnostics to stderr

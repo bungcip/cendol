@@ -86,6 +86,7 @@ pub mod driver_defines;
 pub mod guardian_alias_completeness;
 pub mod guardian_bitfield_constraints;
 pub mod guardian_generic_compatibility;
+pub mod guardian_sizeof_alignof;
 pub mod guardian_ternary_pointer_constraints;
 pub mod mir_dumper_coverage;
 pub mod mir_gen_compound_assignment;

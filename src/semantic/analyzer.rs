@@ -235,6 +235,54 @@ impl<'a> SemanticAnalyzer<'a> {
         eval_const_expr(&self.const_ctx(), expr).is_some_and(|v| v != 0)
     }
 
+    fn has_default(&self, node: NodeRef) -> bool {
+        match self.ast.get_kind(node) {
+            NodeKind::Default(_) => true,
+            NodeKind::CompoundStatement(cs) => cs.stmt_start.range(cs.stmt_len).any(|s| self.has_default(s)),
+            NodeKind::If(if_stmt) => {
+                self.has_default(if_stmt.then_branch) || if_stmt.else_branch.is_some_and(|e| self.has_default(e))
+            }
+            NodeKind::While(while_stmt) => self.has_default(while_stmt.body),
+            NodeKind::DoWhile(body, _) => self.has_default(*body),
+            NodeKind::For(for_stmt) => self.has_default(for_stmt.body),
+            NodeKind::Label(_, stmt, _) => self.has_default(*stmt),
+            NodeKind::Case(_, stmt) | NodeKind::CaseRange(_, _, stmt) => self.has_default(*stmt),
+            // Nested switch has its own default labels
+            NodeKind::Switch(_, _) => false,
+            _ => false,
+        }
+    }
+
+    fn is_noreturn_expr(&self, expr: NodeRef) -> bool {
+        match self.ast.get_kind(expr) {
+            NodeKind::BuiltinUnreachable => true,
+            NodeKind::FunctionCall(call) => {
+                if let Some(callee_type) = self.semantic_info.types[call.callee.index()]
+                    && let TypeKind::Function { is_noreturn, .. } = &self.registry.get(callee_type.ty()).kind
+                {
+                    *is_noreturn
+                } else {
+                    false
+                }
+            }
+            NodeKind::BuiltinChooseExpr(..) => {
+                if let Some(&selected) = self.semantic_info.choose_expressions.get(&expr.index()) {
+                    self.is_noreturn_expr(selected)
+                } else {
+                    false
+                }
+            }
+            NodeKind::GenericSelection(..) => {
+                if let Some(&selected) = self.semantic_info.generic_selections.get(&expr.index()) {
+                    self.is_noreturn_expr(selected)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
     fn contains_break(&self, node: NodeRef) -> bool {
         match self.ast.get_kind(node) {
             NodeKind::Break => true,
@@ -245,6 +293,9 @@ impl<'a> SemanticAnalyzer<'a> {
             // Do not recurse into nested loops or switches as their breaks belong to them.
             NodeKind::While(_) | NodeKind::For(_) | NodeKind::DoWhile(_, _) | NodeKind::Switch(_, _) => false,
             NodeKind::Label(_, stmt, _) => self.contains_break(*stmt),
+            NodeKind::Case(_, stmt) | NodeKind::CaseRange(_, _, stmt) | NodeKind::Default(stmt) => {
+                self.contains_break(*stmt)
+            }
             _ => false,
         }
     }
@@ -257,19 +308,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let else_ft = if_stmt.else_branch.is_none_or(|e| self.can_fall_through(e));
                 then_ft || else_ft
             }
-            NodeKind::ExpressionStatement(Some(expr)) => {
-                let kind = self.ast.get_kind(*expr);
-                if matches!(kind, NodeKind::BuiltinUnreachable) {
-                    return false;
-                }
-                if let NodeKind::FunctionCall(call) = kind
-                    && let Some(callee_type) = self.semantic_info.types[call.callee.index()]
-                    && let TypeKind::Function { is_noreturn, .. } = &self.registry.get(callee_type.ty()).kind
-                {
-                    return !*is_noreturn;
-                }
-                true
-            }
+            NodeKind::ExpressionStatement(Some(expr)) => !self.is_noreturn_expr(*expr),
             NodeKind::While(while_stmt) => {
                 !self.is_always_true(while_stmt.condition) || self.contains_break(while_stmt.body)
             }
@@ -284,6 +323,18 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                 }
                 true
+            }
+            NodeKind::Switch(_, body) => {
+                if !self.has_default(*body) {
+                    return true;
+                }
+                if self.contains_break(*body) {
+                    return true;
+                }
+                self.can_fall_through(*body)
+            }
+            NodeKind::Case(_, stmt) | NodeKind::CaseRange(_, _, stmt) | NodeKind::Default(stmt) => {
+                self.can_fall_through(*stmt)
             }
             NodeKind::Label(_, stmt, _) => self.can_fall_through(*stmt),
             _ => true,

@@ -9,7 +9,7 @@ use crate::parser::TokenKind;
 use super::Parser;
 
 /// Parse enum specifier
-pub(crate) fn parse_enum_specifier(parser: &mut Parser) -> Result<ParsedTypeSpecifier, ParseError> {
+pub(super) fn parse_enum_specifier(parser: &mut Parser) -> Result<ParsedTypeSpecifier, ParseError> {
     let tag = parser.accept_name();
     let enumerators = if parser.accept(TokenKind::LeftBrace).is_some() {
         let enums = parse_enumerator_list(parser)?;

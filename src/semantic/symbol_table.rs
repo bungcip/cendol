@@ -47,7 +47,7 @@ impl Symbol {
         self.type_info.is_const()
     }
 
-    pub(crate) fn has_linkage(&self) -> bool {
+    pub(super) fn has_linkage(&self) -> bool {
         match &self.kind {
             SymbolKind::Function { .. } => true,
             SymbolKind::Variable { is_global, storage, .. } => *is_global || *storage == Some(StorageClass::Extern),
@@ -181,11 +181,11 @@ impl SymbolTable {
         }
     }
 
-    pub(crate) fn current_scope(&self) -> ScopeId {
+    pub(super) fn current_scope(&self) -> ScopeId {
         self.current_scope_id
     }
 
-    pub(crate) fn set_current_scope(&mut self, scope_id: ScopeId) {
+    pub(super) fn set_current_scope(&mut self, scope_id: ScopeId) {
         self.current_scope_id = scope_id;
     }
 
@@ -223,7 +223,7 @@ impl SymbolTable {
         self.lookup(name, self.current_scope_id, Namespace::Ordinary)
     }
 
-    pub(crate) fn lookup_tag(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
+    pub(super) fn lookup_tag(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
         self.lookup(name, self.current_scope_id, Namespace::Tag)
     }
 

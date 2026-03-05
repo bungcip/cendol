@@ -228,7 +228,7 @@ impl Cli {
     }
 
     /// Convert CLI arguments into compilation configuration
-    pub(crate) fn into_config(self) -> Result<CompileConfig, String> {
+    pub(super) fn into_config(self) -> Result<CompileConfig, String> {
         // Validate input files first
         self.validate_input_files()?;
 

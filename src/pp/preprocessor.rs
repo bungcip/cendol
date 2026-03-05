@@ -834,7 +834,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Get the text associated with a token
-    pub(crate) fn get_token_text(&self, token: &PPToken) -> &str {
+    pub(super) fn get_token_text(&self, token: &PPToken) -> &str {
         let buffer = self.sm.get_buffer(token.location.source_id());
         let start = token.location.offset() as usize;
         let end = start + token.length as usize;
@@ -846,7 +846,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Check if a header exists
-    pub(crate) fn check_header_exists(&self, path: &str, is_angled: bool) -> bool {
+    pub(super) fn check_header_exists(&self, path: &str, is_angled: bool) -> bool {
         let current_dir = self
             .lexer_stack
             .last()
@@ -863,7 +863,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Check if a header exists for #include_next
-    pub(crate) fn check_next_header_exists(&self, path: &str, is_angled: bool) -> bool {
+    pub(super) fn check_next_header_exists(&self, path: &str, is_angled: bool) -> bool {
         let current_dir = self
             .lexer_stack
             .last()

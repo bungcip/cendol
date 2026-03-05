@@ -23,7 +23,7 @@ impl ExprValue {
         }
     }
 
-    pub(crate) fn is_truthy(&self) -> bool {
+    pub(super) fn is_truthy(&self) -> bool {
         self.value != 0
     }
 }

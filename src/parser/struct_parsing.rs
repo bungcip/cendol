@@ -13,7 +13,7 @@ use crate::parser::TokenKind;
 use super::Parser;
 
 /// Parse struct or union specifier with context
-pub(crate) fn parse_record_specifier_with_context(
+pub(super) fn parse_record_specifier_with_context(
     parser: &mut Parser,
     is_union: bool,
 ) -> Result<ParsedTypeSpecifier, ParseError> {

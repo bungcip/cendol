@@ -222,7 +222,7 @@ impl TokenKind {
         matches!(self, TokenKind::Alignas)
     }
 
-    pub(crate) fn is_declaration_specifier_start(&self) -> bool {
+    pub(super) fn is_declaration_specifier_start(&self) -> bool {
         self.is_storage_class_specifier()
             || self.is_type_specifier()
             || self.is_type_qualifier()

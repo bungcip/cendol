@@ -59,7 +59,7 @@ impl<'a, 'arena, 'src> ParserTransaction<'a, 'arena, 'src> {
         }
     }
 
-    pub(crate) fn commit(mut self) {
+    pub(super) fn commit(mut self) {
         self.committed = true;
     }
 }

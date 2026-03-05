@@ -83,7 +83,7 @@ impl<'a> MirGen<'a> {
     }
 
     // create dummy operand
-    pub(crate) fn create_dummy_operand(&mut self) -> Operand {
+    pub(super) fn create_dummy_operand(&mut self) -> Operand {
         self.create_int_operand(9999)
     }
 
@@ -283,7 +283,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn operand_to_const_id_strict(&mut self, op: Operand, msg: &str) -> ConstValueId {
+    pub(super) fn operand_to_const_id_strict(&mut self, op: Operand, msg: &str) -> ConstValueId {
         if let Some(id) = self.operand_to_const_id(&op) {
             id
         } else {
@@ -291,7 +291,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn evaluate_constant_usize(&mut self, expr: NodeRef, error_msg: &str) -> usize {
+    pub(super) fn evaluate_constant_usize(&mut self, expr: NodeRef, error_msg: &str) -> usize {
         let operand = self.visit_expression(expr, true);
         if let Some(const_id) = self.operand_to_const_id(&operand) {
             let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
@@ -305,7 +305,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn lower_condition(&mut self, condition: NodeRef) -> Operand {
+    pub(super) fn lower_condition(&mut self, condition: NodeRef) -> Operand {
         let cond_operand = self.visit_expression(condition, true);
         // Apply conversions for condition (should be boolean)
         let cond_ty = self.ast.get_resolved_type(condition).unwrap();
@@ -396,7 +396,7 @@ impl<'a> MirGen<'a> {
         self.visit_variable(entry_ref, mir_type_id);
     }
 
-    pub(crate) fn visit_variable(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
+    pub(super) fn visit_variable(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(entry_ref);
         let (is_global_sym, storage) = if let SymbolKind::Variable { is_global, storage, .. } = symbol.kind {
             (is_global, storage)
@@ -822,7 +822,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_assignment(&mut self, place: Place, operand: Operand) {
+    pub(super) fn emit_assignment(&mut self, place: Place, operand: Operand) {
         if self.mir_builder.current_block_has_terminator() {
             return;
         }
@@ -839,11 +839,11 @@ impl<'a> MirGen<'a> {
         self.mir_builder.add_statement(stmt);
     }
 
-    pub(crate) fn lower_qual_type(&mut self, qt: QualType) -> TypeId {
+    pub(super) fn lower_qual_type(&mut self, qt: QualType) -> TypeId {
         self.lower_type(qt.ty())
     }
 
-    pub(crate) fn lower_type(&mut self, type_ref: TypeRef) -> TypeId {
+    pub(super) fn lower_type(&mut self, type_ref: TypeRef) -> TypeId {
         if let Some(type_id) = self.type_cache.get(&type_ref) {
             return *type_id;
         }
@@ -1155,16 +1155,16 @@ impl<'a> MirGen<'a> {
         self.mir_builder.create_constant(ty, kind)
     }
 
-    pub(crate) fn create_int_operand(&mut self, val: i64) -> Operand {
+    pub(super) fn create_int_operand(&mut self, val: i64) -> Operand {
         let ty_id = self.get_int_type();
         Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val)))
     }
 
-    pub(crate) fn create_float_operand(&mut self, val: f64, ty_id: TypeId) -> Operand {
+    pub(super) fn create_float_operand(&mut self, val: f64, ty_id: TypeId) -> Operand {
         Operand::Constant(self.create_constant(ty_id, ConstValueKind::Float(val)))
     }
 
-    pub(crate) fn create_size_t_operand(&mut self, val: u64) -> Operand {
+    pub(super) fn create_size_t_operand(&mut self, val: u64) -> Operand {
         let ty_id = self.lower_type(self.registry.type_long_unsigned);
         Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val as i64)))
     }
@@ -1284,7 +1284,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn get_operand_type(&mut self, operand: &Operand) -> TypeId {
+    pub(super) fn get_operand_type(&mut self, operand: &Operand) -> TypeId {
         match operand {
             Operand::Copy(place) => self.get_place_type(place),
             Operand::Constant(const_id) => {
@@ -1332,7 +1332,7 @@ impl<'a> MirGen<'a> {
         self.mir_builder.get_globals().get(&global_id).unwrap().type_id
     }
 
-    pub(crate) fn get_function_type(&mut self, func_id: MirFunctionId) -> TypeId {
+    pub(super) fn get_function_type(&mut self, func_id: MirFunctionId) -> TypeId {
         let func = self.mir_builder.get_functions().get(&func_id).unwrap();
         let ret_ty = func.return_type;
         let mut param_types = Vec::new();
@@ -1346,7 +1346,7 @@ impl<'a> MirGen<'a> {
         })
     }
 
-    pub(crate) fn apply_conversions(&mut self, operand: Operand, node_ref: NodeRef, target_type_id: TypeId) -> Operand {
+    pub(super) fn apply_conversions(&mut self, operand: Operand, node_ref: NodeRef, target_type_id: TypeId) -> Operand {
         // Look up conversions for this node in semantic_info
         if let Some(semantic_info) = &self.ast.semantic_info {
             let idx = node_ref.index();
@@ -1361,7 +1361,7 @@ impl<'a> MirGen<'a> {
         operand
     }
 
-    pub(crate) fn get_int_type(&mut self) -> TypeId {
+    pub(super) fn get_int_type(&mut self) -> TypeId {
         self.lower_type(self.registry.type_int)
     }
 
@@ -1400,28 +1400,28 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn create_temp_local(&mut self, type_id: TypeId) -> (LocalId, Place) {
+    pub(super) fn create_temp_local(&mut self, type_id: TypeId) -> (LocalId, Place) {
         let local_id = self.mir_builder.create_local(None, type_id, false);
         let place = Place::Local(local_id);
         (local_id, place)
     }
 
-    pub(crate) fn deref_operand(&self, operand: Operand) -> Place {
+    pub(super) fn deref_operand(&self, operand: Operand) -> Place {
         Place::Deref(Box::new(operand))
     }
 
-    pub(crate) fn deref_place(&self, place: Place) -> Place {
+    pub(super) fn deref_place(&self, place: Place) -> Place {
         self.deref_operand(Operand::Copy(Box::new(place)))
     }
 
-    pub(crate) fn create_temp_local_with_assignment(&mut self, rvalue: Rvalue, type_id: TypeId) -> (LocalId, Place) {
+    pub(super) fn create_temp_local_with_assignment(&mut self, rvalue: Rvalue, type_id: TypeId) -> (LocalId, Place) {
         let (local_id, place) = self.create_temp_local(type_id);
         let assign_stmt = MirStmt::Assign(place.clone(), rvalue);
         self.mir_builder.add_statement(assign_stmt);
         (local_id, place)
     }
 
-    pub(crate) fn ensure_place(&mut self, operand: Operand, type_id: TypeId) -> Place {
+    pub(super) fn ensure_place(&mut self, operand: Operand, type_id: TypeId) -> Place {
         if let Operand::Copy(place) = operand {
             *place
         } else {
@@ -1434,7 +1434,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn emit_rvalue_to_operand(&mut self, rvalue: Rvalue, type_id: TypeId) -> Operand {
+    pub(super) fn emit_rvalue_to_operand(&mut self, rvalue: Rvalue, type_id: TypeId) -> Operand {
         if self.mir_builder.get_type(type_id).is_void() {
             // For void expressions, just return a dummy operand.
             // Any side effects in the Rvalue's operands were already emitted.
@@ -1444,14 +1444,14 @@ impl<'a> MirGen<'a> {
         Operand::Copy(Box::new(place))
     }
 
-    pub(crate) fn get_complex_components(&mut self, operand: Operand, ty: TypeId) -> (Operand, Operand) {
+    pub(super) fn get_complex_components(&mut self, operand: Operand, ty: TypeId) -> (Operand, Operand) {
         let place = self.ensure_place(operand, ty);
         let real = Operand::Copy(Box::new(Place::StructField(Box::new(place.clone()), 0)));
         let imag = Operand::Copy(Box::new(Place::StructField(Box::new(place), 1)));
         (real, imag)
     }
 
-    pub(crate) fn emit_float_binop(
+    pub(super) fn emit_float_binop(
         &mut self,
         op: crate::mir::BinaryFloatOp,
         lhs: Operand,
@@ -1461,15 +1461,15 @@ impl<'a> MirGen<'a> {
         self.emit_rvalue_to_operand(Rvalue::BinaryFloatOp(op, lhs, rhs), ty)
     }
 
-    pub(crate) fn emit_float_unop(&mut self, op: crate::mir::UnaryFloatOp, operand: Operand, ty: TypeId) -> Operand {
+    pub(super) fn emit_float_unop(&mut self, op: crate::mir::UnaryFloatOp, operand: Operand, ty: TypeId) -> Operand {
         self.emit_rvalue_to_operand(Rvalue::UnaryFloatOp(op, operand), ty)
     }
 
-    pub(crate) fn emit_complex_struct(&mut self, real: Operand, imag: Operand, ty: TypeId) -> Operand {
+    pub(super) fn emit_complex_struct(&mut self, real: Operand, imag: Operand, ty: TypeId) -> Operand {
         self.emit_rvalue_to_operand(Rvalue::StructLiteral(vec![(0, real), (1, imag)]), ty)
     }
 
-    pub(crate) fn operand_to_const_id(&mut self, operand: &Operand) -> Option<ConstValueId> {
+    pub(super) fn operand_to_const_id(&mut self, operand: &Operand) -> Option<ConstValueId> {
         match operand {
             Operand::Constant(id) => Some(*id),
             Operand::Cast(ty, inner) => {

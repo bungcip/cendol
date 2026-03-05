@@ -106,7 +106,7 @@ impl PPToken {
     }
 
     /// Get the raw byte slice from the source buffer for this token
-    pub(crate) fn get_raw_slice<'a>(&self, buffer: &'a [u8]) -> &'a [u8] {
+    pub(super) fn get_raw_slice<'a>(&self, buffer: &'a [u8]) -> &'a [u8] {
         let start = self.location.offset() as usize;
         let end = start + self.length as usize;
         &buffer[start..end]
@@ -1180,14 +1180,14 @@ impl PPLexer {
         )
     }
 
-    pub(crate) fn get_current_line(&self) -> u32 {
+    pub(super) fn get_current_line(&self) -> u32 {
         self.line_starts.len() as u32 + self.line_offset
     }
 
     /// ⚡ Bolt: Moves the `line_starts` vector out of the lexer.
     /// This avoids a clone when the lexer is destroyed and its line information
     /// is transferred to the SourceManager, which is a performance optimization.
-    pub(crate) fn take_line_starts(self) -> Vec<u32> {
+    pub(super) fn take_line_starts(self) -> Vec<u32> {
         self.line_starts
     }
 }

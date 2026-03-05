@@ -1,7 +1,7 @@
 use crate::ast::{BinaryOp, UnaryOp};
 use crate::mir::{BinaryFloatOp, BinaryIntOp, Operand, Rvalue, UnaryFloatOp, UnaryIntOp};
 
-pub(crate) fn emit_binary_rvalue(op: &BinaryOp, lhs: Operand, rhs: Operand, is_float: bool) -> Rvalue {
+pub(super) fn emit_binary_rvalue(op: &BinaryOp, lhs: Operand, rhs: Operand, is_float: bool) -> Rvalue {
     if is_float {
         let mir_op = map_ast_binary_op_to_mir_float(op);
         Rvalue::BinaryFloatOp(mir_op, lhs, rhs)
@@ -11,7 +11,7 @@ pub(crate) fn emit_binary_rvalue(op: &BinaryOp, lhs: Operand, rhs: Operand, is_f
     }
 }
 
-pub(crate) fn emit_unary_rvalue(op: &UnaryOp, operand: Operand, is_float: bool) -> Rvalue {
+pub(super) fn emit_unary_rvalue(op: &UnaryOp, operand: Operand, is_float: bool) -> Rvalue {
     // Unary plus is a no-op in MIR (conversions handled by caller)
     if matches!(op, UnaryOp::Plus) {
         return Rvalue::Use(operand);

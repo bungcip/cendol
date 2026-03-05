@@ -187,7 +187,8 @@ bitflags::bitflags! {
 /// Interned table of hide sets for Dave Prosser's macro expansion algorithm
 #[derive(Debug, Clone)]
 pub(crate) struct HideSetTable {
-    sets: Vec<Vec<StringId>>,
+    sets: Vec<Arc<[StringId]>>,
+    map: HashMap<Arc<[StringId]>, u32>,
 }
 
 impl Default for HideSetTable {
@@ -199,7 +200,10 @@ impl Default for HideSetTable {
 impl HideSetTable {
     pub(crate) fn new() -> Self {
         // Index 0 is the empty hide set
-        Self { sets: vec![Vec::new()] }
+        let empty: Arc<[StringId]> = Arc::from([]);
+        let mut map = HashMap::new();
+        map.insert(empty.clone(), 0);
+        Self { sets: vec![empty], map }
     }
 
     pub(crate) fn intern(&mut self, mut set: Vec<StringId>) -> u32 {
@@ -209,14 +213,15 @@ impl HideSetTable {
         set.sort();
         set.dedup();
 
-        for (i, existing) in self.sets.iter().enumerate() {
-            if *existing == set {
-                return i as u32;
-            }
+        // Bolt ⚡: Perform a zero-allocation lookup first to avoid creating an Arc on cache hits.
+        if let Some(&id) = self.map.get(set.as_slice()) {
+            return id;
         }
 
+        let arc_set: Arc<[StringId]> = Arc::from(set);
         let id = self.sets.len() as u32;
-        self.sets.push(set);
+        self.sets.push(arc_set.clone());
+        self.map.insert(arc_set, id);
         id
     }
 
@@ -230,10 +235,18 @@ impl HideSetTable {
         let set1 = &self.sets[id1 as usize];
         let set2 = &self.sets[id2 as usize];
 
+        // Optimized merge-based intersection for sorted sets: O(M+K)
         let mut result = Vec::with_capacity(std::cmp::min(set1.len(), set2.len()));
-        for &s1 in set1 {
-            if set2.contains(&s1) {
-                result.push(s1);
+        let (mut i, mut j) = (0, 0);
+        while i < set1.len() && j < set2.len() {
+            match set1[i].cmp(&set2[j]) {
+                std::cmp::Ordering::Equal => {
+                    result.push(set1[i]);
+                    i += 1;
+                    j += 1;
+                }
+                std::cmp::Ordering::Less => i += 1,
+                std::cmp::Ordering::Greater => j += 1,
             }
         }
 
@@ -253,20 +266,35 @@ impl HideSetTable {
         let set1 = &self.sets[id1 as usize];
         let set2 = &self.sets[id2 as usize];
 
+        // Optimized merge-based union for sorted sets: O(M+K)
         let mut result = Vec::with_capacity(set1.len() + set2.len());
-        result.extend_from_slice(set1);
-        for &s2 in set2 {
-            if !result.contains(&s2) {
-                result.push(s2);
+        let (mut i, mut j) = (0, 0);
+        while i < set1.len() && j < set2.len() {
+            match set1[i].cmp(&set2[j]) {
+                std::cmp::Ordering::Equal => {
+                    result.push(set1[i]);
+                    i += 1;
+                    j += 1;
+                }
+                std::cmp::Ordering::Less => {
+                    result.push(set1[i]);
+                    i += 1;
+                }
+                std::cmp::Ordering::Greater => {
+                    result.push(set2[j]);
+                    j += 1;
+                }
             }
         }
+        result.extend_from_slice(&set1[i..]);
+        result.extend_from_slice(&set2[j..]);
 
         self.intern(result)
     }
 
     pub(crate) fn insert(&mut self, id: u32, symbol: StringId) -> u32 {
         let existing = &self.sets[id as usize];
-        if existing.contains(&symbol) {
+        if existing.binary_search(&symbol).is_ok() {
             return id;
         }
         let mut new_set = Vec::with_capacity(existing.len() + 1);
@@ -280,7 +308,7 @@ impl HideSetTable {
         if id == 0 {
             return false;
         }
-        self.sets[id as usize].contains(&symbol)
+        self.sets[id as usize].binary_search(&symbol).is_ok()
     }
 }
 
@@ -3007,5 +3035,62 @@ mod tests {
         // Test unknown directive (this covers the else { None } branch)
         let unknown_sym = StringId::new("not_a_directive");
         assert_eq!(table.is_directive(unknown_sym), None);
+    }
+
+    #[test]
+    fn test_hide_set_table() {
+        let mut table = HideSetTable::new();
+        let s1 = StringId::new("a");
+        let s2 = StringId::new("b");
+        let s3 = StringId::new("c");
+
+        // Test intern
+        let id0 = 0;
+        let id1 = table.intern(vec![s1]);
+        let id2 = table.intern(vec![s2]);
+        let id1_again = table.intern(vec![s1]);
+        let id12 = table.intern(vec![s2, s1]); // Should be sorted to [s1, s2]
+
+        assert_eq!(id1, id1_again);
+        assert_ne!(id1, id2);
+        assert_ne!(id1, id12);
+        assert_ne!(id2, id12);
+
+        // Test contains
+        assert!(table.contains(id1, s1));
+        assert!(!table.contains(id1, s2));
+        assert!(table.contains(id12, s1));
+        assert!(table.contains(id12, s2));
+        assert!(!table.contains(id0, s1));
+
+        // Test insert
+        let id12_from_1 = table.insert(id1, s2);
+        assert_eq!(id12_from_1, id12);
+        let id1_from_1 = table.insert(id1, s1);
+        assert_eq!(id1_from_1, id1);
+
+        // Test union
+        let u12 = table.union(id1, id2);
+        assert_eq!(u12, id12);
+        let u11 = table.union(id1, id1);
+        assert_eq!(u11, id1);
+        let u01 = table.union(id0, id1);
+        assert_eq!(u01, id1);
+
+        // Test intersection
+        let i12 = table.intersection(id1, id12);
+        assert_eq!(i12, id1);
+        let i12_2 = table.intersection(id2, id12);
+        assert_eq!(i12_2, id2);
+        let i12_none = table.intersection(id1, id2);
+        assert_eq!(i12_none, id0);
+        let i01 = table.intersection(id0, id1);
+        assert_eq!(i01, id0);
+
+        // Complex case
+        let id123 = table.intern(vec![s1, s2, s3]);
+        let id13 = table.intern(vec![s1, s3]);
+        assert_eq!(table.union(id13, id12), id123);
+        assert_eq!(table.intersection(id13, id12), id1);
     }
 }

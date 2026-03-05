@@ -203,10 +203,7 @@ impl HideSetTable {
         let empty: Arc<[StringId]> = Arc::from([]);
         let mut map = HashMap::new();
         map.insert(empty.clone(), 0);
-        Self {
-            sets: vec![empty],
-            map,
-        }
+        Self { sets: vec![empty], map }
     }
 
     pub(crate) fn intern(&mut self, mut set: Vec<StringId>) -> u32 {

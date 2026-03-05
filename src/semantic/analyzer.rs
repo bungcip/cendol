@@ -1324,6 +1324,28 @@ impl<'a> SemanticAnalyzer<'a> {
                 };
 
                 if compatible {
+                    // C11 §6.7.9p14: the number of characters in the string literal
+                    // (excluding the null terminator) shall not exceed the array size.
+                    // e.g. char s[3] = "abc" is OK (null dropped), char s[2] = "abc" is error.
+                    let target_type = self.registry.get(target_ty.ty());
+                    let init_type = self.registry.get(init_ty.ty());
+                    if let (
+                        TypeKind::Array {
+                            size: ArraySizeType::Constant(target_size),
+                            ..
+                        },
+                        TypeKind::Array {
+                            size: ArraySizeType::Constant(init_size),
+                            ..
+                        },
+                    ) = (&target_type.kind, &init_type.kind)
+                    {
+                        // init_size includes null terminator, so non-null chars = init_size - 1
+                        let string_chars = init_size.saturating_sub(1);
+                        if string_chars > *target_size {
+                            self.report_error(init, SemanticErrorKind::ExcessElements { kind: "array" });
+                        }
+                    }
                     self.record_implicit_conversions(target_ty, init_ty, init);
                 } else {
                     self.report_error(

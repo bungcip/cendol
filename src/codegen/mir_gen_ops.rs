@@ -166,4 +166,27 @@ mod tests {
             _ => panic!("Expected UnaryFloatOp"),
         }
     }
+
+    #[test]
+    fn test_mir_ops_mapping_panics() {
+        use std::panic::catch_unwind;
+
+        let res = catch_unwind(|| map_ast_binary_op_to_mir_int(&BinaryOp::LogicAnd));
+        assert!(res.is_err());
+
+        let res = catch_unwind(|| map_ast_binary_op_to_mir_int(&BinaryOp::Comma));
+        assert!(res.is_err());
+
+        let res = catch_unwind(|| map_ast_binary_op_to_mir_int(&BinaryOp::Assign));
+        assert!(res.is_err());
+
+        let res = catch_unwind(|| map_ast_binary_op_to_mir_float(&BinaryOp::Assign));
+        assert!(res.is_err());
+
+        let res = catch_unwind(|| map_ast_unary_op_to_mir_int(&UnaryOp::Plus));
+        assert!(res.is_err());
+
+        let res = catch_unwind(|| map_ast_unary_op_to_mir_float(&UnaryOp::Plus));
+        assert!(res.is_err());
+    }
 }

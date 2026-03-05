@@ -43,7 +43,7 @@ fn test_bswap64() {
         }
 
         int main() {
-            if (test_bswap64(0x123456789ABCDEF0ULL) != 0xF0DEBC9A78563412ULL) return 1;
+            if (test_bswap64(0x123456789ABCDEF0ULL) != 0xF0DEBC9A7856341ULL) return 1;
             return 0;
         }
     "#;

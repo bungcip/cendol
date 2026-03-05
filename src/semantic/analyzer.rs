@@ -1397,6 +1397,17 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             _ => {
+                let mut current_index = 0i64;
+                let max_index = if let TypeKind::Array {
+                    size: ArraySizeType::Constant(n),
+                    ..
+                } = &target_type.kind
+                {
+                    Some(*n as i64)
+                } else {
+                    None
+                };
+
                 for item in list.init_start.range(list.init_len) {
                     let (expr, d_start, d_len) = self.unwrap_initializer_item(item);
                     for designator in d_start.range(d_len) {
@@ -1406,15 +1417,29 @@ impl<'a> SemanticAnalyzer<'a> {
                         match d {
                             Designator::ArrayIndex(e) => {
                                 self.visit_node(*e);
+                                if let Some(idx) = eval_const_expr(&self.const_ctx(), *e) {
+                                    current_index = idx;
+                                }
                             }
                             Designator::GnuArrayRange(s, e) => {
                                 self.visit_node(*s);
                                 self.visit_node(*e);
+                                if let Some(idx) = eval_const_expr(&self.const_ctx(), *s) {
+                                    current_index = idx;
+                                }
                             }
                             Designator::FieldName(_) => {}
                         }
                     }
+
+                    if let Some(max) = max_index {
+                        if current_index >= max {
+                            self.report_error(item, SemanticErrorKind::ExcessElements { kind: "array" });
+                        }
+                    }
+
                     self.visit_node(expr);
+                    current_index += 1;
                 }
             }
         }

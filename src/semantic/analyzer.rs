@@ -2,8 +2,8 @@ use crate::{
     ast::{nodes::*, *},
     diagnostic::DiagnosticEngine,
     semantic::{
-        ArraySizeType, BuiltinType, QualType, StructMember, SymbolKind, SymbolTable, TypeKind, TypeQualifiers, TypeRef,
-        TypeRegistry,
+        ArraySizeType, BuiltinType, QualType, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind,
+        TypeQualifiers, TypeRef, TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticError, SemanticErrorKind},
@@ -96,6 +96,10 @@ pub(crate) fn visit_ast(
         switch_cond_types: SmallVec::new(),
         switch_orig_cond_types: SmallVec::new(),
         checked_types: HashSet::new(),
+        active_vlas: Vec::new(),
+        switch_vla_state: SmallVec::new(),
+        goto_vla_state: Vec::new(),
+        label_vla_state: HashMap::new(),
     };
     let root = ast.get_root();
     resolver.visit_node(root);
@@ -127,6 +131,10 @@ struct SemanticAnalyzer<'a> {
     switch_cond_types: SmallVec<[QualType; 4]>,
     switch_orig_cond_types: SmallVec<[QualType; 4]>,
     checked_types: HashSet<TypeRef>,
+    active_vlas: Vec<NodeRef>,
+    switch_vla_state: SmallVec<[(NodeRef, usize); 4]>,
+    goto_vla_state: Vec<(NodeRef, Vec<NodeRef>)>,
+    label_vla_state: HashMap<SymbolRef, (SourceSpan, Vec<NodeRef>)>,
 }
 
 impl<'a> SemanticAnalyzer<'a> {
@@ -1740,6 +1748,50 @@ impl<'a> SemanticAnalyzer<'a> {
             );
         }
 
+        // Validate goto statements
+        for (goto_node, source_vlas) in std::mem::take(&mut self.goto_vla_state) {
+            let NodeKind::Goto(_, symbol_ref) = self.ast.get_kind(goto_node) else {
+                continue;
+            };
+            let (label_span, target_vlas) = if let Some(v) = self.label_vla_state.get(symbol_ref) {
+                (v.0, v.1.clone())
+            } else {
+                continue;
+            };
+
+            // If there's a VLA in target_vlas that is NOT in source_vlas, it's a jump into scope.
+            for vla in target_vlas {
+                if !source_vlas.contains(&vla) {
+                    self.report_error(goto_node, SemanticErrorKind::JumpIntoScopeVLA { is_switch: false });
+
+                    // Note where label is defined
+                    let label_name = self.symbol_table.get_symbol(*symbol_ref).name;
+                    let diag1 = crate::diagnostic::Diagnostic {
+                        level: crate::diagnostic::DiagnosticLevel::Note,
+                        message: SemanticErrorKind::NoteLabelDefinedHere { name: label_name }.display(self.registry),
+                        span: label_span,
+                        ..Default::default()
+                    };
+                    self.diag.report_diagnostic(diag1);
+
+                    // Note where VLA is declared
+                    if let NodeKind::VarDecl(var_data) = self.ast.get_kind(vla) {
+                        let diag2 = crate::diagnostic::Diagnostic {
+                            level: crate::diagnostic::DiagnosticLevel::Note,
+                            message: SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name }
+                                .display(self.registry),
+                            span: self.ast.get_span(vla),
+                            ..Default::default()
+                        };
+                        self.diag.report_diagnostic(diag2);
+                    }
+                    break;
+                }
+            }
+        }
+        self.goto_vla_state.clear();
+        self.label_vla_state.clear();
+
         self.current_function_ret_type = None;
         self.current_function_name = prev_func_name;
         self.current_function_is_noreturn = false;
@@ -1747,6 +1799,9 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_var_declaration(&mut self, data: &VarDeclData, node: NodeRef) -> Option<QualType> {
+        if self.registry.is_variably_modified(data.ty.ty()) {
+            self.active_vlas.push(node);
+        }
         if data.ty.ty() == self.registry.type_void {
             self.report_error(node, SemanticErrorKind::VariableOfVoidType);
         }
@@ -1768,9 +1823,11 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_statement_node(&mut self, node: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
             NodeKind::CompoundStatement(cs) => {
+                let prev_vla_count = self.active_vlas.len();
                 for item in cs.stmt_start.range(cs.stmt_len) {
                     self.visit_node(item);
                 }
+                self.active_vlas.truncate(prev_vla_count);
                 self.process_deferred_checks();
                 None
             }
@@ -1794,7 +1851,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.check_scalar_condition(*condition);
                 None
             }
-            NodeKind::Switch(cond, body) => self.visit_switch_statement(*cond, *body),
+            NodeKind::Switch(cond, body) => self.visit_switch_statement(*cond, *body, node),
             NodeKind::Case(expr, stmt) => self.visit_case_statement(Some(*expr), None, *stmt),
             NodeKind::CaseRange(start, end, stmt) => self.visit_case_statement(Some(*start), Some(*end), *stmt),
             NodeKind::Default(stmt) => self.visit_default_statement(*stmt, node),
@@ -1824,8 +1881,14 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 None
             }
-            NodeKind::Goto(_, _) => None,
-            NodeKind::Label(_, stmt, _) => {
+            NodeKind::Goto(_, _symbol_ref) => {
+                self.goto_vla_state.push((node, self.active_vlas.clone()));
+                None
+            }
+            NodeKind::Label(_, stmt, symbol_ref) => {
+                let span = self.ast.get_span(node);
+                self.label_vla_state
+                    .insert(*symbol_ref, (span, self.active_vlas.clone()));
                 self.visit_node(*stmt);
                 None
             }
@@ -1833,11 +1896,12 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_switch_statement(&mut self, cond: NodeRef, body: NodeRef) -> Option<QualType> {
+    fn visit_switch_statement(&mut self, cond: NodeRef, body: NodeRef, node: NodeRef) -> Option<QualType> {
         let cond_ty = self.visit_node(cond);
         self.switch_depth += 1;
         self.switch_cases.push(HashSet::new());
         self.switch_default_seen.push(false);
+        self.switch_vla_state.push((node, self.active_vlas.len()));
 
         if let Some(ty) = cond_ty {
             let effective_ty = if !ty.is_integer() {
@@ -1861,8 +1925,48 @@ impl<'a> SemanticAnalyzer<'a> {
         self.switch_orig_cond_types.pop();
         self.switch_default_seen.pop();
         self.switch_cases.pop();
+        self.switch_vla_state.pop();
         self.switch_depth -= 1;
         None
+    }
+
+    fn check_vla_jump_into_scope(
+        &mut self,
+        target_node: NodeRef,
+        target_vlas: &[NodeRef],
+        source_vlas: &[NodeRef],
+        is_switch: bool,
+        source_span: Option<SourceSpan>,
+    ) {
+        for vla in target_vlas {
+            if !source_vlas.contains(vla) {
+                // We jumped into the scope of a VLA that wasn't in scope at the jump source
+                self.report_error(target_node, SemanticErrorKind::JumpIntoScopeVLA { is_switch });
+
+                if let Some(span) = source_span {
+                    // Manually report diagnostic for Note
+                    let diag = crate::diagnostic::Diagnostic {
+                        level: crate::diagnostic::DiagnosticLevel::Note,
+                        message: SemanticErrorKind::NoteSwitchStartsHere.display(self.registry),
+                        span,
+                        ..Default::default()
+                    };
+                    self.diag.report_diagnostic(diag);
+                }
+
+                // Also note where the VLA was declared
+                if let NodeKind::VarDecl(var_data) = self.ast.get_kind(*vla) {
+                    let diag = crate::diagnostic::Diagnostic {
+                        level: crate::diagnostic::DiagnosticLevel::Note,
+                        message: SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name }.display(self.registry),
+                        span: self.ast.get_span(*vla),
+                        ..Default::default()
+                    };
+                    self.diag.report_diagnostic(diag);
+                }
+                break; // Only report one error per jump target
+            }
+        }
     }
 
     fn visit_case_statement(
@@ -1934,6 +2038,15 @@ impl<'a> SemanticAnalyzer<'a> {
             }
         }
 
+        if let Some(&(switch_node, switch_vlas)) = self.switch_vla_state.last()
+            && self.active_vlas.len() > switch_vlas
+        {
+            let target_vlas = self.active_vlas.clone();
+            let source_vlas = self.active_vlas[..switch_vlas].to_vec();
+            let span = self.ast.get_span(switch_node); // Using cond as a proxy for switch
+            self.check_vla_jump_into_scope(stmt, &target_vlas, &source_vlas, true, Some(span));
+        }
+
         self.visit_node(stmt);
         None
     }
@@ -1950,6 +2063,16 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.report_error(node, SemanticErrorKind::MultipleDefaultLabels);
             }
         }
+
+        if let Some(&(switch_node, switch_vlas)) = self.switch_vla_state.last()
+            && self.active_vlas.len() > switch_vlas
+        {
+            let target_vlas = self.active_vlas.clone();
+            let source_vlas = self.active_vlas[..switch_vlas].to_vec();
+            let span = self.ast.get_span(switch_node);
+            self.check_vla_jump_into_scope(node, &target_vlas, &source_vlas, true, Some(span));
+        }
+
         self.visit_node(stmt);
         None
     }

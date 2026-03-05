@@ -278,7 +278,6 @@ impl CompilerDriver {
                         op
                     );
                 }
-                // Check if any legacy variants slipped in (NodeKind shouldn't have them anymore so compile error if we match them)
                 _ => {}
             }
         }

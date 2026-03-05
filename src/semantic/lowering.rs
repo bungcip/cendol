@@ -1678,6 +1678,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             );
         }
 
+        // C11 6.7.1p4: _Thread_local shall only appear in the declaration of an object
+        if spec_info.is_thread_local {
+            self.report_error(span, SemanticErrorKind::ThreadLocalNotAllowed);
+        }
+
         final_ty = self.check_redeclaration_compatibility(func_name, final_ty, span, spec_info.storage);
 
         // Check for _Noreturn on existing declarations
@@ -2017,6 +2022,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     specifier: "register",
                 },
             );
+        }
+
+        // C11 6.7.1p4: _Thread_local shall only appear in the declaration of an object
+        if spec_info.is_thread_local {
+            self.report_error(span, SemanticErrorKind::ThreadLocalNotAllowed);
         }
 
         if spec_info.alignment.is_some() {

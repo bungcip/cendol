@@ -2175,7 +2175,18 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
         }
 
         Terminator::Unreachable => {
-            ctx.builder.ins().trap(cranelift::prelude::TrapCode::unwrap_user(0));
+            // For unreachable, default to appropriate return based on function type
+            if let Some(ret_type) = ctx.return_type {
+                let return_value = ctx.builder.ins().iconst(ret_type, 0i64);
+                ctx.builder.ins().return_(&[return_value]);
+            } else {
+                // Void function
+                ctx.builder.ins().return_(&[]);
+            }
+        }
+
+        Terminator::Trap => {
+            ctx.builder.ins().trap(cranelift::prelude::TrapCode::unwrap_user(1));
         }
     }
 }

@@ -1,3 +1,4 @@
+use super::codegen_common::run_c_code_exit_status;
 use crate::driver::artifact::CompilePhase;
 use crate::tests::test_utils::run_pass;
 
@@ -26,5 +27,5 @@ fn test_popcountll_regression() {
             return 0;
         }
     "#;
-    run_pass(source, CompilePhase::EmitObject);
+    assert_eq!(run_c_code_exit_status(source), 0);
 }

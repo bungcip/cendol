@@ -645,7 +645,7 @@ impl<'a> MirValidator<'a> {
                     self.validate_operand(op);
                 }
             }
-            Terminator::Unreachable => {}
+            Terminator::Unreachable | Terminator::Trap => {}
         }
     }
 

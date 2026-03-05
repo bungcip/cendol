@@ -363,6 +363,9 @@ impl<'a> MirDumper<'a> {
             Terminator::Unreachable => {
                 write!(output, "unreachable")?;
             }
+            Terminator::Trap => {
+                write!(output, "trap")?;
+            }
         }
         Ok(())
     }

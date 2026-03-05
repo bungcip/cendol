@@ -1,5 +1,4 @@
-use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::run_pass;
+use super::codegen_common::run_c_code_exit_status;
 
 #[test]
 fn test_bswap16() {
@@ -15,7 +14,7 @@ fn test_bswap16() {
             return 0;
         }
     "#;
-    run_pass(code, CompilePhase::EmitObject);
+    assert_eq!(run_c_code_exit_status(code), 0);
 }
 
 #[test]
@@ -32,7 +31,7 @@ fn test_bswap32() {
             return 0;
         }
     "#;
-    run_pass(code, CompilePhase::EmitObject);
+    assert_eq!(run_c_code_exit_status(code), 0);
 }
 
 #[test]
@@ -43,11 +42,11 @@ fn test_bswap64() {
         }
 
         int main() {
-            if (test_bswap64(0x123456789ABCDEF0ULL) != 0xF0DEBC9A7856341ULL) return 1;
+            if (test_bswap64(0x123456789ABCDEF0ULL) != 0xF0DEBC9A78563412ULL) return 1;
             return 0;
         }
     "#;
-    run_pass(code, CompilePhase::EmitObject);
+    assert_eq!(run_c_code_exit_status(code), 0);
 }
 
 #[test]
@@ -59,7 +58,7 @@ fn test_bswap_nested() {
             return 0;
         }
     "#;
-    run_pass(code, CompilePhase::EmitObject);
+    assert_eq!(run_c_code_exit_status(code), 0);
 }
 
 #[test]
@@ -81,7 +80,7 @@ fn test_bswap_types() {
             return 0;
         }
     "#;
-    run_pass(code, CompilePhase::EmitObject);
+    assert_eq!(run_c_code_exit_status(code), 0);
 }
 
 #[test]
@@ -99,5 +98,5 @@ fn test_bswap_side_effects() {
             return 0;
         }
     "#;
-    run_pass(code, CompilePhase::EmitObject);
+    assert_eq!(run_c_code_exit_status(code), 0);
 }

@@ -173,6 +173,7 @@ pub enum Terminator {
     If(Operand, MirBlockId, MirBlockId),
     Return(Option<Operand>),
     Unreachable,
+    Trap,
 }
 
 /// Place - Represents a storage location (local variable or memory)

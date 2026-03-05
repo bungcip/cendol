@@ -108,7 +108,7 @@ impl<'a> MirGen<'a> {
                 self.create_int_operand(val)
             }
             NodeKind::BuiltinUnreachable => {
-                self.mir_builder.set_terminator(crate::mir::Terminator::Unreachable);
+                self.mir_builder.set_terminator(crate::mir::Terminator::Trap);
                 self.create_dummy_operand()
             }
             NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(need_value, expr_ref),

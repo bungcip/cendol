@@ -26,7 +26,7 @@ fn test_emit_const_struct_literal() {
             field_offsets: vec![0, 4],
         },
     };
-    let struct_type_id = builder.add_type(struct_type.clone());
+    let struct_type_id = builder.add_type(struct_type);
 
     // 2. Setup Constants
     let const_1_id = builder.create_constant(int_type_id, ConstValueKind::Int(0x11111111));

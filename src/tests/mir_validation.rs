@@ -522,7 +522,7 @@ fn test_flexible_assignment() {
 
     let stmt_id = MirStmtId::new(100).unwrap();
     let op = Operand::Copy(Box::new(Place::Local(local_src)));
-    let rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Eq, op.clone(), op.clone());
+    let rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Eq, op.clone(), op);
 
     // Assign to i32
     let stmt = MirStmt::Assign(Place::Local(local_dest), rvalue);
@@ -559,7 +559,7 @@ fn test_call_void_with_dest() {
     let main_name = NameId::new("main");
     let main_id = MirFunctionId::new(2).unwrap();
     let main_func = MirFunction::new_defined(main_id, main_name, i32_ty, crate::mir::MirLinkage::External);
-    mir.functions.insert(main_id, main_func.clone());
+    mir.functions.insert(main_id, main_func);
     mir.module.functions.push(main_id);
 
     // Call foo() -> void, assign to i32 local

@@ -150,7 +150,7 @@ mod tests {
         }
 
         // Float emission
-        match emit_binary_rvalue(&BinaryOp::Add, op1.clone(), op2.clone(), true) {
+        match emit_binary_rvalue(&BinaryOp::Add, op1.clone(), op2, true) {
             Rvalue::BinaryFloatOp(op, _, _) => assert_eq!(op, BinaryFloatOp::Add),
             _ => panic!("Expected BinaryFloatOp"),
         }
@@ -161,7 +161,7 @@ mod tests {
             _ => panic!("Expected UnaryIntOp"),
         }
 
-        match emit_unary_rvalue(&UnaryOp::Minus, op1.clone(), true) {
+        match emit_unary_rvalue(&UnaryOp::Minus, op1, true) {
             Rvalue::UnaryFloatOp(op, _) => assert_eq!(op, UnaryFloatOp::Neg),
             _ => panic!("Expected UnaryFloatOp"),
         }

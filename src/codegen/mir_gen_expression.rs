@@ -616,7 +616,7 @@ impl<'a> MirGen<'a> {
         self.mir_builder.set_current_block(false_block);
         let zero_op = self.create_int_operand(0);
         self.mir_builder
-            .add_statement(MirStmt::Assign(result_place.clone(), Rvalue::Use(zero_op)));
+            .add_statement(MirStmt::Assign(result_place, Rvalue::Use(zero_op)));
         self.mir_builder.set_terminator(Terminator::Goto(merge_block));
     }
 
@@ -636,8 +636,8 @@ impl<'a> MirGen<'a> {
         let one_op = self.create_int_operand(1);
 
         let (short_circuit_val, true_target, false_target) = match op {
-            BinaryOp::LogicAnd => (zero_op.clone(), eval_rhs_block, short_circuit_block),
-            BinaryOp::LogicOr => (one_op.clone(), short_circuit_block, eval_rhs_block),
+            BinaryOp::LogicAnd => (zero_op, eval_rhs_block, short_circuit_block),
+            BinaryOp::LogicOr => (one_op, short_circuit_block, eval_rhs_block),
             _ => unreachable!(),
         };
 
@@ -1075,7 +1075,7 @@ impl<'a> MirGen<'a> {
         };
 
         if operand_ty.is_atomic() {
-            let ptr = Operand::AddressOf(place.clone());
+            let ptr = Operand::AddressOf(place);
             let op = if is_inc { BinaryIntOp::Add } else { BinaryIntOp::Sub };
             let step = self.create_int_operand(1);
             let rval = Rvalue::AtomicFetchOp(op, ptr, step.clone(), AtomicMemOrder::SeqCst);
@@ -1101,7 +1101,7 @@ impl<'a> MirGen<'a> {
         };
 
         // Determine MIR operation and Rvalue
-        let rval = self.create_inc_dec_rvalue(operand.clone(), operand_ty, is_inc);
+        let rval = self.create_inc_dec_rvalue(operand, operand_ty, is_inc);
 
         // Perform the assignment
         if is_post && !need_value {
@@ -1336,7 +1336,7 @@ impl<'a> MirGen<'a> {
                 let bd = self.emit_float_binop(Mul, lhs_imag.clone(), rhs_imag.clone(), element_ty);
                 let real = self.emit_float_binop(Sub, ac, bd, element_ty);
 
-                let ad = self.emit_float_binop(Mul, lhs_real, rhs_imag.clone(), element_ty);
+                let ad = self.emit_float_binop(Mul, lhs_real, rhs_imag, element_ty);
                 let bc = self.emit_float_binop(Mul, lhs_imag, rhs_real, element_ty);
                 let imag = self.emit_float_binop(Add, ad, bc, element_ty);
 

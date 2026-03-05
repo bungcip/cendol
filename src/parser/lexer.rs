@@ -97,6 +97,9 @@ pub enum TokenKind {
     BuiltinChooseExpr,
     BuiltinConstantP,
     BuiltinUnreachable,
+    BuiltinBswap16,
+    BuiltinBswap32,
+    BuiltinBswap64,
     Asm,
 
     // Atomic builtins
@@ -416,6 +419,9 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__builtin_choose_expr"), TokenKind::BuiltinChooseExpr);
         m.insert(StringId::new("__builtin_constant_p"), TokenKind::BuiltinConstantP);
         m.insert(StringId::new("__builtin_unreachable"), TokenKind::BuiltinUnreachable);
+        m.insert(StringId::new("__builtin_bswap16"), TokenKind::BuiltinBswap16);
+        m.insert(StringId::new("__builtin_bswap32"), TokenKind::BuiltinBswap32);
+        m.insert(StringId::new("__builtin_bswap64"), TokenKind::BuiltinBswap64);
         m.insert(StringId::new("__atomic_load_n"), TokenKind::BuiltinAtomicLoadN);
         m.insert(StringId::new("__atomic_store_n"), TokenKind::BuiltinAtomicStoreN);
         m.insert(StringId::new("__atomic_exchange_n"), TokenKind::BuiltinAtomicExchangeN);

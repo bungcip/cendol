@@ -288,6 +288,9 @@ pub enum UnaryIntOp {
     Popcount,
     Clz,
     Ctz,
+    Bswap16,
+    Bswap32,
+    Bswap64,
 }
 
 /// Floating-point unary operations

@@ -89,6 +89,9 @@ pub enum ParsedNodeKind {
     BuiltinPopcount(ParsedNodeRef),
     BuiltinClz(ParsedNodeRef),
     BuiltinCtz(ParsedNodeRef),
+    BuiltinBswap16(ParsedNodeRef),
+    BuiltinBswap32(ParsedNodeRef),
+    BuiltinBswap64(ParsedNodeRef),
     AtomicOp(AtomicOp, Vec<ParsedNodeRef>),
     SizeOfExpr(ParsedNodeRef),
     SizeOfType(ParsedType),
@@ -453,6 +456,9 @@ impl ParsedNodeKind {
             | ParsedNodeKind::BuiltinClz(e)
             | ParsedNodeKind::BuiltinConstantP(e)
             | ParsedNodeKind::BuiltinCtz(e)
+            | ParsedNodeKind::BuiltinBswap16(e)
+            | ParsedNodeKind::BuiltinBswap32(e)
+            | ParsedNodeKind::BuiltinBswap64(e)
             | ParsedNodeKind::SizeOfExpr(e)
             | ParsedNodeKind::CompoundLiteral(_, e)
             | ParsedNodeKind::Label(_, e)

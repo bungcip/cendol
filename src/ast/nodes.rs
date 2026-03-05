@@ -56,6 +56,9 @@ pub enum NodeKind {
     BuiltinPopcount(NodeRef),
     BuiltinClz(NodeRef),
     BuiltinCtz(NodeRef),
+    BuiltinBswap16(NodeRef),
+    BuiltinBswap32(NodeRef),
+    BuiltinBswap64(NodeRef),
     AtomicOp(AtomicOp, NodeRef /* args start */, u16 /* arg count */),
     SizeOfExpr(NodeRef),
     SizeOfType(QualType),
@@ -152,6 +155,9 @@ impl NodeKind {
             | NodeKind::BuiltinVaArg(_, child)
             | NodeKind::BuiltinOffsetof(_, child)
             | NodeKind::BuiltinVaEnd(child)
+            | NodeKind::BuiltinBswap16(child)
+            | NodeKind::BuiltinBswap32(child)
+            | NodeKind::BuiltinBswap64(child)
             | NodeKind::SizeOfExpr(child)
             | NodeKind::CompoundLiteral(_, child)
             | NodeKind::Label(_, child, _)

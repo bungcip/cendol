@@ -15,3 +15,16 @@ fn test_codegen_bitwise_builtins() {
     "#;
     run_pass(source, CompilePhase::Cranelift);
 }
+
+#[test]
+fn test_popcountll_regression() {
+    let source = r#"
+        int main() {
+            unsigned long long x = 1ULL << 40;
+            // If it was truncated to 32-bit int, popcount would be 0.
+            if (__builtin_popcountll(x) != 1) return 1;
+            return 0;
+        }
+    "#;
+    run_pass(source, CompilePhase::EmitObject);
+}

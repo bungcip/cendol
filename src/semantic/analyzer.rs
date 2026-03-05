@@ -2071,6 +2071,39 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 Some(QualType::unqualified(self.registry.type_int))
             }
+            NodeKind::BuiltinBswap16(exp) | NodeKind::BuiltinBswap32(exp) | NodeKind::BuiltinBswap64(exp) => {
+                let target_ty = match kind {
+                    NodeKind::BuiltinBswap16(_) => self.registry.type_short_unsigned,
+                    NodeKind::BuiltinBswap32(_) => self.registry.type_int_unsigned,
+                    NodeKind::BuiltinBswap64(_) => self.registry.type_long_long_unsigned,
+                    _ => unreachable!(),
+                };
+
+                if let Some(mut actual_ty) = self.visit_node(*exp) {
+                    if actual_ty.is_array() || actual_ty.is_function() {
+                        actual_ty = self.registry.decay(actual_ty, TypeQualifiers::empty());
+                        self.push_conversion(*exp, Conversion::PointerDecay { to: actual_ty.ty() });
+                        // Update semantic info with decayed type for subsequent conversion check
+                        self.semantic_info.types[exp.index()] = Some(actual_ty);
+                    }
+
+                    if !actual_ty.is_integer() {
+                        self.report_error(*exp, SemanticErrorKind::ExpectedIntegerType { found: actual_ty });
+                    } else {
+                        // Match width of target_ty for MIR validation
+                        if actual_ty.ty() != target_ty {
+                            self.push_conversion(
+                                *exp,
+                                Conversion::IntegerCast {
+                                    from: actual_ty.ty(),
+                                    to: target_ty,
+                                },
+                            );
+                        }
+                    }
+                }
+                Some(QualType::unqualified(target_ty))
+            }
             NodeKind::BuiltinOffsetof(ty, expr) => self.visit_builtin_offsetof(*ty, *expr, node),
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
                 self.visit_type_expressions(*t1);

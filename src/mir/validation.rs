@@ -524,6 +524,7 @@ impl<'a> MirValidator<'a> {
                     UnaryIntOp::BitwiseNot => ta,
                     UnaryIntOp::LogicalNot => self.find_bool_type(),
                     UnaryIntOp::Popcount | UnaryIntOp::Clz | UnaryIntOp::Ctz => self.find_i32_type(),
+                    UnaryIntOp::Bswap16 | UnaryIntOp::Bswap32 | UnaryIntOp::Bswap64 => ta,
                 }
             }
             Rvalue::UnaryFloatOp(u, a) => {

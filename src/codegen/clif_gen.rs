@@ -1530,6 +1530,10 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             let res = ctx.builder.ins().ctz(val);
                             emit_type_conversion(res, operand_clif_type, expected_type, false, ctx.builder)
                         }
+                        UnaryIntOp::Bswap16 | UnaryIntOp::Bswap32 | UnaryIntOp::Bswap64 => {
+                            let res = ctx.builder.ins().bswap(val);
+                            emit_type_conversion(res, operand_clif_type, expected_type, false, ctx.builder)
+                        }
                         UnaryIntOp::LogicalNot => {
                             let zero = ctx.builder.ins().iconst(operand_clif_type, 0i64);
                             let is_zero = ctx.builder.ins().icmp(IntCC::Equal, val, zero);
@@ -2171,14 +2175,7 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
         }
 
         Terminator::Unreachable => {
-            // For unreachable, default to appropriate return based on function type
-            if let Some(ret_type) = ctx.return_type {
-                let return_value = ctx.builder.ins().iconst(ret_type, 0i64);
-                ctx.builder.ins().return_(&[return_value]);
-            } else {
-                // Void function
-                ctx.builder.ins().return_(&[]);
-            }
+            ctx.builder.ins().trap(cranelift::prelude::TrapCode::unwrap_user(0));
         }
     }
 }

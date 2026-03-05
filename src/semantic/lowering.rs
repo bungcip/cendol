@@ -824,9 +824,8 @@ fn validate_record_members(
     registry: &TypeRegistry,
     members: &[StructMember],
     seen_names: &mut HashMap<NameId, SourceSpan>,
-) -> Vec<SemanticError> {
-    let mut errors = Vec::new();
-
+    errors: &mut Vec<SemanticError>,
+) {
     for member in members {
         if let Some(name) = member.name {
             if let Some(&first_def) = seen_names.get(&name) {
@@ -842,10 +841,9 @@ fn validate_record_members(
         } = &registry.get(member.member_type.ty()).kind
         {
             // Anonymous member, recurse
-            errors.extend(validate_record_members(registry, inner_members, seen_names));
+            validate_record_members(registry, inner_members, seen_names, errors);
         }
     }
-    errors
 }
 
 fn complete_record_symbol(
@@ -857,7 +855,8 @@ fn complete_record_symbol(
 ) -> Result<(), SemanticError> {
     // New: Validate for name conflicts across anonymous members
     let mut seen_names = HashMap::new();
-    let validation_errors = validate_record_members(ctx.registry, &members, &mut seen_names);
+    let mut validation_errors = Vec::new();
+    validate_record_members(ctx.registry, &members, &mut seen_names, &mut validation_errors);
     for error in validation_errors {
         ctx.report_error(error.span, error.kind);
     }

@@ -607,6 +607,13 @@ fn test_static_assert() {
 }
 
 #[test]
+fn test_static_assert_missing_string_literal() {
+    let err = setup_declaration_with_errors("_Static_assert(1, 42);");
+    assert!(format!("{:?}", err).contains("UnexpectedToken"));
+    assert!(format!("{:?}", err).contains("string literal"));
+}
+
+#[test]
 fn test_function_definition() {
     let resolved = setup_translation_unit("int main() { return 0; }");
     insta::assert_yaml_snapshot!(&resolved, @r"

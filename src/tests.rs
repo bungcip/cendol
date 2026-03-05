@@ -111,6 +111,7 @@ pub mod semantic_complex_types;
 pub mod semantic_const_recursive;
 mod semantic_conversions;
 pub mod semantic_generic;
+pub mod semantic_goto_vla;
 pub mod semantic_implicit_builtins;
 pub mod semantic_integer_literals;
 pub mod semantic_issue_test;

@@ -297,6 +297,17 @@ pub enum SemanticErrorKind {
         name: NameId,
         specifier: &'static str,
     },
+
+    JumpIntoScopeVLA {
+        is_switch: bool,
+    },
+    NoteLabelDefinedHere {
+        name: NameId,
+    },
+    NoteSwitchStartsHere,
+    NoteVLADeclaredHere {
+        name: NameId,
+    },
     InvalidStorageClassForFunction {
         name: NameId,
         specifier: &'static str,
@@ -600,6 +611,17 @@ impl SemanticErrorKind {
             SemanticErrorKind::FileScopeSpecifiesStorageClass { name, specifier } => {
                 format!("file-scope declaration of '{}' specifies '{}'", name, specifier)
             }
+
+            SemanticErrorKind::JumpIntoScopeVLA { is_switch } => {
+                if *is_switch {
+                    "switch jumps into scope of identifier with variably modified type".to_string()
+                } else {
+                    "jump into scope of identifier with variably modified type".to_string()
+                }
+            }
+            SemanticErrorKind::NoteLabelDefinedHere { name } => format!("label '{}' defined here", name),
+            SemanticErrorKind::NoteSwitchStartsHere => "switch starts here".to_string(),
+            SemanticErrorKind::NoteVLADeclaredHere { name } => format!("'{}' declared here", name),
             SemanticErrorKind::InvalidStorageClassForFunction { name, specifier } => {
                 format!("invalid storage class '{}' for function '{}'", specifier, name)
             }

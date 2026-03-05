@@ -431,20 +431,6 @@ fn test_place_field_access_non_record() {
 }
 
 #[test]
-fn test_invalid_pointer_arithmetic() {
-    // There is no explicit invalid pointer arithmetic check triggered in validation.rs in the current snapshot
-    // But there is Rvalue::PtrAdd validation.
-    // It checks operands but doesn't check if they are pointers?
-    // Looking at validate_rvalue in validation.rs:
-    // Rvalue::PtrAdd(a, b) => { validate_operand(a); validate_operand(b); None }
-    // It returns None, which means unknown type.
-    // So invalid pointer arithmetic (e.g. adding two pointers?) is not caught by validation currently?
-    // Wait, the validation logic for PtrAdd is minimal.
-    // The ValidationError::InvalidPointerArithmetic exists but might be unused.
-    // I'll skip testing it for logic, but I've covered it in Display test.
-}
-
-#[test]
 fn test_invalid_cast_in_assignment() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];

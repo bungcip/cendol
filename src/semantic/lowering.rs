@@ -2458,6 +2458,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 lower_simple!(NodeKind::BuiltinConstantP(self.visit_expression(*expr)))
             }
             ParsedNodeKind::BuiltinUnreachable => lower_simple!(NodeKind::BuiltinUnreachable),
+            ParsedNodeKind::BuiltinTrap => lower_simple!(NodeKind::BuiltinTrap),
             ParsedNodeKind::GenericSelection(control, associations) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let c = self.visit_expression(*control);

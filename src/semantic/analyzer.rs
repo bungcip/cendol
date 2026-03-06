@@ -255,7 +255,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn is_noreturn_expr(&self, expr: NodeRef) -> bool {
         match self.ast.get_kind(expr) {
-            NodeKind::BuiltinUnreachable => true,
+            NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => true,
             NodeKind::FunctionCall(call) => {
                 if let Some(callee_type) = self.semantic_info.types[call.callee.index()]
                     && let TypeKind::Function { is_noreturn, .. } = &self.registry.get(callee_type.ty()).kind
@@ -1491,10 +1491,10 @@ impl<'a> SemanticAnalyzer<'a> {
                         }
                     }
 
-                    if let Some(max) = max_index {
-                        if current_index >= max {
-                            self.report_error(item, SemanticErrorKind::ExcessElements { kind: "array" });
-                        }
+                    if let Some(max) = max_index
+                        && current_index >= max
+                    {
+                        self.report_error(item, SemanticErrorKind::ExcessElements { kind: "array" });
                     }
 
                     self.visit_node(expr);
@@ -2336,7 +2336,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_builtin_choose_expr(*cond, *true_expr, *false_expr, node)
             }
             NodeKind::BuiltinConstantP(expr) => self.visit_builtin_constant_p(*expr, node),
-            NodeKind::BuiltinUnreachable => Some(QualType::unqualified(self.registry.type_void)),
+            NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => {
+                Some(QualType::unqualified(self.registry.type_void))
+            }
             _ => None,
         }
     }

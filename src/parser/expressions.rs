@@ -228,6 +228,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinTypesCompatibleP => parse_builtin_types_compatible_p(parser),
         TokenKind::BuiltinConstantP => parse_builtin_constant_p(parser),
         TokenKind::BuiltinUnreachable => parse_builtin_unreachable(parser),
+        TokenKind::BuiltinTrap => parse_builtin_trap(parser),
         TokenKind::BuiltinPopcount
         | TokenKind::BuiltinPopcountL
         | TokenKind::BuiltinPopcountLL
@@ -690,6 +691,13 @@ fn parse_builtin_unreachable(parser: &mut Parser) -> Result<ParsedNodeRef, Parse
     parser.expect(TokenKind::LeftParen)?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(ParsedNodeKind::BuiltinUnreachable, SourceSpan::new(start, end)))
+}
+
+fn parse_builtin_trap(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let start = parser.expect(TokenKind::BuiltinTrap)?.span.start();
+    parser.expect(TokenKind::LeftParen)?;
+    let end = parser.expect(TokenKind::RightParen)?.span.end();
+    Ok(parser.push_node(ParsedNodeKind::BuiltinTrap, SourceSpan::new(start, end)))
 }
 
 fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {

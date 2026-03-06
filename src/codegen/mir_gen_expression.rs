@@ -107,7 +107,7 @@ impl<'a> MirGen<'a> {
                     .expect("__builtin_constant_p should evaluate to constant");
                 self.create_int_operand(val)
             }
-            NodeKind::BuiltinUnreachable => {
+            NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => {
                 self.mir_builder.set_terminator(crate::mir::Terminator::Trap);
                 self.create_dummy_operand()
             }

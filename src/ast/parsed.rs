@@ -102,6 +102,7 @@ pub enum ParsedNodeKind {
     BuiltinChooseExpr(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinConstantP(ParsedNodeRef),
     BuiltinUnreachable,
+    BuiltinTrap,
 
     // --- Statements ---
     CompoundStatement(Vec<ParsedNodeRef>),
@@ -439,6 +440,7 @@ impl ParsedNodeKind {
             | ParsedNodeKind::SizeOfType(_)
             | ParsedNodeKind::AlignOf(_)
             | ParsedNodeKind::BuiltinUnreachable
+            | ParsedNodeKind::BuiltinTrap
             | ParsedNodeKind::Break
             | ParsedNodeKind::Continue
             | ParsedNodeKind::Goto(_)

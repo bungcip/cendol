@@ -70,6 +70,7 @@ pub enum NodeKind {
     BuiltinChooseExpr(NodeRef, NodeRef, NodeRef),
     BuiltinConstantP(NodeRef),
     BuiltinUnreachable,
+    BuiltinTrap,
 
     // --- Statements (Complex statements are separate structs) ---
     CompoundStatement(CompoundStmtData),
@@ -134,6 +135,7 @@ impl NodeKind {
             | NodeKind::AlignOf(_)
             | NodeKind::BuiltinTypesCompatibleP(..)
             | NodeKind::BuiltinUnreachable
+            | NodeKind::BuiltinTrap
             | NodeKind::Break
             | NodeKind::Continue
             | NodeKind::Goto(..)

@@ -161,9 +161,14 @@ mod tests {
             _ => panic!("Expected UnaryIntOp"),
         }
 
-        match emit_unary_rvalue(&UnaryOp::Minus, op1, true) {
+        match emit_unary_rvalue(&UnaryOp::Minus, op1.clone(), true) {
             Rvalue::UnaryFloatOp(op, _) => assert_eq!(op, UnaryFloatOp::Neg),
             _ => panic!("Expected UnaryFloatOp"),
+        }
+
+        match emit_unary_rvalue(&UnaryOp::Plus, op1.clone(), false) {
+            Rvalue::Use(op) => assert_eq!(op, op1),
+            _ => panic!("Expected Use"),
         }
     }
 

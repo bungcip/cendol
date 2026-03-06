@@ -1530,6 +1530,10 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             let res = ctx.builder.ins().ctz(val);
                             emit_type_conversion(res, operand_clif_type, expected_type, false, ctx.builder)
                         }
+                        UnaryIntOp::Bswap16 | UnaryIntOp::Bswap32 | UnaryIntOp::Bswap64 => {
+                            let res = ctx.builder.ins().bswap(val);
+                            emit_type_conversion(res, operand_clif_type, expected_type, false, ctx.builder)
+                        }
                         UnaryIntOp::LogicalNot => {
                             let zero = ctx.builder.ins().iconst(operand_clif_type, 0i64);
                             let is_zero = ctx.builder.ins().icmp(IntCC::Equal, val, zero);
@@ -2179,6 +2183,10 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
                 // Void function
                 ctx.builder.ins().return_(&[]);
             }
+        }
+
+        Terminator::Trap => {
+            ctx.builder.ins().trap(cranelift::prelude::TrapCode::unwrap_user(1));
         }
     }
 }

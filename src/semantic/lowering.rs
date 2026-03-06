@@ -2389,6 +2389,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::BuiltinCtz(expr) => {
                 lower_simple!(NodeKind::BuiltinCtz(self.visit_expression(*expr)))
             }
+            ParsedNodeKind::BuiltinBswap16(expr) => {
+                lower_simple!(NodeKind::BuiltinBswap16(self.visit_expression(*expr)))
+            }
+            ParsedNodeKind::BuiltinBswap32(expr) => {
+                lower_simple!(NodeKind::BuiltinBswap32(self.visit_expression(*expr)))
+            }
+            ParsedNodeKind::BuiltinBswap64(expr) => {
+                lower_simple!(NodeKind::BuiltinBswap64(self.visit_expression(*expr)))
+            }
             ParsedNodeKind::BuiltinTypesCompatibleP(ty1, ty2) => lower_simple!(NodeKind::BuiltinTypesCompatibleP(
                 convert_to_qual_type_or_type_error(self, *ty1, span, false),
                 convert_to_qual_type_or_type_error(self, *ty2, span, false)

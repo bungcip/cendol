@@ -148,6 +148,9 @@ impl AstDumper {
             | NodeKind::BuiltinPopcount(_)
             | NodeKind::BuiltinClz(_)
             | NodeKind::BuiltinCtz(_)
+            | NodeKind::BuiltinBswap16(_)
+            | NodeKind::BuiltinBswap32(_)
+            | NodeKind::BuiltinBswap64(_)
             | NodeKind::BuiltinExpect(_, _)
             | NodeKind::AtomicOp(..) => {}
             NodeKind::VarDecl(var_decl) => {
@@ -335,6 +338,15 @@ impl AstDumper {
             }
             ParsedNodeKind::BuiltinCtz(exp) => {
                 writeln!(f, "BuiltinCtz({})", exp.get())
+            }
+            ParsedNodeKind::BuiltinBswap16(exp) => {
+                writeln!(f, "BuiltinBswap16({})", exp.get())
+            }
+            ParsedNodeKind::BuiltinBswap32(exp) => {
+                writeln!(f, "BuiltinBswap32({})", exp.get())
+            }
+            ParsedNodeKind::BuiltinBswap64(exp) => {
+                writeln!(f, "BuiltinBswap64({})", exp.get())
             }
             ParsedNodeKind::BuiltinOffsetof(ty, expr) => {
                 writeln!(f, "BuiltinOffsetof({:?}, {})", ty, expr.get())
@@ -524,6 +536,15 @@ impl AstDumper {
             }
             NodeKind::BuiltinCtz(exp) => {
                 writeln!(f, "BuiltinCtz({})", exp.get())
+            }
+            NodeKind::BuiltinBswap16(exp) => {
+                writeln!(f, "BuiltinBswap16({})", exp.get())
+            }
+            NodeKind::BuiltinBswap32(exp) => {
+                writeln!(f, "BuiltinBswap32({})", exp.get())
+            }
+            NodeKind::BuiltinBswap64(exp) => {
+                writeln!(f, "BuiltinBswap64({})", exp.get())
             }
             NodeKind::BuiltinOffsetof(ty, expr) => {
                 writeln!(f, "BuiltinOffsetof({}, {})", ty, expr.get())

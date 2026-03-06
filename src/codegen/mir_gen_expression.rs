@@ -108,7 +108,7 @@ impl<'a> MirGen<'a> {
                 self.create_int_operand(val)
             }
             NodeKind::BuiltinUnreachable => {
-                self.mir_builder.set_terminator(crate::mir::Terminator::Unreachable);
+                self.mir_builder.set_terminator(crate::mir::Terminator::Trap);
                 self.create_dummy_operand()
             }
             NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(need_value, expr_ref),
@@ -123,15 +123,28 @@ impl<'a> MirGen<'a> {
                 let _ = self.visit_expression(*c, true); // lower 'c' for side effects or just to process it
                 self.visit_expression(*exp, need_value)
             }
-            NodeKind::BuiltinPopcount(exp) | NodeKind::BuiltinClz(exp) | NodeKind::BuiltinCtz(exp) => {
+            NodeKind::BuiltinPopcount(exp)
+            | NodeKind::BuiltinClz(exp)
+            | NodeKind::BuiltinCtz(exp)
+            | NodeKind::BuiltinBswap16(exp)
+            | NodeKind::BuiltinBswap32(exp)
+            | NodeKind::BuiltinBswap64(exp) => {
                 let op = match node_kind {
                     NodeKind::BuiltinPopcount(_) => crate::mir::UnaryIntOp::Popcount,
                     NodeKind::BuiltinClz(_) => crate::mir::UnaryIntOp::Clz,
                     NodeKind::BuiltinCtz(_) => crate::mir::UnaryIntOp::Ctz,
+                    NodeKind::BuiltinBswap16(_) => crate::mir::UnaryIntOp::Bswap16,
+                    NodeKind::BuiltinBswap32(_) => crate::mir::UnaryIntOp::Bswap32,
+                    NodeKind::BuiltinBswap64(_) => crate::mir::UnaryIntOp::Bswap64,
                     _ => unreachable!(),
                 };
                 let operand = self.visit_expression(*exp, true);
-                let rval = crate::mir::Rvalue::UnaryIntOp(op, operand);
+
+                let operand_ty = self.ast.get_resolved_type(*exp).unwrap();
+                let operand_mir_ty = self.lower_qual_type(operand_ty);
+                let operand_converted = self.apply_conversions(operand, *exp, operand_mir_ty);
+
+                let rval = crate::mir::Rvalue::UnaryIntOp(op, operand_converted);
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
             NodeKind::AtomicOp(op, args_start, args_len) => self.visit_atomic_op(*op, *args_start, *args_len, mir_ty),

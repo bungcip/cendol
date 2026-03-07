@@ -114,3 +114,8 @@ Action: Always use `TypeRegistry::get(ty)` or similar resolution helpers when ch
 
 Learning: C11 6.5.3.4p1 explicitly prohibits `sizeof` and `_Alignof` on function types and incomplete types (including `void`), and `sizeof` on bit-fields. While function-to-pointer decay typically happens in expressions, it is suppressed inside `sizeof` (6.3.2.1p3), meaning the operator correctly sees the function type and must trigger a constraint violation. Similarly, `_Alignof` requires a complete object type, distinguishing it from `sizeof` which can sometimes handle VLAs (though Cendol currently marks VLA sizeof as an unsupported feature).
 Action: Always verify that operators which suppress standard conversions (like `sizeof`, `_Alignof`, and `&`) are tested against the original types they receive, especially for types that are normally transformed (like functions or arrays).
+
+2025-06-06 - [Compound Literal Semantic Constraints]
+
+Learning: C11 6.5.2.5p1 imposes strict constraints on compound literals: they must specify a complete object type or an array of unknown size (which is then completed), and they specifically prohibit variably modified types (VLAs) and function types. Enforcing these early in semantic analysis prevents layout computation failures and backend miscompilations for types that lack a fixed static size or represent non-object entities.
+Action: Centralize compound literal type validation in the semantic analyzer, ensuring that the exception for incomplete arrays is strictly limited to those that can be completed by the following initializer.

@@ -1198,14 +1198,17 @@ impl<'a> MirGen<'a> {
         // Determine MIR operation and Rvalue
         let rval = self.create_inc_dec_rvalue(operand, operand_ty, is_inc);
 
-        // Perform the assignment
+        // Perform the assignment with proper truncation/casting
+        let result_op = self.emit_rvalue_to_operand(rval, mir_ty);
+        let truncated_op = self.emit_cast(result_op, mir_ty);
+        
         if is_post && !need_value {
             // Optimization: assign directly to place if old value not needed
-            self.mir_builder.add_statement(MirStmt::Assign(*place.clone(), rval));
+            self.emit_assignment(*place.clone(), truncated_op);
         } else {
             // If we needed old value (is_post), or if it is pre-inc (need new value),
             // we compute to a temp first to ensure correctness and return the right value.
-            let (_, new_place) = self.create_temp_local_with_assignment(rval, mir_ty);
+            let (_, new_place) = self.create_temp_local_with_assignment(Rvalue::Use(truncated_op.clone()), mir_ty);
             self.emit_assignment(*place.clone(), Operand::Copy(Box::new(new_place.clone())));
 
             if !is_post {

@@ -419,3 +419,15 @@ fn test_postfix_operator_precedence() {
             - LiteralInt: 2
     ");
 }
+
+#[test]
+fn test_sizeof_compound_literal_expr() {
+    let resolved = setup_expr("sizeof(char){12}");
+    insta::assert_yaml_snapshot!(&resolved, @"
+    SizeOfExpr:
+      CompoundLiteral:
+        - parsed_type_1
+        - InitializerList:
+            - LiteralInt: 12
+    ");
+}

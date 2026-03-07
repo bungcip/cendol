@@ -2645,6 +2645,18 @@ impl<'a> SemanticAnalyzer<'a> {
                 let ty = match suffix {
                     Some(literal::FloatSuffix::F) => self.registry.type_float,
                     Some(literal::FloatSuffix::L) => self.registry.type_long_double,
+                    Some(literal::FloatSuffix::I) => {
+                        let base = self.registry.type_double;
+                        self.registry.complex_type(base)
+                    }
+                    Some(literal::FloatSuffix::IF) => {
+                        let base = self.registry.type_float;
+                        self.registry.complex_type(base)
+                    }
+                    Some(literal::FloatSuffix::IL) => {
+                        let base = self.registry.type_long_double;
+                        self.registry.complex_type(base)
+                    }
                     None => self.registry.type_double,
                 };
                 Some(QualType::unqualified(ty))

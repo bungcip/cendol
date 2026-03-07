@@ -223,6 +223,7 @@ impl PPLexer {
                 self.position += 1;
                 if ch == b'\n' {
                     self.line_starts.push(self.position);
+                    self.at_start_of_line = true;
                 }
                 return Some((ch, char_pos));
             }
@@ -273,9 +274,9 @@ impl PPLexer {
 
             self.position += consumed_len as u32;
 
-            // Update line starts for regular newlines
             if ch == b'\n' {
                 self.line_starts.push(self.position);
+                self.at_start_of_line = true;
             }
 
             return Some((ch, start_pos));

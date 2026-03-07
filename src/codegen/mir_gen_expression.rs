@@ -168,7 +168,7 @@ impl<'a> MirGen<'a> {
         }
 
         // Try floating-point constant folding first for float types
-        if ty.ty().is_floating() {
+        if ty.ty().is_floating() && !ty.ty().is_complex() {
             if let Some(val) = eval_const_expr_float(&self.const_ctx(), expr_ref) {
                 let ty_id = self.lower_qual_type(ty);
                 return Some(Operand::Constant(
@@ -400,9 +400,27 @@ impl<'a> MirGen<'a> {
                 crate::ast::literal::Literal::Int { val, .. } => Some(Operand::Constant(
                     self.create_constant(mir_ty, ConstValueKind::Int(*val)),
                 )),
-                crate::ast::literal::Literal::Float { val, .. } => Some(Operand::Constant(
-                    self.create_constant(mir_ty, ConstValueKind::Float(*val)),
-                )),
+                crate::ast::literal::Literal::Float { val, suffix } => {
+                    use crate::ast::literal::FloatSuffix;
+                    if matches!(suffix, Some(FloatSuffix::I | FloatSuffix::IF | FloatSuffix::IL)) {
+                        let ty_info = self.mir_builder.get_type(mir_ty);
+                        if let crate::mir::MirType::Record { field_types, .. } = ty_info {
+                            let elem_ty = field_types[0];
+                            let zero = self.create_constant(elem_ty, ConstValueKind::Float(0.0));
+                            let imag = self.create_constant(elem_ty, ConstValueKind::Float(*val));
+                            Some(Operand::Constant(self.create_constant(
+                                mir_ty,
+                                ConstValueKind::StructLiteral(vec![(0, zero), (1, imag)]),
+                            )))
+                        } else {
+                            unreachable!("Complex float must lower to a record type")
+                        }
+                    } else {
+                        Some(Operand::Constant(
+                            self.create_constant(mir_ty, ConstValueKind::Float(*val)),
+                        ))
+                    }
+                }
                 crate::ast::literal::Literal::Char(val) => Some(Operand::Constant(
                     self.create_constant(mir_ty, ConstValueKind::Int(*val as i64)),
                 )),

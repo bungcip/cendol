@@ -429,7 +429,7 @@ fn is_xmm_argument(mir_type: &MirType) -> bool {
 
 /// Helper to determine if a type should be packed into registers (I64)
 /// Returns Some(count) of I64 registers needed (max 2)
-fn get_struct_packing(mir_type: &MirType, mir: &MirProgram) -> Option<usize> {
+fn get_struct_packing(mir_type: &MirType, mir: &MirProgram) -> Option<Vec<Type>> {
     if !mir_type.is_aggregate() {
         return None;
     }
@@ -439,7 +439,31 @@ fn get_struct_packing(mir_type: &MirType, mir: &MirProgram) -> Option<usize> {
         return None;
     }
 
-    Some(size.div_ceil(8) as usize)
+    let mut is_all_float = false;
+    if let MirType::Record {
+        field_types, is_union, ..
+    } = mir_type
+    {
+        if !*is_union {
+            let mut all_f = true;
+            for &ft in field_types {
+                let ft_mir = mir.get_type(ft);
+                if !matches!(ft_mir, MirType::F32 | MirType::F64) {
+                    all_f = false;
+                }
+            }
+            if all_f && !field_types.is_empty() {
+                is_all_float = true;
+            }
+        }
+    }
+
+    let count = size.div_ceil(8) as usize;
+    if is_all_float {
+        Some(vec![types::F64; count])
+    } else {
+        Some(vec![types::I64; count])
+    }
 }
 
 /// Helper to prepare a function signature for a call
@@ -481,9 +505,9 @@ fn lower_call_signature(
         }
 
         // Check for struct packing (HFA workaround: pass as I64s in GPRs)
-        if let Some(count) = get_struct_packing(mir_type, ctx.mir) {
-            for _ in 0..count {
-                sig.params.push(AbiParam::new(types::I64));
+        if let Some(types_list) = get_struct_packing(mir_type, ctx.mir) {
+            for &t in &types_list {
+                sig.params.push(AbiParam::new(t));
             }
             continue;
         }
@@ -615,19 +639,19 @@ fn emit_call_args(
         // Check for struct packing in fixed parameters
         if arg_idx < fixed_param_count
             && let Some(type_id) = arg_type_id
-            && let Some(count) = get_struct_packing(ctx.mir.get_type(type_id), ctx.mir)
+            && let Some(types_list) = get_struct_packing(ctx.mir.get_type(type_id), ctx.mir)
         {
             // Resolve struct to address
             let struct_addr = emit_operand(arg, ctx, types::I64);
             let size = lower_type_size(ctx.mir.get_type(type_id), ctx.mir);
 
-            for i in 0..count {
+            for (i, &t) in types_list.iter().enumerate() {
                 // If it's the last chunk, we might need partial load
                 let offset = (i * 8) as i32;
                 let remaining = size.saturating_sub((i * 8) as u32);
 
                 let val = if remaining >= 8 {
-                    ctx.builder.ins().load(types::I64, MemFlags::new(), struct_addr, offset)
+                    ctx.builder.ins().load(t, MemFlags::new(), struct_addr, offset)
                 } else {
                     // Partial load
                     let mut current_val = ctx.builder.ins().iconst(types::I64, 0);
@@ -641,12 +665,15 @@ fn emit_call_args(
                         let shifted = ctx.builder.ins().ishl(byte_ext, shift_amt);
                         current_val = ctx.builder.ins().bor(current_val, shifted);
                     }
-                    current_val
+                    if t.is_float() {
+                        ctx.builder.ins().bitcast(t, MemFlags::new(), current_val)
+                    } else {
+                        current_val
+                    }
                 };
                 arg_values.push(val);
+                sig_idx += 1;
             }
-
-            sig_idx += count;
             continue;
         }
 
@@ -2213,10 +2240,10 @@ fn lower_function_signature(
         let param_local = mir.get_local(param_id);
         let mir_type = mir.get_type(param_local.type_id);
 
-        if let Some(count) = get_struct_packing(mir_type, mir) {
-            for _ in 0..count {
-                func_ctx.params.push(AbiParam::new(types::I64));
-                param_types.push(types::I64);
+        if let Some(types_list) = get_struct_packing(mir_type, mir) {
+            for &t in &types_list {
+                func_ctx.params.push(AbiParam::new(t));
+                param_types.push(t);
             }
             continue;
         }
@@ -2565,10 +2592,10 @@ impl ClifGen {
 
                 // Step 2: Add variadic block parameters if needed (still before any instructions)
                 if func.is_variadic {
-                    let fixed_param_count = func.params.len();
+                    let fixed_params_count = func.params.len();
                     let total_variadic_slots = 128; // Must match lower_function_signature
-                    if fixed_param_count < total_variadic_slots {
-                        let extra_count = total_variadic_slots - fixed_param_count;
+                    if fixed_params_count < total_variadic_slots {
+                        let extra_count = total_variadic_slots - fixed_params_count;
                         for _ in 0..extra_count {
                             builder.append_block_param(*clif_block, types::I64);
                         }
@@ -2584,10 +2611,10 @@ impl ClifGen {
                     let mir_type = self.mir.get_type(local.type_id);
 
                     // Check for struct packing
-                    if let Some(count) = get_struct_packing(mir_type, &self.mir) {
+                    if let Some(types_list) = get_struct_packing(mir_type, &self.mir) {
                         if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
                             let size = lower_type_size(mir_type, &self.mir);
-                            for i in 0..count {
+                            for (i, &t) in types_list.iter().enumerate() {
                                 let val = param_iter.next().unwrap();
                                 let offset = (i * 8) as i32;
                                 let remaining = size.saturating_sub((i * 8) as u32);
@@ -2596,9 +2623,14 @@ impl ClifGen {
                                     builder.ins().stack_store(val, *stack_slot, offset);
                                 } else {
                                     // Partial store
+                                    let current_val_i64 = if t.is_float() {
+                                        builder.ins().bitcast(types::I64, MemFlags::new(), val)
+                                    } else {
+                                        val
+                                    };
                                     for b in 0..remaining {
                                         let shift_amt = builder.ins().iconst(types::I64, (b * 8) as i64);
-                                        let shifted = builder.ins().ushr(val, shift_amt);
+                                        let shifted = builder.ins().ushr(current_val_i64, shift_amt);
                                         let byte_val = builder.ins().ireduce(types::I8, shifted);
                                         builder.ins().stack_store(byte_val, *stack_slot, offset + b as i32);
                                     }
@@ -2606,7 +2638,7 @@ impl ClifGen {
                             }
                         } else {
                             // Consume even if no stack slot
-                            for _ in 0..count {
+                            for _ in 0..types_list.len() {
                                 let _ = param_iter.next();
                             }
                         }

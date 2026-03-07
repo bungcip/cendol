@@ -17,6 +17,9 @@ pub enum IntegerSuffix {
 pub enum FloatSuffix {
     F,
     L,
+    I,
+    IF,
+    IL,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]

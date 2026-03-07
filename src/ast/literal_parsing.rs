@@ -54,19 +54,55 @@ pub(crate) fn parse_c11_integer_literal(text: &str) -> Option<(u64, Option<Integ
     Some((val, suffix, base))
 }
 
+fn strip_float_suffix(text: &str) -> (&str, Option<FloatSuffix>) {
+    let mut is_float = false;
+    let mut is_long = false;
+    let mut is_imaginary = false;
+
+    let mut len = text.len();
+    while len > 0 {
+        let ch = text.as_bytes()[len - 1];
+        if (ch == b'f' || ch == b'F') && !is_float && !is_long {
+            is_float = true;
+            len -= 1;
+        } else if (ch == b'l' || ch == b'L') && !is_long && !is_float {
+            is_long = true;
+            len -= 1;
+        } else if (ch == b'i' || ch == b'I' || ch == b'j' || ch == b'J') && !is_imaginary {
+            is_imaginary = true;
+            len -= 1;
+        } else {
+            break;
+        }
+    }
+
+    let stripped = &text[..len];
+    let suffix = if is_imaginary {
+        if is_float {
+            Some(FloatSuffix::IF)
+        } else if is_long {
+            Some(FloatSuffix::IL)
+        } else {
+            Some(FloatSuffix::I)
+        }
+    } else if is_float {
+        Some(FloatSuffix::F)
+    } else if is_long {
+        Some(FloatSuffix::L)
+    } else {
+        None
+    };
+
+    (stripped, suffix)
+}
+
 /// Parse C11 floating-point literal syntax
 pub(crate) fn parse_c11_float_literal(text: &str) -> Option<(f64, Option<FloatSuffix>)> {
     if text.is_empty() {
         return None;
     }
 
-    let (text_without_suffix, suffix) = if let Some(stripped) = text.strip_suffix(|c| c == 'f' || c == 'F') {
-        (stripped, Some(FloatSuffix::F))
-    } else if let Some(stripped) = text.strip_suffix(|c| c == 'l' || c == 'L') {
-        (stripped, Some(FloatSuffix::L))
-    } else {
-        (text, None)
-    };
+    let (text_without_suffix, suffix) = strip_float_suffix(text);
 
     // Handle hexadecimal floating-point literals (C99/C11)
     if text.starts_with("0x") || text.starts_with("0X") {

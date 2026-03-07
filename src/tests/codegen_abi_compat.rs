@@ -8,10 +8,10 @@ fn test_hfa_packing() {
     "#;
     let clif_dump = setup_cranelift(source);
 
-    // Should be packed into I64 (1 register for 8 bytes)
+    // Should be packed into F64 (1 register for 8 bytes, SSE)
     assert!(
-        clif_dump.contains("function u0:0(i64)"),
-        "Expected HFA to be packed into i64. Dump:\n{}",
+        clif_dump.contains("function u0:0(f64)"),
+        "Expected HFA to be packed into f64. Dump:\n{}",
         clif_dump
     );
 

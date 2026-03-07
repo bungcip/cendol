@@ -557,8 +557,8 @@ impl<'src> Preprocessor<'src> {
         built_in_headers.insert("stddef.h", include_str!("../../custom-include/stddef.h"));
         built_in_headers.insert("stdint.h", include_str!("../../custom-include/stdint.h"));
         built_in_headers.insert("stdarg.h", include_str!("../../custom-include/stdarg.h"));
-        built_in_headers.insert("stdatomic.h", include_str!("../../custom-include/stdatomic.h"));
         built_in_headers.insert("stdbool.h", include_str!("../../custom-include/stdbool.h"));
+        built_in_headers.insert("stdatomic.h", include_str!("../../custom-include/stdatomic.h"));
         built_in_headers.insert("limits.h", include_str!("../../custom-include/limits.h"));
         built_in_headers.insert("float.h", include_str!("../../custom-include/float.h"));
 
@@ -1005,7 +1005,10 @@ impl<'src> Preprocessor<'src> {
         while let Some(token) = self.lex_token() {
             match token.kind {
                 // Handle directive
-                PPTokenKind::Hash if !token.flags.contains(PPTokenFlags::MACRO_EXPANDED) => {
+                PPTokenKind::Hash
+                    if !token.flags.contains(PPTokenFlags::MACRO_EXPANDED)
+                        && token.flags.contains(PPTokenFlags::STARTS_PP_LINE) =>
+                {
                     self.handle_directive()?;
                 }
                 // Skip tokens when in conditional compilation skip mode

@@ -51,66 +51,76 @@ fn test_switch_unreachable_cases() {
 
     block0:
         v0 = iconst.i32 0
-        v42 = stack_addr.i64 ss0
-        store notrap v0, v42  ; v0 = 0
-        v41 = stack_addr.i64 ss0
-        v1 = load.i32 notrap v41
+        v52 = stack_addr.i64 ss0
+        store notrap v0, v52  ; v0 = 0
+        v51 = stack_addr.i64 ss0
+        v1 = load.i32 notrap v51
         v2 = iconst.i32 1
         v3 = icmp eq v1, v2  ; v2 = 1
         v4 = iconst.i8 1
         v5 = iconst.i8 0
         v6 = select v3, v4, v5  ; v4 = 1, v5 = 0
-        v40 = stack_addr.i64 ss1
-        store notrap v6, v40
-        v39 = stack_addr.i64 ss1
-        v7 = load.i8 notrap v39
-        v8 = uextend.i32 v7
-        brif v8, block2, block5
+        v7 = iconst.i8 0
+        v8 = icmp ne v6, v7  ; v7 = 0
+        v9 = iconst.i8 1
+        v10 = iconst.i8 0
+        v11 = select v8, v9, v10  ; v9 = 1, v10 = 0
+        v50 = stack_addr.i64 ss1
+        store notrap v11, v50
+        v49 = stack_addr.i64 ss1
+        v12 = load.i8 notrap v49
+        v13 = uextend.i32 v12
+        brif v13, block2, block5
 
     block5:
-        v38 = stack_addr.i64 ss0
-        v9 = load.i32 notrap v38
-        v10 = iconst.i32 2
-        v11 = icmp eq v9, v10  ; v10 = 2
-        v12 = iconst.i8 1
-        v13 = iconst.i8 0
-        v14 = select v11, v12, v13  ; v12 = 1, v13 = 0
-        v37 = stack_addr.i64 ss2
-        store notrap v14, v37
-        v36 = stack_addr.i64 ss2
-        v15 = load.i8 notrap v36
-        v16 = uextend.i32 v15
-        brif v16, block3, block6
+        v48 = stack_addr.i64 ss0
+        v14 = load.i32 notrap v48
+        v15 = iconst.i32 2
+        v16 = icmp eq v14, v15  ; v15 = 2
+        v17 = iconst.i8 1
+        v18 = iconst.i8 0
+        v19 = select v16, v17, v18  ; v17 = 1, v18 = 0
+        v20 = iconst.i8 0
+        v21 = icmp ne v19, v20  ; v20 = 0
+        v22 = iconst.i8 1
+        v23 = iconst.i8 0
+        v24 = select v21, v22, v23  ; v22 = 1, v23 = 0
+        v47 = stack_addr.i64 ss2
+        store notrap v24, v47
+        v46 = stack_addr.i64 ss2
+        v25 = load.i8 notrap v46
+        v26 = uextend.i32 v25
+        brif v26, block3, block6
 
     block6:
         jump block4
 
     block4:
-        v17 = symbol_value.i64 gv0
-        v18 = func_addr.i64 fn0
-        v19 = iconst.i64 0
-        v20, v21 = call fn1(v19, v18)  ; v19 = 0
-        v22 = call_indirect sig1, v21(v17)
+        v27 = symbol_value.i64 gv0
+        v28 = func_addr.i64 fn0
+        v29 = iconst.i64 0
+        v30, v31 = call fn1(v29, v28)  ; v29 = 0
+        v32 = call_indirect sig1, v31(v27)
         jump block1
 
     block1:
-        v23 = iconst.i32 0
-        return v23  ; v23 = 0
+        v33 = iconst.i32 0
+        return v33  ; v33 = 0
 
     block3:
-        v24 = symbol_value.i64 gv1
-        v25 = func_addr.i64 fn2
-        v26 = iconst.i64 0
-        v27, v28 = call fn3(v26, v25)  ; v26 = 0
-        v29 = call_indirect sig4, v28(v24)
+        v34 = symbol_value.i64 gv1
+        v35 = func_addr.i64 fn2
+        v36 = iconst.i64 0
+        v37, v38 = call fn3(v36, v35)  ; v36 = 0
+        v39 = call_indirect sig4, v38(v34)
         jump block1
 
     block2:
-        v30 = symbol_value.i64 gv2
-        v31 = func_addr.i64 fn4
-        v32 = iconst.i64 0
-        v33, v34 = call fn5(v32, v31)  ; v32 = 0
-        v35 = call_indirect sig7, v34(v30)
+        v40 = symbol_value.i64 gv2
+        v41 = func_addr.i64 fn4
+        v42 = iconst.i64 0
+        v43, v44 = call fn5(v42, v41)  ; v42 = 0
+        v45 = call_indirect sig7, v44(v40)
         jump block1
     }
     ");

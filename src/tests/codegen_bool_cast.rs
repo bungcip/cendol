@@ -89,3 +89,42 @@ fn test_bool_cast_global_variable_pointer() {
         "Global _Bool cast of a global variable pointer should result in 1"
     );
 }
+
+/// Test post-increment of normal _Bool variable
+#[test]
+fn test_bool_increment_normal() {
+    let source = r#"
+        int main(void) {
+            _Bool b = 1;
+            b++;
+            b++;
+            return b;
+        }
+    "#;
+    let exit_code = run_c_code_exit_status(source);
+    assert_eq!(
+        exit_code, 1,
+        "Post-increment on a _Bool variable starting at 1 should remain 1"
+    );
+}
+
+/// Test post-increment of _Bool inside a struct bitfield
+#[test]
+fn test_bool_increment_bitfield() {
+    let source = r#"
+        struct S {
+            _Bool b: 1;
+        } s;
+        int main(void) {
+            s.b = 1;
+            s.b++;
+            s.b++;
+            return s.b;
+        }
+    "#;
+    let exit_code = run_c_code_exit_status(source);
+    assert_eq!(
+        exit_code, 1,
+        "Post-increment on a _Bool bitfield starting at 1 should remain 1"
+    );
+}

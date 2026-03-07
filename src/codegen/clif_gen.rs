@@ -1259,13 +1259,31 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                 lower_type(mir_type).unwrap_or(types::I32)
             };
 
-            let converted = emit_type_conversion(
-                inner_val,
-                inner_type,
-                target_type,
-                is_operand_signed(inner_operand, ctx.mir, ctx.pointee_to_pointer),
-                ctx.builder,
-            );
+            let converted = if matches!(mir_type, MirType::Bool) && (inner_type.is_int() || inner_type.is_float()) {
+                let zero = if inner_type.is_int() {
+                    ctx.builder.ins().iconst(inner_type, 0i64)
+                } else if inner_type == types::F32 {
+                    ctx.builder.ins().f32const(0.0)
+                } else if inner_type == types::F64 {
+                    ctx.builder.ins().f64const(0.0)
+                } else {
+                    panic!("Unsupported float type");
+                };
+                let is_not_zero = if inner_type.is_int() {
+                    ctx.builder.ins().icmp(IntCC::NotEqual, inner_val, zero)
+                } else {
+                    ctx.builder.ins().fcmp(FloatCC::NotEqual, inner_val, zero)
+                };
+                emit_bool_to_int(is_not_zero, target_type, ctx.builder)
+            } else {
+                emit_type_conversion(
+                    inner_val,
+                    inner_type,
+                    target_type,
+                    is_operand_signed(inner_operand, ctx.mir, ctx.pointee_to_pointer),
+                    ctx.builder,
+                )
+            };
             emit_type_conversion(converted, target_type, expected_type, mir_type.is_signed(), ctx.builder)
         }
         Operand::AddressOf(place) => {
@@ -1526,13 +1544,33 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let target_mir_type = ctx.mir.get_type(*type_id);
                     let target_clif_type = lower_type(target_mir_type).expect("Cannot cast to void type");
 
-                    let converted = emit_type_conversion(
-                        inner_val,
-                        inner_clif_type,
-                        target_clif_type,
-                        is_operand_signed(operand, ctx.mir, ctx.pointee_to_pointer),
-                        ctx.builder,
-                    );
+                    let converted = if matches!(target_mir_type, MirType::Bool)
+                        && (inner_clif_type.is_int() || inner_clif_type.is_float())
+                    {
+                        let zero = if inner_clif_type.is_int() {
+                            ctx.builder.ins().iconst(inner_clif_type, 0i64)
+                        } else if inner_clif_type == types::F32 {
+                            ctx.builder.ins().f32const(0.0)
+                        } else if inner_clif_type == types::F64 {
+                            ctx.builder.ins().f64const(0.0)
+                        } else {
+                            panic!("Unsupported float type");
+                        };
+                        let is_not_zero = if inner_clif_type.is_int() {
+                            ctx.builder.ins().icmp(IntCC::NotEqual, inner_val, zero)
+                        } else {
+                            ctx.builder.ins().fcmp(FloatCC::NotEqual, inner_val, zero)
+                        };
+                        emit_bool_to_int(is_not_zero, target_clif_type, ctx.builder)
+                    } else {
+                        emit_type_conversion(
+                            inner_val,
+                            inner_clif_type,
+                            target_clif_type,
+                            is_operand_signed(operand, ctx.mir, ctx.pointee_to_pointer),
+                            ctx.builder,
+                        )
+                    };
 
                     emit_type_conversion(
                         converted,
@@ -1954,13 +1992,20 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             // Now, assign the resolved value to the place
             let value_type = ctx.builder.func.dfg.value_type(rvalue_result);
             // Ensure value matches expected type (truncating if necessary)
-            let value = emit_type_conversion(
+            let mut value = emit_type_conversion(
                 rvalue_result,
                 value_type,
                 expected_type,
                 place_mir_type.is_signed(),
                 ctx.builder,
             );
+
+            // C11 6.3.1.2: Any non-zero scalar assigned to _Bool evaluates to 1
+            if matches!(place_mir_type, MirType::Bool) {
+                let zero = ctx.builder.ins().iconst(expected_type, 0i64);
+                let is_not_zero = ctx.builder.ins().icmp(IntCC::NotEqual, value, zero);
+                value = emit_bool_to_int(is_not_zero, expected_type, ctx.builder);
+            }
             {
                 let mir_type = ctx.mir.get_type(place_type_id);
 
@@ -1996,7 +2041,14 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             let place_type = ctx.mir.get_type(place_type_id);
             let cranelift_type = lower_type(place_type).expect("Cannot store to a void type");
 
-            let value = emit_operand(operand, ctx, cranelift_type);
+            let mut value = emit_operand(operand, ctx, cranelift_type);
+
+            // C11 6.3.1.2: Any non-zero scalar assigned to _Bool evaluates to 1
+            if matches!(place_type, MirType::Bool) {
+                let zero = ctx.builder.ins().iconst(cranelift_type, 0i64);
+                let is_not_zero = ctx.builder.ins().icmp(IntCC::NotEqual, value, zero);
+                value = emit_bool_to_int(is_not_zero, cranelift_type, ctx.builder);
+            }
 
             // Now, store the value into the place
             match place {

@@ -372,18 +372,47 @@ impl TypeRegistry {
         }
     }
 
-    pub(crate) fn is_char_type(&self, ty: TypeRef) -> bool {
-        self.get(ty).kind.builtin().is_some_and(|b| b.is_char())
+    pub(crate) fn is_char_type(&self, mut ty: TypeRef) -> bool {
+        loop {
+            // Pointers and arrays are never char types (only 'char', 'signed char', 'unsigned char' are).
+            if ty.is_pointer() || ty.is_array() {
+                return false;
+            }
+
+            // Fast path for builtins (handles both registry and simple TypeRefs).
+            // Aliases have builtin() == None, so they will fall through to registry lookup.
+            if let Some(b) = ty.builtin() {
+                return b.is_char();
+            }
+
+            // Must be a registry type; resolve aliases to find the underlying type.
+            match &self.types[ty.index()].kind {
+                TypeKind::Alias(inner) => ty = *inner,
+                TypeKind::Builtin(b) => return b.is_char(),
+                _ => return false,
+            }
+        }
     }
 
     /// Helper to get the element type if the given type is an array.
-    pub(super) fn get_array_element(&self, ty: TypeRef) -> Option<TypeRef> {
-        if ty.is_inline_array() {
-            Some(self.reconstruct_element(ty))
-        } else {
-            match &self.get(ty).kind {
-                TypeKind::Array { element_type, .. } => Some(*element_type),
-                _ => None,
+    pub(super) fn get_array_element(&self, mut ty: TypeRef) -> Option<TypeRef> {
+        loop {
+            if ty.is_inline_array() {
+                return Some(self.reconstruct_element(ty));
+            }
+            // Pointers and builtins (that aren't aliases) are never arrays.
+            if ty.is_pointer() {
+                return None;
+            }
+            if let Some(b) = ty.builtin() {
+                return None;
+            }
+
+            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations in hot loops.
+            match &self.types[ty.index()].kind {
+                TypeKind::Alias(inner) => ty = *inner,
+                TypeKind::Array { element_type, .. } => return Some(*element_type),
+                _ => return None,
             }
         }
     }
@@ -1328,71 +1357,117 @@ impl TypeRegistry {
         }
     }
 
-    pub(crate) fn is_complete(&self, ty: TypeRef) -> bool {
-        let type_info = self.get(ty);
-        match &type_info.kind {
-            TypeKind::Record { is_complete, .. } => *is_complete,
-            TypeKind::Enum { is_complete, .. } => *is_complete,
-            TypeKind::Array { element_type, size } => {
-                if let ArraySizeType::Incomplete = size {
-                    return false;
-                }
-                self.is_complete(*element_type)
+    pub(crate) fn is_complete(&self, mut ty: TypeRef) -> bool {
+        loop {
+            // Pointers (inline or registry) are always complete.
+            if ty.is_pointer() {
+                return true;
             }
-            TypeKind::Builtin(BuiltinType::Void) => false,
-            _ => true, // Scalars are always complete
+
+            if ty.is_inline_array() {
+                // Inline arrays have constant size and complete element types (as they are Simple).
+                return true;
+            }
+
+            // Fast path for non-alias builtins.
+            if let Some(b) = ty.builtin() {
+                return b != BuiltinType::Void;
+            }
+
+            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations in hot loops.
+            match &self.types[ty.index()].kind {
+                TypeKind::Alias(inner) => ty = *inner,
+                TypeKind::Record { is_complete, .. } | TypeKind::Enum { is_complete, .. } => return *is_complete,
+                TypeKind::Array { element_type, size } => {
+                    if matches!(size, ArraySizeType::Incomplete) {
+                        return false;
+                    }
+                    ty = *element_type;
+                }
+                TypeKind::Builtin(BuiltinType::Void) => return false,
+                _ => return true,
+            }
         }
     }
 
-    pub(super) fn is_const_recursive(&self, qt: QualType) -> bool {
-        if qt.is_const() {
-            return true;
-        }
+    pub(super) fn is_const_recursive(&self, mut qt: QualType) -> bool {
+        loop {
+            if qt.is_const() {
+                return true;
+            }
 
-        let ty_ref = qt.ty();
-        match &self.get(ty_ref).kind {
-            TypeKind::Record { members, .. } => {
-                for member in members.iter() {
-                    // Pointers are only const if the pointer itself is const (checked by member.member_type.is_const() in recursive call),
-                    // not if the pointee is const.
-                    if self.is_const_recursive(member.member_type) {
+            let ty = qt.ty();
+            // Pointers only have recursive constness if the pointer itself is const (handled above).
+            if ty.is_pointer() {
+                return false;
+            }
+
+            if ty.is_inline_array() {
+                qt = QualType::unqualified(self.reconstruct_element(ty));
+                continue;
+            }
+
+            // Builtins (that aren't aliases) don't have recursive constness.
+            if ty.builtin().is_some() {
+                return false;
+            }
+
+            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
+            match &self.types[ty.index()].kind {
+                TypeKind::Alias(inner) => {
+                    qt = QualType::new(*inner, qt.qualifiers());
+                }
+                TypeKind::Record { members, .. } => {
+                    return members.iter().any(|m| self.is_const_recursive(m.member_type));
+                }
+                TypeKind::Array { element_type, .. } => {
+                    qt = QualType::unqualified(*element_type);
+                }
+                _ => return false,
+            }
+        }
+    }
+
+    pub(crate) fn is_variably_modified(&self, mut ty: TypeRef) -> bool {
+        loop {
+            if ty.is_inline_pointer() {
+                ty = self.reconstruct_pointee(ty);
+                continue;
+            }
+            if ty.is_inline_array() {
+                // Inline arrays always have constant size.
+                ty = self.reconstruct_element(ty);
+                continue;
+            }
+
+            // Non-alias builtins are never variably modified.
+            if ty.builtin().is_some() {
+                return false;
+            }
+
+            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
+            match &self.types[ty.index()].kind {
+                TypeKind::Alias(inner) => ty = *inner,
+                TypeKind::Array { element_type, size } => {
+                    if matches!(size, ArraySizeType::Variable(_)) {
                         return true;
                     }
+                    ty = *element_type;
                 }
-            }
-            TypeKind::Array { element_type, .. } => {
-                // Check if element type has recursive constness (e.g. array of structs with const members)
-                if self.is_const_recursive(QualType::unqualified(*element_type)) {
-                    return true;
+                TypeKind::Pointer { pointee } => ty = pointee.ty(),
+                TypeKind::Complex { base_type } => ty = *base_type,
+                TypeKind::Function {
+                    return_type,
+                    parameters,
+                    ..
+                } => {
+                    if self.is_variably_modified(*return_type) {
+                        return true;
+                    }
+                    return parameters.iter().any(|p| self.is_variably_modified(p.param_type.ty()));
                 }
+                _ => return false,
             }
-            _ => {}
-        }
-        false
-    }
-
-    pub(crate) fn is_variably_modified(&self, ty: TypeRef) -> bool {
-        let type_info = self.get(ty);
-        match &type_info.kind {
-            TypeKind::Array { element_type, size } => {
-                if matches!(size, ArraySizeType::Variable(_)) {
-                    return true;
-                }
-                self.is_variably_modified(*element_type)
-            }
-            TypeKind::Pointer { pointee } => self.is_variably_modified(pointee.ty()),
-            TypeKind::Function {
-                return_type,
-                parameters,
-                ..
-            } => {
-                if self.is_variably_modified(*return_type) {
-                    return true;
-                }
-                parameters.iter().any(|p| self.is_variably_modified(p.param_type.ty()))
-            }
-            TypeKind::Complex { base_type } => self.is_variably_modified(*base_type),
-            _ => false,
         }
     }
 

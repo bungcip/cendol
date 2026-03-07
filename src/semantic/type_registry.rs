@@ -1366,7 +1366,9 @@ impl TypeRegistry {
                 let composite_size = match (sa, sb) {
                     (ArraySizeType::Incomplete, s) => s,
                     (s, ArraySizeType::Incomplete) => s,
-                    (ArraySizeType::Constant(sa), ArraySizeType::Constant(sb)) if sa == sb => ArraySizeType::Constant(sa),
+                    (ArraySizeType::Constant(sa), ArraySizeType::Constant(sb)) if sa == sb => {
+                        ArraySizeType::Constant(sa)
+                    }
                     (ArraySizeType::Star, s) => s,
                     (s, ArraySizeType::Star) => s,
                     _ => return None,

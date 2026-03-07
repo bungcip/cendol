@@ -53,3 +53,39 @@ fn test_bool_cast_global_init() {
     let exit_code = run_c_code_exit_status(source);
     assert_eq!(exit_code, 1, "Global _Bool cast should also result in 1");
 }
+
+/// Test global variable initialization with _Bool cast from function pointer
+#[test]
+fn test_bool_cast_function_pointer() {
+    let source = r#"
+        void foo(void) {}
+        int i = (_Bool)&foo;
+
+        int main(void) {
+            return i;
+        }
+    "#;
+    let exit_code = run_c_code_exit_status(source);
+    assert_eq!(
+        exit_code, 1,
+        "Global _Bool cast of a function pointer should result in 1"
+    );
+}
+
+/// Test global variable initialization with _Bool cast from global variable address
+#[test]
+fn test_bool_cast_global_variable_pointer() {
+    let source = r#"
+        int x;
+        int i = (_Bool)&x;
+
+        int main(void) {
+            return i;
+        }
+    "#;
+    let exit_code = run_c_code_exit_status(source);
+    assert_eq!(
+        exit_code, 1,
+        "Global _Bool cast of a global variable pointer should result in 1"
+    );
+}

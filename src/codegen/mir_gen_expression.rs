@@ -392,6 +392,11 @@ impl<'a> MirGen<'a> {
                             ConstValueKind::Int(mir_type.truncate_int(val))
                         }
                     }
+                    ConstValueKind::FunctionAddress(_) | ConstValueKind::GlobalAddress(_, _)
+                        if matches!(mir_type, MirType::Bool) =>
+                    {
+                        ConstValueKind::Int(1)
+                    }
                     kind => kind,
                 };
                 return Operand::Constant(self.create_constant(mir_ty, truncated_kind));

@@ -26,7 +26,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         return result;
     }
 
-    let specifiers = parse_declaration_specifiers(trx.parser)?;
+    let mut specifiers = parse_declaration_specifiers(trx.parser)?;
 
     let has_record_enum_type = specifiers.iter().any(|s| {
         matches!(
@@ -118,7 +118,8 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
 
     loop {
         if trx.parser.is_token(TokenKind::Attribute) {
-            let _ = super::declaration_core::parse_attribute(trx.parser);
+            let attrs = super::declaration_core::parse_attribute(trx.parser)?;
+            specifiers.extend(attrs);
         } else if trx.parser.is_token(TokenKind::Asm) {
             let _ = super::declaration_core::parse_asm(trx.parser);
         } else {

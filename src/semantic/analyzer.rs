@@ -257,13 +257,16 @@ impl<'a> SemanticAnalyzer<'a> {
         match self.ast.get_kind(expr) {
             NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => true,
             NodeKind::FunctionCall(call) => {
-                if let Some(callee_type) = self.semantic_info.types[call.callee.index()]
-                    && let TypeKind::Function { is_noreturn, .. } = &self.registry.get(callee_type.ty()).kind
-                {
-                    *is_noreturn
-                } else {
-                    false
+                if let Some(callee_type) = self.semantic_info.types[call.callee.index()] {
+                    let mut ty = callee_type.ty();
+                    while let TypeKind::Pointer { pointee } = &self.registry.get(ty).kind {
+                        ty = pointee.ty();
+                    }
+                    if let TypeKind::Function { is_noreturn, .. } = &self.registry.get(ty).kind {
+                        return *is_noreturn;
+                    }
                 }
+                false
             }
             NodeKind::BuiltinChooseExpr(..) => {
                 if let Some(&selected) = self.semantic_info.choose_expressions.get(&expr.index()) {

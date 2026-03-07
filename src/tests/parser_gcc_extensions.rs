@@ -48,6 +48,7 @@ fn test_multiple_attributes_function_decl() {
       - Declaration:
           specifiers:
             - void
+            - Noreturn
           init_declarators:
             - name: foo
               kind: function(void) -> int

@@ -80,7 +80,8 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             }
 
             TokenKind::Attribute => {
-                let _ = parse_attribute(parser);
+                let attrs = parse_attribute(parser)?;
+                specifiers.extend(attrs);
                 specifiers.push(ParsedDeclSpecifier::Attribute);
             }
 
@@ -237,12 +238,13 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<ParsedDesignator>, Parse
 }
 
 /// Parse GCC __attribute__ syntax: __attribute__ (( attribute-list ))
-/// For now, we parse and skip the attribute construct
-pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
+/// For now, we parse and skip the attribute construct, extracting `noreturn`.
+pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<ParsedDeclSpecifier>, ParseError> {
     parser.expect(TokenKind::Attribute)?;
     parser.expect(TokenKind::LeftParen)?;
     parser.expect(TokenKind::LeftParen)?;
 
+    let mut specs = Vec::new();
     let mut depth = 2;
     while let Some(token) = parser.try_current_token() {
         match token.kind {
@@ -254,11 +256,20 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<(), ParseError> {
                     break;
                 }
             }
+            TokenKind::Identifier(name) => {
+                let name_noret1 = crate::ast::NameId::new("noreturn");
+                let name_noret2 = crate::ast::NameId::new("__noreturn__");
+                if name == name_noret1 || name == name_noret2 {
+                    specs.push(ParsedDeclSpecifier::FunctionSpecifier(
+                        crate::ast::FunctionSpecifier::Noreturn,
+                    ));
+                }
+            }
             _ => {}
         }
         parser.advance();
     }
-    Ok(())
+    Ok(specs)
 }
 
 /// Parse GCC __asm__ syntax: __asm__ ( string-literal )

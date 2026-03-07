@@ -314,6 +314,8 @@ pub enum SemanticErrorKind {
         name: NameId,
         specifier: &'static str,
     },
+    VlaAtFileScope,
+    VlaInitializerNotAllowed,
 }
 
 impl SemanticErrorKind {
@@ -631,6 +633,10 @@ impl SemanticErrorKind {
             SemanticErrorKind::InvalidStorageClassForFunction { name, specifier } => {
                 format!("invalid storage class '{}' for function '{}'", specifier, name)
             }
+            SemanticErrorKind::VlaAtFileScope => {
+                "variable length array declaration not allowed at file scope".to_string()
+            }
+            SemanticErrorKind::VlaInitializerNotAllowed => "variable-length array may not be initialized".to_string(),
         }
     }
 }

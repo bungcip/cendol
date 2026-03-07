@@ -1913,6 +1913,10 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         if let Some(init) = data.init {
+            // C11 6.7.9p3: VLA may not be initialized
+            if self.registry.is_variably_modified(data.ty.ty()) {
+                self.report_error(node, SemanticErrorKind::VlaInitializerNotAllowed);
+            }
             self.visit_initializer(init, data.ty);
         }
         Some(data.ty)

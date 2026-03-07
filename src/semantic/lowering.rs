@@ -2096,6 +2096,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
         }
 
+        // C11 6.7.6.2p2: VLA shall not have static storage duration.
+        // File scope always has static storage duration. Static locals also have static storage duration.
+        if self.registry.is_variably_modified(qt.ty()) {
+            let has_static_duration = is_global || spec_info.storage == Some(StorageClass::Static);
+            if has_static_duration {
+                self.report_error(span, SemanticErrorKind::VlaAtFileScope);
+            }
+        }
+
         qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);
 
         // Define variable in symbol table early so it's visible in its own initializer

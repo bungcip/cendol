@@ -1,6 +1,7 @@
 use crate::{
     ast::{
         AtomicOp, BinaryOp, FunctionSpecifier, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp,
+        literal::Literal,
     },
     semantic::TypeQualifiers,
 };
@@ -70,7 +71,7 @@ impl ParsedNode {
 #[derive(Debug, Clone)]
 pub enum ParsedNodeKind {
     // --- Literals ---
-    Literal(crate::ast::literal::Literal),
+    Literal(Literal),
 
     // --- Expressions ---
     Ident(NameId), // No symbol ref yet

@@ -438,7 +438,7 @@ impl<'a> MirValidator<'a> {
                 })?;
                 Some(global.type_id)
             }
-            Place::StructField(base, idx) => {
+            Place::StructField(base, idx, _) => {
                 let base_ty = self.validate_place(base)?;
                 let Some(ty) = self.mir.types.get(&base_ty) else {
                     self.errors.push(ValidationError::TypeNotFound(base_ty));

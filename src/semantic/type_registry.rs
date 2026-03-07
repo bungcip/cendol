@@ -885,10 +885,26 @@ impl TypeRegistry {
                     alignment: 8,
                     kind: LayoutKind::Record {
                         fields: Arc::from([
-                            FieldLayout { offset: 0 },
-                            FieldLayout { offset: 4 },
-                            FieldLayout { offset: 8 },
-                            FieldLayout { offset: 16 },
+                            FieldLayout {
+                                offset: 0,
+                                bit_width: None,
+                                bit_offset: None,
+                            },
+                            FieldLayout {
+                                offset: 4,
+                                bit_width: None,
+                                bit_offset: None,
+                            },
+                            FieldLayout {
+                                offset: 8,
+                                bit_width: None,
+                                bit_offset: None,
+                            },
+                            FieldLayout {
+                                offset: 16,
+                                bit_width: None,
+                                bit_offset: None,
+                            },
                         ]),
                         is_union: false,
                     },
@@ -996,6 +1012,10 @@ impl TypeRegistry {
         let mut max_align = 1;
         let mut current_size = 0;
         let mut field_layouts = Vec::with_capacity(members.len());
+
+        let mut current_unit_offset: Option<u64> = None;
+        let mut current_unit_bit_offset = 0;
+        let mut current_unit_size = 0;
         // For C11 6.7.2.1p18 flexible array check:
         // "the last element of a structure with more than one named member may have an incomplete array type"
         // But incomplete array types are NOT allowed in unions.
@@ -1059,7 +1079,11 @@ impl TypeRegistry {
 
                     // Let's compute offset.
                     let offset = (current_size + elem_layout.alignment - 1) & !(elem_layout.alignment - 1);
-                    field_layouts.push(FieldLayout { offset });
+                    field_layouts.push(FieldLayout {
+                        offset,
+                        bit_width: None,
+                        bit_offset: None,
+                    });
 
                     // We do NOT update current_size with FAM size (which is effectively 0 or variable).
                     // But we might update current_size to offset?
@@ -1101,32 +1125,73 @@ impl TypeRegistry {
             }
 
             let is_unnamed_bitfield = member.name.is_none() && member.bit_field_size.is_some();
-            let mut layout_size = layout.size;
-
-            if is_unnamed_bitfield {
-                let bits = member.bit_field_size.unwrap() as u64;
-                if bits == 0 {
-                    layout_size = 0;
-                } else {
-                    member_align = 1;
-                    layout_size = bits.div_ceil(8);
-                }
-            } else if let Some(bits) = member.bit_field_size {
-                layout_size = (bits as u64).div_ceil(8);
-            }
 
             if !is_unnamed_bitfield {
                 max_align = max_align.max(member_align);
             }
 
             if is_union {
-                current_size = current_size.max(layout_size);
-                field_layouts.push(FieldLayout { offset: 0 });
+                current_size = current_size.max(layout.size);
+                field_layouts.push(FieldLayout {
+                    offset: 0,
+                    bit_width: member.bit_field_size,
+                    bit_offset: if member.bit_field_size.is_some() { Some(0) } else { None },
+                });
+            } else if let Some(bits) = member.bit_field_size {
+                if bits == 0 {
+                    // Force alignment to next storage unit
+                    current_size = (current_size + member_align - 1) & !(member_align - 1);
+                    current_unit_offset = None;
+                    current_unit_bit_offset = 0;
+                    current_unit_size = 0;
+                    field_layouts.push(FieldLayout {
+                        offset: current_size,
+                        bit_width: Some(0),
+                        bit_offset: Some(0),
+                    });
+                } else {
+                    let mut fits = false;
+                    if current_unit_offset.is_some() {
+                        if current_unit_size == layout.size
+                            && current_unit_bit_offset + (bits as u64) <= layout.size * 8
+                        {
+                            fits = true;
+                        }
+                    }
+
+                    if fits {
+                        field_layouts.push(FieldLayout {
+                            offset: current_unit_offset.unwrap(),
+                            bit_width: Some(bits),
+                            bit_offset: Some(current_unit_bit_offset as u16),
+                        });
+                        current_unit_bit_offset += bits as u64;
+                    } else {
+                        let offset = (current_size + member_align - 1) & !(member_align - 1);
+                        field_layouts.push(FieldLayout {
+                            offset,
+                            bit_width: Some(bits),
+                            bit_offset: Some(0),
+                        });
+                        current_unit_offset = Some(offset);
+                        current_unit_bit_offset = bits as u64;
+                        current_unit_size = layout.size;
+                        current_size = offset + layout.size;
+                    }
+                }
             } else {
-                // Align current_size to member's alignment to find its offset
+                // Not a bitfield, reset bitfield unit
+                current_unit_offset = None;
+                current_unit_bit_offset = 0;
+                current_unit_size = 0;
+
                 let offset = (current_size + member_align - 1) & !(member_align - 1);
-                field_layouts.push(FieldLayout { offset });
-                current_size = offset + layout_size;
+                field_layouts.push(FieldLayout {
+                    offset,
+                    bit_width: None,
+                    bit_offset: None,
+                });
+                current_size = offset + layout.size;
             }
         }
 

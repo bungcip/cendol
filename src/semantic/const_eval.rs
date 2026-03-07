@@ -5,8 +5,10 @@
 //! static assertions and array sizes.
 
 use crate::ast::literal::Literal;
-use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, UnaryOp, literal};
-use crate::semantic::{BuiltinType, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeRegistry};
+use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, UnaryOp};
+use crate::semantic::literal_utils::parse_string_literal;
+use crate::semantic::types::TypeClass;
+use crate::semantic::{BuiltinType, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeRef, TypeRegistry};
 
 /// Context for constant expression evaluation
 pub(crate) struct ConstEvalCtx<'a> {
@@ -65,27 +67,21 @@ impl<'a> ConstEvalCtx<'a> {
             NodeKind::Cast(target_ty, _) => Some(*target_ty),
             NodeKind::Literal(Literal::String(val)) => {
                 // To get the correct size, we must parse the string literal just like codegen/analyzer does.
-                let parsed_str = crate::semantic::literal_utils::parse_string_literal(*val);
+                let parsed_str = parse_string_literal(*val);
                 let len = parsed_str.values.len() + 1; // +1 for null terminator
 
                 // We cannot allocate a new type here since ConstEvalCtx has a read-only registry.
                 // We can just use one of the standard builtin types.
                 let builtin_base = match parsed_str.builtin_type {
-                    crate::semantic::BuiltinType::Char => self.registry.type_char,
-                    crate::semantic::BuiltinType::Int => self.registry.type_int,
-                    crate::semantic::BuiltinType::UShort => self.registry.type_short_unsigned,
-                    crate::semantic::BuiltinType::UInt => self.registry.type_int_unsigned,
+                    BuiltinType::Char => self.registry.type_char,
+                    BuiltinType::Int => self.registry.type_int,
+                    BuiltinType::UShort => self.registry.type_short_unsigned,
+                    BuiltinType::UInt => self.registry.type_int_unsigned,
                     _ => self.registry.type_char,
                 };
 
-                Some(crate::semantic::QualType::unqualified(
-                    crate::semantic::TypeRef::new(
-                        builtin_base.base(),
-                        crate::semantic::types::TypeClass::Array,
-                        0,
-                        len as u32,
-                    )
-                    .unwrap(),
+                Some(QualType::unqualified(
+                    TypeRef::new(builtin_base.base(), TypeClass::Array, 0, len as u32).unwrap(),
                 ))
             }
             _ => None,
@@ -97,8 +93,8 @@ impl<'a> ConstEvalCtx<'a> {
 pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<i64> {
     let node_kind = ctx.ast.get_kind(expr_node);
     match node_kind {
-        NodeKind::Literal(literal::Literal::Int { val, .. }) => Some(*val),
-        NodeKind::Literal(literal::Literal::Char(val)) => Some(*val as i64),
+        NodeKind::Literal(Literal::Int { val, .. }) => Some(*val),
+        NodeKind::Literal(Literal::Char(val)) => Some(*val as i64),
         NodeKind::Ident(_, sym_ref) => {
             let symbol = ctx.symbol_table.get_symbol(*sym_ref);
             if let SymbolKind::EnumConstant { value } = &symbol.kind {
@@ -415,9 +411,9 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
 pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<f64> {
     let node_kind = ctx.ast.get_kind(expr_node);
     match node_kind {
-        NodeKind::Literal(literal::Literal::Float { val, .. }) => Some(*val),
-        NodeKind::Literal(literal::Literal::Int { val, .. }) => Some(*val as f64),
-        NodeKind::Literal(literal::Literal::Char(val)) => Some(*val as f64),
+        NodeKind::Literal(Literal::Float { val, .. }) => Some(*val),
+        NodeKind::Literal(Literal::Int { val, .. }) => Some(*val as f64),
+        NodeKind::Literal(Literal::Char(val)) => Some(*val as f64),
         NodeKind::BinaryOp(op, left, right) => {
             let left_val = eval_const_expr_float(ctx, *left)?;
             let right_val = eval_const_expr_float(ctx, *right)?;
@@ -473,12 +469,12 @@ fn eval_offsetof(ctx: &ConstEvalCtx, qt: QualType, expr: NodeRef) -> Option<i64>
                 }
 
                 let mut flat_members = Vec::new();
-                let mut flat_offsets = Vec::new();
+                let mut flat_fields = Vec::new();
                 let ty_info = ctx.registry.get(record_ty);
-                ty_info.flatten_members_with_layouts(ctx.registry, &mut flat_members, &mut flat_offsets, 0);
+                ty_info.flatten_members_with_layouts(ctx.registry, &mut flat_members, &mut flat_fields, 0);
 
                 if let Some(idx) = flat_members.iter().position(|m| m.name == Some(member_name)) {
-                    *offset += flat_offsets[idx] as i64;
+                    *offset += flat_fields[idx].offset as i64;
                     *current_qt = flat_members[idx].member_type;
                     true
                 } else {

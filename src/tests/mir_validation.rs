@@ -2,8 +2,8 @@ use crate::ast::NameId;
 use crate::mir::validation::{MirValidator, ValidationError};
 use crate::mir::{
     BinaryIntOp, CallTarget, ConstValue, ConstValueId, ConstValueKind, GlobalId, Local, LocalId, MirBlock, MirBlockId,
-    MirBuilder, MirFunction, MirFunctionId, MirModuleId, MirProgram, MirStmt, MirStmtId, MirType, Operand, Place,
-    Rvalue, Terminator, TypeId,
+    MirBuilder, MirFieldLayout, MirFunction, MirFunctionId, MirModuleId, MirProgram, MirStmt, MirStmtId, MirType,
+    Operand, Place, Rvalue, Terminator, TypeId,
 };
 
 fn create_valid_mir() -> MirProgram {
@@ -405,7 +405,7 @@ fn test_place_field_access_non_record() {
     let stmt_id = MirStmtId::new(100).unwrap();
     // Assign(Local(..), Use(Copy(StructField(Local(100), 0))))
     // But struct field on i32 is invalid
-    let place = Place::StructField(Box::new(Place::Local(local_id)), 0);
+    let place = Place::StructField(Box::new(Place::Local(local_id)), 0, None);
     // To trigger validate_place, we can use it in operand Copy
     let rvalue = Rvalue::Use(Operand::Copy(Box::new(place)));
 
@@ -677,7 +677,12 @@ fn test_place_field_out_of_bounds() {
         layout: MirRecordLayout {
             size: 4,
             alignment: 4,
-            field_offsets: vec![0],
+            fields: vec![MirFieldLayout {
+                offset: 0,
+                bit_width: None,
+                bit_offset: None,
+                is_signed: true,
+            }],
         },
     };
     let struct_ty_id = builder.add_type(struct_ty);
@@ -697,7 +702,7 @@ fn test_place_field_out_of_bounds() {
     let local_id = builder.create_local(None, struct_ty_id, false);
 
     // Access field 1 (out of bounds, size is 1)
-    let place = Place::StructField(Box::new(Place::Local(local_id)), 1);
+    let place = Place::StructField(Box::new(Place::Local(local_id)), 1, None);
     let op = Operand::Copy(Box::new(place));
     // Assign to i32 local
     let dest_local = builder.create_local(None, i32_ty, false);
@@ -732,7 +737,12 @@ fn test_rvalue_cast_aggregate_invalid() {
         layout: MirRecordLayout {
             size: 4,
             alignment: 4,
-            field_offsets: vec![0],
+            fields: vec![MirFieldLayout {
+                offset: 0,
+                bit_width: None,
+                bit_offset: None,
+                is_signed: true,
+            }],
         },
     };
     let struct_ty_id = builder.add_type(struct_ty);

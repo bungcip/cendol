@@ -1,5 +1,9 @@
 use crate::{
-    ast::{nodes::*, *},
+    ast::{
+        literal::{FloatSuffix, Literal},
+        nodes::*,
+        *,
+    },
     diagnostic::DiagnosticEngine,
     semantic::{
         ArraySizeType, BuiltinType, QualType, SymbolKind, SymbolRef, SymbolTable, TypeKind, TypeQualifiers, TypeRef,
@@ -7,6 +11,7 @@ use crate::{
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticError, SemanticErrorKind},
+        literal_utils::parse_string_literal,
     },
 };
 
@@ -361,7 +366,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 // Sub-expressions are always visited before their parents in visit_node.
                 *is_arrow || self.semantic_info.value_categories[obj.index()] == ValueCategory::LValue
             }
-            NodeKind::Literal(literal::Literal::String(_)) => true,
+            NodeKind::Literal(Literal::String(_)) => true,
             NodeKind::CompoundLiteral(..) => true,
             NodeKind::GenericSelection(_) => {
                 // Bolt ⚡: Use cached value category for the selected expression.
@@ -426,7 +431,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn is_null_pointer_constant(&self, node: NodeRef) -> bool {
         let node_kind = self.ast.get_kind(node);
         match node_kind {
-            NodeKind::Literal(literal::Literal::Int { val: 0, .. }) => true,
+            NodeKind::Literal(Literal::Int { val: 0, .. }) => true,
             NodeKind::Cast(qt, inner) if qt.ty() == self.registry.type_void_ptr => {
                 self.is_null_pointer_constant(*inner)
             }
@@ -1103,9 +1108,9 @@ impl<'a> SemanticAnalyzer<'a> {
         let is_literal = |kind: &NodeKind| {
             matches!(
                 kind,
-                NodeKind::Literal(literal::Literal::Int { .. })
-                    | NodeKind::Literal(literal::Literal::Char(_))
-                    | NodeKind::Literal(literal::Literal::Float { .. })
+                NodeKind::Literal(Literal::Int { .. })
+                    | NodeKind::Literal(Literal::Char(_))
+                    | NodeKind::Literal(Literal::Float { .. })
             )
         };
 
@@ -1308,9 +1313,9 @@ impl<'a> SemanticAnalyzer<'a> {
         // 4. Casts (Integer or Pointer)
         let is_literal = matches!(
             self.ast.get_kind(rhs),
-            NodeKind::Literal(literal::Literal::Int { .. })
-                | NodeKind::Literal(literal::Literal::Char(_))
-                | NodeKind::Literal(literal::Literal::Float { .. })
+            NodeKind::Literal(Literal::Int { .. })
+                | NodeKind::Literal(Literal::Char(_))
+                | NodeKind::Literal(Literal::Float { .. })
         );
 
         let is_arithmetic_cast = lhs_ty.is_arithmetic() && current_rhs_ty.is_arithmetic();
@@ -1402,7 +1407,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let list = *list;
                 self.visit_initializer_list(&list, target_ty);
             }
-            NodeKind::Literal(literal::Literal::String(_)) if target_ty.is_array() => {
+            NodeKind::Literal(Literal::String(_)) if target_ty.is_array() => {
                 let Some(init_ty) = self.visit_node(init) else {
                     return;
                 };
@@ -1576,7 +1581,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     let (expr, _d_start, d_len) = self.unwrap_initializer_item(first);
                     if d_len == 0 {
                         let kind = self.ast.get_kind(expr);
-                        if matches!(kind, NodeKind::Literal(crate::ast::literal::Literal::String(_))) {
+                        if matches!(kind, NodeKind::Literal(Literal::String(_))) {
                             self.visit_node(expr);
                             return;
                         }
@@ -1687,7 +1692,7 @@ impl<'a> SemanticAnalyzer<'a> {
             && (element_ty.is_char() || element_ty.is_wchar_t())
         {
             let kind = self.ast.get_kind(expr);
-            if matches!(kind, NodeKind::Literal(crate::ast::literal::Literal::String(_))) {
+            if matches!(kind, NodeKind::Literal(Literal::String(_))) {
                 self.visit_node(expr);
                 iter.next();
                 return;
@@ -1887,7 +1892,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let _ = self.registry.ensure_layout(record_ty);
 
         // Recursive helper to find member (handling anonymous structs/unions)
-        fn find_member(registry: &TypeRegistry, record_ty: crate::semantic::TypeRef, name: NameId) -> Option<QualType> {
+        fn find_member(registry: &TypeRegistry, record_ty: TypeRef, name: NameId) -> Option<QualType> {
             if !record_ty.is_record() {
                 return None;
             }
@@ -2876,9 +2881,9 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_literal(&mut self, literal: &literal::Literal) -> Option<QualType> {
+    fn visit_literal(&mut self, literal: &Literal) -> Option<QualType> {
         match literal {
-            literal::Literal::Int { val, suffix, base } => {
+            Literal::Int { val, suffix, base } => {
                 let val_u64 = *val as u64;
                 let is_decimal = *base == 10;
 
@@ -2893,19 +2898,19 @@ impl<'a> SemanticAnalyzer<'a> {
                 // but usually it's the widest supported type)
                 Some(QualType::unqualified(self.registry.type_long_long_unsigned))
             }
-            literal::Literal::Float { suffix, .. } => {
+            Literal::Float { suffix, .. } => {
                 let ty = match suffix {
-                    Some(literal::FloatSuffix::F) => self.registry.type_float,
-                    Some(literal::FloatSuffix::L) => self.registry.type_long_double,
-                    Some(literal::FloatSuffix::I) => {
+                    Some(FloatSuffix::F) => self.registry.type_float,
+                    Some(FloatSuffix::L) => self.registry.type_long_double,
+                    Some(FloatSuffix::I) => {
                         let base = self.registry.type_double;
                         self.registry.complex_type(base)
                     }
-                    Some(literal::FloatSuffix::IF) => {
+                    Some(FloatSuffix::IF) => {
                         let base = self.registry.type_float;
                         self.registry.complex_type(base)
                     }
-                    Some(literal::FloatSuffix::IL) => {
+                    Some(FloatSuffix::IL) => {
                         let base = self.registry.type_long_double;
                         self.registry.complex_type(base)
                     }
@@ -2913,9 +2918,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 };
                 Some(QualType::unqualified(ty))
             }
-            literal::Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
-            literal::Literal::String(name) => {
-                let parsed = crate::semantic::literal_utils::parse_string_literal(*name);
+            Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
+            Literal::String(name) => {
+                let parsed = parse_string_literal(*name);
                 let element_type = self.registry.get_builtin_type(parsed.builtin_type);
 
                 let array_type = self
@@ -3006,7 +3011,7 @@ impl<'a> SemanticAnalyzer<'a> {
         match eval_const_expr(&self.const_ctx(), cond) {
             Some(0) => {
                 let message = match self.ast.get_kind(msg) {
-                    NodeKind::Literal(literal::Literal::String(s)) => s.as_str().to_string(),
+                    NodeKind::Literal(Literal::String(s)) => s.as_str().to_string(),
                     _ => String::new(),
                 };
 
@@ -3294,12 +3299,12 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         let mut flat_members = Vec::new();
-        let mut flat_offsets = Vec::new();
+        let mut flat_fields = Vec::new();
         let ty_obj = self.registry.get(record_ty);
-        ty_obj.flatten_members_with_layouts(self.registry, &mut flat_members, &mut flat_offsets, 0);
+        ty_obj.flatten_members_with_layouts(self.registry, &mut flat_members, &mut flat_fields, 0);
 
         if let Some(idx) = flat_members.iter().position(|m| m.name == Some(member_name)) {
-            *offset += flat_offsets[idx] as i64;
+            *offset += flat_fields[idx].offset as i64;
             *current_ty = flat_members[idx].member_type;
             true
         } else {

@@ -42,6 +42,8 @@ pub enum LayoutKind {
 #[derive(Debug, Clone)]
 pub struct FieldLayout {
     pub offset: u64,
+    pub bit_width: Option<u16>,
+    pub bit_offset: Option<u16>,
 }
 
 impl Type {
@@ -85,7 +87,7 @@ impl Type {
         &self,
         registry: &super::TypeRegistry,
         flat_members: &mut Vec<StructMember>,
-        flat_offsets: &mut Vec<u64>,
+        flat_fields: &mut Vec<FieldLayout>,
         base_offset: u64,
     ) {
         if let TypeKind::Record { members, .. } = &self.kind
@@ -95,13 +97,14 @@ impl Type {
             }) = &self.layout
         {
             for (i, member) in members.iter().enumerate() {
-                let offset = base_offset + fields[i].offset;
+                let mut field_layout = fields[i].clone();
+                field_layout.offset += base_offset;
                 if member.name.is_none() {
                     let inner_type = registry.get(member.member_type.ty());
-                    inner_type.flatten_members_with_layouts(registry, flat_members, flat_offsets, offset);
+                    inner_type.flatten_members_with_layouts(registry, flat_members, flat_fields, field_layout.offset);
                 } else {
                     flat_members.push(*member);
-                    flat_offsets.push(offset);
+                    flat_fields.push(field_layout);
                 }
             }
         }
@@ -127,7 +130,7 @@ impl Type {
         matches!(self.kind, TypeKind::Pointer { .. })
     }
 
-    pub(crate) fn is_signed(&self) -> bool {
+    pub fn is_signed(&self) -> bool {
         match &self.kind {
             TypeKind::Builtin(b) => b.is_signed(),
             TypeKind::Enum { .. } => true,
@@ -279,7 +282,7 @@ impl BuiltinType {
         matches!(self, Self::Float | Self::Double | Self::LongDouble)
     }
 
-    pub(crate) fn is_signed(self) -> bool {
+    pub fn is_signed(self) -> bool {
         match self {
             Self::Bool => false,
             Self::Char => true, // Assuming char is signed

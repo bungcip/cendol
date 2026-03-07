@@ -4,8 +4,8 @@ use crate::ast::{BinaryOp, NodeKind, NodeRef, UnaryOp};
 use crate::codegen::mir_gen::MirGen;
 use crate::codegen::mir_gen_ops;
 use crate::mir::{
-    AtomicMemOrder, BinaryIntOp, CallTarget, ConstValue, ConstValueKind, MirStmt, MirType, Operand, Place, Rvalue,
-    Terminator, TypeId,
+    AtomicMemOrder, BinaryIntOp, BitFieldInfo, CallTarget, ConstValue, ConstValueKind, MirStmt, MirType, Operand,
+    Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::const_eval::{eval_const_expr, eval_const_expr_float};
 use crate::semantic::{ArraySizeType, QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
@@ -1114,7 +1114,21 @@ impl<'a> MirGen<'a> {
             }
 
             for field_idx in path {
-                current_place = Place::StructField(Box::new(current_place), field_idx);
+                let struct_ty = self.get_place_type(&current_place);
+                let mir_type = self.mir_builder.get_type(struct_ty);
+                let bit_info = if let MirType::Record { layout, .. } = mir_type {
+                    let field = &layout.fields[field_idx];
+                    field.bit_width.and_then(|w| {
+                        field.bit_offset.map(|o| BitFieldInfo {
+                            width: w,
+                            offset: o,
+                            is_signed: field.is_signed,
+                        })
+                    })
+                } else {
+                    None
+                };
+                current_place = Place::StructField(Box::new(current_place), field_idx, bit_info);
             }
 
             Operand::Copy(Box::new(current_place))

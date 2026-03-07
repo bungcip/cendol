@@ -568,8 +568,11 @@ impl<'a> MirDumper<'a> {
             Place::Local(local_id) => self.local_to_string(*local_id),
             Place::Deref(operand) => format!("deref({})", self.operand_to_string(operand)),
             Place::Global(global_id) => self.global_to_string(*global_id),
-            Place::StructField(base_place, field_idx) => {
-                format!("{}.field_{}", self.place_to_string(base_place), field_idx)
+            Place::StructField(base_place, field_idx, bit_info) => {
+                let bit_str = bit_info
+                    .map(|b| format!(" (bit:{}:{})", b.offset, b.width))
+                    .unwrap_or_default();
+                format!("{}.field_{}{}", self.place_to_string(base_place), field_idx, bit_str)
             }
             Place::ArrayIndex(base_place, index) => {
                 format!(

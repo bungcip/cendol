@@ -5,7 +5,7 @@
 use hashbrown::HashSet;
 use std::fmt;
 
-use crate::ast::literal::{self, Literal};
+use crate::ast::literal::Literal;
 use crate::ast::parsed::{ParsedAst, ParsedNodeKind};
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind};
 use crate::semantic::{SymbolRef, SymbolTable, TypeRef, TypeRegistry};
@@ -415,8 +415,7 @@ impl AstDumper {
                 val.map(|v| v.get().to_string()).unwrap_or("auto".to_string())
             ),
             ParsedNodeKind::StaticAssert(cond, msg) => {
-                let message_str = if let ParsedNodeKind::Literal(literal::Literal::String(s)) = &ast.get_node(*msg).kind
-                {
+                let message_str = if let ParsedNodeKind::Literal(Literal::String(s)) = &ast.get_node(*msg).kind {
                     s.to_string()
                 } else {
                     "<invalid>".to_string()
@@ -706,7 +705,7 @@ impl AstDumper {
                 value.map(|r| r.get().to_string()).unwrap_or("auto".to_string())
             ),
             NodeKind::StaticAssert(cond, msg) => {
-                let message_str = if let NodeKind::Literal(literal::Literal::String(s)) = ast.get_kind(*msg) {
+                let message_str = if let NodeKind::Literal(Literal::String(s)) = ast.get_kind(*msg) {
                     s.to_string()
                 } else {
                     "<invalid>".to_string()

@@ -1,10 +1,11 @@
 use std::iter::Peekable;
 
 use crate::ast;
-use crate::ast::{Designator, NodeKind, NodeRef, literal};
+use crate::ast::literal::Literal;
+use crate::ast::{Designator, NodeKind, NodeRef};
 use crate::codegen::mir_gen::MirGen;
 use crate::mir::{ConstValueKind, MirArrayLayout, MirLinkage, MirType, Operand, Place, Rvalue};
-use crate::semantic::{ArraySizeType, QualType, StructMember, TypeKind};
+use crate::semantic::{ArraySizeType, FieldLayout, QualType, StructMember, TypeKind, TypeRef};
 
 impl<'a> MirGen<'a> {
     fn visit_initializer_list(
@@ -19,7 +20,7 @@ impl<'a> MirGen<'a> {
         self.finalize_struct_initializer(fields, target_ty, destination)
     }
 
-    fn get_flattened_type_info(&self, ty_ref: crate::semantic::TypeRef) -> (Vec<StructMember>, Vec<u64>) {
+    fn get_flattened_type_info(&self, ty_ref: TypeRef) -> (Vec<StructMember>, Vec<FieldLayout>) {
         let mut members = Vec::new();
         let mut offsets = Vec::new();
         let ty = self.registry.get(ty_ref);
@@ -174,7 +175,7 @@ impl<'a> MirGen<'a> {
             return false;
         }
 
-        if let NodeKind::Literal(literal::Literal::String(_)) = init_kind
+        if let NodeKind::Literal(Literal::String(_)) = init_kind
             && let TypeKind::Array { element_type, .. } = kind
             && self.registry.is_char_type(*element_type)
         {
@@ -486,7 +487,7 @@ impl<'a> MirGen<'a> {
                 )
             }
             // ...
-            (NodeKind::Literal(literal::Literal::String(val)), TypeKind::Array { element_type, size }) => {
+            (NodeKind::Literal(Literal::String(val)), TypeKind::Array { element_type, size }) => {
                 let fixed_size = if let ArraySizeType::Constant(s) = size {
                     Some(*s)
                 } else {

@@ -5,6 +5,7 @@
 //! These functions ensure that no semantic types (TypeRef) are created
 //! during parsing, only syntactic types (ParsedType).
 
+use crate::ast::literal::Literal;
 use crate::ast::*;
 use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::semantic::TypeQualifiers;
@@ -272,9 +273,8 @@ fn parse_type_specifier_to_parsed_base(
                                         if let ParsedDeclSpecifier::AlignmentSpecifier(align_spec) = spec {
                                             match align_spec {
                                                 ParsedAlignmentSpecifier::Expr(expr_ref) => {
-                                                    if let ParsedNodeKind::Literal(literal::Literal::Int {
-                                                        val, ..
-                                                    }) = parser.ast.get_node(*expr_ref).kind
+                                                    if let ParsedNodeKind::Literal(Literal::Int { val, .. }) =
+                                                        parser.ast.get_node(*expr_ref).kind
                                                     {
                                                         alignment = Some(val as u32);
                                                     }
@@ -321,7 +321,7 @@ fn parse_type_specifier_to_parsed_base(
                             name: *name,
                             value: value_expr_ref.as_ref().and_then(|expr_ref| {
                                 // Try to evaluate constant expression
-                                if let ParsedNodeKind::Literal(literal::Literal::Int { val, .. }) =
+                                if let ParsedNodeKind::Literal(Literal::Int { val, .. }) =
                                     parser.ast.get_node(*expr_ref).kind
                                 {
                                     Some(val)

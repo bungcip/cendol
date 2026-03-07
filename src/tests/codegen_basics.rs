@@ -4,7 +4,7 @@ use crate::codegen::clif_gen::{EmitContext, emit_const};
 use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::driver::artifact::CompilePhase;
 use crate::mir::{ConstValueKind, Rvalue};
-use crate::mir::{MirModuleId, MirRecordLayout, MirStmt, MirType, Operand, Place, Terminator};
+use crate::mir::{MirFieldLayout, MirModuleId, MirRecordLayout, MirStmt, MirType, Operand, Place, Terminator};
 use crate::tests::codegen_common::setup_cranelift;
 use crate::tests::test_utils::run_pass;
 
@@ -23,7 +23,20 @@ fn test_emit_const_struct_literal() {
         layout: MirRecordLayout {
             size: 8,
             alignment: 4,
-            field_offsets: vec![0, 4],
+            fields: vec![
+                MirFieldLayout {
+                    offset: 0,
+                    bit_width: None,
+                    bit_offset: None,
+                    is_signed: false,
+                },
+                MirFieldLayout {
+                    offset: 4,
+                    bit_width: None,
+                    bit_offset: None,
+                    is_signed: false,
+                },
+            ],
         },
     };
     let struct_type_id = builder.add_type(struct_type);

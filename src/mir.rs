@@ -176,6 +176,14 @@ pub enum Terminator {
     Trap,
 }
 
+/// Bitfield information for struct fields
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct BitFieldInfo {
+    pub width: u16,
+    pub offset: u16,
+    pub is_signed: bool,
+}
+
 /// Place - Represents a storage location (local variable or memory)
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Place {
@@ -183,7 +191,7 @@ pub enum Place {
     Deref(Box<Operand>),
     Global(GlobalId),
     // Aggregate access
-    StructField(Box<Place>, /* struct index */ usize),
+    StructField(Box<Place>, /* struct index */ usize, Option<BitFieldInfo>),
     ArrayIndex(Box<Place>, Box<Operand>),
 }
 
@@ -422,10 +430,18 @@ impl MirType {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MirFieldLayout {
+    pub offset: u64,
+    pub bit_width: Option<u16>,
+    pub bit_offset: Option<u16>,
+    pub is_signed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirRecordLayout {
     pub size: u64,
     pub alignment: u64,
-    pub field_offsets: Vec<u64>,
+    pub fields: Vec<MirFieldLayout>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]

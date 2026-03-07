@@ -291,8 +291,8 @@ fn emit_const_struct(
 
     // Emit each field at its proper offset
     for (field_index, field_const_id) in fields {
-        if *field_index < record_layout.field_offsets.len() {
-            let field_offset = record_layout.field_offsets[*field_index] as usize;
+        if *field_index < record_layout.fields.len() {
+            let field_offset = record_layout.fields[*field_index].offset as usize;
 
             let mut field_bytes = Vec::new();
             emit_const(
@@ -1311,9 +1311,30 @@ fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> 
             let addr = emit_operand(operand, ctx, types::I64);
             ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
         }
-        Place::StructField(base_place, field_index) => {
-            let addr = emit_place_addr(&Place::StructField(base_place.clone(), *field_index), ctx);
-            ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
+        Place::StructField(base_place, field_index, bit_info) => {
+            let addr = emit_place_addr(&Place::StructField(base_place.clone(), *field_index, *bit_info), ctx);
+            let raw_val = ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0);
+
+            if let Some(info) = bit_info {
+                let bits = expected_type.bits() as i64;
+                let left_shift = bits - (info.offset + info.width) as i64;
+                let right_shift = bits - info.width as i64;
+
+                let mut val = raw_val;
+                if left_shift > 0 {
+                    val = ctx.builder.ins().ishl_imm(val, left_shift);
+                }
+                if right_shift > 0 {
+                    if info.is_signed {
+                        val = ctx.builder.ins().sshr_imm(val, right_shift);
+                    } else {
+                        val = ctx.builder.ins().ushr_imm(val, right_shift);
+                    }
+                }
+                val
+            } else {
+                raw_val
+            }
         }
         Place::ArrayIndex(base_place, index_operand) => {
             let addr = emit_place_addr(&Place::ArrayIndex(base_place.clone(), index_operand.clone()), ctx);
@@ -1415,7 +1436,7 @@ fn lower_place_type_id(place: &Place, mir: &MirProgram, pointee_to_pointer: &Has
                 _ => panic!("Cannot determine type for deref operand"),
             }
         }
-        Place::StructField(base_place, field_index) => {
+        Place::StructField(base_place, field_index, _) => {
             let base_type_id = lower_place_type_id(base_place, mir, pointee_to_pointer);
             let base_type = mir.get_type(base_type_id);
             match base_type {
@@ -1465,7 +1486,7 @@ fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Value {
             ctx.builder.ins().global_value(types::I64, local_id)
         }
         Place::Deref(operand) => emit_operand(operand, ctx, types::I64),
-        Place::StructField(base_place, field_index) => {
+        Place::StructField(base_place, field_index, _) => {
             let base_addr = emit_place_addr(base_place, ctx);
 
             let base_place_type_id = lower_place_type_id(base_place, ctx.mir, ctx.pointee_to_pointer);
@@ -1473,13 +1494,13 @@ fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Value {
 
             let (field_offset, is_pointer) = match base_type {
                 MirType::Record { layout, .. } => {
-                    let offset = layout.field_offsets[*field_index];
+                    let offset = layout.fields[*field_index].offset;
                     (offset, false)
                 }
                 MirType::Pointer { pointee } => {
                     let pointee_type = ctx.mir.get_type(*pointee);
                     if let MirType::Record { layout, .. } = pointee_type {
-                        let offset = layout.field_offsets[*field_index];
+                        let offset = layout.fields[*field_index].offset;
                         (offset, true)
                     } else {
                         panic!("Base of StructField is not a struct type");
@@ -1928,7 +1949,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     emit_memset(dest_addr, 0, struct_size, ctx.builder, ctx.module);
 
                     for (field_idx, element_op) in fields.iter() {
-                        let offset = layout.field_offsets[*field_idx] as i64;
+                        let offset = layout.fields[*field_idx].offset as i64;
                         let field_dest_addr = if offset == 0 {
                             dest_addr
                         } else {
@@ -3063,7 +3084,7 @@ impl ClifGen {
                 worklist_functions,
                 worklist_globals,
             ),
-            Place::StructField(inner, _) => self.collect_place_reachability(
+            Place::StructField(inner, _, _) => self.collect_place_reachability(
                 inner,
                 reachable_functions,
                 reachable_globals,

@@ -2,10 +2,10 @@ use crate::ast::nodes;
 use crate::ast::*;
 use crate::mir::MirArrayLayout;
 use crate::mir::MirProgram;
-use crate::mir::MirRecordLayout;
 use crate::mir::{
     self, AtomicMemOrder, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, LocalId, MirBlockId, MirBuilder,
-    MirFunctionId, MirLinkage, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    MirFieldLayout, MirFunctionId, MirLinkage, MirRecordLayout, MirStmt, MirType, Operand, Place, Rvalue, Terminator,
+    TypeId,
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
@@ -1050,7 +1050,7 @@ impl<'a> MirGen<'a> {
             layout: MirRecordLayout {
                 size: 0,
                 alignment: 0,
-                field_offsets: Vec::new(),
+                fields: Vec::new(),
             },
         };
         let placeholder_id = self.mir_builder.add_type(placeholder_type);
@@ -1079,7 +1079,32 @@ impl<'a> MirGen<'a> {
         let record_layout = MirRecordLayout {
             size: 24,
             alignment: 8,
-            field_offsets: vec![0, 4, 8, 16],
+            fields: vec![
+                MirFieldLayout {
+                    offset: 0,
+                    bit_width: None,
+                    bit_offset: None,
+                    is_signed: false,
+                },
+                MirFieldLayout {
+                    offset: 4,
+                    bit_width: None,
+                    bit_offset: None,
+                    is_signed: false,
+                },
+                MirFieldLayout {
+                    offset: 8,
+                    bit_width: None,
+                    bit_offset: None,
+                    is_signed: false,
+                },
+                MirFieldLayout {
+                    offset: 16,
+                    bit_width: None,
+                    bit_offset: None,
+                    is_signed: false,
+                },
+            ],
         };
 
         // Cache the __va_list_tag record type to ensure canonical type usage
@@ -1233,7 +1258,20 @@ impl<'a> MirGen<'a> {
             layout: MirRecordLayout {
                 size: element_size * 2,
                 alignment: element_align,
-                field_offsets: vec![0, element_size],
+                fields: vec![
+                    MirFieldLayout {
+                        offset: 0,
+                        bit_width: None,
+                        bit_offset: None,
+                        is_signed: true,
+                    },
+                    MirFieldLayout {
+                        offset: element_size,
+                        bit_width: None,
+                        bit_offset: None,
+                        is_signed: true,
+                    },
+                ],
             },
         }
     }
@@ -1247,22 +1285,31 @@ impl<'a> MirGen<'a> {
     ) -> MirType {
         let name = tag.unwrap_or_else(|| NameId::new("anonymous"));
 
-        let (size, alignment, field_offsets, field_names, field_types) = if is_complete {
+        let (size, alignment, field_layouts, field_names, field_types) = if is_complete {
             let mut flat_members = Vec::new();
-            let mut flat_offsets = Vec::new();
+            let mut flat_fields = Vec::new();
             let ty = self.registry.get(type_ref).into_owned();
-            ty.flatten_members_with_layouts(self.registry, &mut flat_members, &mut flat_offsets, 0);
+            ty.flatten_members_with_layouts(self.registry, &mut flat_members, &mut flat_fields, 0);
 
             let mut field_names = Vec::new();
             let mut field_types = Vec::new();
+            let mut field_layouts = Vec::new();
 
             for (idx, m) in flat_members.iter().enumerate() {
                 let name = m.name.unwrap_or_else(|| NameId::new(format!("__anon_{}", idx)));
                 field_names.push(name);
                 field_types.push(self.lower_qual_type(m.member_type));
+
+                let fl = &flat_fields[idx];
+                field_layouts.push(MirFieldLayout {
+                    offset: fl.offset,
+                    bit_width: fl.bit_width,
+                    bit_offset: fl.bit_offset,
+                    is_signed: self.registry.get(m.member_type.ty()).is_signed(),
+                });
             }
             let layout = ty.layout.as_ref().unwrap();
-            (layout.size, layout.alignment, flat_offsets, field_names, field_types)
+            (layout.size, layout.alignment, field_layouts, field_names, field_types)
         } else {
             (0, 1, Vec::new(), Vec::new(), Vec::new())
         };
@@ -1275,7 +1322,7 @@ impl<'a> MirGen<'a> {
             layout: MirRecordLayout {
                 size,
                 alignment,
-                field_offsets,
+                fields: field_layouts,
             },
         }
     }
@@ -1439,7 +1486,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn get_place_type(&mut self, place: &Place) -> TypeId {
+    pub(super) fn get_place_type(&mut self, place: &Place) -> TypeId {
         match place {
             Place::Local(local_id) => self.mir_builder.get_locals().get(local_id).unwrap().type_id,
             Place::Global(global_id) => self.get_global_type(*global_id),
@@ -1450,7 +1497,7 @@ impl<'a> MirGen<'a> {
                     _ => panic!("Deref of non-pointer type"),
                 }
             }
-            Place::StructField(base, field_idx) => {
+            Place::StructField(base, field_idx, _) => {
                 let struct_ty = self.get_place_type(base);
                 match self.mir_builder.get_type(struct_ty) {
                     MirType::Record { field_types, .. } => field_types[*field_idx],
@@ -1489,13 +1536,13 @@ impl<'a> MirGen<'a> {
     fn place_to_global_offset(&mut self, place: &Place) -> Option<(GlobalId, i64)> {
         match place {
             Place::Global(id) => Some((*id, 0)),
-            Place::StructField(base, field_index) => {
+            Place::StructField(base, field_index, _) => {
                 let (base_id, base_offset) = self.place_to_global_offset(base)?;
                 let base_ty = self.get_place_type(base);
                 let mir_type = self.mir_builder.get_type(base_ty);
                 match mir_type {
                     MirType::Record { layout, .. } => {
-                        let field_offset = layout.field_offsets[*field_index] as i64;
+                        let field_offset = layout.fields[*field_index].offset as i64;
                         Some((base_id, base_offset + field_offset))
                     }
                     _ => None,
@@ -1651,8 +1698,8 @@ impl<'a> MirGen<'a> {
 
     pub(super) fn get_complex_components(&mut self, operand: Operand, ty: TypeId) -> (Operand, Operand) {
         let place = self.ensure_place(operand, ty);
-        let real = Operand::Copy(Box::new(Place::StructField(Box::new(place.clone()), 0)));
-        let imag = Operand::Copy(Box::new(Place::StructField(Box::new(place), 1)));
+        let real = Operand::Copy(Box::new(Place::StructField(Box::new(place.clone()), 0, None)));
+        let imag = Operand::Copy(Box::new(Place::StructField(Box::new(place), 1, None)));
         (real, imag)
     }
 

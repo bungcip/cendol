@@ -105,7 +105,7 @@ fn test_mir_type_is_aggregate() {
         layout: MirRecordLayout {
             size: 0,
             alignment: 1,
-            field_offsets: vec![],
+            fields: vec![],
         },
     };
     assert!(record_type.is_aggregate());
@@ -191,7 +191,7 @@ fn test_mir_type_width() {
         layout: MirRecordLayout {
             size: 0,
             alignment: 1,
-            field_offsets: vec![],
+            fields: vec![],
         },
     };
     assert_eq!(record_type.width(), 0);

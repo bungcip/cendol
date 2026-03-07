@@ -2847,7 +2847,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 && (et.is_char() || et.is_wchar_t())
             {
                 let kind = self.ast.get_kind(init.initializer);
-                if matches!(kind, NodeKind::Literal(crate::ast::literal::Literal::String(_))) {
+                if matches!(kind, NodeKind::Literal(Literal::String(_))) {
                     iter.next();
                     return;
                 }

@@ -24,6 +24,6 @@ pub use analyzer::{Conversion, SemanticInfo, ValueCategory};
 pub use symbol_table::{DefinitionState, Namespace, ScopeId, SymbolKind, SymbolRef, SymbolTable};
 pub use type_registry::TypeRegistry;
 pub use types::{
-    ArraySizeType, BuiltinType, EnumConstant, FunctionParameter, QualType, StructMember, Type, TypeKind, TypeLayout,
-    TypeQualifiers, TypeRef,
+    ArraySizeType, BuiltinType, EnumConstant, FieldLayout, FunctionParameter, QualType, StructMember, Type, TypeKind,
+    TypeLayout, TypeQualifiers, TypeRef,
 };

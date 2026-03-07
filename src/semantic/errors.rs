@@ -232,6 +232,7 @@ pub enum SemanticErrorKind {
         ty: QualType,
     },
     ThreadLocalNotAllowed,
+    ThreadLocalBlockScopeRequiresStaticOrExtern,
     MultipleDefaultLabels,
     FlexibleArrayNotLast,
     FlexibleArrayInEmptyStruct,
@@ -528,6 +529,9 @@ impl SemanticErrorKind {
                 "condition in '__builtin_choose_expr' is not a constant expression".to_string()
             }
             SemanticErrorKind::ThreadLocalNotAllowed => "_Thread_local is not allowed here".to_string(),
+            SemanticErrorKind::ThreadLocalBlockScopeRequiresStaticOrExtern => {
+                "_Thread_local in block scope must be combined with 'static' or 'extern'".to_string()
+            }
             SemanticErrorKind::MultipleDefaultLabels => "multiple default labels in one switch".to_string(),
             SemanticErrorKind::FlexibleArrayNotLast => {
                 "flexible array member must be the last member of a structure".to_string()

@@ -2080,6 +2080,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     },
                 );
             }
+        } else {
+            // C11 6.7.1p4: In the declaration of an object with block scope, if the
+            // declaration specifiers include _Thread_local, they shall also include
+            // either static or extern.
+            if spec_info.is_thread_local
+                && spec_info.storage != Some(StorageClass::Static)
+                && spec_info.storage != Some(StorageClass::Extern)
+            {
+                self.report_error(span, SemanticErrorKind::ThreadLocalBlockScopeRequiresStaticOrExtern);
+            }
         }
 
         qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);

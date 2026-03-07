@@ -703,13 +703,6 @@ pub enum TypeKind {
 }
 
 impl TypeKind {
-    pub(crate) fn builtin(&self) -> Option<BuiltinType> {
-        match self {
-            TypeKind::Builtin(b) => Some(*b),
-            _ => None,
-        }
-    }
-
     pub(crate) fn to_class(&self) -> TypeClass {
         match self {
             TypeKind::Builtin(_) | TypeKind::Error | TypeKind::TypeofExpr(_) | TypeKind::Alias(_) => TypeClass::Builtin,

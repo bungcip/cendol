@@ -404,7 +404,7 @@ impl TypeRegistry {
             if ty.is_pointer() {
                 return None;
             }
-            if let Some(b) = ty.builtin() {
+            if let Some(_) = ty.builtin() {
                 return None;
             }
 

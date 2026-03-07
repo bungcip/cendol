@@ -2465,7 +2465,13 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.report_error(node, SemanticErrorKind::CompoundLiteralVla { ty: *ty });
                 } else if !self.registry.is_complete(ty.ty()) {
                     // Exception: array of unknown size is allowed.
-                    let is_incomplete_array = matches!(resolved.kind, TypeKind::Array { size: ArraySizeType::Incomplete, .. });
+                    let is_incomplete_array = matches!(
+                        resolved.kind,
+                        TypeKind::Array {
+                            size: ArraySizeType::Incomplete,
+                            ..
+                        }
+                    );
                     if !is_incomplete_array {
                         self.report_error(node, SemanticErrorKind::CompoundLiteralIncomplete { ty: *ty });
                     }

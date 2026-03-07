@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use super::pp_lexer::PPLexer;
 use crate::pp::interpreter::Interpreter;
-use crate::pp::{HeaderSearch, PPToken, PPTokenFlags, PPTokenKind};
+use crate::pp::{HeaderSearch, PPToken, PPTokenFlags, PPTokenKind, PragmaPackKind};
 use crate::source_manager::FileKind;
 use std::path::{Path, PathBuf};
 use target_lexicon::{Architecture, OperatingSystem, Triple};
@@ -453,6 +453,8 @@ pub enum PPErrorKind {
     InvalidUniversalCharacterName,
     #[error("Macro '{name}' redefined with different value")]
     MacroRedefined { name: String },
+    #[error("Expected {0:?}")]
+    ExpectedToken(PPTokenKind),
 }
 
 #[derive(Debug)]
@@ -1828,6 +1830,7 @@ impl<'src> Preprocessor<'src> {
             "message" => self.handle_pragma_message()?,
             "warning" => self.handle_pragma_warning(DiagnosticLevel::Warning)?,
             "error" => self.handle_pragma_error(DiagnosticLevel::Error)?,
+            "pack" => return self.handle_pragma_pack(),
             _ => {
                 return self.emit_error_loc(PPErrorKind::UnknownPragma(pragma_name.to_string()), token.location);
             }
@@ -1938,6 +1941,140 @@ impl<'src> Preprocessor<'src> {
         } else {
             Ok(())
         }
+    }
+
+    fn handle_pragma_pack(&mut self) -> Result<(), PPError> {
+        let mut tokens = Vec::new();
+        while let Some(token) = self.lex_token() {
+            if token.kind == PPTokenKind::Eod {
+                break;
+            }
+            tokens.push(token);
+        }
+
+        if tokens.is_empty() {
+            self.pending_tokens.push(PPToken::new(
+                PPTokenKind::PragmaPack(PragmaPackKind::Set(None)),
+                PPTokenFlags::empty(),
+                self.get_current_location(),
+                0,
+            ));
+            return Ok(());
+        }
+
+        let mut it = tokens.iter().peekable();
+
+        // Optional '('
+        let has_paren = if let Some(t) = it.peek()
+            && t.kind == PPTokenKind::LeftParen
+        {
+            it.next();
+            true
+        } else {
+            false
+        };
+
+        let kind = if has_paren && it.peek().map(|t| t.kind) == Some(PPTokenKind::RightParen) {
+            it.next();
+            PragmaPackKind::Set(None)
+        } else if let Some(t) = it.next() {
+            match t.kind {
+                PPTokenKind::Identifier(sym) => {
+                    let name = sym.as_str();
+                    match name {
+                        "push" => {
+                            if it.peek().map(|t| t.kind) == Some(PPTokenKind::Comma) {
+                                it.next(); // consume ','
+                                let val = self.parse_pack_value_from_iter(&mut it, t.location)?;
+                                PragmaPackKind::PushSet(val)
+                            } else {
+                                PragmaPackKind::Push
+                            }
+                        }
+                        "pop" => PragmaPackKind::Pop,
+                        _ => {
+                            let val = name.parse::<u32>().ok();
+                            if let Some(v) = val {
+                                if [1, 2, 4, 8, 16].contains(&v) {
+                                    PragmaPackKind::Set(Some(v))
+                                } else {
+                                    return self.emit_error_loc(
+                                        PPErrorKind::UnknownPragma(format!("invalid pack value: {}", v)),
+                                        t.location,
+                                    );
+                                }
+                            } else {
+                                return self
+                                    .emit_error_loc(PPErrorKind::UnknownPragma(format!("pack({})", name)), t.location);
+                            }
+                        }
+                    }
+                }
+                PPTokenKind::Number(_) => {
+                    let val = self.parse_pack_value_from_token(t)?;
+                    PragmaPackKind::Set(Some(val))
+                }
+                _ => return self.emit_error_loc(PPErrorKind::UnknownPragma("pack".to_string()), t.location),
+            }
+        } else {
+            PragmaPackKind::Set(None)
+        };
+
+        if has_paren && !matches!(kind, PragmaPackKind::Set(None)) {
+            match it.next() {
+                Some(t) if t.kind == PPTokenKind::RightParen => {}
+                Some(t) => return self.emit_error_loc(PPErrorKind::ExpectedToken(PPTokenKind::RightParen), t.location),
+                None => {
+                    return self.emit_error_loc(
+                        PPErrorKind::ExpectedToken(PPTokenKind::RightParen),
+                        tokens.last().unwrap().location,
+                    );
+                }
+            }
+        }
+
+        self.pending_tokens.push(PPToken::new(
+            PPTokenKind::PragmaPack(kind),
+            PPTokenFlags::empty(),
+            tokens[0].location,
+            0,
+        ));
+
+        Ok(())
+    }
+
+    fn parse_pack_value_from_token(&self, t: &PPToken) -> Result<u32, PPError> {
+        if let PPTokenKind::Number(sym) = t.kind {
+            let s = sym.as_str();
+            let val = s.parse::<u32>().map_err(|_| {
+                self.emit_error_loc::<()>(PPErrorKind::UnknownPragma("pack value".to_string()), t.location)
+                    .unwrap_err()
+            })?;
+            if ![1, 2, 4, 8, 16].contains(&val) {
+                return self.emit_error_loc(
+                    PPErrorKind::UnknownPragma(format!("invalid pack value: {}", val)),
+                    t.location,
+                );
+            }
+            Ok(val)
+        } else {
+            self.emit_error_loc(
+                PPErrorKind::UnknownPragma("expected number for pack value".to_string()),
+                t.location,
+            )
+        }
+    }
+
+    fn parse_pack_value_from_iter(
+        &self,
+        it: &mut std::iter::Peekable<std::slice::Iter<'_, PPToken>>,
+        loc: SourceLoc,
+    ) -> Result<u32, PPError> {
+        let t = it.next().ok_or_else(|| {
+            self.emit_error_loc::<()>(PPErrorKind::ExpectedIdentifier, loc)
+                .unwrap_err()
+        })?;
+        self.parse_pack_value_from_token(t)
     }
 
     fn handle_error(&mut self) -> Result<(), PPError> {

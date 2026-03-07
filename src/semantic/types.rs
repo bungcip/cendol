@@ -689,6 +689,7 @@ pub enum TypeKind {
         members: Arc<[StructMember]>,
         is_complete: bool,
         is_union: bool,
+        packing: Option<u32>,
     },
     Enum {
         tag: Option<NameId>,

@@ -54,6 +54,15 @@ fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRe
     let mut declarations = Vec::new();
 
     while !parser.at_eof() && !parser.is_token(TokenKind::RightBrace) {
+        if let Some(token) = parser.try_current_token()
+            && let TokenKind::PragmaPack(kind) = token.kind
+        {
+            let node = parser.push_node(ParsedNodeKind::PragmaPack(kind), token.span);
+            declarations.push(node);
+            parser.advance();
+            continue;
+        }
+
         let declaration = parse_struct_declaration(parser)?;
         declarations.push(declaration);
     }

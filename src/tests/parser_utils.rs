@@ -1,3 +1,4 @@
+use crate::ast::literal::Literal;
 use crate::ast::parsed::{
     ParsedAst, ParsedDeclSpecifier, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpecifier,
 };
@@ -161,10 +162,10 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
     let node = ast.get_node(node_ref);
     match &node.kind {
         ParsedNodeKind::Literal(literal) => match literal {
-            crate::ast::literal::Literal::Int { val, .. } => ResolvedNodeKind::LiteralInt(*val),
-            crate::ast::literal::Literal::Float { val, .. } => ResolvedNodeKind::LiteralFloat(*val),
-            crate::ast::literal::Literal::String(s) => ResolvedNodeKind::LiteralString(s.to_string()),
-            crate::ast::literal::Literal::Char(c) => ResolvedNodeKind::LiteralChar(*c),
+            Literal::Int { val, .. } => ResolvedNodeKind::LiteralInt(*val),
+            Literal::Float { val, .. } => ResolvedNodeKind::LiteralFloat(*val),
+            Literal::String(s) => ResolvedNodeKind::LiteralString(s.to_string()),
+            Literal::Char(c) => ResolvedNodeKind::LiteralChar(*c),
         },
         ParsedNodeKind::Ident(symbol) => ResolvedNodeKind::Ident(symbol.to_string()),
         ParsedNodeKind::UnaryOp(op, operand) => ResolvedNodeKind::UnaryOp(*op, Box::new(resolve_node(ast, *operand))),

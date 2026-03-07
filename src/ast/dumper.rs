@@ -433,6 +433,8 @@ impl AstDumper {
             // InitializerList
             ParsedNodeKind::InitializerList(inits) => writeln!(f, "InitializerList({:?})", inits),
 
+            ParsedNodeKind::PragmaPack(kind) => writeln!(f, "PragmaPack({:?})", kind),
+
             ParsedNodeKind::Dummy => writeln!(f, "Dummy"),
         }
     }

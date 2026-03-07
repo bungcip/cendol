@@ -559,19 +559,22 @@ impl TypeRegistry {
             members: Arc::from([]),
             is_complete: false,
             is_union,
+            packing: None,
         }))
     }
 
-    pub(crate) fn complete_record(&mut self, record: TypeRef, members: Vec<StructMember>) {
+    pub(crate) fn complete_record(&mut self, record: TypeRef, members: Vec<StructMember>, packing: Option<u32>) {
         let ty = self.get_mut(record);
         match &mut ty.kind {
             TypeKind::Record {
                 is_complete,
                 members: slot,
+                packing: packing_slot,
                 ..
             } => {
                 *slot = Arc::from(members);
                 *is_complete = true;
+                *packing_slot = packing;
             }
             _ => unreachable!("complete_record on non-record"),
         }
@@ -946,13 +949,15 @@ impl TypeRegistry {
                 members,
                 is_complete,
                 is_union,
+                packing,
                 ..
             } => {
                 if !is_complete {
                     // This is the correct error when sizeof is used on an incomplete type.
                     return Err(TypeRegistryError::SizeOfIncompleteType { ty });
                 }
-                self.compute_record_layout(&members, is_union)?
+                let members = members.clone();
+                self.compute_record_layout(&members, is_union, packing)?
             }
 
             TypeKind::Enum {
@@ -986,6 +991,7 @@ impl TypeRegistry {
         &mut self,
         members: &[StructMember],
         is_union: bool,
+        packing: Option<u32>,
     ) -> Result<TypeLayout, TypeRegistryError> {
         let mut max_align = 1;
         let mut current_size = 0;
@@ -1089,6 +1095,9 @@ impl TypeRegistry {
             let mut member_align = layout.alignment;
             if let Some(req_align) = member.alignment {
                 member_align = member_align.max(req_align as u64);
+            }
+            if let Some(p) = packing {
+                member_align = member_align.min(p as u64);
             }
             max_align = max_align.max(member_align);
 

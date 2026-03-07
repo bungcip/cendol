@@ -15,6 +15,8 @@ bitflags::bitflags! {
     }
 }
 
+pub use crate::ast::PragmaPackKind;
+
 /// Token kinds for preprocessor tokens
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PPTokenKind {
@@ -76,6 +78,7 @@ pub enum PPTokenKind {
     Eof,
     Eod,
     Unknown,
+    PragmaPack(PragmaPackKind),
 }
 
 /// Token structure for preprocessor tokens
@@ -168,6 +171,7 @@ impl PPToken {
             PPTokenKind::Hash => "#",
             PPTokenKind::HashHash => "##",
             PPTokenKind::Unknown => "?",
+            PPTokenKind::PragmaPack(_) => "#pragma pack",
             _ => "",
         }
     }

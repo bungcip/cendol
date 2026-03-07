@@ -6,3 +6,4 @@ a.out
 *.o
 *.pending-snap
 .vscode/settings.json
+csmith-diff-results

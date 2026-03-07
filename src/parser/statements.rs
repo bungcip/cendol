@@ -38,6 +38,10 @@ pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, Pars
         TokenKind::Semicolon => parse_empty_statement(parser),
         TokenKind::Case => parse_case_statement(parser),
         TokenKind::Default => parse_default_statement(parser),
+        TokenKind::PragmaPack(kind) => {
+            parser.advance();
+            Ok(parser.push_node(ParsedNodeKind::PragmaPack(kind), token.span))
+        }
         _ => parse_expression_statement(parser),
     }
 }
@@ -66,6 +70,15 @@ fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef,
                 }
                 Err(e) => decl_error = Some(e),
             }
+        }
+
+        if let Some(token) = parser.try_current_token()
+            && let TokenKind::PragmaPack(kind) = token.kind
+        {
+            let node = parser.push_node(ParsedNodeKind::PragmaPack(kind), token.span);
+            items.push(node);
+            parser.advance();
+            continue;
         }
 
         match parse_statement(parser) {

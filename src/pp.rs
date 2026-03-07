@@ -1,5 +1,5 @@
 pub(crate) use crate::pp::header_search::HeaderSearch;
-pub use crate::pp::pp_lexer::{PPToken, PPTokenFlags, PPTokenKind};
+pub use crate::pp::pp_lexer::{PPToken, PPTokenFlags, PPTokenKind, PragmaPackKind};
 pub use crate::pp::preprocessor::{PPConfig, PPError, PPErrorKind, Preprocessor};
 
 pub mod dumper;

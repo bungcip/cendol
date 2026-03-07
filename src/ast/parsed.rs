@@ -7,6 +7,15 @@ use crate::{
 use std::num::NonZeroU32;
 use thin_vec::ThinVec;
 
+/// Pragma pack kinds
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+pub enum PragmaPackKind {
+    Push,
+    PushSet(u32),
+    Pop,
+    Set(Option<u32>),
+}
+
 use super::ParsedTypeArena;
 
 /// Node reference type for referencing child nodes in ParsedAst.
@@ -136,6 +145,9 @@ pub enum ParsedNodeKind {
 
     // --- InitializerList ---
     InitializerList(Vec<ParsedDesignatedInitializer>),
+
+    // --- Pragma Pack ---
+    PragmaPack(PragmaPackKind),
 
     // --- Dummy Node ---
     Dummy,
@@ -445,6 +457,7 @@ impl ParsedNodeKind {
             | ParsedNodeKind::Continue
             | ParsedNodeKind::Goto(_)
             | ParsedNodeKind::EmptyStatement
+            | ParsedNodeKind::PragmaPack(_)
             | ParsedNodeKind::Dummy => {}
             ParsedNodeKind::UnaryOp(_, e)
             | ParsedNodeKind::PostIncrement(e)

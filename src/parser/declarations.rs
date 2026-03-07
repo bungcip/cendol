@@ -204,6 +204,13 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
             break;
         }
 
+        if let TokenKind::PragmaPack(kind) = token.kind {
+            let node = parser.push_node(ParsedNodeKind::PragmaPack(kind), token.span);
+            top_level_declarations.push(node);
+            parser.advance();
+            continue;
+        }
+
         let initial_idx = parser.current_idx;
         match parse_declaration(parser) {
             Ok(declaration) => top_level_declarations.push(declaration),

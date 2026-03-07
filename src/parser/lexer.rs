@@ -1,6 +1,6 @@
-use crate::ast::StringId;
 use crate::ast::literal::{FloatSuffix, IntegerSuffix};
 use crate::ast::literal_parsing;
+use crate::ast::{PragmaPackKind, StringId};
 use crate::pp::{PPToken, PPTokenKind};
 use crate::source_manager::SourceSpan;
 
@@ -182,6 +182,7 @@ pub enum TokenKind {
     // === SPECIAL TOKENS ===
     EndOfFile,
     Unknown,
+    PragmaPack(PragmaPackKind),
 }
 
 impl TokenKind {
@@ -490,6 +491,7 @@ impl<'src> Lexer<'src> {
             }
             PPTokenKind::Eof => TokenKind::EndOfFile,
             PPTokenKind::Eod => TokenKind::Unknown,
+            PPTokenKind::PragmaPack(kind) => TokenKind::PragmaPack(kind),
             // Handle punctuation tokens using the optimized match-based function
             pptoken_kind => classify_punctuation(pptoken_kind),
         }

@@ -217,6 +217,8 @@ pub(crate) struct LowerCtx<'a, 'src> {
     /// If Some, the next CompoundStatement lowering will use this scope instead of pushing a new one.
     /// This is used for function bodies to share the parameter scope.
     pub(crate) next_compound_uses_scope: Option<ScopeId>,
+    pub(crate) pragma_pack_stack: Vec<Option<u32>>,
+    pub(crate) current_packing: Option<u32>,
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {
@@ -228,13 +230,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         symbol_table: &'a mut SymbolTable,
         registry: &'a mut TypeRegistry,
     ) -> Self {
-        Self {
+        LowerCtx {
             parsed_ast,
             ast,
             diag,
             symbol_table,
             registry,
             next_compound_uses_scope: None,
+            pragma_pack_stack: Vec::new(),
+            current_packing: None,
         }
     }
 
@@ -866,7 +870,7 @@ fn complete_record_symbol(
     }
 
     // Update the type in AST and SymbolTable
-    ctx.registry.complete_record(ty, members.clone());
+    ctx.registry.complete_record(ty, members.clone(), ctx.current_packing);
     if let Err(e) = ctx.registry.ensure_layout(ty) {
         return Err(SemanticError {
             span,
@@ -1391,8 +1395,28 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.visit_function_definition(&func_def, res_node, span);
                 smallvec![res_node]
             }
+            ParsedNodeKind::PragmaPack(kind) => {
+                self.handle_pragma_pack(kind);
+                smallvec![]
+            }
             // ... other top level kinds ...
             _ => self.visit_node_rest(node, target_slots),
+        }
+    }
+
+    fn handle_pragma_pack(&mut self, kind: PragmaPackKind) {
+        match kind {
+            PragmaPackKind::Push => self.pragma_pack_stack.push(self.current_packing),
+            PragmaPackKind::PushSet(n) => {
+                self.pragma_pack_stack.push(self.current_packing);
+                self.current_packing = Some(n);
+            }
+            PragmaPackKind::Pop => {
+                if let Some(prev) = self.pragma_pack_stack.pop() {
+                    self.current_packing = prev;
+                }
+            }
+            PragmaPackKind::Set(n) => self.current_packing = n,
         }
     }
 
@@ -1406,6 +1430,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         for &child in children {
             let child = self.parsed_ast.get_node(child);
             let count = match &child.kind {
+                ParsedNodeKind::PragmaPack(..) => 0,
                 ParsedNodeKind::FunctionDef(..) | ParsedNodeKind::StaticAssert(..) => 1,
                 ParsedNodeKind::Declaration(decl) => {
                     if !decl.init_declarators.is_empty() {
@@ -1443,6 +1468,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let target_slots = &reserved_slots[current_slot_idx..current_slot_idx + count];
                 self.visit_top_level_node(*child, target_slots);
                 current_slot_idx += count;
+            } else {
+                self.visit_node_entry(*child, None);
             }
         }
 
@@ -1492,6 +1519,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let target = &stmt_slots[current_slot_idx..current_slot_idx + count];
                 self.visit_node_entry(stmt, Some(target));
                 current_slot_idx += count;
+            } else {
+                self.visit_node_entry(stmt, None);
             }
         }
 
@@ -2976,6 +3005,9 @@ fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span
                         span: id.span,
                     });
                 }
+            }
+            ParsedNodeKind::PragmaPack(kind) => {
+                ctx.handle_pragma_pack(*kind);
             }
             _ => unreachable!(),
         }

@@ -1,5 +1,5 @@
 use super::semantic_common::setup_analysis;
-use crate::ast::NodeKind;
+use crate::ast::{NodeKind, literal::Literal};
 
 fn check_literal_type(source: &str, expected_type_str: &str) {
     let (ast, registry, _) = setup_analysis(source);
@@ -7,7 +7,7 @@ fn check_literal_type(source: &str, expected_type_str: &str) {
     // Find the Literal node.
     let mut found = false;
     for (i, kind) in ast.kinds.iter().enumerate() {
-        if let NodeKind::Literal(crate::ast::literal::Literal::Int { .. }) = kind {
+        if let NodeKind::Literal(Literal::Int { .. }) = kind {
             let ty = ast.semantic_info.as_ref().unwrap().types[i].expect("Literal type not resolved");
             let ty_str = registry.display_qual_type(ty);
             assert_eq!(ty_str, expected_type_str, "Type mismatch for source: {}", source);

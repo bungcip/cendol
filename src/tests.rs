@@ -106,6 +106,7 @@ pub mod parser_expect_name_coverage;
 pub mod parser_typedef_shadowing;
 pub mod pp_dumper_coverage;
 pub mod pp_macro_nested;
+pub mod pragma_pack;
 pub mod semantic_assignment_coverage;
 pub mod semantic_atomic;
 pub mod semantic_brace_elision;

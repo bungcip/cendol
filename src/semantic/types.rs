@@ -189,7 +189,7 @@ pub enum TypeClass {
 }
 
 impl TypeClass {
-    pub(crate) fn from_u32(v: u32) -> Self {
+    fn from_u32(v: u32) -> Self {
         match v {
             0 => Self::Builtin,
             1 => Self::Pointer,
@@ -228,7 +228,7 @@ pub enum BuiltinType {
 }
 
 impl BuiltinType {
-    pub(crate) fn from_u32(v: u32) -> Option<Self> {
+    fn from_u32(v: u32) -> Option<Self> {
         match v {
             1 => Some(Self::Void),
             2 => Some(Self::Bool),

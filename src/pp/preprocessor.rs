@@ -206,7 +206,7 @@ impl HideSetTable {
         Self { sets: vec![empty], map }
     }
 
-    pub(crate) fn intern(&mut self, mut set: Vec<StringId>) -> u32 {
+    fn intern(&mut self, mut set: Vec<StringId>) -> u32 {
         if set.is_empty() {
             return 0;
         }
@@ -225,7 +225,7 @@ impl HideSetTable {
         id
     }
 
-    pub(crate) fn intersection(&mut self, id1: u32, id2: u32) -> u32 {
+    fn intersection(&mut self, id1: u32, id2: u32) -> u32 {
         if id1 == 0 || id2 == 0 {
             return 0;
         }
@@ -253,7 +253,7 @@ impl HideSetTable {
         self.intern(result)
     }
 
-    pub(crate) fn union(&mut self, id1: u32, id2: u32) -> u32 {
+    fn union(&mut self, id1: u32, id2: u32) -> u32 {
         if id1 == 0 {
             return id2;
         }
@@ -292,7 +292,7 @@ impl HideSetTable {
         self.intern(result)
     }
 
-    pub(crate) fn insert(&mut self, id: u32, symbol: StringId) -> u32 {
+    fn insert(&mut self, id: u32, symbol: StringId) -> u32 {
         let existing = &self.sets[id as usize];
         if existing.binary_search(&symbol).is_ok() {
             return id;
@@ -304,7 +304,7 @@ impl HideSetTable {
         self.intern(new_set)
     }
 
-    pub(crate) fn contains(&self, id: u32, symbol: StringId) -> bool {
+    fn contains(&self, id: u32, symbol: StringId) -> bool {
         if id == 0 {
             return false;
         }
@@ -2323,7 +2323,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Stringify tokens for # operator
-    pub(crate) fn stringify_tokens(&self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPError> {
+    fn stringify_tokens(&self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPError> {
         // Bolt ⚡: Use a two-pass approach to build the stringified token efficiently.
         let mut total_len = 2; // For the opening and closing quotes
         let mut cache = SourceBufferCache::new(self.sm);

@@ -377,7 +377,7 @@ impl<'a> MirGen<'a> {
             let is_compatible = match (&const_val.kind, mir_type) {
                 (ConstValueKind::Int(_), t) => t.is_int() || t.is_pointer(),
                 (ConstValueKind::Float(_), t) => t.is_float(),
-                (ConstValueKind::GlobalAddress(_), t) => t.is_pointer() || t.is_int(),
+                (ConstValueKind::GlobalAddress(_, _), t) => t.is_pointer() || t.is_int(),
                 (ConstValueKind::FunctionAddress(_), t) => t.is_pointer() || t.is_int(),
                 _ => false,
             };
@@ -962,7 +962,7 @@ impl<'a> MirGen<'a> {
             let is_compatible = match (&const_val.kind, mir_type) {
                 (ConstValueKind::Int(_), t) => t.is_int() || t.is_pointer(),
                 (ConstValueKind::Float(_), t) => t.is_float(),
-                (ConstValueKind::GlobalAddress(_), t) => t.is_pointer() || t.is_int(),
+                (ConstValueKind::GlobalAddress(_, _), t) => t.is_pointer() || t.is_int(),
                 (ConstValueKind::FunctionAddress(_), t) => t.is_pointer() || t.is_int(),
                 _ => false,
             };

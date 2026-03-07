@@ -569,3 +569,21 @@ fn test_compound_literal_array_deduction() {
     "#;
     assert_eq!(run_c_code_exit_status(source), 0);
 }
+
+#[test]
+fn test_global_array_init_ptr() {
+    let source = r#"
+        int g_arr[10] = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
+        int *g_ptr_arr[3] = { &g_arr[5], &g_arr[0], &g_arr[9] };
+        int *g_single_ptr = &g_arr[2];
+
+        int main() {
+            if (*g_ptr_arr[0] != 60) return 1;
+            if (*g_ptr_arr[1] != 10) return 2;
+            if (*g_ptr_arr[2] != 100) return 3;
+            if (*g_single_ptr != 30) return 4;
+            return 0;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
+}

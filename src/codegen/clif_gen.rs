@@ -385,14 +385,14 @@ pub(crate) fn emit_const(
         ConstValueKind::Bool(val) => output.push(if *val { 1u8 } else { 0u8 }),
         ConstValueKind::Null => output.extend_from_slice(&0i64.to_le_bytes()),
         ConstValueKind::Zero => output.extend(std::iter::repeat_n(0, lower_type_size(ty, ctx.mir) as usize)),
-        ConstValueKind::GlobalAddress(global_id) => {
+        ConstValueKind::GlobalAddress(global_id, addend) => {
             if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module) {
                 let data_id = *ctx
                     .data_id_map
                     .get(global_id)
                     .unwrap_or_else(|| panic!("Global ID {} not found in map during relocation", global_id.get()));
                 let global_val = mod_obj.declare_data_in_data(data_id, dd);
-                dd.write_data_addr(offset, global_val, 0);
+                dd.write_data_addr(offset, global_val, *addend);
             }
             output.extend_from_slice(&0i64.to_le_bytes());
         }
@@ -1194,7 +1194,7 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                     ctx.builder.ins().iconst(expected_type, int_val)
                 }
                 ConstValueKind::Null => ctx.builder.ins().iconst(expected_type, 0i64),
-                ConstValueKind::GlobalAddress(global_id) => {
+                ConstValueKind::GlobalAddress(global_id, addend) => {
                     let global = ctx.mir.get_global(*global_id);
                     let linkage = lower_global_linkage(global);
                     let global_val = ctx
@@ -1203,6 +1203,12 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                         .expect("Failed to declare global data");
                     let local_id = ctx.module.declare_data_in_func(global_val, ctx.builder.func);
                     let addr = ctx.builder.ins().global_value(types::I64, local_id);
+                    let addr = if *addend != 0 {
+                        let addend_val = ctx.builder.ins().iconst(types::I64, *addend);
+                        ctx.builder.ins().iadd(addr, addend_val)
+                    } else {
+                        addr
+                    };
                     emit_type_conversion(addr, types::I64, expected_type, false, ctx.builder)
                 }
                 ConstValueKind::FunctionAddress(func_id) => {
@@ -1313,7 +1319,7 @@ fn lower_operand_type(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &
                 ConstValueKind::Int(_) => types::I32,
                 ConstValueKind::Float(_) => types::F64,
                 ConstValueKind::Bool(_) => types::I32,
-                ConstValueKind::Null | ConstValueKind::Zero | ConstValueKind::GlobalAddress(_) => types::I64,
+                ConstValueKind::Null | ConstValueKind::Zero | ConstValueKind::GlobalAddress(..) => types::I64,
                 ConstValueKind::FunctionAddress(_) => types::I64,
                 ConstValueKind::StructLiteral(_) => types::I32,
                 ConstValueKind::ArrayLiteral(_) => types::I32,
@@ -3282,7 +3288,7 @@ impl ClifGen {
                     );
                 }
             }
-            ConstValueKind::GlobalAddress(id) => {
+            ConstValueKind::GlobalAddress(id, _) => {
                 if reachable_globals.insert(*id) {
                     worklist_globals.push(*id);
                 }

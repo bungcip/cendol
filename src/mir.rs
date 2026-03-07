@@ -447,7 +447,7 @@ pub enum ConstValueKind {
     StructLiteral(Vec<(usize, ConstValueId)>),
     ArrayLiteral(Vec<ConstValueId>),
     // Address constants
-    GlobalAddress(GlobalId),
+    GlobalAddress(GlobalId, /* offset */ i64),
     FunctionAddress(MirFunctionId),
 }
 

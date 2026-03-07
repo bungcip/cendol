@@ -1378,7 +1378,7 @@ impl<'a> MirGen<'a> {
                     let is_compatible = match (&const_val.kind, mir_type) {
                         (ConstValueKind::Int(_), t) => t.is_int() || t.is_pointer(),
                         (ConstValueKind::Float(_), t) => t.is_float(),
-                        (ConstValueKind::GlobalAddress(_), t) => t.is_pointer() || t.is_int(),
+                        (ConstValueKind::GlobalAddress(_, _), t) => t.is_pointer() || t.is_int(),
                         (ConstValueKind::FunctionAddress(_), t) => t.is_pointer() || t.is_int(),
                         _ => false,
                     };
@@ -1458,6 +1458,71 @@ impl<'a> MirGen<'a> {
                     _ => panic!("ArrayIndex access on non-array, non-pointer type"),
                 }
             }
+        }
+    }
+
+    fn get_type_size(&self, mir_type: &MirType) -> u32 {
+        match mir_type {
+            MirType::I8 | MirType::U8 => 1,
+            MirType::I16 | MirType::U16 => 2,
+            MirType::I32 | MirType::U32 => 4,
+            MirType::I64 | MirType::U64 => 8,
+            MirType::F32 => 4,
+            MirType::F64 => 8,
+            MirType::F80 | MirType::F128 => 16,
+            MirType::Pointer { .. } => 8, // Assuming 64-bit pointers
+            MirType::Array { layout, .. } => layout.size as u32,
+            MirType::Record { layout, .. } => layout.size as u32,
+            MirType::Bool => 1,
+            MirType::Void => 0,
+            _ => 4,
+        }
+    }
+
+    fn place_to_global_offset(&mut self, place: &Place) -> Option<(GlobalId, i64)> {
+        match place {
+            Place::Global(id) => Some((*id, 0)),
+            Place::StructField(base, field_index) => {
+                let (base_id, base_offset) = self.place_to_global_offset(base)?;
+                let base_ty = self.get_place_type(base);
+                let mir_type = self.mir_builder.get_type(base_ty);
+                match mir_type {
+                    MirType::Record { layout, .. } => {
+                        let field_offset = layout.field_offsets[*field_index] as i64;
+                        Some((base_id, base_offset + field_offset))
+                    }
+                    _ => None,
+                }
+            }
+            Place::ArrayIndex(base, index_operand) => {
+                let (base_id, base_offset) = self.place_to_global_offset(base)?;
+                let element_size = {
+                    let base_ty = self.get_place_type(base);
+                    let mir_type = self.mir_builder.get_type(base_ty);
+                    match mir_type {
+                        MirType::Array { layout, .. } => layout.stride as i64,
+                        MirType::Pointer { pointee, .. } => {
+                            let pointee_type = self.mir_builder.get_type(*pointee);
+                            self.get_type_size(pointee_type) as i64
+                        }
+                        _ => return None,
+                    }
+                };
+
+                let index_val = match &**index_operand {
+                    Operand::Constant(const_id) => {
+                        let const_val = self.mir_builder.get_constants().get(const_id).unwrap();
+                        match const_val.kind {
+                            ConstValueKind::Int(v) => v,
+                            _ => return None,
+                        }
+                    }
+                    _ => return None,
+                };
+
+                Some((base_id, base_offset + element_size * index_val))
+            }
+            Place::Deref(_) | Place::Local(_) => None,
         }
     }
 
@@ -1641,28 +1706,35 @@ impl<'a> MirGen<'a> {
                 }
             }
             Operand::AddressOf(place) => {
-                if let Place::Global(global_id) = **place {
+                if let Some((global_id, offset)) = self.place_to_global_offset(place) {
                     let global_type = self.get_global_type(global_id);
                     let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: global_type });
-                    Some(self.create_constant(ptr_ty, ConstValueKind::GlobalAddress(global_id)))
+                    Some(self.create_constant(ptr_ty, ConstValueKind::GlobalAddress(global_id, offset)))
                 } else {
                     None
                 }
             }
             Operand::Copy(place) => {
-                if let Place::Global(global_id) = **place {
-                    // If it is an array, using it in an expression decays to a pointer (GlobalAddress)
-                    let global_ty_id = self.get_global_type(global_id);
-                    let global_mir_ty = self.mir_builder.get_type(global_ty_id);
-                    if matches!(global_mir_ty, MirType::Array { .. }) {
-                        let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: global_ty_id });
-                        return Some(self.create_constant(ptr_ty, ConstValueKind::GlobalAddress(global_id)));
+                if let Some((global_id, offset)) = self.place_to_global_offset(place) {
+                    // If it is an array, using it in an expression decays to a pointer (GlobalAddress).
+                    // We must check if the *place* itself is an array, not just if the base global is an array.
+                    let place_ty_id = self.get_place_type(place);
+                    let place_mir_ty = self.mir_builder.get_type(place_ty_id);
+                    if matches!(place_mir_ty, MirType::Array { .. }) {
+                        let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: place_ty_id });
+                        return Some(self.create_constant(ptr_ty, ConstValueKind::GlobalAddress(global_id, offset)));
                     }
 
                     // If we are copying a global, and it has a constant initializer, return that value.
                     // This handles compound literals which are lowered to globals.
-                    let global = self.mir_builder.get_globals().get(&global_id).unwrap();
-                    global.initial_value
+                    // However, if there's an offset and it's not an array decaying, we can't easily extract the sub-value right now.
+                    // For now, only return initial_value if offset is 0 and the place is the exact global base.
+                    if offset == 0 && matches!(&**place, Place::Global(_)) {
+                        let global = self.mir_builder.get_globals().get(&global_id).unwrap();
+                        return global.initial_value;
+                    }
+
+                    None
                 } else {
                     None
                 }

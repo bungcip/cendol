@@ -546,8 +546,12 @@ impl<'a> MirDumper<'a> {
                         .collect();
                     format!("const array_literal [{}]", element_strs.join(", "))
                 }
-                ConstValueKind::GlobalAddress(global_id) => {
-                    format!("const {}", self.global_to_string(*global_id))
+                ConstValueKind::GlobalAddress(global_id, addend) => {
+                    if *addend != 0 {
+                        format!("const {}+{}", self.global_to_string(*global_id), addend)
+                    } else {
+                        format!("const {}", self.global_to_string(*global_id))
+                    }
                 }
                 ConstValueKind::FunctionAddress(func_id) => {
                     format!("const {}", self.function_to_string(*func_id))

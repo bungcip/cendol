@@ -575,7 +575,7 @@ impl<'a> MirGen<'a> {
             self.mir_builder
                 .create_global_with_init(name, mir_ty, true, MirLinkage::Internal, Some(array_const));
 
-        Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global_id)))
+        Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global_id, 0)))
     }
 
     pub(super) fn visit_compound_literal(&mut self, ty: QualType, init_ref: NodeRef) -> Operand {

@@ -2425,11 +2425,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 } else {
                     let mut ty = self.visit_node(*result_expr);
                     if let Some(t) = ty
-                        && (t.is_array() || t.is_function()) {
-                            let decayed = self.registry.decay(t, TypeQualifiers::empty());
-                            self.push_conversion(*result_expr, Conversion::PointerDecay { to: decayed.ty() });
-                            ty = Some(decayed);
-                        }
+                        && (t.is_array() || t.is_function())
+                    {
+                        let decayed = self.registry.decay(t, TypeQualifiers::empty());
+                        self.push_conversion(*result_expr, Conversion::PointerDecay { to: decayed.ty() });
+                        ty = Some(decayed);
+                    }
                     ty
                 }
             }

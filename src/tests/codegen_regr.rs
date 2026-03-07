@@ -147,3 +147,22 @@ fn test_array_in_condition_fix() {
         "Expected stack_addr for array 'a' in condition"
     );
 }
+
+#[test]
+fn test_global_variable_modification_not_folded() {
+    let source = r#"
+        int printf(const char *format, ...);
+        int crc32_context = 5;
+        void crc32_byte() { crc32_context = 0; }
+        int main() {
+            crc32_byte();
+            // This triggers an implicit conversion (BitXor with unsigned long long 5UL)
+            // which previously caused constant folding to the initial value 5.
+            printf("checksum = %08X\n", crc32_context ^ 5UL);
+            return 0;
+        }
+    "#;
+
+    let output = crate::tests::codegen_common::run_c_code_with_output(source);
+    assert_eq!(output.trim(), "checksum = 00000005");
+}

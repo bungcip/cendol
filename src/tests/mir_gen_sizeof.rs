@@ -1,4 +1,5 @@
 use crate::driver::artifact::CompilePhase;
+use crate::tests::codegen_common::run_c_code_exit_status;
 use crate::tests::test_utils::run_pass;
 
 #[test]
@@ -65,7 +66,7 @@ fn test_sizeof_array_size_macro() {
 /// Expressions like 1/2.2 must be constant-folded at compile time.
 #[test]
 fn test_float_constant_folding_in_global_init() {
-    run_pass(
+    let status = run_c_code_exit_status(
         r#"
         struct S { double a; double b; };
         static const struct S vals[] = {
@@ -77,6 +78,32 @@ fn test_float_constant_folding_in_global_init() {
             return 0;
         }
         "#,
-        CompilePhase::Cranelift,
     );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn test_sizeof_nested_statement_expression() {
+    let status = run_c_code_exit_status(
+        r#"
+        int main() {
+            int x = sizeof(({ int j[17]; j; }));
+            return (x == sizeof(int*)) ? 0 : 1;
+        }
+        "#,
+    );
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn test_sizeof_double_nested_statement_expression() {
+    let status = run_c_code_exit_status(
+        r#"
+        int main() {
+            int x = sizeof((({ int j[17]; j; })));
+            return (x == sizeof(int*)) ? 0 : 1;
+        }
+        "#,
+    );
+    assert_eq!(status, 0);
 }

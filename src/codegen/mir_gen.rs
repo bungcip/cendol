@@ -1738,7 +1738,7 @@ impl<'a> MirGen<'a> {
                     // For now, only return initial_value if offset is 0 and the place is the exact global base.
                     if offset == 0 && matches!(&**place, Place::Global(_)) {
                         let global = self.mir_builder.get_globals().get(&global_id).unwrap();
-                        if global.is_constant {
+                        if self.current_function.is_none() || global.is_constant {
                             return global.initial_value;
                         }
                     }

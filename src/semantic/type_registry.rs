@@ -1161,12 +1161,13 @@ impl TypeRegistry {
                     let is_unnamed = member.name.is_none();
 
                     let mut fits = false;
-                    if current_unit_offset.is_some() && !is_unnamed
+                    if current_unit_offset.is_some()
+                        && !is_unnamed
                         && current_unit_size == layout.size
-                            && current_unit_bit_offset + (bits as u64) <= layout.size * 8
-                        {
-                            fits = true;
-                        }
+                        && current_unit_bit_offset + (bits as u64) <= layout.size * 8
+                    {
+                        fits = true;
+                    }
 
                     if fits {
                         field_layouts.push(FieldLayout {
@@ -1342,13 +1343,15 @@ impl TypeRegistry {
 
         // Bolt ⚡: Optimized handle for enums using direct registry access.
         if ty_a_ref.is_enum()
-            && let TypeKind::Enum { base_type, .. } = &self.types[ty_a_ref.index()].kind {
-                return self.is_compatible(QualType::new(*base_type, a.qualifiers()), b);
-            }
+            && let TypeKind::Enum { base_type, .. } = &self.types[ty_a_ref.index()].kind
+        {
+            return self.is_compatible(QualType::new(*base_type, a.qualifiers()), b);
+        }
         if ty_b_ref.is_enum()
-            && let TypeKind::Enum { base_type, .. } = &self.types[ty_b_ref.index()].kind {
-                return self.is_compatible(a, QualType::new(*base_type, b.qualifiers()));
-            }
+            && let TypeKind::Enum { base_type, .. } = &self.types[ty_b_ref.index()].kind
+        {
+            return self.is_compatible(a, QualType::new(*base_type, b.qualifiers()));
+        }
 
         // Fallback for registry-only types (Functions, Records).
         // Since these are never inline, self.get() returns Cow::Borrowed which is cheap.

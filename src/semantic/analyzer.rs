@@ -375,11 +375,11 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn is_bitfield(&self, node: NodeRef) -> bool {
+    fn get_bitfield_width(&self, node: NodeRef) -> Option<u16> {
         match self.ast.get_kind(node) {
             NodeKind::MemberAccess(obj, field_name, is_arrow) => {
                 let Some(obj_qt) = self.semantic_info.types[obj.index()] else {
-                    return false;
+                    return None;
                 };
 
                 let record_ty = if *is_arrow {
@@ -388,19 +388,20 @@ impl<'a> SemanticAnalyzer<'a> {
                     Some(obj_qt.ty())
                 };
 
-                record_ty.is_some_and(|rt| {
+                record_ty.and_then(|rt| {
                     self.registry
                         .get(rt)
                         .find_member(self.registry, *field_name)
-                        .is_some_and(|m| m.bit_field_size.is_some())
+                        .and_then(|m| m.bit_field_size)
                 })
             }
             NodeKind::GenericSelection(_) => self
                 .semantic_info
                 .generic_selections
                 .get(&node.index())
-                .is_some_and(|&selected| self.is_bitfield(selected)),
-            _ => false,
+                .and_then(|&selected| self.get_bitfield_width(selected)),
+            NodeKind::GnuStatementExpression(_, result_expr) => self.get_bitfield_width(*result_expr),
+            _ => None,
         }
     }
 
@@ -705,7 +706,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.report_error(node, SemanticErrorKind::NotAnLvalue);
                     return None;
                 }
-                if self.is_bitfield(expr) {
+                if self.get_bitfield_width(expr).is_some() {
                     self.report_error(node, SemanticErrorKind::AddressOfBitfield);
                     return None;
                 }
@@ -792,7 +793,8 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn apply_and_record_integer_promotion(&mut self, node: NodeRef, qt: QualType) -> QualType {
-        let promoted = integer_promotion(self.registry, qt);
+        let bitfield_width = self.get_bitfield_width(node);
+        let promoted = integer_promotion(self.registry, qt, bitfield_width);
         if promoted.ty() != qt.ty() {
             self.push_conversion(
                 node,
@@ -2553,7 +2555,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 } else {
                     self.report_error(node, SemanticErrorKind::SizeOfIncompleteType { ty });
                 }
-            } else if !is_alignof && expr.is_some() && self.is_bitfield(expr.unwrap()) {
+            } else if !is_alignof && expr.is_some() && self.get_bitfield_width(expr.unwrap()).is_some() {
                 self.report_error(node, SemanticErrorKind::SizeOfBitfield);
             } else if !self.registry.is_variably_modified(ty)
                 && let Err(crate::semantic::type_registry::TypeRegistryError::UnsupportedFeature { feature }) =

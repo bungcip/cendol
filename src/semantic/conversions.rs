@@ -40,8 +40,8 @@ pub(super) fn usual_arithmetic_conversions(ctx: &mut TypeRegistry, lhs: QualType
     }
 
     // Both types are promoted to at least 'int' or 'unsigned int'
-    let lp = integer_promotion(ctx, lhs);
-    let rp = integer_promotion(ctx, rhs);
+    let lp = integer_promotion(ctx, lhs, None);
+    let rp = integer_promotion(ctx, rhs, None);
     if lp == rp {
         return Some(lp);
     }
@@ -68,8 +68,27 @@ pub(super) fn usual_arithmetic_conversions(ctx: &mut TypeRegistry, lhs: QualType
 }
 
 /// Performs integer promotions as specified in C11 6.3.1.1.
-pub(super) fn integer_promotion(ctx: &TypeRegistry, qt: QualType) -> QualType {
+pub(super) fn integer_promotion(ctx: &TypeRegistry, qt: QualType, bitfield_width: Option<u16>) -> QualType {
     let ty = qt.ty();
+    if let Some(width) = bitfield_width {
+        // C11 6.3.1.1p2:
+        // If an int can represent all values of the original type (as restricted by the width,
+        // for a bit-field), the value is converted to an int; otherwise, it is converted to
+        // an unsigned int.
+
+        let is_signed = ctx.get(ty).is_signed();
+        let fits_in_int = if is_signed {
+            width <= 32 // Assuming 32-bit int
+        } else {
+            width < 32 // 32-bit unsigned bitfield needs unsigned int
+        };
+
+        if fits_in_int {
+            return QualType::unqualified(ctx.type_int);
+        } else {
+            return QualType::unqualified(ctx.type_int_unsigned);
+        }
+    }
     if ty.is_enum() {
         return QualType::unqualified(ctx.type_int);
     }
@@ -83,6 +102,6 @@ pub(super) fn integer_promotion(ctx: &TypeRegistry, qt: QualType) -> QualType {
 pub(super) fn default_argument_promotions(ctx: &TypeRegistry, qt: QualType) -> QualType {
     match qt.ty().builtin() {
         Some(BuiltinType::Float) => QualType::unqualified(ctx.type_double),
-        _ => integer_promotion(ctx, qt),
+        _ => integer_promotion(ctx, qt, None),
     }
 }

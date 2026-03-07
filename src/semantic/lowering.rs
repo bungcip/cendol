@@ -186,17 +186,21 @@ fn convert_parsed_array_size(size: &ParsedArraySize, ctx: &mut LowerCtx) -> Arra
 fn resolve_array_size(size: Option<ParsedNodeRef>, ctx: &mut LowerCtx) -> ArraySizeType {
     if let Some(node) = size {
         let expr = ctx.visit_expression(node);
+
+        // C11 6.7.6.2p1: Check if the expression is a float literal (non-integer type)
+        if let NodeKind::Literal(crate::ast::literal::Literal::Float { .. }) = ctx.ast.get_kind(expr) {
+            ctx.report_error(ctx.ast.get_span(expr), SemanticErrorKind::ArraySizeNotInteger);
+            return ArraySizeType::Incomplete;
+        }
+
         if let Some(val) = const_eval::eval_const_expr(&ctx.const_ctx(), expr) {
-            if val < 0 {
+            // C11 6.7.6.2p1: the expression shall have a value greater than zero
+            if val <= 0 {
                 ctx.report_error(ctx.ast.get_span(expr), SemanticErrorKind::InvalidArraySize);
                 return ArraySizeType::Incomplete;
             }
             return ArraySizeType::Constant(val as usize);
         } else {
-            // For now, we only support constant sizes (VLA support is future)
-            // Or maybe we should return Variable(expr_ref) and let ensure_layout fail?
-            // But verify what Variable does.
-            // ensure_layout returns "incomplete/VLA array layout" error.
             return ArraySizeType::Variable(expr);
         }
     }

@@ -6,6 +6,7 @@ pub mod codegen_basics;
 pub mod codegen_bswap;
 pub mod codegen_calls;
 pub mod codegen_common;
+mod codegen_inc_bool;
 pub mod codegen_large_array;
 
 pub mod codegen_float_to_int_oob;

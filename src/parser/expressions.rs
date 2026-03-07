@@ -475,8 +475,17 @@ fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let (kind, end) = if parser.accept(TokenKind::LeftParen).is_some() {
         if parser.is_type_name_start() {
             let ty = super::parsed_type_builder::parse_parsed_type_name(parser)?;
-            let end = parser.expect(TokenKind::RightParen)?.span.end();
-            (ParsedNodeKind::SizeOfType(ty), end)
+            let right_paren_end = parser.expect(TokenKind::RightParen)?.span.end();
+
+            if parser.is_token(TokenKind::LeftBrace) {
+                // If it's a compound literal, parse it
+                let mut expr = parse_compound_literal_from_type_and_start(parser, ty, start)?;
+                expr = parse_postfix_tail(parser, expr)?;
+                let end = parser.ast.get_node(expr).span.end();
+                (ParsedNodeKind::SizeOfExpr(expr), end)
+            } else {
+                (ParsedNodeKind::SizeOfType(ty), right_paren_end)
+            }
         } else {
             // sizeof(expr) - the parens are part of the expression, NOT sizeof syntax.
             // Parse inner expression, close paren, then continue parsing postfix

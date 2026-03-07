@@ -15,6 +15,7 @@ impl SemanticError {
             SemanticErrorKind::EmptyDeclaration
             | SemanticErrorKind::IncompatiblePointerComparison { .. }
             | SemanticErrorKind::IncompatiblePointerTypes { .. }
+            | SemanticErrorKind::PointerSignednessMismatch { .. }
             | SemanticErrorKind::PointerAssignmentDiscardsQualifiers { .. }
             | SemanticErrorKind::ReturnLocalAddress { .. }
             | SemanticErrorKind::ImplicitConstantConversion { .. }
@@ -217,6 +218,10 @@ pub enum SemanticErrorKind {
         rhs: QualType,
     },
     IncompatiblePointerTypes {
+        expected: QualType,
+        found: QualType,
+    },
+    PointerSignednessMismatch {
         expected: QualType,
         found: QualType,
     },
@@ -498,6 +503,11 @@ impl SemanticErrorKind {
             ),
             SemanticErrorKind::IncompatiblePointerTypes { expected, found } => format!(
                 "incompatible pointer types passing '{}' to parameter of type '{}'",
+                registry.display_qual_type(*found),
+                registry.display_qual_type(*expected)
+            ),
+            SemanticErrorKind::PointerSignednessMismatch { expected, found } => format!(
+                "pointer targets in assignment differ in signedness (passing '{}' to '{}')",
                 registry.display_qual_type(*found),
                 registry.display_qual_type(*expected)
             ),

@@ -235,6 +235,38 @@ fn test_assign_incompatible_pointers() {
 }
 
 #[test]
+fn test_pointer_signedness_mismatch() {
+    let source = r#"
+        void foo(unsigned int *p) {}
+        int main() {
+            int* a;
+            unsigned int* b;
+            a = b;
+            foo(a);
+            return 0;
+        }
+    "#;
+    let driver = run_pass(source, CompilePhase::Mir);
+    let warnings: Vec<_> = driver.diagnostics.diagnostics.iter().filter(|d| d.level == crate::diagnostic::DiagnosticLevel::Warning).collect();
+
+    if driver.diagnostics.has_errors() {
+        for e in driver.diagnostics.diagnostics.iter().filter(|d| d.level == crate::diagnostic::DiagnosticLevel::Error) {
+            println!("Error: {}", e.message);
+        }
+        panic!("Pointer signedness mismatch should not be an error");
+    }
+
+    assert!(!warnings.is_empty(), "Expected warnings for pointer signedness mismatch. Found: {:?}", driver.diagnostics.diagnostics);
+    assert_eq!(warnings.len(), 2);
+    assert!(warnings[0]
+        .message
+        .contains("pointer targets in assignment differ in signedness (passing 'unsigned int*' to 'int*')"));
+    assert!(warnings[1]
+        .message
+        .contains("pointer targets in assignment differ in signedness (passing 'int*' to 'unsigned int*')"));
+}
+
+#[test]
 fn test_assign_int_to_pointer() {
     let source = r#"
         int main() {

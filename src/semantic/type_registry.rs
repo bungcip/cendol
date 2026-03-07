@@ -374,11 +374,19 @@ impl TypeRegistry {
 
     pub(crate) fn is_char_type(&self, mut ty: TypeRef) -> bool {
         loop {
-            if ty.is_inline_pointer() || ty.is_inline_array() {
+            // Pointers and arrays are never char types (only 'char', 'signed char', 'unsigned char' are).
+            if ty.is_pointer() || ty.is_array() {
                 return false;
             }
-            let type_data = &self.types[ty.index()];
-            match &type_data.kind {
+
+            // Fast path for builtins (handles both registry and simple TypeRefs).
+            // Aliases have builtin() == None, so they will fall through to registry lookup.
+            if let Some(b) = ty.builtin() {
+                return b.is_char();
+            }
+
+            // Must be a registry type; resolve aliases to find the underlying type.
+            match &self.types[ty.index()].kind {
                 TypeKind::Alias(inner) => ty = *inner,
                 TypeKind::Builtin(b) => return b.is_char(),
                 _ => return false,
@@ -392,11 +400,16 @@ impl TypeRegistry {
             if ty.is_inline_array() {
                 return Some(self.reconstruct_element(ty));
             }
-            if ty.is_inline_pointer() {
+            // Pointers and builtins (that aren't aliases) are never arrays.
+            if ty.is_pointer() {
                 return None;
             }
-            let type_data = &self.types[ty.index()];
-            match &type_data.kind {
+            if let Some(b) = ty.builtin() {
+                return None;
+            }
+
+            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations in hot loops.
+            match &self.types[ty.index()].kind {
                 TypeKind::Alias(inner) => ty = *inner,
                 TypeKind::Array { element_type, .. } => return Some(*element_type),
                 _ => return None,
@@ -1346,31 +1359,33 @@ impl TypeRegistry {
 
     pub(crate) fn is_complete(&self, mut ty: TypeRef) -> bool {
         loop {
-            if ty.is_inline_pointer() {
+            // Pointers (inline or registry) are always complete.
+            if ty.is_pointer() {
                 return true;
             }
+
             if ty.is_inline_array() {
-                // Inline arrays are always Constant size (Constant(1..31)), so not Incomplete.
-                // We just need to check if the element type is complete.
-                ty = self.reconstruct_element(ty);
-                continue;
+                // Inline arrays have constant size and complete element types (as they are Simple).
+                return true;
             }
 
-            // Bolt ⚡: Direct registry access to avoid Cow allocations for pointers and other common types.
-            let type_data = &self.types[ty.index()];
-            match &type_data.kind {
+            // Fast path for non-alias builtins.
+            if let Some(b) = ty.builtin() {
+                return b != BuiltinType::Void;
+            }
+
+            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations in hot loops.
+            match &self.types[ty.index()].kind {
                 TypeKind::Alias(inner) => ty = *inner,
-                TypeKind::Pointer { .. } => return true,
-                TypeKind::Record { is_complete, .. } => return *is_complete,
-                TypeKind::Enum { is_complete, .. } => return *is_complete,
+                TypeKind::Record { is_complete, .. } | TypeKind::Enum { is_complete, .. } => return *is_complete,
                 TypeKind::Array { element_type, size } => {
-                    if let ArraySizeType::Incomplete = size {
+                    if matches!(size, ArraySizeType::Incomplete) {
                         return false;
                     }
                     ty = *element_type;
                 }
                 TypeKind::Builtin(BuiltinType::Void) => return false,
-                _ => return true, // Other builtins and complex types are complete
+                _ => return true,
             }
         }
     }
@@ -1382,29 +1397,28 @@ impl TypeRegistry {
             }
 
             let ty = qt.ty();
-            if ty.is_inline_pointer() {
-                // Pointers are only const if the pointer itself is const (checked above).
-                // They don't have recursive constness based on pointee.
+            // Pointers only have recursive constness if the pointer itself is const (handled above).
+            if ty.is_pointer() {
                 return false;
             }
+
             if ty.is_inline_array() {
                 qt = QualType::unqualified(self.reconstruct_element(ty));
                 continue;
             }
 
-            // Bolt ⚡: Direct registry access to avoid Cow allocations.
-            let type_data = &self.types[ty.index()];
-            match &type_data.kind {
+            // Builtins (that aren't aliases) don't have recursive constness.
+            if ty.builtin().is_some() {
+                return false;
+            }
+
+            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
+            match &self.types[ty.index()].kind {
                 TypeKind::Alias(inner) => {
                     qt = QualType::new(*inner, qt.qualifiers());
                 }
                 TypeKind::Record { members, .. } => {
-                    for member in members.iter() {
-                        if self.is_const_recursive(member.member_type) {
-                            return true;
-                        }
-                    }
-                    return false;
+                    return members.iter().any(|m| self.is_const_recursive(m.member_type));
                 }
                 TypeKind::Array { element_type, .. } => {
                     qt = QualType::unqualified(*element_type);
@@ -1421,14 +1435,18 @@ impl TypeRegistry {
                 continue;
             }
             if ty.is_inline_array() {
-                // Inline arrays are always constant size (Constant(1..31)).
+                // Inline arrays always have constant size.
                 ty = self.reconstruct_element(ty);
                 continue;
             }
 
-            // Bolt ⚡: Direct registry access to avoid Cow allocations.
-            let type_data = &self.types[ty.index()];
-            match &type_data.kind {
+            // Non-alias builtins are never variably modified.
+            if ty.builtin().is_some() {
+                return false;
+            }
+
+            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
+            match &self.types[ty.index()].kind {
                 TypeKind::Alias(inner) => ty = *inner,
                 TypeKind::Array { element_type, size } => {
                     if matches!(size, ArraySizeType::Variable(_)) {

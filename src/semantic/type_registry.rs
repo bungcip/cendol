@@ -1099,16 +1099,34 @@ impl TypeRegistry {
             if let Some(p) = packing {
                 member_align = member_align.min(p as u64);
             }
-            max_align = max_align.max(member_align);
+
+            let is_unnamed_bitfield = member.name.is_none() && member.bit_field_size.is_some();
+            let mut layout_size = layout.size;
+
+            if is_unnamed_bitfield {
+                let bits = member.bit_field_size.unwrap() as u64;
+                if bits == 0 {
+                    layout_size = 0;
+                } else {
+                    member_align = 1;
+                    layout_size = (bits + 7) / 8;
+                }
+            } else if let Some(bits) = member.bit_field_size {
+                layout_size = (bits as u64 + 7) / 8;
+            }
+
+            if !is_unnamed_bitfield {
+                max_align = max_align.max(member_align);
+            }
 
             if is_union {
-                current_size = current_size.max(layout.size);
+                current_size = current_size.max(layout_size);
                 field_layouts.push(FieldLayout { offset: 0 });
             } else {
                 // Align current_size to member's alignment to find its offset
                 let offset = (current_size + member_align - 1) & !(member_align - 1);
                 field_layouts.push(FieldLayout { offset });
-                current_size = offset + layout.size;
+                current_size = offset + layout_size;
             }
         }
 

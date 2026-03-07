@@ -203,3 +203,48 @@ fn test_invalid_alignas_non_power_of_two() {
         "requested alignment is not a positive power of 2",
     );
 }
+
+#[test]
+fn test_anonymous_bit_field_alignment_and_size() {
+    let (_, registry, _) = setup_lowering(
+        r#"
+        struct S {
+            long :1;
+            short a;
+        };
+        union U {
+            char a;
+            long long :37;
+        };
+        struct SZ {
+            char a;
+            long :0;
+            char b;
+        };
+        "#,
+    );
+
+    let s_layout = find_layout(&registry, "S");
+    // Size should be 4 (offset 2 for short a + 2 bytes size), alignment 2 from 'short'
+    assert_eq!(
+        s_layout.alignment, 2,
+        "Anonymous bit-field should not affect struct alignment"
+    );
+    assert_eq!(s_layout.size, 4, "Struct size should be 4");
+
+    let u_layout = find_layout(&registry, "U");
+    // Size should be 5 bytes for 37 bits, padded to alignment 1 from 'char'
+    assert_eq!(
+        u_layout.alignment, 1,
+        "Anonymous bit-field should not affect union alignment"
+    );
+    assert_eq!(u_layout.size, 5, "Union size should be 5 bytes for 37 bits");
+
+    let sz_layout = find_layout(&registry, "SZ");
+    // Size should be 9 bytes (1 for char, 7 padding for long:0 internal align, 1 for char b), alignment 1 from 'chars'
+    assert_eq!(
+        sz_layout.alignment, 1,
+        "Zero-width bit-field should not affect struct max alignment"
+    );
+    assert_eq!(sz_layout.size, 9, "Zero-width bit-field should align internal offset");
+}

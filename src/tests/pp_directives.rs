@@ -242,7 +242,7 @@ fn test_undef_extra_tokens() {
 fn test_undef_eof_no_newline() {
     let src = "#undef FOO";
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @"[]");
+    insta::assert_yaml_snapshot!(diags, @r"[]");
 }
 
 #[test]

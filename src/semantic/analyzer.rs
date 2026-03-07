@@ -474,6 +474,17 @@ impl<'a> SemanticAnalyzer<'a> {
             // Still record conversions so the assignment works
             self.record_implicit_conversions(lhs_ty, rhs_ty, rhs);
             true
+        } else if self.is_pointer_signedness_mismatch(lhs_ty, rhs_ty) {
+            // Pointers differ only in signedness - report as warning
+            self.report_warning(
+                node,
+                SemanticErrorKind::PointerSignednessMismatch {
+                    expected: lhs_ty,
+                    found: rhs_ty,
+                },
+            );
+            self.record_implicit_conversions(lhs_ty, rhs_ty, rhs);
+            true
         } else if self.is_discarding_pointer_qualifiers(lhs_ty, rhs_ty) {
             self.report_warning(
                 node,
@@ -531,6 +542,27 @@ impl<'a> SemanticAnalyzer<'a> {
             if compatible_ignoring_quals {
                 // Return true if qualifiers are DISCARDED (rhs has something lhs doesn't)
                 return !lhs_base.qualifiers().contains(rhs_base.qualifiers());
+            }
+        }
+
+        false
+    }
+
+    /// Check if the mismatch is between pointers to integers that only differ in signedness
+    fn is_pointer_signedness_mismatch(&self, lhs_ty: QualType, rhs_ty: QualType) -> bool {
+        if !lhs_ty.is_pointer() || !rhs_ty.is_pointer() {
+            return false;
+        }
+
+        let lhs_pointee = self.registry.get_pointee(lhs_ty.ty());
+        let rhs_pointee = self.registry.get_pointee(rhs_ty.ty());
+
+        if let (Some(lhs_p), Some(rhs_p)) = (lhs_pointee, rhs_pointee) {
+            let lhs_p_canon = self.registry.canonical_qual_type(lhs_p).ty();
+            let rhs_p_canon = self.registry.canonical_qual_type(rhs_p).ty();
+
+            if let (Some(lhs_b), Some(rhs_b)) = (lhs_p_canon.builtin(), rhs_p_canon.builtin()) {
+                return lhs_b.is_integer() && rhs_b.is_integer() && lhs_b.rank() == rhs_b.rank() && lhs_b != rhs_b;
             }
         }
 
@@ -1334,6 +1366,15 @@ impl<'a> SemanticAnalyzer<'a> {
                 },
             );
             // Still record conversions so the assignment works
+            self.record_implicit_conversions(target_ty, init_ty, init);
+        } else if self.is_pointer_signedness_mismatch(target_ty, init_ty) {
+            self.report_warning(
+                init,
+                SemanticErrorKind::PointerSignednessMismatch {
+                    expected: target_ty,
+                    found: init_ty,
+                },
+            );
             self.record_implicit_conversions(target_ty, init_ty, init);
         } else if self.is_discarding_pointer_qualifiers(target_ty, init_ty) {
             self.report_warning(

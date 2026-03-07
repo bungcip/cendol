@@ -423,7 +423,7 @@ fn test_postfix_operator_precedence() {
 #[test]
 fn test_sizeof_compound_literal_expr() {
     let resolved = setup_expr("sizeof(char){12}");
-    insta::assert_yaml_snapshot!(&resolved, @"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     SizeOfExpr:
       CompoundLiteral:
         - parsed_type_1

@@ -1131,7 +1131,13 @@ impl TypeRegistry {
             }
 
             if is_union {
-                current_size = current_size.max(layout.size);
+                // For unions with unnamed bitfields, compute size based on bits needed
+                if let Some(bits) = member.bit_field_size {
+                    let bytes_needed = ((bits as u64) + 7) >> 3;
+                    current_size = current_size.max(bytes_needed);
+                } else {
+                    current_size = current_size.max(layout.size);
+                }
                 field_layouts.push(FieldLayout {
                     offset: 0,
                     bit_width: member.bit_field_size,
@@ -1150,14 +1156,17 @@ impl TypeRegistry {
                         bit_offset: Some(0),
                     });
                 } else {
+                    // For unnamed bit-fields, they don't affect alignment of subsequent members
+                    // but they do take up some space in the struct
+                    let is_unnamed = member.name.is_none();
+
                     let mut fits = false;
-                    if current_unit_offset.is_some() {
-                        if current_unit_size == layout.size
+                    if current_unit_offset.is_some() && !is_unnamed
+                        && current_unit_size == layout.size
                             && current_unit_bit_offset + (bits as u64) <= layout.size * 8
                         {
                             fits = true;
                         }
-                    }
 
                     if fits {
                         field_layouts.push(FieldLayout {
@@ -1173,10 +1182,20 @@ impl TypeRegistry {
                             bit_width: Some(bits),
                             bit_offset: Some(0),
                         });
+
+                        // For unnamed bit-fields, we only consume the bytes needed for the bits,
+                        // not the full type size. This ensures subsequent members are not affected
+                        // by the unnamed bit-field's type alignment.
+                        let bytes_needed = ((bits as u64) + 7) >> 3;
+                        if is_unnamed {
+                            // Reserve only the bytes needed for the bits
+                            current_size = offset + bytes_needed;
+                        } else {
+                            current_size = offset + layout.size;
+                        }
                         current_unit_offset = Some(offset);
                         current_unit_bit_offset = bits as u64;
                         current_unit_size = layout.size;
-                        current_size = offset + layout.size;
                     }
                 }
             } else {
@@ -1322,16 +1341,14 @@ impl TypeRegistry {
         }
 
         // Bolt ⚡: Optimized handle for enums using direct registry access.
-        if ty_a_ref.is_enum() {
-            if let TypeKind::Enum { base_type, .. } = &self.types[ty_a_ref.index()].kind {
+        if ty_a_ref.is_enum()
+            && let TypeKind::Enum { base_type, .. } = &self.types[ty_a_ref.index()].kind {
                 return self.is_compatible(QualType::new(*base_type, a.qualifiers()), b);
             }
-        }
-        if ty_b_ref.is_enum() {
-            if let TypeKind::Enum { base_type, .. } = &self.types[ty_b_ref.index()].kind {
+        if ty_b_ref.is_enum()
+            && let TypeKind::Enum { base_type, .. } = &self.types[ty_b_ref.index()].kind {
                 return self.is_compatible(a, QualType::new(*base_type, b.qualifiers()));
             }
-        }
 
         // Fallback for registry-only types (Functions, Records).
         // Since these are never inline, self.get() returns Cow::Borrowed which is cheap.

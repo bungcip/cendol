@@ -1,12 +1,10 @@
-#[cfg(test)]
-mod tests {
-    use crate::driver::artifact::CompilePhase;
-    use crate::tests::test_utils::run_pass;
+use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils::run_pass;
 
-    #[test]
-    fn test_builtin_constant_p() {
-        run_pass(
-            r#"
+#[test]
+fn test_builtin_constant_p() {
+    run_pass(
+        r#"
             int main() {
                 int x = 5;
                 const int y = 10;
@@ -20,7 +18,6 @@ mod tests {
                 return 0;
             }
         "#,
-            CompilePhase::Mir,
-        );
-    }
+        CompilePhase::Mir,
+    );
 }

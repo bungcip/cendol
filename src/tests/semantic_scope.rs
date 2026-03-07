@@ -57,13 +57,9 @@ int main() {
     );
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_function_redefinition_with_prototype() {
-        let source = r#"
+#[test]
+fn test_function_redefinition_with_prototype() {
+    let source = r#"
             int x;
             int x = 3;
             int x;
@@ -87,8 +83,8 @@ mod tests {
             }
         "#;
 
-        let mir_dump = setup_mir(source);
-        insta::assert_snapshot!(mir_dump, @r"
+    let mir_dump = setup_mir(source);
+    insta::assert_snapshot!(mir_dump, @r"
         type %t0 = i32
         type %t1 = void
         type %t2 = ptr<%t1>
@@ -125,7 +121,6 @@ mod tests {
             return const main
         }
         ");
-    }
 }
 
 #[test]

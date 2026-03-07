@@ -25,7 +25,7 @@ fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
 
 /// Parse C11 integer literal syntax
 /// Returns (value, suffix, base)
-pub(crate) fn parse_c11_integer_literal(text: &str) -> Option<(u64, Option<IntegerSuffix>, u32)> {
+pub(crate) fn parse_integer_literal(text: &str) -> Option<(u64, Option<IntegerSuffix>, u32)> {
     let (number_part, suffix) = strip_integer_suffix(text);
 
     if number_part.is_empty() {
@@ -97,7 +97,7 @@ fn strip_float_suffix(text: &str) -> (&str, Option<FloatSuffix>) {
 }
 
 /// Parse C11 floating-point literal syntax
-pub(crate) fn parse_c11_float_literal(text: &str) -> Option<(f64, Option<FloatSuffix>)> {
+pub(crate) fn parse_float_literal(text: &str) -> Option<(f64, Option<FloatSuffix>)> {
     if text.is_empty() {
         return None;
     }
@@ -377,11 +377,11 @@ mod tests {
     #[test]
     fn test_uppercase_hex_literals() {
         // Test 0X integer prefix
-        assert_eq!(parse_c11_integer_literal("0X10"), Some((16, None, 16)));
+        assert_eq!(parse_integer_literal("0X10"), Some((16, None, 16)));
 
         // Test 0X float prefix
         // 0X1p0 -> 1.0 * 2^0 = 1.0
-        assert_eq!(parse_c11_float_literal("0X1p0"), Some((1.0, None)));
+        assert_eq!(parse_float_literal("0X1p0"), Some((1.0, None)));
     }
 
     #[test]

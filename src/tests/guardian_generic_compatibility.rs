@@ -77,3 +77,34 @@ fn test_generic_selection_qualifier_compatibility_constraints() {
         "compatible with previously specified type 'int'",
     );
 }
+
+#[test]
+fn generic_selection_distinguishes_atomic_types() {
+    // C11 6.5.1.1p2: "No two generic associations in the same generic selection
+    // shall specify compatible types."
+    // 6.7.3p10: "For two qualified types to be compatible, both shall have the identically
+    // qualified version of a compatible type."
+    // _Atomic int and int are not compatible.
+
+    // 1. int and _Atomic int are NOT compatible and can both be present.
+    run_pass(
+        r#"
+        int main() {
+            _Atomic int a = 0;
+            // Matches int because lvalue conversion drops _Atomic.
+            return _Generic(a, int: 1, _Atomic int: 2);
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+
+    // 2. Two _Atomic int associations are compatible and must be rejected.
+    run_fail_with_message(
+        r#"
+        int main() {
+            return _Generic(0, _Atomic int: 1, _Atomic int: 2);
+        }
+        "#,
+        "compatible with previously specified type '_Atomic int'",
+    );
+}

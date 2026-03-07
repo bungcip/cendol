@@ -257,6 +257,15 @@ pub enum SemanticErrorKind {
         requested: u32,
         natural: u32,
     },
+    CompoundLiteralIncomplete {
+        ty: QualType,
+    },
+    CompoundLiteralVla {
+        ty: QualType,
+    },
+    CompoundLiteralFunction {
+        ty: QualType,
+    },
     InvalidAtomicQualifier {
         type_kind: &'static str,
     },
@@ -570,6 +579,24 @@ impl SemanticErrorKind {
                 "alignment specifier specifies {}-byte alignment, but {}-byte alignment is required",
                 requested, natural
             ),
+            SemanticErrorKind::CompoundLiteralIncomplete { ty } => {
+                format!(
+                    "compound literal specifies incomplete type '{}'",
+                    registry.display_qual_type(*ty)
+                )
+            }
+            SemanticErrorKind::CompoundLiteralVla { ty } => {
+                format!(
+                    "compound literal specifies variably modified type '{}'",
+                    registry.display_qual_type(*ty)
+                )
+            }
+            SemanticErrorKind::CompoundLiteralFunction { ty } => {
+                format!(
+                    "compound literal specifies function type '{}'",
+                    registry.display_qual_type(*ty)
+                )
+            }
             SemanticErrorKind::InvalidAtomicQualifier { type_kind } => {
                 format!("_Atomic qualifier cannot be used with {} type", type_kind)
             }

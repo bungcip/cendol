@@ -2455,6 +2455,28 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::AlignOf(ty) => self.visit_sizeof_alignof(None, Some(*ty), true, node),
             NodeKind::CompoundLiteral(ty, init) => {
                 self.visit_type_expressions(*ty);
+
+                // C11 6.5.2.5p1: The type name shall specify a complete object type
+                // or an array of unknown size, but not a variably modified type.
+                let resolved = self.registry.get(ty.ty());
+                if let TypeKind::Function { .. } = &resolved.kind {
+                    self.report_error(node, SemanticErrorKind::CompoundLiteralFunction { ty: *ty });
+                } else if self.registry.is_variably_modified(ty.ty()) {
+                    self.report_error(node, SemanticErrorKind::CompoundLiteralVla { ty: *ty });
+                } else if !self.registry.is_complete(ty.ty()) {
+                    // Exception: array of unknown size is allowed.
+                    let is_incomplete_array = matches!(
+                        resolved.kind,
+                        TypeKind::Array {
+                            size: ArraySizeType::Incomplete,
+                            ..
+                        }
+                    );
+                    if !is_incomplete_array {
+                        self.report_error(node, SemanticErrorKind::CompoundLiteralIncomplete { ty: *ty });
+                    }
+                }
+
                 let _ = self.registry.ensure_layout(ty.ty());
                 self.visit_initializer(*init, *ty);
                 Some(*ty)

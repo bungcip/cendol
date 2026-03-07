@@ -4,6 +4,7 @@
 //! declarators, initializers, and top-level constructs like function definitions
 //! and translation units.
 
+use crate::ast::literal::Literal;
 use crate::ast::{parsed::*, *};
 use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::parser::declaration_core::parse_declaration_specifiers;
@@ -244,10 +245,7 @@ pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
     let message_node = match token.kind {
         TokenKind::StringLiteral(symbol) => {
             parser.advance();
-            parser.push_node(
-                ParsedNodeKind::Literal(crate::ast::literal::Literal::String(symbol)),
-                token.span,
-            )
+            parser.push_node(ParsedNodeKind::Literal(Literal::String(symbol)), token.span)
         }
         _ => {
             return Err(ParseError {

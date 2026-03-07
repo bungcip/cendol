@@ -1,4 +1,5 @@
 use super::semantic_common::setup_lowering;
+use crate::ast::literal::Literal;
 use crate::ast::{Ast, NodeKind, NodeRef};
 use crate::semantic::{QualType, SymbolTable, TypeQualifiers, TypeRegistry};
 use serde::Serialize;
@@ -144,7 +145,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             ResolvedAstNode::Return(expr.map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))))
         }
         NodeKind::Literal(literal) => match literal {
-            crate::ast::literal::Literal::Int { val, .. } => ResolvedAstNode::LiteralInt(*val),
+            Literal::Int { val, .. } => ResolvedAstNode::LiteralInt(*val),
             _ => panic!("Not implemented for this literal type"),
         },
         NodeKind::Ident(name, _) => ResolvedAstNode::Ident(name.as_str().to_string()),

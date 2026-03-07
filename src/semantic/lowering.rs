@@ -188,7 +188,7 @@ fn resolve_array_size(size: Option<ParsedNodeRef>, ctx: &mut LowerCtx) -> ArrayS
         let expr = ctx.visit_expression(node);
 
         // C11 6.7.6.2p1: Check if the expression is a float literal (non-integer type)
-        if let NodeKind::Literal(crate::ast::literal::Literal::Float { .. }) = ctx.ast.get_kind(expr) {
+        if let NodeKind::Literal(Literal::Float { .. }) = ctx.ast.get_kind(expr) {
             ctx.report_error(ctx.ast.get_span(expr), SemanticErrorKind::ArraySizeNotInteger);
             return ArraySizeType::Incomplete;
         }

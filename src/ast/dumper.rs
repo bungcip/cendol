@@ -5,7 +5,7 @@
 use hashbrown::HashSet;
 use std::fmt;
 
-use crate::ast::literal;
+use crate::ast::literal::{self, Literal};
 use crate::ast::parsed::{ParsedAst, ParsedNodeKind};
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind};
 use crate::semantic::{SymbolRef, SymbolTable, TypeRef, TypeRegistry};
@@ -263,14 +263,14 @@ impl AstDumper {
     fn dump_parsed_node_kind(f: &mut fmt::Formatter<'_>, kind: &ParsedNodeKind, ast: &ParsedAst) -> fmt::Result {
         match kind {
             ParsedNodeKind::Literal(literal) => match literal {
-                crate::ast::literal::Literal::Int { val, suffix, base } => {
+                Literal::Int { val, suffix, base } => {
                     writeln!(f, "LiteralInt({:?}, {:?}, base={})", val, suffix, base)
                 }
-                crate::ast::literal::Literal::Float { val, suffix } => {
+                Literal::Float { val, suffix } => {
                     writeln!(f, "LiteralFloat({}, {:?})", val, suffix)
                 }
-                crate::ast::literal::Literal::String(s) => writeln!(f, "LiteralString(\"{}\")", s),
-                crate::ast::literal::Literal::Char(c) => writeln!(
+                Literal::String(s) => writeln!(f, "LiteralString(\"{}\")", s),
+                Literal::Char(c) => writeln!(
                     f,
                     "LiteralChar('{}')",
                     char::from_u32(*c as u32).unwrap_or(char::REPLACEMENT_CHARACTER)
@@ -457,14 +457,14 @@ impl AstDumper {
                 }
             }
             NodeKind::Literal(literal) => match literal {
-                crate::ast::literal::Literal::Int { val, suffix, base } => {
+                Literal::Int { val, suffix, base } => {
                     writeln!(f, "LiteralInt({:?}, {:?}, base={})", val, suffix, base)
                 }
-                crate::ast::literal::Literal::Float { val, suffix } => {
+                Literal::Float { val, suffix } => {
                     writeln!(f, "LiteralFloat({}, {:?})", val, suffix)
                 }
-                crate::ast::literal::Literal::String(s) => writeln!(f, "LiteralString({})", s),
-                crate::ast::literal::Literal::Char(c) => writeln!(
+                Literal::String(s) => writeln!(f, "LiteralString({})", s),
+                Literal::Char(c) => writeln!(
                     f,
                     "LiteralChar('{}')",
                     char::from_u32(*c as u32).unwrap_or(char::REPLACEMENT_CHARACTER)

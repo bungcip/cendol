@@ -63,7 +63,7 @@ impl<'a> ConstEvalCtx<'a> {
                 Some(pointee)
             }
             NodeKind::Cast(target_ty, _) => Some(*target_ty),
-            NodeKind::Literal(crate::ast::literal::Literal::String(val)) => {
+            NodeKind::Literal(Literal::String(val)) => {
                 // To get the correct size, we must parse the string literal just like codegen/analyzer does.
                 let parsed_str = crate::semantic::literal_utils::parse_string_literal(*val);
                 let len = parsed_str.values.len() + 1; // +1 for null terminator

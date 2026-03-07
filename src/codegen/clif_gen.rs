@@ -443,18 +443,17 @@ fn get_struct_packing(mir_type: &MirType, mir: &MirProgram) -> Option<Vec<Type>>
     if let MirType::Record {
         field_types, is_union, ..
     } = mir_type
+        && !*is_union
     {
-        if !*is_union {
-            let mut all_f = true;
-            for &ft in field_types {
-                let ft_mir = mir.get_type(ft);
-                if !matches!(ft_mir, MirType::F32 | MirType::F64) {
-                    all_f = false;
-                }
+        let mut all_f = true;
+        for &ft in field_types {
+            let ft_mir = mir.get_type(ft);
+            if !matches!(ft_mir, MirType::F32 | MirType::F64) {
+                all_f = false;
             }
-            if all_f && !field_types.is_empty() {
-                is_all_float = true;
-            }
+        }
+        if all_f && !field_types.is_empty() {
+            is_all_float = true;
         }
     }
 

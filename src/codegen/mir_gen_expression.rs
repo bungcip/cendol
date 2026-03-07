@@ -1,3 +1,4 @@
+use crate::ast::literal::{FloatSuffix, Literal};
 use crate::ast::nodes::AtomicOp;
 use crate::ast::{BinaryOp, NodeKind, NodeRef, UnaryOp};
 use crate::codegen::mir_gen::MirGen;
@@ -397,11 +398,10 @@ impl<'a> MirGen<'a> {
         let mir_ty = self.lower_qual_type(ty);
         match node_kind {
             NodeKind::Literal(literal) => match literal {
-                crate::ast::literal::Literal::Int { val, .. } => Some(Operand::Constant(
+                Literal::Int { val, .. } => Some(Operand::Constant(
                     self.create_constant(mir_ty, ConstValueKind::Int(*val)),
                 )),
-                crate::ast::literal::Literal::Float { val, suffix } => {
-                    use crate::ast::literal::FloatSuffix;
+                Literal::Float { val, suffix } => {
                     if matches!(suffix, Some(FloatSuffix::I | FloatSuffix::IF | FloatSuffix::IL)) {
                         let ty_info = self.mir_builder.get_type(mir_ty);
                         if let crate::mir::MirType::Record { field_types, .. } = ty_info {
@@ -421,10 +421,10 @@ impl<'a> MirGen<'a> {
                         ))
                     }
                 }
-                crate::ast::literal::Literal::Char(val) => Some(Operand::Constant(
+                Literal::Char(val) => Some(Operand::Constant(
                     self.create_constant(mir_ty, ConstValueKind::Int(*val as i64)),
                 )),
-                crate::ast::literal::Literal::String(val) => Some(self.visit_literal_string(val, ty)),
+                Literal::String(val) => Some(self.visit_literal_string(val, ty)),
             },
             _ => None,
         }

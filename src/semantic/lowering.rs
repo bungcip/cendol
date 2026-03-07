@@ -2716,6 +2716,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         parsed_node.kind.for_each_child(&mut f);
     }
 
+    /// Try to infer the type of an expression node during lowering.
+    /// This is limited because full semantic analysis hasn't run yet.
+    fn try_infer_type(&self, node: NodeRef) -> Option<TypeRef> {
+        match self.ast.get_kind(node) {
+            NodeKind::Ident(_, symbol) => {
+                let sym = self.symbol_table.get_symbol(*symbol);
+                match &sym.kind {
+                    crate::semantic::SymbolKind::Variable { .. } => Some(sym.type_info.ty()),
+                    _ => None,
+                }
+            }
+            NodeKind::Cast(qt, _) => Some(qt.ty()),
+            NodeKind::CompoundLiteral(qt, _) => Some(qt.ty()),
+            _ => None,
+        }
+    }
+
     fn try_deduce_string_initializer_size(&self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
         match self.ast.get_kind(init_node) {
             NodeKind::Literal(Literal::String(s)) => {
@@ -2817,6 +2834,20 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return;
         };
 
+        if init.designator_len == 0 {
+            // C11 6.7.9p14: Character array initialized by string literal
+            if element_type.is_array()
+                && let Some(et) = self.registry.get_array_element(element_type)
+                && (et.is_char() || et.is_wchar_t())
+            {
+                let kind = self.ast.get_kind(init.initializer);
+                if matches!(kind, NodeKind::Literal(crate::ast::literal::Literal::String(_))) {
+                    iter.next();
+                    return;
+                }
+            }
+        }
+
         if init.designator_len > 0 {
             // Check for array designators
             match self.ast.get_kind(init.designator_start) {
@@ -2835,6 +2866,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     iter.next();
                     return;
                 }
+            }
+        } else if element_type.is_record() {
+            // Check for struct-to-struct initialization
+            if let Some(ty) = self.try_infer_type(init.initializer)
+                && self
+                    .registry
+                    .is_compatible(QualType::unqualified(element_type), QualType::unqualified(ty))
+            {
+                iter.next();
+                return;
             }
         }
 

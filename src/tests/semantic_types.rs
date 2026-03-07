@@ -490,6 +490,7 @@ fn test_struct_copy_init() {
     type %t3 = ptr<%t1>
     type %t4 = [2]%t2
     type %t5 = fn() -> %t1
+    type %t6 = ptr<%t5>
 
     global @global: i32 = const zero
     global @global_wrap: [2]%t2 = const array_literal [const struct_literal { 0: const inc_global }, const struct_literal { 0: const inc_global }]

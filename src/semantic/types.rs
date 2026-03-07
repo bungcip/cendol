@@ -448,6 +448,29 @@ impl TypeRef {
     }
 
     #[inline]
+    pub(crate) fn is_char(self) -> bool {
+        self.builtin().is_some_and(|b| b.is_char())
+    }
+
+    #[inline]
+    pub(crate) fn is_char16(self) -> bool {
+        self.builtin().is_some_and(|b| b == BuiltinType::UShort)
+    }
+
+    #[inline]
+    pub(crate) fn is_char32(self) -> bool {
+        self.builtin().is_some_and(|b| b == BuiltinType::UInt)
+    }
+
+    #[inline]
+    pub(crate) fn is_wchar_t(self) -> bool {
+        // For now placeholder, in real implementation it would check if it's the wchar_t typedef'd type
+        // or a specific builtin type if wchar_t is builtin.
+        // In Cendol we assume it's just 'int' (32-bit signed).
+        self.builtin().is_some_and(|b| b == BuiltinType::Int)
+    }
+
+    #[inline]
     pub(crate) fn is_record(self) -> bool {
         self.class() == TypeClass::Record
     }
@@ -601,6 +624,26 @@ impl QualType {
     #[inline]
     pub(crate) fn is_atomic(self) -> bool {
         self.qualifiers().contains(TypeQualifiers::ATOMIC)
+    }
+
+    #[inline]
+    pub(crate) fn is_char(self) -> bool {
+        self.ty().is_char()
+    }
+
+    #[inline]
+    pub(crate) fn is_wchar_t(self) -> bool {
+        self.ty().is_wchar_t()
+    }
+
+    #[inline]
+    pub(crate) fn is_char16(self) -> bool {
+        self.ty().is_char16()
+    }
+
+    #[inline]
+    pub(crate) fn is_char32(self) -> bool {
+        self.ty().is_char32()
     }
 
     #[inline]

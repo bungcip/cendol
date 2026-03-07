@@ -378,10 +378,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn get_bitfield_width(&self, node: NodeRef) -> Option<u16> {
         match self.ast.get_kind(node) {
             NodeKind::MemberAccess(obj, field_name, is_arrow) => {
-                let Some(obj_qt) = self.semantic_info.types[obj.index()] else {
-                    return None;
-                };
-
+                let obj_qt = self.semantic_info.types[obj.index()]?;
                 let record_ty = if *is_arrow {
                     self.registry.get_pointee(obj_qt.ty()).map(|p| p.ty())
                 } else {

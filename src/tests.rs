@@ -77,6 +77,7 @@ pub mod test_utils;
 
 pub mod ast_dumper_coverage;
 
+pub mod codegen_bool_cast;
 pub mod codegen_builtin_choose_expr;
 pub mod codegen_builtin_constant_p;
 pub mod codegen_builtin_unreachable;

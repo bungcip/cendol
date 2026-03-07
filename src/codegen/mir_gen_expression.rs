@@ -4,8 +4,8 @@ use crate::ast::{BinaryOp, NodeKind, NodeRef, UnaryOp};
 use crate::codegen::mir_gen::MirGen;
 use crate::codegen::mir_gen_ops;
 use crate::mir::{
-    AtomicMemOrder, BinaryIntOp, CallTarget, ConstValue, ConstValueKind, MirStmt, Operand, Place, Rvalue, Terminator,
-    TypeId,
+    AtomicMemOrder, BinaryIntOp, CallTarget, ConstValue, ConstValueKind, MirStmt, MirType, Operand, Place, Rvalue,
+    Terminator, TypeId,
 };
 use crate::semantic::const_eval::{eval_const_expr, eval_const_expr_float};
 use crate::semantic::{ArraySizeType, QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
@@ -384,7 +384,14 @@ impl<'a> MirGen<'a> {
 
             if is_compatible {
                 let truncated_kind = match const_val.kind {
-                    ConstValueKind::Int(val) => ConstValueKind::Int(mir_type.truncate_int(val)),
+                    ConstValueKind::Int(val) => {
+                        // C11 6.3.1.2-3: When converting to _Bool, the result is 0 if the value is 0, otherwise 1
+                        if matches!(mir_type, MirType::Bool) {
+                            ConstValueKind::Int(if val != 0 { 1 } else { 0 })
+                        } else {
+                            ConstValueKind::Int(mir_type.truncate_int(val))
+                        }
+                    }
                     kind => kind,
                 };
                 return Operand::Constant(self.create_constant(mir_ty, truncated_kind));

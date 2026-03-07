@@ -1385,7 +1385,14 @@ impl<'a> MirGen<'a> {
 
                     if is_compatible {
                         let truncated_kind = match const_val.kind {
-                            ConstValueKind::Int(val) => ConstValueKind::Int(mir_type.truncate_int(val)),
+                            ConstValueKind::Int(val) => {
+                                // C11 6.3.1.2-3: When converting to _Bool, the result is 0 if the value is 0, otherwise 1
+                                if matches!(mir_type, MirType::Bool) {
+                                    ConstValueKind::Int(if val != 0 { 1 } else { 0 })
+                                } else {
+                                    ConstValueKind::Int(mir_type.truncate_int(val))
+                                }
+                            }
                             kind => kind,
                         };
                         Operand::Constant(self.create_constant(to_mir_type, truncated_kind))

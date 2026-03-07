@@ -275,6 +275,7 @@ impl Cli {
             system_include_paths.push(PathBuf::from("custom-include"));
         }
         system_include_paths.push(PathBuf::from("/usr/include"));
+        system_include_paths.push(PathBuf::from("/usr/local/include"));
 
         // Add architecture-specific include paths
         let arch_paths = ["/usr/include/x86_64-linux-gnu"];

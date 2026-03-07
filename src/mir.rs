@@ -710,12 +710,15 @@ impl MirBuilder {
         let mut func = MirFunction::new_extern(func_id, name, return_type);
         func.is_variadic = is_variadic;
 
-        // Create locals for each parameter
+        // Create locals for each parameter.
+        // Temporarily clear current_function so these params don't get added to the function currently being compiled.
+        let saved_func = self.current_function.take();
         for (i, &param_type) in param_types.iter().enumerate() {
             let param_name = Some(NameId::new(format!("param{}", i)));
             let local_id = self.create_local(param_name, param_type, true);
             func.params.push(local_id);
         }
+        self.current_function = saved_func;
 
         self.functions.insert(func_id, func);
         self.module.functions.push(func_id);

@@ -4,8 +4,8 @@ use crate::mir::MirArrayLayout;
 use crate::mir::MirProgram;
 use crate::mir::MirRecordLayout;
 use crate::mir::{
-    self, AtomicMemOrder, BinaryIntOp, ConstValueId, ConstValueKind, LocalId, MirBlockId, MirBuilder, MirFunctionId,
-    MirLinkage, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
+    self, AtomicMemOrder, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, LocalId, MirBlockId, MirBuilder,
+    MirFunctionId, MirLinkage, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
@@ -34,6 +34,8 @@ pub(crate) struct MirGen<'a> {
     pub(crate) registry: &'a mut TypeRegistry,
     pub(crate) local_map: HashMap<SymbolRef, LocalId>,
     pub(crate) global_map: HashMap<SymbolRef, GlobalId>,
+    /// VLA variables: maps SymbolRef → (pointer_local_id, size_local_id)
+    pub(crate) vla_map: HashMap<SymbolRef, (LocalId, LocalId)>,
     pub(crate) label_map: HashMap<NameId, MirBlockId>,
     pub(crate) type_cache: HashMap<TypeRef, TypeId>,
     pub(crate) type_conversion_in_progress: HashSet<TypeRef>,
@@ -61,6 +63,7 @@ impl<'a> MirGen<'a> {
             current_scope_id: ScopeId::GLOBAL,
             local_map: HashMap::new(),
             global_map: HashMap::new(),
+            vla_map: HashMap::new(),
             label_map: HashMap::new(),
             registry,
             type_cache: HashMap::new(),
@@ -351,6 +354,7 @@ impl<'a> MirGen<'a> {
         // Parameter locals are now created in `define_function`. We just need to
         // map the SymbolRef to the LocalId.
         self.local_map.clear();
+        self.vla_map.clear();
         let mir_params = self.mir_builder.get_functions().get(&func_id).unwrap().params.clone();
 
         for (i, param_ref) in function_data.param_start.range(function_data.param_len).enumerate() {
@@ -487,6 +491,12 @@ impl<'a> MirGen<'a> {
             unreachable!()
         };
 
+        // Check if this is a VLA type
+        if let Some((size_expr, element_type)) = self.get_vla_info(ty.ty()) {
+            self.visit_vla_local(entry_ref, name, size_expr, element_type, alignment);
+            return;
+        }
+
         let local_id = self.mir_builder.create_local(Some(name), mir_type_id, false);
 
         if let Some(align) = alignment {
@@ -501,6 +511,125 @@ impl<'a> MirGen<'a> {
             // emit_assignment will then emit Place::Local(local_id) = Place::Local(local_id), which is fine or can be skipped.
             self.emit_assignment(Place::Local(local_id), init_operand);
         }
+    }
+
+    /// Extract VLA info from a type: returns (size_expression_node, element_type) if VLA.
+    fn get_vla_info(&self, ty: TypeRef) -> Option<(NodeRef, TypeRef)> {
+        let type_info = self.registry.get(ty);
+        if let TypeKind::Array {
+            element_type,
+            size: ArraySizeType::Variable(size_expr),
+        } = &type_info.kind
+        {
+            Some((*size_expr, *element_type))
+        } else {
+            None
+        }
+    }
+
+    /// Handle VLA local variable declaration.
+    /// Creates a pointer-typed local for the data and a size_t local for sizeof.
+    /// Emits runtime allocation using Alloc (malloc).
+    fn visit_vla_local(
+        &mut self,
+        entry_ref: SymbolRef,
+        name: NameId,
+        size_expr: NodeRef,
+        element_type: TypeRef,
+        alignment: Option<u32>,
+    ) {
+        // Get element size dynamically (the element type might itself be a VLA)
+        let element_size_operand = self.visit_type_query(element_type, true);
+
+        // Lower element type to get pointer type
+        let element_mir_ty = self.lower_type(element_type);
+        let ptr_mir_ty = self.mir_builder.add_type(MirType::Pointer {
+            pointee: element_mir_ty,
+        });
+        let size_t_mir_ty = self.get_size_t_type();
+
+        // Create pointer local (holds the allocated memory address)
+        let ptr_local_id = self.mir_builder.create_local(Some(name), ptr_mir_ty, false);
+        if let Some(align) = alignment {
+            self.mir_builder.set_local_alignment(ptr_local_id, align);
+        }
+
+        // Create size local (holds total byte size for sizeof)
+        let size_local_id = self.mir_builder.create_local(None, size_t_mir_ty, false);
+
+        // Evaluate the VLA size expression at runtime to get the count
+        let count_operand = self.visit_expression(size_expr, true);
+
+        // Cast count to size_t if needed
+        let count_ty = self.get_operand_type(&count_operand);
+        let count_as_size_t = if count_ty != size_t_mir_ty {
+            Operand::Cast(size_t_mir_ty, Box::new(count_operand))
+        } else {
+            count_operand
+        };
+
+        // Compute total_size = count * element_size
+        let total_size_rvalue =
+            Rvalue::BinaryIntOp(crate::mir::BinaryIntOp::Mul, count_as_size_t, element_size_operand);
+        let (_, total_size_place) = self.create_temp_local(size_t_mir_ty);
+        self.mir_builder
+            .add_statement(MirStmt::Assign(total_size_place.clone(), total_size_rvalue));
+        let total_size_operand = Operand::Copy(Box::new(total_size_place));
+
+        // Store the size for sizeof
+        self.emit_assignment(Place::Local(size_local_id), total_size_operand.clone());
+
+        // Allocate memory: emit Alloc (calls malloc in Cranelift backend)
+        // We need to create a temporary array type for Alloc, but Alloc takes a TypeId
+        // and calls malloc with the type's size. Instead, we'll directly use a Call to malloc
+        // with the computed total_size.
+        // Actually, MirStmt::Alloc(Place, TypeId) computes size from the TypeId statically.
+        // For VLA, we need dynamic size. Let's use a direct malloc call instead.
+        self.emit_malloc_call(ptr_local_id, total_size_operand);
+
+        // Map: symbol → pointer local (for visit_ident)
+        // Also map in local_map so existing code can find it
+        self.local_map.insert(entry_ref, ptr_local_id);
+        // Map in vla_map for sizeof support and special access handling
+        self.vla_map.insert(entry_ref, (ptr_local_id, size_local_id));
+    }
+
+    /// Emit a malloc call and store the result in the given local.
+    fn emit_malloc_call(&mut self, dest_local: LocalId, size_operand: Operand) {
+        // Declare malloc as an extern function if not already declared
+        let malloc_name = NameId::new("malloc");
+        let size_t_ty = self.get_size_t_type();
+        let void_ty = self.mir_builder.add_type(MirType::Void);
+        let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: void_ty });
+
+        // Find or create the malloc function declaration
+        let malloc_func_id = self.find_or_declare_extern_function(malloc_name, vec![size_t_ty], ptr_ty, false);
+
+        // Call malloc(size) and store result in dest_local
+        self.mir_builder.add_statement(MirStmt::Call {
+            target: CallTarget::Direct(malloc_func_id),
+            args: vec![size_operand],
+            dest: Some(Place::Local(dest_local)),
+        });
+    }
+
+    /// Find or declare an external function by name.
+    fn find_or_declare_extern_function(
+        &mut self,
+        name: NameId,
+        param_types: Vec<TypeId>,
+        return_type: TypeId,
+        is_variadic: bool,
+    ) -> MirFunctionId {
+        // Check if already declared
+        for (id, func) in self.mir_builder.get_functions().iter() {
+            if func.name == name {
+                return *id;
+            }
+        }
+        // Declare it
+        self.mir_builder
+            .declare_function(name, param_types, return_type, is_variadic)
     }
 
     fn visit_return_stmt(&mut self, expr: &Option<NodeRef>) {
@@ -1165,8 +1294,12 @@ impl<'a> MirGen<'a> {
     }
 
     pub(super) fn create_size_t_operand(&mut self, val: u64) -> Operand {
-        let ty_id = self.lower_type(self.registry.type_long_unsigned);
+        let ty_id = self.get_size_t_type();
         Operand::Constant(self.create_constant(ty_id, ConstValueKind::Int(val as i64)))
+    }
+
+    pub(super) fn get_size_t_type(&mut self) -> TypeId {
+        self.lower_type(self.registry.type_long_unsigned)
     }
 
     fn emit_conversion(

@@ -1,9 +1,9 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_fail_with_message, run_pass};
+use crate::tests::test_utils::run_pass;
 
 #[test]
-fn test_sizeof_vla_unsupported() {
-    run_fail_with_message(
+fn test_sizeof_vla_supported() {
+    run_pass(
         r#"
         int main() {
             int n = 10;
@@ -12,7 +12,7 @@ fn test_sizeof_vla_unsupported() {
             return 0;
         }
         "#,
-        "sizeof VLA",
+        CompilePhase::EmitObject,
     );
 }
 

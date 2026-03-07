@@ -7,7 +7,7 @@ use crate::mir::{
     TypeId,
 };
 use crate::semantic::const_eval::{eval_const_expr, eval_const_expr_float};
-use crate::semantic::{QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
+use crate::semantic::{ArraySizeType, QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
 use crate::{ast, semantic};
 
 impl<'a> MirGen<'a> {
@@ -269,15 +269,63 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
+    pub(crate) fn visit_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
         if self.registry.is_variably_modified(ty) {
-            // Error was already reported by semantic analyzer, so we just return a dummy operand.
+            if is_size {
+                // sizeof(VLA) — compute dynamically
+                return self.visit_sizeof_vla(ty);
+            } else {
+                // alignof(VLA) — alignment is determined statically by element type
+                let type_info = self.registry.get(ty);
+                if let TypeKind::Array { element_type, .. } = &type_info.kind {
+                    let elem = *element_type;
+                    let _ = self.registry.ensure_layout(elem);
+                    let layout = self.registry.get_layout(elem);
+                    return self.create_size_t_operand(layout.alignment);
+                }
+            }
             return self.create_dummy_operand();
         }
         let _ = self.registry.ensure_layout(ty);
         let layout = self.registry.get_layout(ty);
         let val = if is_size { layout.size } else { layout.alignment };
         self.create_size_t_operand(val)
+    }
+
+    /// Compute sizeof(VLA) at runtime.
+    fn visit_sizeof_vla(&mut self, ty: semantic::TypeRef) -> Operand {
+        let type_info = self.registry.get(ty);
+        if let TypeKind::Array {
+            element_type,
+            size: ArraySizeType::Variable(size_expr),
+        } = &type_info.kind
+        {
+            let size_expr = *size_expr;
+            let element_type = *element_type;
+
+            // Get element size dynamically (the element type might itself be a VLA)
+            let element_size_operand = self.visit_type_query(element_type, true);
+
+            let size_t_mir_ty = self.get_size_t_type();
+
+            // Evaluate the count expression at runtime
+            let count_operand = self.visit_expression(size_expr, true);
+
+            // Cast count to size_t if needed
+            let count_ty = self.get_operand_type(&count_operand);
+            let count_as_size_t = if count_ty != size_t_mir_ty {
+                Operand::Cast(size_t_mir_ty, Box::new(count_operand))
+            } else {
+                count_operand
+            };
+
+            // total_size = count * element_size
+            let rvalue = Rvalue::BinaryIntOp(crate::mir::BinaryIntOp::Mul, count_as_size_t, element_size_operand);
+            self.emit_rvalue_to_operand(rvalue, size_t_mir_ty)
+        } else {
+            // Shouldn't happen, but fallback
+            self.create_dummy_operand()
+        }
     }
 
     fn visit_generic_selection(
@@ -1060,10 +1108,26 @@ impl<'a> MirGen<'a> {
         };
 
         // In C, arr[idx] is equivalent to *(arr + idx)
-        let arr_place = self.visit_expression_as_place(sequence_ref);
+        let arr_operand = self.visit_expression(sequence_ref, true);
         let idx_operand = self.visit_expression(index_ref, true);
 
-        Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
+        // Check if the base operand is already a pointer in MIR (e.g., VLA locals stored as pointers)
+        let arr_mir_ty = self.get_operand_type(&arr_operand);
+        let arr_mir_type = self.mir_builder.get_type(arr_mir_ty);
+        if arr_mir_type.is_pointer() {
+            // Pointer-based indexing: *(ptr + idx)
+            let ptr_add = Rvalue::PtrAdd(arr_operand, idx_operand);
+            let result_op = self.emit_rvalue_to_operand(ptr_add, arr_mir_ty);
+            // Deref the resulting pointer
+            let deref_place = self.deref_operand(result_op);
+            Operand::Copy(Box::new(deref_place))
+        } else {
+            // Array-based indexing: use Place::ArrayIndex
+            let arr_ty = self.ast.get_resolved_type(sequence_ref).unwrap();
+            let mir_ty = self.lower_qual_type(arr_ty);
+            let arr_place = self.ensure_place(arr_operand, mir_ty);
+            Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
+        }
     }
 
     fn visit_inc_dec_expression(

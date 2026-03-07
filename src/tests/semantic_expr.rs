@@ -1011,7 +1011,7 @@ fn test_usual_arithmetic_conversions_signed_wins() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @"
+    insta::assert_snapshot!(mir, @r"
     type %t0 = i32
     type %t1 = u32
     type %t2 = i64

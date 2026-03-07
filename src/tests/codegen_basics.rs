@@ -108,7 +108,7 @@ fn test_store_statement_lowering() {
     // 7. Assert
     match result {
         ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(clif_ir, @"
+            insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
                 ss0 = explicit_slot 4, align = 4
@@ -178,7 +178,7 @@ fn test_store_deref_pointer() {
 
     match result {
         ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(clif_ir, @"
+            insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
                 ss0 = explicit_slot 4, align = 4
@@ -216,7 +216,7 @@ fn test_boolean_logic_lowering() {
         "#;
     // Verify it compiles without crashing
     let clif_dump = setup_cranelift(source);
-    insta::assert_snapshot!(clif_dump, @"
+    insta::assert_snapshot!(clif_dump, @r"
     ; Function: main
     function u0:0() -> i32 system_v {
         ss0 = explicit_slot 4, align = 4
@@ -316,7 +316,7 @@ fn test_float_to_char_conversion() {
         "#;
     // Verify it compiles without crashing
     let clif_dump = setup_cranelift(source);
-    insta::assert_snapshot!(clif_dump, @"
+    insta::assert_snapshot!(clif_dump, @r"
     ; Function: main
     function u0:0() -> i32 system_v {
         ss0 = explicit_slot 1
@@ -377,7 +377,7 @@ fn test_f128_constant_promotion() {
 
     match result {
         ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(clif_ir, @"
+            insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
                 ss0 = explicit_slot 16, align = 16

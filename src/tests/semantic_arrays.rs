@@ -71,17 +71,25 @@ fn test_vla_ice_fix() {
     type %t1 = i32
     type %t2 = i8
     type %t3 = [0]%t2
+    type %t4 = u64
+    type %t5 = ptr<%t2>
+    type %t6 = ptr<%t0>
 
     fn f1(%param0: i32) -> void
     {
       locals {
-        %test: [0]i8
-        %3: i32
-        %4: i32
-        %5: i32
+        %test: ptr<i8>
+        %3: u64
+        %4: u64
+        %6: i32
+        %7: i32
+        %8: i32
       }
 
       bb1:
+        %4 = cast<u64>(%param0) * const 1
+        %3 = %4
+        %test = call malloc(%4)
         cond_br const 0, bb3, bb4
 
       bb2:
@@ -94,11 +102,11 @@ fn test_vla_ice_fix() {
         br bb5
 
       bb5:
-        %3 = %param0
-        %4 = %param0 + const -1
-        %param0 = %4
-        %5 = %3 == const 0
-        cond_br %5, bb6, bb7
+        %6 = %param0
+        %7 = %param0 + const -1
+        %param0 = %7
+        %8 = %6 == const 0
+        cond_br %8, bb6, bb7
 
       bb6:
         return
@@ -109,6 +117,8 @@ fn test_vla_ice_fix() {
       bb8:
         br bb2
     }
+
+    extern fn malloc(%param0: u64) -> ptr<void>
     ");
 }
 
@@ -128,20 +138,32 @@ fn test_vla_in_block_scope() {
     type %t0 = void
     type %t1 = i32
     type %t2 = [0]%t1
+    type %t3 = u64
+    type %t4 = ptr<%t1>
+    type %t5 = ptr<%t0>
 
     fn f() -> void
     {
       locals {
         %n: i32
         %m: i32
-        %arr: [0]i32
+        %arr: ptr<i32>
+        %4: u64
+        %5: i32
+        %6: u64
       }
 
       bb1:
         %n = const 10
         %m = const 5
+        %5 = %n + %m
+        %6 = cast<u64>(%5) * const 4
+        %4 = %6
+        %arr = call malloc(%6)
         return
     }
+
+    extern fn malloc(%param0: u64) -> ptr<void>
     ");
 }
 

@@ -1109,10 +1109,10 @@ impl TypeRegistry {
                     layout_size = 0;
                 } else {
                     member_align = 1;
-                    layout_size = (bits + 7) / 8;
+                    layout_size = bits.div_ceil(8);
                 }
             } else if let Some(bits) = member.bit_field_size {
-                layout_size = (bits as u64 + 7) / 8;
+                layout_size = (bits as u64).div_ceil(8);
             }
 
             if !is_unnamed_bitfield {

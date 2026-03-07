@@ -1780,6 +1780,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 .symbol_table
                 .define_variable(func_id, qt, storage, Some(init_node), None, span);
 
+            // Also define __FUNCTION__ (GCC extension)
+            let function_id = NameId::new("__FUNCTION__");
+            let _ = self
+                .symbol_table
+                .define_variable(function_id, qt, storage, Some(init_node), None, span);
+
             // Also define __PRETTY_FUNCTION__ (GCC extension)
             let pretty_func_id = NameId::new("__PRETTY_FUNCTION__");
             let _ = self

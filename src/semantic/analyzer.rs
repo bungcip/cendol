@@ -2424,13 +2424,12 @@ impl<'a> SemanticAnalyzer<'a> {
                     Some(QualType::unqualified(self.registry.type_void))
                 } else {
                     let mut ty = self.visit_node(*result_expr);
-                    if let Some(t) = ty {
-                        if t.is_array() || t.is_function() {
+                    if let Some(t) = ty
+                        && (t.is_array() || t.is_function()) {
                             let decayed = self.registry.decay(t, TypeQualifiers::empty());
                             self.push_conversion(*result_expr, Conversion::PointerDecay { to: decayed.ty() });
                             ty = Some(decayed);
                         }
-                    }
                     ty
                 }
             }

@@ -255,7 +255,7 @@ fn test_nested_elif_skipped() {
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"[]");
+    insta::assert_yaml_snapshot!(tokens, @"[]");
 }
 
 #[test]
@@ -270,8 +270,8 @@ fn test_nested_elif_skipped_expression_not_evaluated() {
 #endif
 "#;
     let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(tokens, @r"[]");
-    insta::assert_yaml_snapshot!(diags, @r"[]");
+    insta::assert_yaml_snapshot!(tokens, @"[]");
+    insta::assert_yaml_snapshot!(diags, @"[]");
 }
 
 // Expression Evaluation Tests

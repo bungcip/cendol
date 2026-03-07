@@ -442,7 +442,7 @@ __extension__
 __restrict
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"[]");
+    insta::assert_yaml_snapshot!(tokens, @"[]");
 }
 
 // Macro Redefinition Tests (C11 6.10.3)
@@ -520,7 +520,7 @@ P
 "#;
     let tokens = setup_pp_snapshot(src);
     // The _Pragma("once") is handled and removed from the token stream.
-    insta::assert_yaml_snapshot!(tokens, @r"[]");
+    insta::assert_yaml_snapshot!(tokens, @"[]");
 }
 
 #[test]

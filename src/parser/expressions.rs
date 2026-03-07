@@ -164,6 +164,16 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
             parser.advance();
             Ok(parser.push_node(ParsedNodeKind::Ident(symbol), token.span))
         }
+        TokenKind::Func | TokenKind::Function | TokenKind::PrettyFunction => {
+            parser.advance();
+            let symbol = match token.kind {
+                TokenKind::Func => StringId::new("__func__"),
+                TokenKind::Function => StringId::new("__FUNCTION__"),
+                TokenKind::PrettyFunction => StringId::new("__PRETTY_FUNCTION__"),
+                _ => unreachable!(),
+            };
+            Ok(parser.push_node(ParsedNodeKind::Ident(symbol), token.span))
+        }
         TokenKind::IntegerConstant(val, suffix, base) => {
             parser.advance();
             Ok(parser.push_node(ParsedNodeKind::Literal(Literal::Int { val, suffix, base }), token.span))

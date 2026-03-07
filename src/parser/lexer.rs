@@ -103,6 +103,11 @@ pub enum TokenKind {
     BuiltinBswap64,
     Asm,
 
+    // Reserved identifiers as keywords
+    Func,           // __func__
+    Function,       // __FUNCTION__
+    PrettyFunction, // __PRETTY_FUNCTION__
+
     // Atomic builtins
     BuiltinAtomicLoadN,
     BuiltinAtomicStoreN,
@@ -454,6 +459,11 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__asm"), TokenKind::Asm);
         m.insert(StringId::new("__asm__"), TokenKind::Asm);
         m.insert(StringId::new("asm"), TokenKind::Asm);
+
+        // Reserved identifiers
+        m.insert(StringId::new("__func__"), TokenKind::Func);
+        m.insert(StringId::new("__FUNCTION__"), TokenKind::Function);
+        m.insert(StringId::new("__PRETTY_FUNCTION__"), TokenKind::PrettyFunction);
         m
     })
 }

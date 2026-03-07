@@ -95,8 +95,28 @@ fn test_func_identifier_redefinition() {
             int __func__;
         }
     "#;
-    // Shadows implicitly declared __func__ in SAME scope is an error in C11
-    run_fail_with_message(code, "redefinition of '__func__'");
+    // Shadows implicitly declared __func__ in SAME scope or as keyword is an error
+    run_fail(code, CompilePhase::Mir);
+}
+
+#[test]
+fn test_function_identifier_redefinition() {
+    let code = r#"
+        void foo() {
+            int __FUNCTION__;
+        }
+    "#;
+    run_fail(code, CompilePhase::Mir);
+}
+
+#[test]
+fn test_pretty_function_identifier_redefinition() {
+    let code = r#"
+        void foo() {
+            int __PRETTY_FUNCTION__;
+        }
+    "#;
+    run_fail(code, CompilePhase::Mir);
 }
 
 #[test]
@@ -178,8 +198,8 @@ fn test_func_opt_shadowed() {
             printf("%s", __func__);
         }
     "#;
-    // Redefinition in same scope
-    run_fail_with_message(code, "redefinition of '__func__'");
+    // Redefinition in same scope as keyword is an error
+    run_fail(code, CompilePhase::Mir);
 }
 
 #[test]
@@ -247,6 +267,17 @@ fn test_noreturn_declaration_mismatch() {
     }
     "#;
     run_fail_with_message(code, "conflicting types for 'foo'");
+}
+
+#[test]
+fn test_function_identifier_basic() {
+    let code = r#"
+        int printf(const char *, ...);
+        void foo() {
+            printf("%s", __FUNCTION__);
+        }
+    "#;
+    run_pass(code, CompilePhase::SemanticLowering);
 }
 
 #[test]

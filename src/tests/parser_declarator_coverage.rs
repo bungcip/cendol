@@ -188,7 +188,7 @@ fn test_complex_abstract_declarators_trailing() {
             - void
           init_declarators:
             - name: f
-              kind: function(function(int) -> int) -> int
+              kind: function(int function(int) -> int) -> int
     ");
 
     // Complex abstract declarator: pointer to array of functions (invalid but triggers logic)
@@ -209,7 +209,7 @@ fn test_abstract_declarator_left_paren_gaps() {
             - void
           init_declarators:
             - name: f
-              kind: function(function(void) -> int) -> int
+              kind: function(int function(void) -> int) -> int
     ");
 
     // Variadic abstract declarator

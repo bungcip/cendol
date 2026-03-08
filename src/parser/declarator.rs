@@ -5,10 +5,9 @@
 //! arrays, and functions.
 
 use crate::diagnostic::{ParseError, ParseErrorKind};
-use crate::parser::declaration_core::parse_declaration_specifiers;
 use crate::parser::{Token, TokenKind};
 use crate::{ast::*, semantic::TypeQualifiers};
-use thin_vec::{ThinVec, thin_vec};
+use thin_vec::thin_vec;
 
 use super::Parser;
 
@@ -84,16 +83,18 @@ fn peek_past_attribute(parser: &Parser, mut start_offset: u32) -> Option<Token> 
 
 /// Validate declarator combinations
 fn validate_declarator_combination(
-    base: &ParsedDeclarator,
+    arena: &ParsedTypeArena,
+    base_ref: DeclaratorRef,
     new_kind: DeclaratorKind,
     span: SourceSpan,
 ) -> Result<(), ParseError> {
+    let base = arena.get_decl(base_ref);
     if matches!(
-        (base, new_kind),
+        (&base, new_kind),
         (
             ParsedDeclarator::Function { .. },
             DeclaratorKind::Array | DeclaratorKind::Function
-        ) | (ParsedDeclarator::Array(..), DeclaratorKind::Function)
+        ) | (ParsedDeclarator::Array { .. }, DeclaratorKind::Function)
     ) {
         return Err(ParseError {
             span,
@@ -103,7 +104,7 @@ fn validate_declarator_combination(
     Ok(())
 }
 
-pub(crate) fn parse_declarator(parser: &mut Parser) -> Result<ParsedDeclarator, ParseError> {
+pub(crate) fn parse_declarator(parser: &mut Parser) -> Result<DeclaratorRef, ParseError> {
     while parser.is_token(TokenKind::Attribute) {
         let _ = super::declaration_core::parse_attribute(parser);
     }
@@ -118,19 +119,20 @@ pub(crate) fn parse_declarator(parser: &mut Parser) -> Result<ParsedDeclarator, 
         match token.kind {
             TokenKind::Identifier(symbol) => {
                 parser.advance();
-                ParsedDeclarator::Identifier(symbol, TypeQualifiers::empty())
+                parser
+                    .ast
+                    .parsed_types
+                    .alloc_decl(ParsedDeclarator::Identifier(Some(symbol)))
             }
             _ if parser.is_abstract_declarator_start() => parse_abstract_declarator(parser)?,
-            _ => ParsedDeclarator::Abstract,
+            _ => parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Identifier(None)),
         }
     } else {
-        ParsedDeclarator::Abstract
+        parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Identifier(None))
     };
 
-    Ok(reconstruct_declarator_chain(
-        pointers,
-        parse_trailing_declarators(parser, base)?,
-    ))
+    let trailing = parse_trailing_declarators(parser, base)?;
+    Ok(reconstruct_declarator_chain(parser, pointers, trailing))
 }
 
 fn parse_type_qualifiers(parser: &mut Parser) -> Result<TypeQualifiers, ParseError> {
@@ -181,27 +183,30 @@ fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<DeclaratorComponent
 
 fn parse_trailing_declarators_for_type_names(
     parser: &mut Parser,
-    mut base: ParsedDeclarator,
-) -> Result<ParsedDeclarator, ParseError> {
+    mut base: DeclaratorRef,
+) -> Result<DeclaratorRef, ParseError> {
     while let Some(token) = parser.try_current_token() {
         match token.kind {
             TokenKind::LeftBracket => {
                 parser.advance();
-                validate_declarator_combination(&base, DeclaratorKind::Array, token.span)?;
+                validate_declarator_combination(&parser.ast.parsed_types, base, DeclaratorKind::Array, token.span)?;
                 let size = parse_array_size(parser)?;
                 parser.expect(TokenKind::RightBracket)?;
-                base = ParsedDeclarator::Array(Box::new(base), size);
+                base = parser
+                    .ast
+                    .parsed_types
+                    .alloc_decl(ParsedDeclarator::Array { inner: base, size });
             }
             TokenKind::LeftParen => {
                 parser.advance();
-                validate_declarator_combination(&base, DeclaratorKind::Function, token.span)?;
-                let (params, is_variadic) = parse_function_parameters(parser)?;
+                validate_declarator_combination(&parser.ast.parsed_types, base, DeclaratorKind::Function, token.span)?;
+                let (param_range, is_variadic) = parse_function_parameters(parser)?;
                 parser.expect(TokenKind::RightParen)?;
-                base = ParsedDeclarator::Function {
-                    inner: Box::new(base),
-                    params,
-                    is_variadic,
-                };
+                base = parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Function {
+                    inner: base,
+                    params: param_range,
+                    flags: FunctionFlags { is_variadic },
+                });
             }
             _ => break,
         }
@@ -209,30 +214,37 @@ fn parse_trailing_declarators_for_type_names(
     Ok(base)
 }
 
-fn parse_trailing_declarators(parser: &mut Parser, mut base: ParsedDeclarator) -> Result<ParsedDeclarator, ParseError> {
+fn parse_trailing_declarators(parser: &mut Parser, mut base: DeclaratorRef) -> Result<DeclaratorRef, ParseError> {
     while let Some(token) = parser.try_current_token() {
         match token.kind {
             TokenKind::LeftBracket => {
                 parser.advance();
-                validate_declarator_combination(&base, DeclaratorKind::Array, token.span)?;
+                validate_declarator_combination(&parser.ast.parsed_types, base, DeclaratorKind::Array, token.span)?;
                 let size = parse_array_size(parser)?;
                 parser.expect(TokenKind::RightBracket)?;
-                base = ParsedDeclarator::Array(Box::new(base), size);
+                base = parser
+                    .ast
+                    .parsed_types
+                    .alloc_decl(ParsedDeclarator::Array { inner: base, size });
             }
             TokenKind::LeftParen => {
                 parser.advance();
-                validate_declarator_combination(&base, DeclaratorKind::Function, token.span)?;
-                let (params, is_variadic) = parse_function_parameters(parser)?;
+                validate_declarator_combination(&parser.ast.parsed_types, base, DeclaratorKind::Function, token.span)?;
+                let (param_range, is_variadic) = parse_function_parameters(parser)?;
                 parser.expect(TokenKind::RightParen)?;
-                base = ParsedDeclarator::Function {
-                    inner: Box::new(base),
-                    params,
-                    is_variadic,
-                };
+                base = parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Function {
+                    inner: base,
+                    params: param_range,
+                    flags: FunctionFlags { is_variadic },
+                });
             }
             TokenKind::Colon => {
                 parser.advance();
-                base = ParsedDeclarator::BitField(Box::new(base), parser.parse_expr_min()?);
+                let width = parser.parse_expr_min()?;
+                base = parser
+                    .ast
+                    .parsed_types
+                    .alloc_decl(ParsedDeclarator::BitField { inner: base, width });
             }
             _ => break,
         }
@@ -240,26 +252,35 @@ fn parse_trailing_declarators(parser: &mut Parser, mut base: ParsedDeclarator) -
     Ok(base)
 }
 
-fn reconstruct_declarator_chain(chain: Vec<DeclaratorComponent>, mut base: ParsedDeclarator) -> ParsedDeclarator {
+fn reconstruct_declarator_chain(
+    parser: &mut Parser,
+    chain: Vec<DeclaratorComponent>,
+    mut base: DeclaratorRef,
+) -> DeclaratorRef {
     for component in chain.into_iter().rev() {
         match component {
-            DeclaratorComponent::Pointer(q) => base = ParsedDeclarator::Pointer(q, Some(Box::new(base))),
+            DeclaratorComponent::Pointer(q) => {
+                base = parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Pointer {
+                    qualifiers: q,
+                    inner: base,
+                });
+            }
         }
     }
     base
 }
 
-fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParam>, bool), ParseError> {
-    let mut params = ThinVec::new();
+fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, bool), ParseError> {
+    let mut params = Vec::new();
     let mut is_variadic = false;
 
     if parser.is_token(TokenKind::RightParen) {
-        return Ok((params, is_variadic));
+        return Ok((parser.ast.parsed_types.alloc_params(params), is_variadic));
     }
 
     if parser.is_token(TokenKind::Void) && parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::RightParen) {
         parser.advance();
-        return Ok((params, is_variadic));
+        return Ok((parser.ast.parsed_types.alloc_params(params), is_variadic));
     }
 
     while !parser.at_eof() && !parser.is_token(TokenKind::RightParen) {
@@ -275,7 +296,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParam
         let start_idx = parser.current_idx;
         let spec_idx = parser.current_idx;
         let saved_diags = parser.diag.diagnostics.len();
-        let specifiers = match parse_declaration_specifiers(parser) {
+        let specifiers = match super::declaration_core::parse_declaration_specifiers(parser) {
             Ok(s) => s,
             Err(_) => {
                 parser.current_idx = spec_idx;
@@ -303,9 +324,36 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParam
             .get_token_span(start_idx)
             .unwrap_or_default()
             .merge(parser.last_token_span().unwrap_or_default());
+
+        let name = declarator
+            .map(|d| get_declarator_name(&parser.ast.parsed_types, d))
+            .flatten();
+        let param_parsed_type =
+            super::parsed_type_builder::build_parsed_type_from_specifiers(parser, &specifiers, declarator)?;
+
+        let mut storage = None;
+        let mut is_inline = false;
+        let mut is_noreturn = false;
+        let mut alignment = None;
+        for spec in &specifiers {
+            match spec {
+                ParsedDeclSpec::StorageClass(sc) => storage = Some(*sc),
+                ParsedDeclSpec::FunctionSpec(fs) => match fs {
+                    FunctionSpec::Inline => is_inline = true,
+                    FunctionSpec::Noreturn => is_noreturn = true,
+                },
+                ParsedDeclSpec::AlignmentSpec(align) => alignment = Some(align.clone()),
+                _ => {}
+            }
+        }
+
         params.push(ParsedParam {
-            specifiers,
-            declarator,
+            name,
+            ty: param_parsed_type,
+            storage,
+            is_inline,
+            is_noreturn,
+            alignment,
             span,
         });
 
@@ -314,7 +362,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParam
         }
     }
 
-    Ok((params, is_variadic))
+    Ok((parser.ast.parsed_types.alloc_params(params), is_variadic))
 }
 
 /// Check if current token starts an abstract declarator
@@ -332,35 +380,35 @@ pub(crate) fn is_abstract_declarator_start(parser: &Parser) -> bool {
 }
 
 /// Extract the declared name from a declarator, if any
-pub(crate) fn get_declarator_name(declarator: &ParsedDeclarator) -> Option<NameId> {
+pub(crate) fn get_declarator_name(arena: &ParsedTypeArena, decl_ref: DeclaratorRef) -> Option<NameId> {
+    let declarator = arena.get_decl(decl_ref);
     match declarator {
-        ParsedDeclarator::Identifier(name, _) => Some(*name),
-        ParsedDeclarator::Pointer(_, Some(inner)) => get_declarator_name(inner),
-        ParsedDeclarator::Array(inner, _) => get_declarator_name(inner),
-        ParsedDeclarator::Function { inner, .. } => get_declarator_name(inner),
-        ParsedDeclarator::BitField(inner, _) => get_declarator_name(inner),
-        ParsedDeclarator::Abstract => None,
-        ParsedDeclarator::Pointer(_, None) => None,
+        ParsedDeclarator::Identifier(name) => name,
+        ParsedDeclarator::Pointer { inner, .. } => get_declarator_name(arena, inner),
+        ParsedDeclarator::Array { inner, .. } => get_declarator_name(arena, inner),
+        ParsedDeclarator::Function { inner, .. } => get_declarator_name(arena, inner),
+        ParsedDeclarator::BitField { inner, .. } => get_declarator_name(arena, inner),
     }
 }
 
 /// Extract the parameters from a function declarator, if any
-pub(super) fn get_declarator_params(declarator: &ParsedDeclarator) -> Option<&ThinVec<ParsedParam>> {
+pub(super) fn get_declarator_params(arena: &ParsedTypeArena, decl_ref: DeclaratorRef) -> Option<ParsedParamRange> {
+    let declarator = arena.get_decl(decl_ref);
     match declarator {
         ParsedDeclarator::Function { inner, params, .. } => {
-            if let Some(inner_params) = get_declarator_params(inner) {
+            if let Some(inner_params) = get_declarator_params(arena, inner) {
                 Some(inner_params)
             } else {
                 Some(params)
             }
         }
-        ParsedDeclarator::Pointer(_, Some(inner)) => get_declarator_params(inner),
-        ParsedDeclarator::Array(inner, _) => get_declarator_params(inner),
+        ParsedDeclarator::Pointer { inner, .. } => get_declarator_params(arena, inner),
+        ParsedDeclarator::Array { inner, .. } => get_declarator_params(arena, inner),
         _ => None,
     }
 }
 
-pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDeclarator, ParseError> {
+pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<DeclaratorRef, ParseError> {
     while parser.is_token(TokenKind::Attribute) {
         let _ = super::declaration_core::parse_attribute(parser);
     }
@@ -373,12 +421,15 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDec
                 if let Some(token) = parser.peek_token(0) {
                     if let TokenKind::Identifier(name) = token.kind {
                         parser.advance();
-                        ParsedDeclarator::Identifier(name, TypeQualifiers::empty())
+                        parser
+                            .ast
+                            .parsed_types
+                            .alloc_decl(ParsedDeclarator::Identifier(Some(name)))
                     } else {
-                        ParsedDeclarator::Abstract
+                        parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Identifier(None))
                     }
                 } else {
-                    ParsedDeclarator::Abstract
+                    parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Identifier(None))
                 }
             }
             TokenKind::Int => {
@@ -386,12 +437,15 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDec
                 if let Some(token) = parser.peek_token(0) {
                     if let TokenKind::Identifier(name) = token.kind {
                         parser.advance();
-                        ParsedDeclarator::Identifier(name, TypeQualifiers::empty())
+                        parser
+                            .ast
+                            .parsed_types
+                            .alloc_decl(ParsedDeclarator::Identifier(Some(name)))
                     } else {
-                        ParsedDeclarator::Abstract
+                        parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Identifier(None))
                     }
                 } else {
-                    ParsedDeclarator::Abstract
+                    parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Identifier(None))
                 }
             }
             TokenKind::LeftParen => {
@@ -406,15 +460,17 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDec
                 };
 
                 if is_param {
-                    ParsedDeclarator::Abstract
+                    parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Identifier(None))
                 } else {
                     parser.advance(); // consume '('
                     if parser.accept(TokenKind::RightParen).is_some() {
-                        ParsedDeclarator::Function {
-                            inner: Box::new(ParsedDeclarator::Abstract),
-                            params: ThinVec::new(),
-                            is_variadic: false,
-                        }
+                        let inner = parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Identifier(None));
+                        let params = parser.ast.parsed_types.alloc_params(Vec::new());
+                        parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Function {
+                            inner,
+                            params,
+                            flags: FunctionFlags { is_variadic: false },
+                        })
                     } else {
                         let inner = parse_abstract_declarator(parser)?;
                         if parser.accept(TokenKind::RightParen).is_some() {
@@ -422,11 +478,11 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDec
                         } else if parser.accept(TokenKind::LeftParen).is_some() {
                             let (params, is_variadic) = parse_function_parameters(parser)?;
                             parser.expect(TokenKind::RightParen)?;
-                            ParsedDeclarator::Function {
-                                inner: Box::new(inner),
+                            parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Function {
+                                inner,
                                 params,
-                                is_variadic,
-                            }
+                                flags: FunctionFlags { is_variadic },
+                            })
                         } else {
                             return Err(ParseError {
                                 span: parser.current_token_span_or_empty(),
@@ -443,16 +499,18 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDec
                 parser.advance();
                 let size = parse_array_size(parser)?;
                 parser.expect(TokenKind::RightBracket)?;
-                ParsedDeclarator::Array(Box::new(ParsedDeclarator::Abstract), size)
+                let inner = parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Identifier(None));
+                parser
+                    .ast
+                    .parsed_types
+                    .alloc_decl(ParsedDeclarator::Array { inner, size })
             }
-            _ => ParsedDeclarator::Abstract,
+            _ => parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Identifier(None)),
         }
     } else {
-        ParsedDeclarator::Abstract
+        parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Identifier(None))
     };
 
-    Ok(reconstruct_declarator_chain(
-        pointers,
-        parse_trailing_declarators_for_type_names(parser, base)?,
-    ))
+    let trailing = parse_trailing_declarators_for_type_names(parser, base)?;
+    Ok(reconstruct_declarator_chain(parser, pointers, trailing))
 }

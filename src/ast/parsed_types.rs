@@ -17,13 +17,13 @@ use crate::semantic::TypeQualifiers;
 pub type ParsedBaseTypeRef = NonZeroU32;
 
 /// Type reference for parsed declarators
-pub type ParsedDeclRef = NonZeroU32;
+pub type DeclaratorRef = NonZeroU32;
 
 /// A parsed type that represents the syntactic structure of a type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ParsedType {
     pub base: ParsedBaseTypeRef,   // NonZeroU32
-    pub declarator: ParsedDeclRef, // NonZeroU32
+    pub declarator: DeclaratorRef, // NonZeroU32
     pub qualifiers: TypeQualifiers,
 }
 
@@ -48,13 +48,7 @@ pub struct ParsedEnumRange {
     pub len: u32,
 }
 
-/// Function parameter information
-#[derive(Debug, Clone)]
-pub struct ParsedFunctionParam {
-    pub name: Option<NameId>,
-    pub ty: ParsedType,
-    pub span: SourceSpan,
-}
+// ParsedParam is now in parsed.rs
 
 /// Parsed struct/union member information
 #[derive(Debug, Clone)]
@@ -101,24 +95,28 @@ pub enum ParsedBaseTypeNode {
     TypeofExpr(crate::ast::ParsedNodeRef),
 }
 
-/// Parsed declarator node (the declarator structure)
 #[derive(Debug, Clone)]
-pub enum ParsedDeclaratorNode {
-    Identifier,
+pub enum ParsedDeclarator {
+    Identifier(Option<NameId>),
     Pointer {
         qualifiers: TypeQualifiers,
-        inner: ParsedDeclRef,
+        inner: DeclaratorRef,
     },
 
     Array {
         size: ParsedArraySize,
-        inner: ParsedDeclRef,
+        inner: DeclaratorRef,
     },
 
     Function {
         params: ParsedParamRange,
         flags: FunctionFlags,
-        inner: ParsedDeclRef,
+        inner: DeclaratorRef,
+    },
+
+    BitField {
+        inner: DeclaratorRef,
+        width: crate::ast::ParsedNodeRef,
     },
 }
 
@@ -127,8 +125,8 @@ pub enum ParsedDeclaratorNode {
 #[derive(Clone, Debug, Default)]
 pub struct ParsedTypeArena {
     base_types: Vec<ParsedBaseTypeNode>,
-    declarators: Vec<ParsedDeclaratorNode>,
-    params: Vec<ParsedFunctionParam>,
+    declarators: Vec<ParsedDeclarator>,
+    params: Vec<crate::ast::ParsedParam>,
     struct_members: Vec<ParsedStructMember>,
     enum_constants: Vec<ParsedEnumConstant>,
 }
@@ -142,14 +140,14 @@ impl ParsedTypeArena {
     }
 
     /// Allocate a new declarator and return its reference
-    pub(crate) fn alloc_decl(&mut self, declarator: ParsedDeclaratorNode) -> ParsedDeclRef {
+    pub(crate) fn alloc_decl(&mut self, declarator: ParsedDeclarator) -> DeclaratorRef {
         let index = self.declarators.len() as u32 + 1; // Start from 1 for NonZeroU32
         self.declarators.push(declarator);
-        ParsedDeclRef::new(index).expect("ParsedDeclRef overflow")
+        DeclaratorRef::new(index).expect("DeclaratorRef overflow")
     }
 
     /// Allocate function parameters and return the range
-    pub(crate) fn alloc_params(&mut self, params: Vec<ParsedFunctionParam>) -> ParsedParamRange {
+    pub(crate) fn alloc_params(&mut self, params: Vec<crate::ast::ParsedParam>) -> ParsedParamRange {
         let start = self.params.len() as u32;
         self.params.extend(params);
         let len = self.params.len() as u32 - start;
@@ -179,13 +177,13 @@ impl ParsedTypeArena {
     }
 
     /// Get a declarator by reference
-    pub(crate) fn get_decl(&self, decl_ref: ParsedDeclRef) -> ParsedDeclaratorNode {
+    pub(crate) fn get_decl(&self, decl_ref: DeclaratorRef) -> ParsedDeclarator {
         let index = (decl_ref.get() - 1) as usize;
         self.declarators[index].clone()
     }
 
     /// Get function parameters by range
-    pub(crate) fn get_params(&self, range: ParsedParamRange) -> &[ParsedFunctionParam] {
+    pub(crate) fn get_params(&self, range: ParsedParamRange) -> &[crate::ast::ParsedParam] {
         let start = range.start as usize;
         let end = start + range.len as usize;
         &self.params[start..end]

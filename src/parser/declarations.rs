@@ -92,7 +92,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
 
         let span = start_span.merge(trx.parser.last_token_span().unwrap_or(start_span));
 
-        if let Some(name) = trx.parser.get_declarator_name(&declarator) {
+        if let Some(name) = trx.parser.get_declarator_name(declarator) {
             if specifiers
                 .iter()
                 .any(|s| matches!(s, ParsedDeclSpec::StorageClass(StorageClass::Typedef)))
@@ -161,11 +161,9 @@ fn parse_function_definition(parser: &mut Parser) -> Result<ParsedNodeRef, Parse
 
     parser.type_context.push_scope();
 
-    if let Some(params) = super::declarator::get_declarator_params(&declarator) {
-        for param in params {
-            if let Some(ref decl) = param.declarator
-                && let Some(name) = super::declarator::get_declarator_name(decl)
-            {
+    if let Some(range) = super::declarator::get_declarator_params(&parser.ast.parsed_types, declarator) {
+        for param in parser.ast.parsed_types.get_params(range) {
+            if let Some(name) = param.name {
                 parser.type_context.add_non_typedef(name);
             }
         }
@@ -179,7 +177,7 @@ fn parse_function_definition(parser: &mut Parser) -> Result<ParsedNodeRef, Parse
 
     let function_def = ParsedFunctionDef {
         specifiers,
-        declarator: Box::new(declarator),
+        declarator,
         body,
     };
 

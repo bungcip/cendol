@@ -1,6 +1,5 @@
-use crate::ast::literal::Literal;
-use crate::ast::parsed::{ParsedAst, ParsedDeclSpec, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec};
-use crate::ast::{BinaryOp, UnaryOp};
+use crate::ast::{BinaryOp, UnaryOp, literal::Literal};
+use crate::ast::{ParsedAst, ParsedDeclSpec, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec};
 use crate::diagnostic::ParseError;
 use crate::driver::artifact::CompilePhase;
 use crate::parser::statements::parse_compound_statement;
@@ -215,8 +214,8 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
                 .iter()
                 .map(|init_decl| {
                     let name =
-                        extract_declarator_name(&init_decl.declarator).unwrap_or_else(|| "<unnamed>".to_string());
-                    let kind_str = extract_declarator_kind(&init_decl.declarator);
+                        extract_declarator_name(ast, init_decl.declarator).unwrap_or_else(|| "<unnamed>".to_string());
+                    let kind_str = extract_declarator_kind(ast, init_decl.declarator);
                     let kind = if kind_str == "identifier" { None } else { Some(kind_str) };
                     let initializer = init_decl
                         .initializer
@@ -324,8 +323,8 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
         }
         ParsedNodeKind::FunctionDef(def) => {
             let specifiers = resolve_specifiers(ast, &def.specifiers);
-            let name = extract_declarator_name(&def.declarator).unwrap_or_else(|| "<unnamed>".to_string());
-            let kind_str = extract_declarator_kind(&def.declarator);
+            let name = extract_declarator_name(ast, def.declarator).unwrap_or_else(|| "<unnamed>".to_string());
+            let kind_str = extract_declarator_kind(ast, def.declarator);
             let kind = if kind_str == "identifier" { None } else { Some(kind_str) };
 
             let resolved_declarator = ResolvedInitDeclarator {
@@ -346,32 +345,37 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
     }
 }
 
-fn extract_declarator_name(declarator: &ParsedDeclarator) -> Option<String> {
+fn extract_declarator_name(ast: &ParsedAst, declarator_ref: crate::ast::DeclaratorRef) -> Option<String> {
+    let declarator = ast.parsed_types.get_decl(declarator_ref);
     match declarator {
-        ParsedDeclarator::Identifier(name, _) => Some(name.to_string()),
-        ParsedDeclarator::Pointer(_, next) => next.as_ref().and_then(|d| extract_declarator_name(d)),
-        ParsedDeclarator::Array(next, _) => extract_declarator_name(next),
-        ParsedDeclarator::Function { inner, .. } => extract_declarator_name(inner),
-        ParsedDeclarator::BitField(next, _) => extract_declarator_name(next),
-        ParsedDeclarator::Abstract => None,
+        ParsedDeclarator::Identifier(name) => name.map(|n| n.to_string()),
+        ParsedDeclarator::Pointer { inner, .. } => extract_declarator_name(ast, inner),
+        ParsedDeclarator::Array { inner, .. } => extract_declarator_name(ast, inner),
+        ParsedDeclarator::Function { inner, .. } => extract_declarator_name(ast, inner),
+        ParsedDeclarator::BitField { inner, .. } => extract_declarator_name(ast, inner),
     }
 }
 
-fn extract_declarator_kind(declarator: &ParsedDeclarator) -> String {
+fn extract_declarator_kind(ast: &ParsedAst, declarator_ref: crate::ast::DeclaratorRef) -> String {
+    let declarator = ast.parsed_types.get_decl(declarator_ref);
     match declarator {
-        ParsedDeclarator::Identifier(_, _) => "identifier".to_string(),
-        ParsedDeclarator::Pointer(_, Some(inner)) => {
-            let inner_kind = extract_declarator_kind(inner);
+        ParsedDeclarator::Identifier(name) => {
+            if name.is_some() {
+                "identifier".to_string()
+            } else {
+                "abstract".to_string()
+            }
+        }
+        ParsedDeclarator::Pointer { inner, .. } => {
+            let inner_kind = extract_declarator_kind(ast, inner);
             if inner_kind == "identifier" || inner_kind == "abstract" {
                 "pointer".to_string()
             } else {
                 format!("pointer to {}", inner_kind)
             }
         }
-
-        ParsedDeclarator::Pointer(_, None) => "pointer".to_string(),
-        ParsedDeclarator::Array(inner, _) => {
-            let inner_kind = extract_declarator_kind(inner);
+        ParsedDeclarator::Array { inner, .. } => {
+            let inner_kind = extract_declarator_kind(ast, inner);
             if inner_kind == "identifier" || inner_kind == "abstract" {
                 "array".to_string()
             } else {
@@ -379,60 +383,22 @@ fn extract_declarator_kind(declarator: &ParsedDeclarator) -> String {
             }
         }
         ParsedDeclarator::Function {
-            inner,
-            params,
-            is_variadic,
+            inner, params, flags, ..
         } => {
-            let return_type = extract_declarator_kind(inner);
-            let mut param_str = if params.is_empty() {
+            let return_type = extract_declarator_kind(ast, inner);
+            let mut param_str = if params.len == 0 {
                 "void".to_string()
             } else {
-                params
+                ast.parsed_types
+                    .get_params(params)
                     .iter()
-                    .map(|param| {
-                        // Extract parameter type from specifiers
-                        let mut type_parts = Vec::new();
-                        for spec in &param.specifiers {
-                            if let ParsedDeclSpec::TypeSpec(ts) = spec {
-                                match ts {
-                                    ParsedTypeSpec::Void => type_parts.push("void"),
-                                    ParsedTypeSpec::Char => type_parts.push("char"),
-                                    ParsedTypeSpec::Short => type_parts.push("short"),
-                                    ParsedTypeSpec::Int => type_parts.push("int"),
-                                    ParsedTypeSpec::Long => type_parts.push("long"),
-                                    ParsedTypeSpec::Float => type_parts.push("float"),
-                                    ParsedTypeSpec::Double => type_parts.push("double"),
-                                    ParsedTypeSpec::Signed => type_parts.push("signed"),
-                                    ParsedTypeSpec::Unsigned => type_parts.push("unsigned"),
-                                    _ => type_parts.push("..."),
-                                }
-                            }
-                        }
-                        let base_type = if type_parts.is_empty() {
-                            "int".to_string()
-                        } else {
-                            type_parts.join(" ")
-                        };
-
-                        if let Some(decl) = &param.declarator {
-                            let param_kind = extract_declarator_kind(decl);
-                            if param_kind == "identifier" {
-                                base_type
-                            } else if param_kind.starts_with("function(") && param_kind.ends_with(") -> int") {
-                                param_kind
-                            } else {
-                                format!("{} {}", base_type, param_kind)
-                            }
-                        } else {
-                            base_type
-                        }
-                    })
+                    .map(|param| extract_type_kind(ast, &param.ty))
                     .collect::<Vec<_>>()
                     .join(", ")
             };
 
-            if *is_variadic {
-                if params.is_empty() {
+            if flags.is_variadic {
+                if params.len == 0 {
                     param_str = "...".to_string();
                 } else {
                     param_str.push_str(", ...");
@@ -446,11 +412,63 @@ fn extract_declarator_kind(declarator: &ParsedDeclarator) -> String {
             };
             format!("function({}) -> {}", param_str, return_type_str)
         }
-        ParsedDeclarator::BitField(inner, _) => {
-            let inner_kind = extract_declarator_kind(inner);
+        ParsedDeclarator::BitField { inner, .. } => {
+            let inner_kind = extract_declarator_kind(ast, inner);
             format!("bitfield {}", inner_kind)
         }
-        ParsedDeclarator::Abstract => "abstract".to_string(),
+    }
+}
+
+fn extract_base_kind(ast: &ParsedAst, base_ref: crate::ast::ParsedBaseTypeRef) -> String {
+    let base = ast.parsed_types.get_base_type(base_ref);
+    match base {
+        crate::ast::ParsedBaseTypeNode::Builtin(spec) => {
+            let s = format!("{:?}", spec);
+            let mut result = String::new();
+            for (i, c) in s.chars().enumerate() {
+                if i > 0 && c.is_uppercase() {
+                    result.push(' ');
+                }
+                result.push(c.to_ascii_lowercase());
+            }
+            result
+        }
+        crate::ast::ParsedBaseTypeNode::Record { tag, is_union, .. } => {
+            let kind = if is_union { "union" } else { "struct" };
+            if let Some(tag) = tag {
+                format!("{} {}", kind, tag)
+            } else {
+                format!("struct {{ ... }}")
+            }
+        }
+        crate::ast::ParsedBaseTypeNode::Enum { tag, .. } => {
+            if let Some(tag) = tag {
+                format!("enum {}", tag)
+            } else {
+                "enum { ... }".to_string()
+            }
+        }
+        crate::ast::ParsedBaseTypeNode::Typedef(name) => name.to_string(),
+        crate::ast::ParsedBaseTypeNode::Typeof(..) => "typeof(...)".to_string(),
+        crate::ast::ParsedBaseTypeNode::TypeofExpr(..) => "typeof(...)".to_string(),
+    }
+}
+
+fn extract_type_kind(ast: &ParsedAst, ty: &crate::ast::ParsedType) -> String {
+    let base_kind = extract_base_kind(ast, ty.base);
+    let decl_kind = extract_declarator_kind(ast, ty.declarator);
+
+    if decl_kind == "identifier" || decl_kind == "abstract" {
+        base_kind
+    } else if decl_kind == "pointer" {
+        format!("{} pointer", base_kind)
+    } else if decl_kind == "array" {
+        format!("{} array", base_kind)
+    } else if decl_kind.starts_with("function") {
+        format!("{} {}", base_kind, decl_kind)
+    } else {
+        // Fallback for complex combinations like "pointer to array"
+        format!("{} to {}", decl_kind, base_kind)
     }
 }
 

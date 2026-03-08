@@ -184,7 +184,7 @@ fn test_complex_declaration() {
         - name: b
           kind: pointer to array
         - name: c
-          kind: "function(..., int) -> int"
+          kind: "function(struct X, int) -> int"
         - name: d
           initializer:
             BinaryOp:
@@ -206,7 +206,7 @@ fn test_function_with_array_of_pointer_param() {
         - int
       init_declarators:
         - name: f
-          kind: function(int array of pointer) -> int
+          kind: function(array of pointer to int) -> int
     ");
 }
 
@@ -272,7 +272,7 @@ fn test_function_pointer_with_cast_initializer() {
           kind: function(int) -> pointer
           initializer:
             Cast:
-              - parsed_type_1_4
+              - parsed_type_3_8
               - LiteralInt: 0
     ");
 }
@@ -307,7 +307,7 @@ fn test_deeply_mixed_declarators() {
         - name: b
           kind: function(double) -> pointer to array
         - name: c
-          kind: "function(..., int) -> int"
+          kind: "function(struct X, int) -> int"
         - name: d
           initializer:
             BinaryOp:
@@ -817,7 +817,7 @@ fn test_cast_attribute_pointer() {
         - name: x
           initializer:
             Cast:
-              - parsed_type_1_3
+              - parsed_type_1_4
               - LiteralInt: 0
     ");
 }
@@ -832,7 +832,7 @@ fn test_param_attribute_int() {
         - void
       init_declarators:
         - name: foo
-          kind: function(function(int) -> int) -> int
+          kind: function(int function(int) -> int) -> int
     ");
 }
 

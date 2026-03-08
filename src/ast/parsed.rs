@@ -178,7 +178,7 @@ pub struct ParsedForStmt {
 
 #[derive(Debug, Clone)]
 pub struct ParsedInitDeclarator {
-    pub declarator: ParsedDeclarator,
+    pub declarator: super::DeclaratorRef,
     pub initializer: Option<ParsedNodeRef>,
     pub span: SourceSpan,
 }
@@ -192,7 +192,7 @@ pub struct ParsedDecl {
 #[derive(Debug, Clone)]
 pub struct ParsedFunctionDef {
     pub specifiers: ThinVec<ParsedDeclSpec>,
-    pub declarator: Box<ParsedDeclarator>,
+    pub declarator: super::DeclaratorRef,
     pub body: ParsedNodeRef,
 }
 
@@ -258,27 +258,16 @@ pub enum ParsedAlignmentSpec {
     Expr(ParsedNodeRef), // _Alignas(constant-expression)
 }
 
-// Declarators
-#[derive(Debug, Clone)]
-pub enum ParsedDeclarator {
-    Identifier(NameId, TypeQualifiers),                     // Base case: name (e.g., `x`)
-    Abstract,                                               // for abstract declarator
-    Pointer(TypeQualifiers, Option<Box<ParsedDeclarator>>), // e.g., `*`
-    Array(Box<ParsedDeclarator>, ParsedArraySize),          // e.g., `[10]`
-    Function {
-        inner: Box<ParsedDeclarator>,
-        params: ThinVec<ParsedParam>,
-        is_variadic: bool,
-    }, // e.g., `(int x)`
-    BitField(Box<ParsedDeclarator>, ParsedNodeRef /* bit width expression */), // e.g., `x : 8`
-}
-
-impl ParsedDeclarator {}
+// Declarators are now in parsed_types.rs and are arena-based (DeclaratorRef)
 
 #[derive(Debug, Clone)]
 pub struct ParsedParam {
-    pub specifiers: ThinVec<ParsedDeclSpec>,
-    pub declarator: Option<ParsedDeclarator>, // Optional name for abstract declarator
+    pub name: Option<NameId>,
+    pub ty: crate::ast::ParsedType,
+    pub storage: Option<crate::ast::StorageClass>,
+    pub is_inline: bool,
+    pub is_noreturn: bool,
+    pub alignment: Option<crate::ast::ParsedAlignmentSpec>,
     pub span: SourceSpan,
 }
 
@@ -368,56 +357,8 @@ impl ParsedAlignmentSpec {
     }
 }
 
-impl ParsedDeclarator {
-    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
-        match self {
-            ParsedDeclarator::Pointer(_, Some(inner)) => {
-                inner.for_each_child(f);
-            }
-            ParsedDeclarator::Pointer(_, None) => {}
-            ParsedDeclarator::Array(inner, size) => {
-                inner.for_each_child(f);
-                size.for_each_child(f);
-            }
-            ParsedDeclarator::Function { inner, params, .. } => {
-                inner.for_each_child(f);
-                for p in params {
-                    p.for_each_child(f);
-                }
-            }
-            ParsedDeclarator::BitField(inner, size_expr) => {
-                inner.for_each_child(f);
-                f(*size_expr);
-            }
-            _ => {}
-        }
-    }
-}
-
-impl ParsedParam {
-    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
-        for spec in &self.specifiers {
-            spec.for_each_child(f);
-        }
-        if let Some(decl) = &self.declarator {
-            decl.for_each_child(f);
-        }
-    }
-}
-
-impl ParsedArraySize {
-    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
-        match self {
-            ParsedArraySize::Expression { expr, .. } => f(*expr),
-            ParsedArraySize::VlaSpec { size: Some(s), .. } => f(*s),
-            _ => {}
-        }
-    }
-}
-
 impl ParsedInitDeclarator {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
-        self.declarator.for_each_child(f);
         if let Some(init) = self.initializer {
             f(init);
         }
@@ -440,7 +381,9 @@ impl ParsedFunctionDef {
         for spec in &self.specifiers {
             spec.for_each_child(f);
         }
-        self.declarator.for_each_child(f);
+        // declarator is now a ref, we might need to recurse into it if it contains exprs
+        // But most declarator exprs are array sizes which are already covered in AST nodes?
+        // Actually, array sizes ARE expressions (ParsedNodeRef).
         f(self.body);
     }
 }

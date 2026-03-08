@@ -18,14 +18,14 @@ use super::Parser;
 pub(crate) fn build_parsed_type_from_specifiers(
     parser: &mut Parser,
     specifiers: &ThinVec<ParsedDeclSpec>,
-    declarator: Option<&ParsedDeclarator>,
+    declarator: Option<DeclaratorRef>,
 ) -> Result<ParsedType, ParseError> {
     let (base_type_ref, qualifiers) = parse_base_type_and_qualifiers(parser, specifiers)?;
 
     let declarator_ref = if let Some(d) = declarator {
-        build_parsed_declarator(parser, d)?
+        d
     } else {
-        parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Identifier)
+        parser.ast.parsed_types.alloc_decl(ParsedDeclarator::Identifier(None))
     };
 
     Ok(ParsedType {
@@ -217,7 +217,7 @@ fn parse_type_specifier_to_parsed_base(
             // an array type, a function type, an atomic type, or an incomplete type."
             let decl = parser.ast.parsed_types.get_decl(parsed_type.declarator);
             match decl {
-                ParsedDeclaratorNode::Array { .. } => {
+                ParsedDeclarator::Array { .. } => {
                     return Err(ParseError {
                         span: parser.previous_token_span(),
                         kind: ParseErrorKind::Custom {
@@ -225,7 +225,7 @@ fn parse_type_specifier_to_parsed_base(
                         },
                     });
                 }
-                ParsedDeclaratorNode::Function { .. } => {
+                ParsedDeclarator::Function { .. } => {
                     return Err(ParseError {
                         span: parser.previous_token_span(),
                         kind: ParseErrorKind::Custom {
@@ -260,12 +260,14 @@ fn parse_type_specifier_to_parsed_base(
                         if let ParsedNodeKind::Declaration(decl) = &node_kind {
                             // Parse each member declaration
                             for init_decl in &decl.init_declarators {
-                                if let Some(member_name) = super::declarator::get_declarator_name(&init_decl.declarator)
-                                {
+                                if let Some(member_name) = super::declarator::get_declarator_name(
+                                    &parser.ast.parsed_types,
+                                    init_decl.declarator,
+                                ) {
                                     let member_parsed_type = build_parsed_type_from_specifiers(
                                         parser,
                                         &decl.specifiers,
-                                        Some(&init_decl.declarator),
+                                        Some(init_decl.declarator),
                                     )?;
 
                                     // Extract alignment from specifiers
@@ -356,81 +358,6 @@ fn parse_type_specifier_to_parsed_base(
     }
 }
 
-/// Build a ParsedDeclaratorNode from a ParsedDeclarator
-fn build_parsed_declarator(parser: &mut Parser, declarator: &ParsedDeclarator) -> Result<ParsedDeclRef, ParseError> {
-    match declarator {
-        ParsedDeclarator::Identifier(_name, _qualifiers) => {
-            // Simple identifier
-            // Note: qualifiers are part of specifiers or pointers, not directly on identifiers
-            // in the parser's logic for identifiers.
-            Ok(parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Identifier))
-        }
-        ParsedDeclarator::Pointer(qualifiers, inner_decl) => {
-            let inner_ref = if let Some(inner) = inner_decl {
-                build_parsed_declarator(parser, inner)?
-            } else {
-                parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Identifier)
-            };
-
-            Ok(parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Pointer {
-                qualifiers: *qualifiers,
-                inner: inner_ref,
-            }))
-        }
-        ParsedDeclarator::Array(inner, size) => {
-            let inner_ref = build_parsed_declarator(parser, inner)?;
-
-            Ok(parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Array {
-                size: size.clone(),
-                inner: inner_ref,
-            }))
-        }
-        ParsedDeclarator::Function {
-            inner,
-            params,
-            is_variadic,
-        } => {
-            let inner_ref = build_parsed_declarator(parser, inner)?;
-
-            // Parse parameters
-            let mut parsed_params = Vec::new();
-            for param in params {
-                let param_parsed_type =
-                    build_parsed_type_from_specifiers(parser, &param.specifiers, param.declarator.as_ref())?;
-
-                parsed_params.push(ParsedFunctionParam {
-                    name: param
-                        .declarator
-                        .as_ref()
-                        .and_then(super::declarator::get_declarator_name),
-                    ty: param_parsed_type,
-                    span: param.span,
-                });
-            }
-
-            let param_range = parser.ast.parsed_types.alloc_params(parsed_params);
-
-            Ok(parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Function {
-                params: param_range,
-                flags: FunctionFlags {
-                    is_variadic: *is_variadic,
-                },
-                inner: inner_ref,
-            }))
-        }
-        ParsedDeclarator::Abstract => Ok(parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Identifier)),
-
-        ParsedDeclarator::BitField(inner, _width_expr) => {
-            // BitFields inside structs are usually handled by struct parsing,
-            // creating ParsedStructMember directly.
-            // But if we encounter one here (rare in types?), we probably treat as identifier
-            // or maybe we need to represent it.
-            // For types, a bitfield declarator resolves to the underlying type declarator.
-            build_parsed_declarator(parser, inner)
-        }
-    }
-}
-
 /// Parse a type name and return ParsedType (for casts, sizeof, etc.)
 pub(crate) fn parse_parsed_type_name(parser: &mut Parser) -> Result<ParsedType, ParseError> {
     // Parse declaration specifiers
@@ -444,5 +371,5 @@ pub(crate) fn parse_parsed_type_name(parser: &mut Parser) -> Result<ParsedType, 
     };
 
     // Build the ParsedType from specifiers and declarator
-    build_parsed_type_from_specifiers(parser, &specifiers, declarator.as_ref())
+    build_parsed_type_from_specifiers(parser, &specifiers, declarator)
 }

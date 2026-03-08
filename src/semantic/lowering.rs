@@ -15,9 +15,7 @@ use hashbrown::HashMap;
 use smallvec::{SmallVec, smallvec};
 
 use crate::ast::literal::Literal;
-use crate::ast::parsed::{
-    ParsedDecl, ParsedDeclarator, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec,
-};
+use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec};
 use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
 use crate::semantic::const_eval::{self, ConstEvalCtx};
@@ -220,7 +218,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn lower_array_declarator(
         &mut self,
-        base: &ParsedDeclarator,
+        base_ref: DeclaratorRef,
         size: &ParsedArraySize,
         element_ty: QualType,
         span: SourceSpan,
@@ -241,7 +239,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         };
 
         if has_static || !quals.is_empty() {
-            let is_outermost = matches!(base, ParsedDeclarator::Identifier(..) | ParsedDeclarator::Abstract);
+            let base = self.parsed_ast.parsed_types.get_decl(base_ref);
+            let is_outermost = matches!(base, ParsedDeclarator::Identifier(..));
 
             if !decl_ctx.in_parameter {
                 if has_static {
@@ -446,17 +445,6 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) is_inline: bool,
     pub(crate) is_noreturn: bool,
     pub(crate) alignment: Option<u32>,
-}
-
-fn extract_name(decl: &ParsedDeclarator) -> Option<NameId> {
-    match decl {
-        ParsedDeclarator::Identifier(name, _) => Some(*name),
-        ParsedDeclarator::Pointer(_, inner) => inner.as_ref().and_then(|d| extract_name(d)),
-        ParsedDeclarator::Array(inner, _) => extract_name(inner),
-        ParsedDeclarator::Function { inner, .. } => extract_name(inner),
-        ParsedDeclarator::BitField(inner, _) => extract_name(inner),
-        _ => None,
-    }
 }
 
 /// Finalize tentative definitions by converting them to defined state
@@ -803,12 +791,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let mut final_ty = self.apply_declarator(
             base_ty,
-            &func_def.declarator,
+            func_def.declarator,
             span,
-            &spec_info,
+            Some(&spec_info),
             DeclaratorContext { in_parameter: false },
         );
-        let func_name = extract_name(&func_def.declarator).expect("Function definition must have a name");
+        let func_name = self
+            .extract_name(func_def.declarator)
+            .expect("Function definition must have a name");
 
         if spec_info.storage == Some(StorageClass::Auto) {
             self.report_error(
@@ -914,7 +904,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // Pre-scan labels for forward goto support
         self.collect_labels(func_def.body);
 
-        let parameters = self.get_definition_params(&func_def.declarator).unwrap_or_default();
+        let parameters = self.get_definition_params(func_def.declarator).unwrap_or_default();
 
         let param_len = parameters.len() as u16;
         let mut param_dummies = Vec::new();
@@ -1084,14 +1074,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     ) -> Option<NodeRef> {
         let final_ty = self.apply_declarator(
             base_ty,
-            &init.declarator,
+            init.declarator,
             init.span,
-            spec_info,
+            Some(spec_info),
             DeclaratorContext { in_parameter: false },
         );
 
         // Check if declarator has an identifier
-        let Some(name) = extract_name(&init.declarator) else {
+        let Some(name) = self.extract_name(init.declarator) else {
             // Declaration without identifier (e.g., "int;") - emit warning and skip
             self.report_error(init.span, SemanticErrorKind::EmptyDeclaration);
             return None;
@@ -1238,6 +1228,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if self.registry.is_variably_modified(qt.ty()) && (is_global || spec_info.storage == Some(StorageClass::Static))
         {
             self.report_error(span, SemanticErrorKind::VlaAtFileScope);
+        }
+
+        if spec_info.storage == Some(StorageClass::Register) && spec_info.alignment.is_some() {
+            self.report_error(
+                span,
+                SemanticErrorKind::AlignmentNotAllowed {
+                    context: "register object",
+                },
+            );
         }
 
         qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);
@@ -1576,10 +1575,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error))
     }
 
-    fn visit_type_as_param(&mut self, ty: ParsedType, span: SourceSpan) -> QualType {
-        self.lower_type(ty, span, true)
-            .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error))
-    }
+    // fn visit_type_as_param(&mut self, ty: ParsedType, span: SourceSpan) -> QualType {
+    //     self.lower_type(ty, span, true)
+    //         .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error))
+    // }
 
     fn lower_type(
         &mut self,
@@ -1598,94 +1597,24 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let base = self.convert_parsed_base_type_to_qual_type(&base_type_node, span)?;
         let qbase = self.merge_qualifiers_with_check(base, qualifiers, span);
 
-        let final_type = self.apply_parsed_declarator(qbase, declarator, span, DeclaratorContext { in_parameter });
-        Ok(final_type)
-    }
+        let final_type = self.apply_declarator(qbase, declarator, span, None, DeclaratorContext { in_parameter });
 
-    /// Recursively apply parsed declarator to base type
-    fn apply_parsed_declarator(
-        &mut self,
-        current_type: QualType,
-        declarator: ParsedDeclRef,
-        span: SourceSpan,
-        decl_ctx: DeclaratorContext,
-    ) -> QualType {
-        let declarator_node = self.parsed_ast.parsed_types.get_decl(declarator);
-
-        match declarator_node {
-            ParsedDeclaratorNode::Identifier => current_type,
-            ParsedDeclaratorNode::Pointer { qualifiers, inner } => {
-                let pointer_type = self.registry.pointer_to(current_type);
-                let modified_current =
-                    self.merge_qualifiers_with_check(QualType::unqualified(pointer_type), qualifiers, span);
-                self.apply_parsed_declarator(modified_current, inner, span, decl_ctx)
-            }
-            ParsedDeclaratorNode::Array { size, inner } => {
-                let has_quals = match &size {
-                    ParsedArraySize::Expression { qualifiers, .. } => !qualifiers.is_empty(),
-                    ParsedArraySize::Star { qualifiers } => !qualifiers.is_empty(),
-                    ParsedArraySize::VlaSpec { qualifiers, .. } => !qualifiers.is_empty(),
-                    ParsedArraySize::Incomplete => false,
-                };
-                let has_static = matches!(size, ParsedArraySize::VlaSpec { is_static: true, .. });
-
-                if has_static || has_quals {
-                    let inner_node = self.parsed_ast.parsed_types.get_decl(inner);
-                    let is_outermost = matches!(inner_node, ParsedDeclaratorNode::Identifier);
-
-                    if !decl_ctx.in_parameter {
-                        if has_static {
-                            self.report_error(span, SemanticErrorKind::ArrayStaticOutsideParameter);
-                        }
-                        if has_quals {
-                            self.report_error(span, SemanticErrorKind::ArrayQualifierOutsideParameter);
-                        }
-                    } else if !is_outermost {
-                        if has_static {
-                            self.report_error(span, SemanticErrorKind::ArrayStaticNotOutermost);
-                        }
-                        if has_quals {
-                            self.report_error(span, SemanticErrorKind::ArrayQualifierNotOutermost);
-                        }
-                    }
-                }
-
-                let array_size = self.convert_parsed_array_size(&size);
-                let array_type = self.registry.array_of(current_type.ty(), array_size);
-                let qualified_array = QualType::unqualified(array_type).merge_qualifiers(current_type.qualifiers());
-                self.apply_parsed_declarator(qualified_array, inner, span, decl_ctx)
-            }
-            ParsedDeclaratorNode::Function { params, flags, inner } => {
-                let parsed_params: Vec<_> = self.parsed_ast.parsed_types.get_params(params).to_vec();
-                let mut processed_params = Vec::new();
-                for param in parsed_params {
-                    let param_type = self.visit_type_as_param(param.ty, param.span);
-                    let ptr_quals = self.extract_array_param_qualifiers_from_ref(param.ty.declarator);
-                    let decayed_param_type = self.registry.decay(param_type, ptr_quals);
-
-                    processed_params.push(FunctionParameter {
-                        param_type: decayed_param_type,
-                        name: param.name,
-                        storage: None,
-                    });
-                }
-
-                let function_type =
-                    self.registry
-                        .function_type(current_type.ty(), processed_params, flags.is_variadic, false);
-                self.apply_parsed_declarator(QualType::unqualified(function_type), inner, span, decl_ctx)
-            }
+        if in_parameter {
+            let ptr_quals = self.extract_array_param_qualifiers(declarator);
+            Ok(self.registry.decay(final_type, ptr_quals))
+        } else {
+            Ok(final_type)
         }
     }
 
-    fn extract_array_param_qualifiers_from_ref(&self, decl: ParsedDeclRef) -> TypeQualifiers {
-        let decl = self.parsed_ast.parsed_types.get_decl(decl);
+    fn extract_array_param_qualifiers(&self, decl_ref: DeclaratorRef) -> TypeQualifiers {
+        let decl = self.parsed_ast.parsed_types.get_decl(decl_ref);
         match decl {
-            ParsedDeclaratorNode::Identifier => TypeQualifiers::empty(),
-            ParsedDeclaratorNode::Pointer { .. } => TypeQualifiers::empty(),
-            ParsedDeclaratorNode::Function { .. } => TypeQualifiers::empty(),
-            ParsedDeclaratorNode::Array { size, inner } => {
-                let inner_quals = self.extract_array_param_qualifiers_from_ref(inner);
+            ParsedDeclarator::Identifier(..) => TypeQualifiers::empty(),
+            ParsedDeclarator::Pointer { .. } => TypeQualifiers::empty(),
+            ParsedDeclarator::Function { .. } => TypeQualifiers::empty(),
+            ParsedDeclarator::Array { inner, size } => {
+                let inner_quals = self.extract_array_param_qualifiers(inner);
                 if !inner_quals.is_empty() {
                     return inner_quals;
                 }
@@ -1696,27 +1625,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     ParsedArraySize::Incomplete => TypeQualifiers::empty(),
                 }
             }
+            ParsedDeclarator::BitField { inner, .. } => self.extract_array_param_qualifiers(inner),
         }
     }
 
-    fn extract_array_param_qualifiers(&self, decl: &ParsedDeclarator) -> TypeQualifiers {
+    fn extract_name(&self, decl_ref: DeclaratorRef) -> Option<NameId> {
+        let decl = self.parsed_ast.parsed_types.get_decl(decl_ref);
         match decl {
-            ParsedDeclarator::Identifier(..) | ParsedDeclarator::Abstract => TypeQualifiers::empty(),
-            ParsedDeclarator::Pointer(..) => TypeQualifiers::empty(),
-            ParsedDeclarator::Array(inner, size) => {
-                let inner_quals = self.extract_array_param_qualifiers(inner);
-                if !inner_quals.is_empty() {
-                    return inner_quals;
-                }
-                match size {
-                    ParsedArraySize::Expression { qualifiers, .. } => *qualifiers,
-                    ParsedArraySize::Star { qualifiers } => *qualifiers,
-                    ParsedArraySize::VlaSpec { qualifiers, .. } => *qualifiers,
-                    ParsedArraySize::Incomplete => TypeQualifiers::empty(),
-                }
-            }
-            ParsedDeclarator::Function { .. } => TypeQualifiers::empty(),
-            ParsedDeclarator::BitField(inner, _) => self.extract_array_param_qualifiers(inner),
+            ParsedDeclarator::Identifier(name) => name,
+            ParsedDeclarator::Pointer { inner, .. } => self.extract_name(inner),
+            ParsedDeclarator::Array { inner, .. } => self.extract_name(inner),
+            ParsedDeclarator::Function { inner, .. } => self.extract_name(inner),
+            ParsedDeclarator::BitField { inner, .. } => self.extract_name(inner),
         }
     }
 
@@ -2226,11 +2146,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
         }
     }
-    /// Extracts the bit-field width from a declarator if it exists.
-    fn extract_bit_field_width(&mut self, declarator: &ParsedDeclarator) -> Option<u16> {
+    fn extract_bit_field_width(&mut self, decl_ref: DeclaratorRef) -> Option<u16> {
+        let declarator = self.parsed_ast.parsed_types.get_decl(decl_ref);
         match declarator {
-            ParsedDeclarator::BitField(_, expr) => {
-                let width_expr = self.visit_expression(*expr);
+            ParsedDeclarator::BitField { inner: _, width } => {
+                let width_expr = self.visit_expression(width);
                 let span = self.ast.get_span(width_expr);
 
                 match const_eval::eval_const_expr(&self.const_ctx(), width_expr) {
@@ -2245,8 +2165,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
                 }
             }
-            ParsedDeclarator::Pointer(_, Some(inner)) => self.extract_bit_field_width(inner),
-            ParsedDeclarator::Array(inner, _) => self.extract_bit_field_width(inner),
+            ParsedDeclarator::Pointer { inner, .. } => self.extract_bit_field_width(inner),
+            ParsedDeclarator::Array { inner, .. } => self.extract_bit_field_width(inner),
             ParsedDeclarator::Function { inner, .. } => self.extract_bit_field_width(inner),
             _ => None,
         }
@@ -2256,41 +2176,34 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn apply_declarator(
         &mut self,
         current_type: QualType,
-        declarator: &ParsedDeclarator,
+        declarator_ref: DeclaratorRef,
         span: SourceSpan,
-        spec_info: &DeclSpecInfo,
+        spec_info: Option<&DeclSpecInfo>,
         decl_ctx: DeclaratorContext,
     ) -> QualType {
+        let declarator = self.parsed_ast.parsed_types.get_decl(declarator_ref);
         match declarator {
-            ParsedDeclarator::Identifier(..) | ParsedDeclarator::Abstract => current_type,
-            ParsedDeclarator::Pointer(qualifiers, inner) => {
+            ParsedDeclarator::Identifier(..) => current_type,
+            ParsedDeclarator::Pointer { qualifiers, inner } => {
                 let pointer_type = self.registry.pointer_to(current_type);
                 let modified_current =
-                    self.merge_qualifiers_with_check(QualType::unqualified(pointer_type), *qualifiers, span);
-                match inner {
-                    Some(inner) => self.apply_declarator(modified_current, inner, span, spec_info, decl_ctx),
-                    None => modified_current,
-                }
+                    self.merge_qualifiers_with_check(QualType::unqualified(pointer_type), qualifiers, span);
+                self.apply_declarator(modified_current, inner, span, spec_info, decl_ctx)
             }
-            ParsedDeclarator::Array(inner, size) => {
-                let array_qt = self.lower_array_declarator(inner, size, current_type, span, decl_ctx);
+            ParsedDeclarator::Array { inner, size } => {
+                let array_qt = self.lower_array_declarator(inner, &size, current_type, span, decl_ctx);
                 self.apply_declarator(array_qt, inner, span, spec_info, decl_ctx)
             }
-            ParsedDeclarator::Function {
-                params,
-                is_variadic,
-                inner,
-            } => {
-                let processed_params = self.visit_function_parameters(params, false);
-                let function_type = self.registry.function_type(
-                    current_type.ty(),
-                    processed_params,
-                    *is_variadic,
-                    spec_info.is_noreturn,
-                );
+            ParsedDeclarator::Function { params, flags, inner } => {
+                let params_list = self.parsed_ast.parsed_types.get_params(params);
+                let processed_params = self.visit_function_parameters(params_list, false);
+                let is_noreturn = spec_info.map(|s| s.is_noreturn).unwrap_or(false);
+                let function_type =
+                    self.registry
+                        .function_type(current_type.ty(), processed_params, flags.is_variadic, is_noreturn);
                 self.apply_declarator(QualType::unqualified(function_type), inner, span, spec_info, decl_ctx)
             }
-            ParsedDeclarator::BitField(inner, _) => {
+            ParsedDeclarator::BitField { inner, .. } => {
                 // Bit-fields don't affect the base type in the same way, we just recurse
                 self.apply_declarator(current_type, inner, span, spec_info, decl_ctx)
             }
@@ -2604,18 +2517,20 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn get_definition_params(&mut self, decl: &ParsedDeclarator) -> Option<Vec<FunctionParameter>> {
+    fn get_definition_params(&mut self, decl_ref: DeclaratorRef) -> Option<Vec<FunctionParameter>> {
+        let decl = self.parsed_ast.parsed_types.get_decl(decl_ref);
         match decl {
             ParsedDeclarator::Function { inner, params, .. } => {
                 if let Some(inner_params) = self.get_definition_params(inner) {
                     Some(inner_params)
                 } else {
-                    Some(self.visit_function_parameters(params, true))
+                    let params_list = self.parsed_ast.parsed_types.get_params(params);
+                    Some(self.visit_function_parameters(params_list, true))
                 }
             }
-            ParsedDeclarator::Pointer(_, inner) => inner.as_ref().and_then(|d| self.get_definition_params(d)),
-            ParsedDeclarator::Array(inner, _) => self.get_definition_params(inner),
-            ParsedDeclarator::BitField(inner, _) => self.get_definition_params(inner),
+            ParsedDeclarator::Pointer { inner, .. } => self.get_definition_params(inner),
+            ParsedDeclarator::Array { inner, .. } => self.get_definition_params(inner),
+            ParsedDeclarator::BitField { inner, .. } => self.get_definition_params(inner),
             _ => None,
         }
     }
@@ -2683,44 +2598,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn visit_function_parameters(&mut self, params: &[ParsedParam], is_definition: bool) -> Vec<FunctionParameter> {
-        let mut seen_names = HashMap::new();
+        let mut seen_names: HashMap<NameId, SourceSpan> = HashMap::new();
         params
             .iter()
             .map(|param| {
                 let span = param.span;
-                let spec_info = self.visit_decl_specifiers(&param.specifiers, span);
+                let decayed_ty = self
+                    .lower_type(param.ty.clone(), span, true)
+                    .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error));
 
-                // C standard: if type specifier is missing in a parameter, it defaults to int.
-                let mut base_ty = spec_info
-                    .base_type
-                    .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
-                base_ty = self.merge_qualifiers_with_check(base_ty, spec_info.qualifiers, span);
+                let pname = param.name;
 
-                let final_ty = if let Some(declarator) = &param.declarator {
-                    self.apply_declarator(
-                        base_ty,
-                        declarator,
-                        span,
-                        &spec_info,
-                        DeclaratorContext { in_parameter: true },
-                    )
-                } else {
-                    base_ty
-                };
-
-                // Apply array-to-pointer decay for function parameters (C11 6.7.6.3)
-                let ptr_quals = if let Some(decl) = &param.declarator {
-                    self.extract_array_param_qualifiers(decl)
-                } else {
-                    TypeQualifiers::empty()
-                };
-                let decayed_ty = self.registry.decay(final_ty, ptr_quals);
-
-                let pname = param.declarator.as_ref().and_then(extract_name);
-
-                // C11 6.7.6.3p4: After adjustment, the parameters ... shall not have incomplete type.
-                // C11 6.7.6.3p10: The special case of an unnamed parameter of type void as the only item
-                // in the list specifies that the function has no parameters.
                 if is_definition && !self.registry.is_complete(decayed_ty.ty()) {
                     let is_void_param_list = params.len() == 1 && decayed_ty.is_void() && pname.is_none();
                     if !is_void_param_list {
@@ -2729,14 +2617,35 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
 
                 if let Some(name) = pname {
-                    if let Some(&first_def) = seen_names.get(&name) {
-                        self.report_error(span, SemanticErrorKind::Redefinition { name, first_def });
+                    if let Some(&first_span) = seen_names.get(&name) {
+                        self.report_error(
+                            span,
+                            SemanticErrorKind::Redefinition {
+                                name,
+                                first_def: first_span,
+                            },
+                        );
                     } else {
                         seen_names.insert(name, span);
                     }
                 }
 
-                if spec_info.alignment.is_some() {
+                if let Some(sc) = param.storage {
+                    if sc == StorageClass::ThreadLocal {
+                        self.report_error(span, SemanticErrorKind::ThreadLocalNotAllowed);
+                    } else if sc != StorageClass::Register {
+                        self.report_error(span, SemanticErrorKind::InvalidStorageClassForParameter);
+                    }
+                }
+
+                if param.is_inline {
+                    self.report_error(span, SemanticErrorKind::InvalidFunctionSpec { spec: "inline" });
+                }
+                if param.is_noreturn {
+                    self.report_error(span, SemanticErrorKind::InvalidFunctionSpec { spec: "_Noreturn" });
+                }
+
+                if param.alignment.is_some() {
                     self.report_error(
                         span,
                         SemanticErrorKind::AlignmentNotAllowed {
@@ -2745,24 +2654,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     );
                 }
 
-                // C11 6.7.6.3p2: "The only storage-class specifier that shall occur in a parameter declaration is register."
-                if let Some(sc) = spec_info.storage
-                    && sc != StorageClass::Register
-                {
-                    self.report_error(span, SemanticErrorKind::InvalidStorageClassForParameter);
-                }
-
-                if spec_info.is_thread_local {
-                    self.report_error(span, SemanticErrorKind::ThreadLocalNotAllowed);
-                }
-
-                // Function specifiers are only allowed for functions
-                self.check_function_specifiers(&spec_info, span);
-
                 FunctionParameter {
-                    param_type: decayed_ty,
                     name: pname,
-                    storage: spec_info.storage,
+                    param_type: decayed_ty,
+                    storage: param.storage,
                 }
             })
             .collect()
@@ -2804,7 +2699,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
 
                     for id in &decl.init_declarators {
-                        let bit_field_size = self.extract_bit_field_width(&id.declarator);
+                        let bit_field_size = self.extract_bit_field_width(id.declarator);
 
                         if bit_field_size.is_some() && spec_info.alignment.is_some() {
                             self.report_error(id.span, SemanticErrorKind::AlignmentNotAllowed { context: "bit-field" });
@@ -2812,7 +2707,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                         self.check_function_specifiers(&spec_info, id.span);
 
-                        let name = extract_name(&id.declarator);
+                        let name = self.extract_name(id.declarator);
                         let base = spec_info
                             .base_type
                             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
@@ -2820,9 +2715,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                         let member_type = self.apply_declarator(
                             qualified_base,
-                            &id.declarator,
+                            id.declarator,
                             id.span,
-                            &spec_info,
+                            Some(&spec_info),
                             DeclaratorContext { in_parameter: false },
                         );
 

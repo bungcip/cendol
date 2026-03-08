@@ -340,8 +340,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Extract the declared name from a declarator, if any
-    fn get_declarator_name(&self, declarator: &ParsedDeclarator) -> Option<NameId> {
-        declarator::get_declarator_name(declarator)
+    fn get_declarator_name(&self, declarator: DeclaratorRef) -> Option<NameId> {
+        declarator::get_declarator_name(&self.ast.parsed_types, declarator)
     }
 
     /// Disambiguates between a type name and an identifier in ambiguous contexts.

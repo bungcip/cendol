@@ -270,6 +270,38 @@ fn test_negative_array_size() {
             int a[-1];
         }
         "#,
-        "size of array has non-positive value",
+        "size of array is negative",
     );
+}
+
+#[test]
+fn test_zero_sized_array() {
+    run_pass(
+        r#"
+        int main() {
+            int a[0];
+        }
+        "#,
+        CompilePhase::SemanticLowering,
+    );
+}
+
+#[test]
+fn test_zero_sized_array_pedantic() {
+    use crate::driver::cli::{Cli, PathOrBuffer};
+    use clap::Parser;
+
+    let source = "int main() { int a[0]; }".to_string();
+    let cli = Cli::parse_from(["cendol", "test.c", "--pedantic-errors"]);
+    let mut config = cli.into_config().unwrap();
+    // Use buffer instead of path to avoid needing a real file on disk
+    config.input_files = vec![PathOrBuffer::Buffer("test.c".to_string(), source.into_bytes())];
+
+    let mut driver = crate::driver::compiler::CompilerDriver::from_config(config);
+
+    let result = driver.run_pipeline(CompilePhase::SemanticLowering);
+    assert!(result.is_err());
+
+    let diags = driver.get_diagnostics();
+    assert!(diags.iter().any(|d| d.message.contains("size of array is negative")));
 }

@@ -445,7 +445,7 @@ impl<'a> MirGen<'a> {
 
         let linkage = if storage == Some(StorageClass::Static) {
             MirLinkage::Internal
-        } else if storage == Some(StorageClass::Extern) && init.is_none() {
+        } else if storage == Some(StorageClass::Extern) && symbol.def_state == DefinitionState::DeclaredOnly {
             MirLinkage::Import
         } else {
             MirLinkage::External
@@ -1114,7 +1114,12 @@ impl<'a> MirGen<'a> {
             let record_type = MirType::Record {
                 name: NameId::new("__va_list_tag"),
                 field_types: vec![u32_id, u32_id, u64_id, u64_id],
-                field_names: Vec::new(),
+                field_names: vec![
+                    NameId::new("gp_offset"),
+                    NameId::new("fp_offset"),
+                    NameId::new("overflow_arg_area"),
+                    NameId::new("reg_save_area"),
+                ],
                 is_union: false,
                 layout: record_layout,
             };

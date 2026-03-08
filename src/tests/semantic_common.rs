@@ -51,7 +51,13 @@ pub(crate) fn setup_analysis(source: &str) -> (Ast, TypeRegistry, SymbolTable) {
     let symbol_table = unit.symbol_table.expect("No SymbolTable available");
 
     let mut diag = DiagnosticEngine::from_warnings(&[]);
-    let semantic_info = crate::semantic::analyzer::visit_ast(&ast, &mut diag, &symbol_table, &mut registry);
+    let semantic_info = crate::semantic::analyzer::visit_ast(
+        &ast,
+        &mut diag,
+        &symbol_table,
+        &mut registry,
+        &crate::lang_options::LangOptions::default(),
+    );
 
     if diag.has_errors() {
         panic!("Semantic analysis failed: {:?}", diag.diagnostics);

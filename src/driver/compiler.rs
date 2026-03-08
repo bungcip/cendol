@@ -257,6 +257,7 @@ impl CompilerDriver {
             &mut self.diagnostics,
             &mut symbol_table,
             &mut registry,
+            &self.config.lang_options,
         );
 
         self.check_diagnostics_and_return_if_error()?;
@@ -306,7 +307,13 @@ impl CompilerDriver {
         mut registry: TypeRegistry,
     ) -> Result<MirProgram, PipelineError> {
         use crate::semantic::analyzer::visit_ast;
-        let semantic_info = visit_ast(&ast, &mut self.diagnostics, &symbol_table, &mut registry);
+        let semantic_info = visit_ast(
+            &ast,
+            &mut self.diagnostics,
+            &symbol_table,
+            &mut registry,
+            &self.config.lang_options,
+        );
         self.check_diagnostics_and_return_if_error()?;
 
         // Attach semantic info to AST (like scope_map)

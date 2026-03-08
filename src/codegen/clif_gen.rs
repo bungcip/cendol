@@ -108,7 +108,8 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub module: &'a mut ObjectModule,
     pub clif_blocks: &'a HashMap<MirBlockId, Block>,
     pub worklist: &'a mut Vec<MirBlockId>,
-    pub return_type: Option<Type>,
+    pub return_types: Vec<Type>,
+    pub return_ptr: Option<Value>,
     pub va_spill_slot: Option<StackSlot>,
     pub func: &'a MirFunction,
     pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
@@ -292,7 +293,8 @@ fn emit_const_struct(
     // Emit each field at its proper offset
     for (field_index, field_const_id) in fields {
         if *field_index < record_layout.fields.len() {
-            let field_offset = record_layout.fields[*field_index].offset as usize;
+            let field_layout = &record_layout.fields[*field_index];
+            let field_offset = field_layout.offset as usize;
 
             let mut field_bytes = Vec::new();
             emit_const(
@@ -309,7 +311,37 @@ fn emit_const_struct(
             if required_size > struct_bytes.len() {
                 struct_bytes.resize(required_size, 0);
             }
-            struct_bytes[field_offset..field_offset + field_bytes.len()].copy_from_slice(&field_bytes);
+
+            if let Some(bit_width) = field_layout.bit_width {
+                let bit_offset = field_layout.bit_offset.unwrap_or(0);
+                // For bitfields, we need to pack the bits.
+                // We assume little-endian for now as it's the primary target.
+                let mut val = 0u64;
+                for (i, &b) in field_bytes.iter().enumerate() {
+                    if i < 8 {
+                        val |= (b as u64) << (i * 8);
+                    }
+                }
+
+                let mask = if bit_width == 64 {
+                    !0u64
+                } else {
+                    (1u64 << bit_width) - 1
+                };
+                let packed_val = (val & mask) << bit_offset;
+
+                for i in 0..field_bytes.len() {
+                    let byte_idx = field_offset + i;
+                    if byte_idx < struct_bytes.len() {
+                        let shift = i * 8;
+                        let byte_mask = (mask << bit_offset) >> shift;
+                        struct_bytes[byte_idx] &= !(byte_mask as u8);
+                        struct_bytes[byte_idx] |= (packed_val >> shift) as u8;
+                    }
+                }
+            } else {
+                struct_bytes[field_offset..field_offset + field_bytes.len()].copy_from_slice(&field_bytes);
+            }
         }
     }
     output.extend_from_slice(&struct_bytes);
@@ -474,19 +506,25 @@ fn lower_call_signature(
     is_variadic: bool,
     use_variadic_hack: bool,
     ctx: &SignatureLoweringContext,
-) -> Signature {
+) -> (Signature, bool) {
     let mut sig = Signature::new(call_conv);
     // sig.set_is_variadic(is_variadic); // Try if this method exists
 
     // Return type
     let return_mir_type = ctx.mir.get_type(return_type_id);
-    let return_type_opt = match lower_type(return_mir_type) {
-        Some(t) => Some(t),
-        None if return_mir_type.is_aggregate() => Some(types::I64),
-        None => None,
-    };
-    if let Some(ret_type) = return_type_opt {
-        sig.returns.push(AbiParam::new(ret_type));
+    let mut has_hidden_ptr = false;
+
+    if let Some(types_list) = get_struct_packing(return_mir_type, ctx.mir) {
+        for &t in &types_list {
+            sig.returns.push(AbiParam::new(t));
+        }
+    } else if let Some(t) = lower_type(return_mir_type) {
+        sig.returns.push(AbiParam::new(t));
+    } else if return_mir_type.is_aggregate() {
+        // Large aggregates, same as in lower_function_signature
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        has_hidden_ptr = true;
     }
 
     // Use split ABI for internal functions (defined or indirect calls)
@@ -595,7 +633,7 @@ fn lower_call_signature(
         }
     }
 
-    sig
+    (sig, has_hidden_ptr)
 }
 
 /// Helper to resolve arguments for a call, handling variadic struct expansion if needed
@@ -607,9 +645,10 @@ fn emit_call_args(
     is_variadic: bool,
     split_f128: bool,
     triple: &Triple,
+    start_sig_idx: usize,
 ) -> Vec<Value> {
     let mut arg_values = Vec::new();
-    let mut sig_idx = 0;
+    let mut sig_idx = start_sig_idx;
     let mut xmm_used = 0;
 
     // Count XMM usage from fixed parameters first (checking signatures from ctx.mir logic if needed)
@@ -788,21 +827,37 @@ fn emit_call_args(
 }
 
 /// Helper to get the result of a call, or a zero constant if it has no return value
-fn get_call_result(builder: &mut FunctionBuilder, call_inst: Inst, expected_type: Type) -> Value {
-    let results = builder.inst_results(call_inst);
+fn get_call_result(ctx: &mut BodyEmitContext, call_inst: Inst, return_type_id: TypeId) -> Value {
+    let results: Vec<Value> = ctx.builder.inst_results(call_inst).to_vec();
+    let mir_type = ctx.mir.get_type(return_type_id);
+
+    if let Some(types_list) = get_struct_packing(mir_type, ctx.mir) {
+        // Results are packed into multiple registers. Store them to a temporary stack slot.
+        let size = lower_type_size(mir_type, ctx.mir);
+        let slot = ctx
+            .builder
+            .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, 3)); // 8-byte aligned
+
+        for (i, _) in types_list.iter().enumerate() {
+            let val = results[i];
+            let offset = (i * 8) as i32;
+            ctx.builder.ins().stack_store(val, slot, offset);
+        }
+
+        return ctx.builder.ins().stack_addr(types::I64, slot, 0);
+    }
+
     if results.is_empty() {
-        builder.ins().iconst(expected_type, 0i64)
+        let clif_type = lower_type(mir_type).unwrap_or(types::I32);
+        ctx.builder.ins().iconst(clif_type, 0i64)
     } else {
+        // results[0] could be the hidden pointer for large aggregates,
+        // or the direct result for small types.
         results[0]
     }
 }
 
-fn emit_function_call(
-    call_target: &CallTarget,
-    args: &[Operand],
-    expected_type: Type,
-    ctx: &mut BodyEmitContext,
-) -> Value {
+fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut BodyEmitContext) -> Value {
     // 1. Determine function properties and callee address if indirect/variadic
     let (return_type_id, param_types, is_variadic, name_linkage, target_addr, use_variadic_hack) = match call_target {
         CallTarget::Direct(func_id) => {
@@ -869,7 +924,7 @@ fn emit_function_call(
         pointee_to_pointer: ctx.pointee_to_pointer,
     };
 
-    let sig = lower_call_signature(
+    let (sig, has_hidden_ptr) = lower_call_signature(
         ctx.builder.func.signature.call_conv,
         return_type_id,
         &param_types,
@@ -879,14 +934,38 @@ fn emit_function_call(
         &lower_ctx,
     );
 
+    let mut start_sig_idx = 0;
+    let mut arg_values = Vec::new();
+
+    if has_hidden_ptr {
+        // Allocate space for the large return value
+        let return_mir_type = ctx.mir.get_type(return_type_id);
+        let size = lower_type_size(return_mir_type, ctx.mir);
+        let slot_data = StackSlotData::new(StackSlotKind::ExplicitSlot, size, 3); // 8-byte aligned
+        let slot = ctx.builder.create_sized_stack_slot(slot_data);
+        let addr = ctx.builder.ins().stack_addr(types::I64, slot, 0);
+        arg_values.push(addr);
+        start_sig_idx = 1;
+    }
+
     let split_f128 = use_variadic_hack;
-    let arg_values = emit_call_args(args, param_types.len(), &sig, ctx, is_variadic, split_f128, ctx.triple);
+    let other_arg_values = emit_call_args(
+        args,
+        param_types.len(),
+        &sig,
+        ctx,
+        is_variadic,
+        split_f128,
+        ctx.triple,
+        start_sig_idx,
+    );
+    arg_values.extend(other_arg_values);
 
     // 3. Emit the call
     let call_inst = if is_variadic {
         if let Some((name, linkage)) = name_linkage {
             // Variadic direct calls must be indirect to use the custom signature
-            let canonical_sig = lower_call_signature(
+            let (canonical_sig, _) = lower_call_signature(
                 ctx.builder.func.signature.call_conv,
                 return_type_id,
                 &param_types,
@@ -927,7 +1006,7 @@ fn emit_function_call(
         ctx.builder.ins().call(func_ref, &arg_values)
     };
 
-    get_call_result(ctx.builder, call_inst, expected_type)
+    get_call_result(ctx, call_inst, return_type_id)
 }
 
 /// Helper function to convert boolean to integer (0 or 1)
@@ -1543,6 +1622,39 @@ fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Value {
         }
     }
 }
+/// Helper function to store a value to a MIR place
+fn emit_place_store(place: &Place, value: Value, expected_type: Type, ctx: &mut BodyEmitContext) {
+    match place {
+        Place::Local(local_id) => {
+            if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
+                ctx.builder.ins().stack_store(value, *stack_slot, 0);
+            }
+        }
+        Place::StructField(_, _, Some(bit_info)) => {
+            let addr = emit_place_addr(place, ctx);
+            let original = ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0);
+
+            let mask = if bit_info.width == 64 {
+                !0u64
+            } else {
+                (1u64 << bit_info.width) - 1
+            };
+            let bit_mask = mask << bit_info.offset;
+
+            let masked_original = ctx.builder.ins().band_imm(original, !(bit_mask as i64));
+            let masked_new = ctx.builder.ins().band_imm(value, mask as i64);
+            let shifted_new = ctx.builder.ins().ishl_imm(masked_new, bit_info.offset as i64);
+            let final_val = ctx.builder.ins().bor(masked_original, shifted_new);
+
+            ctx.builder.ins().store(MemFlags::new(), final_val, addr, 0);
+        }
+        _ => {
+            let addr = emit_place_addr(place, ctx);
+            ctx.builder.ins().store(MemFlags::new(), value, addr, 0);
+        }
+    }
+}
+
 /// Helper to lower a single MIR statement
 fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
     match stmt {
@@ -1964,7 +2076,31 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                         } else {
                             let field_clif_type = lower_type(field_mir_type).unwrap();
                             let val = emit_operand(element_op, ctx, field_clif_type);
-                            ctx.builder.ins().store(MemFlags::new(), val, field_dest_addr, 0);
+
+                            let field_layout = &layout.fields[*field_idx];
+                            if let Some(bit_width) = field_layout.bit_width {
+                                let bit_offset = field_layout.bit_offset.unwrap_or(0);
+                                // RMW for bitfield in struct literal initialization
+                                let original =
+                                    ctx.builder
+                                        .ins()
+                                        .load(field_clif_type, MemFlags::new(), field_dest_addr, 0);
+                                let mask = if bit_width == 64 {
+                                    !0u64
+                                } else {
+                                    (1u64 << bit_width) - 1
+                                };
+                                let bit_mask = mask << bit_offset;
+
+                                let masked_original = ctx.builder.ins().band_imm(original, !(bit_mask as i64));
+                                let masked_new = ctx.builder.ins().band_imm(val, mask as i64);
+                                let shifted_new = ctx.builder.ins().ishl_imm(masked_new, bit_offset as i64);
+                                let final_val = ctx.builder.ins().bor(masked_original, shifted_new);
+
+                                ctx.builder.ins().store(MemFlags::new(), final_val, field_dest_addr, 0);
+                            } else {
+                                ctx.builder.ins().store(MemFlags::new(), val, field_dest_addr, 0);
+                            }
                         }
                     }
                     return;
@@ -2035,23 +2171,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let size = lower_type_size(mir_type, ctx.mir) as i64;
                     emit_memcpy(dest_addr, value, size, ctx.builder, ctx.module);
                 } else {
-                    match place {
-                        Place::Local(local_id) => {
-                            // Check if this local has a stack slot (non-void types)
-                            if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
-                                ctx.builder.ins().stack_store(value, *stack_slot, 0);
-                            }
-                            // Else: This local doesn't have a stack slot (likely a void type)
-                            // or it's optimized out. In MIR, we assume it's valid to ignore.
-                        }
-                        _ => {
-                            // This covers StructField, ArrayIndex, Deref, and Global assignments
-                            {
-                                let addr = emit_place_addr(place, ctx);
-                                ctx.builder.ins().store(MemFlags::new(), value, addr, 0);
-                            }
-                        }
-                    }
+                    emit_place_store(place, value, expected_type, ctx);
                 }
             }
         }
@@ -2072,39 +2192,19 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             }
 
             // Now, store the value into the place
-            match place {
-                Place::Local(local_id) => {
-                    let stack_slot = ctx
-                        .stack_slots
-                        .get(local_id)
-                        .ok_or_else(|| {
-                            format!(
-                                "Stack slot not found for local {} in function {}",
-                                local_id.get(),
-                                ctx.func.name
-                            )
-                        })
-                        .expect("Failed to declare data");
-                    ctx.builder.ins().stack_store(value, *stack_slot, 0);
-                }
-                _ => {
-                    // For other places, resolve to an address and store
-                    let addr = emit_place_addr(place, ctx);
-                    ctx.builder.ins().store(MemFlags::new(), value, addr, 0);
-                }
-            }
+            emit_place_store(place, value, cranelift_type, ctx);
         }
         MirStmt::Call { target, args, dest } => {
             if let Some(dest_place) = dest {
                 // Call with destination - need to store the result
                 let dest_type_id = lower_place_type_id(dest_place, ctx.mir, ctx.pointee_to_pointer);
                 let dest_mir_type = ctx.mir.get_type(dest_type_id);
-                let expected_type = match lower_type(dest_mir_type) {
+                let _expected_type = match lower_type(dest_mir_type) {
                     Some(t) => t,
                     None if dest_mir_type.is_aggregate() => types::I64,
                     None => panic!("Cannot assign to void type"),
                 };
-                let result = emit_function_call(target, args, expected_type, ctx);
+                let result = emit_function_call(target, args, ctx);
 
                 // Store the result in the destination place
                 let dest_mir_type = ctx.mir.get_type(dest_type_id);
@@ -2114,21 +2214,12 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     let size = lower_type_size(dest_mir_type, ctx.mir) as i64;
                     emit_memcpy(dest_addr, result, size, ctx.builder, ctx.module);
                 } else {
-                    match dest_place {
-                        Place::Local(local_id) => {
-                            if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
-                                ctx.builder.ins().stack_store(result, *stack_slot, 0);
-                            }
-                        }
-                        _ => {
-                            let addr = emit_place_addr(dest_place, ctx);
-                            ctx.builder.ins().store(MemFlags::new(), result, addr, 0);
-                        }
-                    }
+                    let expected_type = lower_type(dest_mir_type).unwrap();
+                    emit_place_store(dest_place, result, expected_type, ctx);
                 }
             } else {
                 // Call without destination - ignore return value (side-effect only)
-                let _ = emit_function_call(target, args, types::I32, ctx);
+                let _ = emit_function_call(target, args, ctx);
             }
         }
 
@@ -2268,9 +2359,29 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
 
         Terminator::Return(opt) => {
             if let Some(operand) = opt {
-                if let Some(ret_type) = ctx.return_type {
-                    let return_value = emit_operand(operand, ctx, ret_type);
-                    ctx.builder.ins().return_(&[return_value]);
+                if !ctx.return_types.is_empty() {
+                    let mir_type = ctx.mir.get_type(ctx.func.return_type);
+                    if let Some(return_ptr) = ctx.return_ptr {
+                        // Large aggregate return via hidden pointer
+                        let addr = emit_operand(operand, ctx, types::I64);
+                        let size = lower_type_size(mir_type, ctx.mir) as i64;
+                        emit_memcpy(return_ptr, addr, size, ctx.builder, ctx.module);
+                        ctx.builder.ins().return_(&[return_ptr]);
+                    } else if let Some(types_list) = get_struct_packing(mir_type, ctx.mir) {
+                        // Pack return value into multiple registers
+                        let addr = emit_operand(operand, ctx, types::I64);
+                        let mut ret_values = Vec::new();
+                        for (i, &t) in types_list.iter().enumerate() {
+                            let offset = (i * 8) as i32;
+                            let val = ctx.builder.ins().load(t, MemFlags::new(), addr, offset);
+                            ret_values.push(val);
+                        }
+                        ctx.builder.ins().return_(&ret_values);
+                    } else {
+                        let ret_type = ctx.return_types[0];
+                        let return_value = emit_operand(operand, ctx, ret_type);
+                        ctx.builder.ins().return_(&[return_value]);
+                    }
                 } else {
                     panic!("Returning a value from a void function");
                 }
@@ -2281,9 +2392,13 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
 
         Terminator::Unreachable => {
             // For unreachable, default to appropriate return based on function type
-            if let Some(ret_type) = ctx.return_type {
-                let return_value = ctx.builder.ins().iconst(ret_type, 0i64);
-                ctx.builder.ins().return_(&[return_value]);
+            if !ctx.return_types.is_empty() {
+                let mut ret_values = Vec::new();
+                for &ret_type in &ctx.return_types {
+                    let val = ctx.builder.ins().iconst(ret_type, 0i64);
+                    ret_values.push(val);
+                }
+                ctx.builder.ins().return_(&ret_values);
             } else {
                 // Void function
                 ctx.builder.ins().return_(&[]);
@@ -2296,31 +2411,45 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
     }
 }
 
-fn lower_function_signature(
-    func: &MirFunction,
-    mir: &MirProgram,
-    func_ctx: &mut Signature,
-) -> (Option<Type>, Vec<Type>) {
+fn lower_function_signature(func: &MirFunction, mir: &MirProgram, sig: &mut Signature) -> (Vec<Type>, Vec<Type>, bool) {
     // Set up function signature using the actual return type from MIR
-    func_ctx.params.clear();
+    sig.params.clear();
+    sig.returns.clear();
 
-    // Get the return type from MIR and convert to Cranelift type
+    // Get the return type from MIR and convert to Cranelift type(s)
     let return_mir_type = mir.get_type(func.return_type);
-    let return_type_opt = match lower_type(return_mir_type) {
-        Some(t) => Some(t),
-        None if return_mir_type.is_aggregate() => Some(types::I64),
-        None => None, // Void
-    };
+    let mut return_types = Vec::new();
+    let mut has_hidden_return_ptr = false;
+
+    if let Some(types_list) = get_struct_packing(return_mir_type, mir) {
+        for &t in &types_list {
+            sig.returns.push(AbiParam::new(t));
+            return_types.push(t);
+        }
+    } else if let Some(t) = lower_type(return_mir_type) {
+        sig.returns.push(AbiParam::new(t));
+        return_types.push(t);
+    } else if return_mir_type.is_aggregate() {
+        // Large aggregates are returned via hidden pointer in SysV.
+        // The pointer is passed as the first parameter and returned in RAX.
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I64));
+        return_types.push(types::I64);
+        has_hidden_return_ptr = true;
+    }
 
     // Add parameters from MIR function signature
     let mut param_types = Vec::new();
+    if has_hidden_return_ptr {
+        param_types.push(types::I64);
+    }
     for &param_id in &func.params {
         let param_local = mir.get_local(param_id);
         let mir_type = mir.get_type(param_local.type_id);
 
         if let Some(types_list) = get_struct_packing(mir_type, mir) {
             for &t in &types_list {
-                func_ctx.params.push(AbiParam::new(t));
+                sig.params.push(AbiParam::new(t));
                 param_types.push(t);
             }
             continue;
@@ -2328,8 +2457,8 @@ fn lower_function_signature(
 
         if matches!(mir_type, MirType::F80 | MirType::F128) {
             // Split F128/F80 into 2 I64s for internal ABI
-            func_ctx.params.push(AbiParam::new(types::I64));
-            func_ctx.params.push(AbiParam::new(types::I64));
+            sig.params.push(AbiParam::new(types::I64));
+            sig.params.push(AbiParam::new(types::I64));
             // Track them as F128 in param_types for visit_function to know,
             // OR track split types? visit_function iterates MIR params.
             // It needs to know it consumes 2 slots.
@@ -2347,7 +2476,7 @@ fn lower_function_signature(
             None if mir_type.is_aggregate() => types::I64,
             None => panic!("Unsupported parameter type for local {}", param_id.get()),
         };
-        func_ctx.params.push(AbiParam::new(param_type));
+        sig.params.push(AbiParam::new(param_type));
         param_types.push(param_type);
     }
 
@@ -2358,17 +2487,12 @@ fn lower_function_signature(
         let total_variadic_slots = 128; // Support up to 128 I64 slots for variadic args
         if fixed_params_count < total_variadic_slots {
             for _ in 0..(total_variadic_slots - fixed_params_count) {
-                func_ctx.params.push(AbiParam::new(types::I64));
+                sig.params.push(AbiParam::new(types::I64));
             }
         }
     }
 
-    // Only add return parameter if the function has a non-void return type
-    if let Some(return_type) = return_type_opt {
-        func_ctx.returns.push(AbiParam::new(return_type));
-    }
-
-    (return_type_opt, param_types)
+    (return_types, param_types, has_hidden_return_ptr)
 }
 
 fn emit_stack_slots(
@@ -2536,7 +2660,7 @@ impl ClifGen {
 
             // Calculate signature for declaration
             let mut sig = self.module.make_signature();
-            lower_function_signature(func, &self.mir, &mut sig);
+            let (_, _, _) = lower_function_signature(func, &self.mir, &mut sig);
 
             let clif_func_id = self
                 .module
@@ -2631,7 +2755,8 @@ impl ClifGen {
         // Create a fresh context for this function
         let mut func_ctx = self.module.make_context();
 
-        let (return_type_opt, param_types) = lower_function_signature(func, &self.mir, &mut func_ctx.func.signature);
+        let (return_types, param_types, has_hidden_ptr) =
+            lower_function_signature(func, &self.mir, &mut func_ctx.func.signature);
 
         // Create a function builder with the fresh context
         let mut builder = FunctionBuilder::new(&mut func_ctx.func, &mut self.builder_context);
@@ -2683,6 +2808,11 @@ impl ClifGen {
                 // Step 3: NOW emit instructions - store fixed params to stack slots
                 let param_values: Vec<Value> = builder.block_params(*clif_block).to_vec();
                 let mut param_iter = param_values.iter().copied();
+
+                if has_hidden_ptr {
+                    // Skip hidden return pointer
+                    param_iter.next();
+                }
 
                 for &param_id in &func.params {
                     let local = self.mir.get_local(param_id);
@@ -2781,6 +2911,13 @@ impl ClifGen {
                 .filter_map(|&stmt_id| self.mir.statements.get(&stmt_id).cloned())
                 .collect();
 
+            let mut return_ptr = None;
+            if has_hidden_ptr {
+                // Return pointer is the first block parameter
+                let clif_block = clif_blocks.get(&func.entry_block.unwrap()).unwrap();
+                return_ptr = Some(builder.block_params(*clif_block)[0]);
+            }
+
             let mut ctx = BodyEmitContext {
                 builder: &mut builder,
                 mir: &self.mir,
@@ -2790,7 +2927,8 @@ impl ClifGen {
                 func,
                 clif_blocks: &clif_blocks,
                 worklist: &mut worklist,
-                return_type: return_type_opt,
+                return_types: return_types.clone(),
+                return_ptr,
                 func_id_map: &self.func_id_map,
                 data_id_map: &self.data_id_map,
                 triple: &self.triple,

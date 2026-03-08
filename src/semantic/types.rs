@@ -133,7 +133,13 @@ impl Type {
     pub fn is_signed(&self) -> bool {
         match &self.kind {
             TypeKind::Builtin(b) => b.is_signed(),
-            TypeKind::Enum { .. } => true,
+            TypeKind::Enum { enumerators, .. } => {
+                // Return false (unsigned) if all enumerators are non-negative.
+                // This is important for correct bit-field handling: enums with all
+                // non-negative values should be zero-extended (not sign-extended)
+                // when stored in bit-fields.
+                !enumerators.iter().all(|e| e.value >= 0)
+            }
             _ => false,
         }
     }

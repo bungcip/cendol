@@ -8,7 +8,9 @@ pub mod codegen_calls;
 pub mod codegen_common;
 pub mod codegen_large_array;
 
+pub mod codegen_bitfield;
 pub mod codegen_float_to_int_oob;
+pub mod codegen_global_redeclaration;
 pub mod codegen_offsetof;
 pub mod codegen_runtime;
 pub mod codegen_structs;

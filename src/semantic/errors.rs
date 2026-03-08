@@ -391,7 +391,7 @@ impl SemanticErrorKind {
             }
             SemanticErrorKind::ExcessElements { kind } => format!("excess elements in {} initializer", kind),
             SemanticErrorKind::UnsupportedFeature { feature } => format!("Unsupported feature: {}", feature),
-            SemanticErrorKind::InvalidArraySize => "size of array has non-positive value".to_string(),
+            SemanticErrorKind::InvalidArraySize => "size of array is negative".to_string(),
             SemanticErrorKind::ArraySizeNotInteger => "size of array has non-integer type".to_string(),
             SemanticErrorKind::InvalidBitfieldWidth => "invalid bit-field width".to_string(),
             SemanticErrorKind::NonConstantBitfieldWidth => "bit-field width is not a constant expression".to_string(),

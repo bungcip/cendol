@@ -195,7 +195,14 @@ fn resolve_array_size(size: Option<ParsedNodeRef>, ctx: &mut LowerCtx) -> ArrayS
 
         if let Some(val) = const_eval::eval_const_expr(&ctx.const_ctx(), expr) {
             // C11 6.7.6.2p1: the expression shall have a value greater than zero
-            if val <= 0 {
+            // Extension: allow zero-sized arrays unless pedantic-errors is set
+            let is_invalid = if ctx.lang_opts.pedantic_errors {
+                val <= 0
+            } else {
+                val < 0
+            };
+
+            if is_invalid {
                 ctx.report_error(ctx.ast.get_span(expr), SemanticErrorKind::InvalidArraySize);
                 return ArraySizeType::Incomplete;
             }
@@ -219,6 +226,7 @@ pub(crate) struct LowerCtx<'a, 'src> {
     pub(crate) next_compound_uses_scope: Option<ScopeId>,
     pub(crate) pragma_pack_stack: Vec<Option<u32>>,
     pub(crate) current_packing: Option<u32>,
+    pub(crate) lang_opts: &'a crate::lang_options::LangOptions,
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {
@@ -229,6 +237,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         diag: &'src mut DiagnosticEngine,
         symbol_table: &'a mut SymbolTable,
         registry: &'a mut TypeRegistry,
+        lang_opts: &'a crate::lang_options::LangOptions,
     ) -> Self {
         LowerCtx {
             parsed_ast,
@@ -236,6 +245,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             diag,
             symbol_table,
             registry,
+            lang_opts,
             next_compound_uses_scope: None,
             pragma_pack_stack: Vec::new(),
             current_packing: None,
@@ -1360,12 +1370,13 @@ pub(crate) fn visit_ast(
     diag: &mut DiagnosticEngine,
     symbol_table: &mut SymbolTable,
     registry: &mut TypeRegistry,
+    lang_opts: &crate::lang_options::LangOptions,
 ) {
     // Finalize tentative definitions
     finalize_tentative_definitions(symbol_table);
 
     // Create lowering context
-    let mut lower_ctx = LowerCtx::new(parsed_ast, ast, diag, symbol_table, registry);
+    let mut lower_ctx = LowerCtx::new(parsed_ast, ast, diag, symbol_table, registry, lang_opts);
 
     // Perform recursive scope-aware lowering starting from root
     let root = parsed_ast.get_root();

@@ -82,6 +82,7 @@ pub(crate) fn visit_ast(
     diag: &mut DiagnosticEngine,
     symbol_table: &SymbolTable,
     registry: &mut TypeRegistry,
+    _lang_opts: &crate::lang_options::LangOptions,
 ) -> SemanticInfo {
     let mut semantic_info = SemanticInfo::with_capacity(ast.kinds.len());
     let mut resolver = SemanticAnalyzer {
@@ -1704,8 +1705,10 @@ impl<'a> SemanticAnalyzer<'a> {
         // Actually, visit_initializer_list already handled the top-level designator.
 
         // C11 6.7.9p13: Struct/Union initialization by compatible expression.
+        // Also handles designated initializers where we've consumed the designator
+        // (i.e., designator_idx >= d_len).
         if target_ty.is_record()
-            && d_len == 0
+            && (designator_idx as u16) >= d_len
             && let Some(init_ty) = self.visit_node(expr)
             && self.check_assignment_constraints(target_ty, init_ty, expr)
         {
@@ -1715,7 +1718,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // Braced initializer
-        if d_len == 0 && matches!(self.ast.get_kind(expr), NodeKind::InitializerList(_)) {
+        if (designator_idx as u16) >= d_len && matches!(self.ast.get_kind(expr), NodeKind::InitializerList(_)) {
             self.visit_initializer(expr, target_ty);
             iter.next();
             return;

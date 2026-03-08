@@ -587,3 +587,23 @@ fn test_global_array_init_ptr() {
     "#;
     assert_eq!(run_c_code_exit_status(source), 0);
 }
+
+// Test for designated initializer with struct member from pointer
+// This was a bug where .daddr = phdr->daddr would fail with
+// "type mismatch: expected unsigned char, found const struct"
+#[test]
+fn test_designated_initializer_struct_from_ptr() {
+    let source = r#"
+        struct inner { unsigned char x; };
+        struct outer { struct inner daddr; struct inner saddr; };
+        struct data { struct inner daddr; struct inner saddr; };
+        
+        int main() {
+            struct data d = { .daddr = {1}, .saddr = {2} };
+            struct data *phdr = &d;
+            struct outer flow = { .daddr = phdr->daddr, .saddr = phdr->saddr };
+            return (flow.daddr.x == 1 && flow.saddr.x == 2) ? 0 : 1;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
+}

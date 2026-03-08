@@ -145,6 +145,7 @@ pub struct CompileConfig {
     pub defines: Vec<(String, Option<String>)>, // NAME -> VALUE
     pub warnings: Vec<String>,
     pub c_standard: CStandard,
+    pub lang_options: crate::lang_options::LangOptions,
     pub target: Triple,
 
     pub optimization: Option<String>,
@@ -170,6 +171,7 @@ impl Default for CompileConfig {
             defines: Vec::new(),
             warnings: Vec::new(),
             c_standard: CStandard::default(),
+            lang_options: crate::lang_options::LangOptions::default(),
             target: Triple::host(),
             optimization: None,
             libraries: Vec::new(),
@@ -228,7 +230,7 @@ impl Cli {
     }
 
     /// Convert CLI arguments into compilation configuration
-    pub(super) fn into_config(self) -> Result<CompileConfig, String> {
+    pub(crate) fn into_config(self) -> Result<CompileConfig, String> {
         // Validate input files first
         self.validate_input_files()?;
 
@@ -261,6 +263,10 @@ impl Cli {
         // Build language options
 
         let c_standard = self.c_standard.unwrap_or_default();
+        let lang_options = crate::lang_options::LangOptions {
+            c_standard,
+            pedantic_errors: self.pedantic_errors,
+        };
 
         // Build preprocessor configuration with include paths
         let mut system_include_paths = Vec::new();
@@ -324,6 +330,7 @@ impl Cli {
             defines,
             warnings,
             c_standard,
+            lang_options,
             target: target_triple,
             optimization: self.optimization,
             libraries: self.libraries,

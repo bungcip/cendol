@@ -7,6 +7,12 @@ pub enum CStandard {
     C23,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct LangOptions {
+    pub c_standard: CStandard,
+    pub pedantic_errors: bool,
+}
+
 impl CStandard {
     /// Check if C11 standard is enabled
     pub(crate) fn is_c11(&self) -> bool {

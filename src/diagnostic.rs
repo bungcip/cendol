@@ -8,7 +8,7 @@ use thiserror::Error;
 
 /// Diagnostic severity levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DiagnosticLevel {
+pub(crate) enum DiagnosticLevel {
     #[default]
     Error,
     Warning,
@@ -17,7 +17,7 @@ pub enum DiagnosticLevel {
 
 /// Individual diagnostic with rich context
 #[derive(Debug, Clone, Default)]
-pub struct Diagnostic {
+pub(crate) struct Diagnostic {
     pub level: DiagnosticLevel,
     pub message: String,
     pub span: SourceSpan,
@@ -27,14 +27,14 @@ pub struct Diagnostic {
 /// Parse errors
 #[derive(Debug, Error)]
 #[error("{kind}")]
-pub struct ParseError {
+pub(crate) struct ParseError {
     pub span: SourceSpan,
     pub kind: ParseErrorKind,
 }
 
 /// Parse error kinds
 #[derive(Debug, Error)]
-pub enum ParseErrorKind {
+pub(crate) enum ParseErrorKind {
     #[error("Unexpected token: expected {expected_tokens}, found {found:?}")]
     UnexpectedToken { expected_tokens: String, found: TokenKind },
 
@@ -49,7 +49,7 @@ pub enum ParseErrorKind {
 }
 
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
-pub struct DiagnosticEngine {
+pub(crate) struct DiagnosticEngine {
     pub diagnostics: Vec<Diagnostic>,
     pub error_limit: Option<usize>,
     pub use_colors: bool,
@@ -232,7 +232,7 @@ impl DiagnosticEngine {
     }
 }
 
-pub trait IntoDiagnostic {
+pub(crate) trait IntoDiagnostic {
     fn into_diagnostic(self) -> Vec<Diagnostic>;
 }
 

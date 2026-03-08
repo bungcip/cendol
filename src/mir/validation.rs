@@ -18,7 +18,7 @@ use crate::{
 
 /// MIR Validation Error
 #[derive(Debug, PartialEq, Clone)]
-pub enum ValidationError {
+pub(crate) enum ValidationError {
     /// Illegal operation found in MIR
     IllegalOperation(String),
     /// Type not found in type table
@@ -99,7 +99,7 @@ impl std::fmt::Display for ValidationError {
 ///
 /// This pass validates that MIR is well-formed and ready for code generation.
 /// It performs comprehensive checks but does not modify the MIR.
-pub struct MirValidator<'a> {
+pub(crate) struct MirValidator<'a> {
     mir: &'a MirProgram,
     errors: Vec<ValidationError>,
     pointee_to_pointer: hashbrown::HashMap<TypeId, TypeId>,

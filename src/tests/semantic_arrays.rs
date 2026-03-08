@@ -270,6 +270,6 @@ fn test_negative_array_size() {
             int a[-1];
         }
         "#,
-        "size of array has non-positive value",
+        "size of array is negative",
     );
 }

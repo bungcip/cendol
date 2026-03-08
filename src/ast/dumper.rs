@@ -10,7 +10,7 @@ use crate::ast::parsed::{ParsedAst, ParsedNodeKind};
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind};
 use crate::semantic::{SymbolRef, SymbolTable, TypeRef, TypeRegistry};
 
-pub struct ParsedAstDisplay<'a>(pub &'a ParsedAst);
+pub(crate) struct ParsedAstDisplay<'a>(pub(crate) &'a ParsedAst);
 
 impl<'a> fmt::Display for ParsedAstDisplay<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -26,9 +26,9 @@ impl<'a> fmt::Display for ParsedAstDisplay<'a> {
     }
 }
 
-pub struct ParserAstDisplay<'a> {
-    pub ast: &'a Ast,
-    pub symbol_table: Option<&'a SymbolTable>,
+pub(crate) struct ParserAstDisplay<'a> {
+    pub(crate) ast: &'a Ast,
+    pub(crate) symbol_table: Option<&'a SymbolTable>,
 }
 
 impl<'a> fmt::Display for ParserAstDisplay<'a> {
@@ -45,9 +45,9 @@ impl<'a> fmt::Display for ParserAstDisplay<'a> {
     }
 }
 
-pub struct TypeRegistryDisplay<'a> {
-    pub ast: &'a Ast,
-    pub registry: &'a TypeRegistry,
+pub(crate) struct TypeRegistryDisplay<'a> {
+    pub(crate) ast: &'a Ast,
+    pub(crate) registry: &'a TypeRegistry,
 }
 
 impl<'a> fmt::Display for TypeRegistryDisplay<'a> {

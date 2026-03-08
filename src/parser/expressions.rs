@@ -6,6 +6,8 @@
 use crate::ast::literal::Literal;
 use crate::ast::{parsed::*, *};
 use crate::diagnostic::{ParseError, ParseErrorKind};
+use crate::parser::parsed_type_builder::parse_parsed_type_name;
+use crate::parser::utils::expr_patterns::parse_expr_list;
 use crate::parser::{Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 
@@ -267,7 +269,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         _ => Err(ParseError {
             span: token.span,
             kind: ParseErrorKind::UnexpectedToken {
-                expected_tokens: "identifier, literal, or '('".to_string(),
+                expected: "identifier, literal, or '('",
                 found: token.kind,
             },
         }),
@@ -361,7 +363,7 @@ fn parse_gnu_statement_expression(parser: &mut Parser, start_loc: SourceLoc) -> 
     let end_loc = right_paren_token.span.end();
     let span = SourceSpan::new(start_loc, end_loc);
 
-    let node = parser.push_node(ParsedNodeKind::GnuStatementExpression(compound_stmt, result_expr), span);
+    let node = parser.push_node(ParsedNodeKind::GnuStatementExpr(compound_stmt, result_expr), span);
     Ok(node)
 }
 
@@ -373,11 +375,11 @@ fn extract_last_expression_from_compound_statement(
     // Get the compound statement node
     let compound_stmt_node = parser.ast.get_node(compound_stmt_node_ref);
 
-    if let ParsedNodeKind::CompoundStatement(statements) = &compound_stmt_node.kind {
+    if let ParsedNodeKind::CompoundStmt(statements) = &compound_stmt_node.kind {
         // Find the last expression statement in the compound statement
         for &stmt_ref in statements.iter().rev() {
             let stmt_node = parser.ast.get_node(stmt_ref);
-            if let ParsedNodeKind::ExpressionStatement(Some(expr)) = &stmt_node.kind {
+            if let ParsedNodeKind::ExpressionStmt(Some(expr)) = &stmt_node.kind {
                 return *expr;
             }
         }
@@ -714,9 +716,9 @@ fn parse_builtin_trap(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> 
 fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let start = parser.expect(TokenKind::BuiltinTypesCompatibleP)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
-    let ty1 = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+    let ty1 = parse_parsed_type_name(parser)?;
     parser.expect(TokenKind::Comma)?;
-    let ty2 = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+    let ty2 = parse_parsed_type_name(parser)?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(
         ParsedNodeKind::BuiltinTypesCompatibleP(ty1, ty2),
@@ -727,7 +729,7 @@ fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<ParsedNodeRef
 fn parse_atomic_op(parser: &mut Parser, op: AtomicOp) -> Result<ParsedNodeRef, ParseError> {
     let start = parser.advance().unwrap().span.start();
     parser.expect(TokenKind::LeftParen)?;
-    let args = super::utils::expr_patterns::parse_expr_list(parser, BindingPower::ASSIGNMENT)?;
+    let args = parse_expr_list(parser, BindingPower::ASSIGNMENT)?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(ParsedNodeKind::AtomicOp(op, args), SourceSpan::new(start, end)))
 }

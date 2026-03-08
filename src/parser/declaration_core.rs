@@ -146,7 +146,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
         return Err(ParseError {
             span: current_token.span,
             kind: ParseErrorKind::UnexpectedToken {
-                expected_tokens: "declaration specifiers".to_string(),
+                expected: "declaration specifiers",
                 found: current_token.kind,
             },
         });

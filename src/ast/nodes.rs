@@ -95,7 +95,7 @@ pub enum NodeKind {
     ), // GNU Extension often supported
     Default(NodeRef /* statement */),
 
-    ExpressionStatement(Option<NodeRef> /* expression */), // Expression followed by ';'
+    ExpressionStmt(Option<NodeRef> /* expression */), // Expression followed by ';'
 
     // --- Declarations & Definitions ---
     // Removed Parser-only Declaration and FunctionDef variants.
@@ -250,7 +250,7 @@ impl NodeKind {
                 f(stmt.body);
             }
 
-            NodeKind::Return(expr) | NodeKind::ExpressionStatement(expr) | NodeKind::EnumConstant(_, expr) => {
+            NodeKind::Return(expr) | NodeKind::ExpressionStmt(expr) | NodeKind::EnumConstant(_, expr) => {
                 if let Some(child) = expr {
                     f(*child);
                 }

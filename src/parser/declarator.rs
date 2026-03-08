@@ -431,7 +431,7 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<ParsedDec
                             return Err(ParseError {
                                 span: parser.current_token_span_or_empty(),
                                 kind: ParseErrorKind::UnexpectedToken {
-                                    expected_tokens: "')'".to_string(),
+                                    expected: "')'",
                                     found: parser.current_token_kind().unwrap_or(TokenKind::EndOfFile),
                                 },
                             });

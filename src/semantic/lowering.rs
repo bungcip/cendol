@@ -16,7 +16,7 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::ast::literal::Literal;
 use crate::ast::parsed::{
-    ParsedDeclaration, ParsedDeclarator, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec,
+    ParsedDecl, ParsedDeclarator, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec,
 };
 use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
@@ -1397,7 +1397,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::TranslationUnit(children) => {
                 smallvec![self.visit_translation_unit(&children, span)]
             }
-            ParsedNodeKind::CompoundStatement(stmts) => {
+            ParsedNodeKind::CompoundStmt(stmts) => {
                 smallvec![self.visit_compound_statement(&stmts, target_slots, span)]
             }
             ParsedNodeKind::Declaration(decl_data) => self.visit_declaration(&decl_data, span, target_slots),
@@ -1857,7 +1857,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_declaration(
         &mut self,
-        decl: &ParsedDeclaration,
+        decl: &ParsedDecl,
         span: SourceSpan,
         target_slots: Option<&[NodeRef]>,
     ) -> SmallVec<[NodeRef; 1]> {
@@ -2313,8 +2313,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::Return(expr) => {
                 lower_simple!(NodeKind::Return(expr.map(|x| self.visit_expression(x))))
             }
-            ParsedNodeKind::ExpressionStatement(expr) => {
-                lower_simple!(NodeKind::ExpressionStatement(expr.map(|x| self.visit_expression(x))))
+            ParsedNodeKind::ExpressionStmt(expr) => {
+                lower_simple!(NodeKind::ExpressionStmt(expr.map(|x| self.visit_expression(x))))
             }
             ParsedNodeKind::BinaryOp(op, lhs, rhs) => lower_simple!(NodeKind::BinaryOp(
                 *op,
@@ -2393,7 +2393,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.visit_expression(*then_branch),
                 self.visit_expression(*else_branch)
             )),
-            ParsedNodeKind::GnuStatementExpression(stmt, _expr) => {
+            ParsedNodeKind::GnuStatementExpr(stmt, _expr) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let s = self.visit_single_statement(*stmt);
 
@@ -2405,7 +2405,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 let result_expr = last_stmt
                     .and_then(|stmt| {
-                        if let NodeKind::ExpressionStatement(Some(e)) = self.ast.get_kind(stmt) {
+                        if let NodeKind::ExpressionStmt(Some(e)) = self.ast.get_kind(stmt) {
                             Some(*e)
                         } else {
                             None
@@ -2614,7 +2614,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 smallvec![node]
             }
-            ParsedNodeKind::EmptyStatement => {
+            ParsedNodeKind::EmptyStmt => {
                 smallvec![]
             }
             _ => {

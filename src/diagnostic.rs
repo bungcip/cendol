@@ -37,8 +37,8 @@ pub(crate) struct ParseError {
 /// Parse error kinds
 #[derive(Debug, Error)]
 pub(crate) enum ParseErrorKind {
-    #[error("Unexpected token: expected {expected_tokens}, found {found:?}")]
-    UnexpectedToken { expected_tokens: String, found: TokenKind },
+    #[error("Unexpected token: expected {expected}, found {found:?}")]
+    UnexpectedToken { expected: &'static str, found: TokenKind },
 
     #[error("Unexpected End of File")]
     UnexpectedEof,
@@ -47,7 +47,7 @@ pub(crate) enum ParseErrorKind {
     DeclarationNotAllowed,
 
     #[error("{message}")]
-    Custom { message: String },
+    Custom { message: &'static str },
 }
 
 /// Diagnostic engine for collecting and reporting semantic errors and warnings

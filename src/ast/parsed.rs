@@ -78,7 +78,7 @@ pub enum ParsedNodeKind {
     UnaryOp(UnaryOp, ParsedNodeRef),
     BinaryOp(BinaryOp, ParsedNodeRef, ParsedNodeRef),
     TernaryOp(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
-    GnuStatementExpression(ParsedNodeRef, ParsedNodeRef),
+    GnuStatementExpr(ParsedNodeRef, ParsedNodeRef),
 
     PostIncrement(ParsedNodeRef),
     PostDecrement(ParsedNodeRef),
@@ -116,7 +116,7 @@ pub enum ParsedNodeKind {
     BuiltinTrap,
 
     // --- Statements ---
-    CompoundStatement(Vec<ParsedNodeRef>),
+    CompoundStmt(Vec<ParsedNodeRef>),
     If(ParsedIfStmt),
     While(ParsedWhileStmt),
     DoWhile(ParsedNodeRef, ParsedNodeRef),
@@ -133,11 +133,11 @@ pub enum ParsedNodeKind {
     CaseRange(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     Default(ParsedNodeRef),
 
-    ExpressionStatement(Option<ParsedNodeRef>),
-    EmptyStatement,
+    ExpressionStmt(Option<ParsedNodeRef>),
+    EmptyStmt,
 
     // --- Declarations & Definitions ---
-    Declaration(ParsedDeclaration),
+    Declaration(ParsedDecl),
     FunctionDef(ParsedFunctionDef),
     EnumConstant(NameId, Option<ParsedNodeRef>),
     StaticAssert(ParsedNodeRef, ParsedNodeRef),
@@ -184,7 +184,7 @@ pub struct ParsedInitDeclarator {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedDeclaration {
+pub struct ParsedDecl {
     pub specifiers: ThinVec<ParsedDeclSpec>,
     pub init_declarators: ThinVec<ParsedInitDeclarator>,
 }
@@ -424,7 +424,7 @@ impl ParsedInitDeclarator {
     }
 }
 
-impl ParsedDeclaration {
+impl ParsedDecl {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         for spec in &self.specifiers {
             spec.for_each_child(f);
@@ -458,7 +458,7 @@ impl ParsedNodeKind {
             | ParsedNodeKind::Break
             | ParsedNodeKind::Continue
             | ParsedNodeKind::Goto(_)
-            | ParsedNodeKind::EmptyStatement
+            | ParsedNodeKind::EmptyStmt
             | ParsedNodeKind::PragmaPack(_)
             | ParsedNodeKind::Dummy => {}
             ParsedNodeKind::UnaryOp(_, e)
@@ -481,7 +481,7 @@ impl ParsedNodeKind {
             | ParsedNodeKind::CompoundLiteral(_, e)
             | ParsedNodeKind::Label(_, e)
             | ParsedNodeKind::Default(e)
-            | ParsedNodeKind::GnuStatementExpression(e, _) => f(*e),
+            | ParsedNodeKind::GnuStatementExpr(e, _) => f(*e),
             ParsedNodeKind::BinaryOp(_, l, r)
             | ParsedNodeKind::Assignment(_, l, r)
             | ParsedNodeKind::IndexAccess(l, r)
@@ -522,7 +522,7 @@ impl ParsedNodeKind {
                 f(*t);
                 f(*e);
             }
-            ParsedNodeKind::CompoundStatement(stmts) | ParsedNodeKind::TranslationUnit(stmts) => {
+            ParsedNodeKind::CompoundStmt(stmts) | ParsedNodeKind::TranslationUnit(stmts) => {
                 for s in stmts {
                     f(*s);
                 }
@@ -550,7 +550,7 @@ impl ParsedNodeKind {
                 }
                 f(stmt.body);
             }
-            ParsedNodeKind::Return(e) | ParsedNodeKind::ExpressionStatement(e) => {
+            ParsedNodeKind::Return(e) | ParsedNodeKind::ExpressionStmt(e) => {
                 if let Some(e) = e {
                     f(*e);
                 }

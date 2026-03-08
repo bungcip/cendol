@@ -209,7 +209,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             Err(ParseError {
                 span: token.span,
                 kind: ParseErrorKind::UnexpectedToken {
-                    expected_tokens: format!("{:?}", expected),
+                    expected: expected.display(),
                     found: token.kind,
                 },
             })
@@ -412,7 +412,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             Err(ParseError {
                 span: token.span,
                 kind: ParseErrorKind::UnexpectedToken {
-                    expected_tokens: "identifier".to_string(),
+                    expected: "identifier",
                     found: token.kind,
                 },
             })

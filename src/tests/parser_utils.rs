@@ -238,13 +238,13 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
             name.to_string(),
             value_expr.map(|expr| Box::new(resolve_node(ast, expr))),
         ),
-        ParsedNodeKind::ExpressionStatement(expr) => {
+        ParsedNodeKind::ExpressionStmt(expr) => {
             ResolvedNodeKind::ExpressionStatement(expr.map(|e| Box::new(resolve_node(ast, e))))
         }
-        ParsedNodeKind::CompoundStatement(statements) => {
+        ParsedNodeKind::CompoundStmt(statements) => {
             ResolvedNodeKind::CompoundStatement(statements.iter().map(|&stmt| resolve_node(ast, stmt)).collect())
         }
-        ParsedNodeKind::GnuStatementExpression(compound_stmt, result_expr) => ResolvedNodeKind::GnuStatementExpression(
+        ParsedNodeKind::GnuStatementExpr(compound_stmt, result_expr) => ResolvedNodeKind::GnuStatementExpression(
             Box::new(resolve_node(ast, *compound_stmt)),
             Box::new(resolve_node(ast, *result_expr)),
         ),
@@ -340,7 +340,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
                 body: Box::new(resolve_node(ast, def.body)),
             }
         }
-        ParsedNodeKind::EmptyStatement | ParsedNodeKind::Dummy => ResolvedNodeKind::Empty,
+        ParsedNodeKind::EmptyStmt | ParsedNodeKind::Dummy => ResolvedNodeKind::Empty,
         // Add more cases as needed for other ParsedNodeKind variants used in tests
         _ => panic!("Unsupported ParsedNodeKind for resolution: {:?}", node.kind),
     }

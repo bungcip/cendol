@@ -92,7 +92,7 @@ fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef,
 
     let end = parser.expect(TokenKind::RightBrace)?.span;
     let span = start.merge(end);
-    let node = parser.replace_node(dummy, ParsedNodeKind::CompoundStatement(items), span);
+    let node = parser.replace_node(dummy, ParsedNodeKind::CompoundStmt(items), span);
     Ok((node, end.end()))
 }
 
@@ -222,7 +222,7 @@ fn parse_return_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErr
 
 fn parse_empty_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let span = parser.expect(TokenKind::Semicolon)?.span;
-    Ok(parser.push_node(ParsedNodeKind::EmptyStatement, span))
+    Ok(parser.push_node(ParsedNodeKind::EmptyStmt, span))
 }
 
 fn parse_case_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
@@ -264,5 +264,5 @@ fn parse_expression_statement(parser: &mut Parser) -> Result<ParsedNodeRef, Pars
     let expr = parser.parse_expr_min()?;
     let end = parser.expect(TokenKind::Semicolon)?.span;
     let span = start.merge(end);
-    Ok(parser.replace_node(dummy, ParsedNodeKind::ExpressionStatement(Some(expr)), span))
+    Ok(parser.replace_node(dummy, ParsedNodeKind::ExpressionStmt(Some(expr)), span))
 }

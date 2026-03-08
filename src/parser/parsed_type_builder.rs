@@ -8,6 +8,7 @@
 use crate::ast::literal::Literal;
 use crate::ast::*;
 use crate::diagnostic::{ParseError, ParseErrorKind};
+use crate::parser::TokenKind;
 use crate::semantic::TypeQualifiers;
 use thin_vec::ThinVec;
 
@@ -104,11 +105,11 @@ fn merge_parsed_type_specifiers(
         (Complex, LongDouble) => Ok(ComplexLongDouble),
 
         // Mismatch
-        (a, _) => Err(ParseError {
+        _ => Err(ParseError {
             span,
             kind: ParseErrorKind::UnexpectedToken {
-                expected_tokens: format!("compatible type specifier for {:?}", a),
-                found: crate::parser::TokenKind::Unknown,
+                expected: "compatible type specifier",
+                found: TokenKind::Unknown,
             },
         }),
     }
@@ -143,8 +144,8 @@ fn parse_base_type_and_qualifiers(
                         return Err(ParseError {
                             span: crate::ast::SourceSpan::default(),
                             kind: ParseErrorKind::UnexpectedToken {
-                                expected_tokens: "single type specifier".to_string(),
-                                found: crate::parser::TokenKind::Unknown,
+                                expected: "single type specifier",
+                                found: TokenKind::Unknown,
                             },
                         });
                     }
@@ -160,8 +161,8 @@ fn parse_base_type_and_qualifiers(
                         return Err(ParseError {
                             span: crate::ast::SourceSpan::default(),
                             kind: ParseErrorKind::UnexpectedToken {
-                                expected_tokens: "single type specifier".to_string(),
-                                found: crate::parser::TokenKind::Unknown,
+                                expected: "single type specifier",
+                                found: TokenKind::Unknown,
                             },
                         });
                     }
@@ -220,7 +221,7 @@ fn parse_type_specifier_to_parsed_base(
                     return Err(ParseError {
                         span: parser.previous_token_span(),
                         kind: ParseErrorKind::Custom {
-                            message: "_Atomic(type-name) specifier cannot be used with array type".to_string(),
+                            message: "_Atomic(type-name) specifier cannot be used with array type",
                         },
                     });
                 }
@@ -228,7 +229,7 @@ fn parse_type_specifier_to_parsed_base(
                     return Err(ParseError {
                         span: parser.previous_token_span(),
                         kind: ParseErrorKind::Custom {
-                            message: "_Atomic(type-name) specifier cannot be used with function type".to_string(),
+                            message: "_Atomic(type-name) specifier cannot be used with function type",
                         },
                     });
                 }
@@ -240,7 +241,7 @@ fn parse_type_specifier_to_parsed_base(
                 return Err(ParseError {
                     span: parser.previous_token_span(),
                     kind: ParseErrorKind::Custom {
-                        message: "_Atomic(type-name) specifier cannot be used with atomic type".to_string(),
+                        message: "_Atomic(type-name) specifier cannot be used with atomic type",
                     },
                 });
             }

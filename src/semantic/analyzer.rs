@@ -317,7 +317,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let else_ft = if_stmt.else_branch.is_none_or(|e| self.can_fall_through(e));
                 then_ft || else_ft
             }
-            NodeKind::ExpressionStatement(Some(expr)) => !self.is_noreturn_expr(*expr),
+            NodeKind::ExpressionStmt(Some(expr)) => !self.is_noreturn_expr(*expr),
             NodeKind::While(while_stmt) => {
                 !self.is_always_true(while_stmt.condition) || self.contains_break(while_stmt.body)
             }
@@ -2194,7 +2194,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_return_statement(node, expr);
                 None
             }
-            NodeKind::ExpressionStatement(expr) => {
+            NodeKind::ExpressionStmt(expr) => {
                 if let Some(expr) = expr {
                     self.visit_node(*expr);
                 }
@@ -2960,7 +2960,7 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::DoWhile(..)
             | NodeKind::For(_)
             | NodeKind::Return(_)
-            | NodeKind::ExpressionStatement(_)
+            | NodeKind::ExpressionStmt(_)
             | NodeKind::StaticAssert(..)
             | NodeKind::Switch(..)
             | NodeKind::Case(..)

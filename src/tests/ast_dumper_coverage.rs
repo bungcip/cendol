@@ -41,7 +41,7 @@ fn test_parsed_ast_ternary() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
-    4: CompoundStatement(stmts=[9])
+    4: CompoundStmt(stmts=[9])
     5: LiteralInt(1, None, base=10)
     6: LiteralInt(2, None, base=10)
     7: LiteralInt(3, None, base=10)
@@ -57,13 +57,13 @@ fn test_parsed_ast_access() {
     );
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[4, 6])
-    3: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("a", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032783) }] })
-    4: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Record(false, Some("S"), Some(ParsedRecordDef { tag: Some("S"), members: Some([3]), is_union: false })))], init_declarators: [] })
+    3: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("a", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032783) }] })
+    4: Declaration(ParsedDecl { specifiers: [TypeSpec(Record(false, Some("S"), Some(ParsedRecordDef { tag: Some("S"), members: Some([3]), is_union: false })))], init_declarators: [] })
     6: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 7 })
-    7: CompoundStatement(stmts=[8, 9, 10, 21])
-    8: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Record(false, Some("S"), None))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("s", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032808) }] })
-    9: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Record(false, Some("S"), None))], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Identifier("p", TypeQualifiers(0x0)))), initializer: None, span: SourceSpan(2199056810036) }] })
-    10: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Array(Identifier("arr", TypeQualifiers(0x0)), Expression { expr: 11, qualifiers: TypeQualifiers(0x0) }), initializer: None, span: SourceSpan(2199140696124) }] })
+    7: CompoundStmt(stmts=[8, 9, 10, 21])
+    8: Declaration(ParsedDecl { specifiers: [TypeSpec(Record(false, Some("S"), None))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("s", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032808) }] })
+    9: Declaration(ParsedDecl { specifiers: [TypeSpec(Record(false, Some("S"), None))], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Identifier("p", TypeQualifiers(0x0)))), initializer: None, span: SourceSpan(2199056810036) }] })
+    10: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Array(Identifier("arr", TypeQualifiers(0x0)), Expression { expr: 11, qualifiers: TypeQualifiers(0x0) }), initializer: None, span: SourceSpan(2199140696124) }] })
     11: LiteralInt(10, None, base=10)
     12: Ident(s)
     13: MemberAccess(12, a, .)
@@ -84,7 +84,7 @@ fn test_parsed_ast_sizeof_alignof() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
-    4: CompoundStatement(stmts=[14])
+    4: CompoundStmt(stmts=[14])
     5: LiteralFloat(3.14, None)
     6: Cast(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) }, 5)
     7: SizeOfType(ParsedType { base: 2, declarator: 2, qualifiers: TypeQualifiers(0x0) })
@@ -103,10 +103,10 @@ fn test_parsed_ast_compound_literal() {
     let output = dump_parsed_ast("struct S { int a; }; int f() { return ((struct S){1}).a; }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[4, 6])
-    3: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("a", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032783) }] })
-    4: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Record(false, Some("S"), Some(ParsedRecordDef { tag: Some("S"), members: Some([3]), is_union: false })))], init_declarators: [] })
+    3: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("a", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032783) }] })
+    4: Declaration(ParsedDecl { specifiers: [TypeSpec(Record(false, Some("S"), Some(ParsedRecordDef { tag: Some("S"), members: Some([3]), is_union: false })))], init_declarators: [] })
     6: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 7 })
-    7: CompoundStatement(stmts=[12])
+    7: CompoundStmt(stmts=[12])
     8: LiteralInt(1, None, base=10)
     9: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 8 }])
     10: CompoundLiteral(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) }, 9)
@@ -121,13 +121,13 @@ fn test_parsed_ast_gnu_stmt_expr() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
-    4: CompoundStatement(stmts=[11])
-    5: CompoundStatement(stmts=[6, 8])
-    6: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199107141656) }] })
+    4: CompoundStmt(stmts=[11])
+    5: CompoundStmt(stmts=[6, 8])
+    6: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199107141656) }] })
     7: LiteralInt(1, None, base=10)
-    8: ExpressionStatement(9)
+    8: ExpressionStmt(9)
     9: Ident(x)
-    10: GnuStatementExpression(5, 9)
+    10: GnuStatementExpr(5, 9)
     11: Return(10)
     "#);
 }
@@ -151,30 +151,30 @@ fn test_parsed_ast_builtins() {
     );
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2, 4, 25, 27])
-    2: Declaration(ParsedDeclaration { specifiers: [StorageClass(Typedef), TypeSpec(VaList)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("va_list", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199140696099) }] })
+    2: Declaration(ParsedDecl { specifiers: [StorageClass(Typedef), TypeSpec(VaList)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("va_list", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199140696099) }] })
     4: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [ParsedParam { specifiers: [TypeSpec(Int)], declarator: Some(Identifier("x", TypeQualifiers(0x0))), span: SourceSpan(2199107141690) }], is_variadic: true }, body: 5 })
-    5: CompoundStatement(stmts=[6, 7, 11, 14, 17, 22])
-    6: Declaration(ParsedDeclaration { specifiers: [TypeSpec(TypedefName("va_list"))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("ap", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199056810076) }] })
-    7: ExpressionStatement(10)
+    5: CompoundStmt(stmts=[6, 7, 11, 14, 17, 22])
+    6: Declaration(ParsedDecl { specifiers: [TypeSpec(TypedefName("va_list"))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("ap", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199056810076) }] })
+    7: ExpressionStmt(10)
     8: Ident(ap)
     9: Ident(x)
     10: BuiltinVaStart(8, 9)
-    11: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("y", TypeQualifiers(0x0)), initializer: Some(13), span: SourceSpan(2199509794967) }] })
+    11: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("y", TypeQualifiers(0x0)), initializer: Some(13), span: SourceSpan(2199509794967) }] })
     12: Ident(ap)
     13: BuiltinVaArg(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) }, 12)
-    14: ExpressionStatement(16)
+    14: ExpressionStmt(16)
     15: Ident(ap)
     16: BuiltinVaEnd(15)
-    17: ExpressionStatement(20)
+    17: ExpressionStmt(20)
     18: Ident(ap)
     19: Ident(ap)
     20: BuiltinVaCopy(18, 19)
     21: Ident(y)
     22: Return(21)
-    24: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("a", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040033078) }] })
-    25: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Record(false, Some("S"), Some(ParsedRecordDef { tag: Some("S"), members: Some([24]), is_union: false })))], init_declarators: [] })
+    24: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("a", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040033078) }] })
+    25: Declaration(ParsedDecl { specifiers: [TypeSpec(Record(false, Some("S"), Some(ParsedRecordDef { tag: Some("S"), members: Some([24]), is_union: false })))], init_declarators: [] })
     27: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("g", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 28 })
-    28: CompoundStatement(stmts=[32])
+    28: CompoundStmt(stmts=[32])
     30: MemberAccess(29, a, .)
     31: BuiltinOffsetof(ParsedType { base: 2, declarator: 2, qualifiers: TypeQualifiers(0x0) }, 30)
     32: Return(31)
@@ -187,7 +187,7 @@ fn test_parsed_ast_generic() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
-    4: CompoundStatement(stmts=[9])
+    4: CompoundStmt(stmts=[9])
     5: LiteralInt(1, None, base=10)
     6: GenericSelection(5, [ParsedGenericAssociation { type_name: Some(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) }), result_expr: 7 }, ParsedGenericAssociation { type_name: None, result_expr: 8 }])
     7: LiteralInt(1, None, base=10)
@@ -202,7 +202,7 @@ fn test_parsed_ast_labels() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
-    4: CompoundStatement(stmts=[6])
+    4: CompoundStmt(stmts=[6])
     5: Goto(label)
     6: Label(label, 5)
     "#);
@@ -225,69 +225,69 @@ fn test_parsed_ast_empty_stmt() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Void)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
-    4: CompoundStatement(stmts=[5])
-    5: EmptyStatement
+    4: CompoundStmt(stmts=[5])
+    5: EmptyStmt
     "#);
 }
 
 #[test]
 fn test_parser_ast_control_flow() {
     let output = dump_parser_ast("void f() { if (1) {} while(0) {} do {} while(0); for(;;) {} }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
-    3: LiteralString(f)
-    4: CompoundStatement(stmts=5..8)
+    3: LiteralString("f")
+    4: CompoundStmt(stmts=5..8
     5: If(condition=9, then=10, else=none)
     6: While(condition=11, body=12)
     7: DoWhile(body=13, condition=14)
     8: For(init=none, condition=none, increment=none, body=15)
     9: LiteralInt(1, None, base=10)
-    10: CompoundStatement(stmts=[])
+    10: CompoundStmt(stmts=[]
     11: LiteralInt(0, None, base=8)
-    12: CompoundStatement(stmts=[])
-    13: CompoundStatement(stmts=[])
+    12: CompoundStmt(stmts=[]
+    13: CompoundStmt(stmts=[]
     14: LiteralInt(0, None, base=8)
-    15: CompoundStatement(stmts=[])
-    ");
+    15: CompoundStmt(stmts=[]
+    "#);
 }
 
 #[test]
 fn test_parser_ast_switch() {
     let output = dump_parser_ast("void f() { switch(1) { case 1: break; default: continue; } }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
-    3: LiteralString(f)
-    4: CompoundStatement(stmts=5..5)
+    3: LiteralString("f")
+    4: CompoundStmt(stmts=5..5
     5: Switch(condition=6, body=7)
     6: LiteralInt(1, None, base=10)
-    7: CompoundStatement(stmts=8..9)
+    7: CompoundStmt(stmts=8..9
     8: Case(10, 11)
     9: Default(12)
     10: LiteralInt(1, None, base=10)
     11: Break
     12: Continue
-    ");
+    "#);
 }
 
 #[test]
 fn test_parser_ast_ops() {
     let output =
         dump_parser_ast("void f() { int a = 1; int b = 2; int c; c = a + b; c = a > b ? a : b; c += 1; a++; ++b; }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
-    3: LiteralString(f)
-    4: CompoundStatement(stmts=5..12)
+    3: LiteralString("f")
+    4: CompoundStmt(stmts=5..12
     5: VarDecl(name=a, ty=Int, storage=None)
     6: VarDecl(name=b, ty=Int, storage=None)
     7: VarDecl(name=c, ty=Int, storage=None)
-    8: ExpressionStatement(15)
-    9: ExpressionStatement(20)
-    10: ExpressionStatement(28)
-    11: ExpressionStatement(31)
-    12: ExpressionStatement(33)
+    8: ExpressionStmt(15)
+    9: ExpressionStmt(20)
+    10: ExpressionStmt(28)
+    11: ExpressionStmt(31)
+    12: ExpressionStmt(33)
     13: LiteralInt(1, None, base=10)
     14: LiteralInt(2, None, base=10)
     15: Assignment(Assign, 16, 17)
@@ -310,17 +310,17 @@ fn test_parser_ast_ops() {
     32: Ident(a)
     33: UnaryOp(PreIncrement, 34)
     34: Ident(b)
-    ");
+    "#);
 }
 
 #[test]
 fn test_parser_ast_sizeof_alignof() {
     let output = dump_parser_ast("void f() { int a = (int)1.0; int s = sizeof(int) + sizeof(a) + _Alignof(int); }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
-    3: LiteralString(f)
-    4: CompoundStatement(stmts=5..6)
+    3: LiteralString("f")
+    4: CompoundStmt(stmts=5..6
     5: VarDecl(name=a, ty=Int, storage=None)
     6: VarDecl(name=s, ty=Int, storage=None)
     7: Cast(Int, 8)
@@ -331,7 +331,7 @@ fn test_parser_ast_sizeof_alignof() {
     12: SizeOfExpr(13)
     13: Ident(a)
     14: AlignOf(Int)
-    ");
+    "#);
 }
 
 #[test]
@@ -344,8 +344,8 @@ fn test_parser_ast_access() {
     2: RecordDecl(name=Some("S"), ty=1048596, is_union=false, members=4..4)
     3: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=6)
     4: FieldDecl(name=Some("a"), ty=Int)
-    5: LiteralString(f)
-    6: CompoundStatement(stmts=7..10)
+    5: LiteralString("f")
+    6: CompoundStmt(stmts=7..10
     7: VarDecl(name=s, ty=TypeRef(base=20, class=Record, ptr=0, arr=None), storage=None)
     8: VarDecl(name=p, ty=TypeRef(base=20, class=Pointer, ptr=1, arr=None), storage=None)
     9: VarDecl(name=arr, ty=TypeRef(base=8, class=Array, ptr=0, arr=Some(10)), storage=None)
@@ -371,11 +371,11 @@ fn test_parser_ast_compound_literal() {
     2: RecordDecl(name=Some("S"), ty=1048596, is_union=false, members=4..4)
     3: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=6)
     4: FieldDecl(name=Some("a"), ty=Int)
-    5: LiteralString(f)
-    6: CompoundStatement(stmts=7..7)
+    5: LiteralString("f")
+    6: CompoundStmt(stmts=7..7
     7: VarDecl(name=s, ty=TypeRef(base=20, class=Record, ptr=0, arr=None), storage=None)
     8: CompoundLiteral(TypeRef(base=20, class=Record, ptr=0, arr=None), 9)
-    9: InitializerList(inits=10..10)
+    9: InitializerList(inits=10..10
     10: InitializerItem(11)
     11: LiteralInt(1, None, base=10)
     "#);
@@ -384,11 +384,11 @@ fn test_parser_ast_compound_literal() {
 #[test]
 fn test_parser_ast_generic() {
     let output = dump_parser_ast("void f() { int x = _Generic(1, int: 1, default: 0); }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
-    3: LiteralString(f)
-    4: CompoundStatement(stmts=5..5)
+    3: LiteralString("f")
+    4: CompoundStmt(stmts=5..5
     5: VarDecl(name=x, ty=Int, storage=None)
     6: GenericSelection(control=7, associations=8..9)
     7: LiteralInt(1, None, base=10)
@@ -396,25 +396,25 @@ fn test_parser_ast_generic() {
     9: GenericAssociation(ty=None, result_expr=11)
     10: LiteralInt(1, None, base=10)
     11: LiteralInt(0, None, base=8)
-    ");
+    "#);
 }
 
 #[test]
 fn test_parser_ast_gnu_stmt_expr() {
     let output = dump_parser_ast("void f() { int x = ({ int y = 1; y; }); }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
-    3: LiteralString(f)
-    4: CompoundStatement(stmts=5..5)
+    3: LiteralString("f")
+    4: CompoundStmt(stmts=5..5
     5: VarDecl(name=x, ty=Int, storage=None)
-    6: GnuStatementExpression(7, 11)
-    7: CompoundStatement(stmts=8..9)
+    6: GnuStatementExpr(7, 11)
+    7: CompoundStmt(stmts=8..9
     8: VarDecl(name=y, ty=Int, storage=None)
-    9: ExpressionStatement(11)
+    9: ExpressionStmt(11)
     10: LiteralInt(1, None, base=10)
     11: Ident(y)
-    ");
+    "#);
 }
 
 #[test]
@@ -425,8 +425,8 @@ fn test_parser_ast_builtin_offsetof() {
     2: RecordDecl(name=Some("S"), ty=1048596, is_union=false, members=4..4)
     3: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=6)
     4: FieldDecl(name=Some("a"), ty=Int)
-    5: LiteralString(f)
-    6: CompoundStatement(stmts=7..7)
+    5: LiteralString("f")
+    6: CompoundStmt(stmts=7..7
     7: VarDecl(name=x, ty=Int, storage=None)
     8: BuiltinOffsetof(TypeRef(base=20, class=Record, ptr=0, arr=None), 9)
     9: MemberAccess(10, a, .)
@@ -440,21 +440,21 @@ fn test_parser_ast_static_assert() {
     1: TranslationUnit(decls=2..2) (parser kind)
     2: StaticAssert(condition=3, message=""msg"")
     3: LiteralInt(1, None, base=10)
-    4: LiteralString("msg")
+    4: LiteralString(""msg"")
     "#);
 }
 
 #[test]
 fn test_parser_ast_labels() {
     let output = dump_parser_ast("void f() { L: goto L; }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
-    3: LiteralString(f)
-    4: CompoundStatement(stmts=5..5)
+    3: LiteralString("f")
+    4: CompoundStmt(stmts=5..5
     5: Label(L, 6)
     6: Goto(L)
-    ");
+    "#);
 }
 
 #[test]
@@ -501,16 +501,16 @@ fn test_atomic_ops_and_case_range() {
     insta::assert_snapshot!(output_parsed, @r#"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Void)], declarator: Function { inner: Identifier("f", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
-    4: CompoundStatement(stmts=[5, 7, 18])
-    5: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("a", TypeQualifiers(0x0)), initializer: Some(6), span: SourceSpan(2199107141668) }] })
+    4: CompoundStmt(stmts=[5, 7, 18])
+    5: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("a", TypeQualifiers(0x0)), initializer: Some(6), span: SourceSpan(2199107141668) }] })
     6: LiteralInt(0, None, base=8)
-    7: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("b", TypeQualifiers(0x0)), initializer: Some(11), span: SourceSpan(2199459463227) }] })
+    7: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("b", TypeQualifiers(0x0)), initializer: Some(11), span: SourceSpan(2199459463227) }] })
     8: Ident(a)
     9: UnaryOp(AddrOf, 8)
     10: LiteralInt(0, None, base=8)
     11: AtomicOp(LoadN, args=[9, 10])
     12: Ident(a)
-    13: CompoundStatement(stmts=[17])
+    13: CompoundStmt(stmts=[17])
     14: LiteralInt(1, None, base=10)
     15: LiteralInt(5, None, base=10)
     16: Break
@@ -530,19 +530,19 @@ fn test_atomic_ops_and_case_range() {
         }
     ",
     );
-    insta::assert_snapshot!(output_parser, @r"
+    insta::assert_snapshot!(output_parser, @r#"
     1: TranslationUnit(decls=2..2) (parser kind)
     2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
-    3: LiteralString(f)
-    4: CompoundStatement(stmts=5..6)
+    3: LiteralString("f")
+    4: CompoundStmt(stmts=5..6
     5: VarDecl(name=a, ty=Int, storage=None)
     6: Switch(condition=8, body=9)
     7: LiteralInt(0, None, base=8)
     8: Ident(a)
-    9: CompoundStatement(stmts=10..10)
+    9: CompoundStmt(stmts=10..10
     10: CaseRange(11, 12, 13)
     11: LiteralInt(1, None, base=10)
     12: LiteralInt(5, None, base=10)
     13: Break
-    ");
+    "#);
 }

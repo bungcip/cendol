@@ -141,7 +141,7 @@ impl<'a> MirGen<'a> {
             NodeKind::If(if_stmt) => self.visit_if_stmt(&if_stmt),
             NodeKind::While(while_stmt) => self.visit_while_stmt(&while_stmt),
             NodeKind::DoWhile(body, condition) => self.visit_do_while_stmt(body, condition),
-            NodeKind::ExpressionStatement(Some(expr_ref)) => {
+            NodeKind::ExpressionStmt(Some(expr_ref)) => {
                 // Expression statement: value not needed, only side-effects
                 self.visit_expression(expr_ref, false);
             }

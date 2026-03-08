@@ -41,7 +41,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         && !has_storage_class
         && let Some(semi) = trx.parser.accept(TokenKind::Semicolon)
     {
-        let declaration_data = ParsedDeclaration {
+        let declaration_data = ParsedDecl {
             specifiers,
             init_declarators: ThinVec::new(),
         };
@@ -73,7 +73,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         return Err(ParseError {
             span: current_token.span,
             kind: ParseErrorKind::UnexpectedToken {
-                expected_tokens: message.to_string(),
+                expected: message,
                 found: current_token.kind,
             },
         });
@@ -133,13 +133,13 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         return Err(ParseError {
             span: current_token.span,
             kind: ParseErrorKind::UnexpectedToken {
-                expected_tokens: "';' after declaration".to_string(),
+                expected: "';' after declaration",
                 found: current_token.kind,
             },
         });
     };
 
-    let declaration_data = ParsedDeclaration {
+    let declaration_data = ParsedDecl {
         specifiers,
         init_declarators,
     };
@@ -249,7 +249,7 @@ pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
             return Err(ParseError {
                 span: token.span,
                 kind: ParseErrorKind::UnexpectedToken {
-                    expected_tokens: "string literal".to_string(),
+                    expected: "string literal",
                     found: token.kind,
                 },
             });

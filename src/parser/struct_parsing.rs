@@ -101,7 +101,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
                 decls
             };
 
-            ParsedDeclaration {
+            ParsedDecl {
                 specifiers: thin_vec![ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Record(
                     is_union,
                     tag,
@@ -122,7 +122,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
                 parser.expect(TokenKind::Semicolon)?;
                 decls
             };
-            ParsedDeclaration {
+            ParsedDecl {
                 specifiers,
                 init_declarators,
             }
@@ -131,7 +131,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
         let specifiers = parse_declaration_specifiers(parser)?;
         let init_declarators = parse_init_declarators_no_init(parser)?;
         parser.expect(TokenKind::Semicolon)?;
-        ParsedDeclaration {
+        ParsedDecl {
             specifiers,
             init_declarators,
         }

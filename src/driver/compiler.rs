@@ -559,7 +559,7 @@ pub enum DriverError {
 
 /// Error that will stop the compilation pipeline
 #[derive(Debug)]
-pub enum PipelineError {
+pub(crate) enum PipelineError {
     Fatal,
     IoError(std::io::Error),
 }

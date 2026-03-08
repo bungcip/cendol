@@ -18,7 +18,7 @@ use crate::mir::MirProgram;
 
 /// Configuration for MIR dump output
 #[derive(Debug, Clone)]
-pub struct MirDumpConfig {
+pub(crate) struct MirDumpConfig {
     pub include_header: bool,
 }
 
@@ -29,7 +29,7 @@ impl Default for MirDumpConfig {
 }
 
 /// Main MIR dumper that generates human-readable MIR output
-pub struct MirDumper<'a> {
+pub(crate) struct MirDumper<'a> {
     mir: &'a MirProgram,
     config: &'a MirDumpConfig,
 }

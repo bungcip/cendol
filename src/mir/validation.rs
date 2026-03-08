@@ -523,7 +523,7 @@ impl<'a> MirValidator<'a> {
                     UnaryIntOp::Neg => ta,
                     UnaryIntOp::BitwiseNot => ta,
                     UnaryIntOp::LogicalNot => self.find_bool_type(),
-                    UnaryIntOp::Popcount | UnaryIntOp::Clz | UnaryIntOp::Ctz => self.find_i32_type(),
+                    UnaryIntOp::Popcount | UnaryIntOp::Clz | UnaryIntOp::Ctz | UnaryIntOp::Ffs => self.find_i32_type(),
                     UnaryIntOp::Bswap16 | UnaryIntOp::Bswap32 | UnaryIntOp::Bswap64 => ta,
                 }
             }

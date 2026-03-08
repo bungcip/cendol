@@ -248,6 +248,9 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         | TokenKind::BuiltinCtz
         | TokenKind::BuiltinCtzL
         | TokenKind::BuiltinCtzLL
+        | TokenKind::BuiltinFfs
+        | TokenKind::BuiltinFfsL
+        | TokenKind::BuiltinFfsLL
         | TokenKind::BuiltinBswap16
         | TokenKind::BuiltinBswap32
         | TokenKind::BuiltinBswap64 => parse_builtin_bitwise(parser),
@@ -620,6 +623,7 @@ fn parse_builtin_bitwise(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErro
         }
         TokenKind::BuiltinClz | TokenKind::BuiltinClzL | TokenKind::BuiltinClzLL => ParsedNodeKind::BuiltinClz(expr),
         TokenKind::BuiltinCtz | TokenKind::BuiltinCtzL | TokenKind::BuiltinCtzLL => ParsedNodeKind::BuiltinCtz(expr),
+        TokenKind::BuiltinFfs | TokenKind::BuiltinFfsL | TokenKind::BuiltinFfsLL => ParsedNodeKind::BuiltinFfs(expr),
         TokenKind::BuiltinBswap16 => ParsedNodeKind::BuiltinBswap16(expr),
         TokenKind::BuiltinBswap32 => ParsedNodeKind::BuiltinBswap32(expr),
         TokenKind::BuiltinBswap64 => ParsedNodeKind::BuiltinBswap64(expr),

@@ -2457,6 +2457,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::BuiltinCtz(expr) => {
                 lower_simple!(NodeKind::BuiltinCtz(self.visit_expression(*expr)))
             }
+            ParsedNodeKind::BuiltinFfs(expr) => {
+                lower_simple!(NodeKind::BuiltinFfs(self.visit_expression(*expr)))
+            }
             ParsedNodeKind::BuiltinBswap16(expr) => {
                 lower_simple!(NodeKind::BuiltinBswap16(self.visit_expression(*expr)))
             }

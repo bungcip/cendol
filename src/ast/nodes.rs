@@ -56,6 +56,7 @@ pub enum NodeKind {
     BuiltinPopcount(NodeRef),
     BuiltinClz(NodeRef),
     BuiltinCtz(NodeRef),
+    BuiltinFfs(NodeRef),
     BuiltinBswap16(NodeRef),
     BuiltinBswap32(NodeRef),
     BuiltinBswap64(NodeRef),
@@ -156,6 +157,7 @@ impl NodeKind {
             | NodeKind::BuiltinPopcount(child)
             | NodeKind::BuiltinClz(child)
             | NodeKind::BuiltinCtz(child)
+            | NodeKind::BuiltinFfs(child)
             | NodeKind::BuiltinBswap16(child)
             | NodeKind::BuiltinBswap32(child)
             | NodeKind::BuiltinBswap64(child)

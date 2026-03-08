@@ -2,6 +2,8 @@ use crate::{
     parser::TokenKind,
     source_manager::{SourceManager, SourceSpan},
 };
+use std::io::IsTerminal;
+
 use annotate_snippets::renderer::DecorStyle;
 use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
 use thiserror::Error;
@@ -60,7 +62,7 @@ impl Default for DiagnosticEngine {
         Self {
             diagnostics: Vec::new(),
             error_limit: None,
-            use_colors: true,
+            use_colors: std::io::stderr().is_terminal(),
         }
     }
 }
@@ -70,7 +72,7 @@ impl DiagnosticEngine {
         Self {
             diagnostics: Vec::new(),
             error_limit: None,
-            use_colors: true,
+            use_colors: std::io::stderr().is_terminal(),
         }
     }
 

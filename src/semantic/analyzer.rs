@@ -2544,7 +2544,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*c);
                 ty
             }
-            NodeKind::BuiltinPopcount(exp) | NodeKind::BuiltinClz(exp) | NodeKind::BuiltinCtz(exp) => {
+            NodeKind::BuiltinPopcount(exp)
+            | NodeKind::BuiltinClz(exp)
+            | NodeKind::BuiltinCtz(exp)
+            | NodeKind::BuiltinFfs(exp) => {
                 let ty = self.visit_node(*exp);
                 if let Some(t) = ty {
                     let mut actual_ty = t;

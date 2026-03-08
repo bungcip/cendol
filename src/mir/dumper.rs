@@ -784,6 +784,7 @@ impl<'a> MirDumper<'a> {
             super::UnaryIntOp::Bswap16 => "bswap16".to_string(),
             super::UnaryIntOp::Bswap32 => "bswap32".to_string(),
             super::UnaryIntOp::Bswap64 => "bswap64".to_string(),
+            super::UnaryIntOp::Ffs => "ffs".to_string(),
         }
     }
 

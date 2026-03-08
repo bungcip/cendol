@@ -94,6 +94,9 @@ pub enum TokenKind {
     BuiltinCtz,
     BuiltinCtzL,
     BuiltinCtzLL,
+    BuiltinFfs,
+    BuiltinFfsL,
+    BuiltinFfsLL,
     BuiltinChooseExpr,
     BuiltinConstantP,
     BuiltinUnreachable,
@@ -423,6 +426,9 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__builtin_ctz"), TokenKind::BuiltinCtz);
         m.insert(StringId::new("__builtin_ctzl"), TokenKind::BuiltinCtzL);
         m.insert(StringId::new("__builtin_ctzll"), TokenKind::BuiltinCtzLL);
+        m.insert(StringId::new("__builtin_ffs"), TokenKind::BuiltinFfs);
+        m.insert(StringId::new("__builtin_ffsl"), TokenKind::BuiltinFfsL);
+        m.insert(StringId::new("__builtin_ffsll"), TokenKind::BuiltinFfsLL);
         m.insert(StringId::new("__builtin_choose_expr"), TokenKind::BuiltinChooseExpr);
         m.insert(StringId::new("__builtin_constant_p"), TokenKind::BuiltinConstantP);
         m.insert(StringId::new("__builtin_unreachable"), TokenKind::BuiltinUnreachable);

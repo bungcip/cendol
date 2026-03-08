@@ -400,6 +400,14 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
                 Some(val.trailing_zeros() as i64)
             }
         }
+        NodeKind::BuiltinFfs(exp) => {
+            let val = eval_const_expr(ctx, *exp)?;
+            if val == 0 {
+                Some(0)
+            } else {
+                Some((val.trailing_zeros() + 1) as i64)
+            }
+        }
         _ => None,
     }
 }

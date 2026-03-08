@@ -125,6 +125,7 @@ impl<'a> MirGen<'a> {
             NodeKind::BuiltinPopcount(exp)
             | NodeKind::BuiltinClz(exp)
             | NodeKind::BuiltinCtz(exp)
+            | NodeKind::BuiltinFfs(exp)
             | NodeKind::BuiltinBswap16(exp)
             | NodeKind::BuiltinBswap32(exp)
             | NodeKind::BuiltinBswap64(exp) => {
@@ -132,6 +133,7 @@ impl<'a> MirGen<'a> {
                     NodeKind::BuiltinPopcount(_) => crate::mir::UnaryIntOp::Popcount,
                     NodeKind::BuiltinClz(_) => crate::mir::UnaryIntOp::Clz,
                     NodeKind::BuiltinCtz(_) => crate::mir::UnaryIntOp::Ctz,
+                    NodeKind::BuiltinFfs(_) => crate::mir::UnaryIntOp::Ffs,
                     NodeKind::BuiltinBswap16(_) => crate::mir::UnaryIntOp::Bswap16,
                     NodeKind::BuiltinBswap32(_) => crate::mir::UnaryIntOp::Bswap32,
                     NodeKind::BuiltinBswap64(_) => crate::mir::UnaryIntOp::Bswap64,

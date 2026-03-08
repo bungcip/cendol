@@ -148,6 +148,7 @@ impl AstDumper {
             | NodeKind::BuiltinPopcount(_)
             | NodeKind::BuiltinClz(_)
             | NodeKind::BuiltinCtz(_)
+            | NodeKind::BuiltinFfs(_)
             | NodeKind::BuiltinBswap16(_)
             | NodeKind::BuiltinBswap32(_)
             | NodeKind::BuiltinBswap64(_)
@@ -338,6 +339,9 @@ impl AstDumper {
             }
             ParsedNodeKind::BuiltinCtz(exp) => {
                 writeln!(f, "BuiltinCtz({})", exp.get())
+            }
+            ParsedNodeKind::BuiltinFfs(exp) => {
+                writeln!(f, "BuiltinFfs({})", exp.get())
             }
             ParsedNodeKind::BuiltinBswap16(exp) => {
                 writeln!(f, "BuiltinBswap16({})", exp.get())
@@ -538,6 +542,9 @@ impl AstDumper {
             }
             NodeKind::BuiltinCtz(exp) => {
                 writeln!(f, "BuiltinCtz({})", exp.get())
+            }
+            NodeKind::BuiltinFfs(exp) => {
+                writeln!(f, "BuiltinFfs({})", exp.get())
             }
             NodeKind::BuiltinBswap16(exp) => {
                 writeln!(f, "BuiltinBswap16({})", exp.get())

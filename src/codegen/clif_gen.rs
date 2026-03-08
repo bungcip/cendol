@@ -1733,6 +1733,14 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             let res = ctx.builder.ins().ctz(val);
                             emit_type_conversion(res, operand_clif_type, expected_type, false, ctx.builder)
                         }
+                        UnaryIntOp::Ffs => {
+                            let ctz_val = ctx.builder.ins().ctz(val);
+                            let ctz_plus_one = ctx.builder.ins().iadd_imm(ctz_val, 1);
+                            let zero = ctx.builder.ins().iconst(operand_clif_type, 0);
+                            let is_zero = ctx.builder.ins().icmp(IntCC::Equal, val, zero);
+                            let res = ctx.builder.ins().select(is_zero, zero, ctz_plus_one);
+                            emit_type_conversion(res, operand_clif_type, expected_type, false, ctx.builder)
+                        }
                         UnaryIntOp::Bswap16 | UnaryIntOp::Bswap32 | UnaryIntOp::Bswap64 => {
                             let res = ctx.builder.ins().bswap(val);
                             emit_type_conversion(res, operand_clif_type, expected_type, false, ctx.builder)

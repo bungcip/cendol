@@ -297,6 +297,7 @@ pub enum UnaryIntOp {
     Popcount,
     Clz,
     Ctz,
+    Ffs,
     Bswap16,
     Bswap32,
     Bswap64,

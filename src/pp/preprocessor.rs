@@ -4,6 +4,7 @@ use crate::lang_options::CStandard;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use hashbrown::HashMap;
+use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -206,7 +207,7 @@ impl HideSetTable {
         Self { sets: vec![empty], map }
     }
 
-    fn intern(&mut self, mut set: Vec<StringId>) -> u32 {
+    fn intern(&mut self, mut set: SmallVec<[StringId; 4]>) -> u32 {
         if set.is_empty() {
             return 0;
         }
@@ -218,7 +219,7 @@ impl HideSetTable {
             return id;
         }
 
-        let arc_set: Arc<[StringId]> = Arc::from(set);
+        let arc_set: Arc<[StringId]> = Arc::from(set.into_vec());
         let id = self.sets.len() as u32;
         self.sets.push(arc_set.clone());
         self.map.insert(arc_set, id);
@@ -236,7 +237,7 @@ impl HideSetTable {
         let set2 = &self.sets[id2 as usize];
 
         // Optimized merge-based intersection for sorted sets: O(M+K)
-        let mut result = Vec::with_capacity(std::cmp::min(set1.len(), set2.len()));
+        let mut result = SmallVec::<[StringId; 4]>::new();
         let (mut i, mut j) = (0, 0);
         while i < set1.len() && j < set2.len() {
             match set1[i].cmp(&set2[j]) {
@@ -267,7 +268,7 @@ impl HideSetTable {
         let set2 = &self.sets[id2 as usize];
 
         // Optimized merge-based union for sorted sets: O(M+K)
-        let mut result = Vec::with_capacity(set1.len() + set2.len());
+        let mut result = SmallVec::<[StringId; 4]>::new();
         let (mut i, mut j) = (0, 0);
         while i < set1.len() && j < set2.len() {
             match set1[i].cmp(&set2[j]) {
@@ -297,7 +298,7 @@ impl HideSetTable {
         if existing.binary_search(&symbol).is_ok() {
             return id;
         }
-        let mut new_set = Vec::with_capacity(existing.len() + 1);
+        let mut new_set = SmallVec::<[StringId; 4]>::new();
         new_set.extend_from_slice(existing);
         new_set.push(symbol);
         // Note: intern will sort it
@@ -3180,6 +3181,7 @@ mod tests {
 
     #[test]
     fn test_hide_set_table() {
+        use smallvec::smallvec;
         let mut table = HideSetTable::new();
         let s1 = StringId::new("a");
         let s2 = StringId::new("b");
@@ -3187,10 +3189,10 @@ mod tests {
 
         // Test intern
         let id0 = 0;
-        let id1 = table.intern(vec![s1]);
-        let id2 = table.intern(vec![s2]);
-        let id1_again = table.intern(vec![s1]);
-        let id12 = table.intern(vec![s2, s1]); // Should be sorted to [s1, s2]
+        let id1 = table.intern(smallvec![s1]);
+        let id2 = table.intern(smallvec![s2]);
+        let id1_again = table.intern(smallvec![s1]);
+        let id12 = table.intern(smallvec![s2, s1]); // Should be sorted to [s1, s2]
 
         assert_eq!(id1, id1_again);
         assert_ne!(id1, id2);
@@ -3229,8 +3231,8 @@ mod tests {
         assert_eq!(i01, id0);
 
         // Complex case
-        let id123 = table.intern(vec![s1, s2, s3]);
-        let id13 = table.intern(vec![s1, s3]);
+        let id123 = table.intern(smallvec![s1, s2, s3]);
+        let id13 = table.intern(smallvec![s1, s3]);
         assert_eq!(table.union(id13, id12), id123);
         assert_eq!(table.intersection(id13, id12), id1);
     }

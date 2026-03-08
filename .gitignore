@@ -7,3 +7,4 @@ a.out
 *.pending-snap
 .vscode/settings.json
 csmith-diff-results
+cendol.code-workspace

@@ -299,6 +299,8 @@ impl CompilerDriver {
         // But for safety/debugging:
         #[cfg(debug_assertions)]
         for kind in &ast.kinds {
+            use crate::ast::NodeKind;
+
             match kind {
                 NodeKind::BinaryOp(op, ..) if op.is_assignment() => {
                     panic!(
@@ -341,7 +343,7 @@ impl CompilerDriver {
     ) -> Result<MirProgram, PipelineError> {
         // Timing for semantic analysis
         let timing_enabled = self.config.timing;
-        
+
         use crate::semantic::analyzer::visit_ast;
         let t0 = if timing_enabled { Some(Instant::now()) } else { None };
         let semantic_info = visit_ast(
@@ -537,7 +539,8 @@ impl CompilerDriver {
 
     /// Print accumulated diagnostics without returning an error
     pub(crate) fn print_diagnostics(&self) {
-        self.diagnostics.print_diagnostics_filtered(&self.source_manager, self.config.suppress_warnings);
+        self.diagnostics
+            .print_diagnostics_filtered(&self.source_manager, self.config.suppress_warnings);
     }
 }
 

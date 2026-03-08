@@ -7,9 +7,18 @@ use crate::source_manager::SourceSpan;
 pub struct SemanticError {
     pub span: SourceSpan,
     pub kind: SemanticErrorKind,
+    pub notes: Vec<(SourceSpan, SemanticErrorKind)>,
 }
 
 impl SemanticError {
+    pub fn new(span: SourceSpan, kind: SemanticErrorKind) -> Self {
+        Self {
+            span,
+            kind,
+            notes: Vec::new(),
+        }
+    }
+
     pub(crate) fn into_diagnostic(self, registry: &TypeRegistry) -> Vec<Diagnostic> {
         let level = match &self.kind {
             SemanticErrorKind::EmptyDeclaration
@@ -54,6 +63,15 @@ impl SemanticError {
                 level: DiagnosticLevel::Note,
                 message: message.to_string(),
                 span,
+                ..Default::default()
+            });
+        }
+
+        for (note_span, note_kind) in self.notes {
+            diagnostics.push(Diagnostic {
+                level: DiagnosticLevel::Note,
+                message: note_kind.display(registry),
+                span: note_span,
                 ..Default::default()
             });
         }

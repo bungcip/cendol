@@ -365,7 +365,7 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &ParsedDeclarator) -
             // in the parser's logic for identifiers.
             Ok(parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Identifier))
         }
-        ParsedDeclarator::Pointer(ptr_qualifiers, inner_decl) => {
+        ParsedDeclarator::Pointer(qualifiers, inner_decl) => {
             let inner_ref = if let Some(inner) = inner_decl {
                 build_parsed_declarator(parser, inner)?
             } else {
@@ -373,7 +373,7 @@ fn build_parsed_declarator(parser: &mut Parser, declarator: &ParsedDeclarator) -
             };
 
             Ok(parser.ast.parsed_types.alloc_decl(ParsedDeclaratorNode::Pointer {
-                qualifiers: *ptr_qualifiers,
+                qualifiers: *qualifiers,
                 inner: inner_ref,
             }))
         }

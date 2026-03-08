@@ -6,8 +6,8 @@ use crate::{
     },
     diagnostic::DiagnosticEngine,
     semantic::{
-        ArraySizeType, BuiltinType, QualType, SymbolKind, SymbolRef, SymbolTable, TypeKind, TypeQualifiers, TypeRef,
-        TypeRegistry,
+        ArraySizeType, BuiltinType, QualType, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind,
+        TypeQualifiers, TypeRef, TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticError, SemanticErrorKind},
@@ -145,17 +145,36 @@ struct SemanticAnalyzer<'a> {
 
 impl<'a> SemanticAnalyzer<'a> {
     fn report_error(&mut self, node: NodeRef, kind: SemanticErrorKind) {
-        // compute the span lazily inside the helper
+        self.report_error_with_notes(node, kind, vec![])
+    }
+
+    fn report_error_with_notes(
+        &mut self,
+        node: NodeRef,
+        kind: SemanticErrorKind,
+        notes: Vec<(SourceSpan, SemanticErrorKind)>,
+    ) {
         let span = self.ast.get_span(node);
-        let error = SemanticError { span, kind };
+        let mut error = SemanticError::new(span, kind);
+        error.notes = notes;
         for diag in error.into_diagnostic(self.registry) {
             self.diag.report_diagnostic(diag);
         }
     }
 
     fn report_warning(&mut self, node: NodeRef, kind: SemanticErrorKind) {
+        self.report_warning_with_notes(node, kind, vec![])
+    }
+
+    fn report_warning_with_notes(
+        &mut self,
+        node: NodeRef,
+        kind: SemanticErrorKind,
+        notes: Vec<(SourceSpan, SemanticErrorKind)>,
+    ) {
         let span = self.ast.get_span(node);
-        let error = SemanticError { span, kind };
+        let mut error = SemanticError::new(span, kind);
+        error.notes = notes;
         for diag in error.into_diagnostic(self.registry) {
             self.diag.report_diagnostic(diag);
         }
@@ -1271,9 +1290,7 @@ impl<'a> SemanticAnalyzer<'a> {
         false
     }
 
-    fn record_implicit_conversions(&mut self, lhs_ty: QualType, rhs_ty: QualType, rhs: NodeRef) {
-        let mut current_rhs_ty = rhs_ty;
-
+    fn record_implicit_conversions(&mut self, lhs_ty: QualType, mut rhs_ty: QualType, rhs: NodeRef) {
         // 1. Null pointer constant conversion (0 or (void*)0 -> T*)
         if lhs_ty.is_pointer() && self.is_null_pointer_constant(rhs) {
             self.push_conversion(rhs, Conversion::NullPointerConstant);
@@ -1290,71 +1307,62 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // 2. Array/Function-to-pointer decay
-        if lhs_ty.is_pointer() && (current_rhs_ty.is_array() || current_rhs_ty.is_function()) {
-            current_rhs_ty = self.registry.decay(current_rhs_ty, TypeQualifiers::empty());
-            self.push_conversion(
-                rhs,
-                Conversion::PointerDecay {
-                    to: current_rhs_ty.ty(),
-                },
-            );
+        if lhs_ty.is_pointer() && (rhs_ty.is_array() || rhs_ty.is_function()) {
+            rhs_ty = self.registry.decay(rhs_ty, TypeQualifiers::empty());
+            self.push_conversion(rhs, Conversion::PointerDecay { to: rhs_ty.ty() });
         }
 
         // 3. Qualifier adjustment
-        if lhs_ty.ty() == current_rhs_ty.ty() && lhs_ty.qualifiers() != current_rhs_ty.qualifiers() {
+        if lhs_ty.ty() == rhs_ty.ty() && lhs_ty.qualifiers() != rhs_ty.qualifiers() {
             self.push_conversion(
                 rhs,
                 Conversion::QualifierAdjust {
-                    from: current_rhs_ty.qualifiers(),
+                    from: rhs_ty.qualifiers(),
                     to: lhs_ty.qualifiers(),
                 },
             );
         }
 
         // 4. Casts (Integer or Pointer)
-        let is_literal = matches!(
-            self.ast.get_kind(rhs),
-            NodeKind::Literal(Literal::Int { .. })
-                | NodeKind::Literal(Literal::Char(_))
-                | NodeKind::Literal(Literal::Float { .. })
-        );
+        if lhs_ty.ty() == rhs_ty.ty() {
+            return;
+        }
 
-        let is_arithmetic_cast = lhs_ty.is_arithmetic() && current_rhs_ty.is_arithmetic();
-        let is_pointer_cast = lhs_ty.is_pointer() && current_rhs_ty.is_pointer();
-
-        if (is_arithmetic_cast || is_pointer_cast) && (lhs_ty.ty() != current_rhs_ty.ty() || is_literal) {
-            let conv = if is_pointer_cast {
+        if lhs_ty.is_pointer() && rhs_ty.is_pointer() {
+            self.push_conversion(
+                rhs,
                 Conversion::PointerCast {
-                    from: current_rhs_ty.ty(),
+                    from: rhs_ty.ty(),
                     to: lhs_ty.ty(),
+                },
+            );
+        } else if lhs_ty.is_arithmetic() && rhs_ty.is_arithmetic() {
+            // If it's a constant literal, check if conversion changes value
+            if let NodeKind::Literal(literal) = self.ast.get_kind(rhs)
+                && matches!(literal, Literal::Int { .. } | Literal::Char(_) | Literal::Float { .. })
+                && let Some(val) = eval_const_expr(&self.const_ctx(), rhs)
+            {
+                let truncated = self.registry.get(lhs_ty.ty()).as_ref().truncate_int(val);
+                if truncated != val {
+                    self.report_warning(
+                        rhs,
+                        SemanticErrorKind::ImplicitConstantConversion {
+                            from: rhs_ty,
+                            to: lhs_ty,
+                            from_val: val,
+                            to_val: truncated,
+                        },
+                    );
                 }
-            } else {
-                // If it's a literal, check if conversion changes value
-                if is_literal {
-                    let from_val = eval_const_expr(&self.const_ctx(), rhs);
-                    if let Some(val) = from_val {
-                        let to_ty = self.registry.get(lhs_ty.ty());
-                        let truncated = to_ty.as_ref().truncate_int(val);
-                        if truncated != val {
-                            self.report_warning(
-                                rhs,
-                                SemanticErrorKind::ImplicitConstantConversion {
-                                    from: current_rhs_ty,
-                                    to: lhs_ty,
-                                    from_val: val,
-                                    to_val: truncated,
-                                },
-                            );
-                        }
-                    }
-                }
+            }
 
+            self.push_conversion(
+                rhs,
                 Conversion::IntegerCast {
-                    from: current_rhs_ty.ty(),
+                    from: rhs_ty.ty(),
                     to: lhs_ty.ty(),
-                }
-            };
-            self.push_conversion(rhs, conv);
+                },
+            );
         }
     }
 
@@ -1401,6 +1409,68 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    fn check_string_array_initializer(&mut self, init: NodeRef, target_ty: QualType, init_ty: QualType) {
+        let lhs_elem = self
+            .registry
+            .get_array_element(target_ty.ty())
+            .expect("target array type must have element type");
+        let rhs_elem = self
+            .registry
+            .get_array_element(init_ty.ty())
+            .expect("init array type must have element type (string literal)");
+
+        let compatible = if rhs_elem == self.registry.type_char {
+            [
+                self.registry.type_char,
+                self.registry.type_schar,
+                self.registry.type_char_unsigned,
+            ]
+            .contains(&lhs_elem)
+        } else {
+            self.registry
+                .is_compatible(QualType::unqualified(lhs_elem), QualType::unqualified(rhs_elem))
+        };
+
+        if !compatible {
+            self.report_error(
+                init,
+                SemanticErrorKind::TypeMismatch {
+                    expected: target_ty,
+                    found: init_ty,
+                },
+            );
+            return;
+        }
+
+        // Excess elements check: C11 §6.7.9p14
+        if let TypeKind::Array {
+            size: ArraySizeType::Constant(target_size),
+            ..
+        } = self.registry.get(target_ty.ty()).kind
+            && let TypeKind::Array {
+                size: ArraySizeType::Constant(init_size),
+                ..
+            } = self.registry.get(init_ty.ty()).kind
+            && init_size.saturating_sub(1) > target_size
+        {
+            self.report_error(init, SemanticErrorKind::ExcessElements { kind: "array" });
+        }
+
+        self.record_implicit_conversions(target_ty, init_ty, init);
+    }
+
+    fn find_member_index(&self, members: &[StructMember], name: NameId) -> Option<usize> {
+        members.iter().position(|m| {
+            m.name == Some(name)
+                || (m.name.is_none()
+                    && self
+                        .registry
+                        .get(m.member_type.ty())
+                        .find_member(self.registry, name)
+                        .is_some())
+        })
+    }
+
     fn visit_initializer(&mut self, init: NodeRef, target_ty: QualType) {
         match self.ast.get_kind(init) {
             NodeKind::InitializerList(list) => {
@@ -1409,60 +1479,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_initializer_list(&list, target_ty);
             }
             NodeKind::Literal(Literal::String(_)) if target_ty.is_array() => {
-                let Some(init_ty) = self.visit_node(init) else {
-                    return;
-                };
-
-                let lhs_elem = self.registry.get_array_element(target_ty.ty()).unwrap();
-                let rhs_elem = self.registry.get_array_element(init_ty.ty()).unwrap();
-
-                let is_rhs_char = rhs_elem == self.registry.type_char;
-                let is_lhs_char_type = [
-                    self.registry.type_char,
-                    self.registry.type_schar,
-                    self.registry.type_char_unsigned,
-                ]
-                .contains(&lhs_elem);
-
-                let compatible = if is_rhs_char {
-                    is_lhs_char_type
-                } else {
-                    self.registry
-                        .is_compatible(QualType::unqualified(lhs_elem), QualType::unqualified(rhs_elem))
-                };
-
-                if compatible {
-                    // C11 §6.7.9p14: the number of characters in the string literal
-                    // (excluding the null terminator) shall not exceed the array size.
-                    // e.g. char s[3] = "abc" is OK (null dropped), char s[2] = "abc" is error.
-                    let target_type = self.registry.get(target_ty.ty());
-                    let init_type = self.registry.get(init_ty.ty());
-                    if let (
-                        TypeKind::Array {
-                            size: ArraySizeType::Constant(target_size),
-                            ..
-                        },
-                        TypeKind::Array {
-                            size: ArraySizeType::Constant(init_size),
-                            ..
-                        },
-                    ) = (&target_type.kind, &init_type.kind)
-                    {
-                        // init_size includes null terminator, so non-null chars = init_size - 1
-                        let string_chars = init_size.saturating_sub(1);
-                        if string_chars > *target_size {
-                            self.report_error(init, SemanticErrorKind::ExcessElements { kind: "array" });
-                        }
-                    }
-                    self.record_implicit_conversions(target_ty, init_ty, init);
-                } else {
-                    self.report_error(
-                        init,
-                        SemanticErrorKind::TypeMismatch {
-                            expected: target_ty,
-                            found: init_ty,
-                        },
-                    );
+                if let Some(init_ty) = self.visit_node(init) {
+                    self.check_string_array_initializer(init, target_ty, init_ty);
                 }
             }
             _ => {
@@ -1476,30 +1494,23 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_initializer_list(&mut self, list: &InitializerList, target_ty: QualType) {
         if target_ty.is_scalar() {
             let mut items = list.init_start.range(list.init_len);
-
             if let Some(first) = items.next() {
                 let (expr, _, _) = self.unwrap_initializer_item(first);
                 if let Some(init_ty) = self.visit_node(expr) {
                     self.check_assignment_and_record(target_ty, init_ty, expr);
                 }
             }
-
             for (i, item) in items.enumerate() {
                 if i == 0 {
                     self.report_error(item, SemanticErrorKind::ExcessElements { kind: "scalar" });
                 }
-                let (expr, _, _) = self.unwrap_initializer_item(item);
-                self.visit_node(expr);
+                self.visit_node(self.unwrap_initializer_item(item).0);
             }
             return;
         }
 
-        let (target_type_kind, target_type_qt) = {
-            let ty = self.registry.get(target_ty.ty());
-            (ty.kind.clone(), target_ty)
-        };
-
-        match &target_type_kind {
+        let target_kind = self.registry.get(target_ty.ty()).kind.clone();
+        match &target_kind {
             TypeKind::Record { members, is_union, .. } => {
                 let members = members.clone();
                 let is_union = *is_union;
@@ -1507,27 +1518,13 @@ impl<'a> SemanticAnalyzer<'a> {
                 let mut member_idx = 0;
 
                 while let Some(item) = iter.peek().copied() {
+                    let mut designed = false;
                     let (_expr, d_start, d_len) = self.unwrap_initializer_item(item);
 
-                    // Handle record designators
-                    let mut designed = false;
                     if d_len > 0 {
                         let designator = NodeRef::new(d_start.get()).unwrap();
-                        let NodeKind::Designator(d) = self.ast.get_kind(designator) else {
-                            continue;
-                        };
-                        if let Designator::FieldName(name) = d {
-                            if let Some(idx) = members.iter().position(|m| {
-                                if m.name == Some(*name) {
-                                    true
-                                } else if m.name.is_none() {
-                                    // Check if it's in anonymous member
-                                    let inner_type = self.registry.get(m.member_type.ty());
-                                    inner_type.find_member(self.registry, *name).is_some()
-                                } else {
-                                    false
-                                }
-                            }) {
+                        if let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(designator) {
+                            if let Some(idx) = self.find_member_index(&members, *name) {
                                 member_idx = idx;
                                 designed = true;
                             } else {
@@ -1535,7 +1532,7 @@ impl<'a> SemanticAnalyzer<'a> {
                                     designator,
                                     SemanticErrorKind::MemberNotFound {
                                         name: *name,
-                                        ty: target_type_qt,
+                                        ty: target_ty,
                                     },
                                 );
                             }
@@ -1544,20 +1541,17 @@ impl<'a> SemanticAnalyzer<'a> {
 
                     if member_idx >= members.len() {
                         self.report_error(item, SemanticErrorKind::ExcessElements { kind: "record" });
-                        let (expr, _, _) = self.unwrap_initializer_item(item);
-                        self.visit_node(expr);
+                        self.visit_node(self.unwrap_initializer_item(item).0);
                         iter.next();
                         continue;
                     }
 
-                    let member_ty = members[member_idx].member_type;
-                    self.consume_initializers(member_ty, &mut iter, if designed { 1 } else { 0 });
-
-                    if is_union && !designed {
-                        member_idx = members.len();
+                    self.consume_initializers(members[member_idx].member_type, &mut iter, if designed { 1 } else { 0 });
+                    member_idx = if is_union && !designed {
+                        members.len()
                     } else {
-                        member_idx += 1;
-                    }
+                        member_idx + 1
+                    };
                 }
             }
             TypeKind::Array {
@@ -1565,72 +1559,64 @@ impl<'a> SemanticAnalyzer<'a> {
                 size: array_size,
                 ..
             } => {
-                let mut current_index = 0i64;
+                let element_qt = QualType::new(*element_type, target_ty.qualifiers());
+
+                // Special case for char array initialized by string literal (C11 §6.7.9p14)
+                if (element_qt.is_char() || element_qt.is_wchar_t() || element_qt.is_char16() || element_qt.is_char32())
+                    && list.init_len == 1
+                {
+                    let (expr, _, d_len) = self.unwrap_initializer_item(list.init_start);
+                    if d_len == 0 && matches!(self.ast.get_kind(expr), NodeKind::Literal(Literal::String(_))) {
+                        self.visit_node(expr);
+                        return;
+                    }
+                }
+
                 let max_index = if let ArraySizeType::Constant(n) = array_size {
                     Some(*n as i64)
                 } else {
                     None
                 };
-
-                let element_qt = QualType::new(*element_type, target_type_qt.qualifiers());
-
-                // C11 6.7.9p14: Character array initialized by string literal, optionally in braces
-                if (element_qt.is_char() || element_qt.is_wchar_t() || element_qt.is_char16() || element_qt.is_char32())
-                    && list.init_len == 1
-                {
-                    let first = list.init_start;
-                    let (expr, _d_start, d_len) = self.unwrap_initializer_item(first);
-                    if d_len == 0 {
-                        let kind = self.ast.get_kind(expr);
-                        if matches!(kind, NodeKind::Literal(Literal::String(_))) {
-                            self.visit_node(expr);
-                            return;
-                        }
-                    }
-                }
-
+                let mut current_idx = 0i64;
                 let mut iter = list.init_start.range(list.init_len).peekable();
 
                 while let Some(item) = iter.peek().copied() {
-                    let (_expr, d_start, d_len) = self.unwrap_initializer_item(item);
+                    let (_, d_start, d_len) = self.unwrap_initializer_item(item);
                     if d_len > 0 {
                         let designator = NodeRef::new(d_start.get()).unwrap();
-                        let NodeKind::Designator(d) = self.ast.get_kind(designator) else {
-                            continue;
-                        };
-                        match d {
-                            Designator::ArrayIndex(e) => {
-                                self.visit_node(*e);
-                                if let Some(idx) = eval_const_expr(&self.const_ctx(), *e) {
-                                    current_index = idx;
+                        if let NodeKind::Designator(d) = self.ast.get_kind(designator) {
+                            match d {
+                                Designator::ArrayIndex(e) => {
+                                    self.visit_node(*e);
+                                    if let Some(idx) = eval_const_expr(&self.const_ctx(), *e) {
+                                        current_idx = idx;
+                                    }
                                 }
-                            }
-                            Designator::GnuArrayRange(s, e) => {
-                                self.visit_node(*s);
-                                self.visit_node(*e);
-                                if let Some(idx) = eval_const_expr(&self.const_ctx(), *s) {
-                                    current_index = idx;
+                                Designator::GnuArrayRange(s, e) => {
+                                    self.visit_node(*s);
+                                    self.visit_node(*e);
+                                    if let Some(idx) = eval_const_expr(&self.const_ctx(), *s) {
+                                        current_idx = idx;
+                                    }
                                 }
+                                Designator::FieldName(_) => {}
                             }
-                            Designator::FieldName(_) => {}
                         }
                     }
 
                     if let Some(max) = max_index
-                        && current_index >= max
+                        && current_idx >= max
                     {
                         self.report_error(item, SemanticErrorKind::ExcessElements { kind: "array" });
                     }
 
                     self.consume_initializers(element_qt, &mut iter, 1);
-                    current_index += 1;
+                    current_idx += 1;
                 }
             }
             _ => {
-                // Scalar case handled at start of function
                 for item in list.init_start.range(list.init_len) {
-                    let (expr, _, _) = self.unwrap_initializer_item(item);
-                    self.visit_node(expr);
+                    self.visit_node(self.unwrap_initializer_item(item).0);
                 }
             }
         }
@@ -1640,75 +1626,58 @@ impl<'a> SemanticAnalyzer<'a> {
     where
         I: Iterator<Item = NodeRef>,
     {
-        let Some(item) = iter.peek().copied() else {
-            return;
-        };
-
+        let Some(item) = iter.peek().copied() else { return };
         let (expr, d_start, d_len) = self.unwrap_initializer_item(item);
+        let has_more_designators = (designator_idx as u16) < d_len;
 
-        // Nested designators
-        if (designator_idx as u32) < d_len as u32 {
+        if has_more_designators {
             let designator = NodeRef::new(d_start.get() + designator_idx as u32).unwrap();
-            let NodeKind::Designator(d) = self.ast.get_kind(designator) else {
-                return;
-            };
-
-            let target_type = self.registry.get(target_ty.ty()).clone();
-            let target_kind = target_type.kind.clone();
-            match d {
-                Designator::FieldName(name) => {
-                    if let TypeKind::Record { members, .. } = &target_kind
-                        && let Some(idx) = members.iter().position(|m| {
-                            if m.name == Some(*name) {
-                                true
-                            } else if m.name.is_none() {
-                                let inner_type = self.registry.get(m.member_type.ty());
-                                inner_type.find_member(self.registry, *name).is_some()
-                            } else {
-                                false
-                            }
-                        })
-                    {
-                        let member_ty = members[idx].member_type;
-                        self.consume_initializers(member_ty, iter, designator_idx + 1);
-                        return;
+            if let NodeKind::Designator(d) = self.ast.get_kind(designator) {
+                let target_kind = self.registry.get(target_ty.ty()).kind.clone();
+                match d {
+                    Designator::FieldName(name) => {
+                        if let TypeKind::Record { members, .. } = &target_kind
+                            && let Some(idx) = self.find_member_index(members, *name)
+                        {
+                            self.consume_initializers(members[idx].member_type, iter, designator_idx + 1);
+                            return;
+                        }
                     }
-                }
-                Designator::ArrayIndex(e) | Designator::GnuArrayRange(e, _) => {
-                    let e_node = *e;
-                    if let TypeKind::Array { element_type, .. } = &target_kind {
-                        let element_qt = QualType::new(*element_type, target_ty.qualifiers());
-                        self.visit_node(e_node);
-                        self.consume_initializers(element_qt, iter, designator_idx + 1);
-                        return;
+                    Designator::ArrayIndex(e) | Designator::GnuArrayRange(e, _) => {
+                        if let TypeKind::Array { element_type, .. } = &target_kind {
+                            if let Designator::GnuArrayRange(s, end) = d {
+                                self.visit_node(*s);
+                                self.visit_node(*end);
+                            } else {
+                                self.visit_node(*e);
+                            }
+                            self.consume_initializers(
+                                QualType::new(*element_type, target_ty.qualifiers()),
+                                iter,
+                                designator_idx + 1,
+                            );
+                            return;
+                        }
                     }
                 }
             }
         }
 
-        // C11 6.7.9p14: Character array initialized by string literal
+        // C11 §6.7.9p14: Character array initialized by string literal
         if target_ty.is_array()
             && d_len == 0
             && let Some(element_ty) = self.registry.get_array_element(target_ty.ty())
             && (element_ty.is_char() || element_ty.is_wchar_t())
+            && matches!(self.ast.get_kind(expr), NodeKind::Literal(Literal::String(_)))
         {
-            let kind = self.ast.get_kind(expr);
-            if matches!(kind, NodeKind::Literal(Literal::String(_))) {
-                self.visit_node(expr);
-                iter.next();
-                return;
-            }
+            self.visit_node(expr);
+            iter.next();
+            return;
         }
 
-        // If it was a designated initializer, it might "re-start" consumption
-        // for now we only support it if it's the current item.
-        // Actually, visit_initializer_list already handled the top-level designator.
-
-        // C11 6.7.9p13: Struct/Union initialization by compatible expression.
-        // Also handles designated initializers where we've consumed the designator
-        // (i.e., designator_idx >= d_len).
+        // C11 §6.7.9p13: Struct/Union initialization by compatible expression
         if target_ty.is_record()
-            && (designator_idx as u16) >= d_len
+            && !has_more_designators
             && let Some(init_ty) = self.visit_node(expr)
             && self.check_assignment_constraints(target_ty, init_ty, expr)
         {
@@ -1717,65 +1686,46 @@ impl<'a> SemanticAnalyzer<'a> {
             return;
         }
 
-        // Braced initializer
-        if (designator_idx as u16) >= d_len && matches!(self.ast.get_kind(expr), NodeKind::InitializerList(_)) {
+        // Braced initializer list or Brace elision
+        if !has_more_designators && matches!(self.ast.get_kind(expr), NodeKind::InitializerList(_)) {
             self.visit_initializer(expr, target_ty);
             iter.next();
-            return;
-        }
-
-        // Brace elision
-        let target_type = self.registry.get(target_ty.ty());
-        match &target_type.kind {
-            TypeKind::Record { members, is_union, .. } => {
-                let members = members.clone();
-                let is_union = *is_union;
-                for member in members.iter() {
-                    self.consume_initializers(member.member_type, iter, 0);
-                    if iter.peek().is_none() {
-                        break;
-                    }
-
-                    // Stopper: if next item has any designator, stop elision
-                    if let Some(next) = iter.peek() {
-                        let (_, _, next_d_len) = self.unwrap_initializer_item(*next);
-                        if next_d_len > 0 {
-                            break;
-                        }
-                    }
-
-                    if is_union {
-                        break;
-                    }
-                }
-            }
-            TypeKind::Array {
-                element_type,
-                size: ArraySizeType::Constant(len),
-                ..
-            } => {
-                let element_qt = QualType::new(*element_type, target_ty.qualifiers());
-                let len = *len;
-                for _ in 0..len {
-                    self.consume_initializers(element_qt, iter, 0);
-                    if iter.peek().is_none() {
-                        break;
-                    }
-                    // Stopper: if next item has any designator, stop elision
-                    if let Some(next) = iter.peek() {
-                        let (_, _, next_d_len) = self.unwrap_initializer_item(*next);
-                        if next_d_len > 0 {
+        } else {
+            // Brace elision: recursion into members/elements
+            let target_kind = self.registry.get(target_ty.ty()).kind.clone();
+            match &target_kind {
+                TypeKind::Record { members, is_union, .. } => {
+                    let members = members.clone();
+                    let is_union = *is_union;
+                    for member in members.iter() {
+                        self.consume_initializers(member.member_type, iter, 0);
+                        if iter.peek().is_none()
+                            || self.unwrap_initializer_item(*iter.peek().unwrap()).2 > 0
+                            || is_union
+                        {
                             break;
                         }
                     }
                 }
-            }
-            _ => {
-                // Scalar (or incomplete array)
-                if let Some(init_ty) = self.visit_node(expr) {
-                    self.check_assignment_and_record(target_ty, init_ty, expr);
+                TypeKind::Array {
+                    element_type,
+                    size: ArraySizeType::Constant(len),
+                    ..
+                } => {
+                    let element_qt = QualType::new(*element_type, target_ty.qualifiers());
+                    for _ in 0..*len {
+                        self.consume_initializers(element_qt, iter, 0);
+                        if iter.peek().is_none() || self.unwrap_initializer_item(*iter.peek().unwrap()).2 > 0 {
+                            break;
+                        }
+                    }
                 }
-                iter.next();
+                _ => {
+                    if let Some(init_ty) = self.visit_node(expr) {
+                        self.check_assignment_and_record(target_ty, init_ty, expr);
+                    }
+                    iter.next();
+                }
             }
         }
     }
@@ -2093,29 +2043,25 @@ impl<'a> SemanticAnalyzer<'a> {
             // If there's a VLA in target_vlas that is NOT in source_vlas, it's a jump into scope.
             for vla in target_vlas {
                 if !source_vlas.contains(&vla) {
-                    self.report_error(goto_node, SemanticErrorKind::JumpIntoScopeVLA { is_switch: false });
+                    let mut notes = vec![];
 
                     // Note where label is defined
                     let label_name = self.symbol_table.get_symbol(*symbol_ref).name;
-                    let diag1 = crate::diagnostic::Diagnostic {
-                        level: crate::diagnostic::DiagnosticLevel::Note,
-                        message: SemanticErrorKind::NoteLabelDefinedHere { name: label_name }.display(self.registry),
-                        span: label_span,
-                        ..Default::default()
-                    };
-                    self.diag.report_diagnostic(diag1);
+                    notes.push((label_span, SemanticErrorKind::NoteLabelDefinedHere { name: label_name }));
 
                     // Note where VLA is declared
                     if let NodeKind::VarDecl(var_data) = self.ast.get_kind(vla) {
-                        let diag2 = crate::diagnostic::Diagnostic {
-                            level: crate::diagnostic::DiagnosticLevel::Note,
-                            message: SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name }
-                                .display(self.registry),
-                            span: self.ast.get_span(vla),
-                            ..Default::default()
-                        };
-                        self.diag.report_diagnostic(diag2);
+                        notes.push((
+                            self.ast.get_span(vla),
+                            SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name },
+                        ));
                     }
+
+                    self.report_error_with_notes(
+                        goto_node,
+                        SemanticErrorKind::JumpIntoScopeVLA { is_switch: false },
+                        notes,
+                    );
                     break;
                 }
             }
@@ -2276,29 +2222,20 @@ impl<'a> SemanticAnalyzer<'a> {
         for vla in target_vlas {
             if !source_vlas.contains(vla) {
                 // We jumped into the scope of a VLA that wasn't in scope at the jump source
-                self.report_error(target_node, SemanticErrorKind::JumpIntoScopeVLA { is_switch });
-
+                let mut notes = vec![];
                 if let Some(span) = source_span {
-                    // Manually report diagnostic for Note
-                    let diag = crate::diagnostic::Diagnostic {
-                        level: crate::diagnostic::DiagnosticLevel::Note,
-                        message: SemanticErrorKind::NoteSwitchStartsHere.display(self.registry),
-                        span,
-                        ..Default::default()
-                    };
-                    self.diag.report_diagnostic(diag);
+                    notes.push((span, SemanticErrorKind::NoteSwitchStartsHere));
                 }
 
                 // Also note where the VLA was declared
                 if let NodeKind::VarDecl(var_data) = self.ast.get_kind(*vla) {
-                    let diag = crate::diagnostic::Diagnostic {
-                        level: crate::diagnostic::DiagnosticLevel::Note,
-                        message: SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name }.display(self.registry),
-                        span: self.ast.get_span(*vla),
-                        ..Default::default()
-                    };
-                    self.diag.report_diagnostic(diag);
+                    notes.push((
+                        self.ast.get_span(*vla),
+                        SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name },
+                    ));
                 }
+
+                self.report_error_with_notes(target_node, SemanticErrorKind::JumpIntoScopeVLA { is_switch }, notes);
                 break; // Only report one error per jump target
             }
         }
@@ -2453,14 +2390,20 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::FunctionCall(call_expr) => self.visit_function_call(call_expr),
             NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
-            NodeKind::Cast(ty, expr) => {
+            NodeKind::Cast(ty, expr) | NodeKind::BuiltinVaArg(ty, expr) => {
                 self.visit_type_expressions(*ty);
                 self.visit_node(*expr);
                 Some(*ty)
             }
-            NodeKind::SizeOfExpr(expr) => self.visit_sizeof_alignof(Some(*expr), None, false, node),
-            NodeKind::SizeOfType(ty) => self.visit_sizeof_alignof(None, Some(*ty), false, node),
-            NodeKind::AlignOf(ty) => self.visit_sizeof_alignof(None, Some(*ty), true, node),
+            NodeKind::SizeOfExpr(_) | NodeKind::SizeOfType(_) | NodeKind::AlignOf(_) => {
+                let (expr, ty, is_alignof) = match kind {
+                    NodeKind::SizeOfExpr(e) => (Some(*e), None, false),
+                    NodeKind::SizeOfType(t) => (None, Some(*t), false),
+                    NodeKind::AlignOf(t) => (None, Some(*t), true),
+                    _ => unreachable!(),
+                };
+                self.visit_sizeof_alignof(expr, ty, is_alignof, node)
+            }
             NodeKind::CompoundLiteral(ty, init) => {
                 self.visit_type_expressions(*ty);
 
@@ -2520,23 +2463,15 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(init.initializer);
                 None
             }
-            NodeKind::BuiltinVaArg(ty, expr) => {
-                self.visit_type_expressions(*ty);
-                self.visit_node(*expr);
-                Some(*ty)
-            }
-            NodeKind::BuiltinVaStart(ap, last) => {
-                self.visit_node(*ap);
-                self.visit_node(*last);
+            NodeKind::BuiltinVaStart(p1, p2) | NodeKind::BuiltinVaCopy(p1, p2) => {
+                self.visit_node(*p1);
+                self.visit_node(*p2);
                 Some(QualType::unqualified(self.registry.type_void))
             }
-            NodeKind::BuiltinVaEnd(ap) => {
-                self.visit_node(*ap);
-                Some(QualType::unqualified(self.registry.type_void))
-            }
-            NodeKind::BuiltinVaCopy(dst, src) => {
-                self.visit_node(*dst);
-                self.visit_node(*src);
+            NodeKind::BuiltinVaEnd(_) | NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => {
+                if let NodeKind::BuiltinVaEnd(ap) = kind {
+                    self.visit_node(*ap);
+                }
                 Some(QualType::unqualified(self.registry.type_void))
             }
             NodeKind::BuiltinExpect(exp, c) => {
@@ -2544,56 +2479,62 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*c);
                 ty
             }
-            NodeKind::BuiltinPopcount(exp)
-            | NodeKind::BuiltinClz(exp)
-            | NodeKind::BuiltinCtz(exp)
-            | NodeKind::BuiltinFfs(exp) => {
-                let ty = self.visit_node(*exp);
-                if let Some(t) = ty {
-                    let mut actual_ty = t;
-                    if t.is_array() || t.is_function() {
-                        actual_ty = self.registry.decay(t, TypeQualifiers::empty());
-                        self.push_conversion(*exp, Conversion::PointerDecay { to: actual_ty.ty() });
-                    }
-
-                    if !actual_ty.is_integer() {
-                        self.report_error(*exp, SemanticErrorKind::ExpectedIntegerType { found: actual_ty });
-                    }
-                }
-                Some(QualType::unqualified(self.registry.type_int))
-            }
-            NodeKind::BuiltinBswap16(exp) | NodeKind::BuiltinBswap32(exp) | NodeKind::BuiltinBswap64(exp) => {
-                let target_ty = match kind {
-                    NodeKind::BuiltinBswap16(_) => self.registry.type_short_unsigned,
-                    NodeKind::BuiltinBswap32(_) => self.registry.type_int_unsigned,
-                    NodeKind::BuiltinBswap64(_) => self.registry.type_long_long_unsigned,
+            NodeKind::BuiltinPopcount(_)
+            | NodeKind::BuiltinClz(_)
+            | NodeKind::BuiltinCtz(_)
+            | NodeKind::BuiltinFfs(_)
+            | NodeKind::BuiltinBswap16(_)
+            | NodeKind::BuiltinBswap32(_)
+            | NodeKind::BuiltinBswap64(_) => {
+                let exp = match kind {
+                    NodeKind::BuiltinPopcount(e)
+                    | NodeKind::BuiltinClz(e)
+                    | NodeKind::BuiltinCtz(e)
+                    | NodeKind::BuiltinFfs(e)
+                    | NodeKind::BuiltinBswap16(e)
+                    | NodeKind::BuiltinBswap32(e)
+                    | NodeKind::BuiltinBswap64(e) => e,
                     _ => unreachable!(),
+                };
+
+                let (target_ty, ret_ty) = match kind {
+                    NodeKind::BuiltinBswap16(_) => {
+                        let ty = self.registry.type_short_unsigned;
+                        (Some(ty), ty)
+                    }
+                    NodeKind::BuiltinBswap32(_) => {
+                        let ty = self.registry.type_int_unsigned;
+                        (Some(ty), ty)
+                    }
+                    NodeKind::BuiltinBswap64(_) => {
+                        let ty = self.registry.type_long_long_unsigned;
+                        (Some(ty), ty)
+                    }
+                    _ => (None, self.registry.type_int),
                 };
 
                 if let Some(mut actual_ty) = self.visit_node(*exp) {
                     if actual_ty.is_array() || actual_ty.is_function() {
                         actual_ty = self.registry.decay(actual_ty, TypeQualifiers::empty());
                         self.push_conversion(*exp, Conversion::PointerDecay { to: actual_ty.ty() });
-                        // Update semantic info with decayed type for subsequent conversion check
                         self.semantic_info.types[exp.index()] = Some(actual_ty);
                     }
 
                     if !actual_ty.is_integer() {
                         self.report_error(*exp, SemanticErrorKind::ExpectedIntegerType { found: actual_ty });
-                    } else {
-                        // Match width of target_ty for MIR validation
-                        if actual_ty.ty() != target_ty {
-                            self.push_conversion(
-                                *exp,
-                                Conversion::IntegerCast {
-                                    from: actual_ty.ty(),
-                                    to: target_ty,
-                                },
-                            );
-                        }
+                    } else if let Some(target) = target_ty
+                        && actual_ty.ty() != target
+                    {
+                        self.push_conversion(
+                            *exp,
+                            Conversion::IntegerCast {
+                                from: actual_ty.ty(),
+                                to: target,
+                            },
+                        );
                     }
                 }
-                Some(QualType::unqualified(target_ty))
+                Some(QualType::unqualified(ret_ty))
             }
             NodeKind::BuiltinOffsetof(ty, expr) => self.visit_builtin_offsetof(*ty, *expr, node),
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
@@ -2606,9 +2547,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_builtin_choose_expr(*cond, *true_expr, *false_expr, node)
             }
             NodeKind::BuiltinConstantP(expr) => self.visit_builtin_constant_p(*expr, node),
-            NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => {
-                Some(QualType::unqualified(self.registry.type_void))
-            }
             _ => None,
         }
     }

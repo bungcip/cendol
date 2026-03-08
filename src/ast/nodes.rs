@@ -462,6 +462,19 @@ pub enum StorageClass {
     ThreadLocal, // C11 _Thread_local
 }
 
+impl StorageClass {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StorageClass::Typedef => "typedef",
+            StorageClass::Extern => "extern",
+            StorageClass::Static => "static",
+            StorageClass::Auto => "auto",
+            StorageClass::Register => "register",
+            StorageClass::ThreadLocal => "_Thread_local",
+        }
+    }
+}
+
 // Function specifiers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(u8)]

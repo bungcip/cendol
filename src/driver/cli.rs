@@ -116,6 +116,14 @@ pub struct Cli {
     /// GCC/Clang compatible flags to ignore (e.g., -MD, -MP, -MF, -MT)
     #[clap(short = 'M', action = clap::ArgAction::Append)]
     pub ignored_m_flags: Vec<String>,
+
+    /// Print timing information for each compilation phase
+    #[clap(long)]
+    pub timing: bool,
+
+    /// Suppress all warnings
+    #[clap(short = 'w')]
+    pub suppress_warnings: bool,
 }
 
 #[derive(Args, Debug)]
@@ -157,6 +165,8 @@ pub struct CompileConfig {
     pub fmax_errors: Option<usize>,
     pub ignored_f_flags: Vec<String>,
     pub ignored_m_flags: Vec<String>,
+    pub timing: bool,
+    pub suppress_warnings: bool,
 }
 
 impl Default for CompileConfig {
@@ -182,6 +192,8 @@ impl Default for CompileConfig {
             fmax_errors: None,
             ignored_f_flags: Vec::new(),
             ignored_m_flags: Vec::new(),
+            timing: false,
+            suppress_warnings: false,
         }
     }
 }
@@ -341,6 +353,8 @@ impl Cli {
             fmax_errors: self.fmax_errors,
             ignored_f_flags: self.ignored_f_flags,
             ignored_m_flags: self.ignored_m_flags,
+            timing: self.timing,
+            suppress_warnings: self.suppress_warnings,
         })
     }
 }
@@ -380,6 +394,8 @@ mod tests {
             fmax_errors: Some(5),
             ignored_f_flags: vec![],
             ignored_m_flags: vec![],
+            timing: false,
+            suppress_warnings: false,
         };
 
         let config = cli.into_config().expect("Failed to create config");
@@ -424,6 +440,8 @@ mod tests {
             fmax_errors: None,
             ignored_f_flags: vec![],
             ignored_m_flags: vec![],
+            timing: false,
+            suppress_warnings: false,
         };
 
         let err = cli_error.into_config().unwrap_err();
@@ -460,6 +478,8 @@ mod tests {
             fmax_errors: None,
             ignored_f_flags: vec![],
             ignored_m_flags: vec![],
+            timing: false,
+            suppress_warnings: false,
         };
 
         // This tests testing the default bounds, pedantic bounds, and dump priorities

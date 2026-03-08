@@ -225,9 +225,20 @@ impl DiagnosticEngine {
         renderer.render(report)
     }
 
-    /// Print all diagnostics to stderr
-    pub(crate) fn print_diagnostics(&self, source_manager: &SourceManager) {
+    // /// Print all diagnostics to stderr
+    // pub(crate) fn print_diagnostics(&self, source_manager: &SourceManager) {
+    //     for diag in &self.diagnostics {
+    //         let formatted = self.format_diagnostic(diag, source_manager);
+    //         eprintln!("{}", formatted);
+    //     }
+    // }
+
+    /// Print diagnostics, skipping warnings if suppress_warnings is true
+    pub(crate) fn print_diagnostics_filtered(&self, source_manager: &SourceManager, suppress_warnings: bool) {
         for diag in &self.diagnostics {
+            if suppress_warnings && diag.level == DiagnosticLevel::Warning {
+                continue;
+            }
             let formatted = self.format_diagnostic(diag, source_manager);
             eprintln!("{}", formatted);
         }

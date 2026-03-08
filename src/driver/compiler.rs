@@ -4,10 +4,12 @@
 //! the compilation pipeline including preprocessing, lexing, parsing,
 //! semantic analysis, and output generation.
 
+use std::time::Instant;
+
 use indexmap::IndexMap;
 
 use crate::ast::dumper::AstDumper;
-use crate::ast::{Ast, NodeKind, ParsedAst, SourceId};
+use crate::ast::{Ast, ParsedAst, SourceId};
 use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::diagnostic::DiagnosticEngine;
 use crate::driver::cli::PathOrBuffer;
@@ -139,29 +141,49 @@ impl CompilerDriver {
     ) -> Result<CompileArtifact, PipelineError> {
         let mut out = CompileArtifact::default();
 
+        // Timing: Track each phase (only when --timing flag is set)
+        let timing_enabled = self.config.timing;
+        let total_start = if timing_enabled { Some(Instant::now()) } else { None };
+
         // Preprocessing phase
+        let t0 = Instant::now();
         let pp_tokens = self.run_preprocessor(source_id)?;
+        if timing_enabled {
+            eprintln!("[TIMING] Preprocessor: {:?}", t0.elapsed());
+        }
         if stop_after == CompilePhase::Preprocess {
             out.preprocessed = Some(pp_tokens);
             return Ok(out);
         }
 
         // Lexing phase
+        let t1 = Instant::now();
         let tokens = self.run_lexer(&pp_tokens)?;
+        if timing_enabled {
+            eprintln!("[TIMING] Lexer: {:?}", t1.elapsed());
+        }
         if stop_after == CompilePhase::Lex {
             out.lexed = Some(tokens);
             return Ok(out);
         }
 
         // parsing phase
+        let t2 = Instant::now();
         let parsed_ast = self.run_parser(&tokens)?;
+        if timing_enabled {
+            eprintln!("[TIMING] Parser: {:?}", t2.elapsed());
+        }
         if stop_after == CompilePhase::Parse {
             out.parsed_ast = Some(parsed_ast);
             return Ok(out);
         }
 
         // semantic lowering (Symbol Resolution & AST Construction)
+        let t3 = Instant::now();
         let (ast, symbol_table, registry) = self.visit_parsed_ast(parsed_ast)?;
+        if timing_enabled {
+            eprintln!("[TIMING] Semantic Lowering: {:?}", t3.elapsed());
+        }
         if stop_after == CompilePhase::SemanticLowering {
             out.ast = Some(ast);
             out.type_registry = Some(registry);
@@ -170,19 +192,30 @@ impl CompilerDriver {
         }
 
         // semantic analyzer & MIR generation phase
+        let t4 = Instant::now();
         let mir_program = self.visit_ast(ast, symbol_table, registry)?;
+        if timing_enabled {
+            eprintln!("[TIMING] Semantic Analysis + MIR: {:?}", t4.elapsed());
+        }
         if stop_after == CompilePhase::Mir {
             out.mir_program = Some(mir_program);
             return Ok(out);
         }
 
         // Cranelift code generation phase
+        let t5 = Instant::now();
         let emit_kind = if stop_after == CompilePhase::Cranelift {
             EmitKind::Clif
         } else {
             EmitKind::Object
         };
         let cl_output = self.run_codegen(mir_program, emit_kind)?;
+        if timing_enabled {
+            eprintln!("[TIMING] Codegen: {:?}", t5.elapsed());
+            if let Some(start) = total_start {
+                eprintln!("[TIMING] TOTAL: {:?}", start.elapsed());
+            }
+        }
 
         match cl_output {
             ClifOutput::ClifDump(dump) => {
@@ -306,7 +339,11 @@ impl CompilerDriver {
         symbol_table: SymbolTable,
         mut registry: TypeRegistry,
     ) -> Result<MirProgram, PipelineError> {
+        // Timing for semantic analysis
+        let timing_enabled = self.config.timing;
+        
         use crate::semantic::analyzer::visit_ast;
+        let t0 = if timing_enabled { Some(Instant::now()) } else { None };
         let semantic_info = visit_ast(
             &ast,
             &mut self.diagnostics,
@@ -314,13 +351,21 @@ impl CompilerDriver {
             &mut registry,
             &self.config.lang_options,
         );
+        if let Some(t0) = t0 {
+            eprintln!("[TIMING]   Semantic Analyzer: {:?}", t0.elapsed());
+        }
         self.check_diagnostics_and_return_if_error()?;
 
         // Attach semantic info to AST (like scope_map)
         ast.attach_semantic_info(semantic_info);
 
+        // MIR generation
+        let t1 = if timing_enabled { Some(Instant::now()) } else { None };
         let mut sema = MirGen::new(&ast, &symbol_table, &mut registry, &self.source_manager);
         let mir_program = sema.visit_module();
+        if let Some(t1) = t1 {
+            eprintln!("[TIMING]   MIR Generation: {:?}", t1.elapsed());
+        }
         self.check_diagnostics_and_return_if_error()?;
 
         Ok(mir_program)
@@ -492,7 +537,7 @@ impl CompilerDriver {
 
     /// Print accumulated diagnostics without returning an error
     pub(crate) fn print_diagnostics(&self) {
-        self.diagnostics.print_diagnostics(&self.source_manager);
+        self.diagnostics.print_diagnostics_filtered(&self.source_manager, self.config.suppress_warnings);
     }
 }
 

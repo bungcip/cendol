@@ -244,7 +244,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn has_default(&self, node: NodeRef) -> bool {
         match self.ast.get_kind(node) {
             NodeKind::Default(_) => true,
-            NodeKind::CompoundStatement(cs) => cs.stmt_start.range(cs.stmt_len).any(|s| self.has_default(s)),
+            NodeKind::CompoundStmt(cs) => cs.stmt_start.range(cs.stmt_len).any(|s| self.has_default(s)),
             NodeKind::If(if_stmt) => {
                 self.has_default(if_stmt.then_branch) || if_stmt.else_branch.is_some_and(|e| self.has_default(e))
             }
@@ -295,7 +295,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn contains_break(&self, node: NodeRef) -> bool {
         match self.ast.get_kind(node) {
             NodeKind::Break => true,
-            NodeKind::CompoundStatement(cs) => cs.stmt_start.range(cs.stmt_len).any(|s| self.contains_break(s)),
+            NodeKind::CompoundStmt(cs) => cs.stmt_start.range(cs.stmt_len).any(|s| self.contains_break(s)),
             NodeKind::If(if_stmt) => {
                 self.contains_break(if_stmt.then_branch) || if_stmt.else_branch.is_some_and(|e| self.contains_break(e))
             }
@@ -325,7 +325,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::For(for_stmt) => {
                 for_stmt.condition.is_some_and(|c| !self.is_always_true(c)) || self.contains_break(for_stmt.body)
             }
-            NodeKind::CompoundStatement(cs) => {
+            NodeKind::CompoundStmt(cs) => {
                 for stmt in cs.stmt_start.range(cs.stmt_len) {
                     if !self.can_fall_through(stmt) {
                         return false;
@@ -403,7 +403,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 .generic_selections
                 .get(&node.index())
                 .and_then(|&selected| self.get_bitfield_width(selected)),
-            NodeKind::GnuStatementExpression(_, result_expr) => self.get_bitfield_width(*result_expr),
+            NodeKind::GnuStatementExpr(_, result_expr) => self.get_bitfield_width(*result_expr),
             _ => None,
         }
     }
@@ -1473,7 +1473,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_initializer_list(&mut self, list: &InitializerListData, target_ty: QualType) {
+    fn visit_initializer_list(&mut self, list: &InitializerList, target_ty: QualType) {
         if target_ty.is_scalar() {
             let mut items = list.init_start.range(list.init_len);
 
@@ -2053,7 +2053,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_function_definition(&mut self, data: &FunctionData, node: NodeRef) -> Option<QualType> {
+    fn visit_function_definition(&mut self, data: &Function, node: NodeRef) -> Option<QualType> {
         let func_ty = self.registry.get(data.ty).kind.clone();
         if let TypeKind::Function { return_type, .. } = func_ty {
             self.current_function_ret_type = Some(QualType::unqualified(return_type));
@@ -2129,7 +2129,7 @@ impl<'a> SemanticAnalyzer<'a> {
         None
     }
 
-    fn visit_var_declaration(&mut self, data: &VarDeclData, node: NodeRef) -> Option<QualType> {
+    fn visit_var_declaration(&mut self, data: &VarDecl, node: NodeRef) -> Option<QualType> {
         if self.registry.is_variably_modified(data.ty.ty()) {
             self.active_vlas.push(node);
         }
@@ -2157,7 +2157,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_statement_node(&mut self, node: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
-            NodeKind::CompoundStatement(cs) => {
+            NodeKind::CompoundStmt(cs) => {
                 let prev_vla_count = self.active_vlas.len();
                 for item in cs.stmt_start.range(cs.stmt_len) {
                     self.visit_node(item);
@@ -2425,7 +2425,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::UnaryOp(op, operand) => self.visit_unary_op(node, *op, *operand),
             NodeKind::BinaryOp(op, lhs, rhs) => self.visit_binary_op(*op, *lhs, *rhs),
             NodeKind::TernaryOp(cond, then, else_expr) => self.visit_ternary_op(*cond, *then, *else_expr),
-            NodeKind::GnuStatementExpression(stmt, result_expr) => {
+            NodeKind::GnuStatementExpr(stmt, result_expr) => {
                 self.visit_node(*stmt);
 
                 if let NodeKind::Dummy = self.ast.get_kind(*result_expr) {
@@ -2951,7 +2951,7 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::FunctionDecl(_) => self.visit_declaration_node(node, node_kind),
 
             // Statements
-            NodeKind::CompoundStatement(_)
+            NodeKind::CompoundStmt(_)
             | NodeKind::If(_)
             | NodeKind::While(_)
             | NodeKind::DoWhile(..)
@@ -3114,7 +3114,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_generic_selection(&mut self, gs: &GenericSelectionData, node: NodeRef) -> Option<QualType> {
+    fn visit_generic_selection(&mut self, gs: &GenericSelection, node: NodeRef) -> Option<QualType> {
         // First, visit the controlling expression to determine its type.
         let ctrl = self.visit_node(gs.control)?;
 

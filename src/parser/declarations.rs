@@ -32,18 +32,16 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
     let has_record_enum_type = specifiers.iter().any(|s| {
         matches!(
             s,
-            ParsedDeclSpecifier::TypeSpecifier(ParsedTypeSpecifier::Record(_, _, _) | ParsedTypeSpecifier::Enum(_, _))
+            ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Record(_, _, _) | ParsedTypeSpec::Enum(_, _))
         )
     });
-    let has_storage_class = specifiers
-        .iter()
-        .any(|s| matches!(s, ParsedDeclSpecifier::StorageClass(_)));
+    let has_storage_class = specifiers.iter().any(|s| matches!(s, ParsedDeclSpec::StorageClass(_)));
 
     if has_record_enum_type
         && !has_storage_class
         && let Some(semi) = trx.parser.accept(TokenKind::Semicolon)
     {
-        let declaration_data = ParsedDeclarationData {
+        let declaration_data = ParsedDeclaration {
             specifiers,
             init_declarators: ThinVec::new(),
         };
@@ -61,10 +59,10 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
             Some(TokenKind::Identifier(_)) | Some(TokenKind::Star) | Some(TokenKind::LeftParen)
         )
     {
-        let message = if let Some(ParsedDeclSpecifier::TypeSpecifier(ts)) = specifiers.last() {
+        let message = if let Some(ParsedDeclSpec::TypeSpec(ts)) = specifiers.last() {
             match ts {
-                ParsedTypeSpecifier::Record(_, _, _) => "Expected ';' after struct/union definition",
-                ParsedTypeSpecifier::Enum(_, _) => "Expected ';' after enum definition",
+                ParsedTypeSpec::Record(_, _, _) => "Expected ';' after struct/union definition",
+                ParsedTypeSpec::Enum(_, _) => "Expected ';' after enum definition",
                 _ => "Expected declarator or identifier after type specifier",
             }
         } else {
@@ -97,7 +95,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         if let Some(name) = trx.parser.get_declarator_name(&declarator) {
             if specifiers
                 .iter()
-                .any(|s| matches!(s, ParsedDeclSpecifier::StorageClass(StorageClass::Typedef)))
+                .any(|s| matches!(s, ParsedDeclSpec::StorageClass(StorageClass::Typedef)))
             {
                 trx.parser.add_typedef(name);
             } else {
@@ -141,7 +139,7 @@ pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         });
     };
 
-    let declaration_data = ParsedDeclarationData {
+    let declaration_data = ParsedDeclaration {
         specifiers,
         init_declarators,
     };
@@ -179,7 +177,7 @@ fn parse_function_definition(parser: &mut Parser) -> Result<ParsedNodeRef, Parse
 
     let (body, body_end_loc) = res?;
 
-    let function_def = ParsedFunctionDefData {
+    let function_def = ParsedFunctionDef {
         specifiers,
         declarator: Box::new(declarator),
         body,

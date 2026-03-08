@@ -10,8 +10,8 @@ use crate::parser::TokenKind;
 use super::Parser;
 
 /// Parse type specifier
-pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpecifier, ParseError> {
-    use ParsedTypeSpecifier as PTS;
+pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec, ParseError> {
+    use ParsedTypeSpec as PTS;
     use TokenKind as TK;
 
     let token = parser.current_token()?;

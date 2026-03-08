@@ -139,10 +139,10 @@ pub enum SemanticErrorKind {
         name: NameId,
         first_def: SourceSpan,
     },
-    ConflictingTypeSpecifiers {
+    ConflictingTypeSpec {
         prev: QualType,
     },
-    InvalidFunctionSpecifier {
+    InvalidFunctionSpec {
         spec: &'static str,
     },
     DuplicateMember {
@@ -162,7 +162,7 @@ pub enum SemanticErrorKind {
     ExpectedTypedefName {
         found: NameId,
     },
-    MissingTypeSpecifier,
+    MissingTypeSpec,
     StaticAssertFailed {
         message: String,
     },
@@ -269,7 +269,7 @@ pub enum SemanticErrorKind {
     InvalidAtomicQualifier {
         type_kind: &'static str,
     },
-    InvalidAtomicSpecifier {
+    InvalidAtomicSpec {
         reason: &'static str,
     },
     ArrayStaticOutsideParameter,
@@ -410,13 +410,13 @@ impl SemanticErrorKind {
             SemanticErrorKind::ConflictingLinkage { name, .. } => {
                 format!("conflicting linkage for '{}'", name)
             }
-            SemanticErrorKind::ConflictingTypeSpecifiers { prev } => {
+            SemanticErrorKind::ConflictingTypeSpec { prev } => {
                 format!(
                     "cannot combine with previous '{}' declaration specifier",
                     registry.display_qual_type(*prev)
                 )
             }
-            SemanticErrorKind::InvalidFunctionSpecifier { spec } => {
+            SemanticErrorKind::InvalidFunctionSpec { spec } => {
                 format!("'{}' function specifier appears on non-function declaration", spec)
             }
             SemanticErrorKind::DuplicateMember { name, .. } => format!("duplicate member '{}'", name),
@@ -433,7 +433,7 @@ impl SemanticErrorKind {
             SemanticErrorKind::ExpectedTypedefName { found } => {
                 format!("expected a typedef name, found {}", found)
             }
-            SemanticErrorKind::MissingTypeSpecifier => "missing type specifier in declaration".to_string(),
+            SemanticErrorKind::MissingTypeSpec => "missing type specifier in declaration".to_string(),
             SemanticErrorKind::StaticAssertFailed { message } => {
                 format!("static assertion failed: {}", message)
             }
@@ -600,7 +600,7 @@ impl SemanticErrorKind {
             SemanticErrorKind::InvalidAtomicQualifier { type_kind } => {
                 format!("_Atomic qualifier cannot be used with {} type", type_kind)
             }
-            SemanticErrorKind::InvalidAtomicSpecifier { reason } => {
+            SemanticErrorKind::InvalidAtomicSpec { reason } => {
                 format!("_Atomic(type-name) specifier cannot be used with {}", reason)
             }
             SemanticErrorKind::ArrayStaticOutsideParameter => {

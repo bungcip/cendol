@@ -10,7 +10,7 @@ use crate::semantic::{ArraySizeType, FieldLayout, QualType, StructMember, TypeKi
 impl<'a> MirGen<'a> {
     fn visit_initializer_list(
         &mut self,
-        list_data: &ast::nodes::InitializerListData,
+        list_data: &ast::nodes::InitializerList,
         target_ty: QualType,
         destination: Option<Place>,
     ) -> Operand {
@@ -251,7 +251,7 @@ impl<'a> MirGen<'a> {
 
     fn visit_array_initializer(
         &mut self,
-        list_data: &ast::nodes::InitializerListData,
+        list_data: &ast::nodes::InitializerList,
         element_ty: QualType,
         size: usize,
         target_ty: QualType,

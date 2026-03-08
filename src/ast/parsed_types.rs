@@ -9,7 +9,7 @@ use std::num::NonZeroU32;
 
 use serde::Serialize;
 
-use crate::ast::parsed::{ParsedArraySize, ParsedTypeSpecifier};
+use crate::ast::parsed::{ParsedArraySize, ParsedTypeSpec};
 use crate::ast::{NameId, SourceSpan};
 use crate::semantic::TypeQualifiers;
 
@@ -83,7 +83,7 @@ pub struct FunctionFlags {
 /// Parsed base type node (the fundamental type specifier)
 #[derive(Clone, Debug)]
 pub enum ParsedBaseTypeNode {
-    Builtin(ParsedTypeSpecifier),
+    Builtin(ParsedTypeSpec),
 
     Record {
         tag: Option<NameId>,

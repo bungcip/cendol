@@ -23,20 +23,7 @@ fn test_emit_const_struct_literal() {
         layout: MirRecordLayout {
             size: 8,
             alignment: 4,
-            fields: vec![
-                MirFieldLayout {
-                    offset: 0,
-                    bit_width: None,
-                    bit_offset: None,
-                    is_signed: false,
-                },
-                MirFieldLayout {
-                    offset: 4,
-                    bit_width: None,
-                    bit_offset: None,
-                    is_signed: false,
-                },
-            ],
+            fields: vec![MirFieldLayout::new(0), MirFieldLayout::new(4)],
         },
     };
     let struct_type_id = builder.add_type(struct_type);

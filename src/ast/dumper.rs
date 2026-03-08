@@ -160,7 +160,7 @@ impl AstDumper {
                 type_refs.insert(typedef_decl.ty.ty());
             }
             NodeKind::GenericSelection(_) => {
-                // GenericSelectionData doesn't contain TypeRefs directly.
+                // GenericSelection doesn't contain TypeRefs directly.
             }
             NodeKind::GenericAssociation(ga) => {
                 if let Some(qual_type) = ga.ty {
@@ -178,7 +178,7 @@ impl AstDumper {
 
             // Statement types that don't directly contain TypeRefs
             NodeKind::TranslationUnit(_)
-            | NodeKind::CompoundStatement(_)
+            | NodeKind::CompoundStmt(_)
             | NodeKind::If(_)
             | NodeKind::While(_)
             | NodeKind::DoWhile(_, _)
@@ -202,7 +202,7 @@ impl AstDumper {
             }
 
             // GNU extensions
-            NodeKind::GnuStatementExpression(_, _) => {
+            NodeKind::GnuStatementExpr(_, _) => {
                 // Doesn't directly contain TypeRef
             }
 
@@ -595,7 +595,7 @@ impl AstDumper {
             }
             NodeKind::BuiltinUnreachable => writeln!(f, "BuiltinUnreachable"),
             NodeKind::BuiltinTrap => writeln!(f, "BuiltinTrap"),
-            NodeKind::GnuStatementExpression(compound_stmt, result_expr) => {
+            NodeKind::GnuStatementExpr(compound_stmt, result_expr) => {
                 writeln!(
                     f,
                     "GnuStatementExpression({}, {})",
@@ -603,7 +603,7 @@ impl AstDumper {
                     result_expr.get()
                 )
             }
-            NodeKind::CompoundStatement(cs) => {
+            NodeKind::CompoundStmt(cs) => {
                 let start = cs.stmt_start.get();
                 if cs.stmt_len > 0 {
                     let last = start + cs.stmt_len as u32 - 1;

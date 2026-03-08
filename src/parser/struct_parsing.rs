@@ -9,6 +9,7 @@ use crate::ast::parsed::*;
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::parser::TokenKind;
+use crate::parser::declaration_core::parse_declaration_specifiers;
 
 use super::Parser;
 
@@ -16,7 +17,7 @@ use super::Parser;
 pub(super) fn parse_record_specifier_with_context(
     parser: &mut Parser,
     is_union: bool,
-) -> Result<ParsedTypeSpecifier, ParseError> {
+) -> Result<ParsedTypeSpec, ParseError> {
     // Check for __attribute__ after struct/union keyword (GCC extension)
     if parser.is_token(TokenKind::Attribute)
         && let Err(_e) = super::declaration_core::parse_attribute(parser)
@@ -37,7 +38,7 @@ pub(super) fn parse_record_specifier_with_context(
             // For now, ignore attribute parsing errors
         }
 
-        Some(ParsedRecordDefData {
+        Some(ParsedRecordDef {
             tag,
             members: Some(members),
             is_union,
@@ -46,7 +47,7 @@ pub(super) fn parse_record_specifier_with_context(
         None
     };
 
-    Ok(ParsedTypeSpecifier::Record(is_union, tag, definition))
+    Ok(ParsedTypeSpec::Record(is_union, tag, definition))
 }
 
 /// Parse struct declaration list
@@ -100,11 +101,11 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
                 decls
             };
 
-            ParsedDeclarationData {
-                specifiers: thin_vec![ParsedDeclSpecifier::TypeSpecifier(ParsedTypeSpecifier::Record(
+            ParsedDeclaration {
+                specifiers: thin_vec![ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Record(
                     is_union,
                     tag,
-                    Some(ParsedRecordDefData {
+                    Some(ParsedRecordDef {
                         tag,
                         members: Some(members),
                         is_union,
@@ -113,9 +114,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
                 init_declarators,
             }
         } else {
-            let specifiers = thin_vec![ParsedDeclSpecifier::TypeSpecifier(ParsedTypeSpecifier::Record(
-                is_union, tag, None,
-            ))];
+            let specifiers = thin_vec![ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Record(is_union, tag, None,))];
             let init_declarators = if parser.accept(TokenKind::Semicolon).is_some() {
                 ThinVec::new()
             } else {
@@ -123,16 +122,16 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
                 parser.expect(TokenKind::Semicolon)?;
                 decls
             };
-            ParsedDeclarationData {
+            ParsedDeclaration {
                 specifiers,
                 init_declarators,
             }
         }
     } else {
-        let specifiers = super::declaration_core::parse_declaration_specifiers(parser)?;
+        let specifiers = parse_declaration_specifiers(parser)?;
         let init_declarators = parse_init_declarators_no_init(parser)?;
         parser.expect(TokenKind::Semicolon)?;
-        ParsedDeclarationData {
+        ParsedDeclaration {
             specifiers,
             init_declarators,
         }

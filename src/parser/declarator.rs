@@ -160,7 +160,7 @@ fn parse_array_size(parser: &mut Parser) -> Result<ParsedArraySize, ParseError> 
     } else {
         let expr = parser.parse_expr_min()?;
         if is_static || !qualifiers.is_empty() {
-            Ok(ParsedArraySize::VlaSpecifier {
+            Ok(ParsedArraySize::VlaSpec {
                 is_static,
                 qualifiers,
                 size: Some(expr),
@@ -249,7 +249,7 @@ fn reconstruct_declarator_chain(chain: Vec<DeclaratorComponent>, mut base: Parse
     base
 }
 
-fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParamData>, bool), ParseError> {
+fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParam>, bool), ParseError> {
     let mut params = ThinVec::new();
     let mut is_variadic = false;
 
@@ -280,7 +280,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParam
             Err(_) => {
                 parser.current_idx = spec_idx;
                 parser.diag.diagnostics.truncate(saved_diags);
-                thin_vec![ParsedDeclSpecifier::TypeSpecifier(ParsedTypeSpecifier::Int)]
+                thin_vec![ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Int)]
             }
         };
 
@@ -303,7 +303,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ThinVec<ParsedParam
             .get_token_span(start_idx)
             .unwrap_or_default()
             .merge(parser.last_token_span().unwrap_or_default());
-        params.push(ParsedParamData {
+        params.push(ParsedParam {
             specifiers,
             declarator,
             span,
@@ -345,7 +345,7 @@ pub(crate) fn get_declarator_name(declarator: &ParsedDeclarator) -> Option<NameI
 }
 
 /// Extract the parameters from a function declarator, if any
-pub(super) fn get_declarator_params(declarator: &ParsedDeclarator) -> Option<&ThinVec<ParsedParamData>> {
+pub(super) fn get_declarator_params(declarator: &ParsedDeclarator) -> Option<&ThinVec<ParsedParam>> {
     match declarator {
         ParsedDeclarator::Function { inner, params, .. } => {
             if let Some(inner_params) = get_declarator_params(inner) {

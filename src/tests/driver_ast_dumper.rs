@@ -40,7 +40,7 @@ fn test_dump_parsed_ast_simple() {
     let output = dump_parsed_ast("int main() { return 0; }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[3])
-    3: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("main", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
+    3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("main", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
     4: CompoundStatement(stmts=[6])
     5: LiteralInt(0, None, base=8)
     6: Return(5)
@@ -52,9 +52,9 @@ fn test_dump_parsed_ast_with_variables() {
     let output = dump_parsed_ast("int x = 42; int y = x + 5;");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2, 4])
-    2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(3), span: SourceSpan(2199123918852) }] })
+    2: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(3), span: SourceSpan(2199123918852) }] })
     3: LiteralInt(42, None, base=10)
-    4: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("y", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199174250512) }] })
+    4: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("y", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199174250512) }] })
     5: Ident(x)
     6: LiteralInt(5, None, base=10)
     7: BinaryOp(Add, 5, 6)
@@ -67,9 +67,9 @@ fn test_dump_parsed_ast_with_structs() {
     let output = dump_parsed_ast("struct Point { int x; int y; } p = {1, 2};");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2])
-    2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Record(false, Some("Point"), Some(ParsedRecordDefData { tag: Some("Point"), members: Some([3, 4]), is_union: false })))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("p", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199191027743) }] })
-    3: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032787) }] })
-    4: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("y", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032794) }] })
+    2: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Record(false, Some("Point"), Some(ParsedRecordDef { tag: Some("Point"), members: Some([3, 4]), is_union: false })))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("p", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199191027743) }] })
+    3: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032787) }] })
+    4: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("y", TypeQualifiers(0x0)), initializer: None, span: SourceSpan(2199040032794) }] })
     5: LiteralInt(1, None, base=10)
     6: LiteralInt(2, None, base=10)
     7: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 5 }, ParsedDesignatedInitializer { designation: [], initializer: 6 }])
@@ -82,7 +82,7 @@ fn test_dump_parsed_ast_with_enums() {
     let output = dump_parsed_ast("enum Color { RED, GREEN = 2, BLUE } c = RED;");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2])
-    2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Enum(Some("Color"), Some([3, 5, 6])))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("c", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199140696100) }] })
+    2: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Enum(Some("Color"), Some([3, 5, 6])))], init_declarators: [ParsedInitDeclarator { declarator: Identifier("c", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199140696100) }] })
     3: EnumConstant(RED, auto)
     4: LiteralInt(2, None, base=10)
     5: EnumConstant(GREEN, 4)
@@ -96,7 +96,7 @@ fn test_dump_parsed_ast_with_strings() {
     let output = dump_parsed_ast("char* msg = \"Hello, world!\";");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2])
-    2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Char)], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Identifier("msg", TypeQualifiers(0x0)))), initializer: Some(3), span: SourceSpan(2199409131524) }] })
+    2: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Char)], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Identifier("msg", TypeQualifiers(0x0)))), initializer: Some(3), span: SourceSpan(2199409131524) }] })
     3: LiteralString(""Hello, world!"")
     "#);
 }
@@ -106,9 +106,9 @@ fn test_dump_parsed_ast_with_floats() {
     let output = dump_parsed_ast("float pi = 3.14159; double e = 2.71828;");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2, 4])
-    2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Float)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("pi", TypeQualifiers(0x0)), initializer: Some(3), span: SourceSpan(2199224582150) }] })
+    2: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Float)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("pi", TypeQualifiers(0x0)), initializer: Some(3), span: SourceSpan(2199224582150) }] })
     3: LiteralFloat(3.14159, None)
-    4: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Double)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("e", TypeQualifiers(0x0)), initializer: Some(5), span: SourceSpan(2199207804955) }] })
+    4: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Double)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("e", TypeQualifiers(0x0)), initializer: Some(5), span: SourceSpan(2199207804955) }] })
     5: LiteralFloat(2.71828, None)
     "#);
 }
@@ -118,11 +118,11 @@ fn test_dump_parsed_ast_with_chars() {
     let output = dump_parsed_ast("char c = 'a'; signed char sc = 'b'; unsigned char uc = 'c';");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2, 4, 6])
-    2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Char)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("c", TypeQualifiers(0x0)), initializer: Some(3), span: SourceSpan(2199140696069) }] })
+    2: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Char)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("c", TypeQualifiers(0x0)), initializer: Some(3), span: SourceSpan(2199140696069) }] })
     3: LiteralChar('a')
-    4: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Signed), TypeSpecifier(Char)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("sc", TypeQualifiers(0x0)), initializer: Some(5), span: SourceSpan(2199157473306) }] })
+    4: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Signed), TypeSpec(Char)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("sc", TypeQualifiers(0x0)), initializer: Some(5), span: SourceSpan(2199157473306) }] })
     5: LiteralChar('b')
-    6: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Unsigned), TypeSpecifier(Char)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("uc", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199157473330) }] })
+    6: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Unsigned), TypeSpec(Char)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("uc", TypeQualifiers(0x0)), initializer: Some(7), span: SourceSpan(2199157473330) }] })
     7: LiteralChar('c')
     "#);
 }
@@ -132,12 +132,12 @@ fn test_dump_parsed_ast_with_pointers() {
     let output = dump_parsed_ast("int x = 10; int* ptr = &x; int** ptr_ptr = &ptr;");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2, 4, 7])
-    2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(3), span: SourceSpan(2199123918852) }] })
+    2: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(3), span: SourceSpan(2199123918852) }] })
     3: LiteralInt(10, None, base=10)
-    4: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Identifier("ptr", TypeQualifiers(0x0)))), initializer: Some(6), span: SourceSpan(2199191027727) }] })
+    4: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Identifier("ptr", TypeQualifiers(0x0)))), initializer: Some(6), span: SourceSpan(2199191027727) }] })
     5: Ident(x)
     6: UnaryOp(AddrOf, 5)
-    7: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Pointer(TypeQualifiers(0x0), Some(Identifier("ptr_ptr", TypeQualifiers(0x0)))))), initializer: Some(9), span: SourceSpan(2199308468254) }] })
+    7: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Pointer(TypeQualifiers(0x0), Some(Identifier("ptr_ptr", TypeQualifiers(0x0)))))), initializer: Some(9), span: SourceSpan(2199308468254) }] })
     8: Ident(ptr)
     9: UnaryOp(AddrOf, 8)
     "#);
@@ -148,7 +148,7 @@ fn test_dump_parsed_ast_with_arrays() {
     let output = dump_parsed_ast("int arr[5] = {1, 2, 3, 4, 5}; int* ptr_arr[3];");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2, 10])
-    2: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Array(Identifier("arr", TypeQualifiers(0x0)), Expression { expr: 3, qualifiers: TypeQualifiers(0x0) }), initializer: Some(9), span: SourceSpan(2199425908740) }] })
+    2: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Array(Identifier("arr", TypeQualifiers(0x0)), Expression { expr: 3, qualifiers: TypeQualifiers(0x0) }), initializer: Some(9), span: SourceSpan(2199425908740) }] })
     3: LiteralInt(5, None, base=10)
     4: LiteralInt(1, None, base=10)
     5: LiteralInt(2, None, base=10)
@@ -156,7 +156,7 @@ fn test_dump_parsed_ast_with_arrays() {
     7: LiteralInt(4, None, base=10)
     8: LiteralInt(5, None, base=10)
     9: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 4 }, ParsedDesignatedInitializer { designation: [], initializer: 5 }, ParsedDesignatedInitializer { designation: [], initializer: 6 }, ParsedDesignatedInitializer { designation: [], initializer: 7 }, ParsedDesignatedInitializer { designation: [], initializer: 8 }])
-    10: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Array(Identifier("ptr_arr", TypeQualifiers(0x0)), Expression { expr: 11, qualifiers: TypeQualifiers(0x0) }))), initializer: None, span: SourceSpan(2199224582177) }] })
+    10: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Pointer(TypeQualifiers(0x0), Some(Array(Identifier("ptr_arr", TypeQualifiers(0x0)), Expression { expr: 11, qualifiers: TypeQualifiers(0x0) }))), initializer: None, span: SourceSpan(2199224582177) }] })
     11: LiteralInt(3, None, base=10)
     "#);
 }
@@ -168,9 +168,9 @@ fn test_dump_parsed_ast_with_loops() {
     );
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[3])
-    3: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("main", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
+    3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("main", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
     4: CompoundStatement(stmts=[5, 14, 15, 36, 38])
-    5: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("i", TypeQualifiers(0x0)), initializer: Some(6), span: SourceSpan(2199107141649) }] })
+    5: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("i", TypeQualifiers(0x0)), initializer: Some(6), span: SourceSpan(2199107141649) }] })
     6: LiteralInt(0, None, base=8)
     7: Ident(i)
     8: LiteralInt(10, None, base=10)
@@ -181,7 +181,7 @@ fn test_dump_parsed_ast_with_loops() {
     13: PostIncrement(12)
     14: While(ParsedWhileStmt { condition: 9, body: 10 })
     15: For(ParsedForStmt { init: Some(16), condition: Some(20), increment: Some(22), body: 23 })
-    16: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("j", TypeQualifiers(0x0)), initializer: Some(17), span: SourceSpan(2199107141689) }] })
+    16: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("j", TypeQualifiers(0x0)), initializer: Some(17), span: SourceSpan(2199107141689) }] })
     17: LiteralInt(0, None, base=8)
     18: Ident(j)
     19: LiteralInt(5, None, base=10)
@@ -214,9 +214,9 @@ fn test_dump_parsed_ast_with_conditional() {
     );
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[3])
-    3: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("main", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
+    3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("main", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
     4: CompoundStatement(stmts=[5, 29, 31])
-    5: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(6), span: SourceSpan(2199123918865) }] })
+    5: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(6), span: SourceSpan(2199123918865) }] })
     6: LiteralInt(10, None, base=10)
     7: Ident(x)
     8: LiteralInt(5, None, base=10)
@@ -253,9 +253,9 @@ fn test_dump_parsed_ast_with_switch() {
     );
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[3])
-    3: FunctionDef(ParsedFunctionDefData { specifiers: [TypeSpecifier(Int)], declarator: Function { inner: Identifier("main", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
+    3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: Function { inner: Identifier("main", TypeQualifiers(0x0)), params: [], is_variadic: false }, body: 4 })
     4: CompoundStatement(stmts=[5, 28, 30])
-    5: Declaration(ParsedDeclarationData { specifiers: [TypeSpecifier(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(6), span: SourceSpan(2199107141649) }] })
+    5: Declaration(ParsedDeclaration { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: Identifier("x", TypeQualifiers(0x0)), initializer: Some(6), span: SourceSpan(2199107141649) }] })
     6: LiteralInt(2, None, base=10)
     7: Ident(x)
     8: CompoundStatement(stmts=[14, 15, 21, 22, 27])

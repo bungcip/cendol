@@ -1,7 +1,7 @@
 //! Type system representation and utilities.
 //!
 //! This module defines the semantic type system used during analysis,
-//! distinct from the syntactic TypeSpecifier constructs used in parsing.
+//! distinct from the syntactic TypeSpec constructs used in parsing.
 
 use std::sync::Arc;
 use std::{fmt::Display, num::NonZeroU32};
@@ -12,7 +12,7 @@ use serde::Serialize;
 use crate::ast::{NameId, NodeRef, SourceSpan, StorageClass};
 
 /// Type representation (for semantic analysis)
-/// This is a canonical type, distinct from TypeSpecifier which is a syntax construct.
+/// This is a canonical type, distinct from TypeSpec which is a syntax construct.
 /// Types are stored in a separate Vec<Type> with TypeRef references.
 /// invariant:
 /// - layout == None for incomplete types

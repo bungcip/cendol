@@ -16,7 +16,7 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::ast::literal::Literal;
 use crate::ast::parsed::{
-    ParsedDeclarationData, ParsedDeclarator, ParsedFunctionDefData, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpecifier,
+    ParsedDeclaration, ParsedDeclarator, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec,
 };
 use crate::ast::*;
 use crate::diagnostic::DiagnosticEngine;
@@ -68,10 +68,10 @@ fn apply_parsed_declarator(
             let has_quals = match &size {
                 ParsedArraySize::Expression { qualifiers, .. } => !qualifiers.is_empty(),
                 ParsedArraySize::Star { qualifiers } => !qualifiers.is_empty(),
-                ParsedArraySize::VlaSpecifier { qualifiers, .. } => !qualifiers.is_empty(),
+                ParsedArraySize::VlaSpec { qualifiers, .. } => !qualifiers.is_empty(),
                 ParsedArraySize::Incomplete => false,
             };
-            let has_static = matches!(size, ParsedArraySize::VlaSpecifier { is_static: true, .. });
+            let has_static = matches!(size, ParsedArraySize::VlaSpec { is_static: true, .. });
 
             if has_static || has_quals {
                 let inner_node = ctx.parsed_ast.parsed_types.get_decl(inner);
@@ -144,7 +144,7 @@ fn extract_array_param_qualifiers_from_ref(decl: ParsedDeclRef, ctx: &LowerCtx) 
             match size {
                 ParsedArraySize::Expression { qualifiers, .. } => qualifiers,
                 ParsedArraySize::Star { qualifiers } => qualifiers,
-                ParsedArraySize::VlaSpecifier { qualifiers, .. } => qualifiers,
+                ParsedArraySize::VlaSpec { qualifiers, .. } => qualifiers,
                 ParsedArraySize::Incomplete => TypeQualifiers::empty(),
             }
         }
@@ -163,7 +163,7 @@ fn extract_array_param_qualifiers(decl: &ParsedDeclarator) -> TypeQualifiers {
             match size {
                 ParsedArraySize::Expression { qualifiers, .. } => *qualifiers,
                 ParsedArraySize::Star { qualifiers } => *qualifiers,
-                ParsedArraySize::VlaSpecifier { qualifiers, .. } => *qualifiers,
+                ParsedArraySize::VlaSpec { qualifiers, .. } => *qualifiers,
                 ParsedArraySize::Incomplete => TypeQualifiers::empty(),
             }
         }
@@ -178,7 +178,7 @@ fn convert_parsed_array_size(size: &ParsedArraySize, ctx: &mut LowerCtx) -> Arra
         ParsedArraySize::Expression { expr, .. } => resolve_array_size(Some(*expr), ctx),
         ParsedArraySize::Star { .. } => ArraySizeType::Star,
         ParsedArraySize::Incomplete => ArraySizeType::Incomplete,
-        ParsedArraySize::VlaSpecifier { size, .. } => resolve_array_size(*size, ctx),
+        ParsedArraySize::VlaSpec { size, .. } => resolve_array_size(*size, ctx),
     }
 }
 
@@ -263,10 +263,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn check_function_specifiers(&mut self, info: &DeclSpecInfo, span: SourceSpan) {
         if info.is_inline {
-            self.report_error(span, SemanticErrorKind::InvalidFunctionSpecifier { spec: "inline" });
+            self.report_error(span, SemanticErrorKind::InvalidFunctionSpec { spec: "inline" });
         }
         if info.is_noreturn {
-            self.report_error(span, SemanticErrorKind::InvalidFunctionSpecifier { spec: "_Noreturn" });
+            self.report_error(span, SemanticErrorKind::InvalidFunctionSpec { spec: "_Noreturn" });
         }
     }
 
@@ -363,9 +363,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn resolve_alignment(&mut self, align: &ParsedAlignmentSpecifier, span: SourceSpan) -> Option<u32> {
+    fn resolve_alignment(&mut self, align: &ParsedAlignmentSpec, span: SourceSpan) -> Option<u32> {
         match align {
-            ParsedAlignmentSpecifier::Type(parsed_ty) => {
+            ParsedAlignmentSpec::Type(parsed_ty) => {
                 let qt = convert_to_qual_type_or_type_error(self, *parsed_ty, span, false);
                 match self.registry.ensure_layout(qt.ty()) {
                     Ok(layout) => Some(layout.alignment as u32),
@@ -375,7 +375,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
                 }
             }
-            ParsedAlignmentSpecifier::Expr(expr) => {
+            ParsedAlignmentSpec::Expr(expr) => {
                 let lowered_expr = self.visit_expression(*expr);
                 let const_ctx = self.const_ctx();
                 if let Some(val) = const_eval::eval_const_expr(&const_ctx, lowered_expr) {
@@ -411,7 +411,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let (has_static, quals) = match size {
             ParsedArraySize::Expression { qualifiers, .. } => (false, qualifiers),
             ParsedArraySize::Star { qualifiers } => (false, qualifiers),
-            ParsedArraySize::VlaSpecifier {
+            ParsedArraySize::VlaSpec {
                 is_static, qualifiers, ..
             } => (*is_static, qualifiers),
             ParsedArraySize::Incomplete => (false, &TypeQualifiers::empty()),
@@ -441,7 +441,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedArraySize::Expression { expr, .. } => resolve_array_size(Some(*expr), self),
             ParsedArraySize::Star { .. } => ArraySizeType::Star,
             ParsedArraySize::Incomplete => ArraySizeType::Incomplete,
-            ParsedArraySize::VlaSpecifier { size, .. } => resolve_array_size(*size, self),
+            ParsedArraySize::VlaSpec { size, .. } => resolve_array_size(*size, self),
         };
 
         let ty = self.registry.array_of(element_ty.ty(), array_size);
@@ -470,7 +470,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         };
 
         if let Some(reason) = reason {
-            self.report_error(span, SemanticErrorKind::InvalidAtomicSpecifier { reason });
+            self.report_error(span, SemanticErrorKind::InvalidAtomicSpec { reason });
         }
 
         Ok(qt.merge_qualifiers(TypeQualifiers::ATOMIC))
@@ -480,7 +480,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         &mut self,
         is_union: bool,
         tag: Option<NameId>,
-        definition: &Option<ParsedRecordDefData>,
+        definition: &Option<ParsedRecordDef>,
         span: SourceSpan,
     ) -> Result<QualType, SemanticError> {
         let is_definition = definition.is_some();
@@ -974,11 +974,11 @@ fn complete_enum_symbol(
 
 /// Resolve a type specifier to a QualType
 fn resolve_type_specifier(
-    ts: &ParsedTypeSpecifier,
+    ts: &ParsedTypeSpec,
     ctx: &mut LowerCtx,
     span: SourceSpan,
 ) -> Result<QualType, SemanticError> {
-    use ParsedTypeSpecifier::*;
+    use ParsedTypeSpec::*;
     match ts {
         Void => Ok(QualType::unqualified(ctx.registry.type_void)),
         Char => Ok(QualType::unqualified(ctx.registry.type_char)),
@@ -1016,8 +1016,8 @@ fn resolve_type_specifier(
         Enum(t, e) => ctx.resolve_enum_specifier(*t, e, span),
         TypedefName(n) => ctx.resolve_typedef_name(*n, span),
         VaList => Ok(QualType::unqualified(ctx.registry.type_valist)),
-        ParsedTypeSpecifier::Typeof(ty) => convert_to_qual_type(ctx, *ty, span, false),
-        ParsedTypeSpecifier::TypeofExpr(expr) => {
+        ParsedTypeSpec::Typeof(ty) => convert_to_qual_type(ctx, *ty, span, false),
+        ParsedTypeSpec::TypeofExpr(expr) => {
             let expr_node = ctx.visit_expression(*expr);
             let tr = ctx.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)));
             Ok(QualType::unqualified(tr))
@@ -1085,14 +1085,14 @@ fn merge_base_type(
                     ctx.registry.complex_type(ctx.registry.type_long_double)
                 }
                 _ => {
-                    ctx.report_error(span, SemanticErrorKind::ConflictingTypeSpecifiers { prev: existing });
+                    ctx.report_error(span, SemanticErrorKind::ConflictingTypeSpec { prev: existing });
                     ctx.registry.type_error
                 }
             };
             Some(QualType::unqualified(ty))
         }
         _ => {
-            ctx.report_error(span, SemanticErrorKind::ConflictingTypeSpecifiers { prev: existing });
+            ctx.report_error(span, SemanticErrorKind::ConflictingTypeSpec { prev: existing });
             Some(QualType::unqualified(ctx.registry.type_error))
         }
     }
@@ -1125,17 +1125,17 @@ fn validate_specifier_combinations(info: &DeclSpecInfo, ctx: &mut LowerCtx, span
     }
 
     if info.base_type.is_none() {
-        ctx.report_error(span, SemanticErrorKind::MissingTypeSpecifier);
+        ctx.report_error(span, SemanticErrorKind::MissingTypeSpec);
     }
 }
 
 /// Parse and validate declaration specifiers
-fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span: SourceSpan) -> DeclSpecInfo {
+fn visit_decl_specifiers(specs: &[ParsedDeclSpec], ctx: &mut LowerCtx, span: SourceSpan) -> DeclSpecInfo {
     let mut info = DeclSpecInfo::default();
 
     for spec in specs {
         match spec {
-            ParsedDeclSpecifier::StorageClass(sc) => {
+            ParsedDeclSpec::StorageClass(sc) => {
                 if *sc == StorageClass::ThreadLocal {
                     if info.is_thread_local {
                         ctx.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
@@ -1149,7 +1149,7 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                     info.is_typedef |= *sc == StorageClass::Typedef;
                 }
             }
-            ParsedDeclSpecifier::TypeQualifier(tq) => {
+            ParsedDeclSpec::TypeQualifier(tq) => {
                 info.qualifiers.insert(match tq {
                     TypeQualifier::Const => TypeQualifiers::CONST,
                     TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
@@ -1157,23 +1157,23 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
                     TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
                 });
             }
-            ParsedDeclSpecifier::TypeSpecifier(ts) => {
+            ParsedDeclSpec::TypeSpec(ts) => {
                 let ty = resolve_type_specifier(ts, ctx, span).unwrap_or_else(|e| {
                     ctx.report_error(e.span, e.kind);
                     QualType::unqualified(ctx.registry.type_error)
                 });
                 info.base_type = merge_base_type(info.base_type, ty, ctx, span);
             }
-            ParsedDeclSpecifier::AlignmentSpecifier(align) => {
+            ParsedDeclSpec::AlignmentSpec(align) => {
                 if let Some(val) = ctx.resolve_alignment(align, span) {
                     info.alignment = Some(std::cmp::max(info.alignment.unwrap_or(0), val));
                 }
             }
-            ParsedDeclSpecifier::FunctionSpecifier(fs) => match fs {
-                FunctionSpecifier::Inline => info.is_inline = true,
-                FunctionSpecifier::Noreturn => info.is_noreturn = true,
+            ParsedDeclSpec::FunctionSpec(fs) => match fs {
+                FunctionSpec::Inline => info.is_inline = true,
+                FunctionSpec::Noreturn => info.is_noreturn = true,
             },
-            ParsedDeclSpecifier::Attribute => {}
+            ParsedDeclSpec::Attribute => {}
         }
     }
 
@@ -1193,7 +1193,7 @@ fn visit_decl_specifiers(specs: &[ParsedDeclSpecifier], ctx: &mut LowerCtx, span
 }
 
 fn visit_function_parameters(
-    params: &[ParsedParamData],
+    params: &[ParsedParam],
     ctx: &mut LowerCtx,
     is_definition: bool,
 ) -> Vec<FunctionParameter> {
@@ -1446,14 +1446,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 ParsedNodeKind::Declaration(decl) => {
                     if !decl.init_declarators.is_empty() {
                         decl.init_declarators.len()
-                    } else if let Some(ParsedDeclSpecifier::TypeSpecifier(ts)) = decl
+                    } else if let Some(ParsedDeclSpec::TypeSpec(ts)) = decl
                         .specifiers
                         .iter()
-                        .find(|s| matches!(s, ParsedDeclSpecifier::TypeSpecifier(..)))
+                        .find(|s| matches!(s, ParsedDeclSpec::TypeSpec(..)))
                     {
                         match ts {
-                            ParsedTypeSpecifier::Record(_, _, is_def) if is_def.is_some() => 1,
-                            ParsedTypeSpecifier::Enum(_, is_def) if is_def.is_some() => 1,
+                            ParsedTypeSpec::Record(_, _, is_def) if is_def.is_some() => 1,
+                            ParsedTypeSpec::Enum(_, is_def) if is_def.is_some() => 1,
                             _ => 0,
                         }
                     } else {
@@ -1485,7 +1485,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         let decl_start = if decl_len > 0 { reserved_slots[0] } else { NodeRef::ROOT };
-        self.ast.kinds[tu_node.index()] = NodeKind::TranslationUnit(TranslationUnitData {
+        self.ast.kinds[tu_node.index()] = NodeKind::TranslationUnit(TranslationUnit {
             decl_start,
             decl_len,
             scope_id: ScopeId::GLOBAL,
@@ -1541,7 +1541,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.symbol_table.set_current_scope(old_scope);
         }
 
-        self.ast.kinds[node.index()] = NodeKind::CompoundStatement(CompoundStmtData {
+        self.ast.kinds[node.index()] = NodeKind::CompoundStmt(CompoundStmt {
             stmt_start,
             stmt_len,
             scope_id,
@@ -1686,7 +1686,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn visit_function_definition(&mut self, func_def: &ParsedFunctionDefData, node: NodeRef, span: SourceSpan) {
+    fn visit_function_definition(&mut self, func_def: &ParsedFunctionDef, node: NodeRef, span: SourceSpan) {
         let spec_info = visit_decl_specifiers(&func_def.specifiers, self, span);
         let mut base_ty = spec_info
             .base_type
@@ -1825,7 +1825,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         .define_variable(pname, param.param_type, param.storage, None, None, span)
                 {
                     let param_dummy = param_dummies[i];
-                    self.ast.kinds[param_dummy.index()] = NodeKind::Param(ParamData {
+                    self.ast.kinds[param_dummy.index()] = NodeKind::Param(Param {
                         symbol: sym,
                         ty: param.param_type,
                     });
@@ -1843,7 +1843,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         self.symbol_table.pop_scope();
 
-        self.ast.kinds[node.index()] = NodeKind::Function(FunctionData {
+        self.ast.kinds[node.index()] = NodeKind::Function(Function {
             symbol: func_sym,
             ty: final_ty.ty(),
             is_noreturn: final_is_noreturn,
@@ -1857,7 +1857,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_declaration(
         &mut self,
-        decl: &ParsedDeclarationData,
+        decl: &ParsedDeclaration,
         span: SourceSpan,
         target_slots: Option<&[NodeRef]>,
     ) -> SmallVec<[NodeRef; 1]> {
@@ -1892,7 +1892,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         };
 
         // Extract needed data from registry to avoid borrowing self.registry during node creation
-        enum TypeData {
+        enum TypeAgg {
             Record(Option<NameId>, Arc<[StructMember]>, bool),
             Enum(Option<NameId>, Arc<[EnumConstant]>),
         }
@@ -1901,8 +1901,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let type_data = match &type_info.kind {
             TypeKind::Record {
                 tag, members, is_union, ..
-            } => Some(TypeData::Record(*tag, members.clone(), *is_union)),
-            TypeKind::Enum { tag, enumerators, .. } => Some(TypeData::Enum(*tag, enumerators.clone())),
+            } => Some(TypeAgg::Record(*tag, members.clone(), *is_union)),
+            TypeKind::Enum { tag, enumerators, .. } => Some(TypeAgg::Enum(*tag, enumerators.clone())),
             _ => None,
         };
 
@@ -1911,14 +1911,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.check_function_specifiers(spec_info, span);
 
             match data {
-                TypeData::Record(tag, members, is_union) => {
+                TypeAgg::Record(tag, members, is_union) => {
                     let member_start_idx = self.ast.kinds.len() as u32 + 1;
                     let member_start = NodeRef::new(member_start_idx).expect("NodeRef overflow");
                     let member_len = members.len() as u16;
 
                     for m in members.iter() {
                         self.ast.push_node(
-                            NodeKind::FieldDecl(FieldDeclData {
+                            NodeKind::FieldDecl(FieldDecl {
                                 name: m.name,
                                 ty: m.member_type,
                                 alignment: m.alignment,
@@ -1927,7 +1927,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         );
                     }
 
-                    self.ast.kinds[node.index()] = NodeKind::RecordDecl(RecordDeclData {
+                    self.ast.kinds[node.index()] = NodeKind::RecordDecl(RecordDecl {
                         name: tag,
                         ty: qt.ty(),
                         member_start,
@@ -1935,13 +1935,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         is_union,
                     });
                 }
-                TypeData::Enum(tag, enumerators) => {
+                TypeAgg::Enum(tag, enumerators) => {
                     let mut member_start = NodeRef::ROOT;
                     let member_len = enumerators.len() as u16;
 
                     for (i, e) in enumerators.iter().enumerate() {
                         let member = self.ast.push_node(
-                            NodeKind::EnumMember(EnumMemberData {
+                            NodeKind::EnumMember(EnumMember {
                                 name: e.name,
                                 value: e.value,
                                 init_expr: e.init_expr,
@@ -1953,7 +1953,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         }
                     }
 
-                    self.ast.kinds[node.index()] = NodeKind::EnumDecl(EnumDeclData {
+                    self.ast.kinds[node.index()] = NodeKind::EnumDecl(EnumDecl {
                         name: tag,
                         ty: qt.ty(),
                         member_start,
@@ -2029,7 +2029,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     );
                 }
             }
-            self.ast.kinds[node.index()] = NodeKind::TypedefDecl(TypedefDeclData { name, ty: final_ty });
+            self.ast.kinds[node.index()] = NodeKind::TypedefDecl(TypedefDecl { name, ty: final_ty });
             return Some(node);
         }
 
@@ -2083,7 +2083,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         let final_qt = self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
-        let func_decl = FunctionDeclData {
+        let func_decl = FunctionDecl {
             name,
             ty: final_qt.ty(),
             storage: spec_info.storage,
@@ -2212,7 +2212,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticErrorKind::IncompleteType { ty: qt });
         }
 
-        let var_decl = VarDeclData {
+        let var_decl = VarDecl {
             name,
             ty: qt,
             storage: spec_info.storage,
@@ -2397,7 +2397,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let node = self.get_or_push_slot(target_slots, span);
                 let s = self.visit_single_statement(*stmt);
 
-                let last_stmt = if let NodeKind::CompoundStatement(data) = self.ast.get_kind(s) {
+                let last_stmt = if let NodeKind::CompoundStmt(data) = self.ast.get_kind(s) {
                     data.stmt_start.range(data.stmt_len).last()
                 } else {
                     None
@@ -2413,7 +2413,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     })
                     .unwrap_or_else(|| self.push_dummy(span));
 
-                self.ast.kinds[node.index()] = NodeKind::GnuStatementExpression(s, result_expr);
+                self.ast.kinds[node.index()] = NodeKind::GnuStatementExpr(s, result_expr);
                 smallvec![node]
             }
             ParsedNodeKind::SizeOfExpr(expr) => {
@@ -2545,12 +2545,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     let expr = self.visit_expression(a.result_expr);
                     let assoc_dummy = assoc_dummies[i];
                     self.ast.kinds[assoc_dummy.index()] =
-                        NodeKind::GenericAssociation(GenericAssociationData { ty, result_expr: expr });
+                        NodeKind::GenericAssociation(GenericAssociation { ty, result_expr: expr });
                 }
 
                 let assoc_start = if assoc_len > 0 { assoc_dummies[0] } else { NodeRef::ROOT };
 
-                self.ast.kinds[node.index()] = NodeKind::GenericSelection(GenericSelectionData {
+                self.ast.kinds[node.index()] = NodeKind::GenericSelection(GenericSelection {
                     control: c,
                     assoc_start,
                     assoc_len,
@@ -2607,7 +2607,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let init_len = init_dummies.len() as u16;
                 let init_start = if init_len > 0 { init_dummies[0] } else { NodeRef::ROOT };
 
-                self.ast.kinds[node.index()] = NodeKind::InitializerList(InitializerListData { init_start, init_len });
+                self.ast.kinds[node.index()] = NodeKind::InitializerList(InitializerList { init_start, init_len });
 
                 smallvec![node]
             }
@@ -2994,7 +2994,7 @@ fn extract_bit_field_width(declarator: &ParsedDeclarator, ctx: &mut LowerCtx) ->
     }
 }
 
-/// Common logic for lowering struct members, used by both TypeSpecifier::Record lowering
+/// Common logic for lowering struct members, used by both TypeSpec::Record lowering
 /// and Declarator::AnonymousRecord handling.
 fn visit_struct_members(member_nodes: &[ParsedNodeRef], ctx: &mut LowerCtx, span: SourceSpan) -> Vec<StructMember> {
     let mut struct_members = Vec::new();

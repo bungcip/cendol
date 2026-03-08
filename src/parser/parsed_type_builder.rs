@@ -16,7 +16,7 @@ use super::Parser;
 /// Build a ParsedType from declaration specifiers and an optional declarator
 pub(crate) fn build_parsed_type_from_specifiers(
     parser: &mut Parser,
-    specifiers: &ThinVec<ParsedDeclSpecifier>,
+    specifiers: &ThinVec<ParsedDeclSpec>,
     declarator: Option<&ParsedDeclarator>,
 ) -> Result<ParsedType, ParseError> {
     let (base_type_ref, qualifiers) = parse_base_type_and_qualifiers(parser, specifiers)?;
@@ -35,11 +35,11 @@ pub(crate) fn build_parsed_type_from_specifiers(
 }
 
 fn merge_parsed_type_specifiers(
-    current: ParsedTypeSpecifier,
-    new: ParsedTypeSpecifier,
+    current: ParsedTypeSpec,
+    new: ParsedTypeSpec,
     span: crate::ast::SourceSpan,
-) -> Result<ParsedTypeSpecifier, ParseError> {
-    use ParsedTypeSpecifier::*;
+) -> Result<ParsedTypeSpec, ParseError> {
+    use ParsedTypeSpec::*;
     match (current, new) {
         // Redundant same types
         (Long, Long) => Ok(LongLong),
@@ -117,28 +117,28 @@ fn merge_parsed_type_specifiers(
 /// Parse base type and qualifiers from declaration specifiers
 fn parse_base_type_and_qualifiers(
     parser: &mut Parser,
-    specifiers: &ThinVec<ParsedDeclSpecifier>,
+    specifiers: &ThinVec<ParsedDeclSpec>,
 ) -> Result<(ParsedBaseTypeRef, TypeQualifiers), ParseError> {
     let mut qualifiers = TypeQualifiers::empty();
-    let mut base_type_specifier: Option<ParsedTypeSpecifier> = None;
+    let mut base_type_specifier: Option<ParsedTypeSpec> = None;
     let mut other_base_type_node = None;
 
     for spec in specifiers {
         match spec {
-            ParsedDeclSpecifier::TypeSpecifier(ts) => match ts {
-                ParsedTypeSpecifier::Void
-                | ParsedTypeSpecifier::Char
-                | ParsedTypeSpecifier::Short
-                | ParsedTypeSpecifier::Int
-                | ParsedTypeSpecifier::Long
-                | ParsedTypeSpecifier::LongLong
-                | ParsedTypeSpecifier::Float
-                | ParsedTypeSpecifier::Double
-                | ParsedTypeSpecifier::LongDouble
-                | ParsedTypeSpecifier::Signed
-                | ParsedTypeSpecifier::Unsigned
-                | ParsedTypeSpecifier::Bool
-                | ParsedTypeSpecifier::Complex => {
+            ParsedDeclSpec::TypeSpec(ts) => match ts {
+                ParsedTypeSpec::Void
+                | ParsedTypeSpec::Char
+                | ParsedTypeSpec::Short
+                | ParsedTypeSpec::Int
+                | ParsedTypeSpec::Long
+                | ParsedTypeSpec::LongLong
+                | ParsedTypeSpec::Float
+                | ParsedTypeSpec::Double
+                | ParsedTypeSpec::LongDouble
+                | ParsedTypeSpec::Signed
+                | ParsedTypeSpec::Unsigned
+                | ParsedTypeSpec::Bool
+                | ParsedTypeSpec::Complex => {
                     if other_base_type_node.is_some() {
                         return Err(ParseError {
                             span: crate::ast::SourceSpan::default(),
@@ -169,7 +169,7 @@ fn parse_base_type_and_qualifiers(
                     other_base_type_node = Some(parsed_base);
                 }
             },
-            ParsedDeclSpecifier::TypeQualifier(q) => {
+            ParsedDeclSpec::TypeQualifier(q) => {
                 qualifiers |= match q {
                     crate::ast::nodes::TypeQualifier::Const => TypeQualifiers::CONST,
                     crate::ast::nodes::TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
@@ -192,18 +192,18 @@ fn parse_base_type_and_qualifiers(
         parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Int))
+            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpec::Int))
     };
 
     Ok((base_type_ref, qualifiers))
 }
 
-/// Convert a TypeSpecifier to a ParsedBaseTypeNode
+/// Convert a TypeSpec to a ParsedBaseTypeNode
 fn parse_type_specifier_to_parsed_base(
     parser: &mut Parser,
-    ts: &ParsedTypeSpecifier,
+    ts: &ParsedTypeSpec,
 ) -> Result<ParsedBaseTypeRef, ParseError> {
-    use ParsedTypeSpecifier::*;
+    use ParsedTypeSpec::*;
     match ts {
         Void | Char | Short | Int | Long | LongLong | UnsignedLong | UnsignedLongLong | UnsignedShort
         | UnsignedChar | SignedChar | SignedShort | SignedLong | SignedLongLong | Float | Double | LongDouble
@@ -211,7 +211,7 @@ fn parse_type_specifier_to_parsed_base(
             .ast
             .parsed_types
             .alloc_base_type(ParsedBaseTypeNode::Builtin(ts.clone()))),
-        ParsedTypeSpecifier::Atomic(parsed_type) => {
+        ParsedTypeSpec::Atomic(parsed_type) => {
             // C11 6.7.2.4p3: "The type name in an atomic type specifier shall not designate
             // an array type, a function type, an atomic type, or an incomplete type."
             let decl = parser.ast.parsed_types.get_decl(parsed_type.declarator);
@@ -236,7 +236,7 @@ fn parse_type_specifier_to_parsed_base(
             }
 
             let base = parser.ast.parsed_types.get_base_type(parsed_type.base);
-            if let ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Atomic(_)) = base {
+            if let ParsedBaseTypeNode::Builtin(ParsedTypeSpec::Atomic(_)) = base {
                 return Err(ParseError {
                     span: parser.previous_token_span(),
                     kind: ParseErrorKind::Custom {
@@ -248,9 +248,9 @@ fn parse_type_specifier_to_parsed_base(
             Ok(parser
                 .ast
                 .parsed_types
-                .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpecifier::Atomic(*parsed_type))))
+                .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpec::Atomic(*parsed_type))))
         }
-        ParsedTypeSpecifier::Record(is_union, tag, definition) => {
+        ParsedTypeSpec::Record(is_union, tag, definition) => {
             let members = if let Some(def_data) = definition {
                 if let Some(member_node_refs) = &def_data.members {
                     let mut parsed_members = Vec::new();
@@ -270,16 +270,16 @@ fn parse_type_specifier_to_parsed_base(
                                     // Extract alignment from specifiers
                                     let mut alignment = None;
                                     for spec in &decl.specifiers {
-                                        if let ParsedDeclSpecifier::AlignmentSpecifier(align_spec) = spec {
+                                        if let ParsedDeclSpec::AlignmentSpec(align_spec) = spec {
                                             match align_spec {
-                                                ParsedAlignmentSpecifier::Expr(expr_ref) => {
+                                                ParsedAlignmentSpec::Expr(expr_ref) => {
                                                     if let ParsedNodeKind::Literal(Literal::Int { val, .. }) =
                                                         parser.ast.get_node(*expr_ref).kind
                                                     {
                                                         alignment = Some(val as u32);
                                                     }
                                                 }
-                                                ParsedAlignmentSpecifier::Type(_) => {
+                                                ParsedAlignmentSpec::Type(_) => {
                                                     // Handling type alignment in parser is hard, skip for now or resolve during lowering
                                                 }
                                             }
@@ -311,7 +311,7 @@ fn parse_type_specifier_to_parsed_base(
                 is_union: *is_union,
             }))
         }
-        ParsedTypeSpecifier::Enum(tag, enumerators) => {
+        ParsedTypeSpec::Enum(tag, enumerators) => {
             let parsed_enumerators = if let Some(enum_node_refs) = enumerators {
                 let mut parsed_enums = Vec::new();
                 for &enum_ref in enum_node_refs {
@@ -347,8 +347,8 @@ fn parse_type_specifier_to_parsed_base(
             .ast
             .parsed_types
             .alloc_base_type(ParsedBaseTypeNode::Typedef(*name))),
-        ParsedTypeSpecifier::Typeof(ty) => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Typeof(*ty))),
-        ParsedTypeSpecifier::TypeofExpr(expr) => Ok(parser
+        ParsedTypeSpec::Typeof(ty) => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Typeof(*ty))),
+        ParsedTypeSpec::TypeofExpr(expr) => Ok(parser
             .ast
             .parsed_types
             .alloc_base_type(ParsedBaseTypeNode::TypeofExpr(*expr))),

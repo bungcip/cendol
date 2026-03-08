@@ -131,7 +131,7 @@ impl<'a> MirGen<'a> {
                 self.current_scope_id = self.ast.scope_of(node_ref);
                 self.visit_for_stmt(&for_stmt)
             }
-            NodeKind::CompoundStatement(cs) => {
+            NodeKind::CompoundStmt(cs) => {
                 self.current_scope_id = self.ast.scope_of(node_ref);
                 self.visit_compound_statement(&cs)
             }
@@ -191,7 +191,7 @@ impl<'a> MirGen<'a> {
             | NodeKind::BuiltinVaEnd(..)
             | NodeKind::BuiltinVaCopy(..)
             | NodeKind::GenericSelection(..)
-            | NodeKind::GnuStatementExpression(..) => {
+            | NodeKind::GnuStatementExpr(..) => {
                 self.visit_expression(node_ref, false);
             }
 
@@ -201,7 +201,7 @@ impl<'a> MirGen<'a> {
         self.current_scope_id = old_scope;
     }
 
-    fn visit_translation_unit(&mut self, tu_data: &nodes::TranslationUnitData) {
+    fn visit_translation_unit(&mut self, tu_data: &nodes::TranslationUnit) {
         self.predeclare_global_functions();
         for child_ref in tu_data.decl_start.range(tu_data.decl_len) {
             self.visit_node(child_ref);
@@ -316,7 +316,7 @@ impl<'a> MirGen<'a> {
         self.apply_conversions(cond_operand, condition, cond_mir_ty)
     }
 
-    fn visit_compound_statement(&mut self, cs: &nodes::CompoundStmtData) {
+    fn visit_compound_statement(&mut self, cs: &nodes::CompoundStmt) {
         for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
             // We visit all statements regardless of whether the current block is terminated.
             // MirBuilder will suppress statement addition to terminated blocks, but we need
@@ -325,7 +325,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_function(&mut self, function_data: &FunctionData) {
+    fn visit_function(&mut self, function_data: &Function) {
         let symbol_entry = self.symbol_table.get_symbol(function_data.symbol);
         let func_name = symbol_entry.name;
 
@@ -390,7 +390,7 @@ impl<'a> MirGen<'a> {
         self.current_block = None;
     }
 
-    fn visit_var_decl(&mut self, var_decl: &VarDeclData) {
+    fn visit_var_decl(&mut self, var_decl: &VarDecl) {
         let mir_type_id = self.lower_qual_type(var_decl.ty);
         let (entry_ref, _) = self
             .symbol_table
@@ -1080,30 +1080,10 @@ impl<'a> MirGen<'a> {
             size: 24,
             alignment: 8,
             fields: vec![
-                MirFieldLayout {
-                    offset: 0,
-                    bit_width: None,
-                    bit_offset: None,
-                    is_signed: false,
-                },
-                MirFieldLayout {
-                    offset: 4,
-                    bit_width: None,
-                    bit_offset: None,
-                    is_signed: false,
-                },
-                MirFieldLayout {
-                    offset: 8,
-                    bit_width: None,
-                    bit_offset: None,
-                    is_signed: false,
-                },
-                MirFieldLayout {
-                    offset: 16,
-                    bit_width: None,
-                    bit_offset: None,
-                    is_signed: false,
-                },
+                MirFieldLayout::new(0),
+                MirFieldLayout::new(4),
+                MirFieldLayout::new(8),
+                MirFieldLayout::new(16),
             ],
         };
 

@@ -1,5 +1,5 @@
 //! Common utilities for semantic analysis tests.
-use crate::ast::{Ast, NodeKind, VarDeclData};
+use crate::ast::{Ast, NodeKind, VarDecl};
 use crate::diagnostic::DiagnosticEngine;
 use crate::driver::artifact::CompilePhase;
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
@@ -90,7 +90,7 @@ pub(crate) fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'
         .unwrap_or_else(|| panic!("Record type '{}' not found in registry", name))
 }
 
-pub(crate) fn find_var_decl<'a>(ast: &'a Ast, name: &str) -> &'a VarDeclData {
+pub(crate) fn find_var_decl<'a>(ast: &'a Ast, name: &str) -> &'a VarDecl {
     ast.kinds
         .iter()
         .find_map(|kind| {

@@ -1,6 +1,6 @@
 use crate::{
     ast::{
-        AtomicOp, BinaryOp, FunctionSpecifier, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp,
+        AtomicOp, BinaryOp, FunctionSpec, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp,
         literal::Literal,
     },
     semantic::TypeQualifiers,
@@ -136,8 +136,8 @@ pub enum ParsedNodeKind {
     EmptyStatement,
 
     // --- Declarations & Definitions ---
-    Declaration(ParsedDeclarationData),
-    FunctionDef(ParsedFunctionDefData),
+    Declaration(ParsedDeclaration),
+    FunctionDef(ParsedFunctionDef),
     EnumConstant(NameId, Option<ParsedNodeRef>),
     StaticAssert(ParsedNodeRef, ParsedNodeRef),
 
@@ -183,32 +183,32 @@ pub struct ParsedInitDeclarator {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedDeclarationData {
-    pub specifiers: ThinVec<ParsedDeclSpecifier>,
+pub struct ParsedDeclaration {
+    pub specifiers: ThinVec<ParsedDeclSpec>,
     pub init_declarators: ThinVec<ParsedInitDeclarator>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedFunctionDefData {
-    pub specifiers: ThinVec<ParsedDeclSpecifier>,
+pub struct ParsedFunctionDef {
+    pub specifiers: ThinVec<ParsedDeclSpec>,
     pub declarator: Box<ParsedDeclarator>,
     pub body: ParsedNodeRef,
 }
 
 // Declaration specifiers and related types
 #[derive(Debug, Clone)]
-pub enum ParsedDeclSpecifier {
+pub enum ParsedDeclSpec {
     StorageClass(StorageClass),
     TypeQualifier(TypeQualifier),
-    FunctionSpecifier(FunctionSpecifier),
-    AlignmentSpecifier(ParsedAlignmentSpecifier),
-    TypeSpecifier(ParsedTypeSpecifier),
+    FunctionSpec(FunctionSpec),
+    AlignmentSpec(ParsedAlignmentSpec),
+    TypeSpec(ParsedTypeSpec),
     Attribute,
 }
 
 // Type specifiers
 #[derive(Debug, Clone)]
-pub enum ParsedTypeSpecifier {
+pub enum ParsedTypeSpec {
     Void,
     Char,
     Short,
@@ -236,9 +236,9 @@ pub enum ParsedTypeSpecifier {
     Complex,
     Atomic(ParsedType), // _Bool, _Complex, _Atomic
     Record(
-        bool,                        /* is_union */
-        Option<NameId>,              /* tag */
-        Option<ParsedRecordDefData>, /* definition */
+        bool,                    /* is_union */
+        Option<NameId>,          /* tag */
+        Option<ParsedRecordDef>, /* definition */
     ),
     Enum(
         Option<NameId>,             /* tag */
@@ -252,7 +252,7 @@ pub enum ParsedTypeSpecifier {
 
 // Alignment specifiers
 #[derive(Debug, Clone)]
-pub enum ParsedAlignmentSpecifier {
+pub enum ParsedAlignmentSpec {
     Type(ParsedType),    // _Alignas(type-name)
     Expr(ParsedNodeRef), // _Alignas(constant-expression)
 }
@@ -266,7 +266,7 @@ pub enum ParsedDeclarator {
     Array(Box<ParsedDeclarator>, ParsedArraySize),          // e.g., `[10]`
     Function {
         inner: Box<ParsedDeclarator>,
-        params: ThinVec<ParsedParamData>,
+        params: ThinVec<ParsedParam>,
         is_variadic: bool,
     }, // e.g., `(int x)`
     BitField(Box<ParsedDeclarator>, ParsedNodeRef /* bit width expression */), // e.g., `x : 8`
@@ -275,8 +275,8 @@ pub enum ParsedDeclarator {
 impl ParsedDeclarator {}
 
 #[derive(Debug, Clone)]
-pub struct ParsedParamData {
-    pub specifiers: ThinVec<ParsedDeclSpecifier>,
+pub struct ParsedParam {
+    pub specifiers: ThinVec<ParsedDeclSpec>,
     pub declarator: Option<ParsedDeclarator>, // Optional name for abstract declarator
     pub span: SourceSpan,
 }
@@ -292,7 +292,7 @@ pub enum ParsedArraySize {
         qualifiers: TypeQualifiers,
     }, // [*] VLA
     Incomplete, // []
-    VlaSpecifier {
+    VlaSpec {
         is_static: bool,
         qualifiers: TypeQualifiers,
         size: Option<ParsedNodeRef>,
@@ -307,7 +307,7 @@ pub struct ParsedGenericAssociation {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedRecordDefData {
+pub struct ParsedRecordDef {
     pub tag: Option<NameId>,                 // None if anonymous
     pub members: Option<Vec<ParsedNodeRef>>, // Field declarations
     pub is_union: bool,
@@ -325,33 +325,33 @@ pub enum ParsedDesignator {
     ArrayIndex(ParsedNodeRef),
     GnuArrayRange(ParsedNodeRef, ParsedNodeRef),
 }
-impl ParsedDeclSpecifier {
+impl ParsedDeclSpec {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
-            ParsedDeclSpecifier::AlignmentSpecifier(aspec) => aspec.for_each_child(f),
-            ParsedDeclSpecifier::TypeSpecifier(ts) => ts.for_each_child(f),
+            ParsedDeclSpec::AlignmentSpec(aspec) => aspec.for_each_child(f),
+            ParsedDeclSpec::TypeSpec(ts) => ts.for_each_child(f),
             _ => {}
         }
     }
 }
 
-impl ParsedTypeSpecifier {
+impl ParsedTypeSpec {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
-            ParsedTypeSpecifier::Enum(_, Some(enumerators)) => {
+            ParsedTypeSpec::Enum(_, Some(enumerators)) => {
                 for &e in enumerators {
                     f(e);
                 }
             }
-            ParsedTypeSpecifier::Record(_, _, Some(def)) => {
+            ParsedTypeSpec::Record(_, _, Some(def)) => {
                 if let Some(members) = &def.members {
                     for &m in members {
                         f(m);
                     }
                 }
             }
-            ParsedTypeSpecifier::Typeof(_) => {}
-            ParsedTypeSpecifier::TypeofExpr(expr) => {
+            ParsedTypeSpec::Typeof(_) => {}
+            ParsedTypeSpec::TypeofExpr(expr) => {
                 f(*expr);
             }
             _ => {}
@@ -359,9 +359,9 @@ impl ParsedTypeSpecifier {
     }
 }
 
-impl ParsedAlignmentSpecifier {
+impl ParsedAlignmentSpec {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
-        if let ParsedAlignmentSpecifier::Expr(e) = self {
+        if let ParsedAlignmentSpec::Expr(e) = self {
             f(*e)
         }
     }
@@ -393,7 +393,7 @@ impl ParsedDeclarator {
     }
 }
 
-impl ParsedParamData {
+impl ParsedParam {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         for spec in &self.specifiers {
             spec.for_each_child(f);
@@ -408,7 +408,7 @@ impl ParsedArraySize {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
             ParsedArraySize::Expression { expr, .. } => f(*expr),
-            ParsedArraySize::VlaSpecifier { size: Some(s), .. } => f(*s),
+            ParsedArraySize::VlaSpec { size: Some(s), .. } => f(*s),
             _ => {}
         }
     }
@@ -423,7 +423,7 @@ impl ParsedInitDeclarator {
     }
 }
 
-impl ParsedDeclarationData {
+impl ParsedDeclaration {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         for spec in &self.specifiers {
             spec.for_each_child(f);
@@ -434,7 +434,7 @@ impl ParsedDeclarationData {
     }
 }
 
-impl ParsedFunctionDefData {
+impl ParsedFunctionDef {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         for spec in &self.specifiers {
             spec.for_each_child(f);

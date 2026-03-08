@@ -437,6 +437,27 @@ pub struct MirFieldLayout {
     pub is_signed: bool,
 }
 
+impl MirFieldLayout {
+    pub(crate) fn new(offset: u64) -> Self {
+        Self {
+            offset,
+            bit_width: None,
+            bit_offset: None,
+            is_signed: false,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn signed(self, value: bool) -> Self {
+        Self {
+            offset: self.offset,
+            bit_offset: self.bit_offset,
+            bit_width: self.bit_width,
+            is_signed: value,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirRecordLayout {
     pub size: u64,

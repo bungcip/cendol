@@ -133,7 +133,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             lhs: Box::new(resolve_node(ast, registry, symbol_table, *lhs)),
             rhs: Box::new(resolve_node(ast, registry, symbol_table, *rhs)),
         },
-        NodeKind::CompoundStatement(data) => {
+        NodeKind::CompoundStmt(data) => {
             let stmts = data
                 .stmt_start
                 .range(data.stmt_len)

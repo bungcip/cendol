@@ -5,13 +5,13 @@
 //! different declaration components.
 
 use crate::ast::SourceSpan;
-use crate::ast::nodes::FunctionSpecifier;
+use crate::ast::nodes::FunctionSpec;
 use crate::ast::nodes::StorageClass;
 use crate::ast::nodes::TypeQualifier;
 // Import all parsed types to be sure
 use crate::ast::parsed::{
-    ParsedAlignmentSpecifier, ParsedDeclSpecifier, ParsedDesignatedInitializer, ParsedDesignator, ParsedNodeKind,
-    ParsedNodeRef, ParsedTypeSpecifier,
+    ParsedAlignmentSpec, ParsedDeclSpec, ParsedDesignatedInitializer, ParsedDesignator, ParsedNodeKind, ParsedNodeRef,
+    ParsedTypeSpec,
 };
 use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::parser::TokenKind;
@@ -20,7 +20,7 @@ use thin_vec::ThinVec;
 use super::Parser;
 
 /// Parse declaration specifiers
-pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVec<ParsedDeclSpecifier>, ParseError> {
+pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVec<ParsedDeclSpec>, ParseError> {
     let mut specifiers = ThinVec::new();
     let mut has_type_specifier = false;
 
@@ -42,7 +42,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     _ => unreachable!(),
                 };
                 parser.advance();
-                specifiers.push(ParsedDeclSpecifier::StorageClass(storage_class));
+                specifiers.push(ParsedDeclSpec::StorageClass(storage_class));
             }
 
             TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
@@ -56,9 +56,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                             parser.expect(TokenKind::LeftParen)?;
                             let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
                             parser.expect(TokenKind::RightParen)?;
-                            specifiers.push(ParsedDeclSpecifier::TypeSpecifier(ParsedTypeSpecifier::Atomic(
-                                parsed_type,
-                            )));
+                            specifiers.push(ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Atomic(parsed_type)));
                             has_type_specifier = true;
                             continue;
                         }
@@ -67,22 +65,22 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                     _ => unreachable!(),
                 };
                 parser.advance();
-                specifiers.push(ParsedDeclSpecifier::TypeQualifier(qualifier));
+                specifiers.push(ParsedDeclSpec::TypeQualifier(qualifier));
             }
 
             TokenKind::Inline | TokenKind::Noreturn => {
                 let func_spec = match token.kind {
-                    TokenKind::Inline => FunctionSpecifier::Inline,
-                    _ => FunctionSpecifier::Noreturn,
+                    TokenKind::Inline => FunctionSpec::Inline,
+                    _ => FunctionSpec::Noreturn,
                 };
                 parser.advance();
-                specifiers.push(ParsedDeclSpecifier::FunctionSpecifier(func_spec));
+                specifiers.push(ParsedDeclSpec::FunctionSpec(func_spec));
             }
 
             TokenKind::Attribute => {
                 let attrs = parse_attribute(parser)?;
                 specifiers.extend(attrs);
-                specifiers.push(ParsedDeclSpecifier::Attribute);
+                specifiers.push(ParsedDeclSpec::Attribute);
             }
 
             TokenKind::Void
@@ -101,17 +99,17 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             | TokenKind::Enum
             | TokenKind::BuiltinVaList
             | TokenKind::Typeof => {
-                specifiers.push(ParsedDeclSpecifier::TypeSpecifier(
-                    super::type_specifiers::parse_type_specifier(parser)?,
-                ));
+                specifiers.push(ParsedDeclSpec::TypeSpec(super::type_specifiers::parse_type_specifier(
+                    parser,
+                )?));
                 has_type_specifier = true;
             }
 
             TokenKind::Identifier(symbol) => {
                 if !has_type_specifier && parser.is_type_name(symbol) {
-                    specifiers.push(ParsedDeclSpecifier::TypeSpecifier(
-                        super::type_specifiers::parse_type_specifier(parser)?,
-                    ));
+                    specifiers.push(ParsedDeclSpec::TypeSpec(super::type_specifiers::parse_type_specifier(
+                        parser,
+                    )?));
                     has_type_specifier = true;
                 } else {
                     break;
@@ -131,12 +129,12 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
 
                 let alignment = if is_type_start {
                     let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
-                    ParsedAlignmentSpecifier::Type(parsed_type)
+                    ParsedAlignmentSpec::Type(parsed_type)
                 } else {
-                    ParsedAlignmentSpecifier::Expr(parser.parse_expr_min()?)
+                    ParsedAlignmentSpec::Expr(parser.parse_expr_min()?)
                 };
                 parser.expect(TokenKind::RightParen)?;
-                specifiers.push(ParsedDeclSpecifier::AlignmentSpecifier(alignment));
+                specifiers.push(ParsedDeclSpec::AlignmentSpec(alignment));
             }
 
             _ => break,
@@ -239,7 +237,7 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<ParsedDesignator>, Parse
 
 /// Parse GCC __attribute__ syntax: __attribute__ (( attribute-list ))
 /// For now, we parse and skip the attribute construct, extracting `noreturn`.
-pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<ParsedDeclSpecifier>, ParseError> {
+pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<ParsedDeclSpec>, ParseError> {
     parser.expect(TokenKind::Attribute)?;
     parser.expect(TokenKind::LeftParen)?;
     parser.expect(TokenKind::LeftParen)?;
@@ -260,9 +258,7 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<ParsedDeclSpeci
                 let name_noret1 = crate::ast::NameId::new("noreturn");
                 let name_noret2 = crate::ast::NameId::new("__noreturn__");
                 if name == name_noret1 || name == name_noret2 {
-                    specs.push(ParsedDeclSpecifier::FunctionSpecifier(
-                        crate::ast::FunctionSpecifier::Noreturn,
-                    ));
+                    specs.push(ParsedDeclSpec::FunctionSpec(crate::ast::FunctionSpec::Noreturn));
                 }
             }
             _ => {}

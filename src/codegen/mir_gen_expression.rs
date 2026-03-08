@@ -114,9 +114,7 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(need_value, expr_ref),
             NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, need_value, expr_ref),
-            NodeKind::GnuStatementExpression(stmt, result_expr) => {
-                self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value)
-            }
+            NodeKind::GnuStatementExpr(stmt, result_expr) => self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value),
             NodeKind::Cast(_ty, operand_ref) => self.visit_cast(*operand_ref, mir_ty),
             NodeKind::CompoundLiteral(ty, init_ref) => self.visit_compound_literal(*ty, *init_ref),
             NodeKind::BuiltinVaArg(ty, expr) => self.visit_builtin_va_arg(*ty, *expr),
@@ -193,7 +191,7 @@ impl<'a> MirGen<'a> {
 
     fn visit_gnu_stmt_expr(&mut self, stmt: NodeRef, result_expr: NodeRef, need_value: bool) -> Operand {
         let stmt_kind = self.ast.get_kind(stmt);
-        if let NodeKind::CompoundStatement(cs) = stmt_kind {
+        if let NodeKind::CompoundStmt(cs) = stmt_kind {
             let old_scope = self.current_scope_id;
             self.current_scope_id = cs.scope_id;
 
@@ -331,7 +329,7 @@ impl<'a> MirGen<'a> {
 
     fn visit_generic_selection(
         &mut self,
-        _gs: &ast::nodes::GenericSelectionData,
+        _gs: &ast::nodes::GenericSelection,
         need_value: bool,
         node_ref: NodeRef,
     ) -> Operand {

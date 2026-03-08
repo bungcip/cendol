@@ -94,7 +94,7 @@ impl Ast {
             NodeKind::TranslationUnit(data) => data.scope_id,
             NodeKind::Function(data) => data.scope_id,
             NodeKind::FunctionDecl(data) => data.scope_id,
-            NodeKind::CompoundStatement(data) => data.scope_id,
+            NodeKind::CompoundStmt(data) => data.scope_id,
             NodeKind::For(data) => data.scope_id,
             _ => unreachable!("ICE: Node {:?} does not have a scope", self.get_kind(node_ref)),
         }

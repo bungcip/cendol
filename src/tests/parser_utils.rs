@@ -1,7 +1,5 @@
 use crate::ast::literal::Literal;
-use crate::ast::parsed::{
-    ParsedAst, ParsedDeclSpecifier, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpecifier,
-};
+use crate::ast::parsed::{ParsedAst, ParsedDeclSpec, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec};
 use crate::ast::{BinaryOp, UnaryOp};
 use crate::diagnostic::ParseError;
 use crate::driver::artifact::CompilePhase;
@@ -92,24 +90,24 @@ pub(crate) struct ResolvedInitDeclarator {
     initializer: Option<ResolvedNodeKind>,
 }
 
-fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpecifier]) -> Vec<String> {
+fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpec]) -> Vec<String> {
     specifiers
         .iter()
         .map(|s| match s {
-            ParsedDeclSpecifier::TypeSpecifier(ts) => match ts {
-                ParsedTypeSpecifier::Void => "void".to_string(),
-                ParsedTypeSpecifier::Bool => "_Bool".to_string(),
-                ParsedTypeSpecifier::Char => "char".to_string(),
-                ParsedTypeSpecifier::Short => "short".to_string(),
-                ParsedTypeSpecifier::Int => "int".to_string(),
-                ParsedTypeSpecifier::Long => "long".to_string(),
-                ParsedTypeSpecifier::Float => "float".to_string(),
-                ParsedTypeSpecifier::Double => "double".to_string(),
-                ParsedTypeSpecifier::Signed => "signed".to_string(),
-                ParsedTypeSpecifier::Unsigned => "unsigned".to_string(),
-                ParsedTypeSpecifier::Complex => "_Complex".to_string(),
-                ParsedTypeSpecifier::TypedefName(name) => format!("TypedefName({:?})", name.to_string()),
-                ParsedTypeSpecifier::Enum(tag, enumerators) => {
+            ParsedDeclSpec::TypeSpec(ts) => match ts {
+                ParsedTypeSpec::Void => "void".to_string(),
+                ParsedTypeSpec::Bool => "_Bool".to_string(),
+                ParsedTypeSpec::Char => "char".to_string(),
+                ParsedTypeSpec::Short => "short".to_string(),
+                ParsedTypeSpec::Int => "int".to_string(),
+                ParsedTypeSpec::Long => "long".to_string(),
+                ParsedTypeSpec::Float => "float".to_string(),
+                ParsedTypeSpec::Double => "double".to_string(),
+                ParsedTypeSpec::Signed => "signed".to_string(),
+                ParsedTypeSpec::Unsigned => "unsigned".to_string(),
+                ParsedTypeSpec::Complex => "_Complex".to_string(),
+                ParsedTypeSpec::TypedefName(name) => format!("TypedefName({:?})", name.to_string()),
+                ParsedTypeSpec::Enum(tag, enumerators) => {
                     let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
                     if let Some(enums) = enumerators {
                         let enum_parts: Vec<String> = enums
@@ -131,7 +129,7 @@ fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpecifier]) -> Ve
                         format!("enum {}", tag_str)
                     }
                 }
-                ParsedTypeSpecifier::Record(is_union, tag, def) => {
+                ParsedTypeSpec::Record(is_union, tag, def) => {
                     let record_kind = if *is_union { "union" } else { "struct" };
                     let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
                     let has_body = def.as_ref().is_some_and(|d| d.members.is_some());
@@ -148,11 +146,11 @@ fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpecifier]) -> Ve
                 }
                 _ => format!("{:?}", ts),
             },
-            ParsedDeclSpecifier::StorageClass(sc) => format!("{:?}", sc),
-            ParsedDeclSpecifier::TypeQualifier(tq) => format!("TypeQualifier({:?})", tq),
-            ParsedDeclSpecifier::FunctionSpecifier(fs) => format!("{:?}", fs),
-            ParsedDeclSpecifier::AlignmentSpecifier(aspec) => format!("{:?}", aspec),
-            ParsedDeclSpecifier::Attribute => "__attribute__".to_string(),
+            ParsedDeclSpec::StorageClass(sc) => format!("{:?}", sc),
+            ParsedDeclSpec::TypeQualifier(tq) => format!("TypeQualifier({:?})", tq),
+            ParsedDeclSpec::FunctionSpec(fs) => format!("{:?}", fs),
+            ParsedDeclSpec::AlignmentSpec(aspec) => format!("{:?}", aspec),
+            ParsedDeclSpec::Attribute => "__attribute__".to_string(),
         })
         .collect()
 }
@@ -395,17 +393,17 @@ fn extract_declarator_kind(declarator: &ParsedDeclarator) -> String {
                         // Extract parameter type from specifiers
                         let mut type_parts = Vec::new();
                         for spec in &param.specifiers {
-                            if let ParsedDeclSpecifier::TypeSpecifier(ts) = spec {
+                            if let ParsedDeclSpec::TypeSpec(ts) = spec {
                                 match ts {
-                                    ParsedTypeSpecifier::Void => type_parts.push("void"),
-                                    ParsedTypeSpecifier::Char => type_parts.push("char"),
-                                    ParsedTypeSpecifier::Short => type_parts.push("short"),
-                                    ParsedTypeSpecifier::Int => type_parts.push("int"),
-                                    ParsedTypeSpecifier::Long => type_parts.push("long"),
-                                    ParsedTypeSpecifier::Float => type_parts.push("float"),
-                                    ParsedTypeSpecifier::Double => type_parts.push("double"),
-                                    ParsedTypeSpecifier::Signed => type_parts.push("signed"),
-                                    ParsedTypeSpecifier::Unsigned => type_parts.push("unsigned"),
+                                    ParsedTypeSpec::Void => type_parts.push("void"),
+                                    ParsedTypeSpec::Char => type_parts.push("char"),
+                                    ParsedTypeSpec::Short => type_parts.push("short"),
+                                    ParsedTypeSpec::Int => type_parts.push("int"),
+                                    ParsedTypeSpec::Long => type_parts.push("long"),
+                                    ParsedTypeSpec::Float => type_parts.push("float"),
+                                    ParsedTypeSpec::Double => type_parts.push("double"),
+                                    ParsedTypeSpec::Signed => type_parts.push("signed"),
+                                    ParsedTypeSpec::Unsigned => type_parts.push("unsigned"),
                                     _ => type_parts.push("..."),
                                 }
                             }

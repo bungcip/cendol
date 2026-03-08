@@ -27,7 +27,7 @@ pub enum NodeKind {
     UnaryOp(UnaryOp, NodeRef),
     BinaryOp(BinaryOp, NodeRef, NodeRef),
     TernaryOp(NodeRef, NodeRef, NodeRef),
-    GnuStatementExpression(
+    GnuStatementExpr(
         NodeRef, /* compound statement */
         NodeRef, /* result expression */
     ),
@@ -65,15 +65,15 @@ pub enum NodeKind {
     AlignOf(QualType), // C11 _Alignof
 
     CompoundLiteral(QualType, NodeRef),
-    GenericSelection(GenericSelectionData),
-    GenericAssociation(GenericAssociationData),
+    GenericSelection(GenericSelection),
+    GenericAssociation(GenericAssociation),
     BuiltinChooseExpr(NodeRef, NodeRef, NodeRef),
     BuiltinConstantP(NodeRef),
     BuiltinUnreachable,
     BuiltinTrap,
 
     // --- Statements (Complex statements are separate structs) ---
-    CompoundStatement(CompoundStmtData),
+    CompoundStmt(CompoundStmt),
     If(IfStmt),
     While(WhileStmt),
     DoWhile(NodeRef /* body */, NodeRef /* condition */),
@@ -104,21 +104,21 @@ pub enum NodeKind {
 
     // --- Semantic Nodes (Type-Resolved) ---
     // declarations of VarDecl/FunctionDecl/TypedefDecl/RecordDecl
-    VarDecl(VarDeclData),
-    FunctionDecl(FunctionDeclData),
-    TypedefDecl(TypedefDeclData),
-    RecordDecl(RecordDeclData),
-    FieldDecl(FieldDeclData),
-    EnumDecl(EnumDeclData),
-    EnumMember(EnumMemberData),
-    Function(FunctionData),
-    Param(ParamData),
+    VarDecl(VarDecl),
+    FunctionDecl(FunctionDecl),
+    TypedefDecl(TypedefDecl),
+    RecordDecl(RecordDecl),
+    FieldDecl(FieldDecl),
+    EnumDecl(EnumDecl),
+    EnumMember(EnumMember),
+    Function(Function),
+    Param(Param),
 
     // --- Top Level ---
-    TranslationUnit(TranslationUnitData),
+    TranslationUnit(TranslationUnit),
 
     // --- InitializerList ---
-    InitializerList(InitializerListData),
+    InitializerList(InitializerList),
     InitializerItem(DesignatedInitializer),
     Designator(Designator),
 
@@ -170,7 +170,7 @@ impl NodeKind {
             | NodeKind::BuiltinVaCopy(lhs, rhs)
             | NodeKind::BuiltinExpect(lhs, rhs)
             | NodeKind::BinaryOp(_, lhs, rhs)
-            | NodeKind::GnuStatementExpression(lhs, rhs)
+            | NodeKind::GnuStatementExpr(lhs, rhs)
             | NodeKind::Assignment(_, lhs, rhs)
             | NodeKind::IndexAccess(lhs, rhs)
             | NodeKind::DoWhile(lhs, rhs)
@@ -216,7 +216,7 @@ impl NodeKind {
                 f(ga.result_expr);
             }
 
-            NodeKind::CompoundStatement(cs) => {
+            NodeKind::CompoundStmt(cs) => {
                 for child in cs.stmt_start.range(cs.stmt_len) {
                     f(child);
                 }
@@ -340,27 +340,27 @@ pub struct ForStmt {
 
 // Semantic node data structures (type-resolved)
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct CompoundStmtData {
+pub struct CompoundStmt {
     pub stmt_start: NodeRef,
     pub stmt_len: u16,
     pub scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct TranslationUnitData {
+pub struct TranslationUnit {
     pub decl_start: NodeRef,
     pub decl_len: u16,
     pub scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct InitializerListData {
+pub struct InitializerList {
     pub init_start: NodeRef,
     pub init_len: u16,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct FunctionData {
+pub struct Function {
     pub symbol: SymbolRef,
     pub ty: TypeRef, // function type, not the return type
     pub is_noreturn: bool,
@@ -371,14 +371,14 @@ pub struct FunctionData {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct ParamData {
+pub struct Param {
     pub symbol: SymbolRef,
     pub ty: QualType,
 }
 
 // Semantic node data structures (type-resolved)
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct VarDeclData {
+pub struct VarDecl {
     pub name: NameId,
     pub ty: QualType,
     pub storage: Option<StorageClass>,
@@ -387,7 +387,7 @@ pub struct VarDeclData {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct FunctionDeclData {
+pub struct FunctionDecl {
     pub name: NameId,
     pub ty: TypeRef,
     pub storage: Option<StorageClass>,
@@ -395,13 +395,13 @@ pub struct FunctionDeclData {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct TypedefDeclData {
+pub struct TypedefDecl {
     pub name: NameId,
     pub ty: QualType,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct RecordDeclData {
+pub struct RecordDecl {
     pub name: Option<NameId>,
     pub ty: TypeRef,
     pub member_start: NodeRef,
@@ -412,7 +412,7 @@ pub struct RecordDeclData {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct FieldDeclData {
+pub struct FieldDecl {
     pub name: Option<NameId>,
     pub ty: QualType, // object type
     pub alignment: Option<u32>,
@@ -426,7 +426,7 @@ pub struct CallExpr {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct EnumDeclData {
+pub struct EnumDecl {
     pub name: Option<NameId>,
     pub ty: TypeRef,
     pub member_start: NodeRef,
@@ -434,7 +434,7 @@ pub struct EnumDeclData {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct EnumMemberData {
+pub struct EnumMember {
     pub name: NameId,
     pub value: i64,
     pub init_expr: Option<NodeRef>,
@@ -463,7 +463,7 @@ pub enum StorageClass {
 // Function specifiers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(u8)]
-pub enum FunctionSpecifier {
+pub enum FunctionSpec {
     Inline,
     Noreturn, // C11 _Noreturn
 }
@@ -583,14 +583,14 @@ pub enum Designator {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct GenericSelectionData {
+pub struct GenericSelection {
     pub control: NodeRef,
     pub assoc_start: NodeRef,
     pub assoc_len: u16,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct GenericAssociationData {
+pub struct GenericAssociation {
     pub ty: Option<QualType>, // None for 'default:'
     pub result_expr: NodeRef,
 }

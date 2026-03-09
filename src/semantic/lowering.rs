@@ -1268,15 +1268,22 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         });
 
         // Deduced array size from initializer
+        let element_type = if let TypeKind::Array {
+            element_type,
+            size: ArraySizeType::Incomplete,
+        } = &self.registry.get(qt.ty()).kind
+        {
+            Some(*element_type)
+        } else {
+            None
+        };
+
         if let Some(ie) = init_expr
-            && let TypeKind::Array {
-                element_type,
-                size: ArraySizeType::Incomplete,
-            } = &self.registry.get(qt.ty()).kind
-            && let Some(len) = self.deduce_array_size_full(ie, *element_type)
+            && let Some(et) = element_type
+            && let Some(len) = self.deduce_array_size_full(ie, et)
         {
             qt = QualType::new(
-                self.registry.array_of(*element_type, ArraySizeType::Constant(len)),
+                self.registry.array_of(et, ArraySizeType::Constant(len)),
                 qt.qualifiers(),
             );
             if let Ok(sym) = sym_res {
@@ -1914,22 +1921,152 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     /// Try to infer the type of an expression node during lowering.
     /// This is limited because full semantic analysis hasn't run yet.
-    fn try_infer_type(&self, node: NodeRef) -> Option<TypeRef> {
-        match self.ast.get_kind(node) {
+    fn try_infer_type(&mut self, node: NodeRef) -> Option<QualType> {
+        use crate::semantic::conversions::{integer_promotion, usual_arithmetic_conversions};
+
+        let node_kind = *self.ast.get_kind(node);
+        match node_kind {
+            NodeKind::Literal(l) => match l {
+                Literal::Int { .. } => Some(QualType::unqualified(self.registry.type_int)),
+                Literal::Float { suffix, .. } => {
+                    let ty = match suffix {
+                        Some(crate::ast::literal::FloatSuffix::F) => self.registry.type_float,
+                        Some(crate::ast::literal::FloatSuffix::L) => self.registry.type_long_double,
+                        _ => self.registry.type_double,
+                    };
+                    Some(QualType::unqualified(ty))
+                }
+                Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
+                Literal::String(s) => {
+                    let parsed = parse_string_literal(s);
+                    let elem = self.registry.get_builtin_type(parsed.builtin_type);
+                    let array = self.registry.array_of(elem, ArraySizeType::Constant(parsed.size));
+                    Some(QualType::unqualified(array))
+                }
+            },
             NodeKind::Ident(_, symbol) => {
-                let sym = self.symbol_table.get_symbol(*symbol);
+                let sym = self.symbol_table.get_symbol(symbol);
                 match &sym.kind {
-                    crate::semantic::SymbolKind::Variable { .. } => Some(sym.type_info.ty()),
+                    crate::semantic::SymbolKind::Variable { .. } => Some(sym.type_info),
+                    crate::semantic::SymbolKind::Function { .. } => Some(sym.type_info),
+                    crate::semantic::SymbolKind::EnumConstant { .. } => {
+                        Some(QualType::unqualified(self.registry.type_int))
+                    }
                     _ => None,
                 }
             }
-            NodeKind::Cast(qt, _) => Some(qt.ty()),
-            NodeKind::CompoundLiteral(qt, _) => Some(qt.ty()),
+            NodeKind::Cast(qt, _) => Some(qt),
+            NodeKind::CompoundLiteral(qt, _) => Some(qt),
+            NodeKind::MemberAccess(obj, name, is_arrow) => {
+                let obj_ty = self.try_infer_type(obj)?;
+                let mut ty = obj_ty.ty();
+                if is_arrow {
+                    ty = self.registry.get_pointee(ty)?.ty();
+                }
+                let type_info = self.registry.get(ty).into_owned();
+                let member = type_info.find_member(self.registry, name)?;
+                Some(member.member_type)
+            }
+            NodeKind::IndexAccess(base, _) => {
+                let base_ty = self.try_infer_type(base)?;
+                let elem = self.registry.get_array_element(base_ty.ty())?;
+                Some(QualType::unqualified(elem))
+            }
+            NodeKind::UnaryOp(op, expr) => match op {
+                UnaryOp::Deref => {
+                    let qt = self.try_infer_type(expr)?;
+                    self.registry.get_pointee(qt.ty())
+                }
+                UnaryOp::AddrOf => {
+                    let qt = self.try_infer_type(expr)?;
+                    let ptr = self.registry.pointer_to(qt);
+                    Some(QualType::unqualified(ptr))
+                }
+                UnaryOp::Plus | UnaryOp::Minus | UnaryOp::BitNot => {
+                    let qt = self.try_infer_type(expr)?;
+                    if qt.is_integer() {
+                        Some(integer_promotion(self.registry, qt, None))
+                    } else {
+                        Some(qt)
+                    }
+                }
+                UnaryOp::LogicNot => Some(QualType::unqualified(self.registry.type_int)),
+                _ => None,
+            },
+            NodeKind::FunctionCall(call) => {
+                let func_qt = self.try_infer_type(call.callee)?;
+                let mut func_ty = func_qt.ty();
+                if func_ty.is_pointer() {
+                    func_ty = self.registry.get_pointee(func_ty)?.ty();
+                }
+                let kind = self.registry.get(func_ty).kind.clone();
+                if let TypeKind::Function { return_type, .. } = kind {
+                    Some(QualType::unqualified(return_type))
+                } else {
+                    None
+                }
+            }
+            NodeKind::BinaryOp(op, l, r) => match op {
+                BinaryOp::Comma => self.try_infer_type(r),
+                BinaryOp::Equal
+                | BinaryOp::NotEqual
+                | BinaryOp::Less
+                | BinaryOp::LessEqual
+                | BinaryOp::Greater
+                | BinaryOp::GreaterEqual
+                | BinaryOp::LogicAnd
+                | BinaryOp::LogicOr => Some(QualType::unqualified(self.registry.type_int)),
+                BinaryOp::Add
+                | BinaryOp::Sub
+                | BinaryOp::Mul
+                | BinaryOp::Div
+                | BinaryOp::Mod
+                | BinaryOp::BitAnd
+                | BinaryOp::BitOr
+                | BinaryOp::BitXor
+                | BinaryOp::LShift
+                | BinaryOp::RShift => {
+                    let lt = self.try_infer_type(l)?;
+                    let rt = self.try_infer_type(r)?;
+
+                    if op == BinaryOp::Add || op == BinaryOp::Sub {
+                        if lt.is_pointer() {
+                            return Some(lt);
+                        }
+                        if rt.is_pointer() && op == BinaryOp::Add {
+                            return Some(rt);
+                        }
+                    }
+
+                    if lt.is_arithmetic() && rt.is_arithmetic() {
+                        usual_arithmetic_conversions(self.registry, lt, rt)
+                    } else {
+                        Some(lt)
+                    }
+                }
+                _ => None,
+            },
+            NodeKind::Assignment(_, l, _) => self.try_infer_type(l),
+            NodeKind::TernaryOp(_, t, e) => {
+                let tt = self.try_infer_type(t)?;
+                let et = self.try_infer_type(e)?;
+                if tt.ty() == et.ty() {
+                    Some(tt)
+                } else {
+                    usual_arithmetic_conversions(self.registry, tt, et)
+                }
+            }
+            NodeKind::SizeOfExpr(_)
+            | NodeKind::SizeOfType(_)
+            | NodeKind::AlignOf(_)
+            | NodeKind::BuiltinOffsetof(..)
+            | NodeKind::BuiltinTypesCompatibleP(..)
+            | NodeKind::BuiltinConstantP(..) => Some(QualType::unqualified(self.registry.type_long_unsigned)),
             _ => None,
         }
     }
 
-    fn try_deduce_string_initializer_size(&self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
+    fn try_deduce_string_initializer_size(&mut self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
         match self.ast.get_kind(init_node) {
             NodeKind::Literal(Literal::String(s)) => {
                 let parsed = parse_string_literal(*s);
@@ -1957,32 +2094,35 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn deduce_array_size_full(&self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
+    fn deduce_array_size_full(&mut self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
         if let Some(size) = self.try_deduce_string_initializer_size(init_node, element_type) {
             return Some(size);
         }
 
-        match self.ast.get_kind(init_node) {
+        let kind = *self.ast.get_kind(init_node);
+        match kind {
             NodeKind::InitializerList(list) => {
                 let mut max_index: i64 = -1;
                 let mut current_index: i64 = 0;
-                let eval = |e| const_eval::eval_const_expr(&self.const_ctx(), e);
 
                 let mut iter = list.init_start.range(list.init_len).peekable();
 
                 while let Some(item) = iter.peek().copied() {
-                    let NodeKind::InitializerItem(init) = self.ast.get_kind(item) else {
+                    let item_kind = *self.ast.get_kind(item);
+                    let NodeKind::InitializerItem(init) = item_kind else {
                         iter.next();
                         continue;
                     };
 
                     if init.designator_len > 0 {
-                        match self.ast.get_kind(init.designator_start) {
+                        let designator_kind = *self.ast.get_kind(init.designator_start);
+                        match designator_kind {
                             NodeKind::Designator(Designator::ArrayIndex(idx)) => {
-                                current_index = eval(*idx)?;
+                                current_index = const_eval::eval_const_expr(&self.const_ctx(), idx)?;
                             }
                             NodeKind::Designator(Designator::GnuArrayRange(start, end)) => {
-                                let (s_v, e_v) = (eval(*start)?, eval(*end)?);
+                                let s_v = const_eval::eval_const_expr(&self.const_ctx(), start)?;
+                                let e_v = const_eval::eval_const_expr(&self.const_ctx(), end)?;
                                 if s_v > e_v {
                                     return None;
                                 }
@@ -2013,7 +2153,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn consume_initializers<I>(
-        &self,
+        &mut self,
         element_type: TypeRef,
         iter: &mut std::iter::Peekable<I>,
         allow_array_designator: bool,
@@ -2025,7 +2165,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return;
         };
 
-        let NodeKind::InitializerItem(init) = self.ast.get_kind(item) else {
+        let item_kind = *self.ast.get_kind(item);
+        let NodeKind::InitializerItem(init) = item_kind else {
             // Should not happen in valid AST
             return;
         };
@@ -2036,7 +2177,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 && let Some(et) = self.registry.get_array_element(element_type)
                 && (et.is_char() || et.is_wchar_t())
             {
-                let kind = self.ast.get_kind(init.initializer);
+                let kind = *self.ast.get_kind(init.initializer);
                 if matches!(kind, NodeKind::Literal(Literal::String(_))) {
                     iter.next();
                     return;
@@ -2046,7 +2187,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if init.designator_len > 0 {
             // Check for array designators
-            match self.ast.get_kind(init.designator_start) {
+            match *self.ast.get_kind(init.designator_start) {
                 NodeKind::Designator(Designator::ArrayIndex(_))
                 | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
                     if !allow_array_designator {
@@ -2066,9 +2207,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         } else if element_type.is_record() {
             // Check for struct-to-struct initialization
             if let Some(ty) = self.try_infer_type(init.initializer)
-                && self
-                    .registry
-                    .is_compatible(QualType::unqualified(element_type), QualType::unqualified(ty))
+                && self.registry.is_compatible(QualType::unqualified(element_type), ty)
             {
                 iter.next();
                 return;
@@ -2076,13 +2215,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         // Check braced initializer
-        if let NodeKind::InitializerList(_) = self.ast.get_kind(init.initializer) {
+        if let NodeKind::InitializerList(_) = *self.ast.get_kind(init.initializer) {
             iter.next();
             return;
         }
 
         // Brace elision logic
-        let type_kind = &self.registry.get(element_type).kind;
+        let type_kind = self.registry.get(element_type).kind.clone();
         match type_kind {
             TypeKind::Record { members, .. } => {
                 let mut is_first_member = true;
@@ -2097,10 +2236,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
                     // Check if next item is an array designator (stopper)
                     if let Some(next) = iter.peek()
-                        && let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next)
+                        && let item_kind = *self.ast.get_kind(*next)
+                        && let NodeKind::InitializerItem(next_init) = item_kind
                         && next_init.designator_len > 0
                     {
-                        match self.ast.get_kind(next_init.designator_start) {
+                        match *self.ast.get_kind(next_init.designator_start) {
                             NodeKind::Designator(Designator::ArrayIndex(_))
                             | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
                                 return;
@@ -2113,9 +2253,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             TypeKind::Array { element_type, size } => {
                 if let ArraySizeType::Constant(len) = size {
                     let mut is_first = true;
-                    for _ in 0..*len {
+                    for _ in 0..len {
                         let allow = allow_array_designator && is_first;
-                        self.consume_initializers(*element_type, iter, allow);
+                        self.consume_initializers(element_type, iter, allow);
                         is_first = false;
 
                         if iter.peek().is_none() {
@@ -2123,10 +2263,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         }
                         // Check stopper
                         if let Some(next) = iter.peek()
-                            && let NodeKind::InitializerItem(next_init) = self.ast.get_kind(*next)
+                            && let item_kind = *self.ast.get_kind(*next)
+                            && let NodeKind::InitializerItem(next_init) = item_kind
                             && next_init.designator_len > 0
                         {
-                            match self.ast.get_kind(next_init.designator_start) {
+                            match *self.ast.get_kind(next_init.designator_start) {
                                 NodeKind::Designator(Designator::ArrayIndex(_))
                                 | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
                                     return;
@@ -2420,8 +2561,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedTypeSpec::Typeof(ty) => self.lower_type(*ty, span, false),
             ParsedTypeSpec::TypeofExpr(expr) => {
                 let expr_node = self.visit_expression(*expr);
-                let tr = self.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)));
-                Ok(QualType::unqualified(tr))
+                if let Some(qt) = self.try_infer_type(expr_node) {
+                    Ok(qt)
+                } else {
+                    let tr = self.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)));
+                    Ok(QualType::unqualified(tr))
+                }
             }
         }
     }
@@ -2604,7 +2749,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .map(|param| {
                 let span = param.span;
                 let decayed_ty = self
-                    .lower_type(param.ty.clone(), span, true)
+                    .lower_type(param.ty, span, true)
                     .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error));
 
                 let pname = param.name;
@@ -2826,8 +2971,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedBaseTypeNode::Typeof(ty) => self.lower_type(*ty, span, false),
             ParsedBaseTypeNode::TypeofExpr(expr) => {
                 let expr_node = self.visit_expression(*expr);
-                let tr = self.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)));
-                Ok(QualType::unqualified(tr))
+                if let Some(qt) = self.try_infer_type(expr_node) {
+                    Ok(qt)
+                } else {
+                    let tr = self.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)));
+                    Ok(QualType::unqualified(tr))
+                }
             }
         }
     }

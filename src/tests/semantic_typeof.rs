@@ -15,6 +15,38 @@ fn test_typeof_comma_expr_compile() {
 }
 
 #[test]
+fn test_typeof_in_struct_member() {
+    run_pass(
+        "
+        int x;
+        struct S {
+            typeof(x) y;
+        };
+        int main() {
+            struct S s;
+            s.y = 1;
+            return 0;
+        }
+        ",
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_typeof_sizeof_constant() {
+    run_pass(
+        "
+        int x;
+        int main() {
+            int a[sizeof(typeof(x)) == 4 ? 1 : -1];
+            return 0;
+        }
+        ",
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
 fn test_typeof_type_compile() {
     run_pass(
         "

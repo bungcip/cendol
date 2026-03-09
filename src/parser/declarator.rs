@@ -325,9 +325,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, b
             .unwrap_or_default()
             .merge(parser.last_token_span().unwrap_or_default());
 
-        let name = declarator
-            .map(|d| get_declarator_name(&parser.ast.parsed_types, d))
-            .flatten();
+        let name = declarator.and_then(|d| get_declarator_name(&parser.ast.parsed_types, d));
         let param_parsed_type =
             super::parsed_type_builder::build_parsed_type_from_specifiers(parser, &specifiers, declarator)?;
 

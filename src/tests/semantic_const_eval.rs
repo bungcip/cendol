@@ -230,6 +230,17 @@ fn test_enum_constants() {
 }
 
 #[test]
+fn test_offsetof() {
+    let source = "struct S { int a; int b[10]; struct { int c; int d[5]; } e; }; long long test_var = __builtin_offsetof(struct S, b[5]) + __builtin_offsetof(struct S, e.d[2]);";
+    let val_str = evaluate_program(source);
+
+    insta::assert_snapshot!(format!("Source: {}\nResult: {}", source, val_str), @"
+    Source: struct S { int a; int b[10]; struct { int c; int d[5]; } e; }; long long test_var = __builtin_offsetof(struct S, b[5]) + __builtin_offsetof(struct S, e.d[2]);
+    Result: 80
+    ");
+}
+
+#[test]
 fn test_alignof() {
     let output = format_const_eval_batch(&["_Alignof(int)"]);
     insta::assert_snapshot!(output, @r"

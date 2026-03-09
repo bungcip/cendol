@@ -119,3 +119,8 @@ Action: Always verify that operators which suppress standard conversions (like `
 
 Learning: C11 6.5.2.5p1 imposes strict constraints on compound literals: they must specify a complete object type or an array of unknown size (which is then completed), and they specifically prohibit variably modified types (VLAs) and function types. Enforcing these early in semantic analysis prevents layout computation failures and backend miscompilations for types that lack a fixed static size or represent non-object entities.
 Action: Centralize compound literal type validation in the semantic analyzer, ensuring that the exception for incomplete arrays is strictly limited to those that can be completed by the following initializer.
+
+2025-06-07 - [Generic Selection LValue Property Propagation]
+
+Learning: C11 6.5.1.1p5 requires the result of a `_Generic` selection to have the type and value category of its selected association. Crucially, if the selected expression is a bit-field or has the `register` storage class, these properties must be propagated to the `_Generic` expression itself so that operators like `&` and `sizeof` can correctly enforce their respective constraints (e.g., 6.5.3.2p1 prohibiting `&` on bit-fields and register variables).
+Action: Ensure that semantic property queries (like `is_lvalue`, `get_bitfield_width`, and `is_register_variable`) recursively inspect the selected association of `_Generic` nodes to maintain semantic correctness across expression boundaries.

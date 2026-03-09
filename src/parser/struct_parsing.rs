@@ -14,10 +14,7 @@ use crate::parser::declaration_core::parse_declaration_specifiers;
 use super::Parser;
 
 /// Parse struct or union specifier with context
-pub(super) fn parse_record_specifier_with_context(
-    parser: &mut Parser,
-    is_union: bool,
-) -> Result<ParsedTypeSpec, ParseError> {
+pub(super) fn parse_record_specifier(parser: &mut Parser, is_union: bool) -> Result<ParsedTypeSpec, ParseError> {
     // Check for __attribute__ after struct/union keyword (GCC extension)
     if parser.is_token(TokenKind::Attribute)
         && let Err(_e) = super::declaration_core::parse_attribute(parser)

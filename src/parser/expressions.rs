@@ -6,7 +6,7 @@
 use crate::ast::literal::Literal;
 use crate::ast::{parsed::*, *};
 use crate::diagnostic::{ParseError, ParseErrorKind};
-use crate::parser::parsed_type_builder::parse_parsed_type_name;
+use crate::parser::type_builder::parse_type_name;
 use crate::parser::utils::expr_patterns::parse_expr_list;
 use crate::parser::{Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
@@ -195,7 +195,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::LeftParen => {
             parser.advance();
             if parser.is_cast_expression_start() {
-                let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+                let parsed_type = parse_type_name(parser)?;
                 parser.expect(TokenKind::RightParen)?;
 
                 if parser.is_token(TokenKind::LeftBrace) {
@@ -450,7 +450,7 @@ fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseEr
         let type_name = if parser.accept(TokenKind::Default).is_some() {
             None
         } else {
-            Some(super::parsed_type_builder::parse_parsed_type_name(parser)?)
+            Some(parse_type_name(parser)?)
         };
 
         parser.expect(TokenKind::Colon)?;
@@ -491,7 +491,7 @@ fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         && parser.peek_token(0).is_some_and(|t| parser.is_type_name_start_token(t))
     {
         parser.expect(TokenKind::LeftParen)?;
-        let ty = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+        let ty = parse_type_name(parser)?;
         let right_paren_end = parser.expect(TokenKind::RightParen)?.span.end();
 
         if parser.is_token(TokenKind::LeftBrace) {
@@ -553,7 +553,7 @@ fn parse_postfix_tail(parser: &mut Parser, mut left: ParsedNodeRef) -> Result<Pa
 fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let start = parser.expect(TokenKind::Alignof)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
-    let ty = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+    let ty = parse_type_name(parser)?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(ParsedNodeKind::AlignOf(ty), SourceSpan::new(start, end)))
 }
@@ -577,7 +577,7 @@ fn parse_builtin_va_arg(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError
     parser.expect(TokenKind::LeftParen)?;
     let expr = parser.parse_expr_assignment()?;
     parser.expect(TokenKind::Comma)?;
-    let ty = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+    let ty = parse_type_name(parser)?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(ParsedNodeKind::BuiltinVaArg(ty, expr), SourceSpan::new(start, end)))
 }
@@ -648,7 +648,7 @@ fn parse_builtin_expect(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError
 fn parse_builtin_offsetof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let start = parser.expect(TokenKind::BuiltinOffsetof)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
-    let ty = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+    let ty = parse_type_name(parser)?;
     parser.expect(TokenKind::Comma)?;
 
     let mut node = parser.push_node(ParsedNodeKind::Dummy, parser.previous_token_span());
@@ -716,9 +716,9 @@ fn parse_builtin_trap(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> 
 fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let start = parser.expect(TokenKind::BuiltinTypesCompatibleP)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
-    let ty1 = parse_parsed_type_name(parser)?;
+    let ty1 = parse_type_name(parser)?;
     parser.expect(TokenKind::Comma)?;
-    let ty2 = parse_parsed_type_name(parser)?;
+    let ty2 = parse_type_name(parser)?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(
         ParsedNodeKind::BuiltinTypesCompatibleP(ty1, ty2),

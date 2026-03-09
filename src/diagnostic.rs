@@ -46,8 +46,8 @@ pub(crate) enum ParseErrorKind {
     #[error("Declaration not allowed in this context")]
     DeclarationNotAllowed,
 
-    #[error("{message}")]
-    Custom { message: &'static str },
+    #[error("_Atomic(type-name) specifier cannot be used with {0} type ")]
+    InvalidAtomicSpec(&'static str),
 }
 
 /// Diagnostic engine for collecting and reporting semantic errors and warnings

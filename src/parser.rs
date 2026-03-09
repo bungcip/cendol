@@ -14,9 +14,9 @@ pub mod declarator;
 pub mod enum_parsing;
 pub mod expressions;
 pub mod lexer;
-pub mod parsed_type_builder;
 pub mod statements;
 pub mod struct_parsing;
+pub mod type_builder;
 pub mod type_specifiers;
 pub mod utils;
 
@@ -454,15 +454,18 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 /// contain functions related to AST nodes
 impl<'arena, 'src> Parser<'arena, 'src> {
     /// Push a node to the AST and return its reference
+    #[inline]
     pub(crate) fn push_node(&mut self, kind: ParsedNodeKind, span: SourceSpan) -> ParsedNodeRef {
         self.ast.push_node(ParsedNode::new(kind, span))
     }
 
+    #[inline]
     pub(crate) fn push_dummy(&mut self) -> ParsedNodeRef {
         self.push_node(ParsedNodeKind::Dummy, SourceSpan::empty())
     }
 
     /// Push a node to the AST and return its reference
+    #[inline]
     pub(crate) fn replace_node(
         &mut self,
         old_ref: ParsedNodeRef,
@@ -470,5 +473,35 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         span: SourceSpan,
     ) -> ParsedNodeRef {
         self.ast.replace_node(old_ref, ParsedNode::new(kind, span))
+    }
+
+    /// Push Declarator node to AST arena
+    #[inline]
+    pub(crate) fn alloc_decl(&mut self, declarator: ParsedDeclarator) -> DeclaratorRef {
+        self.ast.parsed_types.alloc_decl(declarator)
+    }
+
+    /// Push BaseType node to AST arena
+    #[inline]
+    pub(crate) fn alloc_base_type(&mut self, base_type: ParsedBaseType) -> ParsedBaseTypeRef {
+        self.ast.parsed_types.alloc_base_type(base_type)
+    }
+
+    /// Allocate function parameters and return the range
+    #[inline]
+    pub(crate) fn alloc_params(&mut self, params: Vec<crate::ast::ParsedParam>) -> ParsedParamRange {
+        self.ast.parsed_types.alloc_params(params)
+    }
+
+    /// Allocate struct members and return the range
+    #[inline]
+    pub(crate) fn alloc_struct_members(&mut self, members: Vec<ParsedStructMember>) -> ParsedStructMemberRange {
+        self.ast.parsed_types.alloc_struct_members(members)
+    }
+
+    /// Allocate enum constants and return the range
+    #[inline]
+    pub(crate) fn alloc_enum_constants(&mut self, enumerators: Vec<ParsedEnumConstant>) -> ParsedEnumRange {
+        self.ast.parsed_types.alloc_enum_constants(enumerators)
     }
 }

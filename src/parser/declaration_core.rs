@@ -15,6 +15,8 @@ use crate::ast::parsed::{
 };
 use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::parser::TokenKind;
+use crate::parser::type_builder::parse_type_name;
+use crate::parser::type_specifiers::parse_type_specifier;
 use thin_vec::ThinVec;
 
 use super::Parser;
@@ -54,7 +56,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                         if parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::LeftParen) {
                             parser.advance(); // consume `_Atomic`
                             parser.expect(TokenKind::LeftParen)?;
-                            let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+                            let parsed_type = parse_type_name(parser)?;
                             parser.expect(TokenKind::RightParen)?;
                             specifiers.push(ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Atomic(parsed_type)));
                             has_type_specifier = true;
@@ -99,17 +101,13 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             | TokenKind::Enum
             | TokenKind::BuiltinVaList
             | TokenKind::Typeof => {
-                specifiers.push(ParsedDeclSpec::TypeSpec(super::type_specifiers::parse_type_specifier(
-                    parser,
-                )?));
+                specifiers.push(ParsedDeclSpec::TypeSpec(parse_type_specifier(parser)?));
                 has_type_specifier = true;
             }
 
             TokenKind::Identifier(symbol) => {
                 if !has_type_specifier && parser.is_type_name(symbol) {
-                    specifiers.push(ParsedDeclSpec::TypeSpec(super::type_specifiers::parse_type_specifier(
-                        parser,
-                    )?));
+                    specifiers.push(ParsedDeclSpec::TypeSpec(parse_type_specifier(parser)?));
                     has_type_specifier = true;
                 } else {
                     break;
@@ -128,7 +126,7 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
                 };
 
                 let alignment = if is_type_start {
-                    let parsed_type = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+                    let parsed_type = parse_type_name(parser)?;
                     ParsedAlignmentSpec::Type(parsed_type)
                 } else {
                     ParsedAlignmentSpec::Expr(parser.parse_expr_min()?)

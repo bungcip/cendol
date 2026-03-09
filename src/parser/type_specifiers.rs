@@ -5,7 +5,11 @@
 
 use crate::ast::*;
 use crate::diagnostic::ParseError;
-use crate::parser::TokenKind;
+use crate::parser::enum_parsing::parse_enum_specifier;
+use crate::parser::expressions::parse_expression;
+use crate::parser::struct_parsing::parse_record_specifier;
+use crate::parser::type_builder::parse_type_name;
+use crate::parser::{BindingPower, TokenKind};
 
 use super::Parser;
 
@@ -62,10 +66,10 @@ pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
             parser.expect(TK::LeftParen)?;
             let is_type = parser.is_type_name_start();
             let ts = if is_type {
-                let ty = super::parsed_type_builder::parse_parsed_type_name(parser)?;
+                let ty = parse_type_name(parser)?;
                 PTS::Typeof(ty)
             } else {
-                let expr = super::expressions::parse_expression(parser, super::expressions::BindingPower::MIN)?;
+                let expr = parse_expression(parser, BindingPower::MIN)?;
                 PTS::TypeofExpr(expr)
             };
             parser.expect(TK::RightParen)?;
@@ -74,11 +78,11 @@ pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
         TK::Struct | TK::Union => {
             parser.advance();
             let is_union = token.kind == TK::Union;
-            super::struct_parsing::parse_record_specifier_with_context(parser, is_union)
+            parse_record_specifier(parser, is_union)
         }
         TK::Enum => {
             parser.advance();
-            super::enum_parsing::parse_enum_specifier(parser)
+            parse_enum_specifier(parser)
         }
         TK::Identifier(symbol) => {
             parser.advance();

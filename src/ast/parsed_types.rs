@@ -74,9 +74,9 @@ pub struct FunctionFlags {
     pub is_variadic: bool,
 }
 
-/// Parsed base type node (the fundamental type specifier)
+/// Parsed base type (the fundamental type specifier)
 #[derive(Clone, Debug)]
-pub enum ParsedBaseTypeNode {
+pub enum ParsedBaseType {
     Builtin(ParsedTypeSpec),
 
     Record {
@@ -124,7 +124,7 @@ pub enum ParsedDeclarator {
 /// This provides efficient allocation and referencing for parsed types
 #[derive(Clone, Debug, Default)]
 pub struct ParsedTypeArena {
-    base_types: Vec<ParsedBaseTypeNode>,
+    base_types: Vec<ParsedBaseType>,
     declarators: Vec<ParsedDeclarator>,
     params: Vec<crate::ast::ParsedParam>,
     struct_members: Vec<ParsedStructMember>,
@@ -133,7 +133,7 @@ pub struct ParsedTypeArena {
 
 impl ParsedTypeArena {
     /// Allocate a new base type and return its reference
-    pub(crate) fn alloc_base_type(&mut self, base_type: ParsedBaseTypeNode) -> ParsedBaseTypeRef {
+    pub(crate) fn alloc_base_type(&mut self, base_type: ParsedBaseType) -> ParsedBaseTypeRef {
         let index = self.base_types.len() as u32 + 1; // Start from 1 for NonZeroU32
         self.base_types.push(base_type);
         ParsedBaseTypeRef::new(index).expect("ParsedBaseTypeRef overflow")
@@ -171,7 +171,7 @@ impl ParsedTypeArena {
     }
 
     /// Get a base type by reference
-    pub(crate) fn get_base_type(&self, base_ref: ParsedBaseTypeRef) -> ParsedBaseTypeNode {
+    pub(crate) fn get_base_type(&self, base_ref: ParsedBaseTypeRef) -> ParsedBaseType {
         let index = (base_ref.get() - 1) as usize;
         self.base_types[index].clone()
     }

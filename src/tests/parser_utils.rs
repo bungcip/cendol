@@ -422,7 +422,7 @@ fn extract_declarator_kind(ast: &ParsedAst, declarator_ref: crate::ast::Declarat
 fn extract_base_kind(ast: &ParsedAst, base_ref: crate::ast::ParsedBaseTypeRef) -> String {
     let base = ast.parsed_types.get_base_type(base_ref);
     match base {
-        crate::ast::ParsedBaseTypeNode::Builtin(spec) => {
+        crate::ast::ParsedBaseType::Builtin(spec) => {
             let s = format!("{:?}", spec);
             let mut result = String::new();
             for (i, c) in s.chars().enumerate() {
@@ -433,7 +433,7 @@ fn extract_base_kind(ast: &ParsedAst, base_ref: crate::ast::ParsedBaseTypeRef) -
             }
             result
         }
-        crate::ast::ParsedBaseTypeNode::Record { tag, is_union, .. } => {
+        crate::ast::ParsedBaseType::Record { tag, is_union, .. } => {
             let kind = if is_union { "union" } else { "struct" };
             if let Some(tag) = tag {
                 format!("{} {}", kind, tag)
@@ -441,16 +441,16 @@ fn extract_base_kind(ast: &ParsedAst, base_ref: crate::ast::ParsedBaseTypeRef) -
                 format!("struct {{ ... }}")
             }
         }
-        crate::ast::ParsedBaseTypeNode::Enum { tag, .. } => {
+        crate::ast::ParsedBaseType::Enum { tag, .. } => {
             if let Some(tag) = tag {
                 format!("enum {}", tag)
             } else {
                 "enum { ... }".to_string()
             }
         }
-        crate::ast::ParsedBaseTypeNode::Typedef(name) => name.to_string(),
-        crate::ast::ParsedBaseTypeNode::Typeof(..) => "typeof(...)".to_string(),
-        crate::ast::ParsedBaseTypeNode::TypeofExpr(..) => "typeof(...)".to_string(),
+        crate::ast::ParsedBaseType::Typedef(name) => name.to_string(),
+        crate::ast::ParsedBaseType::Typeof(..) => "typeof(...)".to_string(),
+        crate::ast::ParsedBaseType::TypeofExpr(..) => "typeof(...)".to_string(),
     }
 }
 

@@ -193,7 +193,7 @@ fn parse_base_type_and_qualifiers(
         parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpec::Int))
+            .alloc_base_type(ParsedBaseType::Builtin(ParsedTypeSpec::Int))
     };
 
     Ok((base_type_ref, qualifiers))
@@ -211,7 +211,7 @@ fn parse_type_specifier_to_parsed_base(
         | ComplexFloat | ComplexDouble | ComplexLongDouble | Signed | Unsigned | Bool | Complex | VaList => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Builtin(ts.clone()))),
+            .alloc_base_type(ParsedBaseType::Builtin(ts.clone()))),
         ParsedTypeSpec::Atomic(parsed_type) => {
             // C11 6.7.2.4p3: "The type name in an atomic type specifier shall not designate
             // an array type, a function type, an atomic type, or an incomplete type."
@@ -237,7 +237,7 @@ fn parse_type_specifier_to_parsed_base(
             }
 
             let base = parser.ast.parsed_types.get_base_type(parsed_type.base);
-            if let ParsedBaseTypeNode::Builtin(ParsedTypeSpec::Atomic(_)) = base {
+            if let ParsedBaseType::Builtin(ParsedTypeSpec::Atomic(_)) = base {
                 return Err(ParseError {
                     span: parser.previous_token_span(),
                     kind: ParseErrorKind::Custom {
@@ -249,7 +249,7 @@ fn parse_type_specifier_to_parsed_base(
             Ok(parser
                 .ast
                 .parsed_types
-                .alloc_base_type(ParsedBaseTypeNode::Builtin(ParsedTypeSpec::Atomic(*parsed_type))))
+                .alloc_base_type(ParsedBaseType::Builtin(ParsedTypeSpec::Atomic(*parsed_type))))
         }
         ParsedTypeSpec::Record(is_union, tag, definition) => {
             let members = if let Some(def_data) = definition {
@@ -308,7 +308,7 @@ fn parse_type_specifier_to_parsed_base(
                 None
             };
 
-            Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Record {
+            Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseType::Record {
                 tag: *tag,
                 members,
                 is_union: *is_union,
@@ -341,20 +341,17 @@ fn parse_type_specifier_to_parsed_base(
                 None
             };
 
-            Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Enum {
+            Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseType::Enum {
                 tag: *tag,
                 enumerators: parsed_enumerators,
             }))
         }
-        TypedefName(name) => Ok(parser
-            .ast
-            .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::Typedef(*name))),
-        ParsedTypeSpec::Typeof(ty) => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseTypeNode::Typeof(*ty))),
+        TypedefName(name) => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseType::Typedef(*name))),
+        ParsedTypeSpec::Typeof(ty) => Ok(parser.ast.parsed_types.alloc_base_type(ParsedBaseType::Typeof(*ty))),
         ParsedTypeSpec::TypeofExpr(expr) => Ok(parser
             .ast
             .parsed_types
-            .alloc_base_type(ParsedBaseTypeNode::TypeofExpr(*expr))),
+            .alloc_base_type(ParsedBaseType::TypeofExpr(*expr))),
     }
 }
 

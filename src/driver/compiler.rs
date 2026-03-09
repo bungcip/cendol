@@ -464,7 +464,7 @@ impl CompilerDriver {
                             }
                         }
                     } else if let Some(ast) = artifact.ast {
-                        print!("{}", AstDumper::dump_parser(&ast, artifact.symbol_table.as_ref()));
+                        print!("{}", AstDumper::dump_ast(&ast, artifact.symbol_table.as_ref()));
                         if let Some(registry) = artifact.type_registry {
                             print!("{}", AstDumper::dump_type_registry(&ast, &registry));
                         }

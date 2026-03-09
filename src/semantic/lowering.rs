@@ -2889,12 +2889,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     /// Convert a ParsedBaseTypeNode to a QualType
     fn convert_parsed_base_type_to_qual_type(
         &mut self,
-        parsed_base: &ParsedBaseTypeNode,
+        parsed_base: &ParsedBaseType,
         span: SourceSpan,
     ) -> Result<QualType, SemanticError> {
         match parsed_base {
-            ParsedBaseTypeNode::Builtin(ts) => self.resolve_type_specifier(ts, span),
-            ParsedBaseTypeNode::Record { tag, members, is_union } => {
+            ParsedBaseType::Builtin(ts) => self.resolve_type_specifier(ts, span),
+            ParsedBaseType::Record { tag, members, is_union } => {
                 let is_definition = members.is_some();
                 let ty = self.resolve_record_tag(*tag, *is_union, is_definition, span)?;
 
@@ -2917,7 +2917,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 Ok(QualType::unqualified(ty))
             }
-            ParsedBaseTypeNode::Enum { tag, enumerators } => {
+            ParsedBaseType::Enum { tag, enumerators } => {
                 let is_definition = enumerators.is_some();
                 let ty = self.resolve_enum_tag(*tag, is_definition, span)?;
 
@@ -2949,7 +2949,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 Ok(QualType::unqualified(ty))
             }
-            ParsedBaseTypeNode::Typedef(name) => {
+            ParsedBaseType::Typedef(name) => {
                 match self
                     .symbol_table
                     .lookup_symbol(*name)
@@ -2968,8 +2968,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     None => Ok(QualType::unqualified(self.registry.declare_record(Some(*name), false))),
                 }
             }
-            ParsedBaseTypeNode::Typeof(ty) => self.lower_type(*ty, span, false),
-            ParsedBaseTypeNode::TypeofExpr(expr) => {
+            ParsedBaseType::Typeof(ty) => self.lower_type(*ty, span, false),
+            ParsedBaseType::TypeofExpr(expr) => {
                 let expr_node = self.visit_expression(*expr);
                 if let Some(qt) = self.try_infer_type(expr_node) {
                     Ok(qt)

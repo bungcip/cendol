@@ -745,7 +745,7 @@ fn test_invalid_struct_decl() {
 #[test]
 fn test_enum_with_non_literal_value() {
     use crate::ast::parsed::ParsedNodeKind;
-    use crate::ast::parsed_types::ParsedBaseTypeNode;
+    use crate::ast::parsed_types::ParsedBaseType;
 
     let source = "sizeof(enum { A = 1 + 1 })";
 
@@ -759,7 +759,7 @@ fn test_enum_with_non_literal_value() {
     let constants_info = if let ParsedNodeKind::SizeOfType(type_ref) = &node.kind {
         let base_node = ast.parsed_types.get_base_type(type_ref.base);
         match base_node {
-            ParsedBaseTypeNode::Enum { enumerators, .. } => {
+            ParsedBaseType::Enum { enumerators, .. } => {
                 let range = enumerators.expect("Expected enumerators");
                 let constants = ast.parsed_types.get_enum_constants(range);
                 constants

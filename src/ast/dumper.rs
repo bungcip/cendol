@@ -20,18 +20,18 @@ impl<'a> fmt::Display for ParsedAstDisplay<'a> {
                 continue;
             }
             write!(f, "{}: ", i + 1)?;
-            AstDumper::dump_parsed_node_kind(f, &node.kind, ast)?;
+            AstDumper::dump_parsed_node(f, &node.kind, ast)?;
         }
         Ok(())
     }
 }
 
-pub(crate) struct ParserAstDisplay<'a> {
+pub(crate) struct AstDisplay<'a> {
     pub(crate) ast: &'a Ast,
     pub(crate) symbol_table: Option<&'a SymbolTable>,
 }
 
-impl<'a> fmt::Display for ParserAstDisplay<'a> {
+impl<'a> fmt::Display for AstDisplay<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ast = self.ast;
         for (i, kind) in ast.kinds.iter().enumerate() {
@@ -39,7 +39,7 @@ impl<'a> fmt::Display for ParserAstDisplay<'a> {
                 continue;
             }
             write!(f, "{}: ", i + 1)?;
-            AstDumper::dump_parser_kind(f, kind, ast, self.symbol_table)?;
+            AstDumper::dump_node(f, kind, ast, self.symbol_table)?;
         }
         Ok(())
     }
@@ -56,7 +56,7 @@ impl<'a> fmt::Display for TypeRegistryDisplay<'a> {
         let mut used_type_refs = HashSet::new();
 
         for kind in &self.ast.kinds {
-            AstDumper::collect_type_refs_from_node(kind, &mut used_type_refs);
+            AstDumper::collect_type_refs(kind, &mut used_type_refs);
         }
 
         if used_type_refs.is_empty() {
@@ -88,9 +88,9 @@ impl AstDumper {
         ParsedAstDisplay(ast)
     }
 
-    /// Dump parser AST to stdout
-    pub(crate) fn dump_parser<'a>(ast: &'a Ast, symbol_table: Option<&'a SymbolTable>) -> ParserAstDisplay<'a> {
-        ParserAstDisplay { ast, symbol_table }
+    /// Dump AST to stdout
+    pub(crate) fn dump_ast<'a>(ast: &'a Ast, symbol_table: Option<&'a SymbolTable>) -> AstDisplay<'a> {
+        AstDisplay { ast, symbol_table }
     }
 
     /// Dump TypeRegistry information for used TypeRefs in the AST
@@ -99,7 +99,7 @@ impl AstDumper {
     }
 
     /// Collect TypeRefs from a NodeKind
-    fn collect_type_refs_from_node(kind: &NodeKind, type_refs: &mut HashSet<TypeRef>) {
+    fn collect_type_refs(kind: &NodeKind, type_refs: &mut HashSet<TypeRef>) {
         match kind {
             NodeKind::Designator(_) => {}
             NodeKind::Function(data) => {
@@ -285,477 +285,300 @@ impl AstDumper {
         }
     }
 
-    fn format_parsed_list(nodes: &[ParsedNodeRef]) -> String {
+    fn format_list(nodes: &[ParsedNodeRef]) -> String {
         nodes.iter().map(|n| n.get().to_string()).collect::<Vec<_>>().join(", ")
     }
 
     /// Dump a single parsed parsed node kind
-    fn dump_parsed_node_kind(f: &mut fmt::Formatter<'_>, kind: &ParsedNodeKind, ast: &ParsedAst) -> fmt::Result {
+    fn dump_parsed_node(f: &mut fmt::Formatter<'_>, kind: &ParsedNodeKind, ast: &ParsedAst) -> fmt::Result {
+        fn optional(node: Option<ParsedNodeRef>, text: &'static str) -> String {
+            node.map(|n| n.get().to_string()).unwrap_or(text.to_string())
+        }
         use crate::ast::ParsedNodeKind as PNK;
+
         match kind {
-            PNK::Literal(literal) => writeln!(f, "{}", Self::format_literal(literal)),
-            PNK::Ident(name) => writeln!(f, "Ident({})", name),
+            PNK::Literal(literal) => return writeln!(f, "{}", Self::format_literal(literal)),
+            PNK::Break | PNK::Continue | PNK::EmptyStmt | PNK::Dummy | PNK::BuiltinUnreachable | PNK::BuiltinTrap => {
+                return writeln!(f, "{}", kind.tagname());
+            }
+            _ => {}
+        }
 
-            // Expressions
-            PNK::UnaryOp(op, node) => writeln!(f, "UnaryOp({:?}, {})", op, node.get()),
-            PNK::BinaryOp(op, l, r) => {
-                writeln!(f, "BinaryOp({:?}, {}, {})", op, l.get(), r.get())
+        write!(f, "{}(", kind.tagname())?;
+
+        match kind {
+            PNK::Ident(name) => write!(f, "{}", name)?,
+
+            // One NodeRef: Tag(n1.get())
+            PNK::BuiltinVaEnd(n1)
+            | PNK::BuiltinPopcount(n1)
+            | PNK::BuiltinClz(n1)
+            | PNK::BuiltinCtz(n1)
+            | PNK::BuiltinFfs(n1)
+            | PNK::BuiltinBswap16(n1)
+            | PNK::BuiltinBswap32(n1)
+            | PNK::BuiltinBswap64(n1)
+            | PNK::BuiltinConstantP(n1)
+            | PNK::SizeOfExpr(n1)
+            | PNK::PostIncrement(n1)
+            | PNK::PostDecrement(n1)
+            | PNK::Default(n1) => write!(f, "{}", n1.get())?,
+
+            // Two NodeRefs: Tag(n1.get(), n2.get())
+            PNK::GnuStatementExpr(n1, n2)
+            | PNK::IndexAccess(n1, n2)
+            | PNK::Switch(n1, n2)
+            | PNK::Case(n1, n2)
+            | PNK::BuiltinVaStart(n1, n2)
+            | PNK::BuiltinVaCopy(n1, n2)
+            | PNK::BuiltinExpect(n1, n2) => write!(f, "{}, {}", n1.get(), n2.get())?,
+
+            // Three NodeRefs: Tag(n1.get(), n2.get(), n3.get())
+            PNK::TernaryOp(n1, n2, n3) | PNK::BuiltinChooseExpr(n1, n2, n3) | PNK::CaseRange(n1, n2, n3) => {
+                write!(f, "{}, {}, {}", n1.get(), n2.get(), n3.get())?
             }
-            PNK::TernaryOp(c, t, e) => {
-                writeln!(f, "TernaryOp({}, {}, {})", c.get(), t.get(), e.get())
+
+            // Binary Op / Assignment: Tag(op, l.get(), r.get())
+            PNK::UnaryOp(op, n) => write!(f, "{:?}, {}", op, n.get())?,
+            PNK::BinaryOp(op, l, r) | PNK::Assignment(op, l, r) => write!(f, "{:?}, {}, {}", op, l.get(), r.get())?,
+
+            // TypeRef and NodeRef: Tag(ty, n.get())
+            PNK::Cast(ty, n) | PNK::CompoundLiteral(ty, n) | PNK::BuiltinVaArg(ty, n) | PNK::BuiltinOffsetof(ty, n) => {
+                write!(f, "{:?}, {}", ty, n.get())?
             }
-            PNK::GnuStatementExpr(stmt, expr) => {
-                writeln!(f, "GnuStatementExpr({}, {})", stmt.get(), expr.get())
-            }
-            PNK::Assignment(op, l, r) => {
-                writeln!(f, "Assignment({:?}, {}, {})", op, l.get(), r.get())
-            }
+
+            // TypeRef only: Tag(ty)
+            PNK::SizeOfType(ty) | PNK::AlignOf(ty) => write!(f, "{:?}", ty)?,
+
+            PNK::BuiltinTypesCompatibleP(t1, t2) => write!(f, "{:?}, {:?}", t1, t2)?,
+
             PNK::FunctionCall(callee, args) => {
-                writeln!(
-                    f,
-                    "FunctionCall(callee={}, args=[{}])",
-                    callee.get(),
-                    Self::format_parsed_list(args)
-                )
+                write!(f, "callee={}, args=[{}]", callee.get(), Self::format_list(args))?
             }
-            PNK::MemberAccess(obj, field, arrow) => writeln!(
-                f,
-                "MemberAccess({}, {}, {})",
-                obj.get(),
-                field,
-                if *arrow { "->" } else { "." }
-            ),
-            PNK::IndexAccess(arr, idx) => {
-                writeln!(f, "IndexAccess({}, {})", arr.get(), idx.get())
+            PNK::MemberAccess(obj, field, arrow) => {
+                write!(f, "{}, {}, {}", obj.get(), field, if *arrow { "->" } else { "." })?
             }
-            PNK::Cast(ty, expr)
-            | PNK::CompoundLiteral(ty, expr)
-            | PNK::BuiltinVaArg(ty, expr)
-            | PNK::BuiltinOffsetof(ty, expr) => {
-                let name = match kind {
-                    PNK::Cast(_, _) => "Cast",
-                    PNK::CompoundLiteral(_, _) => "CompoundLiteral",
-                    PNK::BuiltinVaArg(_, _) => "BuiltinVaArg",
-                    PNK::BuiltinOffsetof(_, _) => "BuiltinOffsetof",
-                    _ => unreachable!(),
-                };
-                writeln!(f, "{}({:?}, {})", name, ty, expr.get())
-            }
-            PNK::SizeOfType(ty) | PNK::AlignOf(ty) => {
-                let name = match kind {
-                    PNK::SizeOfType(_) => "SizeOfType",
-                    PNK::AlignOf(_) => "AlignOf",
-                    _ => unreachable!(),
-                };
-                writeln!(f, "{}({:?})", name, ty)
-            }
-            PNK::BuiltinTypesCompatibleP(t1, t2) => {
-                writeln!(f, "BuiltinTypesCompatibleP({:?}, {:?})", t1, t2)
-            }
-            PNK::BuiltinVaStart(ap, last) => {
-                writeln!(f, "BuiltinVaStart({}, {})", ap.get(), last.get())
-            }
-            PNK::BuiltinVaCopy(dst, src) => {
-                writeln!(f, "BuiltinVaCopy({}, {})", dst.get(), src.get())
-            }
-            PNK::BuiltinExpect(exp, c) => {
-                writeln!(f, "BuiltinExpect({}, {})", exp.get(), c.get())
-            }
-            PNK::BuiltinVaEnd(exp)
-            | PNK::BuiltinPopcount(exp)
-            | PNK::BuiltinClz(exp)
-            | PNK::BuiltinCtz(exp)
-            | PNK::BuiltinFfs(exp)
-            | PNK::BuiltinBswap16(exp)
-            | PNK::BuiltinBswap32(exp)
-            | PNK::BuiltinBswap64(exp)
-            | PNK::BuiltinConstantP(exp)
-            | PNK::SizeOfExpr(exp)
-            | PNK::PostIncrement(exp)
-            | PNK::PostDecrement(exp)
-            | PNK::Default(exp) => {
-                let name = match kind {
-                    PNK::BuiltinVaEnd(_) => "BuiltinVaEnd",
-                    PNK::BuiltinPopcount(_) => "BuiltinPopcount",
-                    PNK::BuiltinClz(_) => "BuiltinClz",
-                    PNK::BuiltinCtz(_) => "BuiltinCtz",
-                    PNK::BuiltinFfs(_) => "BuiltinFfs",
-                    PNK::BuiltinBswap16(_) => "BuiltinBswap16",
-                    PNK::BuiltinBswap32(_) => "BuiltinBswap32",
-                    PNK::BuiltinBswap64(_) => "BuiltinBswap64",
-                    PNK::BuiltinConstantP(_) => "BuiltinConstantP",
-                    PNK::SizeOfExpr(_) => "SizeOfExpr",
-                    PNK::PostIncrement(_) => "PostIncrement",
-                    PNK::PostDecrement(_) => "PostDecrement",
-                    PNK::Default(_) => "Default",
-                    _ => unreachable!(),
-                };
-                writeln!(f, "{}({})", name, exp.get())
-            }
-            PNK::AtomicOp(op, args) => {
-                writeln!(f, "AtomicOp({:?}, args=[{}])", op, Self::format_parsed_list(args))
-            }
-            PNK::GenericSelection(ctrl, assocs) => {
-                writeln!(f, "GenericSelection({}, {:?})", ctrl.get(), assocs)
-            }
-            PNK::BuiltinChooseExpr(c, t, e) => {
-                writeln!(f, "BuiltinChooseExpr({}, {}, {})", c.get(), t.get(), e.get())
-            }
-            PNK::BuiltinUnreachable => writeln!(f, "BuiltinUnreachable"),
-            PNK::BuiltinTrap => writeln!(f, "BuiltinTrap"),
 
-            // Statements
-            PNK::CompoundStmt(stmts) => {
-                writeln!(f, "CompoundStmt(stmts=[{}])", Self::format_parsed_list(stmts))
-            }
-            PNK::If(data) => writeln!(f, "If({:?})", data),
-            PNK::While(data) => writeln!(f, "While({:?})", data),
-            PNK::DoWhile(body, cond) => {
-                writeln!(f, "DoWhile(body={}, cond={})", body.get(), cond.get())
-            }
-            PNK::For(data) => writeln!(f, "For({:?})", data),
-            PNK::Return(expr) => writeln!(
-                f,
-                "Return({})",
-                expr.map(|e| e.get().to_string()).unwrap_or("void".to_string())
-            ),
-            PNK::Break => writeln!(f, "Break"),
-            PNK::Continue => writeln!(f, "Continue"),
-            PNK::Goto(label) => writeln!(f, "Goto({})", label),
-            PNK::Label(label, stmt) => writeln!(f, "Label({}, {})", label, stmt.get()),
-            PNK::Switch(cond, body) => {
-                writeln!(f, "Switch({}, {})", cond.get(), body.get())
-            }
-            PNK::Case(val, stmt) => writeln!(f, "Case({}, {})", val.get(), stmt.get()),
-            PNK::CaseRange(start, end, stmt) => {
-                writeln!(f, "CaseRange({}, {}, {})", start.get(), end.get(), stmt.get())
-            }
-            PNK::ExpressionStmt(expr) => writeln!(
-                f,
-                "ExpressionStmt({})",
-                expr.map(|e| e.get().to_string()).unwrap_or("empty".to_string())
-            ),
-            PNK::EmptyStmt => writeln!(f, "EmptyStmt"),
+            PNK::AtomicOp(op, args) => write!(f, "{:?}, args=[{}]", op, Self::format_list(args))?,
+            PNK::GenericSelection(ctrl, assocs) => write!(f, "{}, {:?}", ctrl.get(), assocs)?,
 
-            // Declarations & Definitions
-            PNK::Declaration(data) => writeln!(f, "Declaration({:?})", data),
-            PNK::FunctionDef(data) => writeln!(f, "FunctionDef({:?})", data),
-            PNK::EnumConstant(name, val) => writeln!(
-                f,
-                "EnumConstant({}, {})",
-                name,
-                val.map(|v| v.get().to_string()).unwrap_or("auto".to_string())
-            ),
+            PNK::CompoundStmt(stmts) => write!(f, "stmts=[{}]", Self::format_list(stmts))?,
+            PNK::If(data) => write!(f, "{:?}", data)?,
+            PNK::While(data) => write!(f, "{:?}", data)?,
+            PNK::For(data) => write!(f, "{:?}", data)?,
+            PNK::Declaration(data) => write!(f, "{:?}", data)?,
+            PNK::FunctionDef(data) => write!(f, "{:?}", data)?,
+            PNK::DoWhile(body, cond) => write!(f, "body={}, cond={}", body.get(), cond.get())?,
+            PNK::Return(expr) => write!(f, "{}", optional(*expr, "void"))?,
+            PNK::Goto(label) => write!(f, "{}", label)?,
+            PNK::Label(label, stmt) => write!(f, "{}, {}", label, stmt.get())?,
+            PNK::ExpressionStmt(expr) => write!(f, "{}", optional(*expr, "empty"))?,
+
+            PNK::EnumConstant(name, val) => write!(f, "{}, {}", name, optional(*val, "auto"))?,
             PNK::StaticAssert(cond, msg) => {
                 let message_str = if let PNK::Literal(Literal::String(s)) = &ast.get_node(*msg).kind {
                     s.to_string()
                 } else {
                     "<invalid>".to_string()
                 };
-                writeln!(f, "StaticAssert({}, \"{}\")", cond.get(), message_str)
+                write!(f, "{}, \"{}\"", cond.get(), message_str)?
             }
 
-            PNK::TranslationUnit(decls) => {
-                writeln!(f, "TranslationUnit(decls=[{}])", Self::format_parsed_list(decls))
-            }
-            PNK::InitializerList(inits) => writeln!(f, "InitializerList({:?})", inits),
-            PNK::PragmaPack(kind) => writeln!(f, "PragmaPack({:?})", kind),
-            PNK::Dummy => writeln!(f, "Dummy"),
+            PNK::TranslationUnit(decls) => write!(f, "decls=[{}]", Self::format_list(decls))?,
+            PNK::InitializerList(inits) => write!(f, "{:?}", inits)?,
+            PNK::PragmaPack(kind_pack) => write!(f, "{:?}", kind_pack)?,
+            _ => unreachable!(),
         }
+
+        writeln!(f, ")")
     }
 
     /// Dump a single AST node kind
-    fn dump_parser_kind(
+    fn dump_node(
         f: &mut fmt::Formatter<'_>,
         kind: &NodeKind,
         ast: &Ast,
         symbol_table: Option<&SymbolTable>,
     ) -> fmt::Result {
+        fn optional(node: Option<NodeRef>, text: &'static str) -> String {
+            node.map(|n| n.get().to_string()).unwrap_or(text.to_string())
+        }
+
         match kind {
-            NodeKind::TranslationUnit(tu) => {
-                writeln!(
-                    f,
-                    "TranslationUnit({}) (parser kind)",
-                    Self::format_range("decls", tu.decl_start, tu.decl_len)
-                )
+            NodeKind::Literal(literal) => return writeln!(f, "{}", Self::format_literal(literal)),
+            NodeKind::Break
+            | NodeKind::Continue
+            | NodeKind::Dummy
+            | NodeKind::BuiltinUnreachable
+            | NodeKind::BuiltinTrap => {
+                return writeln!(f, "{}", kind.tagname());
             }
-            NodeKind::Literal(literal) => writeln!(f, "{}", Self::format_literal(literal)),
-            NodeKind::Ident(sym, _) => writeln!(f, "Ident({})", sym),
-            NodeKind::UnaryOp(op, operand) => writeln!(f, "UnaryOp({:?}, {})", op, operand.get()),
-            NodeKind::BinaryOp(op, left, right) => {
-                writeln!(f, "BinaryOp({:?}, {}, {})", op, left.get(), right.get())
-            }
-            NodeKind::TernaryOp(cond, then, else_) => {
-                writeln!(f, "TernaryOp({}, {}, {})", cond.get(), then.get(), else_.get())
-            }
-            NodeKind::PostIncrement(expr) => writeln!(f, "PostIncrement({})", expr.get()),
-            NodeKind::PostDecrement(expr) => writeln!(f, "PostDecrement({})", expr.get()),
-            NodeKind::Assignment(op, lhs, rhs) => {
-                writeln!(f, "Assignment({:?}, {}, {})", op, lhs.get(), rhs.get())
-            }
-            NodeKind::FunctionCall(call_expr) => {
-                writeln!(
-                    f,
-                    "FunctionCall(callee={}, {})",
-                    call_expr.callee.get(),
-                    Self::format_range("args", call_expr.arg_start, call_expr.arg_len)
-                )
+            _ => {}
+        }
+
+        write!(f, "{}(", kind.tagname())?;
+
+        match kind {
+            NodeKind::TranslationUnit(tu) => write!(f, "{}", Self::format_range("decls", tu.decl_start, tu.decl_len))?,
+            NodeKind::Ident(sym, _) => write!(f, "{}", sym)?,
+
+            // One NodeRef: Tag(n1.get())
+            NodeKind::PostIncrement(n)
+            | NodeKind::PostDecrement(n)
+            | NodeKind::Default(n)
+            | NodeKind::BuiltinVaEnd(n)
+            | NodeKind::BuiltinPopcount(n)
+            | NodeKind::BuiltinClz(n)
+            | NodeKind::BuiltinCtz(n)
+            | NodeKind::BuiltinFfs(n)
+            | NodeKind::BuiltinBswap16(n)
+            | NodeKind::BuiltinBswap32(n)
+            | NodeKind::BuiltinBswap64(n)
+            | NodeKind::BuiltinConstantP(n)
+            | NodeKind::SizeOfExpr(n) => write!(f, "{}", n.get())?,
+
+            // Two NodeRefs: Tag(n1.get(), n2.get())
+            NodeKind::IndexAccess(n1, n2)
+            | NodeKind::Case(n1, n2)
+            | NodeKind::GnuStatementExpr(n1, n2)
+            | NodeKind::DoWhile(n1, n2)
+            | NodeKind::Switch(n1, n2)
+            | NodeKind::BuiltinVaStart(n1, n2)
+            | NodeKind::BuiltinVaCopy(n1, n2)
+            | NodeKind::BuiltinExpect(n1, n2) => write!(f, "{}, {}", n1.get(), n2.get())?,
+
+            // Three NodeRefs: Tag(n1.get(), n2.get(), n3.get())
+            NodeKind::TernaryOp(n1, n2, n3)
+            | NodeKind::BuiltinChooseExpr(n1, n2, n3)
+            | NodeKind::CaseRange(n1, n2, n3) => write!(f, "{}, {}, {}", n1.get(), n2.get(), n3.get())?,
+
+            // Binary Op / Assignment: Tag(op, l.get(), r.get())
+            NodeKind::UnaryOp(op, n) => write!(f, "{:?}, {}", op, n.get())?,
+            NodeKind::BinaryOp(op, l, r) | NodeKind::Assignment(op, l, r) => {
+                write!(f, "{:?}, {}, {}", op, l.get(), r.get())?
             }
 
-            NodeKind::MemberAccess(obj, field, is_arrow) => writeln!(
+            // TypeRef and NodeRef: Tag(ty, n.get())
+            NodeKind::Cast(ty, n)
+            | NodeKind::CompoundLiteral(ty, n)
+            | NodeKind::BuiltinVaArg(ty, n)
+            | NodeKind::BuiltinOffsetof(ty, n) => write!(f, "{}, {}", ty, n.get())?,
+
+            // TypeRef only: Tag(ty)
+            NodeKind::SizeOfType(ty) | NodeKind::AlignOf(ty) => write!(f, "{}", ty)?,
+
+            NodeKind::BuiltinTypesCompatibleP(t1, t2) => write!(f, "{}, {}", t1, t2)?,
+
+            NodeKind::FunctionCall(call_expr) => write!(
                 f,
-                "MemberAccess({}, {}, {})",
-                obj.get(),
-                field,
-                if *is_arrow { "->" } else { "." }
-            ),
-            NodeKind::IndexAccess(array, index) => {
-                writeln!(f, "IndexAccess({}, {})", array.get(), index.get())
+                "callee={}, {}",
+                call_expr.callee.get(),
+                Self::format_range("args", call_expr.arg_start, call_expr.arg_len)
+            )?,
+
+            NodeKind::MemberAccess(obj, field, is_arrow) => {
+                write!(f, "{}, {}, {}", obj.get(), field, if *is_arrow { "->" } else { "." })?
             }
-            NodeKind::Cast(ty, expr)
-            | NodeKind::CompoundLiteral(ty, expr)
-            | NodeKind::BuiltinVaArg(ty, expr)
-            | NodeKind::BuiltinOffsetof(ty, expr) => {
-                let name = match kind {
-                    NodeKind::Cast(_, _) => "Cast",
-                    NodeKind::CompoundLiteral(_, _) => "CompoundLiteral",
-                    NodeKind::BuiltinVaArg(_, _) => "BuiltinVaArg",
-                    NodeKind::BuiltinOffsetof(_, _) => "BuiltinOffsetof",
-                    _ => unreachable!(),
-                };
-                writeln!(f, "{}({}, {})", name, ty, expr.get())
-            }
-            NodeKind::BuiltinVaStart(ap, last) => {
-                writeln!(f, "BuiltinVaStart({}, {})", ap.get(), last.get())
-            }
-            NodeKind::BuiltinVaCopy(dst, src) => {
-                writeln!(f, "BuiltinVaCopy({}, {})", dst.get(), src.get())
-            }
-            NodeKind::BuiltinExpect(exp, c) => {
-                writeln!(f, "BuiltinExpect({}, {})", exp.get(), c.get())
-            }
-            NodeKind::BuiltinVaEnd(exp)
-            | NodeKind::BuiltinPopcount(exp)
-            | NodeKind::BuiltinClz(exp)
-            | NodeKind::BuiltinCtz(exp)
-            | NodeKind::BuiltinFfs(exp)
-            | NodeKind::BuiltinBswap16(exp)
-            | NodeKind::BuiltinBswap32(exp)
-            | NodeKind::BuiltinBswap64(exp)
-            | NodeKind::BuiltinConstantP(exp)
-            | NodeKind::SizeOfExpr(exp) => {
-                let name = match kind {
-                    NodeKind::BuiltinVaEnd(_) => "BuiltinVaEnd",
-                    NodeKind::BuiltinPopcount(_) => "BuiltinPopcount",
-                    NodeKind::BuiltinClz(_) => "BuiltinClz",
-                    NodeKind::BuiltinCtz(_) => "BuiltinCtz",
-                    NodeKind::BuiltinFfs(_) => "BuiltinFfs",
-                    NodeKind::BuiltinBswap16(_) => "BuiltinBswap16",
-                    NodeKind::BuiltinBswap32(_) => "BuiltinBswap32",
-                    NodeKind::BuiltinBswap64(_) => "BuiltinBswap64",
-                    NodeKind::BuiltinConstantP(_) => "BuiltinConstantP",
-                    NodeKind::SizeOfExpr(_) => "SizeOfExpr",
-                    _ => unreachable!(),
-                };
-                writeln!(f, "{}({})", name, exp.get())
-            }
-            NodeKind::SizeOfType(ty) | NodeKind::AlignOf(ty) => {
-                let name = match kind {
-                    NodeKind::SizeOfType(_) => "SizeOfType",
-                    NodeKind::AlignOf(_) => "AlignOf",
-                    _ => unreachable!(),
-                };
-                writeln!(f, "{}({})", name, ty)
-            }
-            NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
-                writeln!(f, "BuiltinTypesCompatibleP({}, {})", t1, t2)
-            }
+
             NodeKind::AtomicOp(op, args_start, args_len) => {
-                writeln!(
-                    f,
-                    "AtomicOp({:?}, {})",
-                    op,
-                    Self::format_range("args", *args_start, *args_len)
-                )
+                write!(f, "{:?}, {}", op, Self::format_range("args", *args_start, *args_len))?
             }
 
-            NodeKind::GenericSelection(gs) => {
-                writeln!(
-                    f,
-                    "GenericSelection(control={}, {})",
-                    gs.control.get(),
-                    Self::format_range("associations", gs.assoc_start, gs.assoc_len)
-                )
-            }
-            NodeKind::GenericAssociation(ga) => {
-                writeln!(
-                    f,
-                    "GenericAssociation(ty={:?}, result_expr={})",
-                    ga.ty,
-                    ga.result_expr.get()
-                )
-            }
-            NodeKind::BuiltinChooseExpr(c, t, e) => {
-                writeln!(f, "BuiltinChooseExpr({}, {}, {})", c.get(), t.get(), e.get())
-            }
-            NodeKind::BuiltinUnreachable => writeln!(f, "BuiltinUnreachable"),
-            NodeKind::BuiltinTrap => writeln!(f, "BuiltinTrap"),
-            NodeKind::GnuStatementExpr(compound_stmt, result_expr) => {
-                writeln!(f, "GnuStatementExpr({}, {})", compound_stmt.get(), result_expr.get())
-            }
-            NodeKind::CompoundStmt(cs) => {
-                writeln!(
-                    f,
-                    "{}",
-                    Self::format_range("CompoundStmt(stmts", cs.stmt_start, cs.stmt_len)
-                )
-                // Note: CompoundStmt uses format_range differently to match the CompoundStmt(stmts=...) format
-            }
-            NodeKind::If(if_stmt) => writeln!(
+            NodeKind::GenericSelection(gs) => write!(
                 f,
-                "If(condition={}, then={}, else={})",
+                "control={}, {}",
+                gs.control.get(),
+                Self::format_range("associations", gs.assoc_start, gs.assoc_len)
+            )?,
+            NodeKind::GenericAssociation(ga) => write!(f, "ty={:?}, result_expr={}", ga.ty, ga.result_expr.get())?,
+
+            NodeKind::CompoundStmt(cs) => write!(f, "{}", Self::format_range("stmts", cs.stmt_start, cs.stmt_len))?,
+            NodeKind::If(if_stmt) => write!(
+                f,
+                "condition={}, then={}, else={}",
                 if_stmt.condition.get(),
                 if_stmt.then_branch.get(),
-                if_stmt
-                    .else_branch
-                    .map(|r| r.get().to_string())
-                    .unwrap_or("none".to_string())
-            ),
-            NodeKind::While(while_stmt) => writeln!(
+                optional(if_stmt.else_branch, "none")
+            )?,
+            NodeKind::While(while_stmt) => write!(
                 f,
-                "While(condition={}, body={})",
+                "condition={}, body={}",
                 while_stmt.condition.get(),
                 while_stmt.body.get()
-            ),
-            NodeKind::DoWhile(body, cond) => {
-                writeln!(f, "DoWhile(body={}, condition={})", body.get(), cond.get())
-            }
-            NodeKind::For(for_stmt) => writeln!(
+            )?,
+            NodeKind::For(for_stmt) => write!(
                 f,
-                "For(init={}, condition={}, increment={}, body={})",
-                for_stmt.init.map(|r| r.get().to_string()).unwrap_or("none".to_string()),
-                for_stmt
-                    .condition
-                    .map(|r| r.get().to_string())
-                    .unwrap_or("none".to_string()),
-                for_stmt
-                    .increment
-                    .map(|r| r.get().to_string())
-                    .unwrap_or("none".to_string()),
+                "init={}, condition={}, increment={}, body={}",
+                optional(for_stmt.init, "none"),
+                optional(for_stmt.condition, "none"),
+                optional(for_stmt.increment, "none"),
                 for_stmt.body.get()
-            ),
-            NodeKind::Return(expr) => writeln!(
-                f,
-                "Return({})",
-                expr.map(|r| r.get().to_string()).unwrap_or("void".to_string())
-            ),
-            NodeKind::Break => writeln!(f, "Break"),
-            NodeKind::Continue => writeln!(f, "Continue"),
-            NodeKind::Goto(label, _) => writeln!(f, "Goto({})", label),
-            NodeKind::Label(label, stmt, _) => writeln!(f, "Label({}, {})", label, stmt.get()),
-            NodeKind::Switch(cond, body) => {
-                writeln!(f, "Switch(condition={}, body={})", cond.get(), body.get())
-            }
-            NodeKind::Case(expr, stmt) => writeln!(f, "Case({}, {})", expr.get(), stmt.get()),
-            NodeKind::CaseRange(start, end, stmt) => {
-                writeln!(f, "CaseRange({}, {}, {})", start.get(), end.get(), stmt.get())
-            }
-            NodeKind::Default(stmt) => writeln!(f, "Default({})", stmt.get()),
-            NodeKind::ExpressionStmt(expr) => writeln!(
-                f,
-                "ExpressionStmt({})",
-                expr.map(|r| r.get().to_string()).unwrap_or("none".to_string())
-            ),
+            )?,
+            NodeKind::Return(expr) => write!(f, "{}", optional(*expr, "void"))?,
+            NodeKind::Goto(label, _) => write!(f, "{}", label)?,
+            NodeKind::Label(label, stmt, _) => write!(f, "{}, {}", label, stmt.get())?,
+            NodeKind::ExpressionStmt(expr) => write!(f, "{}", optional(*expr, "none"))?,
 
             NodeKind::Function(data) => {
                 let func_name = Self::get_function_name(data.symbol, symbol_table);
-                writeln!(
+                write!(
                     f,
-                    "Function(name={}, symbol={:?}, ty={}, {}, body={})",
+                    "name={}, symbol={:?}, ty={}, {}, body={}",
                     func_name,
                     data.symbol,
                     data.ty,
                     Self::format_range("params", data.param_start, data.param_len),
                     data.body.get()
-                )
+                )?
             }
-            NodeKind::Param(data) => {
-                writeln!(f, "Param(symbol={:?}, ty={:?})", data.symbol, data.ty)
-            }
-            NodeKind::EnumConstant(name, value) => writeln!(
-                f,
-                "EnumConstant({}, {})",
-                name,
-                value.map(|r| r.get().to_string()).unwrap_or("auto".to_string())
-            ),
+            NodeKind::Param(data) => write!(f, "symbol={:?}, ty={:?}", data.symbol, data.ty)?,
+            NodeKind::EnumConstant(name, value) => write!(f, "{}, {}", name, optional(*value, "auto"))?,
             NodeKind::StaticAssert(cond, msg) => {
                 let message_str = if let NodeKind::Literal(Literal::String(s)) = ast.get_kind(*msg) {
                     s.to_string()
                 } else {
                     "<invalid>".to_string()
                 };
-                writeln!(f, "StaticAssert(condition={}, message=\"{}\")", cond.get(), message_str)
+                write!(f, "condition={}, message=\"{}\"", cond.get(), message_str)?
             }
-            NodeKind::VarDecl(var_decl) => {
-                writeln!(
-                    f,
-                    "VarDecl(name={}, ty={}, storage={:?})",
-                    var_decl.name, var_decl.ty, var_decl.storage
-                )
-            }
-            NodeKind::FunctionDecl(func_decl) => {
-                writeln!(
-                    f,
-                    "FunctionDecl(name={}, ty={}, storage={:?})",
-                    func_decl.name,
-                    func_decl.ty.get(),
-                    func_decl.storage
-                )
-            }
-            NodeKind::TypedefDecl(typedef_decl) => {
-                writeln!(f, "TypedefDecl(name={}, ty={})", typedef_decl.name, typedef_decl.ty)
-            }
-            NodeKind::RecordDecl(record_decl) => {
-                writeln!(
-                    f,
-                    "RecordDecl(name={:?}, ty={}, is_union={}, {})",
-                    record_decl.name,
-                    record_decl.ty.get(),
-                    record_decl.is_union,
-                    Self::format_range("members", record_decl.member_start, record_decl.member_len)
-                )
-            }
-            NodeKind::FieldDecl(field_decl) => {
-                writeln!(f, "FieldDecl(name={:?}, ty={})", field_decl.name, field_decl.ty)
-            }
-            NodeKind::EnumDecl(enum_decl) => {
-                writeln!(
-                    f,
-                    "EnumDecl(name={:?}, ty={}, {})",
-                    enum_decl.name,
-                    enum_decl.ty.get(),
-                    Self::format_range("members", enum_decl.member_start, enum_decl.member_len)
-                )
-            }
-            NodeKind::EnumMember(enum_member) => {
-                writeln!(f, "EnumMember(name={}, value={})", enum_member.name, enum_member.value)
-            }
+            NodeKind::VarDecl(decl) => write!(f, "name={}, ty={}, storage={:?}", decl.name, decl.ty, decl.storage)?,
+            NodeKind::FunctionDecl(decl) => write!(
+                f,
+                "name={}, ty={}, storage={:?}",
+                decl.name,
+                decl.ty.get(),
+                decl.storage
+            )?,
+            NodeKind::TypedefDecl(decl) => write!(f, "name={}, ty={}", decl.name, decl.ty)?,
+            NodeKind::RecordDecl(decl) => write!(
+                f,
+                "name={:?}, ty={}, is_union={}, {}",
+                decl.name,
+                decl.ty.get(),
+                decl.is_union,
+                Self::format_range("members", decl.member_start, decl.member_len)
+            )?,
+            NodeKind::FieldDecl(decl) => write!(f, "name={:?}, ty={}", decl.name, decl.ty)?,
+            NodeKind::EnumDecl(decl) => write!(
+                f,
+                "name={:?}, ty={}, {}",
+                decl.name,
+                decl.ty.get(),
+                Self::format_range("members", decl.member_start, decl.member_len)
+            )?,
+            NodeKind::EnumMember(member) => write!(f, "name={}, value={}", member.name, member.value)?,
             NodeKind::InitializerList(list) => {
-                writeln!(
-                    f,
-                    "{}",
-                    Self::format_range("InitializerList(inits", list.init_start, list.init_len)
-                )
+                write!(f, "{}", Self::format_range("inits", list.init_start, list.init_len))?
             }
-            NodeKind::InitializerItem(init) => {
-                writeln!(f, "InitializerItem({})", Self::format_designated_initializer(init, ast))
-            }
+            NodeKind::InitializerItem(init) => write!(f, "{}", Self::format_designated_initializer(init, ast))?,
             NodeKind::Designator(d) => match d {
-                Designator::FieldName(name) => writeln!(f, "Designator(.{})", name),
-                Designator::ArrayIndex(idx) => writeln!(f, "Designator([{}])", idx.get()),
-                Designator::GnuArrayRange(start, end) => writeln!(f, "Designator([{} ... {}])", start.get(), end.get()),
+                Designator::FieldName(name) => write!(f, ".{}", name)?,
+                Designator::ArrayIndex(idx) => write!(f, "[{}]", idx.get())?,
+                Designator::GnuArrayRange(start, end) => write!(f, "[{} ... {}]", start.get(), end.get())?,
             },
-            NodeKind::Dummy => writeln!(f, "DUMMY"),
+            _ => unreachable!(),
         }
+
+        writeln!(f, ")")
     }
 }

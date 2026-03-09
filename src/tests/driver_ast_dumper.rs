@@ -21,7 +21,7 @@ fn dump_parser_ast(source: &str) -> String {
     let artifact = first.1;
     let ast = artifact.ast.as_ref().unwrap();
     let symbol_table = artifact.symbol_table.as_ref().unwrap();
-    AstDumper::dump_parser(ast, Some(symbol_table)).to_string()
+    AstDumper::dump_ast(ast, Some(symbol_table)).to_string()
 }
 
 fn dump_type_registry(source: &str) -> String {
@@ -288,10 +288,10 @@ fn test_dump_parsed_ast_with_switch() {
 fn test_dump_parser_ast() {
     let output = dump_parser_ast("int main() { return 0; }");
     insta::assert_snapshot!(output, @r#"
-    1: TranslationUnit(decls=2..2) (parser kind)
+    1: TranslationUnit(decls=2..2)
     2: Function(name=main, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("main")
-    4: CompoundStmt(stmts=5..5
+    4: CompoundStmt(stmts=5..5)
     5: Return(6)
     6: LiteralInt(0, None, base=8)
     "#);
@@ -301,19 +301,19 @@ fn test_dump_parser_ast() {
 fn test_dump_parser_ast_with_functions() {
     let output = dump_parser_ast("int add(int a, int b) { return a + b; } int main() { return add(2, 3); }");
     insta::assert_snapshot!(output, @r#"
-    1: TranslationUnit(decls=2..3) (parser kind)
+    1: TranslationUnit(decls=2..3)
     2: Function(name=add, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=5..6, body=7)
     3: Function(name=main, symbol=7, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=13)
     4: LiteralString("add")
     5: Param(symbol=5, ty=QualType(8))
     6: Param(symbol=6, ty=QualType(8))
-    7: CompoundStmt(stmts=8..8
+    7: CompoundStmt(stmts=8..8)
     8: Return(9)
     9: BinaryOp(Add, 10, 11)
     10: Ident(a)
     11: Ident(b)
     12: LiteralString("main")
-    13: CompoundStmt(stmts=14..14
+    13: CompoundStmt(stmts=14..14)
     14: Return(15)
     15: FunctionCall(callee=16, args=17..18)
     16: Ident(add)
@@ -354,17 +354,17 @@ fn test_dump_parser_ast_with_designated_initializers() {
         "struct Point { int x; int y; }; int main() { struct Point p = {.x = 1, .y = 2}; int arr[5] = {[1] = 10, [3] = 30}; return 0; }",
     );
     insta::assert_snapshot!(output, @r#"
-    1: TranslationUnit(decls=2..3) (parser kind)
+    1: TranslationUnit(decls=2..3)
     2: RecordDecl(name=Some("Point"), ty=1048596, is_union=false, members=4..5)
     3: Function(name=main, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=7)
     4: FieldDecl(name=Some("x"), ty=Int)
     5: FieldDecl(name=Some("y"), ty=Int)
     6: LiteralString("main")
-    7: CompoundStmt(stmts=8..10
+    7: CompoundStmt(stmts=8..10)
     8: VarDecl(name=p, ty=TypeRef(base=20, class=Record, ptr=0, arr=None), storage=None)
     9: VarDecl(name=arr, ty=TypeRef(base=8, class=Array, ptr=0, arr=Some(5)), storage=None)
     10: Return(28)
-    11: InitializerList(inits=12..13
+    11: InitializerList(inits=12..13)
     12: InitializerItem(.x = 14)
     13: InitializerItem(.y = 16)
     14: LiteralInt(1, None, base=10)
@@ -372,7 +372,7 @@ fn test_dump_parser_ast_with_designated_initializers() {
     16: LiteralInt(2, None, base=10)
     17: Designator(.y)
     18: LiteralInt(5, None, base=10)
-    19: InitializerList(inits=20..21
+    19: InitializerList(inits=20..21)
     20: InitializerItem([24] = 22)
     21: InitializerItem([27] = 25)
     22: LiteralInt(10, None, base=10)

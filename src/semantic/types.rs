@@ -130,7 +130,7 @@ impl Type {
         matches!(self.kind, TypeKind::Pointer { .. })
     }
 
-    pub fn is_signed(&self) -> bool {
+    pub(crate) fn is_signed(&self) -> bool {
         match &self.kind {
             TypeKind::Builtin(b) => b.is_signed(),
             TypeKind::Enum { enumerators, .. } => {
@@ -288,7 +288,7 @@ impl BuiltinType {
         matches!(self, Self::Float | Self::Double | Self::LongDouble)
     }
 
-    pub fn is_signed(self) -> bool {
+    pub(crate) fn is_signed(self) -> bool {
         match self {
             Self::Bool => false,
             Self::Char => true, // Assuming char is signed

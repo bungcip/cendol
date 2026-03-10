@@ -11,7 +11,7 @@ pub struct SemanticError {
 }
 
 impl SemanticError {
-    pub fn new(span: SourceSpan, kind: SemanticErrorKind) -> Self {
+    pub(crate) fn new(span: SourceSpan, kind: SemanticErrorKind) -> Self {
         Self {
             span,
             kind,

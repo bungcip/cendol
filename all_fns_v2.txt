@@ -1,0 +1,492 @@
+src/source_manager.rs:22:    pub(crate) fn new(id: u32) -> Self {
+src/source_manager.rs:45:    pub(crate) fn new(source_id: SourceId, offset: u32) -> Self {
+src/source_manager.rs:50:    pub(crate) fn builtin() -> Self {
+src/source_manager.rs:54:    pub(crate) fn source_id(&self) -> SourceId {
+src/source_manager.rs:58:    pub(crate) fn offset(&self) -> u32 {
+src/source_manager.rs:99:    pub(crate) fn new(start: SourceLoc, end: SourceLoc) -> Self {
+src/source_manager.rs:111:    pub(crate) fn new_with_length(source_id: SourceId, offset: u32, length: u32) -> Self {
+src/source_manager.rs:125:    pub(crate) fn empty() -> Self {
+src/source_manager.rs:129:    pub(crate) fn start(&self) -> SourceLoc {
+src/source_manager.rs:137:    pub(crate) fn end(&self) -> SourceLoc {
+src/source_manager.rs:146:    pub(crate) fn source_id(&self) -> SourceId {
+src/source_manager.rs:151:    pub(crate) fn is_source_id_builtin(&self) -> bool {
+src/source_manager.rs:156:    pub(crate) fn merge(self, other: SourceSpan) -> SourceSpan {
+src/source_manager.rs:200:    pub(crate) fn new(physical_line: u32, logical_line: u32, logical_file: Option<String>) -> Self {
+src/source_manager.rs:241:    pub(crate) fn new() -> Self {
+src/source_manager.rs:246:    pub(crate) fn add_entry(&mut self, entry: LineDirective) {
+src/source_manager.rs:258:    pub(crate) fn presumed_location(&self, physical_line: u32) -> (u32, Option<&str>) {
+src/source_manager.rs:305:    pub(crate) fn new() -> Self {
+src/source_manager.rs:311:    pub(crate) fn add_file_from_path(
+src/source_manager.rs:322:    pub(crate) fn add_buffer(&mut self, buffer: Vec<u8>, path: &str, include_loc: Option<SourceLoc>) -> SourceId {
+src/source_manager.rs:330:    pub(crate) fn add_virtual_buffer(
+src/source_manager.rs:377:    pub(crate) fn get_buffer(&self, source_id: SourceId) -> &[u8] {
+src/source_manager.rs:390:    pub(crate) fn get_buffer_safe(&self, source_id: SourceId) -> Option<&[u8]> {
+src/source_manager.rs:400:    pub(crate) fn get_buffer_arc(&self, source_id: SourceId) -> Arc<[u8]> {
+src/source_manager.rs:413:    pub(crate) fn get_file_info(&self, source_id: SourceId) -> Option<&FileInfo> {
+src/source_manager.rs:422:    pub(crate) fn get_file_id(&self, path: &str) -> Option<SourceId> {
+src/source_manager.rs:427:    pub(crate) fn get_line_map_mut(&mut self, source_id: SourceId) -> Option<&mut LineMap> {
+src/source_manager.rs:436:    pub(crate) fn set_line_starts(&mut self, source_id: SourceId, line_starts: Vec<u32>) {
+src/source_manager.rs:446:    pub(crate) fn calculate_line_starts(&mut self, source_id: SourceId) {
+src/source_manager.rs:458:    pub(crate) fn get_source_text(&self, span: SourceSpan) -> &str {
+src/source_manager.rs:471:    pub(crate) fn get_line_column(&self, loc: SourceLoc) -> Option<(u32, u32)> {
+src/source_manager.rs:498:    pub(crate) fn get_presumed_location(&self, loc: SourceLoc) -> Option<(u32, u32, Option<&str>)> {
+src/lang_options.rs:18:    pub(crate) fn is_c11(&self) -> bool {
+src/semantic/type_registry.rs:130:    pub(crate) fn new(target_triple: Triple) -> Self {
+src/semantic/type_registry.rs:275:    pub(crate) fn get_builtin_type(&self, b: BuiltinType) -> TypeRef {
+src/semantic/type_registry.rs:300:    pub(crate) fn alloc(&mut self, ty: Type) -> TypeRef {
+src/semantic/type_registry.rs:312:    pub(crate) fn get(&self, mut r: TypeRef) -> Cow<'_, Type> {
+src/semantic/type_registry.rs:357:    pub(crate) fn get_pointee(&self, mut ty: TypeRef) -> Option<QualType> {
+src/semantic/type_registry.rs:375:    pub(crate) fn is_char_type(&self, mut ty: TypeRef) -> bool {
+src/semantic/type_registry.rs:458:    pub(crate) fn pointer_to(&mut self, base: QualType) -> TypeRef {
+src/semantic/type_registry.rs:486:    pub(crate) fn array_of(&mut self, elem: TypeRef, size: ArraySizeType) -> TypeRef {
+src/semantic/type_registry.rs:510:    pub(crate) fn function_type(
+src/semantic/type_registry.rs:541:    pub(crate) fn complex_type(&mut self, base_type: TypeRef) -> TypeRef {
+src/semantic/type_registry.rs:566:    pub(crate) fn complete_record(&mut self, record: TypeRef, members: Vec<StructMember>, packing: Option<u32>) {
+src/semantic/type_registry.rs:613:    pub(crate) fn get_layout(&self, mut ty: TypeRef) -> Cow<'_, TypeLayout> {
+src/semantic/type_registry.rs:772:    pub(crate) fn get_array_layout(&self, ty: TypeRef) -> (u64, u64, TypeRef, u64) {
+src/semantic/type_registry.rs:780:    pub(crate) fn ensure_layout(&mut self, ty: TypeRef) -> Result<Cow<'_, TypeLayout>, TypeRegistryError> {
+src/semantic/type_registry.rs:1231:    pub(crate) fn decay(&mut self, qt: QualType, ptr_qualifiers: TypeQualifiers) -> QualType {
+src/semantic/type_registry.rs:1272:    pub(crate) fn is_compatible(&self, mut a: QualType, mut b: QualType) -> bool {
+src/semantic/type_registry.rs:1533:    pub(crate) fn is_complete(&self, mut ty: TypeRef) -> bool {
+src/semantic/type_registry.rs:1604:    pub(crate) fn is_variably_modified(&self, mut ty: TypeRef) -> bool {
+src/semantic/type_registry.rs:1647:    pub(crate) fn display_qual_type(&self, qt: QualType) -> String {
+src/semantic/type_registry.rs:1657:    pub(crate) fn display_type(&self, ty: TypeRef) -> String {
+src/semantic/const_eval.rs:93:pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<i64> {
+src/semantic/const_eval.rs:419:pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<f64> {
+src/semantic/lowering.rs:55:    pub(crate) fn new(
+src/semantic/lowering.rs:78:    pub(crate) fn report_error(&mut self, span: SourceSpan, kind: SemanticErrorKind) {
+src/semantic/lowering.rs:463:pub(crate) fn visit_ast(
+src/semantic/lowering.rs:483:    pub(crate) fn visit_node(&mut self, node: ParsedNodeRef) -> SmallVec<[NodeRef; 1]> {
+src/semantic/lowering.rs:1562:    pub(crate) fn visit_expression(&mut self, node: ParsedNodeRef) -> NodeRef {
+src/semantic/lowering.rs:1791:    pub(crate) fn convert_parsed_array_size(&mut self, size: &ParsedArraySize) -> ArraySizeType {
+src/semantic/lowering.rs:1801:    pub(crate) fn resolve_array_size(&mut self, size: Option<ParsedNodeRef>) -> ArraySizeType {
+src/semantic/errors.rs:14:    pub(crate) fn new(span: SourceSpan, kind: SemanticErrorKind) -> Self {
+src/semantic/errors.rs:22:    pub(crate) fn into_diagnostic(self, registry: &TypeRegistry) -> Vec<Diagnostic> {
+src/semantic/errors.rs:354:    pub(crate) fn display(&self, registry: &TypeRegistry) -> String {
+src/semantic/analyzer.rs:80:pub(crate) fn visit_ast(
+src/semantic/symbol_table.rs:46:    pub(crate) fn is_const(&self) -> bool {
+src/semantic/symbol_table.rs:105:    pub(crate) fn new(id: u32) -> Option<Self> {
+src/semantic/symbol_table.rs:109:    pub(crate) fn get(self) -> u32 {
+src/semantic/symbol_table.rs:142:    pub(crate) fn new() -> Self {
+src/semantic/symbol_table.rs:158:    pub(crate) fn push_scope(&mut self) -> ScopeId {
+src/semantic/symbol_table.rs:173:    pub(crate) fn pop_scope(&mut self) -> Option<ScopeId> {
+src/semantic/symbol_table.rs:192:    pub(crate) fn get_scope(&self, scope_id: ScopeId) -> &Scope {
+src/semantic/symbol_table.rs:222:    pub(crate) fn lookup_symbol(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
+src/semantic/symbol_table.rs:230:    pub(crate) fn lookup(&self, name: NameId, start_scope: ScopeId, ns: Namespace) -> Option<(SymbolRef, ScopeId)> {
+src/semantic/symbol_table.rs:267:    pub(crate) fn get_symbol(&self, index: SymbolRef) -> &Symbol {
+src/semantic/symbol_table.rs:271:    pub(crate) fn get_symbol_mut(&mut self, index: SymbolRef) -> &mut Symbol {
+src/semantic/symbol_table.rs:290:    pub(crate) fn define_variable(
+src/semantic/symbol_table.rs:369:    pub(crate) fn define_function(
+src/semantic/symbol_table.rs:421:    pub(crate) fn define_typedef(
+src/semantic/symbol_table.rs:438:    pub(crate) fn define_enum_constant(
+src/semantic/symbol_table.rs:459:    pub(crate) fn define_record(
+src/semantic/symbol_table.rs:480:    pub(crate) fn define_enum(&mut self, name: NameId, ty: TypeRef, span: SourceSpan) -> SymbolRef {
+src/semantic/symbol_table.rs:492:    pub(crate) fn define_label(
+src/semantic/symbol_table.rs:506:    pub(crate) fn lookup_label(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
+src/semantic/types.rs:52:    pub(crate) fn new(kind: TypeKind) -> Self {
+src/semantic/types.rs:56:    pub(crate) fn flatten_members(&self, registry: &super::TypeRegistry, flat_members: &mut Vec<StructMember>) {
+src/semantic/types.rs:69:    pub(crate) fn find_member(&self, registry: &super::TypeRegistry, name: NameId) -> Option<StructMember> {
+src/semantic/types.rs:86:    pub(crate) fn flatten_members_with_layouts(
+src/semantic/types.rs:113:    pub(crate) fn is_union(&self) -> bool {
+src/semantic/types.rs:117:    pub(crate) fn is_record_empty(&self) -> bool {
+src/semantic/types.rs:125:    pub(crate) fn is_int(&self) -> bool {
+src/semantic/types.rs:129:    pub(crate) fn is_pointer(&self) -> bool {
+src/semantic/types.rs:133:    pub(crate) fn is_signed(&self) -> bool {
+src/semantic/types.rs:147:    pub(crate) fn truncate_int(&self, val: i64) -> i64 {
+src/semantic/types.rs:265:    pub(crate) fn is_integer(self) -> bool {
+src/semantic/types.rs:283:    pub(crate) fn is_char(self) -> bool {
+src/semantic/types.rs:287:    pub(crate) fn is_floating(self) -> bool {
+src/semantic/types.rs:291:    pub(crate) fn is_signed(self) -> bool {
+src/semantic/types.rs:310:    pub(crate) fn rank(self) -> u8 {
+src/semantic/types.rs:352:    pub(crate) fn new(base_index: u32, class: TypeClass, ptr_depth: u8, arr_len: u32) -> Option<Self> {
+src/semantic/types.rs:409:    pub(crate) fn dummy() -> Self {
+src/semantic/types.rs:414:    pub(crate) fn get(self) -> u32 {
+src/semantic/types.rs:419:    pub(crate) fn base(self) -> u32 {
+src/semantic/types.rs:424:    pub(crate) fn class(self) -> TypeClass {
+src/semantic/types.rs:429:    pub(crate) fn pointer_depth(self) -> u8 {
+src/semantic/types.rs:434:    pub(crate) fn array_len(self) -> Option<u32> {
+src/semantic/types.rs:440:    pub(crate) fn is_builtin(self) -> bool {
+src/semantic/types.rs:445:    pub(crate) fn is_pointer(self) -> bool {
+src/semantic/types.rs:450:    pub(crate) fn is_array(self) -> bool {
+src/semantic/types.rs:455:    pub(crate) fn is_function(self) -> bool {
+src/semantic/types.rs:460:    pub(crate) fn is_char(self) -> bool {
+src/semantic/types.rs:465:    pub(crate) fn is_char16(self) -> bool {
+src/semantic/types.rs:470:    pub(crate) fn is_char32(self) -> bool {
+src/semantic/types.rs:475:    pub(crate) fn is_wchar_t(self) -> bool {
+src/semantic/types.rs:483:    pub(crate) fn is_record(self) -> bool {
+src/semantic/types.rs:488:    pub(crate) fn is_enum(self) -> bool {
+src/semantic/types.rs:493:    pub(crate) fn is_complex(self) -> bool {
+src/semantic/types.rs:500:    pub(crate) fn is_inline_pointer(self) -> bool {
+src/semantic/types.rs:505:    pub(crate) fn is_inline_array(self) -> bool {
+src/semantic/types.rs:511:    pub(crate) fn builtin(self) -> Option<BuiltinType> {
+src/semantic/types.rs:520:    pub(crate) fn raw(self) -> u32 {
+src/semantic/types.rs:525:    pub(crate) fn index(self) -> usize {
+src/semantic/types.rs:533:    pub(crate) fn is_void(self) -> bool {
+src/semantic/types.rs:538:    pub(crate) fn is_integer(self) -> bool {
+src/semantic/types.rs:543:    pub(crate) fn is_floating(self) -> bool {
+src/semantic/types.rs:548:    pub(crate) fn is_arithmetic(self) -> bool {
+src/semantic/types.rs:553:    pub(crate) fn is_real(self) -> bool {
+src/semantic/types.rs:558:    pub(crate) fn is_scalar(self) -> bool {
+src/semantic/types.rs:600:    pub(crate) fn new(ty: TypeRef, quals: TypeQualifiers) -> Self {
+src/semantic/types.rs:608:    pub(crate) fn unqualified(ty: TypeRef) -> Self {
+src/semantic/types.rs:613:    pub(crate) fn ty(self) -> TypeRef {
+src/semantic/types.rs:619:    pub(crate) fn strip_all(self) -> Self {
+src/semantic/types.rs:624:    pub(crate) fn qualifiers(self) -> TypeQualifiers {
+src/semantic/types.rs:629:    pub(crate) fn is_const(self) -> bool {
+src/semantic/types.rs:634:    pub(crate) fn is_atomic(self) -> bool {
+src/semantic/types.rs:639:    pub(crate) fn is_char(self) -> bool {
+src/semantic/types.rs:644:    pub(crate) fn is_wchar_t(self) -> bool {
+src/semantic/types.rs:649:    pub(crate) fn is_char16(self) -> bool {
+src/semantic/types.rs:654:    pub(crate) fn is_char32(self) -> bool {
+src/semantic/types.rs:659:    pub(crate) fn is_pointer(self) -> bool {
+src/semantic/types.rs:663:    pub(crate) fn is_array(self) -> bool {
+src/semantic/types.rs:667:    pub(crate) fn is_function(self) -> bool {
+src/semantic/types.rs:671:    pub(crate) fn is_record(self) -> bool {
+src/semantic/types.rs:675:    pub(crate) fn is_complex(self) -> bool {
+src/semantic/types.rs:679:    pub(crate) fn is_void(self) -> bool {
+src/semantic/types.rs:683:    pub(crate) fn is_integer(self) -> bool {
+src/semantic/types.rs:687:    pub(crate) fn is_arithmetic(self) -> bool {
+src/semantic/types.rs:691:    pub(crate) fn is_real(self) -> bool {
+src/semantic/types.rs:695:    pub(crate) fn is_scalar(self) -> bool {
+src/semantic/types.rs:702:    pub(crate) fn merge_qualifiers(self, additional: TypeQualifiers) -> Self {
+src/semantic/types.rs:759:    pub(crate) fn to_class(&self) -> TypeClass {
+src/semantic/literal_utils.rs:19:pub(crate) fn parse_string_literal(name: NameId) -> ParsedStringLiteral {
+src/parser/statements.rs:13:pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+src/parser/statements.rs:49:pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(ParsedNodeRef, SourceLoc), ParseError> {
+src/parser/declarator.rs:109:pub(crate) fn parse_declarator(parser: &mut Parser) -> Result<DeclaratorRef, ParseError> {
+src/parser/declarator.rs:356:pub(crate) fn is_abstract_declarator_start(parser: &Parser) -> bool {
+src/parser/declarator.rs:370:pub(crate) fn get_declarator_name(arena: &ParsedTypeArena, decl_ref: DeclaratorRef) -> Option<NameId> {
+src/parser/declarator.rs:398:pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<DeclaratorRef, ParseError> {
+src/parser/lexer.rs:202:    pub(crate) fn is_type_specifier(&self) -> bool {
+src/parser/lexer.rs:225:    pub(crate) fn is_type_qualifier(&self) -> bool {
+src/parser/lexer.rs:247:    pub(crate) fn is_declaration_start(&self, is_typedef: bool) -> bool {
+src/parser/lexer.rs:253:    pub(crate) fn display(&self) -> &'static str {
+src/parser/lexer.rs:497:pub(crate) fn is_keyword(symbol: StringId) -> Option<TokenKind> {
+src/parser/lexer.rs:633:    pub(crate) fn new(tokens: &'src [PPToken]) -> Self {
+src/parser/lexer.rs:665:    pub(crate) fn tokenize_all(&mut self) -> Vec<Token> {
+src/parser/expressions.rs:112:pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Result<ParsedNodeRef, ParseError> {
+src/parser/expressions.rs:474:pub(crate) fn parse_compound_literal_from_type_and_start(
+src/parser/expressions.rs:561:pub(crate) fn is_cast_expression_start(parser: &Parser) -> bool {
+src/parser/expressions.rs:565:pub(crate) fn parse_cast_expression_from_type_and_paren(
+src/parser/type_builder.rs:20:pub(crate) fn build_type(
+src/parser/type_builder.rs:238:pub(crate) fn parse_type_name(parser: &mut Parser) -> Result<ParsedType, ParseError> {
+src/parser/utils.rs:18:    pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+src/parser/utils.rs:26:    pub(crate) fn parse_expr_list(
+src/parser/utils.rs:53:    pub(crate) fn new(parser: &'a mut Parser<'arena, 'src>) -> Self {
+src/parser/declaration_core.rs:25:pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVec<ParsedDeclSpec>, ParseError> {
+src/parser/declaration_core.rs:238:pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<ParsedDeclSpec>, ParseError> {
+src/parser/declarations.rs:17:pub(crate) fn parse_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+src/parser/declarations.rs:191:pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+src/diagnostic.rs:71:    pub(crate) fn from_warnings(_warnings: &[String]) -> Self {
+src/diagnostic.rs:79:    pub(crate) fn set_error_limit(&mut self, limit: usize) {
+src/diagnostic.rs:83:    pub(crate) fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
+src/diagnostic.rs:107:    pub(crate) fn has_errors(&self) -> bool {
+src/diagnostic.rs:111:    pub(crate) fn report<T: IntoDiagnostic>(&mut self, error: T) {
+src/diagnostic.rs:229:    // pub(crate) fn print_diagnostics(&self, source_manager: &SourceManager) {
+src/diagnostic.rs:237:    pub(crate) fn print_diagnostics_filtered(&self, source_manager: &SourceManager, suppress_warnings: bool) {
+src/pp/pp_lexer.rs:96:    pub(crate) fn new(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc, length: u16) -> Self {
+src/pp/pp_lexer.rs:107:    pub(crate) fn text(kind: PPTokenKind, flags: PPTokenFlags, location: SourceLoc, text: &str) -> Self {
+src/pp/pp_lexer.rs:119:    pub(crate) fn get_text(&self) -> &str {
+src/pp/pp_lexer.rs:192:    pub(crate) fn new(source_id: SourceId, buffer: Arc<[u8]>) -> Self {
+src/pp/pp_lexer.rs:502:    pub(crate) fn next_token(&mut self) -> Option<PPToken> {
+src/pp/preprocessor.rs:64:    pub(crate) fn new(
+src/pp/preprocessor.rs:136:    pub(crate) fn try_expand_magic_macro(&mut self, token: &PPToken) -> Option<PPToken> {
+src/pp/preprocessor.rs:331:    pub(crate) fn define_user_macro(&mut self, name: &str, value: Option<&str>) {
+src/pp/preprocessor.rs:374:    pub(crate) fn is_macro_defined(&self, symbol: &StringId) -> bool {
+src/pp/preprocessor.rs:457:    pub(crate) fn expect_eod(&mut self) -> Result<(), PPError> {
+src/pp/preprocessor.rs:466:    pub(crate) fn expect_token(&mut self) -> Result<PPToken, PPError> {
+src/pp/preprocessor.rs:472:    pub(crate) fn expect_kind(&mut self, kind: PPTokenKind) -> Result<PPToken, PPError> {
+src/pp/preprocessor.rs:482:    pub(crate) fn expect_string_literal(&mut self) -> Result<(StringId, SourceLoc), PPError> {
+src/pp/preprocessor.rs:492:    pub(crate) fn expect_identifier(&mut self) -> Result<(PPToken, StringId), PPError> {
+src/pp/preprocessor.rs:503:    pub(crate) fn collect_balanced_tokens(
+src/pp/preprocessor.rs:530:    pub(crate) fn extract_string_literal_content(
+src/pp/preprocessor.rs:544:    pub(crate) fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPError> {
+src/pp/preprocessor.rs:607:    pub(crate) fn get_current_location(&self) -> SourceLoc {
+src/pp/preprocessor.rs:615:    pub(crate) fn get_current_span(&self) -> SourceSpan {
+src/pp/preprocessor.rs:624:    pub(crate) fn error_loc(&self, kind: PPErrorKind, loc: SourceLoc) -> PPError {
+src/pp/preprocessor.rs:631:    pub(crate) fn emit_error<T>(&self, kind: PPErrorKind, span: SourceSpan) -> Result<T, PPError> {
+src/pp/preprocessor.rs:635:    pub(crate) fn emit_error_loc<T>(&self, kind: PPErrorKind, loc: SourceLoc) -> Result<T, PPError> {
+src/pp/preprocessor.rs:643:    pub(crate) fn is_currently_skipping(&self) -> bool {
+src/pp/preprocessor.rs:650:    pub(crate) fn parse_conditional_expression(&mut self) -> Result<Vec<PPToken>, PPError> {
+src/pp/preprocessor.rs:669:    pub(crate) fn evaluate_conditional_expression(&mut self, tokens: Vec<PPToken>) -> Result<bool, PPError> {
+src/pp/preprocessor.rs:745:    pub(crate) fn lex_token(&mut self) -> Option<PPToken> {
+src/pp/preprocessor.rs:772:    pub(crate) fn skip_directive(&mut self) -> Result<(), PPError> {
+src/pp/preprocessor.rs:782:    pub(crate) fn push_skipped_conditional(&mut self) {
+src/pp/preprocessor.rs:793:    pub(crate) fn should_evaluate_conditional(&self) -> bool {
+src/pp/preprocessor.rs:814:    pub(crate) fn report_diagnostic(&mut self, level: DiagnosticLevel, message: impl Into<String>, span: SourceSpan) {
+src/pp/preprocessor.rs:825:    pub(crate) fn report_pp_error(&mut self, err: PPError) {
+src/pp/preprocessor.rs:834:    pub(crate) fn report_error(&mut self, loc: SourceLoc, message: impl Into<String>) {
+src/pp/preprocessor.rs:840:    pub(crate) fn report_warning(&mut self, loc: SourceLoc, message: impl Into<String>) {
+src/pp/interpreter.rs:15:    pub(crate) fn new(value: u64, is_unsigned: bool) -> Self {
+src/pp/interpreter.rs:49:    pub(crate) fn evaluate(&self, pp: &Preprocessor, span: SourceSpan) -> Result<ExprValue, PPError> {
+src/pp/interpreter.rs:257:    pub(crate) fn new(tokens: &'a [PPToken], preprocessor: &'a Preprocessor<'a>) -> Self {
+src/pp/interpreter.rs:318:    pub(crate) fn evaluate(&mut self) -> Result<ExprValue, PPError> {
+src/pp/dumper.rs:19:    pub(crate) fn new(tokens: &'a [PPToken], source_manager: &'a SourceManager, suppress_line_markers: bool) -> Self {
+src/pp/dumper.rs:28:    pub(crate) fn dump(&self, writer: &mut impl Write) -> std::io::Result<()> {
+src/pp/macros.rs:12:    pub(crate) fn expand_macro(&mut self, token: &PPToken) -> Result<Option<Vec<PPToken>>, PPError> {
+src/pp/macros.rs:58:    pub(crate) fn tokens_to_string(&self, tokens: &[PPToken]) -> String {
+src/pp/macros.rs:75:    pub(crate) fn expand_virtual_buffer(
+src/pp/macros.rs:85:    pub(crate) fn expand_object_macro(
+src/pp/macros.rs:103:    pub(crate) fn expand_function_macro(
+src/pp/macros.rs:141:    pub(crate) fn parse_macro_args_from_lexer(
+src/pp/macros.rs:200:    pub(crate) fn collect_variadic_args_with_commas(
+src/pp/macros.rs:246:    pub(crate) fn is_macro_param(&self, macro_info: &MacroInfo, symbol: StringId) -> bool {
+src/pp/macros.rs:250:    pub(crate) fn get_macro_param_tokens<'a>(
+src/pp/macros.rs:270:    pub(crate) fn substitute_macro(
+src/pp/macros.rs:342:    pub(crate) fn perform_token_pasting(
+src/pp/macros.rs:388:    pub(crate) fn stringify_tokens(&self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPError> {
+src/pp/macros.rs:454:    pub(crate) fn paste_tokens(&mut self, left: &PPToken, right: &PPToken) -> Result<Vec<PPToken>, PPError> {
+src/pp/macros.rs:504:    pub(crate) fn find_balanced_paren_range(&self, tokens: &[PPToken], start_index: usize) -> Option<usize> {
+src/pp/macros.rs:526:    pub(crate) fn collect_macro_args_from_slice(
+src/pp/macros.rs:557:    pub(crate) fn expand_has_include_computed_args(&mut self, args: &mut Vec<PPToken>) {
+src/pp/macros.rs:576:    pub(crate) fn try_handle_conditional_operator(
+src/pp/macros.rs:644:    pub(crate) fn try_expand_function_macro_in_tokens(
+src/pp/macros.rs:714:    pub(crate) fn try_handle_pragma_operator_inline(&mut self, tokens: &mut Vec<PPToken>, i: usize) -> bool {
+src/pp/macros.rs:735:    pub(crate) fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>, in_conditional: bool) -> Result<(), PPError> {
+src/pp/macros.rs:794:    pub(crate) fn create_virtual_buffer_tokens(
+src/pp/macros.rs:864:    pub(crate) fn parse_macro_definition_params(
+src/pp/macros.rs:939:    pub(crate) fn new(sm: &'a SourceManager) -> Self {
+src/pp/macros.rs:947:    pub(crate) fn reset(&mut self) {
+src/pp/macros.rs:952:    pub(crate) fn get_token_bytes<'b>(&'b mut self, token: &'b PPToken) -> &'b [u8] {
+src/pp/macros.rs:973:    pub(crate) fn get_token_text<'b>(&'b mut self, token: &'b PPToken) -> &'b str {
+src/pp/types.rs:68:    pub(crate) fn new() -> Self {
+src/pp/types.rs:98:    pub(crate) fn is_directive(&self, symbol: StringId) -> Option<DirectiveKind> {
+src/pp/types.rs:133:    pub(crate) fn defined_symbol(&self) -> StringId {
+src/pp/types.rs:138:    pub(crate) fn has_include_symbol(&self) -> StringId {
+src/pp/types.rs:143:    pub(crate) fn has_include_next_symbol(&self) -> StringId {
+src/pp/types.rs:148:    pub(crate) fn has_builtin_symbol(&self) -> StringId {
+src/pp/types.rs:153:    pub(crate) fn has_attribute_symbol(&self) -> StringId {
+src/pp/types.rs:158:    pub(crate) fn has_feature_symbol(&self) -> StringId {
+src/pp/types.rs:163:    pub(crate) fn has_extension_symbol(&self) -> StringId {
+src/pp/types.rs:195:    pub(crate) fn new() -> Self {
+src/pp/types.rs:203:    pub(crate) fn intern(&mut self, mut set: SmallVec<[StringId; 4]>) -> u32 {
+src/pp/types.rs:222:    pub(crate) fn intersection(&mut self, id1: u32, id2: u32) -> u32 {
+src/pp/types.rs:250:    pub(crate) fn union(&mut self, id1: u32, id2: u32) -> u32 {
+src/pp/types.rs:289:    pub(crate) fn insert(&mut self, id: u32, symbol: StringId) -> u32 {
+src/pp/types.rs:301:    pub(crate) fn contains(&self, id: u32, symbol: StringId) -> bool {
+src/pp/header_search.rs:14:    pub(crate) fn add_system_path(&mut self, path: PathBuf) {
+src/pp/header_search.rs:19:    pub(crate) fn add_quoted_path(&mut self, path: PathBuf) {
+src/pp/header_search.rs:24:    pub(crate) fn add_angled_path(&mut self, path: PathBuf) {
+src/pp/header_search.rs:29:    pub(crate) fn add_framework_path(&mut self, path: PathBuf) {
+src/pp/header_search.rs:34:    pub(crate) fn resolve_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
+src/pp/header_search.rs:65:    pub(crate) fn resolve_next_path(&self, include_path: &str, is_angled: bool, current_dir: &Path) -> Option<PathBuf> {
+src/pp/directives.rs:14:    pub(crate) fn handle_directive(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:41:    pub(crate) fn handle_conditional_directive(
+src/pp/directives.rs:79:    pub(crate) fn execute_directive(&mut self, kind: DirectiveKind) -> Result<(), PPError> {
+src/pp/directives.rs:94:    pub(crate) fn handle_pragma_operator(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:107:    pub(crate) fn destringize(&self, full_str: &str) -> String {
+src/pp/directives.rs:112:    pub(crate) fn tokenize_pragma_content(&mut self, pragma_content: &str) -> Vec<PPToken> {
+src/pp/directives.rs:143:    pub(crate) fn perform_pragma(&mut self, pragma_content: &str) {
+src/pp/directives.rs:164:    pub(crate) fn parse_define_args(
+src/pp/directives.rs:192:    pub(crate) fn check_macro_redefinition(
+src/pp/directives.rs:240:    pub(crate) fn handle_define(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:264:    pub(crate) fn handle_undef(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:286:    pub(crate) fn do_handle_include(&mut self, is_next: bool) -> Result<(), PPError> {
+src/pp/directives.rs:388:    pub(crate) fn handle_include(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:392:    pub(crate) fn handle_include_next(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:396:    pub(crate) fn resolve_include_path(
+src/pp/directives.rs:431:    pub(crate) fn resolve_next_include_path(
+src/pp/directives.rs:468:    pub(crate) fn handle_if_directive(&mut self, condition: bool) -> Result<(), PPError> {
+src/pp/directives.rs:479:    pub(crate) fn handle_conditional_def(&mut self, is_ifdef: bool) -> Result<(), PPError> {
+src/pp/directives.rs:487:    pub(crate) fn handle_ifdef(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:491:    pub(crate) fn handle_ifndef(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:495:    pub(crate) fn handle_elif_directive(&mut self, condition: bool, location: SourceLoc) -> Result<(), PPError> {
+src/pp/directives.rs:522:    pub(crate) fn handle_else(&mut self, location: SourceLoc) -> Result<(), PPError> {
+src/pp/directives.rs:547:    pub(crate) fn handle_endif(&mut self, location: SourceLoc) -> Result<(), PPError> {
+src/pp/directives.rs:554:    pub(crate) fn collect_tokens_until_eod(&mut self) -> Vec<PPToken> {
+src/pp/directives.rs:566:    pub(crate) fn parse_line_directive_args(&self, tokens: &[PPToken]) -> Result<(u32, Option<String>), PPError> {
+src/pp/directives.rs:596:    pub(crate) fn handle_line(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:634:    pub(crate) fn handle_pragma(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:659:    pub(crate) fn parse_pragma_macro_name(&mut self) -> Result<StringId, PPError> {
+src/pp/directives.rs:670:    pub(crate) fn handle_push_macro(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:680:    pub(crate) fn handle_pop_macro(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:696:    pub(crate) fn parse_pragma_message_content(&mut self) -> Result<String, PPError> {
+src/pp/directives.rs:709:    pub(crate) fn handle_pragma_diagnostic_message(&mut self, level: DiagnosticLevel) -> Result<(), PPError> {
+src/pp/directives.rs:727:    pub(crate) fn handle_pragma_message(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:731:    pub(crate) fn handle_pragma_warning(&mut self, level: DiagnosticLevel) -> Result<(), PPError> {
+src/pp/directives.rs:735:    pub(crate) fn handle_pragma_error(&mut self, level: DiagnosticLevel) -> Result<(), PPError> {
+src/pp/directives.rs:739:    pub(crate) fn handle_diagnostic_directive(&mut self, is_error: bool) -> Result<(), PPError> {
+src/pp/directives.rs:762:    pub(crate) fn handle_pragma_pack(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:865:    pub(crate) fn parse_pack_value_from_token(&self, t: &PPToken) -> Result<u32, PPError> {
+src/pp/directives.rs:885:    pub(crate) fn parse_pack_value_from_iter(
+src/pp/directives.rs:897:    pub(crate) fn handle_error(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:901:    pub(crate) fn handle_warning(&mut self) -> Result<(), PPError> {
+src/pp/directives.rs:905:    pub(crate) fn read_directive_message(&mut self) -> String {
+src/mir/validation.rs:112:    pub(crate) fn new(mir_program: &'a MirProgram) -> Self {
+src/mir/validation.rs:125:    pub(crate) fn validate(mut self) -> Result<(), Vec<ValidationError>> {
+src/mir/dumper.rs:39:    pub(crate) fn new(mir: &'a MirProgram, config: &'a MirDumpConfig) -> Self {
+src/mir/dumper.rs:44:    pub(crate) fn generate_mir_dump(&self) -> Result<String, std::fmt::Error> {
+src/ast.rs:60:    pub(crate) fn new() -> Self {
+src/ast.rs:65:    pub(crate) fn push_node(&mut self, kind: NodeKind, span: SourceSpan) -> NodeRef {
+src/ast.rs:73:    pub(crate) fn push_dummy(&mut self, span: SourceSpan) -> NodeRef {
+src/ast.rs:78:    pub(crate) fn get_kind(&self, node_ref: NodeRef) -> &NodeKind {
+src/ast.rs:83:    pub(crate) fn get_span(&self, node_ref: NodeRef) -> SourceSpan {
+src/ast.rs:88:    pub(crate) fn get_root(&self) -> NodeRef {
+src/ast.rs:92:    pub(crate) fn scope_of(&self, node_ref: NodeRef) -> ScopeId {
+src/ast.rs:104:    pub(crate) fn attach_semantic_info(&mut self, semantic_info: SemanticInfo) {
+src/ast.rs:116:    pub(crate) fn new(value: u32) -> Option<Self> {
+src/ast.rs:120:    pub(crate) fn get(self) -> u32 {
+src/ast.rs:124:    pub(crate) fn index(self) -> usize {
+src/ast.rs:130:    pub(crate) fn range(self, len: impl Into<u32>) -> NodeRefRange {
+src/ast.rs:170:    pub(crate) fn get_resolved_type(&self, node_ref: NodeRef) -> Option<QualType> {
+src/ast.rs:175:    pub(crate) fn get_value_category(&self, node_ref: NodeRef) -> Option<ValueCategory> {
+src/ast/nodes.rs:131:    pub(crate) fn tagname(&self) -> &'static str {
+src/ast/nodes.rs:205:    pub(crate) fn visit_children<F: FnMut(NodeRef)>(&self, mut f: F) {
+src/ast/nodes.rs:540:    pub(crate) fn as_str(&self) -> &'static str {
+src/ast/nodes.rs:626:    pub(crate) fn is_assignment(&self) -> bool {
+src/ast/nodes.rs:643:    pub(crate) fn without_assignment(&self) -> Option<BinaryOp> {
+src/ast/literal_parsing.rs:28:pub(crate) fn parse_integer_literal(text: &str) -> Option<(u64, Option<IntegerSuffix>, u32)> {
+src/ast/literal_parsing.rs:100:pub(crate) fn parse_float_literal(text: &str) -> Option<(f64, Option<FloatSuffix>)> {
+src/ast/literal_parsing.rs:200:pub(crate) fn unescape_string(s: &str) -> String {
+src/ast/literal_parsing.rs:358:pub(crate) fn parse_char_literal(s: &str) -> Option<u32> {
+src/ast/parsed_types.rs:136:    pub(crate) fn alloc_base_type(&mut self, base_type: ParsedBaseType) -> ParsedBaseTypeRef {
+src/ast/parsed_types.rs:143:    pub(crate) fn alloc_decl(&mut self, declarator: ParsedDeclarator) -> DeclaratorRef {
+src/ast/parsed_types.rs:150:    pub(crate) fn alloc_params(&mut self, params: Vec<crate::ast::ParsedParam>) -> ParsedParamRange {
+src/ast/parsed_types.rs:158:    pub(crate) fn alloc_struct_members(&mut self, members: Vec<ParsedStructMember>) -> ParsedStructMemberRange {
+src/ast/parsed_types.rs:166:    pub(crate) fn alloc_enum_constants(&mut self, enumerators: Vec<ParsedEnumConstant>) -> ParsedEnumRange {
+src/ast/parsed_types.rs:174:    pub(crate) fn get_base_type(&self, base_ref: ParsedBaseTypeRef) -> ParsedBaseType {
+src/ast/parsed_types.rs:180:    pub(crate) fn get_decl(&self, decl_ref: DeclaratorRef) -> ParsedDeclarator {
+src/ast/parsed_types.rs:186:    pub(crate) fn get_params(&self, range: ParsedParamRange) -> &[crate::ast::ParsedParam] {
+src/ast/parsed_types.rs:193:    pub(crate) fn get_struct_members(&self, range: ParsedStructMemberRange) -> &[ParsedStructMember] {
+src/ast/parsed_types.rs:200:    pub(crate) fn get_enum_constants(&self, range: ParsedEnumRange) -> &[ParsedEnumConstant] {
+src/ast/parsed.rs:34:    pub(crate) fn new() -> Self {
+src/ast/parsed.rs:38:    pub(crate) fn push_node(&mut self, node: ParsedNode) -> ParsedNodeRef {
+src/ast/parsed.rs:44:    pub(crate) fn get_node(&self, index: ParsedNodeRef) -> &ParsedNode {
+src/ast/parsed.rs:48:    pub(crate) fn replace_node(&mut self, old_node_ref: ParsedNodeRef, new_node: ParsedNode) -> ParsedNodeRef {
+src/ast/parsed.rs:54:    pub(crate) fn get_root(&self) -> ParsedNodeRef {
+src/ast/parsed.rs:66:    pub(crate) fn new(kind: ParsedNodeKind, span: SourceSpan) -> Self {
+src/ast/parsed.rs:319:    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+src/ast/parsed.rs:329:    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+src/ast/parsed.rs:353:    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+src/ast/parsed.rs:361:    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+src/ast/parsed.rs:369:    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+src/ast/parsed.rs:380:    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+src/ast/parsed.rs:392:    pub(crate) fn tagname(&self) -> &'static str {
+src/ast/parsed.rs:458:    pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
+src/ast/dumper.rs:87:    pub(crate) fn dump_parsed_ast(ast: &ParsedAst) -> ParsedAstDisplay<'_> {
+src/ast/dumper.rs:92:    pub(crate) fn dump_ast<'a>(ast: &'a Ast, symbol_table: Option<&'a SymbolTable>) -> AstDisplay<'a> {
+src/ast/dumper.rs:97:    pub(crate) fn dump_type_registry<'a>(ast: &'a Ast, registry: &'a TypeRegistry) -> TypeRegistryDisplay<'a> {
+src/driver/compiler.rs:39:    pub fn new(cli: super::cli::Cli) -> Result<Self, String> {
+src/driver/compiler.rs:45:    pub(crate) fn from_config(config: CompileConfig) -> Self {
+src/driver/compiler.rs:73:    pub(crate) fn run_pipeline(&mut self, stop_after: CompilePhase) -> Result<PipelineOutputs, PipelineError> {
+src/driver/compiler.rs:400:    pub fn run(&mut self) -> Result<(), DriverError> {
+src/driver/compiler.rs:536:    pub(crate) fn get_diagnostics(&self) -> Vec<crate::diagnostic::Diagnostic> {
+src/driver/compiler.rs:541:    pub(crate) fn print_diagnostics(&self) {
+src/driver/cli.rs:205:    pub(crate) fn from_virtual_file(source: String, stop_after: CompilePhase) -> Self {
+src/driver/cli.rs:245:    pub(crate) fn into_config(self) -> Result<CompileConfig, String> {
+src/parser.rs:38:    pub(crate) fn new() -> Self {
+src/parser.rs:54:    pub(crate) fn is_type_name(&self, symbol: NameId) -> bool {
+src/parser.rs:66:    pub(crate) fn add_typedef(&mut self, symbol: NameId) {
+src/parser.rs:71:    pub(crate) fn add_non_typedef(&mut self, symbol: NameId) {
+src/parser.rs:75:    pub(crate) fn push_scope(&mut self) {
+src/parser.rs:79:    pub(crate) fn pop_scope(&mut self) {
+src/parser.rs:114:    pub(crate) fn new(tokens: &'src [Token], ast: &'arena mut ParsedAst, diag: &'src mut DiagnosticEngine) -> Self {
+src/parser.rs:150:    pub(crate) fn current_token_span(&self) -> Result<SourceSpan, ParseError> {
+src/parser.rs:155:    pub(crate) fn current_token_span_or_empty(&self) -> SourceSpan {
+src/parser.rs:160:    pub(crate) fn previous_token_span(&self) -> SourceSpan {
+src/parser.rs:165:    pub(crate) fn last_token_span(&self) -> Option<SourceSpan> {
+src/parser.rs:173:    pub(crate) fn get_token_span(&self, index: usize) -> Option<SourceSpan> {
+src/parser.rs:310:    pub(crate) fn parse_expression(
+src/parser.rs:323:    pub(crate) fn parse_expr_min(&mut self) -> Result<ParsedNodeRef, ParseError> {
+src/parser.rs:328:    pub(crate) fn parse_expr_assignment(&mut self) -> Result<ParsedNodeRef, ParseError> {
+src/parser.rs:333:    pub(crate) fn parse_translation_unit(&mut self) -> Result<ParsedNodeRef, ParseError> {
+src/parser.rs:360:    pub(crate) fn is_type_name_start_token(&self, token: &Token) -> bool {
+src/parser.rs:370:    pub(crate) fn is_type_name_start(&self) -> bool {
+src/parser.rs:423:    pub(crate) fn add_typedef(&mut self, symbol: NameId) {
+src/parser.rs:441:    pub(crate) fn start_transaction(&mut self) -> utils::ParserTransaction<'_, 'arena, 'src> {
+src/parser.rs:446:    pub(crate) fn starts_declaration(&self) -> bool {
+src/parser.rs:458:    pub(crate) fn push_node(&mut self, kind: ParsedNodeKind, span: SourceSpan) -> ParsedNodeRef {
+src/parser.rs:463:    pub(crate) fn push_dummy(&mut self) -> ParsedNodeRef {
+src/parser.rs:469:    pub(crate) fn replace_node(
+src/parser.rs:480:    pub(crate) fn alloc_decl(&mut self, declarator: ParsedDeclarator) -> DeclaratorRef {
+src/parser.rs:486:    pub(crate) fn alloc_base_type(&mut self, base_type: ParsedBaseType) -> ParsedBaseTypeRef {
+src/parser.rs:492:    pub(crate) fn alloc_params(&mut self, params: Vec<crate::ast::ParsedParam>) -> ParsedParamRange {
+src/parser.rs:498:    pub(crate) fn alloc_struct_members(&mut self, members: Vec<ParsedStructMember>) -> ParsedStructMemberRange {
+src/parser.rs:504:    pub(crate) fn alloc_enum_constants(&mut self, enumerators: Vec<ParsedEnumConstant>) -> ParsedEnumRange {
+src/codegen/mir_gen_initializer.rs:466:    pub(crate) fn visit_initializer(
+src/codegen/mir_gen_expression.rs:22:    pub(crate) fn visit_expression(&mut self, expr_ref: NodeRef, need_value: bool) -> Operand {
+src/codegen/mir_gen_expression.rs:273:    pub(crate) fn visit_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
+src/codegen/clif_gen.rs:403:pub(crate) fn emit_const(
+src/codegen/clif_gen.rs:2598:    pub(crate) fn new(mir: MirProgram) -> Self {
+src/codegen/clif_gen.rs:2640:    pub(crate) fn visit_module(mut self, emit_kind: EmitKind) -> ClifOutput {
+src/codegen/mir_gen.rs:50:    pub(crate) fn new(
+src/codegen/mir_gen.rs:79:    pub(crate) fn const_ctx(&self) -> ConstEvalCtx<'_> {
+src/codegen/mir_gen.rs:93:    pub(crate) fn visit_module(&mut self) -> MirProgram {
+src/codegen/mir_gen.rs:117:    pub(crate) fn visit_node(&mut self, node_ref: NodeRef) {
+src/codegen/mir_gen.rs:1315:    pub(crate) fn create_constant(&mut self, ty: TypeId, kind: ConstValueKind) -> ConstValueId {
+src/codegen/link_gen.rs:61:    pub(crate) fn link<P: AsRef<Path>>(object_files: &[P], config: &LinkConfig) -> Result<(), LinkError> {
+src/mir.rs:107:    pub(crate) fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
+src/mir.rs:129:    pub(crate) fn new(id: MirBlockId) -> Self {
+src/mir.rs:442:    pub(crate) fn new(offset: u64) -> Self {
+src/mir.rs:452:    pub(crate) fn signed(self, value: bool) -> Self {
+src/mir.rs:510:    pub(crate) fn new(id: LocalId, name: Option<NameId>, type_id: TypeId, is_param: bool) -> Self {
+src/mir.rs:534:    pub(crate) fn new(id: GlobalId, name: NameId, type_id: TypeId, is_constant: bool, linkage: MirLinkage) -> Self {
+src/mir.rs:587:    pub(crate) fn get_type(&self, id: TypeId) -> &MirType {
+src/mir.rs:593:    pub(crate) fn get_local(&self, id: LocalId) -> &Local {
+src/mir.rs:599:    pub(crate) fn get_function(&self, id: MirFunctionId) -> &MirFunction {
+src/mir.rs:605:    pub(crate) fn get_global(&self, id: GlobalId) -> &Global {
+src/mir.rs:614:    pub(crate) fn new(module_id: MirModuleId, pointer_width: u8) -> Self {
+src/mir.rs:639:    pub(crate) fn create_local(&mut self, name: Option<NameId>, type_id: TypeId, is_param: bool) -> LocalId {
+src/mir.rs:659:    pub(crate) fn set_local_alignment(&mut self, local_id: LocalId, alignment: u32) {
+src/mir.rs:666:    pub(crate) fn create_block(&mut self) -> MirBlockId {
+src/mir.rs:689:    pub(crate) fn add_statement(&mut self, stmt: MirStmt) -> MirStmtId {
+src/mir.rs:709:    pub(crate) fn set_terminator(&mut self, terminator: Terminator) {
+src/mir.rs:723:    pub(crate) fn set_current_block(&mut self, block_id: MirBlockId) {
+src/mir.rs:730:    pub(crate) fn current_block_has_terminator(&self) -> bool {
+src/mir.rs:740:    pub(crate) fn declare_function(
+src/mir.rs:768:    pub(crate) fn define_function(
+src/mir.rs:794:    pub(crate) fn set_current_function(&mut self, func_id: MirFunctionId) {
+src/mir.rs:804:    pub(crate) fn create_global_with_init(
+src/mir.rs:823:    pub(crate) fn set_global_initializer(&mut self, global_id: GlobalId, init_id: ConstValueId) {
+src/mir.rs:829:    pub(crate) fn set_global_alignment(&mut self, global_id: GlobalId, alignment: u32) {
+src/mir.rs:836:    pub(crate) fn add_type(&mut self, mir_type: MirType) -> TypeId {
+src/mir.rs:856:    pub(crate) fn update_type(&mut self, type_id: TypeId, mir_type: MirType) {
+src/mir.rs:864:    pub(crate) fn get_type(&self, type_id: TypeId) -> &MirType {
+src/mir.rs:869:    pub(crate) fn create_constant(&mut self, ty: TypeId, kind: ConstValueKind) -> ConstValueId {
+src/mir.rs:882:    pub(crate) fn consume(self) -> MirProgram {
+src/mir.rs:898:    pub(crate) fn get_functions(&self) -> &HashMap<MirFunctionId, MirFunction> {
+src/mir.rs:903:    pub(crate) fn get_constants(&self) -> &HashMap<ConstValueId, ConstValue> {
+src/mir.rs:907:    pub(crate) fn get_globals(&self) -> &HashMap<GlobalId, Global> {
+src/mir.rs:911:    pub(crate) fn get_locals(&self) -> &HashMap<LocalId, Local> {
+src/mir.rs:916:    pub(crate) fn set_function_entry_block(&mut self, func_id: MirFunctionId, block_id: MirBlockId) {
+src/mir.rs:923:    pub(crate) fn get_next_anonymous_global_name(&mut self) -> NameId {
+src/tests/parser_utils.rs:158:pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> ResolvedNodeKind {
+src/tests/parser_utils.rs:492:pub(crate) fn setup_source<F, T>(source: &str, parse_fn: F) -> (ParsedAst, T)
+src/tests/parser_utils.rs:512:pub(crate) fn setup_expr(source: &str) -> ResolvedNodeKind {
+src/tests/parser_utils.rs:521:pub(crate) fn setup_declaration(source: &str) -> ResolvedNodeKind {
+src/tests/parser_utils.rs:530:pub(crate) fn setup_declaration_with_errors(source: &str) -> ParseError {
+src/tests/parser_utils.rs:538:pub(crate) fn setup_statement(source: &str) -> ResolvedNodeKind {
+src/tests/parser_utils.rs:548:pub(crate) fn setup_compound(source: &str) -> ResolvedNodeKind {
+src/tests/parser_utils.rs:558:pub(crate) fn setup_translation_unit(source: &str) -> ResolvedNodeKind {
+src/tests/test_utils.rs:7:pub(crate) fn setup_driver(source: &str, phase: CompilePhase) -> CompilerDriver {
+src/tests/test_utils.rs:12:pub(crate) fn setup_sm_and_diag() -> (SourceManager, DiagnosticEngine) {
+src/tests/test_utils.rs:18:pub(crate) fn run_pipeline(source: &str, phase: CompilePhase) -> (CompilerDriver, Result<PipelineOutputs, String>) {
+src/tests/test_utils.rs:24:pub(crate) fn run_pipeline_to_mir(source: &str) -> PipelineOutputs {
+src/tests/test_utils.rs:33:pub(crate) fn sort_clif_ir(ir: &str) -> String {
+src/tests/test_utils.rs:63:pub(crate) fn run_pass(source: &str, phase: CompilePhase) -> CompilerDriver {
+src/tests/test_utils.rs:71:pub(crate) fn run_fail(source: &str, phase: CompilePhase) -> CompilerDriver {
+src/tests/test_utils.rs:77:pub(crate) fn run_fail_with_message(source: &str, message: &str) {
+src/tests/test_utils.rs:82:pub(crate) fn run_fail_with_diagnostic(source: &str, phase: CompilePhase, message: &str, line: u32, col: u32) {
+src/tests/test_utils.rs:87:pub(crate) fn check_diagnostic(driver: &CompilerDriver, message: &str, line: u32, col: u32) {
+src/tests/test_utils.rs:106:pub(crate) fn check_diagnostic_message_only(driver: &CompilerDriver, message: &str) {
+src/tests/test_utils.rs:116:pub(crate) fn run_pass_with_diagnostic(source: &str, phase: CompilePhase, message: &str, line: u32, col: u32) {
+src/tests/test_utils.rs:122:pub(crate) fn run_pass_with_diagnostic_message(source: &str, phase: CompilePhase, message: &str) {
+src/tests/pp_common.rs:29:pub(crate) fn setup_pp_snapshot(src: &str) -> Vec<DebugToken> {
+src/tests/pp_common.rs:34:pub(crate) fn setup_pp_snapshot_with_diags(src: &str) -> (Vec<DebugToken>, Vec<String>) {
+src/tests/pp_common.rs:38:pub(crate) fn setup_pp_snapshot_with_diags_and_config(
+src/tests/pp_common.rs:53:pub(crate) fn setup_multi_file_pp_snapshot(
+src/tests/pp_common.rs:69:pub(crate) fn setup_preprocessor_test_with_diagnostics(
+src/tests/pp_common.rs:76:pub(crate) fn setup_multi_file_pp_with_diagnostics(
+src/tests/pp_common.rs:91:pub(crate) fn setup_multi_file_pp_with_diagnostics_raw(
+src/tests/pp_common.rs:126:    pub(crate) fn next_token(&mut self) -> Option<PPToken> {
+src/tests/pp_common.rs:131:pub(crate) fn create_test_pp_lexer(src: &str) -> TestLexer {
+src/tests/semantic_common.rs:9:pub(crate) fn setup_mir(source: &str) -> String {
+src/tests/semantic_common.rs:26:pub(crate) fn setup_lowering(source: &str) -> (Ast, TypeRegistry, SymbolTable) {
+src/tests/semantic_common.rs:41:pub(crate) fn setup_analysis(source: &str) -> (Ast, TypeRegistry, SymbolTable) {
+src/tests/semantic_common.rs:71:pub(crate) fn find_layout<'a>(registry: &'a TypeRegistry, name: &str) -> &'a TypeLayout {
+src/tests/semantic_common.rs:76:pub(crate) fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'a Type {
+src/tests/semantic_common.rs:93:pub(crate) fn find_var_decl<'a>(ast: &'a Ast, name: &str) -> &'a VarDecl {
+src/tests/semantic_common.rs:108:pub(crate) fn find_enum_constant(symbol_table: &SymbolTable, name: &str) -> i64 {
+src/tests/codegen_common.rs:7:pub(crate) fn setup_cranelift(c_code: &str) -> String {
+src/tests/codegen_common.rs:54:pub(crate) fn run_c_code_with_output(source: &str) -> String {
+src/tests/codegen_common.rs:59:pub(crate) fn run_c_code_exit_status(source: &str) -> i32 {

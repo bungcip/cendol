@@ -537,7 +537,7 @@ pub enum StorageClass {
 }
 
 impl StorageClass {
-    pub fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             StorageClass::Typedef => "typedef",
             StorageClass::Extern => "extern",

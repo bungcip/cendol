@@ -1647,10 +1647,6 @@ impl<'a> MirGen<'a> {
         Place::Deref(Box::new(operand))
     }
 
-    pub(super) fn deref_place(&self, place: Place) -> Place {
-        self.deref_operand(Operand::Copy(Box::new(place)))
-    }
-
     pub(super) fn create_temp_local_with_assignment(&mut self, rvalue: Rvalue, type_id: TypeId) -> (LocalId, Place) {
         let (local_id, place) = self.create_temp_local(type_id);
         let assign_stmt = MirStmt::Assign(place.clone(), rvalue);

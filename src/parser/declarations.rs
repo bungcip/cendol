@@ -208,6 +208,10 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
             continue;
         }
 
+        if parser.accept(TokenKind::Semicolon).is_some() {
+            continue;
+        }
+
         let initial_idx = parser.current_idx;
         match parse_declaration(parser) {
             Ok(declaration) => top_level_declarations.push(declaration),

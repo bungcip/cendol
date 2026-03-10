@@ -934,3 +934,21 @@ fn test_struct_attribute_error_recovery() {
       init_declarators: []
     "#);
 }
+
+#[test]
+fn test_top_level_semicolon_regression() {
+    let resolved = setup_translation_unit("int x; ; ; int y;");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    TranslationUnit:
+      - Declaration:
+          specifiers:
+            - int
+          init_declarators:
+            - name: x
+      - Declaration:
+          specifiers:
+            - int
+          init_declarators:
+            - name: y
+    ");
+}

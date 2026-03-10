@@ -263,11 +263,11 @@ pub enum ParsedAlignmentSpec {
 #[derive(Debug, Clone)]
 pub struct ParsedParam {
     pub name: Option<NameId>,
-    pub ty: crate::ast::ParsedType,
-    pub storage: Option<crate::ast::StorageClass>,
+    pub ty: ParsedType,
+    pub storage: Option<StorageClass>,
     pub is_inline: bool,
     pub is_noreturn: bool,
-    pub alignment: Option<crate::ast::ParsedAlignmentSpec>,
+    pub alignment: Option<ParsedAlignmentSpec>,
     pub span: SourceSpan,
 }
 

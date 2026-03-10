@@ -166,3 +166,23 @@ fn test_global_variable_modification_not_folded() {
     let output = crate::tests::codegen_common::run_c_code_with_output(source);
     assert_eq!(output.trim(), "checksum = 00000005");
 }
+
+#[test]
+fn test_arrow_on_array_deref_panic_regression() {
+    let source = r#"
+        struct Point { int x; int y; };
+        int main() {
+            struct Point pts[2] = {{1, 2}, {3, 4}};
+            return pts->x;
+        }
+    "#;
+
+    // This should not panic during MIR generation
+    let clif_dump = setup_cranelift(source);
+
+    // We expect the array 'pts' to decay to a pointer, then dereferenced for member 'x'
+    assert!(
+        clif_dump.contains("stack_addr.i64"),
+        "Expected stack_addr for array 'pts'"
+    );
+}

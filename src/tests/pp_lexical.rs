@@ -253,6 +253,19 @@ fn test_hex_float_literal() {
 }
 
 #[test]
+fn test_hex_literal_minus_sign_regression() {
+    let source = "0xf-1";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(
+        lexer,
+        ("0xf", PPTokenKind::Number(_)),
+        ("-", PPTokenKind::Minus),
+        ("1", PPTokenKind::Number(_)),
+    );
+}
+
+#[test]
 fn test_char_literal_escapes() {
     let source = r"'\1' '\10' '\100' '\x01' '\x0e' '\x10' '\x40'";
     let mut lexer = create_test_pp_lexer(source);

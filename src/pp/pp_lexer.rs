@@ -1036,9 +1036,7 @@ impl PPLexer {
             false,
             |seen_e, ch| {
                 if ch.is_ascii_digit() || ch == b'.' || ch.is_ascii_alphabetic() || ch == b'_' {
-                    if ch == b'e' || ch == b'E' || ch == b'p' || ch == b'P' {
-                        *seen_e = true;
-                    }
+                    *seen_e = ch == b'e' || ch == b'E' || ch == b'p' || ch == b'P';
                     true
                 } else if (ch == b'+' || ch == b'-') && *seen_e {
                     // Allow + or - after e/E for scientific notation

@@ -8,7 +8,7 @@ use crate::mir::{
     Place, Rvalue, Terminator, TypeId,
 };
 use crate::semantic::const_eval::{eval_const_expr, eval_const_expr_float};
-use crate::semantic::{ArraySizeType, QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
+use crate::semantic::{ArraySizeType, Conversion, QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
 use crate::{ast, semantic};
 
 impl<'a> MirGen<'a> {
@@ -1087,7 +1087,20 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_member_access(&mut self, obj_ref: NodeRef, field_name: &ast::NameId, is_arrow: bool) -> Operand {
-        let obj_ty = self.ast.get_resolved_type(obj_ref).unwrap();
+        let mut obj_ty = self.ast.get_resolved_type(obj_ref).unwrap();
+
+        // Handle implicit conversions (like array-to-pointer decay) for arrow access
+        if is_arrow && let Some(semantic_info) = &self.ast.semantic_info {
+            let idx = obj_ref.index();
+            if idx < semantic_info.conversions.len() {
+                for conv in &semantic_info.conversions[idx] {
+                    if let Conversion::PointerDecay { to } = conv {
+                        obj_ty = QualType::unqualified(*to);
+                    }
+                }
+            }
+        }
+
         let record_ty = if is_arrow {
             self.registry
                 .get_pointee(obj_ty.ty())
@@ -1106,12 +1119,14 @@ impl<'a> MirGen<'a> {
             // Apply the chain of field accesses
 
             // Resolve base place
-            let mut current_place = self.visit_expression_as_place(obj_ref);
-
-            if is_arrow {
-                // Dereference: *ptr
-                current_place = self.deref_place(current_place);
-            }
+            let mut current_place = if is_arrow {
+                let obj_op = self.visit_expression(obj_ref, true);
+                let obj_mir_ty = self.lower_qual_type(obj_ty);
+                let obj_op_converted = self.apply_conversions(obj_op, obj_ref, obj_mir_ty);
+                self.deref_operand(obj_op_converted)
+            } else {
+                self.visit_expression_as_place(obj_ref)
+            };
 
             for field_idx in path {
                 let struct_ty = self.get_place_type(&current_place);

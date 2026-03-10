@@ -57,3 +57,7 @@
 ## 2026-02-22 - Fast-path Guards for State-Heavy Operations
 **Learning:** Operations that involve saving and restoring state (like backtracking in a lexer) should always be guarded by a fast-path check that skips the expensive setup if the work is not needed. In our lexer, the comment-skipping logic was saving state for every single token, even though comments can only start with a specific character ('/').
 **Action:** Always use a simple guard (like `peek_char()`) before performing any state-heavy or potentially redundant operations in hot loops.
+
+## 2026-02-23 - Targeted Recursive Lookup vs Full Flattening
+**Learning:** For deeply nested structures (like C structs with anonymous members), performing a full flattening into temporary `Vec`s to look up a single member is a major performance anti-pattern. It causes O(N) heap allocations and traversal overhead where O(D) (depth) targeted search is sufficient.
+**Action:** Prefer targeted recursive search (like `find_member_with_offset`) over full record flattening when only one member's metadata is required.

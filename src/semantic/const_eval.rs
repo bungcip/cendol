@@ -476,14 +476,13 @@ fn eval_offsetof(ctx: &ConstEvalCtx, qt: QualType, expr: NodeRef) -> Option<i64>
                     return false;
                 }
 
-                let mut flat_members = Vec::new();
-                let mut flat_fields = Vec::new();
+                let mut base_index = 0;
                 let ty_info = ctx.registry.get(record_ty);
-                ty_info.flatten_members_with_layouts(ctx.registry, &mut flat_members, &mut flat_fields, 0);
-
-                if let Some(idx) = flat_members.iter().position(|m| m.name == Some(member_name)) {
-                    *offset += flat_fields[idx].offset as i64;
-                    *current_qt = flat_members[idx].member_type;
+                if let Some((member, field, _)) =
+                    ty_info.find_member_with_offset(ctx.registry, member_name, 0, &mut base_index)
+                {
+                    *offset += field.offset as i64;
+                    *current_qt = member.member_type;
                     true
                 } else {
                     false

@@ -134,7 +134,7 @@ pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Res
             TokenKind::Dot => parse_member_access(parser, left, false)?,
             TokenKind::Arrow => parse_member_access(parser, left, true)?,
             TokenKind::Question => {
-                let true_expr = parser.parse_expr_assignment()?;
+                let true_expr = parser.parse_expr_min()?;
                 parser.expect(TokenKind::Colon)?;
                 let false_expr = parser.parse_expr_bp(BindingPower::CONDITIONAL)?;
                 let span = parser

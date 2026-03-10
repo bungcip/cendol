@@ -431,3 +431,17 @@ fn test_sizeof_compound_literal_expr() {
             - LiteralInt: 12
     ");
 }
+
+#[test]
+fn test_ternary_with_comma_in_middle() {
+    let resolved = setup_expr("a ? b, c : d");
+    insta::assert_yaml_snapshot!(&resolved, @r"
+    TernaryOp:
+      - Ident: a
+      - BinaryOp:
+          - Comma
+          - Ident: b
+          - Ident: c
+      - Ident: d
+    ");
+}

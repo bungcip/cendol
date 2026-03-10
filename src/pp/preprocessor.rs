@@ -270,6 +270,20 @@ impl<'src> Preprocessor<'src> {
         self.define_builtin_macro_with_val("__GNUC_MINOR__", "2");
         self.define_builtin_macro_with_val("__GNUC_PATCHLEVEL__", "1");
 
+        // Atomic memory ordering constants
+        self.define_builtin_macro_with_val("__ATOMIC_RELAXED", "0");
+        self.define_builtin_macro_with_val("__ATOMIC_CONSUME", "1");
+        self.define_builtin_macro_with_val("__ATOMIC_ACQUIRE", "2");
+        self.define_builtin_macro_with_val("__ATOMIC_RELEASE", "3");
+        self.define_builtin_macro_with_val("__ATOMIC_ACQ_REL", "4");
+        self.define_builtin_macro_with_val("__ATOMIC_SEQ_CST", "5");
+
+        // Sync compare and swap availability
+        self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_1");
+        self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2");
+        self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4");
+        self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8");
+
         if self.c_standard.is_c11() {
             self.define_builtin_macro_with_val("__STDC_VERSION__", "201112L");
             self.define_builtin_macro_one("__STDC_HOSTED__");

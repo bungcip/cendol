@@ -196,6 +196,10 @@ pub enum SemanticErrorKind {
         ty: TypeRef,
     },
     AlignOfFunctionType,
+    OffsetofIncompleteType {
+        ty: QualType,
+    },
+    OffsetofBitfield,
     GenericNoMatch {
         ty: QualType,
     },
@@ -475,6 +479,13 @@ impl SemanticErrorKind {
             SemanticErrorKind::AlignOfFunctionType => {
                 "Invalid application of '_Alignof' to a function type".to_string()
             }
+            SemanticErrorKind::OffsetofIncompleteType { ty } => {
+                format!(
+                    "cannot apply 'offsetof' to an incomplete type '{}'",
+                    registry.display_qual_type(*ty)
+                )
+            }
+            SemanticErrorKind::OffsetofBitfield => "cannot apply 'offsetof' to a bit-field".to_string(),
             SemanticErrorKind::GenericNoMatch { ty } => format!(
                 "controlling expression type '{}' not compatible with any generic association",
                 registry.display_qual_type(*ty)

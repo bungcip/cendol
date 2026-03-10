@@ -124,3 +124,13 @@ Action: Centralize compound literal type validation in the semantic analyzer, en
 
 Learning: C11 6.5.1.1p5 requires the result of a `_Generic` selection to have the type and value category of its selected association. Crucially, if the selected expression is a bit-field or has the `register` storage class, these properties must be propagated to the `_Generic` expression itself so that operators like `&` and `sizeof` can correctly enforce their respective constraints (e.g., 6.5.3.2p1 prohibiting `&` on bit-fields and register variables).
 Action: Ensure that semantic property queries (like `is_lvalue`, `get_bitfield_width`, and `is_register_variable`) recursively inspect the selected association of `_Generic` nodes to maintain semantic correctness across expression boundaries.
+
+2025-06-08 - [offsetof Semantic Constraints]
+
+Learning: C11 7.19p3 defines  in terms of the address-of operator on a hypothetical static object. Consequently, the member-designator must be such that  is a valid constant expression. This implicitly prohibits  on bit-fields (as their address cannot be taken per 6.5.3.2p1) and on incomplete types (where the layout is unknown). Furthermore, in a multi-phase compiler, these checks must be performed during semantic analysis of the designator path, ensuring that even nested or anonymous bit-fields are correctly caught.
+Action: Enforce address-of compatibility for all intrinsics or operators that logically rely on object layout or memory location, especially for bit-fields and incomplete types.
+
+2025-06-08 - [offsetof Semantic Constraints]
+
+Learning: C11 7.19p3 defines `offsetof` in terms of the address-of operator on a hypothetical static object. Consequently, the member-designator must be such that `&(t.member-designator)` is a valid constant expression. This implicitly prohibits `offsetof` on bit-fields (as their address cannot be taken per 6.5.3.2p1) and on incomplete types (where the layout is unknown). Furthermore, in a multi-phase compiler, these checks must be performed during semantic analysis of the designator path, ensuring that even nested or anonymous bit-fields are correctly caught.
+Action: Enforce address-of compatibility for all intrinsics or operators that logically rely on object layout or memory location, especially for bit-fields and incomplete types.

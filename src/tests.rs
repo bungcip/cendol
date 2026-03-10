@@ -141,3 +141,4 @@ pub mod semantic_shift_float;
 pub mod semantic_sizeof_vla;
 pub mod semantic_static_assert;
 pub mod semantic_valist;
+pub mod guardian_offsetof;

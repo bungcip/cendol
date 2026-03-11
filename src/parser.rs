@@ -129,11 +129,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Get the current token (returns error if at end of input)
     fn current_token(&self) -> Result<Token, ParseError> {
         self.try_current_token().ok_or_else(|| {
-            let prev = self.tokens.get(self.current_idx - 1);
-            let span = match prev {
-                Some(token) => token.span,
-                None => SourceSpan::empty(),
-            };
+            let span = self
+                .tokens
+                .get(self.current_idx.saturating_sub(1))
+                .map(|token| token.span)
+                .unwrap_or_default();
             ParseError {
                 span,
                 kind: ParseErrorKind::UnexpectedEof,

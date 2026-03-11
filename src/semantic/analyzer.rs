@@ -3196,6 +3196,11 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut offset = 0i64;
         let res_ty = QualType::unqualified(self.registry.type_long_unsigned);
 
+        if !self.registry.is_complete(ty.ty()) {
+            self.report_error(node, SemanticErrorKind::OffsetofIncompleteType { ty });
+            return Some(res_ty);
+        }
+
         if !self.compute_offsetof_recursive(expr, &mut current_ty, &mut offset) {
             return Some(res_ty);
         }
@@ -3246,6 +3251,11 @@ impl<'a> SemanticAnalyzer<'a> {
         let ty_obj = self.registry.get(record_ty);
         if let Some((member, field, _)) = ty_obj.find_member_with_offset(self.registry, member_name, 0, &mut base_index)
         {
+            if member.bit_field_size.is_some() {
+                self.report_error(node, SemanticErrorKind::OffsetofBitfield);
+                return false;
+            }
+
             *offset += field.offset as i64;
             *current_ty = member.member_type;
             true

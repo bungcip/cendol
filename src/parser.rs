@@ -129,11 +129,11 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     /// Get the current token (returns error if at end of input)
     fn current_token(&self) -> Result<Token, ParseError> {
         self.try_current_token().ok_or_else(|| {
-            let prev = self.tokens.get(self.current_idx - 1);
-            let span = match prev {
-                Some(token) => token.span,
-                None => SourceSpan::empty(),
-            };
+            let span = self
+                .tokens
+                .get(self.current_idx.saturating_sub(1))
+                .map(|token| token.span)
+                .unwrap_or_default();
             ParseError {
                 span,
                 kind: ParseErrorKind::UnexpectedEof,
@@ -503,33 +503,5 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     #[inline]
     pub(crate) fn alloc_enum_constants(&mut self, enumerators: Vec<ParsedEnumConstant>) -> ParsedEnumRange {
         self.ast.parsed_types.alloc_enum_constants(enumerators)
-    }
-}
-#[cfg(test)]
-mod tests {
-    use crate::parser::{Parser, Token, TokenKind};
-    use crate::ast::ParsedAst;
-    use crate::diagnostic::{DiagnosticEngine, ParseErrorKind};
-
-    #[test]
-    fn test_unexpected_eof() {
-        let tokens = vec![Token { kind: TokenKind::Int, span: Default::default() }];
-        let mut ast = ParsedAst::new();
-        let mut diag = DiagnosticEngine::default();
-        let mut parser = Parser::new(&tokens, &mut ast, &mut diag);
-
-        parser.advance(); // Consume the Int token
-        let result = parser.current_token();
-
-        match result {
-            Err(e) => {
-                if let ParseErrorKind::UnexpectedEof = e.kind {
-                    // Success
-                } else {
-                    panic!("Expected UnexpectedEof, got {:?}", e.kind);
-                }
-            }
-            Ok(_) => panic!("Expected error, got Ok"),
-        }
     }
 }

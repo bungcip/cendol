@@ -348,6 +348,8 @@ pub enum SemanticErrorKind {
     },
     VlaAtFileScope,
     VlaInitializerNotAllowed,
+    OffsetofBitfield,
+    OffsetofIncompleteType { ty: QualType },
 }
 
 impl SemanticErrorKind {
@@ -692,6 +694,10 @@ impl SemanticErrorKind {
                 "variable length array declaration not allowed at file scope".to_string()
             }
             SemanticErrorKind::VlaInitializerNotAllowed => "variable-length array may not be initialized".to_string(),
+            SemanticErrorKind::OffsetofBitfield => "cannot apply 'offsetof' to a bit-field".to_string(),
+            SemanticErrorKind::OffsetofIncompleteType { ty } => {
+                format!("offsetof of incomplete type '{}'", registry.display_qual_type(*ty))
+            }
         }
     }
 }

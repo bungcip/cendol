@@ -12,9 +12,9 @@ use thin_vec::ThinVec;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
 pub enum PragmaPackKind {
     Push,
-    PushSet(u32),
+    PushSet(u8),
     Pop,
-    Set(Option<u32>),
+    Set(Option<u8>),
 }
 
 use super::ParsedTypeArena;

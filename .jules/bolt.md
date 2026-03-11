@@ -61,3 +61,7 @@
 ## 2026-02-23 - Targeted Recursive Lookup vs Full Flattening
 **Learning:** For deeply nested structures (like C structs with anonymous members), performing a full flattening into temporary `Vec`s to look up a single member is a major performance anti-pattern. It causes O(N) heap allocations and traversal overhead where O(D) (depth) targeted search is sufficient.
 **Action:** Prefer targeted recursive search (like `find_member_with_offset`) over full record flattening when only one member's metadata is required.
+
+## 2026-02-24 - Optimizing Hot Data Structure Layout
+**Learning:** Using large types in enum variants (e.g., `u64` for a char codepoint in `PPTokenKind`) and suboptimal field ordering in frequently allocated structs can lead to significant memory bloat due to alignment requirements and padding. In this codebase, `PPToken` was 32 bytes due to 8-byte alignment forced by a `u64` variant in `PPTokenKind`. By downsizing to `u32` (sufficient for Unicode) and reordering fields, we reduced its size to 28 bytes.
+**Action:** Always use the smallest sufficient integer types for data stored in enums. Audit hot structures for padding using `size_of` and reorder fields to maximize packing density.

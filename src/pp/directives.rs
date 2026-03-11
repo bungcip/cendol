@@ -808,7 +808,7 @@ impl<'src> Preprocessor<'src> {
                         }
                         "pop" => PragmaPackKind::Pop,
                         _ => {
-                            let val = name.parse::<u32>().ok();
+                            let val = name.parse::<u8>().ok();
                             if let Some(v) = val {
                                 if [1, 2, 4, 8, 16].contains(&v) {
                                     PragmaPackKind::Set(Some(v))
@@ -862,11 +862,11 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    pub(crate) fn parse_pack_value_from_token(&self, t: &PPToken) -> Result<u32, PPError> {
+    pub(crate) fn parse_pack_value_from_token(&self, t: &PPToken) -> Result<u8, PPError> {
         let PPTokenKind::Number(sym) = t.kind else {
             return self.emit_error_loc(PPErrorKind::UnknownPragma("pack".to_string()), t.location);
         };
-        let val = sym.as_str().parse::<u32>().ok().ok_or_else(|| {
+        let val = sym.as_str().parse::<u8>().ok().ok_or_else(|| {
             self.error_loc(
                 PPErrorKind::UnknownPragma(format!("invalid pack value: {}", sym.as_str())),
                 t.location,
@@ -886,7 +886,7 @@ impl<'src> Preprocessor<'src> {
         &self,
         it: &mut std::iter::Peekable<std::slice::Iter<'_, PPToken>>,
         loc: SourceLoc,
-    ) -> Result<u32, PPError> {
+    ) -> Result<u8, PPError> {
         if let Some(t) = it.next() {
             self.parse_pack_value_from_token(t)
         } else {

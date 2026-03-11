@@ -1359,7 +1359,11 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                     inner_val,
                     inner_type,
                     target_type,
-                    is_operand_signed(inner_operand, ctx.mir, ctx.pointee_to_pointer),
+                    if inner_type.is_float() {
+                        mir_type.is_signed()
+                    } else {
+                        is_operand_signed(inner_operand, ctx.mir, ctx.pointee_to_pointer)
+                    },
                     ctx.builder,
                 )
             };
@@ -1700,7 +1704,11 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                             inner_val,
                             inner_clif_type,
                             target_clif_type,
-                            is_operand_signed(operand, ctx.mir, ctx.pointee_to_pointer),
+                            if inner_clif_type.is_float() {
+                                target_mir_type.is_signed()
+                            } else {
+                                is_operand_signed(operand, ctx.mir, ctx.pointee_to_pointer)
+                            },
                             ctx.builder,
                         )
                     };

@@ -1,4 +1,4 @@
-use crate::tests::codegen_common::setup_cranelift;
+use crate::tests::codegen_common::{run_c_code_exit_status, run_c_code_with_output, setup_cranelift};
 
 #[test]
 fn test_array_literal_initialization_fix() {
@@ -163,7 +163,7 @@ fn test_global_variable_modification_not_folded() {
         }
     "#;
 
-    let output = crate::tests::codegen_common::run_c_code_with_output(source);
+    let output = run_c_code_with_output(source);
     assert_eq!(output.trim(), "checksum = 00000005");
 }
 
@@ -185,4 +185,37 @@ fn test_arrow_on_array_deref_panic_regression() {
         clif_dump.contains("stack_addr.i64"),
         "Expected stack_addr for array 'pts'"
     );
+}
+
+#[test]
+fn test_negative_float_to_int_cast_regression() {
+    let source = r#"
+        int main() {
+            double val = -1.0;
+            int res = (int)val;
+            if (res == -1) {
+                return 42;
+            }
+            return 0;
+        }
+    "#;
+    let status = run_c_code_exit_status(source);
+    assert_eq!(status, 42);
+}
+
+#[test]
+fn test_negative_float_to_int_implicit_cast_regression() {
+    let source = r#"
+        int main() {
+            double val = -123.456;
+            int res;
+            res = val; 
+            if (res == -123) {
+                return 42;
+            }
+            return 0;
+        }
+    "#;
+    let status = run_c_code_exit_status(source);
+    assert_eq!(status, 42);
 }

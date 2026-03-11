@@ -349,7 +349,9 @@ pub enum SemanticErrorKind {
     VlaAtFileScope,
     VlaInitializerNotAllowed,
     OffsetofBitfield,
-    OffsetofIncompleteType { ty: QualType },
+    OffsetofIncompleteType {
+        ty: QualType,
+    },
 }
 
 impl SemanticErrorKind {

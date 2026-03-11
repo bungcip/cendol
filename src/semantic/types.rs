@@ -79,9 +79,7 @@ impl Type {
 
                 if member.name.is_none() {
                     let inner_type = registry.get(member.member_type.ty());
-                    if let Some(res) =
-                        inner_type.find_member_with_offset(registry, name, current_offset, base_index)
-                    {
+                    if let Some(res) = inner_type.find_member_with_offset(registry, name, current_offset, base_index) {
                         return Some(res);
                     }
                 } else {

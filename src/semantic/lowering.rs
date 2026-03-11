@@ -886,19 +886,19 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // by the standard variable declaration logic because this one is inserted first.
             let _ = self
                 .symbol_table
-                .define_variable(func_id, qt, storage, Some(init_node), None, span);
+                .define_variable(func_id, qt, storage, false, Some(init_node), None, span);
 
             // Also define __FUNCTION__ (GCC extension)
             let function_id = NameId::new("__FUNCTION__");
             let _ = self
                 .symbol_table
-                .define_variable(function_id, qt, storage, Some(init_node), None, span);
+                .define_variable(function_id, qt, storage, false, Some(init_node), None, span);
 
             // Also define __PRETTY_FUNCTION__ (GCC extension)
             let pretty_func_id = NameId::new("__PRETTY_FUNCTION__");
             let _ = self
                 .symbol_table
-                .define_variable(pretty_func_id, qt, storage, Some(init_node), None, span);
+                .define_variable(pretty_func_id, qt, storage, false, Some(init_node), None, span);
         }
 
         // Pre-scan labels for forward goto support
@@ -919,7 +919,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 if let Ok(sym) =
                     self.symbol_table
-                        .define_variable(pname, param.param_type, param.storage, None, None, span)
+                        .define_variable(pname, param.param_type, param.storage, false, None, None, span)
                 {
                     let param_dummy = param_dummies[i];
                     self.ast.kinds[param_dummy.index()] = NodeKind::Param(Param {
@@ -1242,9 +1242,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);
 
         // Define variable in symbol table early so it's visible in its own initializer
-        let sym_res = self
-            .symbol_table
-            .define_variable(name, qt, spec_info.storage, None, spec_info.alignment, span);
+        let sym_res = self.symbol_table.define_variable(
+            name,
+            qt,
+            spec_info.storage,
+            spec_info.is_thread_local,
+            None,
+            spec_info.alignment,
+            span,
+        );
 
         let init_expr = init.map(|n| {
             let ie = self.visit_expression(n);
@@ -1303,6 +1309,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             name,
             ty: qt,
             storage: spec_info.storage,
+            is_thread_local: spec_info.is_thread_local,
             init: init_expr,
             alignment: spec_info.alignment.map(|a| a as u16),
         };

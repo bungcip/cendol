@@ -7,6 +7,7 @@ pub mod codegen_bswap;
 pub mod codegen_calls;
 pub mod codegen_common;
 pub mod codegen_large_array;
+pub mod codegen_tls;
 
 pub mod codegen_bitfield;
 pub mod codegen_float_to_int_oob;

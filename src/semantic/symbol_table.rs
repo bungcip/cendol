@@ -50,7 +50,12 @@ impl Symbol {
     pub(super) fn has_linkage(&self) -> bool {
         match &self.kind {
             SymbolKind::Function { .. } => true,
-            SymbolKind::Variable { is_global, storage, .. } => *is_global || *storage == Some(StorageClass::Extern),
+            SymbolKind::Variable {
+                is_global,
+                storage,
+                is_thread_local,
+                ..
+            } => *is_global || *storage == Some(StorageClass::Extern) || *is_thread_local,
             _ => false,
         }
     }
@@ -61,6 +66,7 @@ impl Symbol {
 pub enum SymbolKind {
     Variable {
         is_global: bool,
+        is_thread_local: bool,
         storage: Option<StorageClass>,
         // Initializer might be an AST node or a constant value
         initializer: Option<NodeRef>,
@@ -292,6 +298,7 @@ impl SymbolTable {
         name: NameId,
         ty: QualType,
         storage: Option<StorageClass>,
+        is_thread_local: bool,
         initializer: Option<NodeRef>,
         alignment: Option<u32>,
         span: SourceSpan,
@@ -301,6 +308,7 @@ impl SymbolTable {
             name,
             SymbolKind::Variable {
                 is_global,
+                is_thread_local,
                 storage,
                 initializer,
                 alignment,
@@ -518,7 +526,20 @@ impl SymbolTable {
 
             // Verify kinds match
             match (&existing.kind, &new_entry.kind) {
-                (SymbolKind::Variable { .. }, SymbolKind::Variable { .. }) => {}
+                (
+                    SymbolKind::Variable {
+                        is_thread_local: e_tls, ..
+                    },
+                    SymbolKind::Variable {
+                        is_thread_local: n_tls, ..
+                    },
+                ) => {
+                    // C11 6.7.1p3: If an identifier is declared with _Thread_local,
+                    // all declarations shall include _Thread_local.
+                    if e_tls != n_tls {
+                        return Err(SymbolTableError::InvalidRedefinition { name, existing: sym });
+                    }
+                }
                 (SymbolKind::Function { .. }, SymbolKind::Function { .. }) => {}
                 _ => {
                     // Mismatched kinds

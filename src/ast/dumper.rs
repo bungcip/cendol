@@ -541,7 +541,11 @@ impl AstDumper {
                 };
                 write!(f, "condition={}, message=\"{}\"", cond.get(), message_str)?
             }
-            NodeKind::VarDecl(decl) => write!(f, "name={}, ty={}, storage={:?}", decl.name, decl.ty, decl.storage)?,
+            NodeKind::VarDecl(decl) => write!(
+                f,
+                "name={}, ty={}, storage={:?}, is_tls={}",
+                decl.name, decl.ty, decl.storage, decl.is_thread_local
+            )?,
             NodeKind::FunctionDecl(decl) => write!(
                 f,
                 "name={}, ty={}, storage={:?}",

@@ -3244,8 +3244,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         let mut base_index = 0;
         let ty_obj = self.registry.get(record_ty);
-        if let Some((member, field, _)) =
-            ty_obj.find_member_with_offset(self.registry, member_name, 0, &mut base_index)
+        if let Some((member, field, _)) = ty_obj.find_member_with_offset(self.registry, member_name, 0, &mut base_index)
         {
             *offset += field.offset as i64;
             *current_ty = member.member_type;

@@ -231,7 +231,8 @@ impl<'a> MirDumper<'a> {
     /// Dump a global variable
     fn dump_global(&self, output: &mut String, global: &Global) -> Result<(), std::fmt::Error> {
         let global_type = self.type_to_string(global.type_id);
-        write!(output, "global @{}: {}", global.name, global_type)?;
+        let tls_suffix = if global.is_tls { " (tls)" } else { "" };
+        write!(output, "global @{}: {}{}", global.name, global_type, tls_suffix)?;
 
         if let Some(const_id) = global.initial_value {
             // Check if this global represents a string literal

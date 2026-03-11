@@ -462,7 +462,7 @@ impl TypeRef {
 
     #[inline]
     pub(crate) fn get(self) -> u32 {
-        self.raw()
+        self.0.get()
     }
 
     #[inline]
@@ -567,11 +567,6 @@ impl TypeRef {
     }
 
     #[inline]
-    pub(crate) fn raw(self) -> u32 {
-        self.0.get()
-    }
-
-    #[inline]
     pub(crate) fn index(self) -> usize {
         // Compatibility: returns base as index.
         // For inline types, this returns the index of the base type.
@@ -649,9 +644,9 @@ impl QualType {
     #[inline]
     pub(crate) fn new(ty: TypeRef, quals: TypeQualifiers) -> Self {
         debug_assert!(quals.bits() < (1 << Self::QUAL_BITS));
-        debug_assert!(ty.raw() <= Self::TY_MASK);
+        debug_assert!(ty.0.get() <= Self::TY_MASK);
 
-        QualType((ty.raw() & Self::TY_MASK) | ((quals.bits() as u32) << Self::QUAL_SHIFT))
+        QualType((ty.0.get() & Self::TY_MASK) | ((quals.bits() as u32) << Self::QUAL_SHIFT))
     }
 
     #[inline]

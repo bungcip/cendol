@@ -424,14 +424,15 @@ impl<'a> MirGen<'a> {
         }
 
         let symbol = self.symbol_table.get_symbol(entry_ref);
-        let (init, alignment, name, ty, storage) = if let SymbolKind::Variable {
+        let (init, alignment, name, ty, storage, is_tls) = if let SymbolKind::Variable {
             initializer,
             alignment,
             storage,
+            is_thread_local,
             ..
         } = &symbol.kind
         {
-            (*initializer, *alignment, symbol.name, symbol.type_info, *storage)
+            (*initializer, *alignment, symbol.name, symbol.type_info, *storage, *is_thread_local)
         } else {
             unreachable!()
         };
@@ -453,7 +454,7 @@ impl<'a> MirGen<'a> {
 
         let global_id =
             self.mir_builder
-                .create_global_with_init(global_name, mir_type_id, symbol.is_const(), linkage, None);
+                .create_global_with_init(global_name, mir_type_id, symbol.is_const(), is_tls, linkage, None);
 
         if let Some(align) = alignment {
             self.mir_builder.set_global_alignment(global_id, align);

@@ -574,7 +574,7 @@ impl<'a> MirGen<'a> {
         let name = self.mir_builder.get_next_anonymous_global_name();
         let global_id =
             self.mir_builder
-                .create_global_with_init(name, mir_ty, true, MirLinkage::Internal, Some(array_const));
+                .create_global_with_init(name, mir_ty, true, false, MirLinkage::Internal, Some(array_const));
 
         Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global_id, 0)))
     }
@@ -589,7 +589,7 @@ impl<'a> MirGen<'a> {
             let name = self.mir_builder.get_next_anonymous_global_name();
             let global_id =
                 self.mir_builder
-                    .create_global_with_init(name, mir_ty, false, MirLinkage::Internal, Some(init_const));
+                    .create_global_with_init(name, mir_ty, false, false, MirLinkage::Internal, Some(init_const));
             Operand::Copy(Box::new(Place::Global(global_id)))
         } else {
             let (_, place) = self.create_temp_local(mir_ty);

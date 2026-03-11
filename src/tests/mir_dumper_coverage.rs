@@ -15,6 +15,7 @@ fn test_dump_basic_module() {
         NameId::new("g_val"),
         i32_ty,
         false,
+        false,
         crate::mir::MirLinkage::External,
         None,
     );

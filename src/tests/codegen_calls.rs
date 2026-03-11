@@ -175,6 +175,7 @@ fn test_global_function_pointer_init() {
         NameId::new("ptr"),
         func_ptr_type_id,
         false,
+        false,
         crate::mir::MirLinkage::External,
         Some(func_addr_const_id),
     );

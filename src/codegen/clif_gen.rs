@@ -1278,7 +1278,7 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                     let linkage = lower_global_linkage(global);
                     let global_val = ctx
                         .module
-                        .declare_data(global.name.as_str(), linkage, true, false)
+                        .declare_data(global.name.as_str(), linkage, true, global.is_tls)
                         .expect("Failed to declare global data");
                     let local_id = ctx.module.declare_data_in_func(global_val, ctx.builder.func);
                     let addr = ctx.builder.ins().global_value(types::I64, local_id);
@@ -1563,7 +1563,7 @@ fn emit_place_addr(place: &Place, ctx: &mut BodyEmitContext) -> Value {
 
             let global_val = ctx
                 .module
-                .declare_data(global.name.as_str(), linkage, true, false)
+                .declare_data(global.name.as_str(), linkage, true, global.is_tls)
                 .expect("Failed to declare global data");
             let local_id = ctx.module.declare_data_in_func(global_val, ctx.builder.func);
             ctx.builder.ins().global_value(types::I64, local_id)
@@ -2660,7 +2660,7 @@ impl ClifGen {
 
             let data_id = self
                 .module
-                .declare_data(global.name.as_str(), linkage, true, false)
+                .declare_data(global.name.as_str(), linkage, true, global.is_tls)
                 .expect("module operation failed");
 
             self.data_id_map.insert(global_id, data_id);

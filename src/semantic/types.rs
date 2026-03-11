@@ -53,17 +53,69 @@ impl Type {
         Type { kind, layout: None }
     }
 
-    pub(crate) fn flatten_members(&self, registry: &super::TypeRegistry, flat_members: &mut Vec<StructMember>) {
-        if let TypeKind::Record { members, .. } = &self.kind {
-            for member in members.iter().cloned() {
+    /// Recursively search for a member by name, returning its info, layout and flattened index.
+    /// Bolt ⚡: This avoids full record flattening when only a single member is needed.
+    pub(crate) fn find_member_with_offset(
+        &self,
+        registry: &super::TypeRegistry,
+        name: NameId,
+        base_offset: u64,
+        base_index: &mut usize,
+    ) -> Option<(StructMember, FieldLayout, usize)> {
+        if let TypeKind::Record { members, .. } = &self.kind
+            && let Some(TypeLayout {
+                kind: LayoutKind::Record { fields, .. },
+                ..
+            }) = &self.layout
+        {
+            for (i, member) in members.iter().enumerate() {
+                let current_offset = fields[i].offset + base_offset;
+
+                if member.name == Some(name) {
+                    let mut field_layout = fields[i].clone();
+                    field_layout.offset = current_offset;
+                    return Some((*member, field_layout, *base_index));
+                }
+
                 if member.name.is_none() {
                     let inner_type = registry.get(member.member_type.ty());
-                    inner_type.flatten_members(registry, flat_members);
+                    if let Some(res) =
+                        inner_type.find_member_with_offset(registry, name, current_offset, base_index)
+                    {
+                        return Some(res);
+                    }
                 } else {
-                    flat_members.push(member);
+                    *base_index += 1;
                 }
             }
         }
+        None
+    }
+
+    /// Recursively search for a member by name without requiring layout, returning its info and flattened index.
+    pub(crate) fn find_member_recursive(
+        &self,
+        registry: &super::TypeRegistry,
+        name: NameId,
+        base_index: &mut usize,
+    ) -> Option<(StructMember, usize)> {
+        if let TypeKind::Record { members, .. } = &self.kind {
+            for member in members.iter() {
+                if member.name == Some(name) {
+                    return Some((*member, *base_index));
+                }
+
+                if member.name.is_none() {
+                    let inner_type = registry.get(member.member_type.ty());
+                    if let Some(res) = inner_type.find_member_recursive(registry, name, base_index) {
+                        return Some(res);
+                    }
+                } else {
+                    *base_index += 1;
+                }
+            }
+        }
+        None
     }
 
     pub(crate) fn find_member(&self, registry: &super::TypeRegistry, name: NameId) -> Option<StructMember> {

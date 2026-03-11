@@ -3242,14 +3242,13 @@ impl<'a> SemanticAnalyzer<'a> {
             return false;
         }
 
-        let mut flat_members = Vec::new();
-        let mut flat_fields = Vec::new();
+        let mut base_index = 0;
         let ty_obj = self.registry.get(record_ty);
-        ty_obj.flatten_members_with_layouts(self.registry, &mut flat_members, &mut flat_fields, 0);
-
-        if let Some(idx) = flat_members.iter().position(|m| m.name == Some(member_name)) {
-            *offset += flat_fields[idx].offset as i64;
-            *current_ty = flat_members[idx].member_type;
+        if let Some((member, field, _)) =
+            ty_obj.find_member_with_offset(self.registry, member_name, 0, &mut base_index)
+        {
+            *offset += field.offset as i64;
+            *current_ty = member.member_type;
             true
         } else {
             self.report_error(

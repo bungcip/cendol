@@ -1076,11 +1076,9 @@ impl<'a> MirGen<'a> {
     }
 
     fn find_member_path(&self, record_ty: semantic::TypeRef, field_name: ast::NameId) -> Option<Vec<usize>> {
-        let mut flat_members = Vec::new();
+        let mut base_index = 0;
         let ty = self.registry.get(record_ty);
-        ty.flatten_members(self.registry, &mut flat_members);
-
-        if let Some(idx) = flat_members.iter().position(|m| m.name == Some(field_name)) {
+        if let Some((_, idx)) = ty.find_member_recursive(self.registry, field_name, &mut base_index) {
             return Some(vec![idx]);
         }
         None

@@ -432,7 +432,14 @@ impl<'a> MirGen<'a> {
             ..
         } = &symbol.kind
         {
-            (*initializer, *alignment, symbol.name, symbol.type_info, *storage, *is_thread_local)
+            (
+                *initializer,
+                *alignment,
+                symbol.name,
+                symbol.type_info,
+                *storage,
+                *is_thread_local,
+            )
         } else {
             unreachable!()
         };
@@ -452,9 +459,14 @@ impl<'a> MirGen<'a> {
             MirLinkage::External
         };
 
-        let global_id =
-            self.mir_builder
-                .create_global_with_init(global_name, mir_type_id, symbol.is_const(), is_tls, linkage, None);
+        let global_id = self.mir_builder.create_global_with_init(
+            global_name,
+            mir_type_id,
+            symbol.is_const(),
+            is_tls,
+            linkage,
+            None,
+        );
 
         if let Some(align) = alignment {
             self.mir_builder.set_global_alignment(global_id, align);

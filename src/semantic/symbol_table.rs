@@ -528,12 +528,10 @@ impl SymbolTable {
             match (&existing.kind, &new_entry.kind) {
                 (
                     SymbolKind::Variable {
-                        is_thread_local: e_tls,
-                        ..
+                        is_thread_local: e_tls, ..
                     },
                     SymbolKind::Variable {
-                        is_thread_local: n_tls,
-                        ..
+                        is_thread_local: n_tls, ..
                     },
                 ) => {
                     // C11 6.7.1p3: If an identifier is declared with _Thread_local,

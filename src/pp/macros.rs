@@ -394,18 +394,24 @@ impl<'src> Preprocessor<'src> {
             if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                 total_len += 1;
             }
-            let bytes = cache.get_token_bytes(token);
-            let should_escape = matches!(
+
+            // Bolt ⚡: Hoist the escape check. Only string and character literals require internal
+            // escaping (backslashes and quotes) during macro stringification. For all other
+            // tokens (identifiers, numbers, operators), we can use the raw length directly.
+            if matches!(
                 token.kind,
                 PPTokenKind::StringLiteral(_) | PPTokenKind::CharLiteral(_, _)
-            );
-
-            for &b in bytes {
-                if should_escape && (b == b'"' || b == b'\\') {
-                    total_len += 2;
-                } else {
-                    total_len += 1;
+            ) {
+                let bytes = cache.get_token_bytes(token);
+                for &b in bytes {
+                    if b == b'"' || b == b'\\' {
+                        total_len += 2;
+                    } else {
+                        total_len += 1;
+                    }
                 }
+            } else {
+                total_len += token.length as usize;
             }
         }
 
@@ -418,25 +424,29 @@ impl<'src> Preprocessor<'src> {
                 result.push(' ');
             }
 
-            let bytes = cache.get_token_bytes(token);
-            let should_escape = matches!(
+            // Bolt ⚡: Hoist the escape check. Most tokens can be appended directly, avoiding
+            // the overhead of the scanning loop and segmenting the string.
+            if matches!(
                 token.kind,
                 PPTokenKind::StringLiteral(_) | PPTokenKind::CharLiteral(_, _)
-            );
-
-            let mut last_start = 0;
-            for (j, &b) in bytes.iter().enumerate() {
-                if should_escape && (b == b'"' || b == b'\\') {
-                    if j > last_start {
-                        result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..j]) });
+            ) {
+                let bytes = cache.get_token_bytes(token);
+                let mut last_start = 0;
+                for (j, &b) in bytes.iter().enumerate() {
+                    if b == b'"' || b == b'\\' {
+                        if j > last_start {
+                            result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..j]) });
+                        }
+                        result.push('\\');
+                        result.push(b as char);
+                        last_start = j + 1;
                     }
-                    result.push('\\');
-                    result.push(b as char);
-                    last_start = j + 1;
                 }
-            }
-            if last_start < bytes.len() {
-                result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..]) });
+                if last_start < bytes.len() {
+                    result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..]) });
+                }
+            } else {
+                result.push_str(cache.get_token_text(token));
             }
         }
 

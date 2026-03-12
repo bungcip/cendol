@@ -72,7 +72,7 @@ pub enum PPTokenKind {
     // Literals and identifiers
     Identifier(StringId),       // Interned identifier
     StringLiteral(StringId),    // Interned string literal
-    CharLiteral(u64, StringId), // char value and raw text
+    CharLiteral(u32, StringId), // char value and raw text
     Number(StringId),           // Raw numeric literal text for parser
     // Special
     Eof,
@@ -85,10 +85,10 @@ pub enum PPTokenKind {
 #[derive(Clone, Copy, Debug)]
 pub struct PPToken {
     pub(crate) kind: PPTokenKind,
-    pub(crate) flags: PPTokenFlags,
     pub(crate) location: SourceLoc, // Contains file ID and byte offset
-    pub(crate) length: u16,         // Maximum token length (64KB should be sufficient for any token)
     pub(crate) hide_set: u32,       // Index into HideSetTable, 0 = empty hide set
+    pub(crate) length: u16,         // Maximum token length (64KB should be sufficient for any token)
+    pub(crate) flags: PPTokenFlags,
 }
 
 impl PPToken {
@@ -1209,9 +1209,7 @@ impl PPLexer {
 
         let codepoint = if !content_str.is_empty() {
             // Use unified parsing for all char literals to handle UCNs and escapes correctly
-            literal_parsing::parse_char_literal(content_str)
-                .map(|c| c as u64)
-                .unwrap_or(0)
+            literal_parsing::parse_char_literal(content_str).unwrap_or(0)
         } else {
             0
         };

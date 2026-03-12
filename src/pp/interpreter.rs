@@ -557,7 +557,7 @@ impl<'a> Interpreter<'a> {
                 }
                 Ok(PPExpr::Number(ExprValue::new(val, is_unsigned)))
             }
-            PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(ExprValue::new(*codepoint, false))),
+            PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(ExprValue::new(*codepoint as u64, false))),
             PPTokenKind::Identifier(_) => Ok(PPExpr::Identifier),
             PPTokenKind::LeftParen => {
                 let result = self.parse_conditional()?;

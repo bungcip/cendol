@@ -642,7 +642,7 @@ impl<'src> Lexer<'src> {
                 is_keyword(symbol).unwrap_or(TokenKind::Identifier(symbol))
             }
             PPTokenKind::StringLiteral(symbol) => TokenKind::StringLiteral(symbol),
-            PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint),
+            PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint.into()),
             PPTokenKind::Number(value) => {
                 // Try to parse as integer first, then float, then unknown
                 if let Some((int_val, suffix, base)) = literal_parsing::parse_integer_literal(value.as_str()) {

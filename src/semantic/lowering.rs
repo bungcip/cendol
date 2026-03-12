@@ -40,8 +40,8 @@ pub(crate) struct LowerCtx<'a, 'src> {
     /// If Some, the next CompoundStatement lowering will use this scope instead of pushing a new one.
     /// This is used for function bodies to share the parameter scope.
     pub(crate) next_compound_uses_scope: Option<ScopeId>,
-    pub(crate) pragma_pack_stack: Vec<Option<u32>>,
-    pub(crate) current_packing: Option<u32>,
+    pub(crate) pragma_pack_stack: Vec<Option<u8>>,
+    pub(crate) current_packing: Option<u8>,
     pub(crate) lang_opts: &'a crate::lang_options::LangOptions,
 }
 
@@ -2476,7 +2476,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         // Update the type in AST and SymbolTable
-        self.registry.complete_record(ty, members.clone(), self.current_packing);
+        self.registry
+            .complete_record(ty, members.clone(), self.current_packing.map(|n| n as u32));
         if let Err(e) = self.registry.ensure_layout(ty) {
             return Err(SemanticError::new(span, e.to_semantic_kind()));
         }

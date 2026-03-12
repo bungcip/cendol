@@ -22,7 +22,7 @@ fn test_has_builtin() {
 #endif
 "#;
     assert_yaml_snapshot!(setup_pp_snapshot(src), 
-    @r"
+    @"
     - kind: Identifier
       text: has_expect
     - kind: Identifier
@@ -49,7 +49,7 @@ fn test_has_feature() {
     no_non_existent
 #endif
 "#;
-    assert_yaml_snapshot!(setup_pp_snapshot(src), @r"
+    assert_yaml_snapshot!(setup_pp_snapshot(src), @"
     - kind: Identifier
       text: has_static_assert
     - kind: Identifier
@@ -68,7 +68,7 @@ fn test_has_attribute() {
     no_aligned
 #endif
 "#;
-    assert_yaml_snapshot!(setup_pp_snapshot(src), @r"
+    assert_yaml_snapshot!(setup_pp_snapshot(src), @"
     - kind: Identifier
       text: no_aligned
     ");
@@ -127,7 +127,7 @@ fn test_has_include_next() {
         .map(DebugToken::from)
         .collect();
 
-    assert_yaml_snapshot!(debug_tokens, @r"
+    assert_yaml_snapshot!(debug_tokens, @"
     - kind: Identifier
       text: found_next
     - kind: Identifier

@@ -706,7 +706,7 @@ impl<'a> MirGen<'a> {
                 }
                 self.finalize_array_initializer(elements, target_ty, destination)
             }
-            TypeKind::Record { .. } if !target_type.is_record_empty() => {
+            TypeKind::Record { members, .. } if !members.is_empty() => {
                 let (flat_members, _) = self.get_flattened_type_info(target_ty.ty());
                 if flat_members.is_empty() {
                     let mir_target_ty = self.lower_qual_type(target_ty);

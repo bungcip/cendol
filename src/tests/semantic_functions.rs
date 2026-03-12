@@ -142,7 +142,7 @@ fn test_func_opt_unused() {
     "#;
     // Check the MIR to ensure __func__ global is NOT generated.
     let mir_output = setup_mir(code);
-    insta::assert_snapshot!(mir_output, @r"
+    insta::assert_snapshot!(mir_output, @"
     type %t0 = void
 
     fn foo() -> void

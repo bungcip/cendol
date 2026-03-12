@@ -3,7 +3,7 @@ use super::parser_utils::setup_declaration;
 #[test]
 fn test_typeof_expr() {
     let decl = setup_declaration("typeof(5 + 3) x;");
-    insta::assert_yaml_snapshot!(decl, @r"
+    insta::assert_yaml_snapshot!(decl, @"
     Declaration:
       specifiers:
         - TypeofExpr(4)
@@ -27,7 +27,7 @@ fn test_typeof_type() {
 #[test]
 fn test_typeof_comma_expr() {
     let decl = setup_declaration("typeof((void)0, 5) x;");
-    insta::assert_yaml_snapshot!(decl, @r"
+    insta::assert_yaml_snapshot!(decl, @"
     Declaration:
       specifiers:
         - TypeofExpr(5)

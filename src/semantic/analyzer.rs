@@ -1845,36 +1845,6 @@ impl<'a> SemanticAnalyzer<'a> {
         let _ = self.registry.ensure_layout(record_ty);
 
         // Recursive helper to find member (handling anonymous structs/unions)
-        fn find_member(registry: &TypeRegistry, record_ty: TypeRef, name: NameId) -> Option<QualType> {
-            if !record_ty.is_record() {
-                return None;
-            }
-
-            if let TypeKind::Record { members, .. } = &registry.get(record_ty).kind {
-                // 1. Check direct members
-                if let Some(member) = members.iter().find(|m| m.name == Some(name)) {
-                    return Some(member.member_type);
-                }
-
-                // 2. Check anonymous members
-                for member in members.iter() {
-                    if member.name.is_none() {
-                        let member_ty = member.member_type.ty();
-                        if member_ty.is_record()
-                            && let Some(found_ty) = find_member(registry, member_ty, name)
-                        {
-                            // Note: C11 6.7.2.1p13: "An unnamed member of structure type with no tag is called an anonymous structure;
-                            // an unnamed member of union type with no tag is called an anonymous union."
-                            // We don't need to merge qualifiers of the anonymous member ITSELF here because
-                            // they will be merged with base_quals later.
-                            return Some(found_ty);
-                        }
-                    }
-                }
-            }
-            None
-        }
-
         if !record_ty.is_record() {
             self.report_error(
                 node,
@@ -1895,7 +1865,12 @@ impl<'a> SemanticAnalyzer<'a> {
             return None;
         }
 
-        if let Some(mut ty) = find_member(self.registry, record_ty, field_name) {
+        if let Some(mut ty) = self
+            .registry
+            .get(record_ty)
+            .find_member(self.registry, field_name)
+            .map(|m| m.member_type)
+        {
             // C11 6.5.2.3p4: if the first expression has qualified type, the result has the so-qualified
             // version of the type of the designated member.
             if !base_quals.is_empty() {

@@ -373,7 +373,7 @@ FAIL
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -395,7 +395,7 @@ FAIL_UCN
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK_WIDE
     - kind: Identifier
@@ -482,7 +482,8 @@ int main() {
 }
 "#;
     let content = dump_pp_output(src, false);
-    insta::assert_snapshot!(content, @r"
+    insta::assert_snapshot!(content, @"
+
     int main() {
         return 0;
     }

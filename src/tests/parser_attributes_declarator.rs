@@ -10,7 +10,7 @@ fn test_attribute_before_declarator_failure() {
     // "__attribute__" is consumed, but "x" is not "((", so parse_attribute fails.
     // The parser then continues to parse "x" as the declarator.
     let resolved = setup_declaration("int (__attribute__ x);");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int

@@ -10,7 +10,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -25,7 +25,7 @@ FAIL
 OK
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -41,7 +41,7 @@ FAIL
 OK
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -55,7 +55,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -72,7 +72,7 @@ FAIL
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -88,7 +88,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -106,7 +106,7 @@ fn test_nested_ifdef() {
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -125,7 +125,7 @@ fn test_nested_ifdef_mixed() {
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -141,7 +141,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -158,7 +158,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -176,7 +176,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -192,7 +192,7 @@ FAIL
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -214,7 +214,7 @@ FAIL_4
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -283,7 +283,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -303,7 +303,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     - kind: Identifier
@@ -320,7 +320,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -340,7 +340,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     - kind: Identifier
@@ -356,7 +356,7 @@ OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -376,7 +376,7 @@ OK
         ),
     ];
     let (tokens, _) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -529,7 +529,7 @@ FAIL_SIGNED_COMPARE
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK_AND_SHORT
     - kind: Identifier
@@ -608,7 +608,7 @@ LOGICNOT_1_OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: PLUS_OK
     - kind: Identifier
@@ -655,7 +655,7 @@ FAIL_INDIRECT_LOCAL
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK_STD
     - kind: Identifier
@@ -700,7 +700,7 @@ FAIL_MOD_OVERFLOW
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK_DIV_ZERO
     - kind: Identifier
@@ -723,7 +723,7 @@ FAIL
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -739,7 +739,7 @@ FAIL
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -767,7 +767,7 @@ FAIL
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -783,7 +783,7 @@ FAIL
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");

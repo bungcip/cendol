@@ -38,7 +38,7 @@ fn dump_type_registry(source: &str) -> String {
 #[test]
 fn test_dump_parsed_ast_simple() {
     let output = dump_parsed_ast("int main() { return 0; }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: 4, body: 4 })
     4: CompoundStmt(stmts=[6])
@@ -50,7 +50,7 @@ fn test_dump_parsed_ast_simple() {
 #[test]
 fn test_dump_parsed_ast_with_variables() {
     let output = dump_parsed_ast("int x = 42; int y = x + 5;");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[2, 4])
     2: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: 1, initializer: Some(3), span: SourceSpan(2199123918852) }] })
     3: LiteralInt(42, None, base=10)
@@ -104,7 +104,7 @@ fn test_dump_parsed_ast_with_strings() {
 #[test]
 fn test_dump_parsed_ast_with_floats() {
     let output = dump_parsed_ast("float pi = 3.14159; double e = 2.71828;");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[2, 4])
     2: Declaration(ParsedDecl { specifiers: [TypeSpec(Float)], init_declarators: [ParsedInitDeclarator { declarator: 1, initializer: Some(3), span: SourceSpan(2199224582150) }] })
     3: LiteralFloat(3.14159, None)
@@ -116,7 +116,7 @@ fn test_dump_parsed_ast_with_floats() {
 #[test]
 fn test_dump_parsed_ast_with_chars() {
     let output = dump_parsed_ast("char c = 'a'; signed char sc = 'b'; unsigned char uc = 'c';");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[2, 4, 6])
     2: Declaration(ParsedDecl { specifiers: [TypeSpec(Char)], init_declarators: [ParsedInitDeclarator { declarator: 1, initializer: Some(3), span: SourceSpan(2199140696069) }] })
     3: LiteralChar('a')
@@ -130,7 +130,7 @@ fn test_dump_parsed_ast_with_chars() {
 #[test]
 fn test_dump_parsed_ast_with_pointers() {
     let output = dump_parsed_ast("int x = 10; int* ptr = &x; int** ptr_ptr = &ptr;");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[2, 4, 7])
     2: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: 1, initializer: Some(3), span: SourceSpan(2199123918852) }] })
     3: LiteralInt(10, None, base=10)
@@ -146,7 +146,7 @@ fn test_dump_parsed_ast_with_pointers() {
 #[test]
 fn test_dump_parsed_ast_with_arrays() {
     let output = dump_parsed_ast("int arr[5] = {1, 2, 3, 4, 5}; int* ptr_arr[3];");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[2, 10])
     2: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: 2, initializer: Some(9), span: SourceSpan(2199425908740) }] })
     3: LiteralInt(5, None, base=10)
@@ -325,7 +325,8 @@ fn test_dump_parser_ast_with_functions() {
 #[test]
 fn test_dump_type_registry() {
     let output = dump_type_registry("int main() { int x = 42; float y = 3.14; return x + (int)y; }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
+
     === TypeRegistry (Used TypeRefs) ===
     TypeRef(8): int
     TypeRef(14): float
@@ -338,7 +339,8 @@ fn test_dump_type_registry_with_complex_types() {
     let output = dump_type_registry(
         "struct Point { int x; int y; }; int main() { struct Point p = {1, 2}; int *ptr = &p.x; float arr[10]; return 0; }",
     );
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
+
     === TypeRegistry (Used TypeRefs) ===
     TypeRef(8): int
     TypeRef(21): int()

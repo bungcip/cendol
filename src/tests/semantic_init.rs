@@ -10,7 +10,7 @@ fn test_array_init_bug_mir() {
         int a[] = {5, [2] = 2, 3};
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = [4]%t0
 
@@ -24,7 +24,7 @@ fn test_array_designator_simple() {
         int a[5] = {[1] = 10, [3] = 30};
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = [5]%t0
 
@@ -38,7 +38,7 @@ fn test_array_designator_out_of_order() {
         int a[5] = {[3] = 30, [1] = 10};
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = [5]%t0
 
@@ -53,7 +53,7 @@ fn test_array_designator_override() {
         int a[3] = {[1] = 10, [1] = 20};
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = [3]%t0
 
@@ -68,7 +68,7 @@ fn test_struct_designator_simple() {
         struct S s = {.y = 2, .x = 1};
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = struct S { x: %t1, y: %t1 }
     type %t1 = i32
 
@@ -83,7 +83,7 @@ fn test_mixed_array_struct_designators() {
         struct S s = { .val = 99, .arr = {[1] = 10} };
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = struct S { arr: %t2, val: %t1 }
     type %t1 = i32
     type %t2 = [3]%t1
@@ -105,7 +105,7 @@ fn test_initializer_list_crash_regression() {
         struct contains_empty ce = { { (1) }, (empty_s){}, 022, };
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = struct contains_empty { a: %t1, empty: %t2, b: %t1 }
     type %t1 = u8
     type %t2 = struct anonymous {  }
@@ -124,7 +124,7 @@ fn test_scalar_braced_init() {
         int c = { }; // Zero init (GNU/C23)
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
 
     global @a: i32 = const 1
@@ -139,7 +139,7 @@ fn test_fam_initialization() {
         struct S s = { 1, {2, 3} };
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = struct S { x: %t1, y: %t2 }
     type %t1 = i32
     type %t2 = [0]%t1
@@ -154,7 +154,7 @@ fn test_range_designators() {
         int a[10] = { [1 ... 3] = 5, [5 ... 6] = 6 };
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = [10]%t0
 
@@ -171,7 +171,7 @@ fn test_scalar_to_aggregate_elision() {
         struct Wrapper w = { 1 };
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = struct Wrapper { s: %t1 }
     type %t1 = struct S { x: %t2, y: %t2 }
     type %t2 = i32
@@ -189,7 +189,7 @@ fn test_local_array_designator_simple() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = [5]%t0
 
@@ -215,7 +215,7 @@ fn test_local_array_designator_out_of_order() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = [5]%t0
 
@@ -242,7 +242,7 @@ fn test_local_struct_designator_simple() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = struct S { x: %t0, y: %t0 }
 
@@ -269,7 +269,7 @@ fn test_local_mixed_array_struct_designators() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = struct S { arr: %t2, val: %t0 }
     type %t2 = [3]%t0
@@ -298,7 +298,7 @@ fn test_local_nested_array_init() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = [2]%t0
     type %t2 = [2]%t1
@@ -329,7 +329,7 @@ fn test_local_nested_array_init_with_designators() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = [2]%t0
     type %t2 = [2]%t1
@@ -362,7 +362,7 @@ fn test_local_partial_init_implicit_zero() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = struct S { x: %t0, y: %t0, z: %t0 }
 
@@ -429,7 +429,7 @@ fn test_nested_struct_designator() {
         struct SEB b = { .a.j = 5 };
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = struct SEB { a: %t1 }
     type %t1 = struct SEA { i: %t2, j: %t2 }
     type %t2 = i32
@@ -498,7 +498,7 @@ fn test_struct_array_brace_elision() {
         struct S gs = {1, 2};
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = struct S { c: %t2 }
     type %t1 = u8
     type %t2 = [2]%t1
@@ -516,7 +516,7 @@ fn test_brace_elision_designator_break() {
         struct Outer o = { 1, .b = 2 };
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = struct Outer { i: %t1, b: %t2 }
     type %t1 = struct Inner { a: %t2 }
     type %t2 = i32

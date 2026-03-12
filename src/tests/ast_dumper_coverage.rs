@@ -38,7 +38,7 @@ fn dump_type_registry(source: &str) -> String {
 #[test]
 fn test_parsed_ast_ternary() {
     let output = dump_parsed_ast("int f() { return 1 ? 2 : 3; }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: 4, body: 4 })
     4: CompoundStmt(stmts=[9])
@@ -81,7 +81,7 @@ fn test_parsed_ast_access() {
 #[test]
 fn test_parsed_ast_sizeof_alignof() {
     let output = dump_parsed_ast("int f() { return (int)3.14 + sizeof(int) + sizeof(1) + _Alignof(int); }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: 4, body: 4 })
     4: CompoundStmt(stmts=[14])
@@ -118,7 +118,7 @@ fn test_parsed_ast_compound_literal() {
 #[test]
 fn test_parsed_ast_gnu_stmt_expr() {
     let output = dump_parsed_ast("int f() { return ({ int x = 1; x; }); }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: 4, body: 4 })
     4: CompoundStmt(stmts=[11])
@@ -184,7 +184,7 @@ fn test_parsed_ast_builtins() {
 #[test]
 fn test_parsed_ast_generic() {
     let output = dump_parsed_ast("int f() { return _Generic(1, int: 1, default: 0); }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: 4, body: 4 })
     4: CompoundStmt(stmts=[9])
@@ -199,7 +199,7 @@ fn test_parsed_ast_generic() {
 #[test]
 fn test_parsed_ast_labels() {
     let output = dump_parsed_ast("int f() { label: goto label; }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: 4, body: 4 })
     4: CompoundStmt(stmts=[6])
@@ -222,7 +222,7 @@ fn test_parsed_ast_static_assert() {
 #[test]
 fn test_parsed_ast_empty_stmt() {
     let output = dump_parsed_ast("void f() { ; }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Void)], declarator: 4, body: 4 })
     4: CompoundStmt(stmts=[5])
@@ -472,7 +472,8 @@ fn test_type_registry_complex() {
         void g(int x, ...); // Variadic
     ",
     );
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
+
     === TypeRegistry (Used TypeRefs) ===
     TypeRef(8): int
     TypeRef(24): int[*]
@@ -498,7 +499,7 @@ fn test_atomic_ops_and_case_range() {
         }
     ",
     );
-    insta::assert_snapshot!(output_parsed, @r"
+    insta::assert_snapshot!(output_parsed, @"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Void)], declarator: 4, body: 4 })
     4: CompoundStmt(stmts=[5, 7, 18])

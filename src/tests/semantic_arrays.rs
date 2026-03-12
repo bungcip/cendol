@@ -66,7 +66,7 @@ fn test_vla_ice_fix() {
             }
         "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i32
     type %t2 = i8
@@ -134,7 +134,7 @@ fn test_vla_in_block_scope() {
             }
         "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i32
     type %t2 = [0]%t1

@@ -15,7 +15,7 @@ fn test_case_range_coverage() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = bool
 

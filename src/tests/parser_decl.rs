@@ -5,7 +5,7 @@ use crate::tests::test_utils::run_pass;
 #[test]
 fn test_simple_struct_declaration() {
     let resolved = setup_declaration("struct Point;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - struct Point
@@ -27,7 +27,7 @@ fn test_struct_declaration_with_body() {
 #[test]
 fn test_struct_variable_declaration() {
     let resolved = setup_declaration("struct Point p;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - struct Point
@@ -63,7 +63,7 @@ fn test_anonymous_struct_declaration() {
 #[test]
 fn test_simple_declaration() {
     let resolved = setup_declaration("int x;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -99,7 +99,7 @@ fn test_atomic_type_specifier_with_pointer() {
 #[test]
 fn test_declaration_with_initializer() {
     let resolved = setup_declaration("int x = 42;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -113,7 +113,7 @@ fn test_declaration_with_initializer() {
 #[test]
 fn test_multiple_declarators() {
     let resolved = setup_declaration("int x, y = 1, z;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -129,7 +129,7 @@ fn test_multiple_declarators() {
 #[test]
 fn test_pointer_declaration() {
     let resolved = setup_declaration("int *p;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -142,7 +142,7 @@ fn test_pointer_declaration() {
 #[test]
 fn test_array_declaration() {
     let resolved = setup_declaration("int arr[10];");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -155,7 +155,7 @@ fn test_array_declaration() {
 #[test]
 fn test_array_declaration_with_initializer() {
     let resolved = setup_declaration("int arr[3] = {1, 2, 3};");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -200,7 +200,7 @@ fn test_complex_declaration() {
 #[test]
 fn test_function_with_array_of_pointer_param() {
     let resolved = setup_declaration("int f(int (*arr)[3]);");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -226,7 +226,7 @@ fn test_array_of_function_pointers() {
 #[test]
 fn test_function_pointer_with_initializer() {
     let resolved = setup_declaration("int (*f)(int) = 0;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -241,7 +241,7 @@ fn test_function_pointer_with_initializer() {
 #[test]
 fn test_array_of_pointers_with_initializer() {
     let resolved = setup_declaration("int *p[3] = { &x, 0, &y };");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -263,7 +263,7 @@ fn test_array_of_pointers_with_initializer() {
 #[test]
 fn test_function_pointer_with_cast_initializer() {
     let resolved = setup_declaration("int (*fp)(int) = (int (*)(int))0;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -280,7 +280,7 @@ fn test_function_pointer_with_cast_initializer() {
 #[test]
 fn test_mixed_declarators_simple() {
     let resolved = setup_declaration("int *a, (*b)(int), c[10];");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -363,7 +363,7 @@ fn test_function_returning_pointer_to_function() {
 #[test]
 fn test_parentheses_that_do_nothing() {
     let resolved = setup_declaration("int (((a)));");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -375,7 +375,7 @@ fn test_parentheses_that_do_nothing() {
 #[test]
 fn test_insane_parentheses_on_pointer_to_array_to_function() {
     let resolved = setup_declaration("int (*(((*f))(int)))[5];");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -427,7 +427,7 @@ fn test_enum_declaration_with_values() {
 #[test]
 fn test_function_with_array_abstract_declarator() {
     let resolved = setup_declaration("int f(int ([4]));");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -440,7 +440,7 @@ fn test_function_with_array_abstract_declarator() {
 #[test]
 fn test_complex_abstract_declarator_function() {
     let resolved = setup_declaration("int f5(int (*fp)(int));");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -498,7 +498,7 @@ fn test_bitfield_with_large_width() {
 #[test]
 fn test_designated_initializer_simple_array() {
     let resolved = setup_declaration("int arr[10] = { [5] = 42 };");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -514,7 +514,7 @@ fn test_designated_initializer_simple_array() {
 #[test]
 fn test_designated_initializer_range_syntax() {
     let resolved = setup_declaration("int arr[10] = { [1 ... 5] = 9 };");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -530,7 +530,7 @@ fn test_designated_initializer_range_syntax() {
 #[test]
 fn test_designated_initializer_multiple_ranges() {
     let resolved = setup_declaration("int arr[20] = { [1 ... 5] = 9, [10 ... 15] = 42 };");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -547,7 +547,7 @@ fn test_designated_initializer_multiple_ranges() {
 #[test]
 fn test_designated_initializer_mixed_single_and_range() {
     let resolved = setup_declaration("int arr[10] = { [0] = 1, [2 ... 5] = 9, [8] = 42 };");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -565,7 +565,7 @@ fn test_designated_initializer_mixed_single_and_range() {
 #[test]
 fn test_designated_initializer_range_with_expressions() {
     let resolved = setup_declaration("int arr[10] = { [1 ... 2+3] = 9 };");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -616,7 +616,7 @@ fn test_static_assert_missing_string_literal() {
 #[test]
 fn test_function_definition() {
     let resolved = setup_translation_unit("int main() { return 0; }");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     TranslationUnit:
       - FunctionDef:
           specifiers:
@@ -634,7 +634,7 @@ fn test_function_definition() {
 #[test]
 fn test_translation_unit() {
     let resolved = setup_translation_unit("int x; int main() { return x; }");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     TranslationUnit:
       - Declaration:
           specifiers:
@@ -670,7 +670,7 @@ fn test_atomic_specifier_syntax() {
 #[test]
 fn test_atomic_qualifier_syntax() {
     let resolved = setup_declaration("_Atomic int *x;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - TypeQualifier(Atomic)
@@ -684,7 +684,7 @@ fn test_atomic_qualifier_syntax() {
 #[test]
 fn test_complex_declarator_ret_ptr_to_func() {
     let resolved = setup_declaration("int (*f)(int (*)(int));");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -697,7 +697,7 @@ fn test_complex_declarator_ret_ptr_to_func() {
 #[test]
 fn test_complex_declarator_arr_of_ptr_to_func() {
     let resolved = setup_declaration("int (*f[])(int);");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -710,7 +710,7 @@ fn test_complex_declarator_arr_of_ptr_to_func() {
 #[test]
 fn test_const_volatile_pointer() {
     let resolved = setup_declaration("int * const volatile x;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - int
@@ -734,7 +734,7 @@ fn test_invalid_enum_decl() {
 #[test]
 fn test_invalid_struct_decl() {
     let resolved = setup_declaration("struct;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - struct
@@ -773,7 +773,7 @@ fn test_enum_with_non_literal_value() {
         panic!("Expected SizeOfType node, got {:?}", node.kind);
     };
 
-    insta::assert_yaml_snapshot!(constants_info, @r"
+    insta::assert_yaml_snapshot!(constants_info, @"
     - - A
       - ~
     ");
@@ -794,7 +794,7 @@ fn test_function_returning_array_rejected() {
 #[test]
 fn test_parse_noreturn_function_declaration() {
     let resolved = setup_declaration("_Noreturn void foo();");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - Noreturn
@@ -809,7 +809,7 @@ fn test_parse_noreturn_function_declaration() {
 fn test_cast_attribute_pointer() {
     // This reproduces the issue: int b = ( (int(ATTR *)(void)) function_pointer)();
     let resolved = setup_declaration("int x = (int (__attribute__((unused)) *) (void)) 0;");
-    insta::assert_yaml_snapshot!(resolved, @r"
+    insta::assert_yaml_snapshot!(resolved, @"
     Declaration:
       specifiers:
         - int
@@ -826,7 +826,7 @@ fn test_cast_attribute_pointer() {
 fn test_param_attribute_int() {
     // Verify that (ATTR int) is still parsed as a parameter list.
     let resolved = setup_declaration("void foo(int (__attribute__((unused)) int));");
-    insta::assert_yaml_snapshot!(resolved, @r"
+    insta::assert_yaml_snapshot!(resolved, @"
     Declaration:
       specifiers:
         - void
@@ -917,7 +917,7 @@ fn test_struct_attribute_error_recovery() {
     // Test error recovery when __attribute__ is malformed before tag
     // expected: struct __attribute__ S; -> struct S;
     let resolved = setup_declaration("struct __attribute__ S;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     Declaration:
       specifiers:
         - struct S
@@ -938,7 +938,7 @@ fn test_struct_attribute_error_recovery() {
 #[test]
 fn test_top_level_semicolon_regression() {
     let resolved = setup_translation_unit("int x; ; ; int y;");
-    insta::assert_yaml_snapshot!(&resolved, @r"
+    insta::assert_yaml_snapshot!(&resolved, @"
     TranslationUnit:
       - Declaration:
           specifiers:

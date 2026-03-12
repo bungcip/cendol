@@ -77,6 +77,7 @@ pub mod parser_typeof;
 pub mod semantic_alignment;
 pub mod semantic_composite;
 pub mod test_utils;
+pub mod guardian_pointer_arithmetic_completeness;
 
 pub mod ast_dumper_coverage;
 

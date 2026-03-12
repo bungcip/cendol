@@ -850,9 +850,9 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             // Pointer + integer = pointer
             BinaryOp::Add if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => {
-                // Void pointer arithmetic is invalid (C11 6.5.6)
+                // Pointer addition requires pointer to a complete object type (C11 6.5.6p2)
                 if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty())
-                    && pointee.is_void()
+                    && (!self.registry.is_complete(pointee.ty()) || pointee.is_function())
                 {
                     self.report_error(
                         node,
@@ -866,9 +866,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some((lhs_promoted, lhs_promoted))
             }
             BinaryOp::Add if lhs_promoted.is_integer() && rhs_promoted.is_pointer() => {
-                // Void pointer arithmetic is invalid (C11 6.5.6)
+                // Pointer addition requires pointer to a complete object type (C11 6.5.6p2)
                 if let Some(pointee) = self.registry.get_pointee(rhs_promoted.ty())
-                    && pointee.is_void()
+                    && (!self.registry.is_complete(pointee.ty()) || pointee.is_function())
                 {
                     self.report_error(
                         node,
@@ -884,9 +884,9 @@ impl<'a> SemanticAnalyzer<'a> {
 
             // Pointer - integer = pointer
             BinaryOp::Sub if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => {
-                // Void pointer arithmetic is invalid (C11 6.5.6)
+                // Pointer subtraction requires pointer to a complete object type (C11 6.5.6p2)
                 if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty())
-                    && pointee.is_void()
+                    && (!self.registry.is_complete(pointee.ty()) || pointee.is_function())
                 {
                     self.report_error(
                         node,
@@ -908,8 +908,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 let compatible = self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all());
                 let complete_lhs = self.registry.is_complete(lhs_base.ty());
                 let complete_rhs = self.registry.is_complete(rhs_base.ty());
+                let is_func_lhs = lhs_base.is_function();
+                let is_func_rhs = rhs_base.is_function();
 
-                if !compatible || !complete_lhs || !complete_rhs {
+                if !compatible || !complete_lhs || !complete_rhs || is_func_lhs || is_func_rhs {
                     self.report_error(
                         node,
                         SemanticErrorKind::InvalidBinaryOperands {

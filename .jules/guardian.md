@@ -124,3 +124,8 @@ Action: Centralize compound literal type validation in the semantic analyzer, en
 
 Learning: C11 6.5.1.1p5 requires the result of a `_Generic` selection to have the type and value category of its selected association. Crucially, if the selected expression is a bit-field or has the `register` storage class, these properties must be propagated to the `_Generic` expression itself so that operators like `&` and `sizeof` can correctly enforce their respective constraints (e.g., 6.5.3.2p1 prohibiting `&` on bit-fields and register variables).
 Action: Ensure that semantic property queries (like `is_lvalue`, `get_bitfield_width`, and `is_register_variable`) recursively inspect the selected association of `_Generic` nodes to maintain semantic correctness across expression boundaries.
+
+2025-06-08 - [Pointer Arithmetic Completeness Constraints]
+
+Learning: C11 6.5.6p2 and 6.5.6p3 impose strict requirements on pointer arithmetic: operands must be pointers to complete object types. This means addition and subtraction are prohibited for pointers to 'void' (which is incomplete), pointers to incomplete structures/unions, and pointers to functions (which are not object types). Simply checking for 'void*' is insufficient as it misses other incomplete types and function pointers, potentially leading to invalid code generation or backend failures.
+Action: Enforce complete object type constraints for all pointer arithmetic operations in the semantic analyzer and verify with negative tests covering diverse incomplete and non-object types.

@@ -1865,7 +1865,12 @@ impl<'a> SemanticAnalyzer<'a> {
             return None;
         }
 
-        if let Some(mut ty) = self.registry.get(record_ty).find_member(self.registry, field_name).map(|m| m.member_type) {
+        if let Some(mut ty) = self
+            .registry
+            .get(record_ty)
+            .find_member(self.registry, field_name)
+            .map(|m| m.member_type)
+        {
             // C11 6.5.2.3p4: if the first expression has qualified type, the result has the so-qualified
             // version of the type of the designated member.
             if !base_quals.is_empty() {

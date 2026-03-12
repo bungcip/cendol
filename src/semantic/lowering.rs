@@ -2476,7 +2476,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         // Update the type in AST and SymbolTable
-        self.registry.complete_record(ty, members.clone(), self.current_packing.map(|n| n as u32));
+        self.registry
+            .complete_record(ty, members.clone(), self.current_packing.map(|n| n as u32));
         if let Err(e) = self.registry.ensure_layout(ty) {
             return Err(SemanticError::new(span, e.to_semantic_kind()));
         }

@@ -12,7 +12,7 @@ fn test_sizeof_logic_not_is_int_size() {
     }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i32
     type %t2 = u64
@@ -40,7 +40,7 @@ fn test_sizeof_logic_and_is_int_size() {
     }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i32
     type %t2 = u64
@@ -68,7 +68,7 @@ fn test_sizeof_logic_or_is_int_size() {
     }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i32
     type %t2 = u64
@@ -337,7 +337,7 @@ fn test_assign_valid_void_ptr() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = ptr<%t0>
     type %t2 = void
@@ -371,7 +371,7 @@ fn test_assign_valid_null_ptr() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = ptr<%t0>
     type %t2 = void
@@ -402,7 +402,7 @@ fn test_assign_pointer_to_bool() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = ptr<%t0>
     type %t2 = bool
@@ -433,7 +433,7 @@ fn test_assign_valid_arithmetic() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = f32
     type %t2 = f64
@@ -491,7 +491,7 @@ fn test_assign_enum_to_int() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -520,7 +520,7 @@ fn test_assign_int_to_enum() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -547,7 +547,7 @@ fn test_enum_constant_assignment() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -573,7 +573,7 @@ fn test_enum_arithmetic() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -601,7 +601,7 @@ fn test_long_double_arithmetic_conversion() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = f80
     type %t2 = f64
@@ -764,7 +764,7 @@ mod tests {
             }
         "#;
         let mir = setup_mir(source);
-        insta::assert_snapshot!(mir, @r"
+        insta::assert_snapshot!(mir, @"
         type %t0 = i32
         type %t1 = i64
 
@@ -835,7 +835,7 @@ fn test_comma_operator() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i8
     type %t2 = ptr<%t1>
@@ -869,7 +869,7 @@ fn test_comma_operator_types() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i32
     type %t2 = i8
@@ -903,7 +903,7 @@ fn test_comma_operator_loop() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i8
     type %t2 = ptr<%t1>
@@ -1061,7 +1061,7 @@ fn test_usual_arithmetic_conversions_signed_wins() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = u32
     type %t2 = i64

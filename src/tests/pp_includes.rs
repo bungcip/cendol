@@ -16,7 +16,7 @@ fn test_include_same_file_twice_without_pragma_once() {
         ),
     ];
     let (tokens, _) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     - kind: Identifier
@@ -149,7 +149,7 @@ fn test_computed_include_string() {
     let files = vec![("foo.h", "OK"), ("main.c", "#define H \"foo.h\"\n#include H")];
     let (tokens, diags) = setup_multi_file_pp_snapshot(files, "main.c", None);
     assert!(diags.is_empty(), "Unexpected diagnostics: {:?}", diags);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");

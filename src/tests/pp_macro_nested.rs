@@ -9,7 +9,7 @@ fn test_nested_macro_expansion_in_args() {
 CAST(unsigned, CAST_U(i))
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: LeftParen
       text: (
     - kind: LeftParen

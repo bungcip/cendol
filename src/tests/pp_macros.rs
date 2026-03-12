@@ -13,7 +13,7 @@ fn test_simple_macro_definition_and_expansion() {
 TEN
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -396,7 +396,7 @@ fn test_placemarker_concatenation_chained() {
 M(, , C)
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: C
     ");
@@ -429,7 +429,7 @@ fn test_concat_with_empty_argument() {
 __CONCAT(a,)
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: a
     ");
@@ -612,7 +612,7 @@ fn test_deferred_macro_expansion() {
 DEFER(EXPAND)()
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: EXPAND
     - kind: LeftParen

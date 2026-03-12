@@ -35,7 +35,7 @@ fn test_line_directive_presumed_location() {
 OK
 "#;
     let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r"
+    insta::assert_yaml_snapshot!((tokens, diags), @"
     - - kind: Identifier
         text: OK
     - []
@@ -89,7 +89,7 @@ fn test_null_directive() {
 OK
 "#;
     let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r"
+    insta::assert_yaml_snapshot!((tokens, diags), @"
     - - kind: Identifier
         text: OK
     - []
@@ -114,7 +114,7 @@ fn test_skipped_directives_coverage() {
 OK
 "#;
     let (tokens, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!((tokens, diags), @r"
+    insta::assert_yaml_snapshot!((tokens, diags), @"
     - - kind: Identifier
         text: OK
     - []
@@ -165,7 +165,7 @@ fn test_pragma_once_via_pragma_operator() {
         ("main.c", "#include \"header.h\"\n#include \"header.h\""),
     ];
     let (tokens, _) = setup_multi_file_pp_snapshot(files, "main.c", None);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -183,7 +183,7 @@ fn test_push_pop_macro() {
 OK
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK
     ");
@@ -224,7 +224,7 @@ fn test_push_pop_undefined_macro() {
 M
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: M
     ");

@@ -164,14 +164,6 @@ impl Type {
         matches!(self.kind, TypeKind::Record { is_union: true, .. })
     }
 
-    pub(crate) fn is_record_empty(&self) -> bool {
-        if let TypeKind::Record { members, .. } = &self.kind {
-            members.is_empty()
-        } else {
-            false
-        }
-    }
-
     pub(crate) fn is_int(&self) -> bool {
         matches!(self.kind, TypeKind::Builtin(b) if b.is_integer()) || matches!(self.kind, TypeKind::Enum { .. })
     }

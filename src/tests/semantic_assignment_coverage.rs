@@ -25,7 +25,7 @@ fn test_compound_assignments() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
 
     fn main() -> i32

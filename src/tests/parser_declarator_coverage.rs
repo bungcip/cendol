@@ -22,7 +22,7 @@ fn test_invalid_attributes_recovery() {
 
     // This checks `depth += 1` inside attribute paren matching
     let decl5 = setup_translation_unit("int foo __attribute__(((foo)));");
-    insta::assert_yaml_snapshot!(&decl5, @r"
+    insta::assert_yaml_snapshot!(&decl5, @"
     TranslationUnit:
       - Declaration:
           specifiers:
@@ -47,7 +47,7 @@ fn test_invalid_attributes_recovery() {
 
     // Disambiguation: attribute followed by *
     let decl6 = setup_translation_unit("void f(int (__attribute__((unused)) *));");
-    insta::assert_yaml_snapshot!(&decl6, @r"
+    insta::assert_yaml_snapshot!(&decl6, @"
     TranslationUnit:
       - Declaration:
           specifiers:
@@ -76,7 +76,7 @@ fn test_array_of_functions() {
 #[test]
 fn test_type_qualifiers_atomic_restrict() {
     let decl = setup_declaration("int * restrict _Atomic p;");
-    insta::assert_yaml_snapshot!(&decl, @r"
+    insta::assert_yaml_snapshot!(&decl, @"
     Declaration:
       specifiers:
         - int
@@ -89,7 +89,7 @@ fn test_type_qualifiers_atomic_restrict() {
 #[test]
 fn test_vla_star_size() {
     let decl = setup_translation_unit("void foo(int a[*]);");
-    insta::assert_yaml_snapshot!(&decl, @r"
+    insta::assert_yaml_snapshot!(&decl, @"
     TranslationUnit:
       - Declaration:
           specifiers:
@@ -104,7 +104,7 @@ fn test_vla_star_size() {
 fn test_abstract_declarator_in_declarator() {
     // Falls into `parse_abstract_declarator(parser)?` from `parse_declarator(parser, None)`
     let decl = setup_translation_unit("void foo(int (*));");
-    insta::assert_yaml_snapshot!(&decl, @r"
+    insta::assert_yaml_snapshot!(&decl, @"
     TranslationUnit:
       - Declaration:
           specifiers:
@@ -125,7 +125,7 @@ fn test_invalid_tokens_in_declarator() {
 fn test_array_size_qualifiers() {
     // Tests `parse_array_size` matching `static` and qualifiers
     let decl = setup_translation_unit("void foo(int a[static restrict 5]);");
-    insta::assert_yaml_snapshot!(&decl, @r"
+    insta::assert_yaml_snapshot!(&decl, @"
     TranslationUnit:
       - Declaration:
           specifiers:
@@ -169,7 +169,7 @@ fn test_complex_abstract_declarators_trailing() {
 
     // Abstract declarator with trailing array
     let decl1 = setup_translation_unit("void f(int [10]);");
-    insta::assert_yaml_snapshot!(&decl1, @r"
+    insta::assert_yaml_snapshot!(&decl1, @"
     TranslationUnit:
       - Declaration:
           specifiers:
@@ -181,7 +181,7 @@ fn test_complex_abstract_declarators_trailing() {
 
     // Abstract declarator with trailing function
     let decl2 = setup_translation_unit("void f(int (int));");
-    insta::assert_yaml_snapshot!(&decl2, @r"
+    insta::assert_yaml_snapshot!(&decl2, @"
     TranslationUnit:
       - Declaration:
           specifiers:
@@ -202,7 +202,7 @@ fn test_abstract_declarator_left_paren_gaps() {
 
     // Empty parameter list in abstract declarator
     let decl1 = setup_translation_unit("void f(int ());");
-    insta::assert_yaml_snapshot!(&decl1, @r"
+    insta::assert_yaml_snapshot!(&decl1, @"
     TranslationUnit:
       - Declaration:
           specifiers:
@@ -214,7 +214,7 @@ fn test_abstract_declarator_left_paren_gaps() {
 
     // Variadic abstract declarator
     let decl2 = setup_translation_unit("void f(int (*)(...));");
-    insta::assert_yaml_snapshot!(&decl2, @r"
+    insta::assert_yaml_snapshot!(&decl2, @"
     TranslationUnit:
       - Declaration:
           specifiers:
@@ -232,7 +232,7 @@ fn test_abstract_declarator_left_paren_gaps() {
 fn test_pointer_qualifier_abstract() {
     // Covers lines 552-554 in parse_abstract_declarator
     let decl = setup_translation_unit("void f(int * restrict);");
-    insta::assert_yaml_snapshot!(&decl, @r"
+    insta::assert_yaml_snapshot!(&decl, @"
     TranslationUnit:
       - Declaration:
           specifiers:

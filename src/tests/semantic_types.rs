@@ -483,7 +483,7 @@ fn test_struct_copy_init() {
         int main() { return 0; }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = void
     type %t2 = struct Wrap { func: %t3 }

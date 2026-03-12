@@ -16,7 +16,7 @@ fn test_if_else_statement() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -57,7 +57,7 @@ fn test_while_statement() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -99,7 +99,7 @@ fn test_for_stmt() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -139,7 +139,7 @@ fn test_simple_variable_return() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -165,7 +165,7 @@ fn test_global_variable() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
 
     global @result: i32 = const 99
@@ -194,7 +194,7 @@ fn test_consecutive_labels() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -229,7 +229,7 @@ fn test_struct_type_regression() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = struct anonymous { a: %t0, b: %t0, c: %t0 }
 
@@ -270,7 +270,7 @@ fn test_long_long_comparison_crash() {
             }
         "#;
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = i64
 
@@ -309,7 +309,7 @@ fn test_designated_initializer_global() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = struct S { a: %t1, b: %t1 }
     type %t1 = i32
 
@@ -326,7 +326,7 @@ fn test_global_initializer_with_address() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = struct S { a: %t0, p: %t2 }
     type %t2 = ptr<%t0>
@@ -354,7 +354,7 @@ fn test_nested_compound_initializer_global() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = struct S2 { a: %t1, b: %t1, s: %t2 }
     type %t1 = i32
     type %t2 = struct S1 { a: %t1, b: %t1 }
@@ -377,7 +377,7 @@ fn test_struct_tag_shadowing() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = struct T { x: %t0 }
     type %t2 = struct T { y: %t0 }
@@ -414,7 +414,7 @@ fn test_variable_shadowing() {
     let mir_dump = setup_mir(source);
     // We expect two different %x locals. MIR printer might show them with same name or different IDs.
     // Currently it shows names if available.
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -469,7 +469,7 @@ fn test_parameter_shadowing() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = fn(%t0) -> %t0
 
@@ -546,7 +546,7 @@ fn test_function_with_many_return_types() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = f64
     type %t2 = i8
@@ -695,7 +695,7 @@ fn test_duplicate_global_declaration() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
 
     global @x: i32 = const zero
@@ -734,7 +734,7 @@ fn test_basic_typedef() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -761,7 +761,7 @@ fn test_mir_generation_for_self_referential_struct() {
     }
     "#;
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = struct S { p: %t2, x: %t0 }
     type %t2 = ptr<%t1>
@@ -791,7 +791,7 @@ fn test_mir_generation_for_self_referential_union() {
             }
         "#;
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = union U { p: %t2, x: %t0 }
     type %t2 = ptr<%t1>
@@ -948,7 +948,7 @@ fn test_increment_decrement() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -999,7 +999,7 @@ fn test_simple_goto() {
             }
         "#;
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
 
     fn main() -> i32
@@ -1029,7 +1029,7 @@ fn test_deref_after_cast() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = void
     type %t2 = ptr<%t1>
@@ -1096,7 +1096,7 @@ fn test_incomplete_record_type() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = struct I {  }
     type %t1 = ptr<%t0>
 
@@ -1131,7 +1131,7 @@ fn test_anonymous_struct_union_field_indices() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = struct anonymous { a: %t0, b1: %t0, b2: %t0, c: %t0, d: %t0 }
 
@@ -1161,7 +1161,7 @@ fn test_global_after_function() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = fn() -> %t0
 
@@ -1209,7 +1209,7 @@ fn test_ternary_with_mixed_pointer_integer() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = void
     type %t2 = ptr<%t1>
@@ -1291,7 +1291,7 @@ fn test_global_initializer_with_cast() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = i64
     type %t2 = i8

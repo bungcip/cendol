@@ -385,6 +385,31 @@ mod tests {
     }
 
     #[test]
+    fn test_float_literal_suffixes() {
+        // Real part
+        assert_eq!(parse_float_literal("1.0"), Some((1.0, None)));
+        assert_eq!(parse_float_literal("1.0f"), Some((1.0, Some(FloatSuffix::F))));
+        assert_eq!(parse_float_literal("1.0F"), Some((1.0, Some(FloatSuffix::F))));
+        assert_eq!(parse_float_literal("1.0l"), Some((1.0, Some(FloatSuffix::L))));
+        assert_eq!(parse_float_literal("1.0L"), Some((1.0, Some(FloatSuffix::L))));
+
+        // Imaginary part
+        assert_eq!(parse_float_literal("1.0i"), Some((1.0, Some(FloatSuffix::I))));
+        assert_eq!(parse_float_literal("1.0I"), Some((1.0, Some(FloatSuffix::I))));
+        assert_eq!(parse_float_literal("1.0j"), Some((1.0, Some(FloatSuffix::I))));
+        assert_eq!(parse_float_literal("1.0J"), Some((1.0, Some(FloatSuffix::I))));
+
+        assert_eq!(parse_float_literal("1.0fi"), Some((1.0, Some(FloatSuffix::IF))));
+        assert_eq!(parse_float_literal("1.0if"), Some((1.0, Some(FloatSuffix::IF))));
+
+        assert_eq!(parse_float_literal("1.0li"), Some((1.0, Some(FloatSuffix::IL))));
+        assert_eq!(parse_float_literal("1.0il"), Some((1.0, Some(FloatSuffix::IL))));
+
+        // Hex exponent value overflows i32
+        assert_eq!(parse_float_literal("0x1p999999999999"), None);
+    }
+
+    #[test]
     fn test_escape_sequences() {
         // Test various C escape sequences
         assert_eq!(unescape_string(r"\n"), "\n");

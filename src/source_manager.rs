@@ -213,7 +213,7 @@ impl Ord for LineDirective {
 }
 
 impl PartialOrd for LineDirective {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }

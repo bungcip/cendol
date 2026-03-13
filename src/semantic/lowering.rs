@@ -1589,11 +1589,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error))
     }
 
-    // fn visit_type_as_param(&mut self, ty: ParsedType, span: SourceSpan) -> QualType {
-    //     self.lower_type(ty, span, true)
-    //         .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error))
-    // }
-
     fn lower_type(
         &mut self,
         parsed_type: ParsedType,
@@ -1795,7 +1790,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     /// Convert ParsedArraySize to ArraySizeType
-    pub(crate) fn convert_parsed_array_size(&mut self, size: &ParsedArraySize) -> ArraySizeType {
+    fn convert_parsed_array_size(&mut self, size: &ParsedArraySize) -> ArraySizeType {
         match size {
             ParsedArraySize::Expression { expr, .. } => self.resolve_array_size(Some(*expr)),
             ParsedArraySize::Star { .. } => ArraySizeType::Star,
@@ -1805,7 +1800,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     /// Helper function to resolve array size logic
-    pub(crate) fn resolve_array_size(&mut self, size: Option<ParsedNodeRef>) -> ArraySizeType {
+    fn resolve_array_size(&mut self, size: Option<ParsedNodeRef>) -> ArraySizeType {
         let Some(node) = size else {
             return ArraySizeType::Incomplete;
         };

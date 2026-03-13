@@ -38,7 +38,7 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    pub(crate) fn handle_conditional_directive(
+    fn handle_conditional_directive(
         &mut self,
         kind: DirectiveKind,
         location: SourceLoc,
@@ -76,7 +76,7 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    pub(crate) fn execute_directive(&mut self, kind: DirectiveKind) -> Result<(), PPError> {
+    fn execute_directive(&mut self, kind: DirectiveKind) -> Result<(), PPError> {
         match kind {
             DirectiveKind::Define => self.handle_define(),
             DirectiveKind::Undef => self.handle_undef(),
@@ -109,7 +109,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Tokenize the content of a pragma directive
-    pub(crate) fn tokenize_pragma_content(&mut self, pragma_content: &str) -> Vec<PPToken> {
+    fn tokenize_pragma_content(&mut self, pragma_content: &str) -> Vec<PPToken> {
         // Create a buffer for the pragma content
         let source_id = self
             .sm
@@ -161,7 +161,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Handle #define directive
-    pub(crate) fn parse_define_args(
+    fn parse_define_args(
         &mut self,
         name: &str,
     ) -> Result<(MacroFlags, Vec<StringId>, Option<StringId>), PPError> {
@@ -189,7 +189,7 @@ impl<'src> Preprocessor<'src> {
         Ok((MacroFlags::empty(), Vec::new(), None))
     }
 
-    pub(crate) fn check_macro_redefinition(
+    fn check_macro_redefinition(
         &mut self,
         name: StringId,
         name_token: &PPToken,
@@ -237,7 +237,7 @@ impl<'src> Preprocessor<'src> {
         true
     }
 
-    pub(crate) fn handle_define(&mut self) -> Result<(), PPError> {
+    fn handle_define(&mut self) -> Result<(), PPError> {
         let (name_token, name) = self.expect_identifier()?;
 
         let (flags, params, variadic) = self.parse_define_args(name.as_str())?;
@@ -261,7 +261,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    pub(crate) fn handle_undef(&mut self) -> Result<(), PPError> {
+    fn handle_undef(&mut self) -> Result<(), PPError> {
         let (name_token, name) = self.expect_identifier()?;
 
         if let Some(existing) = self.macros.get(&name)
@@ -283,7 +283,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    pub(crate) fn do_handle_include(&mut self, is_next: bool) -> Result<(), PPError> {
+    fn do_handle_include(&mut self, is_next: bool) -> Result<(), PPError> {
         let token = self.expect_token()?;
         let mut eod_consumed = false;
 
@@ -385,15 +385,15 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    pub(crate) fn handle_include(&mut self) -> Result<(), PPError> {
+    fn handle_include(&mut self) -> Result<(), PPError> {
         self.do_handle_include(false)
     }
 
-    pub(crate) fn handle_include_next(&mut self) -> Result<(), PPError> {
+    fn handle_include_next(&mut self) -> Result<(), PPError> {
         self.do_handle_include(true)
     }
 
-    pub(crate) fn resolve_include_path(
+    fn resolve_include_path(
         &mut self,
         path: &str,
         is_angled: bool,
@@ -428,7 +428,7 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    pub(crate) fn resolve_next_include_path(
+    fn resolve_next_include_path(
         &mut self,
         path: &str,
         is_angled: bool,
@@ -465,7 +465,7 @@ impl<'src> Preprocessor<'src> {
         self.emit_error_loc(PPErrorKind::FileNotFound { path: path.to_string() }, loc)
     }
 
-    pub(crate) fn handle_if_directive(&mut self, condition: bool) -> Result<(), PPError> {
+    fn handle_if_directive(&mut self, condition: bool) -> Result<(), PPError> {
         // Bolt ⚡: Ensure the skipping state is propagated downward.
         let was_skipping = self.is_currently_skipping() || !condition;
         self.conditional_stack.push(PPConditionalInfo {
@@ -476,7 +476,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    pub(crate) fn handle_conditional_def(&mut self, is_ifdef: bool) -> Result<(), PPError> {
+    fn handle_conditional_def(&mut self, is_ifdef: bool) -> Result<(), PPError> {
         let (_, sym) = self.expect_identifier()?;
 
         let condition = self.macros.contains_key(&sym) == is_ifdef;
@@ -484,15 +484,15 @@ impl<'src> Preprocessor<'src> {
         self.expect_eod()
     }
 
-    pub(crate) fn handle_ifdef(&mut self) -> Result<(), PPError> {
+    fn handle_ifdef(&mut self) -> Result<(), PPError> {
         self.handle_conditional_def(true)
     }
 
-    pub(crate) fn handle_ifndef(&mut self) -> Result<(), PPError> {
+    fn handle_ifndef(&mut self) -> Result<(), PPError> {
         self.handle_conditional_def(false)
     }
 
-    pub(crate) fn handle_elif_directive(&mut self, condition: bool, location: SourceLoc) -> Result<(), PPError> {
+    fn handle_elif_directive(&mut self, condition: bool, location: SourceLoc) -> Result<(), PPError> {
         if self.conditional_stack.is_empty() {
             return self.emit_error_loc(PPErrorKind::ElifWithoutIf, location);
         }
@@ -519,7 +519,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    pub(crate) fn handle_else(&mut self, location: SourceLoc) -> Result<(), PPError> {
+    fn handle_else(&mut self, location: SourceLoc) -> Result<(), PPError> {
         if self.conditional_stack.is_empty() {
             return self.emit_error_loc(PPErrorKind::ElseWithoutIf, location);
         }
@@ -544,14 +544,14 @@ impl<'src> Preprocessor<'src> {
         self.expect_eod()
     }
 
-    pub(crate) fn handle_endif(&mut self, location: SourceLoc) -> Result<(), PPError> {
+    fn handle_endif(&mut self, location: SourceLoc) -> Result<(), PPError> {
         if self.conditional_stack.pop().is_none() {
             return self.emit_error_loc(PPErrorKind::UnmatchedEndif, location);
         }
         self.expect_eod()
     }
 
-    pub(crate) fn collect_tokens_until_eod(&mut self) -> Vec<PPToken> {
+    fn collect_tokens_until_eod(&mut self) -> Vec<PPToken> {
         // ⚡ Bolt: Use a small initial capacity to avoid reallocations for common macro bodies and directives.
         let mut tokens = Vec::with_capacity(32);
         while let Some(token) = self.lex_token() {
@@ -563,7 +563,7 @@ impl<'src> Preprocessor<'src> {
         tokens
     }
 
-    pub(crate) fn parse_line_directive_args(&self, tokens: &[PPToken]) -> Result<(u32, Option<String>), PPError> {
+    fn parse_line_directive_args(&self, tokens: &[PPToken]) -> Result<(u32, Option<String>), PPError> {
         let (first, rest) = tokens
             .split_first()
             .ok_or_else(|| self.error_loc(PPErrorKind::InvalidLineDirective, SourceLoc::builtin()))?;
@@ -593,7 +593,7 @@ impl<'src> Preprocessor<'src> {
         Ok((line_num, filename))
     }
 
-    pub(crate) fn handle_line(&mut self) -> Result<(), PPError> {
+    fn handle_line(&mut self) -> Result<(), PPError> {
         let start_line = if let Some(lexer) = self.lexer_stack.last() {
             lexer.get_current_line()
         } else {
@@ -631,7 +631,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    pub(crate) fn handle_pragma(&mut self) -> Result<(), PPError> {
+    fn handle_pragma(&mut self) -> Result<(), PPError> {
         let (token, symbol) = self.expect_identifier()?;
 
         let pragma_name = symbol.as_str();
@@ -656,7 +656,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    pub(crate) fn parse_pragma_macro_name(&mut self) -> Result<StringId, PPError> {
+    fn parse_pragma_macro_name(&mut self) -> Result<StringId, PPError> {
         self.expect_kind(PPTokenKind::LeftParen)?;
         let (symbol, token_loc) = self.expect_string_literal()?;
 
@@ -667,7 +667,7 @@ impl<'src> Preprocessor<'src> {
         Ok(StringId::new(name))
     }
 
-    pub(crate) fn handle_push_macro(&mut self) -> Result<(), PPError> {
+    fn handle_push_macro(&mut self) -> Result<(), PPError> {
         let name = self.parse_pragma_macro_name()?;
 
         let info = self.macros.get(&name).cloned();
@@ -677,7 +677,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    pub(crate) fn handle_pop_macro(&mut self) -> Result<(), PPError> {
+    fn handle_pop_macro(&mut self) -> Result<(), PPError> {
         let name = self.parse_pragma_macro_name()?;
 
         if let Some(stack) = self.macro_stack.get_mut(&name)
@@ -693,7 +693,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    pub(crate) fn parse_pragma_message_content(&mut self) -> Result<String, PPError> {
+    fn parse_pragma_message_content(&mut self) -> Result<String, PPError> {
         let mut tokens = self.collect_balanced_tokens(PPTokenKind::LeftParen, PPTokenKind::RightParen)?;
         self.expand_tokens(&mut tokens, false)?;
 
@@ -706,7 +706,7 @@ impl<'src> Preprocessor<'src> {
         })
     }
 
-    pub(crate) fn handle_pragma_diagnostic_message(&mut self, level: DiagnosticLevel) -> Result<(), PPError> {
+    fn handle_pragma_diagnostic_message(&mut self, level: DiagnosticLevel) -> Result<(), PPError> {
         let message = self.parse_pragma_message_content()?;
         let loc = self.get_current_location();
         let diag = Diagnostic {
@@ -724,19 +724,19 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    pub(crate) fn handle_pragma_message(&mut self) -> Result<(), PPError> {
+    fn handle_pragma_message(&mut self) -> Result<(), PPError> {
         self.handle_pragma_diagnostic_message(DiagnosticLevel::Note)
     }
 
-    pub(crate) fn handle_pragma_warning(&mut self, level: DiagnosticLevel) -> Result<(), PPError> {
+    fn handle_pragma_warning(&mut self, level: DiagnosticLevel) -> Result<(), PPError> {
         self.handle_pragma_diagnostic_message(level)
     }
 
-    pub(crate) fn handle_pragma_error(&mut self, level: DiagnosticLevel) -> Result<(), PPError> {
+    fn handle_pragma_error(&mut self, level: DiagnosticLevel) -> Result<(), PPError> {
         self.handle_pragma_diagnostic_message(level)
     }
 
-    pub(crate) fn handle_diagnostic_directive(&mut self, is_error: bool) -> Result<(), PPError> {
+    fn handle_diagnostic_directive(&mut self, is_error: bool) -> Result<(), PPError> {
         let directive_location = self.get_current_location();
         let message = self.read_directive_message();
 
@@ -759,7 +759,7 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    pub(crate) fn handle_pragma_pack(&mut self) -> Result<(), PPError> {
+    fn handle_pragma_pack(&mut self) -> Result<(), PPError> {
         let mut tokens = Vec::new();
         while let Some(token) = self.lex_token() {
             if token.kind == PPTokenKind::Eod {
@@ -862,7 +862,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    pub(crate) fn parse_pack_value_from_token(&self, t: &PPToken) -> Result<u8, PPError> {
+    fn parse_pack_value_from_token(&self, t: &PPToken) -> Result<u8, PPError> {
         let PPTokenKind::Number(sym) = t.kind else {
             return self.emit_error_loc(PPErrorKind::UnknownPragma("pack".to_string()), t.location);
         };
@@ -882,7 +882,7 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    pub(crate) fn parse_pack_value_from_iter(
+    fn parse_pack_value_from_iter(
         &self,
         it: &mut std::iter::Peekable<std::slice::Iter<'_, PPToken>>,
         loc: SourceLoc,
@@ -894,15 +894,15 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    pub(crate) fn handle_error(&mut self) -> Result<(), PPError> {
+    fn handle_error(&mut self) -> Result<(), PPError> {
         self.handle_diagnostic_directive(true)
     }
 
-    pub(crate) fn handle_warning(&mut self) -> Result<(), PPError> {
+    fn handle_warning(&mut self) -> Result<(), PPError> {
         self.handle_diagnostic_directive(false)
     }
 
-    pub(crate) fn read_directive_message(&mut self) -> String {
+    fn read_directive_message(&mut self) -> String {
         let tokens = self.collect_tokens_until_eod();
         self.tokens_to_string(&tokens)
     }

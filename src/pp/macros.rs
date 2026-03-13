@@ -243,10 +243,6 @@ impl<'src> Preprocessor<'src> {
         result
     }
 
-    pub(crate) fn is_macro_param(&self, macro_info: &MacroInfo, symbol: StringId) -> bool {
-        macro_info.variadic_arg == Some(symbol) || macro_info.parameter_list.contains(&symbol)
-    }
-
     pub(crate) fn get_macro_param_tokens<'a>(
         &mut self,
         macro_info: &MacroInfo,
@@ -307,7 +303,7 @@ impl<'src> Preprocessor<'src> {
                     i += 2;
                     continue;
                 }
-                PPTokenKind::Identifier(sym) if self.is_macro_param(macro_info, sym) => {
+                PPTokenKind::Identifier(sym) => {
                     let next_is_hh =
                         i + 1 < macro_info.tokens.len() && macro_info.tokens[i + 1].kind == PPTokenKind::HashHash;
                     let src = if next_is_hh { args } else { expanded_args };
@@ -322,7 +318,10 @@ impl<'src> Preprocessor<'src> {
                             last_token_produced_output = true;
                         }
                     } else {
-                        last_token_produced_output = false;
+                        let mut t = *token;
+                        t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+                        result.push(t);
+                        last_token_produced_output = true;
                     }
                 }
                 _ => {

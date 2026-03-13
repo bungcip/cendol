@@ -745,3 +745,42 @@ char *s3 = STR(  a  \n  b  );
       text: ;
     "#);
 }
+
+#[test]
+fn test_deferred_expansion_nested_expand() {
+    // Regression test for EXPAND(EXPAND(A())) where A() expands to A_I () 1
+    let src = r#"
+#define EXPAND(...) __VA_ARGS__
+#define A_I() A
+#define A() A_I () 1
+EXPAND(EXPAND(A()))
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: A
+    - kind: Number
+      text: "1"
+    "#);
+}
+
+#[test]
+fn test_variadic_macro_rescan_bug() {
+    // Regression test for variadic macro calls generated during rescan
+    let src = r#"
+#define EXPAND(...) __VA_ARGS__
+#define F(x, ...) x __VA_ARGS__
+EXPAND(F(1, 2, 3))
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Number
+      text: "1"
+    - kind: Number
+      text: "2"
+    - kind: Comma
+      text: ","
+    - kind: Number
+      text: "3"
+    "#);
+}

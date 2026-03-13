@@ -74,6 +74,7 @@ pub mod parser_regr_hang;
 pub mod parser_type_spec_coverage;
 pub mod parser_typeof;
 
+pub mod guardian_pointer_arithmetic_completeness;
 pub mod semantic_alignment;
 pub mod semantic_composite;
 pub mod test_utils;

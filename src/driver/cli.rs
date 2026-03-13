@@ -11,7 +11,7 @@ use crate::{driver::artifact::CompilePhase, lang_options::CStandard};
 
 /// CLI interface using clap
 #[derive(CliParser, Debug)]
-#[clap(name = "cendol", about = "C11 Compiler written in Rust")]
+#[clap(name = "cendol", version, about = "C11 Compiler written in Rust")]
 pub struct Cli {
     /// Input C source files
     #[clap(value_parser, required = true)]

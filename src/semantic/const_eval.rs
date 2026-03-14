@@ -21,9 +21,63 @@ pub(crate) struct ConstEvalCtx<'a> {
 impl<'a> ConstEvalCtx<'a> {
     fn get_resolved_type(&self, node: NodeRef) -> Option<QualType> {
         if let Some(info) = self.semantic_info {
-            info.types[node.index()]
+            info.types.get(node.index()).and_then(|t| *t)
         } else {
             self.ast.get_resolved_type(node)
+        }
+    }
+
+    fn truncate_to_type(&self, val: i64, qt: QualType) -> i64 {
+        let ty_obj = self.registry.get(qt.ty());
+        ty_obj.truncate_int(val)
+    }
+
+    fn get_result_type(&self, op: BinaryOp, left: NodeRef, right: NodeRef) -> Option<QualType> {
+        let left_ty = self
+            .get_resolved_type(left)
+            .or_else(|| self.infer_type_from_node(left))?;
+        let right_ty = self
+            .get_resolved_type(right)
+            .or_else(|| self.infer_type_from_node(right))?;
+
+        match op {
+            BinaryOp::Add
+            | BinaryOp::Sub
+            | BinaryOp::Mul
+            | BinaryOp::Div
+            | BinaryOp::Mod
+            | BinaryOp::BitAnd
+            | BinaryOp::BitOr
+            | BinaryOp::BitXor => {
+                crate::semantic::conversions::usual_arithmetic_conversions(self.registry, left_ty, right_ty)
+            }
+            BinaryOp::LShift | BinaryOp::RShift => {
+                Some(crate::semantic::conversions::integer_promotion(
+                    self.registry, left_ty, None,
+                ))
+            }
+            BinaryOp::Less
+            | BinaryOp::LessEqual
+            | BinaryOp::Greater
+            | BinaryOp::GreaterEqual
+            | BinaryOp::Equal
+            | BinaryOp::NotEqual
+            | BinaryOp::LogicAnd
+            | BinaryOp::LogicOr => Some(QualType::unqualified(self.registry.type_int)),
+            _ => None,
+        }
+    }
+
+    fn get_unary_result_type(&self, op: UnaryOp, expr: NodeRef) -> Option<QualType> {
+        let qt = self
+            .get_resolved_type(expr)
+            .or_else(|| self.infer_type_from_node(expr))?;
+        match op {
+            UnaryOp::Plus | UnaryOp::Minus | UnaryOp::BitNot => {
+                Some(crate::semantic::conversions::integer_promotion(self.registry, qt, None))
+            }
+            UnaryOp::LogicNot => Some(QualType::unqualified(self.registry.type_int)),
+            _ => None,
         }
     }
 
@@ -65,13 +119,48 @@ impl<'a> ConstEvalCtx<'a> {
                 Some(pointee)
             }
             NodeKind::Cast(target_ty, _) => Some(*target_ty),
+            NodeKind::Literal(Literal::Int { val, suffix, base }) => {
+                let val_u64 = *val as u64;
+                let is_decimal = *base == 10;
+                let ty = match suffix {
+                    None => {
+                        // C11 6.4.4.1: Determine type by smallest that fits.
+                        // For decimal: int, long, long long.
+                        // For oct/hex: also include the unsigned variants.
+                        if is_decimal {
+                            if val_u64 <= i32::MAX as u64 {
+                                self.registry.type_int
+                            } else if val_u64 <= i64::MAX as u64 {
+                                // On 64-bit, long and long long are same size
+                                self.registry.type_long_long
+                            } else {
+                                self.registry.type_long_long_unsigned
+                            }
+                        } else {
+                            if val_u64 <= i32::MAX as u64 {
+                                self.registry.type_int
+                            } else if val_u64 <= u32::MAX as u64 {
+                                self.registry.type_int_unsigned
+                            } else if val_u64 <= i64::MAX as u64 {
+                                self.registry.type_long_long
+                            } else {
+                                self.registry.type_long_long_unsigned
+                            }
+                        }
+                    }
+                    Some(crate::ast::literal::IntegerSuffix::U) => self.registry.type_int_unsigned,
+                    Some(crate::ast::literal::IntegerSuffix::L) => self.registry.type_long,
+                    Some(crate::ast::literal::IntegerSuffix::UL) => self.registry.type_long_unsigned,
+                    Some(crate::ast::literal::IntegerSuffix::LL) => self.registry.type_long_long,
+                    Some(crate::ast::literal::IntegerSuffix::ULL) => self.registry.type_long_long_unsigned,
+                };
+                Some(QualType::unqualified(ty))
+            }
+            NodeKind::Literal(Literal::Char(_)) => Some(QualType::unqualified(self.registry.type_int)),
+            NodeKind::Literal(Literal::Float { .. }) => Some(QualType::unqualified(self.registry.type_double)),
             NodeKind::Literal(Literal::String(val)) => {
-                // To get the correct size, we must parse the string literal just like codegen/analyzer does.
                 let parsed_str = parse_string_literal(*val);
-                let len = parsed_str.values.len() + 1; // +1 for null terminator
-
-                // We cannot allocate a new type here since ConstEvalCtx has a read-only registry.
-                // We can just use one of the standard builtin types.
+                let len = parsed_str.values.len() + 1;
                 let builtin_base = match parsed_str.builtin_type {
                     BuiltinType::Char => self.registry.type_char,
                     BuiltinType::Int => self.registry.type_int,
@@ -79,7 +168,6 @@ impl<'a> ConstEvalCtx<'a> {
                     BuiltinType::UInt => self.registry.type_int_unsigned,
                     _ => self.registry.type_char,
                 };
-
                 Some(QualType::unqualified(
                     TypeRef::new(builtin_base.base(), TypeClass::Array, 0, len as u32).unwrap(),
                 ))
@@ -211,7 +299,7 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
                 }
             };
 
-            match op {
+            let result = match op {
                 BinaryOp::Add => Some(left_val.wrapping_add(right_val)),
                 BinaryOp::Sub => Some(left_val.wrapping_sub(right_val)),
                 BinaryOp::Mul => Some(left_val.wrapping_mul(right_val)),
@@ -279,17 +367,43 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
                     }
                 }
                 _ => None,
+            };
+
+            if let Some(v) = result {
+                if let Some(res_ty) = ctx.get_result_type(*op, *left, *right) {
+                    return Some(ctx.truncate_to_type(v, res_ty));
+                }
+                return Some(v);
             }
+            None
         }
         NodeKind::UnaryOp(op, expr) => {
-            let operand_val = eval_const_expr(ctx, *expr)?;
-            match op {
-                UnaryOp::LogicNot => Some((operand_val == 0) as i64),
-                UnaryOp::Plus => Some(operand_val),
-                UnaryOp::Minus => Some(operand_val.wrapping_neg()),
-                UnaryOp::BitNot => Some(!operand_val),
-                _ => None,
+            let result = if let Some(operand_val) = eval_const_expr(ctx, *expr) {
+                match op {
+                    UnaryOp::LogicNot => Some((operand_val == 0) as i64),
+                    UnaryOp::Plus => Some(operand_val),
+                    UnaryOp::Minus => Some(operand_val.wrapping_neg()),
+                    UnaryOp::BitNot => Some(!operand_val),
+                    _ => None,
+                }
+            } else if let Some(f_val) = eval_const_expr_float(ctx, *expr) {
+                match op {
+                    UnaryOp::LogicNot => Some((f_val == 0.0) as i64),
+                    UnaryOp::Plus => Some(f_val as i64),
+                    UnaryOp::Minus => Some(-(f_val as i64)),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
+            if let Some(v) = result {
+                if let Some(res_ty) = ctx.get_unary_result_type(*op, *expr) {
+                    return Some(ctx.truncate_to_type(v, res_ty));
+                }
+                return Some(v);
             }
+            None
         }
         NodeKind::SizeOfExpr(expr) => {
             let qt = ctx
@@ -351,8 +465,10 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
             if target_ty.ty().builtin() == Some(BuiltinType::Bool) {
                 if let Some(val) = eval_const_expr(ctx, *expr) {
                     return Some((val != 0) as i64);
-                } else if let NodeKind::Literal(Literal::Float { val: f_val, .. }) = kind {
-                    return Some((*f_val != 0.0) as i64);
+                } else if let Some(f_val) = eval_const_expr_float(ctx, *expr) {
+                    // C11 6.3.1.2: Any scalar value converts to 1 if it compares unequal to 0, otherwise 0.
+                    // NaN compares unequal to 0.0, so (bool)NaN is 1.
+                    return Some((f_val != 0.0) as i64);
                 } else {
                     return None;
                 }
@@ -443,6 +559,12 @@ pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr_node: NodeRef) -> O
                 BinaryOp::Sub => Some(left_val - right_val),
                 BinaryOp::Mul => Some(left_val * right_val),
                 BinaryOp::Div => Some(left_val / right_val),
+                BinaryOp::Less => Some((left_val < right_val) as i64 as f64),
+                BinaryOp::LessEqual => Some((left_val <= right_val) as i64 as f64),
+                BinaryOp::Greater => Some((left_val > right_val) as i64 as f64),
+                BinaryOp::GreaterEqual => Some((left_val >= right_val) as i64 as f64),
+                BinaryOp::Equal => Some((left_val == right_val) as i64 as f64),
+                BinaryOp::NotEqual => Some((left_val != right_val) as i64 as f64),
                 _ => None,
             }
         }
@@ -469,6 +591,7 @@ pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr_node: NodeRef) -> O
         _ => eval_const_expr(ctx, expr_node).map(|v| v as f64),
     }
 }
+
 fn eval_offsetof(ctx: &ConstEvalCtx, qt: QualType, expr: NodeRef) -> Option<i64> {
     let mut current_qt = qt;
     let mut offset = 0i64;

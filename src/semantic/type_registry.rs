@@ -78,6 +78,7 @@ impl TypeRegistryError {
 /// - All TypeRef come from this context
 /// - Types are never removed
 /// - Canonical types are reused when possible
+#[derive(Clone)]
 pub struct TypeRegistry {
     pub target_triple: Triple,
 
@@ -580,6 +581,12 @@ impl TypeRegistry {
         let complex = self.alloc(Type::new(TypeKind::Complex { base_type }));
         self.complex_cache.insert(base_type, complex);
         complex
+    }
+
+    /// Look up a previously created complex type without allocating.
+    /// Returns `None` if the complex type hasn't been created yet.
+    pub(crate) fn find_complex_type(&self, base_type: TypeRef) -> Option<TypeRef> {
+        self.complex_cache.get(&base_type).copied()
     }
 
     // ============================================================
@@ -1195,7 +1202,6 @@ impl TypeRegistry {
 
                     let mut fits = false;
                     if current_unit_offset.is_some()
-                        && !is_unnamed
                         && current_unit_size == layout.size
                         && current_unit_bit_offset + (bits as u64) <= layout.size * 8
                     {
@@ -1367,7 +1373,8 @@ impl TypeRegistry {
                     (ArraySizeType::Constant(sa_val), ArraySizeType::Constant(sb_val)) => sa_val == sb_val,
                     (ArraySizeType::Star, _) => true,
                     (_, ArraySizeType::Star) => true,
-                    _ => false,
+                    (ArraySizeType::Variable(_), _) => true,
+                    (_, ArraySizeType::Variable(_)) => true,
                 }
             } else {
                 false

@@ -1616,7 +1616,7 @@ impl<'a> SemanticAnalyzer<'a> {
                                 Designator::GnuArrayRange(s, e) => {
                                     self.visit_node(*s);
                                     self.visit_node(*e);
-                                    if let Some(idx) = eval_const_expr(&self.const_ctx(), *s) {
+                                    if let Some(idx) = eval_const_expr(&self.const_ctx(), *e) {
                                         current_idx = idx;
                                     }
                                 }
@@ -2365,10 +2365,10 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::Literal(literal) => self.visit_literal(literal),
             NodeKind::Ident(_, symbol_ref) => {
                 let symbol = self.symbol_table.get_symbol(*symbol_ref);
-                match &symbol.kind {
-                    SymbolKind::EnumConstant { .. } => Some(QualType::unqualified(self.registry.type_int)),
-                    _ => Some(symbol.type_info),
-                }
+                // Use symbol.type_info for all symbols including enum constants.
+                // For enum constants, type_info is set to the enum's underlying integer type
+                // during lowering, matching GCC's extension (not always plain 'int' per strict C11).
+                Some(symbol.type_info)
             }
             NodeKind::UnaryOp(op, operand) => self.visit_unary_op(node, *op, *operand),
             NodeKind::BinaryOp(op, lhs, rhs) => self.visit_binary_op(*op, *lhs, *rhs),

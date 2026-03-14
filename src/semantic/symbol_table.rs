@@ -158,6 +158,19 @@ impl SymbolTable {
         // Initialize global scope
         table.scopes.push(Scope::default());
 
+        // ⚡ Bolt: Add a dummy poison symbol at index 0 (SymbolRef 1).
+        // This ensures that SymbolRef::new(1) which is often used as a placeholder
+        // for error/undeclared symbols doesn't cause out-of-bounds panics if entries is empty.
+        table.entries.push(Symbol {
+            name: NameId::new(""),
+            kind: SymbolKind::Label,
+            type_info: QualType::unqualified(TypeRef::dummy()),
+            scope_id: ScopeId::GLOBAL,
+            def_span: SourceSpan::empty(),
+            def_state: DefinitionState::DeclaredOnly,
+            is_completed: false,
+        });
+
         table
     }
 
@@ -255,7 +268,7 @@ impl SymbolTable {
     }
 
     /// find a symbol in exact scope without looking to parent scope if not exist
-    fn fetch(&self, name: NameId, scope_id: ScopeId, ns: Namespace) -> Option<SymbolRef> {
+    pub(crate) fn fetch(&self, name: NameId, scope_id: ScopeId, ns: Namespace) -> Option<SymbolRef> {
         let scope = self.get_scope(scope_id);
         match ns {
             Namespace::Ordinary => scope.symbols.get(&name).copied(),

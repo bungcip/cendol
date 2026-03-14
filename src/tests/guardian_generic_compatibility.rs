@@ -31,8 +31,8 @@ fn test_generic_selection_rejects_compatible_enum_type() {
         r#"
         enum E { A };
         int main() {
-            // enum E is compatible with 'unsigned int' by default in this compiler
-            return _Generic(0u, unsigned int: 1, enum E: 2);
+            // enum E is compatible with 'int' (A=0 fits in int)
+            return _Generic(0, int: 1, enum E: 2);
         }
         "#,
         "compatible with previously specified type",

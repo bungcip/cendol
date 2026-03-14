@@ -902,13 +902,66 @@ impl<'a> MirGen<'a> {
             let final_rhs = self.apply_conversions(rhs_op, right_ref, mir_ty);
 
             if lhs_ty.is_atomic() {
-                let ptr = Operand::AddressOf(Box::new(place));
+                let ptr = Operand::AddressOf(Box::new(place.clone()));
                 self.mir_builder
                     .add_statement(MirStmt::AtomicStore(ptr, final_rhs.clone(), AtomicMemOrder::SeqCst));
             } else {
-                self.emit_assignment(place, final_rhs.clone());
+                self.emit_assignment(place.clone(), final_rhs.clone());
             }
-            final_rhs // C assignment expressions evaluate to the assigned value
+
+            // C11 6.5.16p3: An assignment expression has the value of the left operand after the assignment,
+            // but is not an lvalue. For bit-fields, this means the value is truncated to the bit-field width.
+            if let Place::StructField(_, _, Some(bit_info)) = &place {
+                return self.apply_bitfield_truncation(final_rhs, bit_info, mir_ty);
+            }
+
+            final_rhs
+        }
+    }
+
+    fn apply_bitfield_truncation(&mut self, op: Operand, bit_info: &BitFieldInfo, mir_ty: TypeId) -> Operand {
+        let mask = if bit_info.width == 64 {
+            !0u64
+        } else {
+            (1u64 << bit_info.width) - 1
+        };
+
+        if let Operand::Constant(const_id) = op {
+            let constants = self.mir_builder.get_constants();
+            let const_val = constants.get(&const_id).unwrap().clone();
+            if let ConstValueKind::Int(val) = const_val.kind {
+                let mask_signed = mask as i64;
+                let truncated = if bit_info.is_signed {
+                    // Sign extend from bit_info.width
+                    let shift = 64 - bit_info.width;
+                    (val << shift) >> shift
+                } else {
+                    val & mask_signed
+                };
+                let new_const = self.mir_builder.create_constant(mir_ty, ConstValueKind::Int(truncated));
+                return Operand::Constant(new_const);
+            }
+        }
+
+        // Non-constant: emit bitwise AND for unsigned, or shifts for signed
+        if bit_info.is_signed {
+            // (val << (64-width)) >> (64-width)
+            let shift = (64 - bit_info.width) as i64;
+            let shift_op = {
+                let c = self.mir_builder.create_constant(mir_ty, ConstValueKind::Int(shift));
+                Operand::Constant(c)
+            };
+            let lshift =
+                self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::LShift, op, shift_op.clone()), mir_ty);
+            self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::RShift, lshift, shift_op), mir_ty)
+        } else {
+            let mask_op = {
+                let c = self
+                    .mir_builder
+                    .create_constant(mir_ty, ConstValueKind::Int(mask as i64));
+                Operand::Constant(c)
+            };
+            self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, op, mask_op), mir_ty)
         }
     }
 
@@ -956,9 +1009,16 @@ impl<'a> MirGen<'a> {
 
         let truncated_op = self.emit_cast(result_op, mir_ty);
 
-        self.emit_assignment(place, truncated_op.clone());
+        self.emit_assignment(place.clone(), truncated_op.clone());
 
-        self.apply_conversions(truncated_op, node_ref, mir_ty)
+        // C11 6.5.16p3: Bit-field truncation for compound assignment result
+        let final_op = if let Place::StructField(_, _, Some(bit_info)) = &place {
+            self.apply_bitfield_truncation(truncated_op, bit_info, mir_ty)
+        } else {
+            truncated_op
+        };
+
+        self.apply_conversions(final_op, node_ref, mir_ty)
     }
 
     fn emit_cast(&mut self, operand: Operand, target_ty: TypeId) -> Operand {

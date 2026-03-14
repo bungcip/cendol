@@ -55,7 +55,8 @@ fn test_builtin_types_compatible_p_enum() {
     run_pass(
         r#"
         enum E { A };
-        _Static_assert(__builtin_types_compatible_p(enum E, unsigned int), "enum E should be compatible with its underlying type (unsigned int)");
+        // enum E with only A=0 now has underlying type `int` (fits in int)
+        _Static_assert(__builtin_types_compatible_p(enum E, int), "enum E should be compatible with its underlying type (int)");
 
         enum E2 { B = -1 };
         _Static_assert(__builtin_types_compatible_p(enum E2, int), "enum E2 should be compatible with its underlying type (int)");

@@ -223,3 +223,41 @@ int main() {
 "#;
     run_pass(source, CompilePhase::Mir);
 }
+
+// Regression tests for enum underlying type selection and _Generic matching.
+// These cover the cases from BUGS.txt (lines 274-333).
+#[test]
+fn test_enum_generic_underlying_type_e0() {
+    // e0: values all fit in int, underlying type = int
+    let code = r#"
+        enum e0 { e0_i32max = 0x7FFFFFFF };
+        _Static_assert(_Generic(e0_i32max, int:1, default:0), "e0_i32max should be int");
+        _Static_assert(_Generic((enum e0)0, int:1, default:0), "enum e0 should be int");
+        int main() { return 0; }
+    "#;
+    run_pass(code, CompilePhase::Mir);
+}
+
+#[test]
+fn test_enum_generic_underlying_type_e1() {
+    // e1: has a value exceeding int max (0x7FFFFFFF + 1 = 0x80000000) -> unsigned int
+    let code = r#"
+        enum e1 { e1_i32max = 0x7FFFFFFF, e1_i32max_plus1 };
+        _Static_assert(_Generic(e1_i32max, unsigned int:1, default:0), "e1_i32max should be unsigned int");
+        _Static_assert(_Generic((enum e1)0, unsigned int:1, default:0), "enum e1 should be unsigned int");
+        int main() { return 0; }
+    "#;
+    run_pass(code, CompilePhase::Mir);
+}
+
+#[test]
+fn test_enum_generic_underlying_type_e5() {
+    // e5: has u32 max and a negative value -> long long
+    let code = r#"
+        enum e5 { e5_u32max = 0xFFFFFFFF, e5_neg = -1 };
+        _Static_assert(_Generic(e5_u32max, long long:1, default:0), "e5_u32max should be long long");
+        _Static_assert(_Generic((enum e5)0, long long:1, default:0), "enum e5 should be long long");
+        int main() { return 0; }
+    "#;
+    run_pass(code, CompilePhase::Mir);
+}

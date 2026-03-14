@@ -175,7 +175,7 @@ fn test_func_opt_used() {
     type %t8 = [4]%t1
 
     global @.L.str0: [3]i8 = const "%s"
-    global @__func__.3: [4]i8 = const array_literal [const 102, const 111, const 111, const 0]
+    global @__func__.4: [4]i8 = const array_literal [const 102, const 111, const 111, const 0]
 
     extern fn printf(%param0: ptr<i8>, ...) -> i32
 
@@ -183,7 +183,7 @@ fn test_func_opt_used() {
     {
 
       bb1:
-        call printf(cast<ptr<i8>>(const @.L.str0), cast<ptr<i8>>(addr_of(@__func__.3)))
+        call printf(cast<ptr<i8>>(const @.L.str0), cast<ptr<i8>>(addr_of(@__func__.4)))
         return
     }
     "#);

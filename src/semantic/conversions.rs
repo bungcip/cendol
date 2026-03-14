@@ -4,7 +4,7 @@
 use crate::semantic::{BuiltinType, QualType, TypeKind, TypeRef, TypeRegistry};
 
 /// Performs the "usual arithmetic conversions" as specified in C11 6.3.1.8.
-pub(super) fn usual_arithmetic_conversions(ctx: &mut TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
+pub(super) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
     let lt = lhs.ty();
     let rt = rhs.ty();
 
@@ -33,7 +33,11 @@ pub(super) fn usual_arithmetic_conversions(ctx: &mut TypeRegistry, lhs: QualType
         };
 
         if lt.is_complex() || rt.is_complex() {
-            return Some(QualType::unqualified(ctx.complex_type(common_real)));
+            // Use immutable lookup — the complex type must have been created earlier by the caller.
+            let complex = ctx
+                .find_complex_type(common_real)
+                .unwrap_or_else(|| panic!("ICE: complex type for {:?} not pre-allocated", common_real));
+            return Some(QualType::unqualified(complex));
         } else {
             return Some(QualType::unqualified(common_real));
         }

@@ -289,7 +289,7 @@ fn test_dump_parser_ast() {
     let output = dump_parser_ast("int main() { return 0; }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=main, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=main, symbol=2, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("main")
     4: CompoundStmt(stmts=5..5)
     5: Return(6)
@@ -302,11 +302,11 @@ fn test_dump_parser_ast_with_functions() {
     let output = dump_parser_ast("int add(int a, int b) { return a + b; } int main() { return add(2, 3); }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..3)
-    2: Function(name=add, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=5..6, body=7)
-    3: Function(name=main, symbol=7, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=13)
+    2: Function(name=add, symbol=4, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=5..6, body=7)
+    3: Function(name=main, symbol=10, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=13)
     4: LiteralString("add")
-    5: Param(symbol=5, ty=QualType(8))
-    6: Param(symbol=6, ty=QualType(8))
+    5: Param(symbol=8, ty=QualType(8))
+    6: Param(symbol=9, ty=QualType(8))
     7: CompoundStmt(stmts=8..8)
     8: Return(9)
     9: BinaryOp(Add, 10, 11)
@@ -358,7 +358,7 @@ fn test_dump_parser_ast_with_designated_initializers() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..3)
     2: RecordDecl(name=Some("Point"), ty=1048596, is_union=false, members=4..5)
-    3: Function(name=main, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=7)
+    3: Function(name=main, symbol=3, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=7)
     4: FieldDecl(name=Some("x"), ty=Int)
     5: FieldDecl(name=Some("y"), ty=Int)
     6: LiteralString("main")

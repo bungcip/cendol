@@ -235,7 +235,7 @@ fn test_parser_ast_control_flow() {
     let output = dump_parser_ast("void f() { if (1) {} while(0) {} do {} while(0); for(;;) {} }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..8)
     5: If(condition=9, then=10, else=none)
@@ -257,7 +257,7 @@ fn test_parser_ast_switch() {
     let output = dump_parser_ast("void f() { switch(1) { case 1: break; default: continue; } }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..5)
     5: Switch(6, 7)
@@ -277,7 +277,7 @@ fn test_parser_ast_ops() {
         dump_parser_ast("void f() { int a = 1; int b = 2; int c; c = a + b; c = a > b ? a : b; c += 1; a++; ++b; }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..12)
     5: VarDecl(name=a, ty=Int, storage=None, is_tls=false)
@@ -318,7 +318,7 @@ fn test_parser_ast_sizeof_alignof() {
     let output = dump_parser_ast("void f() { int a = (int)1.0; int s = sizeof(int) + sizeof(a) + _Alignof(int); }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..6)
     5: VarDecl(name=a, ty=Int, storage=None, is_tls=false)
@@ -342,7 +342,7 @@ fn test_parser_ast_access() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..3)
     2: RecordDecl(name=Some("S"), ty=1048596, is_union=false, members=4..4)
-    3: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=6)
+    3: Function(name=f, symbol=3, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=6)
     4: FieldDecl(name=Some("a"), ty=Int)
     5: LiteralString("f")
     6: CompoundStmt(stmts=7..10)
@@ -369,7 +369,7 @@ fn test_parser_ast_compound_literal() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..3)
     2: RecordDecl(name=Some("S"), ty=1048596, is_union=false, members=4..4)
-    3: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=6)
+    3: Function(name=f, symbol=3, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=6)
     4: FieldDecl(name=Some("a"), ty=Int)
     5: LiteralString("f")
     6: CompoundStmt(stmts=7..7)
@@ -386,7 +386,7 @@ fn test_parser_ast_generic() {
     let output = dump_parser_ast("void f() { int x = _Generic(1, int: 1, default: 0); }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..5)
     5: VarDecl(name=x, ty=Int, storage=None, is_tls=false)
@@ -404,7 +404,7 @@ fn test_parser_ast_gnu_stmt_expr() {
     let output = dump_parser_ast("void f() { int x = ({ int y = 1; y; }); }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..5)
     5: VarDecl(name=x, ty=Int, storage=None, is_tls=false)
@@ -423,7 +423,7 @@ fn test_parser_ast_builtin_offsetof() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..3)
     2: RecordDecl(name=Some("S"), ty=1048596, is_union=false, members=4..4)
-    3: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=6)
+    3: Function(name=f, symbol=3, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=6)
     4: FieldDecl(name=Some("a"), ty=Int)
     5: LiteralString("f")
     6: CompoundStmt(stmts=7..7)
@@ -449,7 +449,7 @@ fn test_parser_ast_labels() {
     let output = dump_parser_ast("void f() { L: goto L; }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..5)
     5: Label(L, 6)
@@ -533,7 +533,7 @@ fn test_atomic_ops_and_case_range() {
     );
     insta::assert_snapshot!(output_parser, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=1, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=20, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..6)
     5: VarDecl(name=a, ty=Int, storage=None, is_tls=false)

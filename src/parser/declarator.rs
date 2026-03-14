@@ -233,7 +233,7 @@ fn parse_trailing_declarators(parser: &mut Parser, mut base: DeclaratorRef) -> R
             }
             TokenKind::Colon => {
                 parser.advance();
-                let width = parser.parse_expr_min()?;
+                let width = parser.parse_expr_assignment()?;
                 base = parser.alloc_decl(ParsedDeclarator::BitField { inner: base, width });
             }
             _ => break,

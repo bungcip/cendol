@@ -23,8 +23,8 @@ use crate::semantic::errors::{SemanticError, SemanticErrorKind};
 use crate::semantic::literal_utils::parse_string_literal;
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
-    ArraySizeType, BuiltinType, EnumConstant, ScopeId, StructMember, SymbolKind, SymbolRef, SymbolTable, Type,
-    TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
+    ArraySizeType, BuiltinType, EnumConstant, Namespace, ScopeId, StructMember, SymbolKind, SymbolRef, SymbolTable,
+    Type, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
 };
 use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
@@ -337,6 +337,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if let Some(enums) = enumerators {
             let mut next_value = 0i64;
             let mut enumerators_list = Vec::with_capacity(enums.len());
+            let mut constant_syms: Vec<SymbolRef> = Vec::with_capacity(enums.len());
 
             for &enum_ref in enums {
                 let node = self.parsed_ast.get_node(enum_ref);
@@ -355,6 +356,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     })
                     .unwrap_or((next_value, None));
 
+                // C11 6.7.2.2p2: The expression that defines the value of an enumeration
+                // constant shall be an integer constant expression.
+                // GCC/Clang warn (not error) if the value doesn't fit in int,
+                // and use a wider underlying type for the enum.
+                // Note: EnumeratorValueNotRepresentable is mapped to a Warning in into_diagnostic.
                 if !(i32::MIN as i64..=i32::MAX as i64).contains(&value) {
                     self.report_error(
                         node.span,
@@ -364,11 +370,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 next_value = value.wrapping_add(1);
 
-                if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
-                    self.symbol_table.define_enum_constant(*name, value, ty, node.span)
-                {
-                    let first_def = self.symbol_table.get_symbol(existing).def_span;
-                    self.report_error(node.span, SemanticErrorKind::Redefinition { name: *name, first_def });
+                match self.symbol_table.define_enum_constant(*name, value, ty, node.span) {
+                    Ok(sym_ref) => {
+                        constant_syms.push(sym_ref);
+                    }
+                    Err(SymbolTableError::InvalidRedefinition { existing, .. }) => {
+                        let first_def = self.symbol_table.get_symbol(existing).def_span;
+                        self.report_error(node.span, SemanticErrorKind::Redefinition { name: *name, first_def });
+                        constant_syms.push(existing); // keep a reference so index stays aligned
+                    }
                 }
 
                 enumerators_list.push(EnumConstant {
@@ -380,6 +390,21 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
 
             self.complete_enum_symbol(tag, ty, enumerators_list, span)?;
+
+            // After completion, the underlying type is determined.
+            // GCC extension: enum constants have the enum's underlying integer type for _Generic matching.
+            // Update the type_info of each enum constant symbol to the underlying integer type.
+            let underlying_type = {
+                let enum_ty_info = self.registry.get(ty);
+                if let crate::semantic::types::TypeKind::Enum { base_type, .. } = &enum_ty_info.kind {
+                    QualType::unqualified(*base_type)
+                } else {
+                    QualType::unqualified(self.registry.type_int)
+                }
+            };
+            for sym_ref in constant_syms {
+                self.symbol_table.get_symbol_mut(sym_ref).type_info = underlying_type;
+            }
         }
         Ok(QualType::unqualified(ty))
     }
@@ -924,19 +949,27 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         for (i, param) in parameters.iter().enumerate() {
             if let Some(pname) = param.name {
-                // Check if parameter name conflicts with something already in scope (like __func__)
-                self.check_redeclaration_compatibility(pname, param.param_type, span, None);
-
-                if let Ok(sym) =
-                    self.symbol_table
-                        .define_variable(pname, param.param_type, param.storage, false, None, None, span)
+                // Determine the symbol for this parameter.
+                // It might have been already defined by visit_function_parameters (incremental scoping).
+                let sym = match self
+                    .symbol_table
+                    .fetch(pname, self.symbol_table.current_scope(), Namespace::Ordinary)
                 {
-                    let param_dummy = param_dummies[i];
-                    self.ast.kinds[param_dummy.index()] = NodeKind::Param(Param {
-                        symbol: sym,
-                        ty: param.param_type,
-                    });
-                }
+                    Some(s) => s,
+                    None => {
+                        // Not in scope (maybe conflicts with outer scope handled by define_variable)
+                        self.check_redeclaration_compatibility(pname, param.param_type, span, None);
+                        self.symbol_table
+                            .define_variable(pname, param.param_type, param.storage, false, None, None, span)
+                            .expect("Failed to define parameter")
+                    }
+                };
+
+                let param_dummy = param_dummies[i];
+                self.ast.kinds[param_dummy.index()] = NodeKind::Param(Param {
+                    symbol: sym,
+                    ty: param.param_type,
+                });
             }
         }
 
@@ -1235,7 +1268,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         // C11 6.7.6.2p2: VLA shall not have static storage duration.
-        if self.registry.is_variably_modified(qt.ty()) && (is_global || spec_info.storage == Some(StorageClass::Static))
+        // Variably modified types (like pointers to VLAs) ARE allowed.
+        if (is_global || spec_info.storage == Some(StorageClass::Static))
+            && qt.ty().is_array()
+            && self.registry.is_variably_modified(qt.ty())
         {
             self.report_error(span, SemanticErrorKind::VlaAtFileScope);
         }
@@ -2521,20 +2557,31 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         const UINT_MAX: i64 = u32::MAX as i64;
         const INT_MAX: i64 = i32::MAX as i64;
         const INT_MIN: i64 = i32::MIN as i64;
+        const LLONG_MAX: i64 = i64::MAX;
 
-        if min >= 0 && max <= UINT_MAX {
-            return self.registry.type_int_unsigned;
-        }
-
+        // Prefer smallest type that fits all values (GCC/Clang compatible behavior).
+        // C11 says the underlying type of an enum is implementation-defined, but
+        // compatible with an integer type that can represent all enumerator values.
         if min >= INT_MIN && max <= INT_MAX {
+            // All values fit in signed int
             return self.registry.type_int;
         }
 
-        if min >= 0 {
-            return self.registry.type_long_long_unsigned;
+        if min >= 0 && max <= UINT_MAX {
+            // All non-negative values fit in unsigned int
+            return self.registry.type_int_unsigned;
         }
 
-        self.registry.type_long_long
+        if max <= LLONG_MAX && min >= i64::MIN {
+            if min >= 0 {
+                // Values might exceed uint: use unsigned long long
+                return self.registry.type_long_long_unsigned;
+            }
+            // Some values are negative: use long long
+            return self.registry.type_long_long;
+        }
+
+        self.registry.type_long_long_unsigned
     }
 
     fn resolve_type_specifier(&mut self, ts: &ParsedTypeSpec, span: SourceSpan) -> Result<QualType, SemanticError> {
@@ -2762,68 +2809,88 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_function_parameters(&mut self, params: &[ParsedParam], is_definition: bool) -> Vec<FunctionParameter> {
         let mut seen_names: HashMap<NameId, SourceSpan> = HashMap::new();
-        params
-            .iter()
-            .map(|param| {
-                let span = param.span;
-                let decayed_ty = self
-                    .lower_type(param.ty, span, true)
-                    .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error));
+        let mut processed_params = Vec::with_capacity(params.len());
 
-                let pname = param.name;
+        // C11 6.2.1p4: Function prototype scope for declarations, block scope for definitions.
+        // If it's not a definition, we push a temporary scope for these parameters.
+        // If it is a definition, we assume the caller (visit_function_definition) has already pushed the scope.
+        if !is_definition {
+            self.symbol_table.push_scope();
+        }
 
-                if is_definition && !self.registry.is_complete(decayed_ty.ty()) {
-                    let is_void_param_list = params.len() == 1 && decayed_ty.is_void() && pname.is_none();
-                    if !is_void_param_list {
-                        self.report_error(span, SemanticErrorKind::IncompleteType { ty: decayed_ty });
-                    }
+        for param in params {
+            let span = param.span;
+            let decayed_ty = self
+                .lower_type(param.ty, span, true)
+                .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error));
+
+            let pname = param.name;
+
+            if is_definition && !self.registry.is_complete(decayed_ty.ty()) {
+                let is_void_param_list = params.len() == 1 && decayed_ty.is_void() && pname.is_none();
+                if !is_void_param_list {
+                    self.report_error(span, SemanticErrorKind::IncompleteType { ty: decayed_ty });
                 }
+            }
 
-                if let Some(name) = pname {
-                    if let Some(&first_span) = seen_names.get(&name) {
-                        self.report_error(
-                            span,
-                            SemanticErrorKind::Redefinition {
-                                name,
-                                first_def: first_span,
-                            },
-                        );
-                    } else {
-                        seen_names.insert(name, span);
-                    }
-                }
-
-                if let Some(sc) = param.storage {
-                    if sc == StorageClass::ThreadLocal {
-                        self.report_error(span, SemanticErrorKind::ThreadLocalNotAllowed);
-                    } else if sc != StorageClass::Register {
-                        self.report_error(span, SemanticErrorKind::InvalidStorageClassForParameter);
-                    }
-                }
-
-                if param.is_inline {
-                    self.report_error(span, SemanticErrorKind::InvalidFunctionSpec { spec: "inline" });
-                }
-                if param.is_noreturn {
-                    self.report_error(span, SemanticErrorKind::InvalidFunctionSpec { spec: "_Noreturn" });
-                }
-
-                if param.alignment.is_some() {
+            if let Some(name) = pname {
+                if let Some(&first_span) = seen_names.get(&name) {
                     self.report_error(
                         span,
-                        SemanticErrorKind::AlignmentNotAllowed {
-                            context: "function parameter",
+                        SemanticErrorKind::Redefinition {
+                            name,
+                            first_def: first_span,
                         },
                     );
-                }
+                } else {
+                    seen_names.insert(name, span);
 
-                FunctionParameter {
-                    name: pname,
-                    param_type: decayed_ty,
-                    storage: param.storage,
+                    // Add parameter to symbol table so subsequent parameters can refer to it (e.g. for VLA sizes)
+                    // If is_definition is true, visit_function_definition will call define_variable again,
+                    // but we need them in scope NOW for type lowering.
+                    // We use define_variable but since it's a parameter we don't need a full initializer.
+                    let _ = self
+                        .symbol_table
+                        .define_variable(name, decayed_ty, param.storage, false, None, None, span);
                 }
-            })
-            .collect()
+            }
+
+            if let Some(sc) = param.storage {
+                if sc == StorageClass::ThreadLocal {
+                    self.report_error(span, SemanticErrorKind::ThreadLocalNotAllowed);
+                } else if sc != StorageClass::Register {
+                    self.report_error(span, SemanticErrorKind::InvalidStorageClassForParameter);
+                }
+            }
+
+            if param.is_inline {
+                self.report_error(span, SemanticErrorKind::InvalidFunctionSpec { spec: "inline" });
+            }
+            if param.is_noreturn {
+                self.report_error(span, SemanticErrorKind::InvalidFunctionSpec { spec: "_Noreturn" });
+            }
+
+            if param.alignment.is_some() {
+                self.report_error(
+                    span,
+                    SemanticErrorKind::AlignmentNotAllowed {
+                        context: "function parameter",
+                    },
+                );
+            }
+
+            processed_params.push(FunctionParameter {
+                name: pname,
+                param_type: decayed_ty,
+                storage: param.storage,
+            });
+        }
+
+        if !is_definition {
+            self.symbol_table.pop_scope();
+        }
+
+        processed_params
     }
 
     /// Common logic for lowering struct members, used by both TypeSpec::Record lowering

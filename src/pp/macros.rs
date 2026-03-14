@@ -243,11 +243,7 @@ impl<'src> Preprocessor<'src> {
         result
     }
 
-    fn is_macro_param(&self, macro_info: &MacroInfo, symbol: StringId) -> bool {
-        macro_info.variadic_arg == Some(symbol) || macro_info.parameter_list.contains(&symbol)
-    }
-
-    fn get_macro_param_tokens<'a>(
+    pub(crate) fn get_macro_param_tokens<'a>(
         &mut self,
         macro_info: &MacroInfo,
         symbol: StringId,
@@ -307,7 +303,7 @@ impl<'src> Preprocessor<'src> {
                     i += 2;
                     continue;
                 }
-                PPTokenKind::Identifier(sym) if self.is_macro_param(macro_info, sym) => {
+                PPTokenKind::Identifier(sym) => {
                     let next_is_hh =
                         i + 1 < macro_info.tokens.len() && macro_info.tokens[i + 1].kind == PPTokenKind::HashHash;
                     let src = if next_is_hh { args } else { expanded_args };
@@ -322,7 +318,10 @@ impl<'src> Preprocessor<'src> {
                             last_token_produced_output = true;
                         }
                     } else {
-                        last_token_produced_output = false;
+                        let mut t = *token;
+                        t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+                        result.push(t);
+                        last_token_produced_output = true;
                     }
                 }
                 _ => {
@@ -394,18 +393,24 @@ impl<'src> Preprocessor<'src> {
             if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                 total_len += 1;
             }
-            let bytes = cache.get_token_bytes(token);
-            let should_escape = matches!(
+
+            // Bolt ⚡: Hoist the escape check. Only string and character literals require internal
+            // escaping (backslashes and quotes) during macro stringification. For all other
+            // tokens (identifiers, numbers, operators), we can use the raw length directly.
+            if matches!(
                 token.kind,
                 PPTokenKind::StringLiteral(_) | PPTokenKind::CharLiteral(_, _)
-            );
-
-            for &b in bytes {
-                if should_escape && (b == b'"' || b == b'\\') {
-                    total_len += 2;
-                } else {
-                    total_len += 1;
+            ) {
+                let bytes = cache.get_token_bytes(token);
+                for &b in bytes {
+                    if b == b'"' || b == b'\\' {
+                        total_len += 2;
+                    } else {
+                        total_len += 1;
+                    }
                 }
+            } else {
+                total_len += token.length as usize;
             }
         }
 
@@ -418,25 +423,29 @@ impl<'src> Preprocessor<'src> {
                 result.push(' ');
             }
 
-            let bytes = cache.get_token_bytes(token);
-            let should_escape = matches!(
+            // Bolt ⚡: Hoist the escape check. Most tokens can be appended directly, avoiding
+            // the overhead of the scanning loop and segmenting the string.
+            if matches!(
                 token.kind,
                 PPTokenKind::StringLiteral(_) | PPTokenKind::CharLiteral(_, _)
-            );
-
-            let mut last_start = 0;
-            for (j, &b) in bytes.iter().enumerate() {
-                if should_escape && (b == b'"' || b == b'\\') {
-                    if j > last_start {
-                        result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..j]) });
+            ) {
+                let bytes = cache.get_token_bytes(token);
+                let mut last_start = 0;
+                for (j, &b) in bytes.iter().enumerate() {
+                    if b == b'"' || b == b'\\' {
+                        if j > last_start {
+                            result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..j]) });
+                        }
+                        result.push('\\');
+                        result.push(b as char);
+                        last_start = j + 1;
                     }
-                    result.push('\\');
-                    result.push(b as char);
-                    last_start = j + 1;
                 }
-            }
-            if last_start < bytes.len() {
-                result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..]) });
+                if last_start < bytes.len() {
+                    result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..]) });
+                }
+            } else {
+                result.push_str(cache.get_token_text(token));
             }
         }
 
@@ -525,6 +534,7 @@ impl<'src> Preprocessor<'src> {
     /// Collects macro arguments from a slice of tokens.
     fn collect_macro_args_from_slice(
         &self,
+        macro_info: &MacroInfo,
         tokens: &[PPToken],
         start_index: usize,
         end_index: usize,
@@ -550,6 +560,11 @@ impl<'src> Preprocessor<'src> {
         }
         if !current_arg.is_empty() || !args.is_empty() {
             args.push(current_arg);
+        } else if macro_info.parameter_list.len() == 1 || macro_info.variadic_arg.is_some() {
+            // Empty arguments are allowed in C99/C11.
+            // For a macro taking 1 argument or variadic args, an empty list of tokens
+            // between parentheses represents 1 empty argument.
+            args.push(Vec::new());
         }
         args
     }
@@ -675,10 +690,17 @@ impl<'src> Preprocessor<'src> {
             return Ok(false);
         };
 
-        let args = self.collect_macro_args_from_slice(tokens, i + 2, end_j - 1);
+        let args = self.collect_macro_args_from_slice(&macro_info, tokens, i + 2, end_j - 1);
 
         // Validate argument count
-        if args.len() != macro_info.parameter_list.len() {
+        let expected = macro_info.parameter_list.len();
+        let valid = if macro_info.variadic_arg.is_some() {
+            args.len() >= expected
+        } else {
+            args.len() == expected
+        };
+
+        if !valid {
             // For conditional expressions, just skip problematic macro expansions
             return Ok(false);
         }

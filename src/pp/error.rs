@@ -119,3 +119,42 @@ impl crate::diagnostic::IntoDiagnostic for PPError {
         vec![diag]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diagnostic::IntoDiagnostic;
+
+    #[test]
+    fn test_error_hints() {
+        let cases = vec![
+            (PPErrorKind::ElifWithoutIf, "perhaps you meant to use #if?"),
+            (
+                PPErrorKind::ElseWithoutIf,
+                "perhaps you meant to use #ifdef or #ifndef?",
+            ),
+            (
+                PPErrorKind::UnmatchedEndif,
+                "this #endif does not have a matching #if, #ifdef, or #ifndef",
+            ),
+            (
+                PPErrorKind::MultipleElse,
+                "there can only be one #else directive per conditional level",
+            ),
+            (
+                PPErrorKind::ElifAfterElse,
+                "#elif directives must come before the #else directive",
+            ),
+        ];
+
+        for (kind, hint) in cases {
+            let err = PPError {
+                kind,
+                span: SourceSpan::default(),
+            };
+            let diags = err.into_diagnostic();
+            assert_eq!(diags.len(), 1);
+            assert_eq!(diags[0].hints[0], hint);
+        }
+    }
+}

@@ -65,3 +65,7 @@
 ## 2026-02-24 - Optimizing Hot Data Structure Layout
 **Learning:** Using large types in enum variants (e.g., `u64` for a char codepoint in `PPTokenKind`) and suboptimal field ordering in frequently allocated structs can lead to significant memory bloat due to alignment requirements and padding. In this codebase, `PPToken` was 32 bytes due to 8-byte alignment forced by a `u64` variant in `PPTokenKind`. By downsizing to `u32` (sufficient for Unicode) and reordering fields, we reduced its size to 28 bytes.
 **Action:** Always use the smallest sufficient integer types for data stored in enums. Audit hot structures for padding using `size_of` and reorder fields to maximize packing density.
+
+## 2024-05-23 - Hoisting Guard Conditions for Heterogeneous Collection Processing
+**Learning:** Processing a collection of items (like preprocessor tokens) often involves a conditional check that only applies to a small subset of item types (e.g., escaping string/char literals during stringification). Placing this check inside a byte-by-byte loop for every item causes significant overhead due to redundant branching and prevents the use of fast-path operations like `push_str` or bulk length addition for the majority of items.
+**Action:** Always identify if an expensive inner loop or conditional logic only applies to specific variants. Hoist the variant check outside the loop to enable optimized fast-paths for common cases.

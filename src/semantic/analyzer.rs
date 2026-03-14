@@ -1541,6 +1541,13 @@ impl<'a> SemanticAnalyzer<'a> {
                         }
                     }
 
+                    while member_idx < members.len()
+                        && members[member_idx].name.is_none()
+                        && members[member_idx].bit_field_size.is_some()
+                    {
+                        member_idx += 1;
+                    }
+
                     if member_idx >= members.len() {
                         self.report_error(item, SemanticErrorKind::ExcessElements { kind: "record" });
                         self.visit_node(self.unwrap_initializer_item(item).0);

@@ -93,7 +93,13 @@ impl<'a> MirGen<'a> {
                         break;
                     }
                 }
-                None => (current_pos, Vec::new()),
+                None => {
+                    let mut pos = current_pos;
+                    while pos < members.len() && members[pos].name.is_none() && members[pos].bit_field_size.is_some() {
+                        pos += 1;
+                    }
+                    (pos, Vec::new())
+                }
             };
 
             if field_idx >= members.len() {
@@ -731,6 +737,9 @@ impl<'a> MirGen<'a> {
     fn count_flattened_members(&self, m: &StructMember) -> usize {
         if m.name.is_some() {
             return 1;
+        }
+        if m.bit_field_size.is_some() {
+            return 0;
         }
         let ty_ref = m.member_type.ty();
         if !ty_ref.is_record() {

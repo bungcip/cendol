@@ -145,6 +145,10 @@ mod tests {
                 PPErrorKind::ElifAfterElse,
                 "#elif directives must come before the #else directive",
             ),
+            (
+                PPErrorKind::IncludeDepthExceeded,
+                "",
+            ),
         ];
 
         for (kind, hint) in cases {
@@ -154,7 +158,32 @@ mod tests {
             };
             let diags = err.into_diagnostic();
             assert_eq!(diags.len(), 1);
-            assert_eq!(diags[0].hints[0], hint);
+            if hint.is_empty() {
+                assert!(diags[0].hints.is_empty());
+            } else {
+                assert_eq!(diags[0].hints[0], hint);
+            }
         }
+    }
+
+    #[test]
+    fn test_error_formatting_and_diagnostic() {
+        use std::error::Error;
+        let err = PPError {
+            kind: PPErrorKind::IncludeDepthExceeded,
+            span: SourceSpan::default(),
+        };
+        assert_eq!(err.to_string(), "Include depth exceeded");
+        assert!(err.source().is_some());
+
+        let diag: Diagnostic = err.into();
+        assert_eq!(diag.message, "Include depth exceeded");
+        assert_eq!(diag.level, DiagnosticLevel::Error);
+
+        let err_macro = PPError {
+            kind: PPErrorKind::MacroRedefined { name: "TEST".to_string() },
+            span: SourceSpan::default(),
+        };
+        assert_eq!(err_macro.to_string(), "Macro 'TEST' redefined with different value");
     }
 }

@@ -5,12 +5,12 @@
 
 use clap::{Args, Parser as CliParser};
 use std::path::PathBuf;
-use target_lexicon::Triple;
+use target_lexicon::{DefaultToHost, Triple};
 
 use crate::{driver::artifact::CompilePhase, lang_options::CStandard};
 
 /// CLI interface using clap
-#[derive(CliParser, Debug)]
+#[derive(CliParser, Debug, Default)]
 #[clap(name = "cendol", version, about = "C11 Compiler written in Rust")]
 pub struct Cli {
     /// Input C source files
@@ -126,7 +126,7 @@ pub struct Cli {
     pub suppress_warnings: bool,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Default)]
 pub struct PreprocessorOptions {
     /// Maximum include depth
     #[clap(long, default_value = "100")]
@@ -141,7 +141,7 @@ pub enum PathOrBuffer {
 }
 
 /// Configuration for compilation
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CompileConfig {
     pub input_files: Vec<PathOrBuffer>,
     pub output_path: Option<PathBuf>,
@@ -154,7 +154,7 @@ pub struct CompileConfig {
     pub warnings: Vec<String>,
     pub c_standard: CStandard,
     pub lang_options: crate::lang_options::LangOptions,
-    pub target: Triple,
+    pub target: DefaultToHost,
 
     pub optimization: Option<String>,
     pub libraries: Vec<String>,
@@ -169,35 +169,6 @@ pub struct CompileConfig {
     pub suppress_warnings: bool,
 }
 
-impl Default for CompileConfig {
-    fn default() -> Self {
-        Self {
-            input_files: Vec::new(),
-            output_path: None,
-            stop_after: CompilePhase::EmitObject,
-            verbose: false,
-            preprocessor: crate::pp::PPConfig::default(),
-            suppress_line_markers: false,
-            defines: Vec::new(),
-            warnings: Vec::new(),
-            c_standard: CStandard::default(),
-            lang_options: crate::lang_options::LangOptions::default(),
-            target: Triple::host(),
-            optimization: None,
-            libraries: Vec::new(),
-            library_paths: Vec::new(),
-            compile_only: false,
-            debug_info: false,
-            fuse_ld: None,
-            fmax_errors: None,
-            ignored_f_flags: Vec::new(),
-            ignored_m_flags: Vec::new(),
-            timing: false,
-            suppress_warnings: false,
-        }
-    }
-}
-
 impl CompileConfig {
     /// Create a new CompileConfig from a string of source code
     /// it used by tests infrastructure
@@ -209,7 +180,6 @@ impl CompileConfig {
         Self {
             input_files: vec![PathOrBuffer::Buffer(filename.to_string(), source)],
             stop_after,
-            target: Triple::host(),
             ..Default::default()
         }
     }
@@ -343,7 +313,7 @@ impl Cli {
             warnings,
             c_standard,
             lang_options,
-            target: target_triple,
+            target: DefaultToHost(target_triple),
             optimization: self.optimization,
             libraries: self.libraries,
             library_paths: self.library_paths,
@@ -371,19 +341,12 @@ mod tests {
             input_files: vec![PathBuf::from("test.c")],
             output: Some(PathBuf::from("out")),
             verbose: true,
-            dump_ast_after_parser: false,
-            dump_ast_after_semantic_lowering: false,
             dump_mir: true,
-            dump_cranelift: false,
-            preprocess_only: false,
             preprocessor: PreprocessorOptions { max_include_depth: 50 },
             suppress_line_markers: true,
             include_paths: vec![PathBuf::from("inc")],
             defines: vec!["FOO=1".to_string(), "BAR".to_string()],
             warnings: vec!["all".to_string()],
-            pedantic: false,
-            pedantic_errors: false,
-            c_standard: None,
             target: Some("x86_64-unknown-linux-gnu".to_string()),
             optimization: Some("2".to_string()),
             libraries: vec!["m".to_string()],
@@ -392,10 +355,7 @@ mod tests {
             debug_info: true,
             fuse_ld: Some("lld".to_string()),
             fmax_errors: Some(5),
-            ignored_f_flags: vec![],
-            ignored_m_flags: vec![],
-            timing: false,
-            suppress_warnings: false,
+            ..Default::default()
         };
 
         let config = cli.into_config().expect("Failed to create config");
@@ -406,7 +366,7 @@ mod tests {
         assert!(config.verbose);
         assert!(config.suppress_line_markers);
         assert_eq!(config.preprocessor.max_include_depth, 50);
-        assert_eq!(config.target.to_string(), "x86_64-unknown-linux-gnu");
+        assert_eq!(config.target.0.to_string(), "x86_64-unknown-linux-gnu");
 
         let defines: Vec<_> = config.defines.into_iter().collect();
         assert!(defines.contains(&("FOO".to_string(), Some("1".to_string()))));
@@ -415,33 +375,8 @@ mod tests {
         // Test error case: Input file starting with '-' that does not exist
         let cli_error = Cli {
             input_files: vec![PathBuf::from("-nonexistent")],
-            output: None,
-            verbose: false,
-            dump_ast_after_parser: false,
-            dump_ast_after_semantic_lowering: false,
-            dump_mir: false,
-            dump_cranelift: false,
-            preprocess_only: false,
             preprocessor: PreprocessorOptions { max_include_depth: 100 },
-            suppress_line_markers: false,
-            include_paths: vec![],
-            defines: vec![],
-            warnings: vec![],
-            pedantic: false,
-            pedantic_errors: false,
-            c_standard: None,
-            target: None,
-            optimization: None,
-            libraries: vec![],
-            library_paths: vec![],
-            compile_only: false,
-            debug_info: false,
-            fuse_ld: None,
-            fmax_errors: None,
-            ignored_f_flags: vec![],
-            ignored_m_flags: vec![],
-            timing: false,
-            suppress_warnings: false,
+            ..Default::default()
         };
 
         let err = cli_error.into_config().unwrap_err();
@@ -453,33 +388,14 @@ mod tests {
     fn test_cli_config_features() {
         let cli = Cli {
             input_files: vec![PathBuf::from("dummy.c")],
-            output: None,
-            verbose: false,
             dump_ast_after_parser: true,
             dump_ast_after_semantic_lowering: true,
-            dump_mir: false,
             dump_cranelift: true,
             preprocess_only: true,
             preprocessor: PreprocessorOptions { max_include_depth: 100 },
-            suppress_line_markers: false,
-            include_paths: vec![],
-            defines: vec![],
-            warnings: vec![],
             pedantic: true,
             pedantic_errors: true,
-            c_standard: None,
-            target: None,
-            optimization: None,
-            libraries: vec![],
-            library_paths: vec![],
-            compile_only: false,
-            debug_info: false,
-            fuse_ld: None,
-            fmax_errors: None,
-            ignored_f_flags: vec![],
-            ignored_m_flags: vec![],
-            timing: false,
-            suppress_warnings: false,
+            ..Default::default()
         };
 
         // This tests testing the default bounds, pedantic bounds, and dump priorities
@@ -487,7 +403,7 @@ mod tests {
         assert_eq!(config.stop_after, CompilePhase::Preprocess);
         assert!(config.warnings.contains(&"pedantic".to_string()));
         assert!(config.warnings.contains(&"pedantic-errors".to_string()));
-        assert_eq!(config.target, Triple::host());
+        assert_eq!(config.target.0, Triple::host());
     }
 
     #[test]

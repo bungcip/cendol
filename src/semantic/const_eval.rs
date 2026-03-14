@@ -51,11 +51,11 @@ impl<'a> ConstEvalCtx<'a> {
             | BinaryOp::BitXor => {
                 crate::semantic::conversions::usual_arithmetic_conversions(self.registry, left_ty, right_ty)
             }
-            BinaryOp::LShift | BinaryOp::RShift => {
-                Some(crate::semantic::conversions::integer_promotion(
-                    self.registry, left_ty, None,
-                ))
-            }
+            BinaryOp::LShift | BinaryOp::RShift => Some(crate::semantic::conversions::integer_promotion(
+                self.registry,
+                left_ty,
+                None,
+            )),
             BinaryOp::Less
             | BinaryOp::LessEqual
             | BinaryOp::Greater

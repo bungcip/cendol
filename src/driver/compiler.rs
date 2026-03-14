@@ -280,7 +280,7 @@ impl CompilerDriver {
     fn visit_parsed_ast(&mut self, parsed_ast: ParsedAst) -> Result<(Ast, SymbolTable, TypeRegistry), PipelineError> {
         let mut symbol_table = SymbolTable::new();
         // Use the target triple from configuration to initialize TypeRegistry
-        let mut registry = TypeRegistry::new(self.config.target.clone());
+        let mut registry = TypeRegistry::new(self.config.target.0.clone());
         let mut ast = Ast::new();
 
         use crate::semantic::lowering::visit_ast;

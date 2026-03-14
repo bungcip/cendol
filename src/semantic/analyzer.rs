@@ -429,6 +429,8 @@ impl<'a> SemanticAnalyzer<'a> {
                         .and_then(|m| m.bit_field_size)
                 })
             }
+            // Comma operator: the result is wholly the RHS value; propagate its bitfield width.
+            NodeKind::BinaryOp(BinaryOp::Comma, _, rhs) => self.get_bitfield_width(*rhs),
             NodeKind::GenericSelection(_) => self
                 .semantic_info
                 .generic_selections
@@ -2637,6 +2639,16 @@ impl<'a> SemanticAnalyzer<'a> {
                     },
                 );
                 e = e.strip_all();
+            }
+
+            // C11 6.5.15p5: If both operands are arithmetic, the usual arithmetic conversions
+            // are applied (which include integer promotions). Bitfield members must be promoted
+            // to int/unsigned int before the usual arithmetic conversions.
+            if t.ty().is_integer() {
+                t = self.apply_and_record_integer_promotion(then, t);
+            }
+            if e.ty().is_integer() {
+                e = self.apply_and_record_integer_promotion(else_expr, e);
             }
 
             let result_ty = match (t, e) {

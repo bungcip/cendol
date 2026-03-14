@@ -130,7 +130,7 @@ pub(crate) fn parse_declarator(parser: &mut Parser) -> Result<DeclaratorRef, Par
         parser.alloc_decl(ParsedDeclarator::Identifier(None))
     };
 
-    let trailing = parse_trailing_declarators(parser, base)?;
+    let trailing = parse_trailing_declarators(parser, base, false)?;
     Ok(reconstruct_declarator_chain(parser, pointers, trailing))
 }
 
@@ -180,44 +180,11 @@ fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<DeclaratorComponent
     Ok(pointers)
 }
 
-/// Parses trailing declarators for regular declarators: arrays `[...]`, functions `(...)`, and bitfields `:width`.
-fn parse_trailing_declarators(parser: &mut Parser, mut base: DeclaratorRef) -> Result<DeclaratorRef, ParseError> {
-    while let Some(token) = parser.try_current_token() {
-        match token.kind {
-            TokenKind::LeftBracket => {
-                parser.advance();
-                validate_declarator(&parser.ast.parsed_types, base, DeclaratorKind::Array, token.span)?;
-                let size = parse_array_size(parser)?;
-                parser.expect(TokenKind::RightBracket)?;
-                base = parser.alloc_decl(ParsedDeclarator::Array { inner: base, size });
-            }
-            TokenKind::LeftParen => {
-                parser.advance();
-                validate_declarator(&parser.ast.parsed_types, base, DeclaratorKind::Function, token.span)?;
-                let (param_range, is_variadic) = parse_function_parameters(parser)?;
-                parser.expect(TokenKind::RightParen)?;
-                base = parser.alloc_decl(ParsedDeclarator::Function {
-                    inner: base,
-                    params: param_range,
-                    flags: FunctionFlags { is_variadic },
-                });
-            }
-            TokenKind::Colon => {
-                parser.advance();
-                let width = parser.parse_expr_assignment()?;
-                base = parser.alloc_decl(ParsedDeclarator::BitField { inner: base, width });
-            }
-            _ => break,
-        }
-    }
-    Ok(base)
-}
-
-/// Parses trailing declarators for type names (abstract declarators): arrays `[...]` and functions `(...)`.
-/// Does NOT handle bitfields since they are not valid in type names.
-fn parse_trailing_declarators_for_type_names(
+/// Parses trailing declarators
+fn parse_trailing_declarators(
     parser: &mut Parser,
     mut base: DeclaratorRef,
+    in_type_name: bool,
 ) -> Result<DeclaratorRef, ParseError> {
     while let Some(token) = parser.try_current_token() {
         match token.kind {
@@ -238,6 +205,11 @@ fn parse_trailing_declarators_for_type_names(
                     params: param_range,
                     flags: FunctionFlags { is_variadic },
                 });
+            }
+            TokenKind::Colon if in_type_name == false => {
+                parser.advance();
+                let width = parser.parse_expr_assignment()?;
+                base = parser.alloc_decl(ParsedDeclarator::BitField { inner: base, width });
             }
             _ => break,
         }
@@ -492,6 +464,6 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarato
         parser.alloc_decl(ParsedDeclarator::Identifier(None))
     };
 
-    let trailing = parse_trailing_declarators_for_type_names(parser, base)?;
+    let trailing = parse_trailing_declarators(parser, base, true)?;
     Ok(reconstruct_declarator_chain(parser, pointers, trailing))
 }

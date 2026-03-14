@@ -260,6 +260,8 @@ pub enum SemanticErrorKind {
     MultipleDefaultLabels,
     FlexibleArrayNotLast,
     FlexibleArrayInEmptyStruct,
+    FlexibleArrayMemberInStruct,
+    FlexibleArrayElementInArray,
     InvalidRestrict,
     InvalidStorageClassForParameter,
     NoreturnFunctionHasReturn {
@@ -583,6 +585,12 @@ impl SemanticErrorKind {
             }
             SemanticErrorKind::FlexibleArrayInEmptyStruct => {
                 "flexible array member in otherwise empty structure".to_string()
+            }
+            SemanticErrorKind::FlexibleArrayMemberInStruct => {
+                "invalid use of structure with flexible array member as a member".to_string()
+            }
+            SemanticErrorKind::FlexibleArrayElementInArray => {
+                "invalid use of structure with flexible array member as an array element".to_string()
             }
             SemanticErrorKind::InvalidRestrict => "restrict requires a pointer type".to_string(),
             SemanticErrorKind::InvalidStorageClassForParameter => {

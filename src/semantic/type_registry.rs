@@ -372,6 +372,39 @@ impl TypeRegistry {
         }
     }
 
+    /// Check if a type is a structure with a flexible array member (FAM).
+    /// C11 6.7.2.1p18: "the last element of a structure ... may have an incomplete array type"
+    pub(crate) fn has_flexible_array_member(&self, mut ty: TypeRef) -> bool {
+        loop {
+            if ty.is_pointer() || ty.is_array() {
+                return false;
+            }
+            if ty.builtin().is_some() {
+                return false;
+            }
+
+            match &self.types[ty.index()].kind {
+                TypeKind::Alias(inner) => ty = *inner,
+                TypeKind::Record {
+                    is_union: false,
+                    members,
+                    ..
+                } => {
+                    if let Some(last) = members.last()
+                        && let TypeKind::Array {
+                            size: ArraySizeType::Incomplete,
+                            ..
+                        } = &self.get(last.member_type.ty()).kind
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+                _ => return false,
+            }
+        }
+    }
+
     pub(crate) fn is_char_type(&self, mut ty: TypeRef) -> bool {
         loop {
             // Pointers and arrays are never char types (only 'char', 'signed char', 'unsigned char' are).

@@ -168,18 +168,24 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             if width == 0 && name.is_some() {
                 self.report_error(span, SemanticErrorKind::NamedZeroWidthBitfield);
             }
-        } else if let Ok(layout) = self.registry.ensure_layout(member_type.ty())
-            && let Some(req_align) = alignment
-        {
-            let natural_align = layout.alignment as u32;
-            if req_align < natural_align {
-                self.report_error(
-                    span,
-                    SemanticErrorKind::AlignmentTooLoose {
-                        requested: req_align,
-                        natural: natural_align,
-                    },
-                );
+        } else {
+            if self.registry.has_flexible_array_member(member_type.ty()) {
+                self.report_error(span, SemanticErrorKind::FlexibleArrayMemberInStruct);
+            }
+
+            if let Ok(layout) = self.registry.ensure_layout(member_type.ty())
+                && let Some(req_align) = alignment
+            {
+                let natural_align = layout.alignment as u32;
+                if req_align < natural_align {
+                    self.report_error(
+                        span,
+                        SemanticErrorKind::AlignmentTooLoose {
+                            requested: req_align,
+                            natural: natural_align,
+                        },
+                    );
+                }
             }
         }
     }
@@ -227,6 +233,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // C11 6.7.6.2 Array declarators
         if !self.registry.is_complete(element_ty.ty()) || element_ty.ty().is_function() {
             self.report_error(span, SemanticErrorKind::IncompleteType { ty: element_ty });
+        }
+
+        if self.registry.has_flexible_array_member(element_ty.ty()) {
+            self.report_error(span, SemanticErrorKind::FlexibleArrayElementInArray);
         }
 
         let (has_static, quals) = match size {

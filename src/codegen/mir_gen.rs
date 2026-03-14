@@ -119,13 +119,13 @@ impl<'a> MirGen<'a> {
         let node_kind = *self.ast.get_kind(node_ref);
 
         match node_kind {
-            NodeKind::TranslationUnit(tu_data) => {
+            NodeKind::TranslationUnit(tu) => {
                 self.current_scope_id = self.ast.scope_of(node_ref);
-                self.visit_translation_unit(&tu_data)
+                self.visit_translation_unit(&tu)
             }
-            NodeKind::Function(function_data) => {
+            NodeKind::Function(function) => {
                 self.current_scope_id = self.ast.scope_of(node_ref);
-                self.visit_function(&function_data)
+                self.visit_function(&function)
             }
             NodeKind::For(for_stmt) => {
                 self.current_scope_id = self.ast.scope_of(node_ref);
@@ -154,7 +154,7 @@ impl<'a> MirGen<'a> {
                 self.mir_builder.set_terminator(Terminator::Goto(target));
             }
             NodeKind::Goto(label_name, _) => self.visit_goto_stmt(&label_name),
-            NodeKind::Label(label_name, statement, _) => self.visit_label_stmt(&label_name, statement),
+            NodeKind::Label(label_name, stmt, _) => self.visit_label_stmt(&label_name, stmt),
             NodeKind::Switch(cond, body) => self.visit_switch_stmt(cond, body),
             NodeKind::Case(_, stmt) => self.visit_case_default_stmt(node_ref, stmt),
             NodeKind::CaseRange(..) => self.visit_case_default_stmt(node_ref, {
@@ -201,9 +201,9 @@ impl<'a> MirGen<'a> {
         self.current_scope_id = old_scope;
     }
 
-    fn visit_translation_unit(&mut self, tu_data: &nodes::TranslationUnit) {
+    fn visit_translation_unit(&mut self, tu: &nodes::TranslationUnit) {
         self.predeclare_global_functions();
-        for child_ref in tu_data.decl_start.range(tu_data.decl_len) {
+        for child_ref in tu.decl_start.range(tu.decl_len) {
             self.visit_node(child_ref);
         }
     }
@@ -325,8 +325,8 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_function(&mut self, function_data: &Function) {
-        let symbol_entry = self.symbol_table.get_symbol(function_data.symbol);
+    fn visit_function(&mut self, function: &Function) {
+        let symbol_entry = self.symbol_table.get_symbol(function.symbol);
         let func_name = symbol_entry.name;
 
         // Find the existing function in the MIR builder. It should have been created by the pre-pass.
@@ -349,7 +349,7 @@ impl<'a> MirGen<'a> {
 
         // Pre-scan for all labels in the function body to create their MIR blocks upfront.
         self.label_map.clear();
-        self.scan_for_labels(function_data.body);
+        self.scan_for_labels(function.body);
 
         // Parameter locals are now created in `define_function`. We just need to
         // map the SymbolRef to the LocalId.
@@ -357,14 +357,14 @@ impl<'a> MirGen<'a> {
         self.vla_map.clear();
         let mir_params = self.mir_builder.get_functions().get(&func_id).unwrap().params.clone();
 
-        for (i, param_ref) in function_data.param_start.range(function_data.param_len).enumerate() {
-            if let NodeKind::Param(param_data) = self.ast.get_kind(param_ref) {
+        for (i, param_ref) in function.param_start.range(function.param_len).enumerate() {
+            if let NodeKind::Param(param) = self.ast.get_kind(param_ref) {
                 let local_id = mir_params[i];
-                self.local_map.insert(param_data.symbol, local_id);
+                self.local_map.insert(param.symbol, local_id);
             }
         }
 
-        self.visit_node(function_data.body);
+        self.visit_node(function.body);
 
         // Handle implicit return if control falls off the end
         if !self.mir_builder.current_block_has_terminator() {

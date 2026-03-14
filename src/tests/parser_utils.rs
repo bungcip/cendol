@@ -519,7 +519,7 @@ pub(crate) fn setup_expr(source: &str) -> ResolvedNodeKind {
 }
 
 pub(crate) fn setup_declaration(source: &str) -> ResolvedNodeKind {
-    let (ast, decl_result) = setup_source(source, declarations::parse_declaration);
+    let (ast, decl_result) = setup_source(source, declarations::parse_decl);
 
     match decl_result {
         Ok(node_ref) => resolve_node(&ast, node_ref),
@@ -528,7 +528,7 @@ pub(crate) fn setup_declaration(source: &str) -> ResolvedNodeKind {
 }
 
 pub(crate) fn setup_declaration_with_errors(source: &str) -> ParseError {
-    let (_, decl_result) = setup_source(source, declarations::parse_declaration);
+    let (_, decl_result) = setup_source(source, declarations::parse_decl);
     match decl_result {
         Ok(_) => panic!("Expected parse error"),
         Err(e) => e,

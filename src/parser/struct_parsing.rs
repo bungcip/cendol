@@ -9,7 +9,7 @@ use crate::ast::parsed::*;
 use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::parser::TokenKind;
-use crate::parser::declaration_core::parse_declaration_specifiers;
+use crate::parser::declarations::parse_decl_specs;
 
 use super::Parser;
 
@@ -17,7 +17,7 @@ use super::Parser;
 pub(super) fn parse_record_specifier(parser: &mut Parser, is_union: bool) -> Result<ParsedTypeSpec, ParseError> {
     // Check for __attribute__ after struct/union keyword (GCC extension)
     if parser.is_token(TokenKind::Attribute)
-        && let Err(_e) = super::declaration_core::parse_attribute(parser)
+        && let Err(_e) = super::declarations::parse_attribute(parser)
     {
         // For now, ignore attribute parsing errors
     }
@@ -30,7 +30,7 @@ pub(super) fn parse_record_specifier(parser: &mut Parser, is_union: bool) -> Res
 
         // Check for __attribute__ after struct definition (GCC extension)
         if parser.is_token(TokenKind::Attribute)
-            && let Err(_e) = super::declaration_core::parse_attribute(parser)
+            && let Err(_e) = super::declarations::parse_attribute(parser)
         {
             // For now, ignore attribute parsing errors
         }
@@ -84,7 +84,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
     } else {
         false
     };
-    let declaration_data = if is_struct || is_union {
+    let decl = if is_struct || is_union {
         let tag = parser.accept_name();
         if parser.accept(TokenKind::LeftBrace).is_some() {
             let members = parse_struct_declaration_list(parser)?;
@@ -93,7 +93,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
             let init_declarators = if parser.accept(TokenKind::Semicolon).is_some() {
                 ThinVec::new()
             } else {
-                let decls = parse_init_declarators_no_init(parser)?;
+                let decls = parse_init_declarators(parser)?;
                 parser.expect(TokenKind::Semicolon)?;
                 decls
             };
@@ -115,7 +115,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
             let init_declarators = if parser.accept(TokenKind::Semicolon).is_some() {
                 ThinVec::new()
             } else {
-                let decls = parse_init_declarators_no_init(parser)?;
+                let decls = parse_init_declarators(parser)?;
                 parser.expect(TokenKind::Semicolon)?;
                 decls
             };
@@ -125,8 +125,8 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
             }
         }
     } else {
-        let specifiers = parse_declaration_specifiers(parser)?;
-        let init_declarators = parse_init_declarators_no_init(parser)?;
+        let specifiers = parse_decl_specs(parser)?;
+        let init_declarators = parse_init_declarators(parser)?;
         parser.expect(TokenKind::Semicolon)?;
         ParsedDecl {
             specifiers,
@@ -135,10 +135,10 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
     };
 
     let span = SourceSpan::new(start_loc, parser.previous_token_span().end());
-    Ok(parser.push_node(ParsedNodeKind::Declaration(declaration_data), span))
+    Ok(parser.push_node(ParsedNodeKind::Declaration(decl), span))
 }
 
-fn parse_init_declarators_no_init(parser: &mut Parser) -> Result<ThinVec<ParsedInitDeclarator>, ParseError> {
+fn parse_init_declarators(parser: &mut Parser) -> Result<ThinVec<ParsedInitDeclarator>, ParseError> {
     let mut decls = ThinVec::new();
     loop {
         let start = parser.current_token_span_or_empty();

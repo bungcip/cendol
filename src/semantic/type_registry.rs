@@ -659,11 +659,11 @@ impl TypeRegistry {
             }
 
             let idx = ty.index();
-            let ty_data = &self.types[idx];
-            if let TypeKind::Alias(inner) = ty_data.kind {
+            let repr = &self.types[idx];
+            if let TypeKind::Alias(inner) = repr.kind {
                 ty = inner;
             } else {
-                match ty_data.layout.as_ref() {
+                match repr.layout.as_ref() {
                     Some(x) => return Cow::Borrowed(x),
                     None => {
                         panic!("ICE: TypeRef {ty} layout not computed. make sure layout is computed in previous phase")
@@ -697,16 +697,16 @@ impl TypeRegistry {
             }
 
             let idx = ty.index();
-            let ty_data = &self.types[idx];
-            if let TypeKind::Alias(inner) = ty_data.kind {
+            let repr = &self.types[idx];
+            if let TypeKind::Alias(inner) = repr.kind {
                 ty = inner;
             } else {
-                if let Some(layout) = ty_data.layout.as_ref() {
+                if let Some(layout) = repr.layout.as_ref() {
                     return Some(Cow::Borrowed(layout));
                 }
 
                 // Fallback for types that don't need mutation to compute
-                return match &ty_data.kind {
+                return match &repr.kind {
                     TypeKind::Builtin(b) => match b {
                         BuiltinType::Void => None,
                         BuiltinType::Bool | BuiltinType::Char | BuiltinType::SChar | BuiltinType::UChar => {

@@ -12,7 +12,7 @@ use crate::source_manager::SourceLoc;
 
 pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     while parser.is_token(TokenKind::Attribute) {
-        super::declaration_core::parse_attribute(parser)?;
+        super::declarations::parse_attribute(parser)?;
     }
 
     let token = parser.current_token()?;
@@ -62,7 +62,7 @@ fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef,
         let mut decl_error = None;
         if parser.starts_declaration() {
             let trx = parser.start_transaction();
-            match super::declarations::parse_declaration(trx.parser) {
+            match super::declarations::parse_decl(trx.parser) {
                 Ok(decl) => {
                     items.push(decl);
                     trx.commit();
@@ -155,7 +155,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError>
     let init = if parser.accept(TokenKind::Semicolon).is_some() {
         None
     } else if parser.starts_declaration() {
-        Some(super::declarations::parse_declaration(parser)?)
+        Some(super::declarations::parse_decl(parser)?)
     } else {
         let expr = parser.parse_expr_min()?;
         parser.expect(TokenKind::Semicolon)?;

@@ -5,7 +5,7 @@
 //! arrays, and functions.
 
 use crate::diagnostic::{ParseError, ParseErrorKind};
-use crate::parser::declaration_core::parse_declaration_specifiers;
+use crate::parser::declarations::parse_decl_specs;
 use crate::parser::type_builder::build_type;
 use crate::parser::{Token, TokenKind};
 use crate::{ast::*, semantic::TypeQualifiers};
@@ -108,7 +108,7 @@ fn validate_declarator(
 
 pub(crate) fn parse_declarator(parser: &mut Parser) -> Result<DeclaratorRef, ParseError> {
     while parser.is_token(TokenKind::Attribute) {
-        let _ = super::declaration_core::parse_attribute(parser);
+        let _ = super::declarations::parse_attribute(parser);
     }
 
     let pointers = parse_leading_pointers(parser)?;
@@ -261,7 +261,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, b
         let start_idx = parser.current_idx;
         let spec_idx = parser.current_idx;
         let saved_diags = parser.diag.diagnostics.len();
-        let specifiers = match parse_declaration_specifiers(parser) {
+        let specifiers = match parse_decl_specs(parser) {
             Ok(s) => s,
             Err(_) => {
                 parser.current_idx = spec_idx;
@@ -372,7 +372,7 @@ pub(super) fn get_declarator_params(arena: &ParsedTypeArena, decl_ref: Declarato
 
 pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<DeclaratorRef, ParseError> {
     while parser.is_token(TokenKind::Attribute) {
-        let _ = super::declaration_core::parse_attribute(parser);
+        let _ = super::declarations::parse_attribute(parser);
     }
 
     let pointers = parse_leading_pointers(parser)?;

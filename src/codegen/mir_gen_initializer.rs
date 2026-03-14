@@ -10,11 +10,11 @@ use crate::semantic::{ArraySizeType, FieldLayout, QualType, StructMember, TypeKi
 impl<'a> MirGen<'a> {
     fn visit_initializer_list(
         &mut self,
-        list_data: &ast::nodes::InitializerList,
+        list: &ast::nodes::InitializerList,
         target_ty: QualType,
         destination: Option<Place>,
     ) -> Operand {
-        let range = list_data.init_start.range(list_data.init_len);
+        let range = list.init_start.range(list.init_len);
         let mut iter = range.peekable();
         let fields = self.visit_struct_fields_recursive(&mut iter, None, target_ty);
         self.finalize_struct_initializer(fields, target_ty, destination)
@@ -257,13 +257,13 @@ impl<'a> MirGen<'a> {
 
     fn visit_array_initializer(
         &mut self,
-        list_data: &ast::nodes::InitializerList,
+        list: &ast::nodes::InitializerList,
         element_ty: QualType,
         size: usize,
         target_ty: QualType,
         destination: Option<Place>,
     ) -> Operand {
-        let range = list_data.init_start.range(list_data.init_len);
+        let range = list.init_start.range(list.init_len);
         let mut iter = range.peekable();
         self.visit_array_initializer_from_iter(&mut iter, None, element_ty, size, target_ty, destination)
     }

@@ -509,7 +509,7 @@ pub(crate) fn parse_compound_literal_from_type_and_start(
     parsed_type: ParsedType,
     start_loc: SourceLoc,
 ) -> Result<ParsedNodeRef, ParseError> {
-    let initializer_ref = super::declaration_core::parse_initializer(parser)?;
+    let initializer_ref = super::declarations::parse_initializer(parser)?;
 
     let end_loc = parser.current_token_span()?.end();
     let span = SourceSpan::new(start_loc, end_loc);

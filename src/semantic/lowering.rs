@@ -531,7 +531,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::CompoundStmt(stmts) => {
                 smallvec![self.visit_compound_statement(&stmts, target_slots, span)]
             }
-            ParsedNodeKind::Declaration(decl_data) => self.visit_declaration(&decl_data, span, target_slots),
+            ParsedNodeKind::Declaration(decl) => self.visit_declaration(&decl, span, target_slots),
             ParsedNodeKind::FunctionDef(func_def) => {
                 let res_node = self.get_or_push_slot(target_slots, span);
                 self.visit_function_definition(&func_def, res_node, span);
@@ -1049,26 +1049,26 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         };
 
         // Extract needed data from registry to avoid borrowing self.registry during node creation
-        enum TypeAgg {
+        enum AggType {
             Record(Option<NameId>, Arc<[StructMember]>, bool),
             Enum(Option<NameId>, Arc<[EnumConstant]>),
         }
 
         let type_info = self.registry.get(qt.ty());
-        let type_data = match &type_info.kind {
+        let type_kind = match &type_info.kind {
             TypeKind::Record {
                 tag, members, is_union, ..
-            } => Some(TypeAgg::Record(*tag, members.clone(), *is_union)),
-            TypeKind::Enum { tag, enumerators, .. } => Some(TypeAgg::Enum(*tag, enumerators.clone())),
+            } => Some(AggType::Record(*tag, members.clone(), *is_union)),
+            TypeKind::Enum { tag, enumerators, .. } => Some(AggType::Enum(*tag, enumerators.clone())),
             _ => None,
         };
 
-        if let Some(data) = type_data {
+        if let Some(data) = type_kind {
             let node = self.get_or_push_slot(target_slots, span);
             self.check_function_specifiers(spec_info, span);
 
             match data {
-                TypeAgg::Record(tag, members, is_union) => {
+                AggType::Record(tag, members, is_union) => {
                     let member_start_idx = self.ast.kinds.len() as u32 + 1;
                     let member_start = NodeRef::new(member_start_idx).expect("NodeRef overflow");
                     let member_len = members.len() as u16;
@@ -1092,7 +1092,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         is_union,
                     });
                 }
-                TypeAgg::Enum(tag, enumerators) => {
+                AggType::Enum(tag, enumerators) => {
                     let mut member_start = NodeRef::ROOT;
                     let member_len = enumerators.len() as u16;
 

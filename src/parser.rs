@@ -8,7 +8,6 @@ use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError, ParseErrorKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 
-pub mod declaration_core;
 pub mod declarations;
 pub mod declarator;
 pub mod enum_parsing;

@@ -9,7 +9,7 @@ use crate::ast::literal::Literal;
 use crate::ast::*;
 use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::parser::TokenKind;
-use crate::parser::declaration_core::parse_declaration_specifiers;
+use crate::parser::declarations::parse_decl_specs;
 use crate::parser::declarator::{get_declarator_name, parse_abstract_declarator};
 use crate::semantic::TypeQualifiers;
 use thin_vec::ThinVec;
@@ -206,9 +206,8 @@ fn parse_base_type(parser: &mut Parser, ts: &ParsedTypeSpec) -> Result<ParsedBas
             Ok(parser.alloc_base_type(ParsedBaseType::Builtin(Atomic(*parsed_type))))
         }
         Record(is_union, tag, definition) => {
-            let members = if let Some(def_data) = definition {
-                def_data
-                    .members
+            let members = if let Some(def) = definition {
+                def.members
                     .as_ref()
                     .map(|m| parse_record_members(parser, m))
                     .transpose()?
@@ -240,7 +239,7 @@ fn parse_base_type(parser: &mut Parser, ts: &ParsedTypeSpec) -> Result<ParsedBas
 /// Parse a type name and return ParsedType (for casts, sizeof, etc.)
 pub(crate) fn parse_type_name(parser: &mut Parser) -> Result<ParsedType, ParseError> {
     // Parse declaration specifiers
-    let specifiers = parse_declaration_specifiers(parser)?;
+    let specifiers = parse_decl_specs(parser)?;
 
     // Parse abstract declarator (optional)
     let declarator = if parser.is_abstract_declarator_start() {

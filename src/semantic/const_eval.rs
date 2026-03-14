@@ -190,12 +190,25 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
             let right_val = eval_const_expr(ctx, *right)?;
 
             // Determine if operation should be unsigned
-            let (is_unsigned, is_unsigned_cmp) = if let Some(left_ty) = ctx.get_resolved_type(*left) {
-                let ty_obj = ctx.registry.get(left_ty.ty());
-                let is_unsigned = !ty_obj.is_signed() && ty_obj.is_int();
-                (is_unsigned, is_unsigned || ty_obj.is_pointer())
-            } else {
-                (false, false)
+            let (is_unsigned, is_unsigned_cmp) = {
+                let left_ty = ctx.get_resolved_type(*left);
+                let right_ty = ctx.get_resolved_type(*right);
+
+                match (left_ty, right_ty) {
+                    (Some(lt), Some(rt)) => {
+                        let lb = ctx.registry.get(lt.ty());
+                        let rb = ctx.registry.get(rt.ty());
+                        let is_unsigned = (!lb.is_signed() && lb.is_int()) || (!rb.is_signed() && rb.is_int());
+                        let is_unsigned_cmp = is_unsigned || lb.is_pointer() || rb.is_pointer();
+                        (is_unsigned, is_unsigned_cmp)
+                    }
+                    (Some(ty), None) | (None, Some(ty)) => {
+                        let ty_obj = ctx.registry.get(ty.ty());
+                        let is_unsigned = !ty_obj.is_signed() && ty_obj.is_int();
+                        (is_unsigned, is_unsigned || ty_obj.is_pointer())
+                    }
+                    (None, None) => (false, false),
+                }
             };
 
             match op {

@@ -548,3 +548,26 @@ fn test_type_registry_display_builtins() {
         assert_eq!(reg.display_type(ty), expected, "Failed for {:?}", builtin);
     }
 }
+
+#[test]
+fn test_large_hex_literal_comparison() {
+    let source = r#"
+        int main() {
+            int result = (9 >= 0xAC353B0092DB2509);
+            return result;
+        }
+    "#;
+    // The comparison should be 0 (false)
+    let mir = setup_mir(source);
+    assert!(
+        mir.contains("%result = const 0"),
+        "Comparison 9 >= 0xAC353B0092DB2509 should be 0, MIR: {}",
+        mir
+    );
+}
+
+#[test]
+fn test_large_hex_literal_typing() {
+    let source = "unsigned long long x = 0xAC353B0092DB2509;";
+    check_type(source, "unsigned long long");
+}

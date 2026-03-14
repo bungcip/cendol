@@ -69,3 +69,7 @@
 ## 2024-05-23 - Hoisting Guard Conditions for Heterogeneous Collection Processing
 **Learning:** Processing a collection of items (like preprocessor tokens) often involves a conditional check that only applies to a small subset of item types (e.g., escaping string/char literals during stringification). Placing this check inside a byte-by-byte loop for every item causes significant overhead due to redundant branching and prevents the use of fast-path operations like `push_str` or bulk length addition for the majority of items.
 **Action:** Always identify if an expensive inner loop or conditional logic only applies to specific variants. Hoist the variant check outside the loop to enable optimized fast-paths for common cases.
+
+## 2025-05-24 - Avoiding Borrow Conflicts in Shared State Optimization
+**Learning:** Attempting to optimize away clones of shared state (like `MacroInfo`) in the preprocessor can lead to borrow checker violations if the shared reference is held while calling other methods on the same struct (like `lex_token`). The original code avoided this by cloning immediately, which was a performance bottleneck.
+**Action:** Extract only the required bitflags or metadata into local variables to end the shared borrow of the map early. This allows calling other `&mut self` methods and performing mutable updates (like setting the `USED` flag) before finally cloning the full state only when expansion is confirmed.

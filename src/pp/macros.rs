@@ -14,23 +14,23 @@ impl<'src> Preprocessor<'src> {
             return Ok(None);
         };
 
-        let macro_info = self
-            .macros
-            .get(&symbol)
-            .filter(|m| !m.flags.contains(MacroFlags::DISABLED))
-            .cloned();
-
-        let Some(macro_info) = macro_info else {
-            return Ok(None);
-        };
-
-        // Bolt ⚡: Check for recursive expansion here to avoid walking include stack for non-macros.
-        // using Dave Prosser's hide sets intersection approach
+        // Bolt ⚡: Check hide set FIRST. This avoids a HashMap lookup for every recursive
+        // macro identifier encountered during expansion.
         if self.hide_sets.contains(token.hide_set, symbol) {
             return Ok(None);
         }
 
-        if macro_info.flags.contains(MacroFlags::FUNCTION_LIKE) {
+        // Bolt ⚡: Extract flags and drop the borrow of self.macros early to avoid borrow checker errors.
+        let flags = self.macros.get(&symbol).map(|m| m.flags);
+        let Some(flags) = flags else {
+            return Ok(None);
+        };
+
+        if flags.contains(MacroFlags::DISABLED) {
+            return Ok(None);
+        }
+
+        if flags.contains(MacroFlags::FUNCTION_LIKE) {
             let next = self.lex_token();
             let is_call = matches!(next, Some(ref t) if t.kind == PPTokenKind::LeftParen);
             if let Some(t) = next {
@@ -41,11 +41,14 @@ impl<'src> Preprocessor<'src> {
             }
         }
 
-        if let Some(m) = self.macros.get_mut(&symbol) {
-            m.flags |= MacroFlags::USED;
-        }
+        // Bolt ⚡: Consolidated lookup and flag update. We only clone once we are
+        // committed to expansion. This avoids redundant hashing and Arc increments
+        // for disabled or non-call function-like macros.
+        let m = self.macros.get_mut(&symbol).unwrap();
+        m.flags |= MacroFlags::USED;
+        let macro_info = m.clone();
 
-        let result = if macro_info.flags.contains(MacroFlags::FUNCTION_LIKE) {
+        let result = if flags.contains(MacroFlags::FUNCTION_LIKE) {
             self.expand_function_macro(&macro_info, &symbol, token)
         } else {
             self.expand_object_macro(&macro_info, &symbol, token)
@@ -667,18 +670,18 @@ impl<'src> Preprocessor<'src> {
             return Ok(false);
         };
 
-        let macro_info = self.macros.get(&symbol).cloned();
-        let Some(macro_info) = macro_info else {
-            return Ok(false);
-        };
-
-        // Bolt ⚡: Check for recursive expansion here avoiding walking include stack for non-macros
-        // using Dave Prosser hide set algorithm.
+        // Bolt ⚡: Check hide set FIRST.
         if self.hide_sets.contains(symbol_token.hide_set, symbol) {
             return Ok(false);
         }
 
-        if !macro_info.flags.contains(MacroFlags::FUNCTION_LIKE) || macro_info.flags.contains(MacroFlags::DISABLED) {
+        // Bolt ⚡: Extract flags and drop the borrow of self.macros early to avoid borrow checker errors.
+        let flags = self.macros.get(&symbol).map(|m| m.flags);
+        let Some(flags) = flags else {
+            return Ok(false);
+        };
+
+        if !flags.contains(MacroFlags::FUNCTION_LIKE) || flags.contains(MacroFlags::DISABLED) {
             return Ok(false);
         }
 
@@ -689,6 +692,11 @@ impl<'src> Preprocessor<'src> {
         let Some(end_j) = self.find_balanced_paren_range(tokens, i + 1) else {
             return Ok(false);
         };
+
+        // Bolt ⚡: Consolidated lookup and flag update.
+        let m = self.macros.get_mut(&symbol).unwrap();
+        m.flags |= MacroFlags::USED;
+        let macro_info = m.clone();
 
         let args = self.collect_macro_args_from_slice(&macro_info, tokens, i + 2, end_j - 1);
 
@@ -759,6 +767,15 @@ impl<'src> Preprocessor<'src> {
         while i < tokens.len() {
             let token = tokens[i];
 
+            // Bolt ⚡: Hoist identifier guard. Magic macros, conditional operators,
+            // function macros, object macros, and _Pragma all require an identifier.
+            // This fast-tracks operators, numbers, and literals which are common in
+            // macro arguments and conditional expressions.
+            if !matches!(token.kind, PPTokenKind::Identifier(_)) {
+                i += 1;
+                continue;
+            }
+
             if let Some(magic) = self.try_expand_magic_macro(&token) {
                 tokens[i] = magic;
                 i += 1;
@@ -770,36 +787,33 @@ impl<'src> Preprocessor<'src> {
                 continue;
             }
 
-            if !matches!(token.kind, PPTokenKind::Identifier(_)) {
-                i += 1;
-                continue;
-            }
-
             if self.try_expand_function_macro_in_tokens(tokens, i, in_conditional)? {
                 continue;
             }
 
             // Expand object-like macros inline.
             if let PPTokenKind::Identifier(symbol) = tokens[i].kind {
-                let macro_info = self
-                    .macros
-                    .get(&symbol)
-                    .filter(|m| !m.flags.contains(MacroFlags::FUNCTION_LIKE) && !m.flags.contains(MacroFlags::DISABLED))
-                    .cloned();
-                if let Some(macro_info) = macro_info
-                    && !self.hide_sets.contains(tokens[i].hide_set, symbol)
-                {
-                    if let Some(m) = self.macros.get_mut(&symbol) {
-                        m.flags |= MacroFlags::USED;
+                // Bolt ⚡: Check hide set FIRST.
+                if !self.hide_sets.contains(tokens[i].hide_set, symbol) {
+                    // Bolt ⚡: Extract flags and drop the borrow of self.macros early.
+                    let flags = self.macros.get(&symbol).map(|m| m.flags);
+                    if let Some(flags) = flags {
+                        if !flags.contains(MacroFlags::FUNCTION_LIKE) && !flags.contains(MacroFlags::DISABLED) {
+                            // Bolt ⚡: Consolidated lookup and flag update.
+                            let m = self.macros.get_mut(&symbol).unwrap();
+                            m.flags |= MacroFlags::USED;
+                            let macro_info = m.clone();
+
+                            let new_hs = self.hide_sets.insert(tokens[i].hide_set, symbol);
+                            let mut expanded =
+                                self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), tokens[i].location)?;
+                            for t in &mut expanded {
+                                t.hide_set = new_hs;
+                            }
+                            tokens.splice(i..i + 1, expanded);
+                            continue;
+                        }
                     }
-                    let new_hs = self.hide_sets.insert(tokens[i].hide_set, symbol);
-                    let mut expanded =
-                        self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), tokens[i].location)?;
-                    for t in &mut expanded {
-                        t.hide_set = new_hs;
-                    }
-                    tokens.splice(i..i + 1, expanded);
-                    continue;
                 }
             }
 

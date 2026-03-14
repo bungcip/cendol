@@ -3515,15 +3515,11 @@ impl ClifGen {
                     );
                 }
             }
-            ConstValueKind::GlobalAddress(id, _) => {
-                if reachable_globals.insert(*id) {
-                    worklist_globals.push(*id);
-                }
+            ConstValueKind::GlobalAddress(id, _) if reachable_globals.insert(*id) => {
+                worklist_globals.push(*id);
             }
-            ConstValueKind::FunctionAddress(id) => {
-                if reachable_functions.insert(*id) {
-                    worklist_functions.push(*id);
-                }
+            ConstValueKind::FunctionAddress(id) if reachable_functions.insert(*id) => {
+                worklist_functions.push(*id);
             }
             _ => {}
         }

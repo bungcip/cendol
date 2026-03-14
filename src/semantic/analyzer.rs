@@ -19,6 +19,18 @@ use crate::semantic::const_eval::eval_const_expr;
 use smallvec::{SmallVec, smallvec};
 use std::collections::{HashMap, HashSet};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CaseRangeInterval {
+    start: i64,
+    end: i64,
+}
+
+impl CaseRangeInterval {
+    fn overlaps(&self, other: &Self) -> bool {
+        self.start <= other.end && other.start <= self.end
+    }
+}
+
 /// Side table containing semantic information for AST nodes.
 /// Parallel vectors indexed by node index (NodeRef.index()).
 #[derive(Debug, Clone)]
@@ -132,7 +144,7 @@ struct SemanticAnalyzer<'a> {
     loop_depth: usize,
     switch_depth: usize,
     // Bolt ⚡: Use SmallVec for switch state to avoid heap allocations for nested switches.
-    switch_cases: SmallVec<[HashSet<i64>; 4]>,
+    switch_cases: SmallVec<[Vec<CaseRangeInterval>; 4]>,
     switch_default_seen: SmallVec<[bool; 4]>,
     switch_cond_types: SmallVec<[QualType; 4]>,
     switch_orig_cond_types: SmallVec<[QualType; 4]>,
@@ -2164,7 +2176,7 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_switch_statement(&mut self, cond: NodeRef, body: NodeRef, node: NodeRef) -> Option<QualType> {
         let cond_ty = self.visit_node(cond);
         self.switch_depth += 1;
-        self.switch_cases.push(HashSet::new());
+        self.switch_cases.push(Vec::new());
         self.switch_default_seen.push(false);
         self.switch_vla_state.push((node, self.active_vlas.len()));
 
@@ -2288,9 +2300,24 @@ impl<'a> SemanticAnalyzer<'a> {
 
             if let (Some(start_v), Some(end_v)) = (start_val, end_val)
                 && let Some(cases) = self.switch_cases.last_mut()
-                && let Some(duplicate_val) = (start_v..=end_v).find(|&val| !cases.insert(val))
             {
-                self.report_error(stmt, SemanticErrorKind::DuplicateCase { value: duplicate_val });
+                let new_range = CaseRangeInterval {
+                    start: start_v,
+                    end: end_v,
+                };
+                let mut duplicate_val = None;
+                for existing in cases.iter() {
+                    if existing.overlaps(&new_range) {
+                        duplicate_val = Some(std::cmp::max(existing.start, new_range.start));
+                        break;
+                    }
+                }
+
+                if let Some(val) = duplicate_val {
+                    self.report_error(stmt, SemanticErrorKind::DuplicateCase { value: val });
+                } else {
+                    cases.push(new_range);
+                }
             }
         }
 

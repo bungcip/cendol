@@ -1,4 +1,5 @@
 use super::semantic_common::setup_mir;
+use crate::tests::test_utils::run_fail_with_message;
 
 #[test]
 fn test_case_range_coverage() {
@@ -61,4 +62,53 @@ fn test_case_range_coverage() {
         br bb3
     }
     ");
+}
+
+#[test]
+fn test_large_case_range_timeout() {
+    let source = r#"
+        int main() {
+            unsigned int i = 0;
+            switch (i) {
+                case 0 ... 0xFFFFFFFF:
+                    return 1;
+                default:
+                    return 0;
+            }
+        }
+    "#;
+    // This should not time out
+    setup_mir(source);
+}
+
+#[test]
+fn test_case_range_overlap() {
+    let source = r#"
+        int main() {
+            int x = 5;
+            switch (x) {
+                case 1 ... 10:
+                    break;
+                case 5 ... 15:
+                    break;
+            }
+        }
+    "#;
+    run_fail_with_message(source, "duplicate case value '5'");
+}
+
+#[test]
+fn test_case_range_overlap_reverse() {
+    let source = r#"
+        int main() {
+            int x = 5;
+            switch (x) {
+                case 5 ... 15:
+                    break;
+                case 1 ... 10:
+                    break;
+            }
+        }
+    "#;
+    run_fail_with_message(source, "duplicate case value '5'");
 }

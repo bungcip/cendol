@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_fail, run_pass};
+use crate::tests::test_utils::run_fail;
 
 #[test]
 fn test_conflicting_type_specifier() {

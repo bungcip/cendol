@@ -134,3 +134,8 @@ Action: Enforce complete object type constraints for all pointer arithmetic oper
 
 Learning: C11 6.5.8p2 restricts relational operators (<, <=, >, >=) to pointers to compatible object types or compatible incomplete types. Since function types are neither object types nor incomplete types (per 6.2.5), relational comparisons between function pointers are constraint violations. This distinguishes them from equality operators (==, !=), which explicitly allow function pointer comparisons (6.5.9p2).
 Action: Enforce complete/incomplete object type constraints for relational operators while maintaining broader compatibility for equality operators to ensure standard compliance.
+
+2026-03-15 - [Increment and Decrement Completeness Constraints]
+
+Learning: C11 6.5.3.1 (prefix) and 6.5.2.4 (postfix) require that the operand of an increment or decrement operator have a scalar type. Furthermore, because these operators are defined in terms of addition/subtraction of 1 (6.5.6), they inherit the constraint that pointer operands must point to complete object types. This prohibits `++` and `--` on `void*`, incomplete structures, and function pointers, even if the operand is an lvalue.
+Action: Centralize increment/decrement operand validation in a helper that checks for both scalarity and pointer-to-complete-object-type constraints to ensure consistent enforcement across prefix and postfix variants.

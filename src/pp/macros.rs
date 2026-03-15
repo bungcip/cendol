@@ -798,7 +798,9 @@ impl<'src> Preprocessor<'src> {
                     // Bolt ⚡: Extract flags and drop the borrow of self.macros early.
                     let flags = self.macros.get(&symbol).map(|m| m.flags);
                     if let Some(flags) = flags
-                        && !flags.contains(MacroFlags::FUNCTION_LIKE) && !flags.contains(MacroFlags::DISABLED) {
+                        && !flags.contains(MacroFlags::FUNCTION_LIKE)
+                        && !flags.contains(MacroFlags::DISABLED)
+                    {
                         // Bolt ⚡: Consolidated lookup and flag update.
                         let m = self.macros.get_mut(&symbol).unwrap();
                         m.flags |= MacroFlags::USED;

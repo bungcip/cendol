@@ -364,7 +364,9 @@ impl SemanticErrorKind {
             SemanticErrorKind::IncompatiblePointerComparison { .. } => Some("pointer-compare"),
             SemanticErrorKind::IncompatiblePointerTypes { .. } => Some("incompatible-pointer-types"),
             SemanticErrorKind::PointerSignednessMismatch { .. } => Some("pointer-sign"),
-            SemanticErrorKind::PointerAssignmentDiscardsQualifiers { .. } => Some("incompatible-pointer-types-discards-qualifiers"),
+            SemanticErrorKind::PointerAssignmentDiscardsQualifiers { .. } => {
+                Some("incompatible-pointer-types-discards-qualifiers")
+            }
             SemanticErrorKind::ReturnLocalAddress { .. } => Some("return-stack-address"),
             SemanticErrorKind::ImplicitConstantConversion { .. } => Some("constant-conversion"),
             SemanticErrorKind::SwitchCaseOverflow { .. } => Some("switch"),

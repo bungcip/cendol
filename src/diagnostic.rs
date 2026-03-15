@@ -93,7 +93,9 @@ impl DiagnosticEngine {
 
     pub(crate) fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
         if diagnostic.level == DiagnosticLevel::Warning
-            && diagnostic.warning_name.is_some_and(|name| self.disabled_warnings.contains(name))
+            && diagnostic
+                .warning_name
+                .is_some_and(|name| self.disabled_warnings.contains(name))
         {
             return;
         }

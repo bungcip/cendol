@@ -38,6 +38,7 @@ impl SemanticError {
             level,
             message: self.kind.display(registry),
             span: self.span,
+            warning_name: self.kind.warning_name(),
             ..Default::default()
         }];
 
@@ -357,6 +358,24 @@ pub enum SemanticErrorKind {
 }
 
 impl SemanticErrorKind {
+    pub(crate) fn warning_name(&self) -> Option<&'static str> {
+        match self {
+            SemanticErrorKind::EmptyDeclaration => Some("empty-translation-unit"),
+            SemanticErrorKind::IncompatiblePointerComparison { .. } => Some("pointer-compare"),
+            SemanticErrorKind::IncompatiblePointerTypes { .. } => Some("incompatible-pointer-types"),
+            SemanticErrorKind::PointerSignednessMismatch { .. } => Some("pointer-sign"),
+            SemanticErrorKind::PointerAssignmentDiscardsQualifiers { .. } => {
+                Some("incompatible-pointer-types-discards-qualifiers")
+            }
+            SemanticErrorKind::ReturnLocalAddress { .. } => Some("return-stack-address"),
+            SemanticErrorKind::ImplicitConstantConversion { .. } => Some("constant-conversion"),
+            SemanticErrorKind::SwitchCaseOverflow { .. } => Some("switch"),
+            SemanticErrorKind::AddressOfArrayAlwaysTrue { .. } => Some("tautological-pointer-compare"),
+            SemanticErrorKind::EnumeratorValueNotRepresentable { .. } => Some("enum-conversion"),
+            _ => None,
+        }
+    }
+
     pub(crate) fn display(&self, registry: &TypeRegistry) -> String {
         match self {
             SemanticErrorKind::VariableOfVoidType => "variable has incomplete type 'void'".to_string(),

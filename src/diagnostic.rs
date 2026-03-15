@@ -24,6 +24,7 @@ pub(crate) struct Diagnostic {
     pub message: String,
     pub span: SourceSpan,
     pub hints: Vec<String>, // Suggestions for fixing
+    pub warning_name: Option<&'static str>,
 }
 
 /// Parse errors
@@ -54,6 +55,7 @@ pub(crate) enum ParseErrorKind {
 pub(crate) struct DiagnosticEngine {
     pub diagnostics: Vec<Diagnostic>,
     pub error_limit: Option<usize>,
+    pub disabled_warnings: std::collections::HashSet<String>,
     pub use_colors: bool,
 }
 
@@ -62,16 +64,25 @@ impl Default for DiagnosticEngine {
         Self {
             diagnostics: Vec::new(),
             error_limit: None,
+            disabled_warnings: std::collections::HashSet::new(),
             use_colors: std::io::stderr().is_terminal(),
         }
     }
 }
 
 impl DiagnosticEngine {
-    pub(crate) fn from_warnings(_warnings: &[String]) -> Self {
+    pub(crate) fn from_warnings(warnings: &[String]) -> Self {
+        let mut disabled_warnings = std::collections::HashSet::new();
+        for w in warnings {
+            if let Some(stripped) = w.strip_prefix("no-") {
+                disabled_warnings.insert(stripped.to_string());
+            }
+        }
+
         Self {
             diagnostics: Vec::new(),
             error_limit: None,
+            disabled_warnings,
             use_colors: std::io::stderr().is_terminal(),
         }
     }
@@ -81,6 +92,14 @@ impl DiagnosticEngine {
     }
 
     pub(crate) fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
+        if diagnostic.level == DiagnosticLevel::Warning {
+            if let Some(name) = diagnostic.warning_name {
+                if self.disabled_warnings.contains(name) {
+                    return;
+                }
+            }
+        }
+
         if let Some(limit) = self.error_limit {
             let error_count = self
                 .diagnostics

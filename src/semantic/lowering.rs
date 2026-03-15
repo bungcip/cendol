@@ -1011,11 +1011,28 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return self.visit_tag_definition(&spec_info, span, target_slots);
         }
 
+        let is_auto_type = self.registry.get(base_ty.ty()).kind == TypeKind::AutoType;
+        let mut first_deduced_type: Option<QualType> = None;
+
         let mut nodes = SmallVec::new();
         for (i, init) in decl.init_declarators.iter().enumerate() {
             let target_slot = target_slots.and_then(|slots| slots.get(i)).copied();
             if let Some(node) = self.visit_single_declarator(init, base_ty, &spec_info, span, target_slot) {
                 nodes.push(node);
+
+                if is_auto_type && let NodeKind::VarDecl(var_decl) = self.ast.get_kind(node) {
+                    let deduced = var_decl.ty.strip_all();
+                    if let Some(first) = first_deduced_type {
+                        if !self.registry.is_compatible(first, deduced) {
+                            self.report_error(
+                                init.span,
+                                SemanticErrorKind::AutoTypeIncompatibleDeduction { first, new: deduced },
+                            );
+                        }
+                    } else {
+                        first_deduced_type = Some(deduced);
+                    }
+                }
             }
         }
         nodes
@@ -1115,6 +1132,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
         target_slot: Option<NodeRef>,
     ) -> Option<NodeRef> {
+        if self.registry.get(base_ty.ty()).kind == TypeKind::AutoType {
+            let decl = self.parsed_ast.parsed_types.get_decl(init.declarator);
+            if !matches!(decl, ParsedDeclarator::Identifier(..)) {
+                self.report_error(
+                    init.span,
+                    SemanticErrorKind::AutoTypeNotAllowed {
+                        context: "complex declarator",
+                    },
+                );
+            }
+        }
+
         let final_ty = self.apply_declarator(
             base_ty,
             init.declarator,
@@ -1140,6 +1169,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if spec_info.is_typedef {
             if spec_info.alignment.is_some() {
                 self.report_error(init.span, SemanticErrorKind::AlignmentNotAllowed { context: "typedef" });
+            }
+
+            if let Some(base) = spec_info.base_type
+                && self.registry.get(base.ty()).kind == TypeKind::AutoType
+            {
+                self.report_error(init.span, SemanticErrorKind::AutoTypeNotAllowed { context: "typedef" });
             }
 
             self.check_function_specifiers(spec_info, init.span);
@@ -1248,6 +1283,38 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         init: Option<ParsedNodeRef>,
         span: SourceSpan,
     ) {
+        if self.registry.get(qt.ty()).kind == TypeKind::AutoType {
+            if let Some(init_node) = init {
+                let ie = self.visit_expression(init_node);
+                if let NodeKind::InitializerList(_) = self.ast.get_kind(ie) {
+                    self.report_error(
+                        span,
+                        SemanticErrorKind::AutoTypeNotAllowed {
+                            context: "initializer list",
+                        },
+                    );
+                    qt = QualType::unqualified(self.registry.type_error);
+                } else if let Some(mut deduced) = self.try_infer_type(ie) {
+                    // C11 decay rules apply to __auto_type
+                    if deduced.is_array() || deduced.is_function() {
+                        deduced = self.registry.decay(deduced, TypeQualifiers::empty());
+                    }
+                    // Strip top-level qualifiers for non-record types (standard GCC behavior)
+                    if !deduced.is_record() {
+                        deduced = deduced.strip_all();
+                    }
+                    qt = deduced.merge_qualifiers(qt.qualifiers());
+                } else {
+                    // Type could not be inferred yet (e.g. circular dependency or complex expr)
+                    // We'll use error type for now.
+                    qt = QualType::unqualified(self.registry.type_error);
+                }
+            } else {
+                self.report_error(span, SemanticErrorKind::AutoTypeRequiresInitializer);
+                qt = QualType::unqualified(self.registry.type_error);
+            }
+        }
+
         let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
 
         // Storage class validation
@@ -2389,6 +2456,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.apply_declarator(array_qt, inner, span, spec_info, decl_ctx)
             }
             ParsedDeclarator::Function { params, flags, inner } => {
+                if self.registry.get(current_type.ty()).kind == TypeKind::AutoType {
+                    self.report_error(
+                        span,
+                        SemanticErrorKind::AutoTypeNotAllowed {
+                            context: "function return type",
+                        },
+                    );
+                }
+
                 let params_list = self.parsed_ast.parsed_types.get_params(params);
                 let processed_params = self.visit_function_parameters(params_list, false);
                 let is_noreturn = spec_info.map(|s| s.is_noreturn).unwrap_or(false);
@@ -2618,6 +2694,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             Enum(t, e) => self.resolve_enum_specifier(*t, e, span),
             TypedefName(n) => self.resolve_typedef_name(*n, span),
             VaList => Ok(QualType::unqualified(self.registry.type_valist)),
+            AutoType => Ok(QualType::unqualified(
+                self.registry.alloc(Type::new(TypeKind::AutoType)),
+            )),
             ParsedTypeSpec::Typeof(ty) => self.lower_type(*ty, span, false),
             ParsedTypeSpec::TypeofExpr(expr) => {
                 let expr_node = self.visit_expression(*expr);
@@ -2806,6 +2885,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let mut seen_names: HashMap<NameId, SourceSpan> = HashMap::new();
         let mut processed_params = Vec::with_capacity(params.len());
 
+        for param in params {
+            let base_type_node = self.parsed_ast.parsed_types.get_base_type(param.ty.base);
+            if let ParsedBaseType::Builtin(ParsedTypeSpec::AutoType) = base_type_node {
+                self.report_error(
+                    param.span,
+                    SemanticErrorKind::AutoTypeNotAllowed {
+                        context: "function parameter",
+                    },
+                );
+            }
+        }
+
         // C11 6.2.1p4: Function prototype scope for declarations, block scope for definitions.
         // If it's not a definition, we push a temporary scope for these parameters.
         // If it is a definition, we assume the caller (visit_function_definition) has already pushed the scope.
@@ -2901,6 +2992,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 ParsedNodeKind::Declaration(decl) => {
                     let spec_info = self.visit_decl_specifiers(&decl.specifiers, span);
+
+                    if let Some(base) = spec_info.base_type
+                        && self.registry.get(base.ty()).kind == TypeKind::AutoType
+                    {
+                        self.report_error(
+                            node.span,
+                            SemanticErrorKind::AutoTypeNotAllowed {
+                                context: "struct or union member",
+                            },
+                        );
+                    }
 
                     if spec_info.storage.is_some() {
                         self.report_error(span, SemanticErrorKind::ConflictingStorageClasses);

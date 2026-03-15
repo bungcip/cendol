@@ -78,6 +78,8 @@ fn merge_type_specifiers(current: ParsedTypeSpec, new: ParsedTypeSpec) -> Result
         (Double, Complex) | (Complex, Double) => Ok(ComplexDouble),
         (LongDouble, Complex) | (Complex, LongDouble) => Ok(ComplexLongDouble),
 
+        (AutoType, AutoType) => Ok(AutoType),
+
         // Mismatch
         _ => Err(ParseError {
             span: SourceSpan::default(),
@@ -229,6 +231,7 @@ fn parse_base_type(parser: &mut Parser, ts: &ParsedTypeSpec) -> Result<ParsedBas
             Ok(parser.alloc_base_type(ParsedBaseType::Enum { tag: *tag, enumerators }))
         }
         TypedefName(name) => Ok(parser.alloc_base_type(ParsedBaseType::Typedef(*name))),
+        AutoType => Ok(parser.alloc_base_type(ParsedBaseType::Builtin(AutoType))),
         Typeof(ty) => Ok(parser.alloc_base_type(ParsedBaseType::Typeof(*ty))),
         TypeofExpr(expr) => Ok(parser.alloc_base_type(ParsedBaseType::TypeofExpr(*expr))),
     }

@@ -105,6 +105,7 @@ pub enum TokenKind {
     BuiltinBswap32,
     BuiltinBswap64,
     Asm,
+    AutoType,
 
     // Reserved identifiers as keywords
     Func,           // __func__
@@ -219,6 +220,7 @@ impl TokenKind {
                 | Enum
                 | BuiltinVaList
                 | Typeof
+                | AutoType
         )
     }
 
@@ -334,6 +336,7 @@ impl TokenKind {
             BuiltinBswap32 => "__builtin_bswap32",
             BuiltinBswap64 => "__builtin_bswap64",
             Asm => "asm",
+            AutoType => "__auto_type",
             Func => "__func__",
             Function => "__FUNCTION__",
             PrettyFunction => "__PRETTY_FUNCTION__",
@@ -539,6 +542,8 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("void"), TokenKind::Void);
         m.insert(StringId::new("volatile"), TokenKind::Volatile);
         m.insert(StringId::new("while"), TokenKind::While);
+        m.insert(StringId::new("__auto_type"), TokenKind::AutoType);
+        m.insert(StringId::new("__auto_type__"), TokenKind::AutoType);
         m.insert(StringId::new("__real__"), TokenKind::Real);
         m.insert(StringId::new("__imag__"), TokenKind::Imag);
         m.insert(StringId::new("_Alignas"), TokenKind::Alignas);

@@ -14,3 +14,10 @@ fn test_type_specifier_invalid_token() {
     // it doesn't recognize '(' as a type specifier start.
     run_fail_with_message("_Atomic(", "Unexpected token");
 }
+
+#[test]
+fn test_merge_type_specifiers_unsigned_unsigned() {
+    // unsigned unsigned int a;
+    let code = "unsigned unsigned int a;";
+    crate::tests::test_utils::run_pass(code, crate::driver::artifact::CompilePhase::Parse);
+}

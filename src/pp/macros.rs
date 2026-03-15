@@ -797,22 +797,21 @@ impl<'src> Preprocessor<'src> {
                 if !self.hide_sets.contains(tokens[i].hide_set, symbol) {
                     // Bolt ⚡: Extract flags and drop the borrow of self.macros early.
                     let flags = self.macros.get(&symbol).map(|m| m.flags);
-                    if let Some(flags) = flags {
-                        if !flags.contains(MacroFlags::FUNCTION_LIKE) && !flags.contains(MacroFlags::DISABLED) {
-                            // Bolt ⚡: Consolidated lookup and flag update.
-                            let m = self.macros.get_mut(&symbol).unwrap();
-                            m.flags |= MacroFlags::USED;
-                            let macro_info = m.clone();
+                    if let Some(flags) = flags
+                        && !flags.contains(MacroFlags::FUNCTION_LIKE) && !flags.contains(MacroFlags::DISABLED) {
+                        // Bolt ⚡: Consolidated lookup and flag update.
+                        let m = self.macros.get_mut(&symbol).unwrap();
+                        m.flags |= MacroFlags::USED;
+                        let macro_info = m.clone();
 
-                            let new_hs = self.hide_sets.insert(tokens[i].hide_set, symbol);
-                            let mut expanded =
-                                self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), tokens[i].location)?;
-                            for t in &mut expanded {
-                                t.hide_set = new_hs;
-                            }
-                            tokens.splice(i..i + 1, expanded);
-                            continue;
+                        let new_hs = self.hide_sets.insert(tokens[i].hide_set, symbol);
+                        let mut expanded =
+                            self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), tokens[i].location)?;
+                        for t in &mut expanded {
+                            t.hide_set = new_hs;
                         }
+                        tokens.splice(i..i + 1, expanded);
+                        continue;
                     }
                 }
             }

@@ -2557,7 +2557,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         const UINT_MAX: i64 = u32::MAX as i64;
         const INT_MAX: i64 = i32::MAX as i64;
         const INT_MIN: i64 = i32::MIN as i64;
-        const LLONG_MAX: i64 = i64::MAX;
 
         // Prefer smallest type that fits all values (GCC/Clang compatible behavior).
         // C11 says the underlying type of an enum is implementation-defined, but
@@ -2572,16 +2571,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return self.registry.type_int_unsigned;
         }
 
-        if max <= LLONG_MAX && min >= i64::MIN {
-            if min >= 0 {
-                // Values might exceed uint: use unsigned long long
-                return self.registry.type_long_long_unsigned;
-            }
-            // Some values are negative: use long long
-            return self.registry.type_long_long;
+        if min >= 0 {
+            // Values might exceed uint: use unsigned long long
+            return self.registry.type_long_long_unsigned;
         }
-
-        self.registry.type_long_long_unsigned
+        // Some values are negative: use long long
+        self.registry.type_long_long
     }
 
     fn resolve_type_specifier(&mut self, ts: &ParsedTypeSpec, span: SourceSpan) -> Result<QualType, SemanticError> {

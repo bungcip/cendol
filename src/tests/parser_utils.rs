@@ -438,7 +438,7 @@ fn extract_base_kind(ast: &ParsedAst, base_ref: crate::ast::ParsedBaseTypeRef) -
             if let Some(tag) = tag {
                 format!("{} {}", kind, tag)
             } else {
-                format!("struct {{ ... }}")
+                "struct { ... }".to_string()
             }
         }
         crate::ast::ParsedBaseType::Enum { tag, .. } => {

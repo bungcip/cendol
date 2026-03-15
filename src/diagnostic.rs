@@ -92,12 +92,10 @@ impl DiagnosticEngine {
     }
 
     pub(crate) fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
-        if diagnostic.level == DiagnosticLevel::Warning {
-            if let Some(name) = diagnostic.warning_name {
-                if self.disabled_warnings.contains(name) {
-                    return;
-                }
-            }
+        if diagnostic.level == DiagnosticLevel::Warning
+            && diagnostic.warning_name.is_some_and(|name| self.disabled_warnings.contains(name))
+        {
+            return;
         }
 
         if let Some(limit) = self.error_limit {
@@ -243,14 +241,6 @@ impl DiagnosticEngine {
         let report = &[group];
         renderer.render(report)
     }
-
-    // /// Print all diagnostics to stderr
-    // pub(crate) fn print_diagnostics(&self, source_manager: &SourceManager) {
-    //     for diag in &self.diagnostics {
-    //         let formatted = self.format_diagnostic(diag, source_manager);
-    //         eprintln!("{}", formatted);
-    //     }
-    // }
 
     /// Print diagnostics, skipping warnings if suppress_warnings is true
     pub(crate) fn print_diagnostics_filtered(&self, source_manager: &SourceManager, suppress_warnings: bool) {

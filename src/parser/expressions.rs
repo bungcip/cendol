@@ -515,10 +515,7 @@ fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
 /// Parse trailing postfix operators ([], ., ->, (), ++, --) after a primary expression.
 /// This is used by sizeof and alignof to correctly handle cases like sizeof(a)[0].
 fn parse_postfix_tail(parser: &mut Parser, mut left: ParsedNodeRef) -> Result<ParsedNodeRef, ParseError> {
-    loop {
-        let Some(token) = parser.try_current_token() else {
-            break;
-        };
+    while let Some(token) = parser.try_current_token() {
         match token.kind {
             TokenKind::LeftBracket => {
                 parser.advance();

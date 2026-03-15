@@ -817,6 +817,7 @@ impl<'src> Preprocessor<'src> {
             message: message.into(),
             span,
             hints: Vec::new(),
+            warning_name: None,
         };
         self.diag.report_diagnostic(diag);
     }

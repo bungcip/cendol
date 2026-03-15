@@ -473,6 +473,25 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    /// Checks if the operand is valid for increment/decrement operations (prefix or postfix).
+    /// C11 6.5.3.1 (prefix) and 6.5.2.4 (postfix): operand shall have scalar type.
+    /// C11 6.5.6: pointer arithmetic requires pointer to complete object type.
+    fn check_increment_decrement_operand(&mut self, node: NodeRef, qt: QualType) -> bool {
+        if !qt.is_scalar() {
+            self.report_error(node, SemanticErrorKind::InvalidUnaryOperand { ty: qt });
+            return false;
+        }
+
+        if let Some(pointee) = self.registry.get_pointee(qt.ty()) {
+            if !self.registry.is_complete(pointee.ty()) || pointee.is_function() {
+                self.report_error(node, SemanticErrorKind::InvalidUnaryOperand { ty: qt });
+                return false;
+            }
+        }
+
+        true
+    }
+
     /// Checks if the node is an LValue and is not const-qualified.
     /// Reports errors if check fails.
     fn check_lvalue_and_modifiable(&mut self, node: NodeRef, qt: QualType) -> bool {
@@ -786,7 +805,11 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
                 self.check_lvalue_and_modifiable(expr, operand_ty);
-                if operand_ty.is_scalar() { Some(operand_ty) } else { None }
+                if self.check_increment_decrement_operand(node, operand_ty) {
+                    Some(operand_ty)
+                } else {
+                    None
+                }
             }
             UnaryOp::Plus | UnaryOp::Minus => {
                 if operand_ty.is_arithmetic() {
@@ -2408,8 +2431,14 @@ impl<'a> SemanticAnalyzer<'a> {
                 let ty = self.visit_node(*expr);
                 if let Some(t) = ty {
                     self.check_lvalue_and_modifiable(*expr, t);
+                    if self.check_increment_decrement_operand(node, t) {
+                        Some(t)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
                 }
-                ty
             }
             NodeKind::Assignment(op, lhs, rhs) => self.visit_assignment(node, *op, *lhs, *rhs),
             NodeKind::FunctionCall(call_expr) => self.visit_function_call(call_expr),

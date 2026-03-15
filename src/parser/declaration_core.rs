@@ -100,7 +100,8 @@ pub(crate) fn parse_declaration_specifiers(parser: &mut Parser) -> Result<ThinVe
             | TokenKind::Union
             | TokenKind::Enum
             | TokenKind::BuiltinVaList
-            | TokenKind::Typeof => {
+            | TokenKind::Typeof
+            | TokenKind::AutoType => {
                 specifiers.push(ParsedDeclSpec::TypeSpec(parse_type_specifier(parser)?));
                 has_type_specifier = true;
             }

@@ -31,6 +31,7 @@ pub mod pp_lexical;
 pub mod pp_macros;
 
 pub mod semantic_arrays;
+pub mod semantic_auto_type;
 pub mod semantic_builtin_choose_expr;
 pub mod semantic_builtin_constant_p;
 pub mod semantic_builtin_trap;

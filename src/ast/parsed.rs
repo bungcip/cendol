@@ -247,6 +247,7 @@ pub enum ParsedTypeSpec {
     ),
     TypedefName(NameId),
     VaList,
+    AutoType,
     Typeof(ParsedType),
     TypeofExpr(ParsedNodeRef),
 }

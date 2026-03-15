@@ -145,10 +145,7 @@ mod tests {
                 PPErrorKind::ElifAfterElse,
                 "#elif directives must come before the #else directive",
             ),
-            (
-                PPErrorKind::IncludeDepthExceeded,
-                "",
-            ),
+            (PPErrorKind::IncludeDepthExceeded, ""),
         ];
 
         for (kind, hint) in cases {
@@ -181,7 +178,9 @@ mod tests {
         assert_eq!(diag.level, DiagnosticLevel::Error);
 
         let err_macro = PPError {
-            kind: PPErrorKind::MacroRedefined { name: "TEST".to_string() },
+            kind: PPErrorKind::MacroRedefined {
+                name: "TEST".to_string(),
+            },
             span: SourceSpan::default(),
         };
         assert_eq!(err_macro.to_string(), "Macro 'TEST' redefined with different value");

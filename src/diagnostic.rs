@@ -92,12 +92,11 @@ impl DiagnosticEngine {
     }
 
     pub(crate) fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
-        if diagnostic.level == DiagnosticLevel::Warning {
-            if let Some(name) = diagnostic.warning_name {
-                if self.disabled_warnings.contains(name) {
-                    return;
-                }
-            }
+        if diagnostic.level == DiagnosticLevel::Warning
+            && let Some(name) = diagnostic.warning_name
+            && self.disabled_warnings.contains(name)
+        {
+            return;
         }
 
         if let Some(limit) = self.error_limit {

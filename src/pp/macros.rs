@@ -96,8 +96,16 @@ impl<'src> Preprocessor<'src> {
         // No DISABLED flag needed — hide_sets.contains detects self-reference
         // via the virtual buffer's source location (<macro_NAME>).
         let mut tokens = self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), token.location)?;
+        let mut last_hs = None;
+        let mut last_union_res = 0;
         for t in &mut tokens {
-            t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+            if Some(t.hide_set) == last_hs {
+                t.hide_set = last_union_res;
+            } else {
+                last_hs = Some(t.hide_set);
+                last_union_res = self.hide_sets.union(t.hide_set, new_hs);
+                t.hide_set = last_union_res;
+            }
         }
         Ok(tokens)
     }
@@ -278,6 +286,9 @@ impl<'src> Preprocessor<'src> {
         let mut i = 0;
         let mut last_token_produced_output = false;
 
+        let mut last_hs = None;
+        let mut last_union_res = 0;
+
         while i < macro_info.tokens.len() {
             let token = &macro_info.tokens[i];
 
@@ -288,7 +299,13 @@ impl<'src> Preprocessor<'src> {
                         && let Some(arg) = self.get_macro_param_tokens(macro_info, sym, args, token.location)
                     {
                         let mut stringified = self.stringify_tokens(&arg, token.location)?;
-                        stringified.hide_set = self.hide_sets.union(stringified.hide_set, new_hs);
+                        if Some(stringified.hide_set) == last_hs {
+                            stringified.hide_set = last_union_res;
+                        } else {
+                            last_hs = Some(stringified.hide_set);
+                            last_union_res = self.hide_sets.union(stringified.hide_set, new_hs);
+                            stringified.hide_set = last_union_res;
+                        }
                         result.push(stringified);
                         last_token_produced_output = true;
                         i += 2;
@@ -315,21 +332,39 @@ impl<'src> Preprocessor<'src> {
                             last_token_produced_output = false;
                         } else {
                             for mut t in param_tokens.iter().copied() {
-                                t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+                                if Some(t.hide_set) == last_hs {
+                                    t.hide_set = last_union_res;
+                                } else {
+                                    last_hs = Some(t.hide_set);
+                                    last_union_res = self.hide_sets.union(t.hide_set, new_hs);
+                                    t.hide_set = last_union_res;
+                                }
                                 result.push(t);
                             }
                             last_token_produced_output = true;
                         }
                     } else {
                         let mut t = *token;
-                        t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+                        if Some(t.hide_set) == last_hs {
+                            t.hide_set = last_union_res;
+                        } else {
+                            last_hs = Some(t.hide_set);
+                            last_union_res = self.hide_sets.union(t.hide_set, new_hs);
+                            t.hide_set = last_union_res;
+                        }
                         result.push(t);
                         last_token_produced_output = true;
                     }
                 }
                 _ => {
                     let mut t = *token;
-                    t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+                    if Some(t.hide_set) == last_hs {
+                        t.hide_set = last_union_res;
+                    } else {
+                        last_hs = Some(t.hide_set);
+                        last_union_res = self.hide_sets.union(t.hide_set, new_hs);
+                        t.hide_set = last_union_res;
+                    }
                     result.push(t);
                     last_token_produced_output = true;
                 }
@@ -809,8 +844,20 @@ impl<'src> Preprocessor<'src> {
                         let new_hs = self.hide_sets.insert(tokens[i].hide_set, symbol);
                         let mut expanded =
                             self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), tokens[i].location)?;
+
+                        let mut last_hs = None;
+                        let mut last_union_res = 0;
                         for t in &mut expanded {
-                            t.hide_set = new_hs;
+                            // Bolt ⚡: Corrected and cached hide set union for object macro expansion.
+                            // Per Prosser's algorithm, the hide set of each token in the replacement
+                            // list is the union of the token's original hide set and the new macro's hide set.
+                            if Some(t.hide_set) == last_hs {
+                                t.hide_set = last_union_res;
+                            } else {
+                                last_hs = Some(t.hide_set);
+                                last_union_res = self.hide_sets.union(t.hide_set, new_hs);
+                                t.hide_set = last_union_res;
+                            }
                         }
                         tokens.splice(i..i + 1, expanded);
                         continue;

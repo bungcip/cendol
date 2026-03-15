@@ -200,12 +200,21 @@ impl HideSetTable {
         Self { sets: vec![empty], map }
     }
 
+
+    #[cfg(test)]
     pub(crate) fn intern(&mut self, mut set: SmallVec<[StringId; 4]>) -> u32 {
         if set.is_empty() {
             return 0;
         }
         set.sort();
         set.dedup();
+        self.intern_canonical(set)
+    }
+
+    fn intern_canonical(&mut self, set: SmallVec<[StringId; 4]>) -> u32 {
+        if set.is_empty() {
+            return 0;
+        }
 
         // Bolt ⚡: Perform a zero-allocation lookup first to avoid creating an Arc on cache hits.
         if let Some(&id) = self.map.get(set.as_slice()) {
@@ -244,7 +253,7 @@ impl HideSetTable {
             }
         }
 
-        self.intern(result)
+        self.intern_canonical(result)
     }
 
     pub(crate) fn union(&mut self, id1: u32, id2: u32) -> u32 {
@@ -283,19 +292,20 @@ impl HideSetTable {
         result.extend_from_slice(&set1[i..]);
         result.extend_from_slice(&set2[j..]);
 
-        self.intern(result)
+        self.intern_canonical(result)
     }
 
     pub(crate) fn insert(&mut self, id: u32, symbol: StringId) -> u32 {
         let existing = &self.sets[id as usize];
-        if existing.binary_search(&symbol).is_ok() {
-            return id;
+        match existing.binary_search(&symbol) {
+            Ok(_) => id,
+            Err(idx) => {
+                let mut new_set = SmallVec::<[StringId; 4]>::new();
+                new_set.extend_from_slice(existing);
+                new_set.insert(idx, symbol);
+                self.intern_canonical(new_set)
+            }
         }
-        let mut new_set = SmallVec::<[StringId; 4]>::new();
-        new_set.extend_from_slice(existing);
-        new_set.push(symbol);
-        // Note: intern will sort it
-        self.intern(new_set)
     }
 
     pub(crate) fn contains(&self, id: u32, symbol: StringId) -> bool {

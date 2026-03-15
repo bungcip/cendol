@@ -136,16 +136,14 @@ impl<'a> ConstEvalCtx<'a> {
                             } else {
                                 self.registry.type_long_long_unsigned
                             }
+                        } else if val_u64 <= i32::MAX as u64 {
+                            self.registry.type_int
+                        } else if val_u64 <= u32::MAX as u64 {
+                            self.registry.type_int_unsigned
+                        } else if val_u64 <= i64::MAX as u64 {
+                            self.registry.type_long_long
                         } else {
-                            if val_u64 <= i32::MAX as u64 {
-                                self.registry.type_int
-                            } else if val_u64 <= u32::MAX as u64 {
-                                self.registry.type_int_unsigned
-                            } else if val_u64 <= i64::MAX as u64 {
-                                self.registry.type_long_long
-                            } else {
-                                self.registry.type_long_long_unsigned
-                            }
+                            self.registry.type_long_long_unsigned
                         }
                     }
                     Some(crate::ast::literal::IntegerSuffix::U) => self.registry.type_int_unsigned,

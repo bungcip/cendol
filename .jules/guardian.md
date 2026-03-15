@@ -129,3 +129,8 @@ Action: Ensure that semantic property queries (like `is_lvalue`, `get_bitfield_w
 
 Learning: C11 6.5.6p2 and 6.5.6p3 impose strict requirements on pointer arithmetic: operands must be pointers to complete object types. This means addition and subtraction are prohibited for pointers to 'void' (which is incomplete), pointers to incomplete structures/unions, and pointers to functions (which are not object types). Simply checking for 'void*' is insufficient as it misses other incomplete types and function pointers, potentially leading to invalid code generation or backend failures.
 Action: Enforce complete object type constraints for all pointer arithmetic operations in the semantic analyzer and verify with negative tests covering diverse incomplete and non-object types.
+
+2025-06-09 - [Relational Pointer Constraints and Function Pointers]
+
+Learning: C11 6.5.8p2 restricts relational operators (<, <=, >, >=) to pointers to compatible object types or compatible incomplete types. Since function types are neither object types nor incomplete types (per 6.2.5), relational comparisons between function pointers are constraint violations. This distinguishes them from equality operators (==, !=), which explicitly allow function pointer comparisons (6.5.9p2).
+Action: Enforce complete/incomplete object type constraints for relational operators while maintaining broader compatibility for equality operators to ensure standard compliance.

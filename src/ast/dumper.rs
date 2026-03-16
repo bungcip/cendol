@@ -145,6 +145,9 @@ impl AstDumper {
             NodeKind::BuiltinVaStart(_, _)
             | NodeKind::BuiltinVaEnd(_)
             | NodeKind::BuiltinVaCopy(_, _)
+            | NodeKind::BuiltinMemcpy(_, _, _)
+            | NodeKind::BuiltinMemset(_, _, _)
+            | NodeKind::BuiltinMemmove(_, _, _)
             | NodeKind::BuiltinPopcount(_)
             | NodeKind::BuiltinClz(_)
             | NodeKind::BuiltinCtz(_)
@@ -450,6 +453,9 @@ impl AstDumper {
             // Three NodeRefs: Tag(n1.get(), n2.get(), n3.get())
             NodeKind::TernaryOp(n1, n2, n3)
             | NodeKind::BuiltinChooseExpr(n1, n2, n3)
+            | NodeKind::BuiltinMemcpy(n1, n2, n3)
+            | NodeKind::BuiltinMemset(n1, n2, n3)
+            | NodeKind::BuiltinMemmove(n1, n2, n3)
             | NodeKind::CaseRange(n1, n2, n3) => write!(f, "{}, {}, {}", n1.get(), n2.get(), n3.get())?,
 
             // Binary Op / Assignment: Tag(op, l.get(), r.get())

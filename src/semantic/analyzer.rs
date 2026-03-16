@@ -2533,6 +2533,39 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*c);
                 ty
             }
+            NodeKind::BuiltinMemcpy(dest, src, n) | NodeKind::BuiltinMemmove(dest, src, n) => {
+                let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
+                let const_void_ptr = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
+                let const_void_ptr = QualType::unqualified(self.registry.pointer_to(const_void_ptr));
+                let size_t = QualType::unqualified(self.registry.type_long_unsigned);
+
+                if let Some(dest_ty) = self.visit_node(*dest) {
+                    self.check_assignment_and_record(void_ptr, dest_ty, *dest);
+                }
+                if let Some(src_ty) = self.visit_node(*src) {
+                    self.check_assignment_and_record(const_void_ptr, src_ty, *src);
+                }
+                if let Some(n_ty) = self.visit_node(*n) {
+                    self.check_assignment_and_record(size_t, n_ty, *n);
+                }
+                Some(void_ptr)
+            }
+            NodeKind::BuiltinMemset(s, c, n) => {
+                let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
+                let int_ty = QualType::unqualified(self.registry.type_int);
+                let size_t = QualType::unqualified(self.registry.type_long_unsigned);
+
+                if let Some(s_ty) = self.visit_node(*s) {
+                    self.check_assignment_and_record(void_ptr, s_ty, *s);
+                }
+                if let Some(c_ty) = self.visit_node(*c) {
+                    self.check_assignment_and_record(int_ty, c_ty, *c);
+                }
+                if let Some(n_ty) = self.visit_node(*n) {
+                    self.check_assignment_and_record(size_t, n_ty, *n);
+                }
+                Some(void_ptr)
+            }
             NodeKind::BuiltinPopcount(_)
             | NodeKind::BuiltinClz(_)
             | NodeKind::BuiltinCtz(_)

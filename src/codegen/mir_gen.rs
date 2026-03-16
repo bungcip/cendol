@@ -627,7 +627,7 @@ impl<'a> MirGen<'a> {
     }
 
     /// Find or declare an external function by name.
-    fn find_or_declare_extern_function(
+    pub(super) fn find_or_declare_extern_function(
         &mut self,
         name: NameId,
         param_types: Vec<TypeId>,

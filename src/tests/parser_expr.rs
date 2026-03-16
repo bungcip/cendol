@@ -153,7 +153,6 @@ fn test_sizeof_expr_with_postfix_tail_coverage() {
     let _resolved_dec = setup_expr("sizeof(a)--");
 }
 
-
 /// sizeof(a)/sizeof(a)[0] should parse as sizeof(a) / sizeof((a)[0])
 #[test]
 fn test_sizeof_array_size_macro_pattern() {

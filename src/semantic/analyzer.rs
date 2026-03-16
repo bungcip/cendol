@@ -483,10 +483,11 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         if let Some(pointee) = self.registry.get_pointee(qt.ty())
-            && (!self.registry.is_complete(pointee.ty()) || pointee.is_function()) {
-                self.report_error(node, SemanticErrorKind::InvalidUnaryOperand { ty: qt });
-                return false;
-            }
+            && (!self.registry.is_complete(pointee.ty()) || pointee.is_function())
+        {
+            self.report_error(node, SemanticErrorKind::InvalidUnaryOperand { ty: qt });
+            return false;
+        }
 
         true
     }

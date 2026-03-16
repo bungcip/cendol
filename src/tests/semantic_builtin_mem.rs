@@ -1,6 +1,6 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_fail_with_message, run_pass};
 use crate::tests::codegen_common::run_c_code_exit_status;
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn test_builtin_memcpy_semantic() {

@@ -83,6 +83,9 @@ pub enum TokenKind {
     BuiltinVaEnd,
     BuiltinVaCopy,
     BuiltinExpect,
+    BuiltinMemcpy,
+    BuiltinMemset,
+    BuiltinMemmove,
     BuiltinOffsetof,
     BuiltinTypesCompatibleP,
     BuiltinPopcount,
@@ -105,6 +108,7 @@ pub enum TokenKind {
     BuiltinBswap32,
     BuiltinBswap64,
     Asm,
+    AutoType,
 
     // Reserved identifiers as keywords
     Func,           // __func__
@@ -223,6 +227,7 @@ impl TokenKind {
                 | Enum
                 | BuiltinVaList
                 | Typeof
+                | AutoType
         )
     }
 
@@ -316,6 +321,9 @@ impl TokenKind {
             BuiltinVaEnd => "__builtin_va_end",
             BuiltinVaCopy => "__builtin_va_copy",
             BuiltinExpect => "__builtin_expect",
+            BuiltinMemcpy => "__builtin_memcpy",
+            BuiltinMemset => "__builtin_memset",
+            BuiltinMemmove => "__builtin_memmove",
             BuiltinOffsetof => "__builtin_offsetof",
             BuiltinTypesCompatibleP => "__builtin_types_compatible_p",
             BuiltinPopcount => "__builtin_popcount",
@@ -338,6 +346,7 @@ impl TokenKind {
             BuiltinBswap32 => "__builtin_bswap32",
             BuiltinBswap64 => "__builtin_bswap64",
             Asm => "asm",
+            AutoType => "__auto_type",
             Func => "__func__",
             Function => "__FUNCTION__",
             PrettyFunction => "__PRETTY_FUNCTION__",
@@ -545,6 +554,8 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("void"), TokenKind::Void);
         m.insert(StringId::new("volatile"), TokenKind::Volatile);
         m.insert(StringId::new("while"), TokenKind::While);
+        m.insert(StringId::new("__auto_type"), TokenKind::AutoType);
+        m.insert(StringId::new("__auto_type__"), TokenKind::AutoType);
         m.insert(StringId::new("__real__"), TokenKind::Real);
         m.insert(StringId::new("__imag__"), TokenKind::Imag);
         m.insert(StringId::new("_Alignas"), TokenKind::Alignas);
@@ -566,6 +577,9 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__builtin_va_end"), TokenKind::BuiltinVaEnd);
         m.insert(StringId::new("__builtin_va_copy"), TokenKind::BuiltinVaCopy);
         m.insert(StringId::new("__builtin_expect"), TokenKind::BuiltinExpect);
+        m.insert(StringId::new("__builtin_memcpy"), TokenKind::BuiltinMemcpy);
+        m.insert(StringId::new("__builtin_memset"), TokenKind::BuiltinMemset);
+        m.insert(StringId::new("__builtin_memmove"), TokenKind::BuiltinMemmove);
         m.insert(StringId::new("__builtin_offsetof"), TokenKind::BuiltinOffsetof);
         m.insert(
             StringId::new("__builtin_types_compatible_p"),

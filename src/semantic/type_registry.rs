@@ -1028,6 +1028,11 @@ impl TypeRegistry {
             }
 
             TypeKind::Alias(inner) => self.ensure_layout(inner)?.into_owned(),
+            TypeKind::AutoType => {
+                return Err(TypeRegistryError::UnsupportedFeature {
+                    feature: "__auto_type layout",
+                });
+            }
             TypeKind::TypeofExpr(_) => {
                 return Err(TypeRegistryError::UnsupportedFeature {
                     feature: "typeof expr layout",

@@ -31,8 +31,10 @@ pub mod pp_lexical;
 pub mod pp_macros;
 
 pub mod semantic_arrays;
+pub mod semantic_auto_type;
 pub mod semantic_builtin_choose_expr;
 pub mod semantic_builtin_constant_p;
+pub mod semantic_builtin_mem;
 pub mod semantic_builtin_trap;
 pub mod semantic_builtin_types_compatible;
 pub mod semantic_builtin_unreachable;
@@ -76,6 +78,7 @@ pub mod parser_regr_hang;
 pub mod parser_type_spec_coverage;
 pub mod parser_typeof;
 
+pub mod guardian_increment_completeness;
 pub mod guardian_pointer_arithmetic_completeness;
 pub mod semantic_alignment;
 pub mod semantic_composite;

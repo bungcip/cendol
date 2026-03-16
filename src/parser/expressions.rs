@@ -243,6 +243,9 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinVaEnd => parse_builtin_va_end(parser),
         TokenKind::BuiltinVaCopy => parse_builtin_va_copy(parser),
         TokenKind::BuiltinExpect => parse_builtin_expect(parser),
+        TokenKind::BuiltinMemcpy => parse_builtin_mem(parser, TokenKind::BuiltinMemcpy),
+        TokenKind::BuiltinMemset => parse_builtin_mem(parser, TokenKind::BuiltinMemset),
+        TokenKind::BuiltinMemmove => parse_builtin_mem(parser, TokenKind::BuiltinMemmove),
         TokenKind::BuiltinOffsetof => parse_builtin_offsetof(parser),
         TokenKind::BuiltinChooseExpr => parse_builtin_choose_expr(parser),
         TokenKind::BuiltinTypesCompatibleP => parse_builtin_types_compatible_p(parser),
@@ -648,6 +651,26 @@ fn parse_builtin_expect(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError
     let c = parser.parse_expr_assignment()?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(ParsedNodeKind::BuiltinExpect(exp, c), SourceSpan::new(start, end)))
+}
+
+fn parse_builtin_mem(parser: &mut Parser, kind: TokenKind) -> Result<ParsedNodeRef, ParseError> {
+    let start = parser.expect(kind)?.span.start();
+    parser.expect(TokenKind::LeftParen)?;
+    let arg1 = parser.parse_expr_assignment()?;
+    parser.expect(TokenKind::Comma)?;
+    let arg2 = parser.parse_expr_assignment()?;
+    parser.expect(TokenKind::Comma)?;
+    let arg3 = parser.parse_expr_assignment()?;
+    let end = parser.expect(TokenKind::RightParen)?.span.end();
+
+    let node_kind = match kind {
+        TokenKind::BuiltinMemcpy => ParsedNodeKind::BuiltinMemcpy(arg1, arg2, arg3),
+        TokenKind::BuiltinMemset => ParsedNodeKind::BuiltinMemset(arg1, arg2, arg3),
+        TokenKind::BuiltinMemmove => ParsedNodeKind::BuiltinMemmove(arg1, arg2, arg3),
+        _ => unreachable!(),
+    };
+
+    Ok(parser.push_node(node_kind, SourceSpan::new(start, end)))
 }
 
 fn parse_builtin_offsetof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {

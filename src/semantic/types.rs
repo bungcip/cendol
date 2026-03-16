@@ -793,6 +793,7 @@ pub enum TypeKind {
     },
     TypeofExpr(crate::ast::NodeRef),
     Alias(TypeRef),
+    AutoType,
     #[default]
     Error,
 }
@@ -807,6 +808,7 @@ impl TypeKind {
             TypeKind::Function { .. } => TypeClass::Function,
             TypeKind::Record { .. } => TypeClass::Record,
             TypeKind::Enum { .. } => TypeClass::Enum,
+            TypeKind::AutoType => TypeClass::Builtin,
         }
     }
 }
@@ -856,6 +858,7 @@ impl Display for TypeKind {
             }
             TypeKind::TypeofExpr(_) => write!(f, "typeof(<expr>)"),
             TypeKind::Alias(inner) => write!(f, "alias({:?})", inner),
+            TypeKind::AutoType => write!(f, "__auto_type"),
             TypeKind::Error => write!(f, "<error>"),
         }
     }

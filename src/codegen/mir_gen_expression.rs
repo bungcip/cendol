@@ -122,6 +122,94 @@ impl<'a> MirGen<'a> {
                 let _ = self.visit_expression(*c, true); // lower 'c' for side effects or just to process it
                 self.visit_expression(*exp, need_value)
             }
+            NodeKind::BuiltinMemcpy(dest, src, n) | NodeKind::BuiltinMemmove(dest, src, n) => {
+                let d_op = self.visit_expression(*dest, true);
+                let s_op = self.visit_expression(*src, true);
+                let n_op = self.visit_expression(*n, true);
+
+                let void_ptr = self.registry.type_void_ptr;
+                let const_void = QualType::new(self.registry.type_void, crate::semantic::TypeQualifiers::CONST);
+                let const_void_ptr = self.registry.pointer_to(const_void);
+
+                let d_ty = self.lower_type(void_ptr);
+                let s_ty = self.lower_type(const_void_ptr);
+                let n_ty = self.get_size_t_type();
+
+                let d_conv = self.apply_conversions(d_op, *dest, d_ty);
+                let s_conv = self.apply_conversions(s_op, *src, s_ty);
+                let n_conv = self.apply_conversions(n_op, *n, n_ty);
+
+                let name = match node_kind {
+                    NodeKind::BuiltinMemcpy(..) => "memcpy",
+                    NodeKind::BuiltinMemmove(..) => "memmove",
+                    _ => unreachable!(),
+                };
+
+                let target = self.find_or_declare_extern_function(
+                    crate::ast::NameId::new(name),
+                    vec![d_ty, s_ty, n_ty],
+                    d_ty,
+                    false,
+                );
+
+                let dest_place = if need_value {
+                    let (_, p) = self.create_temp_local(d_ty);
+                    Some(p)
+                } else {
+                    None
+                };
+
+                self.mir_builder.add_statement(crate::mir::MirStmt::Call {
+                    target: crate::mir::CallTarget::Direct(target),
+                    args: vec![d_conv, s_conv, n_conv],
+                    dest: dest_place.clone(),
+                });
+
+                if let Some(p) = dest_place {
+                    Operand::Copy(Box::new(p))
+                } else {
+                    self.create_dummy_operand()
+                }
+            }
+            NodeKind::BuiltinMemset(s, c, n) => {
+                let s_op = self.visit_expression(*s, true);
+                let c_op = self.visit_expression(*c, true);
+                let n_op = self.visit_expression(*n, true);
+
+                let void_ptr = self.lower_type(self.registry.type_void_ptr);
+                let int_ty = self.get_int_type();
+                let size_t = self.get_size_t_type();
+
+                let s_conv = self.apply_conversions(s_op, *s, void_ptr);
+                let c_conv = self.apply_conversions(c_op, *c, int_ty);
+                let n_conv = self.apply_conversions(n_op, *n, size_t);
+
+                let target = self.find_or_declare_extern_function(
+                    crate::ast::NameId::new("memset"),
+                    vec![void_ptr, int_ty, size_t],
+                    void_ptr,
+                    false,
+                );
+
+                let dest_place = if need_value {
+                    let (_, p) = self.create_temp_local(void_ptr);
+                    Some(p)
+                } else {
+                    None
+                };
+
+                self.mir_builder.add_statement(crate::mir::MirStmt::Call {
+                    target: crate::mir::CallTarget::Direct(target),
+                    args: vec![s_conv, c_conv, n_conv],
+                    dest: dest_place.clone(),
+                });
+
+                if let Some(p) = dest_place {
+                    Operand::Copy(Box::new(p))
+                } else {
+                    self.create_dummy_operand()
+                }
+            }
             NodeKind::BuiltinPopcount(exp)
             | NodeKind::BuiltinClz(exp)
             | NodeKind::BuiltinCtz(exp)

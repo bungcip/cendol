@@ -473,6 +473,25 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    /// Checks if the operand is valid for increment/decrement operations (prefix or postfix).
+    /// C11 6.5.3.1 (prefix) and 6.5.2.4 (postfix): operand shall have scalar type.
+    /// C11 6.5.6: pointer arithmetic requires pointer to complete object type.
+    fn check_increment_decrement_operand(&mut self, node: NodeRef, qt: QualType) -> bool {
+        if !qt.is_scalar() {
+            self.report_error(node, SemanticErrorKind::InvalidUnaryOperand { ty: qt });
+            return false;
+        }
+
+        if let Some(pointee) = self.registry.get_pointee(qt.ty())
+            && (!self.registry.is_complete(pointee.ty()) || pointee.is_function())
+        {
+            self.report_error(node, SemanticErrorKind::InvalidUnaryOperand { ty: qt });
+            return false;
+        }
+
+        true
+    }
+
     /// Checks if the node is an LValue and is not const-qualified.
     /// Reports errors if check fails.
     fn check_lvalue_and_modifiable(&mut self, node: NodeRef, qt: QualType) -> bool {
@@ -786,7 +805,11 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
                 self.check_lvalue_and_modifiable(expr, operand_ty);
-                if operand_ty.is_scalar() { Some(operand_ty) } else { None }
+                if self.check_increment_decrement_operand(node, operand_ty) {
+                    Some(operand_ty)
+                } else {
+                    None
+                }
             }
             UnaryOp::Plus | UnaryOp::Minus => {
                 if operand_ty.is_arithmetic() {
@@ -2408,8 +2431,14 @@ impl<'a> SemanticAnalyzer<'a> {
                 let ty = self.visit_node(*expr);
                 if let Some(t) = ty {
                     self.check_lvalue_and_modifiable(*expr, t);
+                    if self.check_increment_decrement_operand(node, t) {
+                        Some(t)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
                 }
-                ty
             }
             NodeKind::Assignment(op, lhs, rhs) => self.visit_assignment(node, *op, *lhs, *rhs),
             NodeKind::FunctionCall(call_expr) => self.visit_function_call(call_expr),
@@ -2503,6 +2532,39 @@ impl<'a> SemanticAnalyzer<'a> {
                 let ty = self.visit_node(*exp);
                 self.visit_node(*c);
                 ty
+            }
+            NodeKind::BuiltinMemcpy(dest, src, n) | NodeKind::BuiltinMemmove(dest, src, n) => {
+                let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
+                let const_void_ptr = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
+                let const_void_ptr = QualType::unqualified(self.registry.pointer_to(const_void_ptr));
+                let size_t = QualType::unqualified(self.registry.type_long_unsigned);
+
+                if let Some(dest_ty) = self.visit_node(*dest) {
+                    self.check_assignment_and_record(void_ptr, dest_ty, *dest);
+                }
+                if let Some(src_ty) = self.visit_node(*src) {
+                    self.check_assignment_and_record(const_void_ptr, src_ty, *src);
+                }
+                if let Some(n_ty) = self.visit_node(*n) {
+                    self.check_assignment_and_record(size_t, n_ty, *n);
+                }
+                Some(void_ptr)
+            }
+            NodeKind::BuiltinMemset(s, c, n) => {
+                let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
+                let int_ty = QualType::unqualified(self.registry.type_int);
+                let size_t = QualType::unqualified(self.registry.type_long_unsigned);
+
+                if let Some(s_ty) = self.visit_node(*s) {
+                    self.check_assignment_and_record(void_ptr, s_ty, *s);
+                }
+                if let Some(c_ty) = self.visit_node(*c) {
+                    self.check_assignment_and_record(int_ty, c_ty, *c);
+                }
+                if let Some(n_ty) = self.visit_node(*n) {
+                    self.check_assignment_and_record(size_t, n_ty, *n);
+                }
+                Some(void_ptr)
             }
             NodeKind::BuiltinPopcount(_)
             | NodeKind::BuiltinClz(_)

@@ -52,6 +52,9 @@ pub enum NodeKind {
     BuiltinVaEnd(NodeRef),
     BuiltinVaCopy(NodeRef, NodeRef),
     BuiltinExpect(NodeRef, NodeRef),
+    BuiltinMemcpy(NodeRef, NodeRef, NodeRef),
+    BuiltinMemset(NodeRef, NodeRef, NodeRef),
+    BuiltinMemmove(NodeRef, NodeRef, NodeRef),
     BuiltinTypesCompatibleP(QualType, QualType),
     BuiltinPopcount(NodeRef),
     BuiltinClz(NodeRef),
@@ -149,6 +152,9 @@ impl NodeKind {
             NodeKind::BuiltinVaEnd(..) => "BuiltinVaEnd",
             NodeKind::BuiltinVaCopy(..) => "BuiltinVaCopy",
             NodeKind::BuiltinExpect(..) => "BuiltinExpect",
+            NodeKind::BuiltinMemcpy(..) => "BuiltinMemcpy",
+            NodeKind::BuiltinMemset(..) => "BuiltinMemset",
+            NodeKind::BuiltinMemmove(..) => "BuiltinMemmove",
             NodeKind::BuiltinTypesCompatibleP(..) => "BuiltinTypesCompatibleP",
             NodeKind::BuiltinPopcount(..) => "BuiltinPopcount",
             NodeKind::BuiltinClz(..) => "BuiltinClz",
@@ -269,7 +275,10 @@ impl NodeKind {
                 }
             }
 
-            NodeKind::BuiltinChooseExpr(c, t, e) => {
+            NodeKind::BuiltinChooseExpr(c, t, e)
+            | NodeKind::BuiltinMemcpy(c, t, e)
+            | NodeKind::BuiltinMemset(c, t, e)
+            | NodeKind::BuiltinMemmove(c, t, e) => {
                 f(*c);
                 f(*t);
                 f(*e);

@@ -30,7 +30,8 @@ pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
         | TK::Unsigned
         | TK::Bool
         | TK::Complex
-        | TK::BuiltinVaList => {
+        | TK::BuiltinVaList
+        | TK::AutoType => {
             parser.advance();
             Ok(match token.kind {
                 TK::Void => PTS::Void,
@@ -44,6 +45,7 @@ pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
                 TK::Bool => PTS::Bool,
                 TK::Complex => PTS::Complex,
                 TK::BuiltinVaList => PTS::VaList,
+                TK::AutoType => PTS::AutoType,
                 _ => unreachable!(),
             })
         }

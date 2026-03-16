@@ -95,6 +95,9 @@ pub enum ParsedNodeKind {
     BuiltinVaEnd(ParsedNodeRef),
     BuiltinVaCopy(ParsedNodeRef, ParsedNodeRef),
     BuiltinExpect(ParsedNodeRef, ParsedNodeRef),
+    BuiltinMemcpy(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
+    BuiltinMemset(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
+    BuiltinMemmove(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinTypesCompatibleP(ParsedType, ParsedType),
     BuiltinPopcount(ParsedNodeRef),
     BuiltinClz(ParsedNodeRef),
@@ -247,6 +250,7 @@ pub enum ParsedTypeSpec {
     ),
     TypedefName(NameId),
     VaList,
+    AutoType,
     Typeof(ParsedType),
     TypeofExpr(ParsedNodeRef),
 }
@@ -410,6 +414,9 @@ impl ParsedNodeKind {
             ParsedNodeKind::BuiltinVaEnd(..) => "BuiltinVaEnd",
             ParsedNodeKind::BuiltinVaCopy(..) => "BuiltinVaCopy",
             ParsedNodeKind::BuiltinExpect(..) => "BuiltinExpect",
+            ParsedNodeKind::BuiltinMemcpy(..) => "BuiltinMemcpy",
+            ParsedNodeKind::BuiltinMemset(..) => "BuiltinMemset",
+            ParsedNodeKind::BuiltinMemmove(..) => "BuiltinMemmove",
             ParsedNodeKind::BuiltinTypesCompatibleP(..) => "BuiltinTypesCompatibleP",
             ParsedNodeKind::BuiltinPopcount(..) => "BuiltinPopcount",
             ParsedNodeKind::BuiltinClz(..) => "BuiltinClz",
@@ -504,7 +511,11 @@ impl ParsedNodeKind {
                 f(*l);
                 f(*r);
             }
-            ParsedNodeKind::TernaryOp(c, t, e) | ParsedNodeKind::CaseRange(c, t, e) => {
+            ParsedNodeKind::TernaryOp(c, t, e)
+            | ParsedNodeKind::CaseRange(c, t, e)
+            | ParsedNodeKind::BuiltinMemcpy(c, t, e)
+            | ParsedNodeKind::BuiltinMemset(c, t, e)
+            | ParsedNodeKind::BuiltinMemmove(c, t, e) => {
                 f(*c);
                 f(*t);
                 f(*e);

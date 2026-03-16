@@ -96,8 +96,16 @@ impl<'src> Preprocessor<'src> {
         // No DISABLED flag needed — hide_sets.contains detects self-reference
         // via the virtual buffer's source location (<macro_NAME>).
         let mut tokens = self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), token.location)?;
+        let mut last_hs = (u32::MAX, 0u32);
         for t in &mut tokens {
-            t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+            if t.hide_set == 0 {
+                t.hide_set = new_hs;
+            } else {
+                if t.hide_set != last_hs.0 {
+                    last_hs = (t.hide_set, self.hide_sets.union(t.hide_set, new_hs));
+                }
+                t.hide_set = last_hs.1;
+            }
         }
         Ok(tokens)
     }
@@ -275,6 +283,10 @@ impl<'src> Preprocessor<'src> {
         let mut i = 0;
         let mut last_token_produced_output = false;
 
+        // Bolt ⚡: Single-item cache for hide-set unions.
+        // In substitute_macro, new_hs is constant, so we only need to cache based on input hs.
+        let mut last_hs = (u32::MAX, 0u32);
+
         while i < macro_info.tokens.len() {
             let token = &macro_info.tokens[i];
 
@@ -285,7 +297,8 @@ impl<'src> Preprocessor<'src> {
                         && let Some(arg) = self.get_macro_param_tokens(macro_info, sym, args, token.location)
                     {
                         let mut stringified = self.stringify_tokens(&arg, token.location)?;
-                        stringified.hide_set = self.hide_sets.union(stringified.hide_set, new_hs);
+                        // Bolt ⚡: Stringified tokens always start with an empty hide-set (0).
+                        stringified.hide_set = new_hs;
                         result.push(stringified);
                         last_token_produced_output = true;
                         i += 2;
@@ -312,21 +325,31 @@ impl<'src> Preprocessor<'src> {
                             last_token_produced_output = false;
                         } else {
                             for mut t in param_tokens.iter().copied() {
-                                t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+                                // Bolt ⚡: Hide-set optimization.
+                                if t.hide_set == 0 {
+                                    t.hide_set = new_hs;
+                                } else {
+                                    if t.hide_set != last_hs.0 {
+                                        last_hs = (t.hide_set, self.hide_sets.union(t.hide_set, new_hs));
+                                    }
+                                    t.hide_set = last_hs.1;
+                                }
                                 result.push(t);
                             }
                             last_token_produced_output = true;
                         }
                     } else {
                         let mut t = *token;
-                        t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+                        // Bolt ⚡: Body tokens always start with an empty hide-set (0).
+                        t.hide_set = new_hs;
                         result.push(t);
                         last_token_produced_output = true;
                     }
                 }
                 _ => {
                     let mut t = *token;
-                    t.hide_set = self.hide_sets.union(t.hide_set, new_hs);
+                    // Bolt ⚡: Body tokens always start with an empty hide-set (0).
+                    t.hide_set = new_hs;
                     result.push(t);
                     last_token_produced_output = true;
                 }

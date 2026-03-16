@@ -515,7 +515,7 @@ pub(crate) fn visit_ast(
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {
-    pub(crate) fn visit_node(&mut self, node: ParsedNodeRef) -> SmallVec<[NodeRef; 1]> {
+    fn visit_node(&mut self, node: ParsedNodeRef) -> SmallVec<[NodeRef; 1]> {
         self.visit_node_entry(node, None)
     }
 
@@ -1908,7 +1908,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     /// Convert ParsedArraySize to ArraySizeType
-    pub(crate) fn convert_parsed_array_size(&mut self, size: &ParsedArraySize) -> ArraySizeType {
+    fn convert_parsed_array_size(&mut self, size: &ParsedArraySize) -> ArraySizeType {
         match size {
             ParsedArraySize::Expression { expr, .. } => self.resolve_array_size(Some(*expr)),
             ParsedArraySize::Star { .. } => ArraySizeType::Star,
@@ -1918,7 +1918,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     /// Helper function to resolve array size logic
-    pub(crate) fn resolve_array_size(&mut self, size: Option<ParsedNodeRef>) -> ArraySizeType {
+    fn resolve_array_size(&mut self, size: Option<ParsedNodeRef>) -> ArraySizeType {
         let Some(node) = size else {
             return ArraySizeType::Incomplete;
         };

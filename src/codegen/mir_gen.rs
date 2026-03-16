@@ -592,12 +592,9 @@ impl<'a> MirGen<'a> {
         // Store the size for sizeof
         self.emit_assignment(Place::Local(size_local_id), total_size_operand.clone());
 
-        // Allocate memory: emit Alloc (calls malloc in Cranelift backend)
-        // We need to create a temporary array type for Alloc, but Alloc takes a TypeId
-        // and calls malloc with the type's size. Instead, we'll directly use a Call to malloc
-        // with the computed total_size.
-        // Actually, MirStmt::Alloc(Place, TypeId) computes size from the TypeId statically.
-        // For VLA, we need dynamic size. Let's use a direct malloc call instead.
+        // Allocate memory: emit direct malloc call instead of MirStmt::Alloc.
+        // MirStmt::Alloc(Place, TypeId) computes size from the TypeId statically,
+        // but for VLA, we need dynamic size.
         self.emit_malloc_call(ptr_local_id, total_size_operand);
 
         // Map: symbol → pointer local (for visit_ident)

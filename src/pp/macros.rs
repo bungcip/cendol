@@ -75,7 +75,7 @@ impl<'src> Preprocessor<'src> {
     /// Helper to create a virtual buffer for macro expansion.
     /// Does NOT rescan — the caller is responsible for rescanning.
     /// This prevents double-rescan bugs (e.g. deferred macro patterns).
-    pub(crate) fn expand_virtual_buffer(
+    fn expand_virtual_buffer(
         &mut self,
         tokens: &[PPToken],
         name: &str,
@@ -85,7 +85,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expand an object-like macro
-    pub(crate) fn expand_object_macro(
+    fn expand_object_macro(
         &mut self,
         macro_info: &MacroInfo,
         symbol: &StringId,
@@ -103,7 +103,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expand a function-like macro
-    pub(crate) fn expand_function_macro(
+    fn expand_function_macro(
         &mut self,
         macro_info: &MacroInfo,
         symbol: &StringId,
@@ -141,7 +141,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Parse macro arguments from the current lexer
-    pub(crate) fn parse_macro_args_from_lexer(
+    fn parse_macro_args_from_lexer(
         &mut self,
         macro_info: &MacroInfo,
     ) -> Result<(Vec<Vec<PPToken>>, PPToken), PPError> {
@@ -200,7 +200,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Helper to collect variadic arguments with commas inserted
-    pub(crate) fn collect_variadic_args_with_commas(
+    fn collect_variadic_args_with_commas(
         &mut self,
         args: &[Vec<PPToken>],
         start_index: usize,
@@ -246,7 +246,7 @@ impl<'src> Preprocessor<'src> {
         result
     }
 
-    pub(crate) fn get_macro_param_tokens<'a>(
+    fn get_macro_param_tokens<'a>(
         &mut self,
         macro_info: &MacroInfo,
         symbol: StringId,
@@ -266,7 +266,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Substitute parameters in macro body
-    pub(crate) fn substitute_macro(
+    fn substitute_macro(
         &mut self,
         macro_info: &MacroInfo,
         args: &[Vec<PPToken>],
@@ -341,7 +341,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Perform token pasting logic for the ## operator, including GNU comma swallowing.
-    pub(crate) fn perform_token_pasting(
+    fn perform_token_pasting(
         &mut self,
         macro_info: &MacroInfo,
         left: Option<PPToken>,
@@ -387,7 +387,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Stringify tokens for # operator
-    pub(crate) fn stringify_tokens(&self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPError> {
+    fn stringify_tokens(&self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPError> {
         // Bolt ⚡: Use a two-pass approach to build the stringified token efficiently.
         let mut total_len = 2; // For the opening and closing quotes
         let mut cache = SourceBufferCache::new(self.sm);
@@ -463,7 +463,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Paste tokens for ## operator
-    pub(crate) fn paste_tokens(&mut self, left: &PPToken, right: &PPToken) -> Result<Vec<PPToken>, PPError> {
+    fn paste_tokens(&mut self, left: &PPToken, right: &PPToken) -> Result<Vec<PPToken>, PPError> {
         // Get text of both tokens
         let left_buffer = self.sm.get_buffer(left.location.source_id());
         let left_start = left.location.offset() as usize;
@@ -513,7 +513,7 @@ impl<'src> Preprocessor<'src> {
 
     /// Finds the range of tokens between balanced parentheses, starting at `start_index`.
     /// Returns the end index (exclusive) if successful.
-    pub(crate) fn find_balanced_paren_range(&self, tokens: &[PPToken], start_index: usize) -> Option<usize> {
+    fn find_balanced_paren_range(&self, tokens: &[PPToken], start_index: usize) -> Option<usize> {
         if start_index >= tokens.len() || tokens[start_index].kind != PPTokenKind::LeftParen {
             return None;
         }
@@ -535,7 +535,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Collects macro arguments from a slice of tokens.
-    pub(crate) fn collect_macro_args_from_slice(
+    fn collect_macro_args_from_slice(
         &self,
         macro_info: &MacroInfo,
         tokens: &[PPToken],
@@ -572,7 +572,7 @@ impl<'src> Preprocessor<'src> {
         args
     }
 
-    pub(crate) fn expand_has_include_computed_args(&mut self, args: &mut Vec<PPToken>) {
+    fn expand_has_include_computed_args(&mut self, args: &mut Vec<PPToken>) {
         let mut j = 0;
         let mut expansions = 0;
         while j < args.len() && expansions < 1000 {
@@ -591,7 +591,7 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    pub(crate) fn try_handle_conditional_operator(
+    fn try_handle_conditional_operator(
         &mut self,
         tokens: &mut Vec<PPToken>,
         i: usize,
@@ -659,7 +659,7 @@ impl<'src> Preprocessor<'src> {
         Ok(None)
     }
 
-    pub(crate) fn try_expand_function_macro_in_tokens(
+    fn try_expand_function_macro_in_tokens(
         &mut self,
         tokens: &mut Vec<PPToken>,
         i: usize,
@@ -741,7 +741,7 @@ impl<'src> Preprocessor<'src> {
         Ok(true)
     }
 
-    pub(crate) fn try_handle_pragma_operator_inline(&mut self, tokens: &mut Vec<PPToken>, i: usize) -> bool {
+    fn try_handle_pragma_operator_inline(&mut self, tokens: &mut Vec<PPToken>, i: usize) -> bool {
         let token = tokens[i];
         if !matches!(token.kind, PPTokenKind::Identifier(s) if s == self.directive_keywords.pragma_operator) {
             return false;
@@ -828,7 +828,7 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    pub(crate) fn create_virtual_buffer_tokens(
+    fn create_virtual_buffer_tokens(
         &mut self,
         tokens: &[PPToken],
         macro_name: &str,
@@ -973,7 +973,7 @@ pub(crate) struct SourceBufferCache<'a> {
 }
 
 impl<'a> SourceBufferCache<'a> {
-    pub(crate) fn new(sm: &'a SourceManager) -> Self {
+    fn new(sm: &'a SourceManager) -> Self {
         Self {
             sm,
             last_sid: None,
@@ -981,12 +981,12 @@ impl<'a> SourceBufferCache<'a> {
         }
     }
 
-    pub(crate) fn reset(&mut self) {
+    fn reset(&mut self) {
         self.last_sid = None;
         self.last_buffer = None;
     }
 
-    pub(crate) fn get_token_bytes<'b>(&'b mut self, token: &'b PPToken) -> &'b [u8] {
+    fn get_token_bytes<'b>(&'b mut self, token: &'b PPToken) -> &'b [u8] {
         let sid = token.location.source_id();
         let buffer = if self.last_sid == Some(sid) {
             self.last_buffer.unwrap()
@@ -1007,7 +1007,7 @@ impl<'a> SourceBufferCache<'a> {
         }
     }
 
-    pub(crate) fn get_token_text<'b>(&'b mut self, token: &'b PPToken) -> &'b str {
+    fn get_token_text<'b>(&'b mut self, token: &'b PPToken) -> &'b str {
         unsafe { std::str::from_utf8_unchecked(self.get_token_bytes(token)) }
     }
 }

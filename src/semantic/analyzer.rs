@@ -482,12 +482,11 @@ impl<'a> SemanticAnalyzer<'a> {
             return false;
         }
 
-        if let Some(pointee) = self.registry.get_pointee(qt.ty()) {
-            if !self.registry.is_complete(pointee.ty()) || pointee.is_function() {
+        if let Some(pointee) = self.registry.get_pointee(qt.ty())
+            && (!self.registry.is_complete(pointee.ty()) || pointee.is_function()) {
                 self.report_error(node, SemanticErrorKind::InvalidUnaryOperand { ty: qt });
                 return false;
             }
-        }
 
         true
     }

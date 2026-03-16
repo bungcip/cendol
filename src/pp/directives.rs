@@ -38,11 +38,7 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    fn handle_conditional_directive(
-        &mut self,
-        kind: DirectiveKind,
-        location: SourceLoc,
-    ) -> Result<(), PPError> {
+    fn handle_conditional_directive(&mut self, kind: DirectiveKind, location: SourceLoc) -> Result<(), PPError> {
         match kind {
             DirectiveKind::If | DirectiveKind::Ifdef | DirectiveKind::Ifndef => {
                 if self.is_currently_skipping() {
@@ -161,10 +157,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Handle #define directive
-    fn parse_define_args(
-        &mut self,
-        name: &str,
-    ) -> Result<(MacroFlags, Vec<StringId>, Option<StringId>), PPError> {
+    fn parse_define_args(&mut self, name: &str) -> Result<(MacroFlags, Vec<StringId>, Option<StringId>), PPError> {
         let Some(token) = self.lex_token() else {
             return Ok((MacroFlags::empty(), Vec::new(), None));
         };
@@ -189,12 +182,7 @@ impl<'src> Preprocessor<'src> {
         Ok((MacroFlags::empty(), Vec::new(), None))
     }
 
-    fn check_macro_redefinition(
-        &mut self,
-        name: StringId,
-        name_token: &PPToken,
-        macro_info: &MacroInfo,
-    ) -> bool {
+    fn check_macro_redefinition(&mut self, name: StringId, name_token: &PPToken, macro_info: &MacroInfo) -> bool {
         if let Some(existing) = self.macros.get(&name) {
             // Check if definition is different
             // Mask out runtime state flags (USED, DISABLED) that don't affect definition identity.
@@ -393,12 +381,7 @@ impl<'src> Preprocessor<'src> {
         self.do_handle_include(true)
     }
 
-    fn resolve_include_path(
-        &mut self,
-        path: &str,
-        is_angled: bool,
-        loc: SourceLoc,
-    ) -> Result<SourceId, PPError> {
+    fn resolve_include_path(&mut self, path: &str, is_angled: bool, loc: SourceLoc) -> Result<SourceId, PPError> {
         let current_dir = self
             .lexer_stack
             .last()
@@ -428,12 +411,7 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    fn resolve_next_include_path(
-        &mut self,
-        path: &str,
-        is_angled: bool,
-        loc: SourceLoc,
-    ) -> Result<SourceId, PPError> {
+    fn resolve_next_include_path(&mut self, path: &str, is_angled: bool, loc: SourceLoc) -> Result<SourceId, PPError> {
         let current_dir = self
             .lexer_stack
             .last()

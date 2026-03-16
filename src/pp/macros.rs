@@ -141,10 +141,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Parse macro arguments from the current lexer
-    fn parse_macro_args_from_lexer(
-        &mut self,
-        macro_info: &MacroInfo,
-    ) -> Result<(Vec<Vec<PPToken>>, PPToken), PPError> {
+    fn parse_macro_args_from_lexer(&mut self, macro_info: &MacroInfo) -> Result<(Vec<Vec<PPToken>>, PPToken), PPError> {
         let token = self.expect_token()?;
         if token.kind != PPTokenKind::LeftParen {
             self.pending_tokens.push(token);

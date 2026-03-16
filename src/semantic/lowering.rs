@@ -1990,6 +1990,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     Some(QualType::unqualified(ty))
                 }
                 Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
+                Literal::Bool(_) => Some(QualType::unqualified(self.registry.type_bool)),
                 Literal::String(s) => {
                     let parsed = parse_string_literal(s);
                     let elem = self.registry.get_builtin_type(parsed.builtin_type);

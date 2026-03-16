@@ -192,6 +192,14 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
             parser.advance();
             Ok(parser.push_node(ParsedNodeKind::Literal(Literal::Char(c)), token.span))
         }
+        TokenKind::True => {
+            parser.advance();
+            Ok(parser.push_node(ParsedNodeKind::Literal(Literal::Bool(true)), token.span))
+        }
+        TokenKind::False => {
+            parser.advance();
+            Ok(parser.push_node(ParsedNodeKind::Literal(Literal::Bool(false)), token.span))
+        }
         TokenKind::LeftParen => {
             parser.advance();
             if parser.is_cast_expression_start() {

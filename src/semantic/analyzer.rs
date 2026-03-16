@@ -2898,6 +2898,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(ty))
             }
             Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
+            Literal::Bool(_) => Some(QualType::unqualified(self.registry.type_bool)),
             Literal::String(name) => {
                 let parsed = parse_string_literal(*name);
                 let element_type = self.registry.get_builtin_type(parsed.builtin_type);

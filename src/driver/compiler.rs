@@ -254,7 +254,7 @@ impl CompilerDriver {
 
     fn run_lexer(&mut self, pp_tokens: &[PPToken]) -> Result<Vec<Token>, PipelineError> {
         let tokens = {
-            let mut lexer = Lexer::new(pp_tokens);
+            let mut lexer = Lexer::new(pp_tokens, &self.config.lang_options);
             lexer.tokenize_all()
         };
 

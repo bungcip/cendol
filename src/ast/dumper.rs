@@ -278,6 +278,7 @@ impl AstDumper {
                 format!("LiteralFloat({}, {:?})", val, suffix)
             }
             Literal::String(s) => format!("LiteralString(\"{}\")", s),
+            Literal::Bool(b) => format!("LiteralBool({})", b),
             Literal::Char(c) => format!(
                 "LiteralChar('{}')",
                 char::from_u32(*c as u32).unwrap_or(char::REPLACEMENT_CHARACTER)

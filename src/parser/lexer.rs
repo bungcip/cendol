@@ -187,6 +187,10 @@ pub enum TokenKind {
     LeftBrace,
     RightBrace,
 
+    // C23
+    True,
+    False,
+
     // === SPECIAL TOKENS ===
     EndOfFile,
     Unknown,
@@ -395,6 +399,8 @@ impl TokenKind {
             EndOfFile => "end of file",
             Unknown => "unknown token",
             PragmaPack(_) => "#pragma pack",
+            True => "true",
+            False => "false",
         }
     }
 }
@@ -618,6 +624,11 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__func__"), TokenKind::Func);
         m.insert(StringId::new("__FUNCTION__"), TokenKind::Function);
         m.insert(StringId::new("__PRETTY_FUNCTION__"), TokenKind::PrettyFunction);
+
+        m.insert(StringId::new("true"), TokenKind::True);
+        m.insert(StringId::new("false"), TokenKind::False);
+        m.insert(StringId::new("bool"), TokenKind::Bool);
+
         m
     })
 }
@@ -626,12 +637,13 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
 pub struct Lexer<'src> {
     // Current position in token stream
     tokens: &'src [PPToken],
+    lang_opts: &'src crate::lang_options::LangOptions,
 }
 
 impl<'src> Lexer<'src> {
     /// Create a new lexer with the given preprocessor token stream
-    pub(crate) fn new(tokens: &'src [PPToken]) -> Self {
-        Lexer { tokens }
+    pub(crate) fn new(tokens: &'src [PPToken], lang_opts: &'src crate::lang_options::LangOptions) -> Self {
+        Lexer { tokens, lang_opts }
     }
 
     /// Classify a preprocessor token into a lexical token
@@ -639,7 +651,15 @@ impl<'src> Lexer<'src> {
         match pptoken.kind {
             PPTokenKind::Identifier(symbol) => {
                 // Check if it's a keyword
-                is_keyword(symbol).unwrap_or(TokenKind::Identifier(symbol))
+                match is_keyword(symbol) {
+                    Some(TokenKind::True) | Some(TokenKind::False) | Some(TokenKind::Bool)
+                        if !self.lang_opts.c_standard.is_c23() =>
+                    {
+                        TokenKind::Identifier(symbol)
+                    }
+                    Some(kw) => kw,
+                    None => TokenKind::Identifier(symbol),
+                }
             }
             PPTokenKind::StringLiteral(symbol) => TokenKind::StringLiteral(symbol),
             PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint.into()),

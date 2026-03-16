@@ -18,6 +18,11 @@ impl CStandard {
     pub(crate) fn is_c11(&self) -> bool {
         matches!(self, CStandard::C11)
     }
+
+    /// Check if C23 standard is enabled
+    pub(crate) fn is_c23(&self) -> bool {
+        matches!(self, CStandard::C23)
+    }
 }
 
 impl From<&str> for CStandard {

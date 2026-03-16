@@ -1952,23 +1952,53 @@ impl<'a> SemanticAnalyzer<'a> {
         let idx_ty = self.visit_node(idx)?;
 
         // Handle both arr[idx] and idx[arr] (subscripting is commutative in C)
-        // One must be a pointer/array, the other must be an integer
-        let (sequence_ty, _index_ty) = if arr_ty.is_pointer() || arr_ty.is_array() {
-            (arr_ty, idx_ty)
-        } else if idx_ty.is_pointer() || idx_ty.is_array() {
-            (idx_ty, arr_ty)
-        } else {
-            // Neither is a pointer/array, this is an error - but visit_node already processed both
-            return None;
-        };
+        // C11 6.5.2.1p1: "one of the expressions shall have type 'pointer to complete object type',
+        // and the other shall have integer type."
+        let (sequence_ty, index_ty, sequence_node, index_node) =
+            if arr_ty.is_pointer() || arr_ty.is_array() {
+                (arr_ty, idx_ty, arr, idx)
+            } else if idx_ty.is_pointer() || idx_ty.is_array() {
+                (idx_ty, arr_ty, idx, arr)
+            } else {
+                self.report_error(arr, SemanticErrorKind::ExpectedArrayType { found: arr_ty });
+                return None;
+            };
+
+        if !index_ty.is_integer() {
+            self.report_error(index_node, SemanticErrorKind::ExpectedIntegerType { found: index_ty });
+        }
 
         if sequence_ty.is_array() {
             // Ensure layout is computed for array type
             let _ = self.registry.ensure_layout(sequence_ty.ty());
             let element_type = self.registry.get_array_element(sequence_ty.ty()).unwrap();
+
+            // C11 6.5.2.1p1: "pointer to complete object type"
+            // Note: Incomplete arrays (like extern int a[]) are fine as they decay to complete pointers.
+            // But an array of incomplete type (like extern struct S a[]) is always illegal anyway.
+            if !self.registry.is_complete(element_type) || element_type.is_function() {
+                self.report_error(
+                    sequence_node,
+                    SemanticErrorKind::SubscriptIncompleteType {
+                        ty: QualType::new(element_type, sequence_ty.qualifiers()),
+                    },
+                );
+            }
+
             Some(QualType::new(element_type, sequence_ty.qualifiers()))
         } else {
-            self.registry.get_pointee(sequence_ty.ty())
+            let pointee = self.registry.get_pointee(sequence_ty.ty()).unwrap();
+
+            // C11 6.5.2.1p1: pointee must be a complete object type.
+            // A function type is not an object type.
+            if !self.registry.is_complete(pointee.ty()) || pointee.is_function() {
+                self.report_error(
+                    sequence_node,
+                    SemanticErrorKind::SubscriptIncompleteType { ty: pointee },
+                );
+            }
+
+            Some(pointee)
         }
     }
 

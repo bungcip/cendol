@@ -139,3 +139,8 @@ Action: Enforce complete/incomplete object type constraints for relational opera
 
 Learning: C11 6.5.3.1 (prefix) and 6.5.2.4 (postfix) require that the operand of an increment or decrement operator have a scalar type. Furthermore, because these operators are defined in terms of addition/subtraction of 1 (6.5.6), they inherit the constraint that pointer operands must point to complete object types. This prohibits `++` and `--` on `void*`, incomplete structures, and function pointers, even if the operand is an lvalue.
 Action: Centralize increment/decrement operand validation in a helper that checks for both scalarity and pointer-to-complete-object-type constraints to ensure consistent enforcement across prefix and postfix variants.
+
+2026-03-16 - [Subscript Operator Completeness Constraints]
+
+Learning: C11 6.5.2.1p1 requires one subscript operand to be a pointer to a complete object type and the other to be an integer. This prohibits subscripting `void*`, function pointers, and pointers to incomplete types. Crucially, incomplete arrays (e.g. 'extern int a[];') are PERMITTED because they decay to a pointer to a complete object type ('int*'), distinguishing them from arrays of incomplete types which are inherently illegal.
+Action: Enforce complete object type and integer constraints in 'visit_index_access', ensuring that both pointer-based and array-based bases are validated for element completeness.

@@ -1547,6 +1547,21 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.visit_expression(*e),
                 self.visit_expression(*c)
             )),
+            ParsedNodeKind::BuiltinMemcpy(d, s, n) => lower_simple!(NodeKind::BuiltinMemcpy(
+                self.visit_expression(*d),
+                self.visit_expression(*s),
+                self.visit_expression(*n)
+            )),
+            ParsedNodeKind::BuiltinMemset(s, c, n) => lower_simple!(NodeKind::BuiltinMemset(
+                self.visit_expression(*s),
+                self.visit_expression(*c),
+                self.visit_expression(*n)
+            )),
+            ParsedNodeKind::BuiltinMemmove(d, s, n) => lower_simple!(NodeKind::BuiltinMemmove(
+                self.visit_expression(*d),
+                self.visit_expression(*s),
+                self.visit_expression(*n)
+            )),
             ParsedNodeKind::DoWhile(b, c) => lower_simple!(NodeKind::DoWhile(
                 self.visit_single_statement(*b),
                 self.visit_expression(*c)

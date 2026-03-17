@@ -1954,15 +1954,14 @@ impl<'a> SemanticAnalyzer<'a> {
         // Handle both arr[idx] and idx[arr] (subscripting is commutative in C)
         // C11 6.5.2.1p1: "one of the expressions shall have type 'pointer to complete object type',
         // and the other shall have integer type."
-        let (sequence_ty, index_ty, sequence_node, index_node) =
-            if arr_ty.is_pointer() || arr_ty.is_array() {
-                (arr_ty, idx_ty, arr, idx)
-            } else if idx_ty.is_pointer() || idx_ty.is_array() {
-                (idx_ty, arr_ty, idx, arr)
-            } else {
-                self.report_error(arr, SemanticErrorKind::ExpectedArrayType { found: arr_ty });
-                return None;
-            };
+        let (sequence_ty, index_ty, sequence_node, index_node) = if arr_ty.is_pointer() || arr_ty.is_array() {
+            (arr_ty, idx_ty, arr, idx)
+        } else if idx_ty.is_pointer() || idx_ty.is_array() {
+            (idx_ty, arr_ty, idx, arr)
+        } else {
+            self.report_error(arr, SemanticErrorKind::ExpectedArrayType { found: arr_ty });
+            return None;
+        };
 
         if !index_ty.is_integer() {
             self.report_error(index_node, SemanticErrorKind::ExpectedIntegerType { found: index_ty });

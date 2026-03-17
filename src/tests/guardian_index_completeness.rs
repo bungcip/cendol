@@ -51,16 +51,10 @@ fn test_subscript_complete_object_allowed() {
 fn test_subscript_incomplete_array_complete_element_allowed() {
     // C11 6.5.2.1p1: Subscripting is defined in terms of pointer addition.
     // Incomplete arrays decay to complete pointers.
-    run_pass(
-        "extern int a[]; void f() { (void)a[0]; }",
-        CompilePhase::Mir,
-    );
+    run_pass("extern int a[]; void f() { (void)a[0]; }", CompilePhase::Mir);
 }
 
 #[test]
 fn test_subscript_commutative_allowed() {
-    run_pass(
-        "void f(int *p) { (void)0[p]; }",
-        CompilePhase::Mir,
-    );
+    run_pass("void f(int *p) { (void)0[p]; }", CompilePhase::Mir);
 }

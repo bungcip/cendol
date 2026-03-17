@@ -183,7 +183,6 @@ fn test_generic_selection_rejects_multiple_matches_even_if_controlling_is_differ
     );
 }
 
-
 #[test]
 fn test_generic_selection_with_user_defined_type() {
     run_pass(

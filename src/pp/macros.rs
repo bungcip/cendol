@@ -787,8 +787,9 @@ impl<'src> Preprocessor<'src> {
                                 expanded_args.push(arg_clone);
                             }
 
-                            let intersect_hs =
-                                self.hide_sets.intersection(tokens[i].hide_set, tokens[end_j - 1].hide_set);
+                            let intersect_hs = self
+                                .hide_sets
+                                .intersection(tokens[i].hide_set, tokens[end_j - 1].hide_set);
                             let new_hs = self.hide_sets.insert(intersect_hs, symbol);
 
                             let substituted = self.substitute_macro(&macro_info, &args, &expanded_args, new_hs)?;

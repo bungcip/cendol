@@ -3265,8 +3265,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // C11 6.5.1.1p2: The controlling expression shall be an expression of a complete object type,
         // or the void type.
-        let decayed_ctrl_ty = decayed_ctrl.ty();
-        if !self.registry.is_complete(decayed_ctrl_ty) && decayed_ctrl_ty != self.registry.type_void {
+        if !ctrl.is_void() && (ctrl.is_function() || !self.registry.is_complete(ctrl.ty())) {
             self.report_error(gs.control, SemanticErrorKind::GenericIncompleteControl { ty: ctrl });
         }
 

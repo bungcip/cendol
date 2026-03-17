@@ -155,6 +155,7 @@ impl AstDumper {
             | NodeKind::BuiltinBswap16(_)
             | NodeKind::BuiltinBswap32(_)
             | NodeKind::BuiltinBswap64(_)
+            | NodeKind::BuiltinPrefetch(..)
             | NodeKind::BuiltinExpect(_, _)
             | NodeKind::AtomicOp(..) => {}
             NodeKind::VarDecl(var_decl) => {
@@ -327,6 +328,14 @@ impl AstDumper {
             | PNK::PostDecrement(n1)
             | PNK::Default(n1) => write!(f, "{}", n1.get())?,
 
+            PNK::BuiltinPrefetch(addr, rw, locality) => write!(
+                f,
+                "addr={}, rw={}, locality={}",
+                addr.get(),
+                optional(*rw, "none"),
+                optional(*locality, "none")
+            )?,
+
             // Two NodeRefs: Tag(n1.get(), n2.get())
             PNK::GnuStatementExpr(n1, n2)
             | PNK::IndexAccess(n1, n2)
@@ -439,6 +448,14 @@ impl AstDumper {
             | NodeKind::BuiltinBswap64(n)
             | NodeKind::BuiltinConstantP(n)
             | NodeKind::SizeOfExpr(n) => write!(f, "{}", n.get())?,
+
+            NodeKind::BuiltinPrefetch(addr, rw, locality) => write!(
+                f,
+                "addr={}, rw={}, locality={}",
+                addr.get(),
+                optional(*rw, "none"),
+                optional(*locality, "none")
+            )?,
 
             // Two NodeRefs: Tag(n1.get(), n2.get())
             NodeKind::IndexAccess(n1, n2)

@@ -244,6 +244,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinConstantP => parse_builtin_constant_p(parser),
         TokenKind::BuiltinUnreachable => parse_builtin_unreachable(parser),
         TokenKind::BuiltinTrap => parse_builtin_trap(parser),
+        TokenKind::BuiltinPrefetch => parse_builtin_prefetch(parser),
         TokenKind::BuiltinPopcount
         | TokenKind::BuiltinPopcountL
         | TokenKind::BuiltinPopcountLL
@@ -752,4 +753,28 @@ fn parse_atomic_op(parser: &mut Parser, op: AtomicOp) -> Result<ParsedNodeRef, P
     let args = parse_expr_list(parser, BindingPower::ASSIGNMENT)?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(ParsedNodeKind::AtomicOp(op, args), SourceSpan::new(start, end)))
+}
+
+fn parse_builtin_prefetch(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let start = parser.expect(TokenKind::BuiltinPrefetch)?.span.start();
+    parser.expect(TokenKind::LeftParen)?;
+
+    let addr = parser.parse_expr_assignment()?;
+
+    let mut rw = None;
+    let mut locality = None;
+
+    if parser.accept(TokenKind::Comma).is_some() {
+        rw = Some(parser.parse_expr_assignment()?);
+
+        if parser.accept(TokenKind::Comma).is_some() {
+            locality = Some(parser.parse_expr_assignment()?);
+        }
+    }
+
+    let end = parser.expect(TokenKind::RightParen)?.span.end();
+    Ok(parser.push_node(
+        ParsedNodeKind::BuiltinPrefetch(addr, rw, locality),
+        SourceSpan::new(start, end),
+    ))
 }

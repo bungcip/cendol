@@ -79,6 +79,7 @@ impl PPExpr {
                 | "__builtin_memset"
                 | "__builtin_memmove"
                 | "__builtin_offsetof"
+                | "__builtin_prefetch"
                 | "__atomic_load_n"
                 | "__atomic_store_n"
                 | "__atomic_exchange_n"

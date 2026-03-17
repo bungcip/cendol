@@ -236,6 +236,16 @@ impl<'a> MirGen<'a> {
                 let rval = crate::mir::Rvalue::UnaryIntOp(op, operand_converted);
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
+            NodeKind::BuiltinPrefetch(addr, rw, locality) => {
+                let _ = self.visit_expression(*addr, true);
+                if let Some(rw) = rw {
+                    let _ = self.visit_expression(*rw, true);
+                }
+                if let Some(locality) = locality {
+                    let _ = self.visit_expression(*locality, true);
+                }
+                self.create_dummy_operand()
+            }
             NodeKind::AtomicOp(op, args_start, args_len) => self.visit_atomic_op(*op, *args_start, *args_len, mir_ty),
             NodeKind::BuiltinVaStart(..) | NodeKind::BuiltinVaEnd(..) | NodeKind::BuiltinVaCopy(..) => {
                 self.visit_builtin_void(&node_kind)

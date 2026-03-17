@@ -63,6 +63,7 @@ pub enum NodeKind {
     BuiltinBswap16(NodeRef),
     BuiltinBswap32(NodeRef),
     BuiltinBswap64(NodeRef),
+    BuiltinPrefetch(NodeRef, Option<NodeRef>, Option<NodeRef>),
     AtomicOp(AtomicOp, NodeRef /* args start */, u16 /* arg count */),
     SizeOfExpr(NodeRef),
     SizeOfType(QualType),
@@ -163,6 +164,7 @@ impl NodeKind {
             NodeKind::BuiltinBswap16(..) => "BuiltinBswap16",
             NodeKind::BuiltinBswap32(..) => "BuiltinBswap32",
             NodeKind::BuiltinBswap64(..) => "BuiltinBswap64",
+            NodeKind::BuiltinPrefetch(..) => "BuiltinPrefetch",
             NodeKind::AtomicOp(..) => "AtomicOp",
             NodeKind::SizeOfExpr(..) => "SizeOfExpr",
             NodeKind::SizeOfType(..) => "SizeOfType",
@@ -247,6 +249,16 @@ impl NodeKind {
             | NodeKind::Label(_, child, _)
             | NodeKind::Default(child)
             | NodeKind::StaticAssert(child, _) => f(*child),
+
+            NodeKind::BuiltinPrefetch(addr, rw, locality) => {
+                f(*addr);
+                if let Some(rw) = rw {
+                    f(*rw);
+                }
+                if let Some(locality) = locality {
+                    f(*locality);
+                }
+            }
 
             NodeKind::BuiltinVaStart(lhs, rhs)
             | NodeKind::BuiltinVaCopy(lhs, rhs)

@@ -366,6 +366,12 @@ pub enum SemanticErrorKind {
     AutoTypeNotAllowed {
         context: &'static str,
     },
+    BuiltinPrefetchNotConstant {
+        arg: &'static str,
+    },
+    BuiltinPrefetchOutOfRange {
+        arg: &'static str,
+    },
 }
 
 impl SemanticErrorKind {
@@ -752,6 +758,12 @@ impl SemanticErrorKind {
             ),
             SemanticErrorKind::AutoTypeNotAllowed { context } => {
                 format!("__auto_type is not allowed in {}", context)
+            }
+            SemanticErrorKind::BuiltinPrefetchNotConstant { arg } => {
+                format!("argument '{}' to '__builtin_prefetch' must be a constant", arg)
+            }
+            SemanticErrorKind::BuiltinPrefetchOutOfRange { arg } => {
+                format!("argument '{}' to '__builtin_prefetch' is out of range", arg)
             }
         }
     }

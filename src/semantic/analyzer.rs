@@ -2663,8 +2663,73 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_builtin_choose_expr(*cond, *true_expr, *false_expr, node)
             }
             NodeKind::BuiltinConstantP(expr) => self.visit_builtin_constant_p(*expr, node),
+            NodeKind::BuiltinPrefetch(addr, rw, locality) => self.visit_builtin_prefetch(*addr, *rw, *locality, node),
             _ => None,
         }
+    }
+
+    fn visit_builtin_prefetch(
+        &mut self,
+        addr: NodeRef,
+        rw: Option<NodeRef>,
+        locality: Option<NodeRef>,
+        _node: NodeRef,
+    ) -> Option<QualType> {
+        let addr_ty = self.visit_node(addr)?;
+        if !addr_ty.is_pointer() {
+            // GCC allows any pointer, including void*
+            self.report_error(
+                addr,
+                SemanticErrorKind::TypeMismatch {
+                    expected: QualType::unqualified(self.registry.type_void_ptr),
+                    found: addr_ty,
+                },
+            );
+        }
+
+        if let Some(rw) = rw {
+            let rw_ty = self.visit_node(rw)?;
+            if !rw_ty.is_integer() {
+                self.report_error(rw, SemanticErrorKind::ExpectedIntegerType { found: rw_ty });
+            } else {
+                match eval_const_expr(&self.const_ctx(), rw) {
+                    Some(val) => {
+                        if !(0..=1).contains(&val) {
+                            self.report_error(rw, SemanticErrorKind::BuiltinPrefetchOutOfRange { arg: "rw" });
+                        }
+                    }
+                    None => {
+                        self.report_error(rw, SemanticErrorKind::BuiltinPrefetchNotConstant { arg: "rw" });
+                    }
+                }
+            }
+        }
+
+        if let Some(locality) = locality {
+            let loc_ty = self.visit_node(locality)?;
+            if !loc_ty.is_integer() {
+                self.report_error(locality, SemanticErrorKind::ExpectedIntegerType { found: loc_ty });
+            } else {
+                match eval_const_expr(&self.const_ctx(), locality) {
+                    Some(val) => {
+                        if !(0..=3).contains(&val) {
+                            self.report_error(
+                                locality,
+                                SemanticErrorKind::BuiltinPrefetchOutOfRange { arg: "locality" },
+                            );
+                        }
+                    }
+                    None => {
+                        self.report_error(
+                            locality,
+                            SemanticErrorKind::BuiltinPrefetchNotConstant { arg: "locality" },
+                        );
+                    }
+                }
+            }
+        }
+
+        Some(QualType::unqualified(self.registry.type_void))
     }
 
     fn visit_builtin_constant_p(&mut self, expr: NodeRef, _node: NodeRef) -> Option<QualType> {

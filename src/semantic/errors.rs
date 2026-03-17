@@ -355,6 +355,9 @@ pub enum SemanticErrorKind {
     OffsetofIncompleteType {
         ty: QualType,
     },
+    SubscriptIncompleteType {
+        ty: QualType,
+    },
     AutoTypeRequiresInitializer,
     AutoTypeIncompatibleDeduction {
         first: QualType,
@@ -734,6 +737,12 @@ impl SemanticErrorKind {
             SemanticErrorKind::OffsetofBitfield => "cannot apply 'offsetof' to a bit-field".to_string(),
             SemanticErrorKind::OffsetofIncompleteType { ty } => {
                 format!("offsetof of incomplete type '{}'", registry.display_qual_type(*ty))
+            }
+            SemanticErrorKind::SubscriptIncompleteType { ty } => {
+                format!(
+                    "subscript of pointer to incomplete type '{}'",
+                    registry.display_qual_type(*ty)
+                )
             }
             SemanticErrorKind::AutoTypeRequiresInitializer => "__auto_type requires an initializer".to_string(),
             SemanticErrorKind::AutoTypeIncompatibleDeduction { first, new } => format!(

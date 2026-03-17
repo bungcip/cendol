@@ -451,16 +451,6 @@ impl TypeRegistry {
         }
     }
 
-    // Legacy support: mutable access only for completing records/enums
-    #[inline]
-    fn get_mut(&mut self, r: TypeRef) -> &mut Type {
-        // Cannot mutate inline types
-        if r.is_inline_pointer() || r.is_inline_array() {
-            panic!("Cannot get_mut on inline type {:?}", r);
-        }
-        &mut self.types[r.index()]
-    }
-
     fn reconstruct_pointee(&self, r: TypeRef) -> TypeRef {
         debug_assert!(r.is_inline_pointer());
         let depth = r.pointer_depth();
@@ -604,7 +594,7 @@ impl TypeRegistry {
     }
 
     pub(crate) fn complete_record(&mut self, record: TypeRef, members: Vec<StructMember>, packing: Option<u32>) {
-        let ty = self.get_mut(record);
+        let ty = &mut self.types[record.index()];
         match &mut ty.kind {
             TypeKind::Record {
                 is_complete,
@@ -630,7 +620,7 @@ impl TypeRegistry {
     }
 
     pub(super) fn complete_enum(&mut self, enum_ty: TypeRef, enumerators: Vec<EnumConstant>, base_type: TypeRef) {
-        let ty = self.get_mut(enum_ty);
+        let ty = &mut self.types[enum_ty.index()];
         match &mut ty.kind {
             TypeKind::Enum {
                 is_complete,

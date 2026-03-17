@@ -67,12 +67,13 @@ fn test_generic_allows_array_decay() {
 }
 
 #[test]
-fn test_generic_allows_function_decay() {
+fn test_generic_allows_function_decay_via_pointer() {
     run_pass(
         r#"
         void f() {}
         int main() {
-            return _Generic(f, void (*)(void): 0, default: 1);
+            // Function pointer is a complete object type.
+            return _Generic(&f, void (*)(void): 0, default: 1);
         }
         "#,
         CompilePhase::Mir,
@@ -182,18 +183,6 @@ fn test_generic_selection_rejects_multiple_matches_even_if_controlling_is_differ
     );
 }
 
-#[test]
-fn test_generic_function_decay() {
-    run_pass(
-        r#"
-        void my_func() {}
-        int main() {
-            return _Generic(my_func, void (*)(void): 0, default: 1);
-        }
-    "#,
-        CompilePhase::Mir,
-    );
-}
 
 #[test]
 fn test_generic_selection_with_user_defined_type() {

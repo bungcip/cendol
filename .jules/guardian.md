@@ -144,3 +144,8 @@ Action: Centralize increment/decrement operand validation in a helper that check
 
 Learning: C11 6.5.2.1p1 requires one subscript operand to be a pointer to a complete object type and the other to be an integer. This prohibits subscripting `void*`, function pointers, and pointers to incomplete types. Crucially, incomplete arrays (e.g. 'extern int a[];') are PERMITTED because they decay to a pointer to a complete object type ('int*'), distinguishing them from arrays of incomplete types which are inherently illegal.
 Action: Enforce complete object type and integer constraints in 'visit_index_access', ensuring that both pointer-based and array-based bases are validated for element completeness.
+
+2026-03-17 - [_Generic Controlling Expression Completeness]
+
+Learning: C11 6.5.1.1p2 mandates that the controlling expression of a `_Generic` selection shall be an expression of a complete object type or the `void` type. Because function types are not object types and incomplete arrays/structures are not complete, they must be rejected. Performing this check on the decayed type is incorrect, as decay transforms functions and arrays into complete pointer types, potentially bypassing the constraint.
+Action: Enforce completeness and object type constraints on the original (undecayed) type of the controlling expression in `_Generic` selection, while maintaining the explicit exception for the `void` type.

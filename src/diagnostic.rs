@@ -54,7 +54,12 @@ pub(crate) enum ParseErrorKind {
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
 pub(crate) struct DiagnosticEngine {
     pub diagnostics: Vec<Diagnostic>,
+    /// Bolt ⚡: Cached error count for O(1) checks and improved performance
+    /// when error limits are applied.
+    pub error_count: usize,
     pub error_limit: Option<usize>,
+    /// Bolt ⚡: Flag to ensure the "too many errors" note is only emitted once.
+    pub limit_reached: bool,
     pub disabled_warnings: std::collections::HashSet<String>,
     pub use_colors: bool,
 }
@@ -63,7 +68,9 @@ impl Default for DiagnosticEngine {
     fn default() -> Self {
         Self {
             diagnostics: Vec::new(),
+            error_count: 0,
             error_limit: None,
+            limit_reached: false,
             disabled_warnings: std::collections::HashSet::new(),
             use_colors: std::io::stderr().is_terminal(),
         }
@@ -81,7 +88,9 @@ impl DiagnosticEngine {
 
         Self {
             diagnostics: Vec::new(),
+            error_count: 0,
             error_limit: None,
+            limit_reached: false,
             disabled_warnings,
             use_colors: std::io::stderr().is_terminal(),
         }
@@ -101,13 +110,8 @@ impl DiagnosticEngine {
         }
 
         if let Some(limit) = self.error_limit {
-            let error_count = self
-                .diagnostics
-                .iter()
-                .filter(|d| d.level == DiagnosticLevel::Error)
-                .count();
-            if error_count >= limit {
-                if error_count == limit {
+            if self.error_count >= limit {
+                if !self.limit_reached {
                     // Report that we reached the limit
                     // Use the span of the current error to avoid <unknown> source if possible
                     self.diagnostics.push(Diagnostic {
@@ -116,15 +120,20 @@ impl DiagnosticEngine {
                         span: diagnostic.span,
                         ..Default::default()
                     });
+                    self.limit_reached = true;
                 }
                 return;
             }
+        }
+
+        if diagnostic.level == DiagnosticLevel::Error {
+            self.error_count += 1;
         }
         self.diagnostics.push(diagnostic);
     }
 
     pub(crate) fn has_errors(&self) -> bool {
-        self.diagnostics.iter().any(|d| d.level == DiagnosticLevel::Error)
+        self.error_count > 0
     }
 
     pub(crate) fn report<T: IntoDiagnostic>(&mut self, error: T) {

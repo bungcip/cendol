@@ -77,3 +77,7 @@
 ## 2025-05-25 - Single-item Hide-set Union Caching and Fast-paths
 **Learning:** During macro expansion, the macro's own hide-set (recursion protection) is merged with every token produced. This often results in redundant merges for sequences of tokens sharing the same input hide-set (e.g., within a macro parameter or the macro body itself). Furthermore, tokens originating from the macro body or stringification always start with an empty hide-set, making the merge operation a trivial identity.
 **Action:** Implement a single-item cache for `HideSetTable::union` results in expansion loops to avoid redundant merges. Use a fast-path that directly assigns the macro's hide-set to tokens with an empty hide-set (ID 0), bypassing the merge logic entirely. In the `HideSetTable` itself, provide `intern_canonical` to skip re-sorting/deduplication when the caller already guarantees canonical form (like `union` or `intersection`).
+
+## 2025-05-26 - Optimized Diagnostic Error Tracking
+**Learning:** The diagnostic engine was performing a full linear scan of all previously reported diagnostics to count errors every time a new one was reported (if a limit was set), and every time `has_errors()` was called. This resulted in $O(N^2)$ complexity for error reporting in large files with many errors.
+**Action:** Always use cached counters for frequently queried properties of growing collections, especially when those queries occur in hot paths like error reporting or semantic validation guards.

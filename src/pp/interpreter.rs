@@ -12,7 +12,7 @@ pub(crate) struct ExprValue {
 }
 
 impl ExprValue {
-    pub(crate) fn new(value: u64, is_unsigned: bool) -> Self {
+    fn new(value: u64, is_unsigned: bool) -> Self {
         ExprValue { value, is_unsigned }
     }
 
@@ -46,7 +46,7 @@ pub(crate) enum PPExpr {
 }
 
 impl PPExpr {
-    pub(crate) fn evaluate(&self, pp: &Preprocessor, span: SourceSpan) -> Result<ExprValue, PPError> {
+    fn evaluate(&self, pp: &Preprocessor, span: SourceSpan) -> Result<ExprValue, PPError> {
         match self {
             PPExpr::Number(n) => Ok(*n),
             PPExpr::Identifier => Ok(ExprValue::new(0, false)), // C11 6.10.1p4: All remaining identifiers are replaced with 0

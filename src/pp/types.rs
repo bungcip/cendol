@@ -210,7 +210,7 @@ impl HideSetTable {
         self.intern_canonical(set)
     }
 
-    pub(crate) fn intern_canonical(&mut self, set: SmallVec<[StringId; 4]>) -> u32 {
+    fn intern_canonical(&mut self, set: SmallVec<[StringId; 4]>) -> u32 {
         if set.is_empty() {
             return 0;
         }

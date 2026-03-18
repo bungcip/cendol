@@ -394,7 +394,7 @@ impl ParsedFunctionDef {
 }
 
 impl ParsedNodeKind {
-    pub(crate) fn tagname(&self) -> &'static str {
+    pub(super) fn tagname(&self) -> &'static str {
         match self {
             ParsedNodeKind::Literal(_) => "Literal",
             ParsedNodeKind::Ident(_) => "Ident",

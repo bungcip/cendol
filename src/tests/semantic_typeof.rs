@@ -83,3 +83,19 @@ fn test_typeof_struct_member() {
         CompilePhase::Mir,
     );
 }
+
+#[test]
+fn test_typeof_expr_unresolved() {
+    // This exercises the TypeofExpr coverage in semantic analyzer,
+    // by using a GNU statement expression whose type couldn't be inferred by try_infer_type
+    run_pass(
+        "
+        int main() {
+            int a = 1;
+            typeof(({ a; })) b = 1;
+            return b;
+        }
+        ",
+        CompilePhase::Mir,
+    );
+}

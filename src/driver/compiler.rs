@@ -42,7 +42,6 @@ impl CompilerDriver {
     }
 
     /// Create a new compiler driver from configuration
-    #[cfg(any(test, debug_assertions))]
     pub(crate) fn from_config(config: CompileConfig) -> Self {
         let mut diagnostics = DiagnosticEngine::from_warnings(&config.warnings);
         // Default to one error report as requested, or use the configured limit

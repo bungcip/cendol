@@ -109,21 +109,21 @@ impl DiagnosticEngine {
             return;
         }
 
-        if let Some(limit) = self.error_limit {
-            if self.error_count >= limit {
-                if !self.limit_reached {
-                    // Report that we reached the limit
-                    // Use the span of the current error to avoid <unknown> source if possible
-                    self.diagnostics.push(Diagnostic {
-                        level: DiagnosticLevel::Note,
-                        message: format!("too many errors emitted, stopping after {} errors", limit),
-                        span: diagnostic.span,
-                        ..Default::default()
-                    });
-                    self.limit_reached = true;
-                }
-                return;
+        if let Some(limit) = self.error_limit
+            && self.error_count >= limit
+        {
+            if !self.limit_reached {
+                // Report that we reached the limit
+                // Use the span of the current error to avoid <unknown> source if possible
+                self.diagnostics.push(Diagnostic {
+                    level: DiagnosticLevel::Note,
+                    message: format!("too many errors emitted, stopping after {} errors", limit),
+                    span: diagnostic.span,
+                    ..Default::default()
+                });
+                self.limit_reached = true;
             }
+            return;
         }
 
         if diagnostic.level == DiagnosticLevel::Error {

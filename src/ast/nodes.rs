@@ -132,7 +132,7 @@ pub enum NodeKind {
 }
 
 impl NodeKind {
-    pub(crate) fn tagname(&self) -> &'static str {
+    pub(super) fn tagname(&self) -> &'static str {
         match self {
             NodeKind::Literal(_) => "Literal",
             NodeKind::Ident(..) => "Ident",

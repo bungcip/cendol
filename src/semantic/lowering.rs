@@ -52,7 +52,7 @@ struct DeclaratorContext {
 
 impl<'a, 'src> LowerCtx<'a, 'src> {
     /// Create a new lowering context
-    pub(crate) fn new(
+    fn new(
         parsed_ast: &'a ParsedAst,
         ast: &'a mut Ast,
         diag: &'src mut DiagnosticEngine,
@@ -1701,7 +1701,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    pub(crate) fn visit_expression(&mut self, node: ParsedNodeRef) -> NodeRef {
+    fn visit_expression(&mut self, node: ParsedNodeRef) -> NodeRef {
         self.visit_node(node)
             .first()
             .copied()

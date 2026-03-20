@@ -566,4 +566,13 @@ mod tests {
     fn test_sourceloc_default() {
         assert_eq!(SourceLoc::default(), SourceLoc::builtin());
     }
+
+    #[test]
+    fn test_sourcespan_display() {
+        let span = SourceSpan::empty();
+        assert_eq!(
+            format!("{}", span),
+            "SourceSpan(source_id=SourceId(1), start=0, end=0)"
+        );
+    }
 }

@@ -2,6 +2,7 @@ use crate::{
     parser::TokenKind,
     source_manager::{SourceManager, SourceSpan},
 };
+use hashbrown::HashSet;
 use std::io::IsTerminal;
 
 use annotate_snippets::renderer::DecorStyle;
@@ -60,7 +61,7 @@ pub(crate) struct DiagnosticEngine {
     pub error_limit: Option<usize>,
     /// Bolt ⚡: Flag to ensure the "too many errors" note is only emitted once.
     pub limit_reached: bool,
-    pub disabled_warnings: std::collections::HashSet<String>,
+    pub disabled_warnings: HashSet<String>,
     pub use_colors: bool,
 }
 
@@ -71,7 +72,7 @@ impl Default for DiagnosticEngine {
             error_count: 0,
             error_limit: None,
             limit_reached: false,
-            disabled_warnings: std::collections::HashSet::new(),
+            disabled_warnings: HashSet::new(),
             use_colors: std::io::stderr().is_terminal(),
         }
     }
@@ -79,7 +80,7 @@ impl Default for DiagnosticEngine {
 
 impl DiagnosticEngine {
     pub(crate) fn from_warnings(warnings: &[String]) -> Self {
-        let mut disabled_warnings = std::collections::HashSet::new();
+        let mut disabled_warnings = HashSet::new();
         for w in warnings {
             if let Some(stripped) = w.strip_prefix("no-") {
                 disabled_warnings.insert(stripped.to_string());
@@ -109,8 +110,8 @@ impl DiagnosticEngine {
             return;
         }
 
-        if let Some(limit) = self.error_limit {
-            if self.error_count >= limit {
+        if let Some(limit) = self.error_limit
+            && self.error_count >= limit {
                 if !self.limit_reached {
                     // Report that we reached the limit
                     // Use the span of the current error to avoid <unknown> source if possible
@@ -124,7 +125,6 @@ impl DiagnosticEngine {
                 }
                 return;
             }
-        }
 
         if diagnostic.level == DiagnosticLevel::Error {
             self.error_count += 1;

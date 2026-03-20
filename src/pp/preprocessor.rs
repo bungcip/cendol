@@ -3,8 +3,7 @@ use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::lang_options::CStandard;
 use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use hashbrown::HashMap;
-use std::collections::HashSet;
+use hashbrown::{HashMap, HashSet};
 use std::sync::Arc;
 
 use super::pp_lexer::PPLexer;

@@ -2934,7 +2934,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             let pname = param.name;
 
-            if is_definition && !self.registry.is_complete(decayed_ty.ty()) {
+            // C11 6.7.6.3p4: "after adjustment, shall have complete object type."
+            // C11 6.7.6.3p10: "single parameter of type void and no identifier is a special case."
+            if !self.registry.is_complete(decayed_ty.ty()) {
                 let is_void_param_list = params.len() == 1 && decayed_ty.is_void() && pname.is_none();
                 if !is_void_param_list {
                     self.report_error(span, SemanticErrorKind::IncompleteType { ty: decayed_ty });

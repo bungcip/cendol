@@ -2934,11 +2934,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             let pname = param.name;
 
-            if is_definition && !self.registry.is_complete(decayed_ty.ty()) {
-                let is_void_param_list = params.len() == 1 && decayed_ty.is_void() && pname.is_none();
-                if !is_void_param_list {
-                    self.report_error(span, SemanticErrorKind::IncompleteType { ty: decayed_ty });
-                }
+            // C11 6.7.6.3p4: All parameters in a function declarator must have a complete object type.
+            // Exception: single unnamed parameter of type void (void)
+            let is_void_param_list = params.len() == 1 && decayed_ty.is_void() && pname.is_none();
+            if !is_void_param_list && !self.registry.is_complete(decayed_ty.ty()) {
+                // Technically 6.7.6.3p4 applies to both declarations and definitions.
+                // However, many compilers (GCC, Clang) only error on definitions for incomplete structs,
+                // while they do warn/error for 'void' even in declarations.
+                // Standard says: "each parameter shall have a complete object type".
+                // We'll enforce it for everyone, matching GCC's error for void and definition for structs.
+                self.report_error(span, SemanticErrorKind::IncompleteType { ty: decayed_ty });
             }
 
             if let Some(name) = pname {

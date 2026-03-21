@@ -149,3 +149,8 @@ Action: Enforce complete object type and integer constraints in 'visit_index_acc
 
 Learning: C11 6.5.1.1p2 mandates that the controlling expression of a `_Generic` selection shall be an expression of a complete object type or the `void` type. Because function types are not object types and incomplete arrays/structures are not complete, they must be rejected. Performing this check on the decayed type is incorrect, as decay transforms functions and arrays into complete pointer types, potentially bypassing the constraint.
 Action: Enforce completeness and object type constraints on the original (undecayed) type of the controlling expression in `_Generic` selection, while maintaining the explicit exception for the `void` type.
+
+2026-03-18 - [Function Parameter Completeness Constraints]
+
+Learning: C11 6.7.6.3p4 mandates that all parameters in a function declarator must have a complete object type after adjustment. While array and function types are adjusted to complete pointer types, incomplete structures/unions and the 'void' type (unless it's the special '(void)' case) remain incomplete and must be rejected. Crucially, enforcing this in the 'visit_function_parameters' phase of semantic lowering ensures that both declarations and definitions are validated, preventing later stage failures when these types are assumed to be complete.
+Action: Enforce complete object type constraints for all function parameters during semantic lowering and verify with negative tests covering diverse incomplete and non-object types in both declarations and definitions.

@@ -81,3 +81,7 @@
 ## 2025-05-26 - Optimized Diagnostic Error Tracking
 **Learning:** The diagnostic engine was performing a full linear scan of all previously reported diagnostics to count errors every time a new one was reported (if a limit was set), and every time `has_errors()` was called. This resulted in $O(N^2)$ complexity for error reporting in large files with many errors.
 **Action:** Always use cached counters for frequently queried properties of growing collections, especially when those queries occur in hot paths like error reporting or semantic validation guards.
+
+## 2024-05-27 - Niche Optimization via NonZeroU32 for Qualified Types
+**Learning:** In Rust, `Option<T>` usually takes more space than `T` unless `T` has a "niche" (invalid bit pattern) that the compiler can use to represent `None`. In our compiler, `QualType` is a very frequently used 4-byte packed structure (TypeRef + qualifiers). Since `TypeRef` is guaranteed to be non-zero, `QualType` can never have a zero bit pattern.
+**Action:** Use `NonZeroU32` as the internal representation for `QualType`. This enables niche optimization for `Option<QualType>`, reducing its size from 8 bytes to 4 bytes. This significantly improves memory density and cache locality in large data-parallel structures like the `SemanticInfo` side table, which stores an `Option<QualType>` for every node in the AST.

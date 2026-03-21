@@ -621,16 +621,18 @@ impl Display for TypeRef {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize)]
 #[repr(transparent)]
-pub struct QualType(u32);
+pub struct QualType(NonZeroU32);
 
 impl Default for QualType {
     fn default() -> Self {
-        // Use raw value 1 (which maps to TypeRef(1)) as default to avoid NonZeroU32(0) UB
-        QualType(1)
+        // Use raw value 1 (which maps to TypeRef(1)) as default.
+        // TypeRef 1 is always a valid base and non-zero.
+        QualType(unsafe { NonZeroU32::new_unchecked(1) })
     }
 }
 
 // bits  0..=27  → TypeRef (28 bit)
+const _: () = assert!(std::mem::size_of::<Option<QualType>>() == 4);
 // bits 28..=31  → qualifiers (4 bit)
 
 impl QualType {
@@ -643,7 +645,10 @@ impl QualType {
         debug_assert!(quals.bits() < (1 << Self::QUAL_BITS));
         debug_assert!(ty.raw() <= Self::TY_MASK);
 
-        QualType((ty.raw() & Self::TY_MASK) | ((quals.bits() as u32) << Self::QUAL_SHIFT))
+        // Bolt ⚡: Since TypeRef is already guaranteed to be non-zero (confirmed in TypeRef::new),
+        // QualType will also be non-zero. This enables niche optimization for Option<QualType>.
+        let raw = (ty.raw() & Self::TY_MASK) | ((quals.bits() as u32) << Self::QUAL_SHIFT);
+        QualType(unsafe { NonZeroU32::new_unchecked(raw) })
     }
 
     #[inline]
@@ -653,7 +658,7 @@ impl QualType {
 
     #[inline]
     pub(crate) fn ty(self) -> TypeRef {
-        unsafe { TypeRef::from_raw_unchecked(self.0 & Self::TY_MASK) }
+        unsafe { TypeRef::from_raw_unchecked(self.0.get() & Self::TY_MASK) }
     }
 
     /// Strip all qualifiers and return an unqualified type with the same TypeRef.
@@ -664,7 +669,7 @@ impl QualType {
 
     #[inline]
     pub(crate) fn qualifiers(self) -> TypeQualifiers {
-        TypeQualifiers::from_bits_truncate((self.0 >> Self::QUAL_SHIFT) as u8)
+        TypeQualifiers::from_bits_truncate((self.0.get() >> Self::QUAL_SHIFT) as u8)
     }
 
     #[inline]

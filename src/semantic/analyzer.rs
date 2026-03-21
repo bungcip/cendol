@@ -16,8 +16,8 @@ use crate::{
 };
 
 use crate::semantic::const_eval::eval_const_expr;
+use hashbrown::{HashMap, HashSet};
 use smallvec::{SmallVec, smallvec};
-use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CaseRangeInterval {
@@ -216,6 +216,14 @@ impl<'a> SemanticAnalyzer<'a> {
     /// Recursively visit type to find any expressions (e.g. VLA sizes) and resolve them.
     fn visit_type_expressions(&mut self, qt: QualType) {
         let ty = qt.ty();
+
+        // Bolt ⚡: Fast-path for built-in types.
+        // These types are fixed and cannot contain any expressions (like VLA sizes),
+        // so we can skip the expensive hash set insertion entirely.
+        if ty.builtin().is_some() {
+            return;
+        }
+
         // ⚡ Bolt: Optimized duplicate check.
         // `HashSet::insert` returns `false` if the value was already present.
         // This is faster than calling `contains` and then `insert`, as it

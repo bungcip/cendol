@@ -16,8 +16,8 @@ use crate::{
 };
 
 use crate::semantic::const_eval::eval_const_expr;
+use hashbrown::{HashMap, HashSet};
 use smallvec::{SmallVec, smallvec};
-use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CaseRangeInterval {
@@ -216,10 +216,14 @@ impl<'a> SemanticAnalyzer<'a> {
     /// Recursively visit type to find any expressions (e.g. VLA sizes) and resolve them.
     fn visit_type_expressions(&mut self, qt: QualType) {
         let ty = qt.ty();
-        // ⚡ Bolt: Optimized duplicate check.
-        // `HashSet::insert` returns `false` if the value was already present.
-        // This is faster than calling `contains` and then `insert`, as it
-        // performs a single lookup instead of two.
+
+        // ⚡ Bolt: Fast-path for built-in types.
+        // Built-in types (int, float, void, etc.) cannot contain nested
+        // expressions and thus don't need recursion or HashSet tracking.
+        if ty.builtin().is_some() {
+            return;
+        }
+
         if !self.checked_types.insert(ty) {
             return;
         }
@@ -2277,29 +2281,32 @@ impl<'a> SemanticAnalyzer<'a> {
         &mut self,
         target_node: NodeRef,
         target_vlas: &[NodeRef],
-        source_vlas: &[NodeRef],
+        source_vla_count: usize,
         is_switch: bool,
         source_span: Option<SourceSpan>,
     ) {
-        for vla in target_vlas {
-            if !source_vlas.contains(vla) {
-                // We jumped into the scope of a VLA that wasn't in scope at the jump source
-                let mut notes = vec![];
-                if let Some(span) = source_span {
-                    notes.push((span, SemanticErrorKind::NoteSwitchStartsHere));
-                }
+        if target_vlas.len() <= source_vla_count {
+            return;
+        }
 
-                // Also note where the VLA was declared
-                if let NodeKind::VarDecl(var_data) = self.ast.get_kind(*vla) {
-                    notes.push((
-                        self.ast.get_span(*vla),
-                        SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name },
-                    ));
-                }
+        let offending_vlas = &target_vlas[source_vla_count..];
 
-                self.report_error_with_notes(target_node, SemanticErrorKind::JumpIntoScopeVLA { is_switch }, notes);
-                break; // Only report one error per jump target
+        if let Some(vla) = offending_vlas.iter().next() {
+            // We jumped into the scope of a VLA that wasn't in scope at the jump source
+            let mut notes = vec![];
+            if let Some(span) = source_span {
+                notes.push((span, SemanticErrorKind::NoteSwitchStartsHere));
             }
+
+            // Also note where the VLA was declared
+            if let NodeKind::VarDecl(var_data) = self.ast.get_kind(*vla) {
+                notes.push((
+                    self.ast.get_span(*vla),
+                    SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name },
+                ));
+            }
+
+            self.report_error_with_notes(target_node, SemanticErrorKind::JumpIntoScopeVLA { is_switch }, notes);
         }
     }
 
@@ -2387,13 +2394,13 @@ impl<'a> SemanticAnalyzer<'a> {
             }
         }
 
-        if let Some(&(switch_node, switch_vlas)) = self.switch_vla_state.last()
-            && self.active_vlas.len() > switch_vlas
-        {
-            let target_vlas = self.active_vlas.clone();
-            let source_vlas = self.active_vlas[..switch_vlas].to_vec();
-            let span = self.ast.get_span(switch_node); // Using cond as a proxy for switch
-            self.check_vla_jump_into_scope(stmt, &target_vlas, &source_vlas, true, Some(span));
+        if let Some(&(switch_node, switch_vla_count)) = self.switch_vla_state.last() {
+            let span = self.ast.get_span(switch_node);
+            let has_vla_jump = self.active_vlas.len() > switch_vla_count;
+            if has_vla_jump {
+                let target_vlas = self.active_vlas.clone();
+                self.check_vla_jump_into_scope(stmt, &target_vlas, switch_vla_count, true, Some(span));
+            }
         }
 
         self.visit_node(stmt);
@@ -2413,13 +2420,13 @@ impl<'a> SemanticAnalyzer<'a> {
             }
         }
 
-        if let Some(&(switch_node, switch_vlas)) = self.switch_vla_state.last()
-            && self.active_vlas.len() > switch_vlas
-        {
-            let target_vlas = self.active_vlas.clone();
-            let source_vlas = self.active_vlas[..switch_vlas].to_vec();
+        if let Some(&(switch_node, switch_vla_count)) = self.switch_vla_state.last() {
             let span = self.ast.get_span(switch_node);
-            self.check_vla_jump_into_scope(node, &target_vlas, &source_vlas, true, Some(span));
+            let has_vla_jump = self.active_vlas.len() > switch_vla_count;
+            if has_vla_jump {
+                let target_vlas = self.active_vlas.clone();
+                self.check_vla_jump_into_scope(node, &target_vlas, switch_vla_count, true, Some(span));
+            }
         }
 
         self.visit_node(stmt);

@@ -340,7 +340,8 @@ fn test_array_parameter_decay_ok() {
 
 #[test]
 fn test_incomplete_type_in_prototype_ok() {
-    run_pass("struct S; void f(struct S s);", CompilePhase::Mir);
+    // C11 6.7.6.3p4: parameters shall have complete object type.
+    run_fail_with_message("struct S; void f(struct S s);", "incomplete type 'struct S'");
     run_pass("void f(int arr[]);", CompilePhase::Mir);
 }
 

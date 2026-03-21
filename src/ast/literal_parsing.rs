@@ -407,6 +407,12 @@ mod tests {
 
         // Hex exponent value overflows i32
         assert_eq!(parse_float_literal("0x1p999999999999"), None);
+
+        // Hex float without exponent
+        assert_eq!(parse_float_literal("0x1.5"), Some((1.3125, None)));
+
+        // Exponent without digits
+        assert_eq!(parse_float_literal("0x1p"), None);
     }
 
     #[test]

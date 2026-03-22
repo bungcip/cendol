@@ -320,5 +320,27 @@ fn test_builtin_functions() {
         "__builtin_ffs(2)",
         "__builtin_ffs(0)",
     ]);
-    insta::assert_snapshot!(output);
+    insta::assert_snapshot!(output, @"
+    Expression: __builtin_clz(1)
+    Result: 63
+    ---
+    Expression: __builtin_clz(0)
+    Result: None
+    ---
+    Expression: __builtin_ctz(2)
+    Result: 1
+    ---
+    Expression: __builtin_ctz(0)
+    Result: None
+    ---
+    Expression: __builtin_popcount(3)
+    Result: 2
+    ---
+    Expression: __builtin_ffs(2)
+    Result: 2
+    ---
+    Expression: __builtin_ffs(0)
+    Result: 0
+    ---
+    ");
 }

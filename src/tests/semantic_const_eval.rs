@@ -308,3 +308,39 @@ fn test_unsigned_arithmetic() {
     ---
     ");
 }
+
+#[test]
+fn test_builtin_functions() {
+    let output = format_const_eval_batch(&[
+        "__builtin_clz(1)",
+        "__builtin_clz(0)", // Undefined behavior, returns None
+        "__builtin_ctz(2)",
+        "__builtin_ctz(0)", // Undefined behavior, returns None
+        "__builtin_popcount(3)",
+        "__builtin_ffs(2)",
+        "__builtin_ffs(0)",
+    ]);
+    insta::assert_snapshot!(output, @"
+    Expression: __builtin_clz(1)
+    Result: 63
+    ---
+    Expression: __builtin_clz(0)
+    Result: None
+    ---
+    Expression: __builtin_ctz(2)
+    Result: 1
+    ---
+    Expression: __builtin_ctz(0)
+    Result: None
+    ---
+    Expression: __builtin_popcount(3)
+    Result: 2
+    ---
+    Expression: __builtin_ffs(2)
+    Result: 2
+    ---
+    Expression: __builtin_ffs(0)
+    Result: 0
+    ---
+    ");
+}

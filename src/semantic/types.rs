@@ -236,6 +236,7 @@ pub enum TypeClass {
     Function = 3,
     Record = 4,
     Enum = 5,
+    Alias = 6,
     Complex = 7,
 }
 
@@ -248,6 +249,7 @@ impl TypeClass {
             3 => Self::Function,
             4 => Self::Record,
             5 => Self::Enum,
+            6 => Self::Alias,
             7 => Self::Complex,
             _ => unreachable!("Invalid TypeClass value: {}", v),
         }
@@ -423,7 +425,7 @@ impl TypeRef {
                     return None;
                 }
             }
-            TypeClass::Function | TypeClass::Record | TypeClass::Enum | TypeClass::Complex => {
+            TypeClass::Function | TypeClass::Record | TypeClass::Enum | TypeClass::Alias | TypeClass::Complex => {
                 if ptr_depth != 0 || arr_len != 0 {
                     return None;
                 }
@@ -806,14 +808,14 @@ pub enum TypeKind {
 impl TypeKind {
     pub(crate) fn to_class(&self) -> TypeClass {
         match self {
-            TypeKind::Builtin(_) | TypeKind::Error | TypeKind::TypeofExpr(_) | TypeKind::Alias(_) => TypeClass::Builtin,
+            TypeKind::Builtin(_) | TypeKind::Error => TypeClass::Builtin,
             TypeKind::Complex { .. } => TypeClass::Complex,
             TypeKind::Pointer { .. } => TypeClass::Pointer,
             TypeKind::Array { .. } => TypeClass::Array,
             TypeKind::Function { .. } => TypeClass::Function,
             TypeKind::Record { .. } => TypeClass::Record,
             TypeKind::Enum { .. } => TypeClass::Enum,
-            TypeKind::AutoType => TypeClass::Builtin,
+            TypeKind::Alias(_) | TypeKind::TypeofExpr(_) | TypeKind::AutoType => TypeClass::Alias,
         }
     }
 }

@@ -312,44 +312,41 @@ impl TypeRegistry {
     #[inline]
     pub(crate) fn get(&self, mut r: TypeRef) -> Cow<'_, Type> {
         loop {
-            if r.is_inline_pointer() {
-                // Reconstruct Pointer Type
-                // We need to know the TypeRef of the pointee.
-                let pointee = self.reconstruct_pointee(r);
-
-                // Pointer layout is always fixed
-                let layout = TypeLayout {
-                    size: 8,
-                    alignment: 8,
-                    kind: LayoutKind::Scalar,
-                };
-
-                return Cow::Owned(Type {
-                    kind: TypeKind::Pointer {
-                        pointee: QualType::unqualified(pointee),
-                    },
-                    layout: Some(layout),
-                });
-            } else if r.is_inline_array() {
-                // Reconstruct Array Type
-                let element = self.reconstruct_element(r);
-                let len = r.array_len().unwrap() as u64;
-
-                return Cow::Owned(Type {
-                    kind: TypeKind::Array {
-                        element_type: element,
-                        size: ArraySizeType::Constant(len as usize),
-                    },
-                    layout: None,
-                });
-            } else {
-                // Registry type
-                let ty = &self.types[r.index()];
-                if let TypeKind::Alias(inner) = ty.kind {
-                    r = inner;
-                } else {
-                    return Cow::Borrowed(ty);
+            // Bolt ⚡: Use TypeClass for fast dispatch.
+            // This avoids redundant matches and property checks for terminal types.
+            match r.class() {
+                TypeClass::Pointer if r.is_inline_pointer() => {
+                    let pointee = self.reconstruct_pointee(r);
+                    return Cow::Owned(Type {
+                        kind: TypeKind::Pointer {
+                            pointee: QualType::unqualified(pointee),
+                        },
+                        layout: Some(TypeLayout {
+                            size: 8,
+                            alignment: 8,
+                            kind: LayoutKind::Scalar,
+                        }),
+                    });
                 }
+                TypeClass::Array if r.is_inline_array() => {
+                    let element = self.reconstruct_element(r);
+                    let len = r.array_len().unwrap() as u64;
+                    return Cow::Owned(Type {
+                        kind: TypeKind::Array {
+                            element_type: element,
+                            size: ArraySizeType::Constant(len as usize),
+                        },
+                        layout: None,
+                    });
+                }
+                TypeClass::Alias => {
+                    if let TypeKind::Alias(inner) = self.types[r.index()].kind {
+                        r = inner;
+                        continue;
+                    }
+                    return Cow::Borrowed(&self.types[r.index()]);
+                }
+                _ => return Cow::Borrowed(&self.types[r.index()]),
             }
         }
     }
@@ -1290,10 +1287,17 @@ impl TypeRegistry {
 
     pub(super) fn canonical_qual_type(&self, qt: QualType) -> QualType {
         let mut ty = qt.ty();
+
+        // Bolt ⚡: Fast path for non-alias types.
+        // Pointers, arrays, builtins, records, and enums are terminal types
+        // that do not require an alias resolution loop.
+        if ty.class() != crate::semantic::types::TypeClass::Alias {
+            return qt;
+        }
+
         loop {
-            if ty.is_inline_pointer() || ty.is_inline_array() {
-                break;
-            }
+            // All inline types are non-alias terminal types, handled above.
+            // Registry aliases can be recursive (typedef to another typedef).
             if let TypeKind::Alias(inner) = self.types[ty.index()].kind {
                 ty = inner;
             } else {

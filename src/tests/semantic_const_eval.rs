@@ -308,3 +308,17 @@ fn test_unsigned_arithmetic() {
     ---
     ");
 }
+
+#[test]
+fn test_builtin_functions() {
+    let output = format_const_eval_batch(&[
+        "__builtin_clz(1)",
+        "__builtin_clz(0)", // Undefined behavior, returns None
+        "__builtin_ctz(2)",
+        "__builtin_ctz(0)", // Undefined behavior, returns None
+        "__builtin_popcount(3)",
+        "__builtin_ffs(2)",
+        "__builtin_ffs(0)",
+    ]);
+    insta::assert_snapshot!(output);
+}

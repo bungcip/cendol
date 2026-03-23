@@ -9,7 +9,7 @@ use std::borrow::Cow;
 
 impl<'src> Preprocessor<'src> {
     /// Expand a macro if it exists
-    pub(crate) fn expand_macro(&mut self, token: &PPToken) -> Result<Option<Vec<PPToken>>, PPError> {
+    pub(super) fn expand_macro(&mut self, token: &PPToken) -> Result<Option<Vec<PPToken>>, PPError> {
         let PPTokenKind::Identifier(symbol) = token.kind else {
             return Ok(None);
         };
@@ -58,7 +58,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Helper to convert tokens to their string representation
-    pub(crate) fn tokens_to_string(&self, tokens: &[PPToken]) -> String {
+    pub(super) fn tokens_to_string(&self, tokens: &[PPToken]) -> String {
         // Bolt ⚡: Optimized two-pass string building.
         // We use the token's length field for the first pass as it's a fast u16 access.
         let total_len: usize = tokens.iter().map(|t| t.length as usize).sum();
@@ -699,7 +699,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expand tokens by rescanning for further macro expansion
-    pub(crate) fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>, in_conditional: bool) -> Result<(), PPError> {
+    pub(super) fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>, in_conditional: bool) -> Result<(), PPError> {
         let mut i = 0;
         while i < tokens.len() {
             let token = tokens[i];
@@ -896,7 +896,7 @@ impl<'src> Preprocessor<'src> {
             .collect()
     }
 
-    pub(crate) fn parse_macro_definition_params(
+    pub(super) fn parse_macro_definition_params(
         &mut self,
         macro_name: &str,
     ) -> Result<(MacroFlags, Vec<StringId>, Option<StringId>), PPError> {

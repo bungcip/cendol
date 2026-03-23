@@ -65,7 +65,7 @@ impl Default for DirectiveKeywordTable {
 }
 
 impl DirectiveKeywordTable {
-    pub(crate) fn new() -> Self {
+    pub(super) fn new() -> Self {
         DirectiveKeywordTable {
             define: StringId::new("define"),
             undef: StringId::new("undef"),
@@ -95,7 +95,7 @@ impl DirectiveKeywordTable {
         }
     }
 
-    pub(crate) fn is_directive(&self, symbol: StringId) -> Option<DirectiveKind> {
+    pub(super) fn is_directive(&self, symbol: StringId) -> Option<DirectiveKind> {
         if symbol == self.define {
             Some(DirectiveKind::Define)
         } else if symbol == self.undef {
@@ -130,37 +130,37 @@ impl DirectiveKeywordTable {
     }
 
     /// Get the interned symbol for the "defined" operator
-    pub(crate) fn defined_symbol(&self) -> StringId {
+    pub(super) fn defined_symbol(&self) -> StringId {
         self.defined
     }
 
     /// Get the interned symbol for the "__has_include" operator
-    pub(crate) fn has_include_symbol(&self) -> StringId {
+    pub(super) fn has_include_symbol(&self) -> StringId {
         self.has_include
     }
 
     /// Get the interned symbol for the "__has_include_next" operator
-    pub(crate) fn has_include_next_symbol(&self) -> StringId {
+    pub(super) fn has_include_next_symbol(&self) -> StringId {
         self.has_include_next
     }
 
     /// Get the interned symbol for the "__has_builtin" operator
-    pub(crate) fn has_builtin_symbol(&self) -> StringId {
+    pub(super) fn has_builtin_symbol(&self) -> StringId {
         self.has_builtin
     }
 
     /// Get the interned symbol for the "__has_attribute" operator
-    pub(crate) fn has_attribute_symbol(&self) -> StringId {
+    pub(super) fn has_attribute_symbol(&self) -> StringId {
         self.has_attribute
     }
 
     /// Get the interned symbol for the "__has_feature" operator
-    pub(crate) fn has_feature_symbol(&self) -> StringId {
+    pub(super) fn has_feature_symbol(&self) -> StringId {
         self.has_feature
     }
 
     /// Get the interned symbol for the "__has_extension" operator
-    pub(crate) fn has_extension_symbol(&self) -> StringId {
+    pub(super) fn has_extension_symbol(&self) -> StringId {
         self.has_extension
     }
 }
@@ -192,7 +192,7 @@ impl Default for HideSetTable {
 }
 
 impl HideSetTable {
-    pub(crate) fn new() -> Self {
+    pub(super) fn new() -> Self {
         // Index 0 is the empty hide set
         let empty: Arc<[StringId]> = Arc::from([]);
         let mut map = HashMap::new();
@@ -227,7 +227,7 @@ impl HideSetTable {
         id
     }
 
-    pub(crate) fn intersection(&mut self, id1: u32, id2: u32) -> u32 {
+    pub(super) fn intersection(&mut self, id1: u32, id2: u32) -> u32 {
         if id1 == 0 || id2 == 0 {
             return 0;
         }
@@ -255,7 +255,7 @@ impl HideSetTable {
         self.intern_canonical(result)
     }
 
-    pub(crate) fn union(&mut self, id1: u32, id2: u32) -> u32 {
+    pub(super) fn union(&mut self, id1: u32, id2: u32) -> u32 {
         if id1 == 0 {
             return id2;
         }
@@ -294,7 +294,7 @@ impl HideSetTable {
         self.intern_canonical(result)
     }
 
-    pub(crate) fn insert(&mut self, id: u32, symbol: StringId) -> u32 {
+    pub(super) fn insert(&mut self, id: u32, symbol: StringId) -> u32 {
         let existing = &self.sets[id as usize];
         match existing.binary_search(&symbol) {
             Ok(_) => id,
@@ -308,7 +308,7 @@ impl HideSetTable {
         }
     }
 
-    pub(crate) fn contains(&self, id: u32, symbol: StringId) -> bool {
+    pub(super) fn contains(&self, id: u32, symbol: StringId) -> bool {
         if id == 0 {
             return false;
         }

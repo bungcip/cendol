@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 impl<'src> Preprocessor<'src> {
     /// Handle preprocessor directives
-    pub(crate) fn handle_directive(&mut self) -> Result<(), PPError> {
+    pub(super) fn handle_directive(&mut self) -> Result<(), PPError> {
         let token = self.expect_token()?;
 
         match token.kind {
@@ -87,7 +87,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Handle _Pragma("...") operator
-    pub(crate) fn handle_pragma_operator(&mut self) -> Result<(), PPError> {
+    pub(super) fn handle_pragma_operator(&mut self) -> Result<(), PPError> {
         // We have already consumed the `_Pragma` identifier.
         self.expect_kind(PPTokenKind::LeftParen)?;
         let (symbol, _) = self.expect_string_literal()?;
@@ -136,7 +136,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Perform the action of a pragma directive
-    pub(crate) fn perform_pragma(&mut self, pragma_content: &str) {
+    pub(super) fn perform_pragma(&mut self, pragma_content: &str) {
         let tokens = self.tokenize_pragma_content(pragma_content);
 
         // Bolt ⚡: Use batch insertion to efficiently push pragma tokens onto the stack.

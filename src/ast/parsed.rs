@@ -106,6 +106,9 @@ pub enum ParsedNodeKind {
     BuiltinBswap16(ParsedNodeRef),
     BuiltinBswap32(ParsedNodeRef),
     BuiltinBswap64(ParsedNodeRef),
+    BuiltinFabs(ParsedNodeRef),
+    BuiltinFabsf(ParsedNodeRef),
+    BuiltinFabsl(ParsedNodeRef),
     BuiltinPrefetch(ParsedNodeRef, Option<ParsedNodeRef>, Option<ParsedNodeRef>),
     AtomicOp(AtomicOp, Vec<ParsedNodeRef>),
     SizeOfExpr(ParsedNodeRef),
@@ -426,6 +429,9 @@ impl ParsedNodeKind {
             ParsedNodeKind::BuiltinBswap16(..) => "BuiltinBswap16",
             ParsedNodeKind::BuiltinBswap32(..) => "BuiltinBswap32",
             ParsedNodeKind::BuiltinBswap64(..) => "BuiltinBswap64",
+            ParsedNodeKind::BuiltinFabs(..) => "BuiltinFabs",
+            ParsedNodeKind::BuiltinFabsf(..) => "BuiltinFabsf",
+            ParsedNodeKind::BuiltinFabsl(..) => "BuiltinFabsl",
             ParsedNodeKind::BuiltinPrefetch(..) => "BuiltinPrefetch",
             ParsedNodeKind::AtomicOp(..) => "AtomicOp",
             ParsedNodeKind::SizeOfExpr(..) => "SizeOfExpr",
@@ -495,6 +501,9 @@ impl ParsedNodeKind {
             | ParsedNodeKind::BuiltinBswap16(e)
             | ParsedNodeKind::BuiltinBswap32(e)
             | ParsedNodeKind::BuiltinBswap64(e)
+            | ParsedNodeKind::BuiltinFabs(e)
+            | ParsedNodeKind::BuiltinFabsf(e)
+            | ParsedNodeKind::BuiltinFabsl(e)
             | ParsedNodeKind::SizeOfExpr(e)
             | ParsedNodeKind::CompoundLiteral(_, e)
             | ParsedNodeKind::Label(_, e)

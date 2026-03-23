@@ -809,6 +809,7 @@ impl<'a> MirDumper<'a> {
     fn unary_float_op_to_string(&self, op: &UnaryFloatOp) -> String {
         match op {
             UnaryFloatOp::Neg => "fneg".to_string(),
+            UnaryFloatOp::Abs => "fabs".to_string(),
         }
     }
 }

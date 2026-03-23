@@ -308,6 +308,7 @@ pub enum UnaryIntOp {
 #[repr(u8)]
 pub enum UnaryFloatOp {
     Neg,
+    Abs,
 }
 
 /// Type - MIR type system

@@ -1002,7 +1002,6 @@ impl TypeRegistry {
                     // This is the correct error when sizeof is used on an incomplete type.
                     return Err(TypeRegistryError::SizeOfIncompleteType { ty });
                 }
-                let members = members.clone();
                 self.compute_record_layout(&members, is_union, packing)?
             }
 

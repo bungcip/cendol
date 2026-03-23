@@ -322,6 +322,9 @@ pub enum SemanticErrorKind {
     ExpectedIntegerType {
         found: QualType,
     },
+    ExpectedFloatingType {
+        found: QualType,
+    },
     BuiltinChooseExprNotConstant,
     AddressOfArrayAlwaysTrue {
         name: NameId,
@@ -599,6 +602,12 @@ impl SemanticErrorKind {
             SemanticErrorKind::ExpectedScalarType { found } => {
                 format!(
                     "type mismatch: expected scalar type, found {}",
+                    registry.display_qual_type(*found)
+                )
+            }
+            SemanticErrorKind::ExpectedFloatingType { found } => {
+                format!(
+                    "type mismatch: expected floating-point type, found {}",
                     registry.display_qual_type(*found)
                 )
             }

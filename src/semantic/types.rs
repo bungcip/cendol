@@ -729,6 +729,10 @@ impl QualType {
         self.ty().is_void()
     }
     #[inline]
+    pub(crate) fn is_floating(self) -> bool {
+        self.ty().is_floating()
+    }
+    #[inline]
     pub(crate) fn is_integer(self) -> bool {
         self.ty().is_integer()
     }

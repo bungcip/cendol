@@ -1510,6 +1510,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::BuiltinBswap64(e) => {
                 lower_simple!(NodeKind::BuiltinBswap64(self.visit_expression(*e)))
             }
+            ParsedNodeKind::BuiltinFabs(e) => {
+                lower_simple!(NodeKind::BuiltinFabs(self.visit_expression(*e)))
+            }
+            ParsedNodeKind::BuiltinFabsf(e) => {
+                lower_simple!(NodeKind::BuiltinFabsf(self.visit_expression(*e)))
+            }
+            ParsedNodeKind::BuiltinFabsl(e) => {
+                lower_simple!(NodeKind::BuiltinFabsl(self.visit_expression(*e)))
+            }
             ParsedNodeKind::BuiltinPrefetch(addr, rw, locality) => {
                 lower_simple!(NodeKind::BuiltinPrefetch(
                     self.visit_expression(*addr),

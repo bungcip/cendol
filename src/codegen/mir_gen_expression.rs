@@ -216,16 +216,19 @@ impl<'a> MirGen<'a> {
             | NodeKind::BuiltinFfs(exp)
             | NodeKind::BuiltinBswap16(exp)
             | NodeKind::BuiltinBswap32(exp)
-            | NodeKind::BuiltinBswap64(exp) => {
+            | NodeKind::BuiltinBswap64(exp)
+            | NodeKind::BuiltinFabs(exp)
+            | NodeKind::BuiltinFabsf(exp)
+            | NodeKind::BuiltinFabsl(exp) => {
                 let op = match node_kind {
-                    NodeKind::BuiltinPopcount(_) => crate::mir::UnaryIntOp::Popcount,
-                    NodeKind::BuiltinClz(_) => crate::mir::UnaryIntOp::Clz,
-                    NodeKind::BuiltinCtz(_) => crate::mir::UnaryIntOp::Ctz,
-                    NodeKind::BuiltinFfs(_) => crate::mir::UnaryIntOp::Ffs,
-                    NodeKind::BuiltinBswap16(_) => crate::mir::UnaryIntOp::Bswap16,
-                    NodeKind::BuiltinBswap32(_) => crate::mir::UnaryIntOp::Bswap32,
-                    NodeKind::BuiltinBswap64(_) => crate::mir::UnaryIntOp::Bswap64,
-                    _ => unreachable!(),
+                    NodeKind::BuiltinPopcount(_) => Some(crate::mir::UnaryIntOp::Popcount),
+                    NodeKind::BuiltinClz(_) => Some(crate::mir::UnaryIntOp::Clz),
+                    NodeKind::BuiltinCtz(_) => Some(crate::mir::UnaryIntOp::Ctz),
+                    NodeKind::BuiltinFfs(_) => Some(crate::mir::UnaryIntOp::Ffs),
+                    NodeKind::BuiltinBswap16(_) => Some(crate::mir::UnaryIntOp::Bswap16),
+                    NodeKind::BuiltinBswap32(_) => Some(crate::mir::UnaryIntOp::Bswap32),
+                    NodeKind::BuiltinBswap64(_) => Some(crate::mir::UnaryIntOp::Bswap64),
+                    _ => None,
                 };
                 let operand = self.visit_expression(*exp, true);
 
@@ -233,8 +236,18 @@ impl<'a> MirGen<'a> {
                 let operand_mir_ty = self.lower_qual_type(operand_ty);
                 let operand_converted = self.apply_conversions(operand, *exp, operand_mir_ty);
 
-                let rval = crate::mir::Rvalue::UnaryIntOp(op, operand_converted);
-                self.emit_rvalue_to_operand(rval, mir_ty)
+                let is_fabs = matches!(
+                    node_kind,
+                    NodeKind::BuiltinFabs(_) | NodeKind::BuiltinFabsf(_) | NodeKind::BuiltinFabsl(_)
+                );
+
+                if is_fabs {
+                    let rval = crate::mir::Rvalue::UnaryFloatOp(crate::mir::UnaryFloatOp::Abs, operand_converted);
+                    self.emit_rvalue_to_operand(rval, mir_ty)
+                } else {
+                    let rval = crate::mir::Rvalue::UnaryIntOp(op.unwrap(), operand_converted);
+                    self.emit_rvalue_to_operand(rval, mir_ty)
+                }
             }
             NodeKind::BuiltinPrefetch(addr, rw, locality) => {
                 let _ = self.visit_expression(*addr, true);

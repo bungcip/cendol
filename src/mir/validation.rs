@@ -530,7 +530,7 @@ impl<'a> MirValidator<'a> {
             Rvalue::UnaryFloatOp(u, a) => {
                 let ta = self.validate_operand(a);
                 match u {
-                    UnaryFloatOp::Neg => ta,
+                    UnaryFloatOp::Neg | UnaryFloatOp::Abs => ta,
                 }
             }
             Rvalue::Cast(type_id, op) => {

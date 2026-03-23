@@ -35,6 +35,7 @@ pub mod semantic_auto_type;
 pub mod semantic_builtin_alloca;
 pub mod semantic_builtin_choose_expr;
 pub mod semantic_builtin_constant_p;
+pub mod semantic_builtin_fabs;
 pub mod semantic_builtin_mem;
 pub mod semantic_builtin_prefetch;
 pub mod semantic_builtin_trap;

@@ -63,6 +63,9 @@ pub enum NodeKind {
     BuiltinBswap16(NodeRef),
     BuiltinBswap32(NodeRef),
     BuiltinBswap64(NodeRef),
+    BuiltinFabs(NodeRef),
+    BuiltinFabsf(NodeRef),
+    BuiltinFabsl(NodeRef),
     BuiltinPrefetch(NodeRef, Option<NodeRef>, Option<NodeRef>),
     BuiltinAlloca(NodeRef),
     AtomicOp(AtomicOp, NodeRef /* args start */, u16 /* arg count */),
@@ -165,6 +168,9 @@ impl NodeKind {
             NodeKind::BuiltinBswap16(..) => "BuiltinBswap16",
             NodeKind::BuiltinBswap32(..) => "BuiltinBswap32",
             NodeKind::BuiltinBswap64(..) => "BuiltinBswap64",
+            NodeKind::BuiltinFabs(..) => "BuiltinFabs",
+            NodeKind::BuiltinFabsf(..) => "BuiltinFabsf",
+            NodeKind::BuiltinFabsl(..) => "BuiltinFabsl",
             NodeKind::BuiltinPrefetch(..) => "BuiltinPrefetch",
             NodeKind::BuiltinAlloca(..) => "BuiltinAlloca",
             NodeKind::AtomicOp(..) => "AtomicOp",
@@ -245,6 +251,9 @@ impl NodeKind {
             | NodeKind::BuiltinBswap16(child)
             | NodeKind::BuiltinBswap32(child)
             | NodeKind::BuiltinBswap64(child)
+            | NodeKind::BuiltinFabs(child)
+            | NodeKind::BuiltinFabsf(child)
+            | NodeKind::BuiltinFabsl(child)
             | NodeKind::BuiltinConstantP(child)
             | NodeKind::SizeOfExpr(child)
             | NodeKind::CompoundLiteral(_, child)

@@ -155,6 +155,9 @@ impl AstDumper {
             | NodeKind::BuiltinBswap16(_)
             | NodeKind::BuiltinBswap32(_)
             | NodeKind::BuiltinBswap64(_)
+            | NodeKind::BuiltinFabs(_)
+            | NodeKind::BuiltinFabsf(_)
+            | NodeKind::BuiltinFabsl(_)
             | NodeKind::BuiltinPrefetch(..)
             | NodeKind::BuiltinAlloca(_)
             | NodeKind::BuiltinExpect(_, _)
@@ -449,6 +452,9 @@ impl AstDumper {
             | NodeKind::BuiltinBswap32(n)
             | NodeKind::BuiltinBswap64(n)
             | NodeKind::BuiltinAlloca(n)
+            | NodeKind::BuiltinFabs(n)
+            | NodeKind::BuiltinFabsf(n)
+            | NodeKind::BuiltinFabsl(n)
             | NodeKind::BuiltinConstantP(n)
             | NodeKind::SizeOfExpr(n) => write!(f, "{}", n.get())?,
 

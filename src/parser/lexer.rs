@@ -107,6 +107,9 @@ pub enum TokenKind {
     BuiltinBswap16,
     BuiltinBswap32,
     BuiltinBswap64,
+    BuiltinFabs,
+    BuiltinFabsf,
+    BuiltinFabsl,
     BuiltinPrefetch,
     Asm,
     AutoType,
@@ -342,6 +345,9 @@ impl TokenKind {
             BuiltinBswap16 => "__builtin_bswap16",
             BuiltinBswap32 => "__builtin_bswap32",
             BuiltinBswap64 => "__builtin_bswap64",
+            BuiltinFabs => "__builtin_fabs",
+            BuiltinFabsf => "__builtin_fabsf",
+            BuiltinFabsl => "__builtin_fabsl",
             BuiltinPrefetch => "__builtin_prefetch",
             Asm => "asm",
             AutoType => "__auto_type",
@@ -600,6 +606,9 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__builtin_bswap16"), TokenKind::BuiltinBswap16);
         m.insert(StringId::new("__builtin_bswap32"), TokenKind::BuiltinBswap32);
         m.insert(StringId::new("__builtin_bswap64"), TokenKind::BuiltinBswap64);
+        m.insert(StringId::new("__builtin_fabs"), TokenKind::BuiltinFabs);
+        m.insert(StringId::new("__builtin_fabsf"), TokenKind::BuiltinFabsf);
+        m.insert(StringId::new("__builtin_fabsl"), TokenKind::BuiltinFabsl);
         m.insert(StringId::new("__builtin_prefetch"), TokenKind::BuiltinPrefetch);
         m.insert(StringId::new("__atomic_load_n"), TokenKind::BuiltinAtomicLoadN);
         m.insert(StringId::new("__atomic_store_n"), TokenKind::BuiltinAtomicStoreN);

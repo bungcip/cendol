@@ -1766,6 +1766,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
 
                     match op {
                         UnaryFloatOp::Neg => ctx.builder.ins().fneg(val),
+                        UnaryFloatOp::Abs => ctx.builder.ins().fabs(val),
                     }
                 }
                 Rvalue::PtrAdd(base, offset) => {

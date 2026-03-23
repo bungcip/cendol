@@ -2642,7 +2642,10 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::BuiltinFfs(_)
             | NodeKind::BuiltinBswap16(_)
             | NodeKind::BuiltinBswap32(_)
-            | NodeKind::BuiltinBswap64(_) => {
+            | NodeKind::BuiltinBswap64(_)
+            | NodeKind::BuiltinFabs(_)
+            | NodeKind::BuiltinFabsf(_)
+            | NodeKind::BuiltinFabsl(_) => {
                 let exp = match kind {
                     NodeKind::BuiltinPopcount(e)
                     | NodeKind::BuiltinClz(e)
@@ -2650,7 +2653,10 @@ impl<'a> SemanticAnalyzer<'a> {
                     | NodeKind::BuiltinFfs(e)
                     | NodeKind::BuiltinBswap16(e)
                     | NodeKind::BuiltinBswap32(e)
-                    | NodeKind::BuiltinBswap64(e) => e,
+                    | NodeKind::BuiltinBswap64(e)
+                    | NodeKind::BuiltinFabs(e)
+                    | NodeKind::BuiltinFabsf(e)
+                    | NodeKind::BuiltinFabsl(e) => e,
                     _ => unreachable!(),
                 };
 
@@ -2667,25 +2673,39 @@ impl<'a> SemanticAnalyzer<'a> {
                         let ty = self.registry.type_long_long_unsigned;
                         (Some(ty), ty)
                     }
+                    NodeKind::BuiltinFabs(_) => (Some(self.registry.type_double), self.registry.type_double),
+                    NodeKind::BuiltinFabsf(_) => (Some(self.registry.type_float), self.registry.type_float),
+                    NodeKind::BuiltinFabsl(_) => (Some(self.registry.type_long_double), self.registry.type_long_double),
                     _ => (None, self.registry.type_int),
                 };
 
-                if let Some(mut actual_ty) = self.visit_node(*exp) {
-                    if actual_ty.is_array() || actual_ty.is_function() {
-                        actual_ty = self.registry.decay(actual_ty, TypeQualifiers::empty());
-                        self.push_conversion(*exp, Conversion::PointerDecay { to: actual_ty.ty() });
-                        self.semantic_info.types[exp.index()] = Some(actual_ty);
+                if let Some(mut arg_ty) = self.visit_node(*exp) {
+                    if arg_ty.is_array() || arg_ty.is_function() {
+                        arg_ty = self.registry.decay(arg_ty, TypeQualifiers::empty());
+                        self.push_conversion(*exp, Conversion::PointerDecay { to: arg_ty.ty() });
+                        self.semantic_info.types[exp.index()] = Some(arg_ty);
                     }
 
-                    if !actual_ty.is_integer() {
-                        self.report_error(*exp, SemanticErrorKind::ExpectedIntegerType { found: actual_ty });
-                    } else if let Some(target) = target_ty
-                        && actual_ty.ty() != target
+                    let is_fabs = matches!(
+                        kind,
+                        NodeKind::BuiltinFabs(_) | NodeKind::BuiltinFabsf(_) | NodeKind::BuiltinFabsl(_)
+                    );
+
+                    if is_fabs {
+                        if !arg_ty.is_floating() {
+                            self.report_error(*exp, SemanticErrorKind::ExpectedFloatingType { found: arg_ty });
+                        }
+                    } else if !arg_ty.is_integer() {
+                        self.report_error(*exp, SemanticErrorKind::ExpectedIntegerType { found: arg_ty });
+                    }
+
+                    if let Some(target) = target_ty
+                        && arg_ty.ty() != target
                     {
                         self.push_conversion(
                             *exp,
                             Conversion::IntegerCast {
-                                from: actual_ty.ty(),
+                                from: arg_ty.ty(),
                                 to: target,
                             },
                         );

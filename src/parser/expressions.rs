@@ -231,6 +231,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::Sizeof => parse_sizeof(parser),
 
         TokenKind::BuiltinVaArg => parse_builtin_va_arg(parser),
+        TokenKind::BuiltinFabs | TokenKind::BuiltinFabsf | TokenKind::BuiltinFabsl => parse_builtin_fabs_family(parser),
         TokenKind::BuiltinVaStart => parse_builtin_va_start(parser),
         TokenKind::BuiltinVaEnd => parse_builtin_va_end(parser),
         TokenKind::BuiltinVaCopy => parse_builtin_va_copy(parser),
@@ -472,6 +473,25 @@ fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseEr
         ParsedNodeKind::GenericSelection(controlling_expr, associations),
         SourceSpan::new(start, end),
     ))
+}
+
+fn parse_builtin_fabs_family(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let token = parser.advance().unwrap();
+    let start = token.span.start();
+    let kind = token.kind;
+
+    parser.expect(TokenKind::LeftParen)?;
+    let expr = parser.parse_expr_assignment()?;
+    let end = parser.expect(TokenKind::RightParen)?.span.end();
+
+    let node_kind = match kind {
+        TokenKind::BuiltinFabs => ParsedNodeKind::BuiltinFabs(expr),
+        TokenKind::BuiltinFabsf => ParsedNodeKind::BuiltinFabsf(expr),
+        TokenKind::BuiltinFabsl => ParsedNodeKind::BuiltinFabsl(expr),
+        _ => unreachable!(),
+    };
+
+    Ok(parser.push_node(node_kind, SourceSpan::new(start, end)))
 }
 
 /// Parse compound literal given the type and start location

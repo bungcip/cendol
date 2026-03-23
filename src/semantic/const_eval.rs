@@ -535,6 +535,9 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
                 Some((val.trailing_zeros() + 1) as i64)
             }
         }
+        NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
+            eval_const_expr_float(ctx, *exp).map(|v| v.abs() as i64)
+        }
         _ => None,
     }
 }
@@ -585,6 +588,9 @@ pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr_node: NodeRef) -> O
             } else {
                 None
             }
+        }
+        NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
+            eval_const_expr_float(ctx, *exp).map(|v| v.abs())
         }
         _ => eval_const_expr(ctx, expr_node).map(|v| v as f64),
     }

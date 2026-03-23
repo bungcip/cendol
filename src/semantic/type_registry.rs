@@ -1294,14 +1294,10 @@ impl TypeRegistry {
             return qt;
         }
 
-        loop {
-            // All inline types are non-alias terminal types, handled above.
-            // Registry aliases can be recursive (typedef to another typedef).
-            if let TypeKind::Alias(inner) = self.types[ty.index()].kind {
-                ty = inner;
-            } else {
-                break;
-            }
+        // All inline types are non-alias terminal types, handled above.
+        // Registry aliases can be recursive (typedef to another typedef).
+        while let TypeKind::Alias(inner) = self.types[ty.index()].kind {
+            ty = inner;
         }
         QualType::new(ty, qt.qualifiers())
     }

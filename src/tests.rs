@@ -110,6 +110,7 @@ pub mod guardian_noreturn_switch;
 pub mod guardian_offsetof;
 pub mod guardian_parameter_completeness;
 pub mod guardian_relational_pointer_constraints;
+pub mod guardian_selection_props;
 pub mod guardian_sizeof_alignof;
 pub mod guardian_ternary_pointer_constraints;
 pub mod mir_dumper_coverage;

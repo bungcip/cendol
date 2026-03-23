@@ -404,6 +404,14 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::Literal(Literal::String(_)) => true,
             NodeKind::CompoundLiteral(..) => true,
+            NodeKind::BuiltinChooseExpr(..) => {
+                // Bolt ⚡: Use cached value category for the selected expression.
+                if let Some(&selected) = self.semantic_info.choose_expressions.get(&node.index()) {
+                    self.semantic_info.value_categories[selected.index()] == ValueCategory::LValue
+                } else {
+                    false
+                }
+            }
             NodeKind::GenericSelection(_) => {
                 // Bolt ⚡: Use cached value category for the selected expression.
                 if let Some(&selected) = self.semantic_info.generic_selections.get(&node.index()) {
@@ -435,6 +443,11 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             // Comma operator: the result is wholly the RHS value; propagate its bitfield width.
             NodeKind::BinaryOp(BinaryOp::Comma, _, rhs) => self.get_bitfield_width(*rhs),
+            NodeKind::BuiltinChooseExpr(..) => self
+                .semantic_info
+                .choose_expressions
+                .get(&node.index())
+                .and_then(|&selected| self.get_bitfield_width(selected)),
             NodeKind::GenericSelection(_) => self
                 .semantic_info
                 .generic_selections
@@ -455,6 +468,13 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 false
             }
+            NodeKind::BuiltinChooseExpr(..) => {
+                if let Some(&selected) = self.semantic_info.choose_expressions.get(&node.index()) {
+                    self.is_register_variable(selected)
+                } else {
+                    false
+                }
+            }
             NodeKind::GenericSelection(_) => {
                 if let Some(&selected) = self.semantic_info.generic_selections.get(&node.index()) {
                     self.is_register_variable(selected)
@@ -472,6 +492,20 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::Literal(Literal::Int { val: 0, .. }) => true,
             NodeKind::Cast(qt, inner) if qt.ty() == self.registry.type_void_ptr => {
                 self.is_null_pointer_constant(*inner)
+            }
+            NodeKind::BuiltinChooseExpr(..) => {
+                if let Some(&selected) = self.semantic_info.choose_expressions.get(&node.index()) {
+                    self.is_null_pointer_constant(selected)
+                } else {
+                    false
+                }
+            }
+            NodeKind::GenericSelection(_) => {
+                if let Some(&selected) = self.semantic_info.generic_selections.get(&node.index()) {
+                    self.is_null_pointer_constant(selected)
+                } else {
+                    false
+                }
             }
             _ => false,
         }

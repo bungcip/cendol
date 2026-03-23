@@ -154,3 +154,8 @@ Action: Enforce completeness and object type constraints on the original (undeca
 
 Learning: C11 6.7.6.3p4 and 6.7.6.3p10 require that all function parameters have complete object type (after adjustment), regardless of whether the declaration is a definition. The only exception is a single unnamed parameter of type 'void'. Enforcing this check only during function definitions allows invalid types (like named 'void' or incomplete structs) to bypass semantic validation in prototypes, potentially leading to issues in later phases or non-compliant behavior.
 Action: Enforce parameter completeness in 'visit_function_parameters' for all function declarators, while carefully preserving the special case for unnamed '(void)' parameter lists.
+
+2026-03-19 - [Selection Expression Property Propagation]
+
+Learning: C11 (via DR 481) requires that selection expressions (`_Generic` and `__builtin_choose_expr`) act as transparent wrappers for the semantic properties of their selected associations. This includes lvalue-ness, bit-field status, `register` storage class, and null-pointer-constant (NPC) status. Failure to propagate these properties leads to constraint bypasses (e.g., taking the address of a bit-field wrapped in `_Generic`) or incorrect type mismatches (e.g., rejecting an NPC wrapped in `__builtin_choose_expr` where a pointer is expected).
+Action: Ensure all expression property queries (like `is_lvalue`, `is_register_variable`, `get_bitfield_width`, and `is_null_pointer_constant`) recursively inspect the selected branch of selection expressions.

@@ -605,7 +605,7 @@ impl<'a> MirGen<'a> {
     }
 
     /// Emit a malloc call and store the result in the given local.
-    fn emit_malloc_call(&mut self, dest_local: LocalId, size_operand: Operand) {
+    pub(super) fn emit_malloc_call(&mut self, dest_local: LocalId, size_operand: Operand) {
         // Declare malloc as an extern function if not already declared
         let malloc_name = NameId::new("malloc");
         let size_t_ty = self.get_size_t_type();

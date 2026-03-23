@@ -159,6 +159,7 @@ impl AstDumper {
             | NodeKind::BuiltinFabsf(_)
             | NodeKind::BuiltinFabsl(_)
             | NodeKind::BuiltinPrefetch(..)
+            | NodeKind::BuiltinAlloca(_)
             | NodeKind::BuiltinExpect(_, _)
             | NodeKind::AtomicOp(..) => {}
             NodeKind::VarDecl(var_decl) => {
@@ -325,6 +326,7 @@ impl AstDumper {
             | PNK::BuiltinBswap16(n1)
             | PNK::BuiltinBswap32(n1)
             | PNK::BuiltinBswap64(n1)
+            | PNK::BuiltinAlloca(n1)
             | PNK::BuiltinConstantP(n1)
             | PNK::SizeOfExpr(n1)
             | PNK::PostIncrement(n1)
@@ -449,6 +451,7 @@ impl AstDumper {
             | NodeKind::BuiltinBswap16(n)
             | NodeKind::BuiltinBswap32(n)
             | NodeKind::BuiltinBswap64(n)
+            | NodeKind::BuiltinAlloca(n)
             | NodeKind::BuiltinFabs(n)
             | NodeKind::BuiltinFabsf(n)
             | NodeKind::BuiltinFabsl(n)

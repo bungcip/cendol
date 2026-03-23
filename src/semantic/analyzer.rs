@@ -2725,8 +2725,18 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::BuiltinConstantP(expr) => self.visit_builtin_constant_p(*expr, node),
             NodeKind::BuiltinPrefetch(addr, rw, locality) => self.visit_builtin_prefetch(*addr, *rw, *locality, node),
+            NodeKind::BuiltinAlloca(size) => self.visit_builtin_alloca(*size, node),
             _ => None,
         }
+    }
+
+    fn visit_builtin_alloca(&mut self, size: NodeRef, _node: NodeRef) -> Option<QualType> {
+        if let Some(size_ty) = self.visit_node(size)
+            && !size_ty.is_integer()
+        {
+            self.report_error(size, SemanticErrorKind::ExpectedIntegerType { found: size_ty });
+        }
+        Some(QualType::unqualified(self.registry.type_void_ptr))
     }
 
     fn visit_builtin_prefetch(

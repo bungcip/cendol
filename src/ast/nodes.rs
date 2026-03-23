@@ -67,6 +67,7 @@ pub enum NodeKind {
     BuiltinFabsf(NodeRef),
     BuiltinFabsl(NodeRef),
     BuiltinPrefetch(NodeRef, Option<NodeRef>, Option<NodeRef>),
+    BuiltinAlloca(NodeRef),
     AtomicOp(AtomicOp, NodeRef /* args start */, u16 /* arg count */),
     SizeOfExpr(NodeRef),
     SizeOfType(QualType),
@@ -171,6 +172,7 @@ impl NodeKind {
             NodeKind::BuiltinFabsf(..) => "BuiltinFabsf",
             NodeKind::BuiltinFabsl(..) => "BuiltinFabsl",
             NodeKind::BuiltinPrefetch(..) => "BuiltinPrefetch",
+            NodeKind::BuiltinAlloca(..) => "BuiltinAlloca",
             NodeKind::AtomicOp(..) => "AtomicOp",
             NodeKind::SizeOfExpr(..) => "SizeOfExpr",
             NodeKind::SizeOfType(..) => "SizeOfType",
@@ -268,6 +270,7 @@ impl NodeKind {
                     f(*locality);
                 }
             }
+            NodeKind::BuiltinAlloca(child) => f(*child),
 
             NodeKind::BuiltinVaStart(lhs, rhs)
             | NodeKind::BuiltinVaCopy(lhs, rhs)

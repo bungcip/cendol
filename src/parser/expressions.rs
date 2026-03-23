@@ -246,6 +246,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinUnreachable => parse_builtin_unreachable(parser),
         TokenKind::BuiltinTrap => parse_builtin_trap(parser),
         TokenKind::BuiltinPrefetch => parse_builtin_prefetch(parser),
+        TokenKind::BuiltinAlloca => parse_builtin_alloca(parser),
         TokenKind::BuiltinPopcount
         | TokenKind::BuiltinPopcountL
         | TokenKind::BuiltinPopcountLL
@@ -473,6 +474,14 @@ fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseEr
         ParsedNodeKind::GenericSelection(controlling_expr, associations),
         SourceSpan::new(start, end),
     ))
+}
+
+fn parse_builtin_alloca(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let start = parser.expect(TokenKind::BuiltinAlloca)?.span.start();
+    parser.expect(TokenKind::LeftParen)?;
+    let size = parser.parse_expr_assignment()?;
+    let end = parser.expect(TokenKind::RightParen)?.span.end();
+    Ok(parser.push_node(ParsedNodeKind::BuiltinAlloca(size), SourceSpan::new(start, end)))
 }
 
 fn parse_builtin_fabs_family(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {

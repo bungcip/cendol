@@ -111,6 +111,7 @@ pub enum TokenKind {
     BuiltinFabsf,
     BuiltinFabsl,
     BuiltinPrefetch,
+    BuiltinAlloca,
     Asm,
     AutoType,
 
@@ -349,6 +350,7 @@ impl TokenKind {
             BuiltinFabsf => "__builtin_fabsf",
             BuiltinFabsl => "__builtin_fabsl",
             BuiltinPrefetch => "__builtin_prefetch",
+            BuiltinAlloca => "__builtin_alloca",
             Asm => "asm",
             AutoType => "__auto_type",
             Func => "__func__",
@@ -610,6 +612,7 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__builtin_fabsf"), TokenKind::BuiltinFabsf);
         m.insert(StringId::new("__builtin_fabsl"), TokenKind::BuiltinFabsl);
         m.insert(StringId::new("__builtin_prefetch"), TokenKind::BuiltinPrefetch);
+        m.insert(StringId::new("__builtin_alloca"), TokenKind::BuiltinAlloca);
         m.insert(StringId::new("__atomic_load_n"), TokenKind::BuiltinAtomicLoadN);
         m.insert(StringId::new("__atomic_store_n"), TokenKind::BuiltinAtomicStoreN);
         m.insert(StringId::new("__atomic_exchange_n"), TokenKind::BuiltinAtomicExchangeN);

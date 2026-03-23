@@ -259,6 +259,17 @@ impl<'a> MirGen<'a> {
                 }
                 self.create_dummy_operand()
             }
+            NodeKind::BuiltinAlloca(size) => {
+                let size_op = self.visit_expression(*size, true);
+                let size_t = self.get_size_t_type();
+                let size_conv = self.apply_conversions(size_op, *size, size_t);
+
+                let void_ptr_mir = self.lower_type(self.registry.type_void_ptr);
+                let (temp_local, temp_place) = self.create_temp_local(void_ptr_mir);
+
+                self.emit_malloc_call(temp_local, size_conv);
+                Operand::Copy(Box::new(temp_place))
+            }
             NodeKind::AtomicOp(op, args_start, args_len) => self.visit_atomic_op(*op, *args_start, *args_len, mir_ty),
             NodeKind::BuiltinVaStart(..) | NodeKind::BuiltinVaEnd(..) | NodeKind::BuiltinVaCopy(..) => {
                 self.visit_builtin_void(&node_kind)

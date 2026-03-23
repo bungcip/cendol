@@ -64,6 +64,7 @@ pub enum NodeKind {
     BuiltinBswap32(NodeRef),
     BuiltinBswap64(NodeRef),
     BuiltinPrefetch(NodeRef, Option<NodeRef>, Option<NodeRef>),
+    BuiltinAlloca(NodeRef),
     AtomicOp(AtomicOp, NodeRef /* args start */, u16 /* arg count */),
     SizeOfExpr(NodeRef),
     SizeOfType(QualType),
@@ -165,6 +166,7 @@ impl NodeKind {
             NodeKind::BuiltinBswap32(..) => "BuiltinBswap32",
             NodeKind::BuiltinBswap64(..) => "BuiltinBswap64",
             NodeKind::BuiltinPrefetch(..) => "BuiltinPrefetch",
+            NodeKind::BuiltinAlloca(..) => "BuiltinAlloca",
             NodeKind::AtomicOp(..) => "AtomicOp",
             NodeKind::SizeOfExpr(..) => "SizeOfExpr",
             NodeKind::SizeOfType(..) => "SizeOfType",
@@ -259,6 +261,7 @@ impl NodeKind {
                     f(*locality);
                 }
             }
+            NodeKind::BuiltinAlloca(child) => f(*child),
 
             NodeKind::BuiltinVaStart(lhs, rhs)
             | NodeKind::BuiltinVaCopy(lhs, rhs)

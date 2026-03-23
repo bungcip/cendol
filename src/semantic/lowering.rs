@@ -1517,6 +1517,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     locality.map(|e| self.visit_expression(e))
                 ))
             }
+            ParsedNodeKind::BuiltinAlloca(e) => {
+                lower_simple!(NodeKind::BuiltinAlloca(self.visit_expression(*e)))
+            }
             ParsedNodeKind::BuiltinConstantP(e) => {
                 lower_simple!(NodeKind::BuiltinConstantP(self.visit_expression(*e)))
             }

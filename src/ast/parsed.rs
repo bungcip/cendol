@@ -107,6 +107,7 @@ pub enum ParsedNodeKind {
     BuiltinBswap32(ParsedNodeRef),
     BuiltinBswap64(ParsedNodeRef),
     BuiltinPrefetch(ParsedNodeRef, Option<ParsedNodeRef>, Option<ParsedNodeRef>),
+    BuiltinAlloca(ParsedNodeRef),
     AtomicOp(AtomicOp, Vec<ParsedNodeRef>),
     SizeOfExpr(ParsedNodeRef),
     SizeOfType(ParsedType),
@@ -427,6 +428,7 @@ impl ParsedNodeKind {
             ParsedNodeKind::BuiltinBswap32(..) => "BuiltinBswap32",
             ParsedNodeKind::BuiltinBswap64(..) => "BuiltinBswap64",
             ParsedNodeKind::BuiltinPrefetch(..) => "BuiltinPrefetch",
+            ParsedNodeKind::BuiltinAlloca(..) => "BuiltinAlloca",
             ParsedNodeKind::AtomicOp(..) => "AtomicOp",
             ParsedNodeKind::SizeOfExpr(..) => "SizeOfExpr",
             ParsedNodeKind::SizeOfType(..) => "SizeOfType",
@@ -509,6 +511,7 @@ impl ParsedNodeKind {
                     f(*locality);
                 }
             }
+            ParsedNodeKind::BuiltinAlloca(e) => f(*e),
             ParsedNodeKind::BinaryOp(_, l, r)
             | ParsedNodeKind::Assignment(_, l, r)
             | ParsedNodeKind::IndexAccess(l, r)

@@ -572,11 +572,11 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_line(&mut self) -> Result<(), PPError> {
-        let start_line = if let Some(lexer) = self.lexer_stack.last() {
-            lexer.get_current_line()
-        } else {
-            0
-        };
+        let start_line = self
+            .sm
+            .get_line_column(self.get_current_location())
+            .map(|(l, _)| l)
+            .unwrap_or(0);
 
         // Collect tokens until end of line
         let mut tokens = self.collect_tokens_until_eod();

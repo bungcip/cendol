@@ -321,7 +321,6 @@ impl SourceManager {
     /// Add a buffer to the source manager with raw bytes (UTF-8 assumed)
     pub(crate) fn add_buffer(&mut self, buffer: Vec<u8>, path: &str, include_loc: Option<SourceLoc>) -> SourceId {
         let path_buf = PathBuf::from(path);
-        // Standard buffers get empty line_starts initially; they are calculated/set later if needed
         self.add_file_entry(Arc::from(buffer), path_buf, Vec::new(), include_loc, FileKind::Real)
     }
 
@@ -334,17 +333,19 @@ impl SourceManager {
         include_loc: Option<SourceLoc>,
         kind: FileKind,
     ) -> SourceId {
-        let line_starts = compute_line_starts(&buffer);
         let path_buf = PathBuf::from(format!("<{}>", name));
-        self.add_file_entry(Arc::from(buffer), path_buf, line_starts, include_loc, kind)
+        self.add_file_entry(Arc::from(buffer), path_buf, Vec::new(), include_loc, kind)
     }
 
-    /// Helper to add a file entry and update maps
+    /// Helper to add a file entry and update maps.
+    /// Bolt ⚡: Automatically computes line starts if they are not provided.
+    /// This ensures line information is ALWAYS available immediately for all buffers,
+    /// fixing bugs with __LINE__ in included files and avoiding redundant scans.
     fn add_file_entry(
         &mut self,
         buffer: Arc<[u8]>,
         path: PathBuf,
-        line_starts: Vec<u32>,
+        mut line_starts: Vec<u32>,
         include_loc: Option<SourceLoc>,
         kind: FileKind,
     ) -> SourceId {
@@ -355,6 +356,10 @@ impl SourceManager {
             // Only map path for real files (not virtual ones usually).
             // This avoids unnecessary map insertions for short-lived virtual buffers.
             self.path_to_id.insert(path.clone(), file_id);
+        }
+
+        if line_starts.is_empty() {
+            line_starts = compute_line_starts(&buffer);
         }
 
         let file_info = FileInfo {
@@ -432,25 +437,6 @@ impl SourceManager {
         self.file_infos.get_mut(id as usize - 2).map(|fi| &mut fi.line_map)
     }
 
-    /// Set line starts for a given source ID
-    pub(crate) fn set_line_starts(&mut self, source_id: SourceId, line_starts: Vec<u32>) {
-        let id = source_id.to_u32();
-        if id >= 2
-            && let Some(file_info) = self.file_infos.get_mut(id as usize - 2)
-        {
-            file_info.line_starts = line_starts;
-        }
-    }
-
-    /// Calculate line starts for a given source ID
-    pub(crate) fn calculate_line_starts(&mut self, source_id: SourceId) {
-        let id = source_id.to_u32();
-        if id >= 2
-            && let Some(file_info) = self.file_infos.get_mut(id as usize - 2)
-        {
-            file_info.line_starts = compute_line_starts(&file_info.buffer);
-        }
-    }
 
     /// Get the source text for a given span
     /// Since we only support UTF-8, we can assume the bytes are valid UTF-8
@@ -467,16 +453,15 @@ impl SourceManager {
         }
     }
 
-    /// Get line and column for a source location
+    /// Get line and column for a source location.
+    /// Bolt ⚡: Guaranteed O(log N) lookup because line_starts are always pre-computed.
     pub(crate) fn get_line_column(&self, loc: SourceLoc) -> Option<(u32, u32)> {
         let file_info = self.get_file_info(loc.source_id())?;
         let offset = loc.offset();
 
         let line_starts = &file_info.line_starts;
-        if line_starts.is_empty() {
-            // If line_starts not calculated yet, assume single line starting at 0
-            return Some((1, offset + 1));
-        }
+        // Bolt ⚡: line_starts is now guaranteed non-empty by add_file_entry.
+        debug_assert!(!line_starts.is_empty());
 
         // Use partition_point which performs a binary search
         let idx = line_starts.partition_point(|&start| start <= offset);

@@ -159,3 +159,8 @@ Action: Enforce parameter completeness in 'visit_function_parameters' for all fu
 
 Learning: C11 (via DR 481) requires that selection expressions (`_Generic` and `__builtin_choose_expr`) act as transparent wrappers for the semantic properties of their selected associations. This includes lvalue-ness, bit-field status, `register` storage class, and null-pointer-constant (NPC) status. Failure to propagate these properties leads to constraint bypasses (e.g., taking the address of a bit-field wrapped in `_Generic`) or incorrect type mismatches (e.g., rejecting an NPC wrapped in `__builtin_choose_expr` where a pointer is expected).
 Action: Ensure all expression property queries (like `is_lvalue`, `is_register_variable`, `get_bitfield_width`, and `is_null_pointer_constant`) recursively inspect the selected branch of selection expressions.
+
+2026-03-20 - [Member Completeness and Span Propagation]
+
+Learning: C11 6.7.2.1p3 constraints on structure members (prohibiting incomplete or function types) are best enforced during semantic lowering when the record is being completed. However, because record completion often triggers layout computation, errors like 'SizeOfIncompleteType' or 'RecursiveType' can originate deep in the type registry. Ensuring these are caught during lowering and associated with the correct member span is critical for diagnostic quality. Testing this at the `SemanticLowering` phase rather than later (like MIR) ensures that invalid types are rejected as soon as they are defined.
+Action: Always verify that structural constraints (like member types) are enforced during the lowering/definition phase and that diagnostics point to the relevant declaration rather than just the start of the containing block.

@@ -85,7 +85,3 @@
 ## 2024-05-27 - Niche Optimization via NonZeroU32 for Qualified Types
 **Learning:** In Rust, `Option<T>` usually takes more space than `T` unless `T` has a "niche" (invalid bit pattern) that the compiler can use to represent `None`. In our compiler, `QualType` is a very frequently used 4-byte packed structure (TypeRef + qualifiers). Since `TypeRef` is guaranteed to be non-zero, `QualType` can never have a zero bit pattern.
 **Action:** Use `NonZeroU32` as the internal representation for `QualType`. This enables niche optimization for `Option<QualType>`, reducing its size from 8 bytes to 4 bytes. This significantly improves memory density and cache locality in large data-parallel structures like the `SemanticInfo` side table, which stores an `Option<QualType>` for every node in the AST.
-
-## 2024-05-28 - Centralized Metadata Management for Line Starts
-**Learning:** Redundant $O(N)$ buffer scans in every `PPLexer::new` and on-the-fly line tracking in lexer hot paths were significant overheads and caused bugs where line information was unavailable for included files. Centralizing line-start calculation in `SourceManager` ensures it happens exactly once per buffer and makes it globally available.
-**Action:** Favor centralized, pre-computed metadata in a manager class over redundant tracking in individual processing components. This simplifies hot paths and ensures data consistency across the pipeline.

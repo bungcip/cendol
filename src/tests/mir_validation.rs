@@ -765,3 +765,41 @@ fn test_rvalue_cast_aggregate_invalid() {
 
     assert!(matches!(res, Err(errors) if errors.contains(&ValidationError::InvalidCast(struct_ty_id, i32_ty))));
 }
+
+#[test]
+fn test_invalid_cast_in_store() {
+    let mut mir = create_valid_mir();
+    let func_id = mir.module.functions[0];
+    let func = mir.functions.get(&func_id).unwrap();
+    let block_id = func.blocks[0];
+
+    // Add float type
+    let f32_ty = TypeId::new(2).unwrap();
+    mir.types.insert(f32_ty, MirType::F32);
+    mir.module.types.push(MirType::F32);
+
+    let i32_ty = TypeId::new(1).unwrap();
+    let local_i32 = LocalId::new(100).unwrap();
+    let local_f32 = LocalId::new(101).unwrap();
+
+    mir.locals.insert(local_i32, Local::new(local_i32, None, i32_ty, false));
+    mir.locals.insert(local_f32, Local::new(local_f32, None, f32_ty, false));
+
+    if let Some(func) = mir.functions.get_mut(&func_id) {
+        func.locals.push(local_i32);
+        func.locals.push(local_f32);
+    }
+
+    let stmt_id = MirStmtId::new(100).unwrap();
+    let op = Operand::Copy(Box::new(Place::Local(local_f32)));
+    let stmt = MirStmt::Store(op, Place::Local(local_i32));
+
+    mir.statements.insert(stmt_id, stmt);
+    if let Some(block) = mir.blocks.get_mut(&block_id) {
+        block.statements.push(stmt_id);
+    }
+
+    let validator = MirValidator::new(&mir);
+    let res = validator.validate();
+    assert!(matches!(res, Err(errors) if errors.contains(&ValidationError::InvalidCast(f32_ty, i32_ty))));
+}

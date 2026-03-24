@@ -181,9 +181,9 @@ impl PPToken {
 pub(crate) struct PPLexer {
     pub(crate) source_id: SourceId,
     buffer: Arc<[u8]>,
-    pub(crate) position: u32,           // its okay to use u32 here since source files are limited to 4 MB
+    pub(crate) position: u32, // its okay to use u32 here since source files are limited to 4 MB
     pub(crate) in_directive_line: bool, // Whether we are currently processing tokens on a directive line
-    pub(crate) at_start_of_line: bool,  // Whether we are at the beginning of a line (only whitespace/comments seen)
+    pub(crate) at_start_of_line: bool, // Whether we are at the beginning of a line (only whitespace/comments seen)
 }
 
 impl PPLexer {
@@ -1209,7 +1209,6 @@ impl PPLexer {
             .map(|(line, _)| line)
             .unwrap_or(1)
     }
-
 }
 
 #[cfg(test)]

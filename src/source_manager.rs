@@ -438,8 +438,6 @@ impl SourceManager {
         self.file_infos.get_mut(id as usize - 2).map(|fi| &mut fi.line_map)
     }
 
-
-
     /// Get the source text for a given span
     /// Since we only support UTF-8, we can assume the bytes are valid UTF-8
     #[cfg(test)]

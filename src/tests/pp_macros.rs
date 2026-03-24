@@ -63,6 +63,37 @@ A
 }
 
 #[test]
+fn test_defer_recursive_expansion() {
+    let src = r#"
+#define EMPTY()
+#define DEFER(id) id EMPTY()
+#define EXPAND(...) __VA_ARGS__
+#define BAR_I() BAR
+#define BAR()  DEFER(BAR_I)()() 1
+EXPAND(EXPAND(BAR()))
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: BAR_I
+    - kind: LeftParen
+      text: (
+    - kind: RightParen
+      text: )
+    - kind: LeftParen
+      text: (
+    - kind: RightParen
+      text: )
+    - kind: Number
+      text: "1"
+    - kind: Number
+      text: "1"
+    - kind: Number
+      text: "1"
+    "#);
+}
+
+#[test]
 fn test_function_like_macro_not_expanded_when_not_followed_by_paren() {
     let src = r#"
 #define x(y) ((y) + 1)

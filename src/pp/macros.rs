@@ -14,6 +14,10 @@ impl<'src> Preprocessor<'src> {
             return Ok(None);
         };
 
+        if token.flags.contains(PPTokenFlags::DISABLE_EXPANSION) {
+            return Ok(None);
+        }
+
         // Bolt ⚡: Check hide set FIRST. This avoids a HashMap lookup for every recursive
         // macro identifier encountered during expansion.
         if self.hide_sets.contains(token.hide_set, symbol) {
@@ -141,7 +145,7 @@ impl<'src> Preprocessor<'src> {
         let new_hs = self.hide_sets.insert(intersect_hs, *symbol);
 
         // Substitute parameters in macro body
-        let substituted = self.substitute_macro(macro_info, &args, &expanded_args, new_hs)?;
+        let substituted = self.substitute_macro(macro_info, *symbol, &args, &expanded_args, intersect_hs, new_hs)?;
 
         // No DISABLED flag needed — is_recursive_expansion() detects self-reference
         // via the virtual buffer's source location (<macro_NAME>).
@@ -274,8 +278,10 @@ impl<'src> Preprocessor<'src> {
     fn substitute_macro(
         &mut self,
         macro_info: &MacroInfo,
+        symbol: StringId,
         args: &[Vec<PPToken>],
         expanded_args: &[Vec<PPToken>],
+        intersect_hs: u32,
         new_hs: u32,
     ) -> Result<Vec<PPToken>, PPError> {
         // Bolt ⚡: Pre-allocate result vector to minimize reallocations during substitution.
@@ -283,8 +289,7 @@ impl<'src> Preprocessor<'src> {
         let mut i = 0;
         let mut last_token_produced_output = false;
 
-        // Bolt ⚡: Single-item cache for hide-set unions.
-        // In substitute_macro, new_hs is constant, so we only need to cache based on input hs.
+        // Bolt ⚡: Single-item cache for hide-set updates.
         let mut last_hs = (u32::MAX, 0u32);
 
         while i < macro_info.tokens.len() {
@@ -325,12 +330,18 @@ impl<'src> Preprocessor<'src> {
                             last_token_produced_output = false;
                         } else {
                             for mut t in param_tokens.iter().copied() {
-                                // Bolt ⚡: Hide-set optimization.
+                                // Bolt ⚡: Hide-set intersection logic for arguments (Dave Prosser algorithm).
                                 if t.hide_set == 0 {
-                                    t.hide_set = new_hs;
+                                    // 0 intersected with intersect_hs is 0. 0 unioned with symbol is just {symbol}.
+                                    if last_hs.0 != 0 {
+                                        last_hs = (0, self.hide_sets.insert(0, symbol));
+                                    }
+                                    t.hide_set = last_hs.1;
                                 } else {
                                     if t.hide_set != last_hs.0 {
-                                        last_hs = (t.hide_set, self.hide_sets.union(t.hide_set, new_hs));
+                                        let intersected = self.hide_sets.intersection(t.hide_set, intersect_hs);
+                                        let updated = self.hide_sets.insert(intersected, symbol);
+                                        last_hs = (t.hide_set, updated);
                                     }
                                     t.hide_set = last_hs.1;
                                 }
@@ -726,6 +737,11 @@ impl<'src> Preprocessor<'src> {
 
             // Expand macros inline.
             if let PPTokenKind::Identifier(symbol) = tokens[i].kind {
+                if tokens[i].flags.contains(PPTokenFlags::DISABLE_EXPANSION) {
+                    i += 1;
+                    continue;
+                }
+
                 // Bolt ⚡: Consolidated macro lookup logic.
                 // We perform a single hide-set check and a single HashMap lookup per identifier
                 // to determine if it should be expanded as a function-like or object-like macro.
@@ -792,7 +808,14 @@ impl<'src> Preprocessor<'src> {
                                 .intersection(tokens[i].hide_set, tokens[end_j - 1].hide_set);
                             let new_hs = self.hide_sets.insert(intersect_hs, symbol);
 
-                            let substituted = self.substitute_macro(&macro_info, &args, &expanded_args, new_hs)?;
+                            let substituted = self.substitute_macro(
+                                &macro_info,
+                                symbol,
+                                &args,
+                                &expanded_args,
+                                intersect_hs,
+                                new_hs,
+                            )?;
                             let substituted =
                                 self.create_virtual_buffer_tokens(&substituted, symbol.as_str(), tokens[i].location);
 
@@ -813,6 +836,9 @@ impl<'src> Preprocessor<'src> {
                         }
                         None => {}
                     }
+                } else {
+                    // Mark as permanently disabled.
+                    tokens[i].flags |= PPTokenFlags::DISABLE_EXPANSION;
                 }
             }
 

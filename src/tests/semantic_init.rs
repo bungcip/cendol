@@ -607,3 +607,39 @@ fn test_designated_initializer_struct_from_ptr() {
     "#;
     assert_eq!(run_c_code_exit_status(source), 0);
 }
+
+#[test]
+fn test_array_designator_subobject_completion() {
+    // Tests that after a designated initializer finishes initializing a subobject,
+    // subsequent non-designated items continue to initialize the rest of the current aggregate.
+    let source = r#"
+        int main() {
+            int i[1][3] = {[0][0 ... 1] = 4, 2};
+            if (i[0][0] != 4) return 1;
+            if (i[0][1] != 4) return 2;
+            if (i[0][2] != 2) return 3;
+            return 0;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
+}
+
+#[test]
+fn test_struct_designator_subobject_completion() {
+    // Tests that after a designed structure member is initialized, subsequent non-designated items
+    // continue to initialize the structure from the next member.
+    let source = r#"
+        struct S { int a; int b[2]; };
+        
+        int main() {
+            struct S s[2] = { [0].b[0] = 1, 2, 3 };
+            if (s[0].a != 0) return 1;
+            if (s[0].b[0] != 1) return 2;
+            if (s[0].b[1] != 2) return 3;
+            if (s[1].a != 3) return 4;
+            if (s[1].b[0] != 0 || s[1].b[1] != 0) return 5;
+            return 0;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
+}

@@ -1732,26 +1732,59 @@ impl<'a> SemanticAnalyzer<'a> {
                 let target_kind = self.registry.get(target_ty.ty()).kind.clone();
                 match d {
                     Designator::FieldName(name) => {
-                        if let TypeKind::Record { members, .. } = &target_kind
+                        if let TypeKind::Record { members, is_union, .. } = &target_kind
                             && let Some(idx) = self.find_member_index(members, *name)
                         {
                             self.consume_initializers(members[idx].member_type, iter, designator_idx + 1);
+
+                            if !is_union {
+                                for i in (idx + 1)..members.len() {
+                                    if iter.peek().is_none()
+                                        || self.unwrap_initializer_item(*iter.peek().unwrap()).2 > 0
+                                    {
+                                        break;
+                                    }
+                                    self.consume_initializers(members[i].member_type, iter, 0);
+                                }
+                            }
                             return;
                         }
                     }
                     Designator::ArrayIndex(e) | Designator::GnuArrayRange(e, _) => {
-                        if let TypeKind::Array { element_type, .. } = &target_kind {
+                        if let TypeKind::Array { element_type, size, .. } = &target_kind {
+                            let mut end_idx = 0i64;
                             if let Designator::GnuArrayRange(s, end) = d {
                                 self.visit_node(*s);
                                 self.visit_node(*end);
+                                if let Some(idx) = eval_const_expr(&self.const_ctx(), *end) {
+                                    end_idx = idx;
+                                }
                             } else {
                                 self.visit_node(*e);
+                                if let Some(idx) = eval_const_expr(&self.const_ctx(), *e) {
+                                    end_idx = idx;
+                                }
                             }
                             self.consume_initializers(
                                 QualType::new(*element_type, target_ty.qualifiers()),
                                 iter,
                                 designator_idx + 1,
                             );
+
+                            if let ArraySizeType::Constant(len) = size {
+                                for _ in (end_idx + 1)..(*len as i64) {
+                                    if iter.peek().is_none()
+                                        || self.unwrap_initializer_item(*iter.peek().unwrap()).2 > 0
+                                    {
+                                        break;
+                                    }
+                                    self.consume_initializers(
+                                        QualType::new(*element_type, target_ty.qualifiers()),
+                                        iter,
+                                        0,
+                                    );
+                                }
+                            }
                             return;
                         }
                     }

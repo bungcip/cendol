@@ -363,7 +363,7 @@ impl<'a> MirGen<'a> {
 
         if let Some(const_id) = self.operand_to_const_id(&operand) {
             let const_val = self.mir_builder.get_constants().get(&const_id).unwrap().clone();
-            
+
             let is_true = match const_val.kind {
                 ConstValueKind::Int(val) => val != 0,
                 ConstValueKind::Float(val) => val != 0.0,
@@ -372,8 +372,10 @@ impl<'a> MirGen<'a> {
                 ConstValueKind::Null => false,
                 _ => return Operand::Cast(bool_ty_id, Box::new(operand)),
             };
-            
-            return Operand::Constant(self.create_constant(bool_ty_id, ConstValueKind::Int(if is_true { 1 } else { 0 })));
+
+            return Operand::Constant(
+                self.create_constant(bool_ty_id, ConstValueKind::Int(if is_true { 1 } else { 0 })),
+            );
         }
 
         Operand::Cast(bool_ty_id, Box::new(operand))

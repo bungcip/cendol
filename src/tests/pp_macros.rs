@@ -815,3 +815,64 @@ EXPAND(F(1, 2, 3))
       text: "3"
     "#);
 }
+
+#[test]
+fn test_va_opt_basic() {
+    let src = r#"
+#define M(a, ...) a __VA_OPT__(+) __VA_ARGS__
+M(1)
+M(1, 2)
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Number
+      text: "1"
+    - kind: Number
+      text: "1"
+    - kind: Plus
+      text: +
+    - kind: Number
+      text: "2"
+    "#);
+}
+
+#[test]
+fn test_va_opt_stringification() {
+    let src = r#"
+#define FOO BAR
+#define M2(x,y,...) #__VA_OPT__(y##x __VA_ARGS__)
+M2(a,b,FOO)
+M2(a,b)
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: StringLiteral
+      text: "\"ba BAR\""
+    - kind: StringLiteral
+      text: "\"\""
+    "#);
+}
+
+#[test]
+fn test_va_opt_empty() {
+    let src = r#"
+#define M1(a, ...) a __VA_OPT__(,) __VA_ARGS__
+M1(1)
+M1(1, 2, 3)
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Number
+      text: "1"
+    - kind: Number
+      text: "1"
+    - kind: Comma
+      text: ","
+    - kind: Number
+      text: "2"
+    - kind: Comma
+      text: ","
+    - kind: Number
+      text: "3"
+    "#);
+}

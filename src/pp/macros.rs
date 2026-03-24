@@ -274,6 +274,106 @@ impl<'src> Preprocessor<'src> {
         None
     }
 
+    fn is_variadic_args_empty(&self, macro_info: &MacroInfo, args: &[Vec<PPToken>]) -> bool {
+        let start = macro_info.parameter_list.len();
+        if args.len() <= start {
+            return true;
+        }
+        args[start..].iter().all(|arg| arg.is_empty())
+    }
+
+    fn resolve_va_opt<'a>(
+        &mut self,
+        macro_info: &'a MacroInfo,
+        symbol: StringId,
+        args: &[Vec<PPToken>],
+        expanded_args: &[Vec<PPToken>],
+        intersect_hs: u32,
+        new_hs: u32,
+    ) -> Result<Cow<'a, [PPToken]>, PPError> {
+        if macro_info.variadic_arg.is_none() {
+            return Ok(Cow::Borrowed(&macro_info.tokens));
+        }
+
+        let mut has_va_opt = false;
+        for t in macro_info.tokens.iter() {
+            if let PPTokenKind::Identifier(sym) = t.kind {
+                if sym.as_str() == "__VA_OPT__" {
+                    has_va_opt = true;
+                    break;
+                }
+            }
+        }
+        if !has_va_opt {
+            return Ok(Cow::Borrowed(&macro_info.tokens));
+        }
+
+        let mut resolved = Vec::with_capacity(macro_info.tokens.len());
+        let mut i = 0;
+        let is_empty = self.is_variadic_args_empty(macro_info, args);
+
+        while i < macro_info.tokens.len() {
+            let token = &macro_info.tokens[i];
+
+            // Handle # __VA_OPT__(content)
+            if token.kind == PPTokenKind::Hash && i + 1 < macro_info.tokens.len() {
+                let next = &macro_info.tokens[i + 1];
+                if let PPTokenKind::Identifier(sym) = next.kind {
+                    if sym.as_str() == "__VA_OPT__"
+                        && i + 2 < macro_info.tokens.len()
+                        && macro_info.tokens[i + 2].kind == PPTokenKind::LeftParen
+                    {
+                        if let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 2) {
+                            if !is_empty {
+                                let content = &macro_info.tokens[i + 3..rparen_idx - 1];
+                                let substituted = self.substitute_tokens_slice(
+                                    macro_info,
+                                    content,
+                                    symbol,
+                                    args,
+                                    expanded_args,
+                                    intersect_hs,
+                                    new_hs,
+                                )?;
+                                let mut stringified = self.stringify_tokens(&substituted, token.location)?;
+                                stringified.hide_set = token.hide_set;
+                                resolved.push(stringified);
+                            } else {
+                                let mut stringified = self.stringify_tokens(&[], token.location)?;
+                                stringified.hide_set = token.hide_set;
+                                resolved.push(stringified);
+                            }
+                            i = rparen_idx;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            // Handle __VA_OPT__(content)
+            if let PPTokenKind::Identifier(sym) = token.kind {
+                if sym.as_str() == "__VA_OPT__"
+                    && i + 1 < macro_info.tokens.len()
+                    && macro_info.tokens[i + 1].kind == PPTokenKind::LeftParen
+                {
+                    if let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 1) {
+                        if !is_empty {
+                            let content = &macro_info.tokens[i + 2..rparen_idx - 1];
+                            resolved.extend_from_slice(content);
+                        }
+                        i = rparen_idx;
+                        continue;
+                    }
+                }
+            }
+
+            resolved.push(*token);
+            i += 1;
+        }
+
+        Ok(Cow::Owned(resolved))
+    }
+
     /// Substitute parameters in macro body
     fn substitute_macro(
         &mut self,
@@ -284,20 +384,43 @@ impl<'src> Preprocessor<'src> {
         intersect_hs: u32,
         new_hs: u32,
     ) -> Result<Vec<PPToken>, PPError> {
-        // Bolt ⚡: Pre-allocate result vector to minimize reallocations during substitution.
-        let mut result = Vec::with_capacity(macro_info.tokens.len());
+        let tokens_cow = self.resolve_va_opt(macro_info, symbol, args, expanded_args, intersect_hs, new_hs)?;
+        self.substitute_tokens_slice(
+            macro_info,
+            &tokens_cow,
+            symbol,
+            args,
+            expanded_args,
+            intersect_hs,
+            new_hs,
+        )
+    }
+
+    fn substitute_tokens_slice(
+        &mut self,
+        macro_info: &MacroInfo,
+        tokens_slice: &[PPToken],
+        symbol: StringId,
+        args: &[Vec<PPToken>],
+        expanded_args: &[Vec<PPToken>],
+        intersect_hs: u32,
+        new_hs: u32,
+    ) -> Result<Vec<PPToken>, PPError> {
+        let mut result = Vec::with_capacity(tokens_slice.len());
         let mut i = 0;
         let mut last_token_produced_output = false;
 
         // Bolt ⚡: Single-item cache for hide-set updates.
         let mut last_hs = (u32::MAX, 0u32);
 
-        while i < macro_info.tokens.len() {
-            let token = &macro_info.tokens[i];
+        while i < tokens_slice.len() {
+            let token = &tokens_slice[i];
 
             match token.kind {
-                PPTokenKind::Hash if i + 1 < macro_info.tokens.len() => {
-                    let next = &macro_info.tokens[i + 1];
+                PPTokenKind::Hash if i + 1 < tokens_slice.len() => {
+                    let next = &tokens_slice[i + 1];
+                    let mut matched = false;
+
                     if let PPTokenKind::Identifier(sym) = next.kind
                         && let Some(arg) = self.get_macro_param_tokens(macro_info, sym, args, token.location)
                     {
@@ -307,11 +430,19 @@ impl<'src> Preprocessor<'src> {
                         result.push(stringified);
                         last_token_produced_output = true;
                         i += 2;
+                        matched = true;
+                    }
+                    if matched {
                         continue;
                     }
+                    // Fallback: output isolated hash token
+                    let mut t = *token;
+                    t.hide_set = new_hs;
+                    result.push(t);
+                    last_token_produced_output = true;
                 }
-                PPTokenKind::HashHash if i + 1 < macro_info.tokens.len() => {
-                    let right_token = &macro_info.tokens[i + 1];
+                PPTokenKind::HashHash if i + 1 < tokens_slice.len() => {
+                    let right_token = &tokens_slice[i + 1];
                     let left = if last_token_produced_output { result.pop() } else { None };
 
                     let (pasted, produced_output) = self.perform_token_pasting(macro_info, left, right_token, args)?;
@@ -322,8 +453,7 @@ impl<'src> Preprocessor<'src> {
                     continue;
                 }
                 PPTokenKind::Identifier(sym) => {
-                    let next_is_hh =
-                        i + 1 < macro_info.tokens.len() && macro_info.tokens[i + 1].kind == PPTokenKind::HashHash;
+                    let next_is_hh = i + 1 < tokens_slice.len() && tokens_slice[i + 1].kind == PPTokenKind::HashHash;
                     let src = if next_is_hh { args } else { expanded_args };
                     if let Some(param_tokens) = self.get_macro_param_tokens(macro_info, sym, src, token.location) {
                         if param_tokens.is_empty() {

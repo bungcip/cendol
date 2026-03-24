@@ -1,5 +1,6 @@
+use crate::driver::artifact::CompilePhase;
 use crate::tests::codegen_common::run_c_code_exit_status;
-use crate::tests::test_utils::run_fail_with_message;
+use crate::tests::test_utils::run_pass_with_diagnostic_message;
 
 #[test]
 fn test_init_range_index_advancement() {
@@ -22,11 +23,11 @@ fn test_init_range_index_advancement() {
 fn test_init_range_excess_elements() {
     let source = r#"
     int main() {
-        int a[2] = { [0 ... 1] = 1, 2 }; // Error: index 2 is out of bounds
+        int a[2] = { [0 ... 1] = 1, 2 }; // Warning: index 2 is out of bounds
         return 0;
     }
     "#;
-    run_fail_with_message(source, "excess elements");
+    run_pass_with_diagnostic_message(source, CompilePhase::Mir, "excess elements");
 }
 
 #[test]

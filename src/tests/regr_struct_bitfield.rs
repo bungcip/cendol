@@ -84,3 +84,36 @@ fn test_anonymous_bitfield_alignment() {
     "#;
     assert_eq!(run_c_code_exit_status(source), 0);
 }
+
+#[test]
+fn test_unnamed_bitfield_init_excess_elements() {
+    // Unnamed bitfields should be skipped during initialization.
+    // {1,2,3,4} should initialize a=1, b=2 and warn about excess elements 3,4.
+    use crate::driver::artifact::CompilePhase;
+    use crate::tests::test_utils::run_pass_with_diagnostic_message;
+
+    let source = r#"
+        int main(void) {
+            struct {int :1, a, :1, b;} s = {1,2,3,4};
+            if (s.a != 1) return 1;
+            if (s.b != 2) return 2;
+            return 0;
+        }
+    "#;
+    run_pass_with_diagnostic_message(source, CompilePhase::Mir, "excess elements");
+}
+
+#[test]
+fn test_unnamed_bitfield_init_exact_elements() {
+    // Unnamed bitfields should be skipped during initialization.
+    // {1,2} should initialize a=1, b=2 with no warnings.
+    let source = r#"
+        int main(void) {
+            struct {int :1, a, :1, b;} s = {1, 2};
+            if (s.a != 1) return 1;
+            if (s.b != 2) return 2;
+            return 0;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
+}

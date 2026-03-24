@@ -1542,7 +1542,7 @@ impl<'a> SemanticAnalyzer<'a> {
             } = self.registry.get(init_ty.ty()).kind
             && init_size.saturating_sub(1) > target_size
         {
-            self.report_error(init, SemanticErrorKind::ExcessElements { kind: "array" });
+            self.report_warning(init, SemanticErrorKind::ExcessElements { kind: "array" });
         }
 
         self.record_implicit_conversions(target_ty, init_ty, init);
@@ -1591,7 +1591,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             for (i, item) in items.enumerate() {
                 if i == 0 {
-                    self.report_error(item, SemanticErrorKind::ExcessElements { kind: "scalar" });
+                    self.report_warning(item, SemanticErrorKind::ExcessElements { kind: "scalar" });
                 }
                 self.visit_node(self.unwrap_initializer_item(item).0);
             }
@@ -1605,6 +1605,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let is_union = *is_union;
                 let mut iter = list.init_start.range(list.init_len).peekable();
                 let mut member_idx = 0;
+                let mut excess_reported = false;
 
                 while let Some(item) = iter.peek().copied() {
                     let mut designed = false;
@@ -1636,7 +1637,10 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
 
                     if member_idx >= members.len() {
-                        self.report_error(item, SemanticErrorKind::ExcessElements { kind: "record" });
+                        if !excess_reported {
+                            self.report_warning(item, SemanticErrorKind::ExcessElements { kind: "record" });
+                            excess_reported = true;
+                        }
                         self.visit_node(self.unwrap_initializer_item(item).0);
                         iter.next();
                         continue;
@@ -1703,7 +1707,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     if let Some(max) = max_index
                         && current_idx >= max
                     {
-                        self.report_error(item, SemanticErrorKind::ExcessElements { kind: "array" });
+                        self.report_warning(item, SemanticErrorKind::ExcessElements { kind: "array" });
                     }
 
                     self.consume_initializers(element_qt, &mut iter, 1);

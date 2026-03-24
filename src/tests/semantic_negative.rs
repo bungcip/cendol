@@ -111,12 +111,14 @@ fn test_designated_init_field_not_found() {
 
 #[test]
 fn test_scalar_init_brace_list() {
-    run_fail_with_message(
+    use crate::tests::test_utils::run_pass_with_diagnostic_message;
+    run_pass_with_diagnostic_message(
         r#"
         int main() {
             int x = {1, 2};
         }
         "#,
+        CompilePhase::Mir,
         "excess elements",
     );
 }

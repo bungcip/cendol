@@ -1,12 +1,12 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_fail_with_diagnostic, run_pass};
+use crate::tests::test_utils::{run_pass, run_pass_with_diagnostic};
 
 #[test]
 fn test_string_init_excess_chars() {
     // C11 §6.7.9p14: the number of characters in the string literal
     // (excluding the null) shall not exceed the number of elements in the array.
-    // char s[2] = "abc" → error: 3 chars > 2 elements
-    run_fail_with_diagnostic(
+    // char s[2] = "abc" → warning: 3 chars > 2 elements
+    run_pass_with_diagnostic(
         r#"
         int main(void) {
             char s[2] = "abc";

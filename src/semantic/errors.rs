@@ -30,7 +30,8 @@ impl SemanticError {
             | SemanticErrorKind::ImplicitConstantConversion { .. }
             | SemanticErrorKind::SwitchCaseOverflow { .. }
             | SemanticErrorKind::AddressOfArrayAlwaysTrue { .. }
-            | SemanticErrorKind::EnumeratorValueNotRepresentable { .. } => DiagnosticLevel::Warning,
+            | SemanticErrorKind::EnumeratorValueNotRepresentable { .. }
+            | SemanticErrorKind::ExcessElements { .. } => DiagnosticLevel::Warning,
             _ => DiagnosticLevel::Error,
         };
 
@@ -392,6 +393,7 @@ impl SemanticErrorKind {
             SemanticErrorKind::SwitchCaseOverflow { .. } => Some("switch"),
             SemanticErrorKind::AddressOfArrayAlwaysTrue { .. } => Some("tautological-pointer-compare"),
             SemanticErrorKind::EnumeratorValueNotRepresentable { .. } => Some("enum-conversion"),
+            SemanticErrorKind::ExcessElements { .. } => Some("excess-initializers"),
             _ => None,
         }
     }

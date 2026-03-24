@@ -1,16 +1,17 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_fail_with_message, run_pass};
+use crate::tests::test_utils::{run_pass, run_pass_with_diagnostic_message};
 
 #[test]
 fn test_array_init_excess_elements() {
-    // int a[2] = {1, 2, 3} -> Error: 3 elements in array of 2
-    run_fail_with_message(
+    // int a[2] = {1, 2, 3} -> Warning: 3 elements in array of 2
+    run_pass_with_diagnostic_message(
         r#"
         int main(void) {
             int a[2] = {1, 2, 3};
             return 0;
         }
         "#,
+        CompilePhase::Mir,
         "excess elements in array initializer",
     );
 }
@@ -67,14 +68,15 @@ fn test_array_init_designator_reset() {
 
 #[test]
 fn test_array_init_designator_excess() {
-    // int a[3] = {1, [2] = 5, 2} -> Error, 2 goes to index 3 which is out of bounds
-    run_fail_with_message(
+    // int a[3] = {1, [2] = 5, 2} -> Warning, 2 goes to index 3 which is out of bounds
+    run_pass_with_diagnostic_message(
         r#"
         int main(void) {
             int a[3] = {1, [2] = 5, 2};
             return 0;
         }
         "#,
+        CompilePhase::Mir,
         "excess elements in array initializer",
     );
 }

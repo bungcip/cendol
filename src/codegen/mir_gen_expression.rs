@@ -639,8 +639,17 @@ impl<'a> MirGen<'a> {
 
     fn visit_unary_addrof(&mut self, operand_ref: NodeRef) -> Operand {
         let operand = self.visit_expression(operand_ref, true);
-        if let Operand::Copy(place) = operand {
-            Operand::AddressOf(place)
+        if let Operand::Copy(ref place) = operand {
+            // Special case for VLA: &vla should evaluate to the value of the pointer local.
+            if let Place::Local(local_id) = &**place {
+                if self.vla_map.values().any(|(ptr, _)| ptr == local_id) {
+                    let symbol_ty = self.ast.get_resolved_type(operand_ref).unwrap();
+                    if symbol_ty.is_array() {
+                        return operand.clone();
+                    }
+                }
+            }
+            Operand::AddressOf(place.clone())
         } else if let Operand::Constant(const_id) = operand
             && self.ast.get_value_category(operand_ref) == Some(ValueCategory::LValue)
             && matches!(
@@ -697,6 +706,21 @@ impl<'a> MirGen<'a> {
                         }
                     };
                     Operand::Copy(Box::new(Place::Global(*global_id)))
+                } else if let Some(&(ptr_local_id, _)) = self.vla_map.get(&resolved_ref) {
+                    // For VLA, the identifier refers to the dynamically allocated memory.
+                    // If it is an array type (VLA), the identifier refers to the base of the array.
+                    // If it is a scalar (highly-aligned fallback), we must Deref to get the value.
+                    let symbol = self.symbol_table.get_symbol(resolved_ref);
+                    let is_array = symbol.type_info.ty().is_array();
+                    
+                    if is_array {
+                        // Return the pointer local directly. ArrayIndex and decay will handle it.
+                        Operand::Copy(Box::new(Place::Local(ptr_local_id)))
+                    } else {
+                        // Return Deref(p) so it behaves like a normal scalar variable.
+                        let ptr_op = Operand::Copy(Box::new(Place::Local(ptr_local_id)));
+                        Operand::Copy(Box::new(Place::Deref(Box::new(ptr_op))))
+                    }
                 } else {
                     let local_id = self.local_map.get(&resolved_ref).unwrap();
                     Operand::Copy(Box::new(Place::Local(*local_id)))

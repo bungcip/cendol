@@ -79,18 +79,18 @@ fn test_vla_ice_fix() {
     fn f1(%param0: i32) -> void
     {
       locals {
-        %test: ptr<i8>
+        %2: u64
         %3: u64
-        %4: u64
+        %test: ptr<i8>
         %6: i32
         %7: i32
         %8: i32
       }
 
       bb1:
-        %4 = cast<u64>(%param0) * const 1
-        %3 = %4
-        %test = call malloc(%4)
+        %2 = cast<u64>(%param0) * const 1
+        %3 = %2
+        %test = call malloc(%2)
         cond_br const 0, bb3, bb4
 
       bb2:
@@ -120,6 +120,8 @@ fn test_vla_ice_fix() {
     }
 
     extern fn malloc(%param0: u64) -> ptr<void>
+
+    extern fn free(%param0: ptr<void>) -> void
     ");
 }
 
@@ -135,7 +137,7 @@ fn test_vla_in_block_scope() {
             }
         "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @"
+    insta::assert_snapshot!(mir, @r"
     type %t0 = void
     type %t1 = i32
     type %t2 = [0]%t1
@@ -148,23 +150,26 @@ fn test_vla_in_block_scope() {
       locals {
         %n: i32
         %m: i32
-        %arr: ptr<i32>
+        %3: i32
         %4: u64
-        %5: i32
-        %6: u64
+        %5: u64
+        %arr: ptr<i32>
       }
 
       bb1:
         %n = const 10
         %m = const 5
-        %5 = %n + %m
-        %6 = cast<u64>(%5) * const 4
-        %4 = %6
-        %arr = call malloc(%6)
+        %3 = %n + %m
+        %4 = cast<u64>(%3) * const 4
+        %5 = %4
+        %arr = call malloc(%4)
+        call free(%arr)
         return
     }
 
     extern fn malloc(%param0: u64) -> ptr<void>
+
+    extern fn free(%param0: ptr<void>) -> void
     ");
 }
 

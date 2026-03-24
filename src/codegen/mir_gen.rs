@@ -44,6 +44,7 @@ pub(crate) struct MirGen<'a> {
     pub(crate) switch_case_map: HashMap<NodeRef, MirBlockId>,
     pub(crate) valist_mir_id: Option<TypeId>,
     pub(crate) source_manager: &'a SourceManager,
+    pub(crate) scope_cleanup: Vec<Vec<LocalId>>,
 }
 
 impl<'a> MirGen<'a> {
@@ -73,6 +74,7 @@ impl<'a> MirGen<'a> {
             switch_case_map: HashMap::new(),
             valist_mir_id: None,
             source_manager,
+            scope_cleanup: vec![Vec::new()],
         }
     }
 
@@ -318,11 +320,17 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_compound_statement(&mut self, cs: &nodes::CompoundStmt) {
+        self.scope_cleanup.push(Vec::new());
         for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
             // We visit all statements regardless of whether the current block is terminated.
             // MirBuilder will suppress statement addition to terminated blocks, but we need
             // to traverse to find nested labels/cases which start new reachable blocks.
             self.visit_node(stmt_ref)
+        }
+        let cleanup = self.scope_cleanup.pop().unwrap();
+        for ptr_local_id in cleanup {
+            let ptr_op = Operand::Copy(Box::new(Place::Local(ptr_local_id)));
+            self.emit_free_call(ptr_op);
         }
     }
 
@@ -511,8 +519,28 @@ impl<'a> MirGen<'a> {
             return;
         }
 
-        let local_id = self.mir_builder.create_local(Some(name), mir_type_id, false);
+        // Fallback for highly aligned locals: treat as fixed-size VLA if alignment > 16.
+        // This works around backend limitations in stack realignment.
+        if let Some(align) = alignment && align > 16 {
+            let mir_type = self.mir_builder.get_type(mir_type_id);
+            let size = self.get_type_size(mir_type);
+            let size_op = self.create_size_t_operand(size as u64);
+            let ptr_local_id = self.emit_heap_alloc(Some(name), mir_type_id, alignment, size_op);
+            
+            // We need a dummy size local for the vla_map entry, although it won't be used for sizeof.
+            let size_t_ty = self.get_size_t_type();
+            let dummy_size_local = self.mir_builder.create_local(None, size_t_ty, false);
+            self.vla_map.insert(entry_ref, (ptr_local_id, dummy_size_local));
+            
+            // Initialize if needed
+            if let Some(initializer) = init {
+                let init_operand = self.visit_initializer(initializer, ty, Some(Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(ptr_local_id)))))));
+                self.emit_assignment(Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(ptr_local_id))))), init_operand);
+            }
+            return;
+        }
 
+        let local_id = self.mir_builder.create_local(Some(name), mir_type_id, false);
         if let Some(align) = alignment {
             self.mir_builder.set_local_alignment(local_id, align);
         }
@@ -540,10 +568,9 @@ impl<'a> MirGen<'a> {
             None
         }
     }
-
     /// Handle VLA local variable declaration.
     /// Creates a pointer-typed local for the data and a size_t local for sizeof.
-    /// Emits runtime allocation using Alloc (malloc).
+    /// Emits runtime allocation using posix_memalign/malloc.
     fn visit_vla_local(
         &mut self,
         entry_ref: SymbolRef,
@@ -554,22 +581,8 @@ impl<'a> MirGen<'a> {
     ) {
         // Get element size dynamically (the element type might itself be a VLA)
         let element_size_operand = self.visit_type_query(element_type, true);
-
-        // Lower element type to get pointer type
         let element_mir_ty = self.lower_type(element_type);
-        let ptr_mir_ty = self.mir_builder.add_type(MirType::Pointer {
-            pointee: element_mir_ty,
-        });
         let size_t_mir_ty = self.get_size_t_type();
-
-        // Create pointer local (holds the allocated memory address)
-        let ptr_local_id = self.mir_builder.create_local(Some(name), ptr_mir_ty, false);
-        if let Some(align) = alignment {
-            self.mir_builder.set_local_alignment(ptr_local_id, align);
-        }
-
-        // Create size local (holds total byte size for sizeof)
-        let size_local_id = self.mir_builder.create_local(None, size_t_mir_ty, false);
 
         // Evaluate the VLA size expression at runtime to get the count
         let count_operand = self.visit_expression(size_expr, true);
@@ -590,19 +603,53 @@ impl<'a> MirGen<'a> {
             .add_statement(MirStmt::Assign(total_size_place.clone(), total_size_rvalue));
         let total_size_operand = Operand::Copy(Box::new(total_size_place));
 
+        // Create size local (holds total byte size for sizeof)
+        let size_local_id = self.mir_builder.create_local(None, size_t_mir_ty, false);
         // Store the size for sizeof
         self.emit_assignment(Place::Local(size_local_id), total_size_operand.clone());
 
-        // Allocate memory: emit direct malloc call instead of MirStmt::Alloc.
-        // MirStmt::Alloc(Place, TypeId) computes size from the TypeId statically,
-        // but for VLA, we need dynamic size.
-        self.emit_malloc_call(ptr_local_id, total_size_operand);
+        // Allocate memory
+        let ptr_local_id = self.emit_heap_alloc(Some(name), element_mir_ty, alignment, total_size_operand);
 
         // Map: symbol → pointer local (for visit_ident)
         // Also map in local_map so existing code can find it
         self.local_map.insert(entry_ref, ptr_local_id);
         // Map in vla_map for sizeof support and special access handling
         self.vla_map.insert(entry_ref, (ptr_local_id, size_local_id));
+    }
+
+    /// Helper to emit heap allocation for a local (VLA or highly-aligned).
+    /// Returns the LocalId of the pointer.
+    fn emit_heap_alloc(
+        &mut self,
+        name: Option<NameId>,
+        mir_type_id: TypeId,
+        alignment: Option<u32>,
+        size_operand: Operand,
+    ) -> LocalId {
+        let ptr_mir_ty = self.mir_builder.add_type(MirType::Pointer {
+            pointee: mir_type_id,
+        });
+
+        // Create pointer local (holds the allocated memory address)
+        let ptr_local_id = self.mir_builder.create_local(name, ptr_mir_ty, false);
+        if let Some(align) = alignment {
+            self.mir_builder.set_local_alignment(ptr_local_id, align);
+        }
+
+        // Allocate memory: use posix_memalign if alignment is specified and > 8, otherwise malloc.
+        if let Some(align) = alignment && align > 8 {
+            self.emit_posix_memalign_call(ptr_local_id, align, size_operand);
+        } else {
+            self.emit_malloc_call(ptr_local_id, size_operand);
+        }
+
+        // Register for cleanup at end of current scope
+        if let Some(current_scope_cleanup) = self.scope_cleanup.last_mut() {
+            current_scope_cleanup.push(ptr_local_id);
+        }
+
+        ptr_local_id
     }
 
     /// Emit a malloc call and store the result in the given local.
@@ -621,6 +668,48 @@ impl<'a> MirGen<'a> {
             target: CallTarget::Direct(malloc_func_id),
             args: vec![size_operand],
             dest: Some(Place::Local(dest_local)),
+        });
+    }
+
+    /// Emit a posix_memalign call and store the result in the given local.
+    pub(super) fn emit_posix_memalign_call(&mut self, dest_local: LocalId, alignment: u32, size_operand: Operand) {
+        let name = NameId::new("posix_memalign");
+        let size_t_ty = self.get_size_t_type();
+        let void_ty = self.mir_builder.add_type(MirType::Void);
+        let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: void_ty });
+        let ptr_ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: ptr_ty });
+        let int_ty = self.get_int_type();
+
+        // Declare int posix_memalign(void **memptr, size_t alignment, size_t size);
+        let func_id =
+            self.find_or_declare_extern_function(name, vec![ptr_ptr_ty, size_t_ty, size_t_ty], int_ty, false);
+
+        let align_operand = self.create_size_t_operand(alignment as u64);
+        let dest_addr = Operand::AddressOf(Box::new(Place::Local(dest_local)));
+        let dest_addr_casted = Operand::Cast(ptr_ptr_ty, Box::new(dest_addr));
+
+        // Call posix_memalign(&dest_local, alignment, size)
+        self.mir_builder.add_statement(MirStmt::Call {
+            target: CallTarget::Direct(func_id),
+            args: vec![dest_addr_casted, align_operand, size_operand],
+            dest: None, // Ignore return value (should ideally check for ENOMEM/EINVAL)
+        });
+    }
+
+    /// Emit a free call for the given pointer operand.
+    pub(super) fn emit_free_call(&mut self, ptr_operand: Operand) {
+        let name = NameId::new("free");
+        let void_ty = self.mir_builder.add_type(MirType::Void);
+        let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: void_ty });
+
+        // Declare void free(void *ptr);
+        let func_id = self.find_or_declare_extern_function(name, vec![ptr_ty], void_ty, false);
+
+        // Call free(ptr)
+        self.mir_builder.add_statement(MirStmt::Call {
+            target: CallTarget::Direct(func_id),
+            args: vec![ptr_operand],
+            dest: None,
         });
     }
 

@@ -208,7 +208,7 @@ impl TokenKind {
         matches!(self, Typedef | Extern | Static | ThreadLocal | Auto | Register)
     }
 
-    pub(crate) fn is_type_specifier(&self) -> bool {
+    pub(super) fn is_type_specifier(&self) -> bool {
         use TokenKind::*;
         matches!(
             self,
@@ -232,7 +232,7 @@ impl TokenKind {
         )
     }
 
-    pub(crate) fn is_type_qualifier(&self) -> bool {
+    pub(super) fn is_type_qualifier(&self) -> bool {
         use TokenKind::*;
         matches!(self, Const | Restrict | Volatile | Atomic)
     }
@@ -254,7 +254,7 @@ impl TokenKind {
             || matches!(self, TokenKind::Attribute)
     }
 
-    pub(crate) fn is_declaration_start(&self, is_typedef: bool) -> bool {
+    pub(super) fn is_declaration_start(&self, is_typedef: bool) -> bool {
         self.is_declaration_specifier_start()
             || *self == TokenKind::StaticAssert
             || matches!(self, TokenKind::Identifier(_) if is_typedef)

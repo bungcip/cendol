@@ -132,7 +132,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Try to expand a magic macro (e.g. __LINE__, __FILE__, __COUNTER__)
-    pub(crate) fn try_expand_magic_macro(&mut self, token: &PPToken) -> Option<PPToken> {
+    pub(super) fn try_expand_magic_macro(&mut self, token: &PPToken) -> Option<PPToken> {
         let PPTokenKind::Identifier(symbol) = token.kind else {
             return None;
         };
@@ -453,7 +453,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expect and consume an Eod token or end of file
-    pub(crate) fn expect_eod(&mut self) -> Result<(), PPError> {
+    pub(super) fn expect_eod(&mut self) -> Result<(), PPError> {
         match self.lex_token() {
             Some(token) if token.kind == PPTokenKind::Eod => Ok(()),
             None => Ok(()), // End of file is acceptable
@@ -462,13 +462,13 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expect a token, and fail with UnexpectedEndOfFile if None is returned
-    pub(crate) fn expect_token(&mut self) -> Result<PPToken, PPError> {
+    pub(super) fn expect_token(&mut self) -> Result<PPToken, PPError> {
         self.lex_token()
             .ok_or_else(|| self.error(PPErrorKind::UnexpectedEndOfFile, self.get_current_span()))
     }
 
     /// Expect a token of a specific kind
-    pub(crate) fn expect_kind(&mut self, kind: PPTokenKind) -> Result<PPToken, PPError> {
+    pub(super) fn expect_kind(&mut self, kind: PPTokenKind) -> Result<PPToken, PPError> {
         let token = self.expect_token()?;
         if token.kind == kind {
             Ok(token)
@@ -478,7 +478,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expect a string literal token
-    pub(crate) fn expect_string_literal(&mut self) -> Result<(StringId, SourceLoc), PPError> {
+    pub(super) fn expect_string_literal(&mut self) -> Result<(StringId, SourceLoc), PPError> {
         let token = self.expect_token()?;
         if let PPTokenKind::StringLiteral(s) = token.kind {
             Ok((s, token.location))
@@ -488,7 +488,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expect an identifier token
-    pub(crate) fn expect_identifier(&mut self) -> Result<(PPToken, StringId), PPError> {
+    pub(super) fn expect_identifier(&mut self) -> Result<(PPToken, StringId), PPError> {
         let token = self.expect_token()?;
         if let PPTokenKind::Identifier(sym) = token.kind {
             Ok((token, sym))
@@ -499,7 +499,7 @@ impl<'src> Preprocessor<'src> {
 
     /// Collect tokens balanced between open and close delimiters.
     /// Assumes the opening delimiter has NOT been consumed yet and will consume it.
-    pub(crate) fn collect_balanced_tokens(
+    pub(super) fn collect_balanced_tokens(
         &mut self,
         open: PPTokenKind,
         close: PPTokenKind,
@@ -526,7 +526,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Helper to extract content of a string literal, stripping quotes.
-    pub(crate) fn extract_string_literal_content(
+    pub(super) fn extract_string_literal_content(
         &self,
         symbol: StringId,
         location: SourceLoc,
@@ -602,7 +602,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Get the current location from the lexer stack
-    pub(crate) fn get_current_location(&self) -> SourceLoc {
+    pub(super) fn get_current_location(&self) -> SourceLoc {
         if let Some(lexer) = self.lexer_stack.last() {
             SourceLoc::new(lexer.source_id, lexer.position)
         } else {
@@ -610,7 +610,7 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    pub(crate) fn get_current_span(&self) -> SourceSpan {
+    pub(super) fn get_current_span(&self) -> SourceSpan {
         let loc = self.get_current_location();
         SourceSpan::new(loc, loc)
     }
@@ -619,18 +619,18 @@ impl<'src> Preprocessor<'src> {
         PPError { kind, span }
     }
 
-    pub(crate) fn error_loc(&self, kind: PPErrorKind, loc: SourceLoc) -> PPError {
+    pub(super) fn error_loc(&self, kind: PPErrorKind, loc: SourceLoc) -> PPError {
         PPError {
             kind,
             span: SourceSpan::new(loc, loc),
         }
     }
 
-    pub(crate) fn emit_error<T>(&self, kind: PPErrorKind, span: SourceSpan) -> Result<T, PPError> {
+    pub(super) fn emit_error<T>(&self, kind: PPErrorKind, span: SourceSpan) -> Result<T, PPError> {
         Err(PPError { kind, span })
     }
 
-    pub(crate) fn emit_error_loc<T>(&self, kind: PPErrorKind, loc: SourceLoc) -> Result<T, PPError> {
+    pub(super) fn emit_error_loc<T>(&self, kind: PPErrorKind, loc: SourceLoc) -> Result<T, PPError> {
         Err(PPError {
             kind,
             span: SourceSpan::new(loc, loc),
@@ -638,14 +638,14 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Check if we are currently skipping tokens
-    pub(crate) fn is_currently_skipping(&self) -> bool {
+    pub(super) fn is_currently_skipping(&self) -> bool {
         // Bolt ⚡: Optimized to O(1) by checking only the top of the stack.
         // The skipping state is propagated downwards to ensure this is sufficient.
         self.conditional_stack.last().is_some_and(|info| info.was_skipping)
     }
 
     /// Parse a conditional expression for #if and #elif
-    pub(crate) fn parse_conditional_expression(&mut self) -> Result<Vec<PPToken>, PPError> {
+    pub(super) fn parse_conditional_expression(&mut self) -> Result<Vec<PPToken>, PPError> {
         // ⚡ Bolt: Use a small initial capacity to avoid reallocations for common short expressions.
         let mut tokens = Vec::with_capacity(16);
         while let Some(token) = self.lex_token() {
@@ -664,7 +664,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Evaluate a conditional expression (simplified - handle defined and basic arithmetic)
-    pub(crate) fn evaluate_conditional_expression(&mut self, tokens: Vec<PPToken>) -> Result<bool, PPError> {
+    pub(super) fn evaluate_conditional_expression(&mut self, tokens: Vec<PPToken>) -> Result<bool, PPError> {
         // Bolt ⚡: Removed redundant filtering of Eod tokens and a buggy optimization.
         // parse_conditional_expression already ensures no Eod tokens are present.
         // This avoids two allocations and two full clones of the token list.
@@ -734,7 +734,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Lex the next token
-    pub(crate) fn lex_token(&mut self) -> Option<PPToken> {
+    pub(super) fn lex_token(&mut self) -> Option<PPToken> {
         if let Some(token) = self.pending_tokens.pop() {
             return Some(token);
         }
@@ -761,7 +761,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Skip current directive tokens until EOD
-    pub(crate) fn skip_directive(&mut self) -> Result<(), PPError> {
+    pub(super) fn skip_directive(&mut self) -> Result<(), PPError> {
         while let Some(token) = self.lex_token() {
             if token.kind == PPTokenKind::Eod {
                 break;
@@ -771,7 +771,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Push a conditional that is lazily skipped (nested in a skipped block)
-    pub(crate) fn push_skipped_conditional(&mut self) {
+    pub(super) fn push_skipped_conditional(&mut self) {
         // Bolt ⚡: Optimized to avoid redundant set_skipping call.
         let info = PPConditionalInfo {
             was_skipping: true,
@@ -782,7 +782,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Check if we should evaluate conditional expression (e.g. for #elif)
-    pub(crate) fn should_evaluate_conditional(&self) -> bool {
+    pub(super) fn should_evaluate_conditional(&self) -> bool {
         // We should evaluate ONLY if no parent is skipping
         // The current level (which we are about to replace with elif) is at index len()-1.
         // The parent is at index len()-2.
@@ -803,7 +803,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Helper to report diagnostics
-    pub(crate) fn report_diagnostic(&mut self, level: DiagnosticLevel, message: impl Into<String>, span: SourceSpan) {
+    pub(super) fn report_diagnostic(&mut self, level: DiagnosticLevel, message: impl Into<String>, span: SourceSpan) {
         let diag = Diagnostic {
             level,
             message: message.into(),
@@ -815,7 +815,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Helper to report error diagnostics from PPError
-    pub(crate) fn report_pp_error(&mut self, err: PPError) {
+    pub(super) fn report_pp_error(&mut self, err: PPError) {
         use crate::diagnostic::IntoDiagnostic;
         let diags = err.into_diagnostic();
         for diag in diags {
@@ -824,13 +824,13 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Helper to report error diagnostics
-    pub(crate) fn report_error(&mut self, loc: SourceLoc, message: impl Into<String>) {
+    pub(super) fn report_error(&mut self, loc: SourceLoc, message: impl Into<String>) {
         let span = SourceSpan::new(loc, loc);
         self.report_diagnostic(DiagnosticLevel::Error, message, span);
     }
 
     /// Helper to report warning diagnostics
-    pub(crate) fn report_warning(&mut self, loc: SourceLoc, message: impl Into<String>) {
+    pub(super) fn report_warning(&mut self, loc: SourceLoc, message: impl Into<String>) {
         let span = SourceSpan::new(loc, loc);
         self.report_diagnostic(DiagnosticLevel::Warning, message, span);
     }

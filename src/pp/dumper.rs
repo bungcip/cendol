@@ -46,6 +46,7 @@ impl<'a> PPDumper<'a> {
         let mut current_buffer = self.source_manager.get_buffer(current_file_id);
         let mut last_pos = 0u32;
         let mut last_was_macro_expanded = false;
+        let mut last_macro_orig_line: Option<u32> = None;
 
         for token in self.tokens {
             if token.kind == PPTokenKind::Eof {
@@ -54,6 +55,9 @@ impl<'a> PPDumper<'a> {
 
             // Handle macro-expanded tokens (Level A: use canonical spelling)
             if token.flags.contains(PPTokenFlags::MACRO_EXPANDED) {
+                // Resolve through the include_loc chain to find the original source line.
+                let orig_line = self.resolve_original_line(token);
+
                 // Heuristic: if we are entering a macro expansion (previous was not macro),
                 // and there was whitespace at the current position in the source, print a space.
                 // This preserves separation like "return FOO" -> "return 123".
@@ -62,6 +66,13 @@ impl<'a> PPDumper<'a> {
                     if let Some(&byte) = current_buffer.get(last_pos as usize)
                         && (byte as char).is_whitespace()
                     {
+                        write!(writer, " ")?;
+                    }
+                } else if let (Some(prev), Some(cur)) = (last_macro_orig_line, orig_line) {
+                    // Both macro-expanded: check if the source line changed.
+                    if cur != prev {
+                        writeln!(writer)?;
+                    } else {
                         write!(writer, " ")?;
                     }
                 } else {
@@ -74,6 +85,7 @@ impl<'a> PPDumper<'a> {
                 // meaningful source locations for whitespace calculation
                 write!(writer, "{}", token.get_text())?;
                 last_was_macro_expanded = true;
+                last_macro_orig_line = orig_line;
                 // Don't update last_pos for macro-expanded tokens
                 continue;
             }
@@ -128,9 +140,30 @@ impl<'a> PPDumper<'a> {
 
             last_pos = token_end;
             last_was_macro_expanded = false;
+            last_macro_orig_line = None;
         }
 
         writeln!(writer)?;
         Ok(())
+    }
+
+    /// Resolve a macro-expanded token back to its original source file line
+    /// by walking the `include_loc` chain of virtual buffers.
+    fn resolve_original_line(&self, token: &PPToken) -> Option<u32> {
+        let mut source_id = token.location.source_id();
+        loop {
+            let file_info = self.source_manager.get_file_info(source_id)?;
+            if let Some(include_loc) = file_info.include_loc {
+                let parent_info = self.source_manager.get_file_info(include_loc.source_id())?;
+                if parent_info.kind == crate::source_manager::FileKind::Real {
+                    // Found the original source file — resolve line number.
+                    return self.source_manager.get_line_column(include_loc).map(|(line, _)| line);
+                }
+                // Keep walking up.
+                source_id = include_loc.source_id();
+            } else {
+                return None;
+            }
+        }
     }
 }

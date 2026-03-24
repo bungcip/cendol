@@ -876,3 +876,27 @@ M1(1, 2, 3)
       text: "3"
     "#);
 }
+
+// Regression test: `,##__VA_ARGS__` should only swallow comma when
+// no variadic arguments are provided.  An explicit empty arg preserves it.
+#[test]
+fn test_gnu_comma_elision_with_empty_variadic_arg() {
+    let src = r#"
+#define M(x,y,...) x y ,##__VA_ARGS__
+M(a,b,)
+M(a,b)
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: a
+    - kind: Identifier
+      text: b
+    - kind: Comma
+      text: ","
+    - kind: Identifier
+      text: a
+    - kind: Identifier
+      text: b
+    "#);
+}

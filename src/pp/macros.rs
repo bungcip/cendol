@@ -522,8 +522,11 @@ impl<'src> Preprocessor<'src> {
             let is_variadic =
                 matches!(right_token.kind, PPTokenKind::Identifier(s) if macro_info.variadic_arg == Some(s));
 
-            if is_comma && is_variadic {
-                // GNU Comma Swallowing extension: swallow the comma.
+            if is_comma && is_variadic && args.len() <= macro_info.parameter_list.len() {
+                // GNU Comma Swallowing extension: swallow the comma only when
+                // no variadic arguments were provided at all (e.g. M(a,b) for
+                // #define M(x,y,...)).  When an explicit empty variadic argument
+                // is supplied (e.g. M(a,b,)), the comma is preserved.
                 Ok((Vec::new(), false))
             } else if let Some(l) = left {
                 // Standard behavior: paste left with empty -> left.

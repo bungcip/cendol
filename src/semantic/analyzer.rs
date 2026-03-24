@@ -2573,7 +2573,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let resolved = self.registry.get(ty.ty());
                 if let TypeKind::Function { .. } = &resolved.kind {
                     self.report_error(node, SemanticErrorKind::CompoundLiteralFunction { ty: *ty });
-                } else if self.registry.is_variably_modified(ty.ty()) {
+                } else if self.registry.is_vla_type(ty.ty()) {
                     self.report_error(node, SemanticErrorKind::CompoundLiteralVla { ty: *ty });
                 } else if !self.registry.is_complete(ty.ty()) {
                     // Exception: array of unknown size is allowed.

@@ -58,3 +58,17 @@ fn test_compound_literal_array_unknown_size_accepted() {
         CompilePhase::Mir,
     );
 }
+
+// Pointer-to-VLA is a variably modified type but NOT a VLA type.
+// C11 6.5.2.5p1 only prohibits VLA types in compound literals.
+#[test]
+fn test_compound_literal_pointer_to_vla_accepted() {
+    run_pass(
+        r#"
+        int fn(int i){
+            return sizeof(*(char(*)[i+7]){0});
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}

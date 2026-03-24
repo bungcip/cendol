@@ -1678,6 +1678,27 @@ impl TypeRegistry {
         }
     }
 
+    /// Returns true if the type is directly a variable length array type.
+    /// Unlike `is_variably_modified`, this does NOT recurse through pointers —
+    /// a pointer to a VLA is variably modified but is NOT itself a VLA type.
+    /// This distinction matters for C11 6.5.2.5p1 (compound literals).
+    pub(crate) fn is_vla_type(&self, mut ty: TypeRef) -> bool {
+        loop {
+            // Inline pointers and inline arrays are never VLA types.
+            if ty.is_inline_pointer() || ty.is_inline_array() {
+                return false;
+            }
+            if ty.builtin().is_some() {
+                return false;
+            }
+            match &self.types[ty.index()].kind {
+                TypeKind::Alias(inner) => ty = *inner,
+                TypeKind::Array { size, .. } => return matches!(size, ArraySizeType::Variable(_)),
+                _ => return false,
+            }
+        }
+    }
+
     pub(crate) fn display_qual_type(&self, qt: QualType) -> String {
         let quals = qt.qualifiers();
         let ty_str = self.display_type(qt.ty());

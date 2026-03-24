@@ -7,11 +7,9 @@ fn test_dumper_with_includes() {
 
     // Create file 1
     let id1 = sm.add_buffer(b"int x;".to_vec(), "file1.c", None);
-    sm.calculate_line_starts(id1);
 
     // Create file 2
     let id2 = sm.add_buffer(b"int y;".to_vec(), "file2.h", None);
-    sm.calculate_line_starts(id2);
 
     // Construct tokens
     // File 1: int x;

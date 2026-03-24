@@ -181,27 +181,17 @@ impl PPToken {
 pub(crate) struct PPLexer {
     pub(crate) source_id: SourceId,
     buffer: Arc<[u8]>,
-    pub(crate) position: u32, // its okay to use u32 here since source files are limited to 4 MB
-    line_starts: Vec<u32>,
-    pub(crate) line_offset: u32,
+    pub(crate) position: u32,           // its okay to use u32 here since source files are limited to 4 MB
     pub(crate) in_directive_line: bool, // Whether we are currently processing tokens on a directive line
     pub(crate) at_start_of_line: bool,  // Whether we are at the beginning of a line (only whitespace/comments seen)
 }
 
 impl PPLexer {
     pub(crate) fn new(source_id: SourceId, buffer: Arc<[u8]>) -> Self {
-        // ⚡ Bolt: Pre-calculate capacity for line_starts to avoid multiple reallocations.
-        // Counting newlines is efficient and allows for a single allocation.
-        let newline_count = buffer.iter().filter(|&&b| b == b'\n').count();
-        let mut line_starts = Vec::with_capacity(newline_count + 1);
-        line_starts.push(0); // First line starts at offset 0
-
         PPLexer {
             source_id,
             buffer,
             position: 0,
-            line_starts,
-            line_offset: 0,
             in_directive_line: false,
             at_start_of_line: true,
         }
@@ -226,7 +216,6 @@ impl PPLexer {
                 let char_pos = self.position;
                 self.position += 1;
                 if ch == b'\n' {
-                    self.line_starts.push(self.position);
                     self.at_start_of_line = true;
                 }
                 return Some((ch, char_pos));
@@ -269,7 +258,6 @@ impl PPLexer {
 
                 if found_splice {
                     self.position = new_pos as u32;
-                    self.line_starts.push(self.position);
                     continue;
                 } else {
                     // Not a splice
@@ -279,7 +267,6 @@ impl PPLexer {
             self.position += consumed_len as u32;
 
             if ch == b'\n' {
-                self.line_starts.push(self.position);
                 self.at_start_of_line = true;
             }
 
@@ -302,17 +289,13 @@ impl PPLexer {
         }
 
         let saved_position = self.position;
-        // ⚡ Bolt: Avoid cloning `line_starts` by saving its length.
-        // `next_char` only ever appends to this vector, so we can restore its
-        // state by truncating it to its original length. This is a significant
-        // performance win as `peek_char` is called frequently.
-        let saved_line_starts_len = self.line_starts.len();
+        let saved_at_start_of_line = self.at_start_of_line;
 
         let result = self.next_char();
 
         // Restore state
         self.position = saved_position;
-        self.line_starts.truncate(saved_line_starts_len);
+        self.at_start_of_line = saved_at_start_of_line;
 
         result.map(|(ch, _)| ch)
     }
@@ -472,7 +455,7 @@ impl PPLexer {
             b'~' => token!(PPTokenKind::Tilde, 1),
             b'.' => 'ellipsis: {
                 let pos_after_first = self.position;
-                let lines_after_first = self.line_starts.len();
+                let at_start_after_first = self.at_start_of_line;
                 if self.peek_char() == Some(b'.') {
                     self.next_char(); // Consume second '.'
                     if self.peek_char() == Some(b'.') {
@@ -481,7 +464,7 @@ impl PPLexer {
                     }
                     // It was '..', which is not a valid C token. Backtrack to handle it as a single '.'
                     self.position = pos_after_first;
-                    self.line_starts.truncate(lines_after_first);
+                    self.at_start_of_line = at_start_after_first;
                 }
                 token!(PPTokenKind::Dot, 1)
             }
@@ -548,7 +531,7 @@ impl PPLexer {
                     // Check for u8" (UTF-8 string literal)
                     if ch == b'u' && next_ch == Some(b'8') {
                         let saved_pos = self.position;
-                        let saved_line_starts_len = self.line_starts.len();
+                        let saved_at_start = self.at_start_of_line;
                         self.next_char(); // consume '8'
 
                         if self.peek_char() == Some(b'"') {
@@ -556,7 +539,7 @@ impl PPLexer {
                         } else {
                             // Backtrack if it's not u8"
                             self.position = saved_pos;
-                            self.line_starts.truncate(saved_line_starts_len);
+                            self.at_start_of_line = saved_at_start;
                             Some(self.lex_identifier(start_pos, ch, flags))
                         }
                     } else if next_ch == Some(b'"') {
@@ -572,20 +555,20 @@ impl PPLexer {
             }
             b'\\' => {
                 let saved_pos = self.position;
-                let saved_lines_len = self.line_starts.len();
+                let saved_at_start = self.at_start_of_line;
 
                 match self.lex_ucn(false) {
                     Some(Ok(_)) => {
                         // Valid UCN start. Backtrack to just after `\` so lex_identifier can re-parse it.
                         self.position = saved_pos;
-                        self.line_starts.truncate(saved_lines_len);
+                        self.at_start_of_line = saved_at_start;
                         Some(self.lex_identifier(start_pos, ch, flags))
                     }
                     _ => {
                         // Not a UCN or invalid.
                         // Backtrack to just after `\` (saved_pos).
                         self.position = saved_pos;
-                        self.line_starts.truncate(saved_lines_len);
+                        self.at_start_of_line = saved_at_start;
                         Some(PPToken::new(
                             PPTokenKind::Unknown,
                             flags,
@@ -653,7 +636,6 @@ impl PPLexer {
                     self.position += 1;
                 } else if ch == b'\n' && !self.in_directive_line {
                     self.position += 1;
-                    self.line_starts.push(self.position);
                     self.at_start_of_line = true;
                 } else {
                     // Trigraphs, line splices, or non-whitespace.
@@ -686,7 +668,7 @@ impl PPLexer {
 
             // Check for comments by temporarily consuming
             let saved_position = self.position;
-            let saved_line_starts_len = self.line_starts.len();
+            let saved_at_start = self.at_start_of_line;
 
             let ch1 = self.next_char().map(|(c, _)| c);
             let ch2 = self.next_char().map(|(c, _)| c);
@@ -711,7 +693,7 @@ impl PPLexer {
             } else {
                 // Not a comment, restore position
                 self.position = saved_position;
-                self.line_starts.truncate(saved_line_starts_len);
+                self.at_start_of_line = saved_at_start;
                 break;
             }
         }
@@ -1003,7 +985,7 @@ impl PPLexer {
             // Check for UCN
             if ch == b'\\' {
                 let saved_pos = self.position;
-                let saved_lines_len = self.line_starts.len();
+                let saved_at_start = self.at_start_of_line;
                 self.next_char(); // consume \
 
                 match self.lex_ucn(false) {
@@ -1015,7 +997,7 @@ impl PPLexer {
                         // Not a valid UCN or not a UCN.
                         // Backtrack and stop identifier
                         self.position = saved_pos;
-                        self.line_starts.truncate(saved_lines_len);
+                        self.at_start_of_line = saved_at_start;
                         break;
                     }
                 }
@@ -1025,7 +1007,7 @@ impl PPLexer {
             // Check for UTF-8
             if ch >= 0x80 && self.is_valid_utf8_start(ch) {
                 let saved_pos = self.position;
-                let saved_lines_len = self.line_starts.len();
+                let saved_at_start = self.at_start_of_line;
 
                 self.next_char(); // consume first
                 let mut bytes = vec![ch];
@@ -1043,7 +1025,7 @@ impl PPLexer {
                 } else {
                     // Invalid UTF-8, backtrack
                     self.position = saved_pos;
-                    self.line_starts.truncate(saved_lines_len);
+                    self.at_start_of_line = saved_at_start;
                     break;
                 }
                 continue;
@@ -1222,16 +1204,12 @@ impl PPLexer {
         )
     }
 
-    pub(super) fn get_current_line(&self) -> u32 {
-        self.line_starts.len() as u32 + self.line_offset
+    pub(super) fn get_current_line(&self, sm: &crate::source_manager::SourceManager) -> u32 {
+        sm.get_line_column(SourceLoc::new(self.source_id, self.position))
+            .map(|(line, _)| line)
+            .unwrap_or(1)
     }
 
-    /// ⚡ Bolt: Moves the `line_starts` vector out of the lexer.
-    /// This avoids a clone when the lexer is destroyed and its line information
-    /// is transferred to the SourceManager, which is a performance optimization.
-    pub(super) fn take_line_starts(self) -> Vec<u32> {
-        self.line_starts
-    }
 }
 
 #[cfg(test)]

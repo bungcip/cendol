@@ -344,10 +344,16 @@ impl SourceManager {
         &mut self,
         buffer: Arc<[u8]>,
         path: PathBuf,
-        line_starts: Vec<u32>,
+        mut line_starts: Vec<u32>,
         include_loc: Option<SourceLoc>,
         kind: FileKind,
     ) -> SourceId {
+        // Bolt ⚡: Ensure line starts are always computed upon file addition.
+        // This centralizes line tracking and avoids redundant $O(N)$ scans later.
+        if line_starts.is_empty() {
+            line_starts = compute_line_starts(&buffer);
+        }
+
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
@@ -432,25 +438,7 @@ impl SourceManager {
         self.file_infos.get_mut(id as usize - 2).map(|fi| &mut fi.line_map)
     }
 
-    /// Set line starts for a given source ID
-    pub(crate) fn set_line_starts(&mut self, source_id: SourceId, line_starts: Vec<u32>) {
-        let id = source_id.to_u32();
-        if id >= 2
-            && let Some(file_info) = self.file_infos.get_mut(id as usize - 2)
-        {
-            file_info.line_starts = line_starts;
-        }
-    }
 
-    /// Calculate line starts for a given source ID
-    pub(crate) fn calculate_line_starts(&mut self, source_id: SourceId) {
-        let id = source_id.to_u32();
-        if id >= 2
-            && let Some(file_info) = self.file_infos.get_mut(id as usize - 2)
-        {
-            file_info.line_starts = compute_line_starts(&file_info.buffer);
-        }
-    }
 
     /// Get the source text for a given span
     /// Since we only support UTF-8, we can assume the bytes are valid UTF-8

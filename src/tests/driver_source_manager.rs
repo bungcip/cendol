@@ -77,7 +77,6 @@ fn test_source_manager_get_line_column() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3";
     let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
-    sm.calculate_line_starts(file_id);
 
     // Position at 'l' in "line2"
     let loc = SourceLoc::new(file_id, 6); // "line1\n" is 6 bytes
@@ -92,7 +91,6 @@ fn test_source_manager_get_line_column_end_of_file() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2";
     let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
-    sm.calculate_line_starts(file_id);
 
     // Position at end of file
     let loc = SourceLoc::new(file_id, content.len() as u32);
@@ -108,20 +106,13 @@ fn test_source_manager_get_line_column_before_start() {
     let content = "content";
     let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
 
-    // Manually set line starts to start at offset 5
-    // This simulates a scenario where we have some prefix that is not part of the lines
-    // or simply an invalid state we want to ensure doesn't crash
-    sm.set_line_starts(file_id, vec![5]);
-
-    // Query location at offset 2 (before the first line start)
+    // Query location at offset 2. Since compute_line_starts adds 0 as the first line start,
+    // offset 2 is within the first line.
     let loc = SourceLoc::new(file_id, 2);
     let (line, col) = sm.get_line_column(loc).unwrap();
 
-    // Expecting line 0 (invalid/before start) and column 1
-    // This exercises the else branch in get_line_column where line becomes u32::MAX
-    // and is handled by returning line 0 and column 0+1 = 1.
-    assert_eq!(line, 0);
-    assert_eq!(col, 1);
+    assert_eq!(line, 1);
+    assert_eq!(col, 3);
 }
 
 #[test]
@@ -294,7 +285,6 @@ fn test_source_manager_get_presumed_location() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3\nline4\nline5";
     let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
-    sm.calculate_line_starts(file_id);
 
     // Add a line mapping: at physical line 3, logical line 100
     {
@@ -314,7 +304,6 @@ fn test_source_manager_get_presumed_location_no_mapping() {
     let mut sm = SourceManager::new();
     let content = "line1\nline2\nline3";
     let file_id = sm.add_buffer(content.as_bytes().to_vec(), "test.c", None);
-    sm.calculate_line_starts(file_id);
 
     // No line mappings
     let loc = SourceLoc::new(file_id, 7); // "line1\nl" position
@@ -412,8 +401,6 @@ fn test_source_manager_edge_cases() {
     assert_eq!(sm.get_presumed_location(loc), None);
 
     // Test helper methods with invalid ID (should not panic)
-    sm.set_line_starts(invalid_id, vec![0, 10]);
-    sm.calculate_line_starts(invalid_id);
     assert!(sm.get_line_map_mut(invalid_id).is_none());
 
     // 2. Empty line_starts (file added but not analyzed/calculated)
@@ -556,12 +543,6 @@ fn test_reserved_source_id_behavior() {
 
     // get_line_map_mut should return None for reserved ID
     assert!(sm.get_line_map_mut(reserved_id).is_none());
-
-    // set_line_starts should do nothing (no panic) for reserved ID
-    sm.set_line_starts(reserved_id, vec![0, 10]);
-
-    // calculate_line_starts should do nothing (no panic) for reserved ID
-    sm.calculate_line_starts(reserved_id);
 
     // Explicitly check that get_file_info and get_buffer_safe handle reserved ID gracefully
     assert!(sm.get_file_info(reserved_id).is_none());

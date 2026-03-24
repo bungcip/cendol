@@ -573,7 +573,7 @@ impl<'src> Preprocessor<'src> {
 
     fn handle_line(&mut self) -> Result<(), PPError> {
         let start_line = if let Some(lexer) = self.lexer_stack.last() {
-            lexer.get_current_line()
+            lexer.get_current_line(self.sm)
         } else {
             0
         };

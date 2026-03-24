@@ -35,7 +35,7 @@ pub(crate) struct TypeDefContext {
 
 impl TypeDefContext {
     /// Create a new type context with builtin typedefs
-    pub(crate) fn new() -> Self {
+    fn new() -> Self {
         let globals = vec![
             (NameId::new("int8_t"), true),
             (NameId::new("int16_t"), true),
@@ -51,7 +51,7 @@ impl TypeDefContext {
     }
 
     /// Check if a symbol is a typedef name
-    pub(crate) fn is_type_name(&self, symbol: NameId) -> bool {
+    fn is_type_name(&self, symbol: NameId) -> bool {
         for scope in self.scopes.iter().rev() {
             for &(name, is_typedef) in scope.iter().rev() {
                 if name == symbol {
@@ -63,20 +63,20 @@ impl TypeDefContext {
     }
 
     /// Add a typedef name
-    pub(crate) fn add_typedef(&mut self, symbol: NameId) {
+    fn add_typedef(&mut self, symbol: NameId) {
         self.scopes.last_mut().unwrap().push((symbol, true));
     }
 
     /// Add a non-typedef name (e.g. variable or function) that shadows outer typedefs
-    pub(crate) fn add_non_typedef(&mut self, symbol: NameId) {
+    fn add_non_typedef(&mut self, symbol: NameId) {
         self.scopes.last_mut().unwrap().push((symbol, false));
     }
 
-    pub(crate) fn push_scope(&mut self) {
+    fn push_scope(&mut self) {
         self.scopes.push(Vec::new());
     }
 
-    pub(crate) fn pop_scope(&mut self) {
+    fn pop_scope(&mut self) {
         self.scopes.pop();
     }
 
@@ -147,22 +147,22 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Get the current token location
-    pub(crate) fn current_token_span(&self) -> Result<SourceSpan, ParseError> {
+    pub(super) fn current_token_span(&self) -> Result<SourceSpan, ParseError> {
         Ok(self.current_token()?.span)
     }
 
     /// Get the current token location (infallible, returns empty span on EOF)
-    pub(crate) fn current_token_span_or_empty(&self) -> SourceSpan {
+    pub(super) fn current_token_span_or_empty(&self) -> SourceSpan {
         self.try_current_token().map(|t| t.span).unwrap_or_default()
     }
 
     /// Get the location of the previous token, or an empty span if not available.
-    pub(crate) fn previous_token_span(&self) -> SourceSpan {
+    pub(super) fn previous_token_span(&self) -> SourceSpan {
         self.last_token_span().unwrap_or_default()
     }
 
     /// Get the span of the last token
-    pub(crate) fn last_token_span(&self) -> Option<SourceSpan> {
+    pub(super) fn last_token_span(&self) -> Option<SourceSpan> {
         self.current_idx
             .checked_sub(1)
             .and_then(|i| self.tokens.get(i))
@@ -170,7 +170,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Get the span of a token at a specific index
-    pub(crate) fn get_token_span(&self, index: usize) -> Option<SourceSpan> {
+    pub(super) fn get_token_span(&self, index: usize) -> Option<SourceSpan> {
         self.tokens.get(index).map(|token| token.span)
     }
 
@@ -307,7 +307,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Main expression parsing using Pratt algorithm
-    pub(crate) fn parse_expression(
+    pub(super) fn parse_expression(
         &mut self,
         min_binding_power: expressions::BindingPower,
     ) -> Result<ParsedNodeRef, ParseError> {
@@ -320,12 +320,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Parse expression with minimum binding power
-    pub(crate) fn parse_expr_min(&mut self) -> Result<ParsedNodeRef, ParseError> {
+    pub(super) fn parse_expr_min(&mut self) -> Result<ParsedNodeRef, ParseError> {
         self.parse_expr_bp(BindingPower::MIN)
     }
 
     /// Parse expression up to assignment
-    pub(crate) fn parse_expr_assignment(&mut self) -> Result<ParsedNodeRef, ParseError> {
+    pub(super) fn parse_expr_assignment(&mut self) -> Result<ParsedNodeRef, ParseError> {
         self.parse_expr_bp(BindingPower::ASSIGNMENT)
     }
 
@@ -357,7 +357,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Check if the given token can start a type name.
-    pub(crate) fn is_type_name_start_token(&self, token: &Token) -> bool {
+    pub(super) fn is_type_name_start_token(&self, token: &Token) -> bool {
         match token.kind {
             TokenKind::Attribute => true,
             TokenKind::Identifier(symbol) => self.is_type_name(symbol),
@@ -367,7 +367,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if the current token can start a type name.
     /// This is a lightweight check used for disambiguation.
-    pub(crate) fn is_type_name_start(&self) -> bool {
+    pub(super) fn is_type_name_start(&self) -> bool {
         if let Some(token) = self.try_current_token() {
             self.is_type_name_start_token(&token)
         } else {
@@ -420,7 +420,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Add a typedef name to the type context
-    pub(crate) fn add_typedef(&mut self, symbol: NameId) {
+    pub(super) fn add_typedef(&mut self, symbol: NameId) {
         self.type_context.add_typedef(symbol);
     }
 
@@ -438,12 +438,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.type_context.truncate_last_scope(state.type_context_last_scope_len);
     }
 
-    pub(crate) fn start_transaction(&mut self) -> utils::ParserTransaction<'_, 'arena, 'src> {
+    pub(super) fn start_transaction(&mut self) -> utils::ParserTransaction<'_, 'arena, 'src> {
         utils::ParserTransaction::new(self)
     }
 
     /// Check if the current token can start a declaration
-    pub(crate) fn starts_declaration(&self) -> bool {
+    pub(super) fn starts_declaration(&self) -> bool {
         self.try_current_token().is_some_and(|token| {
             let is_typedef = matches!(token.kind, TokenKind::Identifier(s) if self.is_type_name(s));
             token.kind.is_declaration_start(is_typedef)
@@ -455,18 +455,18 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 impl<'arena, 'src> Parser<'arena, 'src> {
     /// Push a node to the AST and return its reference
     #[inline]
-    pub(crate) fn push_node(&mut self, kind: ParsedNodeKind, span: SourceSpan) -> ParsedNodeRef {
+    pub(super) fn push_node(&mut self, kind: ParsedNodeKind, span: SourceSpan) -> ParsedNodeRef {
         self.ast.push_node(ParsedNode::new(kind, span))
     }
 
     #[inline]
-    pub(crate) fn push_dummy(&mut self) -> ParsedNodeRef {
+    pub(super) fn push_dummy(&mut self) -> ParsedNodeRef {
         self.push_node(ParsedNodeKind::Dummy, SourceSpan::empty())
     }
 
     /// Push a node to the AST and return its reference
     #[inline]
-    pub(crate) fn replace_node(
+    pub(super) fn replace_node(
         &mut self,
         old_ref: ParsedNodeRef,
         kind: ParsedNodeKind,
@@ -477,31 +477,31 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Push Declarator node to AST arena
     #[inline]
-    pub(crate) fn alloc_decl(&mut self, declarator: ParsedDeclarator) -> DeclaratorRef {
+    pub(super) fn alloc_decl(&mut self, declarator: ParsedDeclarator) -> DeclaratorRef {
         self.ast.parsed_types.alloc_decl(declarator)
     }
 
     /// Push BaseType node to AST arena
     #[inline]
-    pub(crate) fn alloc_base_type(&mut self, base_type: ParsedBaseType) -> ParsedBaseTypeRef {
+    pub(super) fn alloc_base_type(&mut self, base_type: ParsedBaseType) -> ParsedBaseTypeRef {
         self.ast.parsed_types.alloc_base_type(base_type)
     }
 
     /// Allocate function parameters and return the range
     #[inline]
-    pub(crate) fn alloc_params(&mut self, params: Vec<crate::ast::ParsedParam>) -> ParsedParamRange {
+    pub(super) fn alloc_params(&mut self, params: Vec<crate::ast::ParsedParam>) -> ParsedParamRange {
         self.ast.parsed_types.alloc_params(params)
     }
 
     /// Allocate struct members and return the range
     #[inline]
-    pub(crate) fn alloc_struct_members(&mut self, members: Vec<ParsedStructMember>) -> ParsedStructMemberRange {
+    pub(super) fn alloc_struct_members(&mut self, members: Vec<ParsedStructMember>) -> ParsedStructMemberRange {
         self.ast.parsed_types.alloc_struct_members(members)
     }
 
     /// Allocate enum constants and return the range
     #[inline]
-    pub(crate) fn alloc_enum_constants(&mut self, enumerators: Vec<ParsedEnumConstant>) -> ParsedEnumRange {
+    pub(super) fn alloc_enum_constants(&mut self, enumerators: Vec<ParsedEnumConstant>) -> ParsedEnumRange {
         self.ast.parsed_types.alloc_enum_constants(enumerators)
     }
 }

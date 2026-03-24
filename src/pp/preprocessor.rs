@@ -546,7 +546,6 @@ impl<'src> Preprocessor<'src> {
         let buffer = self.sm.get_buffer_arc(source_id);
 
         self.lexer_stack.push(PPLexer::new(source_id, buffer));
-        self.sm.calculate_line_starts(source_id);
 
         // ⚡ Bolt: Pre-allocate the result_tokens vector using a capacity hint based on buffer size.
         // A common estimate for C code is around 8 bytes per token.
@@ -730,12 +729,6 @@ impl<'src> Preprocessor<'src> {
             self.include_stack.pop();
             self.include_depth -= 1;
         }
-
-        // ⚡ Bolt: Use `take_line_starts` to move the line_starts vector
-        // instead of cloning it. This is a performance optimization that
-        // avoids a potentially large allocation when a file is finished lexing.
-        self.sm
-            .set_line_starts(popped_lexer.source_id, popped_lexer.take_line_starts());
 
         !self.lexer_stack.is_empty()
     }

@@ -903,11 +903,12 @@ fn test_comma_operator_loop() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @"
+    insta::assert_snapshot!(mir, @r"
     type %t0 = void
     type %t1 = i8
     type %t2 = ptr<%t1>
-    type %t3 = i32
+    type %t3 = bool
+    type %t4 = i32
 
     fn loop(%param0: ptr<i8>, %param1: ptr<i8>) -> void
     {
@@ -920,7 +921,7 @@ fn test_comma_operator_loop() {
         br bb2
 
       bb2:
-        cond_br deref(%param1), bb3, bb5
+        cond_br cast<bool>(deref(%param1)), bb3, bb5
 
       bb3:
         br bb4

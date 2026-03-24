@@ -216,7 +216,7 @@ fn test_boolean_logic_lowering() {
         "#;
     // Verify it compiles without crashing
     let clif_dump = setup_cranelift(source);
-    insta::assert_snapshot!(clif_dump, @"
+    insta::assert_snapshot!(clif_dump, @r"
     ; Function: main
     function u0:0() -> i32 system_v {
         ss0 = explicit_slot 4, align = 4
@@ -228,79 +228,91 @@ fn test_boolean_logic_lowering() {
 
     block0:
         v0 = iconst.i32 4
-        v48 = stack_addr.i64 ss0
-        store notrap v0, v48  ; v0 = 4
-        v47 = stack_addr.i64 ss0
-        v1 = load.i32 notrap v47
+        v60 = stack_addr.i64 ss0
+        store notrap v0, v60  ; v0 = 4
+        v59 = stack_addr.i64 ss0
+        v1 = load.i32 notrap v59
         v2 = iconst.i32 0
         v3 = icmp eq v1, v2  ; v2 = 0
         v4 = iconst.i32 1
         v5 = iconst.i32 0
         v6 = select v3, v4, v5  ; v4 = 1, v5 = 0
-        v46 = stack_addr.i64 ss1
-        store notrap v6, v46
-        v45 = stack_addr.i64 ss1
-        v7 = load.i32 notrap v45
+        v58 = stack_addr.i64 ss1
+        store notrap v6, v58
+        v57 = stack_addr.i64 ss1
+        v7 = load.i32 notrap v57
         v8 = iconst.i32 0
         v9 = icmp ne v7, v8  ; v8 = 0
         v10 = iconst.i32 1
         v11 = iconst.i32 0
         v12 = select v9, v10, v11  ; v10 = 1, v11 = 0
-        v44 = stack_addr.i64 ss2
-        store notrap v12, v44
-        v43 = stack_addr.i64 ss2
-        v13 = load.i32 notrap v43
-        brif v13, block1, block2
+        v56 = stack_addr.i64 ss2
+        store notrap v12, v56
+        v55 = stack_addr.i64 ss2
+        v13 = load.i32 notrap v55
+        v14 = iconst.i32 0
+        v15 = icmp ne v13, v14  ; v14 = 0
+        v16 = iconst.i8 1
+        v17 = iconst.i8 0
+        v18 = select v15, v16, v17  ; v16 = 1, v17 = 0
+        v19 = uextend.i32 v18
+        brif v19, block1, block2
 
     block2:
         jump block3
 
     block3:
-        v42 = stack_addr.i64 ss0
-        v14 = load.i32 notrap v42
-        v15 = iconst.i32 0
-        v16 = icmp eq v14, v15  ; v15 = 0
-        v17 = iconst.i32 1
-        v18 = iconst.i32 0
-        v19 = select v16, v17, v18  ; v17 = 1, v18 = 0
-        v41 = stack_addr.i64 ss3
-        store notrap v19, v41
-        v40 = stack_addr.i64 ss3
-        v20 = load.i32 notrap v40
+        v54 = stack_addr.i64 ss0
+        v20 = load.i32 notrap v54
         v21 = iconst.i32 0
         v22 = icmp eq v20, v21  ; v21 = 0
         v23 = iconst.i32 1
         v24 = iconst.i32 0
         v25 = select v22, v23, v24  ; v23 = 1, v24 = 0
-        v39 = stack_addr.i64 ss4
-        store notrap v25, v39
-        v38 = stack_addr.i64 ss4
-        v26 = load.i32 notrap v38
-        v27 = iconst.i32 1
-        v28 = icmp ne v26, v27  ; v27 = 1
+        v53 = stack_addr.i64 ss3
+        store notrap v25, v53
+        v52 = stack_addr.i64 ss3
+        v26 = load.i32 notrap v52
+        v27 = iconst.i32 0
+        v28 = icmp eq v26, v27  ; v27 = 0
         v29 = iconst.i32 1
         v30 = iconst.i32 0
         v31 = select v28, v29, v30  ; v29 = 1, v30 = 0
-        v37 = stack_addr.i64 ss5
-        store notrap v31, v37
-        v36 = stack_addr.i64 ss5
-        v32 = load.i32 notrap v36
-        brif v32, block4, block5
+        v51 = stack_addr.i64 ss4
+        store notrap v31, v51
+        v50 = stack_addr.i64 ss4
+        v32 = load.i32 notrap v50
+        v33 = iconst.i32 1
+        v34 = icmp ne v32, v33  ; v33 = 1
+        v35 = iconst.i32 1
+        v36 = iconst.i32 0
+        v37 = select v34, v35, v36  ; v35 = 1, v36 = 0
+        v49 = stack_addr.i64 ss5
+        store notrap v37, v49
+        v48 = stack_addr.i64 ss5
+        v38 = load.i32 notrap v48
+        v39 = iconst.i32 0
+        v40 = icmp ne v38, v39  ; v39 = 0
+        v41 = iconst.i8 1
+        v42 = iconst.i8 0
+        v43 = select v40, v41, v42  ; v41 = 1, v42 = 0
+        v44 = uextend.i32 v43
+        brif v44, block4, block5
 
     block5:
         jump block6
 
     block6:
-        v33 = iconst.i32 0
-        return v33  ; v33 = 0
+        v45 = iconst.i32 0
+        return v45  ; v45 = 0
 
     block4:
-        v34 = iconst.i32 1
-        return v34  ; v34 = 1
+        v46 = iconst.i32 1
+        return v46  ; v46 = 1
 
     block1:
-        v35 = iconst.i32 1
-        return v35  ; v35 = 1
+        v47 = iconst.i32 1
+        return v47  ; v47 = 1
     }
     ");
 }

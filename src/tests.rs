@@ -95,6 +95,7 @@ pub mod codegen_builtin_constant_p;
 pub mod codegen_builtin_prefetch;
 pub mod codegen_builtin_unreachable;
 pub mod codegen_builtins_bitwise;
+pub mod codegen_float_bool;
 pub mod codegen_cast_init;
 pub mod codegen_func_ptr_global;
 pub mod codegen_regr;

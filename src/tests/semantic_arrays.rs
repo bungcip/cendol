@@ -66,7 +66,7 @@ fn test_vla_ice_fix() {
             }
         "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @"
+    insta::assert_snapshot!(mir, @r"
     type %t0 = void
     type %t1 = i32
     type %t2 = i8
@@ -74,6 +74,7 @@ fn test_vla_ice_fix() {
     type %t4 = u64
     type %t5 = ptr<%t2>
     type %t6 = ptr<%t0>
+    type %t7 = bool
 
     fn f1(%param0: i32) -> void
     {
@@ -106,7 +107,7 @@ fn test_vla_ice_fix() {
         %7 = %param0 + const -1
         %param0 = %7
         %8 = %6 == const 0
-        cond_br %8, bb6, bb7
+        cond_br cast<bool>(%8), bb6, bb7
 
       bb6:
         return

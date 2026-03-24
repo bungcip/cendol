@@ -16,8 +16,9 @@ fn test_if_else_statement() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
+    type %t1 = bool
 
     fn main() -> i32
     {
@@ -31,7 +32,7 @@ fn test_if_else_statement() {
         %a = const 1
         %b = const 2
         %3 = %a > %b
-        cond_br %3, bb2, bb3
+        cond_br cast<bool>(%3), bb2, bb3
 
       bb2:
         return const 1
@@ -57,8 +58,9 @@ fn test_while_statement() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
+    type %t1 = bool
 
     fn main() -> i32
     {
@@ -72,7 +74,7 @@ fn test_while_statement() {
         br bb2
 
       bb2:
-        cond_br %steins, bb3, bb4
+        cond_br cast<bool>(%steins), bb3, bb4
 
       bb3:
         %2 = %steins - const 1
@@ -99,8 +101,9 @@ fn test_for_stmt() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
+    type %t1 = bool
 
     fn main() -> i32
     {
@@ -116,7 +119,7 @@ fn test_for_stmt() {
         br bb2
 
       bb2:
-        cond_br %steins, bb3, bb4
+        cond_br cast<bool>(%steins), bb3, bb4
 
       bb3:
         %3 = %steins - %gate
@@ -229,9 +232,10 @@ fn test_struct_type_regression() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
     type %t1 = struct anonymous { a: %t0, b: %t0, c: %t0 }
+    type %t2 = bool
 
     global @s: %t1 = const struct_literal { 0: const 1, 1: const 2, 2: const 3 }
 
@@ -243,7 +247,7 @@ fn test_struct_type_regression() {
 
       bb1:
         %1 = @s.field_0 != const 1
-        cond_br %1, bb2, bb3
+        cond_br cast<bool>(%1), bb2, bb3
 
       bb2:
         return const 1
@@ -270,9 +274,10 @@ fn test_long_long_comparison_crash() {
             }
         "#;
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
     type %t1 = i64
+    type %t2 = bool
 
     fn main() -> i32
     {
@@ -287,7 +292,7 @@ fn test_long_long_comparison_crash() {
         %2 = %x + const 1
         %x = %2
         %3 = %x != const 1
-        cond_br %3, bb2, bb3
+        cond_br cast<bool>(%3), bb2, bb3
 
       bb2:
         return const 1
@@ -414,8 +419,9 @@ fn test_variable_shadowing() {
     let mir_dump = setup_mir(source);
     // We expect two different %x locals. MIR printer might show them with same name or different IDs.
     // Currently it shows names if available.
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
+    type %t1 = bool
 
     fn main() -> i32
     {
@@ -430,7 +436,7 @@ fn test_variable_shadowing() {
         %x = const 1
         %x = const 2
         %3 = %x != const 2
-        cond_br %3, bb2, bb3
+        cond_br cast<bool>(%3), bb2, bb3
 
       bb2:
         return const 1
@@ -440,7 +446,7 @@ fn test_variable_shadowing() {
 
       bb4:
         %4 = %x != const 1
-        cond_br %4, bb5, bb6
+        cond_br cast<bool>(%4), bb5, bb6
 
       bb5:
         return const 1
@@ -1029,11 +1035,12 @@ fn test_deref_after_cast() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
     type %t1 = void
     type %t2 = ptr<%t1>
     type %t3 = ptr<%t0>
+    type %t4 = bool
 
     fn main() -> i32
     {
@@ -1047,7 +1054,7 @@ fn test_deref_after_cast() {
         %x = const 2
         %p = cast<ptr<void>>(addr_of(%x))
         %3 = deref(cast<ptr<i32>>(%p)) != const 2
-        cond_br %3, bb2, bb3
+        cond_br cast<bool>(%3), bb2, bb3
 
       bb2:
         return const 1
@@ -1209,11 +1216,12 @@ fn test_ternary_with_mixed_pointer_integer() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
     type %t1 = void
     type %t2 = ptr<%t1>
     type %t3 = ptr<%t0>
+    type %t4 = bool
 
     fn main() -> i32
     {
@@ -1229,7 +1237,7 @@ fn test_ternary_with_mixed_pointer_integer() {
 
       bb1:
         %i = const 1
-        cond_br %i, bb2, bb3
+        cond_br cast<bool>(%i), bb2, bb3
 
       bb2:
         %4 = cast<ptr<void>>(const 0)
@@ -1241,7 +1249,7 @@ fn test_ternary_with_mixed_pointer_integer() {
 
       bb4:
         %p = %4
-        cond_br %i, bb5, bb6
+        cond_br cast<bool>(%i), bb5, bb6
 
       bb5:
         %5 = const 0
@@ -1253,7 +1261,7 @@ fn test_ternary_with_mixed_pointer_integer() {
 
       bb7:
         %p = %5
-        cond_br %i, bb8, bb9
+        cond_br cast<bool>(%i), bb8, bb9
 
       bb8:
         %6 = cast<ptr<i32>>(const 0)
@@ -1265,7 +1273,7 @@ fn test_ternary_with_mixed_pointer_integer() {
 
       bb10:
         %q = %6
-        cond_br %i, bb11, bb12
+        cond_br cast<bool>(%i), bb11, bb12
 
       bb11:
         %7 = %q
@@ -1372,11 +1380,12 @@ fn test_gnu_statement_expression_labels_and_void() {
     type %t2 = ptr<%t1>
     type %t3 = void
     type %t4 = u64
-    type %t5 = fn(%t2, ...) -> %t0
-    type %t6 = [13]%t1
+    type %t5 = bool
+    type %t6 = fn(%t2, ...) -> %t0
     type %t7 = [13]%t1
-    type %t8 = [7]%t1
+    type %t8 = [13]%t1
     type %t9 = [7]%t1
+    type %t10 = [7]%t1
 
     global @.L.str0: [13]i8 = const "timeout=%ld\n"
     global @.L.str1: [7]i8 = const "error\n"
@@ -1401,7 +1410,7 @@ fn test_gnu_statement_expression_labels_and_void() {
         br bb12
 
       bb3:
-        cond_br %timeout, bb4, bb5
+        cond_br cast<bool>(%timeout), bb4, bb5
 
       bb4:
         cond_br const 1, bb6, bb7
@@ -1434,7 +1443,7 @@ fn test_gnu_statement_expression_labels_and_void() {
         %4 = %i
         %5 = %i + const -1
         %i = %5
-        cond_br %4, bb13, bb14
+        cond_br cast<bool>(%4), bb13, bb14
 
       bb13:
         br bb2

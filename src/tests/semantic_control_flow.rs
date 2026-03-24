@@ -67,8 +67,9 @@ fn test_for_loop_init_assignment() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
+    type %t1 = bool
 
     fn main() -> i32
     {
@@ -83,7 +84,7 @@ fn test_for_loop_init_assignment() {
 
       bb2:
         %2 = %i < const 10
-        cond_br %2, bb3, bb5
+        cond_br cast<bool>(%2), bb3, bb5
 
       bb3:
         br bb4

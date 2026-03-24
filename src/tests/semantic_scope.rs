@@ -84,12 +84,13 @@ fn test_function_redefinition_with_prototype() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
     type %t1 = void
     type %t2 = ptr<%t1>
     type %t3 = fn() -> %t0
     type %t4 = ptr<%t3>
+    type %t5 = bool
 
     global @x: i32 = const 3
 
@@ -101,7 +102,7 @@ fn test_function_redefinition_with_prototype() {
 
       bb2:
         %1 = @x != const 3
-        cond_br %1, bb3, bb4
+        cond_br cast<bool>(%1), bb3, bb4
 
       bb3:
         return const 0

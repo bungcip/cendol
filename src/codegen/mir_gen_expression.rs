@@ -354,10 +354,36 @@ impl<'a> MirGen<'a> {
         }
     }
 
+    pub(crate) fn cast_operand_to_bool(&mut self, operand: Operand) -> Operand {
+        let ty_id = self.get_operand_type(&operand);
+        let bool_ty_id = self.lower_type(self.registry.type_bool);
+        if ty_id == bool_ty_id {
+            return operand;
+        }
+
+        if let Some(const_id) = self.operand_to_const_id(&operand) {
+            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap().clone();
+            
+            let is_true = match const_val.kind {
+                ConstValueKind::Int(val) => val != 0,
+                ConstValueKind::Float(val) => val != 0.0,
+                ConstValueKind::FunctionAddress(_) | ConstValueKind::GlobalAddress(_, _) => true,
+                ConstValueKind::Bool(val) => val,
+                ConstValueKind::Null => false,
+                _ => return Operand::Cast(bool_ty_id, Box::new(operand)),
+            };
+            
+            return Operand::Constant(self.create_constant(bool_ty_id, ConstValueKind::Int(if is_true { 1 } else { 0 })));
+        }
+
+        Operand::Cast(bool_ty_id, Box::new(operand))
+    }
+
     fn visit_ternary_op(&mut self, cond: NodeRef, then_expr: NodeRef, else_expr: NodeRef, mir_ty: TypeId) -> Operand {
         let is_void = matches!(self.mir_builder.get_type(mir_ty), crate::mir::MirType::Void);
 
-        let cond_op = self.visit_expression(cond, true);
+        let mut cond_op = self.visit_expression(cond, true);
+        cond_op = self.cast_operand_to_bool(cond_op);
 
         let then_block = self.mir_builder.create_block();
         let else_block = self.mir_builder.create_block();
@@ -498,7 +524,7 @@ impl<'a> MirGen<'a> {
 
             let is_compatible = match (&const_val.kind, mir_type) {
                 (ConstValueKind::Int(_), t) => t.is_int() || t.is_pointer(),
-                (ConstValueKind::Float(_), t) => t.is_float(),
+                (ConstValueKind::Float(_), t) => t.is_float() || matches!(t, MirType::Bool),
                 (ConstValueKind::GlobalAddress(_, _), t) => t.is_pointer() || t.is_int(),
                 (ConstValueKind::FunctionAddress(_), t) => t.is_pointer() || t.is_int(),
                 _ => false,
@@ -518,6 +544,13 @@ impl<'a> MirGen<'a> {
                         if matches!(mir_type, MirType::Bool) =>
                     {
                         ConstValueKind::Int(1)
+                    }
+                    ConstValueKind::Float(val) => {
+                        if matches!(mir_type, MirType::Bool) {
+                            ConstValueKind::Int(if val != 0.0 { 1 } else { 0 })
+                        } else {
+                            ConstValueKind::Float(val)
+                        }
                     }
                     kind => kind,
                 };

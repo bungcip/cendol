@@ -313,7 +313,8 @@ impl<'a> MirGen<'a> {
         // Apply conversions for condition (should be boolean)
         let cond_ty = self.ast.get_resolved_type(condition).unwrap();
         let cond_mir_ty = self.lower_qual_type(cond_ty);
-        self.apply_conversions(cond_operand, condition, cond_mir_ty)
+        let converted = self.apply_conversions(cond_operand, condition, cond_mir_ty);
+        self.cast_operand_to_bool(converted)
     }
 
     fn visit_compound_statement(&mut self, cs: &nodes::CompoundStmt) {

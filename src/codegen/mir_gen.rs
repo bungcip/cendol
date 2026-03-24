@@ -185,7 +185,8 @@ impl<'a> MirGen<'a> {
             | NodeKind::Cast(..)
             | NodeKind::SizeOfExpr(..)
             | NodeKind::SizeOfType(..)
-            | NodeKind::AlignOf(..)
+            | NodeKind::AlignOfType(..)
+            | NodeKind::AlignOfExpr(..)
             | NodeKind::CompoundLiteral(..)
             | NodeKind::BuiltinVaArg(..)
             | NodeKind::BuiltinExpect(..)
@@ -521,21 +522,32 @@ impl<'a> MirGen<'a> {
 
         // Fallback for highly aligned locals: treat as fixed-size VLA if alignment > 16.
         // This works around backend limitations in stack realignment.
-        if let Some(align) = alignment && align > 16 {
+        if let Some(align) = alignment
+            && align > 16
+        {
             let mir_type = self.mir_builder.get_type(mir_type_id);
             let size = self.get_type_size(mir_type);
             let size_op = self.create_size_t_operand(size as u64);
             let ptr_local_id = self.emit_heap_alloc(Some(name), mir_type_id, alignment, size_op);
-            
+
             // We need a dummy size local for the vla_map entry, although it won't be used for sizeof.
             let size_t_ty = self.get_size_t_type();
             let dummy_size_local = self.mir_builder.create_local(None, size_t_ty, false);
             self.vla_map.insert(entry_ref, (ptr_local_id, dummy_size_local));
-            
+
             // Initialize if needed
             if let Some(initializer) = init {
-                let init_operand = self.visit_initializer(initializer, ty, Some(Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(ptr_local_id)))))));
-                self.emit_assignment(Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(ptr_local_id))))), init_operand);
+                let init_operand = self.visit_initializer(
+                    initializer,
+                    ty,
+                    Some(Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(
+                        ptr_local_id,
+                    )))))),
+                );
+                self.emit_assignment(
+                    Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(ptr_local_id))))),
+                    init_operand,
+                );
             }
             return;
         }
@@ -627,9 +639,7 @@ impl<'a> MirGen<'a> {
         alignment: Option<u32>,
         size_operand: Operand,
     ) -> LocalId {
-        let ptr_mir_ty = self.mir_builder.add_type(MirType::Pointer {
-            pointee: mir_type_id,
-        });
+        let ptr_mir_ty = self.mir_builder.add_type(MirType::Pointer { pointee: mir_type_id });
 
         // Create pointer local (holds the allocated memory address)
         let ptr_local_id = self.mir_builder.create_local(name, ptr_mir_ty, false);
@@ -638,7 +648,9 @@ impl<'a> MirGen<'a> {
         }
 
         // Allocate memory: use posix_memalign if alignment is specified and > 8, otherwise malloc.
-        if let Some(align) = alignment && align > 8 {
+        if let Some(align) = alignment
+            && align > 8
+        {
             self.emit_posix_memalign_call(ptr_local_id, align, size_operand);
         } else {
             self.emit_malloc_call(ptr_local_id, size_operand);
@@ -681,8 +693,7 @@ impl<'a> MirGen<'a> {
         let int_ty = self.get_int_type();
 
         // Declare int posix_memalign(void **memptr, size_t alignment, size_t size);
-        let func_id =
-            self.find_or_declare_extern_function(name, vec![ptr_ptr_ty, size_t_ty, size_t_ty], int_ty, false);
+        let func_id = self.find_or_declare_extern_function(name, vec![ptr_ptr_ty, size_t_ty, size_t_ty], int_ty, false);
 
         let align_operand = self.create_size_t_operand(alignment as u64);
         let dest_addr = Operand::AddressOf(Box::new(Place::Local(dest_local)));
@@ -705,10 +716,17 @@ impl<'a> MirGen<'a> {
         // Declare void free(void *ptr);
         let func_id = self.find_or_declare_extern_function(name, vec![ptr_ty], void_ty, false);
 
+        // MIR requires strict type matching for call arguments.
+        let ptr_casted = if self.get_operand_type(&ptr_operand) != ptr_ty {
+            Operand::Cast(ptr_ty, Box::new(ptr_operand))
+        } else {
+            ptr_operand
+        };
+
         // Call free(ptr)
         self.mir_builder.add_statement(MirStmt::Call {
             target: CallTarget::Direct(func_id),
-            args: vec![ptr_operand],
+            args: vec![ptr_casted],
             dest: None,
         });
     }

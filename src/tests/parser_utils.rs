@@ -26,8 +26,9 @@ pub(crate) enum ResolvedNodeKind {
     IndexAccess(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>),
     Cast(String, Box<ResolvedNodeKind>), // Simplified: just type name
     SizeOfExpr(Box<ResolvedNodeKind>),
-    SizeOfType(String), // Simplified: just type name
-    AlignOf(String),    // Simplified: just type name
+    SizeOfType(String),  // Simplified: just type name
+    AlignOfType(String), // Simplified: just type name
+    AlignOfExpr(Box<ResolvedNodeKind>),
     Declaration {
         specifiers: Vec<String>,
         init_declarators: Vec<ResolvedInitDeclarator>,
@@ -206,7 +207,8 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
         }
         ParsedNodeKind::SizeOfExpr(expr) => ResolvedNodeKind::SizeOfExpr(Box::new(resolve_node(ast, *expr))),
         ParsedNodeKind::SizeOfType(type_ref) => ResolvedNodeKind::SizeOfType(format!("type_{}", type_ref.base.get())),
-        ParsedNodeKind::AlignOf(type_ref) => ResolvedNodeKind::AlignOf(format!("type_{}", type_ref.base.get())),
+        ParsedNodeKind::AlignOfType(type_ref) => ResolvedNodeKind::AlignOfType(format!("type_{}", type_ref.base.get())),
+        ParsedNodeKind::AlignOfExpr(expr) => ResolvedNodeKind::AlignOfExpr(Box::new(resolve_node(ast, *expr))),
         ParsedNodeKind::Declaration(decl) => {
             let specifiers = resolve_specifiers(ast, &decl.specifiers);
             let init_declarators = decl

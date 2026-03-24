@@ -81,7 +81,7 @@ fn test_parsed_ast_access() {
 #[test]
 fn test_parsed_ast_sizeof_alignof() {
     let output = dump_parsed_ast("int f() { return (int)3.14 + sizeof(int) + sizeof(1) + _Alignof(int); }");
-    insta::assert_snapshot!(output, @"
+    insta::assert_snapshot!(output, @r"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: 4, body: 4 })
     4: CompoundStmt(stmts=[14])
@@ -92,7 +92,7 @@ fn test_parsed_ast_sizeof_alignof() {
     9: LiteralInt(1, None, base=10)
     10: SizeOfExpr(9)
     11: BinaryOp(Add, 8, 10)
-    12: AlignOf(ParsedType { base: 3, declarator: 7, qualifiers: TypeQualifiers(0x0) })
+    12: AlignOfType(ParsedType { base: 3, declarator: 7, qualifiers: TypeQualifiers(0x0) })
     13: BinaryOp(Add, 11, 12)
     14: Return(13)
     ");
@@ -330,7 +330,7 @@ fn test_parser_ast_sizeof_alignof() {
     11: SizeOfType(Int)
     12: SizeOfExpr(13)
     13: Ident(a)
-    14: AlignOf(Int)
+    14: AlignOfType(Int)
     "#);
 }
 

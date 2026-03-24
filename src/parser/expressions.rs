@@ -582,10 +582,21 @@ fn parse_postfix_tail(parser: &mut Parser, mut left: ParsedNodeRef) -> Result<Pa
 
 fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let start = parser.expect(TokenKind::Alignof)?.span.start();
-    parser.expect(TokenKind::LeftParen)?;
-    let ty = parse_type_name(parser)?;
-    let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok(parser.push_node(ParsedNodeKind::AlignOf(ty), SourceSpan::new(start, end)))
+
+    let (kind, end) = if parser.is_token(TokenKind::LeftParen)
+        && parser.peek_token(0).is_some_and(|t| parser.is_type_name_start_token(t))
+    {
+        parser.expect(TokenKind::LeftParen)?;
+        let ty = parse_type_name(parser)?;
+        let end = parser.expect(TokenKind::RightParen)?.span.end();
+        (ParsedNodeKind::AlignOfType(ty), end)
+    } else {
+        let expr = parser.parse_expr_bp(BindingPower::UNARY)?;
+        let end = parser.ast.get_node(expr).span.end();
+        (ParsedNodeKind::AlignOfExpr(expr), end)
+    };
+
+    Ok(parser.push_node(kind, SourceSpan::new(start, end)))
 }
 
 pub(crate) fn is_cast_expression_start(parser: &Parser) -> bool {

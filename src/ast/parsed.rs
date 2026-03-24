@@ -114,7 +114,8 @@ pub enum ParsedNodeKind {
     AtomicOp(AtomicOp, Vec<ParsedNodeRef>),
     SizeOfExpr(ParsedNodeRef),
     SizeOfType(ParsedType),
-    AlignOf(ParsedType),
+    AlignOfExpr(ParsedNodeRef),
+    AlignOfType(ParsedType),
 
     CompoundLiteral(ParsedType, ParsedNodeRef),
     GenericSelection(ParsedNodeRef, Vec<ParsedGenericAssociation>),
@@ -438,7 +439,8 @@ impl ParsedNodeKind {
             ParsedNodeKind::AtomicOp(..) => "AtomicOp",
             ParsedNodeKind::SizeOfExpr(..) => "SizeOfExpr",
             ParsedNodeKind::SizeOfType(..) => "SizeOfType",
-            ParsedNodeKind::AlignOf(..) => "AlignOf",
+            ParsedNodeKind::AlignOfExpr(..) => "AlignOfExpr",
+            ParsedNodeKind::AlignOfType(..) => "AlignOfType",
             ParsedNodeKind::CompoundLiteral(..) => "CompoundLiteral",
             ParsedNodeKind::GenericSelection(..) => "GenericSelection",
             ParsedNodeKind::BuiltinChooseExpr(..) => "BuiltinChooseExpr",
@@ -478,7 +480,7 @@ impl ParsedNodeKind {
             | ParsedNodeKind::Ident(_)
             | ParsedNodeKind::BuiltinTypesCompatibleP(_, _)
             | ParsedNodeKind::SizeOfType(_)
-            | ParsedNodeKind::AlignOf(_)
+            | ParsedNodeKind::AlignOfType(_)
             | ParsedNodeKind::BuiltinUnreachable
             | ParsedNodeKind::BuiltinTrap
             | ParsedNodeKind::Break
@@ -507,6 +509,7 @@ impl ParsedNodeKind {
             | ParsedNodeKind::BuiltinFabsf(e)
             | ParsedNodeKind::BuiltinFabsl(e)
             | ParsedNodeKind::SizeOfExpr(e)
+            | ParsedNodeKind::AlignOfExpr(e)
             | ParsedNodeKind::CompoundLiteral(_, e)
             | ParsedNodeKind::Label(_, e)
             | ParsedNodeKind::Default(e)

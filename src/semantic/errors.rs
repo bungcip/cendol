@@ -8,6 +8,7 @@ pub struct SemanticError {
     pub span: SourceSpan,
     pub kind: SemanticErrorKind,
     pub notes: Vec<(SourceSpan, SemanticErrorKind)>,
+    pub level: Option<DiagnosticLevel>,
 }
 
 impl SemanticError {
@@ -16,11 +17,12 @@ impl SemanticError {
             span,
             kind,
             notes: Vec::new(),
+            level: None,
         }
     }
 
     pub(crate) fn into_diagnostic(self, registry: &TypeRegistry) -> Vec<Diagnostic> {
-        let level = match &self.kind {
+        let level = self.level.unwrap_or_else(|| match &self.kind {
             SemanticErrorKind::EmptyDeclaration
             | SemanticErrorKind::IncompatiblePointerComparison { .. }
             | SemanticErrorKind::IncompatiblePointerTypes { .. }
@@ -31,9 +33,10 @@ impl SemanticError {
             | SemanticErrorKind::SwitchCaseOverflow { .. }
             | SemanticErrorKind::AddressOfArrayAlwaysTrue { .. }
             | SemanticErrorKind::EnumeratorValueNotRepresentable { .. }
+            | SemanticErrorKind::AlignOfExpression
             | SemanticErrorKind::ExcessElements { .. } => DiagnosticLevel::Warning,
             _ => DiagnosticLevel::Error,
-        };
+        });
 
         let mut diagnostics = vec![Diagnostic {
             level,
@@ -376,6 +379,7 @@ pub enum SemanticErrorKind {
     BuiltinPrefetchOutOfRange {
         arg: &'static str,
     },
+    AlignOfExpression,
 }
 
 impl SemanticErrorKind {
@@ -394,6 +398,7 @@ impl SemanticErrorKind {
             SemanticErrorKind::AddressOfArrayAlwaysTrue { .. } => Some("tautological-pointer-compare"),
             SemanticErrorKind::EnumeratorValueNotRepresentable { .. } => Some("enum-conversion"),
             SemanticErrorKind::ExcessElements { .. } => Some("excess-initializers"),
+            SemanticErrorKind::AlignOfExpression => Some("gnu-alignof-expression"),
             _ => None,
         }
     }
@@ -775,6 +780,9 @@ impl SemanticErrorKind {
             }
             SemanticErrorKind::BuiltinPrefetchOutOfRange { arg } => {
                 format!("argument '{}' to '__builtin_prefetch' is out of range", arg)
+            }
+            SemanticErrorKind::AlignOfExpression => {
+                "'_Alignof' applied to an expression is a GNU extension".to_string()
             }
         }
     }

@@ -5,6 +5,7 @@ use crate::{
         *,
     },
     diagnostic::DiagnosticEngine,
+    diagnostic::DiagnosticLevel,
     semantic::{
         ArraySizeType, BuiltinType, QualType, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind,
         TypeQualifiers, TypeRef, TypeRegistry,
@@ -94,7 +95,7 @@ pub(crate) fn visit_ast(
     diag: &mut DiagnosticEngine,
     symbol_table: &SymbolTable,
     registry: &mut TypeRegistry,
-    _lang_opts: &crate::lang_options::LangOptions,
+    lang_opts: &crate::lang_options::LangOptions,
 ) -> SemanticInfo {
     let mut semantic_info = SemanticInfo::with_capacity(ast.kinds.len());
     let mut resolver = SemanticAnalyzer {
@@ -118,6 +119,7 @@ pub(crate) fn visit_ast(
         switch_vla_state: SmallVec::new(),
         goto_vla_state: Vec::new(),
         label_vla_state: HashMap::new(),
+        lang_opts,
     };
     let root = ast.get_root();
     resolver.visit_node(root);
@@ -153,6 +155,7 @@ struct SemanticAnalyzer<'a> {
     switch_vla_state: SmallVec<[(NodeRef, usize); 4]>,
     goto_vla_state: Vec<(NodeRef, Vec<NodeRef>)>,
     label_vla_state: HashMap<SymbolRef, (SourceSpan, Vec<NodeRef>)>,
+    lang_opts: &'a crate::lang_options::LangOptions,
 }
 
 impl<'a> SemanticAnalyzer<'a> {
@@ -169,13 +172,18 @@ impl<'a> SemanticAnalyzer<'a> {
         let span = self.ast.get_span(node);
         let mut error = SemanticError::new(span, kind);
         error.notes = notes;
+        error.level = Some(DiagnosticLevel::Error);
         for diag in error.into_diagnostic(self.registry) {
             self.diag.report_diagnostic(diag);
         }
     }
 
     fn report_warning(&mut self, node: NodeRef, kind: SemanticErrorKind) {
-        self.report_warning_with_notes(node, kind, vec![])
+        if self.lang_opts.pedantic_errors {
+            self.report_error(node, kind);
+        } else {
+            self.report_warning_with_notes(node, kind, vec![])
+        }
     }
 
     fn report_warning_with_notes(
@@ -187,6 +195,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let span = self.ast.get_span(node);
         let mut error = SemanticError::new(span, kind);
         error.notes = notes;
+        error.level = Some(DiagnosticLevel::Warning);
         for diag in error.into_diagnostic(self.registry) {
             self.diag.report_diagnostic(diag);
         }
@@ -2556,11 +2565,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*expr);
                 Some(*ty)
             }
-            NodeKind::SizeOfExpr(_) | NodeKind::SizeOfType(_) | NodeKind::AlignOf(_) => {
+            NodeKind::SizeOfExpr(_) | NodeKind::SizeOfType(_) | NodeKind::AlignOfExpr(_) | NodeKind::AlignOfType(_) => {
                 let (expr, ty, is_alignof) = match kind {
                     NodeKind::SizeOfExpr(e) => (Some(*e), None, false),
                     NodeKind::SizeOfType(t) => (None, Some(*t), false),
-                    NodeKind::AlignOf(t) => (None, Some(*t), true),
+                    NodeKind::AlignOfExpr(e) => (Some(*e), None, true),
+                    NodeKind::AlignOfType(t) => (None, Some(*t), true),
                     _ => unreachable!(),
                 };
                 self.visit_sizeof_alignof(expr, ty, is_alignof, node)
@@ -2997,6 +3007,10 @@ impl<'a> SemanticAnalyzer<'a> {
         };
 
         if let Some(ty) = opt_ty {
+            if is_alignof && expr.is_some() {
+                self.report_warning(node, SemanticErrorKind::AlignOfExpression);
+            }
+
             // function type check
             let is_function = matches!(self.registry.get(ty).kind, TypeKind::Function { .. });
 

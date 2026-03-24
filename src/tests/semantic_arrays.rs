@@ -163,7 +163,7 @@ fn test_vla_in_block_scope() {
         %4 = cast<u64>(%3) * const 4
         %5 = %4
         %arr = call malloc(%4)
-        call free(%arr)
+        call free(cast<ptr<void>>(%arr))
         return
     }
 

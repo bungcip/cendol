@@ -71,7 +71,8 @@ pub enum NodeKind {
     AtomicOp(AtomicOp, NodeRef /* args start */, u16 /* arg count */),
     SizeOfExpr(NodeRef),
     SizeOfType(QualType),
-    AlignOf(QualType), // C11 _Alignof
+    AlignOfExpr(NodeRef),
+    AlignOfType(QualType), // C11 _Alignof
 
     CompoundLiteral(QualType, NodeRef),
     GenericSelection(GenericSelection),
@@ -176,7 +177,8 @@ impl NodeKind {
             NodeKind::AtomicOp(..) => "AtomicOp",
             NodeKind::SizeOfExpr(..) => "SizeOfExpr",
             NodeKind::SizeOfType(..) => "SizeOfType",
-            NodeKind::AlignOf(..) => "AlignOf",
+            NodeKind::AlignOfExpr(..) => "AlignOfExpr",
+            NodeKind::AlignOfType(..) => "AlignOfType",
             NodeKind::CompoundLiteral(..) => "CompoundLiteral",
             NodeKind::GenericSelection(..) => "GenericSelection",
             NodeKind::GenericAssociation(..) => "GenericAssociation",
@@ -223,7 +225,7 @@ impl NodeKind {
             NodeKind::Literal(_)
             | NodeKind::Ident(..)
             | NodeKind::SizeOfType(_)
-            | NodeKind::AlignOf(_)
+            | NodeKind::AlignOfType(_)
             | NodeKind::BuiltinTypesCompatibleP(..)
             | NodeKind::BuiltinUnreachable
             | NodeKind::BuiltinTrap
@@ -256,6 +258,7 @@ impl NodeKind {
             | NodeKind::BuiltinFabsl(child)
             | NodeKind::BuiltinConstantP(child)
             | NodeKind::SizeOfExpr(child)
+            | NodeKind::AlignOfExpr(child)
             | NodeKind::CompoundLiteral(_, child)
             | NodeKind::Label(_, child, _)
             | NodeKind::Default(child)

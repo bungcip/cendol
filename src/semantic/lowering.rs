@@ -1651,7 +1651,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.visit_expression(*e)
             )),
             ParsedNodeKind::SizeOfType(t) => lower_simple!(NodeKind::SizeOfType(self.visit_type(*t, span))),
-            ParsedNodeKind::AlignOf(t) => lower_simple!(NodeKind::AlignOf(self.visit_type(*t, span))),
+            ParsedNodeKind::AlignOfType(t) => lower_simple!(NodeKind::AlignOfType(self.visit_type(*t, span))),
+            ParsedNodeKind::AlignOfExpr(e) => lower_simple!(NodeKind::AlignOfExpr(self.visit_expression(*e))),
             ParsedNodeKind::BuiltinTypesCompatibleP(t1, t2) => {
                 lower_simple!(NodeKind::BuiltinTypesCompatibleP(
                     self.visit_type(*t1, span),
@@ -2212,7 +2213,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             NodeKind::SizeOfExpr(_)
             | NodeKind::SizeOfType(_)
-            | NodeKind::AlignOf(_)
+            | NodeKind::AlignOfExpr(_)
+            | NodeKind::AlignOfType(_)
             | NodeKind::BuiltinOffsetof(..)
             | NodeKind::BuiltinTypesCompatibleP(..)
             | NodeKind::BuiltinConstantP(..) => Some(QualType::unqualified(self.registry.type_long_unsigned)),

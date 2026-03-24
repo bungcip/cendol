@@ -130,10 +130,7 @@ impl AstDumper {
                 type_refs.insert(t1.ty());
                 type_refs.insert(t2.ty());
             }
-            NodeKind::SizeOfType(qual_type) => {
-                type_refs.insert(qual_type.ty());
-            }
-            NodeKind::AlignOf(qual_type) => {
+            NodeKind::SizeOfType(qual_type) | NodeKind::AlignOfType(qual_type) => {
                 type_refs.insert(qual_type.ty());
             }
             NodeKind::CompoundLiteral(qual_type, _) => {
@@ -225,7 +222,8 @@ impl AstDumper {
             | NodeKind::Assignment(_, _, _)
             | NodeKind::MemberAccess(_, _, _)
             | NodeKind::IndexAccess(_, _)
-            | NodeKind::SizeOfExpr(_) => {
+            | NodeKind::SizeOfExpr(_)
+            | NodeKind::AlignOfExpr(_) => {
                 // These don't directly contain TypeRefs, they will be handled when we process child nodes
             }
         }
@@ -329,6 +327,7 @@ impl AstDumper {
             | PNK::BuiltinAlloca(n1)
             | PNK::BuiltinConstantP(n1)
             | PNK::SizeOfExpr(n1)
+            | PNK::AlignOfExpr(n1)
             | PNK::PostIncrement(n1)
             | PNK::PostDecrement(n1)
             | PNK::Default(n1) => write!(f, "{}", n1.get())?,
@@ -365,7 +364,7 @@ impl AstDumper {
             }
 
             // TypeRef only: Tag(ty)
-            PNK::SizeOfType(ty) | PNK::AlignOf(ty) => write!(f, "{:?}", ty)?,
+            PNK::SizeOfType(ty) | PNK::AlignOfType(ty) => write!(f, "{:?}", ty)?,
 
             PNK::BuiltinTypesCompatibleP(t1, t2) => write!(f, "{:?}, {:?}", t1, t2)?,
 
@@ -456,7 +455,8 @@ impl AstDumper {
             | NodeKind::BuiltinFabsf(n)
             | NodeKind::BuiltinFabsl(n)
             | NodeKind::BuiltinConstantP(n)
-            | NodeKind::SizeOfExpr(n) => write!(f, "{}", n.get())?,
+            | NodeKind::SizeOfExpr(n)
+            | NodeKind::AlignOfExpr(n) => write!(f, "{}", n.get())?,
 
             NodeKind::BuiltinPrefetch(addr, rw, locality) => write!(
                 f,
@@ -497,7 +497,7 @@ impl AstDumper {
             | NodeKind::BuiltinOffsetof(ty, n) => write!(f, "{}, {}", ty, n.get())?,
 
             // TypeRef only: Tag(ty)
-            NodeKind::SizeOfType(ty) | NodeKind::AlignOf(ty) => write!(f, "{}", ty)?,
+            NodeKind::SizeOfType(ty) | NodeKind::AlignOfType(ty) => write!(f, "{}", ty)?,
 
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => write!(f, "{}, {}", t1, t2)?,
 

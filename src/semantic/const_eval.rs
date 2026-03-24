@@ -410,7 +410,25 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
             let layout = ctx.registry.try_get_layout(qt.ty())?;
             Some(layout.size as i64)
         }
-        NodeKind::AlignOf(qt) => {
+        NodeKind::AlignOfType(qt) => {
+            let layout = ctx.registry.try_get_layout(qt.ty())?;
+            Some(layout.alignment as i64)
+        }
+        NodeKind::AlignOfExpr(expr) => {
+            // Take the alignment of the expression's type.
+            // If the expression is a direct reference to a variable, it might have a custom alignment.
+            if let NodeKind::Ident(_, symbol_ref) = ctx.ast.get_kind(*expr) {
+                let symbol = ctx.symbol_table.get_symbol(*symbol_ref);
+                if let SymbolKind::Variable { alignment, .. } = &symbol.kind {
+                    if let Some(align) = alignment {
+                        return Some(*align as i64);
+                    }
+                }
+            }
+
+            let qt = ctx
+                .get_resolved_type(*expr)
+                .or_else(|| ctx.infer_type_from_node(*expr))?;
             let layout = ctx.registry.try_get_layout(qt.ty())?;
             Some(layout.alignment as i64)
         }

@@ -93,7 +93,25 @@ impl<'a> MirGen<'a> {
                 self.visit_type_query(ty, true)
             }
             NodeKind::SizeOfType(ty) => self.visit_type_query(ty.ty(), true),
-            NodeKind::AlignOf(ty) => self.visit_type_query(ty.ty(), false),
+            NodeKind::AlignOfType(ty) => self.visit_type_query(ty.ty(), false),
+            NodeKind::AlignOfExpr(expr) => {
+                // If the expression is a direct reference to a variable, it might have a custom alignment.
+                if let NodeKind::Ident(_, symbol_ref) = self.ast.get_kind(*expr) {
+                    let symbol = self.symbol_table.get_symbol(*symbol_ref);
+                    if let SymbolKind::Variable { alignment, .. } = &symbol.kind {
+                        if let Some(align) = alignment {
+                            return self.create_size_t_operand(*align as u64);
+                        }
+                    }
+                }
+
+                let ty = self
+                    .ast
+                    .get_resolved_type(*expr)
+                    .expect("AlignOf operand type missing")
+                    .ty();
+                self.visit_type_query(ty, false)
+            }
             NodeKind::BuiltinOffsetof(..) => {
                 let val = eval_const_expr(&self.const_ctx(), expr_ref).expect("offsetof should be constant");
                 self.create_size_t_operand(val as u64)
@@ -712,7 +730,7 @@ impl<'a> MirGen<'a> {
                     // If it is a scalar (highly-aligned fallback), we must Deref to get the value.
                     let symbol = self.symbol_table.get_symbol(resolved_ref);
                     let is_array = symbol.type_info.ty().is_array();
-                    
+
                     if is_array {
                         // Return the pointer local directly. ArrayIndex and decay will handle it.
                         Operand::Copy(Box::new(Place::Local(ptr_local_id)))

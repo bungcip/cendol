@@ -167,3 +167,4 @@ pub mod regr_init_range;
 pub mod regr_struct_bitfield;
 pub mod regr_vla_sizeof;
 pub mod regr_vla_static;
+pub mod semantic_alignof_expr;

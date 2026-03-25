@@ -382,3 +382,61 @@ fn test_generic_selection_rejects_function_type_association() {
         "generic association specifies function type",
     );
 }
+
+#[test]
+fn test_generic_function_as_control() {
+    run_pass(
+        r#"
+        int foo(int i) { return i; }
+        typedef int (*fptr)(int);
+        int main() {
+            int i = _Generic(foo, fptr: 1, default: 0);
+            return i;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_generic_incomplete_array_as_control() {
+    run_pass(
+        r#"
+        extern int arr[];
+        int main() {
+            return _Generic(arr, int*: 1, default: 0);
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_generic_unreachable_qualified() {
+    use crate::tests::test_utils::run_pass_with_diagnostic_message;
+    run_pass_with_diagnostic_message(
+        r#"
+        int main() {
+            int i = 0;
+            return _Generic(i, const int: 1, default: 0);
+        }
+        "#,
+        CompilePhase::Mir,
+        "due to lvalue conversion of the controlling expression, association of type 'const int' will never be selected because it is qualified",
+    );
+}
+
+#[test]
+fn test_generic_unreachable_array() {
+    use crate::tests::test_utils::run_pass_with_diagnostic_message;
+    run_pass_with_diagnostic_message(
+        r#"
+        int main() {
+            int i = 0;
+            return _Generic(i, int[4]: 1, default: 0);
+        }
+        "#,
+        CompilePhase::Mir,
+        "due to lvalue conversion of the controlling expression, association of type 'int[4]' will never be selected because it is of array type",
+    );
+}

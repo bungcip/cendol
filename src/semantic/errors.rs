@@ -39,7 +39,9 @@ impl SemanticError {
             | SemanticErrorKind::GnuDesignatedInitializerRange
             | SemanticErrorKind::GnuCaseRange
             | SemanticErrorKind::InlineAsmIgnored
-            | SemanticErrorKind::ExcessElements { .. } => DiagnosticLevel::Warning,
+            | SemanticErrorKind::ExcessElements { .. }
+            | SemanticErrorKind::GenericUnreachableQualified { .. }
+            | SemanticErrorKind::GenericUnreachableDecay { .. } => DiagnosticLevel::Warning,
             _ => DiagnosticLevel::Error,
         });
 
@@ -213,6 +215,12 @@ pub enum SemanticErrorKind {
         ty: QualType,
     },
     GenericVlaAssociation {
+        ty: QualType,
+    },
+    GenericUnreachableQualified {
+        ty: QualType,
+    },
+    GenericUnreachableDecay {
         ty: QualType,
     },
     AddressOfBitfield,
@@ -415,6 +423,8 @@ impl SemanticErrorKind {
             SemanticErrorKind::GnuDesignatedInitializerRange => Some("gnu-designated-init"),
             SemanticErrorKind::GnuCaseRange => Some("gnu-case-range"),
             SemanticErrorKind::InlineAsmIgnored => Some("inline-asm"),
+            SemanticErrorKind::GenericUnreachableQualified { .. }
+            | SemanticErrorKind::GenericUnreachableDecay { .. } => Some("unreachable-code-generic-assoc"),
             _ => None,
         }
     }
@@ -559,6 +569,15 @@ impl SemanticErrorKind {
                     registry.display_qual_type(*ty)
                 )
             }
+            SemanticErrorKind::GenericUnreachableQualified { ty } => format!(
+                "due to lvalue conversion of the controlling expression, association of type '{}' will never be selected because it is qualified",
+                registry.display_qual_type(*ty)
+            ),
+            SemanticErrorKind::GenericUnreachableDecay { ty } => format!(
+                "due to lvalue conversion of the controlling expression, association of type '{}' will never be selected because it is of {} type",
+                registry.display_qual_type(*ty),
+                if ty.is_array() { "array" } else { "function" }
+            ),
             SemanticErrorKind::AddressOfBitfield => "cannot take address of bit-field".to_string(),
             SemanticErrorKind::AddressOfRegister => "cannot take address of 'register' variable".to_string(),
             SemanticErrorKind::SizeOfBitfield => "cannot apply 'sizeof' to a bit-field".to_string(),

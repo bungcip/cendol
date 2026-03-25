@@ -2,32 +2,32 @@ use crate::driver::artifact::CompilePhase;
 use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
-fn test_generic_incomplete_array_prohibited() {
+fn test_generic_incomplete_array_allowed() {
     // C11 6.5.1.1p2: The controlling expression shall be an expression of a complete object type, or the void type.
-    // An incomplete array is NOT a complete object type.
-    run_fail_with_message(
+    // An incomplete array decays to a pointer, which IS a complete object type.
+    run_pass(
         r#"
         extern int a[];
         int main() {
-            return _Generic(a, int*: 1);
+            return _Generic(a, int*: 1, default: 0);
         }
         "#,
-        "controlling expression type 'int[]' is an incomplete type",
+        CompilePhase::Mir,
     );
 }
 
 #[test]
-fn test_generic_function_prohibited() {
+fn test_generic_function_allowed() {
     // C11 6.5.1.1p2: The controlling expression shall be an expression of a complete object type, or the void type.
-    // A function type is NOT an object type.
-    run_fail_with_message(
+    // A function type decays to a function pointer, which IS a complete object type.
+    run_pass(
         r#"
         void f(void);
         int main() {
-            return _Generic(f, void(*)(void): 1);
+            return _Generic(f, void(*)(void): 1, default: 0);
         }
         "#,
-        "controlling expression type 'void()' is an incomplete type",
+        CompilePhase::Mir,
     );
 }
 

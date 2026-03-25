@@ -3430,6 +3430,8 @@ impl<'a> SemanticAnalyzer<'a> {
         // First, visit the controlling expression to determine its type.
         let ctrl = self.visit_node(gs.control)?;
 
+        // C11 6.5.1.1p2: The controlling expression... shall be an expression of a complete object type,
+        // or the void type.
         // C11 6.5.1.1p3: The controlling expression of a generic selection is not evaluated.
         // C11 6.5.1.1p2: The type of the controlling expression is compared with the type name of each generic
         // association. Before comparison, array and function types decay to pointers.
@@ -3440,12 +3442,12 @@ impl<'a> SemanticAnalyzer<'a> {
             ctrl
         };
 
-        // After decay, top-level qualifiers are removed for the compatibility check.
+        // After decay, top-level qualifiers are removed for the compatibility check (lvalue conversion).
         let unqualified_ctrl = decayed_ctrl.strip_all();
 
-        // C11 6.5.1.1p2: The controlling expression shall be an expression of a complete object type,
-        // or the void type.
-        if !ctrl.is_void() && (ctrl.is_function() || !self.registry.is_complete(ctrl.ty())) {
+        // The completeness check applies to the DECAYED type.
+        // Pointer types (from array/function decay) are always complete object types.
+        if !decayed_ctrl.is_void() && !self.registry.is_complete(decayed_ctrl.ty()) {
             self.report_error(gs.control, SemanticErrorKind::GenericIncompleteControl { ty: ctrl });
         }
 
@@ -3498,6 +3500,19 @@ impl<'a> SemanticAnalyzer<'a> {
                 );
             } else if self.registry.is_variably_modified(assoc_qt.ty()) {
                 self.report_error(assoc_node, SemanticErrorKind::GenericVlaAssociation { ty: assoc_qt });
+            }
+
+            // Warning for unreachable associations (top-level qualifiers stripped from control)
+            if !assoc_qt.qualifiers().is_empty() {
+                self.report_warning(
+                    assoc_node,
+                    SemanticErrorKind::GenericUnreachableQualified { ty: assoc_qt },
+                );
+            }
+
+            // Warning for unreachable associations (array/function types never match decayed pointer)
+            if assoc_qt.is_array() || assoc_qt.is_function() {
+                self.report_warning(assoc_node, SemanticErrorKind::GenericUnreachableDecay { ty: assoc_qt });
             }
 
             // C11 6.5.1.1p2: The controlling expression... shall have type compatible with at most one...

@@ -338,6 +338,25 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro_one("__STDC_UTF_16__");
             self.define_builtin_macro_one("__STDC_UTF_32__");
         }
+
+        // Integer constant macros
+        self.define_builtin_function_macro("__INT8_C", &["c"], "c");
+        self.define_builtin_function_macro("__INT16_C", &["c"], "c");
+        self.define_builtin_function_macro("__INT32_C", &["c"], "c");
+        self.define_builtin_function_macro("__UINT8_C", &["c"], "c");
+        self.define_builtin_function_macro("__UINT16_C", &["c"], "c");
+        self.define_builtin_function_macro("__UINT32_C", &["c"], "c ## U");
+
+        if self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(64) == 64 {
+            self.define_builtin_function_macro("__INT64_C", &["c"], "c ## L");
+            self.define_builtin_function_macro("__UINT64_C", &["c"], "c ## UL");
+        } else {
+            self.define_builtin_function_macro("__INT64_C", &["c"], "c ## LL");
+            self.define_builtin_function_macro("__UINT64_C", &["c"], "c ## ULL");
+        }
+
+        self.define_builtin_function_macro("__INTMAX_C", &["c"], "c ## LL");
+        self.define_builtin_function_macro("__UINTMAX_C", &["c"], "c ## ULL");
     }
 
     /// Helper to define a built-in macro with value "1"
@@ -417,6 +436,21 @@ impl<'src> Preprocessor<'src> {
             flags: MacroFlags::BUILTIN,
             tokens: Arc::from(tokens),
             parameter_list: Arc::from([]),
+            variadic_arg: None,
+        };
+        self.macros.insert(symbol, macro_info);
+    }
+
+    /// Define a built-in function-like macro
+    fn define_builtin_function_macro(&mut self, name: &str, params: &[&str], body: &str) {
+        let symbol = StringId::new(name);
+        let param_symbols: Vec<StringId> = params.iter().map(|&p| StringId::new(p)).collect();
+        let tokens = self.lex_macro_value(body, "<builtin>");
+        let macro_info = MacroInfo {
+            location: SourceLoc::builtin(),
+            flags: MacroFlags::BUILTIN | MacroFlags::FUNCTION_LIKE,
+            tokens: Arc::from(tokens),
+            parameter_list: Arc::from(param_symbols),
             variadic_arg: None,
         };
         self.macros.insert(symbol, macro_info);

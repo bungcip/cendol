@@ -67,18 +67,18 @@ typedef unsigned long long uintmax_t;
 #define SIZE_MAX ULONG_MAX
 
 /* Integer constant macros */
-#define INT8_C(x) x
-#define INT16_C(x) x
-#define INT32_C(x) x
-#define INT64_C(x) x ## LL
+#define INT8_C(x) __INT8_C(x)
+#define INT16_C(x) __INT16_C(x)
+#define INT32_C(x) __INT32_C(x)
+#define INT64_C(x) __INT64_C(x)
 
-#define UINT8_C(x) x
-#define UINT16_C(x) x
-#define UINT32_C(x) x ## U
-#define UINT64_C(x) x ## ULL
+#define UINT8_C(x) __UINT8_C(x)
+#define UINT16_C(x) __UINT16_C(x)
+#define UINT32_C(x) __UINT32_C(x)
+#define UINT64_C(x) __UINT64_C(x)
 
-#define INTMAX_C(x) x ## LL
-#define UINTMAX_C(x) x ## ULL
+#define INTMAX_C(x) __INTMAX_C(x)
+#define UINTMAX_C(x) __UINTMAX_C(x)
 
 /* Limits of other integer types */
 #define SIG_ATOMIC_MIN INT32_MIN

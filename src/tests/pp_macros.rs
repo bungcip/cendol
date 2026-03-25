@@ -900,3 +900,60 @@ M(a,b)
       text: b
     "#);
 }
+
+#[test]
+fn test_int_constant_macros() {
+    let src = r#"
+__INT8_C(1)
+__INT16_C(1)
+__INT32_C(1)
+__INT64_C(1)
+__UINT8_C(1)
+__UINT16_C(1)
+__UINT32_C(1)
+__UINT64_C(1)
+__INTMAX_C(1)
+__UINTMAX_C(1)
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Number
+      text: "1"
+    - kind: Number
+      text: "1"
+    - kind: Number
+      text: "1"
+    - kind: Number
+      text: 1L
+    - kind: Number
+      text: "1"
+    - kind: Number
+      text: "1"
+    - kind: Number
+      text: 1U
+    - kind: Number
+      text: 1UL
+    - kind: Number
+      text: 1LL
+    - kind: Number
+      text: 1ULL
+    "#);
+}
+
+#[test]
+fn test_stdint_h_constant_macros() {
+    let src = r#"
+#include <stdint.h>
+INT64_C(123)
+UINT64_C(456)
+"#;
+    let tokens = setup_pp_snapshot(src);
+    // Find the tokens we're interested in (they should be at the end)
+    let last_tokens: Vec<_> = tokens.iter().rev().take(2).rev().collect();
+    insta::assert_yaml_snapshot!(last_tokens, @r#"
+    - kind: Number
+      text: 123L
+    - kind: Number
+      text: 456UL
+    "#);
+}

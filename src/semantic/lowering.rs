@@ -3119,6 +3119,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         self.check_function_specifiers(&spec_info, id.span);
 
                         let name = self.extract_name(id.declarator);
+                        if name.is_none() && bit_field_size.is_none() {
+                            self.report_error(id.span, SemanticErrorKind::EmptyDeclaration);
+                            continue;
+                        }
                         let base = spec_info
                             .base_type
                             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));

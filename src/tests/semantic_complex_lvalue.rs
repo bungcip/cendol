@@ -1,5 +1,5 @@
-use crate::tests::test_utils;
 use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils;
 
 #[test]
 fn test_complex_real_lvalue() {

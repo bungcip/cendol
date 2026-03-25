@@ -15,7 +15,7 @@ impl<'a> MirGen<'a> {
     fn visit_expression_as_place(&mut self, expr_ref: NodeRef) -> Place {
         let node_kind = self.ast.get_kind(expr_ref);
         match node_kind {
-            NodeKind::UnaryOp(op, operand_ref) if matches!(op, UnaryOp::Real) => {
+            NodeKind::UnaryOp(UnaryOp::Real, operand_ref) => {
                 let base_place = self.visit_expression_as_place(*operand_ref);
                 let operand_ty = self.ast.get_resolved_type(*operand_ref).unwrap();
                 if operand_ty.is_complex() {
@@ -24,7 +24,7 @@ impl<'a> MirGen<'a> {
                     base_place
                 }
             }
-            NodeKind::UnaryOp(op, operand_ref) if matches!(op, UnaryOp::Imag) => {
+            NodeKind::UnaryOp(UnaryOp::Imag, operand_ref) => {
                 let base_place = self.visit_expression_as_place(*operand_ref);
                 let operand_ty = self.ast.get_resolved_type(*operand_ref).unwrap();
                 if operand_ty.is_complex() {

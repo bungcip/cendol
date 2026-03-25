@@ -17,7 +17,7 @@ use smallvec::{SmallVec, smallvec};
 use crate::ast::literal::Literal;
 use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec};
 use crate::ast::*;
-use crate::diagnostic::DiagnosticEngine;
+use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
 use crate::semantic::const_eval::{self, ConstEvalCtx};
 use crate::semantic::errors::{SemanticError, SemanticErrorKind};
 use crate::semantic::literal_utils::parse_string_literal;
@@ -79,6 +79,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let error = SemanticError::new(span, kind);
         for diag in error.into_diagnostic(self.registry) {
             self.diag.report_diagnostic(diag);
+        }
+    }
+
+    pub(crate) fn report_warning(&mut self, span: SourceSpan, kind: SemanticErrorKind) {
+        if self.lang_opts.pedantic_errors {
+            self.report_error(span, kind);
+        } else {
+            let mut error = SemanticError::new(span, kind);
+            error.level = Some(DiagnosticLevel::Warning);
+            for diag in error.into_diagnostic(self.registry) {
+                self.diag.report_diagnostic(diag);
+            }
         }
     }
 
@@ -1604,11 +1616,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.visit_expression(*t),
                 self.visit_expression(*e)
             )),
-            ParsedNodeKind::CaseRange(s, e, stmt) => lower_simple!(NodeKind::CaseRange(
-                self.visit_expression(*s),
-                self.visit_expression(*e),
-                self.visit_single_statement(*stmt)
-            )),
+            ParsedNodeKind::CaseRange(s, e, stmt) => {
+                self.report_warning(span, SemanticErrorKind::GnuCaseRange);
+                lower_simple!(NodeKind::CaseRange(
+                    self.visit_expression(*s),
+                    self.visit_expression(*e),
+                    self.visit_single_statement(*stmt)
+                ))
+            }
             ParsedNodeKind::BuiltinChooseExpr(c, t, e) => lower_simple!(NodeKind::BuiltinChooseExpr(
                 self.visit_expression(*c),
                 self.visit_expression(*t),
@@ -1680,6 +1695,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             // Complex variants extracted to helpers
             ParsedNodeKind::GnuStatementExpr(stmt, _) => {
+                self.report_warning(span, SemanticErrorKind::GnuStatementExpression);
                 lower_simple!(self.visit_gnu_statement_expr(*stmt, span))
             }
             ParsedNodeKind::FunctionCall(func, args) => {
@@ -1920,6 +1936,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     ParsedDesignator::FieldName(name) => Designator::FieldName(*name),
                     ParsedDesignator::ArrayIndex(idx) => Designator::ArrayIndex(self.visit_expression(*idx)),
                     ParsedDesignator::GnuArrayRange(start, end) => {
+                        self.report_warning(
+                            self.parsed_ast.nodes[start.get() as usize].span,
+                            SemanticErrorKind::GnuDesignatedInitializerRange,
+                        );
                         Designator::GnuArrayRange(self.visit_expression(*start), self.visit_expression(*end))
                     }
                 };
@@ -2733,8 +2753,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             AutoType => Ok(QualType::unqualified(
                 self.registry.alloc(Type::new(TypeKind::AutoType)),
             )),
-            ParsedTypeSpec::Typeof(ty) => self.lower_type(*ty, span, false),
+            ParsedTypeSpec::Typeof(ty) => {
+                self.report_warning(span, SemanticErrorKind::GnuTypeof);
+                self.lower_type(*ty, span, false)
+            }
             ParsedTypeSpec::TypeofExpr(expr) => {
+                self.report_warning(span, SemanticErrorKind::GnuTypeof);
                 let expr_node = self.visit_expression(*expr);
                 if let Some(qt) = self.try_infer_type(expr_node) {
                     Ok(qt)
@@ -3188,8 +3212,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     None => Ok(QualType::unqualified(self.registry.declare_record(Some(*name), false))),
                 }
             }
-            ParsedBaseType::Typeof(ty) => self.lower_type(*ty, span, false),
+            ParsedBaseType::Typeof(ty) => {
+                self.report_warning(span, SemanticErrorKind::GnuTypeof);
+                self.lower_type(*ty, span, false)
+            }
             ParsedBaseType::TypeofExpr(expr) => {
+                self.report_warning(span, SemanticErrorKind::GnuTypeof);
                 let expr_node = self.visit_expression(*expr);
                 if let Some(qt) = self.try_infer_type(expr_node) {
                     Ok(qt)

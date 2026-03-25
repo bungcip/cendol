@@ -116,6 +116,7 @@ pub mod guardian_relational_pointer_constraints;
 pub mod guardian_selection_props;
 pub mod guardian_sizeof_alignof;
 pub mod guardian_ternary_pointer_constraints;
+pub mod issue_test;
 pub mod mir_dumper_coverage;
 pub mod mir_gen_compound_assignment;
 pub mod mir_gen_function_address;

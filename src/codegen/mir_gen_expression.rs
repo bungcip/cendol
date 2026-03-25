@@ -13,10 +13,36 @@ use crate::{ast, semantic};
 
 impl<'a> MirGen<'a> {
     fn visit_expression_as_place(&mut self, expr_ref: NodeRef) -> Place {
-        let op = self.visit_expression(expr_ref, true);
-        let ty = self.ast.get_resolved_type(expr_ref).unwrap();
-        let mir_ty = self.lower_qual_type(ty);
-        self.ensure_place(op, mir_ty)
+        let node_kind = self.ast.get_kind(expr_ref);
+        match node_kind {
+            NodeKind::UnaryOp(op, operand_ref) if matches!(op, UnaryOp::Real) => {
+                let base_place = self.visit_expression_as_place(*operand_ref);
+                let operand_ty = self.ast.get_resolved_type(*operand_ref).unwrap();
+                if operand_ty.is_complex() {
+                    Place::StructField(Box::new(base_place), 0, None)
+                } else {
+                    base_place
+                }
+            }
+            NodeKind::UnaryOp(op, operand_ref) if matches!(op, UnaryOp::Imag) => {
+                let base_place = self.visit_expression_as_place(*operand_ref);
+                let operand_ty = self.ast.get_resolved_type(*operand_ref).unwrap();
+                if operand_ty.is_complex() {
+                    Place::StructField(Box::new(base_place), 1, None)
+                } else {
+                    let op = self.visit_expression(expr_ref, true);
+                    let ty = self.ast.get_resolved_type(expr_ref).unwrap();
+                    let mir_ty = self.lower_qual_type(ty);
+                    self.ensure_place(op, mir_ty)
+                }
+            }
+            _ => {
+                let op = self.visit_expression(expr_ref, true);
+                let ty = self.ast.get_resolved_type(expr_ref).unwrap();
+                let mir_ty = self.lower_qual_type(ty);
+                self.ensure_place(op, mir_ty)
+            }
+        }
     }
 
     pub(crate) fn visit_expression(&mut self, expr_ref: NodeRef, need_value: bool) -> Operand {
@@ -578,8 +604,13 @@ impl<'a> MirGen<'a> {
             UnaryOp::AddrOf => self.visit_unary_addrof(operand_ref),
             UnaryOp::Deref => self.visit_unary_deref(operand_ref),
             UnaryOp::Real => {
-                let operand = self.visit_expression(operand_ref, true);
-                self.apply_conversions(operand, operand_ref, mir_ty)
+                if self.ast.get_value_category(operand_ref) == Some(ValueCategory::LValue) {
+                    let place = self.visit_expression_as_place(operand_ref);
+                    Operand::Copy(Box::new(place))
+                } else {
+                    let operand = self.visit_expression(operand_ref, true);
+                    self.apply_conversions(operand, operand_ref, mir_ty)
+                }
             }
             UnaryOp::Imag => {
                 let _ = self.visit_expression(operand_ref, false);
@@ -1455,6 +1486,23 @@ impl<'a> MirGen<'a> {
         if operand_ty.is_pointer() {
             let op = if is_inc { BinaryOp::Add } else { BinaryOp::Sub };
             self.create_pointer_arithmetic_rvalue(operand, one_const, op)
+        } else if operand_ty.is_complex() {
+            let mir_ty = self.lower_qual_type(operand_ty);
+            let (real, imag) = self.get_complex_components(operand, mir_ty);
+            let element_ty = match self.mir_builder.get_type(mir_ty) {
+                crate::mir::MirType::Record { field_types, .. } => field_types[0],
+                _ => unreachable!("Complex type must be a record"),
+            };
+
+            let op = if is_inc {
+                crate::mir::BinaryFloatOp::Add
+            } else {
+                crate::mir::BinaryFloatOp::Sub
+            };
+            let one = self.create_constant(element_ty, ConstValueKind::Float(1.0));
+            let res_real = self.emit_float_binop(op, real, Operand::Constant(one), element_ty);
+
+            Rvalue::StructLiteral(vec![(0, res_real), (1, imag)])
         } else {
             let mir_ty_id = self.lower_qual_type(operand_ty);
             let mir_ty = self.mir_builder.get_type(mir_ty_id);
@@ -1728,6 +1776,10 @@ impl<'a> MirGen<'a> {
             UnaryOp::Plus => self.emit_complex_struct(real, imag, mir_ty),
             UnaryOp::Real => real,
             UnaryOp::Imag => imag,
+            UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
+                let is_inc = matches!(op, UnaryOp::PreIncrement);
+                self.visit_inc_dec_expression(operand_ref, is_inc, false, true)
+            }
             _ => panic!("Unsupported complex unary operator: {:?}", op),
         }
     }

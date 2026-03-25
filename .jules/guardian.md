@@ -164,3 +164,8 @@ Action: Ensure all expression property queries (like `is_lvalue`, `is_register_v
 
 Learning: C11 6.7.2.1p3 constraints on structure members (prohibiting incomplete or function types) are best enforced during semantic lowering when the record is being completed. However, because record completion often triggers layout computation, errors like 'SizeOfIncompleteType' or 'RecursiveType' can originate deep in the type registry. Ensuring these are caught during lowering and associated with the correct member span is critical for diagnostic quality. Testing this at the `SemanticLowering` phase rather than later (like MIR) ensures that invalid types are rejected as soon as they are defined.
 Action: Always verify that structural constraints (like member types) are enforced during the lowering/definition phase and that diagnostics point to the relevant declaration rather than just the start of the containing block.
+
+2026-03-21 - [Function Type Members via Typedef]
+
+Learning: C11 6.7.2.1p3 prohibits structure/union members from having a function type. While direct function declarations in structs are easily caught, function types introduced via 'typedef' must also be rejected. In Cendol, this validation occurs during the record completion and layout computation phase in 'TypeRegistry'. This ensures that even types hidden behind multiple layers of aliases are correctly validated for completeness and object-type status before they are used in memory layout or code generation.
+Action: Always include tests for constraint enforcement that use 'typedef' to ensure that semantic checks are performed on the underlying resolved types rather than just the syntactic representation.

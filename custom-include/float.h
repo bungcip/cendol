@@ -1,78 +1,78 @@
 #ifndef _CENDOL_FLOAT_H
 #define _CENDOL_FLOAT_H
 
-/* Floating-point characteristics for IEEE 754 binary64 (double) and binary32 (float) */
+/* Floating-point characteristics */
 
 /* Radix of exponent representation */
-#define FLT_RADIX 2
+#define FLT_RADIX __FLT_RADIX__
 
 /* Number of base-FLT_RADIX digits in the floating-point significand */
-#define FLT_MANT_DIG 24
-#define DBL_MANT_DIG 53
-#define LDBL_MANT_DIG 53
+#define FLT_MANT_DIG __FLT_MANT_DIG__
+#define DBL_MANT_DIG __DBL_MANT_DIG__
+#define LDBL_MANT_DIG __LDBL_MANT_DIG__
 
 /* Number of decimal digits that can be represented without change */
-#define FLT_DIG 6
-#define DBL_DIG 15
-#define LDBL_DIG 15
+#define FLT_DIG __FLT_DIG__
+#define DBL_DIG __DBL_DIG__
+#define LDBL_DIG __LDBL_DIG__
 
 /* Minimum negative integer such that FLT_RADIX raised to that power minus 1 is a normalized float */
-#define FLT_MIN_EXP (-125)
-#define DBL_MIN_EXP (-1021)
-#define LDBL_MIN_EXP (-1021)
+#define FLT_MIN_EXP __FLT_MIN_EXP__
+#define DBL_MIN_EXP __DBL_MIN_EXP__
+#define LDBL_MIN_EXP __LDBL_MIN_EXP__
 
 /* Minimum negative integer such that 10 raised to that power is in the range of normalized floats */
-#define FLT_MIN_10_EXP (-37)
-#define DBL_MIN_10_EXP (-307)
-#define LDBL_MIN_10_EXP (-307)
+#define FLT_MIN_10_EXP __FLT_MIN_10_EXP__
+#define DBL_MIN_10_EXP __DBL_MIN_10_EXP__
+#define LDBL_MIN_10_EXP __LDBL_MIN_10_EXP__
 
 /* Maximum integer such that FLT_RADIX raised to that power minus 1 is a representable finite float */
-#define FLT_MAX_EXP 128
-#define DBL_MAX_EXP 1024
-#define LDBL_MAX_EXP 1024
+#define FLT_MAX_EXP __FLT_MAX_EXP__
+#define DBL_MAX_EXP __DBL_MAX_EXP__
+#define LDBL_MAX_EXP __LDBL_MAX_EXP__
 
 /* Maximum integer such that 10 raised to that power is in the range of representable finite floats */
-#define FLT_MAX_10_EXP 38
-#define DBL_MAX_10_EXP 308
-#define LDBL_MAX_10_EXP 308
+#define FLT_MAX_10_EXP __FLT_MAX_10_EXP__
+#define DBL_MAX_10_EXP __DBL_MAX_10_EXP__
+#define LDBL_MAX_10_EXP __LDBL_MAX_10_EXP__
 
 /* Maximum representable finite floating-point number */
-#define FLT_MAX 3.40282347e+38F
-#define DBL_MAX 1.7976931348623157e+308
-#define LDBL_MAX 1.7976931348623157e+308L
+#define FLT_MAX __FLT_MAX__
+#define DBL_MAX __DBL_MAX__
+#define LDBL_MAX __LDBL_MAX__
 
 /* Difference between 1 and the least value greater than 1 that is representable */
-#define FLT_EPSILON 1.19209290e-7F
-#define DBL_EPSILON 2.2204460492503131e-16
-#define LDBL_EPSILON 2.2204460492503131e-16L
+#define FLT_EPSILON __FLT_EPSILON__
+#define DBL_EPSILON __DBL_EPSILON__
+#define LDBL_EPSILON __LDBL_EPSILON__
 
 /* Minimum normalized positive floating-point number */
-#define FLT_MIN 1.17549435e-38F
-#define DBL_MIN 2.2250738585072014e-308
-#define LDBL_MIN 2.2250738585072014e-308L
+#define FLT_MIN __FLT_MIN__
+#define DBL_MIN __DBL_MIN__
+#define LDBL_MIN __LDBL_MIN__
 
 /* Number of decimal digits to represent a floating-point number uniquely */
-#define DECIMAL_DIG 17
+#define DECIMAL_DIG __DECIMAL_DIG__
 
 /* C11 additions */
-#define FLT_DECIMAL_DIG 9
-#define DBL_DECIMAL_DIG 17
-#define LDBL_DECIMAL_DIG 17
+#define FLT_DECIMAL_DIG __FLT_DECIMAL_DIG__
+#define DBL_DECIMAL_DIG __DBL_DECIMAL_DIG__
+#define LDBL_DECIMAL_DIG __LDBL_DECIMAL_DIG__
 
 /* Evaluation method */
-#define FLT_EVAL_METHOD 0
+#define FLT_EVAL_METHOD __FLT_EVAL_METHOD__
 
 /* Rounding mode */
-#define FLT_ROUNDS 1
+#define FLT_ROUNDS __FLT_ROUNDS__
 
 /* Denormalized numbers support */
-#define FLT_HAS_SUBNORM 1
-#define DBL_HAS_SUBNORM 1
-#define LDBL_HAS_SUBNORM 1
+#define FLT_HAS_SUBNORM __FLT_HAS_SUBNORM__
+#define DBL_HAS_SUBNORM __DBL_HAS_SUBNORM__
+#define LDBL_HAS_SUBNORM __LDBL_HAS_SUBNORM__
 
 /* Minimum positive subnormal floating-point number */
-#define FLT_TRUE_MIN 1.40129846e-45F
-#define DBL_TRUE_MIN 4.9406564584124654e-324
-#define LDBL_TRUE_MIN 4.9406564584124654e-324L
+#define FLT_TRUE_MIN __FLT_TRUE_MIN__
+#define DBL_TRUE_MIN __DBL_TRUE_MIN__
+#define LDBL_TRUE_MIN __LDBL_TRUE_MIN__
 
 #endif

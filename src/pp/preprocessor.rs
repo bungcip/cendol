@@ -198,8 +198,50 @@ impl<'src> Preprocessor<'src> {
 
         // Float limits
         self.define_builtin_macro_with_val("__FLT_MANT_DIG__", "24");
+        self.define_builtin_macro_with_val("__FLT_DIG__", "6");
+        self.define_builtin_macro_with_val("__FLT_MIN_EXP__", "(-125)");
+        self.define_builtin_macro_with_val("__FLT_MAX_EXP__", "128");
+        self.define_builtin_macro_with_val("__FLT_MIN_10_EXP__", "(-37)");
+        self.define_builtin_macro_with_val("__FLT_MAX_10_EXP__", "38");
+        self.define_builtin_macro_with_val("__FLT_MAX__", "3.40282346638528859811704183484516925e+38F");
+        self.define_builtin_macro_with_val("__FLT_MIN__", "1.17549435082228750796873653722224568e-38F");
+        self.define_builtin_macro_with_val("__FLT_EPSILON__", "1.19209289550781250000000000000000000e-7F");
+        self.define_builtin_macro_with_val("__FLT_DECIMAL_DIG__", "9");
+
         self.define_builtin_macro_with_val("__DBL_MANT_DIG__", "53");
+        self.define_builtin_macro_with_val("__DBL_DIG__", "15");
+        self.define_builtin_macro_with_val("__DBL_MIN_EXP__", "(-1021)");
+        self.define_builtin_macro_with_val("__DBL_MAX_EXP__", "1024");
+        self.define_builtin_macro_with_val("__DBL_MIN_10_EXP__", "(-307)");
+        self.define_builtin_macro_with_val("__DBL_MAX_10_EXP__", "308");
+        self.define_builtin_macro_with_val("__DBL_MAX__", "((double)1.79769313486231570814527423731704357e+308L)");
+        self.define_builtin_macro_with_val("__DBL_MIN__", "((double)2.22507385850720138309023271733240406e-308L)");
+        self.define_builtin_macro_with_val("__DBL_EPSILON__", "((double)2.22044604925031308084726333618164062e-16L)");
+        self.define_builtin_macro_with_val("__DBL_DECIMAL_DIG__", "17");
+
         self.define_builtin_macro_with_val("__LDBL_MANT_DIG__", "64");
+        self.define_builtin_macro_with_val("__LDBL_DIG__", "18");
+        self.define_builtin_macro_with_val("__LDBL_MIN_EXP__", "-16381");
+        self.define_builtin_macro_with_val("__LDBL_MAX_EXP__", "16384");
+        self.define_builtin_macro_with_val("__LDBL_MIN_10_EXP__", "-4931");
+        self.define_builtin_macro_with_val("__LDBL_MAX_10_EXP__", "4932");
+        self.define_builtin_macro_with_val("__LDBL_MAX__", "1.18973149535723176502e+4932L");
+        self.define_builtin_macro_with_val("__LDBL_MIN__", "3.36210314311209350626e-4932L");
+        self.define_builtin_macro_with_val("__LDBL_EPSILON__", "1.08420217248550443401e-19L");
+        self.define_builtin_macro_with_val("__LDBL_DECIMAL_DIG__", "21");
+
+        self.define_builtin_macro_with_val("__FLT_RADIX__", "2");
+        self.define_builtin_macro_with_val("__DECIMAL_DIG__", "21");
+        self.define_builtin_macro_with_val("__FLT_EVAL_METHOD__", "0");
+        self.define_builtin_macro_with_val("__FLT_ROUNDS__", "1");
+
+        self.define_builtin_macro_with_val("__FLT_HAS_SUBNORM__", "1");
+        self.define_builtin_macro_with_val("__DBL_HAS_SUBNORM__", "1");
+        self.define_builtin_macro_with_val("__LDBL_HAS_SUBNORM__", "1");
+
+        self.define_builtin_macro_with_val("__FLT_TRUE_MIN__", "1.40129846e-45F");
+        self.define_builtin_macro_with_val("__DBL_TRUE_MIN__", "4.9406564584124654e-324");
+        self.define_builtin_macro_with_val("__LDBL_TRUE_MIN__", "3.64519953188247460253e-4951L");
 
         // Target specific macros
         // Architecture

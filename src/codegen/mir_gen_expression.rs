@@ -329,7 +329,7 @@ impl<'a> MirGen<'a> {
         // Attempt constant folding for arithmetic/logical operations that are not simple literals
         if !matches!(
             node_kind,
-            NodeKind::BinaryOp(..) | NodeKind::UnaryOp(..) | NodeKind::TernaryOp(..)
+            NodeKind::BinaryOp(..) | NodeKind::UnaryOp(..) | NodeKind::TernaryOp(..) | NodeKind::Cast(..)
         ) {
             return None;
         }
@@ -594,6 +594,8 @@ impl<'a> MirGen<'a> {
                     ConstValueKind::Float(val) => {
                         if matches!(mir_type, MirType::Bool) {
                             ConstValueKind::Int(if val != 0.0 { 1 } else { 0 })
+                        } else if matches!(mir_type, MirType::F32) {
+                            ConstValueKind::Float((val as f32) as f64)
                         } else {
                             ConstValueKind::Float(val)
                         }

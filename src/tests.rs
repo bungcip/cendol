@@ -164,6 +164,7 @@ pub mod semantic_static_assert;
 pub mod semantic_valist;
 
 pub mod regr_bitfield_assign_eval;
+pub mod regr_float_cast;
 pub mod regr_fp_const_eval;
 pub mod regr_init_range;
 pub mod regr_struct_bitfield;

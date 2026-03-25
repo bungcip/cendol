@@ -351,7 +351,7 @@ fn test_builtin_fabs_eval_test() {
         "__builtin_fabs(-1.5)",
         "__builtin_fabsf(-2.5f)",
         "__builtin_fabsl(-3.5L)",
-        "__builtin_fabs(1.5)"
+        "__builtin_fabs(1.5)",
     ]);
     insta::assert_snapshot!(output, @"
     Expression: __builtin_fabs(-1.5)

@@ -106,7 +106,7 @@ impl AstDumper {
                 type_refs.insert(data.ty);
             }
             NodeKind::Param(data) => {
-                type_refs.insert(data.ty.ty());
+                type_refs.insert(data.qt.ty());
             }
             NodeKind::FunctionDecl(func_decl) => {
                 type_refs.insert(func_decl.ty);
@@ -115,7 +115,7 @@ impl AstDumper {
                 type_refs.insert(record_decl.ty);
             }
             NodeKind::FieldDecl(field_decl) => {
-                type_refs.insert(field_decl.ty.ty());
+                type_refs.insert(field_decl.qt.ty());
             }
             NodeKind::EnumDecl(enum_decl) => {
                 type_refs.insert(enum_decl.ty);
@@ -160,10 +160,10 @@ impl AstDumper {
             | NodeKind::BuiltinExpect(_, _)
             | NodeKind::AtomicOp(..) => {}
             NodeKind::VarDecl(var_decl) => {
-                type_refs.insert(var_decl.ty.ty());
+                type_refs.insert(var_decl.qt.ty());
             }
             NodeKind::TypedefDecl(typedef_decl) => {
-                type_refs.insert(typedef_decl.ty.ty());
+                type_refs.insert(typedef_decl.qt.ty());
             }
             NodeKind::GenericSelection(_) => {
                 // GenericSelection doesn't contain TypeRefs directly.
@@ -563,7 +563,7 @@ impl AstDumper {
                     data.body.get()
                 )?
             }
-            NodeKind::Param(data) => write!(f, "symbol={:?}, ty={:?}", data.symbol, data.ty)?,
+            NodeKind::Param(data) => write!(f, "symbol={:?}, ty={:?}", data.symbol, data.qt)?,
             NodeKind::EnumConstant(name, value) => write!(f, "{}, {}", name, optional(*value, "auto"))?,
             NodeKind::StaticAssert(cond, msg) => {
                 let message_str = if let NodeKind::Literal(Literal::String(s)) = ast.get_kind(*msg) {
@@ -576,7 +576,7 @@ impl AstDumper {
             NodeKind::VarDecl(decl) => write!(
                 f,
                 "name={}, ty={}, storage={:?}, is_tls={}",
-                decl.name, decl.ty, decl.storage, decl.is_thread_local
+                decl.name, decl.qt, decl.storage, decl.is_thread_local
             )?,
             NodeKind::FunctionDecl(decl) => write!(
                 f,
@@ -585,7 +585,7 @@ impl AstDumper {
                 decl.ty.get(),
                 decl.storage
             )?,
-            NodeKind::TypedefDecl(decl) => write!(f, "name={}, ty={}", decl.name, decl.ty)?,
+            NodeKind::TypedefDecl(decl) => write!(f, "name={}, ty={}", decl.name, decl.qt)?,
             NodeKind::RecordDecl(decl) => write!(
                 f,
                 "name={:?}, ty={}, is_union={}, {}",
@@ -594,7 +594,7 @@ impl AstDumper {
                 decl.is_union,
                 Self::format_range("members", decl.member_start, decl.member_len)
             )?,
-            NodeKind::FieldDecl(decl) => write!(f, "name={:?}, ty={}", decl.name, decl.ty)?,
+            NodeKind::FieldDecl(decl) => write!(f, "name={:?}, ty={}", decl.name, decl.qt)?,
             NodeKind::EnumDecl(decl) => write!(
                 f,
                 "name={:?}, ty={}, {}",

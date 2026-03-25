@@ -203,8 +203,8 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
             );
 
             if is_cmp_or_logic {
-                let is_float_op = ctx.get_resolved_type(*left).is_some_and(|ty| ty.ty().is_floating())
-                    || ctx.get_resolved_type(*right).is_some_and(|ty| ty.ty().is_floating());
+                let is_float_op = ctx.get_resolved_type(*left).is_some_and(|qt| qt.ty().is_floating())
+                    || ctx.get_resolved_type(*right).is_some_and(|qt| qt.ty().is_floating());
                 if is_float_op
                     && let (Some(left_f), Some(right_f)) =
                         (eval_const_expr_float(ctx, *left), eval_const_expr_float(ctx, *right))
@@ -277,10 +277,10 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
 
             // Determine if operation should be unsigned
             let (is_unsigned, is_unsigned_cmp) = {
-                let left_ty = ctx.get_resolved_type(*left);
-                let right_ty = ctx.get_resolved_type(*right);
+                let left_qt = ctx.get_resolved_type(*left);
+                let right_qt = ctx.get_resolved_type(*right);
 
-                match (left_ty, right_ty) {
+                match (left_qt, right_qt) {
                     (Some(lt), Some(rt)) => {
                         let lb = ctx.registry.get(lt.ty());
                         let rb = ctx.registry.get(rt.ty());
@@ -288,8 +288,8 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
                         let is_unsigned_cmp = is_unsigned || lb.is_pointer() || rb.is_pointer();
                         (is_unsigned, is_unsigned_cmp)
                     }
-                    (Some(ty), None) | (None, Some(ty)) => {
-                        let ty_obj = ctx.registry.get(ty.ty());
+                    (Some(qt), None) | (None, Some(qt)) => {
+                        let ty_obj = ctx.registry.get(qt.ty());
                         let is_unsigned = !ty_obj.is_signed() && ty_obj.is_int();
                         (is_unsigned, is_unsigned || ty_obj.is_pointer())
                     }
@@ -475,9 +475,9 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
                 eval_const_expr(ctx, *else_expr)
             }
         }
-        NodeKind::Cast(target_ty, expr) => {
+        NodeKind::Cast(target_qt, expr) => {
             // C11 6.3.1.2: Any scalar value converts to 1 if it compares unequal to 0, otherwise 0.
-            if target_ty.ty().builtin() == Some(BuiltinType::Bool) {
+            if target_qt.ty().builtin() == Some(BuiltinType::Bool) {
                 if let Some(val) = eval_const_expr(ctx, *expr) {
                     return Some((val != 0) as i64);
                 } else if let Some(f_val) = eval_const_expr_float(ctx, *expr) {
@@ -489,17 +489,17 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
 
             // Try integer evaluation first
             if let Some(val) = eval_const_expr(ctx, *expr) {
-                if !target_ty.is_integer() && !target_ty.is_pointer() {
+                if !target_qt.is_integer() && !target_qt.is_pointer() {
                     return None;
                 }
-                let target_type_obj = ctx.registry.get(target_ty.ty());
+                let target_type_obj = ctx.registry.get(target_qt.ty());
                 return Some(target_type_obj.truncate_int(val));
             }
 
             // If integer evaluation fails, try float evaluation if the operand is a float
             // and the target is an integer/pointer.
             if let Some(f_val) = eval_const_expr_float(ctx, *expr) {
-                if !target_ty.is_integer() && !target_ty.is_pointer() {
+                if !target_qt.is_integer() && !target_qt.is_pointer() {
                     return None;
                 }
 
@@ -523,7 +523,7 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
                     return None;
                 }
                 let val = truncated as i64;
-                let target_type_obj = ctx.registry.get(target_ty.ty());
+                let target_type_obj = ctx.registry.get(target_qt.ty());
                 return Some(target_type_obj.truncate_int(val));
             }
 
@@ -581,19 +581,18 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
 ///
 /// This function handles floating-point operations specifically and falls back to integer evaluation
 /// for other types, converting the result to f64.
-pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<f64> {
-    let node_kind = ctx.ast.get_kind(expr_node);
+pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr: NodeRef) -> Option<f64> {
+    let node_kind = ctx.ast.get_kind(expr);
     match node_kind {
         NodeKind::Literal(Literal::Float { val, .. }) => {
             // C11 6.4.4.2p4: A floating constant with suffix 'f' or 'F' has type float.
             // We ensure that the constant value respects the precision of its type.
-            if let Some(ty) = ctx
+            if let Some(qt) = ctx
                 .semantic_info
-                .and_then(|info| info.types.get(expr_node.index()).and_then(|t| t.as_ref()))
+                .and_then(|info| info.types.get(expr.index()).and_then(|t| t.as_ref()))
+                && qt.ty().builtin() == Some(BuiltinType::Float)
             {
-                if ty.ty().builtin() == Some(BuiltinType::Float) {
-                    return Some((*val as f32) as f64);
-                }
+                return Some((*val as f32) as f64);
             }
             Some(*val)
         }
@@ -625,11 +624,11 @@ pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr_node: NodeRef) -> O
                 _ => None,
             }
         }
-        NodeKind::Cast(target_ty, expr) => {
+        NodeKind::Cast(target_qt, expr) => {
             if let Some(val) = eval_const_expr_float(ctx, *expr) {
-                if target_ty.is_integer() {
+                if target_qt.is_integer() {
                     Some(val.trunc())
-                } else if target_ty.ty().builtin() == Some(BuiltinType::Float) {
+                } else if target_qt.ty().builtin() == Some(BuiltinType::Float) {
                     // Truncate to f32 precision
                     Some((val as f32) as f64)
                 } else {
@@ -642,7 +641,7 @@ pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr_node: NodeRef) -> O
         NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
             eval_const_expr_float(ctx, *exp).map(|v| v.abs())
         }
-        _ => eval_const_expr(ctx, expr_node).map(|v| v as f64),
+        _ => eval_const_expr(ctx, expr).map(|v| v as f64),
     }
 }
 

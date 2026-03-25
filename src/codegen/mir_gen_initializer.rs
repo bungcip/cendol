@@ -33,12 +33,12 @@ impl<'a> MirGen<'a> {
         iter: &mut Peekable<impl Iterator<Item = NodeRef>>,
         pending: Option<(NodeRef, Option<(NodeRef, u16)>)>,
         pending_path: &[usize],
-        target_ty: QualType,
+        target_qt: QualType,
     ) -> Vec<(usize, Operand)> {
-        let TypeKind::Record { members, .. } = &self.registry.get(target_ty.ty()).kind else {
+        let TypeKind::Record { members, .. } = &self.registry.get(target_qt.ty()).kind else {
             return Vec::new();
         };
-        let is_union = self.registry.get(target_ty.ty()).is_union();
+        let is_union = self.registry.get(target_qt.ty()).is_union();
         let members = members.clone();
 
         // Precalculate flattened offsets for hierarchical members
@@ -203,8 +203,8 @@ impl<'a> MirGen<'a> {
         field_operands
     }
 
-    fn should_recurse_aggregate(&self, target_ty: QualType, initializer: NodeRef) -> bool {
-        let kind = &self.registry.get(target_ty.ty()).kind;
+    fn should_recurse_aggregate(&self, target_qt: QualType, initializer: NodeRef) -> bool {
+        let kind = &self.registry.get(target_qt.ty()).kind;
         if !matches!(kind, TypeKind::Record { .. } | TypeKind::Array { .. }) {
             return false;
         }
@@ -224,7 +224,7 @@ impl<'a> MirGen<'a> {
         let is_compatible = self
             .ast
             .get_resolved_type(initializer)
-            .is_some_and(|ty| self.registry.is_compatible(ty.strip_all(), target_ty.strip_all()));
+            .is_some_and(|ty| self.registry.is_compatible(ty.strip_all(), target_qt.strip_all()));
 
         !is_compatible
     }
@@ -264,7 +264,7 @@ impl<'a> MirGen<'a> {
         &mut self,
         iter: &mut Peekable<impl Iterator<Item = NodeRef>>,
         pending: Option<(NodeRef, Option<(NodeRef, u16)>)>,
-        element_ty: QualType,
+        element_qt: QualType,
         size: usize,
         target_ty: QualType,
         destination: Option<Place>,
@@ -333,10 +333,10 @@ impl<'a> MirGen<'a> {
                 let next_d_len = d_len - 1;
                 let next_pending = Some((initializer, Some((next_d_start, next_d_len))));
 
-                match &self.registry.get(element_ty.ty()).kind {
+                match &self.registry.get(element_qt.ty()).kind {
                     TypeKind::Record { .. } => {
-                        let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_ty);
-                        self.finalize_struct_initializer(fields, element_ty, None)
+                        let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt);
+                        self.finalize_struct_initializer(fields, element_qt, None)
                     }
                     TypeKind::Array {
                         element_type: inner_elem,
@@ -352,18 +352,18 @@ impl<'a> MirGen<'a> {
                             next_pending,
                             QualType::unqualified(*inner_elem),
                             array_size,
-                            element_ty,
+                            element_qt,
                             None,
                         )
                     }
                     _ => unreachable!("Designator path on non-aggregate"),
                 }
-            } else if self.should_recurse_aggregate(element_ty, initializer) {
+            } else if self.should_recurse_aggregate(element_qt, initializer) {
                 let next_pending = Some((initializer, None));
-                match &self.registry.get(element_ty.ty()).kind {
+                match &self.registry.get(element_qt.ty()).kind {
                     TypeKind::Record { .. } => {
-                        let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_ty);
-                        self.finalize_struct_initializer(fields, element_ty, None)
+                        let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt);
+                        self.finalize_struct_initializer(fields, element_qt, None)
                     }
                     TypeKind::Array {
                         element_type: inner_elem,
@@ -379,14 +379,14 @@ impl<'a> MirGen<'a> {
                             next_pending,
                             QualType::unqualified(*inner_elem),
                             array_size,
-                            element_ty,
+                            element_qt,
                             None,
                         )
                     }
                     _ => unreachable!(),
                 }
             } else {
-                self.visit_initializer(initializer, element_ty, None)
+                self.visit_initializer(initializer, element_qt, None)
             };
             if end >= elements.len() {
                 elements.resize(end + 1, None);
@@ -397,7 +397,7 @@ impl<'a> MirGen<'a> {
             current_idx = end + 1;
         }
 
-        let mir_elem_ty = self.lower_qual_type(element_ty);
+        let mir_elem_ty = self.lower_qual_type(element_qt);
         let final_elements = elements
             .into_iter()
             .map(|op| op.unwrap_or_else(|| Operand::Constant(self.create_constant(mir_elem_ty, ConstValueKind::Zero))))
@@ -489,15 +489,15 @@ impl<'a> MirGen<'a> {
     pub(crate) fn visit_initializer(
         &mut self,
         init_ref: NodeRef,
-        target_ty: QualType,
+        target_qt: QualType,
         destination: Option<Place>,
     ) -> Operand {
         let kind = *self.ast.get_kind(init_ref);
-        let target_type = self.registry.get(target_ty.ty()).into_owned();
+        let target_type = self.registry.get(target_qt.ty()).into_owned();
 
         match (&kind, &target_type.kind) {
             (NodeKind::InitializerList(list), TypeKind::Record { .. }) => {
-                self.visit_initializer_list(list, target_ty, destination)
+                self.visit_initializer_list(list, target_qt, destination)
             }
             (NodeKind::InitializerList(list), TypeKind::Array { element_type, size }) => {
                 let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
@@ -505,7 +505,7 @@ impl<'a> MirGen<'a> {
                     list,
                     QualType::unqualified(*element_type),
                     array_size,
-                    target_ty,
+                    target_qt,
                     destination,
                 )
             }
@@ -524,24 +524,24 @@ impl<'a> MirGen<'a> {
             }
             (NodeKind::InitializerList(list), _) => {
                 if list.init_len == 0 {
-                    let mir_ty = self.lower_qual_type(target_ty);
+                    let mir_ty = self.lower_qual_type(target_qt);
                     return Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Zero));
                 }
                 let NodeKind::InitializerItem(item) = self.ast.get_kind(list.init_start) else {
                     unreachable!()
                 };
-                self.visit_initializer(item.initializer, target_ty, destination)
+                self.visit_initializer(item.initializer, target_qt, destination)
             }
             _ => {
                 let operand = self.visit_expression(init_ref, true);
-                let mir_target_ty = self.lower_qual_type(target_ty);
+                let mir_target_ty = self.lower_qual_type(target_qt);
 
                 if self.get_operand_type(&operand) == mir_target_ty {
                     return operand;
                 }
 
                 // Brace elision: scalar -> aggregate
-                self.visit_brace_elision(operand, init_ref, target_ty, destination)
+                self.visit_brace_elision(operand, init_ref, target_qt, destination)
             }
         }
     }
@@ -586,9 +586,9 @@ impl<'a> MirGen<'a> {
         self.create_constant(array_ty, ConstValueKind::ArrayLiteral(constants))
     }
 
-    pub(super) fn visit_literal_string(&mut self, val: &ast::NameId, ty: QualType) -> Operand {
-        let mir_ty = self.lower_qual_type(ty);
-        let elem_ty = match &self.registry.get(ty.ty()).kind {
+    pub(super) fn visit_literal_string(&mut self, val: &ast::NameId, qt: QualType) -> Operand {
+        let mir_ty = self.lower_qual_type(qt);
+        let elem_ty = match &self.registry.get(qt.ty()).kind {
             TypeKind::Array { element_type, .. } => *element_type,
             _ => self.registry.type_char,
         };
@@ -645,10 +645,10 @@ impl<'a> MirGen<'a> {
         &mut self,
         operand: Operand,
         init_ref: NodeRef,
-        target_ty: QualType,
+        target_qt: QualType,
         destination: Option<Place>,
     ) -> Operand {
-        let target_type = self.registry.get(target_ty.ty()).into_owned();
+        let target_type = self.registry.get(target_qt.ty()).into_owned();
         match &target_type.kind {
             TypeKind::Array { element_type, size } => {
                 let elem_ty = QualType::unqualified(*element_type);
@@ -661,20 +661,20 @@ impl<'a> MirGen<'a> {
                         self.create_constant(mir_elem_ty, ConstValueKind::Zero),
                     ));
                 }
-                self.finalize_array_initializer(elements, target_ty, destination)
+                self.finalize_array_initializer(elements, target_qt, destination)
             }
             TypeKind::Record { members, .. } if !members.is_empty() => {
-                let (flat_members, _) = self.get_flattened_type_info(target_ty.ty());
+                let (flat_members, _) = self.get_flattened_type_info(target_qt.ty());
                 if flat_members.is_empty() {
-                    let mir_target_ty = self.lower_qual_type(target_ty);
+                    let mir_target_ty = self.lower_qual_type(target_qt);
                     return Operand::Constant(self.create_constant(mir_target_ty, ConstValueKind::Zero));
                 }
                 let member_ty = flat_members[0].member_type;
                 let final_op = self.visit_brace_elision(operand, init_ref, member_ty, None);
-                self.finalize_struct_initializer(vec![(0, final_op)], target_ty, destination)
+                self.finalize_struct_initializer(vec![(0, final_op)], target_qt, destination)
             }
             _ => {
-                let mir_target_ty = self.lower_qual_type(target_ty);
+                let mir_target_ty = self.lower_qual_type(target_qt);
                 let conv_op = self.apply_conversions(operand, init_ref, mir_target_ty);
                 if self.get_operand_type(&conv_op) != mir_target_ty {
                     Operand::Cast(mir_target_ty, Box::new(conv_op))

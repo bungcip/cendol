@@ -401,7 +401,7 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_var_decl(&mut self, var_decl: &VarDecl) {
-        let mir_type_id = self.lower_qual_type(var_decl.ty);
+        let mir_type_id = self.lower_qual_type(var_decl.qt);
         let (entry_ref, _) = self
             .symbol_table
             .lookup(var_decl.name, self.current_scope_id, Namespace::Ordinary)
@@ -505,7 +505,7 @@ impl<'a> MirGen<'a> {
 
     fn visit_local_symbol(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(entry_ref);
-        let (init, alignment, name, ty) = if let SymbolKind::Variable {
+        let (init, alignment, name, qt) = if let SymbolKind::Variable {
             initializer, alignment, ..
         } = &symbol.kind
         {
@@ -515,7 +515,7 @@ impl<'a> MirGen<'a> {
         };
 
         // Check if this is a VLA type
-        if let Some((size_expr, element_type)) = self.get_vla_info(ty.ty()) {
+        if let Some((size_expr, element_type)) = self.get_vla_info(qt.ty()) {
             self.visit_vla_local(entry_ref, name, size_expr, element_type, alignment);
             return;
         }
@@ -539,7 +539,7 @@ impl<'a> MirGen<'a> {
             if let Some(initializer) = init {
                 let init_operand = self.visit_initializer(
                     initializer,
-                    ty,
+                    qt,
                     Some(Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(
                         ptr_local_id,
                     )))))),
@@ -560,7 +560,7 @@ impl<'a> MirGen<'a> {
         self.local_map.insert(entry_ref, local_id);
 
         if let Some(initializer) = init {
-            let init_operand = self.visit_initializer(initializer, ty, Some(Place::Local(local_id)));
+            let init_operand = self.visit_initializer(initializer, qt, Some(Place::Local(local_id)));
             // If visit_initializer used the destination, it returns Operand::Copy(destination)
             // emit_assignment will then emit Place::Local(local_id) = Place::Local(local_id), which is fine or can be skipped.
             self.emit_assignment(Place::Local(local_id), init_operand);

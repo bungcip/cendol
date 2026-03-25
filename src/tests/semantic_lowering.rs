@@ -65,7 +65,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
         }
         NodeKind::VarDecl(data) => ResolvedAstNode::VarDecl {
             name: data.name.as_str().to_string(),
-            ty: display_qual_type(registry, data.ty),
+            ty: display_qual_type(registry, data.qt),
             init: data
                 .init
                 .map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))),
@@ -90,7 +90,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
                 .name
                 .map(|n| n.as_str().to_string())
                 .unwrap_or_else(|| "<anon>".to_string()),
-            ty: display_qual_type(registry, data.ty),
+            ty: display_qual_type(registry, data.qt),
         },
         NodeKind::EnumDecl(data) => {
             let members = data

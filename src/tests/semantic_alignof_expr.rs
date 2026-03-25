@@ -104,3 +104,17 @@ fn test_alignof_expression_pedantic() {
     let diagnostics = driver.get_diagnostics();
     assert!(diagnostics.iter().any(|d| d.message.contains("GNU extension")));
 }
+
+#[test]
+fn test_alignof_max_align_t() {
+    let source = r#"
+        #include <stddef.h>
+        int printf(const char *, ...);
+        int main() {
+            printf("%d", _Alignof(max_align_t) >= _Alignof(long double));
+            return 0;
+        }
+    "#;
+    let output = run_c_code_with_output(source);
+    assert_eq!(output.trim(), "1");
+}

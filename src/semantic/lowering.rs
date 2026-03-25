@@ -238,16 +238,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         &mut self,
         base_ref: DeclaratorRef,
         size: &ParsedArraySize,
-        element_ty: QualType,
+        element_qt: QualType,
         span: SourceSpan,
         decl_ctx: DeclaratorContext,
     ) -> QualType {
         // C11 6.7.6.2 Array declarators
-        if !self.registry.is_complete(element_ty.ty()) || element_ty.ty().is_function() {
-            self.report_error(span, SemanticErrorKind::IncompleteType { ty: element_ty });
+        if !self.registry.is_complete(element_qt.ty()) || element_qt.ty().is_function() {
+            self.report_error(span, SemanticErrorKind::IncompleteType { ty: element_qt });
         }
 
-        if self.registry.has_flexible_array_member(element_ty.ty()) {
+        if self.registry.has_flexible_array_member(element_qt.ty()) {
             self.report_error(span, SemanticErrorKind::FlexibleArrayElementInArray);
         }
 
@@ -283,8 +283,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let array_size = self.convert_parsed_array_size(size);
 
-        let ty = self.registry.array_of(element_ty.ty(), array_size);
-        QualType::new(ty, element_ty.qualifiers())
+        let ty = self.registry.array_of(element_qt.ty(), array_size);
+        QualType::new(ty, element_qt.qualifiers())
     }
 
     fn resolve_atomic_specifier(
@@ -813,8 +813,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         existing_ty: QualType,
     ) {
         // Check for _Noreturn mismatch
-        let get_noreturn = |ty: QualType, registry: &TypeRegistry| {
-            if let TypeKind::Function { is_noreturn, .. } = &registry.get(ty.ty()).kind {
+        let get_noreturn = |qt: QualType, registry: &TypeRegistry| {
+            if let TypeKind::Function { is_noreturn, .. } = &registry.get(qt.ty()).kind {
                 *is_noreturn
             } else {
                 false
@@ -831,13 +831,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn visit_function_definition(&mut self, func_def: &ParsedFunctionDef, node: NodeRef, span: SourceSpan) {
         let spec_info = self.visit_decl_specifiers(&func_def.specifiers, span);
-        let mut base_ty = spec_info
+        let mut base_qt = spec_info
             .base_type
             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
-        base_ty = self.merge_qualifiers_with_check(base_ty, spec_info.qualifiers, span);
+        base_qt = self.merge_qualifiers_with_check(base_qt, spec_info.qualifiers, span);
 
-        let mut final_ty = self.apply_declarator(
-            base_ty,
+        let mut final_qt = self.apply_declarator(
+            base_qt,
             func_def.declarator,
             span,
             Some(&spec_info),
@@ -870,7 +870,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticErrorKind::ThreadLocalNotAllowed);
         }
 
-        final_ty = self.check_redeclaration_compatibility(func_name, final_ty, span, spec_info.storage);
+        final_qt = self.check_redeclaration_compatibility(func_name, final_qt, span, spec_info.storage);
 
         // Check for _Noreturn on existing declarations
         let existing_symbol_is_noreturn = if let Some((sym, _)) = self.symbol_table.lookup_symbol(func_name) {
@@ -888,7 +888,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
             self.symbol_table
-                .define_function(func_name, final_ty.ty(), spec_info.storage, true, span)
+                .define_function(func_name, final_qt.ty(), spec_info.storage, true, span)
         {
             let entry = self.symbol_table.get_symbol(existing);
             if entry.def_state == DefinitionState::Defined {
@@ -980,7 +980,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let param_dummy = param_dummies[i];
                 self.ast.kinds[param_dummy.index()] = NodeKind::Param(Param {
                     symbol: sym,
-                    ty: param.param_type,
+                    qt: param.param_type,
                 });
             }
         }
@@ -997,7 +997,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         self.ast.kinds[node.index()] = NodeKind::Function(Function {
             symbol: func_sym,
-            ty: final_ty.ty(),
+            ty: final_qt.ty(),
             is_noreturn: final_is_noreturn,
             param_start,
             param_len,
@@ -1014,26 +1014,26 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         target_slots: Option<&[NodeRef]>,
     ) -> SmallVec<[NodeRef; 1]> {
         let spec_info = self.visit_decl_specifiers(&decl.specifiers, span);
-        let mut base_ty = spec_info
+        let mut base_qt = spec_info
             .base_type
             .unwrap_or(QualType::unqualified(self.registry.type_int));
-        base_ty = self.merge_qualifiers_with_check(base_ty, spec_info.qualifiers, span);
+        base_qt = self.merge_qualifiers_with_check(base_qt, spec_info.qualifiers, span);
 
         if decl.init_declarators.is_empty() {
             return self.visit_tag_definition(&spec_info, span, target_slots);
         }
 
-        let is_auto_type = self.registry.get(base_ty.ty()).kind == TypeKind::AutoType;
+        let is_auto_type = self.registry.get(base_qt.ty()).kind == TypeKind::AutoType;
         let mut first_deduced_type: Option<QualType> = None;
 
         let mut nodes = SmallVec::new();
         for (i, init) in decl.init_declarators.iter().enumerate() {
             let target_slot = target_slots.and_then(|slots| slots.get(i)).copied();
-            if let Some(node) = self.visit_single_declarator(init, base_ty, &spec_info, span, target_slot) {
+            if let Some(node) = self.visit_single_declarator(init, base_qt, &spec_info, span, target_slot) {
                 nodes.push(node);
 
                 if is_auto_type && let NodeKind::VarDecl(var_decl) = self.ast.get_kind(node) {
-                    let deduced = var_decl.ty.strip_all();
+                    let deduced = var_decl.qt.strip_all();
                     if let Some(first) = first_deduced_type {
                         if !self.registry.is_compatible(first, deduced) {
                             self.report_error(
@@ -1089,7 +1089,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         self.ast.push_node(
                             NodeKind::FieldDecl(FieldDecl {
                                 name: m.name,
-                                ty: m.member_type,
+                                qt: m.member_type,
                                 alignment: m.alignment,
                             }),
                             m.span,
@@ -1139,12 +1139,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn visit_single_declarator(
         &mut self,
         init: &ParsedInitDeclarator,
-        base_ty: QualType,
+        base_qt: QualType,
         spec_info: &DeclSpecInfo,
         span: SourceSpan,
         target_slot: Option<NodeRef>,
     ) -> Option<NodeRef> {
-        if self.registry.get(base_ty.ty()).kind == TypeKind::AutoType {
+        if self.registry.get(base_qt.ty()).kind == TypeKind::AutoType {
             let decl = self.parsed_ast.parsed_types.get_decl(init.declarator);
             if !matches!(decl, ParsedDeclarator::Identifier(..)) {
                 self.report_error(
@@ -1157,7 +1157,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         let final_ty = self.apply_declarator(
-            base_ty,
+            base_qt,
             init.declarator,
             init.span,
             Some(spec_info),
@@ -1215,7 +1215,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     );
                 }
             }
-            self.ast.kinds[node.index()] = NodeKind::TypedefDecl(TypedefDecl { name, ty: final_ty });
+            self.ast.kinds[node.index()] = NodeKind::TypedefDecl(TypedefDecl { name, qt: final_ty });
             return Some(node);
         }
 
@@ -1432,7 +1432,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // Finalize AST node
         let var_decl = VarDecl {
             name,
-            ty: qt,
+            qt,
             storage: spec_info.storage,
             is_thread_local: spec_info.is_thread_local,
             init: init_expr,
@@ -2133,8 +2133,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             NodeKind::Cast(qt, _) => Some(qt),
             NodeKind::CompoundLiteral(qt, _) => Some(qt),
             NodeKind::MemberAccess(obj, name, is_arrow) => {
-                let obj_ty = self.try_infer_type(obj)?;
-                let mut ty = obj_ty.ty();
+                let obj_qt = self.try_infer_type(obj)?;
+                let mut ty = obj_qt.ty();
                 if is_arrow {
                     ty = self.registry.get_pointee(ty)?.ty();
                 }
@@ -2143,8 +2143,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 Some(member.member_type)
             }
             NodeKind::IndexAccess(base, _) => {
-                let base_ty = self.try_infer_type(base)?;
-                let elem = self.registry.get_array_element(base_ty.ty())?;
+                let base_qt = self.try_infer_type(base)?;
+                let elem = self.registry.get_array_element(base_qt.ty())?;
                 Some(QualType::unqualified(elem))
             }
             NodeKind::UnaryOp(op, expr) => match op {
@@ -2966,7 +2966,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         for param in params {
             let span = param.span;
-            let decayed_ty = self
+            let decayed_qt = self
                 .lower_type(param.ty, span, true)
                 .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error));
 
@@ -2974,10 +2974,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             // C11 6.7.6.3p4: "after adjustment, shall have complete object type."
             // C11 6.7.6.3p10: "single parameter of type void and no identifier is a special case."
-            if !self.registry.is_complete(decayed_ty.ty()) {
-                let is_void_param_list = params.len() == 1 && decayed_ty.is_void() && pname.is_none();
+            if !self.registry.is_complete(decayed_qt.ty()) {
+                let is_void_param_list = params.len() == 1 && decayed_qt.is_void() && pname.is_none();
                 if !is_void_param_list {
-                    self.report_error(span, SemanticErrorKind::IncompleteType { ty: decayed_ty });
+                    self.report_error(span, SemanticErrorKind::IncompleteType { ty: decayed_qt });
                 }
             }
 
@@ -2999,7 +2999,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     // We use define_variable but since it's a parameter we don't need a full initializer.
                     let _ = self
                         .symbol_table
-                        .define_variable(name, decayed_ty, param.storage, false, None, None, span);
+                        .define_variable(name, decayed_qt, param.storage, false, None, None, span);
                 }
             }
 
@@ -3029,7 +3029,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             processed_params.push(FunctionParameter {
                 name: pname,
-                param_type: decayed_ty,
+                param_type: decayed_qt,
                 storage: param.storage,
             });
         }
@@ -3072,12 +3072,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                     if decl.init_declarators.is_empty() {
                         if let Some(base) = spec_info.base_type {
-                            let ty = self.merge_qualifiers_with_check(base, spec_info.qualifiers, span);
-                            if ty.is_record()
-                                && matches!(&self.registry.get(ty.ty()).kind, TypeKind::Record { tag: None, .. })
+                            let qt = self.merge_qualifiers_with_check(base, spec_info.qualifiers, span);
+                            if qt.is_record()
+                                && matches!(&self.registry.get(qt.ty()).kind, TypeKind::Record { tag: None, .. })
                             {
                                 struct_members.push(StructMember {
-                                    member_type: ty,
+                                    member_type: qt,
                                     alignment: spec_info.alignment,
                                     span,
                                     ..Default::default()

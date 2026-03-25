@@ -485,14 +485,14 @@ pub struct Function {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct Param {
     pub symbol: SymbolRef,
-    pub ty: QualType,
+    pub qt: QualType,
 }
 
 // Semantic node data structures (type-resolved)
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct VarDecl {
     pub name: NameId,
-    pub ty: QualType,
+    pub qt: QualType,
     pub storage: Option<StorageClass>,
     pub is_thread_local: bool,
     pub init: Option<NodeRef>,  // InitializerList or Expression
@@ -510,7 +510,7 @@ pub struct FunctionDecl {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct TypedefDecl {
     pub name: NameId,
-    pub ty: QualType,
+    pub qt: QualType,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -527,7 +527,7 @@ pub struct RecordDecl {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct FieldDecl {
     pub name: Option<NameId>,
-    pub ty: QualType, // object type
+    pub qt: QualType, // object type
     pub alignment: Option<u32>,
 }
 

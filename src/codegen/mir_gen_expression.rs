@@ -46,7 +46,7 @@ impl<'a> MirGen<'a> {
     }
 
     pub(crate) fn visit_expression(&mut self, expr_ref: NodeRef, need_value: bool) -> Operand {
-        let ty = self.ast.get_resolved_type(expr_ref).unwrap_or_else(|| {
+        let qt = self.ast.get_resolved_type(expr_ref).unwrap_or_else(|| {
             let node_kind = self.ast.get_kind(expr_ref);
             let node_span = self.ast.get_span(expr_ref);
             let (line, col, file) = self
@@ -61,14 +61,14 @@ impl<'a> MirGen<'a> {
         });
         let node_kind = *self.ast.get_kind(expr_ref);
 
-        let mir_ty = self.lower_qual_type(ty);
+        let mir_ty = self.lower_qual_type(qt);
 
-        if let Some(const_op) = self.try_constant_fold(expr_ref, &node_kind, ty) {
+        if let Some(const_op) = self.try_constant_fold(expr_ref, &node_kind, qt) {
             return const_op;
         }
 
         match &node_kind {
-            NodeKind::Literal(_) => self.visit_literal(&node_kind, ty).expect("Failed to lower literal"),
+            NodeKind::Literal(_) => self.visit_literal(&node_kind, qt).expect("Failed to lower literal"),
             NodeKind::Ident(_, symbol_ref) => self.visit_ident(*symbol_ref),
             NodeKind::UnaryOp(op, operand_ref) => self.visit_unary_op(op, *operand_ref, mir_ty),
             NodeKind::PostIncrement(operand_ref) => self.visit_inc_dec_expression(*operand_ref, true, true, need_value),
@@ -118,8 +118,8 @@ impl<'a> MirGen<'a> {
                     .ty();
                 self.visit_type_query(ty, true)
             }
-            NodeKind::SizeOfType(ty) => self.visit_type_query(ty.ty(), true),
-            NodeKind::AlignOfType(ty) => self.visit_type_query(ty.ty(), false),
+            NodeKind::SizeOfType(qt) => self.visit_type_query(qt.ty(), true),
+            NodeKind::AlignOfType(qt) => self.visit_type_query(qt.ty(), false),
             NodeKind::AlignOfExpr(expr) => {
                 // If the expression is a direct reference to a variable, it might have a custom alignment.
                 if let NodeKind::Ident(_, symbol_ref) = self.ast.get_kind(*expr) {
@@ -325,7 +325,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn try_constant_fold(&mut self, expr_ref: NodeRef, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
+    fn try_constant_fold(&mut self, expr_ref: NodeRef, node_kind: &NodeKind, qt: QualType) -> Option<Operand> {
         // Attempt constant folding for arithmetic/logical operations that are not simple literals
         if !matches!(
             node_kind,
@@ -335,9 +335,9 @@ impl<'a> MirGen<'a> {
         }
 
         // Try floating-point constant folding first for float types
-        if ty.ty().is_floating() && !ty.ty().is_complex() {
+        if qt.ty().is_floating() && !qt.ty().is_complex() {
             if let Some(val) = eval_const_expr_float(&self.const_ctx(), expr_ref) {
-                let ty_id = self.lower_qual_type(ty);
+                let ty_id = self.lower_qual_type(qt);
                 return Some(Operand::Constant(
                     self.create_constant(ty_id, ConstValueKind::Float(val)),
                 ));
@@ -347,7 +347,7 @@ impl<'a> MirGen<'a> {
 
         // Integer constant folding
         if let Some(val) = eval_const_expr(&self.const_ctx(), expr_ref) {
-            let ty_id = self.lower_qual_type(ty);
+            let ty_id = self.lower_qual_type(qt);
             let mir_type = self.mir_builder.get_type(ty_id);
             let truncated_val = mir_type.truncate_int(val);
             return Some(Operand::Constant(
@@ -1377,7 +1377,7 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_member_access(&mut self, obj_ref: NodeRef, field_name: &ast::NameId, is_arrow: bool) -> Operand {
-        let mut obj_ty = self.ast.get_resolved_type(obj_ref).unwrap();
+        let mut obj_qt = self.ast.get_resolved_type(obj_ref).unwrap();
 
         // Handle implicit conversions (like array-to-pointer decay) for arrow access
         if is_arrow && let Some(semantic_info) = &self.ast.semantic_info {
@@ -1385,7 +1385,7 @@ impl<'a> MirGen<'a> {
             if idx < semantic_info.conversions.len() {
                 for conv in &semantic_info.conversions[idx] {
                     if let Conversion::PointerDecay { to } = conv {
-                        obj_ty = QualType::unqualified(*to);
+                        obj_qt = QualType::unqualified(*to);
                     }
                 }
             }
@@ -1393,11 +1393,11 @@ impl<'a> MirGen<'a> {
 
         let record_ty = if is_arrow {
             self.registry
-                .get_pointee(obj_ty.ty())
+                .get_pointee(obj_qt.ty())
                 .expect("Arrow access on non-pointer type")
                 .ty()
         } else {
-            obj_ty.ty()
+            obj_qt.ty()
         };
 
         if record_ty.is_record() {
@@ -1411,7 +1411,7 @@ impl<'a> MirGen<'a> {
             // Resolve base place
             let mut current_place = if is_arrow {
                 let obj_op = self.visit_expression(obj_ref, true);
-                let obj_mir_ty = self.lower_qual_type(obj_ty);
+                let obj_mir_ty = self.lower_qual_type(obj_qt);
                 let obj_op_converted = self.apply_conversions(obj_op, obj_ref, obj_mir_ty);
                 self.deref_operand(obj_op_converted)
             } else {

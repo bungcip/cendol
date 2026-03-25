@@ -3,7 +3,7 @@ use crate::tests::semantic_common::{setup_lowering, setup_mir};
 use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pass_with_diagnostic_message};
 
 fn find_var_type(ast: &crate::ast::Ast, target_name: &str) -> crate::semantic::types::QualType {
-    crate::tests::semantic_common::find_var_decl(ast, target_name).ty
+    crate::tests::semantic_common::find_var_decl(ast, target_name).qt
 }
 
 #[test]

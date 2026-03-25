@@ -241,6 +241,7 @@ pub enum SemanticErrorKind {
         ty: QualType,
     },
     IncompleteReturnType,
+    EnumForwardDeclaration,
     IncompatiblePointerComparison {
         lhs: QualType,
         rhs: QualType,
@@ -590,6 +591,7 @@ impl SemanticErrorKind {
                 format!("incomplete type '{}'", registry.display_qual_type(*ty))
             }
             SemanticErrorKind::IncompleteReturnType => "function has incomplete return type".to_string(),
+            SemanticErrorKind::EnumForwardDeclaration => "ISO C forbids forward references to 'enum' types".to_string(),
             SemanticErrorKind::IncompatiblePointerComparison { lhs, rhs } => format!(
                 "comparison of incompatible pointer types '{}' and '{}'",
                 registry.display_qual_type(*lhs),

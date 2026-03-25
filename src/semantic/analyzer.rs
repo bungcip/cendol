@@ -2180,10 +2180,14 @@ impl<'a> SemanticAnalyzer<'a> {
                     ..
                 } = func_type
                 {
-                    if !self.registry.is_complete(return_type) && return_type != self.registry.type_void {
+                    // Bolt ⚡: Extension: allow incomplete enums in declarations (per GCC/Clang).
+                    let is_incomplete_enum = matches!(self.registry.get(return_type).kind, TypeKind::Enum { .. });
+                    if !self.registry.is_complete(return_type)
+                        && return_type != self.registry.type_void
+                        && !is_incomplete_enum
+                    {
                         self.report_error(node, SemanticErrorKind::IncompleteReturnType);
                     }
-
                     for param in parameters.iter() {
                         let _ = self.registry.ensure_layout(param.param_type.ty());
                     }
@@ -2197,6 +2201,9 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_function_definition(&mut self, data: &Function, node: NodeRef) -> Option<QualType> {
         let func_ty = self.registry.get(data.ty).kind.clone();
         if let TypeKind::Function { return_type, .. } = func_ty {
+            if !self.registry.is_complete(return_type) && return_type != self.registry.type_void {
+                self.report_error(node, SemanticErrorKind::IncompleteReturnType);
+            }
             self.current_function_ret_type = Some(QualType::unqualified(return_type));
             self.current_function_is_noreturn = data.is_noreturn;
         };

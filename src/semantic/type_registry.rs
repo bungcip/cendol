@@ -1002,16 +1002,7 @@ impl TypeRegistry {
                 self.compute_record_layout(&members, is_union, packing)?
             }
 
-            TypeKind::Enum {
-                base_type, is_complete, ..
-            } => {
-                if !is_complete {
-                    return Err(TypeRegistryError::UnsupportedFeature {
-                        feature: "incomplete enum type layout",
-                    });
-                }
-                self.ensure_layout(base_type)?.into_owned()
-            }
+            TypeKind::Enum { base_type, .. } => self.ensure_layout(base_type)?.into_owned(),
 
             TypeKind::Alias(inner) => self.ensure_layout(inner)?.into_owned(),
             TypeKind::AutoType => {
@@ -1376,15 +1367,15 @@ impl TypeRegistry {
         }
 
         // Bolt ⚡: Optimized handle for enums using direct registry access.
-        if ty_a_ref.is_enum()
-            && let TypeKind::Enum { base_type, .. } = &self.types[ty_a_ref.index()].kind
-        {
-            return self.is_compatible(QualType::new(*base_type, a.qualifiers()), b);
+        // C11 6.7.2.2p4: "Each enumerated type shall be compatible with ... an integer type."
+        // GCC and many other compilers are permissive with enum compatibility, especially
+        // regarding signedness of the underlying type. We allow an enum to be compatible
+        // with any integer type of the same size.
+        if ty_a_ref.is_enum() {
+            return b.is_integer() && self.get_layout(ty_a_ref).size == self.get_layout(ty_b_ref).size;
         }
-        if ty_b_ref.is_enum()
-            && let TypeKind::Enum { base_type, .. } = &self.types[ty_b_ref.index()].kind
-        {
-            return self.is_compatible(a, QualType::new(*base_type, b.qualifiers()));
+        if ty_b_ref.is_enum() {
+            return a.is_integer() && self.get_layout(ty_a_ref).size == self.get_layout(ty_b_ref).size;
         }
 
         // Fallback for registry-only types (Functions, Records).

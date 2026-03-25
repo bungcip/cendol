@@ -2591,10 +2591,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if let Some((sym, scope_id)) = existing
             && (!is_definition || scope_id == self.symbol_table.current_scope())
         {
-            let symbol = self.symbol_table.get_symbol(sym);
-            let type_info = symbol.type_info;
-            let is_completed = symbol.is_completed;
-            let def_span = symbol.def_span;
+            let (type_info, is_completed, def_span) = {
+                let symbol = self.symbol_table.get_symbol(sym);
+                (symbol.type_info, symbol.is_completed, symbol.def_span)
+            };
 
             if is_definition && is_completed {
                 self.report_error(
@@ -2605,8 +2605,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     },
                 );
             }
+            if !is_definition && !is_completed {
+                self.report_warning(span, SemanticErrorKind::EnumForwardDeclaration);
+            }
             Ok(type_info.ty())
         } else {
+            if !is_definition {
+                self.report_warning(span, SemanticErrorKind::EnumForwardDeclaration);
+            }
             let ty = self.registry.declare_enum(Some(tag_name), self.registry.type_int);
             self.symbol_table.define_enum(tag_name, ty, span);
             Ok(ty)
@@ -2976,10 +2982,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let pname = param.name;
 
             // C11 6.7.6.3p4: "after adjustment, shall have complete object type."
-            // C11 6.7.6.3p10: "single parameter of type void and no identifier is a special case."
+            // C11 6.7.6.3p12: "If the function declarator is not part of a definition of that function,
+            // parameters may have incomplete type..."
+            // Bolt ⚡: Extension: allow incomplete enums in declarations (per GCC/Clang).
             if !self.registry.is_complete(decayed_qt.ty()) {
                 let is_void_param_list = params.len() == 1 && decayed_qt.is_void() && pname.is_none();
-                if !is_void_param_list {
+                let is_incomplete_enum = matches!(self.registry.get(decayed_qt.ty()).kind, TypeKind::Enum { .. });
+
+                let should_report = if decayed_qt.is_void() {
+                    !is_void_param_list
+                } else if is_incomplete_enum {
+                    is_definition
+                } else {
+                    // For structs and other incomplete types, keep previous strictness (always error)
+                    true
+                };
+
+                if should_report {
                     self.report_error(span, SemanticErrorKind::IncompleteType { ty: decayed_qt });
                 }
             }

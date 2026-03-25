@@ -4,7 +4,7 @@ use crate::driver::artifact::CompilePhase;
 use crate::semantic::ArraySizeType;
 use crate::semantic::type_registry::TypeRegistry;
 use crate::semantic::types::{QualType, TypeClass, TypeRef};
-use crate::tests::test_utils::{run_fail, run_fail_with_message, run_pass};
+use crate::tests::test_utils::{run_fail, run_fail_with_message, run_pass, run_pedantic_fail_with_message};
 
 fn check_type(source: &str, expected: &str) {
     let (_ast, registry, symbol_table) = setup_lowering(source);
@@ -570,4 +570,79 @@ fn test_large_hex_literal_comparison() {
 fn test_large_hex_literal_typing() {
     let source = "unsigned long long x = 0xAC353B0092DB2509;";
     check_type(source, "unsigned long long");
+}
+
+#[test]
+fn test_forward_enum_param() {
+    let source = r#"
+        enum E;
+        struct S {
+            int (*f)(enum E x);
+        };
+        int main() { return 0; }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_forward_enum_return() {
+    let source = r#"
+        enum E;
+        enum E foo(void);
+        int main() { return 0; }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_enum_unsigned_compatibility() {
+    let source = r#"
+        enum E { A, B };
+        void foo(unsigned int *p);
+        int main() {
+            enum E e = A;
+            foo(&e);
+            return 0;
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_incomplete_struct_in_declaration_rejected() {
+    let source = r#"
+        struct S;
+        void foo(struct S s);
+        struct S bar(void);
+        int main() { return 0; }
+    "#;
+    run_fail_with_message(source, "incomplete type 'struct S'");
+}
+
+#[test]
+fn test_incomplete_type_in_definition_rejected() {
+    let source = r#"
+        struct S;
+        void foo(struct S s) {}
+    "#;
+    run_fail_with_message(source, "incomplete type 'struct S'");
+}
+
+#[test]
+fn test_incomplete_return_type_in_definition_rejected() {
+    let source = r#"
+        struct S;
+        struct S foo(void) { struct S *s = 0; return *s; }
+    "#;
+    run_fail_with_message(source, "function has incomplete return type");
+}
+
+#[test]
+fn test_pedantic_enum_forward_decl() {
+    let source = "enum E; void f(enum E x);";
+    // Should pass normally
+    run_pass(source, CompilePhase::Mir);
+
+    // Should fail with --pedantic-errors
+    run_pedantic_fail_with_message(source, "ISO C forbids forward references");
 }

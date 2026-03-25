@@ -509,3 +509,10 @@ int x = TEN;
     let content = dump_pp_output(src, true);
     insta::assert_snapshot!(content, @"int x = 10;");
 }
+
+#[test]
+fn test_invalid_ucn() {
+    let src = r#"const char* s = "\uZZZZ";"#; // malformed UCN in string literal
+    let (_, diags) = setup_preprocessor_test_with_diagnostics(src, None).unwrap();
+    assert!(diags.len() > 0, "Expected diagnostics for invalid UCN");
+}

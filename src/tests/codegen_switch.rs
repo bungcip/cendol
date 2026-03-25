@@ -24,37 +24,43 @@ fn test_switch_unreachable_cases() {
     "#;
 
     let clif_ir = setup_cranelift(source);
-    insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @"
+    insta::assert_snapshot!(test_utils::sort_clif_ir(&clif_ir), @r"
     ; Function: main
     function u0:0() -> i32 system_v {
         ss0 = explicit_slot 4, align = 4
         ss1 = explicit_slot 1
         ss2 = explicit_slot 1
         gv0 = symbol colocated userextname0
-        gv1 = symbol colocated userextname3
-        gv2 = symbol colocated userextname4
+        gv1 = symbol userextname2
+        gv2 = symbol userextname3
+        gv3 = symbol colocated userextname5
+        gv4 = symbol userextname2
+        gv5 = symbol userextname3
+        gv6 = symbol colocated userextname6
+        gv7 = symbol userextname2
+        gv8 = symbol userextname3
         sig0 = (i64) -> i32 system_v
         sig1 = (i64) -> i32 system_v
-        sig2 = (i64, i64) -> i64, i64 system_v
+        sig2 = () system_v
         sig3 = (i64) -> i32 system_v
         sig4 = (i64) -> i32 system_v
-        sig5 = (i64, i64) -> i64, i64 system_v
+        sig5 = () system_v
         sig6 = (i64) -> i32 system_v
         sig7 = (i64) -> i32 system_v
-        sig8 = (i64, i64) -> i64, i64 system_v
+        sig8 = () system_v
         fn0 = u0:1 sig0
-        fn1 = colocated u0:2 sig2
+        fn1 = u0:2 sig2
         fn2 = u0:1 sig3
-        fn3 = colocated u0:2 sig5
+        fn3 = u0:2 sig5
         fn4 = u0:1 sig6
-        fn5 = colocated u0:2 sig8
+        fn5 = u0:2 sig8
 
     block0:
         v0 = iconst.i32 0
-        v52 = stack_addr.i64 ss0
-        store notrap v0, v52  ; v0 = 0
-        v51 = stack_addr.i64 ss0
-        v1 = load.i32 notrap v51
+        v55 = stack_addr.i64 ss0
+        store notrap v0, v55  ; v0 = 0
+        v54 = stack_addr.i64 ss0
+        v1 = load.i32 notrap v54
         v2 = iconst.i32 1
         v3 = icmp eq v1, v2  ; v2 = 1
         v4 = iconst.i8 1
@@ -65,16 +71,16 @@ fn test_switch_unreachable_cases() {
         v9 = iconst.i8 1
         v10 = iconst.i8 0
         v11 = select v8, v9, v10  ; v9 = 1, v10 = 0
-        v50 = stack_addr.i64 ss1
-        store notrap v11, v50
-        v49 = stack_addr.i64 ss1
-        v12 = load.i8 notrap v49
+        v53 = stack_addr.i64 ss1
+        store notrap v11, v53
+        v52 = stack_addr.i64 ss1
+        v12 = load.i8 notrap v52
         v13 = uextend.i32 v12
         brif v13, block2, block5
 
     block5:
-        v48 = stack_addr.i64 ss0
-        v14 = load.i32 notrap v48
+        v51 = stack_addr.i64 ss0
+        v14 = load.i32 notrap v51
         v15 = iconst.i32 2
         v16 = icmp eq v14, v15  ; v15 = 2
         v17 = iconst.i8 1
@@ -85,10 +91,10 @@ fn test_switch_unreachable_cases() {
         v22 = iconst.i8 1
         v23 = iconst.i8 0
         v24 = select v21, v22, v23  ; v22 = 1, v23 = 0
-        v47 = stack_addr.i64 ss2
-        store notrap v24, v47
-        v46 = stack_addr.i64 ss2
-        v25 = load.i8 notrap v46
+        v50 = stack_addr.i64 ss2
+        store notrap v24, v50
+        v49 = stack_addr.i64 ss2
+        v25 = load.i8 notrap v49
         v26 = uextend.i32 v25
         brif v26, block3, block6
 
@@ -98,29 +104,41 @@ fn test_switch_unreachable_cases() {
     block4:
         v27 = symbol_value.i64 gv0
         v28 = func_addr.i64 fn0
-        v29 = iconst.i64 0
-        v30, v31 = call fn1(v29, v28)  ; v29 = 0
-        v32 = call_indirect sig1, v31(v27)
+        v29 = symbol_value.i64 gv1
+        v30 = iconst.i64 0
+        store notrap aligned v30, v29  ; v30 = 0
+        v31 = symbol_value.i64 gv2
+        store notrap aligned v28, v31
+        v32 = func_addr.i64 fn1
+        v33 = call_indirect sig1, v32(v27)
         jump block1
 
     block1:
-        v33 = iconst.i32 0
-        return v33  ; v33 = 0
+        v34 = iconst.i32 0
+        return v34  ; v34 = 0
 
     block3:
-        v34 = symbol_value.i64 gv1
-        v35 = func_addr.i64 fn2
-        v36 = iconst.i64 0
-        v37, v38 = call fn3(v36, v35)  ; v36 = 0
-        v39 = call_indirect sig4, v38(v34)
+        v35 = symbol_value.i64 gv3
+        v36 = func_addr.i64 fn2
+        v37 = symbol_value.i64 gv4
+        v38 = iconst.i64 0
+        store notrap aligned v38, v37  ; v38 = 0
+        v39 = symbol_value.i64 gv5
+        store notrap aligned v36, v39
+        v40 = func_addr.i64 fn3
+        v41 = call_indirect sig4, v40(v35)
         jump block1
 
     block2:
-        v40 = symbol_value.i64 gv2
-        v41 = func_addr.i64 fn4
-        v42 = iconst.i64 0
-        v43, v44 = call fn5(v42, v41)  ; v42 = 0
-        v45 = call_indirect sig7, v44(v40)
+        v42 = symbol_value.i64 gv6
+        v43 = func_addr.i64 fn4
+        v44 = symbol_value.i64 gv7
+        v45 = iconst.i64 0
+        store notrap aligned v45, v44  ; v45 = 0
+        v46 = symbol_value.i64 gv8
+        store notrap aligned v43, v46
+        v47 = func_addr.i64 fn5
+        v48 = call_indirect sig7, v47(v42)
         jump block1
     }
     ");

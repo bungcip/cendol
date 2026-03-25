@@ -490,6 +490,43 @@ impl CompilerDriver {
 
                 // Link if we have object files and NOT compile_only
                 if !object_files_to_link.is_empty() && !self.config.compile_only {
+                    if self.config.target.0.architecture == "x86_64".parse().unwrap() {
+                        let mut temp_s = tempfile::Builder::new()
+                            .suffix(".s")
+                            .tempfile()
+                            .map_err(|e| DriverError::IoError(format!("Failed to create temp assembly: {}", e)))?;
+
+                        let asm_content = b"
+.data
+.global __cendol_vararg_al_count
+.global __cendol_vararg_target_addr
+.align 8
+__cendol_vararg_al_count:
+        .quad 0
+__cendol_vararg_target_addr:
+        .quad 0
+
+.text
+.global __cendol_vararg_trampoline
+.type __cendol_vararg_trampoline, @function
+__cendol_vararg_trampoline:
+        movq __cendol_vararg_al_count(%rip), %rax
+        movq __cendol_vararg_target_addr(%rip), %r11
+        jmp *%r11
+        .size __cendol_vararg_trampoline, . - __cendol_vararg_trampoline
+
+#if defined(__linux__) && defined(__ELF__)
+.section .note.GNU-stack,\"\",%progbits
+#endif
+";
+                        use std::io::Write;
+                        temp_s
+                            .write_all(asm_content)
+                            .map_err(|e| DriverError::IoError(format!("Failed to write assembly: {}", e)))?;
+                        object_files_to_link.push(temp_s.path().to_path_buf());
+                        temp_files.push(temp_s);
+                    }
+
                     // Determine the output path
                     let output_path = if let Some(output_path) = &self.config.output_path {
                         output_path.clone()

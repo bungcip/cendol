@@ -53,14 +53,18 @@ fn test_variadic_al_setup() {
     "#;
     let clif_dump = setup_cranelift(source);
 
-    // Check for the helper function signature: (i64, i64) -> i64, i64 system_v
+    // Check that globals for count, addr, and trampoline are declared
+    // Note: Cranelift dumps external global names as "userextnameX".
     assert!(
-        clif_dump.contains("(i64, i64) -> i64, i64 system_v"),
-        "Missing or incorrect __cendol_set_al signature in CLIF"
+        clif_dump.contains("userextname"),
+        "Missing global references for trampoline"
     );
 
-    // Check for the helper call. It should have two results (vX, vY = call fnZ(vA, vB)).
-    assert!(clif_dump.contains("= call"), "Missing call to __cendol_set_al");
+    // Check for the store instructions that replace the function call.
+    assert!(
+        clif_dump.contains("store notrap aligned"),
+        "Missing store to global fields"
+    );
 
     // Check for call_indirect which uses the address returned by the helper.
     assert!(

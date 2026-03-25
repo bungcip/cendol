@@ -115,7 +115,9 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub func_id_map: &'a HashMap<MirFunctionId, FuncId>,
     pub data_id_map: &'a HashMap<GlobalId, DataId>,
     pub triple: &'a Triple,
-    pub set_al_func: &'a mut Option<FuncId>,
+    pub vararg_count_data: &'a mut Option<DataId>,
+    pub vararg_target_data: &'a mut Option<DataId>,
+    pub vararg_trampoline_func: &'a mut Option<FuncId>,
     pub pointee_to_pointer: &'a HashMap<TypeId, TypeId>,
 }
 
@@ -1035,15 +1037,40 @@ fn emit_al_count_and_pass_addr(
 
         let fp_arg_count = fp_arg_count.min(8);
 
-        if ctx.set_al_func.is_none() {
-            *ctx.set_al_func = Some(emit_cendol_set_al(ctx.module));
+        if ctx.vararg_count_data.is_none() {
+            *ctx.vararg_count_data = Some(
+                ctx.module
+                    .declare_data("__cendol_vararg_al_count", Linkage::Import, true, false)
+                    .unwrap(),
+            );
+            *ctx.vararg_target_data = Some(
+                ctx.module
+                    .declare_data("__cendol_vararg_target_addr", Linkage::Import, true, false)
+                    .unwrap(),
+            );
+            let dummy_sig = Signature::new(cranelift::codegen::isa::CallConv::SystemV);
+            *ctx.vararg_trampoline_func = Some(
+                ctx.module
+                    .declare_function("__cendol_vararg_trampoline", Linkage::Import, &dummy_sig)
+                    .unwrap(),
+            );
         }
 
-        let set_al_func = ctx.set_al_func.unwrap();
-        let local_set_al = ctx.module.declare_func_in_func(set_al_func, ctx.builder.func);
+        let count_data_id = ctx.vararg_count_data.unwrap();
+        let target_data_id = ctx.vararg_target_data.unwrap();
+        let tramp_func_id = ctx.vararg_trampoline_func.unwrap();
+
+        let count_global = ctx.module.declare_data_in_func(count_data_id, ctx.builder.func);
+        let count_addr = ctx.builder.ins().global_value(types::I64, count_global);
         let count_val = ctx.builder.ins().iconst(types::I64, fp_arg_count as i64);
-        let call_inst = ctx.builder.ins().call(local_set_al, &[count_val, addr]);
-        ctx.builder.inst_results(call_inst)[1]
+        ctx.builder.ins().store(MemFlags::trusted(), count_val, count_addr, 0);
+
+        let target_global = ctx.module.declare_data_in_func(target_data_id, ctx.builder.func);
+        let target_addr_val = ctx.builder.ins().global_value(types::I64, target_global);
+        ctx.builder.ins().store(MemFlags::trusted(), addr, target_addr_val, 0);
+
+        let tramp_func_ref = ctx.module.declare_func_in_func(tramp_func_id, ctx.builder.func);
+        ctx.builder.ins().func_addr(types::I64, tramp_func_ref)
     } else {
         addr
     }
@@ -2601,7 +2628,9 @@ pub struct ClifGen {
     va_spill_slot: Option<StackSlot>,
 
     triple: Triple,
-    set_al_func: Option<FuncId>,
+    vararg_count_data: Option<DataId>,
+    vararg_target_data: Option<DataId>,
+    vararg_trampoline_func: Option<FuncId>,
 }
 
 /// NOTE: we use panic!() to ICE because codegen rely on correct MIR, so if we give invalid MIR, then problem is in previous phase
@@ -2632,7 +2661,9 @@ impl ClifGen {
             data_id_map: HashMap::new(),
             va_spill_slot: None,
             triple,
-            set_al_func: None,
+            vararg_count_data: None,
+            vararg_target_data: None,
+            vararg_trampoline_func: None,
             pointee_to_pointer: mir
                 .types
                 .iter()
@@ -2951,7 +2982,9 @@ impl ClifGen {
                 func_id_map: &self.func_id_map,
                 data_id_map: &self.data_id_map,
                 triple: &self.triple,
-                set_al_func: &mut self.set_al_func,
+                vararg_count_data: &mut self.vararg_count_data,
+                vararg_target_data: &mut self.vararg_target_data,
+                vararg_trampoline_func: &mut self.vararg_trampoline_func,
                 pointee_to_pointer: &self.pointee_to_pointer,
             };
 
@@ -3529,38 +3562,4 @@ impl ClifGen {
     }
 }
 
-/// Internal helper for variadic calls on x86_64 SysV
-fn emit_cendol_set_al(module: &mut ObjectModule) -> FuncId {
-    let mut sig = Signature::new(cranelift::codegen::isa::CallConv::SystemV);
-    sig.params.push(AbiParam::new(types::I64)); // count
-    sig.params.push(AbiParam::new(types::I64)); // addr
-    sig.returns.push(AbiParam::new(types::I64)); // count (RAX)
-    sig.returns.push(AbiParam::new(types::I64)); // addr (RDX)
-
-    let func_id = module
-        .declare_function("__cendol_set_al", Linkage::Local, &sig)
-        .expect("Failed to declare __cendol_set_al");
-
-    let mut ctx = cranelift::codegen::Context::new();
-    ctx.func.signature = sig;
-
-    let mut func_ctx = FunctionBuilderContext::new();
-    let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
-
-    let block = builder.create_block();
-    builder.append_block_params_for_function_params(block);
-    builder.switch_to_block(block);
-    builder.seal_block(block);
-
-    let count = builder.block_params(block)[0];
-    let addr = builder.block_params(block)[1];
-    builder.ins().return_(&[count, addr]);
-
-    builder.finalize();
-
-    module
-        .define_function(func_id, &mut ctx)
-        .expect("Failed to define __cendol_set_al");
-
-    func_id
-}
+// The variadic set_al hack was replaced with a trampoline due to Cranelift 0.130's register allocation behavior.

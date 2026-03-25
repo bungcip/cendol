@@ -59,21 +59,35 @@ pub(crate) struct DiagnosticEngine {
     /// when error limits are applied.
     pub error_count: usize,
     pub error_limit: Option<usize>,
+    pub warning_count: usize,
+    pub warning_limit: Option<usize>,
     /// Bolt ⚡: Flag to ensure the "too many errors" note is only emitted once.
     pub limit_reached: bool,
+    /// Bolt ⚡: Flag to ensure the "too many warnings" note is only emitted once.
+    pub warning_limit_reached: bool,
     pub disabled_warnings: HashSet<String>,
-    pub use_colors: bool,
+    pub(crate) renderer: Renderer,
 }
 
 impl Default for DiagnosticEngine {
     fn default() -> Self {
+        let use_colors = std::io::stderr().is_terminal();
+        let renderer = if use_colors {
+            Renderer::styled().decor_style(DecorStyle::Unicode)
+        } else {
+            Renderer::plain()
+        };
+
         Self {
             diagnostics: Vec::new(),
             error_count: 0,
             error_limit: None,
+            warning_count: 0,
+            warning_limit: None,
             limit_reached: false,
+            warning_limit_reached: false,
             disabled_warnings: HashSet::new(),
-            use_colors: std::io::stderr().is_terminal(),
+            renderer,
         }
     }
 }
@@ -87,18 +101,32 @@ impl DiagnosticEngine {
             }
         }
 
+        let use_colors = std::io::stderr().is_terminal();
+        let renderer = if use_colors {
+            Renderer::styled().decor_style(DecorStyle::Unicode)
+        } else {
+            Renderer::plain()
+        };
+
         Self {
             diagnostics: Vec::new(),
             error_count: 0,
             error_limit: None,
+            warning_count: 0,
+            warning_limit: None,
             limit_reached: false,
+            warning_limit_reached: false,
             disabled_warnings,
-            use_colors: std::io::stderr().is_terminal(),
+            renderer,
         }
     }
 
     pub(crate) fn set_error_limit(&mut self, limit: usize) {
         self.error_limit = Some(limit);
+    }
+
+    pub(crate) fn set_warning_limit(&mut self, limit: usize) {
+        self.warning_limit = Some(limit);
     }
 
     pub(crate) fn report_diagnostic(&mut self, diagnostic: Diagnostic) {
@@ -110,26 +138,42 @@ impl DiagnosticEngine {
             return;
         }
 
-        if let Some(limit) = self.error_limit
-            && self.error_count >= limit
-        {
-            if !self.limit_reached {
-                // Report that we reached the limit
-                // Use the span of the current error to avoid <unknown> source if possible
-                self.diagnostics.push(Diagnostic {
-                    level: DiagnosticLevel::Note,
-                    message: format!("too many errors emitted, stopping after {} errors", limit),
-                    span: diagnostic.span,
-                    ..Default::default()
-                });
-                self.limit_reached = true;
+        if diagnostic.level == DiagnosticLevel::Error {
+            if let Some(limit) = self.error_limit
+                && self.error_count >= limit
+            {
+                if !self.limit_reached {
+                    // Report that we reached the limit
+                    // Use the span of the current error to avoid <unknown> source if possible
+                    self.diagnostics.push(Diagnostic {
+                        level: DiagnosticLevel::Note,
+                        message: format!("too many errors emitted, stopping after {} errors", limit),
+                        span: diagnostic.span,
+                        ..Default::default()
+                    });
+                    self.limit_reached = true;
+                }
+                return;
             }
-            return;
+            self.error_count += 1;
+        } else if diagnostic.level == DiagnosticLevel::Warning {
+            if let Some(limit) = self.warning_limit
+                && self.warning_count >= limit
+            {
+                if !self.warning_limit_reached {
+                    self.diagnostics.push(Diagnostic {
+                        level: DiagnosticLevel::Note,
+                        message: format!("too many warnings emitted, stopping after {} warnings", limit),
+                        span: diagnostic.span,
+                        ..Default::default()
+                    });
+                    self.warning_limit_reached = true;
+                }
+                return;
+            }
+            self.warning_count += 1;
         }
 
-        if diagnostic.level == DiagnosticLevel::Error {
-            self.error_count += 1;
-        }
         self.diagnostics.push(diagnostic);
     }
 
@@ -172,34 +216,29 @@ impl DiagnosticEngine {
         message: &'a str,
         source_manager: &'a SourceManager,
     ) -> Snippet<'a, annotate_snippets::Annotation<'a>> {
-        let source_buffer = source_manager.get_buffer(span.source_id());
-        let source = std::str::from_utf8(source_buffer).unwrap_or("");
+        let (start, end, start_line) = source_manager.get_line_window(span.source_id(), span.start().offset(), 3);
+        let source_full = source_manager.get_source_str(span.source_id());
+        let source_slice = &source_full[start as usize..end as usize];
+
         let path = source_manager
             .get_file_info(span.source_id())
             .map(|fi| fi.path.to_str().unwrap_or("<unknown>"))
             .unwrap_or("<unknown>");
 
-        let mut snippet = Snippet::source(source).line_start(1).path(path);
+        let mut snippet = Snippet::source(source_slice).line_start(start_line as usize).path(path);
 
         let annotation_kind = AnnotationKind::Primary;
 
-        snippet = snippet.annotation(
-            annotation_kind
-                .span(span.start().offset() as usize..span.end().offset() as usize)
-                .label(message),
-        );
+        let rel_start = span.start().offset().saturating_sub(start) as usize;
+        let rel_end = (span.end().offset().saturating_sub(start) as usize).min(source_slice.len());
+
+        snippet = snippet.annotation(annotation_kind.span(rel_start..rel_end).label(message));
 
         snippet
     }
 
     /// Format a single diagnostic with rich source code context
     fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
-        let renderer = if self.use_colors {
-            Renderer::styled().decor_style(DecorStyle::Unicode)
-        } else {
-            Renderer::plain()
-        };
-
         // If it's a built-in source ID (e.g. command line define), simple print
         if diag.span.is_source_id_builtin() {
             return format!("{}: {}", self.format_location(diag, source_manager), diag.message);
@@ -251,7 +290,7 @@ impl DiagnosticEngine {
         }
 
         let report = &[group];
-        renderer.render(report)
+        self.renderer.render(report)
     }
 
     /// Print diagnostics, skipping warnings if suppress_warnings is true

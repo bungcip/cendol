@@ -149,6 +149,7 @@ pub mod semantic_integer_literals;
 pub mod semantic_issue_test;
 mod semantic_label_duplicate;
 mod semantic_label_goto;
+pub mod semantic_long_double;
 pub mod semantic_mir_const_global;
 pub mod semantic_noreturn;
 pub mod semantic_offsetof;
@@ -163,7 +164,6 @@ pub mod semantic_shift_float;
 pub mod semantic_sizeof_vla;
 pub mod semantic_static_assert;
 pub mod semantic_valist;
-pub mod semantic_long_double;
 
 pub mod regr_bitfield_assign_eval;
 pub mod regr_float_cast;

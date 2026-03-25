@@ -46,6 +46,8 @@ impl CompilerDriver {
         let mut diagnostics = DiagnosticEngine::from_warnings(&config.warnings);
         // Default to one error report as requested, or use the configured limit
         diagnostics.set_error_limit(config.fmax_errors.unwrap_or(20));
+        // Also set a default warning limit to prevent massive overhead for very large files
+        diagnostics.set_warning_limit(200);
 
         for flag in &config.ignored_f_flags {
             log::warn!("ignoring unrecognized command-line option '-f{}'", flag);

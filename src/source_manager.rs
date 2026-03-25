@@ -276,6 +276,7 @@ impl LineMap {
 pub struct FileInfo {
     pub(crate) path: PathBuf,
     pub(crate) buffer: Arc<[u8]>,
+    pub(crate) cached_string: std::sync::OnceLock<String>,
     pub(crate) kind: FileKind,
     pub line_starts: Vec<u32>,          // Line start offsets for efficient line lookup
     pub line_map: LineMap,              // #line directive mappings
@@ -366,6 +367,7 @@ impl SourceManager {
         let file_info = FileInfo {
             path,
             buffer,
+            cached_string: std::sync::OnceLock::new(),
             kind,
             line_starts,
             line_map: LineMap::new(),
@@ -427,6 +429,49 @@ impl SourceManager {
     /// Get source ID for a given file path
     pub(crate) fn get_file_id(&self, path: &str) -> Option<SourceId> {
         self.path_to_id.get(Path::new(path)).copied()
+    }
+
+    /// Get the source string for a given source ID, with caching
+    pub(crate) fn get_source_str(&self, source_id: SourceId) -> &str {
+        if let Some(info) = self.get_file_info(source_id) {
+            info.cached_string.get_or_init(|| {
+                // If the buffer is not valid UTF-8, we just use an empty string or lossy conversion
+                // Standard C files should be valid UTF-8/ASCII for the most part.
+                String::from_utf8_lossy(&info.buffer).into_owned()
+            })
+        } else {
+            ""
+        }
+    }
+
+    /// Get a "window" of lines around a given offset.
+    /// Returns (start_offset, end_offset, start_line_number)
+    pub(crate) fn get_line_window(&self, source_id: SourceId, offset: u32, window: usize) -> (u32, u32, u32) {
+        let Some(info) = self.get_file_info(source_id) else {
+            return (0, 0, 1);
+        };
+
+        if info.line_starts.is_empty() {
+            return (0, info.buffer.len() as u32, 1);
+        }
+
+        // Find current line index
+        let current_line_idx = info
+            .line_starts
+            .partition_point(|&start| start <= offset)
+            .saturating_sub(1);
+
+        let start_line_idx = current_line_idx.saturating_sub(window);
+        let end_line_idx = (current_line_idx + window).min(info.line_starts.len() - 1);
+
+        let start_offset = info.line_starts[start_line_idx];
+        let end_offset = if end_line_idx + 1 < info.line_starts.len() {
+            info.line_starts[end_line_idx + 1]
+        } else {
+            info.buffer.len() as u32
+        };
+
+        (start_offset, end_offset, start_line_idx as u32 + 1)
     }
 
     /// Get mutable access to the LineMap for a given source ID

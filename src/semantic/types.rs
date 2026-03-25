@@ -351,6 +351,17 @@ impl BuiltinType {
         }
     }
 
+    pub(crate) fn to_unsigned(self) -> Self {
+        match self {
+            Self::Char | Self::SChar => Self::UChar,
+            Self::Short => Self::UShort,
+            Self::Int | Self::Signed => Self::UInt,
+            Self::Long => Self::ULong,
+            Self::LongLong => Self::ULongLong,
+            _ => self,
+        }
+    }
+
     pub(crate) fn rank(self) -> u8 {
         match self {
             Self::Bool => 1,

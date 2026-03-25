@@ -66,8 +66,16 @@ pub(super) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rh
         Some(ut)
     } else {
         // If the signed type can represent all values of the unsigned type, it wins.
-        // For currently supported targets (e.g. 32-bit int, 64-bit long), this holds.
-        Some(st)
+        // This requires the signed type to be strictly wider than the unsigned type.
+        let ut_size = ctx.get_layout(ut.ty()).size;
+        let st_size = ctx.get_layout(st.ty()).size;
+        if st_size > ut_size {
+            Some(st)
+        } else {
+            // Otherwise, both are converted to the unsigned integer type corresponding
+            // to the type of the operand with signed integer type.
+            Some(QualType::unqualified(ctx.get_unsigned_corresponding_type(st.ty())))
+        }
     }
 }
 

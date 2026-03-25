@@ -307,6 +307,21 @@ impl TypeRegistry {
         TypeRef::new(idx, class, 0, 0).expect("TypeRef alloc failed")
     }
 
+    /// Get the unsigned version of a builtin integer type.
+    pub(crate) fn get_unsigned_corresponding_type(&self, ty: TypeRef) -> TypeRef {
+        if let Some(b) = ty.builtin() {
+            return self.get_builtin_type(b.to_unsigned());
+        }
+
+        let inner = self.get(ty);
+        if let TypeKind::Builtin(b) = inner.kind {
+            return self.get_builtin_type(b.to_unsigned());
+        }
+
+        // Default to the original type if it's not a builtin integer.
+        ty
+    }
+
     /// Resolve a TypeRef to a Type.
     /// Returns Cow because inline types are constructed on the fly.
     #[inline]

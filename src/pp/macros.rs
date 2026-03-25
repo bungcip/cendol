@@ -298,10 +298,11 @@ impl<'src> Preprocessor<'src> {
         let mut has_va_opt = false;
         for t in macro_info.tokens.iter() {
             if let PPTokenKind::Identifier(sym) = t.kind
-                && sym.as_str() == "__VA_OPT__" {
-                    has_va_opt = true;
-                    break;
-                }
+                && sym.as_str() == "__VA_OPT__"
+            {
+                has_va_opt = true;
+                break;
+            }
         }
         if !has_va_opt {
             return Ok(Cow::Borrowed(&macro_info.tokens));
@@ -319,46 +320,48 @@ impl<'src> Preprocessor<'src> {
                 let next = &macro_info.tokens[i + 1];
                 if let PPTokenKind::Identifier(sym) = next.kind
                     && sym.as_str() == "__VA_OPT__"
-                        && i + 2 < macro_info.tokens.len()
-                        && macro_info.tokens[i + 2].kind == PPTokenKind::LeftParen
-                        && let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 2) {
-                            if !is_empty {
-                                let content = &macro_info.tokens[i + 3..rparen_idx - 1];
-                                let substituted = self.substitute_tokens_slice(
-                                    macro_info,
-                                    content,
-                                    symbol,
-                                    args,
-                                    expanded_args,
-                                    intersect_hs,
-                                    new_hs,
-                                )?;
-                                let mut stringified = self.stringify_tokens(&substituted, token.location)?;
-                                stringified.hide_set = token.hide_set;
-                                resolved.push(stringified);
-                            } else {
-                                let mut stringified = self.stringify_tokens(&[], token.location)?;
-                                stringified.hide_set = token.hide_set;
-                                resolved.push(stringified);
-                            }
-                            i = rparen_idx;
-                            continue;
-                        }
+                    && i + 2 < macro_info.tokens.len()
+                    && macro_info.tokens[i + 2].kind == PPTokenKind::LeftParen
+                    && let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 2)
+                {
+                    if !is_empty {
+                        let content = &macro_info.tokens[i + 3..rparen_idx - 1];
+                        let substituted = self.substitute_tokens_slice(
+                            macro_info,
+                            content,
+                            symbol,
+                            args,
+                            expanded_args,
+                            intersect_hs,
+                            new_hs,
+                        )?;
+                        let mut stringified = self.stringify_tokens(&substituted, token.location)?;
+                        stringified.hide_set = token.hide_set;
+                        resolved.push(stringified);
+                    } else {
+                        let mut stringified = self.stringify_tokens(&[], token.location)?;
+                        stringified.hide_set = token.hide_set;
+                        resolved.push(stringified);
+                    }
+                    i = rparen_idx;
+                    continue;
+                }
             }
 
             // Handle __VA_OPT__(content)
             if let PPTokenKind::Identifier(sym) = token.kind
                 && sym.as_str() == "__VA_OPT__"
-                    && i + 1 < macro_info.tokens.len()
-                    && macro_info.tokens[i + 1].kind == PPTokenKind::LeftParen
-                    && let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 1) {
-                        if !is_empty {
-                            let content = &macro_info.tokens[i + 2..rparen_idx - 1];
-                            resolved.extend_from_slice(content);
-                        }
-                        i = rparen_idx;
-                        continue;
-                    }
+                && i + 1 < macro_info.tokens.len()
+                && macro_info.tokens[i + 1].kind == PPTokenKind::LeftParen
+                && let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 1)
+            {
+                if !is_empty {
+                    let content = &macro_info.tokens[i + 2..rparen_idx - 1];
+                    resolved.extend_from_slice(content);
+                }
+                i = rparen_idx;
+                continue;
+            }
 
             resolved.push(*token);
             i += 1;

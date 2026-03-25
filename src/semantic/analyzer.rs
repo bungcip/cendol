@@ -404,7 +404,15 @@ impl<'a> SemanticAnalyzer<'a> {
                 let symbol = self.symbol_table.get_symbol(*symbol_ref);
                 matches!(symbol.kind, SymbolKind::Variable { .. } | SymbolKind::Function { .. })
             }
-            NodeKind::UnaryOp(op, _) => matches!(*op, UnaryOp::Deref),
+            NodeKind::UnaryOp(op, operand) => match *op {
+                UnaryOp::Deref => true,
+                UnaryOp::Real => self.is_lvalue(*operand),
+                UnaryOp::Imag => {
+                    let operand_ty = self.semantic_info.types.get(operand.index()).and_then(|t| *t);
+                    operand_ty.is_some_and(|t| t.is_complex()) && self.is_lvalue(*operand)
+                }
+                _ => false,
+            },
             NodeKind::IndexAccess(..) => true,
             NodeKind::MemberAccess(obj, _, is_arrow) => {
                 // Bolt ⚡: Use cached value category for the object expression.
@@ -463,6 +471,15 @@ impl<'a> SemanticAnalyzer<'a> {
                 .get(&node.index())
                 .and_then(|&selected| self.get_bitfield_width(selected)),
             NodeKind::GnuStatementExpr(_, result_expr) => self.get_bitfield_width(*result_expr),
+            NodeKind::UnaryOp(UnaryOp::Real, operand) => self.get_bitfield_width(*operand),
+            NodeKind::UnaryOp(UnaryOp::Imag, operand) => {
+                let operand_ty = self.semantic_info.types.get(operand.index()).and_then(|t| *t);
+                if operand_ty.is_some_and(|t| t.is_complex()) {
+                    self.get_bitfield_width(*operand)
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -476,6 +493,15 @@ impl<'a> SemanticAnalyzer<'a> {
                     return *storage == Some(StorageClass::Register);
                 }
                 false
+            }
+            NodeKind::UnaryOp(UnaryOp::Real, operand) => self.is_register_variable(*operand),
+            NodeKind::UnaryOp(UnaryOp::Imag, operand) => {
+                let operand_ty = self.semantic_info.types.get(operand.index()).and_then(|t| *t);
+                if operand_ty.is_some_and(|t| t.is_complex()) {
+                    self.is_register_variable(*operand)
+                } else {
+                    false
+                }
             }
             NodeKind::BuiltinChooseExpr(..) => {
                 if let Some(&selected) = self.semantic_info.choose_expressions.get(&node.index()) {
@@ -501,6 +527,21 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::Literal(Literal::Int { val: 0, .. }) => true,
             NodeKind::Cast(qt, inner) if qt.ty() == self.registry.type_void_ptr => {
                 self.is_null_pointer_constant(*inner)
+            }
+            NodeKind::UnaryOp(UnaryOp::Real, operand) => self.is_null_pointer_constant(*operand),
+            NodeKind::UnaryOp(UnaryOp::Imag, operand) => {
+                let operand_ty = self.semantic_info.types.get(operand.index()).and_then(|t| *t);
+                if operand_ty.is_some_and(|t| t.is_complex()) {
+                    self.is_null_pointer_constant(*operand)
+                } else {
+                    // __imag__ on real type returns zero, which is a null pointer constant if it's an integer 0.
+                    // But usually __imag__ on integer is not very useful.
+                    // Let's check if the result of __imag__ on real is a constant 0.
+                    // Actually, if operand is real, it's an rvalue anyway, so it might already be handled
+                    // by Literal(Literal::Int { val: 0, .. }) if constant folded.
+                    // But if not folded yet:
+                    false
+                }
             }
             NodeKind::BuiltinChooseExpr(..) => {
                 if let Some(&selected) = self.semantic_info.choose_expressions.get(&node.index()) {

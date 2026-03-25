@@ -137,6 +137,7 @@ pub mod semantic_atomic;
 pub mod semantic_bitfield_init;
 pub mod semantic_brace_elision;
 pub mod semantic_caserange;
+pub mod semantic_complex_lvalue;
 pub mod semantic_complex_types;
 pub mod semantic_const_recursive;
 mod semantic_conversions;

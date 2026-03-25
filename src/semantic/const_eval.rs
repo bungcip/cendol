@@ -178,6 +178,57 @@ impl<'a> ConstEvalCtx<'a> {
             _ => None,
         }
     }
+
+    fn eval_complex_part(&self, node: NodeRef, is_real: bool) -> Option<f64> {
+        match self.ast.get_kind(node) {
+            NodeKind::Literal(Literal::Float { val, suffix }) => match suffix {
+                Some(crate::ast::literal::FloatSuffix::I)
+                | Some(crate::ast::literal::FloatSuffix::IF)
+                | Some(crate::ast::literal::FloatSuffix::IL) => {
+                    if is_real {
+                        Some(0.0)
+                    } else {
+                        Some(*val)
+                    }
+                }
+                _ => {
+                    if is_real {
+                        Some(*val)
+                    } else {
+                        Some(0.0)
+                    }
+                }
+            },
+            NodeKind::CompoundLiteral(_, init_list_ref) => {
+                if let NodeKind::InitializerList(list) = self.ast.get_kind(*init_list_ref) {
+                    let index = if is_real { 0 } else { 1 };
+                    if (index as u16) < list.init_len {
+                        let item_ref = NodeRef::new(list.init_start.get() + index as u32).expect("NodeRef overflow");
+                        if let NodeKind::InitializerItem(item) = self.ast.get_kind(item_ref) {
+                            return eval_const_expr_float(self, item.initializer);
+                        }
+                    }
+                    // If index is out of bounds, C99/C11 zero-fills
+                    Some(0.0)
+                } else {
+                    None
+                }
+            }
+            NodeKind::Cast(_, expr) => self.eval_complex_part(*expr, is_real),
+            _ => {
+                // For other expressions, if they are not complex, they are purely real
+                if is_real {
+                    eval_const_expr_float(self, node)
+                } else {
+                    // Imaginary part of a real expression is 0.0
+                    // But we need to check if the expression is indeed purely real.
+                    // If it's complex but not specifically handled above, we can't evaluate it.
+                    let qt = self.get_resolved_type(node)?;
+                    if qt.ty().is_complex() { None } else { Some(0.0) }
+                }
+            }
+        }
+    }
 }
 
 /// Evaluate a constant expression node to an i64 value
@@ -620,15 +671,14 @@ pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr: NodeRef) -> Option
                 _ => None,
             }
         }
-        NodeKind::UnaryOp(op, expr) => {
-            let operand_val = eval_const_expr_float(ctx, *expr)?;
-            match op {
-                UnaryOp::Plus => Some(operand_val),
-                UnaryOp::Minus => Some(-operand_val),
-                UnaryOp::LogicNot => Some((operand_val == 0.0) as i64 as f64),
-                _ => None,
-            }
-        }
+        NodeKind::UnaryOp(op, expr) => match op {
+            UnaryOp::Plus => eval_const_expr_float(ctx, *expr),
+            UnaryOp::Minus => eval_const_expr_float(ctx, *expr).map(|v| -v),
+            UnaryOp::LogicNot => eval_const_expr_float(ctx, *expr).map(|v| (v == 0.0) as i64 as f64),
+            UnaryOp::Real => ctx.eval_complex_part(*expr, true),
+            UnaryOp::Imag => ctx.eval_complex_part(*expr, false),
+            _ => None,
+        },
         NodeKind::Cast(target_qt, expr) => {
             if let Some(val) = eval_const_expr_float(ctx, *expr) {
                 if target_qt.is_integer() {

@@ -1698,7 +1698,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             // Complex variants extracted to helpers
             ParsedNodeKind::GnuStatementExpr(stmt, _) => {
-                self.report_warning(span, SemanticErrorKind::GnuStatementExpression);
+                if self.lang_opts.pedantic || self.lang_opts.pedantic_errors {
+                    self.report_warning(span, SemanticErrorKind::GnuStatementExpression);
+                }
                 lower_simple!(self.visit_gnu_statement_expr(*stmt, span))
             }
             ParsedNodeKind::FunctionCall(func, args) => {

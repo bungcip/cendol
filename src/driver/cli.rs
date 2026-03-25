@@ -247,6 +247,7 @@ impl Cli {
         let c_standard = self.c_standard.unwrap_or_default();
         let lang_options = crate::lang_options::LangOptions {
             c_standard,
+            pedantic: self.pedantic,
             pedantic_errors: self.pedantic_errors,
         };
 

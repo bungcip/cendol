@@ -483,7 +483,7 @@ fn test_struct_copy_init() {
         int main() { return 0; }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @"
+    insta::assert_snapshot!(mir, @r"
     type %t0 = i32
     type %t1 = void
     type %t2 = struct Wrap { func: %t3 }
@@ -493,7 +493,7 @@ fn test_struct_copy_init() {
     type %t6 = ptr<%t5>
 
     global @global: i32 = const zero
-    global @global_wrap: [2]%t2 = const array_literal [const struct_literal { 0: const inc_global }, const struct_literal { 0: const inc_global }]
+    global @global_wrap: [2]%t2 = const array_literal [const @.L.str0, const struct_literal { 0: const inc_global }]
     global @.L.str0: %t2 = const struct_literal { 0: const inc_global }
 
     fn main() -> i32

@@ -561,7 +561,9 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__auto_type"), TokenKind::AutoType);
         m.insert(StringId::new("__auto_type__"), TokenKind::AutoType);
         m.insert(StringId::new("__real__"), TokenKind::Real);
+        m.insert(StringId::new("__builtin_real"), TokenKind::Real);
         m.insert(StringId::new("__imag__"), TokenKind::Imag);
+        m.insert(StringId::new("__builtin_imag"), TokenKind::Imag);
         m.insert(StringId::new("_Alignas"), TokenKind::Alignas);
         m.insert(StringId::new("_Alignof"), TokenKind::Alignof);
         m.insert(StringId::new("_Atomic"), TokenKind::Atomic);

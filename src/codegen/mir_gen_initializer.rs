@@ -496,7 +496,7 @@ impl<'a> MirGen<'a> {
         let target_type = self.registry.get(target_qt.ty()).into_owned();
 
         match (&kind, &target_type.kind) {
-            (NodeKind::InitializerList(list), TypeKind::Record { .. }) => {
+            (NodeKind::InitializerList(list), TypeKind::Record { .. } | TypeKind::Complex { .. }) => {
                 self.visit_initializer_list(list, target_qt, destination)
             }
             (NodeKind::InitializerList(list), TypeKind::Array { element_type, size }) => {
@@ -614,20 +614,21 @@ impl<'a> MirGen<'a> {
             let init_const = self
                 .eval_initializer_to_const(init_ref, ty)
                 .expect("Global compound literal init must be const");
+
             let name = self.mir_builder.get_next_anonymous_global_name();
             let global_id = self.mir_builder.create_global_with_init(
                 name,
                 mir_ty,
-                false,
+                true,
                 false,
                 MirLinkage::Internal,
                 Some(init_const),
             );
-            Operand::Copy(Box::new(Place::Global(global_id)))
+
+            Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global_id, 0)))
         } else {
             let (_, place) = self.create_temp_local(mir_ty);
-            let init_op = self.visit_initializer(init_ref, ty, Some(place.clone()));
-            self.emit_assignment(place.clone(), init_op);
+            self.visit_initializer(init_ref, ty, Some(place.clone()));
             Operand::Copy(Box::new(place))
         }
     }

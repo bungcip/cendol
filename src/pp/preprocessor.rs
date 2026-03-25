@@ -94,6 +94,7 @@ impl<'src> Preprocessor<'src> {
         built_in_headers.insert("stdatomic.h", include_str!("../../custom-include/stdatomic.h"));
         built_in_headers.insert("limits.h", include_str!("../../custom-include/limits.h"));
         built_in_headers.insert("float.h", include_str!("../../custom-include/float.h"));
+        built_in_headers.insert("complex.h", include_str!("../../custom-include/complex.h"));
 
         let mut preprocessor = Preprocessor {
             sm: source_manager,

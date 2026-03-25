@@ -105,13 +105,13 @@ fn test_initializer_list_crash_regression() {
         struct contains_empty ce = { { (1) }, (empty_s){}, 022, };
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @"
+    insta::assert_snapshot!(mir, @r"
     type %t0 = struct contains_empty { a: %t1, empty: %t2, b: %t1 }
     type %t1 = u8
     type %t2 = struct anonymous {  }
     type %t3 = i32
 
-    global @ce: %t0 = const struct_literal { 0: const 1, 1: const struct_literal {  }, 2: const 18 }
+    global @ce: %t0 = const struct_literal { 0: const 1, 1: const @.L.str0, 2: const 18 }
     global @.L.str0: %t2 = const struct_literal {  }
     ");
 }

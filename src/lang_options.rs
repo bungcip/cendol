@@ -10,6 +10,7 @@ pub enum CStandard {
 #[derive(Clone, Debug, Default)]
 pub struct LangOptions {
     pub c_standard: CStandard,
+    pub pedantic: bool,
     pub pedantic_errors: bool,
 }
 

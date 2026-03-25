@@ -1631,6 +1631,36 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_initializer_list(&mut self, list: &InitializerList, target_qt: QualType) {
+        if target_qt.is_complex() {
+            let base_type = if let TypeKind::Complex { base_type } = self.registry.get(target_qt.ty()).kind {
+                base_type
+            } else {
+                unreachable!()
+            };
+            let base_qt = QualType::unqualified(base_type);
+
+            let mut items = list.init_start.range(list.init_len);
+            if let Some(first) = items.next() {
+                let (expr, _, _) = self.unwrap_initializer_item(first);
+                if let Some(init_qt) = self.visit_node(expr) {
+                    self.check_assignment_and_record(base_qt, init_qt, expr);
+                }
+            }
+            if let Some(second) = items.next() {
+                let (expr, _, _) = self.unwrap_initializer_item(second);
+                if let Some(init_qt) = self.visit_node(expr) {
+                    self.check_assignment_and_record(base_qt, init_qt, expr);
+                }
+            }
+            for (i, item) in items.enumerate() {
+                if i == 0 {
+                    self.report_warning(item, SemanticErrorKind::ExcessElements { kind: "complex" });
+                }
+                self.visit_node(self.unwrap_initializer_item(item).0);
+            }
+            return;
+        }
+
         if target_qt.is_scalar() {
             let mut items = list.init_start.range(list.init_len);
             if let Some(first) = items.next() {
@@ -3065,7 +3095,9 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if let Some(ty) = opt_ty {
             if is_alignof && expr.is_some() {
-                self.report_warning(node, SemanticErrorKind::AlignOfExpression);
+                if self.lang_opts.pedantic || self.lang_opts.pedantic_errors {
+                    self.report_warning(node, SemanticErrorKind::AlignOfExpression);
+                }
             }
 
             // function type check

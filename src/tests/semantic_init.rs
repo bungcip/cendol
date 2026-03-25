@@ -643,3 +643,19 @@ fn test_struct_designator_subobject_completion() {
     "#;
     assert_eq!(run_c_code_exit_status(source), 0);
 }
+
+#[test]
+fn test_fam_brace_elision_initialization() {
+    let source = r#"
+        struct S { int c; int arr[]; };
+        struct S s = {1, 2, 3};
+        int main(void) {
+            if (sizeof(s) != 4) return 1;
+            if (s.c != 1) return 2;
+            if (s.arr[0] != 2) return 3;
+            if (s.arr[1] != 3) return 4;
+            return 0;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
+}

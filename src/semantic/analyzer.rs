@@ -1825,19 +1825,21 @@ impl<'a> SemanticAnalyzer<'a> {
                                 designator_idx + 1,
                             );
 
+                            let mut max_len = None;
                             if let ArraySizeType::Constant(len) = size {
-                                for _ in (end_idx + 1)..(*len as i64) {
-                                    if iter.peek().is_none()
-                                        || self.unwrap_initializer_item(*iter.peek().unwrap()).2 > 0
-                                    {
-                                        break;
-                                    }
-                                    self.consume_initializers(
-                                        QualType::new(*element_type, target_qt.qualifiers()),
-                                        iter,
-                                        0,
-                                    );
+                                max_len = Some(*len as i64);
+                            }
+                            let mut current_idx = end_idx + 1;
+                            while max_len.is_none() || current_idx < max_len.unwrap() {
+                                if iter.peek().is_none() || self.unwrap_initializer_item(*iter.peek().unwrap()).2 > 0 {
+                                    break;
                                 }
+                                self.consume_initializers(
+                                    QualType::new(*element_type, target_qt.qualifiers()),
+                                    iter,
+                                    0,
+                                );
+                                current_idx += 1;
                             }
                             return;
                         }
@@ -1890,17 +1892,19 @@ impl<'a> SemanticAnalyzer<'a> {
                         }
                     }
                 }
-                TypeKind::Array {
-                    element_type,
-                    size: ArraySizeType::Constant(len),
-                    ..
-                } => {
+                TypeKind::Array { element_type, size, .. } => {
                     let element_qt = QualType::new(*element_type, target_qt.qualifiers());
-                    for _ in 0..*len {
+                    let mut max_len = None;
+                    if let ArraySizeType::Constant(len) = size {
+                        max_len = Some(*len);
+                    }
+                    let mut count = 0;
+                    while max_len.is_none() || count < max_len.unwrap() {
                         self.consume_initializers(element_qt, iter, 0);
                         if iter.peek().is_none() || self.unwrap_initializer_item(*iter.peek().unwrap()).2 > 0 {
                             break;
                         }
+                        count += 1;
                     }
                 }
                 _ => {

@@ -371,7 +371,9 @@ fn emit_const_array(
     let stride = array_layout.stride as usize;
     let padding = stride.saturating_sub(element_size);
 
-    for (i, element_const_id) in elements.iter().take(*size).enumerate() {
+    let limit = if *size == 0 { elements.len() } else { *size };
+
+    for (i, element_const_id) in elements.iter().take(limit).enumerate() {
         let element_offset = (i * stride) as u32;
 
         emit_const(
@@ -389,9 +391,9 @@ fn emit_const_array(
     }
 
     // Fill remaining space with zeros if array is partially initialized
-    let count = elements.len().min(*size);
+    let count = elements.len().min(limit);
     let emitted_size = count * stride;
-    let total_size = array_layout.size as usize;
+    let total_size = (array_layout.size as usize).max(emitted_size);
 
     if emitted_size < total_size {
         let remaining = total_size - emitted_size;

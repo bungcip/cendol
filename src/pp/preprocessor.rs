@@ -322,6 +322,37 @@ impl<'src> Preprocessor<'src> {
         self.define_builtin_macro_with_val("__ATOMIC_ACQ_REL", "4");
         self.define_builtin_macro_with_val("__ATOMIC_SEQ_CST", "5");
 
+        // Type definitions
+        if self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(64) == 64 {
+            self.define_builtin_macro_lexed("__SIZE_TYPE__", "unsigned long");
+            self.define_builtin_macro_lexed("__PTRDIFF_TYPE__", "long");
+            self.define_builtin_macro_with_val("__SIZE_WIDTH__", "64");
+            self.define_builtin_macro_with_val("__PTRDIFF_WIDTH__", "64");
+            self.define_builtin_macro_with_val("__SIZE_MAX__", "18446744073709551615UL");
+            self.define_builtin_macro_with_val("__PTRDIFF_MAX__", "9223372036854775807L");
+        } else {
+            self.define_builtin_macro_lexed("__SIZE_TYPE__", "unsigned int");
+            self.define_builtin_macro_lexed("__PTRDIFF_TYPE__", "int");
+            self.define_builtin_macro_with_val("__SIZE_WIDTH__", "32");
+            self.define_builtin_macro_with_val("__PTRDIFF_WIDTH__", "32");
+            self.define_builtin_macro_with_val("__SIZE_MAX__", "4294967295U");
+            self.define_builtin_macro_with_val("__PTRDIFF_MAX__", "2147483647");
+        }
+
+        self.define_builtin_macro_lexed("__WCHAR_TYPE__", "int");
+        self.define_builtin_macro_lexed("__WINT_TYPE__", "unsigned int");
+        self.define_builtin_macro_lexed("__SIG_ATOMIC_TYPE__", "int");
+        self.define_builtin_macro_lexed("__INTMAX_TYPE__", "long long");
+        self.define_builtin_macro_lexed("__UINTMAX_TYPE__", "unsigned long long");
+
+        self.define_builtin_macro_with_val("__WCHAR_WIDTH__", "32");
+        self.define_builtin_macro_with_val("__WINT_WIDTH__", "32");
+        self.define_builtin_macro_with_val("__SIG_ATOMIC_WIDTH__", "32");
+        self.define_builtin_macro_with_val("__INTMAX_WIDTH__", "64");
+
+        self.define_builtin_macro_with_val("__INTMAX_MAX__", "9223372036854775807LL");
+        self.define_builtin_macro_with_val("__UINTMAX_MAX__", "18446744073709551615ULL");
+
         // Sync compare and swap availability
         self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_1");
         self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2");

@@ -34,8 +34,8 @@ typedef unsigned long long uint_fast64_t;
 typedef long intptr_t;
 typedef unsigned long uintptr_t;
 
-typedef signed long long intmax_t;
-typedef unsigned long long uintmax_t;
+typedef __INTMAX_TYPE__ intmax_t;
+typedef __UINTMAX_TYPE__ uintmax_t;
 
 #define INT8_MIN (-128)
 #define INT8_MAX (127)
@@ -57,14 +57,14 @@ typedef unsigned long long uintmax_t;
 #define INTPTR_MAX LONG_MAX
 #define UINTPTR_MAX ULONG_MAX
 
-#define INTMAX_MIN LLONG_MIN
-#define INTMAX_MAX LLONG_MAX
-#define UINTMAX_MAX ULLONG_MAX
+#define INTMAX_MIN (-__INTMAX_MAX__ - 1)
+#define INTMAX_MAX __INTMAX_MAX__
+#define UINTMAX_MAX __UINTMAX_MAX__
 
-#define PTRDIFF_MIN LONG_MIN
-#define PTRDIFF_MAX LONG_MAX
+#define PTRDIFF_MIN (-__PTRDIFF_MAX__ - 1)
+#define PTRDIFF_MAX __PTRDIFF_MAX__
 
-#define SIZE_MAX ULONG_MAX
+#define SIZE_MAX __SIZE_MAX__
 
 /* Integer constant macros */
 #define INT8_C(x) __INT8_C(x)

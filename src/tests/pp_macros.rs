@@ -588,6 +588,67 @@ foobar
 // blocking expansion of a macro just because it appeared somewhere in the
 // expansion history, even when the current token is a fresh invocation.
 #[test]
+fn test_type_builtins() {
+    let src = r#"
+__SIZE_TYPE__
+__PTRDIFF_TYPE__
+__WCHAR_TYPE__
+__WINT_TYPE__
+__INTMAX_TYPE__
+__UINTMAX_TYPE__
+__SIZE_MAX__
+__PTRDIFF_MAX__
+__INTMAX_MAX__
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: unsigned
+    - kind: Identifier
+      text: long
+    - kind: Identifier
+      text: long
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: unsigned
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: long
+    - kind: Identifier
+      text: long
+    - kind: Identifier
+      text: unsigned
+    - kind: Identifier
+      text: long
+    - kind: Identifier
+      text: long
+    - kind: Number
+      text: 18446744073709551615UL
+    - kind: Number
+      text: 9223372036854775807L
+    - kind: Number
+      text: 9223372036854775807LL
+    "#);
+}
+
+#[test]
+fn test_stddef_stdint_integration() {
+    let src = r#"
+#include <stddef.h>
+#include <stdint.h>
+size_t s;
+ptrdiff_t p;
+intmax_t i;
+uintmax_t u;
+"#;
+    // We just want to make sure it preprocesses without errors
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    assert!(diags.is_empty(), "Expected no diagnostics, got: {:?}", diags);
+}
+
+#[test]
 fn test_macro_expansion_chain_not_blocked() {
     let src = r#"
 #define foo(X) 1 bar

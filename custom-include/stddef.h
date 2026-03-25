@@ -5,21 +5,13 @@
 #define NULL (void*)0
 
 /* size_t */
-#if __LP64__
-typedef unsigned long size_t;
-#else
-typedef unsigned int size_t;
-#endif
+typedef __SIZE_TYPE__ size_t;
 
 /* ptrdiff_t */
-#if __LP64__
-typedef long ptrdiff_t;
-#else
-typedef int ptrdiff_t;
-#endif
+typedef __PTRDIFF_TYPE__ ptrdiff_t;
 
 /* wchar_t */
-typedef int wchar_t;
+typedef __WCHAR_TYPE__ wchar_t;
 
 #define offsetof(type, member) __builtin_offsetof(type, member)
 

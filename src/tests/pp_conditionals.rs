@@ -800,3 +800,25 @@ OK
     assert!(!diags.is_empty());
     assert!(diags[0].contains("Invalid conditional expression"));
 }
+
+#[test]
+fn test_has_include_next_builtin() {
+    let files = vec![
+        ("header.h", "int z = 3;"),
+        (
+            "main.c",
+            r#"
+#if __has_include_next("header.h")
+OK
+#else
+MISSING
+#endif
+"#,
+        ),
+    ];
+    let (tokens, _) = setup_multi_file_pp_snapshot(files, "main.c", None);
+    insta::assert_yaml_snapshot!(tokens, @"
+    - kind: Identifier
+      text: MISSING
+    ");
+}

@@ -124,10 +124,10 @@ impl<'a> MirGen<'a> {
                 // If the expression is a direct reference to a variable, it might have a custom alignment.
                 if let NodeKind::Ident(_, symbol_ref) = self.ast.get_kind(*expr) {
                     let symbol = self.symbol_table.get_symbol(*symbol_ref);
-                    if let SymbolKind::Variable { alignment, .. } = &symbol.kind {
-                        if let Some(align) = alignment {
-                            return self.create_size_t_operand(*align as u64);
-                        }
+                    if let SymbolKind::Variable { alignment, .. } = &symbol.kind
+                        && let Some(align) = alignment
+                    {
+                        return self.create_size_t_operand(*align as u64);
                     }
                 }
 
@@ -690,12 +690,12 @@ impl<'a> MirGen<'a> {
         let operand = self.visit_expression(operand_ref, true);
         if let Operand::Copy(ref place) = operand {
             // Special case for VLA: &vla should evaluate to the value of the pointer local.
-            if let Place::Local(local_id) = &**place {
-                if self.vla_map.values().any(|(ptr, _)| ptr == local_id) {
-                    let symbol_ty = self.ast.get_resolved_type(operand_ref).unwrap();
-                    if symbol_ty.is_array() {
-                        return operand.clone();
-                    }
+            if let Place::Local(local_id) = &**place
+                && self.vla_map.values().any(|(ptr, _)| ptr == local_id)
+            {
+                let symbol_ty = self.ast.get_resolved_type(operand_ref).unwrap();
+                if symbol_ty.is_array() {
+                    return operand.clone();
                 }
             }
             Operand::AddressOf(place.clone())

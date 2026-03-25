@@ -22,7 +22,7 @@ impl SemanticError {
     }
 
     pub(crate) fn into_diagnostic(self, registry: &TypeRegistry) -> Vec<Diagnostic> {
-        let level = self.level.unwrap_or_else(|| match &self.kind {
+        let level = self.level.unwrap_or(match &self.kind {
             SemanticErrorKind::EmptyDeclaration
             | SemanticErrorKind::IncompatiblePointerComparison { .. }
             | SemanticErrorKind::IncompatiblePointerTypes { .. }
@@ -34,6 +34,10 @@ impl SemanticError {
             | SemanticErrorKind::AddressOfArrayAlwaysTrue { .. }
             | SemanticErrorKind::EnumeratorValueNotRepresentable { .. }
             | SemanticErrorKind::AlignOfExpression
+            | SemanticErrorKind::GnuStatementExpression
+            | SemanticErrorKind::GnuTypeof
+            | SemanticErrorKind::GnuDesignatedInitializerRange
+            | SemanticErrorKind::GnuCaseRange
             | SemanticErrorKind::ExcessElements { .. } => DiagnosticLevel::Warning,
             _ => DiagnosticLevel::Error,
         });
@@ -380,6 +384,10 @@ pub enum SemanticErrorKind {
         arg: &'static str,
     },
     AlignOfExpression,
+    GnuStatementExpression,
+    GnuTypeof,
+    GnuDesignatedInitializerRange,
+    GnuCaseRange,
 }
 
 impl SemanticErrorKind {
@@ -399,6 +407,10 @@ impl SemanticErrorKind {
             SemanticErrorKind::EnumeratorValueNotRepresentable { .. } => Some("enum-conversion"),
             SemanticErrorKind::ExcessElements { .. } => Some("excess-initializers"),
             SemanticErrorKind::AlignOfExpression => Some("gnu-alignof-expression"),
+            SemanticErrorKind::GnuStatementExpression => Some("gnu-statement-expression"),
+            SemanticErrorKind::GnuTypeof => Some("gnu-typeof-expression"),
+            SemanticErrorKind::GnuDesignatedInitializerRange => Some("gnu-designated-init"),
+            SemanticErrorKind::GnuCaseRange => Some("gnu-case-range"),
             _ => None,
         }
     }
@@ -784,6 +796,12 @@ impl SemanticErrorKind {
             SemanticErrorKind::AlignOfExpression => {
                 "'_Alignof' applied to an expression is a GNU extension".to_string()
             }
+            SemanticErrorKind::GnuStatementExpression => "use of GNU statement expression extension".to_string(),
+            SemanticErrorKind::GnuTypeof => "use of GNU typeof extension".to_string(),
+            SemanticErrorKind::GnuDesignatedInitializerRange => {
+                "use of GNU designated initializer range extension".to_string()
+            }
+            SemanticErrorKind::GnuCaseRange => "use of GNU case range extension".to_string(),
         }
     }
 }

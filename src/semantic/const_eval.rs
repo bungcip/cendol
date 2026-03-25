@@ -419,10 +419,10 @@ pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<
             // If the expression is a direct reference to a variable, it might have a custom alignment.
             if let NodeKind::Ident(_, symbol_ref) = ctx.ast.get_kind(*expr) {
                 let symbol = ctx.symbol_table.get_symbol(*symbol_ref);
-                if let SymbolKind::Variable { alignment, .. } = &symbol.kind {
-                    if let Some(align) = alignment {
-                        return Some(*align as i64);
-                    }
+                if let SymbolKind::Variable { alignment, .. } = &symbol.kind
+                    && let Some(align) = alignment
+                {
+                    return Some(*align as i64);
                 }
             }
 

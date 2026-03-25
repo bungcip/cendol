@@ -89,3 +89,7 @@
 ## 2027-01-15 - Centralized Line-Start Calculation and Hot Path Optimization
 **Learning:** Redundant line-start tracking in the lexer's character-advancement hot paths (`next_char`, `peek_char`) and multiple $O(N)$ buffer scans for the same metadata are significant performance bottlenecks. Centralizing this calculation in the `SourceManager` upon file addition simplifies state management and improves performance.
 **Action:** Centralize one-time expensive metadata calculations at the point of data ingestion. Remove redundant tracking from hot loops to reduce branching and memory mutation overhead.
+
+## 2024-05-28 - Leveraging Semantic Side-tables and Deferred Allocations
+**Learning:** In recursive AST property checks (like `is_lvalue`), the semantic side-table can act as a natural cache because sub-expressions are visited and resolved before their parents. Additionally, expensive operations like `Vec` clones (e.g., during VLA jump-into-scope validation) should be hoisted and guarded by fast-path checks (`len > threshold`) to defer allocation until a violation is definitively identified.
+**Action:** Always check if a recursive property check can be replaced by a side-table lookup from a previously visited node. Hoist collection clones out of helper functions and guard them with simple logic to avoid unnecessary allocations in common paths.

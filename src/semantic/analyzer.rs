@@ -406,10 +406,13 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::UnaryOp(op, operand) => match *op {
                 UnaryOp::Deref => true,
-                UnaryOp::Real => self.is_lvalue(*operand),
+                UnaryOp::Real => {
+                    self.semantic_info.value_categories[operand.index()] == ValueCategory::LValue
+                }
                 UnaryOp::Imag => {
                     let operand_ty = self.semantic_info.types.get(operand.index()).and_then(|t| *t);
-                    operand_ty.is_some_and(|t| t.is_complex()) && self.is_lvalue(*operand)
+                    operand_ty.is_some_and(|t| t.is_complex())
+                        && self.semantic_info.value_categories[operand.index()] == ValueCategory::LValue
                 }
                 _ => false,
             },

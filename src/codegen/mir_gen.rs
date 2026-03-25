@@ -147,6 +147,9 @@ impl<'a> MirGen<'a> {
                 // Expression statement: value not needed, only side-effects
                 self.visit_expression(expr_ref, false);
             }
+            NodeKind::AsmStmt(_) => {
+                // Ignore inline assembly in Cranelift backend for now
+            }
             NodeKind::Break => {
                 let target = self.break_target.unwrap();
                 self.mir_builder.set_terminator(Terminator::Goto(target));

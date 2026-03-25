@@ -1,6 +1,7 @@
 pub mod codegen_abi;
 pub mod codegen_abi_compat;
 pub mod codegen_alignas;
+pub mod codegen_asm;
 mod codegen_atomic;
 pub mod codegen_basics;
 pub mod codegen_bswap;

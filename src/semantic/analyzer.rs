@@ -2337,6 +2337,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 None
             }
+            NodeKind::AsmStmt(expr) => {
+                self.report_warning(node, SemanticErrorKind::InlineAsmIgnored);
+                self.visit_node(*expr);
+                None
+            }
             NodeKind::StaticAssert(..) => {
                 self.deferred_checks.push(DeferredCheck::StaticAssert(node));
                 None
@@ -3257,6 +3262,7 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::For(_)
             | NodeKind::Return(_)
             | NodeKind::ExpressionStmt(_)
+            | NodeKind::AsmStmt(_)
             | NodeKind::StaticAssert(..)
             | NodeKind::Switch(..)
             | NodeKind::Case(..)

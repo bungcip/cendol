@@ -38,6 +38,7 @@ pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, Pars
         TokenKind::Semicolon => parse_empty_statement(parser),
         TokenKind::Case => parse_case_statement(parser),
         TokenKind::Default => parse_default_statement(parser),
+        TokenKind::Asm => parse_asm_statement(parser),
         TokenKind::PragmaPack(kind) => {
             parser.advance();
             Ok(parser.push_node(ParsedNodeKind::PragmaPack(kind), token.span))
@@ -265,4 +266,33 @@ fn parse_expression_statement(parser: &mut Parser) -> Result<ParsedNodeRef, Pars
     let end = parser.expect(TokenKind::Semicolon)?.span;
     let span = start.merge(end);
     Ok(parser.replace_node(dummy, ParsedNodeKind::ExpressionStmt(Some(expr)), span))
+}
+
+fn parse_asm_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let start = parser.expect(TokenKind::Asm)?.span;
+
+    // consume qualifiers like volatile, inline, goto
+    while !parser.is_token(TokenKind::LeftParen) && !parser.is_token(TokenKind::Semicolon) && !parser.at_eof() {
+        parser.advance();
+    }
+
+    parser.expect(TokenKind::LeftParen)?;
+    let mut depth = 1;
+    while depth > 0 && !parser.at_eof() {
+        if parser.is_token(TokenKind::LeftParen) {
+            depth += 1;
+        } else if parser.is_token(TokenKind::RightParen) {
+            depth -= 1;
+        }
+
+        if depth == 0 {
+            break;
+        }
+        parser.advance();
+    }
+    parser.expect(TokenKind::RightParen)?;
+    let end = parser.expect(TokenKind::Semicolon)?.span;
+
+    let dummy_expr = parser.push_dummy();
+    Ok(parser.push_node(ParsedNodeKind::AsmStmt(dummy_expr), start.merge(end)))
 }

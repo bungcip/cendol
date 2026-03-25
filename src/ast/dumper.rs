@@ -199,6 +199,7 @@ impl AstDumper {
             | NodeKind::CaseRange(_, _, _)
             | NodeKind::Default(_)
             | NodeKind::ExpressionStmt(_)
+            | NodeKind::AsmStmt(_)
             | NodeKind::InitializerList(_)
             | NodeKind::InitializerItem(_)
             | NodeKind::StaticAssert(_, _)
@@ -389,6 +390,7 @@ impl AstDumper {
             PNK::Goto(label) => write!(f, "{}", label)?,
             PNK::Label(label, stmt) => write!(f, "{}, {}", label, stmt.get())?,
             PNK::ExpressionStmt(expr) => write!(f, "{}", optional(*expr, "empty"))?,
+            PNK::AsmStmt(expr) => write!(f, "{}", expr.get())?,
 
             PNK::EnumConstant(name, val) => write!(f, "{}, {}", name, optional(*val, "auto"))?,
             PNK::StaticAssert(cond, msg) => {
@@ -550,6 +552,7 @@ impl AstDumper {
             NodeKind::Goto(label, _) => write!(f, "{}", label)?,
             NodeKind::Label(label, stmt, _) => write!(f, "{}, {}", label, stmt.get())?,
             NodeKind::ExpressionStmt(expr) => write!(f, "{}", optional(*expr, "none"))?,
+            NodeKind::AsmStmt(expr) => write!(f, "{}", expr.get())?,
 
             NodeKind::Function(data) => {
                 let func_name = Self::get_function_name(data.symbol, symbol_table);

@@ -105,6 +105,7 @@ pub enum NodeKind {
     Default(NodeRef /* statement */),
 
     ExpressionStmt(Option<NodeRef> /* expression */), // Expression followed by ';'
+    AsmStmt(NodeRef),
 
     // --- Declarations & Definitions ---
     // Removed Parser-only Declaration and FunctionDef variants.
@@ -201,6 +202,7 @@ impl NodeKind {
             NodeKind::CaseRange(..) => "CaseRange",
             NodeKind::Default(..) => "Default",
             NodeKind::ExpressionStmt(..) => "ExpressionStmt",
+            NodeKind::AsmStmt(..) => "AsmStmt",
             NodeKind::EnumConstant(..) => "EnumConstant",
             NodeKind::StaticAssert(..) => "StaticAssert",
             NodeKind::VarDecl(..) => "VarDecl",
@@ -365,6 +367,8 @@ impl NodeKind {
                     f(*child);
                 }
             }
+
+            NodeKind::AsmStmt(expr) => f(*expr),
 
             NodeKind::VarDecl(data) => {
                 if let Some(init) = data.init {

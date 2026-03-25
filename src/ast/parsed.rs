@@ -144,6 +144,7 @@ pub enum ParsedNodeKind {
 
     ExpressionStmt(Option<ParsedNodeRef>),
     EmptyStmt,
+    AsmStmt(ParsedNodeRef),
 
     // --- Declarations & Definitions ---
     Declaration(ParsedDecl),
@@ -463,6 +464,7 @@ impl ParsedNodeKind {
             ParsedNodeKind::Default(..) => "Default",
             ParsedNodeKind::ExpressionStmt(..) => "ExpressionStmt",
             ParsedNodeKind::EmptyStmt => "EmptyStmt",
+            ParsedNodeKind::AsmStmt(..) => "AsmStmt",
             ParsedNodeKind::Declaration(..) => "Declaration",
             ParsedNodeKind::FunctionDef(..) => "FunctionDef",
             ParsedNodeKind::EnumConstant(..) => "EnumConstant",
@@ -601,6 +603,7 @@ impl ParsedNodeKind {
                     f(*e);
                 }
             }
+            ParsedNodeKind::AsmStmt(e) => f(*e),
             ParsedNodeKind::EnumConstant(_, e) => {
                 if let Some(e) = e {
                     f(*e);

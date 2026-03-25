@@ -1682,6 +1682,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::ExpressionStmt(e) => {
                 lower_simple!(NodeKind::ExpressionStmt(e.map(|x| self.visit_expression(x))))
             }
+            ParsedNodeKind::AsmStmt(e) => {
+                lower_simple!(NodeKind::AsmStmt(self.visit_expression(*e)))
+            }
             ParsedNodeKind::Goto(n) => {
                 lower_simple!(NodeKind::Goto(*n, self.resolve_label(*n, span)))
             }

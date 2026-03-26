@@ -7,8 +7,8 @@ use crate::{
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
     lang_options::LangOptions,
     semantic::{
-        ArraySizeType, BuiltinType, QualType, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind,
-        TypeQualifiers, TypeRef, TypeRegistry,
+        ArraySizeType, BuiltinType, FunctionParameter, QualType, StructMember, SymbolKind, SymbolRef,
+        SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticError, SemanticErrorKind},
@@ -19,6 +19,7 @@ use crate::{
 
 use hashbrown::{HashMap, HashSet};
 use smallvec::{SmallVec, smallvec};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CaseRangeInterval {
@@ -239,47 +240,68 @@ impl<'a> SemanticAnalyzer<'a> {
             return;
         }
 
-        // To avoid infinite recursion on recursive types (e.g. struct A { struct A *next; }),
-        // we rely on checked_types.
-        // Note: We need to clone the kind to avoid borrowing self.registry while calling self methods
-        let kind = self.registry.get(ty).kind.clone();
+        // Bolt ⚡: Extract only needed info from TypeKind while holding a reference
+        // to avoid cloning the entire Kind (which contains Arcs and large Record/Enum data).
+        // For TypeofExpr, we must release the borrow before updating the registry.
+        enum Task {
+            Array(TypeRef, Option<NodeRef>),
+            Pointer(QualType),
+            Function(TypeRef, Arc<[FunctionParameter]>),
+            Complex(TypeRef),
+            Typeof(NodeRef),
+            Alias(TypeRef),
+            None,
+        }
 
-        match kind {
+        let task = match &self.registry.get(ty).kind {
             TypeKind::Array { element_type, size } => {
-                if let ArraySizeType::Variable(expr) = size {
-                    self.visit_node(expr);
-                }
-                self.visit_type_exprs(QualType::unqualified(element_type));
+                let vla_expr = if let ArraySizeType::Variable(expr) = size { Some(*expr) } else { None };
+                Task::Array(*element_type, vla_expr)
             }
-            TypeKind::Pointer { pointee } => {
-                self.visit_type_exprs(pointee);
-            }
+            TypeKind::Pointer { pointee } => Task::Pointer(*pointee),
             TypeKind::Function {
                 return_type,
                 parameters,
                 ..
-            } => {
+            } => Task::Function(*return_type, Arc::clone(parameters)),
+            TypeKind::Complex { base_type } => Task::Complex(*base_type),
+            TypeKind::TypeofExpr(expr) => Task::Typeof(*expr),
+            TypeKind::Alias(inner) => Task::Alias(*inner),
+            _ => Task::None,
+        };
+
+        match task {
+            Task::Array(element_type, vla_expr) => {
+                if let Some(expr) = vla_expr {
+                    self.visit_node(expr);
+                }
+                self.visit_type_exprs(QualType::unqualified(element_type));
+            }
+            Task::Pointer(pointee) => {
+                self.visit_type_exprs(pointee);
+            }
+            Task::Function(return_type, parameters) => {
                 self.visit_type_exprs(QualType::unqualified(return_type));
                 for param in parameters.iter() {
                     self.visit_type_exprs(param.param_type);
                 }
             }
-            TypeKind::Complex { base_type } => {
+            Task::Complex(base_type) => {
                 self.visit_type_exprs(QualType::unqualified(base_type));
             }
-            TypeKind::TypeofExpr(expr) => {
+            Task::Typeof(expr) => {
                 let resolved_qt = self
                     .visit_node(expr)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
                 self.registry.types[ty.index()].kind = TypeKind::Alias(resolved_qt.ty());
             }
-            TypeKind::Alias(inner) => {
+            Task::Alias(inner) => {
                 self.visit_type_exprs(QualType::unqualified(inner));
             }
             // For Records and Enums, we don't need to traverse members because
             // they cannot contain VLAs (C11 6.7.2.1).
             // Even if they did, the members would be visited during their declaration processing.
-            _ => {}
+            Task::None => {}
         }
     }
 

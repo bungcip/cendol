@@ -476,7 +476,7 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<ParsedDesignator>, Parse
             if parser.accept(TokenKind::Ellipsis).is_some() {
                 let end_expr = parser.parse_expr_min()?;
                 parser.expect(TokenKind::RightBracket)?;
-                designators.push(ParsedDesignator::GnuArrayRange(start_expr, end_expr));
+                designators.push(ParsedDesignator::ArrayRange(start_expr, end_expr));
             } else {
                 parser.expect(TokenKind::RightBracket)?;
                 designators.push(ParsedDesignator::ArrayIndex(start_expr));

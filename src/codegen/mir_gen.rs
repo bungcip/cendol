@@ -197,7 +197,7 @@ impl<'a> MirGen<'a> {
             | NodeKind::BuiltinVaEnd(..)
             | NodeKind::BuiltinVaCopy(..)
             | NodeKind::GenericSelection(..)
-            | NodeKind::GnuStatementExpr(..) => {
+            | NodeKind::StatementExpr(..) => {
                 self.visit_expression(node_ref, false);
             }
 

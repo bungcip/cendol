@@ -1777,7 +1777,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let declarator = parsed_type.declarator;
         let qualifiers = parsed_type.qualifiers;
 
-        let base = self.convert_parsed_base_type_to_qual_type(&base_type_node, span)?;
+        let base = self.convert_to_qual_type(&base_type_node, span)?;
         let qbase = self.merge_qualifiers_with_check(base, qualifiers, span);
 
         let final_type = self.apply_declarator(qbase, declarator, span, None, DeclaratorContext { in_parameter });
@@ -1841,7 +1841,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.push_dummy(span)
         };
 
-        NodeKind::GnuStatementExpr(s, result_expr)
+        NodeKind::StatementExpr(s, result_expr)
     }
 
     fn visit_function_call(&mut self, func: ParsedNodeRef, args: &[ParsedNodeRef], span: SourceSpan) -> NodeKind {
@@ -1940,12 +1940,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let node_kind = match d {
                     ParsedDesignator::FieldName(name) => Designator::FieldName(*name),
                     ParsedDesignator::ArrayIndex(idx) => Designator::ArrayIndex(self.visit_expression(*idx)),
-                    ParsedDesignator::GnuArrayRange(start, end) => {
+                    ParsedDesignator::ArrayRange(start, end) => {
                         self.report_warning(
                             self.parsed_ast.nodes[start.get() as usize].span,
                             SemanticErrorKind::GnuDesignatedInitializerRange,
                         );
-                        Designator::GnuArrayRange(self.visit_expression(*start), self.visit_expression(*end))
+                        Designator::ArrayRange(self.visit_expression(*start), self.visit_expression(*end))
                     }
                 };
                 self.ast.kinds[designator_dummies[j].index()] = NodeKind::Designator(node_kind);
@@ -2301,7 +2301,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             NodeKind::Designator(Designator::ArrayIndex(idx)) => {
                                 current_index = const_eval::eval_const_expr(&self.const_ctx(), idx)?;
                             }
-                            NodeKind::Designator(Designator::GnuArrayRange(start, end)) => {
+                            NodeKind::Designator(Designator::ArrayRange(start, end)) => {
                                 let s_v = const_eval::eval_const_expr(&self.const_ctx(), start)?;
                                 let e_v = const_eval::eval_const_expr(&self.const_ctx(), end)?;
                                 if s_v > e_v {
@@ -2370,7 +2370,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // Check for array designators
             match *self.ast.get_kind(init.designator_start) {
                 NodeKind::Designator(Designator::ArrayIndex(_))
-                | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
+                | NodeKind::Designator(Designator::ArrayRange(_, _)) => {
                     if !allow_array_designator {
                         return;
                     }
@@ -2423,7 +2423,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     {
                         match *self.ast.get_kind(next_init.designator_start) {
                             NodeKind::Designator(Designator::ArrayIndex(_))
-                            | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
+                            | NodeKind::Designator(Designator::ArrayRange(_, _)) => {
                                 return;
                             }
                             _ => {}
@@ -2450,7 +2450,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         {
                             match *self.ast.get_kind(next_init.designator_start) {
                                 NodeKind::Designator(Designator::ArrayIndex(_))
-                                | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => {
+                                | NodeKind::Designator(Designator::ArrayRange(_, _)) => {
                                     return;
                                 }
                                 _ => {}
@@ -3158,8 +3158,115 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         struct_members
     }
 
+    fn lower_record_parsed_base(
+        &mut self,
+        tag: Option<NameId>,
+        members: Option<ParsedStructMemberRange>,
+        is_union: bool,
+        span: SourceSpan,
+    ) -> Result<QualType, SemanticError> {
+        let is_definition = members.is_some();
+        let ty = self.resolve_record_tag(tag, is_union, is_definition, span)?;
+
+        if let Some(members_range) = members {
+            let parsed_members = self.parsed_ast.parsed_types.get_struct_members(members_range).to_vec();
+            let struct_members = parsed_members
+                .into_iter()
+                .map(|m| {
+                    Ok(StructMember {
+                        name: m.name,
+                        member_type: self.lower_type(m.ty, span, false)?,
+                        bit_field_size: m.bit_field_size,
+                        alignment: m.alignment,
+                        span: m.span,
+                    })
+                })
+                .collect::<Result<Vec<_>, SemanticError>>()?;
+
+            self.complete_record_symbol(tag, ty, struct_members, span)?;
+        }
+        Ok(QualType::unqualified(ty))
+    }
+
+    fn lower_enum_parsed_base(
+        &mut self,
+        tag: Option<NameId>,
+        enumerators: Option<ParsedEnumRange>,
+        span: SourceSpan,
+    ) -> Result<QualType, SemanticError> {
+        let is_definition = enumerators.is_some();
+        let ty = self.resolve_enum_tag(tag, is_definition, span)?;
+
+        if let Some(enum_range) = enumerators {
+            let parsed_enums = self.parsed_ast.parsed_types.get_enum_constants(enum_range).to_vec();
+            let mut next_value = 0i64;
+            let mut enumerators_list = Vec::with_capacity(parsed_enums.len());
+
+            for m in parsed_enums {
+                let value = m.value.unwrap_or(next_value);
+                if !(i32::MIN as i64..=i32::MAX as i64).contains(&value) {
+                    self.report_error(
+                        m.span,
+                        SemanticErrorKind::EnumeratorValueNotRepresentable { name: m.name, value },
+                    );
+                }
+                next_value = value.wrapping_add(1);
+                let _ = self.symbol_table.define_enum_constant(m.name, value, ty, m.span);
+                enumerators_list.push(EnumConstant {
+                    name: m.name,
+                    value,
+                    span: m.span,
+                    init_expr: None,
+                });
+            }
+
+            self.complete_enum_symbol(tag, ty, enumerators_list, span)?;
+        }
+        Ok(QualType::unqualified(ty))
+    }
+
+    fn lower_typedef_parsed_base(&mut self, name: NameId, span: SourceSpan) -> Result<QualType, SemanticError> {
+        match self
+            .symbol_table
+            .lookup_symbol(name)
+            .map(|(r, _)| self.symbol_table.get_symbol(r))
+        {
+            Some(entry) => {
+                if let SymbolKind::Typedef { aliased_type } = entry.kind {
+                    Ok(aliased_type)
+                } else {
+                    Err(SemanticError::new(
+                        span,
+                        SemanticErrorKind::ExpectedTypedefName { found: name },
+                    ))
+                }
+            }
+            None => Ok(QualType::unqualified(self.registry.declare_record(Some(name), false))),
+        }
+    }
+
+    fn lower_typeof_parsed_base(&mut self, ty: ParsedType, span: SourceSpan) -> Result<QualType, SemanticError> {
+        self.report_warning(span, SemanticErrorKind::GnuTypeof);
+        self.lower_type(ty, span, false)
+    }
+
+    fn lower_typeof_expr_parsed_base(
+        &mut self,
+        expr: ParsedNodeRef,
+        span: SourceSpan,
+    ) -> Result<QualType, SemanticError> {
+        self.report_warning(span, SemanticErrorKind::GnuTypeof);
+        let expr_node = self.visit_expression(expr);
+        if let Some(qt) = self.try_infer_type(expr_node) {
+            Ok(qt)
+        } else {
+            let tr = self.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)));
+            Ok(QualType::unqualified(tr))
+        }
+    }
+
     /// Convert a ParsedBaseTypeNode to a QualType
-    fn convert_parsed_base_type_to_qual_type(
+    fn convert_to_qual_type(
         &mut self,
         parsed_base: &ParsedBaseType,
         span: SourceSpan,
@@ -3167,93 +3274,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         match parsed_base {
             ParsedBaseType::Builtin(ts) => self.resolve_type_specifier(ts, span),
             ParsedBaseType::Record { tag, members, is_union } => {
-                let is_definition = members.is_some();
-                let ty = self.resolve_record_tag(*tag, *is_union, is_definition, span)?;
-
-                if let Some(members_range) = members {
-                    let parsed_members = self.parsed_ast.parsed_types.get_struct_members(*members_range).to_vec();
-                    let struct_members = parsed_members
-                        .into_iter()
-                        .map(|m| {
-                            Ok(StructMember {
-                                name: m.name,
-                                member_type: self.lower_type(m.ty, span, false)?,
-                                bit_field_size: m.bit_field_size,
-                                alignment: m.alignment,
-                                span: m.span,
-                            })
-                        })
-                        .collect::<Result<Vec<_>, SemanticError>>()?;
-
-                    self.complete_record_symbol(*tag, ty, struct_members, span)?;
-                }
-                Ok(QualType::unqualified(ty))
+                self.lower_record_parsed_base(*tag, *members, *is_union, span)
             }
-            ParsedBaseType::Enum { tag, enumerators } => {
-                let is_definition = enumerators.is_some();
-                let ty = self.resolve_enum_tag(*tag, is_definition, span)?;
-
-                if let Some(enum_range) = enumerators {
-                    let parsed_enums = self.parsed_ast.parsed_types.get_enum_constants(*enum_range).to_vec();
-                    let mut next_value = 0i64;
-                    let enumerators_list = parsed_enums
-                        .into_iter()
-                        .map(|m| {
-                            let value = m.value.unwrap_or(next_value);
-                            if !(i32::MIN as i64..=i32::MAX as i64).contains(&value) {
-                                self.report_error(
-                                    m.span,
-                                    SemanticErrorKind::EnumeratorValueNotRepresentable { name: m.name, value },
-                                );
-                            }
-                            next_value = value.wrapping_add(1);
-                            let _ = self.symbol_table.define_enum_constant(m.name, value, ty, m.span);
-                            Ok(EnumConstant {
-                                name: m.name,
-                                value,
-                                span: m.span,
-                                init_expr: None,
-                            })
-                        })
-                        .collect::<Result<Vec<_>, SemanticError>>()?;
-
-                    self.complete_enum_symbol(*tag, ty, enumerators_list, span)?;
-                }
-                Ok(QualType::unqualified(ty))
-            }
-            ParsedBaseType::Typedef(name) => {
-                match self
-                    .symbol_table
-                    .lookup_symbol(*name)
-                    .map(|(r, _)| self.symbol_table.get_symbol(r))
-                {
-                    Some(entry) => {
-                        if let SymbolKind::Typedef { aliased_type } = entry.kind {
-                            Ok(aliased_type)
-                        } else {
-                            Err(SemanticError::new(
-                                span,
-                                SemanticErrorKind::ExpectedTypedefName { found: *name },
-                            ))
-                        }
-                    }
-                    None => Ok(QualType::unqualified(self.registry.declare_record(Some(*name), false))),
-                }
-            }
-            ParsedBaseType::Typeof(ty) => {
-                self.report_warning(span, SemanticErrorKind::GnuTypeof);
-                self.lower_type(*ty, span, false)
-            }
-            ParsedBaseType::TypeofExpr(expr) => {
-                self.report_warning(span, SemanticErrorKind::GnuTypeof);
-                let expr_node = self.visit_expression(*expr);
-                if let Some(qt) = self.try_infer_type(expr_node) {
-                    Ok(qt)
-                } else {
-                    let tr = self.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)));
-                    Ok(QualType::unqualified(tr))
-                }
-            }
+            ParsedBaseType::Enum { tag, enumerators } => self.lower_enum_parsed_base(*tag, *enumerators, span),
+            ParsedBaseType::Typedef(name) => self.lower_typedef_parsed_base(*name, span),
+            ParsedBaseType::Typeof(ty) => self.lower_typeof_parsed_base(*ty, span),
+            ParsedBaseType::TypeofExpr(expr) => self.lower_typeof_expr_parsed_base(*expr, span),
         }
     }
 }

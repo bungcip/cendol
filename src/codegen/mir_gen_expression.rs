@@ -158,7 +158,7 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(need_value, expr_ref),
             NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, need_value, expr_ref),
-            NodeKind::GnuStatementExpr(stmt, result_expr) => self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value),
+            NodeKind::StatementExpr(stmt, result_expr) => self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value),
             NodeKind::Cast(_ty, operand_ref) => self.visit_cast(*operand_ref, mir_ty),
             NodeKind::CompoundLiteral(ty, init_ref) => self.visit_compound_literal(*ty, *init_ref),
             NodeKind::BuiltinVaArg(ty, expr) => self.visit_builtin_va_arg(*ty, *expr),

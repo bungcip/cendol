@@ -117,10 +117,8 @@ impl<'a> ConstEvalCtx<'a> {
                     .or_else(|| self.infer_type_from_node(*expr))?;
                 if let Some(pointee) = self.registry.get_pointee(qt.ty()) {
                     Some(pointee)
-                } else if let Some(elem) = self.registry.get_array_element(qt.ty()) {
-                    Some(QualType::unqualified(elem))
                 } else {
-                    None
+                    self.registry.get_array_element(qt.ty()).map(QualType::unqualified)
                 }
             }
             NodeKind::Cast(target_ty, _) => Some(*target_ty),

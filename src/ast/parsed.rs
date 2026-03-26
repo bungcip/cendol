@@ -324,7 +324,7 @@ pub struct ParsedDesignatedInitializer {
 pub enum ParsedDesignator {
     FieldName(NameId),
     ArrayIndex(ParsedNodeRef),
-    GnuArrayRange(ParsedNodeRef, ParsedNodeRef),
+    ArrayRange(ParsedNodeRef, ParsedNodeRef),
 }
 impl ParsedDeclSpec {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
@@ -621,7 +621,7 @@ impl ParsedNodeKind {
                     for d in &init.designation {
                         match d {
                             ParsedDesignator::ArrayIndex(idx) => f(*idx),
-                            ParsedDesignator::GnuArrayRange(s, e) => {
+                            ParsedDesignator::ArrayRange(s, e) => {
                                 f(*s);
                                 f(*e);
                             }

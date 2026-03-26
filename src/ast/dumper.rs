@@ -209,7 +209,7 @@ impl AstDumper {
             }
 
             // GNU extensions
-            NodeKind::GnuStatementExpr(_, _) => {
+            NodeKind::StatementExpr(_, _) => {
                 // Doesn't directly contain TypeRef
             }
 
@@ -251,7 +251,7 @@ impl AstDumper {
                     Designator::ArrayIndex(index) => {
                         result.push_str(&format!("[{}]", index.get()));
                     }
-                    Designator::GnuArrayRange(start, end) => {
+                    Designator::ArrayRange(start, end) => {
                         result.push_str(&format!("[{} ... {}]", start.get(), end.get()));
                     }
                 },
@@ -471,7 +471,7 @@ impl AstDumper {
             // Two NodeRefs: Tag(n1.get(), n2.get())
             NodeKind::IndexAccess(n1, n2)
             | NodeKind::Case(n1, n2)
-            | NodeKind::GnuStatementExpr(n1, n2)
+            | NodeKind::StatementExpr(n1, n2)
             | NodeKind::DoWhile(n1, n2)
             | NodeKind::Switch(n1, n2)
             | NodeKind::BuiltinVaStart(n1, n2)
@@ -613,7 +613,7 @@ impl AstDumper {
             NodeKind::Designator(d) => match d {
                 Designator::FieldName(name) => write!(f, ".{}", name)?,
                 Designator::ArrayIndex(idx) => write!(f, "[{}]", idx.get())?,
-                Designator::GnuArrayRange(start, end) => write!(f, "[{} ... {}]", start.get(), end.get())?,
+                Designator::ArrayRange(start, end) => write!(f, "[{} ... {}]", start.get(), end.get())?,
             },
             _ => unreachable!(),
         }

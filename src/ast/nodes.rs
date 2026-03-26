@@ -27,7 +27,7 @@ pub enum NodeKind {
     UnaryOp(UnaryOp, NodeRef),
     BinaryOp(BinaryOp, NodeRef, NodeRef),
     TernaryOp(NodeRef, NodeRef, NodeRef),
-    GnuStatementExpr(
+    StatementExpr(
         NodeRef, /* compound statement */
         NodeRef, /* result expression */
     ),
@@ -145,7 +145,7 @@ impl NodeKind {
             NodeKind::UnaryOp(..) => "UnaryOp",
             NodeKind::BinaryOp(..) => "BinaryOp",
             NodeKind::TernaryOp(..) => "TernaryOp",
-            NodeKind::GnuStatementExpr(..) => "GnuStatementExpr",
+            NodeKind::StatementExpr(..) => "GnuStatementExpr",
             NodeKind::PostIncrement(..) => "PostIncrement",
             NodeKind::PostDecrement(..) => "PostDecrement",
             NodeKind::Assignment(..) => "Assignment",
@@ -281,7 +281,7 @@ impl NodeKind {
             | NodeKind::BuiltinVaCopy(lhs, rhs)
             | NodeKind::BuiltinExpect(lhs, rhs)
             | NodeKind::BinaryOp(_, lhs, rhs)
-            | NodeKind::GnuStatementExpr(lhs, rhs)
+            | NodeKind::StatementExpr(lhs, rhs)
             | NodeKind::Assignment(_, lhs, rhs)
             | NodeKind::IndexAccess(lhs, rhs)
             | NodeKind::DoWhile(lhs, rhs)
@@ -418,7 +418,7 @@ impl NodeKind {
 
             NodeKind::Designator(d) => match d {
                 Designator::ArrayIndex(idx) => f(*idx),
-                Designator::GnuArrayRange(start, end) => {
+                Designator::ArrayRange(start, end) => {
                     f(*start);
                     f(*end);
                 }
@@ -708,8 +708,8 @@ pub struct DesignatedInitializer {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum Designator {
     FieldName(NameId),
-    ArrayIndex(NodeRef),             // Index expression
-    GnuArrayRange(NodeRef, NodeRef), // GCC extension: Range expression [start ... end]
+    ArrayIndex(NodeRef),          // Index expression
+    ArrayRange(NodeRef, NodeRef), // GCC extension: Range expression [start ... end]
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]

@@ -235,7 +235,7 @@ impl<'a> MirGen<'a> {
                 let idx = self.evaluate_constant_usize(*idx_expr, "Array designator must be constant");
                 (idx, idx)
             }
-            NodeKind::Designator(Designator::GnuArrayRange(start, end)) => {
+            NodeKind::Designator(Designator::ArrayRange(start, end)) => {
                 let s = self.evaluate_constant_usize(*start, "Range start must be constant");
                 let e = self.evaluate_constant_usize(*end, "Range end must be constant");
                 if e < s {
@@ -309,7 +309,7 @@ impl<'a> MirGen<'a> {
             let (start, end) = if let Some((d_start, _)) = designator_info {
                 match self.ast.get_kind(d_start) {
                     NodeKind::Designator(Designator::ArrayIndex(_))
-                    | NodeKind::Designator(Designator::GnuArrayRange(_, _)) => self.resolve_designator_range(d_start),
+                    | NodeKind::Designator(Designator::ArrayRange(_, _)) => self.resolve_designator_range(d_start),
                     _ => {
                         // Field designator or other. Not for array.
                         if !is_pending {

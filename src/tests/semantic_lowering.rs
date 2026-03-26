@@ -51,15 +51,15 @@ enum ResolvedAstNode {
     Other(String),
 }
 
-fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, node_ref: NodeRef) -> ResolvedAstNode {
-    let kind = ast.get_kind(node_ref);
+fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, node: NodeRef) -> ResolvedAstNode {
+    let kind = ast.get_kind(node);
 
     match kind {
         NodeKind::TranslationUnit(data) => {
             let nodes = data
                 .decl_start
                 .range(data.decl_len)
-                .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
+                .map(|child| resolve_node(ast, registry, symbol_table, child))
                 .collect();
             ResolvedAstNode::TranslationUnit(nodes)
         }
@@ -75,7 +75,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             let members = data
                 .member_start
                 .range(data.member_len)
-                .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
+                .map(|child| resolve_node(ast, registry, symbol_table, child))
                 .collect();
             ResolvedAstNode::RecordDecl {
                 name: data
@@ -96,7 +96,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             let members = data
                 .member_start
                 .range(data.member_len)
-                .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
+                .map(|child| resolve_node(ast, registry, symbol_table, child))
                 .collect();
             ResolvedAstNode::EnumDecl {
                 name: data
@@ -121,7 +121,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             let args = call
                 .arg_start
                 .range(call.arg_len)
-                .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
+                .map(|child| resolve_node(ast, registry, symbol_table, child))
                 .collect();
             ResolvedAstNode::FunctionCall {
                 callee: Box::new(resolve_node(ast, registry, symbol_table, call.callee)),
@@ -137,7 +137,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             let stmts = data
                 .stmt_start
                 .range(data.stmt_len)
-                .map(|child_ref| resolve_node(ast, registry, symbol_table, child_ref))
+                .map(|child| resolve_node(ast, registry, symbol_table, child))
                 .collect();
             ResolvedAstNode::CompoundStatement(stmts)
         }
@@ -168,8 +168,8 @@ fn display_qual_type(registry: &TypeRegistry, qt: QualType) -> String {
         s.push_str("_Atomic ");
     }
 
-    let ty_ref = qt.ty();
-    let type_cow = registry.get(ty_ref);
+    let ty = qt.ty();
+    let type_cow = registry.get(ty);
     use crate::semantic::TypeKind;
     let kind = &type_cow.kind;
 

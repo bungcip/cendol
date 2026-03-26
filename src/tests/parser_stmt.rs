@@ -247,7 +247,7 @@ fn test_ambiguous_compound_statement_with_typedef() {
     });
 
     let resolved = match stmt_result {
-        Ok((node_ref, _)) => resolve_node(&ast, node_ref),
+        Ok((node, _)) => resolve_node(&ast, node),
         _ => panic!("Expected multi statement block"),
     };
 

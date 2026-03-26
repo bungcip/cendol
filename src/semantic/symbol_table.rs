@@ -344,27 +344,23 @@ impl SymbolTable {
                 self.merge_global_symbol(name, symbol)
             } else {
                 // Determine linkage of this local declaration
-                if let Some((existing_ref, _)) = self.lookup_symbol(name) {
-                    let existing = self.get_symbol(existing_ref);
-                    if existing.has_linkage() {
+                if let Some((existing, _)) = self.lookup_symbol(name) {
+                    let existing_sym = self.get_symbol(existing);
+                    if existing_sym.has_linkage() {
                         // Inherit linkage and refer to the same object
-                        self.get_scope_mut(self.current_scope_id)
-                            .symbols
-                            .insert(name, existing_ref);
-                        return Ok(existing_ref);
+                        self.get_scope_mut(self.current_scope_id).symbols.insert(name, existing);
+                        return Ok(existing);
                     }
                 }
 
                 // If no prior declaration with linkage is visible, it has external linkage.
                 // It refers to the global symbol with external linkage if it exists.
-                if let Some(global_ref) = self.fetch(name, ScopeId::GLOBAL, Namespace::Ordinary) {
-                    let global_sym = self.get_symbol(global_ref);
+                if let Some(global) = self.fetch(name, ScopeId::GLOBAL, Namespace::Ordinary) {
+                    let global_sym = self.get_symbol(global);
                     if global_sym.has_linkage() {
                         // Link to the global symbol
-                        self.get_scope_mut(self.current_scope_id)
-                            .symbols
-                            .insert(name, global_ref);
-                        return Ok(global_ref);
+                        self.get_scope_mut(self.current_scope_id).symbols.insert(name, global);
+                        return Ok(global);
                     }
                 }
 
@@ -372,13 +368,11 @@ impl SymbolTable {
                 // but only after making sure it doesn't already exist as something else.
                 // Actually, merge_global_symbol handles the kind mismatch check.
                 symbol.scope_id = ScopeId::GLOBAL;
-                let global_ref = self.merge_global_symbol(name, symbol)?;
+                let global = self.merge_global_symbol(name, symbol)?;
 
                 // Link the local name to the global symbol
-                self.get_scope_mut(self.current_scope_id)
-                    .symbols
-                    .insert(name, global_ref);
-                Ok(global_ref)
+                self.get_scope_mut(self.current_scope_id).symbols.insert(name, global);
+                Ok(global)
             }
         } else {
             Ok(self.add_symbol(name, symbol))
@@ -408,33 +402,27 @@ impl SymbolTable {
             self.merge_global_symbol(name, symbol)
         } else {
             // Function declarations in local scope always have linkage
-            if let Some((existing_ref, _)) = self.lookup_symbol(name) {
-                let existing = self.get_symbol(existing_ref);
-                if existing.has_linkage() {
-                    self.get_scope_mut(self.current_scope_id)
-                        .symbols
-                        .insert(name, existing_ref);
-                    return Ok(existing_ref);
+            if let Some((existing, _)) = self.lookup_symbol(name) {
+                let existing_sym = self.get_symbol(existing);
+                if existing_sym.has_linkage() {
+                    self.get_scope_mut(self.current_scope_id).symbols.insert(name, existing);
+                    return Ok(existing);
                 }
             }
 
-            if let Some(global_ref) = self.fetch(name, ScopeId::GLOBAL, Namespace::Ordinary) {
-                let global_sym = self.get_symbol(global_ref);
+            if let Some(global) = self.fetch(name, ScopeId::GLOBAL, Namespace::Ordinary) {
+                let global_sym = self.get_symbol(global);
                 if global_sym.has_linkage() {
-                    self.get_scope_mut(self.current_scope_id)
-                        .symbols
-                        .insert(name, global_ref);
-                    return Ok(global_ref);
+                    self.get_scope_mut(self.current_scope_id).symbols.insert(name, global);
+                    return Ok(global);
                 }
             }
 
             // Create global entry for the function
             symbol.scope_id = ScopeId::GLOBAL;
-            let global_ref = self.merge_global_symbol(name, symbol)?;
-            self.get_scope_mut(self.current_scope_id)
-                .symbols
-                .insert(name, global_ref);
-            Ok(global_ref)
+            let global = self.merge_global_symbol(name, symbol)?;
+            self.get_scope_mut(self.current_scope_id).symbols.insert(name, global);
+            Ok(global)
         }
     }
 

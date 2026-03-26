@@ -364,7 +364,7 @@ fn parse_gnu_statement_expression(parser: &mut Parser, start_loc: SourceLoc) -> 
 
     // For GNU statement expressions, the result is the last expression in the compound statement
     // We need to extract it from the compound statement
-    let result_expr = extract_last_expression_from_compound_statement(parser, compound_stmt);
+    let result_expr = extract_last_expr_from_compound_stmt(parser, compound_stmt);
 
     let end_loc = right_paren_token.span.end();
     let span = SourceSpan::new(start_loc, end_loc);
@@ -374,18 +374,15 @@ fn parse_gnu_statement_expression(parser: &mut Parser, start_loc: SourceLoc) -> 
 }
 
 /// Extract the last expression from a compound statement for GNU statement expressions
-fn extract_last_expression_from_compound_statement(
-    parser: &mut Parser,
-    compound_stmt_node_ref: ParsedNodeRef,
-) -> ParsedNodeRef {
+fn extract_last_expr_from_compound_stmt(parser: &mut Parser, compound_stmt: ParsedNodeRef) -> ParsedNodeRef {
     // Get the compound statement node
-    let compound_stmt_node = parser.ast.get_node(compound_stmt_node_ref);
+    let compound_stmt_node = parser.ast.get_node(compound_stmt);
 
     if let ParsedNodeKind::CompoundStmt(statements) = &compound_stmt_node.kind {
         // Find the last expression statement in the compound statement
-        for &stmt_ref in statements.iter().rev() {
-            let stmt_node = parser.ast.get_node(stmt_ref);
-            if let ParsedNodeKind::ExpressionStmt(Some(expr)) = &stmt_node.kind {
+        for &stmt in statements.iter().rev() {
+            let stmt = parser.ast.get_node(stmt);
+            if let ParsedNodeKind::ExpressionStmt(Some(expr)) = &stmt.kind {
                 return *expr;
             }
         }
@@ -509,11 +506,11 @@ pub(crate) fn parse_compound_literal_from_type_and_start(
     parsed_type: ParsedType,
     start_loc: SourceLoc,
 ) -> Result<ParsedNodeRef, ParseError> {
-    let initializer_ref = super::declarations::parse_initializer(parser)?;
+    let init = super::declarations::parse_initializer(parser)?;
 
     let end_loc = parser.current_token_span()?.end();
     let span = SourceSpan::new(start_loc, end_loc);
-    let node = parser.push_node(ParsedNodeKind::CompoundLiteral(parsed_type, initializer_ref), span);
+    let node = parser.push_node(ParsedNodeKind::CompoundLiteral(parsed_type, init), span);
     Ok(node)
 }
 

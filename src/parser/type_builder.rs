@@ -22,17 +22,17 @@ pub(crate) fn build_type(
     specifiers: &ThinVec<ParsedDeclSpec>,
     declarator: Option<DeclaratorRef>,
 ) -> Result<ParsedType, ParseError> {
-    let (base_type_ref, qualifiers) = parse_base_type_and_qualifiers(parser, specifiers)?;
+    let (base_type, qualifiers) = parse_base_type_and_qualifiers(parser, specifiers)?;
 
-    let declarator_ref = if let Some(d) = declarator {
+    let declarator = if let Some(d) = declarator {
         d
     } else {
         parser.alloc_decl(ParsedDeclarator::Identifier(None))
     };
 
     Ok(ParsedType {
-        base: base_type_ref,
-        declarator: declarator_ref,
+        base: base_type,
+        declarator,
         qualifiers,
     })
 }
@@ -97,8 +97,8 @@ fn parse_base_type_and_qualifiers(
     specifiers: &ThinVec<ParsedDeclSpec>,
 ) -> Result<(ParsedBaseTypeRef, TypeQualifiers), ParseError> {
     let mut qualifiers = TypeQualifiers::empty();
-    let mut base_type_specifier: Option<ParsedTypeSpec> = None;
-    let mut other_base_type_node = None;
+    let mut base_type_spec: Option<ParsedTypeSpec> = None;
+    let mut other_base_type = None;
 
     for spec in specifiers {
         match spec {
@@ -116,7 +116,7 @@ fn parse_base_type_and_qualifiers(
                 | ParsedTypeSpec::Unsigned
                 | ParsedTypeSpec::Bool
                 | ParsedTypeSpec::Complex => {
-                    if other_base_type_node.is_some() {
+                    if other_base_type.is_some() {
                         return Err(ParseError {
                             span: SourceSpan::default(),
                             kind: ParseErrorKind::UnexpectedToken {
@@ -125,13 +125,13 @@ fn parse_base_type_and_qualifiers(
                             },
                         });
                     }
-                    base_type_specifier = Some(match base_type_specifier {
+                    base_type_spec = Some(match base_type_spec {
                         Some(curr) => merge_type_specifiers(curr, ts.clone())?,
                         None => ts.clone(),
                     });
                 }
                 _ => {
-                    if base_type_specifier.is_some() || other_base_type_node.is_some() {
+                    if base_type_spec.is_some() || other_base_type.is_some() {
                         return Err(ParseError {
                             span: SourceSpan::default(),
                             kind: ParseErrorKind::UnexpectedToken {
@@ -140,7 +140,7 @@ fn parse_base_type_and_qualifiers(
                             },
                         });
                     }
-                    other_base_type_node = Some(parse_base_type(parser, ts)?);
+                    other_base_type = Some(parse_base_type(parser, ts)?);
                 }
             },
             ParsedDeclSpec::TypeQualifier(q) => {
@@ -155,15 +155,15 @@ fn parse_base_type_and_qualifiers(
         }
     }
 
-    let base_type_ref = if let Some(ts) = base_type_specifier {
+    let base_type = if let Some(ts) = base_type_spec {
         parse_base_type(parser, &ts)?
-    } else if let Some(node) = other_base_type_node {
+    } else if let Some(node) = other_base_type {
         node
     } else {
         parser.alloc_base_type(ParsedBaseType::Builtin(ParsedTypeSpec::Int))
     };
 
-    Ok((base_type_ref, qualifiers))
+    Ok((base_type, qualifiers))
 }
 
 /// Convert a TypeSpec to a ParsedBaseType
@@ -254,11 +254,11 @@ pub(crate) fn parse_type_name(parser: &mut Parser) -> Result<ParsedType, ParseEr
 
 fn parse_record_members(
     parser: &mut Parser,
-    member_node_refs: &[ParsedNodeRef],
+    member_nodes: &[ParsedNodeRef],
 ) -> Result<ParsedStructMemberRange, ParseError> {
     let mut parsed_members = Vec::new();
-    for &node_ref in member_node_refs {
-        let node_kind = parser.ast.get_node(node_ref).kind.clone();
+    for &node in member_nodes {
+        let node_kind = parser.ast.get_node(node).kind.clone();
         if let ParsedNodeKind::Declaration(decl) = &node_kind {
             for init_decl in &decl.init_declarators {
                 if let Some(member_name) = get_declarator_name(&parser.ast.parsed_types, init_decl.declarator) {
@@ -282,8 +282,8 @@ fn parse_record_members(
 fn extract_alignment(specifiers: &[ParsedDeclSpec], parser: &Parser) -> Option<u32> {
     for spec in specifiers {
         if let ParsedDeclSpec::AlignmentSpec(align_spec) = spec
-            && let ParsedAlignmentSpec::Expr(expr_ref) = align_spec
-            && let ParsedNodeKind::Literal(Literal::Int { val, .. }) = parser.ast.get_node(*expr_ref).kind
+            && let ParsedAlignmentSpec::Expr(expr) = align_spec
+            && let ParsedNodeKind::Literal(Literal::Int { val, .. }) = parser.ast.get_node(*expr).kind
         {
             return Some(val as u32);
         }
@@ -291,15 +291,15 @@ fn extract_alignment(specifiers: &[ParsedDeclSpec], parser: &Parser) -> Option<u
     None
 }
 
-fn parse_enum_constants(parser: &mut Parser, enum_node_refs: &[ParsedNodeRef]) -> Result<ParsedEnumRange, ParseError> {
+fn parse_enum_constants(parser: &mut Parser, enum_nodes: &[ParsedNodeRef]) -> Result<ParsedEnumRange, ParseError> {
     let mut parsed_enums = Vec::new();
-    for &enum_ref in enum_node_refs {
-        let enum_node = parser.ast.get_node(enum_ref);
-        if let ParsedNodeKind::EnumConstant(name, value_expr_ref) = &enum_node.kind {
+    for &enum_node in enum_nodes {
+        let enum_node = parser.ast.get_node(enum_node);
+        if let ParsedNodeKind::EnumConstant(name, value_expr) = &enum_node.kind {
             parsed_enums.push(ParsedEnumConstant {
                 name: *name,
-                value: value_expr_ref.as_ref().and_then(|expr_ref| {
-                    if let ParsedNodeKind::Literal(Literal::Int { val, .. }) = parser.ast.get_node(*expr_ref).kind {
+                value: value_expr.as_ref().and_then(|expr| {
+                    if let ParsedNodeKind::Literal(Literal::Int { val, .. }) = parser.ast.get_node(*expr).kind {
                         Some(val)
                     } else {
                         None

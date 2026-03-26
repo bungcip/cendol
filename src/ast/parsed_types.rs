@@ -171,14 +171,14 @@ impl ParsedTypeArena {
     }
 
     /// Get a base type by reference
-    pub(crate) fn get_base_type(&self, base_ref: ParsedBaseTypeRef) -> ParsedBaseType {
-        let index = (base_ref.get() - 1) as usize;
+    pub(crate) fn get_base_type(&self, base: ParsedBaseTypeRef) -> ParsedBaseType {
+        let index = (base.get() - 1) as usize;
         self.base_types[index].clone()
     }
 
     /// Get a declarator by reference
-    pub(crate) fn get_decl(&self, decl_ref: DeclaratorRef) -> ParsedDeclarator {
-        let index = (decl_ref.get() - 1) as usize;
+    pub(crate) fn get_decl(&self, decl: DeclaratorRef) -> ParsedDeclarator {
+        let index = (decl.get() - 1) as usize;
         self.declarators[index].clone()
     }
 

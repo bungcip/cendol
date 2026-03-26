@@ -116,25 +116,25 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn visit_node(&mut self, node_ref: NodeRef) {
+    pub(crate) fn visit_node(&mut self, node: NodeRef) {
         let old_scope = self.current_scope_id;
-        let node_kind = *self.ast.get_kind(node_ref);
+        let node_kind = *self.ast.get_kind(node);
 
         match node_kind {
             NodeKind::TranslationUnit(tu) => {
-                self.current_scope_id = self.ast.scope_of(node_ref);
+                self.current_scope_id = self.ast.scope_of(node);
                 self.visit_translation_unit(&tu)
             }
             NodeKind::Function(function) => {
-                self.current_scope_id = self.ast.scope_of(node_ref);
+                self.current_scope_id = self.ast.scope_of(node);
                 self.visit_function(&function)
             }
             NodeKind::For(for_stmt) => {
-                self.current_scope_id = self.ast.scope_of(node_ref);
+                self.current_scope_id = self.ast.scope_of(node);
                 self.visit_for_stmt(&for_stmt)
             }
             NodeKind::CompoundStmt(cs) => {
-                self.current_scope_id = self.ast.scope_of(node_ref);
+                self.current_scope_id = self.ast.scope_of(node);
                 self.visit_compound_statement(&cs)
             }
             NodeKind::VarDecl(var_decl) => self.visit_var_decl(&var_decl),
@@ -143,9 +143,9 @@ impl<'a> MirGen<'a> {
             NodeKind::If(if_stmt) => self.visit_if_stmt(&if_stmt),
             NodeKind::While(while_stmt) => self.visit_while_stmt(&while_stmt),
             NodeKind::DoWhile(body, condition) => self.visit_do_while_stmt(body, condition),
-            NodeKind::ExpressionStmt(Some(expr_ref)) => {
+            NodeKind::ExpressionStmt(Some(expr)) => {
                 // Expression statement: value not needed, only side-effects
-                self.visit_expression(expr_ref, false);
+                self.visit_expression(expr, false);
             }
             NodeKind::AsmStmt(_) => {
                 // Ignore inline assembly in Cranelift backend for now
@@ -161,8 +161,8 @@ impl<'a> MirGen<'a> {
             NodeKind::Goto(label_name, _) => self.visit_goto_stmt(&label_name),
             NodeKind::Label(label_name, stmt, _) => self.visit_label_stmt(&label_name, stmt),
             NodeKind::Switch(cond, body) => self.visit_switch_stmt(cond, body),
-            NodeKind::Case(_, stmt) => self.visit_case_default_stmt(node_ref, stmt),
-            NodeKind::CaseRange(..) => self.visit_case_default_stmt(node_ref, {
+            NodeKind::Case(_, stmt) => self.visit_case_default_stmt(node, stmt),
+            NodeKind::CaseRange(..) => self.visit_case_default_stmt(node, {
                 // CaseRange stmt is the 3rd argument
                 if let NodeKind::CaseRange(_, _, stmt) = node_kind {
                     stmt
@@ -170,7 +170,7 @@ impl<'a> MirGen<'a> {
                     unreachable!()
                 }
             }),
-            NodeKind::Default(stmt) => self.visit_case_default_stmt(node_ref, stmt),
+            NodeKind::Default(stmt) => self.visit_case_default_stmt(node, stmt),
 
             // Expressions used as statements (without ExpressionStatement wrapper)
             // This happens in For loop initializers/increments and potentially GnuStatementExpression results.
@@ -198,7 +198,7 @@ impl<'a> MirGen<'a> {
             | NodeKind::BuiltinVaCopy(..)
             | NodeKind::GenericSelection(..)
             | NodeKind::StatementExpr(..) => {
-                self.visit_expression(node_ref, false);
+                self.visit_expression(node, false);
             }
 
             _ => {}
@@ -209,8 +209,8 @@ impl<'a> MirGen<'a> {
 
     fn visit_translation_unit(&mut self, tu: &nodes::TranslationUnit) {
         self.predeclare_global_functions();
-        for child_ref in tu.decl_start.range(tu.decl_len) {
-            self.visit_node(child_ref);
+        for child in tu.decl_start.range(tu.decl_len) {
+            self.visit_node(child);
         }
     }
 
@@ -224,9 +224,9 @@ impl<'a> MirGen<'a> {
         // Sort by symbol name to ensure deterministic order for snapshot tests
         global_symbols.sort_by_key(|s| self.symbol_table.get_symbol(*s).name);
 
-        for sym_ref in global_symbols {
+        for sym in global_symbols {
             let (symbol_name, symbol_type_info, is_function, has_definition, storage) = {
-                let symbol = self.symbol_table.get_symbol(sym_ref);
+                let symbol = self.symbol_table.get_symbol(sym);
                 let (is_func, storage) = if let SymbolKind::Function { storage } = &symbol.kind {
                     (true, *storage)
                 } else {
@@ -325,11 +325,11 @@ impl<'a> MirGen<'a> {
 
     fn visit_compound_statement(&mut self, cs: &nodes::CompoundStmt) {
         self.scope_cleanup.push(Vec::new());
-        for stmt_ref in cs.stmt_start.range(cs.stmt_len) {
+        for stmt in cs.stmt_start.range(cs.stmt_len) {
             // We visit all statements regardless of whether the current block is terminated.
             // MirBuilder will suppress statement addition to terminated blocks, but we need
             // to traverse to find nested labels/cases which start new reachable blocks.
-            self.visit_node(stmt_ref)
+            self.visit_node(stmt)
         }
         let cleanup = self.scope_cleanup.pop().unwrap();
         for ptr_local_id in cleanup {
@@ -370,8 +370,8 @@ impl<'a> MirGen<'a> {
         self.vla_map.clear();
         let mir_params = self.mir_builder.get_functions().get(&func_id).unwrap().params.clone();
 
-        for (i, param_ref) in function.param_start.range(function.param_len).enumerate() {
-            if let NodeKind::Param(param) = self.ast.get_kind(param_ref) {
+        for (i, param) in function.param_start.range(function.param_len).enumerate() {
+            if let NodeKind::Param(param) = self.ast.get_kind(param) {
                 let local_id = mir_params[i];
                 self.local_map.insert(param.symbol, local_id);
             }
@@ -405,16 +405,16 @@ impl<'a> MirGen<'a> {
 
     fn visit_var_decl(&mut self, var_decl: &VarDecl) {
         let mir_type_id = self.lower_qual_type(var_decl.qt);
-        let (entry_ref, _) = self
+        let (entry, _) = self
             .symbol_table
             .lookup(var_decl.name, self.current_scope_id, Namespace::Ordinary)
             .unwrap();
 
-        self.visit_variable(entry_ref, mir_type_id);
+        self.visit_variable(entry, mir_type_id);
     }
 
-    pub(super) fn visit_variable(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
-        let symbol = self.symbol_table.get_symbol(entry_ref);
+    pub(super) fn visit_variable(&mut self, sym: SymbolRef, mir_type_id: TypeId) {
+        let symbol = self.symbol_table.get_symbol(sym);
         let (is_global_sym, storage) = if let SymbolKind::Variable { is_global, storage, .. } = symbol.kind {
             (is_global, storage)
         } else {
@@ -425,18 +425,18 @@ impl<'a> MirGen<'a> {
         let is_global = self.current_function.is_none() || is_global_sym || storage == Some(StorageClass::Static);
 
         if is_global {
-            self.visit_global_symbol(entry_ref, mir_type_id);
+            self.visit_global_symbol(sym, mir_type_id);
         } else {
-            self.visit_local_symbol(entry_ref, mir_type_id);
+            self.visit_local_symbol(sym, mir_type_id);
         }
     }
 
-    fn visit_global_symbol(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
-        if self.global_map.contains_key(&entry_ref) {
+    fn visit_global_symbol(&mut self, sym: SymbolRef, mir_type_id: TypeId) {
+        if self.global_map.contains_key(&sym) {
             return;
         }
 
-        let symbol = self.symbol_table.get_symbol(entry_ref);
+        let symbol = self.symbol_table.get_symbol(sym);
         let (init, alignment, name, ty, storage, is_tls) = if let SymbolKind::Variable {
             initializer,
             alignment,
@@ -461,7 +461,7 @@ impl<'a> MirGen<'a> {
             name
         } else {
             // Mangle name for static local to avoid collision
-            crate::ast::NameId::new(format!("{}.{}", name, entry_ref.get()))
+            crate::ast::NameId::new(format!("{}.{}", name, sym.get()))
         };
 
         let linkage = if storage == Some(StorageClass::Static) {
@@ -485,12 +485,12 @@ impl<'a> MirGen<'a> {
             self.mir_builder.set_global_alignment(global_id, align);
         }
 
-        self.global_map.insert(entry_ref, global_id);
+        self.global_map.insert(sym, global_id);
 
         // Static locals must be evaluated as constants, even if we are inside a function.
         // We temporarily unset current_function to force constant evaluation mode.
         let saved_func = self.current_function.take();
-        let initial_value_id = init.and_then(|init_ref| self.eval_initializer_to_const(init_ref, ty));
+        let initial_value_id = init.and_then(|init| self.eval_initializer_to_const(init, ty));
         self.current_function = saved_func;
 
         let final_init = initial_value_id.or_else(|| {
@@ -506,8 +506,8 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_local_symbol(&mut self, entry_ref: SymbolRef, mir_type_id: TypeId) {
-        let symbol = self.symbol_table.get_symbol(entry_ref);
+    fn visit_local_symbol(&mut self, sym: SymbolRef, mir_type_id: TypeId) {
+        let symbol = self.symbol_table.get_symbol(sym);
         let (init, alignment, name, qt) = if let SymbolKind::Variable {
             initializer, alignment, ..
         } = &symbol.kind
@@ -519,7 +519,7 @@ impl<'a> MirGen<'a> {
 
         // Check if this is a VLA type
         if let Some((size_expr, element_type)) = self.get_vla_info(qt.ty()) {
-            self.visit_vla_local(entry_ref, name, size_expr, element_type, alignment);
+            self.visit_vla_local(sym, name, size_expr, element_type, alignment);
             return;
         }
 
@@ -536,7 +536,7 @@ impl<'a> MirGen<'a> {
             // We need a dummy size local for the vla_map entry, although it won't be used for sizeof.
             let size_t_ty = self.get_size_t_type();
             let dummy_size_local = self.mir_builder.create_local(None, size_t_ty, false);
-            self.vla_map.insert(entry_ref, (ptr_local_id, dummy_size_local));
+            self.vla_map.insert(sym, (ptr_local_id, dummy_size_local));
 
             // Initialize if needed
             if let Some(initializer) = init {
@@ -560,7 +560,7 @@ impl<'a> MirGen<'a> {
             self.mir_builder.set_local_alignment(local_id, align);
         }
 
-        self.local_map.insert(entry_ref, local_id);
+        self.local_map.insert(sym, local_id);
 
         if let Some(initializer) = init {
             let init_operand = self.visit_initializer(initializer, qt, Some(Place::Local(local_id)));
@@ -588,7 +588,7 @@ impl<'a> MirGen<'a> {
     /// Emits runtime allocation using posix_memalign/malloc.
     fn visit_vla_local(
         &mut self,
-        entry_ref: SymbolRef,
+        sym: SymbolRef,
         name: NameId,
         size_expr: NodeRef,
         element_type: TypeRef,
@@ -628,9 +628,9 @@ impl<'a> MirGen<'a> {
 
         // Map: symbol → pointer local (for visit_ident)
         // Also map in local_map so existing code can find it
-        self.local_map.insert(entry_ref, ptr_local_id);
+        self.local_map.insert(sym, ptr_local_id);
         // Map in vla_map for sizeof support and special access handling
-        self.vla_map.insert(entry_ref, (ptr_local_id, size_local_id));
+        self.vla_map.insert(sym, (ptr_local_id, size_local_id));
     }
 
     /// Helper to emit heap allocation for a local (VLA or highly-aligned).
@@ -754,13 +754,13 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_return_stmt(&mut self, expr: &Option<NodeRef>) {
-        let operand = expr.map(|expr_ref| {
-            let expr_operand = self.visit_expression(expr_ref, true);
+        let operand = expr.map(|expr| {
+            let expr_operand = self.visit_expression(expr, true);
             // Apply conversions for return value if needed
             if let Some(func_id) = self.current_function {
                 let func = self.mir_builder.get_functions().get(&func_id).unwrap();
                 let return_mir_ty = func.return_type;
-                self.apply_conversions(expr_operand, expr_ref, return_mir_ty)
+                self.apply_conversions(expr_operand, expr, return_mir_ty)
             } else {
                 expr_operand
             }
@@ -1093,22 +1093,22 @@ impl<'a> MirGen<'a> {
         self.lower_type(qt.ty())
     }
 
-    pub(super) fn lower_type(&mut self, type_ref: TypeRef) -> TypeId {
-        if let Some(type_id) = self.type_cache.get(&type_ref) {
+    pub(super) fn lower_type(&mut self, ty: TypeRef) -> TypeId {
+        if let Some(type_id) = self.type_cache.get(&ty) {
             return *type_id;
         }
 
-        let _ = self.registry.ensure_layout(type_ref);
+        let _ = self.registry.ensure_layout(ty);
 
         // Return placeholder if already converting this type (recursion loop)
-        if self.type_conversion_in_progress.contains(&type_ref) {
+        if self.type_conversion_in_progress.contains(&ty) {
             return *self
                 .type_cache
-                .get(&type_ref)
+                .get(&ty)
                 .expect("Placeholder must exist for recursive type");
         }
 
-        let ast_type_kind = self.registry.get(type_ref).kind.clone();
+        let ast_type_kind = self.registry.get(ty).kind.clone();
 
         match ast_type_kind {
             TypeKind::Record {
@@ -1116,22 +1116,22 @@ impl<'a> MirGen<'a> {
                 is_union,
                 is_complete,
                 ..
-            } => self.lower_recursive_record_pattern(type_ref, tag, is_union, is_complete),
+            } => self.lower_recursive_record_pattern(ty, tag, is_union, is_complete),
             TypeKind::Builtin(b) => {
                 let mir_type = if matches!(b, BuiltinType::VaList) {
                     self.lower_valist_type()
                 } else {
                     self.lower_builtin_type(&b)
                 };
-                self.cache_type(type_ref, mir_type)
+                self.cache_type(ty, mir_type)
             }
             TypeKind::Pointer { pointee } => {
                 let mir_type = self.lower_pointer_type(pointee);
-                self.cache_type(type_ref, mir_type)
+                self.cache_type(ty, mir_type)
             }
             TypeKind::Array { element_type, size } => {
-                let mir_type = self.lower_array_type(type_ref, element_type, &size);
-                self.cache_type(type_ref, mir_type)
+                let mir_type = self.lower_array_type(ty, element_type, &size);
+                self.cache_type(ty, mir_type)
             }
             TypeKind::Function {
                 return_type,
@@ -1140,29 +1140,29 @@ impl<'a> MirGen<'a> {
                 ..
             } => {
                 let mir_type = self.lower_function_type(&return_type, &parameters, is_variadic);
-                self.cache_type(type_ref, mir_type)
+                self.cache_type(ty, mir_type)
             }
             TypeKind::Complex { base_type } => {
                 let mir_type = self.lower_complex_type(base_type);
-                self.cache_type(type_ref, mir_type)
+                self.cache_type(ty, mir_type)
             }
             _ => {
                 let mir_type = MirType::I32;
-                self.cache_type(type_ref, mir_type)
+                self.cache_type(ty, mir_type)
             }
         }
     }
 
     fn lower_recursive_record_pattern(
         &mut self,
-        type_ref: TypeRef,
+        ty: TypeRef,
         tag: Option<NameId>,
         is_union: bool,
         is_complete: bool,
     ) -> TypeId {
         // Begin conversion: reserve a placeholder TypeId so recursive references can point to it.
-        self.type_conversion_in_progress.insert(type_ref);
-        let placeholder_name = NameId::new(format!("__recursive_placeholder_{}", type_ref.get()));
+        self.type_conversion_in_progress.insert(ty);
+        let placeholder_name = NameId::new(format!("__recursive_placeholder_{}", ty.get()));
         let placeholder_type = MirType::Record {
             name: placeholder_name,
             field_types: Vec::new(),
@@ -1175,21 +1175,21 @@ impl<'a> MirGen<'a> {
             },
         };
         let placeholder_id = self.mir_builder.add_type(placeholder_type);
-        self.type_cache.insert(type_ref, placeholder_id);
+        self.type_cache.insert(ty, placeholder_id);
 
-        let mir_type = self.lower_record_type(type_ref, &tag, is_union, is_complete);
+        let mir_type = self.lower_record_type(ty, &tag, is_union, is_complete);
 
         // Remove from in-progress set
-        self.type_conversion_in_progress.remove(&type_ref);
+        self.type_conversion_in_progress.remove(&ty);
 
         // Replace the placeholder entry with the real type
         self.mir_builder.update_type(placeholder_id, mir_type);
         placeholder_id
     }
 
-    fn cache_type(&mut self, type_ref: TypeRef, mir_type: MirType) -> TypeId {
+    fn cache_type(&mut self, ty: TypeRef, mir_type: MirType) -> TypeId {
         let type_id = self.mir_builder.add_type(mir_type);
-        self.type_cache.insert(type_ref, type_id);
+        self.type_cache.insert(ty, type_id);
         type_id
     }
 
@@ -1275,14 +1275,14 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn lower_array_type(&mut self, type_ref: TypeRef, element_type: TypeRef, size: &ArraySizeType) -> MirType {
+    fn lower_array_type(&mut self, ty: TypeRef, element_type: TypeRef, size: &ArraySizeType) -> MirType {
         let element = self.lower_type(element_type);
 
         match size {
             ArraySizeType::Constant(s) => {
-                let _ = self.registry.ensure_layout(type_ref);
-                let (layout_size, layout_align, element_ref, _) = self.registry.get_array_layout(type_ref);
-                let element_layout = self.registry.get_layout(element_ref);
+                let _ = self.registry.ensure_layout(ty);
+                let (layout_size, layout_align, element_ty, _) = self.registry.get_array_layout(ty);
+                let element_layout = self.registry.get_layout(element_ty);
 
                 MirType::Array {
                     element,
@@ -1382,19 +1382,13 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn lower_record_type(
-        &mut self,
-        type_ref: TypeRef,
-        tag: &Option<NameId>,
-        is_union: bool,
-        is_complete: bool,
-    ) -> MirType {
+    fn lower_record_type(&mut self, ty: TypeRef, tag: &Option<NameId>, is_union: bool, is_complete: bool) -> MirType {
         let name = tag.unwrap_or_else(|| NameId::new("anonymous"));
 
         let (size, alignment, field_layouts, field_names, field_types) = if is_complete {
             let mut flat_members = Vec::new();
             let mut flat_fields = Vec::new();
-            let ty = self.registry.get(type_ref).into_owned();
+            let ty = self.registry.get(ty).into_owned();
             ty.flatten_members_with_layouts(self.registry, &mut flat_members, &mut flat_fields, 0);
 
             let mut field_names = Vec::new();
@@ -1460,9 +1454,9 @@ impl<'a> MirGen<'a> {
         operand: Operand,
         conv: &Conversion,
         target_type_id: TypeId,
-        node_ref: NodeRef,
+        node: NodeRef,
     ) -> Operand {
-        let to_ty_ref = match conv {
+        let to_ty = match conv {
             Conversion::IntegerCast { to, .. }
             | Conversion::IntegerPromotion { to, .. }
             | Conversion::PointerCast { to, .. } => Some(*to),
@@ -1470,17 +1464,17 @@ impl<'a> MirGen<'a> {
             _ => None,
         };
 
-        let from_ty_ref = match conv {
+        let from_ty = match conv {
             Conversion::IntegerCast { from, .. }
             | Conversion::IntegerPromotion { from, .. }
             | Conversion::PointerCast { from, .. } => Some(*from),
             _ => None,
         };
 
-        if let Some(to) = to_ty_ref
-            && (to.is_complex() || from_ty_ref.is_some_and(|f| f.is_complex()))
+        if let Some(to) = to_ty
+            && (to.is_complex() || from_ty.is_some_and(|f| f.is_complex()))
         {
-            return self.emit_complex_conversion(operand, from_ty_ref, to);
+            return self.emit_complex_conversion(operand, from_ty, to);
         }
 
         let to_mir_type = match conv {
@@ -1503,8 +1497,8 @@ impl<'a> MirGen<'a> {
         };
 
         if matches!(conv, Conversion::LValueToRValue) {
-            let ast_ty = self.ast.get_resolved_type(node_ref).unwrap();
-            if ast_ty.is_atomic() {
+            let qt = self.ast.get_resolved_type(node).unwrap();
+            if qt.is_atomic() {
                 // Perform atomic load
                 let ptr_operand = match operand {
                     Operand::Copy(ref p) => Operand::AddressOf(p.clone()),
@@ -1516,8 +1510,8 @@ impl<'a> MirGen<'a> {
         }
 
         // Optimization: skip if already same type
-        let current_ty = self.get_operand_type(&operand);
-        if current_ty == to_mir_type && !matches!(conv, Conversion::PointerDecay { .. }) {
+        let current_mty = self.get_operand_type(&operand);
+        if current_mty == to_mir_type && !matches!(conv, Conversion::PointerDecay { .. }) {
             return operand;
         }
 
@@ -1704,14 +1698,14 @@ impl<'a> MirGen<'a> {
         })
     }
 
-    pub(super) fn apply_conversions(&mut self, operand: Operand, node_ref: NodeRef, target_type_id: TypeId) -> Operand {
+    pub(super) fn apply_conversions(&mut self, operand: Operand, node: NodeRef, target: TypeId) -> Operand {
         // Look up conversions for this node in semantic_info
         if let Some(semantic_info) = &self.ast.semantic_info {
-            let idx = node_ref.index();
+            let idx = node.index();
             if idx < semantic_info.conversions.len() {
                 let mut result = operand;
                 for conv in &semantic_info.conversions[idx] {
-                    result = self.emit_conversion(result, conv, target_type_id, node_ref);
+                    result = self.emit_conversion(result, conv, target, node);
                 }
                 return result;
             }
@@ -1913,8 +1907,8 @@ impl<'a> MirGen<'a> {
         self.continue_target = old_continue;
     }
 
-    fn scan_for_labels(&mut self, node_ref: NodeRef) {
-        let node_kind = *self.ast.get_kind(node_ref);
+    fn scan_for_labels(&mut self, node: NodeRef) {
+        let node_kind = *self.ast.get_kind(node);
         if let NodeKind::Label(name, _, _) = node_kind
             && !self.label_map.contains_key(&name)
         {

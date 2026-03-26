@@ -301,8 +301,8 @@ impl TypeRegistry {
     pub(crate) fn alloc(&mut self, ty: Type) -> TypeRef {
         let idx = self.types.len() as u32;
         self.types.push(ty);
-        let kind_ref = &self.types[idx as usize].kind;
-        let class = kind_ref.to_class();
+        let kind = &self.types[idx as usize].kind;
+        let class = kind.to_class();
 
         TypeRef::new(idx, class, 0, 0).expect("TypeRef alloc failed")
     }
@@ -1265,9 +1265,9 @@ impl TypeRegistry {
     }
 
     pub(crate) fn decay(&mut self, qt: QualType, ptr_qualifiers: TypeQualifiers) -> QualType {
-        let ty_ref = qt.ty();
+        let ty = qt.ty();
         let (element_type, is_array, is_function) = {
-            let type_info = self.get(ty_ref);
+            let type_info = self.get(ty);
             match &type_info.kind {
                 TypeKind::Array { element_type, .. } => (Some(*element_type), true, false),
                 TypeKind::Function { .. } => (None, false, true),
@@ -1320,16 +1320,16 @@ impl TypeRegistry {
             return false;
         }
 
-        let ty_a_ref = a.ty();
-        let ty_b_ref = b.ty();
+        let ty_a = a.ty();
+        let ty_b = b.ty();
 
-        if ty_a_ref == ty_b_ref {
+        if ty_a == ty_b {
             return true;
         }
 
         // Bolt ⚡: Fast path for pointers to avoid self.get() and Cow<Type> overhead.
-        let pa = self.get_pointee(ty_a_ref);
-        let pb = self.get_pointee(ty_b_ref);
+        let pa = self.get_pointee(ty_a);
+        let pb = self.get_pointee(ty_b);
         if pa.is_some() || pb.is_some() {
             return if let (Some(pa), Some(pb)) = (pa, pb) {
                 self.is_compatible(pa, pb)
@@ -1339,8 +1339,8 @@ impl TypeRegistry {
         }
 
         // Bolt ⚡: Fast path for arrays to avoid self.get() and Cow<Type> overhead.
-        let ea = self.get_array_element(ty_a_ref);
-        let eb = self.get_array_element(ty_b_ref);
+        let ea = self.get_array_element(ty_a);
+        let eb = self.get_array_element(ty_b);
         if ea.is_some() || eb.is_some() {
             return if let (Some(ea), Some(eb)) = (ea, eb) {
                 if !self.is_compatible(QualType::unqualified(ea), QualType::unqualified(eb)) {
@@ -1349,19 +1349,19 @@ impl TypeRegistry {
 
                 // For array compatibility, we need to compare their sizes.
                 // Inline arrays are always constant size; registry arrays can be complex.
-                let sa = if ty_a_ref.is_inline_array() {
-                    ArraySizeType::Constant(ty_a_ref.array_len().unwrap() as usize)
+                let sa = if ty_a.is_inline_array() {
+                    ArraySizeType::Constant(ty_a.array_len().unwrap() as usize)
                 } else {
-                    match &self.types[ty_a_ref.index()].kind {
+                    match &self.types[ty_a.index()].kind {
                         TypeKind::Array { size, .. } => size.clone(),
                         _ => unreachable!(),
                     }
                 };
 
-                let sb = if ty_b_ref.is_inline_array() {
-                    ArraySizeType::Constant(ty_b_ref.array_len().unwrap() as usize)
+                let sb = if ty_b.is_inline_array() {
+                    ArraySizeType::Constant(ty_b.array_len().unwrap() as usize)
                 } else {
-                    match &self.types[ty_b_ref.index()].kind {
+                    match &self.types[ty_b.index()].kind {
                         TypeKind::Array { size, .. } => size.clone(),
                         _ => unreachable!(),
                     }
@@ -1386,17 +1386,17 @@ impl TypeRegistry {
         // GCC and many other compilers are permissive with enum compatibility, especially
         // regarding signedness of the underlying type. We allow an enum to be compatible
         // with any integer type of the same size.
-        if ty_a_ref.is_enum() {
-            return b.is_integer() && self.get_layout(ty_a_ref).size == self.get_layout(ty_b_ref).size;
+        if ty_a.is_enum() {
+            return b.is_integer() && self.get_layout(ty_a).size == self.get_layout(ty_b).size;
         }
-        if ty_b_ref.is_enum() {
-            return a.is_integer() && self.get_layout(ty_a_ref).size == self.get_layout(ty_b_ref).size;
+        if ty_b.is_enum() {
+            return a.is_integer() && self.get_layout(ty_a).size == self.get_layout(ty_b).size;
         }
 
         // Fallback for registry-only types (Functions, Records).
         // Since these are never inline, self.get() returns Cow::Borrowed which is cheap.
-        let type_a = self.get(ty_a_ref);
-        let type_b = self.get(ty_b_ref);
+        let type_a = self.get(ty_a);
+        let type_b = self.get(ty_b);
 
         match (&type_a.kind, &type_b.kind) {
             (
@@ -1445,12 +1445,12 @@ impl TypeRegistry {
             return Some(a);
         }
 
-        let ty_a_ref = a.ty();
-        let ty_b_ref = b.ty();
+        let ty_a = a.ty();
+        let ty_b = b.ty();
 
         // Bolt ⚡: Fast path for pointers to avoid self.get() and Cow<Type> overhead.
-        let pa = self.get_pointee(ty_a_ref);
-        let pb = self.get_pointee(ty_b_ref);
+        let pa = self.get_pointee(ty_a);
+        let pb = self.get_pointee(ty_b);
         if pa.is_some() || pb.is_some() {
             return if let (Some(pa), Some(pb)) = (pa, pb) {
                 let composite_pointee = self.composite_type(pa, pb)?;
@@ -1462,27 +1462,27 @@ impl TypeRegistry {
         }
 
         // Bolt ⚡: Fast path for arrays to avoid self.get() and Cow<Type> overhead.
-        let ea = self.get_array_element(ty_a_ref);
-        let eb = self.get_array_element(ty_b_ref);
+        let ea = self.get_array_element(ty_a);
+        let eb = self.get_array_element(ty_b);
         if ea.is_some() || eb.is_some() {
             return if let (Some(ea), Some(eb)) = (ea, eb) {
                 let composite_elem = self.composite_type(QualType::unqualified(ea), QualType::unqualified(eb))?;
 
                 // Resolve sizes for array composite logic.
                 // Inline arrays are always constant size; registry arrays can be complex.
-                let sa = if ty_a_ref.is_inline_array() {
-                    ArraySizeType::Constant(ty_a_ref.array_len().unwrap() as usize)
+                let sa = if ty_a.is_inline_array() {
+                    ArraySizeType::Constant(ty_a.array_len().unwrap() as usize)
                 } else {
-                    match &self.types[ty_a_ref.index()].kind {
+                    match &self.types[ty_a.index()].kind {
                         TypeKind::Array { size, .. } => size.clone(),
                         _ => unreachable!(),
                     }
                 };
 
-                let sb = if ty_b_ref.is_inline_array() {
-                    ArraySizeType::Constant(ty_b_ref.array_len().unwrap() as usize)
+                let sb = if ty_b.is_inline_array() {
+                    ArraySizeType::Constant(ty_b.array_len().unwrap() as usize)
                 } else {
-                    match &self.types[ty_b_ref.index()].kind {
+                    match &self.types[ty_b.index()].kind {
                         TypeKind::Array { size, .. } => size.clone(),
                         _ => unreachable!(),
                     }
@@ -1507,8 +1507,8 @@ impl TypeRegistry {
 
         // Fallback for registry-only types (Functions, Records, Enums).
         // Since these are never inline, self.get() returns Cow::Borrowed which is cheap.
-        let type_a = self.get(ty_a_ref);
-        let type_b = self.get(ty_b_ref);
+        let type_a = self.get(ty_a);
+        let type_b = self.get(ty_b);
 
         match (&type_a.kind, &type_b.kind) {
             (

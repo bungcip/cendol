@@ -75,13 +75,13 @@ impl Ast {
     }
 
     /// Get node kind by reference
-    pub(crate) fn get_kind(&self, node_ref: NodeRef) -> &NodeKind {
-        &self.kinds[node_ref.index()]
+    pub(crate) fn get_kind(&self, node: NodeRef) -> &NodeKind {
+        &self.kinds[node.index()]
     }
 
     /// Get node span by reference
-    pub(crate) fn get_span(&self, node_ref: NodeRef) -> SourceSpan {
-        self.spans[node_ref.index()]
+    pub(crate) fn get_span(&self, node: NodeRef) -> SourceSpan {
+        self.spans[node.index()]
     }
 
     /// get root node ref
@@ -89,14 +89,14 @@ impl Ast {
         NodeRef::ROOT
     }
 
-    pub(crate) fn scope_of(&self, node_ref: NodeRef) -> ScopeId {
-        match &self.kinds[node_ref.index()] {
+    pub(crate) fn scope_of(&self, node: NodeRef) -> ScopeId {
+        match &self.kinds[node.index()] {
             NodeKind::TranslationUnit(data) => data.scope_id,
             NodeKind::Function(data) => data.scope_id,
             NodeKind::FunctionDecl(data) => data.scope_id,
             NodeKind::CompoundStmt(data) => data.scope_id,
             NodeKind::For(data) => data.scope_id,
-            _ => unreachable!("ICE: Node {:?} does not have a scope", self.get_kind(node_ref)),
+            _ => unreachable!("ICE: Node {:?} does not have a scope", self.get_kind(node)),
         }
     }
 
@@ -167,16 +167,12 @@ impl ExactSizeIterator for NodeRefRange {}
 
 impl Ast {
     /// Get the resolved type for a node (reads from attached semantic_info)
-    pub(crate) fn get_resolved_type(&self, node_ref: NodeRef) -> Option<QualType> {
-        self.semantic_info.as_ref()?.types[node_ref.index()]
+    pub(crate) fn get_resolved_type(&self, node: NodeRef) -> Option<QualType> {
+        self.semantic_info.as_ref()?.types[node.index()]
     }
 
     /// Get the value category for a node (reads from attached semantic_info)
-    pub(crate) fn get_value_category(&self, node_ref: NodeRef) -> Option<ValueCategory> {
-        self.semantic_info
-            .as_ref()?
-            .value_categories
-            .get(node_ref.index())
-            .copied()
+    pub(crate) fn get_value_category(&self, node: NodeRef) -> Option<ValueCategory> {
+        self.semantic_info.as_ref()?.value_categories.get(node.index()).copied()
     }
 }

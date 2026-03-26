@@ -86,11 +86,11 @@ fn peek_past_attribute(parser: &Parser, mut start_offset: u32) -> Option<Token> 
 /// Validate declarator combinations
 fn validate_declarator(
     arena: &ParsedTypeArena,
-    base_ref: DeclaratorRef,
+    base: DeclaratorRef,
     new_kind: DeclaratorKind,
     span: SourceSpan,
 ) -> Result<(), ParseError> {
-    let base = arena.get_decl(base_ref);
+    let base = arena.get_decl(base);
     if matches!(
         (&base, new_kind),
         (
@@ -342,8 +342,8 @@ pub(crate) fn is_abstract_declarator_start(parser: &Parser) -> bool {
 }
 
 /// Extract the declared name from a declarator, if any
-pub(crate) fn get_declarator_name(arena: &ParsedTypeArena, decl_ref: DeclaratorRef) -> Option<NameId> {
-    let declarator = arena.get_decl(decl_ref);
+pub(crate) fn get_declarator_name(arena: &ParsedTypeArena, declarator: DeclaratorRef) -> Option<NameId> {
+    let declarator = arena.get_decl(declarator);
     match declarator {
         ParsedDeclarator::Identifier(name) => name,
         ParsedDeclarator::Pointer { inner, .. } => get_declarator_name(arena, inner),
@@ -354,8 +354,8 @@ pub(crate) fn get_declarator_name(arena: &ParsedTypeArena, decl_ref: DeclaratorR
 }
 
 /// Extract the parameters from a function declarator, if any
-pub(super) fn get_declarator_params(arena: &ParsedTypeArena, decl_ref: DeclaratorRef) -> Option<ParsedParamRange> {
-    let declarator = arena.get_decl(decl_ref);
+pub(super) fn get_declarator_params(arena: &ParsedTypeArena, declarator: DeclaratorRef) -> Option<ParsedParamRange> {
+    let declarator = arena.get_decl(declarator);
     match declarator {
         ParsedDeclarator::Function { inner, params, .. } => {
             if let Some(inner_params) = get_declarator_params(arena, inner) {

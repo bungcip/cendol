@@ -53,13 +53,13 @@ pub(crate) struct TypeRegistryDisplay<'a> {
 impl<'a> fmt::Display for TypeRegistryDisplay<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Collect all TypeRefs used in the AST
-        let mut used_type_refs = HashSet::new();
+        let mut used_types = HashSet::new();
 
         for kind in &self.ast.kinds {
-            AstDumper::collect_type_refs(kind, &mut used_type_refs);
+            AstDumper::collect_types(kind, &mut used_types);
         }
 
-        if used_type_refs.is_empty() {
+        if used_types.is_empty() {
             return Ok(());
         }
 
@@ -67,13 +67,13 @@ impl<'a> fmt::Display for TypeRegistryDisplay<'a> {
         writeln!(f, "\n=== TypeRegistry (Used TypeRefs) ===")?;
 
         // Sort TypeRefs for consistent output
-        let mut sorted_type_refs: Vec<_> = used_type_refs.into_iter().collect();
-        sorted_type_refs.sort_by_key(|ty_ref| ty_ref.get());
+        let mut sorted_types: Vec<_> = used_types.into_iter().collect();
+        sorted_types.sort_by_key(|ty| ty.get());
 
         // Dump each used TypeRef with user-friendly formatting
-        for ty_ref in sorted_type_refs {
-            let formatted_type = self.registry.display_type(ty_ref);
-            writeln!(f, "TypeRef({}): {}", ty_ref.base(), formatted_type)?;
+        for ty in sorted_types {
+            let formatted_type = self.registry.display_type(ty);
+            writeln!(f, "TypeRef({}): {}", ty.base(), formatted_type)?;
         }
         Ok(())
     }
@@ -99,45 +99,45 @@ impl AstDumper {
     }
 
     /// Collect TypeRefs from a NodeKind
-    fn collect_type_refs(kind: &NodeKind, type_refs: &mut HashSet<TypeRef>) {
+    fn collect_types(kind: &NodeKind, types: &mut HashSet<TypeRef>) {
         match kind {
             NodeKind::Designator(_) => {}
             NodeKind::Function(data) => {
-                type_refs.insert(data.ty);
+                types.insert(data.ty);
             }
             NodeKind::Param(data) => {
-                type_refs.insert(data.qt.ty());
+                types.insert(data.qt.ty());
             }
             NodeKind::FunctionDecl(func_decl) => {
-                type_refs.insert(func_decl.ty);
+                types.insert(func_decl.ty);
             }
             NodeKind::RecordDecl(record_decl) => {
-                type_refs.insert(record_decl.ty);
+                types.insert(record_decl.ty);
             }
             NodeKind::FieldDecl(field_decl) => {
-                type_refs.insert(field_decl.qt.ty());
+                types.insert(field_decl.qt.ty());
             }
             NodeKind::EnumDecl(enum_decl) => {
-                type_refs.insert(enum_decl.ty);
+                types.insert(enum_decl.ty);
             }
             NodeKind::EnumMember(_) => {}
 
             // QualType usage (contains TypeRef)
             NodeKind::Cast(qual_type, _) => {
-                type_refs.insert(qual_type.ty());
+                types.insert(qual_type.ty());
             }
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
-                type_refs.insert(t1.ty());
-                type_refs.insert(t2.ty());
+                types.insert(t1.ty());
+                types.insert(t2.ty());
             }
             NodeKind::SizeOfType(qual_type) | NodeKind::AlignOfType(qual_type) => {
-                type_refs.insert(qual_type.ty());
+                types.insert(qual_type.ty());
             }
             NodeKind::CompoundLiteral(qual_type, _) => {
-                type_refs.insert(qual_type.ty());
+                types.insert(qual_type.ty());
             }
             NodeKind::BuiltinVaArg(qual_type, _) | NodeKind::BuiltinOffsetof(qual_type, _) => {
-                type_refs.insert(qual_type.ty());
+                types.insert(qual_type.ty());
             }
             NodeKind::BuiltinVaStart(_, _)
             | NodeKind::BuiltinVaEnd(_)
@@ -160,17 +160,17 @@ impl AstDumper {
             | NodeKind::BuiltinExpect(_, _)
             | NodeKind::AtomicOp(..) => {}
             NodeKind::VarDecl(var_decl) => {
-                type_refs.insert(var_decl.qt.ty());
+                types.insert(var_decl.qt.ty());
             }
             NodeKind::TypedefDecl(typedef_decl) => {
-                type_refs.insert(typedef_decl.qt.ty());
+                types.insert(typedef_decl.qt.ty());
             }
             NodeKind::GenericSelection(_) => {
                 // GenericSelection doesn't contain TypeRefs directly.
             }
             NodeKind::GenericAssociation(ga) => {
                 if let Some(qual_type) = ga.ty {
-                    type_refs.insert(qual_type.ty());
+                    types.insert(qual_type.ty());
                 }
             }
             NodeKind::BuiltinChooseExpr(_, _, _) => {}
@@ -231,19 +231,19 @@ impl AstDumper {
     }
 
     /// Get function name from symbol entry reference
-    fn get_function_name(symbol_ref: SymbolRef, symbol_table: Option<&SymbolTable>) -> String {
+    fn get_function_name(symbol: SymbolRef, symbol_table: Option<&SymbolTable>) -> String {
         if let Some(table) = symbol_table {
-            let entry = table.get_symbol(symbol_ref);
+            let entry = table.get_symbol(symbol);
             return entry.name.to_string();
         }
-        format!("func_{}", symbol_ref.get())
+        format!("func_{}", symbol.get())
     }
 
     /// Format a DesignatedInitializer for display
     fn format_designated_initializer(init: &DesignatedInitializer, ast: &Ast) -> String {
         let mut result = String::new();
-        for designator_ref in init.designator_start.range(init.designator_len) {
-            match ast.get_kind(designator_ref) {
+        for designator in init.designator_start.range(init.designator_len) {
+            match ast.get_kind(designator) {
                 NodeKind::Designator(d) => match d {
                     Designator::FieldName(name) => {
                         result.push_str(&format!(".{}", name));

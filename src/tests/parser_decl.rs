@@ -753,11 +753,11 @@ fn test_enum_with_non_literal_value() {
         parser.parse_expression(crate::parser::BindingPower::MIN)
     });
 
-    let node_ref = expr_result.expect("Failed to parse expression");
-    let node = ast.get_node(node_ref);
+    let node = expr_result.expect("Failed to parse expression");
+    let node = ast.get_node(node);
 
-    let constants_info = if let ParsedNodeKind::SizeOfType(type_ref) = &node.kind {
-        let base_node = ast.parsed_types.get_base_type(type_ref.base);
+    let constants_info = if let ParsedNodeKind::SizeOfType(ty) = &node.kind {
+        let base_node = ast.parsed_types.get_base_type(ty.base);
         match base_node {
             ParsedBaseType::Enum { enumerators, .. } => {
                 let range = enumerators.expect("Expected enumerators");

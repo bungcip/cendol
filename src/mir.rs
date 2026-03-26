@@ -372,7 +372,10 @@ impl MirType {
     }
 
     pub(super) fn is_aggregate(&self) -> bool {
-        matches!(self, MirType::Record { .. } | MirType::Array { .. })
+        matches!(
+            self,
+            MirType::Record { .. } | MirType::Array { .. } | MirType::F80 | MirType::F128
+        )
     }
 
     pub(super) fn is_int(&self) -> bool {

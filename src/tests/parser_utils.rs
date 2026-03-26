@@ -1,5 +1,7 @@
 use crate::ast::{BinaryOp, UnaryOp, literal::Literal};
-use crate::ast::{ParsedAst, ParsedDeclSpec, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec};
+use crate::ast::{
+    DeclaratorRef, ParsedAst, ParsedDeclSpec, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec,
+};
 use crate::diagnostic::ParseError;
 use crate::driver::artifact::CompilePhase;
 use crate::parser::statements::parse_compound_statement;
@@ -112,7 +114,7 @@ fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpec]) -> Vec<Str
                     if let Some(enums) = enumerators {
                         let enum_parts: Vec<String> = enums
                             .iter()
-                            .map(|&node_ref| match &ast.get_node(node_ref).kind {
+                            .map(|&node| match &ast.get_node(node).kind {
                                 ParsedNodeKind::EnumConstant(name, Some(value_expr)) => {
                                     let value = resolve_node(ast, *value_expr);
                                     match value {
@@ -156,8 +158,8 @@ fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpec]) -> Vec<Str
 }
 
 /// Resolve a ParsedNodeRef to a ResolvedNodeKind by recursively following references
-pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> ResolvedNodeKind {
-    let node = ast.get_node(node_ref);
+pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNodeKind {
+    let node = ast.get_node(node);
     match &node.kind {
         ParsedNodeKind::Literal(literal) => match literal {
             Literal::Int { val, .. } => ResolvedNodeKind::LiteralInt(*val),
@@ -198,16 +200,16 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
         ParsedNodeKind::IndexAccess(array, index) => {
             ResolvedNodeKind::IndexAccess(Box::new(resolve_node(ast, *array)), Box::new(resolve_node(ast, *index)))
         }
-        ParsedNodeKind::Cast(type_ref, expr) => {
+        ParsedNodeKind::Cast(ty, expr) => {
             // For simplicity, just show a placeholder type name
             ResolvedNodeKind::Cast(
-                format!("parsed_type_{}_{}", type_ref.base.get(), type_ref.declarator.get()),
+                format!("parsed_type_{}_{}", ty.base.get(), ty.declarator.get()),
                 Box::new(resolve_node(ast, *expr)),
             )
         }
         ParsedNodeKind::SizeOfExpr(expr) => ResolvedNodeKind::SizeOfExpr(Box::new(resolve_node(ast, *expr))),
-        ParsedNodeKind::SizeOfType(type_ref) => ResolvedNodeKind::SizeOfType(format!("type_{}", type_ref.base.get())),
-        ParsedNodeKind::AlignOfType(type_ref) => ResolvedNodeKind::AlignOfType(format!("type_{}", type_ref.base.get())),
+        ParsedNodeKind::SizeOfType(ty) => ResolvedNodeKind::SizeOfType(format!("type_{}", ty.base.get())),
+        ParsedNodeKind::AlignOfType(ty) => ResolvedNodeKind::AlignOfType(format!("type_{}", ty.base.get())),
         ParsedNodeKind::AlignOfExpr(expr) => ResolvedNodeKind::AlignOfExpr(Box::new(resolve_node(ast, *expr))),
         ParsedNodeKind::Declaration(decl) => {
             let specifiers = resolve_specifiers(ast, &decl.specifiers);
@@ -254,10 +256,10 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
             let resolved_associations = associations
                 .iter()
                 .map(|assoc| {
-                    let type_name = assoc.type_name.map(|type_ref| {
+                    let type_name = assoc.type_name.map(|ty| {
                         // For simplicity, just show a placeholder type name
                         // In a full implementation, we'd resolve the actual type
-                        format!("type_{}", type_ref.base.get())
+                        format!("type_{}", ty.base.get())
                     });
                     let result_expr = resolve_node(ast, assoc.result_expr);
                     ResolvedGenericAssociation { type_name, result_expr }
@@ -308,7 +310,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
         ParsedNodeKind::StaticAssert(expr, msg) => {
             ResolvedNodeKind::StaticAssert(Box::new(resolve_node(ast, *expr)), msg.to_string())
         }
-        ParsedNodeKind::CompoundLiteral(type_ref, init) => {
+        ParsedNodeKind::CompoundLiteral(ty, init) => {
             // Check if init is an InitializerList, if so use resolve_initializer, otherwise resolve_node
             let init_node = ast.get_node(*init);
             let resolved_init = match init_node.kind {
@@ -316,7 +318,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
                 _ => resolve_node(ast, *init),
             };
             ResolvedNodeKind::CompoundLiteral(
-                format!("parsed_type_{}", type_ref.base.get()), // Simplified type
+                format!("parsed_type_{}", ty.base.get()), // Simplified type
                 Box::new(resolved_init),
             )
         }
@@ -347,8 +349,8 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node_ref: ParsedNodeRef) -> Resolved
     }
 }
 
-fn extract_declarator_name(ast: &ParsedAst, declarator_ref: crate::ast::DeclaratorRef) -> Option<String> {
-    let declarator = ast.parsed_types.get_decl(declarator_ref);
+fn extract_declarator_name(ast: &ParsedAst, declarator: DeclaratorRef) -> Option<String> {
+    let declarator = ast.parsed_types.get_decl(declarator);
     match declarator {
         ParsedDeclarator::Identifier(name) => name.map(|n| n.to_string()),
         ParsedDeclarator::Pointer { inner, .. } => extract_declarator_name(ast, inner),
@@ -358,8 +360,8 @@ fn extract_declarator_name(ast: &ParsedAst, declarator_ref: crate::ast::Declarat
     }
 }
 
-fn extract_declarator_kind(ast: &ParsedAst, declarator_ref: crate::ast::DeclaratorRef) -> String {
-    let declarator = ast.parsed_types.get_decl(declarator_ref);
+fn extract_declarator_kind(ast: &ParsedAst, declarator: DeclaratorRef) -> String {
+    let declarator = ast.parsed_types.get_decl(declarator);
     match declarator {
         ParsedDeclarator::Identifier(name) => {
             if name.is_some() {
@@ -421,8 +423,8 @@ fn extract_declarator_kind(ast: &ParsedAst, declarator_ref: crate::ast::Declarat
     }
 }
 
-fn extract_base_kind(ast: &ParsedAst, base_ref: crate::ast::ParsedBaseTypeRef) -> String {
-    let base = ast.parsed_types.get_base_type(base_ref);
+fn extract_base_kind(ast: &ParsedAst, base: crate::ast::ParsedBaseTypeRef) -> String {
+    let base = ast.parsed_types.get_base_type(base);
     match base {
         crate::ast::ParsedBaseType::Builtin(spec) => {
             let s = format!("{:?}", spec);
@@ -516,15 +518,15 @@ pub(crate) fn setup_expr(source: &str) -> ResolvedNodeKind {
         parser.parse_expression(crate::parser::BindingPower::MIN)
     });
 
-    let node_ref = expr_result.unwrap();
-    resolve_node(&ast, node_ref)
+    let node = expr_result.unwrap();
+    resolve_node(&ast, node)
 }
 
 pub(crate) fn setup_declaration(source: &str) -> ResolvedNodeKind {
     let (ast, decl_result) = setup_source(source, declarations::parse_decl);
 
     match decl_result {
-        Ok(node_ref) => resolve_node(&ast, node_ref),
+        Ok(node) => resolve_node(&ast, node),
         _ => panic!("Expected declaration"),
     }
 }
@@ -541,7 +543,7 @@ pub(crate) fn setup_statement(source: &str) -> ResolvedNodeKind {
     let (ast, stmt_result) = setup_source(source, statements::parse_statement);
 
     match stmt_result {
-        Ok(node_ref) => resolve_node(&ast, node_ref),
+        Ok(node) => resolve_node(&ast, node),
         _ => panic!("Expected statement"),
     }
 }
@@ -552,7 +554,7 @@ pub(crate) fn setup_compound(source: &str) -> ResolvedNodeKind {
     let (ast, stmt_result) = setup_source(&source, parse_compound_statement);
 
     match stmt_result {
-        Ok((node_ref, _)) => resolve_node(&ast, node_ref),
+        Ok((node, _)) => resolve_node(&ast, node),
         _ => panic!("Expected multi statement block"),
     }
 }
@@ -564,6 +566,6 @@ pub(crate) fn setup_translation_unit(source: &str) -> ResolvedNodeKind {
     let first = out.units.first_mut().unwrap();
     let artifact = first.1;
     let ast = artifact.parsed_ast.clone().unwrap();
-    let root_ref = ast.get_root();
-    resolve_node(&ast, root_ref)
+    let root = ast.get_root();
+    resolve_node(&ast, root)
 }

@@ -389,17 +389,19 @@ fn test_f128_constant_promotion() {
 
     match result {
         ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(clif_ir, @"
+            insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
                 ss0 = explicit_slot 16, align = 16
                 gv0 = symbol colocated userextname0
+                sig0 = (i64, i64, i64) -> i64 system_v
+                fn0 = u0:1 sig0
 
             block0:
-                v0 = symbol_value.i64 gv0
-                v1 = load.f128 readonly v0
-                v2 = stack_addr.i64 ss0
-                store notrap v1, v2
+                v0 = stack_addr.i64 ss0
+                v1 = symbol_value.i64 gv0
+                v2 = iconst.i64 16
+                v3 = call fn0(v0, v1, v2)  ; v2 = 16
                 return
             }
             ");

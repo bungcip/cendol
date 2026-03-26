@@ -402,8 +402,8 @@ impl<'a> SemanticAnalyzer<'a> {
     fn is_lvalue(&self, node: NodeRef) -> bool {
         let node_kind = self.ast.get_kind(node);
         match node_kind {
-            NodeKind::Ident(_, symbol_ref) => {
-                let symbol = self.symbol_table.get_symbol(*symbol_ref);
+            NodeKind::Ident(_, sym) => {
+                let symbol = self.symbol_table.get_symbol(*sym);
                 matches!(symbol.kind, SymbolKind::Variable { .. } | SymbolKind::Function { .. })
             }
             NodeKind::UnaryOp(op, operand) => match *op {
@@ -508,8 +508,8 @@ impl<'a> SemanticAnalyzer<'a> {
     fn is_register_variable(&self, node: NodeRef) -> bool {
         let node_kind = self.ast.get_kind(node);
         match node_kind {
-            NodeKind::Ident(_, symbol_ref) => {
-                let symbol = self.symbol_table.get_symbol(*symbol_ref);
+            NodeKind::Ident(_, sym) => {
+                let symbol = self.symbol_table.get_symbol(*sym);
                 if let SymbolKind::Variable { storage, .. } = &symbol.kind {
                     return *storage == Some(StorageClass::Register);
                 }
@@ -841,9 +841,9 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if let Some(expr) = value_expr
             && let NodeKind::UnaryOp(UnaryOp::AddrOf, operand) = self.ast.get_kind(*expr)
-            && let NodeKind::Ident(name, symbol_ref) = self.ast.get_kind(*operand)
+            && let NodeKind::Ident(name, sym) = self.ast.get_kind(*operand)
         {
-            let symbol = self.symbol_table.get_symbol(*symbol_ref);
+            let symbol = self.symbol_table.get_symbol(*sym);
             if let SymbolKind::Variable { storage, .. } = &symbol.kind {
                 // Check if it's a local variable (not static/extern)
                 let is_local = symbol.scope_id != crate::semantic::ScopeId::GLOBAL
@@ -2237,10 +2237,10 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // Validate goto statements
         for (goto_node, source_vlas) in std::mem::take(&mut self.goto_vla_state) {
-            let NodeKind::Goto(_, symbol_ref) = self.ast.get_kind(goto_node) else {
+            let NodeKind::Goto(_, sym) = self.ast.get_kind(goto_node) else {
                 continue;
             };
-            let (label_span, target_vlas) = if let Some(v) = self.label_vla_state.get(symbol_ref) {
+            let (label_span, target_vlas) = if let Some(v) = self.label_vla_state.get(sym) {
                 (v.0, v.1.clone())
             } else {
                 continue;
@@ -2252,7 +2252,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     let mut notes = vec![];
 
                     // Note where label is defined
-                    let label_name = self.symbol_table.get_symbol(*symbol_ref).name;
+                    let label_name = self.symbol_table.get_symbol(*sym).name;
                     notes.push((label_span, SemanticErrorKind::NoteLabelDefinedHere { name: label_name }));
 
                     // Note where VLA is declared
@@ -2369,14 +2369,13 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 None
             }
-            NodeKind::Goto(_, _symbol_ref) => {
+            NodeKind::Goto(_, _) => {
                 self.goto_vla_state.push((node, self.active_vlas.clone()));
                 None
             }
-            NodeKind::Label(_, stmt, symbol_ref) => {
+            NodeKind::Label(_, stmt, sym) => {
                 let span = self.ast.get_span(node);
-                self.label_vla_state
-                    .insert(*symbol_ref, (span, self.active_vlas.clone()));
+                self.label_vla_state.insert(*sym, (span, self.active_vlas.clone()));
                 self.visit_node(*stmt);
                 None
             }
@@ -2549,8 +2548,8 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_expression_node(&mut self, node: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
             NodeKind::Literal(literal) => self.visit_literal(literal),
-            NodeKind::Ident(_, symbol_ref) => {
-                let symbol = self.symbol_table.get_symbol(*symbol_ref);
+            NodeKind::Ident(_, sym) => {
+                let symbol = self.symbol_table.get_symbol(*sym);
                 // Use symbol.type_info for all symbols including enum constants.
                 // For enum constants, type_info is set to the enum's underlying integer type
                 // during lowering, matching GCC's extension (not always plain 'int' per strict C11).

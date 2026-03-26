@@ -236,7 +236,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn lower_array_declarator(
         &mut self,
-        base_ref: DeclaratorRef,
+        base: DeclaratorRef,
         size: &ParsedArraySize,
         element_qt: QualType,
         span: SourceSpan,
@@ -261,7 +261,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         };
 
         if has_static || !quals.is_empty() {
-            let base = self.parsed_ast.parsed_types.get_decl(base_ref);
+            let base = self.parsed_ast.parsed_types.get_decl(base);
             let is_outermost = matches!(base, ParsedDeclarator::Identifier(..));
 
             if !decl_ctx.in_parameter {
@@ -351,8 +351,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             let mut enumerators_list = Vec::with_capacity(enums.len());
             let mut constant_syms: Vec<SymbolRef> = Vec::with_capacity(enums.len());
 
-            for &enum_ref in enums {
-                let node = self.parsed_ast.get_node(enum_ref);
+            for &enum_node in enums {
+                let node = self.parsed_ast.get_node(enum_node);
                 let ParsedNodeKind::EnumConstant(name, value_expr) = &node.kind else {
                     unreachable!()
                 };
@@ -383,8 +383,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 next_value = value.wrapping_add(1);
 
                 match self.symbol_table.define_enum_constant(*name, value, ty, node.span) {
-                    Ok(sym_ref) => {
-                        constant_syms.push(sym_ref);
+                    Ok(sym) => {
+                        constant_syms.push(sym);
                     }
                     Err(SymbolTableError::InvalidRedefinition { existing, .. }) => {
                         let first_def = self.symbol_table.get_symbol(existing).def_span;
@@ -414,8 +414,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     QualType::unqualified(self.registry.type_int)
                 }
             };
-            for sym_ref in constant_syms {
-                self.symbol_table.get_symbol_mut(sym_ref).type_info = underlying_type;
+            for sym in constant_syms {
+                self.symbol_table.get_symbol_mut(sym).type_info = underlying_type;
             }
         }
         Ok(QualType::unqualified(ty))
@@ -1790,9 +1790,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn extract_array_param_qualifiers(&self, decl_ref: DeclaratorRef) -> TypeQualifiers {
-        let decl = self.parsed_ast.parsed_types.get_decl(decl_ref);
-        match decl {
+    fn extract_array_param_qualifiers(&self, declarator: DeclaratorRef) -> TypeQualifiers {
+        let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
+        match declarator {
             ParsedDeclarator::Identifier(..) => TypeQualifiers::empty(),
             ParsedDeclarator::Pointer { .. } => TypeQualifiers::empty(),
             ParsedDeclarator::Function { .. } => TypeQualifiers::empty(),
@@ -1812,9 +1812,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn extract_name(&self, decl_ref: DeclaratorRef) -> Option<NameId> {
-        let decl = self.parsed_ast.parsed_types.get_decl(decl_ref);
-        match decl {
+    fn extract_name(&self, declarator: DeclaratorRef) -> Option<NameId> {
+        let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
+        match declarator {
             ParsedDeclarator::Identifier(name) => name,
             ParsedDeclarator::Pointer { inner, .. } => self.extract_name(inner),
             ParsedDeclarator::Array { inner, .. } => self.extract_name(inner),
@@ -2468,8 +2468,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
         }
     }
-    fn extract_bit_field_width(&mut self, decl_ref: DeclaratorRef) -> Option<u16> {
-        let declarator = self.parsed_ast.parsed_types.get_decl(decl_ref);
+    fn extract_bit_field_width(&mut self, declarator: DeclaratorRef) -> Option<u16> {
+        let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
         match declarator {
             ParsedDeclarator::BitField { inner: _, width } => {
                 let width_expr = self.visit_expression(width);
@@ -2498,23 +2498,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn apply_declarator(
         &mut self,
         current_type: QualType,
-        declarator_ref: DeclaratorRef,
+        declarator: DeclaratorRef,
         span: SourceSpan,
         spec_info: Option<&DeclSpecInfo>,
-        decl_ctx: DeclaratorContext,
+        ctx: DeclaratorContext,
     ) -> QualType {
-        let declarator = self.parsed_ast.parsed_types.get_decl(declarator_ref);
+        let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
         match declarator {
             ParsedDeclarator::Identifier(..) => current_type,
             ParsedDeclarator::Pointer { qualifiers, inner } => {
                 let pointer_type = self.registry.pointer_to(current_type);
                 let modified_current =
                     self.merge_qualifiers_with_check(QualType::unqualified(pointer_type), qualifiers, span);
-                self.apply_declarator(modified_current, inner, span, spec_info, decl_ctx)
+                self.apply_declarator(modified_current, inner, span, spec_info, ctx)
             }
             ParsedDeclarator::Array { inner, size } => {
-                let array_qt = self.lower_array_declarator(inner, &size, current_type, span, decl_ctx);
-                self.apply_declarator(array_qt, inner, span, spec_info, decl_ctx)
+                let array_qt = self.lower_array_declarator(inner, &size, current_type, span, ctx);
+                self.apply_declarator(array_qt, inner, span, spec_info, ctx)
             }
             ParsedDeclarator::Function { params, flags, inner } => {
                 if self.registry.get(current_type.ty()).kind == TypeKind::AutoType {
@@ -2532,11 +2532,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let function_type =
                     self.registry
                         .function_type(current_type.ty(), processed_params, flags.is_variadic, is_noreturn);
-                self.apply_declarator(QualType::unqualified(function_type), inner, span, spec_info, decl_ctx)
+                self.apply_declarator(QualType::unqualified(function_type), inner, span, spec_info, ctx)
             }
             ParsedDeclarator::BitField { inner, .. } => {
                 // Bit-fields don't affect the base type in the same way, we just recurse
-                self.apply_declarator(current_type, inner, span, spec_info, decl_ctx)
+                self.apply_declarator(current_type, inner, span, spec_info, ctx)
             }
         }
     }
@@ -2872,9 +2872,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn get_definition_params(&mut self, decl_ref: DeclaratorRef) -> Option<Vec<FunctionParameter>> {
-        let decl = self.parsed_ast.parsed_types.get_decl(decl_ref);
-        match decl {
+    fn get_definition_params(&mut self, declarator: DeclaratorRef) -> Option<Vec<FunctionParameter>> {
+        let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
+        match declarator {
             ParsedDeclarator::Function { inner, params, .. } => {
                 if let Some(inner_params) = self.get_definition_params(inner) {
                     Some(inner_params)

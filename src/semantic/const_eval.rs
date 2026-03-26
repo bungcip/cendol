@@ -85,8 +85,8 @@ impl<'a> ConstEvalCtx<'a> {
     /// isn't available yet (e.g., for evaluating sizeof in array sizes).
     fn infer_type_from_node(&self, node: NodeRef) -> Option<QualType> {
         match self.ast.get_kind(node) {
-            NodeKind::Ident(_, sym_ref) => {
-                let symbol = self.symbol_table.get_symbol(*sym_ref);
+            NodeKind::Ident(_, sym) => {
+                let symbol = self.symbol_table.get_symbol(*sym);
                 Some(symbol.type_info)
             }
             NodeKind::IndexAccess(base, _) => {
@@ -188,12 +188,12 @@ impl<'a> ConstEvalCtx<'a> {
                     }
                 }
             },
-            NodeKind::CompoundLiteral(_, init_list_ref) => {
-                if let NodeKind::InitializerList(list) = self.ast.get_kind(*init_list_ref) {
+            NodeKind::CompoundLiteral(_, init_list) => {
+                if let NodeKind::InitializerList(list) = self.ast.get_kind(*init_list) {
                     let index = if is_real { 0 } else { 1 };
                     if (index as u16) < list.init_len {
-                        let item_ref = NodeRef::new(list.init_start.get() + index as u32).expect("NodeRef overflow");
-                        if let NodeKind::InitializerItem(item) = self.ast.get_kind(item_ref) {
+                        let item = NodeRef::new(list.init_start.get() + index as u32).expect("NodeRef overflow");
+                        if let NodeKind::InitializerItem(item) = self.ast.get_kind(item) {
                             return self.eval_float(item.initializer);
                         }
                     }
@@ -219,8 +219,8 @@ impl<'a> ConstEvalCtx<'a> {
         match node_kind {
             NodeKind::Literal(Literal::Int { val, .. }) => Some(*val),
             NodeKind::Literal(Literal::Char(val)) => Some(*val as i64),
-            NodeKind::Ident(_, sym_ref) => {
-                let symbol = self.symbol_table.get_symbol(*sym_ref);
+            NodeKind::Ident(_, sym) => {
+                let symbol = self.symbol_table.get_symbol(*sym);
                 if let SymbolKind::EnumConstant { value } = &symbol.kind {
                     Some(*value)
                 } else {
@@ -583,9 +583,9 @@ impl<'a> ConstEvalCtx<'a> {
 
     fn eval_alignof(&self, expr: Option<NodeRef>, qt: Option<QualType>) -> Option<i64> {
         if let Some(e) = expr
-            && let NodeKind::Ident(_, symbol_ref) = self.ast.get_kind(e)
+            && let NodeKind::Ident(_, sym) = self.ast.get_kind(e)
         {
-            let symbol = self.symbol_table.get_symbol(*symbol_ref);
+            let symbol = self.symbol_table.get_symbol(*sym);
             if let SymbolKind::Variable { alignment, .. } = &symbol.kind
                 && let Some(align) = alignment
             {

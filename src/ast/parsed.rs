@@ -45,10 +45,10 @@ impl ParsedAst {
         &self.nodes[(index.get() - 1) as usize]
     }
 
-    pub(crate) fn replace_node(&mut self, old_node_ref: ParsedNodeRef, new_node: ParsedNode) -> ParsedNodeRef {
-        let old_index = (old_node_ref.get() - 1) as usize;
+    pub(crate) fn replace_node(&mut self, old_node: ParsedNodeRef, new_node: ParsedNode) -> ParsedNodeRef {
+        let old_index = (old_node.get() - 1) as usize;
         self.nodes[old_index] = new_node;
-        old_node_ref
+        old_node
     }
 
     pub(crate) fn get_root(&self) -> ParsedNodeRef {

@@ -465,13 +465,8 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Push a node to the AST and return its reference
     #[inline]
-    pub(super) fn replace_node(
-        &mut self,
-        old_ref: ParsedNodeRef,
-        kind: ParsedNodeKind,
-        span: SourceSpan,
-    ) -> ParsedNodeRef {
-        self.ast.replace_node(old_ref, ParsedNode::new(kind, span))
+    pub(super) fn replace_node(&mut self, old: ParsedNodeRef, kind: ParsedNodeKind, span: SourceSpan) -> ParsedNodeRef {
+        self.ast.replace_node(old, ParsedNode::new(kind, span))
     }
 
     /// Push Declarator node to AST arena

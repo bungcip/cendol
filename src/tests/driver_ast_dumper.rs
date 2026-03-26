@@ -402,9 +402,9 @@ fn test_scope_of_function_decl() {
     if let NodeKind::TranslationUnit(tu) = ast.get_kind(root) {
         let expected_scope = tu.scope_id;
         let mut found = false;
-        for decl_ref in tu.decl_start.range(tu.decl_len) {
-            if let NodeKind::FunctionDecl(_) = ast.get_kind(decl_ref) {
-                let scope_id = ast.scope_of(decl_ref);
+        for decl in tu.decl_start.range(tu.decl_len) {
+            if let NodeKind::FunctionDecl(_) = ast.get_kind(decl) {
+                let scope_id = ast.scope_of(decl);
                 assert_eq!(scope_id, expected_scope);
                 found = true;
             }

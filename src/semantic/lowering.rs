@@ -18,7 +18,7 @@ use crate::ast::literal::Literal;
 use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
-use crate::semantic::const_eval::{self, ConstEvalCtx};
+use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticError, SemanticErrorKind};
 use crate::semantic::literal_utils::parse_string_literal;
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
@@ -144,7 +144,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         let const_ctx = self.const_ctx();
-        match const_eval::eval_const_expr(&const_ctx, cond_node) {
+        match const_ctx.eval_int(cond_node) {
             Some(0) => {
                 let message = match self.ast.get_kind(msg_node) {
                     NodeKind::Literal(Literal::String(s)) => s.as_str().to_string(),
@@ -217,7 +217,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedAlignmentSpec::Expr(expr) => {
                 let lowered_expr = self.visit_expression(*expr);
                 let const_ctx = self.const_ctx();
-                if let Some(val) = const_eval::eval_const_expr(&const_ctx, lowered_expr) {
+                if let Some(val) = const_ctx.eval_int(lowered_expr) {
                     if val > 0 && (val as u64).is_power_of_two() {
                         Some(val as u32)
                     } else if val == 0 {
@@ -360,7 +360,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let (value, init_expr) = value_expr
                     .map(|v| {
                         let expr = self.visit_expression(v);
-                        let val = const_eval::eval_const_expr(&self.const_ctx(), expr).unwrap_or_else(|| {
+                        let val = self.const_ctx().eval_int(expr).unwrap_or_else(|| {
                             self.report_error(node.span, SemanticErrorKind::NonConstantInitializer);
                             0
                         });
@@ -1991,7 +1991,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return ArraySizeType::Incomplete;
         }
 
-        match const_eval::eval_const_expr(&self.const_ctx(), expr) {
+        match self.const_ctx().eval_int(expr) {
             Some(val) => {
                 // C11 6.7.6.2p1: the expression shall have a value greater than zero
                 // Extension: allow zero-sized arrays unless pedantic-errors is set
@@ -2299,11 +2299,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         let designator_kind = *self.ast.get_kind(init.designator_start);
                         match designator_kind {
                             NodeKind::Designator(Designator::ArrayIndex(idx)) => {
-                                current_index = const_eval::eval_const_expr(&self.const_ctx(), idx)?;
+                                current_index = self.const_ctx().eval_int(idx)?;
                             }
                             NodeKind::Designator(Designator::ArrayRange(start, end)) => {
-                                let s_v = const_eval::eval_const_expr(&self.const_ctx(), start)?;
-                                let e_v = const_eval::eval_const_expr(&self.const_ctx(), end)?;
+                                let s_v = self.const_ctx().eval_int(start)?;
+                                let e_v = self.const_ctx().eval_int(end)?;
                                 if s_v > e_v {
                                     return None;
                                 }
@@ -2475,7 +2475,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let width_expr = self.visit_expression(width);
                 let span = self.ast.get_span(width_expr);
 
-                match const_eval::eval_const_expr(&self.const_ctx(), width_expr) {
+                match self.const_ctx().eval_int(width_expr) {
                     Some(val) if (0..=65535).contains(&val) => Some(val as u16),
                     Some(_) => {
                         self.report_error(span, SemanticErrorKind::InvalidBitfieldWidth);
@@ -2722,7 +2722,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.registry.type_long_long
     }
 
-    fn resolve_type_specifier(&mut self, ts: &ParsedTypeSpec, span: SourceSpan) -> Result<QualType, SemanticError> {
+    fn resolve_type_spec(&mut self, ts: &ParsedTypeSpec, span: SourceSpan) -> Result<QualType, SemanticError> {
         use ParsedTypeSpec::*;
         match ts {
             Void => Ok(QualType::unqualified(self.registry.type_void)),
@@ -2918,7 +2918,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     });
                 }
                 ParsedDeclSpec::TypeSpec(ts) => {
-                    let ty = self.resolve_type_specifier(ts, span).unwrap_or_else(|e| {
+                    let ty = self.resolve_type_spec(ts, span).unwrap_or_else(|e| {
                         self.report_error(e.span, e.kind);
                         QualType::unqualified(self.registry.type_error)
                     });
@@ -3272,7 +3272,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
     ) -> Result<QualType, SemanticError> {
         match parsed_base {
-            ParsedBaseType::Builtin(ts) => self.resolve_type_specifier(ts, span),
+            ParsedBaseType::Builtin(ts) => self.resolve_type_spec(ts, span),
             ParsedBaseType::Record { tag, members, is_union } => {
                 self.lower_record_parsed_base(*tag, *members, *is_union, span)
             }

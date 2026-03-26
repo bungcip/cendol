@@ -621,16 +621,6 @@ impl<'a> ConstEvalCtx<'a> {
     }
 }
 
-///// Evaluate a constant expression node to an i64 value
-pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<i64> {
-    ctx.eval_int(expr_node)
-}
-
-/// Evaluate a constant expression node to an f64 value
-pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr: NodeRef) -> Option<f64> {
-    ctx.eval_float(expr)
-}
-
 fn eval_offsetof(ctx: &ConstEvalCtx, qt: QualType, expr: NodeRef) -> Option<i64> {
     let mut current_qt = qt;
     let mut offset = 0i64;
@@ -671,7 +661,7 @@ fn eval_offsetof(ctx: &ConstEvalCtx, qt: QualType, expr: NodeRef) -> Option<i64>
                 let Some(elem_ty) = ctx.registry.get_array_element(current_qt.ty()) else {
                     return false;
                 };
-                let Some(index_val) = eval_const_expr(ctx, index) else {
+                let Some(index_val) = ctx.eval_int(index) else {
                     return false;
                 };
 

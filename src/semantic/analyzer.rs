@@ -9,7 +9,7 @@ use crate::{
     semantic::{
         ArraySizeType, BuiltinType, QualType, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind,
         TypeQualifiers, TypeRef, TypeRegistry,
-        const_eval::{ConstEvalCtx, eval_const_expr},
+        const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticError, SemanticErrorKind},
         literal_utils::parse_string_literal,
@@ -284,7 +284,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn is_always_true(&self, expr: NodeRef) -> bool {
-        eval_const_expr(&self.const_ctx(), expr).is_some_and(|v| v != 0)
+        self.const_ctx().eval_int(expr).is_some_and(|v| v != 0)
     }
 
     fn has_default(&self, node: NodeRef) -> bool {
@@ -697,12 +697,11 @@ impl<'a> SemanticAnalyzer<'a> {
             let lhs_base = self.registry.get_pointee(lhs.ty()).unwrap();
 
             // Check compatibility ignoring top-level qualifiers of the pointed-to type
-            let compatible_ignoring_quals =
-                if lhs_base.ty() == self.registry.type_void || rhs_base.ty() == self.registry.type_void {
-                    true
-                } else {
-                    self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all())
-                };
+            let compatible_ignoring_quals = if lhs_base.is_void() || rhs_base.is_void() {
+                true
+            } else {
+                self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all())
+            };
 
             if compatible_ignoring_quals {
                 // Return true if qualifiers are DISCARDED (rhs has something lhs doesn't)
@@ -1069,7 +1068,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     let lhs_base = self.registry.get_pointee(lhs_promoted.ty()).unwrap();
                     let rhs_base = self.registry.get_pointee(rhs_promoted.ty()).unwrap();
 
-                    if lhs_base.ty() == self.registry.type_void || rhs_base.ty() == self.registry.type_void {
+                    if lhs_base.is_void() || rhs_base.is_void() {
                         QualType::unqualified(self.registry.type_void_ptr)
                     } else if self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all()) {
                         lhs_promoted
@@ -1393,7 +1392,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let lhs_base = self.registry.get_pointee(lhs_qt.ty()).unwrap();
 
                 // void* wildcard
-                if lhs_base.ty() == self.registry.type_void || rhs_base.ty() == self.registry.type_void {
+                if lhs_base.is_void() || rhs_base.is_void() {
                     return lhs_base.qualifiers().contains(rhs_base.qualifiers());
                 }
 
@@ -1470,7 +1469,7 @@ impl<'a> SemanticAnalyzer<'a> {
         } else if lhs_qt.is_arithmetic() && rhs_qt.is_arithmetic() {
             // If it's a constant literal, check if conversion changes value
             if self.is_numeric_literal(rhs)
-                && let Some(val) = eval_const_expr(&self.const_ctx(), rhs)
+                && let Some(val) = self.const_ctx().eval_int(rhs)
             {
                 let truncated = self.registry.get(lhs_qt.ty()).as_ref().truncate_int(val);
                 if truncated != val {
@@ -1733,14 +1732,14 @@ impl<'a> SemanticAnalyzer<'a> {
                     match d {
                         Designator::ArrayIndex(e) => {
                             self.visit_node(*e);
-                            if let Some(idx) = eval_const_expr(&self.const_ctx(), *e) {
+                            if let Some(idx) = self.const_ctx().eval_int(*e) {
                                 current_idx = idx;
                             }
                         }
                         Designator::ArrayRange(s, e) => {
                             self.visit_node(*s);
                             self.visit_node(*e);
-                            if let Some(idx) = eval_const_expr(&self.const_ctx(), *e) {
+                            if let Some(idx) = self.const_ctx().eval_int(*e) {
                                 current_idx = idx;
                             }
                         }
@@ -1802,12 +1801,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 if let Designator::ArrayRange(s, end) = designator {
                     self.visit_node(s);
                     self.visit_node(end);
-                    if let Some(idx) = eval_const_expr(&self.const_ctx(), end) {
+                    if let Some(idx) = self.const_ctx().eval_int(end) {
                         end_idx = idx;
                     }
                 } else {
                     self.visit_node(e);
-                    if let Some(idx) = eval_const_expr(&self.const_ctx(), e) {
+                    if let Some(idx) = self.const_ctx().eval_int(e) {
                         end_idx = idx;
                     }
                 }
@@ -2284,7 +2283,7 @@ impl<'a> SemanticAnalyzer<'a> {
         if self.registry.is_variably_modified(data.qt.ty()) {
             self.active_vlas.push(node);
         }
-        if data.qt.ty() == self.registry.type_void {
+        if data.qt.is_void() {
             self.report_error(node, SemanticErrorKind::VariableOfVoidType);
         }
         self.visit_type_exprs(data.qt);
@@ -2451,7 +2450,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn evaluate_case_value(&mut self, node: NodeRef) -> Option<i64> {
         let ty = self.visit_node(node);
-        let val = eval_const_expr(&self.const_ctx(), node);
+        let val = self.const_ctx().eval_int(node);
         if !self.switch_stack.is_empty() && (val.is_none() || ty.is_none_or(|t| !t.is_integer())) {
             self.report_error(node, SemanticErrorKind::NonConstantCaseValue);
         }
@@ -2844,7 +2843,7 @@ impl<'a> SemanticAnalyzer<'a> {
             if !rw_ty.is_integer() {
                 self.report_error(rw, SemanticErrorKind::ExpectedIntegerType { found: rw_ty });
             } else {
-                match eval_const_expr(&self.const_ctx(), rw) {
+                match self.const_ctx().eval_int(rw) {
                     Some(val) => {
                         if !(0..=1).contains(&val) {
                             self.report_error(rw, SemanticErrorKind::BuiltinPrefetchOutOfRange { arg: "rw" });
@@ -2862,7 +2861,7 @@ impl<'a> SemanticAnalyzer<'a> {
             if !loc_ty.is_integer() {
                 self.report_error(locality, SemanticErrorKind::ExpectedIntegerType { found: loc_ty });
             } else {
-                match eval_const_expr(&self.const_ctx(), locality) {
+                match self.const_ctx().eval_int(locality) {
                     Some(val) => {
                         if !(0..=3).contains(&val) {
                             self.report_error(
@@ -2900,7 +2899,7 @@ impl<'a> SemanticAnalyzer<'a> {
         self.visit_node(cond);
 
         let const_ctx = self.const_ctx();
-        let cond_val = eval_const_expr(&const_ctx, cond);
+        let cond_val = const_ctx.eval_int(cond);
 
         if cond_val.is_none() {
             self.report_error(cond, SemanticErrorKind::BuiltinChooseExprNotConstant);
@@ -2945,7 +2944,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let p_t = self.registry.get_pointee(t.ty())?;
         let p_e = self.registry.get_pointee(e.ty())?;
 
-        if p_t.ty() == self.registry.type_void || p_e.ty() == self.registry.type_void {
+        if p_t.is_void() || p_e.is_void() {
             let res_quals = p_t.qualifiers() | p_e.qualifiers();
             let void_ptr = self
                 .registry
@@ -3269,7 +3268,7 @@ impl<'a> SemanticAnalyzer<'a> {
             self.report_error(cond, SemanticErrorKind::ExpectedIntegerType { found: cond_ty });
         }
 
-        match eval_const_expr(&self.const_ctx(), cond) {
+        match self.const_ctx().eval_int(cond) {
             Some(0) => {
                 let message = match self.ast.get_kind(msg) {
                     NodeKind::Literal(Literal::String(s)) => s.as_str().to_string(),
@@ -3616,7 +3615,7 @@ impl<'a> SemanticAnalyzer<'a> {
         };
 
         self.visit_node(index);
-        let Some(index_val) = eval_const_expr(&self.const_ctx(), index) else {
+        let Some(index_val) = self.const_ctx().eval_int(index) else {
             // C11 7.19p3: "integer constant expression"
             self.report_error(index, SemanticErrorKind::NonConstantInitializer);
             return false;

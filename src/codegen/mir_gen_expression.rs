@@ -4,10 +4,10 @@ use crate::ast::{BinaryOp, NodeKind, NodeRef, UnaryOp};
 use crate::codegen::mir_gen::MirGen;
 use crate::codegen::mir_gen_ops;
 use crate::mir::{
-    AtomicMemOrder, BinaryIntOp, BitFieldInfo, CallTarget, ConstValue, ConstValueKind, MirStmt, MirType, Operand,
-    Place, Rvalue, Terminator, TypeId,
+    AtomicMemOrder, BinaryFloatOp, BinaryIntOp, BitFieldInfo, CallTarget, ConstValue, ConstValueKind, MirStmt, MirType,
+    Operand, Place, Rvalue, Terminator, TypeId,
 };
-use crate::semantic::const_eval::{eval_const_expr, eval_const_expr_float};
+
 use crate::semantic::{ArraySizeType, Conversion, QualType, SymbolKind, SymbolRef, TypeKind, ValueCategory};
 use crate::{ast, semantic};
 
@@ -71,10 +71,8 @@ impl<'a> MirGen<'a> {
             NodeKind::Literal(_) => self.visit_literal(&node_kind, qt).expect("Failed to lower literal"),
             NodeKind::Ident(_, symbol_ref) => self.visit_ident(*symbol_ref),
             NodeKind::UnaryOp(op, operand_ref) => self.visit_unary_op(op, *operand_ref, mir_ty),
-            NodeKind::PostIncrement(operand_ref) => self.visit_inc_dec_expression(*operand_ref, true, true, need_value),
-            NodeKind::PostDecrement(operand_ref) => {
-                self.visit_inc_dec_expression(*operand_ref, false, true, need_value)
-            }
+            NodeKind::PostIncrement(operand_ref) => self.visit_inc_dec_expr(*operand_ref, true, true, need_value),
+            NodeKind::PostDecrement(operand_ref) => self.visit_inc_dec_expr(*operand_ref, false, true, need_value),
             NodeKind::BinaryOp(op, left_ref, right_ref) => self.visit_binary_op(op, *left_ref, *right_ref, mir_ty),
             NodeKind::Assignment(op, left_ref, right_ref) => {
                 self.visit_assignment_expr(expr_ref, op, *left_ref, *right_ref, mir_ty)
@@ -139,16 +137,23 @@ impl<'a> MirGen<'a> {
                 self.visit_type_query(ty, false)
             }
             NodeKind::BuiltinOffsetof(..) => {
-                let val = eval_const_expr(&self.const_ctx(), expr_ref).expect("offsetof should be constant");
+                let val = self
+                    .const_ctx()
+                    .eval_int(expr_ref)
+                    .expect("offsetof should be constant");
                 self.create_size_t_operand(val as u64)
             }
             NodeKind::BuiltinTypesCompatibleP(..) => {
-                let val = eval_const_expr(&self.const_ctx(), expr_ref)
+                let val = self
+                    .const_ctx()
+                    .eval_int(expr_ref)
                     .expect("__builtin_types_compatible_p should be constant");
                 self.create_int_operand(val)
             }
             NodeKind::BuiltinConstantP(..) => {
-                let val = eval_const_expr(&self.const_ctx(), expr_ref)
+                let val = self
+                    .const_ctx()
+                    .eval_int(expr_ref)
                     .expect("__builtin_constant_p should evaluate to constant");
                 self.create_int_operand(val)
             }
@@ -336,7 +341,7 @@ impl<'a> MirGen<'a> {
 
         // Try floating-point constant folding first for float types
         if qt.is_floating() && !qt.is_complex() {
-            if let Some(val) = eval_const_expr_float(&self.const_ctx(), expr_ref) {
+            if let Some(val) = self.const_ctx().eval_float(expr_ref) {
                 let ty_id = self.lower_qual_type(qt);
                 return Some(Operand::Constant(
                     self.create_constant(ty_id, ConstValueKind::Float(val)),
@@ -346,7 +351,7 @@ impl<'a> MirGen<'a> {
         }
 
         // Integer constant folding
-        if let Some(val) = eval_const_expr(&self.const_ctx(), expr_ref) {
+        if let Some(val) = self.const_ctx().eval_int(expr_ref) {
             let ty_id = self.lower_qual_type(qt);
             let mir_type = self.mir_builder.get_type(ty_id);
             let truncated_val = mir_type.truncate_int(val);
@@ -654,7 +659,7 @@ impl<'a> MirGen<'a> {
         match op {
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
                 let is_inc = matches!(op, UnaryOp::PreIncrement);
-                self.visit_inc_dec_expression(operand_ref, is_inc, false, true)
+                self.visit_inc_dec_expr(operand_ref, is_inc, false, true)
             }
             UnaryOp::AddrOf => self.visit_unary_addrof(operand_ref),
             UnaryOp::Deref => self.visit_unary_deref(operand_ref),
@@ -1479,13 +1484,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_inc_dec_expression(
-        &mut self,
-        operand_ref: NodeRef,
-        is_inc: bool,
-        is_post: bool,
-        need_value: bool,
-    ) -> Operand {
+    fn visit_inc_dec_expr(&mut self, operand_ref: NodeRef, is_inc: bool, is_post: bool, need_value: bool) -> Operand {
         let operand = self.visit_expression(operand_ref, true);
         let operand_ty = self.ast.get_resolved_type(operand_ref).unwrap();
         let mir_ty = self.lower_qual_type(operand_ty);
@@ -1569,15 +1568,11 @@ impl<'a> MirGen<'a> {
             let mir_ty = self.lower_qual_type(operand_ty);
             let (real, imag) = self.get_complex_components(operand, mir_ty);
             let element_ty = match self.mir_builder.get_type(mir_ty) {
-                crate::mir::MirType::Record { field_types, .. } => field_types[0],
+                MirType::Record { field_types, .. } => field_types[0],
                 _ => unreachable!("Complex type must be a record"),
             };
 
-            let op = if is_inc {
-                crate::mir::BinaryFloatOp::Add
-            } else {
-                crate::mir::BinaryFloatOp::Sub
-            };
+            let op = if is_inc { BinaryFloatOp::Add } else { BinaryFloatOp::Sub };
             let one = self.create_constant(element_ty, ConstValueKind::Float(1.0));
             let res_real = self.emit_float_binop(op, real, Operand::Constant(one), element_ty);
 
@@ -1590,7 +1585,7 @@ impl<'a> MirGen<'a> {
                 let val = if is_inc { 1.0 } else { -1.0 };
                 let const_val = self.create_constant(mir_ty_id, ConstValueKind::Float(val));
                 let rhs = Operand::Constant(const_val);
-                Rvalue::BinaryFloatOp(crate::mir::BinaryFloatOp::Add, operand, rhs)
+                Rvalue::BinaryFloatOp(BinaryFloatOp::Add, operand, rhs)
             } else {
                 // For Integers: Add(delta) (Note: we use Add with negative delta for decrement
                 // to support proper wrapping arithmetic and fix previous bugs)
@@ -1857,7 +1852,7 @@ impl<'a> MirGen<'a> {
             UnaryOp::Imag => imag,
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
                 let is_inc = matches!(op, UnaryOp::PreIncrement);
-                self.visit_inc_dec_expression(operand_ref, is_inc, false, true)
+                self.visit_inc_dec_expr(operand_ref, is_inc, false, true)
             }
             _ => panic!("Unsupported complex unary operator: {:?}", op),
         }

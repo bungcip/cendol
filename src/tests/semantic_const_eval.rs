@@ -1,5 +1,5 @@
 use crate::ast::NodeKind;
-use crate::semantic::const_eval::{ConstEvalCtx, eval_const_expr};
+use crate::semantic::const_eval::ConstEvalCtx;
 use crate::tests::semantic_common::setup_analysis;
 
 fn evaluate_program(source: &str) -> String {
@@ -30,7 +30,7 @@ fn evaluate_program(source: &str) -> String {
         semantic_info: ast.semantic_info.as_ref(),
     };
 
-    let result = eval_const_expr(&ctx, init_expr);
+    let result = ctx.eval_int(init_expr);
     match result {
         Some(val) => format!("{}", val),
         None => "None".to_string(),

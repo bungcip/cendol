@@ -181,7 +181,7 @@ impl<'a> MirGen<'a> {
                 }
             } else if matches!(self.ast.get_kind(initializer), NodeKind::InitializerList(_))
                 && m.name.is_none()
-                && m.member_type.ty().is_record()
+                && m.member_type.is_record()
             {
                 // Anonymous member initialized with braces
                 let NodeKind::InitializerList(list) = self.ast.get_kind(initializer) else {

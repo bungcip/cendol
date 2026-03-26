@@ -335,7 +335,7 @@ impl<'a> MirGen<'a> {
         }
 
         // Try floating-point constant folding first for float types
-        if qt.ty().is_floating() && !qt.ty().is_complex() {
+        if qt.is_floating() && !qt.is_complex() {
             if let Some(val) = eval_const_expr_float(&self.const_ctx(), expr_ref) {
                 let ty_id = self.lower_qual_type(qt);
                 return Some(Operand::Constant(
@@ -762,7 +762,7 @@ impl<'a> MirGen<'a> {
                     // If it is an array type (VLA), the identifier refers to the base of the array.
                     // If it is a scalar (highly-aligned fallback), we must Deref to get the value.
                     let symbol = self.symbol_table.get_symbol(resolved_ref);
-                    let is_array = symbol.type_info.ty().is_array();
+                    let is_array = symbol.type_info.is_array();
 
                     if is_array {
                         // Return the pointer local directly. ArrayIndex and decay will handle it.

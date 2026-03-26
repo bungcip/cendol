@@ -686,6 +686,11 @@ impl QualType {
     }
 
     #[inline]
+    pub(crate) fn builtin(self) -> Option<BuiltinType> {
+        self.ty().builtin()
+    }
+
+    #[inline]
     pub(crate) fn is_const(self) -> bool {
         self.qualifiers().contains(TypeQualifiers::CONST)
     }
@@ -730,6 +735,10 @@ impl QualType {
     #[inline]
     pub(crate) fn is_record(self) -> bool {
         self.ty().is_record()
+    }
+    #[inline]
+    pub(crate) fn is_enum(self) -> bool {
+        self.ty().is_enum()
     }
     #[inline]
     pub(crate) fn is_complex(self) -> bool {

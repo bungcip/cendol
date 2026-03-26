@@ -4,7 +4,7 @@
 //! at compile time, as required by the C11 standard for contexts like
 //! static assertions and array sizes.
 
-use crate::ast::literal::Literal;
+use crate::ast::literal::{FloatSuffix, IntegerSuffix, Literal};
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, UnaryOp};
 use crate::semantic::literal_utils::parse_string_literal;
 use crate::semantic::types::TypeClass;
@@ -27,18 +27,19 @@ impl<'a> ConstEvalCtx<'a> {
         }
     }
 
+    /// Resolve type of a node, with inference fallback if semantic info is missing.
+    fn resolve_type(&self, node: NodeRef) -> Option<QualType> {
+        self.get_resolved_type(node).or_else(|| self.infer_type_from_node(node))
+    }
+
     fn truncate_to_type(&self, val: i64, qt: QualType) -> i64 {
         let ty_obj = self.registry.get(qt.ty());
         ty_obj.truncate_int(val)
     }
 
     fn get_result_type(&self, op: BinaryOp, left: NodeRef, right: NodeRef) -> Option<QualType> {
-        let left_ty = self
-            .get_resolved_type(left)
-            .or_else(|| self.infer_type_from_node(left))?;
-        let right_ty = self
-            .get_resolved_type(right)
-            .or_else(|| self.infer_type_from_node(right))?;
+        let left_ty = self.resolve_type(left)?;
+        let right_ty = self.resolve_type(right)?;
 
         match op {
             BinaryOp::Add
@@ -69,9 +70,7 @@ impl<'a> ConstEvalCtx<'a> {
     }
 
     fn get_unary_result_type(&self, op: UnaryOp, expr: NodeRef) -> Option<QualType> {
-        let qt = self
-            .get_resolved_type(expr)
-            .or_else(|| self.infer_type_from_node(expr))?;
+        let qt = self.resolve_type(expr)?;
         match op {
             UnaryOp::Plus | UnaryOp::Minus | UnaryOp::BitNot => {
                 Some(crate::semantic::conversions::integer_promotion(self.registry, qt, None))
@@ -92,16 +91,12 @@ impl<'a> ConstEvalCtx<'a> {
             }
             NodeKind::IndexAccess(base, _) => {
                 // array[index] -> element type
-                let base_qt = self
-                    .get_resolved_type(*base)
-                    .or_else(|| self.infer_type_from_node(*base))?;
+                let base_qt = self.resolve_type(*base)?;
                 let elem_ty = self.registry.get_array_element(base_qt.ty())?;
                 Some(QualType::unqualified(elem_ty))
             }
             NodeKind::MemberAccess(base, member_name, _) => {
-                let base_qt = self
-                    .get_resolved_type(*base)
-                    .or_else(|| self.infer_type_from_node(*base))?;
+                let base_qt = self.resolve_type(*base)?;
                 let mut ty = base_qt.ty();
                 // Dereference pointer for arrow operator
                 if ty.is_pointer() {
@@ -112,9 +107,7 @@ impl<'a> ConstEvalCtx<'a> {
                 Some(member.member_type)
             }
             NodeKind::UnaryOp(UnaryOp::Deref, expr) => {
-                let qt = self
-                    .get_resolved_type(*expr)
-                    .or_else(|| self.infer_type_from_node(*expr))?;
+                let qt = self.resolve_type(*expr)?;
                 if let Some(pointee) = self.registry.get_pointee(qt.ty()) {
                     Some(pointee)
                 } else {
@@ -122,19 +115,22 @@ impl<'a> ConstEvalCtx<'a> {
                 }
             }
             NodeKind::Cast(target_ty, _) => Some(*target_ty),
-            NodeKind::Literal(Literal::Int { val, suffix, base }) => {
+            NodeKind::Literal(literal) => Some(self.get_literal_type(literal)),
+            _ => None,
+        }
+    }
+
+    fn get_literal_type(&self, literal: &Literal) -> QualType {
+        match literal {
+            Literal::Int { val, suffix, base } => {
                 let val_u64 = *val as u64;
                 let is_decimal = *base == 10;
                 let ty = match suffix {
                     None => {
-                        // C11 6.4.4.1: Determine type by smallest that fits.
-                        // For decimal: int, long, long long.
-                        // For oct/hex: also include the unsigned variants.
                         if is_decimal {
                             if val_u64 <= i32::MAX as u64 {
                                 self.registry.type_int
                             } else if val_u64 <= i64::MAX as u64 {
-                                // On 64-bit, long and long long are same size
                                 self.registry.type_long_long
                             } else {
                                 self.registry.type_long_long_unsigned
@@ -149,17 +145,17 @@ impl<'a> ConstEvalCtx<'a> {
                             self.registry.type_long_long_unsigned
                         }
                     }
-                    Some(crate::ast::literal::IntegerSuffix::U) => self.registry.type_int_unsigned,
-                    Some(crate::ast::literal::IntegerSuffix::L) => self.registry.type_long,
-                    Some(crate::ast::literal::IntegerSuffix::UL) => self.registry.type_long_unsigned,
-                    Some(crate::ast::literal::IntegerSuffix::LL) => self.registry.type_long_long,
-                    Some(crate::ast::literal::IntegerSuffix::ULL) => self.registry.type_long_long_unsigned,
+                    Some(IntegerSuffix::U) => self.registry.type_int_unsigned,
+                    Some(IntegerSuffix::L) => self.registry.type_long,
+                    Some(IntegerSuffix::UL) => self.registry.type_long_unsigned,
+                    Some(IntegerSuffix::LL) => self.registry.type_long_long,
+                    Some(IntegerSuffix::ULL) => self.registry.type_long_long_unsigned,
                 };
-                Some(QualType::unqualified(ty))
+                QualType::unqualified(ty)
             }
-            NodeKind::Literal(Literal::Char(_)) => Some(QualType::unqualified(self.registry.type_int)),
-            NodeKind::Literal(Literal::Float { .. }) => Some(QualType::unqualified(self.registry.type_double)),
-            NodeKind::Literal(Literal::String(val)) => {
+            Literal::Char(_) => QualType::unqualified(self.registry.type_int),
+            Literal::Float { .. } => QualType::unqualified(self.registry.type_double),
+            Literal::String(val) => {
                 let parsed_str = parse_string_literal(*val);
                 let len = parsed_str.values.len() + 1;
                 let builtin_base = match parsed_str.builtin_type {
@@ -169,20 +165,15 @@ impl<'a> ConstEvalCtx<'a> {
                     BuiltinType::UInt => self.registry.type_int_unsigned,
                     _ => self.registry.type_char,
                 };
-                Some(QualType::unqualified(
-                    TypeRef::new(builtin_base.base(), TypeClass::Array, 0, len as u32).unwrap(),
-                ))
+                QualType::unqualified(TypeRef::new(builtin_base.base(), TypeClass::Array, 0, len as u32).unwrap())
             }
-            _ => None,
         }
     }
 
     fn eval_complex_part(&self, node: NodeRef, is_real: bool) -> Option<f64> {
         match self.ast.get_kind(node) {
             NodeKind::Literal(Literal::Float { val, suffix }) => match suffix {
-                Some(crate::ast::literal::FloatSuffix::I)
-                | Some(crate::ast::literal::FloatSuffix::IF)
-                | Some(crate::ast::literal::FloatSuffix::IL) => {
+                Some(FloatSuffix::I) | Some(FloatSuffix::IF) | Some(FloatSuffix::IL) => {
                     if is_real {
                         Some(0.0)
                     } else {
@@ -203,10 +194,9 @@ impl<'a> ConstEvalCtx<'a> {
                     if (index as u16) < list.init_len {
                         let item_ref = NodeRef::new(list.init_start.get() + index as u32).expect("NodeRef overflow");
                         if let NodeKind::InitializerItem(item) = self.ast.get_kind(item_ref) {
-                            return eval_const_expr_float(self, item.initializer);
+                            return self.eval_float(item.initializer);
                         }
                     }
-                    // If index is out of bounds, C99/C11 zero-fills
                     Some(0.0)
                 } else {
                     None
@@ -214,488 +204,431 @@ impl<'a> ConstEvalCtx<'a> {
             }
             NodeKind::Cast(_, expr) => self.eval_complex_part(*expr, is_real),
             _ => {
-                // For other expressions, if they are not complex, they are purely real
                 if is_real {
-                    eval_const_expr_float(self, node)
+                    self.eval_float(node)
                 } else {
-                    // Imaginary part of a real expression is 0.0
-                    // But we need to check if the expression is indeed purely real.
-                    // If it's complex but not specifically handled above, we can't evaluate it.
-                    let qt = self.get_resolved_type(node)?;
-                    if qt.ty().is_complex() { None } else { Some(0.0) }
+                    let qt = self.resolve_type(node)?;
+                    if qt.is_complex() { None } else { Some(0.0) }
                 }
             }
         }
     }
-}
 
-/// Evaluate a constant expression node to an i64 value
-pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<i64> {
-    let node_kind = ctx.ast.get_kind(expr_node);
-    match node_kind {
-        NodeKind::Literal(Literal::Int { val, .. }) => Some(*val),
-        NodeKind::Literal(Literal::Char(val)) => Some(*val as i64),
-        NodeKind::Ident(_, sym_ref) => {
-            let symbol = ctx.symbol_table.get_symbol(*sym_ref);
-            if let SymbolKind::EnumConstant { value } = &symbol.kind {
-                Some(*value)
-            } else {
-                None
-            }
-        }
-        NodeKind::BinaryOp(op, left, right) => {
-            let is_cmp_or_logic = matches!(
-                *op,
-                BinaryOp::Equal
-                    | BinaryOp::NotEqual
-                    | BinaryOp::Less
-                    | BinaryOp::LessEqual
-                    | BinaryOp::Greater
-                    | BinaryOp::GreaterEqual
-                    | BinaryOp::LogicAnd
-                    | BinaryOp::LogicOr
-            );
-
-            if is_cmp_or_logic {
-                let is_float_op = ctx.get_resolved_type(*left).is_some_and(|qt| qt.ty().is_floating())
-                    || ctx.get_resolved_type(*right).is_some_and(|qt| qt.ty().is_floating());
-                if is_float_op
-                    && let (Some(left_f), Some(right_f)) =
-                        (eval_const_expr_float(ctx, *left), eval_const_expr_float(ctx, *right))
-                {
-                    return match op {
-                        BinaryOp::Equal => Some((left_f == right_f) as i64),
-                        BinaryOp::NotEqual => Some((left_f != right_f) as i64),
-                        BinaryOp::Less => Some((left_f < right_f) as i64),
-                        BinaryOp::LessEqual => Some((left_f <= right_f) as i64),
-                        BinaryOp::Greater => Some((left_f > right_f) as i64),
-                        BinaryOp::GreaterEqual => Some((left_f >= right_f) as i64),
-                        BinaryOp::LogicAnd => Some(((left_f != 0.0) && (right_f != 0.0)) as i64),
-                        BinaryOp::LogicOr => Some(((left_f != 0.0) || (right_f != 0.0)) as i64),
-                        _ => None,
-                    };
-                }
-            }
-
-            // If the operator is logic and/or, try fallback to float evaluation if it doesn't evaluate as an integer
-            let left_val = match eval_const_expr(ctx, *left) {
-                Some(v) => v,
-                None => {
-                    if matches!(op, BinaryOp::LogicAnd | BinaryOp::LogicOr) {
-                        let is_float_op = ctx.get_resolved_type(*left).is_some_and(|qt| qt.ty().is_floating())
-                            || ctx.get_resolved_type(*right).is_some_and(|qt| qt.ty().is_floating());
-                        if is_float_op {
-                            if *op == BinaryOp::LogicAnd {
-                                if let Some(left_f) = eval_const_expr_float(ctx, *left) {
-                                    if left_f == 0.0 {
-                                        return Some(0);
-                                    }
-                                    if let Some(right_f) = eval_const_expr_float(ctx, *right) {
-                                        return Some((right_f != 0.0) as i64);
-                                    }
-                                }
-                            } else if let Some(left_f) = eval_const_expr_float(ctx, *left) {
-                                if left_f != 0.0 {
-                                    return Some(1);
-                                }
-                                if let Some(right_f) = eval_const_expr_float(ctx, *right) {
-                                    return Some((right_f != 0.0) as i64);
-                                }
-                            }
-                        }
-                    }
-                    return None;
-                }
-            };
-
-            // Short-circuiting logic
-            match op {
-                BinaryOp::LogicAnd => {
-                    if left_val == 0 {
-                        return Some(0);
-                    }
-                    let right_val = eval_const_expr(ctx, *right)?;
-                    return Some((right_val != 0) as i64);
-                }
-                BinaryOp::LogicOr => {
-                    if left_val != 0 {
-                        return Some(1);
-                    }
-                    let right_val = eval_const_expr(ctx, *right)?;
-                    return Some((right_val != 0) as i64);
-                }
-                _ => {}
-            }
-
-            let right_val = eval_const_expr(ctx, *right)?;
-
-            // Determine if operation should be unsigned
-            let (is_unsigned, is_unsigned_cmp) = {
-                let left_qt = ctx.get_resolved_type(*left);
-                let right_qt = ctx.get_resolved_type(*right);
-
-                match (left_qt, right_qt) {
-                    (Some(lt), Some(rt)) => {
-                        let lb = ctx.registry.get(lt.ty());
-                        let rb = ctx.registry.get(rt.ty());
-                        let is_unsigned = (!lb.is_signed() && lb.is_int()) || (!rb.is_signed() && rb.is_int());
-                        let is_unsigned_cmp = is_unsigned || lb.is_pointer() || rb.is_pointer();
-                        (is_unsigned, is_unsigned_cmp)
-                    }
-                    (Some(qt), None) | (None, Some(qt)) => {
-                        let ty_obj = ctx.registry.get(qt.ty());
-                        let is_unsigned = !ty_obj.is_signed() && ty_obj.is_int();
-                        (is_unsigned, is_unsigned || ty_obj.is_pointer())
-                    }
-                    (None, None) => (false, false),
-                }
-            };
-
-            let result = match op {
-                BinaryOp::Add => Some(left_val.wrapping_add(right_val)),
-                BinaryOp::Sub => Some(left_val.wrapping_sub(right_val)),
-                BinaryOp::Mul => Some(left_val.wrapping_mul(right_val)),
-                BinaryOp::Div => {
-                    if right_val == 0 {
-                        None
-                    } else if is_unsigned {
-                        Some((left_val as u64).wrapping_div(right_val as u64) as i64)
-                    } else {
-                        Some(left_val.wrapping_div(right_val))
-                    }
-                }
-                BinaryOp::Mod => {
-                    if right_val == 0 {
-                        None
-                    } else if is_unsigned {
-                        Some((left_val as u64).wrapping_rem(right_val as u64) as i64)
-                    } else {
-                        Some(left_val.wrapping_rem(right_val))
-                    }
-                }
-                BinaryOp::Equal => Some((left_val == right_val) as i64),
-                BinaryOp::NotEqual => Some((left_val != right_val) as i64),
-                BinaryOp::Less => {
-                    if is_unsigned_cmp {
-                        Some(((left_val as u64) < (right_val as u64)) as i64)
-                    } else {
-                        Some((left_val < right_val) as i64)
-                    }
-                }
-                BinaryOp::LessEqual => {
-                    if is_unsigned_cmp {
-                        Some(((left_val as u64) <= (right_val as u64)) as i64)
-                    } else {
-                        Some((left_val <= right_val) as i64)
-                    }
-                }
-                BinaryOp::Greater => {
-                    if is_unsigned_cmp {
-                        Some(((left_val as u64) > (right_val as u64)) as i64)
-                    } else {
-                        Some((left_val > right_val) as i64)
-                    }
-                }
-                BinaryOp::GreaterEqual => {
-                    if is_unsigned_cmp {
-                        Some(((left_val as u64) >= (right_val as u64)) as i64)
-                    } else {
-                        Some((left_val >= right_val) as i64)
-                    }
-                }
-                // LogicAnd/LogicOr handled above
-                BinaryOp::BitOr => Some(left_val | right_val),
-                BinaryOp::BitAnd => Some(left_val & right_val),
-                BinaryOp::BitXor => Some(left_val ^ right_val),
-                BinaryOp::LShift => {
-                    // Safe shift, handle overflow or large shift count by wrapping or masking
-                    Some(left_val.wrapping_shl(right_val as u32))
-                }
-                BinaryOp::RShift => {
-                    if is_unsigned {
-                        Some((left_val as u64).wrapping_shr(right_val as u32) as i64)
-                    } else {
-                        Some(left_val.wrapping_shr(right_val as u32))
-                    }
-                }
-                _ => None,
-            };
-
-            if let Some(v) = result {
-                if let Some(res_ty) = ctx.get_result_type(*op, *left, *right) {
-                    return Some(ctx.truncate_to_type(v, res_ty));
-                }
-                return Some(v);
-            }
-            None
-        }
-        NodeKind::UnaryOp(op, expr) => {
-            let result = if let Some(operand_val) = eval_const_expr(ctx, *expr) {
-                match op {
-                    UnaryOp::LogicNot => Some((operand_val == 0) as i64),
-                    UnaryOp::Plus => Some(operand_val),
-                    UnaryOp::Minus => Some(operand_val.wrapping_neg()),
-                    UnaryOp::BitNot => Some(!operand_val),
-                    _ => None,
-                }
-            } else if let Some(f_val) = eval_const_expr_float(ctx, *expr) {
-                match op {
-                    UnaryOp::LogicNot => Some((f_val == 0.0) as i64),
-                    UnaryOp::Plus => Some(f_val as i64),
-                    UnaryOp::Minus => Some(-(f_val as i64)),
-                    _ => None,
-                }
-            } else {
-                None
-            };
-
-            if let Some(v) = result {
-                if let Some(res_ty) = ctx.get_unary_result_type(*op, *expr) {
-                    return Some(ctx.truncate_to_type(v, res_ty));
-                }
-                return Some(v);
-            }
-            None
-        }
-        NodeKind::SizeOfExpr(expr) => {
-            let qt = ctx
-                .get_resolved_type(*expr)
-                .or_else(|| ctx.infer_type_from_node(*expr))?;
-            let layout = ctx.registry.try_get_layout(qt.ty())?;
-            Some(layout.size as i64)
-        }
-        NodeKind::AlignOfType(qt) => {
-            let layout = ctx.registry.try_get_layout(qt.ty())?;
-            Some(layout.alignment as i64)
-        }
-        NodeKind::AlignOfExpr(expr) => {
-            // Take the alignment of the expression's type.
-            // If the expression is a direct reference to a variable, it might have a custom alignment.
-            if let NodeKind::Ident(_, symbol_ref) = ctx.ast.get_kind(*expr) {
-                let symbol = ctx.symbol_table.get_symbol(*symbol_ref);
-                if let SymbolKind::Variable { alignment, .. } = &symbol.kind
-                    && let Some(align) = alignment
-                {
-                    return Some(*align as i64);
-                }
-            }
-
-            let qt = ctx
-                .get_resolved_type(*expr)
-                .or_else(|| ctx.infer_type_from_node(*expr))?;
-            let layout = ctx.registry.try_get_layout(qt.ty())?;
-            Some(layout.alignment as i64)
-        }
-        NodeKind::SizeOfType(qt) => {
-            let layout = ctx.registry.try_get_layout(qt.ty())?;
-            Some(layout.size as i64)
-        }
-        NodeKind::GenericSelection(_) => {
-            let info = ctx.semantic_info.or(ctx.ast.semantic_info.as_ref());
-            if let Some(info) = info
-                && let Some(selected_expr) = info.generic_selections.get(&expr_node.index())
-            {
-                return eval_const_expr(ctx, *selected_expr);
-            }
-            None
-        }
-        NodeKind::BuiltinConstantP(expr) => {
-            if eval_const_expr(ctx, *expr).is_some() {
-                Some(1)
-            } else {
-                Some(0)
-            }
-        }
-        NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
-            let info = ctx.semantic_info.or(ctx.ast.semantic_info.as_ref());
-            if let Some(info) = info
-                && let Some(selected_expr) = info.choose_expressions.get(&expr_node.index())
-            {
-                return eval_const_expr(ctx, *selected_expr);
-            }
-
-            let cond_val = eval_const_expr(ctx, *cond)?;
-            if cond_val != 0 {
-                eval_const_expr(ctx, *true_expr)
-            } else {
-                eval_const_expr(ctx, *false_expr)
-            }
-        }
-        NodeKind::TernaryOp(cond, then_expr, else_expr) => {
-            let cond_val = eval_const_expr(ctx, *cond)?;
-            if cond_val != 0 {
-                eval_const_expr(ctx, *then_expr)
-            } else {
-                eval_const_expr(ctx, *else_expr)
-            }
-        }
-        NodeKind::Cast(target_qt, expr) => {
-            // C11 6.3.1.2: Any scalar value converts to 1 if it compares unequal to 0, otherwise 0.
-            if target_qt.ty().builtin() == Some(BuiltinType::Bool) {
-                if let Some(val) = eval_const_expr(ctx, *expr) {
-                    return Some((val != 0) as i64);
-                } else if let Some(f_val) = eval_const_expr_float(ctx, *expr) {
-                    return Some((f_val != 0.0) as i64);
+    pub(crate) fn eval_int(&self, expr_node: NodeRef) -> Option<i64> {
+        let node_kind = self.ast.get_kind(expr_node);
+        match node_kind {
+            NodeKind::Literal(Literal::Int { val, .. }) => Some(*val),
+            NodeKind::Literal(Literal::Char(val)) => Some(*val as i64),
+            NodeKind::Ident(_, sym_ref) => {
+                let symbol = self.symbol_table.get_symbol(*sym_ref);
+                if let SymbolKind::EnumConstant { value } = &symbol.kind {
+                    Some(*value)
                 } else {
-                    return None;
+                    None
                 }
             }
-
-            // Try integer evaluation first
-            if let Some(val) = eval_const_expr(ctx, *expr) {
-                if !target_qt.is_integer() && !target_qt.is_pointer() {
-                    return None;
+            NodeKind::BinaryOp(op, left, right) => self.eval_binary(*op, *left, *right),
+            NodeKind::UnaryOp(op, expr) => self.eval_unary(*op, *expr),
+            NodeKind::SizeOfExpr(expr) => self.eval_sizeof(Some(*expr), None),
+            NodeKind::SizeOfType(qt) => self.eval_sizeof(None, Some(*qt)),
+            NodeKind::AlignOfExpr(expr) => self.eval_alignof(Some(*expr), None),
+            NodeKind::AlignOfType(qt) => self.eval_alignof(None, Some(*qt)),
+            NodeKind::GenericSelection(_) => {
+                let info = self.semantic_info.or(self.ast.semantic_info.as_ref());
+                if let Some(info) = info
+                    && let Some(selected_expr) = info.generic_selections.get(&expr_node.index())
+                {
+                    return self.eval_int(*selected_expr);
                 }
-                let target_type_obj = ctx.registry.get(target_qt.ty());
-                return Some(target_type_obj.truncate_int(val));
+                None
             }
-
-            // If integer evaluation fails, try float evaluation if the operand is a float
-            // and the target is an integer/pointer.
-            if let Some(f_val) = eval_const_expr_float(ctx, *expr) {
-                if !target_qt.is_integer() && !target_qt.is_pointer() {
-                    return None;
+            NodeKind::BuiltinConstantP(expr) => Some(self.eval_int(*expr).is_some() as i64),
+            NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
+                let info = self.semantic_info.or(self.ast.semantic_info.as_ref());
+                if let Some(info) = info
+                    && let Some(selected_expr) = info.choose_expressions.get(&expr_node.index())
+                {
+                    return self.eval_int(*selected_expr);
                 }
-
-                // C11 6.6p6: "floating constants that are the immediate operands of casts" are allowed in
-                // integer constant expressions. We also allow nested casts to support the recursive evaluation
-                // needed for our precision fixes (e.g., (int)(float)expr).
-                // However, we reject more complex expressions like (int)(1.0 + 1.0) to satisfy the compiler's
-                // existing test suite requirements for strict C11 compliance in static assertions.
-                let operand_kind = ctx.ast.get_kind(*expr);
-                if !matches!(
-                    operand_kind,
-                    NodeKind::Literal(Literal::Float { .. }) | NodeKind::Cast(..)
-                ) {
-                    return None;
+                let cond_val = self.eval_int(*cond)?;
+                if cond_val != 0 {
+                    self.eval_int(*true_expr)
+                } else {
+                    self.eval_int(*false_expr)
                 }
-                if !f_val.is_finite() {
-                    return None;
+            }
+            NodeKind::TernaryOp(cond, then_expr, else_expr) => {
+                let cond_val = self.eval_int(*cond)?;
+                if cond_val != 0 {
+                    self.eval_int(*then_expr)
+                } else {
+                    self.eval_int(*else_expr)
                 }
-                let truncated = f_val.trunc();
-                if !(-9223372036854775808.0..9223372036854775808.0).contains(&truncated) {
-                    return None;
+            }
+            NodeKind::Cast(target_qt, expr) => self.eval_cast(*target_qt, *expr),
+            NodeKind::BuiltinOffsetof(ty, expr) => {
+                if let Some(info) = self.semantic_info
+                    && let Some(&offset) = info.offsetof_results.get(&expr_node.index())
+                {
+                    return Some(offset);
                 }
-                let val = truncated as i64;
-                let target_type_obj = ctx.registry.get(target_qt.ty());
-                return Some(target_type_obj.truncate_int(val));
+                eval_offsetof(self, *ty, *expr)
             }
-
-            None
-        }
-        NodeKind::BuiltinOffsetof(ty, expr) => {
-            if let Some(info) = ctx.semantic_info
-                && let Some(&offset) = info.offsetof_results.get(&expr_node.index())
-            {
-                return Some(offset);
+            NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
+                Some(self.registry.is_compatible(t1.strip_all(), t2.strip_all()) as i64)
             }
-            eval_offsetof(ctx, *ty, *expr)
-        }
-        NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
-            let t1_unqual = t1.strip_all();
-            let t2_unqual = t2.strip_all();
-            Some(ctx.registry.is_compatible(t1_unqual, t2_unqual) as i64)
-        }
-        NodeKind::BuiltinPopcount(exp) => {
-            let val = eval_const_expr(ctx, *exp)?;
-            Some(val.count_ones() as i64)
-        }
-        NodeKind::BuiltinClz(exp) => {
-            let val = eval_const_expr(ctx, *exp)?;
-            if val == 0 {
-                None // Undefined behavior for 0, return None
-            } else {
-                Some(val.leading_zeros() as i64)
+            NodeKind::BuiltinPopcount(exp) => self.eval_int(*exp).map(|v| v.count_ones() as i64),
+            NodeKind::BuiltinClz(exp) => self
+                .eval_int(*exp)
+                .and_then(|v| (v != 0).then(|| v.leading_zeros() as i64)),
+            NodeKind::BuiltinCtz(exp) => self
+                .eval_int(*exp)
+                .and_then(|v| (v != 0).then(|| v.trailing_zeros() as i64)),
+            NodeKind::BuiltinFfs(exp) => self
+                .eval_int(*exp)
+                .map(|v| if v == 0 { 0 } else { (v.trailing_zeros() + 1) as i64 }),
+            NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
+                self.eval_float(*exp).map(|v| v.abs() as i64)
             }
-        }
-        NodeKind::BuiltinCtz(exp) => {
-            let val = eval_const_expr(ctx, *exp)?;
-            if val == 0 {
-                None // Undefined behavior for 0, return None
-            } else {
-                Some(val.trailing_zeros() as i64)
-            }
-        }
-        NodeKind::BuiltinFfs(exp) => {
-            let val = eval_const_expr(ctx, *exp)?;
-            if val == 0 {
-                Some(0)
-            } else {
-                Some((val.trailing_zeros() + 1) as i64)
-            }
-        }
-        NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
-            eval_const_expr_float(ctx, *exp).map(|v| v.abs() as i64)
-        }
-        _ => None,
-    }
-}
-
-/// Evaluate a constant expression node to an f64 value
-///
-/// This function handles floating-point operations specifically and falls back to integer evaluation
-/// for other types, converting the result to f64.
-pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr: NodeRef) -> Option<f64> {
-    let node_kind = ctx.ast.get_kind(expr);
-    match node_kind {
-        NodeKind::Literal(Literal::Float { val, .. }) => {
-            // C11 6.4.4.2p4: A floating constant with suffix 'f' or 'F' has type float.
-            // We ensure that the constant value respects the precision of its type.
-            if let Some(qt) = ctx
-                .semantic_info
-                .and_then(|info| info.types.get(expr.index()).and_then(|t| t.as_ref()))
-                && qt.ty().builtin() == Some(BuiltinType::Float)
-            {
-                return Some((*val as f32) as f64);
-            }
-            Some(*val)
-        }
-        NodeKind::Literal(Literal::Int { val, .. }) => Some(*val as f64),
-        NodeKind::Literal(Literal::Char(val)) => Some(*val as f64),
-        NodeKind::BinaryOp(op, left, right) => {
-            let left_val = eval_const_expr_float(ctx, *left)?;
-            let right_val = eval_const_expr_float(ctx, *right)?;
-            match op {
-                BinaryOp::Add => Some(left_val + right_val),
-                BinaryOp::Sub => Some(left_val - right_val),
-                BinaryOp::Mul => Some(left_val * right_val),
-                BinaryOp::Div => Some(left_val / right_val),
-                BinaryOp::Less => Some((left_val < right_val) as i64 as f64),
-                BinaryOp::LessEqual => Some((left_val <= right_val) as i64 as f64),
-                BinaryOp::Greater => Some((left_val > right_val) as i64 as f64),
-                BinaryOp::GreaterEqual => Some((left_val >= right_val) as i64 as f64),
-                BinaryOp::Equal => Some((left_val == right_val) as i64 as f64),
-                BinaryOp::NotEqual => Some((left_val != right_val) as i64 as f64),
-                _ => None,
-            }
-        }
-        NodeKind::UnaryOp(op, expr) => match op {
-            UnaryOp::Plus => eval_const_expr_float(ctx, *expr),
-            UnaryOp::Minus => eval_const_expr_float(ctx, *expr).map(|v| -v),
-            UnaryOp::LogicNot => eval_const_expr_float(ctx, *expr).map(|v| (v == 0.0) as i64 as f64),
-            UnaryOp::Real => ctx.eval_complex_part(*expr, true),
-            UnaryOp::Imag => ctx.eval_complex_part(*expr, false),
             _ => None,
-        },
-        NodeKind::Cast(target_qt, expr) => {
-            if let Some(val) = eval_const_expr_float(ctx, *expr) {
+        }
+    }
+
+    pub(crate) fn eval_float(&self, expr: NodeRef) -> Option<f64> {
+        match self.ast.get_kind(expr) {
+            NodeKind::Literal(Literal::Float { val, .. }) => {
+                if let Some(qt) = self.get_resolved_type(expr)
+                    && qt.builtin() == Some(BuiltinType::Float)
+                {
+                    return Some((*val as f32) as f64);
+                }
+                Some(*val)
+            }
+            NodeKind::Literal(Literal::Int { val, .. }) => Some(*val as f64),
+            NodeKind::Literal(Literal::Char(val)) => Some(*val as f64),
+            NodeKind::BinaryOp(op, left, right) => {
+                let l = self.eval_float(*left)?;
+                let r = self.eval_float(*right)?;
+                match op {
+                    BinaryOp::Add => Some(l + r),
+                    BinaryOp::Sub => Some(l - r),
+                    BinaryOp::Mul => Some(l * r),
+                    BinaryOp::Div => Some(l / r),
+                    BinaryOp::Less => Some((l < r) as i64 as f64),
+                    BinaryOp::LessEqual => Some((l <= r) as i64 as f64),
+                    BinaryOp::Greater => Some((l > r) as i64 as f64),
+                    BinaryOp::GreaterEqual => Some((l >= r) as i64 as f64),
+                    BinaryOp::Equal => Some((l == r) as i64 as f64),
+                    BinaryOp::NotEqual => Some((l != r) as i64 as f64),
+                    _ => None,
+                }
+            }
+            NodeKind::UnaryOp(op, expr) => match op {
+                UnaryOp::Plus => self.eval_float(*expr),
+                UnaryOp::Minus => self.eval_float(*expr).map(|v| -v),
+                UnaryOp::LogicNot => self.eval_float(*expr).map(|v| (v == 0.0) as i64 as f64),
+                UnaryOp::Real => self.eval_complex_part(*expr, true),
+                UnaryOp::Imag => self.eval_complex_part(*expr, false),
+                _ => None,
+            },
+            NodeKind::Cast(target_qt, expr) => {
+                let val = self.eval_float(*expr)?;
                 if target_qt.is_integer() {
                     Some(val.trunc())
-                } else if target_qt.ty().builtin() == Some(BuiltinType::Float) {
-                    // Truncate to f32 precision
+                } else if target_qt.builtin() == Some(BuiltinType::Float) {
                     Some((val as f32) as f64)
                 } else {
                     Some(val)
                 }
-            } else {
-                None
+            }
+            NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
+                self.eval_float(*exp).map(|v| v.abs())
+            }
+            _ => self.eval_int(expr).map(|v| v as f64),
+        }
+    }
+
+    fn eval_binary(&self, op: BinaryOp, left: NodeRef, right: NodeRef) -> Option<i64> {
+        let is_cmp_or_logic = matches!(
+            op,
+            BinaryOp::Equal
+                | BinaryOp::NotEqual
+                | BinaryOp::Less
+                | BinaryOp::LessEqual
+                | BinaryOp::Greater
+                | BinaryOp::GreaterEqual
+                | BinaryOp::LogicAnd
+                | BinaryOp::LogicOr
+        );
+
+        if is_cmp_or_logic {
+            let is_float_op = self.resolve_type(left).is_some_and(|qt| qt.is_floating())
+                || self.resolve_type(right).is_some_and(|qt| qt.is_floating());
+            if is_float_op && let (Some(left_f), Some(right_f)) = (self.eval_float(left), self.eval_float(right)) {
+                return match op {
+                    BinaryOp::Equal => Some((left_f == right_f) as i64),
+                    BinaryOp::NotEqual => Some((left_f != right_f) as i64),
+                    BinaryOp::Less => Some((left_f < right_f) as i64),
+                    BinaryOp::LessEqual => Some((left_f <= right_f) as i64),
+                    BinaryOp::Greater => Some((left_f > right_f) as i64),
+                    BinaryOp::GreaterEqual => Some((left_f >= right_f) as i64),
+                    BinaryOp::LogicAnd => Some(((left_f != 0.0) && (right_f != 0.0)) as i64),
+                    BinaryOp::LogicOr => Some(((left_f != 0.0) || (right_f != 0.0)) as i64),
+                    _ => None,
+                };
             }
         }
-        NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
-            eval_const_expr_float(ctx, *exp).map(|v| v.abs())
+
+        let left_val = match self.eval_int(left) {
+            Some(v) => v,
+            None => {
+                if matches!(op, BinaryOp::LogicAnd | BinaryOp::LogicOr)
+                    && let Some(left_f) = self.eval_float(left)
+                {
+                    if op == BinaryOp::LogicAnd {
+                        if left_f == 0.0 {
+                            return Some(0);
+                        }
+                        if let Some(right_f) = self.eval_float(right) {
+                            return Some((right_f != 0.0) as i64);
+                        }
+                    } else {
+                        if left_f != 0.0 {
+                            return Some(1);
+                        }
+                        if let Some(right_f) = self.eval_float(right) {
+                            return Some((right_f != 0.0) as i64);
+                        }
+                    }
+                }
+                return None;
+            }
+        };
+
+        match op {
+            BinaryOp::LogicAnd => {
+                if left_val == 0 {
+                    return Some(0);
+                }
+                return self.eval_int(right).map(|v| (v != 0) as i64);
+            }
+            BinaryOp::LogicOr => {
+                if left_val != 0 {
+                    return Some(1);
+                }
+                return self.eval_int(right).map(|v| (v != 0) as i64);
+            }
+            _ => {}
         }
-        _ => eval_const_expr(ctx, expr).map(|v| v as f64),
+
+        let right_val = self.eval_int(right)?;
+
+        let (is_unsigned, is_unsigned_cmp) = self.get_unsigned_info(left, right);
+
+        let result = match op {
+            BinaryOp::Add => Some(left_val.wrapping_add(right_val)),
+            BinaryOp::Sub => Some(left_val.wrapping_sub(right_val)),
+            BinaryOp::Mul => Some(left_val.wrapping_mul(right_val)),
+            BinaryOp::Div => {
+                if right_val == 0 {
+                    None
+                } else if is_unsigned {
+                    Some((left_val as u64).wrapping_div(right_val as u64) as i64)
+                } else {
+                    Some(left_val.wrapping_div(right_val))
+                }
+            }
+            BinaryOp::Mod => {
+                if right_val == 0 {
+                    None
+                } else if is_unsigned {
+                    Some((left_val as u64).wrapping_rem(right_val as u64) as i64)
+                } else {
+                    Some(left_val.wrapping_rem(right_val))
+                }
+            }
+            BinaryOp::Equal => Some((left_val == right_val) as i64),
+            BinaryOp::NotEqual => Some((left_val != right_val) as i64),
+            BinaryOp::Less => {
+                if is_unsigned_cmp {
+                    Some(((left_val as u64) < (right_val as u64)) as i64)
+                } else {
+                    Some((left_val < right_val) as i64)
+                }
+            }
+            BinaryOp::LessEqual => {
+                if is_unsigned_cmp {
+                    Some(((left_val as u64) <= (right_val as u64)) as i64)
+                } else {
+                    Some((left_val <= right_val) as i64)
+                }
+            }
+            BinaryOp::Greater => {
+                if is_unsigned_cmp {
+                    Some(((left_val as u64) > (right_val as u64)) as i64)
+                } else {
+                    Some((left_val > right_val) as i64)
+                }
+            }
+            BinaryOp::GreaterEqual => {
+                if is_unsigned_cmp {
+                    Some(((left_val as u64) >= (right_val as u64)) as i64)
+                } else {
+                    Some((left_val >= right_val) as i64)
+                }
+            }
+            BinaryOp::BitOr => Some(left_val | right_val),
+            BinaryOp::BitAnd => Some(left_val & right_val),
+            BinaryOp::BitXor => Some(left_val ^ right_val),
+            BinaryOp::LShift => Some(left_val.wrapping_shl(right_val as u32)),
+            BinaryOp::RShift => {
+                if is_unsigned {
+                    Some((left_val as u64).wrapping_shr(right_val as u32) as i64)
+                } else {
+                    Some(left_val.wrapping_shr(right_val as u32))
+                }
+            }
+            _ => None,
+        };
+
+        if let Some(v) = result {
+            if let Some(res_ty) = self.get_result_type(op, left, right) {
+                return Some(self.truncate_to_type(v, res_ty));
+            }
+            return Some(v);
+        }
+        None
     }
+
+    fn eval_unary(&self, op: UnaryOp, expr: NodeRef) -> Option<i64> {
+        let result = if let Some(val) = self.eval_int(expr) {
+            match op {
+                UnaryOp::LogicNot => Some((val == 0) as i64),
+                UnaryOp::Plus => Some(val),
+                UnaryOp::Minus => Some(val.wrapping_neg()),
+                UnaryOp::BitNot => Some(!val),
+                _ => None,
+            }
+        } else if let Some(f_val) = self.eval_float(expr) {
+            match op {
+                UnaryOp::LogicNot => Some((f_val == 0.0) as i64),
+                UnaryOp::Plus => Some(f_val as i64),
+                UnaryOp::Minus => Some(-(f_val as i64)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        if let Some(v) = result {
+            if let Some(res_ty) = self.get_unary_result_type(op, expr) {
+                return Some(self.truncate_to_type(v, res_ty));
+            }
+            return Some(v);
+        }
+        None
+    }
+
+    fn eval_cast(&self, target_qt: QualType, expr: NodeRef) -> Option<i64> {
+        if target_qt.builtin() == Some(BuiltinType::Bool) {
+            if let Some(val) = self.eval_int(expr) {
+                return Some((val != 0) as i64);
+            }
+            if let Some(f_val) = self.eval_float(expr) {
+                return Some((f_val != 0.0) as i64);
+            }
+            return None;
+        }
+
+        if let Some(val) = self.eval_int(expr) {
+            if !target_qt.is_integer() && !target_qt.is_pointer() {
+                return None;
+            }
+            return Some(self.truncate_to_type(val, target_qt));
+        }
+
+        if let Some(f_val) = self.eval_float(expr) {
+            if !target_qt.is_integer() && !target_qt.is_pointer() {
+                return None;
+            }
+            let op_kind = self.ast.get_kind(expr);
+            if !matches!(op_kind, NodeKind::Literal(Literal::Float { .. }) | NodeKind::Cast(..)) {
+                return None;
+            }
+            if !f_val.is_finite() {
+                return None;
+            }
+
+            const I64_MIN_F64: f64 = i64::MIN as f64;
+            const I64_MAX_PLUS_1_F64: f64 = 9223372036854775808.0; // 2^63
+
+            let truncated = f_val.trunc();
+            if !(I64_MIN_F64..I64_MAX_PLUS_1_F64).contains(&truncated) {
+                return None;
+            }
+            return Some(self.truncate_to_type(truncated as i64, target_qt));
+        }
+        None
+    }
+
+    fn eval_sizeof(&self, expr: Option<NodeRef>, qt: Option<QualType>) -> Option<i64> {
+        let ty = if let Some(e) = expr {
+            self.resolve_type(e)?.ty()
+        } else {
+            qt?.ty()
+        };
+        let layout = self.registry.try_get_layout(ty)?;
+        Some(layout.size as i64)
+    }
+
+    fn eval_alignof(&self, expr: Option<NodeRef>, qt: Option<QualType>) -> Option<i64> {
+        if let Some(e) = expr
+            && let NodeKind::Ident(_, symbol_ref) = self.ast.get_kind(e)
+        {
+            let symbol = self.symbol_table.get_symbol(*symbol_ref);
+            if let SymbolKind::Variable { alignment, .. } = &symbol.kind
+                && let Some(align) = alignment
+            {
+                return Some(*align as i64);
+            }
+        }
+        let ty = if let Some(e) = expr {
+            self.resolve_type(e)?.ty()
+        } else {
+            qt?.ty()
+        };
+        let layout = self.registry.try_get_layout(ty)?;
+        Some(layout.alignment as i64)
+    }
+
+    fn get_unsigned_info(&self, left: NodeRef, right: NodeRef) -> (bool, bool) {
+        let left_qt = self.resolve_type(left);
+        let right_qt = self.resolve_type(right);
+        match (left_qt, right_qt) {
+            (Some(lt), Some(rt)) => {
+                let lb = self.registry.get(lt.ty());
+                let rb = self.registry.get(rt.ty());
+                let is_unsigned = (!lb.is_signed() && lb.is_int()) || (!rb.is_signed() && rb.is_int());
+                (is_unsigned, is_unsigned || lb.is_pointer() || rb.is_pointer())
+            }
+            (Some(qt), None) | (None, Some(qt)) => {
+                let ty_obj = self.registry.get(qt.ty());
+                let is_unsigned = !ty_obj.is_signed() && ty_obj.is_int();
+                (is_unsigned, is_unsigned || ty_obj.is_pointer())
+            }
+            _ => (false, false),
+        }
+    }
+}
+
+///// Evaluate a constant expression node to an i64 value
+pub(crate) fn eval_const_expr(ctx: &ConstEvalCtx, expr_node: NodeRef) -> Option<i64> {
+    ctx.eval_int(expr_node)
+}
+
+/// Evaluate a constant expression node to an f64 value
+pub(crate) fn eval_const_expr_float(ctx: &ConstEvalCtx, expr: NodeRef) -> Option<f64> {
+    ctx.eval_float(expr)
 }
 
 fn eval_offsetof(ctx: &ConstEvalCtx, qt: QualType, expr: NodeRef) -> Option<i64> {

@@ -243,7 +243,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         decl_ctx: DeclaratorContext,
     ) -> QualType {
         // C11 6.7.6.2 Array declarators
-        if !self.registry.is_complete(element_qt.ty()) || element_qt.ty().is_function() {
+        if !self.registry.is_complete(element_qt.ty()) || element_qt.is_function() {
             self.report_error(span, SemanticErrorKind::IncompleteType { ty: element_qt });
         }
 
@@ -1349,7 +1349,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // C11 6.7.6.2p2: VLA shall not have static storage duration.
         // Variably modified types (like pointers to VLAs) ARE allowed.
         if (is_global || spec_info.storage == Some(StorageClass::Static))
-            && qt.ty().is_array()
+            && qt.is_array()
             && self.registry.is_variably_modified(qt.ty())
         {
             self.report_error(span, SemanticErrorKind::VlaAtFileScope);

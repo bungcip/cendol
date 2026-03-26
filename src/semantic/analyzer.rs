@@ -2229,10 +2229,11 @@ impl<'a> SemanticAnalyzer<'a> {
 
         self.visit_node(data.body);
 
-        if let Some(ctx) = self.current_function {
-            if ctx.is_noreturn && self.can_fall_through(data.body) {
-                self.report_error(node, SemanticErrorKind::NoreturnFunctionFallsOff { name: ctx.name });
-            }
+        if let Some(ctx) = self.current_function
+            && ctx.is_noreturn
+            && self.can_fall_through(data.body)
+        {
+            self.report_error(node, SemanticErrorKind::NoreturnFunctionFallsOff { name: ctx.name });
         }
 
         // Validate goto statements
@@ -2934,7 +2935,7 @@ impl<'a> SemanticAnalyzer<'a> {
             qt = qt.strip_all();
         }
 
-        if qt.ty().is_integer() {
+        if qt.is_integer() {
             qt = self.apply_integer_promotion(node, qt);
         }
         qt

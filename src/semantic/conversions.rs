@@ -1,118 +1,89 @@
 //! Implements C11 semantic conversions, such as usual arithmetic conversions
 //! and integer promotions.
 
-use crate::semantic::{BuiltinType, QualType, TypeKind, TypeRef, TypeRegistry};
+use crate::semantic::{BuiltinType, QualType, TypeKind, TypeRegistry};
 
 /// Performs the "usual arithmetic conversions" as specified in C11 6.3.1.8.
 pub(super) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
-    let lt = lhs.ty();
-    let rt = rhs.ty();
-
-    if lt.is_floating() || rt.is_floating() {
-        let get_real_type = |registry: &TypeRegistry, ty: TypeRef| {
-            if ty.is_complex() {
-                match &registry.get(ty).kind {
+    if lhs.is_floating() || rhs.is_floating() {
+        let get_real = |qt: QualType| {
+            if qt.is_complex() {
+                match &ctx.get(qt.ty()).kind {
                     TypeKind::Complex { base_type } => Some(*base_type),
                     _ => unreachable!("ICE: Complex type has non-complex kind"),
                 }
             } else {
-                Some(ty)
+                Some(qt.ty())
             }
         };
 
-        let lr = get_real_type(ctx, lt)?;
-        let rr = get_real_type(ctx, rt)?;
+        let lr = get_real(lhs)?;
+        let rr = get_real(rhs)?;
 
-        let lb = lr.builtin();
-        let rb = rr.builtin();
-
-        let common_real = match (lb, rb) {
+        let common_real = match (lr.builtin(), rr.builtin()) {
             (Some(BuiltinType::LongDouble), _) | (_, Some(BuiltinType::LongDouble)) => ctx.type_long_double,
             (Some(BuiltinType::Double), _) | (_, Some(BuiltinType::Double)) => ctx.type_double,
             _ => ctx.type_float,
         };
 
-        if lt.is_complex() || rt.is_complex() {
-            // Use immutable lookup — the complex type must have been created earlier by the caller.
-            let complex = ctx
-                .find_complex_type(common_real)
-                .unwrap_or_else(|| panic!("ICE: complex type for {:?} not pre-allocated", common_real));
-            return Some(QualType::unqualified(complex));
+        let res_ty = if lhs.is_complex() || rhs.is_complex() {
+            ctx.find_complex_type(common_real)
+                .unwrap_or_else(|| panic!("ICE: complex type for {:?} not pre-allocated", common_real))
         } else {
-            return Some(QualType::unqualified(common_real));
-        }
+            common_real
+        };
+        return Some(QualType::unqualified(res_ty));
     }
 
-    // Both types are promoted to at least 'int' or 'unsigned int'
     let lp = integer_promotion(ctx, lhs, None);
     let rp = integer_promotion(ctx, rhs, None);
     if lp == rp {
         return Some(lp);
     }
 
-    let lbp = lp.ty().builtin()?;
-    let rbp = rp.ty().builtin()?;
+    let lbp = lp.builtin()?;
+    let rbp = rp.builtin()?;
     let (ls, lr) = (lbp.is_signed(), lbp.rank());
     let (rs, rr) = (rbp.is_signed(), rbp.rank());
 
-    // Same signedness: higher rank wins
     if ls == rs {
         return Some(if lr >= rr { lp } else { rp });
     }
 
-    // Different signedness: Higher rank usually wins; if ranks are equal, unsigned wins.
     let (ut, ur, st, sr) = if ls { (rp, rr, lp, lr) } else { (lp, lr, rp, rr) };
     if ur >= sr {
         Some(ut)
+    } else if ctx.get_layout(st.ty()).size > ctx.get_layout(ut.ty()).size {
+        Some(st)
     } else {
-        // If the signed type can represent all values of the unsigned type, it wins.
-        // This requires the signed type to be strictly wider than the unsigned type.
-        let ut_size = ctx.get_layout(ut.ty()).size;
-        let st_size = ctx.get_layout(st.ty()).size;
-        if st_size > ut_size {
-            Some(st)
-        } else {
-            // Otherwise, both are converted to the unsigned integer type corresponding
-            // to the type of the operand with signed integer type.
-            Some(QualType::unqualified(ctx.get_unsigned_corresponding_type(st.ty())))
-        }
+        Some(QualType::unqualified(ctx.get_unsigned_corresponding_type(st.ty())))
     }
 }
 
 /// Performs integer promotions as specified in C11 6.3.1.1.
 pub(super) fn integer_promotion(ctx: &TypeRegistry, qt: QualType, bitfield_width: Option<u16>) -> QualType {
-    let ty = qt.ty();
     if let Some(width) = bitfield_width {
-        // C11 6.3.1.1p2:
-        // If an int can represent all values of the original type (as restricted by the width,
-        // for a bit-field), the value is converted to an int; otherwise, it is converted to
-        // an unsigned int.
-
-        let is_signed = ctx.get(ty).is_signed();
-        let fits_in_int = if is_signed {
-            width <= 32 // Assuming 32-bit int
+        let fits = if ctx.get(qt.ty()).is_signed() {
+            width <= 32
         } else {
-            width < 32 // 32-bit unsigned bitfield needs unsigned int
+            width < 32
         };
-
-        if fits_in_int {
-            return QualType::unqualified(ctx.type_int);
-        } else {
-            return QualType::unqualified(ctx.type_int_unsigned);
-        }
+        return QualType::unqualified(if fits { ctx.type_int } else { ctx.type_int_unsigned });
     }
-    if ty.is_enum() {
+
+    if qt.is_enum()
+        || qt
+            .builtin()
+            .is_some_and(|b| b.is_integer() && b.rank() < BuiltinType::Int.rank())
+    {
         return QualType::unqualified(ctx.type_int);
     }
-    match ty.builtin() {
-        Some(b) if b.is_integer() && b.rank() < BuiltinType::Int.rank() => QualType::unqualified(ctx.type_int),
-        _ => qt,
-    }
+    qt
 }
 
 /// Performs default argument promotions as specified in C11 6.5.2.2.
 pub(super) fn default_argument_promotions(ctx: &TypeRegistry, qt: QualType) -> QualType {
-    match qt.ty().builtin() {
+    match qt.builtin() {
         Some(BuiltinType::Float) => QualType::unqualified(ctx.type_double),
         _ => integer_promotion(ctx, qt, None),
     }

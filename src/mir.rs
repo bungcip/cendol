@@ -184,6 +184,24 @@ pub struct BitFieldInfo {
     pub is_signed: bool,
 }
 
+impl BitFieldInfo {
+    pub fn truncate(&self, val: i64) -> i64 {
+        let mask = if self.width == 64 {
+            !0u64
+        } else {
+            (1u64 << self.width) - 1
+        };
+        let mask_signed = mask as i64;
+        if self.is_signed && self.width < 64 {
+            // Sign extend from bit_info.width
+            let shift = 64 - self.width;
+            ((val as u64) << shift) as i64 >> shift
+        } else {
+            val & mask_signed
+        }
+    }
+}
+
 /// Place - Represents a storage location (local variable or memory)
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Place {

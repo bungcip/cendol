@@ -17,7 +17,7 @@ impl<'a> MirGen<'a> {
         let range = list.init_start.range(list.init_len);
         let mut iter = range.peekable();
         let fields = self.visit_struct_fields_recursive(&mut iter, None, &[], target_ty);
-        self.finalize_struct_initializer(fields, target_ty, destination)
+        self.finalize_struct_init(fields, target_ty, destination)
     }
 
     fn get_flattened_type_info(&self, ty: TypeRef) -> (Vec<StructMember>, Vec<FieldLayout>) {
@@ -137,7 +137,7 @@ impl<'a> MirGen<'a> {
                         if m.name.is_none() {
                             fields
                         } else {
-                            vec![(0, self.finalize_struct_initializer(fields, m.member_type, None))]
+                            vec![(0, self.finalize_struct_init(fields, m.member_type, None))]
                         }
                     }
                     TypeKind::Array { element_type, size } => {
@@ -162,7 +162,7 @@ impl<'a> MirGen<'a> {
                         if m.name.is_none() {
                             fields
                         } else {
-                            vec![(0, self.finalize_struct_initializer(fields, m.member_type, None))]
+                            vec![(0, self.finalize_struct_init(fields, m.member_type, None))]
                         }
                     }
                     TypeKind::Array { element_type, size } => {
@@ -191,7 +191,7 @@ impl<'a> MirGen<'a> {
                 let mut sub_iter = range.peekable();
                 self.visit_struct_fields_recursive(&mut sub_iter, None, &[], m.member_type)
             } else {
-                vec![(0, self.visit_initializer(initializer, m.member_type, None))]
+                vec![(0, self.visit_init(initializer, m.member_type, None))]
             };
 
             for (sub_idx, op) in value {
@@ -336,7 +336,7 @@ impl<'a> MirGen<'a> {
                 match &self.registry.get(element_qt.ty()).kind {
                     TypeKind::Record { .. } => {
                         let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt);
-                        self.finalize_struct_initializer(fields, element_qt, None)
+                        self.finalize_struct_init(fields, element_qt, None)
                     }
                     TypeKind::Array {
                         element_type: inner_elem,
@@ -363,7 +363,7 @@ impl<'a> MirGen<'a> {
                 match &self.registry.get(element_qt.ty()).kind {
                     TypeKind::Record { .. } => {
                         let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt);
-                        self.finalize_struct_initializer(fields, element_qt, None)
+                        self.finalize_struct_init(fields, element_qt, None)
                     }
                     TypeKind::Array {
                         element_type: inner_elem,
@@ -386,7 +386,7 @@ impl<'a> MirGen<'a> {
                     _ => unreachable!(),
                 }
             } else {
-                self.visit_initializer(initializer, element_qt, None)
+                self.visit_init(initializer, element_qt, None)
             };
             if end >= elements.len() {
                 elements.resize(end + 1, None);
@@ -403,7 +403,7 @@ impl<'a> MirGen<'a> {
             .map(|op| op.unwrap_or_else(|| Operand::Constant(self.create_constant(mir_elem_ty, ConstValueKind::Zero))))
             .collect();
 
-        self.finalize_array_initializer(final_elements, target_ty, destination)
+        self.finalize_array_init(final_elements, target_ty, destination)
     }
 
     fn finalize_initializer_generic<T, C, R>(
@@ -433,7 +433,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn finalize_struct_initializer(
+    fn finalize_struct_init(
         &mut self,
         field_operands: Vec<(usize, Operand)>,
         target_ty: QualType,
@@ -465,7 +465,7 @@ impl<'a> MirGen<'a> {
         )
     }
 
-    fn finalize_array_initializer(
+    fn finalize_array_init(
         &mut self,
         elements: Vec<Operand>,
         target_ty: QualType,
@@ -486,12 +486,7 @@ impl<'a> MirGen<'a> {
         )
     }
 
-    pub(crate) fn visit_initializer(
-        &mut self,
-        init: NodeRef,
-        target_qt: QualType,
-        destination: Option<Place>,
-    ) -> Operand {
+    pub(crate) fn visit_init(&mut self, init: NodeRef, target_qt: QualType, destination: Option<Place>) -> Operand {
         let kind = *self.ast.get_kind(init);
         let target_type = self.registry.get(target_qt.ty()).into_owned();
 
@@ -530,7 +525,7 @@ impl<'a> MirGen<'a> {
                 let NodeKind::InitializerItem(item) = self.ast.get_kind(list.init_start) else {
                     unreachable!()
                 };
-                self.visit_initializer(item.initializer, target_qt, destination)
+                self.visit_init(item.initializer, target_qt, destination)
             }
             _ => {
                 let operand = self.visit_expression(init, true);
@@ -612,7 +607,7 @@ impl<'a> MirGen<'a> {
 
         if self.current_function.is_none() {
             let init_const = self
-                .eval_initializer_to_const(init, ty)
+                .eval_init_to_const(init, ty)
                 .expect("Global compound literal init must be const");
 
             let name = self.mir_builder.get_next_anonymous_global_name();
@@ -628,17 +623,13 @@ impl<'a> MirGen<'a> {
             Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global_id, 0)))
         } else {
             let (_, place) = self.create_temp_local(mir_ty);
-            self.visit_initializer(init, ty, Some(place.clone()));
+            self.visit_init(init, ty, Some(place.clone()));
             Operand::Copy(Box::new(place))
         }
     }
 
-    pub(super) fn eval_initializer_to_const(
-        &mut self,
-        init: NodeRef,
-        ty: QualType,
-    ) -> Option<crate::mir::ConstValueId> {
-        let operand = self.visit_initializer(init, ty, None);
+    pub(super) fn eval_init_to_const(&mut self, init: NodeRef, ty: QualType) -> Option<crate::mir::ConstValueId> {
+        let operand = self.visit_init(init, ty, None);
         self.operand_to_const_id(&operand)
     }
 
@@ -662,7 +653,7 @@ impl<'a> MirGen<'a> {
                         self.create_constant(mir_elem_ty, ConstValueKind::Zero),
                     ));
                 }
-                self.finalize_array_initializer(elements, target_qt, destination)
+                self.finalize_array_init(elements, target_qt, destination)
             }
             TypeKind::Record { members, .. } if !members.is_empty() => {
                 let (flat_members, _) = self.get_flattened_type_info(target_qt.ty());
@@ -672,7 +663,7 @@ impl<'a> MirGen<'a> {
                 }
                 let member_ty = flat_members[0].member_type;
                 let final_op = self.visit_brace_elision(operand, init, member_ty, None);
-                self.finalize_struct_initializer(vec![(0, final_op)], target_qt, destination)
+                self.finalize_struct_init(vec![(0, final_op)], target_qt, destination)
             }
             _ => {
                 let mir_target_ty = self.lower_qual_type(target_qt);

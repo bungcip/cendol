@@ -15,6 +15,25 @@ impl<'a> MirGen<'a> {
     fn visit_expression_as_place(&mut self, expr: NodeRef) -> Place {
         let node_kind = self.ast.get_kind(expr);
         match node_kind {
+            NodeKind::Ident(_, sym) => {
+                let op = self.visit_ident(*sym);
+                if let Operand::Copy(p) = op {
+                    *p
+                } else {
+                    self.ensure_place_fallback(op, expr)
+                }
+            }
+            NodeKind::MemberAccess(obj, field_name, is_arrow) => {
+                self.visit_member_access_as_place(*obj, field_name, *is_arrow)
+            }
+            NodeKind::IndexAccess(arr, idx) => self.visit_index_access_as_place(*arr, *idx),
+            NodeKind::UnaryOp(UnaryOp::Deref, operand) => {
+                let op = self.visit_expression(*operand, true);
+                let op_ty = self.ast.get_resolved_type(*operand).unwrap();
+                let mir_ty = self.lower_qual_type(op_ty);
+                let conv = self.apply_conversions(op, *operand, mir_ty);
+                self.deref_operand(conv)
+            }
             NodeKind::UnaryOp(UnaryOp::Real, operand) => {
                 let base_place = self.visit_expression_as_place(*operand);
                 let operand_ty = self.ast.get_resolved_type(*operand).unwrap();
@@ -31,18 +50,20 @@ impl<'a> MirGen<'a> {
                     Place::StructField(Box::new(base_place), 1, None)
                 } else {
                     let op = self.visit_expression(expr, true);
-                    let ty = self.ast.get_resolved_type(expr).unwrap();
-                    let mir_ty = self.lower_qual_type(ty);
-                    self.ensure_place(op, mir_ty)
+                    self.ensure_place_fallback(op, expr)
                 }
             }
             _ => {
                 let op = self.visit_expression(expr, true);
-                let ty = self.ast.get_resolved_type(expr).unwrap();
-                let mir_ty = self.lower_qual_type(ty);
-                self.ensure_place(op, mir_ty)
+                self.ensure_place_fallback(op, expr)
             }
         }
+    }
+
+    fn ensure_place_fallback(&mut self, op: Operand, expr: NodeRef) -> Place {
+        let ty = self.ast.get_resolved_type(expr).unwrap();
+        let mir_ty = self.lower_qual_type(ty);
+        self.ensure_place(op, mir_ty)
     }
 
     pub(crate) fn visit_expression(&mut self, expr: NodeRef, need_value: bool) -> Operand {
@@ -132,23 +153,14 @@ impl<'a> MirGen<'a> {
                     .ty();
                 self.visit_type_query(ty, false)
             }
-            NodeKind::BuiltinOffsetof(..) => {
-                let val = self.const_ctx().eval_int(expr).expect("offsetof should be constant");
-                self.create_size_t_operand(val as u64)
-            }
-            NodeKind::BuiltinTypesCompatibleP(..) => {
-                let val = self
-                    .const_ctx()
-                    .eval_int(expr)
-                    .expect("__builtin_types_compatible_p should be constant");
-                self.create_int_operand(val)
-            }
-            NodeKind::BuiltinConstantP(..) => {
-                let val = self
-                    .const_ctx()
-                    .eval_int(expr)
-                    .expect("__builtin_constant_p should evaluate to constant");
-                self.create_int_operand(val)
+            NodeKind::BuiltinOffsetof(..) | NodeKind::BuiltinTypesCompatibleP(..) | NodeKind::BuiltinConstantP(..) => {
+                let val = self.const_ctx().eval_int(expr).expect("Builtin should be constant");
+                let kind = if self.mir_builder.get_type(mir_ty).is_float() {
+                    ConstValueKind::Float(val as f64)
+                } else {
+                    ConstValueKind::Int(val)
+                };
+                Operand::Constant(self.create_constant(mir_ty, kind))
             }
             NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => {
                 self.mir_builder.set_terminator(crate::mir::Terminator::Trap);
@@ -165,10 +177,6 @@ impl<'a> MirGen<'a> {
                 self.visit_expression(*exp, need_value)
             }
             NodeKind::BuiltinMemcpy(dest, src, n) | NodeKind::BuiltinMemmove(dest, src, n) => {
-                let d_op = self.visit_expression(*dest, true);
-                let s_op = self.visit_expression(*src, true);
-                let n_op = self.visit_expression(*n, true);
-
                 let void_ptr = self.registry.type_void_ptr;
                 let const_void = QualType::new(self.registry.type_void, crate::semantic::TypeQualifiers::CONST);
                 let const_void_ptr = self.registry.pointer_to(const_void);
@@ -177,80 +185,25 @@ impl<'a> MirGen<'a> {
                 let s_ty = self.lower_type(const_void_ptr);
                 let n_ty = self.get_size_t_type();
 
-                let d_conv = self.apply_conversions(d_op, *dest, d_ty);
-                let s_conv = self.apply_conversions(s_op, *src, s_ty);
-                let n_conv = self.apply_conversions(n_op, *n, n_ty);
-
                 let name = match node_kind {
                     NodeKind::BuiltinMemcpy(..) => "memcpy",
                     NodeKind::BuiltinMemmove(..) => "memmove",
                     _ => unreachable!(),
                 };
 
-                let target = self.find_or_declare_extern_function(
-                    crate::ast::NameId::new(name),
-                    vec![d_ty, s_ty, n_ty],
-                    d_ty,
-                    false,
-                );
-
-                let dest_place = if need_value {
-                    let (_, p) = self.create_temp_local(d_ty);
-                    Some(p)
-                } else {
-                    None
-                };
-
-                self.mir_builder.add_statement(crate::mir::MirStmt::Call {
-                    target: crate::mir::CallTarget::Direct(target),
-                    args: vec![d_conv, s_conv, n_conv],
-                    dest: dest_place.clone(),
-                });
-
-                if let Some(p) = dest_place {
-                    Operand::Copy(Box::new(p))
-                } else {
-                    self.create_dummy_operand()
-                }
+                self.emit_builtin_memory_op(name, &[(*dest, d_ty), (*src, s_ty), (*n, n_ty)], d_ty, need_value)
             }
             NodeKind::BuiltinMemset(s, c, n) => {
-                let s_op = self.visit_expression(*s, true);
-                let c_op = self.visit_expression(*c, true);
-                let n_op = self.visit_expression(*n, true);
-
                 let void_ptr = self.lower_type(self.registry.type_void_ptr);
                 let int_ty = self.get_int_type();
                 let size_t = self.get_size_t_type();
 
-                let s_conv = self.apply_conversions(s_op, *s, void_ptr);
-                let c_conv = self.apply_conversions(c_op, *c, int_ty);
-                let n_conv = self.apply_conversions(n_op, *n, size_t);
-
-                let target = self.find_or_declare_extern_function(
-                    crate::ast::NameId::new("memset"),
-                    vec![void_ptr, int_ty, size_t],
+                self.emit_builtin_memory_op(
+                    "memset",
+                    &[(*s, void_ptr), (*c, int_ty), (*n, size_t)],
                     void_ptr,
-                    false,
-                );
-
-                let dest_place = if need_value {
-                    let (_, p) = self.create_temp_local(void_ptr);
-                    Some(p)
-                } else {
-                    None
-                };
-
-                self.mir_builder.add_statement(crate::mir::MirStmt::Call {
-                    target: crate::mir::CallTarget::Direct(target),
-                    args: vec![s_conv, c_conv, n_conv],
-                    dest: dest_place.clone(),
-                });
-
-                if let Some(p) = dest_place {
-                    Operand::Copy(Box::new(p))
-                } else {
-                    self.create_dummy_operand()
-                }
+                    need_value,
+                )
             }
             NodeKind::BuiltinPopcount(exp)
             | NodeKind::BuiltinClz(exp)
@@ -261,36 +214,7 @@ impl<'a> MirGen<'a> {
             | NodeKind::BuiltinBswap64(exp)
             | NodeKind::BuiltinFabs(exp)
             | NodeKind::BuiltinFabsf(exp)
-            | NodeKind::BuiltinFabsl(exp) => {
-                let op = match node_kind {
-                    NodeKind::BuiltinPopcount(_) => Some(crate::mir::UnaryIntOp::Popcount),
-                    NodeKind::BuiltinClz(_) => Some(crate::mir::UnaryIntOp::Clz),
-                    NodeKind::BuiltinCtz(_) => Some(crate::mir::UnaryIntOp::Ctz),
-                    NodeKind::BuiltinFfs(_) => Some(crate::mir::UnaryIntOp::Ffs),
-                    NodeKind::BuiltinBswap16(_) => Some(crate::mir::UnaryIntOp::Bswap16),
-                    NodeKind::BuiltinBswap32(_) => Some(crate::mir::UnaryIntOp::Bswap32),
-                    NodeKind::BuiltinBswap64(_) => Some(crate::mir::UnaryIntOp::Bswap64),
-                    _ => None,
-                };
-                let operand = self.visit_expression(*exp, true);
-
-                let operand_ty = self.ast.get_resolved_type(*exp).unwrap();
-                let operand_mir_ty = self.lower_qual_type(operand_ty);
-                let operand_converted = self.apply_conversions(operand, *exp, operand_mir_ty);
-
-                let is_fabs = matches!(
-                    node_kind,
-                    NodeKind::BuiltinFabs(_) | NodeKind::BuiltinFabsf(_) | NodeKind::BuiltinFabsl(_)
-                );
-
-                if is_fabs {
-                    let rval = crate::mir::Rvalue::UnaryFloatOp(crate::mir::UnaryFloatOp::Abs, operand_converted);
-                    self.emit_rvalue_to_operand(rval, mir_ty)
-                } else {
-                    let rval = crate::mir::Rvalue::UnaryIntOp(op.unwrap(), operand_converted);
-                    self.emit_rvalue_to_operand(rval, mir_ty)
-                }
-            }
+            | NodeKind::BuiltinFabsl(exp) => self.visit_builtin_unary_op(&node_kind, *exp, mir_ty),
             NodeKind::BuiltinPrefetch(addr, rw, locality) => {
                 let _ = self.visit_expression(*addr, true);
                 if let Some(rw) = rw {
@@ -556,55 +480,8 @@ impl<'a> MirGen<'a> {
             self.visit_expression(operand, false);
             return self.create_dummy_operand();
         }
-        let operand = self.visit_expression(operand, true);
-        if self.get_operand_type(&operand) == mir_ty {
-            return operand;
-        }
-
-        // Fold constant casts if types are compatible
-        if let Some(const_id) = self.operand_to_const_id(&operand) {
-            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap().clone();
-            let mir_type = self.mir_builder.get_type(mir_ty);
-
-            let is_compatible = match (&const_val.kind, mir_type) {
-                (ConstValueKind::Int(_), t) => t.is_int() || t.is_pointer(),
-                (ConstValueKind::Float(_), t) => t.is_float() || matches!(t, MirType::Bool),
-                (ConstValueKind::GlobalAddress(_, _), t) => t.is_pointer() || t.is_int(),
-                (ConstValueKind::FunctionAddress(_), t) => t.is_pointer() || t.is_int(),
-                _ => false,
-            };
-
-            if is_compatible {
-                let truncated_kind = match const_val.kind {
-                    ConstValueKind::Int(val) => {
-                        // C11 6.3.1.2-3: When converting to _Bool, the result is 0 if the value is 0, otherwise 1
-                        if matches!(mir_type, MirType::Bool) {
-                            ConstValueKind::Int(if val != 0 { 1 } else { 0 })
-                        } else {
-                            ConstValueKind::Int(mir_type.truncate_int(val))
-                        }
-                    }
-                    ConstValueKind::FunctionAddress(_) | ConstValueKind::GlobalAddress(_, _)
-                        if matches!(mir_type, MirType::Bool) =>
-                    {
-                        ConstValueKind::Int(1)
-                    }
-                    ConstValueKind::Float(val) => {
-                        if matches!(mir_type, MirType::Bool) {
-                            ConstValueKind::Int(if val != 0.0 { 1 } else { 0 })
-                        } else if matches!(mir_type, MirType::F32) {
-                            ConstValueKind::Float((val as f32) as f64)
-                        } else {
-                            ConstValueKind::Float(val)
-                        }
-                    }
-                    kind => kind,
-                };
-                return Operand::Constant(self.create_constant(mir_ty, truncated_kind));
-            }
-        }
-
-        Operand::Cast(mir_ty, Box::new(operand))
+        let operand_op = self.visit_expression(operand, true);
+        self.emit_cast(operand_op, mir_ty)
     }
 
     fn visit_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
@@ -1150,31 +1027,18 @@ impl<'a> MirGen<'a> {
     }
 
     fn apply_bitfield_truncation(&mut self, op: Operand, bit_info: &BitFieldInfo, mir_ty: TypeId) -> Operand {
-        let mask = if bit_info.width == 64 {
-            !0u64
-        } else {
-            (1u64 << bit_info.width) - 1
-        };
-
-        if let Operand::Constant(const_id) = op {
+        if let Some(const_id) = self.operand_to_const_id(&op) {
             let constants = self.mir_builder.get_constants();
             let const_val = constants.get(&const_id).unwrap().clone();
             if let ConstValueKind::Int(val) = const_val.kind {
-                let mask_signed = mask as i64;
-                let truncated = if bit_info.is_signed {
-                    // Sign extend from bit_info.width
-                    let shift = 64 - bit_info.width;
-                    (val << shift) >> shift
-                } else {
-                    val & mask_signed
-                };
+                let truncated = bit_info.truncate(val);
                 let new_const = self.mir_builder.create_constant(mir_ty, ConstValueKind::Int(truncated));
                 return Operand::Constant(new_const);
             }
         }
 
         // Non-constant: emit bitwise AND for unsigned, or shifts for signed
-        if bit_info.is_signed {
+        if bit_info.is_signed && bit_info.width < 64 {
             // (val << (64-width)) >> (64-width)
             let shift = (64 - bit_info.width) as i64;
             let shift_op = {
@@ -1185,10 +1049,13 @@ impl<'a> MirGen<'a> {
                 self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::LShift, op, shift_op.clone()), mir_ty);
             self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::RShift, lshift, shift_op), mir_ty)
         } else {
+            let mask = if bit_info.width == 64 {
+                -1i64
+            } else {
+                ((1u64 << bit_info.width) - 1) as i64
+            };
             let mask_op = {
-                let c = self
-                    .mir_builder
-                    .create_constant(mir_ty, ConstValueKind::Int(mask as i64));
+                let c = self.mir_builder.create_constant(mir_ty, ConstValueKind::Int(mask));
                 Operand::Constant(c)
             };
             self.emit_rvalue_to_operand(Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, op, mask_op), mir_ty)
@@ -1262,7 +1129,7 @@ impl<'a> MirGen<'a> {
 
             let is_compatible = match (&const_val.kind, mir_type) {
                 (ConstValueKind::Int(_), t) => t.is_int() || t.is_pointer(),
-                (ConstValueKind::Float(_), t) => t.is_float(),
+                (ConstValueKind::Float(_), t) => t.is_float() || matches!(t, MirType::Bool),
                 (ConstValueKind::GlobalAddress(_, _), t) => t.is_pointer() || t.is_int(),
                 (ConstValueKind::FunctionAddress(_), t) => t.is_pointer() || t.is_int(),
                 _ => false,
@@ -1270,7 +1137,28 @@ impl<'a> MirGen<'a> {
 
             if is_compatible {
                 let truncated_kind = match const_val.kind {
-                    ConstValueKind::Int(val) => ConstValueKind::Int(mir_type.truncate_int(val)),
+                    ConstValueKind::Int(val) => {
+                        // C11 6.3.1.2-3: When converting to _Bool, the result is 0 if the value is 0, otherwise 1
+                        if matches!(mir_type, MirType::Bool) {
+                            ConstValueKind::Int(if val != 0 { 1 } else { 0 })
+                        } else {
+                            ConstValueKind::Int(mir_type.truncate_int(val))
+                        }
+                    }
+                    ConstValueKind::FunctionAddress(_) | ConstValueKind::GlobalAddress(_, _)
+                        if matches!(mir_type, MirType::Bool) =>
+                    {
+                        ConstValueKind::Int(1)
+                    }
+                    ConstValueKind::Float(val) => {
+                        if matches!(mir_type, MirType::Bool) {
+                            ConstValueKind::Int(if val != 0.0 { 1 } else { 0 })
+                        } else if matches!(mir_type, MirType::F32) {
+                            ConstValueKind::Float((val as f32) as f64)
+                        } else {
+                            ConstValueKind::Float(val)
+                        }
+                    }
                     kind => kind,
                 };
                 return Operand::Constant(self.create_constant(target_ty, truncated_kind));
@@ -1374,6 +1262,11 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_member_access(&mut self, obj: NodeRef, field_name: &NameId, is_arrow: bool) -> Operand {
+        let current_place = self.visit_member_access_as_place(obj, field_name, is_arrow);
+        Operand::Copy(Box::new(current_place))
+    }
+
+    fn visit_member_access_as_place(&mut self, obj: NodeRef, field_name: &NameId, is_arrow: bool) -> Place {
         let mut obj_qt = self.ast.get_resolved_type(obj).unwrap();
 
         // Handle implicit conversions (like array-to-pointer decay) for arrow access
@@ -1433,13 +1326,17 @@ impl<'a> MirGen<'a> {
                 current_place = Place::StructField(Box::new(current_place), field_idx, bit_info);
             }
 
-            Operand::Copy(Box::new(current_place))
+            current_place
         } else {
             panic!("Member access on non-record type");
         }
     }
 
     fn visit_index_access(&mut self, arr: NodeRef, idx: NodeRef) -> Operand {
+        Operand::Copy(Box::new(self.visit_index_access_as_place(arr, idx)))
+    }
+
+    fn visit_index_access_as_place(&mut self, arr: NodeRef, idx: NodeRef) -> Place {
         let arr_ty = self.ast.get_resolved_type(arr).unwrap();
         let idx_ty = self.ast.get_resolved_type(idx).unwrap();
 
@@ -1465,14 +1362,13 @@ impl<'a> MirGen<'a> {
             let ptr_add = Rvalue::PtrAdd(arr_operand, idx_operand);
             let result_op = self.emit_rvalue_to_operand(ptr_add, arr_mir_ty);
             // Deref the resulting pointer
-            let deref_place = self.deref_operand(result_op);
-            Operand::Copy(Box::new(deref_place))
+            self.deref_operand(result_op)
         } else {
             // Array-based indexing: use Place::ArrayIndex
             let arr_ty = self.ast.get_resolved_type(sequence).unwrap();
             let mir_ty = self.lower_qual_type(arr_ty);
             let arr_place = self.ensure_place(arr_operand, mir_ty);
-            Operand::Copy(Box::new(Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))))
+            Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))
         }
     }
 
@@ -1492,19 +1388,7 @@ impl<'a> MirGen<'a> {
         };
 
         if operand_ty.is_atomic() {
-            let ptr = Operand::AddressOf(place);
-            let op = if is_inc { BinaryIntOp::Add } else { BinaryIntOp::Sub };
-            let step = self.create_int_operand(1);
-            let rval = Rvalue::AtomicFetchOp(op, ptr, step.clone(), AtomicMemOrder::SeqCst);
-            let old_val = self.emit_rvalue_to_operand(rval, mir_ty);
-
-            if is_post {
-                return old_val;
-            } else {
-                let bin_op = if is_inc { BinaryOp::Add } else { BinaryOp::Sub };
-                let (new_val_rval, _) = self.visit_binary_arithmetic_logic(&bin_op, old_val, step, expr, expr, mir_ty);
-                return self.emit_rvalue_to_operand(new_val_rval, mir_ty);
-            }
+            return self.visit_atomic_inc_dec(expr, *place, mir_ty, is_inc, is_post);
         }
 
         // If it's post-inc/dec and we need the value, save the old value
@@ -1539,12 +1423,34 @@ impl<'a> MirGen<'a> {
             if need_value {
                 old_value.unwrap()
             } else {
-                self.create_int_operand(0)
+                self.create_dummy_operand()
             }
         } else {
-            // Pre-inc: we already returned inside the block above.
-            // RE-FETCH from place as a fallback (should not be reached)
+            // Pre-inc: already returned
             Operand::Copy(place)
+        }
+    }
+
+    fn visit_atomic_inc_dec(
+        &mut self,
+        expr: NodeRef,
+        place: Place,
+        mir_ty: TypeId,
+        is_inc: bool,
+        is_post: bool,
+    ) -> Operand {
+        let ptr = Operand::AddressOf(Box::new(place));
+        let op = if is_inc { BinaryIntOp::Add } else { BinaryIntOp::Sub };
+        let step = self.create_int_operand(1);
+        let rval = Rvalue::AtomicFetchOp(op, ptr, step.clone(), AtomicMemOrder::SeqCst);
+        let old_val = self.emit_rvalue_to_operand(rval, mir_ty);
+
+        if is_post {
+            old_val
+        } else {
+            let bin_op = if is_inc { BinaryOp::Add } else { BinaryOp::Sub };
+            let (new_val_rval, _) = self.visit_binary_arithmetic_logic(&bin_op, old_val, step, expr, expr, mir_ty);
+            self.emit_rvalue_to_operand(new_val_rval, mir_ty)
         }
     }
 
@@ -1878,5 +1784,65 @@ impl<'a> MirGen<'a> {
             }
             _ => None,
         }
+    }
+
+    fn emit_builtin_memory_op(
+        &mut self,
+        name: &str,
+        args: &[(NodeRef, TypeId)],
+        return_ty: TypeId,
+        need_value: bool,
+    ) -> Operand {
+        let mut arg_ops = Vec::new();
+        let mut arg_types = Vec::new();
+        for (node, target_ty) in args {
+            let op = self.visit_expression(*node, true);
+            let conv = self.apply_conversions(op, *node, *target_ty);
+            arg_ops.push(conv);
+            arg_types.push(*target_ty);
+        }
+
+        let target = self.find_or_declare_extern_function(crate::ast::NameId::new(name), arg_types, return_ty, false);
+
+        let dest_place = if need_value {
+            let (_, p) = self.create_temp_local(return_ty);
+            Some(p)
+        } else {
+            None
+        };
+
+        self.mir_builder.add_statement(crate::mir::MirStmt::Call {
+            target: crate::mir::CallTarget::Direct(target),
+            args: arg_ops,
+            dest: dest_place.clone(),
+        });
+
+        if let Some(p) = dest_place {
+            Operand::Copy(Box::new(p))
+        } else {
+            self.create_dummy_operand()
+        }
+    }
+
+    fn visit_builtin_unary_op(&mut self, kind: &NodeKind, exp: NodeRef, mir_ty: TypeId) -> Operand {
+        let operand = self.visit_expression(exp, true);
+        let operand_ty = self.ast.get_resolved_type(exp).unwrap();
+        let operand_mir_ty = self.lower_qual_type(operand_ty);
+        let operand_converted = self.apply_conversions(operand, exp, operand_mir_ty);
+
+        let rval = match kind {
+            NodeKind::BuiltinPopcount(_) => Rvalue::UnaryIntOp(crate::mir::UnaryIntOp::Popcount, operand_converted),
+            NodeKind::BuiltinClz(_) => Rvalue::UnaryIntOp(crate::mir::UnaryIntOp::Clz, operand_converted),
+            NodeKind::BuiltinCtz(_) => Rvalue::UnaryIntOp(crate::mir::UnaryIntOp::Ctz, operand_converted),
+            NodeKind::BuiltinFfs(_) => Rvalue::UnaryIntOp(crate::mir::UnaryIntOp::Ffs, operand_converted),
+            NodeKind::BuiltinBswap16(_) => Rvalue::UnaryIntOp(crate::mir::UnaryIntOp::Bswap16, operand_converted),
+            NodeKind::BuiltinBswap32(_) => Rvalue::UnaryIntOp(crate::mir::UnaryIntOp::Bswap32, operand_converted),
+            NodeKind::BuiltinBswap64(_) => Rvalue::UnaryIntOp(crate::mir::UnaryIntOp::Bswap64, operand_converted),
+            NodeKind::BuiltinFabs(_) | NodeKind::BuiltinFabsf(_) | NodeKind::BuiltinFabsl(_) => {
+                Rvalue::UnaryFloatOp(crate::mir::UnaryFloatOp::Abs, operand_converted)
+            }
+            _ => unreachable!(),
+        };
+        self.emit_rvalue_to_operand(rval, mir_ty)
     }
 }

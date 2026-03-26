@@ -225,20 +225,14 @@ impl<'a> MirGen<'a> {
         global_symbols.sort_by_key(|s| self.symbol_table.get_symbol(*s).name);
 
         for sym in global_symbols {
-            let (symbol_name, symbol_type_info, is_function, has_definition, storage) = {
+            let (symbol_name, symbol_type_info, is_function, def_state, storage) = {
                 let symbol = self.symbol_table.get_symbol(sym);
                 let (is_func, storage) = if let SymbolKind::Function { storage } = &symbol.kind {
                     (true, *storage)
                 } else {
                     (false, None)
                 };
-                (
-                    symbol.name,
-                    symbol.type_info,
-                    is_func,
-                    symbol.def_state == DefinitionState::Defined,
-                    storage,
-                )
+                (symbol.name, symbol.type_info, is_func, symbol.def_state, storage)
             };
 
             if is_function {
@@ -251,11 +245,8 @@ impl<'a> MirGen<'a> {
                     continue;
                 }
 
-                let linkage = if storage == Some(StorageClass::Static) {
-                    MirLinkage::Internal
-                } else {
-                    MirLinkage::External
-                };
+                let linkage = self.calculate_linkage(storage, def_state);
+                let has_definition = def_state == DefinitionState::Defined;
 
                 let func_type_kind = self.registry.get(symbol_type_info.ty()).kind.clone();
                 if let TypeKind::Function {
@@ -381,21 +372,20 @@ impl<'a> MirGen<'a> {
 
         // Handle implicit return if control falls off the end
         if !self.mir_builder.current_block_has_terminator() {
-            let func_def = self.mir_builder.get_functions().get(&func_id).unwrap();
+            let func_def = self.get_current_func();
             let ret_ty_id = func_def.return_type;
             let ret_ty = self.mir_builder.get_type(ret_ty_id);
 
-            if matches!(ret_ty, crate::mir::MirType::Void) {
-                self.mir_builder.set_terminator(crate::mir::Terminator::Return(None));
+            if matches!(ret_ty, MirType::Void) {
+                self.mir_builder.set_terminator(Terminator::Return(None));
             } else if func_name.as_str() == "main" && ret_ty.is_int() {
                 // main() implicitly returns 0
                 let zero = self.create_int_operand(0);
-                self.mir_builder
-                    .set_terminator(crate::mir::Terminator::Return(Some(zero)));
+                self.mir_builder.set_terminator(Terminator::Return(Some(zero)));
             } else {
                 // Falling off the end of a non-void function is undefined behavior.
                 // We leave it as Unreachable (default) or explicitly set it.
-                self.mir_builder.set_terminator(crate::mir::Terminator::Unreachable);
+                self.mir_builder.set_terminator(Terminator::Unreachable);
             }
         }
 
@@ -464,13 +454,7 @@ impl<'a> MirGen<'a> {
             crate::ast::NameId::new(format!("{}.{}", name, sym.get()))
         };
 
-        let linkage = if storage == Some(StorageClass::Static) {
-            MirLinkage::Internal
-        } else if storage == Some(StorageClass::Extern) && symbol.def_state == DefinitionState::DeclaredOnly {
-            MirLinkage::Import
-        } else {
-            MirLinkage::External
-        };
+        let linkage = self.calculate_linkage(storage, symbol.def_state);
 
         let global_id = self.mir_builder.create_global_with_init(
             global_name,
@@ -490,7 +474,7 @@ impl<'a> MirGen<'a> {
         // Static locals must be evaluated as constants, even if we are inside a function.
         // We temporarily unset current_function to force constant evaluation mode.
         let saved_func = self.current_function.take();
-        let initial_value_id = init.and_then(|init| self.eval_initializer_to_const(init, ty));
+        let initial_value_id = init.and_then(|init| self.eval_init_to_const(init, ty));
         self.current_function = saved_func;
 
         let final_init = initial_value_id.or_else(|| {
@@ -540,7 +524,7 @@ impl<'a> MirGen<'a> {
 
             // Initialize if needed
             if let Some(initializer) = init {
-                let init_operand = self.visit_initializer(
+                let init_operand = self.visit_init(
                     initializer,
                     qt,
                     Some(Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(
@@ -563,7 +547,7 @@ impl<'a> MirGen<'a> {
         self.local_map.insert(sym, local_id);
 
         if let Some(initializer) = init {
-            let init_operand = self.visit_initializer(initializer, qt, Some(Place::Local(local_id)));
+            let init_operand = self.visit_init(initializer, qt, Some(Place::Local(local_id)));
             // If visit_initializer used the destination, it returns Operand::Copy(destination)
             // emit_assignment will then emit Place::Local(local_id) = Place::Local(local_id), which is fine or can be skipped.
             self.emit_assignment(Place::Local(local_id), init_operand);
@@ -613,10 +597,7 @@ impl<'a> MirGen<'a> {
         // Compute total_size = count * element_size
         let total_size_rvalue =
             Rvalue::BinaryIntOp(crate::mir::BinaryIntOp::Mul, count_as_size_t, element_size_operand);
-        let (_, total_size_place) = self.create_temp_local(size_t_mir_ty);
-        self.mir_builder
-            .add_statement(MirStmt::Assign(total_size_place.clone(), total_size_rvalue));
-        let total_size_operand = Operand::Copy(Box::new(total_size_place));
+        let total_size_operand = self.emit_rvalue_to_operand(total_size_rvalue, size_t_mir_ty);
 
         // Create size local (holds total byte size for sizeof)
         let size_local_id = self.mir_builder.create_local(None, size_t_mir_ty, false);
@@ -757,8 +738,8 @@ impl<'a> MirGen<'a> {
         let operand = expr.map(|expr| {
             let expr_operand = self.visit_expression(expr, true);
             // Apply conversions for return value if needed
-            if let Some(func_id) = self.current_function {
-                let func = self.mir_builder.get_functions().get(&func_id).unwrap();
+            if let Some(_) = self.current_function {
+                let func = self.get_current_func();
                 let return_mir_ty = func.return_type;
                 self.apply_conversions(expr_operand, expr, return_mir_ty)
             } else {
@@ -961,24 +942,19 @@ impl<'a> MirGen<'a> {
 
                 // GE: x >= start
                 let ge_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Ge, cond_op.clone(), cast_start_op);
-                let (_, ge_place) = self.create_temp_local_with_assignment(ge_rvalue, bool_type_id);
-                let ge_op = Operand::Copy(Box::new(ge_place));
+                let ge_op = self.emit_rvalue_to_operand(ge_rvalue, bool_type_id);
 
                 // LE: x <= end
                 let le_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Le, cond_op.clone(), cast_end_op);
-                let (_, le_place) = self.create_temp_local_with_assignment(le_rvalue, bool_type_id);
-                let le_op = Operand::Copy(Box::new(le_place));
+                let le_op = self.emit_rvalue_to_operand(le_rvalue, bool_type_id);
 
                 // AND: (x >= start) && (x <= end)
-                // Use BitAnd which works for boolean types (conceptually i1/i8 0 or 1)
                 let and_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::BitAnd, ge_op, le_op);
-                let (_, and_place) = self.create_temp_local_with_assignment(and_rvalue, bool_type_id);
-                Operand::Copy(Box::new(and_place))
+                self.emit_rvalue_to_operand(and_rvalue, bool_type_id)
             } else {
                 // Single value check: x == val
                 let eq_rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Eq, cond_op.clone(), cast_start_op);
-                let (_, eq_place) = self.create_temp_local_with_assignment(eq_rvalue, bool_type_id);
-                Operand::Copy(Box::new(eq_place))
+                self.emit_rvalue_to_operand(eq_rvalue, bool_type_id)
             };
 
             self.mir_builder
@@ -1139,7 +1115,7 @@ impl<'a> MirGen<'a> {
                 is_variadic,
                 ..
             } => {
-                let mir_type = self.lower_function_type(&return_type, &parameters, is_variadic);
+                let mir_type = self.lower_function_type(return_type, &parameters, is_variadic);
                 self.cache_type(ty, mir_type)
             }
             TypeKind::Complex { base_type } => {
@@ -1271,7 +1247,7 @@ impl<'a> MirGen<'a> {
 
     fn lower_pointer_type(&mut self, pointee: QualType) -> MirType {
         MirType::Pointer {
-            pointee: self.lower_type(pointee.ty()),
+            pointee: self.lower_qual_type(pointee),
         }
     }
 
@@ -1319,11 +1295,11 @@ impl<'a> MirGen<'a> {
 
     fn lower_function_type(
         &mut self,
-        return_type: &TypeRef,
+        return_type: TypeRef,
         parameters: &[crate::semantic::FunctionParameter],
         is_variadic: bool,
     ) -> MirType {
-        let return_type = self.lower_type(*return_type);
+        let return_type = self.lower_type(return_type);
         let mut params = Vec::new();
         for p in parameters {
             let param_ty_id = self.lower_qual_type(p.param_type);
@@ -1958,5 +1934,21 @@ impl<'a> MirGen<'a> {
         } else {
             self.mir_builder.declare_function(name, params, ret, variadic);
         }
+    }
+
+    fn calculate_linkage(&self, storage: Option<StorageClass>, def_state: DefinitionState) -> MirLinkage {
+        match storage {
+            Some(StorageClass::Static) => MirLinkage::Internal,
+            Some(StorageClass::Extern) if def_state == DefinitionState::DeclaredOnly => MirLinkage::Import,
+            _ => MirLinkage::External,
+        }
+    }
+
+    fn get_current_func(&self) -> &mir::MirFunction {
+        let func_id = self.current_function.expect("Not in a function");
+        self.mir_builder
+            .get_functions()
+            .get(&func_id)
+            .expect("Function not found")
     }
 }

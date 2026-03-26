@@ -368,3 +368,28 @@ fn test_builtin_fabs_eval_test() {
     ---
     ");
 }
+
+#[test]
+fn test_offsetof_fallback_with_index_access() {
+    let source = "struct S { int a; int b[10]; struct { int c; int d[5]; } e; }; long long test_var = __builtin_offsetof(struct S, b[5]) + __builtin_offsetof(struct S, e.d[2]);";
+    let (ast, mut registry, symbol_table) = crate::tests::semantic_common::setup_analysis(source);
+
+    let _ = registry.ensure_layout(registry.type_int);
+    let _ = registry.ensure_layout(registry.type_long);
+    let _ = registry.ensure_layout(registry.type_long_long);
+
+    let init_expr = crate::tests::semantic_common::find_var_decl(&ast, "test_var")
+        .init
+        .expect("Could not find test_var initializer");
+
+    // Create ConstEvalCtx with semantic_info = None to force eval_offsetof fallback
+    let ctx = ConstEvalCtx {
+        ast: &ast,
+        symbol_table: &symbol_table,
+        registry: &registry,
+        semantic_info: None,
+    };
+
+    let result = ctx.eval_int(init_expr);
+    assert_eq!(result, Some(80));
+}

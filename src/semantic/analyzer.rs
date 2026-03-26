@@ -568,12 +568,24 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    fn is_integer_constant_zero(&self, node: NodeRef) -> bool {
+        let Some(ty) = self.semantic_info.types.get(node.index()).and_then(|t| *t) else {
+            return false;
+        };
+        if !ty.is_integer() {
+            return false;
+        }
+        self.const_ctx().eval_int(node) == Some(0)
+    }
+
     fn is_null_pointer_constant(&self, node: NodeRef) -> bool {
+        if self.is_integer_constant_zero(node) {
+            return true;
+        }
         let node_kind = self.ast.get_kind(node);
         match node_kind {
-            NodeKind::Literal(Literal::Int { val: 0, .. }) => true,
             NodeKind::Cast(qt, inner) if qt.ty() == self.registry.type_void_ptr => {
-                self.is_null_pointer_constant(*inner)
+                self.is_integer_constant_zero(*inner)
             }
             NodeKind::UnaryOp(UnaryOp::Real, operand) => self.is_null_pointer_constant(*operand),
             NodeKind::UnaryOp(UnaryOp::Imag, operand) => {
@@ -581,13 +593,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 if operand_ty.is_some_and(|t| t.is_complex()) {
                     self.is_null_pointer_constant(*operand)
                 } else {
-                    // __imag__ on real type returns zero, which is a null pointer constant if it's an integer 0.
-                    // But usually __imag__ on integer is not very useful.
-                    // Let's check if the result of __imag__ on real is a constant 0.
-                    // Actually, if operand is real, it's an rvalue anyway, so it might already be handled
-                    // by Literal(Literal::Int { val: 0, .. }) if constant folded.
-                    // But if not folded yet:
-                    false
+                    // __imag__ on real type returns zero of that type.
+                    // If it's an integer type, it's a null pointer constant.
+                    self.is_integer_constant_zero(node)
                 }
             }
             NodeKind::BuiltinChooseExpr(..) => {

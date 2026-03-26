@@ -409,9 +409,9 @@ fn test_extract_literal_parts_edge_cases() {
 
 #[test]
 fn test_lexer_display() {
+    use crate::ast::parsed::PragmaPackKind;
     use crate::parser::lexer::TokenKind;
     use crate::tests::parser_lexical::StringId;
-    use crate::ast::parsed::PragmaPackKind;
 
     let kinds = vec![
         TokenKind::IntegerConstant(1, None, 10),

@@ -1075,8 +1075,29 @@ impl PPLexer {
     }
 
     fn lex_common_literal_body(&mut self, delimiter: u8, chars: &mut Vec<u8>, has_invalid_ucn: &mut bool) {
-        while let Some((ch, _)) = self.next_char() {
+        loop {
+            // Bolt ⚡: Fast path for simple characters.
+            // Directly scan the buffer for characters that don't need special handling
+            // (delimiter, backslash, trigraph trigger '?', or non-ASCII characters).
+            let mut end = self.position as usize;
+            while end < self.buffer.len() {
+                let ch = self.buffer[end];
+                if ch == delimiter || ch == b'\\' || ch == b'?' || ch >= 0x80 || ch == b'\n' || ch == b'\r' {
+                    break;
+                }
+                end += 1;
+            }
+
+            if end > self.position as usize {
+                chars.extend_from_slice(&self.buffer[self.position as usize..end]);
+                self.position = end as u32;
+            }
+
+            let Some((ch, _)) = self.next_char() else {
+                break;
+            };
             chars.push(ch);
+
             if ch == delimiter {
                 break; // End of literal
             } else if ch == b'\\' {
@@ -1123,7 +1144,7 @@ impl PPLexer {
     }
 
     /// Shared logic for lexing quoted literals (strings and chars)
-    fn lex_quoted_literal(&mut self, prefix: &[u8], delimiter: u8) -> (String, StringId, bool) {
+    fn lex_quoted_literal(&mut self, prefix: &[u8], delimiter: u8) -> (StringId, bool) {
         let mut chars = prefix.to_vec();
 
         if prefix.is_empty() || prefix.last() != Some(&delimiter) {
@@ -1137,21 +1158,22 @@ impl PPLexer {
 
         let text = String::from_utf8(chars).unwrap();
         let symbol = StringId::new(&text);
-        (text, symbol, has_invalid_ucn)
+        (symbol, has_invalid_ucn)
     }
 
     fn lex_string_literal(&mut self, start_pos: u32, prefix: &[u8], flags: PPTokenFlags) -> PPToken {
-        let (text, symbol, invalid_ucn) = self.lex_quoted_literal(prefix, b'"');
+        let (symbol, invalid_ucn) = self.lex_quoted_literal(prefix, b'"');
         let mut final_flags = flags;
         if invalid_ucn {
             final_flags |= PPTokenFlags::HAS_INVALID_UCN;
         }
 
+        let text = symbol.as_str();
         PPToken::text(
             PPTokenKind::StringLiteral(symbol),
             final_flags,
             SourceLoc::new(self.source_id, start_pos),
-            &text,
+            text,
         )
     }
 
@@ -1166,11 +1188,12 @@ impl PPLexer {
     }
 
     fn lex_char_literal(&mut self, start_pos: u32, prefix: &[u8], flags: PPTokenFlags) -> PPToken {
-        let (text, symbol, invalid_ucn) = self.lex_quoted_literal(prefix, b'\'');
+        let (symbol, invalid_ucn) = self.lex_quoted_literal(prefix, b'\'');
         let mut final_flags = flags;
         if invalid_ucn {
             final_flags |= PPTokenFlags::HAS_INVALID_UCN;
         }
+        let text = symbol.as_str();
         let chars = text.as_bytes();
 
         // Parse character literal content

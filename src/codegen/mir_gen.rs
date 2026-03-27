@@ -27,7 +27,7 @@ use crate::source_manager::SourceManager;
 pub(crate) struct MirGen<'a> {
     pub(crate) ast: &'a Ast,
     pub(crate) symbol_table: &'a SymbolTable, // Now immutable
-    pub(crate) mir_builder: MirBuilder,
+    pub(crate) mb: MirBuilder,
     pub(crate) current_function: Option<MirFunctionId>,
     pub(crate) current_block: Option<MirBlockId>,
     pub(crate) current_scope_id: ScopeId,
@@ -58,7 +58,7 @@ impl<'a> MirGen<'a> {
         Self {
             ast,
             symbol_table,
-            mir_builder,
+            mb: mir_builder,
             current_function: None,
             current_block: None,
             current_scope_id: ScopeId::GLOBAL,
@@ -97,10 +97,7 @@ impl<'a> MirGen<'a> {
         self.visit_node(root);
 
         // Take ownership of the builder to consume it, replacing it with a dummy.
-        let builder = std::mem::replace(
-            &mut self.mir_builder,
-            MirBuilder::new(mir::MirModuleId::new(1).unwrap(), 8),
-        );
+        let builder = std::mem::replace(&mut self.mb, MirBuilder::new(mir::MirModuleId::new(1).unwrap(), 8));
         let output = builder.consume();
 
         MirProgram {
@@ -152,11 +149,11 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::Break => {
                 let target = self.break_target.unwrap();
-                self.mir_builder.set_terminator(Terminator::Goto(target));
+                self.mb.set_terminator(Terminator::Goto(target));
             }
             NodeKind::Continue => {
                 let target = self.continue_target.unwrap();
-                self.mir_builder.set_terminator(Terminator::Goto(target));
+                self.mb.set_terminator(Terminator::Goto(target));
             }
             NodeKind::Goto(label_name, _) => self.visit_goto_stmt(&label_name),
             NodeKind::Label(label_name, stmt, _) => self.visit_label_stmt(&label_name, stmt),
@@ -236,12 +233,7 @@ impl<'a> MirGen<'a> {
             };
 
             if is_function {
-                if self
-                    .mir_builder
-                    .get_functions()
-                    .iter()
-                    .any(|(_, f)| f.name == symbol_name)
-                {
+                if self.mb.get_functions().iter().any(|(_, f)| f.name == symbol_name) {
                     continue;
                 }
 
@@ -294,7 +286,7 @@ impl<'a> MirGen<'a> {
     pub(super) fn evaluate_constant_usize(&mut self, expr: NodeRef, error_msg: &str) -> usize {
         let operand = self.visit_expression(expr, true);
         if let Some(const_id) = self.operand_to_const_id(&operand) {
-            let const_val = self.mir_builder.get_constants().get(&const_id).unwrap();
+            let const_val = self.mb.get_constants().get(&const_id).unwrap();
             if let ConstValueKind::Int(val) = const_val.kind {
                 val as usize
             } else {
@@ -335,7 +327,7 @@ impl<'a> MirGen<'a> {
 
         // Find the existing function in the MIR builder. It should have been created by the pre-pass.
         let func_id = self
-            .mir_builder
+            .mb
             .get_functions()
             .iter()
             .find(|(_, f)| f.name == func_name)
@@ -343,13 +335,13 @@ impl<'a> MirGen<'a> {
             .expect("Function not found in MIR builder, pre-pass failed?");
 
         self.current_function = Some(func_id);
-        self.mir_builder.set_current_function(func_id);
+        self.mb.set_current_function(func_id);
 
         // Since we use define_function for functions with bodies, we should always have a body here
-        let entry_block_id = self.mir_builder.create_block();
-        self.mir_builder.set_function_entry_block(func_id, entry_block_id);
+        let entry_block_id = self.mb.create_block();
+        self.mb.set_function_entry_block(func_id, entry_block_id);
         self.current_block = Some(entry_block_id);
-        self.mir_builder.set_current_block(entry_block_id);
+        self.mb.set_current_block(entry_block_id);
 
         // Pre-scan for all labels in the function body to create their MIR blocks upfront.
         self.label_map.clear();
@@ -359,7 +351,7 @@ impl<'a> MirGen<'a> {
         // map the SymbolRef to the LocalId.
         self.local_map.clear();
         self.vla_map.clear();
-        let mir_params = self.mir_builder.get_functions().get(&func_id).unwrap().params.clone();
+        let mir_params = self.mb.get_functions().get(&func_id).unwrap().params.clone();
 
         for (i, param) in function.param_start.range(function.param_len).enumerate() {
             if let NodeKind::Param(param) = self.ast.get_kind(param) {
@@ -371,21 +363,21 @@ impl<'a> MirGen<'a> {
         self.visit_node(function.body);
 
         // Handle implicit return if control falls off the end
-        if !self.mir_builder.current_block_has_terminator() {
+        if !self.mb.current_block_has_terminator() {
             let func_def = self.get_current_func();
             let ret_ty_id = func_def.return_type;
-            let ret_ty = self.mir_builder.get_type(ret_ty_id);
+            let ret_ty = self.mb.get_type(ret_ty_id);
 
             if matches!(ret_ty, MirType::Void) {
-                self.mir_builder.set_terminator(Terminator::Return(None));
+                self.mb.set_terminator(Terminator::Return(None));
             } else if func_name.as_str() == "main" && ret_ty.is_int() {
                 // main() implicitly returns 0
                 let zero = self.create_int_operand(0);
-                self.mir_builder.set_terminator(Terminator::Return(Some(zero)));
+                self.mb.set_terminator(Terminator::Return(Some(zero)));
             } else {
                 // Falling off the end of a non-void function is undefined behavior.
                 // We leave it as Unreachable (default) or explicitly set it.
-                self.mir_builder.set_terminator(Terminator::Unreachable);
+                self.mb.set_terminator(Terminator::Unreachable);
             }
         }
 
@@ -456,17 +448,12 @@ impl<'a> MirGen<'a> {
 
         let linkage = self.calculate_linkage(storage, symbol.def_state);
 
-        let global_id = self.mir_builder.create_global_with_init(
-            global_name,
-            mir_type_id,
-            symbol.is_const(),
-            is_tls,
-            linkage,
-            None,
-        );
+        let global_id =
+            self.mb
+                .create_global_with_init(global_name, mir_type_id, symbol.is_const(), is_tls, linkage, None);
 
         if let Some(align) = alignment {
-            self.mir_builder.set_global_alignment(global_id, align);
+            self.mb.set_global_alignment(global_id, align);
         }
 
         self.global_map.insert(sym, global_id);
@@ -486,7 +473,7 @@ impl<'a> MirGen<'a> {
         });
 
         if let Some(init_id) = final_init {
-            self.mir_builder.set_global_initializer(global_id, init_id);
+            self.mb.set_global_initializer(global_id, init_id);
         }
     }
 
@@ -512,14 +499,14 @@ impl<'a> MirGen<'a> {
         if let Some(align) = alignment
             && align > 16
         {
-            let mir_type = self.mir_builder.get_type(mir_type_id);
+            let mir_type = self.mb.get_type(mir_type_id);
             let size = self.get_type_size(mir_type);
             let size_op = self.create_size_t_operand(size as u64);
             let ptr_local_id = self.emit_heap_alloc(Some(name), mir_type_id, alignment, size_op);
 
             // We need a dummy size local for the vla_map entry, although it won't be used for sizeof.
             let size_t_ty = self.get_size_t_type();
-            let dummy_size_local = self.mir_builder.create_local(None, size_t_ty, false);
+            let dummy_size_local = self.mb.create_local(None, size_t_ty, false);
             self.vla_map.insert(sym, (ptr_local_id, dummy_size_local));
 
             // Initialize if needed
@@ -539,9 +526,9 @@ impl<'a> MirGen<'a> {
             return;
         }
 
-        let local_id = self.mir_builder.create_local(Some(name), mir_type_id, false);
+        let local_id = self.mb.create_local(Some(name), mir_type_id, false);
         if let Some(align) = alignment {
-            self.mir_builder.set_local_alignment(local_id, align);
+            self.mb.set_local_alignment(local_id, align);
         }
 
         self.local_map.insert(sym, local_id);
@@ -600,7 +587,7 @@ impl<'a> MirGen<'a> {
         let total_size_operand = self.emit_rvalue_to_operand(total_size_rvalue, size_t_mir_ty);
 
         // Create size local (holds total byte size for sizeof)
-        let size_local_id = self.mir_builder.create_local(None, size_t_mir_ty, false);
+        let size_local_id = self.mb.create_local(None, size_t_mir_ty, false);
         // Store the size for sizeof
         self.emit_assignment(Place::Local(size_local_id), total_size_operand.clone());
 
@@ -623,12 +610,12 @@ impl<'a> MirGen<'a> {
         alignment: Option<u32>,
         size_operand: Operand,
     ) -> LocalId {
-        let ptr_mir_ty = self.mir_builder.add_type(MirType::Pointer { pointee: mir_type_id });
+        let ptr_mir_ty = self.mb.add_type(MirType::Pointer { pointee: mir_type_id });
 
         // Create pointer local (holds the allocated memory address)
-        let ptr_local_id = self.mir_builder.create_local(name, ptr_mir_ty, false);
+        let ptr_local_id = self.mb.create_local(name, ptr_mir_ty, false);
         if let Some(align) = alignment {
-            self.mir_builder.set_local_alignment(ptr_local_id, align);
+            self.mb.set_local_alignment(ptr_local_id, align);
         }
 
         // Allocate memory: use posix_memalign if alignment is specified and > 8, otherwise malloc.
@@ -653,14 +640,14 @@ impl<'a> MirGen<'a> {
         // Declare malloc as an extern function if not already declared
         let malloc_name = NameId::new("malloc");
         let size_t_ty = self.get_size_t_type();
-        let void_ty = self.mir_builder.add_type(MirType::Void);
-        let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: void_ty });
+        let void_ty = self.mb.add_type(MirType::Void);
+        let ptr_ty = self.mb.add_type(MirType::Pointer { pointee: void_ty });
 
         // Find or create the malloc function declaration
         let malloc_func_id = self.find_or_declare_extern_function(malloc_name, vec![size_t_ty], ptr_ty, false);
 
         // Call malloc(size) and store result in dest_local
-        self.mir_builder.add_statement(MirStmt::Call {
+        self.mb.add_stmt(MirStmt::Call {
             target: CallTarget::Direct(malloc_func_id),
             args: vec![size_operand],
             dest: Some(Place::Local(dest_local)),
@@ -671,9 +658,9 @@ impl<'a> MirGen<'a> {
     pub(super) fn emit_posix_memalign_call(&mut self, dest_local: LocalId, alignment: u32, size_operand: Operand) {
         let name = NameId::new("posix_memalign");
         let size_t_ty = self.get_size_t_type();
-        let void_ty = self.mir_builder.add_type(MirType::Void);
-        let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: void_ty });
-        let ptr_ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: ptr_ty });
+        let void_ty = self.mb.add_type(MirType::Void);
+        let ptr_ty = self.mb.add_type(MirType::Pointer { pointee: void_ty });
+        let ptr_ptr_ty = self.mb.add_type(MirType::Pointer { pointee: ptr_ty });
         let int_ty = self.get_int_type();
 
         // Declare int posix_memalign(void **memptr, size_t alignment, size_t size);
@@ -684,7 +671,7 @@ impl<'a> MirGen<'a> {
         let dest_addr_casted = Operand::Cast(ptr_ptr_ty, Box::new(dest_addr));
 
         // Call posix_memalign(&dest_local, alignment, size)
-        self.mir_builder.add_statement(MirStmt::Call {
+        self.mb.add_stmt(MirStmt::Call {
             target: CallTarget::Direct(func_id),
             args: vec![dest_addr_casted, align_operand, size_operand],
             dest: None, // Ignore return value (should ideally check for ENOMEM/EINVAL)
@@ -694,8 +681,8 @@ impl<'a> MirGen<'a> {
     /// Emit a free call for the given pointer operand.
     pub(super) fn emit_free_call(&mut self, ptr_operand: Operand) {
         let name = NameId::new("free");
-        let void_ty = self.mir_builder.add_type(MirType::Void);
-        let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: void_ty });
+        let void_ty = self.mb.add_type(MirType::Void);
+        let ptr_ty = self.mb.add_type(MirType::Pointer { pointee: void_ty });
 
         // Declare void free(void *ptr);
         let func_id = self.find_or_declare_extern_function(name, vec![ptr_ty], void_ty, false);
@@ -708,7 +695,7 @@ impl<'a> MirGen<'a> {
         };
 
         // Call free(ptr)
-        self.mir_builder.add_statement(MirStmt::Call {
+        self.mb.add_stmt(MirStmt::Call {
             target: CallTarget::Direct(func_id),
             args: vec![ptr_casted],
             dest: None,
@@ -724,14 +711,13 @@ impl<'a> MirGen<'a> {
         is_variadic: bool,
     ) -> MirFunctionId {
         // Check if already declared
-        for (id, func) in self.mir_builder.get_functions().iter() {
+        for (id, func) in self.mb.get_functions().iter() {
             if func.name == name {
                 return *id;
             }
         }
         // Declare it
-        self.mir_builder
-            .declare_function(name, param_types, return_type, is_variadic)
+        self.mb.declare_function(name, param_types, return_type, is_variadic)
     }
 
     fn visit_return_stmt(&mut self, expr: &Option<NodeRef>) {
@@ -746,33 +732,33 @@ impl<'a> MirGen<'a> {
                 expr_operand
             }
         });
-        self.mir_builder.set_terminator(Terminator::Return(operand));
+        self.mb.set_terminator(Terminator::Return(operand));
     }
 
     fn visit_if_stmt(&mut self, if_stmt: &IfStmt) {
-        let then_block = self.mir_builder.create_block();
-        let else_block = self.mir_builder.create_block();
-        let merge_block = self.mir_builder.create_block();
+        let then_block = self.mb.create_block();
+        let else_block = self.mb.create_block();
+        let merge_block = self.mb.create_block();
 
         let cond_converted = self.lower_condition(if_stmt.condition);
-        self.mir_builder
+        self.mb
             .set_terminator(Terminator::If(cond_converted, then_block, else_block));
 
-        self.mir_builder.set_current_block(then_block);
+        self.mb.set_current_block(then_block);
         self.visit_node(if_stmt.then_branch);
-        if !self.mir_builder.current_block_has_terminator() {
-            self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+        if !self.mb.current_block_has_terminator() {
+            self.mb.set_terminator(Terminator::Goto(merge_block));
         }
 
-        self.mir_builder.set_current_block(else_block);
+        self.mb.set_current_block(else_block);
         if let Some(else_branch) = &if_stmt.else_branch {
             self.visit_node(*else_branch);
         }
-        if !self.mir_builder.current_block_has_terminator() {
-            self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+        if !self.mb.current_block_has_terminator() {
+            self.mb.set_terminator(Terminator::Goto(merge_block));
         }
 
-        self.mir_builder.set_current_block(merge_block);
+        self.mb.set_current_block(merge_block);
         self.current_block = Some(merge_block);
     }
 
@@ -789,15 +775,15 @@ impl<'a> MirGen<'a> {
         B: FnOnce(&mut Self),
         Inc: FnOnce(&mut Self),
     {
-        let cond_block = self.mir_builder.create_block();
-        let body_block = self.mir_builder.create_block();
+        let cond_block = self.mb.create_block();
+        let body_block = self.mb.create_block();
         let increment_block = if inc_fn.is_some() {
-            self.mir_builder.create_block()
+            self.mb.create_block()
         } else {
             // If there's no increment block (e.g. while/do-while), "continue" goes to condition
             cond_block
         };
-        let exit_block = self.mir_builder.create_block();
+        let exit_block = self.mb.create_block();
 
         // Continue target depends on whether we have an increment step
         let continue_target = increment_block;
@@ -809,41 +795,40 @@ impl<'a> MirGen<'a> {
 
             if is_do_while {
                 // do-while: jump straight to body
-                this.mir_builder.set_terminator(Terminator::Goto(body_block));
+                this.mb.set_terminator(Terminator::Goto(body_block));
             } else {
                 // for/while: jump to condition
-                this.mir_builder.set_terminator(Terminator::Goto(cond_block));
+                this.mb.set_terminator(Terminator::Goto(cond_block));
             }
 
             // Condition block
-            this.mir_builder.set_current_block(cond_block);
+            this.mb.set_current_block(cond_block);
             if let Some(cond) = cond_fn {
                 let cond_val = cond(this);
-                this.mir_builder
-                    .set_terminator(Terminator::If(cond_val, body_block, exit_block));
+                this.mb.set_terminator(Terminator::If(cond_val, body_block, exit_block));
             } else {
                 // No condition (e.g. for(;;)) -> infinite loop
-                this.mir_builder.set_terminator(Terminator::Goto(body_block));
+                this.mb.set_terminator(Terminator::Goto(body_block));
             }
 
             // Body block
-            this.mir_builder.set_current_block(body_block);
+            this.mb.set_current_block(body_block);
             body_fn(this);
 
             // After body, jump to increment (or condition if no increment)
-            if !this.mir_builder.current_block_has_terminator() {
-                this.mir_builder.set_terminator(Terminator::Goto(increment_block));
+            if !this.mb.current_block_has_terminator() {
+                this.mb.set_terminator(Terminator::Goto(increment_block));
             }
 
             // Increment block (only if it exists and is distinct from cond_block)
             if let Some(inc) = inc_fn {
-                this.mir_builder.set_current_block(increment_block);
+                this.mb.set_current_block(increment_block);
                 inc(this);
-                this.mir_builder.set_terminator(Terminator::Goto(cond_block));
+                this.mb.set_terminator(Terminator::Goto(cond_block));
             }
         });
 
-        self.mir_builder.set_current_block(exit_block);
+        self.mb.set_current_block(exit_block);
         self.current_block = Some(exit_block);
     }
 
@@ -891,7 +876,7 @@ impl<'a> MirGen<'a> {
 
         let cond_ty_id = self.get_operand_type(&cond_op);
 
-        let merge_block = self.mir_builder.create_block();
+        let merge_block = self.mb.create_block();
 
         let saved_break = self.break_target;
         self.break_target = Some(merge_block);
@@ -904,7 +889,7 @@ impl<'a> MirGen<'a> {
         let mut default_block = None;
 
         for (node, start_val, end_val) in cases {
-            let block = self.mir_builder.create_block();
+            let block = self.mb.create_block();
             self.switch_case_map.insert(node, block);
 
             if let Some(start) = start_val {
@@ -919,8 +904,8 @@ impl<'a> MirGen<'a> {
         let bool_type_id = self.lower_type(self.registry.type_bool);
 
         for (start_id, end_id_opt, target_block) in case_blocks {
-            let next_test_block = self.mir_builder.create_block();
-            let start_const = self.mir_builder.get_constants().get(&start_id).unwrap().clone();
+            let next_test_block = self.mb.create_block();
+            let start_const = self.mb.get_constants().get(&start_id).unwrap().clone();
 
             // Re-create constant with the same type as condition to ensure safe comparison
             let start_op = Operand::Constant(start_id);
@@ -932,7 +917,7 @@ impl<'a> MirGen<'a> {
 
             let cmp_op = if let Some(end_id) = end_id_opt {
                 // Range check: x >= start && x <= end
-                let end_const = self.mir_builder.get_constants().get(&end_id).unwrap().clone();
+                let end_const = self.mb.get_constants().get(&end_id).unwrap().clone();
                 let end_op = Operand::Constant(end_id);
                 let cast_end_op = if end_const.ty != cond_ty_id {
                     Operand::Cast(cond_ty_id, Box::new(end_op))
@@ -957,38 +942,38 @@ impl<'a> MirGen<'a> {
                 self.emit_rvalue_to_operand(eq_rvalue, bool_type_id)
             };
 
-            self.mir_builder
+            self.mb
                 .set_terminator(Terminator::If(cmp_op, target_block, next_test_block));
 
-            self.mir_builder.set_current_block(next_test_block);
+            self.mb.set_current_block(next_test_block);
             self.current_block = Some(next_test_block);
         }
 
         // Final jump to default or merge
-        self.mir_builder.set_terminator(Terminator::Goto(fallback_block));
+        self.mb.set_terminator(Terminator::Goto(fallback_block));
 
         // Lower body
         // Start a dummy unreachable block for the body entry (to catch unreachable statements)
-        let body_entry_dummy = self.mir_builder.create_block();
+        let body_entry_dummy = self.mb.create_block();
         // Do not jump to it. It is unreachable.
 
-        self.mir_builder.set_current_block(body_entry_dummy);
+        self.mb.set_current_block(body_entry_dummy);
         self.current_block = Some(body_entry_dummy);
 
         self.visit_node(body);
 
         // If body falls through, go to merge
-        if self.mir_builder.current_block_has_terminator() == false {
+        if self.mb.current_block_has_terminator() == false {
             // Check if terminator is Unreachable (default) - if so, we can replace it or just leave it?
             // `current_block_has_terminator` returns false if it is Unreachable.
             // But if we are in body_entry_dummy and it's empty, we shouldn't jump to merge.
             // Actually, if execution falls through the body, it should hit merge.
             // But valid C code falling through end of switch goes to next stmt (merge).
-            self.mir_builder.set_terminator(Terminator::Goto(merge_block));
+            self.mb.set_terminator(Terminator::Goto(merge_block));
         }
 
         self.break_target = saved_break;
-        self.mir_builder.set_current_block(merge_block);
+        self.mb.set_current_block(merge_block);
         self.current_block = Some(merge_block);
     }
 
@@ -996,11 +981,11 @@ impl<'a> MirGen<'a> {
         let target_block = *self.switch_case_map.get(&node).expect("Case/Default not mapped");
 
         // Fallthrough from previous block
-        if !self.mir_builder.current_block_has_terminator() {
-            self.mir_builder.set_terminator(Terminator::Goto(target_block));
+        if !self.mb.current_block_has_terminator() {
+            self.mb.set_terminator(Terminator::Goto(target_block));
         }
 
-        self.mir_builder.set_current_block(target_block);
+        self.mb.set_current_block(target_block);
         self.current_block = Some(target_block);
 
         self.visit_node(stmt);
@@ -1049,7 +1034,7 @@ impl<'a> MirGen<'a> {
     }
 
     pub(super) fn emit_assignment(&mut self, place: Place, operand: Operand) {
-        if self.mir_builder.current_block_has_terminator() {
+        if self.mb.current_block_has_terminator() {
             return;
         }
 
@@ -1062,7 +1047,7 @@ impl<'a> MirGen<'a> {
 
         let rvalue = Rvalue::Use(operand);
         let stmt = MirStmt::Assign(place, rvalue);
-        self.mir_builder.add_statement(stmt);
+        self.mb.add_stmt(stmt);
     }
 
     pub(super) fn lower_qual_type(&mut self, qt: QualType) -> TypeId {
@@ -1150,7 +1135,7 @@ impl<'a> MirGen<'a> {
                 fields: Vec::new(),
             },
         };
-        let placeholder_id = self.mir_builder.add_type(placeholder_type);
+        let placeholder_id = self.mb.add_type(placeholder_type);
         self.type_cache.insert(ty, placeholder_id);
 
         let mir_type = self.lower_record_type(ty, &tag, is_union, is_complete);
@@ -1159,12 +1144,12 @@ impl<'a> MirGen<'a> {
         self.type_conversion_in_progress.remove(&ty);
 
         // Replace the placeholder entry with the real type
-        self.mir_builder.update_type(placeholder_id, mir_type);
+        self.mb.update_type(placeholder_id, mir_type);
         placeholder_id
     }
 
     fn cache_type(&mut self, ty: TypeRef, mir_type: MirType) -> TypeId {
-        let type_id = self.mir_builder.add_type(mir_type);
+        let type_id = self.mb.add_type(mir_type);
         self.type_cache.insert(ty, type_id);
         type_id
     }
@@ -1200,7 +1185,7 @@ impl<'a> MirGen<'a> {
                 is_union: false,
                 layout: record_layout,
             };
-            let id = self.mir_builder.add_type(record_type);
+            let id = self.mb.add_type(record_type);
             self.valist_mir_id = Some(id);
             id
         };
@@ -1306,9 +1291,9 @@ impl<'a> MirGen<'a> {
             // Adjust array parameters to pointers (C standard).
             // This is especially important for VaList which treats itself as an array but is passed as a pointer.
             // Sema handles explicit arrays, but BuiltinType::VaList is lowered to Array here.
-            let param_ty = self.mir_builder.get_type(param_ty_id);
+            let param_ty = self.mb.get_type(param_ty_id);
             let adjusted_ty_id = if let MirType::Array { element, .. } = param_ty {
-                self.mir_builder.add_type(MirType::Pointer { pointee: *element })
+                self.mb.add_type(MirType::Pointer { pointee: *element })
             } else {
                 param_ty_id
             };
@@ -1404,7 +1389,7 @@ impl<'a> MirGen<'a> {
     }
 
     pub(crate) fn create_constant(&mut self, ty: TypeId, kind: ConstValueKind) -> ConstValueId {
-        self.mir_builder.create_constant(ty, kind)
+        self.mb.create_constant(ty, kind)
     }
 
     pub(super) fn create_int_operand(&mut self, val: i64) -> Operand {
@@ -1461,7 +1446,7 @@ impl<'a> MirGen<'a> {
                 // Null pointer constant usually converts to void* first.
                 // However, we can use target_type_id if it's already a pointer.
                 let void_ptr_mir = self.lower_type(self.registry.type_void_ptr);
-                if self.mir_builder.get_type(target_type_id).is_pointer() {
+                if self.mb.get_type(target_type_id).is_pointer() {
                     target_type_id
                 } else {
                     void_ptr_mir
@@ -1495,8 +1480,8 @@ impl<'a> MirGen<'a> {
             Conversion::IntegerCast { .. } | Conversion::IntegerPromotion { .. } | Conversion::PointerCast { .. } => {
                 // Fold constant casts if types are compatible
                 if let Some(const_id) = self.operand_to_const_id(&operand) {
-                    let const_val = self.mir_builder.get_constants().get(&const_id).unwrap().clone();
-                    let mir_type = self.mir_builder.get_type(to_mir_type);
+                    let const_val = self.mb.get_constants().get(&const_id).unwrap().clone();
+                    let mir_type = self.mb.get_type(to_mir_type);
 
                     let is_compatible = match (&const_val.kind, mir_type) {
                         (ConstValueKind::Int(_), t) => t.is_int() || t.is_pointer(),
@@ -1551,12 +1536,12 @@ impl<'a> MirGen<'a> {
         match operand {
             Operand::Copy(place) => self.get_place_type(place),
             Operand::Constant(const_id) => {
-                let const_val = self.mir_builder.get_constants().get(const_id).unwrap();
+                let const_val = self.mb.get_constants().get(const_id).unwrap();
                 const_val.ty
             }
             Operand::AddressOf(place) => {
                 let pointee = self.get_place_type(place);
-                self.mir_builder.add_type(MirType::Pointer { pointee })
+                self.mb.add_type(MirType::Pointer { pointee })
             }
             Operand::Cast(ty, _) => *ty,
         }
@@ -1564,25 +1549,25 @@ impl<'a> MirGen<'a> {
 
     pub(super) fn get_place_type(&mut self, place: &Place) -> TypeId {
         match place {
-            Place::Local(local_id) => self.mir_builder.get_locals().get(local_id).unwrap().type_id,
+            Place::Local(local_id) => self.mb.get_locals().get(local_id).unwrap().type_id,
             Place::Global(global_id) => self.get_global_type(*global_id),
             Place::Deref(operand) => {
                 let ptr_ty = self.get_operand_type(operand);
-                match self.mir_builder.get_type(ptr_ty) {
+                match self.mb.get_type(ptr_ty) {
                     MirType::Pointer { pointee } => *pointee,
                     _ => panic!("Deref of non-pointer type"),
                 }
             }
             Place::StructField(base, field_idx, _) => {
                 let struct_ty = self.get_place_type(base);
-                match self.mir_builder.get_type(struct_ty) {
+                match self.mb.get_type(struct_ty) {
                     MirType::Record { field_types, .. } => field_types[*field_idx],
                     _ => panic!("StructField access on non-struct type"),
                 }
             }
             Place::ArrayIndex(base, _) => {
                 let base_ty = self.get_place_type(base);
-                match self.mir_builder.get_type(base_ty) {
+                match self.mb.get_type(base_ty) {
                     MirType::Array { element, .. } => *element,
                     MirType::Pointer { pointee, .. } => *pointee,
                     _ => panic!("ArrayIndex access on non-array, non-pointer type"),
@@ -1615,7 +1600,7 @@ impl<'a> MirGen<'a> {
             Place::StructField(base, field_index, _) => {
                 let (base_id, base_offset) = self.place_to_global_offset(base)?;
                 let base_ty = self.get_place_type(base);
-                let mir_type = self.mir_builder.get_type(base_ty);
+                let mir_type = self.mb.get_type(base_ty);
                 match mir_type {
                     MirType::Record { layout, .. } => {
                         let field_offset = layout.fields[*field_index].offset as i64;
@@ -1628,11 +1613,11 @@ impl<'a> MirGen<'a> {
                 let (base_id, base_offset) = self.place_to_global_offset(base)?;
                 let element_size = {
                     let base_ty = self.get_place_type(base);
-                    let mir_type = self.mir_builder.get_type(base_ty);
+                    let mir_type = self.mb.get_type(base_ty);
                     match mir_type {
                         MirType::Array { layout, .. } => layout.stride as i64,
                         MirType::Pointer { pointee, .. } => {
-                            let pointee_type = self.mir_builder.get_type(*pointee);
+                            let pointee_type = self.mb.get_type(*pointee);
                             self.get_type_size(pointee_type) as i64
                         }
                         _ => return None,
@@ -1641,7 +1626,7 @@ impl<'a> MirGen<'a> {
 
                 let index_val = match &**index_operand {
                     Operand::Constant(const_id) => {
-                        let const_val = self.mir_builder.get_constants().get(const_id).unwrap();
+                        let const_val = self.mb.get_constants().get(const_id).unwrap();
                         match const_val.kind {
                             ConstValueKind::Int(v) => v,
                             _ => return None,
@@ -1657,17 +1642,17 @@ impl<'a> MirGen<'a> {
     }
 
     fn get_global_type(&self, global_id: GlobalId) -> TypeId {
-        self.mir_builder.get_globals().get(&global_id).unwrap().type_id
+        self.mb.get_globals().get(&global_id).unwrap().type_id
     }
 
     pub(super) fn get_function_type(&mut self, func_id: MirFunctionId) -> TypeId {
-        let func = self.mir_builder.get_functions().get(&func_id).unwrap();
+        let func = self.mb.get_functions().get(&func_id).unwrap();
         let ret_ty = func.return_type;
         let mut param_types = Vec::new();
         for &param_id in &func.params {
-            param_types.push(self.mir_builder.get_locals().get(&param_id).unwrap().type_id);
+            param_types.push(self.mb.get_locals().get(&param_id).unwrap().type_id);
         }
-        self.mir_builder.add_type(MirType::Function {
+        self.mb.add_type(MirType::Function {
             return_type: ret_ty,
             params: param_types,
             is_variadic: func.is_variadic,
@@ -1729,7 +1714,7 @@ impl<'a> MirGen<'a> {
     }
 
     pub(super) fn create_temp_local(&mut self, type_id: TypeId) -> (LocalId, Place) {
-        let local_id = self.mir_builder.create_local(None, type_id, false);
+        let local_id = self.mb.create_local(None, type_id, false);
         let place = Place::Local(local_id);
         (local_id, place)
     }
@@ -1741,7 +1726,7 @@ impl<'a> MirGen<'a> {
     pub(super) fn create_temp_local_with_assignment(&mut self, rvalue: Rvalue, type_id: TypeId) -> (LocalId, Place) {
         let (local_id, place) = self.create_temp_local(type_id);
         let assign_stmt = MirStmt::Assign(place.clone(), rvalue);
-        self.mir_builder.add_statement(assign_stmt);
+        self.mb.add_stmt(assign_stmt);
         (local_id, place)
     }
 
@@ -1749,7 +1734,7 @@ impl<'a> MirGen<'a> {
         if let Operand::Copy(place) = operand {
             *place
         } else {
-            if self.mir_builder.get_type(type_id).is_void() {
+            if self.mb.get_type(type_id).is_void() {
                 // This shouldn't normally happen if the rest of the lowerer handles void correctly.
                 panic!("ICE: Cannot ensure_place for void type");
             }
@@ -1759,7 +1744,7 @@ impl<'a> MirGen<'a> {
     }
 
     pub(super) fn emit_rvalue_to_operand(&mut self, rvalue: Rvalue, type_id: TypeId) -> Operand {
-        if self.mir_builder.get_type(type_id).is_void() {
+        if self.mb.get_type(type_id).is_void() {
             // For void expressions, just return a dummy operand.
             // Any side effects in the Rvalue's operands were already emitted.
             return self.create_dummy_operand();
@@ -1799,8 +1784,8 @@ impl<'a> MirGen<'a> {
             Operand::Cast(ty, inner) => {
                 // Recursively try to get constant from inner operand
                 if let Some(inner_const_id) = self.operand_to_const_id(inner) {
-                    let inner_const = self.mir_builder.get_constants().get(&inner_const_id).unwrap().clone();
-                    let mir_type = self.mir_builder.get_type(*ty);
+                    let inner_const = self.mb.get_constants().get(&inner_const_id).unwrap().clone();
+                    let mir_type = self.mb.get_type(*ty);
                     let truncated_kind = match inner_const.kind {
                         ConstValueKind::Int(val) => {
                             if mir_type.is_float() {
@@ -1834,7 +1819,7 @@ impl<'a> MirGen<'a> {
             Operand::AddressOf(place) => {
                 if let Some((global_id, offset)) = self.place_to_global_offset(place) {
                     let global_type = self.get_global_type(global_id);
-                    let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: global_type });
+                    let ptr_ty = self.mb.add_type(MirType::Pointer { pointee: global_type });
                     Some(self.create_constant(ptr_ty, ConstValueKind::GlobalAddress(global_id, offset)))
                 } else {
                     None
@@ -1845,9 +1830,9 @@ impl<'a> MirGen<'a> {
                     // If it is an array, using it in an expression decays to a pointer (GlobalAddress).
                     // We must check if the *place* itself is an array, not just if the base global is an array.
                     let place_ty_id = self.get_place_type(place);
-                    let place_mir_ty = self.mir_builder.get_type(place_ty_id);
+                    let place_mir_ty = self.mb.get_type(place_ty_id);
                     if matches!(place_mir_ty, MirType::Array { .. }) {
-                        let ptr_ty = self.mir_builder.add_type(MirType::Pointer { pointee: place_ty_id });
+                        let ptr_ty = self.mb.add_type(MirType::Pointer { pointee: place_ty_id });
                         return Some(self.create_constant(ptr_ty, ConstValueKind::GlobalAddress(global_id, offset)));
                     }
 
@@ -1856,7 +1841,7 @@ impl<'a> MirGen<'a> {
                     // However, if there's an offset and it's not an array decaying, we can't easily extract the sub-value right now.
                     // For now, only return initial_value if offset is 0 and the place is the exact global base.
                     if offset == 0 && matches!(&**place, Place::Global(_)) {
-                        let global = self.mir_builder.get_globals().get(&global_id).unwrap();
+                        let global = self.mb.get_globals().get(&global_id).unwrap();
                         if self.current_function.is_none() || global.is_constant {
                             return global.initial_value;
                         }
@@ -1888,7 +1873,7 @@ impl<'a> MirGen<'a> {
         if let NodeKind::Label(name, _, _) = node_kind
             && !self.label_map.contains_key(&name)
         {
-            let block_id = self.mir_builder.create_block();
+            let block_id = self.mb.create_block();
             self.label_map.insert(name, block_id);
         }
         node_kind.visit_children(|child| self.scan_for_labels(child));
@@ -1896,7 +1881,7 @@ impl<'a> MirGen<'a> {
 
     fn visit_goto_stmt(&mut self, label_name: &NameId) {
         if let Some(target_block) = self.label_map.get(label_name).copied() {
-            self.mir_builder.set_terminator(Terminator::Goto(target_block));
+            self.mb.set_terminator(Terminator::Goto(target_block));
         } else {
             // This should be caught by semantic analysis, but we panic as a safeguard
             panic!("Goto to undefined label '{}'", label_name.as_str());
@@ -1906,11 +1891,11 @@ impl<'a> MirGen<'a> {
     fn visit_label_stmt(&mut self, label_name: &NameId, statement: NodeRef) {
         if let Some(label_block) = self.label_map.get(label_name).copied() {
             // Make sure the current block is terminated before switching
-            if !self.mir_builder.current_block_has_terminator() {
-                self.mir_builder.set_terminator(Terminator::Goto(label_block));
+            if !self.mb.current_block_has_terminator() {
+                self.mb.set_terminator(Terminator::Goto(label_block));
             }
 
-            self.mir_builder.set_current_block(label_block);
+            self.mb.set_current_block(label_block);
             self.current_block = Some(label_block);
 
             // Now, lower the statement that follows the label
@@ -1930,9 +1915,9 @@ impl<'a> MirGen<'a> {
         linkage: MirLinkage,
     ) {
         if is_def {
-            self.mir_builder.define_function(name, params, ret, variadic, linkage);
+            self.mb.define_function(name, params, ret, variadic, linkage);
         } else {
-            self.mir_builder.declare_function(name, params, ret, variadic);
+            self.mb.declare_function(name, params, ret, variadic);
         }
     }
 
@@ -1946,9 +1931,6 @@ impl<'a> MirGen<'a> {
 
     fn get_current_func(&self) -> &mir::MirFunction {
         let func_id = self.current_function.expect("Not in a function");
-        self.mir_builder
-            .get_functions()
-            .get(&func_id)
-            .expect("Function not found")
+        self.mb.get_functions().get(&func_id).expect("Function not found")
     }
 }

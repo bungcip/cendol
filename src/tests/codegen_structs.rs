@@ -120,10 +120,10 @@ fn test_alloc_dealloc_codegen() {
     let local_p_id = builder.create_local(Some(NameId::new("p")), ptr_type_id, false);
 
     // p = alloc(...)
-    builder.add_statement(MirStmt::Alloc(Place::Local(local_p_id), int_type_id));
+    builder.add_stmt(MirStmt::Alloc(Place::Local(local_p_id), int_type_id));
 
     // dealloc(p)
-    builder.add_statement(MirStmt::Dealloc(Operand::Copy(Box::new(Place::Local(local_p_id)))));
+    builder.add_stmt(MirStmt::Dealloc(Operand::Copy(Box::new(Place::Local(local_p_id)))));
 
     builder.set_terminator(Terminator::Return(None));
 

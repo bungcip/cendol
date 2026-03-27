@@ -96,7 +96,7 @@ fn test_store_statement_lowering() {
 
     // 5. Create Statement: store 42 into x
     let store_stmt = MirStmt::Store(Operand::Constant(const_val_id), Place::Local(local_id));
-    builder.add_statement(store_stmt);
+    builder.add_stmt(store_stmt);
 
     builder.set_terminator(Terminator::Return(None));
 
@@ -153,19 +153,19 @@ fn test_store_deref_pointer() {
     let const_10_id = builder.create_constant(int_type_id, ConstValueKind::Int(10));
 
     // x = 10
-    builder.add_statement(MirStmt::Assign(
+    builder.add_stmt(MirStmt::Assign(
         Place::Local(local_x_id),
         Rvalue::Use(Operand::Constant(const_10_id)),
     ));
 
     // p = &x
-    builder.add_statement(MirStmt::Assign(
+    builder.add_stmt(MirStmt::Assign(
         Place::Local(local_p_id),
         Rvalue::Use(Operand::AddressOf(Box::new(Place::Local(local_x_id)))),
     ));
 
     // *p = 42
-    builder.add_statement(MirStmt::Store(
+    builder.add_stmt(MirStmt::Store(
         Operand::Constant(const_42_id),
         Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(local_p_id))))),
     ));
@@ -379,7 +379,7 @@ fn test_f128_constant_promotion() {
     let local_id = builder.create_local(None, f128_type_id, false);
 
     // Store it
-    builder.add_statement(MirStmt::Store(Operand::Constant(const_id), Place::Local(local_id)));
+    builder.add_stmt(MirStmt::Store(Operand::Constant(const_id), Place::Local(local_id)));
 
     builder.set_terminator(Terminator::Return(None));
 

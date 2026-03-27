@@ -71,7 +71,7 @@ fn test_indirect_function_call() {
     let arg_const_id = builder.create_constant(int_type_id, crate::mir::ConstValueKind::Int(42));
 
     // 1. ptr = &target
-    builder.add_statement(MirStmt::Assign(
+    builder.add_stmt(MirStmt::Assign(
         Place::Local(ptr_local_id),
         crate::mir::Rvalue::Use(Operand::Constant(func_addr_const_id)),
     ));
@@ -79,7 +79,7 @@ fn test_indirect_function_call() {
     // 2. call(*ptr)(42)
     let temp_local_id = builder.create_local(Some(NameId::new("temp")), int_type_id, false);
 
-    builder.add_statement(MirStmt::Call {
+    builder.add_stmt(MirStmt::Call {
         target: CallTarget::Indirect(Operand::Copy(Box::new(Place::Local(ptr_local_id)))),
         args: vec![Operand::Constant(arg_const_id)],
         dest: Some(Place::Local(temp_local_id)),

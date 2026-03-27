@@ -8,7 +8,7 @@ use crate::mir::{ConstValueKind, MirArrayLayout, MirLinkage, MirType, Operand, P
 use crate::semantic::{ArraySizeType, FieldLayout, QualType, StructMember, TypeKind, TypeRef};
 
 impl<'a> MirGen<'a> {
-    fn visit_initializer_list(
+    fn visit_init_list(
         &mut self,
         list: &ast::nodes::InitializerList,
         target_ty: QualType,
@@ -142,7 +142,7 @@ impl<'a> MirGen<'a> {
                     }
                     TypeKind::Array { element_type, size } => {
                         let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
-                        let op = self.visit_array_initializer_from_iter(
+                        let op = self.visit_array_init_from_iter(
                             iter,
                             next_pending,
                             QualType::unqualified(*element_type),
@@ -167,7 +167,7 @@ impl<'a> MirGen<'a> {
                     }
                     TypeKind::Array { element_type, size } => {
                         let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
-                        let op = self.visit_array_initializer_from_iter(
+                        let op = self.visit_array_init_from_iter(
                             iter,
                             next_pending,
                             QualType::unqualified(*element_type),
@@ -247,7 +247,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_array_initializer(
+    fn visit_array_init(
         &mut self,
         list: &ast::nodes::InitializerList,
         element_ty: QualType,
@@ -257,10 +257,10 @@ impl<'a> MirGen<'a> {
     ) -> Operand {
         let range = list.init_start.range(list.init_len);
         let mut iter = range.peekable();
-        self.visit_array_initializer_from_iter(&mut iter, None, element_ty, size, target_ty, destination)
+        self.visit_array_init_from_iter(&mut iter, None, element_ty, size, target_ty, destination)
     }
 
-    fn visit_array_initializer_from_iter(
+    fn visit_array_init_from_iter(
         &mut self,
         iter: &mut Peekable<impl Iterator<Item = NodeRef>>,
         pending: Option<(NodeRef, Option<(NodeRef, u16)>)>,
@@ -347,7 +347,7 @@ impl<'a> MirGen<'a> {
                         } else {
                             0
                         };
-                        self.visit_array_initializer_from_iter(
+                        self.visit_array_init_from_iter(
                             iter,
                             next_pending,
                             QualType::unqualified(*inner_elem),
@@ -374,7 +374,7 @@ impl<'a> MirGen<'a> {
                         } else {
                             0
                         };
-                        self.visit_array_initializer_from_iter(
+                        self.visit_array_init_from_iter(
                             iter,
                             next_pending,
                             QualType::unqualified(*inner_elem),
@@ -424,8 +424,7 @@ impl<'a> MirGen<'a> {
             Operand::Constant(self.create_constant(mir_ty, const_kind))
         } else if let Some(place) = destination {
             let rval = create_rvalue(data);
-            self.mir_builder
-                .add_statement(crate::mir::MirStmt::Assign(place.clone(), rval));
+            self.mb.add_stmt(crate::mir::MirStmt::Assign(place.clone(), rval));
             Operand::Copy(Box::new(place))
         } else {
             let rval = create_rvalue(data);
@@ -492,11 +491,11 @@ impl<'a> MirGen<'a> {
 
         match (&kind, &target_type.kind) {
             (NodeKind::InitializerList(list), TypeKind::Record { .. } | TypeKind::Complex { .. }) => {
-                self.visit_initializer_list(list, target_qt, destination)
+                self.visit_init_list(list, target_qt, destination)
             }
             (NodeKind::InitializerList(list), TypeKind::Array { element_type, size }) => {
                 let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
-                self.visit_array_initializer(
+                self.visit_array_init(
                     list,
                     QualType::unqualified(*element_type),
                     array_size,
@@ -568,7 +567,7 @@ impl<'a> MirGen<'a> {
             })
             .collect();
 
-        let array_ty = self.mir_builder.add_type(MirType::Array {
+        let array_ty = self.mb.add_type(MirType::Array {
             element: mir_elem_ty,
             size,
             layout: MirArrayLayout {
@@ -589,15 +588,10 @@ impl<'a> MirGen<'a> {
         };
 
         let array_const = self.create_array_const_from_string(val, None, Some(QualType::unqualified(elem_ty)));
-        let name = self.mir_builder.get_next_anonymous_global_name();
-        let global_id = self.mir_builder.create_global_with_init(
-            name,
-            mir_ty,
-            true,
-            false,
-            MirLinkage::Internal,
-            Some(array_const),
-        );
+        let name = self.mb.get_next_anon_global_name();
+        let global_id =
+            self.mb
+                .create_global_with_init(name, mir_ty, true, false, MirLinkage::Internal, Some(array_const));
 
         Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global_id, 0)))
     }
@@ -610,15 +604,10 @@ impl<'a> MirGen<'a> {
                 .eval_init_to_const(init, ty)
                 .expect("Global compound literal init must be const");
 
-            let name = self.mir_builder.get_next_anonymous_global_name();
-            let global_id = self.mir_builder.create_global_with_init(
-                name,
-                mir_ty,
-                true,
-                false,
-                MirLinkage::Internal,
-                Some(init_const),
-            );
+            let name = self.mb.get_next_anon_global_name();
+            let global_id =
+                self.mb
+                    .create_global_with_init(name, mir_ty, true, false, MirLinkage::Internal, Some(init_const));
 
             Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global_id, 0)))
         } else {

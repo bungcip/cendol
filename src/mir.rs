@@ -16,29 +16,47 @@ use crate::ast::NameId;
 pub mod dumper;
 pub mod validation;
 
-/// Unique identifier for MIR global variables
-pub type GlobalId = NonZeroU32;
+macro_rules! mir_id {
+    ($name:ident, $doc:expr) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+        #[repr(transparent)]
+        pub struct $name(NonZeroU32);
 
-/// Unique identifier for MIR modules
-pub type MirModuleId = NonZeroU32;
+        impl $name {
+            #[inline]
+            pub fn new(val: u32) -> Option<Self> {
+                NonZeroU32::new(val).map(Self)
+            }
 
-/// Unique identifier for MIR functions
-pub type MirFunctionId = NonZeroU32;
+            #[inline]
+            pub const unsafe fn from_u32_unchecked(val: u32) -> Self {
+                // SAFETY: The caller must ensure val is non-zero
+                Self(unsafe { NonZeroU32::new_unchecked(val) })
+            }
 
-/// Unique identifier for MIR blocks
-pub type MirBlockId = NonZeroU32;
+            #[inline]
+            pub fn get(self) -> u32 {
+                self.0.get()
+            }
+        }
 
-/// Unique identifier for MIR statements
-pub type MirStmtId = NonZeroU32;
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.0.get())
+            }
+        }
+    };
+}
 
-/// Unique identifier for MIR locals
-pub type LocalId = NonZeroU32;
-
-/// Unique identifier for MIR types
-pub type TypeId = NonZeroU32;
-
-/// Unique identifier for MIR constant values
-pub type ConstValueId = NonZeroU32;
+mir_id!(GlobalId, "Unique identifier for MIR global variables");
+mir_id!(MirModuleId, "Unique identifier for MIR modules");
+mir_id!(MirFunctionId, "Unique identifier for MIR functions");
+mir_id!(MirBlockId, "Unique identifier for MIR blocks");
+mir_id!(MirStmtId, "Unique identifier for MIR statements");
+mir_id!(LocalId, "Unique identifier for MIR locals");
+mir_id!(TypeId, "Unique identifier for MIR types");
+mir_id!(ConstValueId, "Unique identifier for MIR constant values");
 
 /// Function linkage - distinguishes between internal, external, and imported functions
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -614,29 +632,28 @@ pub struct MirProgram {
 }
 
 impl MirProgram {
-    /// get type or panic if not found
     pub(crate) fn get_type(&self, id: TypeId) -> &MirType {
         match self.types.get(&id) {
-            Some(id) => id,
-            None => panic!("ICE: Type ID {id} not found"),
+            Some(ty) => ty,
+            None => panic!("ICE: Type ID {} not found", id),
         }
     }
     pub(crate) fn get_local(&self, id: LocalId) -> &Local {
         match self.locals.get(&id) {
-            Some(id) => id,
-            None => panic!("ICE: Local ID {id} not found"),
+            Some(local) => local,
+            None => panic!("ICE: Local ID {} not found", id),
         }
     }
     pub(crate) fn get_function(&self, id: MirFunctionId) -> &MirFunction {
         match self.functions.get(&id) {
-            Some(id) => id,
-            None => panic!("ICE: Function ID {id} not found"),
+            Some(func) => func,
+            None => panic!("ICE: Function ID {} not found", id),
         }
     }
     pub(crate) fn get_global(&self, id: GlobalId) -> &Global {
         match self.globals.get(&id) {
-            Some(id) => id,
-            None => panic!("ICE: Global ID {id} not found"),
+            Some(global) => global,
+            None => panic!("ICE: Global ID {} not found", id),
         }
     }
 }
@@ -666,7 +683,6 @@ impl MirBuilder {
         }
     }
 
-    /// Create a new local variable
     pub(crate) fn create_local(&mut self, name: Option<NameId>, type_id: TypeId, is_param: bool) -> LocalId {
         let local_id = LocalId::new(self.next_local_id).unwrap();
         self.next_local_id += 1;
@@ -717,7 +733,7 @@ impl MirBuilder {
     }
 
     /// Add a statement to the current block
-    pub(crate) fn add_statement(&mut self, stmt: MirStmt) -> MirStmtId {
+    pub(crate) fn add_stmt(&mut self, stmt: MirStmt) -> MirStmtId {
         let stmt_id = MirStmtId::new(self.next_stmt_id).unwrap();
         self.next_stmt_id += 1;
 
@@ -952,7 +968,7 @@ impl MirBuilder {
         }
     }
 
-    pub(crate) fn get_next_anonymous_global_name(&mut self) -> NameId {
+    pub(crate) fn get_next_anon_global_name(&mut self) -> NameId {
         let name = format!(".L.str{}", self.anonymous_global_counter);
         self.anonymous_global_counter += 1;
         NameId::new(name)

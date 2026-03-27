@@ -702,7 +702,7 @@ fn test_place_field_out_of_bounds() {
     // Assign to i32 local
     let dest_local = builder.create_local(None, i32_ty, false);
     let stmt = MirStmt::Assign(Place::Local(dest_local), Rvalue::Use(op));
-    builder.add_statement(stmt);
+    builder.add_stmt(stmt);
     let const_val = builder.create_constant(i32_ty, ConstValueKind::Int(0));
     builder.set_terminator(Terminator::Return(Some(Operand::Constant(const_val))));
 
@@ -755,7 +755,7 @@ fn test_rvalue_cast_aggregate_invalid() {
     let rvalue = Rvalue::Cast(i32_ty, Operand::Copy(Box::new(Place::Local(local_id))));
     let dest_local = builder.create_local(None, i32_ty, false);
     let stmt = MirStmt::Assign(Place::Local(dest_local), rvalue);
-    builder.add_statement(stmt);
+    builder.add_stmt(stmt);
     let const_val = builder.create_constant(i32_ty, ConstValueKind::Int(0));
     builder.set_terminator(Terminator::Return(Some(Operand::Constant(const_val))));
 

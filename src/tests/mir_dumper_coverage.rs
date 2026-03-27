@@ -41,12 +41,12 @@ fn test_dump_basic_module() {
     use crate::mir::{MirStmt, Operand, Place, Rvalue, Terminator};
 
     let const_val_id = builder.create_constant(i32_ty, crate::mir::ConstValueKind::Int(42));
-    builder.add_statement(MirStmt::Assign(
+    builder.add_stmt(MirStmt::Assign(
         Place::Local(loc_i32),
         Rvalue::Use(Operand::Constant(const_val_id)),
     ));
 
-    builder.add_statement(MirStmt::Store(
+    builder.add_stmt(MirStmt::Store(
         Operand::Copy(Box::new(Place::Local(loc_i32))),
         Place::Global(global_id),
     ));

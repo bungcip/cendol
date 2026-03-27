@@ -13,7 +13,7 @@ fn test_const_global_mir() {
     let mir = unit.mir_program.as_ref().expect("MIR generation failed");
 
     // Sort globals by name for deterministic output
-    let mut globals: Vec<_> = mir.globals.values().collect();
+    let mut globals: Vec<_> = mir.globals.iter().collect();
     globals.sort_by_key(|g| g.name.to_string());
 
     // we check is_constant value if it is constant, it will be true

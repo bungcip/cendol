@@ -17,7 +17,7 @@ fn test_complex_declarations() {
 
     // Verify that we have some record types for complex numbers
     let mut found_complex = false;
-    for ty in mir.types.values() {
+    for ty in mir.types.iter() {
         if let crate::mir::MirType::Record { name, .. } = ty
             && name.as_str().contains("_Complex_")
         {

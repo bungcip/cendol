@@ -417,7 +417,7 @@ pub(crate) fn emit_const(
     mut data_description: Option<&mut DataDescription>,
     offset: u32,
 ) {
-    let const_value = ctx.mir.constants.get(&const_id).expect("Constant ID not found");
+    let const_value = ctx.mir.get_constant(const_id);
     let ty = ctx.mir.get_type(const_value.ty);
 
     match &const_value.kind {
@@ -1099,7 +1099,7 @@ fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, build
 
 /// Helper to emit a constant to anonymous memory and return its address
 fn emit_constant_to_memory(const_id: ConstValueId, ctx: &mut BodyEmitContext) -> Value {
-    let const_value = ctx.mir.constants.get(&const_id).expect("Constant not found");
+    let const_value = ctx.mir.get_constant(const_id);
     let ty = ctx.mir.get_type(const_value.ty);
     let size = lower_type_size(ty, ctx.mir) as usize;
 
@@ -1153,24 +1153,26 @@ fn truncate_const(val: i64, ty: Type) -> i64 {
 fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Type) -> Value {
     match operand {
         Operand::Constant(const_id) => {
-            let const_value = ctx.mir.constants.get(const_id).expect("constant id not found");
+            let const_value = ctx.mir.get_constant(*const_id);
             match &const_value.kind {
                 ConstValueKind::Int(val) => {
+                    let val = *val;
                     if expected_type.is_float() {
                         if expected_type == types::F64 {
-                            ctx.builder.ins().f64const(*val as f64)
+                            ctx.builder.ins().f64const(val as f64)
                         } else if expected_type == types::F32 {
-                            ctx.builder.ins().f32const(*val as f32)
+                            ctx.builder.ins().f32const(val as f32)
                         } else {
                             // F128 or other float types - might need better handling but for now fallback to f64 logic or panic
                             panic!("Implicit int-to-float constant conversion for type {:?}", expected_type);
                         }
                     } else {
-                        let truncated = truncate_const(*val, expected_type);
+                        let truncated = truncate_const(val, expected_type);
                         ctx.builder.ins().iconst(expected_type, truncated)
                     }
                 }
                 ConstValueKind::Float(val) => {
+                    let val = *val;
                     let mir_type = ctx.mir.get_type(const_value.ty);
                     if mir_type.is_aggregate() {
                         let addr = emit_constant_to_memory(*const_id, ctx);
@@ -1185,16 +1187,16 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                         let bits = val.to_bits();
                         ctx.builder.ins().iconst(types::I64, bits as i64)
                     } else if expected_type.is_int() {
-                        let int_val = *val as i64;
+                        let int_val = val as i64;
                         let truncated = truncate_const(int_val, expected_type);
                         ctx.builder.ins().iconst(expected_type, truncated)
                     } else if expected_type == types::F64 {
-                        ctx.builder.ins().f64const(*val)
+                        ctx.builder.ins().f64const(val)
                     } else if expected_type == types::F32 {
-                        ctx.builder.ins().f32const(*val as f32)
+                        ctx.builder.ins().f32const(val as f32)
                     } else {
                         // Fallback/Default for float constants
-                        ctx.builder.ins().f32const(*val as f32)
+                        ctx.builder.ins().f32const(val as f32)
                     }
                 }
                 ConstValueKind::Bool(val) => {
@@ -1203,7 +1205,9 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                 }
                 ConstValueKind::Null => ctx.builder.ins().iconst(expected_type, 0i64),
                 ConstValueKind::GlobalAddress(global_id, addend) => {
-                    let global = ctx.mir.get_global(*global_id);
+                    let global_id = *global_id;
+                    let addend = *addend;
+                    let global = ctx.mir.get_global(global_id);
                     let linkage = lower_mir_linkage(global.linkage);
                     let global_val = ctx
                         .module
@@ -1211,8 +1215,8 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                         .expect("Failed to declare global data");
                     let local_id = ctx.module.declare_data_in_func(global_val, ctx.builder.func);
                     let addr = ctx.builder.ins().global_value(types::I64, local_id);
-                    let addr = if *addend != 0 {
-                        let addend_val = ctx.builder.ins().iconst(types::I64, *addend);
+                    let addr = if addend != 0 {
+                        let addend_val = ctx.builder.ins().iconst(types::I64, addend);
                         ctx.builder.ins().iadd(addr, addend_val)
                     } else {
                         addr
@@ -1390,7 +1394,7 @@ fn is_operand_signed(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &H
 /// Helper function to resolve an operand to its TypeId
 fn lower_operand_type_id(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &HashMap<TypeId, TypeId>) -> TypeId {
     match operand {
-        Operand::Constant(const_id) => mir.constants.get(const_id).expect("constant id not found").ty,
+        Operand::Constant(const_id) => mir.get_constant(*const_id).ty,
         Operand::Copy(place) => lower_place_type_id(place, mir, pointee_to_pointer),
         Operand::Cast(type_id, _) => *type_id,
         Operand::AddressOf(place) => {
@@ -2570,9 +2574,11 @@ impl ClifGen {
             pointee_to_pointer: mir
                 .types
                 .iter()
-                .filter_map(|(id, ty)| {
+                .enumerate()
+                .filter_map(|(i, ty)| {
+                    let id = TypeId::new((i + 1) as u32).unwrap();
                     if let MirType::Pointer { pointee } = ty {
-                        Some((*pointee, *id))
+                        Some((*pointee, id))
                     } else {
                         None
                     }
@@ -2592,7 +2598,7 @@ impl ClifGen {
             if !reachable_globals.contains(&global_id) {
                 continue;
             }
-            let global = self.mir.globals.get(&global_id).unwrap();
+            let global = self.mir.get_global(global_id);
             let linkage = lower_mir_linkage(global.linkage);
 
             let data_id = self
@@ -2608,7 +2614,7 @@ impl ClifGen {
             if !reachable_functions.contains(&func_id) {
                 continue;
             }
-            let func = self.mir.functions.get(&func_id).unwrap();
+            let func = self.mir.get_function(func_id);
             let linkage = lower_mir_linkage(func.linkage);
 
             // Calculate signature for declaration
@@ -2631,12 +2637,12 @@ impl ClifGen {
             if !reachable_globals.contains(&global_id) {
                 continue;
             }
-            let global = self.mir.globals.get(&global_id).unwrap();
+            let global = self.mir.get_global(global_id);
             if let Some(const_id) = global.initial_value {
                 let data_id = *self.data_id_map.get(&global_id).unwrap();
                 let mut data_description = DataDescription::new();
 
-                let const_val = self.mir.constants.get(&const_id).unwrap();
+                let const_val = self.mir.get_constant(const_id);
                 if let ConstValueKind::Zero = const_val.kind {
                     let ty = self.mir.get_type(const_val.ty);
                     let size = lower_type_size(ty, &self.mir) as usize;
@@ -2677,7 +2683,7 @@ impl ClifGen {
                 continue;
             }
             // Only lower functions that are defined (have bodies)
-            if let Some(func) = self.mir.functions.get(&func_id)
+            if let Some(func) = self.mir.functions.get(func_id.index())
                 && func.linkage != MirLinkage::Import
             {
                 self.visit_function(func_id);
@@ -2856,7 +2862,7 @@ impl ClifGen {
             }
 
             // Get the MIR block
-            let mir_block = self.mir.blocks.get(&current_block_id).expect("Block not found in MIR");
+            let mir_block = self.mir.get_block(current_block_id);
 
             // ========================================================================
             // SECTION 1: Process statements within this block
@@ -2864,7 +2870,7 @@ impl ClifGen {
             let statements_to_process: Vec<MirStmt> = mir_block
                 .statements
                 .iter()
-                .filter_map(|&stmt_id| self.mir.statements.get(&stmt_id).cloned())
+                .filter_map(|&stmt_id| Some(self.mir.get_statement(stmt_id).clone()))
                 .collect();
 
             let mut return_ptr = None;
@@ -2934,12 +2940,14 @@ impl ClifGen {
         let mut worklist_globals = Vec::new();
 
         // Initial roots: all non-import functions and all globals with initializers
-        for (&id, func) in &self.mir.functions {
+        for func in &self.mir.functions {
+            let id = func.id;
             if func.linkage != MirLinkage::Import && reachable_functions.insert(id) {
                 worklist_functions.push(id);
             }
         }
-        for (&id, global) in &self.mir.globals {
+        for global in &self.mir.globals {
+            let id = global.id;
             if global.initial_value.is_some() && reachable_globals.insert(id) {
                 worklist_globals.push(id);
             }
@@ -2949,9 +2957,9 @@ impl ClifGen {
             while let Some(func_id) = worklist_functions.pop() {
                 let func = self.mir.get_function(func_id);
                 for block_id in &func.blocks {
-                    let block = self.mir.blocks.get(block_id).unwrap();
+                    let block = self.mir.get_block(*block_id);
                     for &stmt_id in &block.statements {
-                        let stmt = self.mir.statements.get(&stmt_id).unwrap();
+                        let stmt = self.mir.get_statement(stmt_id);
                         self.collect_stmt_reachability(
                             stmt,
                             &mut worklist_functions,
@@ -2971,7 +2979,7 @@ impl ClifGen {
             }
 
             while let Some(global_id) = worklist_globals.pop() {
-                let global = self.mir.globals.get(&global_id).unwrap();
+                let global = self.mir.get_global(global_id);
                 if let Some(const_id) = global.initial_value {
                     self.collect_const_reachability(
                         const_id,
@@ -3150,7 +3158,7 @@ impl ClifGen {
         rg: &mut HashSet<GlobalId>,
         wg: &mut Vec<GlobalId>,
     ) {
-        let cv = self.mir.constants.get(&id).unwrap();
+        let cv = self.mir.get_constant(id);
         match &cv.kind {
             ConstValueKind::GlobalAddress(gid, _) => {
                 if rg.insert(*gid) {

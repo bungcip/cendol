@@ -233,7 +233,7 @@ impl<'a> MirGen<'a> {
             };
 
             if is_function {
-                if self.mb.get_functions().iter().any(|(_, f)| f.name == symbol_name) {
+                if self.mb.get_functions().iter().any(|f| f.name == symbol_name) {
                     continue;
                 }
 
@@ -286,7 +286,7 @@ impl<'a> MirGen<'a> {
     pub(super) fn evaluate_constant_usize(&mut self, expr: NodeRef, error_msg: &str) -> usize {
         let operand = self.visit_expression(expr, true);
         if let Some(const_id) = self.operand_to_const_id(&operand) {
-            let const_val = self.mb.get_constants().get(&const_id).unwrap();
+            let const_val = self.mb.get_constants().get(const_id.index()).unwrap();
             if let ConstValueKind::Int(val) = const_val.kind {
                 val as usize
             } else {
@@ -330,8 +330,9 @@ impl<'a> MirGen<'a> {
             .mb
             .get_functions()
             .iter()
+            .enumerate()
             .find(|(_, f)| f.name == func_name)
-            .map(|(id, _)| *id)
+            .map(|(i, _)| MirFunctionId::new((i + 1) as u32).unwrap())
             .expect("Function not found in MIR builder, pre-pass failed?");
 
         self.current_function = Some(func_id);
@@ -351,7 +352,7 @@ impl<'a> MirGen<'a> {
         // map the SymbolRef to the LocalId.
         self.local_map.clear();
         self.vla_map.clear();
-        let mir_params = self.mb.get_functions().get(&func_id).unwrap().params.clone();
+        let mir_params = self.mb.get_functions().get(func_id.index()).unwrap().params.clone();
 
         for (i, param) in function.param_start.range(function.param_len).enumerate() {
             if let NodeKind::Param(param) = self.ast.get_kind(param) {
@@ -711,9 +712,9 @@ impl<'a> MirGen<'a> {
         is_variadic: bool,
     ) -> MirFunctionId {
         // Check if already declared
-        for (id, func) in self.mb.get_functions().iter() {
+        for (i, func) in self.mb.get_functions().iter().enumerate() {
             if func.name == name {
-                return *id;
+                return MirFunctionId::new((i + 1) as u32).unwrap();
             }
         }
         // Declare it
@@ -905,7 +906,7 @@ impl<'a> MirGen<'a> {
 
         for (start_id, end_id_opt, target_block) in case_blocks {
             let next_test_block = self.mb.create_block();
-            let start_const = self.mb.get_constants().get(&start_id).unwrap().clone();
+            let start_const = self.mb.get_constants().get(start_id.index()).unwrap().clone();
 
             // Re-create constant with the same type as condition to ensure safe comparison
             let start_op = Operand::Constant(start_id);
@@ -917,7 +918,7 @@ impl<'a> MirGen<'a> {
 
             let cmp_op = if let Some(end_id) = end_id_opt {
                 // Range check: x >= start && x <= end
-                let end_const = self.mb.get_constants().get(&end_id).unwrap().clone();
+                let end_const = self.mb.get_constants().get(end_id.index()).unwrap().clone();
                 let end_op = Operand::Constant(end_id);
                 let cast_end_op = if end_const.ty != cond_ty_id {
                     Operand::Cast(cond_ty_id, Box::new(end_op))
@@ -1480,7 +1481,7 @@ impl<'a> MirGen<'a> {
             Conversion::IntegerCast { .. } | Conversion::IntegerPromotion { .. } | Conversion::PointerCast { .. } => {
                 // Fold constant casts if types are compatible
                 if let Some(const_id) = self.operand_to_const_id(&operand) {
-                    let const_val = self.mb.get_constants().get(&const_id).unwrap().clone();
+                    let const_val = self.mb.get_constants()[const_id.index()].clone();
                     let mir_type = self.mb.get_type(to_mir_type);
 
                     let is_compatible = match (&const_val.kind, mir_type) {
@@ -1536,7 +1537,7 @@ impl<'a> MirGen<'a> {
         match operand {
             Operand::Copy(place) => self.get_place_type(place),
             Operand::Constant(const_id) => {
-                let const_val = self.mb.get_constants().get(const_id).unwrap();
+                let const_val = self.mb.get_constant(*const_id);
                 const_val.ty
             }
             Operand::AddressOf(place) => {
@@ -1549,7 +1550,7 @@ impl<'a> MirGen<'a> {
 
     pub(super) fn get_place_type(&mut self, place: &Place) -> TypeId {
         match place {
-            Place::Local(local_id) => self.mb.get_locals().get(local_id).unwrap().type_id,
+            Place::Local(local_id) => self.mb.get_local(*local_id).type_id,
             Place::Global(global_id) => self.get_global_type(*global_id),
             Place::Deref(operand) => {
                 let ptr_ty = self.get_operand_type(operand);
@@ -1626,7 +1627,7 @@ impl<'a> MirGen<'a> {
 
                 let index_val = match &**index_operand {
                     Operand::Constant(const_id) => {
-                        let const_val = self.mb.get_constants().get(const_id).unwrap();
+                        let const_val = self.mb.get_constant(*const_id);
                         match const_val.kind {
                             ConstValueKind::Int(v) => v,
                             _ => return None,
@@ -1642,15 +1643,15 @@ impl<'a> MirGen<'a> {
     }
 
     fn get_global_type(&self, global_id: GlobalId) -> TypeId {
-        self.mb.get_globals().get(&global_id).unwrap().type_id
+        self.mb.get_global(global_id).type_id
     }
 
     pub(super) fn get_function_type(&mut self, func_id: MirFunctionId) -> TypeId {
-        let func = self.mb.get_functions().get(&func_id).unwrap();
+        let func = self.mb.get_function(func_id);
         let ret_ty = func.return_type;
         let mut param_types = Vec::new();
         for &param_id in &func.params {
-            param_types.push(self.mb.get_locals().get(&param_id).unwrap().type_id);
+            param_types.push(self.mb.get_local(param_id).type_id);
         }
         self.mb.add_type(MirType::Function {
             return_type: ret_ty,
@@ -1784,7 +1785,7 @@ impl<'a> MirGen<'a> {
             Operand::Cast(ty, inner) => {
                 // Recursively try to get constant from inner operand
                 if let Some(inner_const_id) = self.operand_to_const_id(inner) {
-                    let inner_const = self.mb.get_constants().get(&inner_const_id).unwrap().clone();
+                    let inner_const = self.mb.get_constant(inner_const_id).clone();
                     let mir_type = self.mb.get_type(*ty);
                     let truncated_kind = match inner_const.kind {
                         ConstValueKind::Int(val) => {
@@ -1841,7 +1842,7 @@ impl<'a> MirGen<'a> {
                     // However, if there's an offset and it's not an array decaying, we can't easily extract the sub-value right now.
                     // For now, only return initial_value if offset is 0 and the place is the exact global base.
                     if offset == 0 && matches!(&**place, Place::Global(_)) {
-                        let global = self.mb.get_globals().get(&global_id).unwrap();
+                        let global = self.mb.get_global(global_id);
                         if self.current_function.is_none() || global.is_constant {
                             return global.initial_value;
                         }
@@ -1931,6 +1932,6 @@ impl<'a> MirGen<'a> {
 
     fn get_current_func(&self) -> &mir::MirFunction {
         let func_id = self.current_function.expect("Not in a function");
-        self.mb.get_functions().get(&func_id).expect("Function not found")
+        self.mb.get_function(func_id)
     }
 }

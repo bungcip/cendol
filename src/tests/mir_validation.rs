@@ -120,7 +120,7 @@ fn test_missing_type() {
 fn test_invalid_function_name() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
-    if let Some(func) = mir.functions.get_mut(&func_id) {
+    if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.name = NameId::new("");
     }
 
@@ -136,7 +136,7 @@ fn test_function_missing_return_type() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
     let invalid_type_id = TypeId::new(999).unwrap();
-    if let Some(func) = mir.functions.get_mut(&func_id) {
+    if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.return_type = invalid_type_id;
     }
 
@@ -150,7 +150,7 @@ fn test_function_missing_local() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
     let invalid_local_id = LocalId::new(999).unwrap();
-    if let Some(func) = mir.functions.get_mut(&func_id) {
+    if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(invalid_local_id);
     }
 
@@ -164,7 +164,7 @@ fn test_function_missing_block() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
     let invalid_block_id = MirBlockId::new(999).unwrap();
-    if let Some(func) = mir.functions.get_mut(&func_id) {
+    if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.blocks.push(invalid_block_id);
     }
 
@@ -177,11 +177,11 @@ fn test_function_missing_block() {
 fn test_block_missing_statement() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
-    let func = mir.functions.get(&func_id).unwrap();
+    let func = mir.functions.get(func_id.index()).unwrap();
     let block_id = func.blocks[0];
     let invalid_stmt_id = MirStmtId::new(999).unwrap();
 
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         block.statements.push(invalid_stmt_id);
     }
 
@@ -194,11 +194,11 @@ fn test_block_missing_statement() {
 fn test_terminator_missing_block() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
-    let func = mir.functions.get(&func_id).unwrap();
+    let func = mir.functions.get(func_id.index()).unwrap();
     let block_id = func.blocks[0];
     let invalid_block_id = MirBlockId::new(999).unwrap();
 
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         block.terminator = Terminator::Goto(invalid_block_id);
     }
 
@@ -211,7 +211,7 @@ fn test_terminator_missing_block() {
 fn test_statement_alloc_missing_type() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
-    let func = mir.functions.get(&func_id).unwrap();
+    let func = mir.functions.get(func_id.index()).unwrap();
     let block_id = func.blocks[0];
     let missing_type_id = TypeId::new(999).unwrap();
 
@@ -220,16 +220,15 @@ fn test_statement_alloc_missing_type() {
     // create_valid_mir defines 'main' with no locals/params.
     // Let's add a local.
     let local_id = LocalId::new(100).unwrap();
-    let local = Local::new(local_id, None, TypeId::new(1).unwrap(), false);
-    mir.locals.insert(local_id, local);
-    if let Some(func) = mir.functions.get_mut(&func_id) {
+    let _local = Local::new(local_id, None, TypeId::new(1).unwrap(), false);
+    if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_id);
     }
 
-    let stmt_id = MirStmtId::new(100).unwrap();
     let stmt = MirStmt::Alloc(Place::Local(local_id), missing_type_id);
-    mir.statements.insert(stmt_id, stmt);
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    mir.statements.push(stmt);
+    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         block.statements.push(stmt_id);
     }
 
@@ -243,11 +242,10 @@ fn test_call_arg_count_mismatch() {
     let _module_id = MirModuleId::new(1).unwrap();
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
-    let func = mir.functions.get(&func_id).unwrap();
+    let func = mir.functions.get(func_id.index()).unwrap();
     let block_id = func.blocks[0];
 
     // Create a call to main (takes 0 args) with 1 arg
-    let stmt_id = MirStmtId::new(100).unwrap();
     let const_val_id = ConstValueId::new(1).unwrap(); // existing constant 0
     let arg = Operand::Constant(const_val_id);
 
@@ -256,8 +254,9 @@ fn test_call_arg_count_mismatch() {
         args: vec![arg],
         dest: None,
     };
-    mir.statements.insert(stmt_id, stmt);
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    mir.statements.push(stmt);
+    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         block.statements.push(stmt_id);
     }
 
@@ -299,14 +298,14 @@ fn test_call_arg_type_mismatch() {
     let mut mir = builder.consume();
 
     // Inject invalid call: foo(1.0)
-    let stmt_id = MirStmtId::new(999).unwrap();
     let stmt = MirStmt::Call {
         target: CallTarget::Direct(func_id),
         args: vec![Operand::Constant(const_f32_id)],
         dest: None,
     };
-    mir.statements.insert(stmt_id, stmt);
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    mir.statements.push(stmt);
+    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         // Insert before terminator
         block.statements.push(stmt_id);
     }
@@ -334,40 +333,39 @@ fn test_constant_value_out_of_range() {
     // Let's add u8 type manually to mir
     // Existing types: I32 (id 1)
     let u8_ty_id = TypeId::new(2).unwrap();
-    mir.types.insert(u8_ty_id, MirType::U8);
+    mir.types.push(MirType::U8);
     mir.module.types.push(MirType::U8);
 
     // Create a constant 300 (out of range for u8)
-    let const_id = ConstValueId::new(999).unwrap();
     let const_val = ConstValue {
         ty: TypeId::new(1).unwrap(), // original type i32
         kind: ConstValueKind::Int(300),
     };
-    mir.constants.insert(const_id, const_val);
+    mir.constants.push(const_val);
+    let const_id = ConstValueId::new(mir.constants.len() as u32).unwrap();
 
     // Create a cast operand: Cast(u8, Constant(300))
     // We need to put this operand somewhere, e.g. in a statement
     let func_id = mir.module.functions[0];
-    let func = mir.functions.get(&func_id).unwrap();
+    let func = mir.functions.get(func_id.index()).unwrap();
     let block_id = func.blocks[0];
 
     // Need a local to assign to, or use return
     // Let's use Assign to a new local of type u8
     let local_id = LocalId::new(100).unwrap();
-    let local = Local::new(local_id, None, u8_ty_id, false);
-    mir.locals.insert(local_id, local);
-    if let Some(func) = mir.functions.get_mut(&func_id) {
+    let _local = Local::new(local_id, None, u8_ty_id, false);
+    if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_id);
     }
 
-    let stmt_id = MirStmtId::new(100).unwrap();
     // Assign(Local(100), Cast(u8, Constant(300)))
     // Rvalue::Use(Operand::Cast(u8, Constant(300)))
     let rvalue = Rvalue::Use(Operand::Cast(u8_ty_id, Box::new(Operand::Constant(const_id))));
     let stmt = MirStmt::Assign(Place::Local(local_id), rvalue);
 
-    mir.statements.insert(stmt_id, stmt);
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    mir.statements.push(stmt);
+    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         block.statements.push(stmt_id);
     }
 
@@ -389,36 +387,36 @@ fn test_constant_value_out_of_range() {
 fn test_place_field_access_non_record() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
-    let func = mir.functions.get(&func_id).unwrap();
+    let func = mir.functions.get(func_id.index()).unwrap();
     let block_id = func.blocks[0];
 
     // Access field 0 of an i32 local
     // We need a local
-    let local_id = LocalId::new(100).unwrap(); // type i32 (id 1)
+    let local_id = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
     let i32_ty = TypeId::new(1).unwrap();
     let local = Local::new(local_id, None, i32_ty, false);
-    mir.locals.insert(local_id, local);
-    if let Some(func) = mir.functions.get_mut(&func_id) {
+    mir.locals.push(local);
+    if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_id);
     }
 
-    let stmt_id = MirStmtId::new(100).unwrap();
     // Assign(Local(..), Use(Copy(StructField(Local(100), 0))))
     // But struct field on i32 is invalid
     let place = Place::StructField(Box::new(Place::Local(local_id)), 0, None);
     // To trigger validate_place, we can use it in operand Copy
     let rvalue = Rvalue::Use(Operand::Copy(Box::new(place)));
 
-    let dest_local_id = LocalId::new(101).unwrap();
+    let dest_local_id = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
     let dest_local = Local::new(dest_local_id, None, i32_ty, false);
-    mir.locals.insert(dest_local_id, dest_local);
-    if let Some(func) = mir.functions.get_mut(&func_id) {
+    mir.locals.push(dest_local);
+    if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(dest_local_id);
     }
 
     let stmt = MirStmt::Assign(Place::Local(dest_local_id), rvalue);
-    mir.statements.insert(stmt_id, stmt);
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    mir.statements.push(stmt);
+    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         block.statements.push(stmt_id);
     }
 
@@ -434,35 +432,36 @@ fn test_place_field_access_non_record() {
 fn test_invalid_cast_in_assignment() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
-    let func = mir.functions.get(&func_id).unwrap();
+    let func = mir.functions.get(func_id.index()).unwrap();
     let block_id = func.blocks[0];
 
     // Add float type
     let f32_ty = TypeId::new(2).unwrap();
-    mir.types.insert(f32_ty, MirType::F32);
+    mir.types.push(MirType::F32);
     mir.module.types.push(MirType::F32);
 
     // Create i32 local and f32 local
     let i32_ty = TypeId::new(1).unwrap();
-    let local_i32 = LocalId::new(100).unwrap();
-    let local_f32 = LocalId::new(101).unwrap();
+    let local_i32 = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
+    mir.locals.push(Local::new(local_i32, None, i32_ty, false));
+    let local_f32 = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
+    mir.locals.push(Local::new(local_f32, None, f32_ty, false));
 
-    mir.locals.insert(local_i32, Local::new(local_i32, None, i32_ty, false));
-    mir.locals.insert(local_f32, Local::new(local_f32, None, f32_ty, false));
-
-    if let Some(func) = mir.functions.get_mut(&func_id) {
+    if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_i32);
         func.locals.push(local_f32);
     }
 
     // Assign f32 local to i32 local without cast
     // local_i32 = local_f32
-    let stmt_id = MirStmtId::new(100).unwrap();
+    // Assign f32 local to i32 local without cast
+    // local_i32 = local_f32
     let rvalue = Rvalue::Use(Operand::Copy(Box::new(Place::Local(local_f32))));
     let stmt = MirStmt::Assign(Place::Local(local_i32), rvalue);
 
-    mir.statements.insert(stmt_id, stmt);
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    mir.statements.push(stmt);
+    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         block.statements.push(stmt_id);
     }
 
@@ -479,19 +478,17 @@ fn test_flexible_assignment() {
 
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
-    let func = mir.functions.get(&func_id).unwrap();
+    let func = mir.functions.get(func_id.index()).unwrap();
     let block_id = func.blocks[0];
     let i32_ty = TypeId::new(1).unwrap();
 
     // Create locals
-    let local_dest = LocalId::new(100).unwrap(); // i32
-    let local_src = LocalId::new(101).unwrap(); // i32
+    let local_dest = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
+    mir.locals.push(Local::new(local_dest, None, i32_ty, false));
+    let local_src = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
+    mir.locals.push(Local::new(local_src, None, i32_ty, false));
 
-    mir.locals
-        .insert(local_dest, Local::new(local_dest, None, i32_ty, false));
-    mir.locals.insert(local_src, Local::new(local_src, None, i32_ty, false));
-
-    if let Some(func) = mir.functions.get_mut(&func_id) {
+    if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_dest);
         func.locals.push(local_src);
     }
@@ -502,19 +499,19 @@ fn test_flexible_assignment() {
     // If Bool type doesn't exist in module, find_bool_type returns None.
 
     // Let's add Bool type
-    let bool_ty = TypeId::new(2).unwrap();
-    mir.types.insert(bool_ty, MirType::Bool);
+    let _bool_ty = TypeId::new(mir.types.len() as u32 + 1).unwrap();
+    mir.types.push(MirType::Bool);
     mir.module.types.push(MirType::Bool);
 
-    let stmt_id = MirStmtId::new(100).unwrap();
     let op = Operand::Copy(Box::new(Place::Local(local_src)));
     let rvalue = Rvalue::BinaryIntOp(BinaryIntOp::Eq, op.clone(), op);
 
     // Assign to i32
     let stmt = MirStmt::Assign(Place::Local(local_dest), rvalue);
 
-    mir.statements.insert(stmt_id, stmt);
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    mir.statements.push(stmt);
+    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         block.statements.push(stmt_id);
     }
 
@@ -543,33 +540,33 @@ fn test_call_void_with_dest() {
 
     // fn main() -> i32
     let main_name = NameId::new("main");
-    let main_id = MirFunctionId::new(2).unwrap();
+    let main_id = MirFunctionId::new(mir.functions.len() as u32 + 1).unwrap();
     let main_func = MirFunction::new_defined(main_id, main_name, i32_ty, crate::mir::MirLinkage::External);
-    mir.functions.insert(main_id, main_func);
+    mir.functions.push(main_func);
     mir.module.functions.push(main_id);
 
     // Call foo() -> void, assign to i32 local
-    let local_id = LocalId::new(100).unwrap();
+    let local_id = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
     let local = Local::new(local_id, None, i32_ty, false);
-    mir.locals.insert(local_id, local);
-    if let Some(func) = mir.functions.get_mut(&main_id) {
+    mir.locals.push(local);
+    if let Some(func) = mir.functions.get_mut(main_id.index()) {
         func.locals.push(local_id);
     }
 
-    let stmt_id = MirStmtId::new(100).unwrap();
     let stmt = MirStmt::Call {
         target: CallTarget::Direct(foo_id),
         args: vec![],
         dest: Some(Place::Local(local_id)),
     };
 
-    mir.statements.insert(stmt_id, stmt);
+    mir.statements.push(stmt);
+    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
     // Add block to main
-    let main_block_id = MirBlockId::new(2).unwrap();
+    let main_block_id = MirBlockId::new(mir.blocks.len() as u32 + 1).unwrap();
     let mut main_block = MirBlock::new(main_block_id);
     main_block.statements.push(stmt_id);
-    mir.blocks.insert(main_block_id, main_block);
-    if let Some(func) = mir.functions.get_mut(&main_id) {
+    mir.blocks.push(main_block);
+    if let Some(func) = mir.functions.get_mut(main_id.index()) {
         func.blocks.push(main_block_id);
     }
 
@@ -585,7 +582,7 @@ fn test_call_void_with_dest() {
 fn test_operand_missing_constant() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
-    let func = mir.functions.get(&func_id).unwrap();
+    let func = mir.functions.get(func_id.index()).unwrap();
     let block_id = func.blocks[0];
 
     // Refer to non-existent constant
@@ -593,7 +590,7 @@ fn test_operand_missing_constant() {
     let op = Operand::Constant(invalid_const_id);
 
     // Use it in Return
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         block.terminator = Terminator::Return(Some(op));
     }
 
@@ -609,14 +606,14 @@ fn test_operand_missing_constant() {
 fn test_operand_cast_missing_type() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
-    let func = mir.functions.get(&func_id).unwrap();
+    let func = mir.functions.get(func_id.index()).unwrap();
     let block_id = func.blocks[0];
 
     let missing_type_id = TypeId::new(999).unwrap();
     let const_val_id = ConstValueId::new(1).unwrap(); // existing 0
     let op = Operand::Cast(missing_type_id, Box::new(Operand::Constant(const_val_id)));
 
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         block.terminator = Terminator::Return(Some(op));
     }
 
@@ -629,15 +626,15 @@ fn test_operand_cast_missing_type() {
 fn test_place_deref_non_pointer() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
-    let func = mir.functions.get(&func_id).unwrap();
+    let func = mir.functions.get(func_id.index()).unwrap();
     let block_id = func.blocks[0];
 
     // Dereference an i32 local
-    let local_id = LocalId::new(100).unwrap();
     let i32_ty = TypeId::new(1).unwrap();
+    let local_id = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
     let local = Local::new(local_id, None, i32_ty, false);
-    mir.locals.insert(local_id, local);
-    if let Some(func) = mir.functions.get_mut(&func_id) {
+    mir.locals.push(local);
+    if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_id);
     }
 
@@ -645,11 +642,11 @@ fn test_place_deref_non_pointer() {
     // Use it as rvalue
     let rvalue = Rvalue::Use(Operand::Copy(Box::new(place)));
 
-    let stmt_id = MirStmtId::new(100).unwrap();
     let stmt = MirStmt::Assign(Place::Local(local_id), rvalue);
 
-    mir.statements.insert(stmt_id, stmt);
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    mir.statements.push(stmt);
+    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         block.statements.push(stmt_id);
     }
 
@@ -770,32 +767,31 @@ fn test_rvalue_cast_aggregate_invalid() {
 fn test_invalid_cast_in_store() {
     let mut mir = create_valid_mir();
     let func_id = mir.module.functions[0];
-    let func = mir.functions.get(&func_id).unwrap();
+    let func = mir.functions.get(func_id.index()).unwrap();
     let block_id = func.blocks[0];
 
     // Add float type
-    let f32_ty = TypeId::new(2).unwrap();
-    mir.types.insert(f32_ty, MirType::F32);
+    let f32_ty = TypeId::new(mir.types.len() as u32 + 1).unwrap();
+    mir.types.push(MirType::F32);
     mir.module.types.push(MirType::F32);
 
     let i32_ty = TypeId::new(1).unwrap();
-    let local_i32 = LocalId::new(100).unwrap();
-    let local_f32 = LocalId::new(101).unwrap();
+    let local_i32 = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
+    mir.locals.push(Local::new(local_i32, None, i32_ty, false));
+    let local_f32 = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
+    mir.locals.push(Local::new(local_f32, None, f32_ty, false));
 
-    mir.locals.insert(local_i32, Local::new(local_i32, None, i32_ty, false));
-    mir.locals.insert(local_f32, Local::new(local_f32, None, f32_ty, false));
-
-    if let Some(func) = mir.functions.get_mut(&func_id) {
+    if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_i32);
         func.locals.push(local_f32);
     }
 
-    let stmt_id = MirStmtId::new(100).unwrap();
     let op = Operand::Copy(Box::new(Place::Local(local_f32)));
     let stmt = MirStmt::Store(op, Place::Local(local_i32));
 
-    mir.statements.insert(stmt_id, stmt);
-    if let Some(block) = mir.blocks.get_mut(&block_id) {
+    mir.statements.push(stmt);
+    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
+    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
         block.statements.push(stmt_id);
     }
 

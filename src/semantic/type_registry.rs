@@ -530,7 +530,7 @@ impl TypeRegistry {
             return TypeRef::new(elem.base(), TypeClass::Array, 0, len as u32).unwrap();
         }
 
-        let key = (elem, size.clone());
+        let key = (elem, size);
         if let Some(&arr) = self.array_cache.get(&key) {
             return arr;
         }
@@ -1353,7 +1353,7 @@ impl TypeRegistry {
                     ArraySizeType::Constant(ty_a.array_len().unwrap() as usize)
                 } else {
                     match &self.types[ty_a.index()].kind {
-                        TypeKind::Array { size, .. } => size.clone(),
+                        TypeKind::Array { size, .. } => *size,
                         _ => unreachable!(),
                     }
                 };
@@ -1362,7 +1362,7 @@ impl TypeRegistry {
                     ArraySizeType::Constant(ty_b.array_len().unwrap() as usize)
                 } else {
                     match &self.types[ty_b.index()].kind {
-                        TypeKind::Array { size, .. } => size.clone(),
+                        TypeKind::Array { size, .. } => *size,
                         _ => unreachable!(),
                     }
                 };
@@ -1474,7 +1474,7 @@ impl TypeRegistry {
                     ArraySizeType::Constant(ty_a.array_len().unwrap() as usize)
                 } else {
                     match &self.types[ty_a.index()].kind {
-                        TypeKind::Array { size, .. } => size.clone(),
+                        TypeKind::Array { size, .. } => *size,
                         _ => unreachable!(),
                     }
                 };
@@ -1483,7 +1483,7 @@ impl TypeRegistry {
                     ArraySizeType::Constant(ty_b.array_len().unwrap() as usize)
                 } else {
                     match &self.types[ty_b.index()].kind {
-                        TypeKind::Array { size, .. } => size.clone(),
+                        TypeKind::Array { size, .. } => *size,
                         _ => unreachable!(),
                     }
                 };

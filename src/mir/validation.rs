@@ -128,7 +128,7 @@ impl<'a> MirValidator<'a> {
 
         // Validate each function
         for func_id in &self.mir.module.functions {
-            if let Some(func) = self.mir.functions.get(func_id) {
+            if let Some(func) = self.mir.functions.get(func_id.index()) {
                 self.validate_function(func);
             } else {
                 self.errors.push(ValidationError::FunctionNotFound(*func_id));
@@ -137,7 +137,7 @@ impl<'a> MirValidator<'a> {
 
         // Validate each global
         for global_id in &self.mir.module.globals {
-            if self.mir.globals.get(global_id).is_none() {
+            if self.mir.globals.get(global_id.index()).is_none() {
                 self.errors.push(ValidationError::GlobalNotFound(*global_id));
             }
         }
@@ -147,7 +147,7 @@ impl<'a> MirValidator<'a> {
         // While we are at it, build the pointee_to_pointer map and cache common types.
         for (index, _) in self.mir.module.types.iter().enumerate() {
             let type_id = TypeId::new((index + 1) as u32).unwrap(); // Types are 1-indexed
-            if let Some(ty) = self.mir.types.get(&type_id) {
+            if let Some(ty) = self.mir.types.get(type_id.index()) {
                 if let MirType::Pointer { pointee } = ty {
                     self.pointee_to_pointer.insert(*pointee, type_id);
                 } else if matches!(ty, MirType::Bool) {
@@ -169,7 +169,7 @@ impl<'a> MirValidator<'a> {
 
     /// Validate that a constant value can be cast to the target type
     fn validate_constant_cast(&mut self, const_id: ConstValueId, const_value: &ConstValue, target_type_id: TypeId) {
-        let Some(target_ty) = self.mir.types.get(&target_type_id) else {
+        let Some(target_ty) = self.mir.types.get(target_type_id.index()) else {
             return;
         };
         let ConstValueKind::Int(value) = const_value.kind else {
@@ -201,20 +201,20 @@ impl<'a> MirValidator<'a> {
             ));
         }
 
-        if !self.mir.types.contains_key(&func.return_type) {
+        if self.mir.types.get(func.return_type.index()).is_none() {
             self.errors.push(ValidationError::TypeNotFound(func.return_type));
         }
 
         // Validate presence of locals (params + locals)
         for local_id in func.params.iter().chain(&func.locals) {
-            if !self.mir.locals.contains_key(local_id) {
+            if self.mir.locals.get(local_id.index()).is_none() {
                 self.errors.push(ValidationError::LocalNotFound(*local_id));
             }
         }
 
         // Validate presence of blocks (body + entry)
         for block_id in func.blocks.iter().chain(func.entry_block.as_ref()) {
-            if !self.mir.blocks.contains_key(block_id) {
+            if self.mir.blocks.get(block_id.index()).is_none() {
                 self.errors.push(ValidationError::BlockNotFound(*block_id));
             }
         }
@@ -222,12 +222,12 @@ impl<'a> MirValidator<'a> {
         // Validate items within blocks for defined functions
         if func.linkage != MirLinkage::Import {
             for block_id in &func.blocks {
-                let Some(block) = self.mir.blocks.get(block_id) else {
+                let Some(block) = self.mir.blocks.get(block_id.index()) else {
                     continue;
                 };
 
                 for stmt_id in &block.statements {
-                    let Some(stmt) = self.mir.statements.get(stmt_id) else {
+                    let Some(stmt) = self.mir.statements.get(stmt_id.index()) else {
                         self.errors.push(ValidationError::StatementNotFound(*stmt_id));
                         continue;
                     };
@@ -268,7 +268,7 @@ impl<'a> MirValidator<'a> {
             }
             MirStmt::Alloc(place, type_id) => {
                 self.validate_place(place);
-                if !self.mir.types.contains_key(type_id) {
+                if self.mir.types.get(type_id.index()).is_none() {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
             }
@@ -331,12 +331,8 @@ impl<'a> MirValidator<'a> {
 
         match target {
             CallTarget::Direct(fid) => {
-                if let Some(func) = self.mir.functions.get(fid) {
-                    let param_types: Vec<TypeId> = func
-                        .params
-                        .iter()
-                        .map(|p| self.mir.locals.get(p).unwrap().type_id)
-                        .collect();
+                if let Some(func) = self.mir.functions.get(fid.index()) {
+                    let param_types: Vec<TypeId> = func.params.iter().map(|p| self.mir.get_local(*p).type_id).collect();
                     self.check_call_signature(
                         Some(func.name),
                         &param_types,
@@ -349,12 +345,12 @@ impl<'a> MirValidator<'a> {
             }
             CallTarget::Indirect(op) => {
                 if let Some(op_ty) = self.operand_type(op)
-                    && let Some(MirType::Pointer { pointee }) = self.mir.types.get(&op_ty)
+                    && let Some(MirType::Pointer { pointee }) = self.mir.types.get(op_ty.index())
                     && let Some(MirType::Function {
                         params,
                         return_type,
                         is_variadic,
-                    }) = self.mir.types.get(pointee)
+                    }) = self.mir.types.get(pointee.index())
                 {
                     self.check_call_signature(None, params, *is_variadic, *return_type, args, dest);
                 }
@@ -398,7 +394,7 @@ impl<'a> MirValidator<'a> {
 
         if let Some(dest_place) = dest {
             self.validate_place(dest_place);
-            if matches!(self.mir.types.get(&return_type), Some(MirType::Void)) {
+            if matches!(self.mir.get_type(return_type), MirType::Void) {
                 self.errors.push(ValidationError::IllegalOperation(format!(
                     "Call to void function {} with destination",
                     name
@@ -410,7 +406,7 @@ impl<'a> MirValidator<'a> {
     fn validate_place(&mut self, place: &Place) -> Option<TypeId> {
         match place {
             Place::Local(local_id) => {
-                let local = self.mir.locals.get(local_id).or_else(|| {
+                let local = self.mir.locals.get(local_id.index()).or_else(|| {
                     self.errors.push(ValidationError::LocalNotFound(*local_id));
                     None
                 })?;
@@ -418,7 +414,7 @@ impl<'a> MirValidator<'a> {
             }
             Place::Deref(op) => {
                 let op_ty = self.operand_type(op)?;
-                let Some(ty) = self.mir.types.get(&op_ty) else {
+                let Some(ty) = self.mir.types.get(op_ty.index()) else {
                     self.errors.push(ValidationError::TypeNotFound(op_ty));
                     return None;
                 };
@@ -432,7 +428,7 @@ impl<'a> MirValidator<'a> {
                 Some(*pointee)
             }
             Place::Global(gid) => {
-                let global = self.mir.globals.get(gid).or_else(|| {
+                let global = self.mir.globals.get(gid.index()).or_else(|| {
                     self.errors.push(ValidationError::GlobalNotFound(*gid));
                     None
                 })?;
@@ -440,7 +436,7 @@ impl<'a> MirValidator<'a> {
             }
             Place::StructField(base, idx, _) => {
                 let base_ty = self.validate_place(base)?;
-                let Some(ty) = self.mir.types.get(&base_ty) else {
+                let Some(ty) = self.mir.types.get(base_ty.index()) else {
                     self.errors.push(ValidationError::TypeNotFound(base_ty));
                     return None;
                 };
@@ -471,7 +467,7 @@ impl<'a> MirValidator<'a> {
         match op {
             Operand::Copy(place) => self.validate_place(place),
             Operand::Constant(cid) => {
-                if let Some(cv) = self.mir.constants.get(cid) {
+                if let Some(cv) = self.mir.constants.get(cid.index()) {
                     Some(cv.ty)
                 } else {
                     self.errors.push(ValidationError::IllegalOperation(format!(
@@ -489,12 +485,12 @@ impl<'a> MirValidator<'a> {
                 }
             }
             Operand::Cast(type_id, inner) => {
-                if !self.mir.types.contains_key(type_id) {
+                if self.mir.types.get(type_id.index()).is_none() {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
                 // Check if casting a constant value that doesn't fit in the target type
                 if let Operand::Constant(const_id) = inner.as_ref()
-                    && let Some(const_value) = self.mir.constants.get(const_id)
+                    && let Some(const_value) = self.mir.constants.get(const_id.index())
                 {
                     self.validate_constant_cast(*const_id, const_value, *type_id);
                 }
@@ -535,14 +531,14 @@ impl<'a> MirValidator<'a> {
             }
             Rvalue::Cast(type_id, op) => {
                 let from_ty_id = self.validate_operand(op);
-                let to_ty = self.mir.types.get(type_id);
+                let to_ty = self.mir.types.get(type_id.index());
 
                 if to_ty.is_none() {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
 
                 if let (Some(from_id), Some(to_ty)) = (from_ty_id, to_ty)
-                    && let Some(from_ty) = self.mir.types.get(&from_id)
+                    && let Some(from_ty) = self.mir.types.get(from_id.index())
                     && from_ty.is_aggregate()
                     && !to_ty.is_pointer()
                     && (to_ty.is_int() || to_ty.is_float())
@@ -580,7 +576,7 @@ impl<'a> MirValidator<'a> {
 
             Rvalue::BuiltinVaArg(ap, type_id) => {
                 self.validate_place(ap);
-                if !self.mir.types.contains_key(type_id) {
+                if self.mir.types.get(type_id.index()).is_none() {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
                 Some(*type_id)
@@ -611,7 +607,7 @@ impl<'a> MirValidator<'a> {
     fn validate_call_target(&mut self, target: &CallTarget) {
         match target {
             CallTarget::Direct(fid) => {
-                if self.mir.functions.get(fid).is_none() {
+                if self.mir.functions.get(fid.index()).is_none() {
                     self.errors.push(ValidationError::FunctionNotFound(*fid));
                 }
             }
@@ -627,16 +623,16 @@ impl<'a> MirValidator<'a> {
     fn validate_terminator(&mut self, term: &Terminator) {
         match term {
             Terminator::Goto(bid) => {
-                if !self.mir.blocks.contains_key(bid) {
+                if self.mir.blocks.get(bid.index()).is_none() {
                     self.errors.push(ValidationError::BlockNotFound(*bid));
                 }
             }
             Terminator::If(cond, then_bb, else_bb) => {
                 self.validate_operand(cond);
-                if !self.mir.blocks.contains_key(then_bb) {
+                if self.mir.blocks.get(then_bb.index()).is_none() {
                     self.errors.push(ValidationError::BlockNotFound(*then_bb));
                 }
-                if !self.mir.blocks.contains_key(else_bb) {
+                if self.mir.blocks.get(else_bb.index()).is_none() {
                     self.errors.push(ValidationError::BlockNotFound(*else_bb));
                 }
             }
@@ -662,7 +658,7 @@ impl<'a> MirValidator<'a> {
             return true;
         }
 
-        let (Some(ty1), Some(ty2)) = (self.mir.types.get(&t1), self.mir.types.get(&t2)) else {
+        let (Some(ty1), Some(ty2)) = (self.mir.types.get(t1.index()), self.mir.types.get(t2.index())) else {
             return false;
         };
 

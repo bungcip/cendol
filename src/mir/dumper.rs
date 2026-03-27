@@ -58,7 +58,7 @@ impl<'a> MirDumper<'a> {
         // Dump global variables first
         if !self.mir.module.globals.is_empty() {
             for &global_id in &self.mir.module.globals {
-                if let Some(global) = self.mir.globals.get(&global_id) {
+                if let Some(global) = self.mir.globals.get(global_id.index()) {
                     self.dump_global(&mut output, global)?;
                     writeln!(output)?;
                 }
@@ -68,7 +68,7 @@ impl<'a> MirDumper<'a> {
 
         // Dump all functions
         for &func_id in &self.mir.module.functions {
-            if let Some(func) = self.mir.functions.get(&func_id) {
+            if let Some(func) = self.mir.functions.get(func_id.index()) {
                 self.dump_function(&mut output, func)?;
                 writeln!(output)?;
             }
@@ -92,7 +92,7 @@ impl<'a> MirDumper<'a> {
             if i > 0 {
                 write!(output, ", ")?;
             }
-            if let Some(param) = self.mir.locals.get(&param_id) {
+            if let Some(param) = self.mir.locals.get(param_id.index()) {
                 let param_type = self.type_to_string(param.type_id);
                 let param_name = param.name.as_ref().map_or("%unnamed".to_string(), |s| s.to_string());
                 write!(output, "%{}: {}", param_name, param_type)?;
@@ -124,7 +124,7 @@ impl<'a> MirDumper<'a> {
         if func.locals.is_empty() == false {
             writeln!(output, "  locals {{")?;
             for &local_id in &func.locals {
-                if let Some(local) = self.mir.locals.get(&local_id) {
+                if let Some(local) = self.mir.locals.get(local_id.index()) {
                     let local_type = self.type_to_string(local.type_id);
                     let local_name = self.local_to_string(local_id);
                     writeln!(output, "    {}: {}", local_name, local_type)?;
@@ -135,7 +135,7 @@ impl<'a> MirDumper<'a> {
 
         // Dump basic blocks
         for &block_id in &func.blocks {
-            if let Some(block) = self.mir.blocks.get(&block_id) {
+            if let Some(block) = self.mir.blocks.get(block_id.index()) {
                 self.dump_block(output, block_id, block)?;
             }
         }
@@ -253,7 +253,7 @@ impl<'a> MirDumper<'a> {
 
         // Dump statements in the block
         for &stmt_id in &block.statements {
-            if let Some(stmt) = self.mir.statements.get(&stmt_id) {
+            if let Some(stmt) = self.mir.statements.get(stmt_id.index()) {
                 write!(output, "    ")?;
                 self.dump_statement(output, stmt)?;
                 writeln!(output)?;
@@ -373,7 +373,7 @@ impl<'a> MirDumper<'a> {
 
     /// Convert MIR type to string representation
     fn type_to_string(&self, type_id: TypeId) -> String {
-        if let Some(mir_type) = self.mir.types.get(&type_id) {
+        if let Some(mir_type) = self.mir.types.get(type_id.index()) {
             let type_index = self.get_type_index_from_type_id(type_id);
 
             match mir_type {
@@ -424,7 +424,7 @@ impl<'a> MirDumper<'a> {
 
     /// Convert local ID to string representation
     fn local_to_string(&self, local_id: LocalId) -> String {
-        let local = self.mir.locals.get(&local_id);
+        let local = self.mir.locals.get(local_id.index());
         let name = match local {
             Some(local) => {
                 if let Some(name) = &local.name {
@@ -441,7 +441,7 @@ impl<'a> MirDumper<'a> {
 
     /// Convert global ID to string representation
     fn global_to_string(&self, global_id: GlobalId) -> String {
-        if let Some(global) = self.mir.globals.get(&global_id) {
+        if let Some(global) = self.mir.globals.get(global_id.index()) {
             format!("@{}", global.name)
         } else {
             format!("@global_{}", global_id.get())
@@ -455,7 +455,7 @@ impl<'a> MirDumper<'a> {
 
     /// Convert function ID to string representation
     fn function_to_string(&self, func_id: MirFunctionId) -> String {
-        if let Some(func) = self.mir.functions.get(&func_id) {
+        if let Some(func) = self.mir.functions.get(func_id.index()) {
             format!("{}", func.name)
         } else {
             format!("func_{}", func_id.get())
@@ -477,14 +477,14 @@ impl<'a> MirDumper<'a> {
             return None;
         }
 
-        if let Some(const_value) = self.mir.constants.get(&const_id)
+        if let Some(const_value) = self.mir.constants.get(const_id.index())
             && let ConstValueKind::ArrayLiteral(elements) = &const_value.kind
         {
             // Try to convert the array elements to a string
             let mut string_content = String::new();
 
             for &element_id in elements {
-                let element = self.mir.constants.get(&element_id).unwrap();
+                let element = self.mir.constants.get(element_id.index()).unwrap();
                 if let ConstValueKind::Int(byte) = &element.kind {
                     let byte = *byte as u8;
                     if byte == 0 {
@@ -521,7 +521,7 @@ impl<'a> MirDumper<'a> {
 
     /// Convert constant ID to string representation
     fn const_to_string(&self, const_id: ConstValueId) -> String {
-        if let Some(const_value) = self.mir.constants.get(&const_id) {
+        if let Some(const_value) = self.mir.constants.get(const_id.index()) {
             match &const_value.kind {
                 ConstValueKind::Int(val) => format!("const {}", val),
                 ConstValueKind::Float(val) => format!("const {}", val),

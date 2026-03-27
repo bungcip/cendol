@@ -5,7 +5,7 @@ use crate::codegen::mir_gen::MirGen;
 use crate::codegen::mir_gen_ops;
 use crate::mir::{
     AtomicMemOrder, BinaryFloatOp, BinaryIntOp, BitFieldInfo, CallTarget, ConstValue, ConstValueKind, MirBlockId,
-    MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
+    MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
 };
 
 use crate::semantic::{
@@ -330,7 +330,7 @@ impl<'a> MirGen<'a> {
         }
 
         if let Some(const_id) = self.operand_to_const_id(&operand) {
-            let const_val = self.mb.get_constants().get(&const_id).unwrap().clone();
+            let const_val = self.mb.get_constants().get(const_id.index()).unwrap().clone();
 
             let is_true = match const_val.kind {
                 ConstValueKind::Int(val) => val != 0,
@@ -580,7 +580,7 @@ impl<'a> MirGen<'a> {
         } else if let Operand::Constant(const_id) = operand
             && self.ast.get_value_category(expr) == Some(ValueCategory::LValue)
             && matches!(
-                self.mb.get_constants().get(&const_id),
+                self.mb.get_constants().get(const_id.index()),
                 Some(ConstValue {
                     kind: ConstValueKind::FunctionAddress(_),
                     ..
@@ -656,8 +656,9 @@ impl<'a> MirGen<'a> {
                     .mb
                     .get_functions()
                     .iter()
+                    .enumerate()
                     .find(|(_, f)| f.name == entry.name)
-                    .map(|(id, _)| *id)
+                    .map(|(i, _)| MirFunctionId::new((i + 1) as u32).unwrap())
                     .unwrap();
                 let func_type = self.get_function_type(func_id);
                 Operand::Constant(self.create_constant(func_type, ConstValueKind::FunctionAddress(func_id)))
@@ -873,7 +874,7 @@ impl<'a> MirGen<'a> {
             }
             Operand::Constant(const_id) => {
                 let val_opt = {
-                    let const_val = self.mb.get_constants().get(&const_id).unwrap();
+                    let const_val = self.mb.get_constants().get(const_id.index()).unwrap();
                     if let ConstValueKind::Int(val) = const_val.kind {
                         Some(val)
                     } else {
@@ -1019,7 +1020,7 @@ impl<'a> MirGen<'a> {
     fn apply_bitfield_truncation(&mut self, op: Operand, bit_info: &BitFieldInfo, mir_ty: TypeId) -> Operand {
         if let Some(const_id) = self.operand_to_const_id(&op) {
             let constants = self.mb.get_constants();
-            let const_val = constants.get(&const_id).unwrap().clone();
+            let const_val = constants.get(const_id.index()).unwrap().clone();
             if let ConstValueKind::Int(val) = const_val.kind {
                 let truncated = bit_info.truncate(val);
                 let new_const = self.mb.create_constant(mir_ty, ConstValueKind::Int(truncated));
@@ -1114,7 +1115,7 @@ impl<'a> MirGen<'a> {
 
         // Fold constant casts if types are compatible
         if let Some(const_id) = self.operand_to_const_id(&operand) {
-            let const_val = self.mb.get_constants().get(&const_id).unwrap().clone();
+            let const_val = self.mb.get_constant(const_id).clone();
             let mir_type = self.mb.get_type(target_ty);
 
             let is_compatible = match (&const_val.kind, mir_type) {
@@ -1167,7 +1168,7 @@ impl<'a> MirGen<'a> {
             if let ConstValue {
                 kind: ConstValueKind::FunctionAddress(func_id),
                 ..
-            } = self.mb.get_constants().get(&const_id).unwrap()
+            } = self.mb.get_constants().get(const_id.index()).unwrap()
             {
                 CallTarget::Direct(*func_id)
             } else {

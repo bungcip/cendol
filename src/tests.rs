@@ -166,6 +166,7 @@ pub mod semantic_sizeof_vla;
 pub mod semantic_static_assert;
 pub mod semantic_valist;
 
+pub mod guardian_npc_eval;
 pub mod regr_bitfield_assign_eval;
 pub mod regr_float_cast;
 pub mod regr_fp_const_eval;
@@ -176,4 +177,3 @@ pub mod regr_vla_sizeof;
 pub mod regr_vla_static;
 pub mod semantic_alignof_expr;
 pub mod semantic_sizeof_array;
-pub mod guardian_npc_eval;

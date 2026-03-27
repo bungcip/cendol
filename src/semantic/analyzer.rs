@@ -3055,8 +3055,15 @@ impl<'a> SemanticAnalyzer<'a> {
                 SemanticErrorKind::SizeOfIncompleteType { ty }
             };
             self.report_error(node, err);
-        } else if !is_alignof && expr.and_then(|e| self.get_bitfield_width(e)).is_some() {
-            self.report_error(node, SemanticErrorKind::SizeOfBitfield);
+        } else if let Some(e) = expr
+            && self.get_bitfield_width(e).is_some()
+        {
+            let err = if is_alignof {
+                SemanticErrorKind::AlignOfBitfield
+            } else {
+                SemanticErrorKind::SizeOfBitfield
+            };
+            self.report_error(node, err);
         } else if !self.registry.is_variably_modified(ty)
             && let Err(TypeRegistryError::UnsupportedFeature { feature }) = self.registry.ensure_layout(ty)
         {

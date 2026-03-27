@@ -470,7 +470,7 @@ fn get_struct_packing(mir_type: &MirType, mir: &MirProgram) -> Option<Vec<Type>>
         MirType::Record {
             layout, field_types, ..
         } if layout.size > 0 && layout.size <= 16 => {
-            let count = (layout.size + 7) / 8;
+            let count = layout.size.div_ceil(8);
             if field_types.iter().all(|&ft| {
                 let ft_mir = mir.get_type(ft);
                 matches!(ft_mir, MirType::F32 | MirType::F64)

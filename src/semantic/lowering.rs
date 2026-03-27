@@ -1624,11 +1624,33 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     self.visit_single_statement(*stmt)
                 ))
             }
-            ParsedNodeKind::BuiltinChooseExpr(c, t, e) => lower_simple!(NodeKind::BuiltinChooseExpr(
-                self.visit_expression(*c),
-                self.visit_expression(*t),
-                self.visit_expression(*e)
-            )),
+            ParsedNodeKind::BuiltinChooseExpr(c, t, e) => {
+                let res_node = self.get_or_push_slot(target_slots, span);
+
+                let lowered_cond = self.visit_expression(*c);
+                let ctx = crate::semantic::const_eval::ConstEvalCtx {
+                    ast: self.ast,
+                    symbol_table: self.symbol_table,
+                    registry: self.registry,
+                    semantic_info: None,
+                };
+
+                let (lowered_true, lowered_false) = match ctx.eval_int(lowered_cond) {
+                    Some(val) if val != 0 => (
+                        self.visit_expression(*t),
+                        self.push_dummy(self.parsed_ast.get_node(*e).span),
+                    ),
+                    Some(_) => (
+                        self.push_dummy(self.parsed_ast.get_node(*t).span),
+                        self.visit_expression(*e),
+                    ),
+                    None => (self.visit_expression(*t), self.visit_expression(*e)),
+                };
+
+                self.ast.kinds[res_node.index()] =
+                    NodeKind::BuiltinChooseExpr(lowered_cond, lowered_true, lowered_false);
+                smallvec![res_node]
+            }
 
             // Control flow with scopes
             ParsedNodeKind::If(stmt) => lower_simple!(NodeKind::If(IfStmt {

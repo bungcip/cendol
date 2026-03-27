@@ -738,7 +738,7 @@ impl<'a> MirGen<'a> {
         let operand = expr.map(|expr| {
             let expr_operand = self.visit_expression(expr, true);
             // Apply conversions for return value if needed
-            if let Some(_) = self.current_function {
+            if self.current_function.is_some() {
                 let func = self.get_current_func();
                 let return_mir_ty = func.return_type;
                 self.apply_conversions(expr_operand, expr, return_mir_ty)

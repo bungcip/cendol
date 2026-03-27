@@ -7,8 +7,8 @@ use crate::{
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
     lang_options::LangOptions,
     semantic::{
-        ArraySizeType, BuiltinType, FunctionParameter, QualType, StructMember, SymbolKind, SymbolRef,
-        SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
+        ArraySizeType, BuiltinType, FunctionParameter, QualType, StructMember, SymbolKind, SymbolRef, SymbolTable,
+        TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticError, SemanticErrorKind},
@@ -255,7 +255,11 @@ impl<'a> SemanticAnalyzer<'a> {
 
         let task = match &self.registry.get(ty).kind {
             TypeKind::Array { element_type, size } => {
-                let vla_expr = if let ArraySizeType::Variable(expr) = size { Some(*expr) } else { None };
+                let vla_expr = if let ArraySizeType::Variable(expr) = size {
+                    Some(*expr)
+                } else {
+                    None
+                };
                 Task::Array(*element_type, vla_expr)
             }
             TypeKind::Pointer { pointee } => Task::Pointer(*pointee),

@@ -896,7 +896,7 @@ impl Display for TypeKind {
 }
 
 /// Array size types
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArraySizeType {
     Constant(usize),
     Variable(NodeRef),

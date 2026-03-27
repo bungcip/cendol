@@ -226,6 +226,7 @@ pub enum SemanticErrorKind {
     AddressOfBitfield,
     AddressOfRegister,
     SizeOfBitfield,
+    AlignOfBitfield,
     GenericIncompleteControl {
         ty: QualType,
     },
@@ -581,6 +582,7 @@ impl SemanticErrorKind {
             SemanticErrorKind::AddressOfBitfield => "cannot take address of bit-field".to_string(),
             SemanticErrorKind::AddressOfRegister => "cannot take address of 'register' variable".to_string(),
             SemanticErrorKind::SizeOfBitfield => "cannot apply 'sizeof' to a bit-field".to_string(),
+            SemanticErrorKind::AlignOfBitfield => "cannot apply '_Alignof' to a bit-field".to_string(),
             SemanticErrorKind::GenericIncompleteControl { ty } => {
                 format!(
                     "controlling expression type '{}' is an incomplete type",

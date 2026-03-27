@@ -169,3 +169,8 @@ Action: Always verify that structural constraints (like member types) are enforc
 
 Learning: C11 6.7.2.1p3 prohibits structure/union members from having a function type. While direct function declarations in structs are easily caught, function types introduced via 'typedef' must also be rejected. In Cendol, this validation occurs during the record completion and layout computation phase in 'TypeRegistry'. This ensures that even types hidden behind multiple layers of aliases are correctly validated for completeness and object-type status before they are used in memory layout or code generation.
 Action: Always include tests for constraint enforcement that use 'typedef' to ensure that semantic checks are performed on the underlying resolved types rather than just the syntactic representation.
+
+2026-03-22 - [_Alignof on Bit-fields Constraint]
+
+Learning: While C11 only defines '_Alignof' for type names (6.5.3.4p2), common extensions (GCC/Clang) allow it for expressions. Because bit-fields do not have a byte-aligned address and their layout is implementation-defined, applying '_Alignof' to a bit-field must be rejected, mirroring the constraint for 'sizeof'. Centralizing these checks in 'visit_sizeof_alignof' ensures consistent enforcement across both operators.
+Action: When supporting language extensions that mirror standard operators (like '_Alignof' mirroring 'sizeof'), always ensure that base-language constraints (like bit-field prohibitions) are also mirrored and correctly diagnosed.

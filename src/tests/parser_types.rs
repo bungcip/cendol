@@ -5,7 +5,7 @@ use crate::tests::test_utils::run_fail_with_message;
 fn check_type(source: &str, expected: &str) {
     let (_ast, registry, symbol_table) = setup_lowering(source);
     // Assume variable is named 'x'
-    let (entry, _) = symbol_table
+    let entry = symbol_table
         .lookup_symbol(NameId::from("x"))
         .expect("Symbol 'x' not found");
     let symbol = symbol_table.get_symbol(entry);

@@ -514,5 +514,5 @@ int x = TEN;
 fn test_invalid_ucn() {
     let src = r#"const char* s = "\uZZZZ";"#; // malformed UCN in string literal
     let (_, diags) = setup_preprocessor_test_with_diagnostics(src, None).unwrap();
-    assert!(diags.len() > 0, "Expected diagnostics for invalid UCN");
+    assert!(!diags.is_empty(), "Expected diagnostics for invalid UCN");
 }

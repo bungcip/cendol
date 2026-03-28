@@ -2870,7 +2870,7 @@ impl ClifGen {
             let statements_to_process: Vec<MirStmt> = mir_block
                 .statements
                 .iter()
-                .filter_map(|&stmt_id| Some(self.mir.get_statement(stmt_id).clone()))
+                .map(|&stmt_id| self.mir.get_statement(stmt_id).clone())
                 .collect();
 
             let mut return_ptr = None;
@@ -2940,14 +2940,14 @@ impl ClifGen {
         let mut worklist_globals = Vec::new();
 
         // Initial roots: all non-import functions and all globals with initializers
-        for func in &self.mir.functions {
-            let id = func.id;
+        for (i, func) in self.mir.functions.iter().enumerate() {
+            let id = MirFunctionId::new((i + 1) as u32).unwrap();
             if func.linkage != MirLinkage::Import && reachable_functions.insert(id) {
                 worklist_functions.push(id);
             }
         }
-        for global in &self.mir.globals {
-            let id = global.id;
+        for (i, global) in self.mir.globals.iter().enumerate() {
+            let id = GlobalId::new((i + 1) as u32).unwrap();
             if global.initial_value.is_some() && reachable_globals.insert(id) {
                 worklist_globals.push(id);
             }

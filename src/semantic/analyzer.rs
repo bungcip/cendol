@@ -3575,7 +3575,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let kind = *self.ast.get_kind(node);
         match kind {
             NodeKind::Dummy => true,
-            NodeKind::MemberAccess(base, member_name, _is_arrow) => {
+            NodeKind::MemberAccess(base, member_name, _) => {
                 self.compute_offsetof_recursive(base, current_ty, offset)
                     && self.apply_offsetof_member(node, member_name, current_ty, offset)
             }

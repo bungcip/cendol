@@ -1,10 +1,10 @@
 use crate::ast::NameId;
+use crate::mir::MirType;
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
-use crate::mir::{MirModuleId, MirType};
 
 #[test]
 fn test_dump_basic_module() {
-    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+    let mut builder = crate::mir::MirBuilder::new(8);
 
     // Types
     let i32_ty = builder.add_type(MirType::I32);

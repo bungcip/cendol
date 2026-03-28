@@ -4,13 +4,13 @@ use crate::codegen::clif_gen::{EmitContext, emit_const};
 use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::driver::artifact::CompilePhase;
 use crate::mir::{ConstValueKind, Rvalue};
-use crate::mir::{MirFieldLayout, MirModuleId, MirRecordLayout, MirStmt, MirType, Operand, Place, Terminator};
+use crate::mir::{MirFieldLayout, MirRecordLayout, MirStmt, MirType, Operand, Place, Terminator};
 use crate::tests::codegen_common::setup_cranelift;
 use crate::tests::test_utils::run_pass;
 
 #[test]
 fn test_emit_const_struct_literal() {
-    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+    let mut builder = crate::mir::MirBuilder::new(8);
 
     // 1. Setup Types
     let int_type_id = builder.add_type(MirType::I32);
@@ -68,7 +68,7 @@ fn test_invalid_hex_float_no_exponent() {
 
 #[test]
 fn test_store_statement_lowering() {
-    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+    let mut builder = crate::mir::MirBuilder::new(8);
 
     // 1. Set up Types
     let int_type_id = builder.add_type(MirType::I32);
@@ -127,7 +127,7 @@ fn test_store_statement_lowering() {
 
 #[test]
 fn test_store_deref_pointer() {
-    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+    let mut builder = crate::mir::MirBuilder::new(8);
 
     let int_type_id = builder.add_type(MirType::I32);
     let ptr_type_id = builder.add_type(MirType::Pointer { pointee: int_type_id });
@@ -353,7 +353,7 @@ fn test_float_to_char_conversion() {
 
 #[test]
 fn test_f128_constant_promotion() {
-    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+    let mut builder = crate::mir::MirBuilder::new(8);
 
     // Setup Type F128
     let f128_type_id = builder.add_type(MirType::F128);

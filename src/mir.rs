@@ -48,7 +48,6 @@ macro_rules! mir_id {
 }
 
 mir_id!(GlobalId, "Unique identifier for MIR global variables");
-mir_id!(MirModuleId, "Unique identifier for MIR modules");
 mir_id!(MirFunctionId, "Unique identifier for MIR functions");
 mir_id!(MirBlockId, "Unique identifier for MIR blocks");
 mir_id!(MirStmtId, "Unique identifier for MIR statements");
@@ -67,7 +66,6 @@ pub enum MirLinkage {
 /// MIR Module - Top-level container for MIR
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirModule {
-    pub id: MirModuleId,
     pub functions: Vec<MirFunctionId>,
     pub globals: Vec<GlobalId>,
     pub types: Vec<MirType>,
@@ -76,9 +74,8 @@ pub struct MirModule {
 }
 
 impl MirModule {
-    fn new(id: MirModuleId) -> Self {
+    fn new() -> Self {
         Self {
-            id,
             functions: Vec::new(),
             globals: Vec::new(),
             types: Vec::new(),
@@ -91,7 +88,6 @@ impl MirModule {
 /// MIR Function - Represents a C function in MIR
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirFunction {
-    pub id: MirFunctionId,
     pub name: NameId,
     pub return_type: TypeId,
     pub params: Vec<LocalId>,
@@ -106,9 +102,8 @@ pub struct MirFunction {
 }
 
 impl MirFunction {
-    fn new(id: MirFunctionId, name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
+    fn new(name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
         Self {
-            id,
             name,
             return_type,
             params: Vec::new(),
@@ -120,31 +115,29 @@ impl MirFunction {
         }
     }
 
-    pub(crate) fn new_defined(id: MirFunctionId, name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
+    pub(crate) fn new_defined(name: NameId, return_type: TypeId, linkage: MirLinkage) -> Self {
         assert!(
             linkage != MirLinkage::Import,
             "Cannot create defined function with Import linkage"
         );
-        Self::new(id, name, return_type, linkage)
+        Self::new(name, return_type, linkage)
     }
 
-    fn new_extern(id: MirFunctionId, name: NameId, return_type: TypeId) -> Self {
-        Self::new(id, name, return_type, MirLinkage::Import)
+    fn new_extern(name: NameId, return_type: TypeId) -> Self {
+        Self::new(name, return_type, MirLinkage::Import)
     }
 }
 
 /// MIR Block - Basic block with statements and terminator
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MirBlock {
-    pub id: MirBlockId,
     pub statements: Vec<MirStmtId>,
     pub terminator: Terminator,
 }
 
 impl MirBlock {
-    pub(crate) fn new(id: MirBlockId) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            id,
             statements: Vec::new(),
             terminator: Terminator::Unreachable,
         }
@@ -537,7 +530,6 @@ pub struct ConstValue {
 /// Local - Represents a local variable or parameter
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Local {
-    pub id: LocalId,
     pub name: Option<NameId>,
     pub type_id: TypeId,
     pub is_param: bool,
@@ -545,9 +537,8 @@ pub struct Local {
 }
 
 impl Local {
-    pub(crate) fn new(id: LocalId, name: Option<NameId>, type_id: TypeId, is_param: bool) -> Self {
+    pub(crate) fn new(name: Option<NameId>, type_id: TypeId, is_param: bool) -> Self {
         Self {
-            id,
             name,
             type_id,
             is_param,
@@ -559,7 +550,6 @@ impl Local {
 /// Global - Represents a global variable
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Global {
-    pub id: GlobalId,
     pub name: NameId,
     pub type_id: TypeId,
     pub is_constant: bool,
@@ -570,16 +560,8 @@ pub struct Global {
 }
 
 impl Global {
-    pub(crate) fn new(
-        id: GlobalId,
-        name: NameId,
-        type_id: TypeId,
-        is_constant: bool,
-        is_tls: bool,
-        linkage: MirLinkage,
-    ) -> Self {
+    pub(crate) fn new(name: NameId, type_id: TypeId, is_constant: bool, is_tls: bool, linkage: MirLinkage) -> Self {
         Self {
-            id,
             name,
             type_id,
             is_constant,
@@ -656,8 +638,8 @@ impl MirProgram {
 }
 
 impl MirBuilder {
-    pub(crate) fn new(module_id: MirModuleId, pointer_width: u8) -> Self {
-        let mut module = MirModule::new(module_id);
+    pub(crate) fn new(pointer_width: u8) -> Self {
+        let mut module = MirModule::new();
         module.pointer_width = pointer_width;
         Self {
             module,
@@ -684,7 +666,7 @@ impl MirBuilder {
         let local_id = LocalId::new(self.next_local_id).unwrap();
         self.next_local_id += 1;
 
-        let local = Local::new(local_id, name, type_id, is_param);
+        let local = Local::new(name, type_id, is_param);
         self.locals.push(local);
 
         if let Some(func_id) = self.current_function
@@ -719,7 +701,7 @@ impl MirBuilder {
         let block_id = MirBlockId::new(self.next_block_id).unwrap();
         self.next_block_id += 1;
 
-        let block = MirBlock::new(block_id);
+        let block = MirBlock::new();
         self.blocks.push(block);
 
         if let Some(func) = self.functions.get_mut(func_id.index()) {
@@ -788,8 +770,8 @@ impl MirBuilder {
         return_type: TypeId,
         is_variadic: bool,
     ) -> MirFunctionId {
-        let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
-        let mut func = MirFunction::new_extern(func_id, name, return_type);
+        let func_id = MirFunctionId::new(self.functions.len() as u32 + 1).unwrap();
+        let mut func = MirFunction::new_extern(name, return_type);
         func.is_variadic = is_variadic;
 
         // Create locals for each parameter.
@@ -817,8 +799,8 @@ impl MirBuilder {
         is_variadic: bool,
         linkage: MirLinkage,
     ) -> MirFunctionId {
-        let func_id = MirFunctionId::new(self.module.functions.len() as u32 + 1).unwrap();
-        let mut func = MirFunction::new_defined(func_id, name, return_type, linkage);
+        let func_id = MirFunctionId::new(self.functions.len() as u32 + 1).unwrap();
+        let mut func = MirFunction::new_defined(name, return_type, linkage);
         func.is_variadic = is_variadic;
 
         // Create locals for each parameter
@@ -857,7 +839,7 @@ impl MirBuilder {
         let global_id = GlobalId::new(self.next_global_id).unwrap();
         self.next_global_id += 1;
 
-        let mut global = Global::new(global_id, name, type_id, is_constant, is_tls, linkage);
+        let mut global = Global::new(name, type_id, is_constant, is_tls, linkage);
         global.initial_value = initial_value;
         self.globals.push(global);
         self.module.globals.push(global_id);

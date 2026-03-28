@@ -1,12 +1,12 @@
 //! Tests for function calls
 use crate::ast::NameId;
 use crate::codegen::{ClifGen, ClifOutput, EmitKind};
-use crate::mir::{CallTarget, MirModuleId, MirStmt, MirType, Operand, Place, Terminator};
+use crate::mir::{CallTarget, MirStmt, MirType, Operand, Place, Terminator};
 use crate::tests::test_utils;
 
 #[test]
 fn test_indirect_function_call() {
-    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+    let mut builder = crate::mir::MirBuilder::new(8);
 
     // Setup Types
     let int_type_id = builder.add_type(MirType::I32);
@@ -139,7 +139,7 @@ fn test_indirect_function_call() {
 
 #[test]
 fn test_global_function_pointer_init() {
-    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+    let mut builder = crate::mir::MirBuilder::new(8);
 
     // Define function type: fn(i32) -> i32
     let int_type_id = builder.add_type(MirType::I32);

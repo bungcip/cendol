@@ -425,7 +425,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         match self
             .symbol_table
             .lookup_symbol(name)
-            .map(|(r, _)| self.symbol_table.get_symbol(r))
+            .map(|r| self.symbol_table.get_symbol(r))
         {
             Some(entry) => {
                 if let SymbolKind::Typedef { aliased_type } = entry.kind {
@@ -725,7 +725,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
         storage: Option<StorageClass>,
     ) -> QualType {
-        let Some((sym, existing_scope)) = self.symbol_table.lookup_symbol(name) else {
+        let Some((sym, existing_scope)) = self.symbol_table.lookup_symbol_and_scope(name) else {
             return new_ty;
         };
 
@@ -873,7 +873,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         final_qt = self.check_redeclaration_compatibility(func_name, final_qt, span, spec_info.storage);
 
         // Check for _Noreturn on existing declarations
-        let existing_symbol_is_noreturn = if let Some((sym, _)) = self.symbol_table.lookup_symbol(func_name) {
+        let existing_symbol_is_noreturn = if let Some(sym) = self.symbol_table.lookup_symbol(func_name) {
             let existing = self.symbol_table.get_symbol(sym);
             if let TypeKind::Function { is_noreturn, .. } = &self.registry.get(existing.type_info.ty()).kind {
                 *is_noreturn
@@ -902,7 +902,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 );
             }
         }
-        let func_sym = self.symbol_table.lookup_symbol(func_name).map(|(s, _)| s).unwrap();
+        let func_sym = self.symbol_table.lookup_symbol(func_name).unwrap();
         let scope_id = self.symbol_table.push_scope();
 
         // Implement __func__ (C11 6.4.2.2)
@@ -2028,7 +2028,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn resolve_ident(&mut self, name: NameId, span: SourceSpan) -> SymbolRef {
-        if let Some((sym, _)) = self.symbol_table.lookup_symbol(name) {
+        if let Some(sym) = self.symbol_table.lookup_symbol(name) {
             sym
         } else {
             let name_str = name.as_str();
@@ -3251,7 +3251,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         match self
             .symbol_table
             .lookup_symbol(name)
-            .map(|(r, _)| self.symbol_table.get_symbol(r))
+            .map(|r| self.symbol_table.get_symbol(r))
         {
             Some(entry) => {
                 if let SymbolKind::Typedef { aliased_type } = entry.kind {

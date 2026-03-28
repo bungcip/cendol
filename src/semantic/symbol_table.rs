@@ -238,8 +238,13 @@ impl SymbolTable {
         sym
     }
 
-    pub(crate) fn lookup_symbol(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
+    pub(crate) fn lookup_symbol_and_scope(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
         self.lookup(name, self.current_scope_id, Namespace::Ordinary)
+    }
+
+    pub(crate) fn lookup_symbol(&self, name: NameId) -> Option<SymbolRef> {
+        self.lookup(name, self.current_scope_id, Namespace::Ordinary)
+            .map(|(s, _)| s)
     }
 
     pub(super) fn lookup_tag(&self, name: NameId) -> Option<(SymbolRef, ScopeId)> {
@@ -344,7 +349,7 @@ impl SymbolTable {
                 self.merge_global_symbol(name, symbol)
             } else {
                 // Determine linkage of this local declaration
-                if let Some((existing, _)) = self.lookup_symbol(name) {
+                if let Some(existing) = self.lookup_symbol(name) {
                     let existing_sym = self.get_symbol(existing);
                     if existing_sym.has_linkage() {
                         // Inherit linkage and refer to the same object
@@ -402,7 +407,7 @@ impl SymbolTable {
             self.merge_global_symbol(name, symbol)
         } else {
             // Function declarations in local scope always have linkage
-            if let Some((existing, _)) = self.lookup_symbol(name) {
+            if let Some(existing) = self.lookup_symbol(name) {
                 let existing_sym = self.get_symbol(existing);
                 if existing_sym.has_linkage() {
                     self.get_scope_mut(self.current_scope_id).symbols.insert(name, existing);

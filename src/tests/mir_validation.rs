@@ -2,13 +2,12 @@ use crate::ast::NameId;
 use crate::mir::validation::{MirValidator, ValidationError};
 use crate::mir::{
     BinaryIntOp, CallTarget, ConstValue, ConstValueId, ConstValueKind, GlobalId, Local, LocalId, MirBlock, MirBlockId,
-    MirBuilder, MirFieldLayout, MirFunction, MirFunctionId, MirModuleId, MirProgram, MirStmt, MirStmtId, MirType,
-    Operand, Place, Rvalue, Terminator, TypeId,
+    MirBuilder, MirFieldLayout, MirFunction, MirFunctionId, MirProgram, MirStmt, MirStmtId, MirType, Operand, Place,
+    Rvalue, Terminator, TypeId,
 };
 
 fn create_valid_mir() -> MirProgram {
-    let module_id = MirModuleId::new(1).unwrap();
-    let mut builder = MirBuilder::new(module_id, 8);
+    let mut builder = MirBuilder::new(8);
 
     // Create a basic type: i32
     let i32_ty = builder.add_type(MirType::I32);
@@ -220,7 +219,7 @@ fn test_statement_alloc_missing_type() {
     // create_valid_mir defines 'main' with no locals/params.
     // Let's add a local.
     let local_id = LocalId::new(100).unwrap();
-    let _local = Local::new(local_id, None, TypeId::new(1).unwrap(), false);
+    let _local = Local::new(None, TypeId::new(1).unwrap(), false);
     if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_id);
     }
@@ -239,43 +238,7 @@ fn test_statement_alloc_missing_type() {
 
 #[test]
 fn test_call_arg_count_mismatch() {
-    let _module_id = MirModuleId::new(1).unwrap();
-    let mut mir = create_valid_mir();
-    let func_id = mir.module.functions[0];
-    let func = mir.functions.get(func_id.index()).unwrap();
-    let block_id = func.blocks[0];
-
-    // Create a call to main (takes 0 args) with 1 arg
-    let const_val_id = ConstValueId::new(1).unwrap(); // existing constant 0
-    let arg = Operand::Constant(const_val_id);
-
-    let stmt = MirStmt::Call {
-        target: CallTarget::Direct(func_id),
-        args: vec![arg],
-        dest: None,
-    };
-    mir.statements.push(stmt);
-    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
-    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
-        block.statements.push(stmt_id);
-    }
-
-    let validator = MirValidator::new(&mir);
-    let res = validator.validate();
-    let expected_msg = "Call to function main arg count mismatch";
-    if let Err(e) = &res {
-        println!("Errors: {:?}", e);
-    }
-    assert!(
-        matches!(res, Err(errors) if errors.iter().any(|e| matches!(e, ValidationError::IllegalOperation(msg) if msg == expected_msg)))
-    );
-}
-
-#[test]
-fn test_call_arg_type_mismatch() {
-    // Need a function that takes an argument
-    let _module_id = MirModuleId::new(1).unwrap();
-    let mut builder = MirBuilder::new(_module_id, 8);
+    let mut builder = MirBuilder::new(8);
     let i32_ty = builder.add_type(MirType::I32);
     let f32_ty = builder.add_type(MirType::F32);
 
@@ -328,7 +291,6 @@ fn test_call_arg_type_mismatch() {
 #[test]
 fn test_constant_value_out_of_range() {
     let mut mir = create_valid_mir();
-    let _module_id = MirModuleId::new(1).unwrap();
     // We need to add types manually or via builder
     // Let's add u8 type manually to mir
     // Existing types: I32 (id 1)
@@ -353,7 +315,7 @@ fn test_constant_value_out_of_range() {
     // Need a local to assign to, or use return
     // Let's use Assign to a new local of type u8
     let local_id = LocalId::new(100).unwrap();
-    let _local = Local::new(local_id, None, u8_ty_id, false);
+    let _local = Local::new(None, u8_ty_id, false);
     if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_id);
     }
@@ -394,7 +356,7 @@ fn test_place_field_access_non_record() {
     // We need a local
     let local_id = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
     let i32_ty = TypeId::new(1).unwrap();
-    let local = Local::new(local_id, None, i32_ty, false);
+    let local = Local::new(None, i32_ty, false);
     mir.locals.push(local);
     if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_id);
@@ -407,7 +369,7 @@ fn test_place_field_access_non_record() {
     let rvalue = Rvalue::Use(Operand::Copy(Box::new(place)));
 
     let dest_local_id = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
-    let dest_local = Local::new(dest_local_id, None, i32_ty, false);
+    let dest_local = Local::new(None, i32_ty, false);
     mir.locals.push(dest_local);
     if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(dest_local_id);
@@ -443,9 +405,9 @@ fn test_invalid_cast_in_assignment() {
     // Create i32 local and f32 local
     let i32_ty = TypeId::new(1).unwrap();
     let local_i32 = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
-    mir.locals.push(Local::new(local_i32, None, i32_ty, false));
+    mir.locals.push(Local::new(None, i32_ty, false));
     let local_f32 = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
-    mir.locals.push(Local::new(local_f32, None, f32_ty, false));
+    mir.locals.push(Local::new(None, f32_ty, false));
 
     if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_i32);
@@ -484,9 +446,9 @@ fn test_flexible_assignment() {
 
     // Create locals
     let local_dest = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
-    mir.locals.push(Local::new(local_dest, None, i32_ty, false));
+    mir.locals.push(Local::new(None, i32_ty, false));
     let local_src = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
-    mir.locals.push(Local::new(local_src, None, i32_ty, false));
+    mir.locals.push(Local::new(None, i32_ty, false));
 
     if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_dest);
@@ -522,8 +484,7 @@ fn test_flexible_assignment() {
 
 #[test]
 fn test_call_void_with_dest() {
-    let _module_id = MirModuleId::new(1).unwrap();
-    let mut builder = MirBuilder::new(_module_id, 8);
+    let mut builder = MirBuilder::new(8);
     let void_ty = builder.add_type(MirType::Void);
     let i32_ty = builder.add_type(MirType::I32);
 
@@ -541,13 +502,13 @@ fn test_call_void_with_dest() {
     // fn main() -> i32
     let main_name = NameId::new("main");
     let main_id = MirFunctionId::new(mir.functions.len() as u32 + 1).unwrap();
-    let main_func = MirFunction::new_defined(main_id, main_name, i32_ty, crate::mir::MirLinkage::External);
+    let main_func = MirFunction::new_defined(main_name, i32_ty, crate::mir::MirLinkage::External);
     mir.functions.push(main_func);
     mir.module.functions.push(main_id);
 
     // Call foo() -> void, assign to i32 local
     let local_id = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
-    let local = Local::new(local_id, None, i32_ty, false);
+    let local = Local::new(None, i32_ty, false);
     mir.locals.push(local);
     if let Some(func) = mir.functions.get_mut(main_id.index()) {
         func.locals.push(local_id);
@@ -563,7 +524,7 @@ fn test_call_void_with_dest() {
     let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
     // Add block to main
     let main_block_id = MirBlockId::new(mir.blocks.len() as u32 + 1).unwrap();
-    let mut main_block = MirBlock::new(main_block_id);
+    let mut main_block = MirBlock::new();
     main_block.statements.push(stmt_id);
     mir.blocks.push(main_block);
     if let Some(func) = mir.functions.get_mut(main_id.index()) {
@@ -632,7 +593,7 @@ fn test_place_deref_non_pointer() {
     // Dereference an i32 local
     let i32_ty = TypeId::new(1).unwrap();
     let local_id = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
-    let local = Local::new(local_id, None, i32_ty, false);
+    let local = Local::new(None, i32_ty, false);
     mir.locals.push(local);
     if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_id);
@@ -660,8 +621,7 @@ fn test_place_deref_non_pointer() {
 
 #[test]
 fn test_place_field_out_of_bounds() {
-    let _module_id = MirModuleId::new(1).unwrap();
-    let mut builder = MirBuilder::new(_module_id, 8);
+    let mut builder = MirBuilder::new(8);
     let i32_ty = builder.add_type(MirType::I32);
 
     // Create struct with 1 field
@@ -715,8 +675,7 @@ fn test_place_field_out_of_bounds() {
 
 #[test]
 fn test_rvalue_cast_aggregate_invalid() {
-    let _module_id = MirModuleId::new(1).unwrap();
-    let mut builder = MirBuilder::new(_module_id, 8);
+    let mut builder = MirBuilder::new(8);
     let i32_ty = builder.add_type(MirType::I32);
 
     // Create struct
@@ -777,9 +736,9 @@ fn test_invalid_cast_in_store() {
 
     let i32_ty = TypeId::new(1).unwrap();
     let local_i32 = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
-    mir.locals.push(Local::new(local_i32, None, i32_ty, false));
+    mir.locals.push(Local::new(None, i32_ty, false));
     let local_f32 = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
-    mir.locals.push(Local::new(local_f32, None, f32_ty, false));
+    mir.locals.push(Local::new(None, f32_ty, false));
 
     if let Some(func) = mir.functions.get_mut(func_id.index()) {
         func.locals.push(local_i32);

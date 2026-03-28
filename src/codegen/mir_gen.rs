@@ -54,7 +54,7 @@ impl<'a> MirGen<'a> {
         registry: &'a mut TypeRegistry,
         source_manager: &'a SourceManager,
     ) -> Self {
-        let mir_builder = MirBuilder::new(mir::MirModuleId::new(1).unwrap(), 8);
+        let mir_builder = MirBuilder::new(8);
         Self {
             ast,
             symbol_table,
@@ -97,7 +97,7 @@ impl<'a> MirGen<'a> {
         self.visit_node(root);
 
         // Take ownership of the builder to consume it, replacing it with a dummy.
-        let builder = std::mem::replace(&mut self.mb, MirBuilder::new(mir::MirModuleId::new(1).unwrap(), 8));
+        let builder = std::mem::replace(&mut self.mb, MirBuilder::new(8));
         let output = builder.consume();
 
         MirProgram {

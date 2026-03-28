@@ -8,7 +8,7 @@ use crate::tests::test_utils::{run_fail, run_fail_with_message, run_pass, run_pe
 
 fn check_type(source: &str, expected: &str) {
     let (_ast, registry, symbol_table) = setup_lowering(source);
-    let (entry, _) = symbol_table.lookup_symbol(NameId::from("x")).unwrap();
+    let entry = symbol_table.lookup_symbol(NameId::from("x")).unwrap();
     let symbol = symbol_table.get_symbol(entry);
     assert_eq!(registry.display_qual_type(symbol.type_info), expected);
 }

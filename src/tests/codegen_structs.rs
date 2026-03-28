@@ -2,7 +2,7 @@
 use crate::ast::NameId;
 use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::driver::artifact::CompilePhase;
-use crate::mir::{MirModuleId, MirStmt, MirType, Operand, Place, Terminator};
+use crate::mir::{MirStmt, MirType, Operand, Place, Terminator};
 use crate::tests::codegen_common::setup_cranelift;
 use crate::tests::test_utils::run_pass;
 
@@ -98,7 +98,7 @@ fn test_compile_union_field_access() {
 
 #[test]
 fn test_alloc_dealloc_codegen() {
-    let mut builder = crate::mir::MirBuilder::new(MirModuleId::new(1).unwrap(), 8);
+    let mut builder = crate::mir::MirBuilder::new(8);
 
     let int_type_id = builder.add_type(MirType::I32);
     let ptr_type_id = builder.add_type(MirType::Pointer { pointee: int_type_id });

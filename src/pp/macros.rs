@@ -209,12 +209,11 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Helper to collect variadic arguments with commas inserted
-    fn collect_variadic_args_with_commas(
-        &mut self,
-        args: &[Vec<PPToken>],
-        start_index: usize,
-        trigger_loc: SourceLoc,
-    ) -> Vec<PPToken> {
+    /// ⚡ Bolt: Efficiently collect variadic arguments into a single token list.
+    /// This optimization uses `SourceLoc::builtin()` for synthetic commas to avoid
+    /// creating thousands of tiny virtual buffers and unique `SourceId`s, which
+    /// significantly reduces memory pressure and `SourceManager` churn in large projects.
+    fn collect_variadic_args_with_commas(&mut self, args: &[Vec<PPToken>], start_index: usize) -> Vec<PPToken> {
         // ⚡ Bolt: Pre-allocate result vector and avoid redundant clones.
         let mut total_tokens = 0;
         let num_args = args.len().saturating_sub(start_index);
@@ -228,24 +227,12 @@ impl<'src> Preprocessor<'src> {
 
         let mut first = true;
 
-        // We need a source for the comma token.
-        // We create a virtual buffer for it to ensure stringification works correctly.
-        // We only create it if we actually need a comma.
-        let comma_source_id = if num_args > 1 {
-            Some(
-                self.sm
-                    .add_virtual_buffer(b",".to_vec(), "<comma>", Some(trigger_loc), FileKind::Virtual),
-            )
-        } else {
-            None
-        };
-
         for arg in args.iter().skip(start_index) {
-            if !first && let Some(sid) = comma_source_id {
+            if !first {
                 result.push(PPToken::new(
                     PPTokenKind::Comma,
-                    PPTokenFlags::empty(),
-                    SourceLoc::new(sid, 0),
+                    PPTokenFlags::MACRO_EXPANDED,
+                    SourceLoc::builtin(),
                     1,
                 ));
             }
@@ -260,16 +247,13 @@ impl<'src> Preprocessor<'src> {
         macro_info: &MacroInfo,
         symbol: StringId,
         args: &'a [Vec<PPToken>],
-        location: SourceLoc,
     ) -> Option<Cow<'a, [PPToken]>> {
         if let Some(idx) = macro_info.parameter_list.iter().position(|&p| p == symbol) {
             return Some(Cow::Borrowed(&args[idx]));
         }
         if macro_info.variadic_arg == Some(symbol) {
             let start = macro_info.parameter_list.len();
-            return Some(Cow::Owned(
-                self.collect_variadic_args_with_commas(args, start, location),
-            ));
+            return Some(Cow::Owned(self.collect_variadic_args_with_commas(args, start)));
         }
         None
     }
@@ -418,7 +402,7 @@ impl<'src> Preprocessor<'src> {
                     let mut matched = false;
 
                     if let PPTokenKind::Identifier(sym) = next.kind
-                        && let Some(arg) = self.get_macro_param_tokens(macro_info, sym, args, token.location)
+                        && let Some(arg) = self.get_macro_param_tokens(macro_info, sym, args)
                     {
                         let mut stringified = self.stringify_tokens(&arg, token.location)?;
                         // Bolt ⚡: Stringified tokens always start with an empty hide-set (0).
@@ -451,7 +435,7 @@ impl<'src> Preprocessor<'src> {
                 PPTokenKind::Identifier(sym) => {
                     let next_is_hh = i + 1 < tokens_slice.len() && tokens_slice[i + 1].kind == PPTokenKind::HashHash;
                     let src = if next_is_hh { args } else { expanded_args };
-                    if let Some(param_tokens) = self.get_macro_param_tokens(macro_info, sym, src, token.location) {
+                    if let Some(param_tokens) = self.get_macro_param_tokens(macro_info, sym, src) {
                         if param_tokens.is_empty() {
                             last_token_produced_output = false;
                         } else {
@@ -506,7 +490,7 @@ impl<'src> Preprocessor<'src> {
         args: &[Vec<PPToken>],
     ) -> Result<(Vec<PPToken>, bool), PPError> {
         let right_tokens = if let PPTokenKind::Identifier(sym) = right_token.kind {
-            self.get_macro_param_tokens(macro_info, sym, args, right_token.location)
+            self.get_macro_param_tokens(macro_info, sym, args)
                 .unwrap_or(Cow::Borrowed(std::slice::from_ref(right_token)))
         } else {
             Cow::Borrowed(std::slice::from_ref(right_token))

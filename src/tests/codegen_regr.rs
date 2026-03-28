@@ -219,3 +219,53 @@ fn test_negative_float_to_int_implicit_cast_regression() {
     let status = run_c_code_exit_status(source);
     assert_eq!(status, 42);
 }
+
+#[test]
+fn test_variadic_struct_argument_crash() {
+    let source = r#"
+        struct foo {
+            int i, j, k;
+            char *p;
+            float v;
+        };
+
+        int
+        bar(struct foo f, struct foo *p, int n, ...)
+        {
+            if (f.i != p->i)
+                return 0;
+            return p->j + n;
+        }
+
+        int
+        main(void)
+        {
+            struct foo f;
+
+            f.i = f.j = 1;
+            bar(f, &f, 2);
+            bar(f, &f, 2, 1, f, &f);
+
+            return 0;
+        }
+    "#;
+    // This should not panic and should exit with status 0
+    let status = run_c_code_exit_status(source);
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn test_compound_literal_address_at_file_scope() {
+    let source = r#"
+        struct S { int x, y; };
+        struct S *p = &(struct S){1, 2};
+        int main() {
+            if (p->x != 1 || p->y != 2) return 1;
+            return 0;
+        }
+    "#;
+
+    // This should not panic during MIR generation and should exit with status 0
+    let status = run_c_code_exit_status(source);
+    assert_eq!(status, 0);
+}

@@ -582,7 +582,7 @@ impl<'a> MirGen<'a> {
             && matches!(
                 self.mb.get_constants().get(const_id.index()),
                 Some(ConstValue {
-                    kind: ConstValueKind::FunctionAddress(_),
+                    kind: ConstValueKind::FunctionAddress(_) | ConstValueKind::GlobalAddress(_, _),
                     ..
                 })
             )

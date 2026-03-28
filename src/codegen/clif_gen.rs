@@ -125,6 +125,7 @@ pub(crate) struct BodyEmitContext<'a, 'b> {
     pub vararg_trampoline_func: &'a mut Option<FuncId>,
     pub pointee_to_pointer: &'a HashMap<TypeId, TypeId>,
     pub use_variadic_hack: bool,
+    pub fixed_params_count: usize,
 }
 
 /// Context for lowering call signatures
@@ -491,7 +492,7 @@ fn lower_abi_param(
     param_types: &mut Vec<Type>,
     split_f128: bool,
 ) {
-    if let Some(types_list) = get_struct_packing(mir_type, mir) {
+    if !split_f128 && let Some(types_list) = get_struct_packing(mir_type, mir) {
         for &t in &types_list {
             sig.params.push(AbiParam::new(t));
             param_types.push(t);
@@ -504,8 +505,11 @@ fn lower_abi_param(
     // Internal calls pad the signature and expand into I64 registers.
     let size = lower_type_size(mir_type, mir);
     if !split_f128 && (size > 16 || matches!(mir_type, MirType::F80 | MirType::F128)) {
-        sig.params
-            .push(AbiParam::special(types::I64, ArgumentPurpose::StructArgument(size)));
+        let aligned_size = (size + 7) & !7;
+        sig.params.push(AbiParam::special(
+            types::I64,
+            ArgumentPurpose::StructArgument(aligned_size),
+        ));
         param_types.push(types::I64);
         return;
     }
@@ -2295,7 +2299,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
 
                 // 1. gp_offset
                 // Calculate how many bytes are consumed by fixed parameters
-                let fixed_count = ctx.func.params.len();
+                let fixed_count = ctx.fixed_params_count;
                 let gp_val = fixed_count * 8;
 
                 // Clamp to 48 (max GPR registers)
@@ -2683,9 +2687,7 @@ impl ClifGen {
                 continue;
             }
             // Only lower functions that are defined (have bodies)
-            if let Some(func) = self.mir.functions.get(func_id.index())
-                && func.linkage != MirLinkage::Import
-            {
+            if self.mir.get_function(func_id).linkage != MirLinkage::Import {
                 self.visit_function(func_id);
             }
         }
@@ -2761,10 +2763,9 @@ impl ClifGen {
 
                 // Step 2: Add variadic block parameters if needed (still before any instructions)
                 if func.is_variadic {
-                    let fixed_params_count = func.params.len();
                     let total_variadic_slots = 128; // Must match lower_function_signature
-                    if fixed_params_count < total_variadic_slots {
-                        let extra_count = total_variadic_slots - fixed_params_count;
+                    if param_types.len() < total_variadic_slots {
+                        let extra_count = total_variadic_slots - param_types.len();
                         for _ in 0..extra_count {
                             builder.append_block_param(*clif_block, types::I64);
                         }
@@ -2784,8 +2785,14 @@ impl ClifGen {
                     let local = self.mir.get_local(param_id);
                     let mir_type = self.mir.get_type(local.type_id);
 
-                    // Check for struct packing
-                    if let Some(types_list) = get_struct_packing(mir_type, &self.mir) {
+                    // Check for struct packing or variadic hack splitting
+                    let use_hack = func.is_variadic && self.triple.architecture == target_lexicon::Architecture::X86_64;
+                    if let Some(types_list) = get_struct_packing(mir_type, &self.mir).or_else(|| {
+                        (use_hack && mir_type.is_aggregate()).then(|| {
+                            let size = lower_type_size(mir_type, &self.mir);
+                            vec![types::I64; size.div_ceil(8) as usize]
+                        })
+                    }) {
                         if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
                             let size = lower_type_size(mir_type, &self.mir);
                             for (i, &t) in types_list.iter().enumerate() {
@@ -2830,7 +2837,7 @@ impl ClifGen {
                     let param_value = param_iter.next().unwrap();
                     if let Some(stack_slot) = self.clif_stack_slots.get(&param_id) {
                         if mir_type.is_aggregate() {
-                            // Passed by pointer (I64), copy to stack slot
+                            // Passed by pointer (I64) (only for non-variadic large structs)
                             let dest_addr = builder.ins().stack_addr(types::I64, *stack_slot, 0);
                             let size = lower_type_size(mir_type, &self.mir) as i64;
                             emit_memcpy(dest_addr, param_value, size, &mut builder, &mut self.module);
@@ -2899,6 +2906,7 @@ impl ClifGen {
                 vararg_trampoline_func: &mut self.vararg_trampoline_func,
                 pointee_to_pointer: &self.pointee_to_pointer,
                 use_variadic_hack: func.is_variadic && self.triple.architecture == target_lexicon::Architecture::X86_64,
+                fixed_params_count: param_types.len(),
             };
 
             // Process statements

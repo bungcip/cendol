@@ -656,7 +656,7 @@ impl<'a> MirGen<'a> {
     }
 
     /// Emit a posix_memalign call and store the result in the given local.
-    pub(super) fn emit_posix_memalign_call(&mut self, dest_local: LocalId, alignment: u32, size_operand: Operand) {
+    fn emit_posix_memalign_call(&mut self, dest_local: LocalId, alignment: u32, size_operand: Operand) {
         let name = NameId::new("posix_memalign");
         let size_t_ty = self.get_size_t_type();
         let void_ty = self.mb.add_type(MirType::Void);
@@ -680,7 +680,7 @@ impl<'a> MirGen<'a> {
     }
 
     /// Emit a free call for the given pointer operand.
-    pub(super) fn emit_free_call(&mut self, ptr_operand: Operand) {
+    fn emit_free_call(&mut self, ptr_operand: Operand) {
         let name = NameId::new("free");
         let void_ty = self.mb.add_type(MirType::Void);
         let ptr_ty = self.mb.add_type(MirType::Pointer { pointee: void_ty });

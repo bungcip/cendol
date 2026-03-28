@@ -3168,16 +3168,14 @@ impl ClifGen {
     ) {
         let cv = self.mir.get_constant(id);
         match &cv.kind {
-            ConstValueKind::GlobalAddress(gid, _) => {
-                if rg.insert(*gid) {
+            ConstValueKind::GlobalAddress(gid, _)
+                if rg.insert(*gid) => {
                     wg.push(*gid);
                 }
-            }
-            ConstValueKind::FunctionAddress(fid) => {
-                if rf.insert(*fid) {
+            ConstValueKind::FunctionAddress(fid)
+                if rf.insert(*fid) => {
                     wf.push(*fid);
                 }
-            }
             ConstValueKind::StructLiteral(fields) => {
                 for (_, fid) in fields {
                     self.collect_const_reachability(*fid, wf, rf, rg, wg);

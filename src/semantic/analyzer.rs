@@ -3479,19 +3479,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.report_error(assoc_node, SemanticErrorKind::GenericVlaAssociation { ty: assoc_qt });
             }
 
-            // Warning for unreachable associations (top-level qualifiers stripped from control)
-            if !assoc_qt.qualifiers().is_empty() {
-                self.report_warning(
-                    assoc_node,
-                    SemanticErrorKind::GenericUnreachableQualified { ty: assoc_qt },
-                );
-            }
-
-            // Warning for unreachable associations (array/function types never match decayed pointer)
-            if assoc_qt.is_array() || assoc_qt.is_function() {
-                self.report_warning(assoc_node, SemanticErrorKind::GenericUnreachableDecay { ty: assoc_qt });
-            }
-
             // C11 6.5.1.1p2: The controlling expression... shall have type compatible with at most one...
             // "No two generic associations in the same generic selection shall specify compatible types."
 

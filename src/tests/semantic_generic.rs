@@ -410,33 +410,3 @@ fn test_generic_incomplete_array_as_control() {
         CompilePhase::Mir,
     );
 }
-
-#[test]
-fn test_generic_unreachable_qualified() {
-    use crate::tests::test_utils::run_pass_with_diagnostic_message;
-    run_pass_with_diagnostic_message(
-        r#"
-        int main() {
-            int i = 0;
-            return _Generic(i, const int: 1, default: 0);
-        }
-        "#,
-        CompilePhase::Mir,
-        "due to lvalue conversion of the controlling expression, association of type 'const int' will never be selected because it is qualified",
-    );
-}
-
-#[test]
-fn test_generic_unreachable_array() {
-    use crate::tests::test_utils::run_pass_with_diagnostic_message;
-    run_pass_with_diagnostic_message(
-        r#"
-        int main() {
-            int i = 0;
-            return _Generic(i, int[4]: 1, default: 0);
-        }
-        "#,
-        CompilePhase::Mir,
-        "due to lvalue conversion of the controlling expression, association of type 'int[4]' will never be selected because it is of array type",
-    );
-}

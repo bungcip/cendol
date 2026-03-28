@@ -658,12 +658,18 @@ fn parse_builtin_bitwise(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErro
     let end = parser.expect(TokenKind::RightParen)?.span.end();
 
     let node_kind = match kind {
-        TokenKind::BuiltinPopcount | TokenKind::BuiltinPopcountL | TokenKind::BuiltinPopcountLL => {
-            ParsedNodeKind::BuiltinPopcount(expr)
-        }
-        TokenKind::BuiltinClz | TokenKind::BuiltinClzL | TokenKind::BuiltinClzLL => ParsedNodeKind::BuiltinClz(expr),
-        TokenKind::BuiltinCtz | TokenKind::BuiltinCtzL | TokenKind::BuiltinCtzLL => ParsedNodeKind::BuiltinCtz(expr),
-        TokenKind::BuiltinFfs | TokenKind::BuiltinFfsL | TokenKind::BuiltinFfsLL => ParsedNodeKind::BuiltinFfs(expr),
+        TokenKind::BuiltinPopcount => ParsedNodeKind::BuiltinPopcount(expr),
+        TokenKind::BuiltinPopcountL => ParsedNodeKind::BuiltinPopcountL(expr),
+        TokenKind::BuiltinPopcountLL => ParsedNodeKind::BuiltinPopcountLL(expr),
+        TokenKind::BuiltinClz => ParsedNodeKind::BuiltinClz(expr),
+        TokenKind::BuiltinClzL => ParsedNodeKind::BuiltinClzL(expr),
+        TokenKind::BuiltinClzLL => ParsedNodeKind::BuiltinClzLL(expr),
+        TokenKind::BuiltinCtz => ParsedNodeKind::BuiltinCtz(expr),
+        TokenKind::BuiltinCtzL => ParsedNodeKind::BuiltinCtzL(expr),
+        TokenKind::BuiltinCtzLL => ParsedNodeKind::BuiltinCtzLL(expr),
+        TokenKind::BuiltinFfs => ParsedNodeKind::BuiltinFfs(expr),
+        TokenKind::BuiltinFfsL => ParsedNodeKind::BuiltinFfsL(expr),
+        TokenKind::BuiltinFfsLL => ParsedNodeKind::BuiltinFfsLL(expr),
         TokenKind::BuiltinBswap16 => ParsedNodeKind::BuiltinBswap16(expr),
         TokenKind::BuiltinBswap32 => ParsedNodeKind::BuiltinBswap32(expr),
         TokenKind::BuiltinBswap64 => ParsedNodeKind::BuiltinBswap64(expr),

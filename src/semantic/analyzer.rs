@@ -2742,9 +2742,17 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(void_ptr)
             }
             NodeKind::BuiltinPopcount(_)
+            | NodeKind::BuiltinPopcountL(_)
+            | NodeKind::BuiltinPopcountLL(_)
             | NodeKind::BuiltinClz(_)
+            | NodeKind::BuiltinClzL(_)
+            | NodeKind::BuiltinClzLL(_)
             | NodeKind::BuiltinCtz(_)
+            | NodeKind::BuiltinCtzL(_)
+            | NodeKind::BuiltinCtzLL(_)
             | NodeKind::BuiltinFfs(_)
+            | NodeKind::BuiltinFfsL(_)
+            | NodeKind::BuiltinFfsLL(_)
             | NodeKind::BuiltinBswap16(_)
             | NodeKind::BuiltinBswap32(_)
             | NodeKind::BuiltinBswap64(_)
@@ -2753,9 +2761,17 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::BuiltinFabsl(_) => {
                 let exp = match kind {
                     NodeKind::BuiltinPopcount(e)
+                    | NodeKind::BuiltinPopcountL(e)
+                    | NodeKind::BuiltinPopcountLL(e)
                     | NodeKind::BuiltinClz(e)
+                    | NodeKind::BuiltinClzL(e)
+                    | NodeKind::BuiltinClzLL(e)
                     | NodeKind::BuiltinCtz(e)
+                    | NodeKind::BuiltinCtzL(e)
+                    | NodeKind::BuiltinCtzLL(e)
                     | NodeKind::BuiltinFfs(e)
+                    | NodeKind::BuiltinFfsL(e)
+                    | NodeKind::BuiltinFfsLL(e)
                     | NodeKind::BuiltinBswap16(e)
                     | NodeKind::BuiltinBswap32(e)
                     | NodeKind::BuiltinBswap64(e)
@@ -2766,6 +2782,18 @@ impl<'a> SemanticAnalyzer<'a> {
                 };
 
                 let (target_ty, ret_ty) = match kind {
+                    NodeKind::BuiltinPopcount(..) | NodeKind::BuiltinClz(..) | NodeKind::BuiltinCtz(..) => {
+                        (Some(self.registry.type_int_unsigned), self.registry.type_int)
+                    }
+                    NodeKind::BuiltinPopcountL(..) | NodeKind::BuiltinClzL(..) | NodeKind::BuiltinCtzL(..) => {
+                        (Some(self.registry.type_long_unsigned), self.registry.type_int)
+                    }
+                    NodeKind::BuiltinPopcountLL(..) | NodeKind::BuiltinClzLL(..) | NodeKind::BuiltinCtzLL(..) => {
+                        (Some(self.registry.type_long_long_unsigned), self.registry.type_int)
+                    }
+                    NodeKind::BuiltinFfs(..) => (Some(self.registry.type_int), self.registry.type_int),
+                    NodeKind::BuiltinFfsL(..) => (Some(self.registry.type_long), self.registry.type_int),
+                    NodeKind::BuiltinFfsLL(..) => (Some(self.registry.type_long_long), self.registry.type_int),
                     NodeKind::BuiltinBswap16(_) => {
                         let ty = self.registry.type_short_unsigned;
                         (Some(ty), ty)

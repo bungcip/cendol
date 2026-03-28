@@ -1504,14 +1504,38 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::BuiltinPopcount(e) => {
                 lower_simple!(NodeKind::BuiltinPopcount(self.visit_expression(*e)))
             }
+            ParsedNodeKind::BuiltinPopcountL(e) => {
+                lower_simple!(NodeKind::BuiltinPopcountL(self.visit_expression(*e)))
+            }
+            ParsedNodeKind::BuiltinPopcountLL(e) => {
+                lower_simple!(NodeKind::BuiltinPopcountLL(self.visit_expression(*e)))
+            }
             ParsedNodeKind::BuiltinClz(e) => {
                 lower_simple!(NodeKind::BuiltinClz(self.visit_expression(*e)))
+            }
+            ParsedNodeKind::BuiltinClzL(e) => {
+                lower_simple!(NodeKind::BuiltinClzL(self.visit_expression(*e)))
+            }
+            ParsedNodeKind::BuiltinClzLL(e) => {
+                lower_simple!(NodeKind::BuiltinClzLL(self.visit_expression(*e)))
             }
             ParsedNodeKind::BuiltinCtz(e) => {
                 lower_simple!(NodeKind::BuiltinCtz(self.visit_expression(*e)))
             }
+            ParsedNodeKind::BuiltinCtzL(e) => {
+                lower_simple!(NodeKind::BuiltinCtzL(self.visit_expression(*e)))
+            }
+            ParsedNodeKind::BuiltinCtzLL(e) => {
+                lower_simple!(NodeKind::BuiltinCtzLL(self.visit_expression(*e)))
+            }
             ParsedNodeKind::BuiltinFfs(e) => {
                 lower_simple!(NodeKind::BuiltinFfs(self.visit_expression(*e)))
+            }
+            ParsedNodeKind::BuiltinFfsL(e) => {
+                lower_simple!(NodeKind::BuiltinFfsL(self.visit_expression(*e)))
+            }
+            ParsedNodeKind::BuiltinFfsLL(e) => {
+                lower_simple!(NodeKind::BuiltinFfsLL(self.visit_expression(*e)))
             }
             ParsedNodeKind::BuiltinBswap16(e) => {
                 lower_simple!(NodeKind::BuiltinBswap16(self.visit_expression(*e)))

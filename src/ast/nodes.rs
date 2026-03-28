@@ -57,9 +57,17 @@ pub enum NodeKind {
     BuiltinMemmove(NodeRef, NodeRef, NodeRef),
     BuiltinTypesCompatibleP(QualType, QualType),
     BuiltinPopcount(NodeRef),
+    BuiltinPopcountL(NodeRef),
+    BuiltinPopcountLL(NodeRef),
     BuiltinClz(NodeRef),
+    BuiltinClzL(NodeRef),
+    BuiltinClzLL(NodeRef),
     BuiltinCtz(NodeRef),
+    BuiltinCtzL(NodeRef),
+    BuiltinCtzLL(NodeRef),
     BuiltinFfs(NodeRef),
+    BuiltinFfsL(NodeRef),
+    BuiltinFfsLL(NodeRef),
     BuiltinBswap16(NodeRef),
     BuiltinBswap32(NodeRef),
     BuiltinBswap64(NodeRef),
@@ -164,9 +172,17 @@ impl NodeKind {
             NodeKind::BuiltinMemmove(..) => "BuiltinMemmove",
             NodeKind::BuiltinTypesCompatibleP(..) => "BuiltinTypesCompatibleP",
             NodeKind::BuiltinPopcount(..) => "BuiltinPopcount",
+            NodeKind::BuiltinPopcountL(..) => "BuiltinPopcountL",
+            NodeKind::BuiltinPopcountLL(..) => "BuiltinPopcountLL",
             NodeKind::BuiltinClz(..) => "BuiltinClz",
+            NodeKind::BuiltinClzL(..) => "BuiltinClzL",
+            NodeKind::BuiltinClzLL(..) => "BuiltinClzLL",
             NodeKind::BuiltinCtz(..) => "BuiltinCtz",
+            NodeKind::BuiltinCtzL(..) => "BuiltinCtzL",
+            NodeKind::BuiltinCtzLL(..) => "BuiltinCtzLL",
             NodeKind::BuiltinFfs(..) => "BuiltinFfs",
+            NodeKind::BuiltinFfsL(..) => "BuiltinFfsL",
+            NodeKind::BuiltinFfsLL(..) => "BuiltinFfsLL",
             NodeKind::BuiltinBswap16(..) => "BuiltinBswap16",
             NodeKind::BuiltinBswap32(..) => "BuiltinBswap32",
             NodeKind::BuiltinBswap64(..) => "BuiltinBswap64",
@@ -249,9 +265,17 @@ impl NodeKind {
             | NodeKind::BuiltinOffsetof(_, child)
             | NodeKind::BuiltinVaEnd(child)
             | NodeKind::BuiltinPopcount(child)
+            | NodeKind::BuiltinPopcountL(child)
+            | NodeKind::BuiltinPopcountLL(child)
             | NodeKind::BuiltinClz(child)
+            | NodeKind::BuiltinClzL(child)
+            | NodeKind::BuiltinClzLL(child)
             | NodeKind::BuiltinCtz(child)
+            | NodeKind::BuiltinCtzL(child)
+            | NodeKind::BuiltinCtzLL(child)
             | NodeKind::BuiltinFfs(child)
+            | NodeKind::BuiltinFfsL(child)
+            | NodeKind::BuiltinFfsLL(child)
             | NodeKind::BuiltinBswap16(child)
             | NodeKind::BuiltinBswap32(child)
             | NodeKind::BuiltinBswap64(child)

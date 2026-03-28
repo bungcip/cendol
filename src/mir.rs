@@ -24,23 +24,17 @@ macro_rules! mir_id {
 
         impl $name {
             #[inline]
-            pub fn new(val: u32) -> Option<Self> {
+            pub(crate) fn new(val: u32) -> Option<Self> {
                 NonZeroU32::new(val).map(Self)
             }
 
             #[inline]
-            pub const unsafe fn from_u32_unchecked(val: u32) -> Self {
-                // SAFETY: The caller must ensure val is non-zero
-                Self(unsafe { NonZeroU32::new_unchecked(val) })
-            }
-
-            #[inline]
-            pub fn get(self) -> u32 {
+            pub(crate) fn get(self) -> u32 {
                 self.0.get()
             }
 
             #[inline]
-            pub fn index(self) -> usize {
+            pub(crate) fn index(self) -> usize {
                 (self.0.get() - 1) as usize
             }
         }
@@ -207,7 +201,7 @@ pub struct BitFieldInfo {
 }
 
 impl BitFieldInfo {
-    pub fn truncate(&self, val: i64) -> i64 {
+    pub(crate) fn truncate(&self, val: i64) -> i64 {
         let mask = if self.width == 64 {
             !0u64
         } else {

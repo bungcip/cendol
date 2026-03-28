@@ -521,7 +521,7 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<ParsedDeclSpec>
 }
 
 /// Parse GCC __asm__ syntax: __asm__ ( string-literal )
-pub(super) fn parse_asm(parser: &mut Parser) -> Result<(), ParseError> {
+fn parse_asm(parser: &mut Parser) -> Result<(), ParseError> {
     parser.expect(TokenKind::Asm)?;
     parser.expect(TokenKind::LeftParen)?;
 

@@ -368,3 +368,16 @@ fn test_builtin_fabs_eval_test() {
     ---
     ");
 }
+
+#[test]
+fn test_unary_float_eval() {
+    let output = format_const_eval_batch(&["+1.5", "-1.5"]);
+    insta::assert_snapshot!(output, @"
+    Expression: +1.5
+    Result: 1
+    ---
+    Expression: -1.5
+    Result: -1
+    ---
+    ");
+}

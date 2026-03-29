@@ -364,6 +364,7 @@ pub enum SemanticErrorKind {
         specifier: &'static str,
     },
     VlaAtFileScope,
+    VlaStarOutsidePrototype,
     VlaInitializerNotAllowed,
     OffsetofBitfield,
     OffsetofIncompleteType {
@@ -773,6 +774,9 @@ impl SemanticErrorKind {
             }
             SemanticErrorKind::VlaAtFileScope => {
                 "variable length array declaration not allowed at file scope".to_string()
+            }
+            SemanticErrorKind::VlaStarOutsidePrototype => {
+                "[*] array size only allowed in function prototype scope".to_string()
             }
             SemanticErrorKind::VlaInitializerNotAllowed => "variable-length array may not be initialized".to_string(),
             SemanticErrorKind::OffsetofBitfield => "cannot apply 'offsetof' to a bit-field".to_string(),

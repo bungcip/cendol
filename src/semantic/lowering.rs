@@ -42,6 +42,7 @@ pub(crate) struct LowerCtx<'a, 'src> {
     pub(crate) next_compound_uses_scope: Option<ScopeId>,
     pub(crate) pragma_pack_stack: Vec<Option<u8>>,
     pub(crate) current_packing: Option<u8>,
+    pub(crate) in_prototype: bool,
     pub(crate) lang_opts: &'a crate::lang_options::LangOptions,
 }
 
@@ -70,6 +71,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             next_compound_uses_scope: None,
             pragma_pack_stack: Vec::new(),
             current_packing: None,
+            in_prototype: false,
         }
     }
 
@@ -253,9 +255,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let (has_static, quals) = match size {
             ParsedArraySize::Expression { qualifiers, .. } => (false, qualifiers),
-            ParsedArraySize::Star { qualifiers } => (false, qualifiers),
+            ParsedArraySize::Star { qualifiers } => {
+                if !self.in_prototype {
+                    self.report_error(span, SemanticErrorKind::VlaStarOutsidePrototype);
+                }
+                (false, qualifiers)
+            }
             ParsedArraySize::VlaSpec {
-                is_static, qualifiers, ..
+                is_static,
+                qualifiers,
+                ..
             } => (*is_static, qualifiers),
             ParsedArraySize::Incomplete => (false, &TypeQualifiers::empty()),
         };
@@ -3017,6 +3026,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // C11 6.2.1p4: Function prototype scope for declarations, block scope for definitions.
         // If it's not a definition, we push a temporary scope for these parameters.
         // If it is a definition, we assume the caller (visit_function_definition) has already pushed the scope.
+        let old_in_prototype = self.in_prototype;
+        self.in_prototype = !is_definition;
+
         if !is_definition {
             self.symbol_table.push_scope();
         }
@@ -3107,6 +3119,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if !is_definition {
             self.symbol_table.pop_scope();
         }
+
+        self.in_prototype = old_in_prototype;
 
         processed_params
     }

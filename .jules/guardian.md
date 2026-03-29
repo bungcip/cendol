@@ -175,6 +175,11 @@ Action: Always include tests for constraint enforcement that use 'typedef' to en
 Learning: While C11 only defines '_Alignof' for type names (6.5.3.4p2), common extensions (GCC/Clang) allow it for expressions. Because bit-fields do not have a byte-aligned address and their layout is implementation-defined, applying '_Alignof' to a bit-field must be rejected, mirroring the constraint for 'sizeof'. Centralizing these checks in 'visit_sizeof_alignof' ensures consistent enforcement across both operators.
 Action: When supporting language extensions that mirror standard operators (like '_Alignof' mirroring 'sizeof'), always ensure that base-language constraints (like bit-field prohibitions) are also mirrored and correctly diagnosed.
 
+2026-03-24 - [VLA Star Scope Constraints]
+
+Learning: C11 6.7.6.2p4 restricts the use of `[*]` array size to function prototype scope only. This means it is invalid in file scope, block scope (outside of parameter lists), and even in function definitions (where parameters have block scope). Cendol previously lacked this constraint, potentially allowing invalid VLAs to reach the backend.
+Action: Implemented scope-aware tracking in `LowerCtx` to distinguish between prototype scope and definition/block scope, and added a specific diagnostic for illegal `[*]` usage.
+
 2026-03-23 - [VLA Size Expression Validation]
 
 Learning: C11 6.7.6.2p1 requires that variable array size expressions have an integer type. In Cendol, these expressions are resolved during semantic analysis via `visit_type_exprs`. Simply visiting the expression node is insufficient; the compiler must also verify the resulting type of the size expression. This is critical because VLA sizes can appear within complex types (e.g. `int (*p)[n]`) that might be processed without a direct variable declaration context.

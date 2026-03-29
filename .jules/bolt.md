@@ -93,3 +93,11 @@
 ## 2024-05-28 - Leveraging Semantic Side-tables and Deferred Allocations
 **Learning:** In recursive AST property checks (like `is_lvalue`), the semantic side-table can act as a natural cache because sub-expressions are visited and resolved before their parents. Additionally, expensive operations like `Vec` clones (e.g., during VLA jump-into-scope validation) should be hoisted and guarded by fast-path checks (`len > threshold`) to defer allocation until a violation is definitively identified.
 **Action:** Always check if a recursive property check can be replaced by a side-table lookup from a previously visited node. Hoist collection clones out of helper functions and guard them with simple logic to avoid unnecessary allocations in common paths.
+
+## 2025-05-29 - Reducing SourceManager Churn for Synthetic Tokens
+**Learning:** Creating virtual buffers for every synthetic token (like commas in variadic macro expansions) is a significant performance bottleneck due to  mutation, mutex locking, and  churn. Large projects with heavy variadic macro usage can exhaust the 24-bit  space and cause excessive heap fragmentation.
+**Action:** Reuse  for synthetic punctuation and operators that don't originate from a specific source location. This allows the preprocessor to generate tokens without polluting the  with thousands of redundant 1-byte virtual files. Ensure  handles these tokens by falling back to the token's internal text representation.
+
+## 2025-05-29 - Reducing SourceManager Churn for Synthetic Tokens
+**Learning:** Creating virtual buffers for every synthetic token (like commas in variadic macro expansions) is a significant performance bottleneck due to `SourceManager` mutation, mutex locking, and `SourceId` churn. Large projects with heavy variadic macro usage can exhaust the 24-bit `SourceId` space and cause excessive heap fragmentation.
+**Action:** Reuse `SourceLoc::builtin()` for synthetic punctuation and operators that don't originate from a specific source location. This allows the preprocessor to generate tokens without polluting the `SourceManager` with thousands of redundant 1-byte virtual files. Ensure `SourceBufferCache` handles these tokens by falling back to the token's internal text representation.

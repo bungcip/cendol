@@ -363,6 +363,37 @@ impl<'a> ConstEvalCtx<'a> {
             NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
                 self.eval_float(*exp).map(|v| v.abs())
             }
+            NodeKind::GenericSelection(_) => {
+                let info = self.semantic_info.or(self.ast.semantic_info.as_ref());
+                if let Some(info) = info
+                    && let Some(selected_expr) = info.generic_selections.get(&expr.index())
+                {
+                    return self.eval_float(*selected_expr);
+                }
+                None
+            }
+            NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
+                let info = self.semantic_info.or(self.ast.semantic_info.as_ref());
+                if let Some(info) = info
+                    && let Some(selected_expr) = info.choose_expressions.get(&expr.index())
+                {
+                    return self.eval_float(*selected_expr);
+                }
+                let cond_val = self.eval_int(*cond)?;
+                if cond_val != 0 {
+                    self.eval_float(*true_expr)
+                } else {
+                    self.eval_float(*false_expr)
+                }
+            }
+            NodeKind::TernaryOp(cond, then_expr, else_expr) => {
+                let cond_val = self.eval_int(*cond)?;
+                if cond_val != 0 {
+                    self.eval_float(*then_expr)
+                } else {
+                    self.eval_float(*else_expr)
+                }
+            }
             _ => self.eval_int(expr).map(|v| v as f64),
         }
     }

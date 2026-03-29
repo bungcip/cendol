@@ -161,6 +161,7 @@ pub mod semantic_sizeof_vla;
 pub mod semantic_static_assert;
 
 pub mod guardian_choose_expr_lazy;
+pub mod guardian_const_eval_fp;
 pub mod regr_bitfield_assign_eval;
 pub mod regr_float_cast;
 pub mod regr_fp_const_eval;

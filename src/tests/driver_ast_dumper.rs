@@ -5,9 +5,7 @@ use crate::tests::test_utils;
 
 fn get_artifact(source: &str, phase: CompilePhase) -> crate::driver::artifact::CompileArtifact {
     let (driver, result) = test_utils::run_pipeline(source, phase);
-    let out = result.unwrap_or_else(|e| {
-        panic!("Pipeline failed: {}\nDiagnostics: {:?}", e, driver.get_diagnostics())
-    });
+    let out = result.unwrap_or_else(|e| panic!("Pipeline failed: {}\nDiagnostics: {:?}", e, driver.get_diagnostics()));
     out.units.into_iter().next().unwrap().1
 }
 
@@ -23,11 +21,7 @@ fn dump_parser_ast(source: &str) -> String {
 
 fn dump_type_registry(source: &str) -> String {
     let artifact = get_artifact(source, CompilePhase::SemanticLowering);
-    AstDumper::dump_type_registry(
-        artifact.ast.as_ref().unwrap(),
-        artifact.type_registry.as_ref().unwrap(),
-    )
-    .to_string()
+    AstDumper::dump_type_registry(artifact.ast.as_ref().unwrap(), artifact.type_registry.as_ref().unwrap()).to_string()
 }
 
 #[test]

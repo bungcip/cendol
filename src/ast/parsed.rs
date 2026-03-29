@@ -100,9 +100,17 @@ pub enum ParsedNodeKind {
     BuiltinMemmove(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinTypesCompatibleP(ParsedType, ParsedType),
     BuiltinPopcount(ParsedNodeRef),
+    BuiltinPopcountL(ParsedNodeRef),
+    BuiltinPopcountLL(ParsedNodeRef),
     BuiltinClz(ParsedNodeRef),
+    BuiltinClzL(ParsedNodeRef),
+    BuiltinClzLL(ParsedNodeRef),
     BuiltinCtz(ParsedNodeRef),
+    BuiltinCtzL(ParsedNodeRef),
+    BuiltinCtzLL(ParsedNodeRef),
     BuiltinFfs(ParsedNodeRef),
+    BuiltinFfsL(ParsedNodeRef),
+    BuiltinFfsLL(ParsedNodeRef),
     BuiltinBswap16(ParsedNodeRef),
     BuiltinBswap32(ParsedNodeRef),
     BuiltinBswap64(ParsedNodeRef),
@@ -426,9 +434,17 @@ impl ParsedNodeKind {
             ParsedNodeKind::BuiltinMemmove(..) => "BuiltinMemmove",
             ParsedNodeKind::BuiltinTypesCompatibleP(..) => "BuiltinTypesCompatibleP",
             ParsedNodeKind::BuiltinPopcount(..) => "BuiltinPopcount",
+            ParsedNodeKind::BuiltinPopcountL(..) => "BuiltinPopcountL",
+            ParsedNodeKind::BuiltinPopcountLL(..) => "BuiltinPopcountLL",
             ParsedNodeKind::BuiltinClz(..) => "BuiltinClz",
+            ParsedNodeKind::BuiltinClzL(..) => "BuiltinClzL",
+            ParsedNodeKind::BuiltinClzLL(..) => "BuiltinClzLL",
             ParsedNodeKind::BuiltinCtz(..) => "BuiltinCtz",
+            ParsedNodeKind::BuiltinCtzL(..) => "BuiltinCtzL",
+            ParsedNodeKind::BuiltinCtzLL(..) => "BuiltinCtzLL",
             ParsedNodeKind::BuiltinFfs(..) => "BuiltinFfs",
+            ParsedNodeKind::BuiltinFfsL(..) => "BuiltinFfsL",
+            ParsedNodeKind::BuiltinFfsLL(..) => "BuiltinFfsLL",
             ParsedNodeKind::BuiltinBswap16(..) => "BuiltinBswap16",
             ParsedNodeKind::BuiltinBswap32(..) => "BuiltinBswap32",
             ParsedNodeKind::BuiltinBswap64(..) => "BuiltinBswap64",
@@ -500,10 +516,18 @@ impl ParsedNodeKind {
             | ParsedNodeKind::BuiltinOffsetof(_, e)
             | ParsedNodeKind::BuiltinVaEnd(e)
             | ParsedNodeKind::BuiltinPopcount(e)
+            | ParsedNodeKind::BuiltinPopcountL(e)
+            | ParsedNodeKind::BuiltinPopcountLL(e)
             | ParsedNodeKind::BuiltinClz(e)
+            | ParsedNodeKind::BuiltinClzL(e)
+            | ParsedNodeKind::BuiltinClzLL(e)
             | ParsedNodeKind::BuiltinConstantP(e)
             | ParsedNodeKind::BuiltinCtz(e)
+            | ParsedNodeKind::BuiltinCtzL(e)
+            | ParsedNodeKind::BuiltinCtzLL(e)
             | ParsedNodeKind::BuiltinFfs(e)
+            | ParsedNodeKind::BuiltinFfsL(e)
+            | ParsedNodeKind::BuiltinFfsLL(e)
             | ParsedNodeKind::BuiltinBswap16(e)
             | ParsedNodeKind::BuiltinBswap32(e)
             | ParsedNodeKind::BuiltinBswap64(e)

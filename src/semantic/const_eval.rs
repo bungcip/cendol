@@ -277,14 +277,33 @@ impl<'a> ConstEvalCtx<'a> {
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
                 Some(self.registry.is_compatible(t1.strip_all(), t2.strip_all()) as i64)
             }
-            NodeKind::BuiltinPopcount(exp) => self.eval_int(*exp).map(|v| v.count_ones() as i64),
-            NodeKind::BuiltinClz(exp) => self
-                .eval_int(*exp)
-                .and_then(|v| (v != 0).then(|| v.leading_zeros() as i64)),
-            NodeKind::BuiltinCtz(exp) => self
-                .eval_int(*exp)
-                .and_then(|v| (v != 0).then(|| v.trailing_zeros() as i64)),
-            NodeKind::BuiltinFfs(exp) => self
+            NodeKind::BuiltinPopcount(exp) | NodeKind::BuiltinPopcountL(exp) | NodeKind::BuiltinPopcountLL(exp) => {
+                self.eval_int(*exp).map(|v| v.count_ones() as i64)
+            }
+            NodeKind::BuiltinClz(exp) | NodeKind::BuiltinClzL(exp) | NodeKind::BuiltinClzLL(exp) => {
+                let val = self.eval_int(*exp)?;
+                if val == 0 {
+                    return None;
+                }
+                let target_ty = match node_kind {
+                    NodeKind::BuiltinClz(_) => self.registry.type_int,
+                    NodeKind::BuiltinClzL(_) => self.registry.type_long,
+                    NodeKind::BuiltinClzLL(_) => self.registry.type_long_long,
+                    _ => unreachable!(),
+                };
+                let width = self.registry.get(target_ty).layout.as_ref()?.size * 8;
+                let mask = if width == 64 { !0u64 } else { (1u64 << width) - 1 };
+                let val_truncated = (val as u64) & mask;
+                Some(val_truncated.leading_zeros() as i64 - (64 - width as i64))
+            }
+            NodeKind::BuiltinCtz(exp) | NodeKind::BuiltinCtzL(exp) | NodeKind::BuiltinCtzLL(exp) => {
+                let val = self.eval_int(*exp)?;
+                if val == 0 {
+                    return None;
+                }
+                Some(val.trailing_zeros() as i64)
+            }
+            NodeKind::BuiltinFfs(exp) | NodeKind::BuiltinFfsL(exp) | NodeKind::BuiltinFfsLL(exp) => self
                 .eval_int(*exp)
                 .map(|v| if v == 0 { 0 } else { (v.trailing_zeros() + 1) as i64 }),
             NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {

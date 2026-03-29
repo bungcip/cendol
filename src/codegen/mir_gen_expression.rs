@@ -208,9 +208,17 @@ impl<'a> MirGen<'a> {
                 )
             }
             NodeKind::BuiltinPopcount(exp)
+            | NodeKind::BuiltinPopcountL(exp)
+            | NodeKind::BuiltinPopcountLL(exp)
             | NodeKind::BuiltinClz(exp)
+            | NodeKind::BuiltinClzL(exp)
+            | NodeKind::BuiltinClzLL(exp)
             | NodeKind::BuiltinCtz(exp)
+            | NodeKind::BuiltinCtzL(exp)
+            | NodeKind::BuiltinCtzLL(exp)
             | NodeKind::BuiltinFfs(exp)
+            | NodeKind::BuiltinFfsL(exp)
+            | NodeKind::BuiltinFfsLL(exp)
             | NodeKind::BuiltinBswap16(exp)
             | NodeKind::BuiltinBswap32(exp)
             | NodeKind::BuiltinBswap64(exp)
@@ -1820,10 +1828,18 @@ impl<'a> MirGen<'a> {
         let operand_converted = self.apply_conversions(operand, exp, operand_mir_ty);
 
         let rval = match kind {
-            NodeKind::BuiltinPopcount(_) => Rvalue::UnaryIntOp(UnaryIntOp::Popcount, operand_converted),
-            NodeKind::BuiltinClz(_) => Rvalue::UnaryIntOp(UnaryIntOp::Clz, operand_converted),
-            NodeKind::BuiltinCtz(_) => Rvalue::UnaryIntOp(UnaryIntOp::Ctz, operand_converted),
-            NodeKind::BuiltinFfs(_) => Rvalue::UnaryIntOp(UnaryIntOp::Ffs, operand_converted),
+            NodeKind::BuiltinPopcount(_) | NodeKind::BuiltinPopcountL(_) | NodeKind::BuiltinPopcountLL(_) => {
+                Rvalue::UnaryIntOp(UnaryIntOp::Popcount, operand_converted)
+            }
+            NodeKind::BuiltinClz(_) | NodeKind::BuiltinClzL(_) | NodeKind::BuiltinClzLL(_) => {
+                Rvalue::UnaryIntOp(UnaryIntOp::Clz, operand_converted)
+            }
+            NodeKind::BuiltinCtz(_) | NodeKind::BuiltinCtzL(_) | NodeKind::BuiltinCtzLL(_) => {
+                Rvalue::UnaryIntOp(UnaryIntOp::Ctz, operand_converted)
+            }
+            NodeKind::BuiltinFfs(_) | NodeKind::BuiltinFfsL(_) | NodeKind::BuiltinFfsLL(_) => {
+                Rvalue::UnaryIntOp(UnaryIntOp::Ffs, operand_converted)
+            }
             NodeKind::BuiltinBswap16(_) => Rvalue::UnaryIntOp(UnaryIntOp::Bswap16, operand_converted),
             NodeKind::BuiltinBswap32(_) => Rvalue::UnaryIntOp(UnaryIntOp::Bswap32, operand_converted),
             NodeKind::BuiltinBswap64(_) => Rvalue::UnaryIntOp(UnaryIntOp::Bswap64, operand_converted),

@@ -81,6 +81,7 @@ pub mod parser_regr_hang;
 pub mod parser_type_spec_coverage;
 pub mod parser_typeof;
 
+pub mod bitwise_builtins;
 pub mod guardian_increment_completeness;
 pub mod guardian_member_completeness;
 pub mod guardian_pointer_arithmetic_completeness;

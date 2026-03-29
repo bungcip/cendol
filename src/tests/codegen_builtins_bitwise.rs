@@ -50,3 +50,19 @@ fn test_popcountll_regression() {
     "#;
     assert_eq!(run_c_code_exit_status(source), 0);
 }
+
+#[test]
+fn test_bitwise_runtime() {
+    let source = r#"
+        int main() {
+            if (__builtin_clz(1) != 31) return 1;
+            if (__builtin_clzll(1) != 63) return 2;
+            if (__builtin_ctz(8) != 3) return 3;
+            if (__builtin_ctzll(1LL << 40) != 40) return 4;
+            if (__builtin_popcount(0xFF) != 8) return 5;
+            if (__builtin_popcountll(0xFF00000000ULL) != 8) return 6;
+            return 0;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
+}

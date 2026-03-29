@@ -227,8 +227,6 @@ pub enum FileKind {
     MacroExpansion,
     /// A virtual buffer for pasted tokens (## operator)
     PastedToken,
-    /// Other virtual buffers (e.g. built-in headers, command line defines)
-    Virtual,
 }
 
 /// Stores all #line directives for a single file, sorted by physical line

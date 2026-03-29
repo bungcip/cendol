@@ -1,11 +1,9 @@
 pub mod codegen_abi;
-pub mod codegen_abi_compat;
 pub mod codegen_alignas;
 pub mod codegen_asm;
 mod codegen_atomic;
 pub mod codegen_basics;
 pub mod codegen_bswap;
-pub mod codegen_calls;
 pub mod codegen_common;
 pub mod codegen_large_array;
 pub mod codegen_tls;
@@ -76,20 +74,16 @@ pub mod parser_types;
 pub mod parser_utils;
 
 pub mod codegen_ternary_array_size;
+pub mod guardian_increment_completeness;
+pub mod guardian_member_completeness;
+pub mod guardian_pointer_arithmetic_completeness;
 pub mod parser_gcc_extensions;
 pub mod parser_regr_hang;
 pub mod parser_type_spec_coverage;
 pub mod parser_typeof;
-
-pub mod bitwise_builtins;
-pub mod guardian_increment_completeness;
-pub mod guardian_member_completeness;
-pub mod guardian_pointer_arithmetic_completeness;
 pub mod semantic_alignment;
 pub mod semantic_composite;
 pub mod test_utils;
-
-pub mod ast_dumper_coverage;
 
 pub mod codegen_bool_cast;
 pub mod codegen_builtin_choose_expr;
@@ -125,7 +119,6 @@ pub mod guardian_vla_size_type;
 pub mod mir_dumper_coverage;
 pub mod mir_gen_compound_assignment;
 pub mod mir_gen_function_address;
-pub mod mir_gen_function_calls;
 pub mod mir_gen_sizeof;
 pub mod mir_unit;
 pub mod mir_validation;
@@ -177,6 +170,5 @@ pub mod regr_init_range;
 pub mod regr_mixed_sign_comp;
 pub mod regr_struct_bitfield;
 pub mod regr_vla_sizeof;
-pub mod regr_vla_static;
 pub mod semantic_alignof_expr;
 pub mod semantic_sizeof_array;

@@ -584,3 +584,15 @@ fn test_incompatible_struct_pointer_argument() {
 
     run_pass(source, CompilePhase::Mir);
 }
+
+#[test]
+fn test_call_int_cast_to_fn_ptr() {
+    let source = r#"
+        void test() {
+            ((void (*)(void))0)();
+        }
+    "#;
+
+    // This should not panic
+    run_pass(source, CompilePhase::Mir);
+}

@@ -609,7 +609,7 @@ impl<'a> MirGen<'a> {
                 self.mb
                     .create_global_with_init(name, mir_ty, true, false, MirLinkage::Internal, Some(init_const));
 
-            Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global_id, 0)))
+            Operand::Copy(Box::new(Place::Global(global_id)))
         } else {
             let (_, place) = self.create_temp_local(mir_ty);
             self.visit_init(init, ty, Some(place.clone()));

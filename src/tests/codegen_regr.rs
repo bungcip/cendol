@@ -244,3 +244,34 @@ fn test_vla_static_pointer() {
     "#;
     assert_eq!(run_c_code_exit_status(source), 0);
 }
+
+#[test]
+fn test_global_struct_init_compound_literal() {
+    let source = r#"
+        struct S { int x, y; };
+        struct S gs = (struct S){1, 2};
+        int main() {
+            if (gs.x != 1 || gs.y != 2) return 1;
+            return 0;
+        }
+    "#;
+    let status = run_c_code_exit_status(source);
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn test_global_wrap_function_ptr() {
+    let source = r#"
+        struct Wrap { void (*func)(void); };
+        int global = 0;
+        void inc() { global++; }
+        struct Wrap wrap = (struct Wrap){inc};
+        int main() {
+            wrap.func();
+            if (global != 1) return 1;
+            return 0;
+        }
+    "#;
+    let status = run_c_code_exit_status(source);
+    assert_eq!(status, 0);
+}

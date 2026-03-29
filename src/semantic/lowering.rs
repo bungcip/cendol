@@ -262,9 +262,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 (false, qualifiers)
             }
             ParsedArraySize::VlaSpec {
-                is_static,
-                qualifiers,
-                ..
+                is_static, qualifiers, ..
             } => (*is_static, qualifiers),
             ParsedArraySize::Incomplete => (false, &TypeQualifiers::empty()),
         };

@@ -7,10 +7,7 @@ fn test_vla_star_outside_prototype_scope() {
     // which can only be used in declarations with function prototype scope.
 
     // 1. File scope
-    run_fail_with_message(
-        "int a[*];",
-        "[*] array size only allowed in function prototype scope",
-    );
+    run_fail_with_message("int a[*];", "[*] array size only allowed in function prototype scope");
 
     // 2. Block scope (not a parameter)
     run_fail_with_message(

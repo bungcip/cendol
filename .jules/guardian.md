@@ -174,3 +174,8 @@ Action: Always include tests for constraint enforcement that use 'typedef' to en
 
 Learning: While C11 only defines '_Alignof' for type names (6.5.3.4p2), common extensions (GCC/Clang) allow it for expressions. Because bit-fields do not have a byte-aligned address and their layout is implementation-defined, applying '_Alignof' to a bit-field must be rejected, mirroring the constraint for 'sizeof'. Centralizing these checks in 'visit_sizeof_alignof' ensures consistent enforcement across both operators.
 Action: When supporting language extensions that mirror standard operators (like '_Alignof' mirroring 'sizeof'), always ensure that base-language constraints (like bit-field prohibitions) are also mirrored and correctly diagnosed.
+
+2026-03-23 - [VLA Size Expression Validation]
+
+Learning: C11 6.7.6.2p1 requires that variable array size expressions have an integer type. In Cendol, these expressions are resolved during semantic analysis via `visit_type_exprs`. Simply visiting the expression node is insufficient; the compiler must also verify the resulting type of the size expression. This is critical because VLA sizes can appear within complex types (e.g. `int (*p)[n]`) that might be processed without a direct variable declaration context.
+Action: Always enforce type constraints on expressions embedded within types (like VLA sizes or `typeof`) during the recursive type traversal phase of semantic analysis.

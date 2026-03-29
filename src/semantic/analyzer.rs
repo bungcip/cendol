@@ -276,12 +276,11 @@ impl<'a> SemanticAnalyzer<'a> {
 
         match task {
             Task::Array(element_type, vla_expr) => {
-                if let Some(expr) = vla_expr {
-                    if let Some(qt) = self.visit_node(expr)
-                        && !qt.is_integer()
-                    {
-                        self.report_error(expr, SemanticErrorKind::ArraySizeNotInteger);
-                    }
+                if let Some(expr) = vla_expr
+                    && let Some(qt) = self.visit_node(expr)
+                    && !qt.is_integer()
+                {
+                    self.report_error(expr, SemanticErrorKind::ArraySizeNotInteger);
                 }
                 self.visit_type_exprs(QualType::unqualified(element_type));
             }
@@ -793,12 +792,13 @@ impl<'a> SemanticAnalyzer<'a> {
             return;
         };
 
+        if cond_qt.is_array()
+            && let NodeKind::Ident(name, _) = self.ast.get_kind(condition)
+        {
+            self.report_warning(condition, SemanticErrorKind::AddressOfArrayAlwaysTrue { name: *name });
+        }
+
         if cond_qt.is_array() || cond_qt.is_function() {
-            if cond_qt.is_array()
-                && let NodeKind::Ident(name, _) = self.ast.get_kind(condition)
-            {
-                self.report_warning(condition, SemanticErrorKind::AddressOfArrayAlwaysTrue { name: *name });
-            }
             cond_qt = self.decay(condition, cond_qt);
             self.semantic_info.types[condition.index()] = Some(cond_qt);
         }

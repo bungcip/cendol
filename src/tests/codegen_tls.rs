@@ -1,49 +1,35 @@
-use crate::tests::semantic_common::setup_mir;
+use crate::tests::codegen_common::{run_c_code_exit_status, setup_cranelift};
 
 #[test]
-fn test_thread_local_storage_mir() {
+fn test_thread_local_codegen() {
     let source = r#"
         _Thread_local int tls_var = 42;
         int main() {
             return tls_var;
         }
     "#;
-    let mir_dump = setup_mir(source);
+    let clif_ir = setup_cranelift(source);
+    insta::assert_snapshot!(clif_ir, @"
+    ; Function: main
+    function u0:0() -> i32 system_v {
+        gv0 = symbol colocated tls userextname0
 
-    // Check if tls_var is declared as a TLS global in MIR
-    insta::assert_snapshot!(mir_dump, @"
-    type %t0 = i32
-
-    global @tls_var: i32 (tls) = const 42
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return @tls_var
+    block0:
+        v0 = tls_value.i64 gv0
+        v1 = load.i32 v0
+        return v1
     }
     ");
 }
 
 #[test]
-fn test_thread_local_extern_mir() {
+fn test_thread_local_runtime() {
     let source = r#"
-        extern _Thread_local int tls_extern;
+        _Thread_local int tls_var = 42;
         int main() {
-            return tls_extern;
+            tls_var += 10;
+            return tls_var;
         }
     "#;
-    let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
-    type %t0 = i32
-
-    global @tls_extern: i32 (tls)
-
-    fn main() -> i32
-    {
-
-      bb1:
-        return @tls_extern
-    }
-    ");
+    assert_eq!(run_c_code_exit_status(source), 52);
 }

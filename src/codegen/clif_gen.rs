@@ -2550,6 +2550,15 @@ impl ClifGen {
         let triple = Triple::host();
         let mut flag_builder = cranelift::prelude::settings::builder();
         flag_builder.set("is_pic", "true").unwrap();
+
+        let tls_model = match triple.binary_format {
+            target_lexicon::BinaryFormat::Elf => "elf_gd",
+            target_lexicon::BinaryFormat::Macho => "macho",
+            target_lexicon::BinaryFormat::Coff => "coff",
+            _ => "none",
+        };
+        flag_builder.set("tls_model", tls_model).unwrap();
+
         let builder = ObjectBuilder::new(
             cranelift::prelude::isa::lookup(triple.clone())
                 .unwrap()

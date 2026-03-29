@@ -101,3 +101,7 @@
 ## 2025-05-29 - Reducing SourceManager Churn for Synthetic Tokens
 **Learning:** Creating virtual buffers for every synthetic token (like commas in variadic macro expansions) is a significant performance bottleneck due to `SourceManager` mutation, mutex locking, and `SourceId` churn. Large projects with heavy variadic macro usage can exhaust the 24-bit `SourceId` space and cause excessive heap fragmentation.
 **Action:** Reuse `SourceLoc::builtin()` for synthetic punctuation and operators that don't originate from a specific source location. This allows the preprocessor to generate tokens without polluting the `SourceManager` with thousands of redundant 1-byte virtual files. Ensure `SourceBufferCache` handles these tokens by falling back to the token's internal text representation.
+
+## 2024-05-30 - Bitflag Hoisting for Complex Macro Expansions
+**Learning:** Variadic macros with complex expansion logic (like `__VA_OPT__`) often trigger expensive token scans during every expansion, even if the feature isn't used. Moving this detection to the macro definition stage and caching it in a bitflag (e.g., `HAS_VA_OPT`) turns an $O(N)$ scan into an $O(1)$ guard during expansion.
+**Action:** For any macro feature requiring a body scan, perform the scan once during `#define` and store the result in `MacroFlags`. Use this flag to provide an early exit in the expansion hot path.

@@ -1,5 +1,4 @@
 use crate::ast::StringId;
-use crate::lang_options::CStandard;
 use crate::pp::{PPConfig, PPTokenFlags, PPTokenKind, Preprocessor, dumper::PPDumper};
 use crate::test_tokens;
 use crate::tests::pp_common::{create_test_pp_lexer, setup_pp_snapshot, setup_preprocessor_test_with_diagnostics};
@@ -316,19 +315,19 @@ char *s = "\u00E4";
 fn test_utf_macros() {
     let src = r#"
 #if __STDC_UTF_16__ == 1
-int u16 = 1;
+OK
 #endif
 #if __STDC_UTF_32__ == 1
-int u32 = 1;
+OK
 #endif
 "#;
-    let config = PPConfig {
-        c_standard: CStandard::C11,
-        ..Default::default()
-    };
-    let (tokens, _) = setup_preprocessor_test_with_diagnostics(src, Some(config)).unwrap();
-    assert!(tokens.iter().any(|t| t.get_text() == "u16"));
-    assert!(tokens.iter().any(|t| t.get_text() == "u32"));
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @"
+    - kind: Identifier
+      text: OK
+    - kind: Identifier
+      text: OK
+    ");
 }
 
 // Line Splicing

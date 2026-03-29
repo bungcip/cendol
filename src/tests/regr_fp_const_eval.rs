@@ -19,8 +19,6 @@ fn test_fp_const_eval() {
 #[test]
 fn test_nan_bool_conversion() {
     let source = r#"
-        // Simple manual NaN if math.h is not available or too complex for test
-        // But we have __builtin_nan
         int main() {
             _Bool b = (_Bool)__builtin_nan("");
             if (!b) return 1;

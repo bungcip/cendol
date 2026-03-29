@@ -1,11 +1,11 @@
 pub mod codegen_abi;
 pub mod codegen_alignas;
+pub mod codegen_array;
 pub mod codegen_asm;
 mod codegen_atomic;
 pub mod codegen_basics;
 pub mod codegen_bswap;
 pub mod codegen_common;
-pub mod codegen_large_array;
 pub mod codegen_tls;
 
 pub mod codegen_bitfield;
@@ -73,7 +73,6 @@ pub mod parser_stmt;
 pub mod parser_types;
 pub mod parser_utils;
 
-pub mod codegen_ternary_array_size;
 pub mod guardian_increment_completeness;
 pub mod guardian_member_completeness;
 pub mod guardian_pointer_arithmetic_completeness;
@@ -126,7 +125,6 @@ pub mod parser_builder_coverage;
 pub mod parser_expect_name_coverage;
 pub mod parser_typedef_shadowing;
 pub mod pp_dumper_coverage;
-pub mod pp_macro_nested;
 pub mod pragma_pack;
 pub mod semantic_assignment_coverage;
 pub mod semantic_atomic;
@@ -154,7 +152,6 @@ pub mod semantic_parsed_types_coverage;
 pub mod semantic_regr_real_imag;
 pub mod semantic_regr_struct_init_in_array;
 pub mod semantic_return_check;
-pub mod semantic_return_local_address;
 pub mod semantic_scope_invariants;
 pub mod semantic_shift_float;
 pub mod semantic_sizeof_vla;

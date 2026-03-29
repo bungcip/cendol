@@ -122,7 +122,6 @@ pub mod mir_gen_function_address;
 pub mod mir_gen_sizeof;
 pub mod mir_unit;
 pub mod mir_validation;
-pub mod parser_attributes_declarator;
 pub mod parser_builder_coverage;
 pub mod parser_expect_name_coverage;
 pub mod parser_typedef_shadowing;
@@ -160,7 +159,6 @@ pub mod semantic_scope_invariants;
 pub mod semantic_shift_float;
 pub mod semantic_sizeof_vla;
 pub mod semantic_static_assert;
-pub mod semantic_valist;
 
 pub mod guardian_choose_expr_lazy;
 pub mod regr_bitfield_assign_eval;

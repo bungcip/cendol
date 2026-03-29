@@ -1,11 +1,11 @@
 use crate::driver::artifact::CompilePhase;
 use crate::tests::parser_utils::{setup_declaration, setup_translation_unit};
-use crate::tests::test_utils;
+use crate::tests::test_utils::{run_pass, run_pipeline};
 
 use crate::diagnostic::DiagnosticLevel;
 
 fn has_parse_errors(source: &str) -> bool {
-    let (driver, _) = test_utils::run_pipeline(source, CompilePhase::Parse);
+    let (driver, _) = run_pipeline(source, CompilePhase::Parse);
     driver
         .get_diagnostics()
         .iter()
@@ -15,46 +15,53 @@ fn has_parse_errors(source: &str) -> bool {
 #[test]
 fn test_invalid_attributes_recovery() {
     // Tests for peek_past_attribute EOF and format fallbacks (lines 36-74)
-    test_utils::run_pass("int foo __attribute__;", CompilePhase::Parse);
-    test_utils::run_pass("int foo __attribute__(;", CompilePhase::Parse);
-    test_utils::run_pass("int foo __attribute__(();", CompilePhase::Parse);
-    test_utils::run_pass("int foo __attribute__((foo", CompilePhase::Parse);
+    run_pass("int foo __attribute__;", CompilePhase::Parse);
+    run_pass("int foo __attribute__(;", CompilePhase::Parse);
+    run_pass("int foo __attribute__(();", CompilePhase::Parse);
+    run_pass("int foo __attribute__((foo", CompilePhase::Parse);
 
     // This checks `depth += 1` inside attribute paren matching
-    let decl5 = setup_translation_unit("int foo __attribute__(((foo)));");
+    let decl5 = setup_declaration("int foo __attribute__(((foo)));");
     insta::assert_yaml_snapshot!(&decl5, @"
-    TranslationUnit:
-      - Declaration:
-          specifiers:
-            - int
-          init_declarators:
-            - name: foo
+      Declaration:
+        specifiers:
+          - int
+        init_declarators:
+          - name: foo
     ");
 
     // 74: EOF after one Attribute block
-    test_utils::run_pass("int x __attribute__((foo))", CompilePhase::Parse);
+    run_pass("int x __attribute__((foo))", CompilePhase::Parse);
 
     // Targeted tests for peek_past_attribute (disambiguation context)
     // Line 36, 45, 58, 71
-    test_utils::run_pass("void f(int (__attribute__ * x));", CompilePhase::Parse); // No LeftParen after Attribute (falls back)
-    test_utils::run_pass("void f(int (__attribute__ (unused) * x));", CompilePhase::Parse); // No second LeftParen
-    test_utils::run_pass("void f(int (__attribute__((unused(1))) * x));", CompilePhase::Parse); // depth += 1 (Line 58)
-    test_utils::run_pass(
+    run_pass("void f(int (__attribute__ * x));", CompilePhase::Parse); // No LeftParen after Attribute (falls back)
+    run_pass("void f(int (__attribute__ (unused) * x));", CompilePhase::Parse); // No second LeftParen
+    run_pass("void f(int (__attribute__((unused(1))) * x));", CompilePhase::Parse); // depth += 1 (Line 58)
+    run_pass(
         "void f(int (__attribute__((unused)) __attribute__((unused)) * x));",
         CompilePhase::Parse,
     ); // Multiple attributes (Line 73)
-    test_utils::run_pass("void f(int (__attribute__((unused)) x));", CompilePhase::Parse); // Not Attribute after one (Line 70)
+    run_pass("void f(int (__attribute__((unused)) x));", CompilePhase::Parse); // Not Attribute after one (Line 70)
 
     // Disambiguation: attribute followed by *
-    let decl6 = setup_translation_unit("void f(int (__attribute__((unused)) *));");
+    let decl6 = setup_declaration("void f(int (__attribute__((unused)) *));");
     insta::assert_yaml_snapshot!(&decl6, @"
-    TranslationUnit:
-      - Declaration:
-          specifiers:
-            - void
-          init_declarators:
-            - name: f
-              kind: function(int pointer) -> int
+      Declaration:
+        specifiers:
+          - void
+        init_declarators:
+          - name: f
+            kind: function(int pointer) -> int
+    ");
+
+    let resolved = setup_declaration("int (__attribute__ x);");
+    insta::assert_yaml_snapshot!(&resolved, @"
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: x
     ");
 }
 

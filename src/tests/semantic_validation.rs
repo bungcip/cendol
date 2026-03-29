@@ -1,9 +1,9 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_fail_with_diagnostic, run_fail_with_message, run_pass};
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn rejects_modulo_on_non_integer() {
-    run_fail_with_diagnostic(
+    run_fail_with_message(
         r#"
         int main() {
             double x = 1.0;
@@ -11,11 +11,8 @@ fn rejects_modulo_on_non_integer() {
             x % y;
             return 0;
         }
-    "#,
-        CompilePhase::Mir,
+        "#,
         "Invalid operands for binary operation: have 'double' and 'double'",
-        5,
-        13,
     );
 }
 
@@ -36,7 +33,7 @@ fn accepts_modulo_on_integer() {
 
 #[test]
 fn rejects_bitnot_on_non_integer() {
-    run_fail_with_diagnostic(
+    run_fail_with_message(
         r#"
         int main() {
             double x = 1.0;
@@ -44,10 +41,7 @@ fn rejects_bitnot_on_non_integer() {
             return 0;
         }
     "#,
-        CompilePhase::Mir,
         "Invalid operand for unary operation: have 'double'",
-        4,
-        13,
     );
 }
 

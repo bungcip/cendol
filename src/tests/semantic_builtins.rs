@@ -172,6 +172,18 @@ fn test_gnuc_va_list_typedef() {
 }
 
 #[test]
+fn test_valist_assignment() {
+    let src = r#"
+    typedef __builtin_va_list va_list;
+    void foo(va_list ap) {
+        va_list ap2;
+        ap2 = ap;
+    }
+    "#;
+    run_pass(src, CompilePhase::Mir);
+}
+
+#[test]
 fn test_clz_const_eval() {
     // 1 in 32-bit: 00000000 00000000 00000000 00000001 -> 31 leading zeros
     // 1 in 64-bit: 00000000 ... 00000001 -> 63 leading zeros

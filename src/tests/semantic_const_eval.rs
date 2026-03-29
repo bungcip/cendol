@@ -322,7 +322,7 @@ fn test_builtin_functions() {
     ]);
     insta::assert_snapshot!(output, @"
     Expression: __builtin_clz(1)
-    Result: 63
+    Result: 31
     ---
     Expression: __builtin_clz(0)
     Result: None

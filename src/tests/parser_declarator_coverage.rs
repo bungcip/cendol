@@ -23,11 +23,11 @@ fn test_invalid_attributes_recovery() {
     // This checks `depth += 1` inside attribute paren matching
     let decl5 = setup_declaration("int foo __attribute__(((foo)));");
     insta::assert_yaml_snapshot!(&decl5, @"
-      Declaration:
-        specifiers:
-          - int
-        init_declarators:
-          - name: foo
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: foo
     ");
 
     // 74: EOF after one Attribute block
@@ -47,12 +47,12 @@ fn test_invalid_attributes_recovery() {
     // Disambiguation: attribute followed by *
     let decl6 = setup_declaration("void f(int (__attribute__((unused)) *));");
     insta::assert_yaml_snapshot!(&decl6, @"
-      Declaration:
-        specifiers:
-          - void
-        init_declarators:
-          - name: f
-            kind: function(int pointer) -> int
+    Declaration:
+      specifiers:
+        - void
+      init_declarators:
+        - name: f
+          kind: function(int pointer) -> int
     ");
 
     let resolved = setup_declaration("int (__attribute__ x);");

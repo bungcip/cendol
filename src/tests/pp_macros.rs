@@ -601,7 +601,7 @@ __PTRDIFF_MAX__
 __INTMAX_MAX__
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r#"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: unsigned
     - kind: Identifier
@@ -630,7 +630,7 @@ __INTMAX_MAX__
       text: 9223372036854775807L
     - kind: Number
       text: 9223372036854775807LL
-    "#);
+    ");
 }
 
 #[test]
@@ -1011,12 +1011,12 @@ UINT64_C(456)
     let tokens = setup_pp_snapshot(src);
     // Find the tokens we're interested in (they should be at the end)
     let last_tokens: Vec<_> = tokens.iter().rev().take(2).rev().collect();
-    insta::assert_yaml_snapshot!(last_tokens, @r#"
+    insta::assert_yaml_snapshot!(last_tokens, @"
     - kind: Number
       text: 123L
     - kind: Number
       text: 456UL
-    "#);
+    ");
 }
 
 #[test]

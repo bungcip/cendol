@@ -20,6 +20,8 @@ pub enum DirectiveKind {
     Ifdef,
     Ifndef,
     Elif,
+    Elifdef,
+    Elifndef,
     Else,
     Endif,
     Line,
@@ -39,6 +41,8 @@ pub(crate) struct DirectiveKeywordTable {
     pub(crate) ifdef: StringId,
     pub(crate) ifndef: StringId,
     pub(crate) elif: StringId,
+    pub(crate) elifdef: StringId,
+    pub(crate) elifndef: StringId,
     pub(crate) else_: StringId,
     pub(crate) endif: StringId,
     pub(crate) line: StringId,
@@ -76,6 +80,8 @@ impl DirectiveKeywordTable {
             ifdef: StringId::new("ifdef"),
             ifndef: StringId::new("ifndef"),
             elif: StringId::new("elif"),
+            elifdef: StringId::new("elifdef"),
+            elifndef: StringId::new("elifndef"),
             else_: StringId::new("else"),
             endif: StringId::new("endif"),
             line: StringId::new("line"),
@@ -114,6 +120,10 @@ impl DirectiveKeywordTable {
             Some(DirectiveKind::Ifndef)
         } else if symbol == self.elif {
             Some(DirectiveKind::Elif)
+        } else if symbol == self.elifdef {
+            Some(DirectiveKind::Elifdef)
+        } else if symbol == self.elifndef {
+            Some(DirectiveKind::Elifndef)
         } else if symbol == self.else_ {
             Some(DirectiveKind::Else)
         } else if symbol == self.endif {

@@ -1799,7 +1799,9 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             let rvalue_result = match rvalue {
                 Rvalue::Use(operand) => emit_operand(operand, ctx, expected_type),
                 Rvalue::Cast(type_id, operand) => {
-                    let inner_mir_type = ctx.mir.get_type(lower_operand_type_id(operand, ctx.mir, ctx.pointee_to_pointer));
+                    let inner_mir_type =
+                        ctx.mir
+                            .get_type(lower_operand_type_id(operand, ctx.mir, ctx.pointee_to_pointer));
                     let inner_clif_type = if matches!(inner_mir_type, MirType::F80 | MirType::F128) {
                         types::F64
                     } else {
@@ -1897,7 +1899,9 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     }
                 }
                 Rvalue::UnaryFloatOp(op, operand) => {
-                    let operand_mir_type = ctx.mir.get_type(lower_operand_type_id(operand, ctx.mir, ctx.pointee_to_pointer));
+                    let operand_mir_type =
+                        ctx.mir
+                            .get_type(lower_operand_type_id(operand, ctx.mir, ctx.pointee_to_pointer));
                     let operand_clif_type = if matches!(operand_mir_type, MirType::F80 | MirType::F128) {
                         types::F64
                     } else {

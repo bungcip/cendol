@@ -12,7 +12,7 @@ fn test_array_literal_initialization_fix() {
     "#;
 
     let clif_dump = setup_cranelift(source);
-    assert_snapshot!(clif_dump, @r"
+    assert_snapshot!(clif_dump, @"
     ; Function: main
     function u0:0() -> i32 system_v {
         ss0 = explicit_slot 6

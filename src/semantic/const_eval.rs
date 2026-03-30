@@ -242,7 +242,10 @@ impl<'a> ConstEvalCtx<'a> {
                 }
                 None
             }
-            NodeKind::BuiltinConstantP(expr) => Some(self.eval_int(*expr).is_some() as i64),
+            NodeKind::BuiltinConstantP(expr) => {
+                Some((self.eval_int(*expr).is_some() || self.eval_float(*expr).is_some()) as i64)
+            }
+            NodeKind::BuiltinExpect(exp, _) => self.eval_int(*exp),
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
                 let info = self.semantic_info.or(self.ast.semantic_info.as_ref());
                 if let Some(info) = info
@@ -306,6 +309,9 @@ impl<'a> ConstEvalCtx<'a> {
             NodeKind::BuiltinFfs(exp) | NodeKind::BuiltinFfsL(exp) | NodeKind::BuiltinFfsLL(exp) => self
                 .eval_int(*exp)
                 .map(|v| if v == 0 { 0 } else { (v.trailing_zeros() + 1) as i64 }),
+            NodeKind::BuiltinBswap16(exp) => self.eval_int(*exp).map(|v| (v as u16).swap_bytes() as i64),
+            NodeKind::BuiltinBswap32(exp) => self.eval_int(*exp).map(|v| (v as u32).swap_bytes() as i64),
+            NodeKind::BuiltinBswap64(exp) => self.eval_int(*exp).map(|v| (v as u64).swap_bytes() as i64),
             NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
                 self.eval_float(*exp).map(|v| v.abs() as i64)
             }
@@ -360,8 +366,38 @@ impl<'a> ConstEvalCtx<'a> {
                     Some(val)
                 }
             }
+            NodeKind::BuiltinExpect(exp, _) => self.eval_float(*exp),
+            NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
+                let info = self.semantic_info.or(self.ast.semantic_info.as_ref());
+                if let Some(info) = info
+                    && let Some(selected_expr) = info.choose_expressions.get(&expr.index())
+                {
+                    return self.eval_float(*selected_expr);
+                }
+                let cond_val = self.eval_int(*cond)?;
+                if cond_val != 0 {
+                    self.eval_float(*true_expr)
+                } else {
+                    self.eval_float(*false_expr)
+                }
+            }
             NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
                 self.eval_float(*exp).map(|v| v.abs())
+            }
+            NodeKind::FunctionCall(call) => {
+                let callee_kind = self.ast.get_kind(call.callee);
+                let name = match callee_kind {
+                    NodeKind::Ident(name_id, _) => name_id.as_str(),
+                    _ => return None,
+                };
+
+                match name {
+                    "__builtin_inff" | "__builtin_huge_valf" => Some(f32::INFINITY as f64),
+                    "__builtin_inf" | "__builtin_huge_val" => Some(f64::INFINITY),
+                    "__builtin_nanf" => Some(f32::NAN as f64),
+                    "__builtin_nan" => Some(f64::NAN),
+                    _ => None,
+                }
             }
             _ => self.eval_int(expr).map(|v| v as f64),
         }

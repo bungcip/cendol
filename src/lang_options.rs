@@ -49,6 +49,8 @@ mod tests {
     #[test]
     fn test_c_standard_from_str() {
         assert_eq!(CStandard::from("c11"), CStandard::C11);
+        assert_eq!(CStandard::from("c17"), CStandard::C17);
+        assert_eq!(CStandard::from("c23"), CStandard::C23);
         assert_eq!(CStandard::from("invalid"), CStandard::C11);
     }
 }

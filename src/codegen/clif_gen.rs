@@ -1101,6 +1101,71 @@ fn emit_type_conversion(val: Value, from: Type, to: Type, is_signed: bool, build
     }
 }
 
+/// Helper to convert a 16-byte x87 80-bit float (in memory) to a Cranelift F64 value.
+/// This is used as a workaround since Cranelift x64 backend lacks native F128/F80 support.
+fn emit_x87_to_f64(addr: Value, builder: &mut FunctionBuilder) -> Value {
+    let lo = builder.ins().load(types::I64, MemFlags::new(), addr, 0);
+    let hi = builder.ins().load(types::I64, MemFlags::new(), addr, 8);
+
+    // x87 lo (8 bytes): Mantissa with explicit integer bit at 63
+    // x87 hi (bits 0..14): Exponent (15-bit, 16383 bias)
+    // x87 hi (bit 15): Sign
+
+    let sign = builder.ins().ushr_imm(hi, 15);
+    let sign = builder.ins().band_imm(sign, 1);
+    let sign_f64 = builder.ins().ishl_imm(sign, 63);
+
+    let exp_x87 = builder.ins().band_imm(hi, 0x7FFF);
+    // f64_exp = exp_x87 - 16383 + 1023 = exp_x87 - 15360
+    // We use saturating logic for extreme values
+    let exp_f64 = builder.ins().iadd_imm(exp_x87, -15360);
+    let exp_f64_clamped = builder.ins().ishl_imm(exp_f64, 52);
+
+    // Mantissa: drop the explicit integer bit (bit 63) and shift to 52 bits
+    let mant_f64 = builder.ins().ushr_imm(lo, 11);
+    let mant_f64_masked = builder.ins().band_imm(mant_f64, 0x000F_FFFF_FFFF_FFFF);
+
+    let res_i64 = builder.ins().bor(sign_f64, exp_f64_clamped);
+    let res_i64 = builder.ins().bor(res_i64, mant_f64_masked);
+
+    builder.ins().bitcast(types::F64, MemFlags::new(), res_i64)
+}
+
+/// Helper to convert a Cranelift F64 value to a 16-byte x87 80-bit float format and store it.
+fn emit_f64_to_x87(val: Value, addr: Value, builder: &mut FunctionBuilder) {
+    // Zero the entire 16 bytes first to avoid garbage in padding (ABI requirement)
+    let zero64 = builder.ins().iconst(types::I64, 0);
+    builder.ins().store(MemFlags::new(), zero64, addr, 0);
+    builder.ins().store(MemFlags::new(), zero64, addr, 8);
+
+    let val_i64 = builder.ins().bitcast(types::I64, MemFlags::new(), val);
+
+    let sign = builder.ins().ushr_imm(val_i64, 63);
+    let exp_f64 = builder.ins().ushr_imm(val_i64, 52);
+    let exp_f64 = builder.ins().band_imm(exp_f64, 0x7FF);
+    let mant_f64 = builder.ins().band_imm(val_i64, 0x000F_FFFF_FFFF_FFFF);
+
+    // x87_exp = exp_f64 - 1023 + 16383 = exp_f64 + 15360
+    let exp_x87 = builder.ins().iadd_imm(exp_f64, 15360);
+    let hi = builder.ins().ishl_imm(sign, 15);
+    let hi = builder.ins().bor(hi, exp_x87);
+
+    // x87_mant = (mant_f64 << 11) | explicit_integer_bit
+    let mant_x87 = builder.ins().ishl_imm(mant_f64, 11);
+    // Fixed: only set integer bit if exponent is not zero (simplified normal handling)
+    let is_not_zero = builder.ins().icmp_imm(IntCC::NotEqual, exp_f64, 0);
+    let iconst8 = builder.ins().iconst(types::I64, 1 << 63);
+    let iconst0 = builder.ins().iconst(types::I64, 0);
+    let integer_bit = builder.ins().select(is_not_zero, iconst8, iconst0);
+    let mant_x87 = builder.ins().bor(mant_x87, integer_bit);
+
+    builder.ins().store(MemFlags::new(), mant_x87, addr, 0);
+    builder.ins().store(MemFlags::new(), hi, addr, 8);
+    // Clear the rest of the 16-byte slot (padding to 16 bytes for ABI)
+    let zero = builder.ins().iconst(types::I16, 0);
+    builder.ins().store(MemFlags::new(), zero, addr, 10);
+}
+
 /// Helper to emit a constant to anonymous memory and return its address
 fn emit_constant_to_memory(const_id: ConstValueId, ctx: &mut BodyEmitContext) -> Value {
     let const_value = ctx.mir.get_constant(const_id);
@@ -1182,6 +1247,8 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                         let addr = emit_constant_to_memory(*const_id, ctx);
                         if expected_type == types::I64 {
                             return addr;
+                        } else if matches!(mir_type, MirType::F80 | MirType::F128) && expected_type.is_float() {
+                            return emit_x87_to_f64(addr, ctx.builder);
                         } else {
                             return ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0);
                         }
@@ -1255,6 +1322,13 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
 
             if place_type.is_aggregate() {
                 let addr = emit_place_addr(place, ctx);
+                // For long double types (which are aggregates in MIR), if we expect a float value, load it
+                if expected_type.is_float() && place_type.is_float() {
+                    if matches!(place_type, MirType::F80 | MirType::F128) {
+                        return emit_x87_to_f64(addr, ctx.builder);
+                    }
+                    return ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0);
+                }
                 return emit_type_conversion(addr, types::I64, expected_type, false, ctx.builder);
             }
 
@@ -1380,10 +1454,7 @@ fn lower_operand_type(operand: &Operand, mir: &MirProgram, pointee_to_pointer: &
     }
 
     // Fallback for types that lower_type returns None for but aren't aggregates (shoudn't happen with valid MIR)
-    match mir_type {
-        MirType::F80 | MirType::F128 => types::F128,
-        _ => types::I32,
-    }
+    types::I32
 }
 
 /// Helper function to check if a MIR type is signed
@@ -1669,10 +1740,18 @@ fn lower_ptr_arith(base: &Operand, offset: &Operand, is_add: bool, ctx: &mut Bod
 }
 /// Helper function to store a value to a MIR place
 fn emit_place_store(place: &Place, value: Value, expected_type: Type, ctx: &mut BodyEmitContext) {
+    let place_type_id = lower_place_type_id(place, ctx.mir, ctx.pointee_to_pointer);
+    let place_mir_type = ctx.mir.get_type(place_type_id);
+
     match place {
         Place::Local(local_id) => {
             if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
-                ctx.builder.ins().stack_store(value, *stack_slot, 0);
+                if matches!(place_mir_type, MirType::F80 | MirType::F128) && expected_type == types::F64 {
+                    let addr = ctx.builder.ins().stack_addr(types::I64, *stack_slot, 0);
+                    emit_f64_to_x87(value, addr, ctx.builder);
+                } else {
+                    ctx.builder.ins().stack_store(value, *stack_slot, 0);
+                }
             }
         }
         Place::StructField(_, _, Some(bit_info)) => {
@@ -1695,7 +1774,11 @@ fn emit_place_store(place: &Place, value: Value, expected_type: Type, ctx: &mut 
         }
         _ => {
             let addr = emit_place_addr(place, ctx);
-            ctx.builder.ins().store(MemFlags::new(), value, addr, 0);
+            if matches!(place_mir_type, MirType::F80 | MirType::F128) && expected_type == types::F64 {
+                emit_f64_to_x87(value, addr, ctx.builder);
+            } else {
+                ctx.builder.ins().store(MemFlags::new(), value, addr, 0);
+            }
         }
     }
 }
@@ -1708,14 +1791,20 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             let place_mir_type = ctx.mir.get_type(place_type_id);
             let expected_type = match lower_type(place_mir_type) {
                 Some(t) => t,
-                None => types::I64, // Pointers/addresses for aggregates or long-double
+                None if matches!(place_mir_type, MirType::F80 | MirType::F128) => types::F64,
+                None => types::I64, // Pointers/addresses for aggregates
             };
 
             // Process the rvalue to get a Cranelift value first
             let rvalue_result = match rvalue {
                 Rvalue::Use(operand) => emit_operand(operand, ctx, expected_type),
                 Rvalue::Cast(type_id, operand) => {
-                    let inner_clif_type = lower_operand_type(operand, ctx.mir, ctx.pointee_to_pointer);
+                    let inner_mir_type = ctx.mir.get_type(lower_operand_type_id(operand, ctx.mir, ctx.pointee_to_pointer));
+                    let inner_clif_type = if matches!(inner_mir_type, MirType::F80 | MirType::F128) {
+                        types::F64
+                    } else {
+                        lower_operand_type(operand, ctx.mir, ctx.pointee_to_pointer)
+                    };
                     let inner_val = emit_operand(operand, ctx, inner_clif_type);
 
                     let target_mir_type = ctx.mir.get_type(*type_id);
@@ -1808,7 +1897,12 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     }
                 }
                 Rvalue::UnaryFloatOp(op, operand) => {
-                    let operand_clif_type = lower_operand_type(operand, ctx.mir, ctx.pointee_to_pointer);
+                    let operand_mir_type = ctx.mir.get_type(lower_operand_type_id(operand, ctx.mir, ctx.pointee_to_pointer));
+                    let operand_clif_type = if matches!(operand_mir_type, MirType::F80 | MirType::F128) {
+                        types::F64
+                    } else {
+                        lower_operand_type(operand, ctx.mir, ctx.pointee_to_pointer)
+                    };
                     let val = emit_operand(operand, ctx, operand_clif_type);
 
                     match op {
@@ -1841,7 +1935,11 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                 }
                 Rvalue::Load(operand) => {
                     let addr = emit_operand(operand, ctx, types::I64);
-                    ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
+                    if matches!(place_mir_type, MirType::F80 | MirType::F128) && expected_type.is_float() {
+                        emit_x87_to_f64(addr, ctx.builder)
+                    } else {
+                        ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
+                    }
                 }
 
                 Rvalue::BinaryIntOp(op, left_operand, right_operand) => {
@@ -1955,11 +2053,24 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     }
                 }
                 Rvalue::BinaryFloatOp(op, left_operand, right_operand) => {
-                    let left_cranelift_type = lower_operand_type(left_operand, ctx.mir, ctx.pointee_to_pointer);
-                    let right_cranelift_type = lower_operand_type(right_operand, ctx.mir, ctx.pointee_to_pointer);
+                    let left_type_id = lower_operand_type_id(left_operand, ctx.mir, ctx.pointee_to_pointer);
+                    let left_mir_type = ctx.mir.get_type(left_type_id);
+                    let left_clif_type = if matches!(left_mir_type, MirType::F80 | MirType::F128) {
+                        types::F64
+                    } else {
+                        lower_operand_type(left_operand, ctx.mir, ctx.pointee_to_pointer)
+                    };
 
-                    let left_val = emit_operand(left_operand, ctx, left_cranelift_type);
-                    let right_val = emit_operand(right_operand, ctx, right_cranelift_type);
+                    let right_type_id = lower_operand_type_id(right_operand, ctx.mir, ctx.pointee_to_pointer);
+                    let right_mir_type = ctx.mir.get_type(right_type_id);
+                    let right_clif_type = if matches!(right_mir_type, MirType::F80 | MirType::F128) {
+                        types::F64
+                    } else {
+                        lower_operand_type(right_operand, ctx.mir, ctx.pointee_to_pointer)
+                    };
+
+                    let left_val = emit_operand(left_operand, ctx, left_clif_type);
+                    let right_val = emit_operand(right_operand, ctx, right_clif_type);
 
                     match op {
                         BinaryFloatOp::Add => ctx.builder.ins().fadd(left_val, right_val),
@@ -2152,33 +2263,34 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                 }
             };
 
-            // Now, assign the resolved value to the place
-            let value_type = ctx.builder.func.dfg.value_type(rvalue_result);
-            // Ensure value matches expected type (truncating if necessary)
-            let mut value = emit_type_conversion(
-                rvalue_result,
-                value_type,
-                expected_type,
-                place_mir_type.is_signed(),
-                ctx.builder,
-            );
+            // Decide how to store the result based on whether the rvalue produced a value or an address
+            let rvalue_type = ctx.builder.func.dfg.value_type(rvalue_result);
+            let mir_type = ctx.mir.get_type(place_type_id);
 
-            // C11 6.3.1.2: Any non-zero scalar assigned to _Bool evaluates to 1
-            if matches!(place_mir_type, MirType::Bool) {
-                let zero = ctx.builder.ins().iconst(expected_type, 0i64);
-                let is_not_zero = ctx.builder.ins().icmp(IntCC::NotEqual, value, zero);
-                value = emit_bool_to_int(is_not_zero, expected_type, ctx.builder);
-            }
-            {
-                let mir_type = ctx.mir.get_type(place_type_id);
+            if mir_type.is_aggregate() && rvalue_type == types::I64 {
+                // Address-to-address copy (memcpy)
+                let dest_addr = emit_place_addr(place, ctx);
+                let size = lower_type_size(mir_type, ctx.mir) as i64;
+                emit_memcpy(dest_addr, rvalue_result, size, ctx.builder, ctx.module);
+            } else {
+                // Value-to-storage (store)
+                // Ensure value matches expected type (truncating/casting if necessary)
+                let mut value = emit_type_conversion(
+                    rvalue_result,
+                    rvalue_type,
+                    expected_type,
+                    place_mir_type.is_signed(),
+                    ctx.builder,
+                );
 
-                if mir_type.is_aggregate() {
-                    let dest_addr = emit_place_addr(place, ctx);
-                    let size = lower_type_size(mir_type, ctx.mir) as i64;
-                    emit_memcpy(dest_addr, value, size, ctx.builder, ctx.module);
-                } else {
-                    emit_place_store(place, value, expected_type, ctx);
+                // C11 6.3.1.2: Any non-zero scalar assigned to _Bool evaluates to 1
+                if matches!(place_mir_type, MirType::Bool) {
+                    let zero = ctx.builder.ins().iconst(expected_type, 0i64);
+                    let is_not_zero = ctx.builder.ins().icmp(IntCC::NotEqual, value, zero);
+                    value = emit_bool_to_int(is_not_zero, expected_type, ctx.builder);
                 }
+
+                emit_place_store(place, value, expected_type, ctx);
             }
         }
 

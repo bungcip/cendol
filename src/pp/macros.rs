@@ -275,20 +275,7 @@ impl<'src> Preprocessor<'src> {
         intersect_hs: u32,
         new_hs: u32,
     ) -> Result<Cow<'a, [PPToken]>, PPError> {
-        if macro_info.variadic_arg.is_none() {
-            return Ok(Cow::Borrowed(&macro_info.tokens));
-        }
-
-        let mut has_va_opt = false;
-        for t in macro_info.tokens.iter() {
-            if let PPTokenKind::Identifier(sym) = t.kind
-                && sym.as_str() == "__VA_OPT__"
-            {
-                has_va_opt = true;
-                break;
-            }
-        }
-        if !has_va_opt {
+        if !macro_info.flags.contains(MacroFlags::HAS_VA_OPT) {
             return Ok(Cow::Borrowed(&macro_info.tokens));
         }
 
@@ -303,7 +290,7 @@ impl<'src> Preprocessor<'src> {
             if token.kind == PPTokenKind::Hash && i + 1 < macro_info.tokens.len() {
                 let next = &macro_info.tokens[i + 1];
                 if let PPTokenKind::Identifier(sym) = next.kind
-                    && sym.as_str() == "__VA_OPT__"
+                    && sym == self.directive_keywords.va_opt
                     && i + 2 < macro_info.tokens.len()
                     && macro_info.tokens[i + 2].kind == PPTokenKind::LeftParen
                     && let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 2)
@@ -334,7 +321,7 @@ impl<'src> Preprocessor<'src> {
 
             // Handle __VA_OPT__(content)
             if let PPTokenKind::Identifier(sym) = token.kind
-                && sym.as_str() == "__VA_OPT__"
+                && sym == self.directive_keywords.va_opt
                 && i + 1 < macro_info.tokens.len()
                 && macro_info.tokens[i + 1].kind == PPTokenKind::LeftParen
                 && let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 1)

@@ -235,13 +235,25 @@ impl<'src> Preprocessor<'src> {
         let tokens = self.collect_tokens_until_eod();
 
         // Store the macro
-        let macro_info = MacroInfo {
+        let mut macro_info = MacroInfo {
             location: name_token.location,
             flags,
             tokens: Arc::from(tokens),
             parameter_list: Arc::from(params),
             variadic_arg: variadic,
         };
+
+        // Bolt ⚡: Pre-detect __VA_OPT__ in variadic macros to speed up expansion.
+        if macro_info.variadic_arg.is_some() {
+            for t in macro_info.tokens.iter() {
+                if let PPTokenKind::Identifier(sym) = t.kind
+                    && sym == self.directive_keywords.va_opt
+                {
+                    macro_info.flags |= MacroFlags::HAS_VA_OPT;
+                    break;
+                }
+            }
+        }
 
         if self.check_macro_redefinition(name, &name_token, &macro_info) {
             self.macros.insert(name, macro_info);

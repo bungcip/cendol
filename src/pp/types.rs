@@ -56,6 +56,7 @@ pub(crate) struct DirectiveKeywordTable {
     pub(crate) file_macro: StringId,
     pub(crate) counter_macro: StringId,
     pub(crate) pragma_operator: StringId,
+    pub(crate) va_opt: StringId,
 }
 
 impl Default for DirectiveKeywordTable {
@@ -92,6 +93,7 @@ impl DirectiveKeywordTable {
             file_macro: StringId::new("__FILE__"),
             counter_macro: StringId::new("__COUNTER__"),
             pragma_operator: StringId::new("_Pragma"),
+            va_opt: StringId::new("__VA_OPT__"),
         }
     }
 
@@ -175,6 +177,7 @@ bitflags::bitflags! {
         const BUILTIN = 1 << 3;
         const DISABLED = 1 << 4;
         const USED = 1 << 5;
+        const HAS_VA_OPT = 1 << 6;
     }
 }
 

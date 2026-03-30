@@ -184,3 +184,8 @@ Action: Implemented scope-aware tracking in `LowerCtx` to distinguish between pr
 
 Learning: C11 6.7.6.2p1 requires that variable array size expressions have an integer type. In Cendol, these expressions are resolved during semantic analysis via `visit_type_exprs`. Simply visiting the expression node is insufficient; the compiler must also verify the resulting type of the size expression. This is critical because VLA sizes can appear within complex types (e.g. `int (*p)[n]`) that might be processed without a direct variable declaration context.
 Action: Always enforce type constraints on expressions embedded within types (like VLA sizes or `typeof`) during the recursive type traversal phase of semantic analysis.
+
+2026-03-25 - [_Generic Qualifier Matching and Lvalue Conversion]
+
+Learning: C11 6.5.1.1p2 requires that the type of the controlling expression in a `_Generic` selection be compared after lvalue conversion. This means that if the controlling expression is an lvalue with a qualified type (e.g., `const int`), the type used for matching is the unqualified version (`int`). However, pointer-to-qualified types (e.g., `const int *`) are only stripped of their top-level qualifiers (like `const` in `const int * const`), preserving the qualification of the pointed-to type.
+Action: When testing or implementing `_Generic` selection, ensure that the lvalue conversion rules are correctly applied to the controlling expression's type before matching against associations, while keeping association types themselves fully qualified.

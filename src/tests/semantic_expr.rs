@@ -903,7 +903,7 @@ fn test_comma_operator_loop() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i8
     type %t2 = ptr<%t1>

@@ -449,7 +449,7 @@ fn test_parsed_ast_access() {
 #[test]
 fn test_parsed_ast_sizeof_alignof() {
     let output = dump_parsed_ast("int f() { return (int)3.14 + sizeof(int) + sizeof(1) + _Alignof(int); }");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[3])
     3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: 4, body: 4 })
     4: CompoundStmt(stmts=[14])

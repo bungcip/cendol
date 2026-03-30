@@ -21,6 +21,8 @@ impl<'src> Preprocessor<'src> {
                     | DirectiveKind::Ifdef
                     | DirectiveKind::Ifndef
                     | DirectiveKind::Elif
+                    | DirectiveKind::Elifdef
+                    | DirectiveKind::Elifndef
                     | DirectiveKind::Else
                     | DirectiveKind::Endif => self.handle_conditional_directive(kind, token.location),
                     _ => {
@@ -63,6 +65,24 @@ impl<'src> Preprocessor<'src> {
                     let cond = self.evaluate_conditional_expression(tokens).unwrap_or(false);
                     self.handle_elif_directive(cond, location)
                 } else {
+                    self.handle_elif_directive(false, location)
+                }
+            }
+            DirectiveKind::Elifdef | DirectiveKind::Elifndef => {
+                let is_ifdef = kind == DirectiveKind::Elifdef;
+                if self.should_evaluate_conditional() {
+                    match self.expect_identifier() {
+                        Ok((_, sym)) => {
+                            let cond = self.macros.contains_key(&sym) == is_ifdef;
+                            self.expect_eod().unwrap_or(());
+                            self.handle_elif_directive(cond, location)
+                        }
+                        Err(_) => self.handle_elif_directive(false, location),
+                    }
+                } else {
+                    // We need to consume the identifier but ignore its result
+                    let _ = self.expect_identifier();
+                    let _ = self.expect_eod();
                     self.handle_elif_directive(false, location)
                 }
             }

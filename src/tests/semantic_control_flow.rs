@@ -67,7 +67,7 @@ fn test_for_loop_init_assignment() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = bool
 

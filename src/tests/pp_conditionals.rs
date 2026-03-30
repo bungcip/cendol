@@ -822,3 +822,93 @@ MISSING
       text: MISSING
     ");
 }
+
+#[test]
+fn test_elifdef_defined() {
+    let src = r#"
+#define FOO
+#if 0
+FAIL
+#elifdef FOO
+OK
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_elifdef_undefined() {
+    let src = r#"
+#if 0
+FAIL
+#elifdef FOO
+FAIL2
+#else
+OK
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_elifndef_defined() {
+    let src = r#"
+#define FOO
+#if 0
+FAIL
+#elifndef FOO
+FAIL2
+#else
+OK
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_elifndef_undefined() {
+    let src = r#"
+#if 0
+FAIL
+#elifndef FOO
+OK
+#endif
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_elifdef_without_if() {
+    let src = r#"
+#elifdef FOO
+FAIL
+"#;
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ElifWithoutIf, span: SourceSpan(2199023255554) }""#);
+}
+
+#[test]
+fn test_elifndef_without_if() {
+    let src = r#"
+#elifndef FOO
+FAIL
+"#;
+    let (_, diags) = setup_pp_snapshot_with_diags(src);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ElifWithoutIf, span: SourceSpan(2199023255554) }""#);
+}

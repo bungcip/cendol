@@ -21,7 +21,7 @@ fn test_compile_struct_pointer_access() {
     let clif_dump = setup_cranelift(source);
     insta::assert_snapshot!(
         clif_dump,
-        @r"
+        @"
     ; Function: main
     function u0:0() -> i32 system_v {
         ss0 = explicit_slot 8, align = 4

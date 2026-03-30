@@ -84,7 +84,7 @@ fn test_function_redefinition_with_prototype() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = void
     type %t2 = ptr<%t1>

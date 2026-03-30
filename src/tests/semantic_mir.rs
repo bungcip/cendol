@@ -16,7 +16,7 @@ fn test_if_else_statement() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = bool
 
@@ -58,7 +58,7 @@ fn test_while_statement() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = bool
 
@@ -101,7 +101,7 @@ fn test_for_stmt() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = bool
 
@@ -232,7 +232,7 @@ fn test_struct_type_regression() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = struct anonymous { a: %t0, b: %t0, c: %t0 }
     type %t2 = bool
@@ -274,7 +274,7 @@ fn test_long_long_comparison_crash() {
             }
         "#;
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = i64
     type %t2 = bool
@@ -419,7 +419,7 @@ fn test_variable_shadowing() {
     let mir_dump = setup_mir(source);
     // We expect two different %x locals. MIR printer might show them with same name or different IDs.
     // Currently it shows names if available.
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = bool
 
@@ -1035,7 +1035,7 @@ fn test_deref_after_cast() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = void
     type %t2 = ptr<%t1>
@@ -1216,7 +1216,7 @@ fn test_ternary_with_mixed_pointer_integer() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = void
     type %t2 = ptr<%t1>

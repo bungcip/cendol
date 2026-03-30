@@ -17,7 +17,7 @@ fn test_const_global_mir() {
     globals.sort_by_key(|g| g.name.to_string());
 
     // we check is_constant value if it is constant, it will be true
-    assert_yaml_snapshot!(globals, @r"
+    assert_yaml_snapshot!(globals, @"
     - name: x
       type_id: 1
       is_constant: true

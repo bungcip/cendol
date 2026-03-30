@@ -34,7 +34,7 @@ impl CaseRangeInterval {
 }
 
 struct SwitchCtx {
-    cases: Vec<CaseRangeInterval>,
+    cases: SmallVec<[CaseRangeInterval; 8]>,
     default_seen: bool,
     cond_type: QualType,
     orig_cond_type: QualType,
@@ -2271,35 +2271,32 @@ impl<'a> SemanticAnalyzer<'a> {
                 continue;
             };
             let (label_span, target_vlas) = if let Some(v) = self.label_vla_state.get(sym) {
-                (v.0, v.1.clone())
+                (v.0, &v.1)
             } else {
                 continue;
             };
 
             // If there's a VLA in target_vlas that is NOT in source_vlas, it's a jump into scope.
-            for vla in target_vlas {
-                if !source_vlas.contains(&vla) {
-                    let mut notes = vec![];
+            if let Some(&vla) = target_vlas.iter().find(|v| !source_vlas.contains(v)) {
+                let mut notes = vec![];
 
-                    // Note where label is defined
-                    let label_name = self.symbol_table.get_symbol(*sym).name;
-                    notes.push((label_span, SemanticErrorKind::NoteLabelDefinedHere { name: label_name }));
+                // Note where label is defined
+                let label_name = self.symbol_table.get_symbol(*sym).name;
+                notes.push((label_span, SemanticErrorKind::NoteLabelDefinedHere { name: label_name }));
 
-                    // Note where VLA is declared
-                    if let NodeKind::VarDecl(var_data) = self.ast.get_kind(vla) {
-                        notes.push((
-                            self.ast.get_span(vla),
-                            SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name },
-                        ));
-                    }
-
-                    self.report_error_with_notes(
-                        goto_node,
-                        SemanticErrorKind::JumpIntoScopeVLA { is_switch: false },
-                        notes,
-                    );
-                    break;
+                // Note where VLA is declared
+                if let NodeKind::VarDecl(var_data) = self.ast.get_kind(vla) {
+                    notes.push((
+                        self.ast.get_span(vla),
+                        SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name },
+                    ));
                 }
+
+                self.report_error_with_notes(
+                    goto_node,
+                    SemanticErrorKind::JumpIntoScopeVLA { is_switch: false },
+                    notes,
+                );
             }
         }
         self.goto_vla_state.clear();
@@ -2431,7 +2428,7 @@ impl<'a> SemanticAnalyzer<'a> {
         };
 
         self.switch_stack.push(SwitchCtx {
-            cases: Vec::new(),
+            cases: SmallVec::new(),
             default_seen: false,
             cond_type: promoted_ty,
             orig_cond_type: orig_ty,
@@ -2444,38 +2441,7 @@ impl<'a> SemanticAnalyzer<'a> {
         None
     }
 
-    fn check_vla_jump_into_scope(
-        &mut self,
-        target_node: NodeRef,
-        target_vlas: &[NodeRef],
-        source_vla_count: usize,
-        is_switch: bool,
-        source_span: Option<SourceSpan>,
-    ) {
-        if target_vlas.len() <= source_vla_count {
-            return;
-        }
 
-        let offending_vlas = &target_vlas[source_vla_count..];
-
-        if let Some(vla) = offending_vlas.iter().next() {
-            // We jumped into the scope of a VLA that wasn't in scope at the jump source
-            let mut notes = vec![];
-            if let Some(span) = source_span {
-                notes.push((span, SemanticErrorKind::NoteSwitchStartsHere));
-            }
-
-            // Also note where the VLA was declared
-            if let NodeKind::VarDecl(var_data) = self.ast.get_kind(*vla) {
-                notes.push((
-                    self.ast.get_span(*vla),
-                    SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name },
-                ));
-            }
-
-            self.report_error_with_notes(target_node, SemanticErrorKind::JumpIntoScopeVLA { is_switch }, notes);
-        }
-    }
 
     fn evaluate_case_value(&mut self, node: NodeRef) -> Option<i64> {
         let ty = self.visit_node(node);
@@ -2507,14 +2473,33 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn check_switch_vla_jump(&mut self, node: NodeRef) {
-        if let Some(ctx) = self.switch_stack.last()
-            && let (switch_node, switch_vla_count) = ctx.vla_state
-            && self.active_vlas.len() > switch_vla_count
-        {
-            let span = self.ast.get_span(switch_node);
-            let target_vlas = self.active_vlas.clone();
-            self.check_vla_jump_into_scope(node, &target_vlas, switch_vla_count, true, Some(span));
+        let Some(ctx) = self.switch_stack.last() else {
+            return;
+        };
+
+        let (switch_node, switch_vla_count) = ctx.vla_state;
+        if self.active_vlas.len() <= switch_vla_count {
+            return;
         }
+
+        // We jumped into the scope of a VLA that wasn't in scope at the switch header.
+        // C11 6.8.4.2p4: "A switch statement ... shall not jump into the scope of an identifier
+        // with a variably modified type."
+        let vla = self.active_vlas[switch_vla_count];
+        let switch_span = self.ast.get_span(switch_node);
+
+        let mut notes = vec![];
+        notes.push((switch_span, SemanticErrorKind::NoteSwitchStartsHere));
+
+        // Also note where the VLA was declared
+        if let NodeKind::VarDecl(var_data) = self.ast.get_kind(vla) {
+            notes.push((
+                self.ast.get_span(vla),
+                SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name },
+            ));
+        }
+
+        self.report_error_with_notes(node, SemanticErrorKind::JumpIntoScopeVLA { is_switch: true }, notes);
     }
 
     fn visit_case_statement(

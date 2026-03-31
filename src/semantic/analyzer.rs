@@ -2441,8 +2441,6 @@ impl<'a> SemanticAnalyzer<'a> {
         None
     }
 
-
-
     fn evaluate_case_value(&mut self, node: NodeRef) -> Option<i64> {
         let ty = self.visit_node(node);
         let val = self.const_ctx().eval_int(node);

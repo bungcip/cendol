@@ -106,6 +106,7 @@ pub mod guardian_const_eval_builtins;
 pub mod guardian_generic_bitfield;
 pub mod guardian_generic_compatibility;
 pub mod guardian_generic_completeness;
+pub mod guardian_generic_qualifier_matching;
 pub mod guardian_index_completeness;
 pub mod guardian_noreturn_switch;
 pub mod guardian_offsetof;

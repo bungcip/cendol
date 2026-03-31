@@ -1309,6 +1309,11 @@ impl TypeRegistry {
     }
 
     pub(crate) fn is_compatible(&self, mut a: QualType, mut b: QualType) -> bool {
+        // Bolt ⚡: Early exit for identical types before performing canonicalization.
+        if a == b {
+            return true;
+        }
+
         a = self.canonical_qual_type(a);
         b = self.canonical_qual_type(b);
 

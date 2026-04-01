@@ -1,4 +1,3 @@
-pub mod semantic_thread_local;
 pub mod codegen_abi;
 pub mod codegen_alignas;
 pub mod codegen_array;
@@ -8,6 +7,7 @@ pub mod codegen_basics;
 pub mod codegen_bswap;
 pub mod codegen_common;
 pub mod codegen_tls;
+pub mod semantic_thread_local;
 
 pub mod codegen_bitfield;
 pub mod codegen_float_to_int_oob;

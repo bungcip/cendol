@@ -21,19 +21,19 @@ pub(crate) enum DiagnosticLevel {
 /// Individual diagnostic with rich context
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Diagnostic {
-    pub level: DiagnosticLevel,
-    pub message: String,
-    pub span: SourceSpan,
-    pub hints: Vec<String>, // Suggestions for fixing
-    pub warning_name: Option<&'static str>,
+    pub(crate) level: DiagnosticLevel,
+    pub(crate) message: String,
+    pub(crate) span: SourceSpan,
+    pub(crate) hints: Vec<String>, // Suggestions for fixing
+    pub(crate) warning_name: Option<&'static str>,
 }
 
 /// Parse errors
 #[derive(Debug, Error)]
 #[error("{kind}")]
 pub(crate) struct ParseError {
-    pub span: SourceSpan,
-    pub kind: ParseErrorKind,
+    pub(crate) span: SourceSpan,
+    pub(crate) kind: ParseErrorKind,
 }
 
 /// Parse error kinds
@@ -54,18 +54,18 @@ pub(crate) enum ParseErrorKind {
 
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
 pub(crate) struct DiagnosticEngine {
-    pub diagnostics: Vec<Diagnostic>,
+    pub(crate) diagnostics: Vec<Diagnostic>,
     /// Bolt ⚡: Cached error count for O(1) checks and improved performance
     /// when error limits are applied.
-    pub error_count: usize,
-    pub error_limit: Option<usize>,
-    pub warning_count: usize,
-    pub warning_limit: Option<usize>,
+    pub(crate) error_count: usize,
+    pub(crate) error_limit: Option<usize>,
+    pub(crate) warning_count: usize,
+    pub(crate) warning_limit: Option<usize>,
     /// Bolt ⚡: Flag to ensure the "too many errors" note is only emitted once.
-    pub limit_reached: bool,
+    pub(crate) limit_reached: bool,
     /// Bolt ⚡: Flag to ensure the "too many warnings" note is only emitted once.
-    pub warning_limit_reached: bool,
-    pub disabled_warnings: HashSet<String>,
+    pub(crate) warning_limit_reached: bool,
+    pub(crate) disabled_warnings: HashSet<String>,
     pub(crate) renderer: Renderer,
 }
 

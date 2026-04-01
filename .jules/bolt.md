@@ -105,3 +105,7 @@
 ## 2024-05-30 - Bitflag Hoisting for Complex Macro Expansions
 **Learning:** Variadic macros with complex expansion logic (like `__VA_OPT__`) often trigger expensive token scans during every expansion, even if the feature isn't used. Moving this detection to the macro definition stage and caching it in a bitflag (e.g., `HAS_VA_OPT`) turns an $O(N)$ scan into an $O(1)$ guard during expansion.
 **Action:** For any macro feature requiring a body scan, perform the scan once during `#define` and store the result in `MacroFlags`. Use this flag to provide an early exit in the expansion hot path.
+
+## 2025-05-31 - Identical Type Short-circuit in Compatibility Checks
+**Learning:** In `TypeRegistry::is_compatible`, redundant canonicalization of already identical types is a performance bottleneck. Identical `QualType`s are always compatible, so checking `if a == b` early avoids expensive O(N) alias resolution loops and hash lookups.
+**Action:** Always check for identity early in recursive or complex comparison functions to provide a fast-path for the most common case.

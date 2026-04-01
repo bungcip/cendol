@@ -34,17 +34,17 @@ fn test_alignof_expression_alignas() {
 }
 
 #[test]
-fn test_alignof_expression_vla_alignas() {
+fn test_alignof_expression_vla() {
     let source = r#"
         int printf(const char*, ...);
         int main(int argc, char** argv) {
-            char _Alignas(128) arr[argc + 10];
+            char arr[argc + 10];
             printf("%d", (int)_Alignof arr);
             return 0;
         }
     "#;
     let output = run_c_code_with_output(source);
-    assert_eq!(output.trim(), "128");
+    assert_eq!(output.trim(), "1");
 }
 
 #[test]

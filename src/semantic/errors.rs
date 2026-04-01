@@ -364,6 +364,7 @@ pub enum SemanticErrorKind {
         specifier: &'static str,
     },
     VlaAtFileScope,
+    AlignasOnVla,
     VlaStarOutsidePrototype,
     VlaInitializerNotAllowed,
     OffsetofBitfield,
@@ -774,6 +775,9 @@ impl SemanticErrorKind {
             }
             SemanticErrorKind::VlaAtFileScope => {
                 "variable length array declaration not allowed at file scope".to_string()
+            }
+            SemanticErrorKind::AlignasOnVla => {
+                "alignment specifier cannot be used on a variably modified type".to_string()
             }
             SemanticErrorKind::VlaStarOutsidePrototype => {
                 "[*] array size only allowed in function prototype scope".to_string()

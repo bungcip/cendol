@@ -3293,11 +3293,13 @@ impl ClifGen {
     ) {
         let cv = self.mir.get_constant(id);
         match &cv.kind {
+            #[allow(clippy::collapsible_match)]
             ConstValueKind::GlobalAddress(gid, _) => {
                 if rg.insert(*gid) {
                     wg.push(*gid);
                 }
             }
+            #[allow(clippy::collapsible_match)]
             ConstValueKind::FunctionAddress(fid) => {
                 if rf.insert(*fid) {
                     wf.push(*fid);

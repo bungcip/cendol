@@ -206,7 +206,7 @@ fn parse_trailing_declarators(
                     flags: FunctionFlags { is_variadic },
                 });
             }
-            TokenKind::Colon if in_type_name == false => {
+            TokenKind::Colon if !in_type_name => {
                 parser.advance();
                 let width = parser.parse_expr_assignment()?;
                 base = parser.alloc_decl(ParsedDeclarator::BitField { inner: base, width });

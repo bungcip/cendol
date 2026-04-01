@@ -73,7 +73,7 @@ pub(crate) fn setup_preprocessor_test_with_diagnostics(
     setup_multi_file_pp_with_diagnostics(vec![("<test>", src)], "<test>", config)
 }
 
-pub(crate) fn setup_multi_file_pp_with_diagnostics(
+fn setup_multi_file_pp_with_diagnostics(
     files: Vec<(&str, &str)>,
     main_file_name: &str,
     config: Option<PPConfig>,
@@ -88,7 +88,7 @@ pub(crate) fn setup_multi_file_pp_with_diagnostics(
     Ok((significant_tokens, diagnostics))
 }
 
-pub(crate) fn setup_multi_file_pp_with_diagnostics_raw(
+fn setup_multi_file_pp_with_diagnostics_raw(
     files: Vec<(&str, &str)>,
     main_file_name: &str,
     config: Option<PPConfig>,

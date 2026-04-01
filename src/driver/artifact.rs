@@ -7,8 +7,8 @@ use crate::semantic::{SymbolTable, TypeRegistry};
 
 /// compilation outputs for all source files
 pub struct PipelineOutputs {
-    pub units: indexmap::IndexMap<SourceId, CompileArtifact>,
-    pub external_object_files: Vec<std::path::PathBuf>,
+    pub(crate) units: indexmap::IndexMap<SourceId, CompileArtifact>,
+    pub(crate) external_object_files: Vec<std::path::PathBuf>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -26,13 +26,13 @@ pub enum CompilePhase {
 /// outputs for a single compilation unit
 #[derive(Default)]
 pub struct CompileArtifact {
-    pub preprocessed: Option<Vec<PPToken>>,
-    pub lexed: Option<Vec<Token>>,
-    pub parsed_ast: Option<ParsedAst>,
-    pub ast: Option<Ast>,
-    pub mir_program: Option<MirProgram>,
-    pub clif_dump: Option<String>,
-    pub object_file: Option<Vec<u8>>,
-    pub type_registry: Option<TypeRegistry>,
-    pub symbol_table: Option<SymbolTable>,
+    pub(crate) preprocessed: Option<Vec<PPToken>>,
+    pub(crate) lexed: Option<Vec<Token>>,
+    pub(crate) parsed_ast: Option<ParsedAst>,
+    pub(crate) ast: Option<Ast>,
+    pub(crate) mir_program: Option<MirProgram>,
+    pub(crate) clif_dump: Option<String>,
+    pub(crate) object_file: Option<Vec<u8>>,
+    pub(crate) type_registry: Option<TypeRegistry>,
+    pub(crate) symbol_table: Option<SymbolTable>,
 }

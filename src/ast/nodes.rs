@@ -17,7 +17,7 @@ use crate::{
 use crate::ast::literal::Literal;
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub enum NodeKind {
+pub(crate) enum NodeKind {
     // --- Literals (Inline storage for common types) ---
     Literal(Literal),
 
@@ -457,128 +457,128 @@ impl NodeKind {
 
 // Control flow statements
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct IfStmt {
-    pub condition: NodeRef,
-    pub then_branch: NodeRef,
-    pub else_branch: Option<NodeRef>,
+pub(crate) struct IfStmt {
+    pub(crate) condition: NodeRef,
+    pub(crate) then_branch: NodeRef,
+    pub(crate) else_branch: Option<NodeRef>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct WhileStmt {
-    pub condition: NodeRef,
-    pub body: NodeRef,
+pub(crate) struct WhileStmt {
+    pub(crate) condition: NodeRef,
+    pub(crate) body: NodeRef,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct ForStmt {
-    pub init: Option<NodeRef>, // Can be Declaration or Expression
-    pub condition: Option<NodeRef>,
-    pub increment: Option<NodeRef>,
-    pub body: NodeRef,
-    pub scope_id: ScopeId,
-}
-
-// Semantic node data structures (type-resolved)
-#[derive(Debug, Clone, Copy, Serialize)]
-pub struct CompoundStmt {
-    pub stmt_start: NodeRef,
-    pub stmt_len: u16,
-    pub scope_id: ScopeId,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-pub struct TranslationUnit {
-    pub decl_start: NodeRef,
-    pub decl_len: u16,
-    pub scope_id: ScopeId,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-pub struct InitializerList {
-    pub init_start: NodeRef,
-    pub init_len: u16,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-pub struct Function {
-    pub symbol: SymbolRef,
-    pub ty: TypeRef, // function type, not the return type
-    pub is_noreturn: bool,
-    pub param_start: NodeRef,
-    pub param_len: u16,
-    pub body: NodeRef, // compound statement
-    pub scope_id: ScopeId,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-pub struct Param {
-    pub symbol: SymbolRef,
-    pub qt: QualType,
+pub(crate) struct ForStmt {
+    pub(crate) init: Option<NodeRef>, // Can be Declaration or Expression
+    pub(crate) condition: Option<NodeRef>,
+    pub(crate) increment: Option<NodeRef>,
+    pub(crate) body: NodeRef,
+    pub(crate) scope_id: ScopeId,
 }
 
 // Semantic node data structures (type-resolved)
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct VarDecl {
-    pub name: NameId,
-    pub qt: QualType,
-    pub storage: Option<StorageClass>,
-    pub is_thread_local: bool,
-    pub init: Option<NodeRef>,  // InitializerList or Expression
-    pub alignment: Option<u16>, // Max alignment in bytes
+pub(crate) struct CompoundStmt {
+    pub(crate) stmt_start: NodeRef,
+    pub(crate) stmt_len: u16,
+    pub(crate) scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct FunctionDecl {
-    pub name: NameId,
-    pub ty: TypeRef,
-    pub storage: Option<StorageClass>,
-    pub scope_id: ScopeId,
+pub(crate) struct TranslationUnit {
+    pub(crate) decl_start: NodeRef,
+    pub(crate) decl_len: u16,
+    pub(crate) scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct TypedefDecl {
-    pub name: NameId,
-    pub qt: QualType,
+pub(crate) struct InitializerList {
+    pub(crate) init_start: NodeRef,
+    pub(crate) init_len: u16,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct RecordDecl {
-    pub name: Option<NameId>,
-    pub ty: TypeRef,
-    pub member_start: NodeRef,
+pub(crate) struct Function {
+    pub(crate) symbol: SymbolRef,
+    pub(crate) ty: TypeRef, // function type, not the return type
+    pub(crate) is_noreturn: bool,
+    pub(crate) param_start: NodeRef,
+    pub(crate) param_len: u16,
+    pub(crate) body: NodeRef, // compound statement
+    pub(crate) scope_id: ScopeId,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub(crate) struct Param {
+    pub(crate) symbol: SymbolRef,
+    pub(crate) qt: QualType,
+}
+
+// Semantic node data structures (type-resolved)
+#[derive(Debug, Clone, Copy, Serialize)]
+pub(crate) struct VarDecl {
+    pub(crate) name: NameId,
+    pub(crate) qt: QualType,
+    pub(crate) storage: Option<StorageClass>,
+    pub(crate) is_thread_local: bool,
+    pub(crate) init: Option<NodeRef>,  // InitializerList or Expression
+    pub(crate) alignment: Option<u16>, // Max alignment in bytes
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub(crate) struct FunctionDecl {
+    pub(crate) name: NameId,
+    pub(crate) ty: TypeRef,
+    pub(crate) storage: Option<StorageClass>,
+    pub(crate) scope_id: ScopeId,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub(crate) struct TypedefDecl {
+    pub(crate) name: NameId,
+    pub(crate) qt: QualType,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub(crate) struct RecordDecl {
+    pub(crate) name: Option<NameId>,
+    pub(crate) ty: TypeRef,
+    pub(crate) member_start: NodeRef,
     /// index where FieldDecl located
-    pub member_len: u16,
+    pub(crate) member_len: u16,
 
-    pub is_union: bool,
+    pub(crate) is_union: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct FieldDecl {
-    pub name: Option<NameId>,
-    pub qt: QualType, // object type
-    pub alignment: Option<u32>,
+pub(crate) struct FieldDecl {
+    pub(crate) name: Option<NameId>,
+    pub(crate) qt: QualType, // object type
+    pub(crate) alignment: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct CallExpr {
-    pub callee: NodeRef,
-    pub arg_start: NodeRef, // index where CallArg located
-    pub arg_len: u16,
+pub(crate) struct CallExpr {
+    pub(crate) callee: NodeRef,
+    pub(crate) arg_start: NodeRef, // index where CallArg located
+    pub(crate) arg_len: u16,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct EnumDecl {
-    pub name: Option<NameId>,
-    pub ty: TypeRef,
-    pub member_start: NodeRef,
-    pub member_len: u16,
+pub(crate) struct EnumDecl {
+    pub(crate) name: Option<NameId>,
+    pub(crate) ty: TypeRef,
+    pub(crate) member_start: NodeRef,
+    pub(crate) member_len: u16,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct EnumMember {
-    pub name: NameId,
-    pub value: i64,
-    pub init_expr: Option<NodeRef>,
+pub(crate) struct EnumMember {
+    pub(crate) name: NameId,
+    pub(crate) value: i64,
+    pub(crate) init_expr: Option<NodeRef>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -723,28 +723,28 @@ impl BinaryOp {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct DesignatedInitializer {
-    pub designator_start: NodeRef,
-    pub designator_len: u16,
-    pub initializer: NodeRef,
+pub(crate) struct DesignatedInitializer {
+    pub(crate) designator_start: NodeRef,
+    pub(crate) designator_len: u16,
+    pub(crate) initializer: NodeRef,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub enum Designator {
+pub(crate) enum Designator {
     FieldName(NameId),
     ArrayIndex(NodeRef),          // Index expression
     ArrayRange(NodeRef, NodeRef), // GCC extension: Range expression [start ... end]
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct GenericSelection {
-    pub control: NodeRef,
-    pub assoc_start: NodeRef,
-    pub assoc_len: u16,
+pub(crate) struct GenericSelection {
+    pub(crate) control: NodeRef,
+    pub(crate) assoc_start: NodeRef,
+    pub(crate) assoc_len: u16,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct GenericAssociation {
-    pub ty: Option<QualType>, // None for 'default:'
-    pub result_expr: NodeRef,
+pub(crate) struct GenericAssociation {
+    pub(crate) ty: Option<QualType>, // None for 'default:'
+    pub(crate) result_expr: NodeRef,
 }

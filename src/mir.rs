@@ -57,7 +57,7 @@ mir_id!(ConstValueId, "Unique identifier for MIR constant values");
 
 /// Function linkage - distinguishes between internal, external, and imported functions
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub enum MirLinkage {
+pub(crate) enum MirLinkage {
     Internal, // Defined in this module, not exported
     External, // Defined in this module, exported
     Import,   // Declared but defined elsewhere
@@ -65,12 +65,12 @@ pub enum MirLinkage {
 
 /// MIR Module - Top-level container for MIR
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct MirModule {
-    pub functions: Vec<MirFunctionId>,
-    pub globals: Vec<GlobalId>,
-    pub types: Vec<MirType>,
-    pub constants: Vec<ConstValue>,
-    pub pointer_width: u8, // Width of a pointer in bytes (e.g., 4 or 8)
+pub(crate) struct MirModule {
+    pub(crate) functions: Vec<MirFunctionId>,
+    pub(crate) globals: Vec<GlobalId>,
+    pub(crate) types: Vec<MirType>,
+    pub(crate) constants: Vec<ConstValue>,
+    pub(crate) pointer_width: u8, // Width of a pointer in bytes (e.g., 4 or 8)
 }
 
 impl MirModule {
@@ -87,18 +87,18 @@ impl MirModule {
 
 /// MIR Function - Represents a C function in MIR
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct MirFunction {
-    pub name: NameId,
-    pub return_type: TypeId,
-    pub params: Vec<LocalId>,
+pub(crate) struct MirFunction {
+    pub(crate) name: NameId,
+    pub(crate) return_type: TypeId,
+    pub(crate) params: Vec<LocalId>,
 
-    pub linkage: MirLinkage,
-    pub is_variadic: bool, // Track if this function is variadic
+    pub(crate) linkage: MirLinkage,
+    pub(crate) is_variadic: bool, // Track if this function is variadic
 
     // Only valid if linkage is Defined (Internal or External)
-    pub locals: Vec<LocalId>,
-    pub blocks: Vec<MirBlockId>,
-    pub entry_block: Option<MirBlockId>,
+    pub(crate) locals: Vec<LocalId>,
+    pub(crate) blocks: Vec<MirBlockId>,
+    pub(crate) entry_block: Option<MirBlockId>,
 }
 
 impl MirFunction {
@@ -130,9 +130,9 @@ impl MirFunction {
 
 /// MIR Block - Basic block with statements and terminator
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct MirBlock {
-    pub statements: Vec<MirStmtId>,
-    pub terminator: Terminator,
+pub(crate) struct MirBlock {
+    pub(crate) statements: Vec<MirStmtId>,
+    pub(crate) terminator: Terminator,
 }
 
 impl MirBlock {
@@ -147,7 +147,7 @@ impl MirBlock {
 /// MIR Statement - Individual operations within a block
 /// Only contains side-effect operations, no control flow
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum MirStmt {
+pub(crate) enum MirStmt {
     Assign(Place, Rvalue),
     Store(Operand, Place),
     // Function calls - dest is None if void or result is ignored
@@ -166,7 +166,7 @@ pub enum MirStmt {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub enum AtomicMemOrder {
+pub(crate) enum AtomicMemOrder {
     Relaxed,
     Consume,
     Acquire,
@@ -177,7 +177,7 @@ pub enum AtomicMemOrder {
 
 /// Terminator - Control flow terminators for basic blocks
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum Terminator {
+pub(crate) enum Terminator {
     Goto(MirBlockId),
     If(Operand, MirBlockId, MirBlockId),
     Return(Option<Operand>),
@@ -187,10 +187,10 @@ pub enum Terminator {
 
 /// Bitfield information for struct fields
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct BitFieldInfo {
-    pub width: u16,
-    pub offset: u16,
-    pub is_signed: bool,
+pub(crate) struct BitFieldInfo {
+    pub(crate) width: u16,
+    pub(crate) offset: u16,
+    pub(crate) is_signed: bool,
 }
 
 impl BitFieldInfo {
@@ -213,7 +213,7 @@ impl BitFieldInfo {
 
 /// Place - Represents a storage location (local variable or memory)
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum Place {
+pub(crate) enum Place {
     Local(LocalId),
     Deref(Box<Operand>),
     Global(GlobalId),
@@ -224,7 +224,7 @@ pub enum Place {
 
 /// Operand - Represents values used in MIR operations
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum Operand {
+pub(crate) enum Operand {
     Copy(Box<Place>),
     Constant(ConstValueId),
     // Address operations
@@ -235,7 +235,7 @@ pub enum Operand {
 
 /// Rvalue - Right-hand side values in assignments
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum Rvalue {
+pub(crate) enum Rvalue {
     Use(Operand),
     BinaryIntOp(BinaryIntOp, Operand, Operand),
     BinaryFloatOp(BinaryFloatOp, Operand, Operand),
@@ -259,7 +259,7 @@ pub enum Rvalue {
 
 /// Call target - represents how a function is called
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum CallTarget {
+pub(crate) enum CallTarget {
     Direct(MirFunctionId), // Direct call to a known function
     Indirect(Operand),     // Indirect call via function pointer
 }
@@ -267,7 +267,7 @@ pub enum CallTarget {
 /// Integer binary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(u8)]
-pub enum BinaryIntOp {
+pub(crate) enum BinaryIntOp {
     Add,
     Sub,
     Mul,
@@ -295,7 +295,7 @@ impl BinaryIntOp {
 /// Floating-point binary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(u8)]
-pub enum BinaryFloatOp {
+pub(crate) enum BinaryFloatOp {
     Add,
     Sub,
     Mul,
@@ -317,7 +317,7 @@ impl BinaryFloatOp {
 /// Integer unary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(u8)]
-pub enum UnaryIntOp {
+pub(crate) enum UnaryIntOp {
     Neg,
     BitwiseNot,
     LogicalNot,
@@ -333,7 +333,7 @@ pub enum UnaryIntOp {
 /// Floating-point unary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(u8)]
-pub enum UnaryFloatOp {
+pub(crate) enum UnaryFloatOp {
     Neg,
     Abs,
 }
@@ -344,7 +344,7 @@ pub enum UnaryFloatOp {
 // - No anonymous members exist in MIR
 // - Field names are unique within a record
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum MirType {
+pub(crate) enum MirType {
     Void,
     Bool,
 
@@ -462,11 +462,11 @@ impl MirType {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct MirFieldLayout {
-    pub offset: u64,
-    pub bit_width: Option<u16>,
-    pub bit_offset: Option<u16>,
-    pub is_signed: bool,
+pub(crate) struct MirFieldLayout {
+    pub(crate) offset: u64,
+    pub(crate) bit_width: Option<u16>,
+    pub(crate) bit_offset: Option<u16>,
+    pub(crate) is_signed: bool,
 }
 
 impl MirFieldLayout {
@@ -491,22 +491,22 @@ impl MirFieldLayout {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct MirRecordLayout {
-    pub size: u64,
-    pub alignment: u64,
-    pub fields: Vec<MirFieldLayout>,
+pub(crate) struct MirRecordLayout {
+    pub(crate) size: u64,
+    pub(crate) alignment: u64,
+    pub(crate) fields: Vec<MirFieldLayout>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct MirArrayLayout {
-    pub size: u64,
-    pub align: u64,
-    pub stride: u64,
+pub(crate) struct MirArrayLayout {
+    pub(crate) size: u64,
+    pub(crate) align: u64,
+    pub(crate) stride: u64,
 }
 
 /// Constant Value Kind - discriminant for ConstValue
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum ConstValueKind {
+pub(crate) enum ConstValueKind {
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -522,18 +522,18 @@ pub enum ConstValueKind {
 
 /// Constant Value - Literal values in MIR
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ConstValue {
-    pub ty: TypeId,
-    pub kind: ConstValueKind,
+pub(crate) struct ConstValue {
+    pub(crate) ty: TypeId,
+    pub(crate) kind: ConstValueKind,
 }
 
 /// Local - Represents a local variable or parameter
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct Local {
-    pub name: Option<NameId>,
-    pub type_id: TypeId,
-    pub is_param: bool,
-    pub alignment: Option<u32>, // Alignment in bytes
+pub(crate) struct Local {
+    pub(crate) name: Option<NameId>,
+    pub(crate) type_id: TypeId,
+    pub(crate) is_param: bool,
+    pub(crate) alignment: Option<u32>, // Alignment in bytes
 }
 
 impl Local {
@@ -549,14 +549,14 @@ impl Local {
 
 /// Global - Represents a global variable
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct Global {
-    pub name: NameId,
-    pub type_id: TypeId,
-    pub is_constant: bool,
-    pub is_tls: bool,
-    pub initial_value: Option<ConstValueId>,
-    pub alignment: Option<u32>, // Max alignment in bytes
-    pub linkage: MirLinkage,
+pub(crate) struct Global {
+    pub(crate) name: NameId,
+    pub(crate) type_id: TypeId,
+    pub(crate) is_constant: bool,
+    pub(crate) is_tls: bool,
+    pub(crate) initial_value: Option<ConstValueId>,
+    pub(crate) alignment: Option<u32>, // Max alignment in bytes
+    pub(crate) linkage: MirLinkage,
 }
 
 impl Global {
@@ -599,16 +599,16 @@ pub(crate) struct MirBuilder {
 /// Complete semantic analysis output containing the full MIR program representation
 /// Includes all functions, blocks, instructions, and type definitions.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct MirProgram {
-    pub module: MirModule,
-    pub functions: Vec<MirFunction>,
-    pub blocks: Vec<MirBlock>,
-    pub locals: Vec<Local>,
-    pub globals: Vec<Global>,
-    pub types: Vec<MirType>,
-    pub constants: Vec<ConstValue>,
-    pub statements: Vec<MirStmt>,
-    pub pointer_width: u8,
+pub(crate) struct MirProgram {
+    pub(crate) module: MirModule,
+    pub(crate) functions: Vec<MirFunction>,
+    pub(crate) blocks: Vec<MirBlock>,
+    pub(crate) locals: Vec<Local>,
+    pub(crate) globals: Vec<Global>,
+    pub(crate) types: Vec<MirType>,
+    pub(crate) constants: Vec<ConstValue>,
+    pub(crate) statements: Vec<MirStmt>,
+    pub(crate) pointer_width: u8,
 }
 
 impl MirProgram {

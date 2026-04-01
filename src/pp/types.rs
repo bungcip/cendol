@@ -11,7 +11,7 @@ use target_lexicon::Triple;
 
 /// Preprocessor directive kinds
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DirectiveKind {
+pub(crate) enum DirectiveKind {
     Define,
     Undef,
     Include,
@@ -356,14 +356,14 @@ pub(crate) struct IncludeStackInfo {
 /// Configuration for preprocessor
 #[derive(Debug, Clone)]
 pub struct PPConfig {
-    pub max_include_depth: usize,
-    pub system_include_paths: Vec<PathBuf>,
-    pub quoted_include_paths: Vec<PathBuf>,
-    pub angled_include_paths: Vec<PathBuf>,
-    pub framework_paths: Vec<PathBuf>,
-    pub c_standard: CStandard,
-    pub target: Triple,
-    pub current_time: Option<DateTime<Utc>>,
+    pub(crate) max_include_depth: usize,
+    pub(crate) system_include_paths: Vec<PathBuf>,
+    pub(crate) quoted_include_paths: Vec<PathBuf>,
+    pub(crate) angled_include_paths: Vec<PathBuf>,
+    pub(crate) framework_paths: Vec<PathBuf>,
+    pub(crate) c_standard: CStandard,
+    pub(crate) target: Triple,
+    pub(crate) current_time: Option<DateTime<Utc>>,
 }
 
 impl Default for PPConfig {

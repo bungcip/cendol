@@ -410,7 +410,7 @@ fn emit_const_array(
 }
 
 /// Emit a constant value to the output buffer based on its type layout
-pub(crate) fn emit_const(
+fn emit_const(
     const_id: ConstValueId,
     output: &mut Vec<u8>,
     ctx: &EmitContext,

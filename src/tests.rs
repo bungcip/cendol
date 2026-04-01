@@ -1,3 +1,4 @@
+pub mod semantic_thread_local;
 pub mod codegen_abi;
 pub mod codegen_alignas;
 pub mod codegen_array;

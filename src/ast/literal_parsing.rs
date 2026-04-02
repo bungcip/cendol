@@ -36,6 +36,10 @@ pub(crate) fn parse_integer_literal(text: &str) -> Option<(u64, Option<IntegerSu
         (16, stripped)
     } else if let Some(stripped) = number_part.strip_prefix("0X") {
         (16, stripped)
+    } else if let Some(stripped) = number_part.strip_prefix("0b") {
+        (2, stripped)
+    } else if let Some(stripped) = number_part.strip_prefix("0B") {
+        (2, stripped)
     } else if let Some(stripped) = number_part.strip_prefix('0') {
         if stripped.is_empty() {
             return Some((0, suffix, 8));
@@ -382,6 +386,13 @@ mod tests {
         // Test 0X float prefix
         // 0X1p0 -> 1.0 * 2^0 = 1.0
         assert_eq!(parse_float_literal("0X1p0"), Some((1.0, None)));
+    }
+
+    #[test]
+    fn test_binary_literals() {
+        assert_eq!(parse_integer_literal("0b1010"), Some((10, None, 2)));
+        assert_eq!(parse_integer_literal("0B1111"), Some((15, None, 2)));
+        assert_eq!(parse_integer_literal("0b1010u"), Some((10, Some(IntegerSuffix::U), 2)));
     }
 
     #[test]

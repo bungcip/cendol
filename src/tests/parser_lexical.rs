@@ -124,6 +124,8 @@ fn test_literals() {
         ("42", TokenKind::IntegerConstant(42, None, 10)),
         ("0x1A", TokenKind::IntegerConstant(26, None, 16)),
         ("077", TokenKind::IntegerConstant(63, None, 8)),
+        ("0b1010", TokenKind::IntegerConstant(10, None, 2)),
+        ("0B1111", TokenKind::IntegerConstant(15, None, 2)),
         // C11 integer suffixes - decimal
         ("1ll", TokenKind::IntegerConstant(1, Some(IntegerSuffix::LL), 10)),
         ("42u", TokenKind::IntegerConstant(42, Some(IntegerSuffix::U), 10)),
@@ -335,6 +337,7 @@ fn test_string_escapes_edge_cases() {
 fn test_literal_parsing_edge_cases() {
     // Test parse_c11_integer_literal edge cases
     assert!(parse_integer_literal("0x").is_none(), "0x should fail");
+    assert!(parse_integer_literal("0b").is_none(), "0b should fail");
     assert!(parse_integer_literal("u").is_none(), "Suffix only should fail");
 
     // Test parse_c11_float_literal edge cases

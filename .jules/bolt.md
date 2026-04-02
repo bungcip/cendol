@@ -109,3 +109,11 @@
 ## 2025-05-31 - Identical Type Short-circuit in Compatibility Checks
 **Learning:** In `TypeRegistry::is_compatible`, redundant canonicalization of already identical types is a performance bottleneck. Identical `QualType`s are always compatible, so checking `if a == b` early avoids expensive O(N) alias resolution loops and hash lookups.
 **Action:** Always check for identity early in recursive or complex comparison functions to provide a fast-path for the most common case.
+
+## 2025-06-01 - Redundant Enum Clones in Hot Matching Paths
+**Learning:** Matching on an enum by value from a shared reference (e.g., ) triggers a full clone of the enum if it's not . In our compiler,  contains  fields and is large, making these clones extremely expensive in hot paths like type canonicalization and layout calculation.
+**Action:** Always match on references () when the data inside the variant is  (like ) or when a borrow is sufficient. This avoids unnecessary  reference count increments and large memory copies.
+
+## 2025-06-01 - Redundant Enum Clones in Hot Matching Paths
+**Learning:** Matching on an enum by value from a shared reference (e.g., `if let Variant(inner) = self.vec[idx].field`) triggers a full clone of the enum if it's not `Copy`. In our compiler, `TypeKind` contains `Arc` fields and is large, making these clones extremely expensive in hot paths like type canonicalization and layout calculation.
+**Action:** Always match on references (`&self.vec[idx].field`) when the data inside the variant is `Copy` (like `TypeRef`) or when a borrow is sufficient. This avoids unnecessary `Arc` reference count increments and large memory copies.

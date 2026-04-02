@@ -373,6 +373,7 @@ pub enum SemanticErrorKind {
     SubscriptIncompleteType {
         ty: QualType,
     },
+    AlignasOnVla,
     AutoTypeRequiresInitializer,
     AutoTypeIncompatibleDeduction {
         first: QualType,
@@ -788,6 +789,9 @@ impl SemanticErrorKind {
                     "subscript of pointer to incomplete type '{}'",
                     registry.display_qual_type(*ty)
                 )
+            }
+            SemanticErrorKind::AlignasOnVla => {
+                "alignment specifier cannot be used in a variably modified type".to_string()
             }
             SemanticErrorKind::AutoTypeRequiresInitializer => "__auto_type requires an initializer".to_string(),
             SemanticErrorKind::AutoTypeIncompatibleDeduction { first, new } => format!(

@@ -1373,6 +1373,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);
 
+        if spec_info.alignment.is_some() && self.registry.is_variably_modified(qt.ty()) {
+            self.report_error(span, SemanticErrorKind::AlignasOnVla);
+        }
+
         // Define variable in symbol table early so it's visible in its own initializer
         let sym_res = self.symbol_table.define_variable(
             name,

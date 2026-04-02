@@ -180,6 +180,11 @@ Action: When supporting language extensions that mirror standard operators (like
 Learning: C11 6.7.6.2p4 restricts the use of `[*]` array size to function prototype scope only. This means it is invalid in file scope, block scope (outside of parameter lists), and even in function definitions (where parameters have block scope). Cendol previously lacked this constraint, potentially allowing invalid VLAs to reach the backend.
 Action: Implemented scope-aware tracking in `LowerCtx` to distinguish between prototype scope and definition/block scope, and added a specific diagnostic for illegal `[*]` usage.
 
+2026-03-25 - [_Alignas on Variably Modified Types]
+
+Learning: C11 6.7.5p2 prohibits the use of alignment specifiers (`_Alignas`) on identifiers with variably modified types (e.g., VLAs or pointers to VLAs). This is a semantic constraint that must be enforced during the lowering phase to prevent backend issues with dynamic stack allocation.
+Action: Implement strict checking for `is_variably_modified` types when an alignment specifier is present in `visit_variable_decl` and ensure appropriate diagnostics are emitted.
+
 2026-03-23 - [VLA Size Expression Validation]
 
 Learning: C11 6.7.6.2p1 requires that variable array size expressions have an integer type. In Cendol, these expressions are resolved during semantic analysis via `visit_type_exprs`. Simply visiting the expression node is insufficient; the compiler must also verify the resulting type of the size expression. This is critical because VLA sizes can appear within complex types (e.g. `int (*p)[n]`) that might be processed without a direct variable declaration context.

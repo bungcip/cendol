@@ -1362,13 +1362,19 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticErrorKind::VlaAtFileScope);
         }
 
-        if spec_info.storage == Some(StorageClass::Register) && spec_info.alignment.is_some() {
-            self.report_error(
-                span,
-                SemanticErrorKind::AlignmentNotAllowed {
-                    context: "register object",
-                },
-            );
+        if spec_info.alignment.is_some() {
+            if spec_info.storage == Some(StorageClass::Register) {
+                self.report_error(
+                    span,
+                    SemanticErrorKind::AlignmentNotAllowed {
+                        context: "register object",
+                    },
+                );
+            }
+
+            if self.registry.is_variably_modified(qt.ty()) {
+                self.report_error(span, SemanticErrorKind::AlignmentNotAllowedOnVla);
+            }
         }
 
         qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);

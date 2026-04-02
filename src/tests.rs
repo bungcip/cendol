@@ -115,6 +115,7 @@ pub mod guardian_parameter_completeness;
 pub mod guardian_relational_pointer_constraints;
 pub mod guardian_selection_props;
 pub mod guardian_sizeof_alignof;
+pub mod guardian_alignas_vla;
 pub mod guardian_ternary_pointer_constraints;
 pub mod guardian_typedef_member_function;
 pub mod guardian_vla_size_type;

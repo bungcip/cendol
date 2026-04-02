@@ -285,6 +285,7 @@ pub enum SemanticErrorKind {
     AlignmentNotAllowed {
         context: &'static str,
     },
+    AlignmentNotAllowedOnVla,
     AlignmentTooLoose {
         requested: u32,
         natural: u32,
@@ -676,6 +677,9 @@ impl SemanticErrorKind {
             }
             SemanticErrorKind::AlignmentNotAllowed { context } => {
                 format!("alignment specifier cannot be used in a {}", context)
+            }
+            SemanticErrorKind::AlignmentNotAllowedOnVla => {
+                "alignment specifier cannot be used on a variably modified type".to_string()
             }
             SemanticErrorKind::AlignmentTooLoose { requested, natural } => format!(
                 "alignment specifier specifies {}-byte alignment, but {}-byte alignment is required",

@@ -189,3 +189,8 @@ Action: Always enforce type constraints on expressions embedded within types (li
 
 Learning: C11 6.5.1.1p2 requires that the type of the controlling expression in a `_Generic` selection be compared after lvalue conversion. This means that if the controlling expression is an lvalue with a qualified type (e.g., `const int`), the type used for matching is the unqualified version (`int`). However, pointer-to-qualified types (e.g., `const int *`) are only stripped of their top-level qualifiers (like `const` in `const int * const`), preserving the qualification of the pointed-to type.
 Action: When testing or implementing `_Generic` selection, ensure that the lvalue conversion rules are correctly applied to the controlling expression's type before matching against associations, while keeping association types themselves fully qualified.
+
+2025-06-10 - [Alignas on Variably Modified Types Constraint]
+
+Learning: C11 6.7.5p2 prohibits the use of an alignment specifier (_Alignas) in the declaration of an object with a variably modified type. This constraint is distinct from the storage-class constraints on _Alignas (like 'register') and applies to both Variable Length Arrays and pointers to VLAs. Enforcing this in the lowering phase ensures that invalid layouts are rejected before they reach the backend, where VLA alignment might be handled differently than static objects.
+Action: Enforce variably modified type checks for all declarations that include an alignment specifier, and distinguish this error from other _Alignas-related constraints.

@@ -83,6 +83,7 @@ pub mod parser_type_spec_coverage;
 pub mod parser_typeof;
 pub mod semantic_alignment;
 pub mod semantic_composite;
+pub mod guardian_alignas_vla;
 pub mod test_utils;
 
 pub mod codegen_bool_cast;

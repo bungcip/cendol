@@ -189,3 +189,8 @@ Action: Always enforce type constraints on expressions embedded within types (li
 
 Learning: C11 6.5.1.1p2 requires that the type of the controlling expression in a `_Generic` selection be compared after lvalue conversion. This means that if the controlling expression is an lvalue with a qualified type (e.g., `const int`), the type used for matching is the unqualified version (`int`). However, pointer-to-qualified types (e.g., `const int *`) are only stripped of their top-level qualifiers (like `const` in `const int * const`), preserving the qualification of the pointed-to type.
 Action: When testing or implementing `_Generic` selection, ensure that the lvalue conversion rules are correctly applied to the controlling expression's type before matching against associations, while keeping association types themselves fully qualified.
+
+2026-03-26 - [Address-of Label and Namespace Separation]
+
+Learning: Standard C11 (6.5.3.2p1) operand constraints for the unary `&` operator exclude labels, which occupy a separate namespace (6.2.1). In this compiler, attempting to take the address of a label (`&label`) results in an "Undeclared identifier" error because the expression resolver correctly restricts lookup to the ordinary identifier namespace. This behavior is standard-compliant and distinguishes it from the GCC "Computed Goto" extension (`&&label`), which is not implemented.
+Action: Always verify that identifiers in expressions are looked up strictly within the ordinary namespace, and use negative tests to ensure that entities from other namespaces (like labels or tags) are correctly rejected when used as expressions.

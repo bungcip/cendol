@@ -366,6 +366,7 @@ pub enum SemanticErrorKind {
     VlaAtFileScope,
     VlaStarOutsidePrototype,
     VlaInitializerNotAllowed,
+    AlignasOnVla,
     OffsetofBitfield,
     OffsetofIncompleteType {
         ty: QualType,
@@ -779,6 +780,9 @@ impl SemanticErrorKind {
                 "[*] array size only allowed in function prototype scope".to_string()
             }
             SemanticErrorKind::VlaInitializerNotAllowed => "variable-length array may not be initialized".to_string(),
+            SemanticErrorKind::AlignasOnVla => {
+                "alignment specifier cannot be used on an object with a variably modified type".to_string()
+            }
             SemanticErrorKind::OffsetofBitfield => "cannot apply 'offsetof' to a bit-field".to_string(),
             SemanticErrorKind::OffsetofIncompleteType { ty } => {
                 format!("offsetof of incomplete type '{}'", registry.display_qual_type(*ty))

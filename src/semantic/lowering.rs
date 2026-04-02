@@ -877,6 +877,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticErrorKind::ThreadLocalNotAllowed);
         }
 
+        if spec_info.alignment.is_some() {
+            self.report_error(span, SemanticErrorKind::AlignmentNotAllowed { context: "function" });
+        }
+
         final_qt = self.check_redeclaration_compatibility(func_name, final_qt, span, spec_info.storage);
 
         // Check for _Noreturn on existing declarations
@@ -1369,6 +1373,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     context: "register object",
                 },
             );
+        }
+
+        if spec_info.alignment.is_some() && self.registry.is_variably_modified(qt.ty()) {
+            self.report_error(span, SemanticErrorKind::AlignasOnVla);
         }
 
         qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);
@@ -3195,6 +3203,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             Some(&spec_info),
                             DeclaratorContext { in_parameter: false },
                         );
+
+                        if spec_info.alignment.is_some() && self.registry.is_variably_modified(member_type.ty()) {
+                            self.report_error(id.span, SemanticErrorKind::AlignasOnVla);
+                        }
 
                         self.validate_member_layout(member_type, bit_field_size, spec_info.alignment, name, id.span);
 

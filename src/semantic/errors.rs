@@ -289,6 +289,7 @@ pub enum SemanticErrorKind {
         requested: u32,
         natural: u32,
     },
+    AlignasOnVla,
     CompoundLiteralIncomplete {
         ty: QualType,
     },
@@ -681,6 +682,9 @@ impl SemanticErrorKind {
                 "alignment specifier specifies {}-byte alignment, but {}-byte alignment is required",
                 requested, natural
             ),
+            SemanticErrorKind::AlignasOnVla => {
+                "alignment specifier cannot be used with a variably modified type".to_string()
+            }
             SemanticErrorKind::CompoundLiteralIncomplete { ty } => {
                 format!(
                     "compound literal specifies incomplete type '{}'",

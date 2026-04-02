@@ -189,3 +189,8 @@ Action: Always enforce type constraints on expressions embedded within types (li
 
 Learning: C11 6.5.1.1p2 requires that the type of the controlling expression in a `_Generic` selection be compared after lvalue conversion. This means that if the controlling expression is an lvalue with a qualified type (e.g., `const int`), the type used for matching is the unqualified version (`int`). However, pointer-to-qualified types (e.g., `const int *`) are only stripped of their top-level qualifiers (like `const` in `const int * const`), preserving the qualification of the pointed-to type.
 Action: When testing or implementing `_Generic` selection, ensure that the lvalue conversion rules are correctly applied to the controlling expression's type before matching against associations, while keeping association types themselves fully qualified.
+
+2026-03-26 - [_Generic and Modifiable Lvalue Preservation]
+
+Learning: C11 6.5.1.1p5 requires that the result of a `_Generic` selection has the type and value category of its selected association's expression. This means if the selected expression is a `const`-qualified lvalue, the `_Generic` expression itself evaluates to a non-modifiable lvalue. The semantic analyzer must ensure that the `QualType` returned by `visit_generic_selection` includes the qualifiers of the selected association's expression, so that assignment constraints (e.g., rejecting assignments to read-only locations) are correctly enforced on the result.
+Action: Always verify that selection expressions correctly propagate both the base type and the qualifiers of the selected branch to maintain strict C11 compliance for modifiable lvalue checks.

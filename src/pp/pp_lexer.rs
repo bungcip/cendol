@@ -1059,7 +1059,7 @@ impl PPLexer {
             flags,
             false,
             |seen_e, ch| {
-                if ch.is_ascii_digit() || ch == b'.' || ch.is_ascii_alphabetic() || ch == b'_' {
+                if ch.is_ascii_digit() || ch == b'.' || ch.is_ascii_alphabetic() || ch == b'_' || ch == b'\'' {
                     *seen_e = ch == b'e' || ch == b'E' || ch == b'p' || ch == b'P';
                     true
                 } else if (ch == b'+' || ch == b'-') && *seen_e {

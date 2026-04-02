@@ -13,6 +13,11 @@ const INTEGER_SUFFIXES: &[(&str, IntegerSuffix)] = &[
     ("l", IntegerSuffix::L),
 ];
 
+/// Strip digit separators (') from number literal
+fn strip_digit_separators(text: &str) -> String {
+    text.replace('\'', "")
+}
+
 /// Strip integer literal suffix (u, l, ll, ul, ull, etc.)
 fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
     for &(suffix, variant) in INTEGER_SUFFIXES {
@@ -26,7 +31,8 @@ fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
 /// Parse C11 integer literal syntax
 /// Returns (value, suffix, base)
 pub(crate) fn parse_integer_literal(text: &str) -> Option<(u64, Option<IntegerSuffix>, u32)> {
-    let (number_part, suffix) = strip_integer_suffix(text);
+    let text_no_sep = strip_digit_separators(text);
+    let (number_part, suffix) = strip_integer_suffix(&text_no_sep);
 
     if number_part.is_empty() {
         return None;
@@ -36,6 +42,10 @@ pub(crate) fn parse_integer_literal(text: &str) -> Option<(u64, Option<IntegerSu
         (16, stripped)
     } else if let Some(stripped) = number_part.strip_prefix("0X") {
         (16, stripped)
+    } else if let Some(stripped) = number_part.strip_prefix("0b") {
+        (2, stripped)
+    } else if let Some(stripped) = number_part.strip_prefix("0B") {
+        (2, stripped)
     } else if let Some(stripped) = number_part.strip_prefix('0') {
         if stripped.is_empty() {
             return Some((0, suffix, 8));
@@ -373,6 +383,26 @@ pub(crate) fn parse_char_literal(s: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_binary_literals() {
+        assert_eq!(parse_integer_literal("0b1010"), Some((10, None, 2)));
+        assert_eq!(parse_integer_literal("0B1010"), Some((10, None, 2)));
+        assert_eq!(parse_integer_literal("0b1010U"), Some((10, Some(IntegerSuffix::U), 2)));
+        assert_eq!(
+            parse_integer_literal("0b1010LL"),
+            Some((10, Some(IntegerSuffix::LL), 2))
+        );
+        assert_eq!(parse_integer_literal("0B11111111"), Some((255, None, 2)));
+    }
+
+    #[test]
+    fn test_digit_separators() {
+        assert_eq!(parse_integer_literal("1'000'000"), Some((1000000, None, 10)));
+        assert_eq!(parse_integer_literal("0xDEAD'BEEF"), Some((0xDEADBEEF, None, 16)));
+        assert_eq!(parse_integer_literal("0b1010'0101"), Some((165, None, 2)));
+        assert_eq!(parse_integer_literal("0'123'456"), Some((0o123456, None, 8)));
+    }
 
     #[test]
     fn test_uppercase_hex_literals() {

@@ -233,6 +233,8 @@ fn parse_base_type(parser: &mut Parser, ts: &ParsedTypeSpec) -> Result<ParsedBas
         AutoType => Ok(parser.alloc_base_type(ParsedBaseType::Builtin(AutoType))),
         Typeof(ty) => Ok(parser.alloc_base_type(ParsedBaseType::Typeof(*ty))),
         TypeofExpr(expr) => Ok(parser.alloc_base_type(ParsedBaseType::TypeofExpr(*expr))),
+        TypeofUnqual(ty) => Ok(parser.alloc_base_type(ParsedBaseType::TypeofUnqual(*ty))),
+        TypeofUnqualExpr(expr) => Ok(parser.alloc_base_type(ParsedBaseType::TypeofUnqualExpr(*expr))),
     }
 }
 

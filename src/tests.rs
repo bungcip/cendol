@@ -30,6 +30,7 @@ pub mod pp_internal;
 pub mod pp_lexical;
 pub mod pp_macros;
 
+pub mod parser_typeof_unqual;
 pub mod semantic_arrays;
 pub mod semantic_auto_type;
 pub mod semantic_builtin_alloca;
@@ -54,6 +55,7 @@ pub mod semantic_functions;
 pub mod semantic_init;
 pub mod semantic_scope;
 pub mod semantic_typeof;
+pub mod semantic_typeof_unqual;
 pub mod semantic_types;
 
 pub mod semantic_common;

@@ -822,7 +822,7 @@ pub enum TypeKind {
         enumerators: Arc<[EnumConstant]>,
         is_complete: bool,
     },
-    TypeofExpr(crate::ast::NodeRef),
+    TypeofExpr(crate::ast::NodeRef, bool /* is_unqual */),
     Alias(TypeRef),
     AutoType,
     #[default]
@@ -839,7 +839,7 @@ impl TypeKind {
             TypeKind::Function { .. } => TypeClass::Function,
             TypeKind::Record { .. } => TypeClass::Record,
             TypeKind::Enum { .. } => TypeClass::Enum,
-            TypeKind::Alias(_) | TypeKind::TypeofExpr(_) | TypeKind::AutoType => TypeClass::Alias,
+            TypeKind::Alias(_) | TypeKind::TypeofExpr(..) | TypeKind::AutoType => TypeClass::Alias,
         }
     }
 }
@@ -887,7 +887,13 @@ impl Display for TypeKind {
                     write!(f, "enum (anonymous)")
                 }
             }
-            TypeKind::TypeofExpr(_) => write!(f, "typeof(<expr>)"),
+            TypeKind::TypeofExpr(_, is_unqual) => {
+                if *is_unqual {
+                    write!(f, "typeof_unqual(<expr>)")
+                } else {
+                    write!(f, "typeof(<expr>)")
+                }
+            }
             TypeKind::Alias(inner) => write!(f, "alias({:?})", inner),
             TypeKind::AutoType => write!(f, "__auto_type"),
             TypeKind::Error => write!(f, "<error>"),

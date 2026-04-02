@@ -54,6 +54,7 @@ pub mod semantic_functions;
 pub mod semantic_init;
 pub mod semantic_scope;
 pub mod semantic_typeof;
+pub mod semantic_typeof_unqual;
 pub mod semantic_types;
 
 pub mod semantic_common;

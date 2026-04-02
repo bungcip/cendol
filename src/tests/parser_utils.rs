@@ -455,6 +455,8 @@ fn extract_base_kind(ast: &ParsedAst, base: crate::ast::ParsedBaseTypeRef) -> St
         crate::ast::ParsedBaseType::Typedef(name) => name.to_string(),
         crate::ast::ParsedBaseType::Typeof(..) => "typeof(...)".to_string(),
         crate::ast::ParsedBaseType::TypeofExpr(..) => "typeof(...)".to_string(),
+        crate::ast::ParsedBaseType::TypeofUnqual(..) => "typeof_unqual(...)".to_string(),
+        crate::ast::ParsedBaseType::TypeofUnqualExpr(..) => "typeof_unqual(...)".to_string(),
     }
 }
 

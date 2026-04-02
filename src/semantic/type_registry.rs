@@ -1025,7 +1025,7 @@ impl TypeRegistry {
                     feature: "__auto_type layout",
                 });
             }
-            TypeKind::TypeofExpr(_) => {
+            TypeKind::TypeofExpr(..) => {
                 return Err(TypeRegistryError::UnsupportedFeature {
                     feature: "typeof expr layout",
                 });

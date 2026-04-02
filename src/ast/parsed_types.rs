@@ -93,6 +93,8 @@ pub enum ParsedBaseType {
     Typedef(NameId),
     Typeof(ParsedType),
     TypeofExpr(crate::ast::ParsedNodeRef),
+    TypeofUnqual(ParsedType),
+    TypeofUnqualExpr(crate::ast::ParsedNodeRef),
 }
 
 #[derive(Debug, Clone)]

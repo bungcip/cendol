@@ -33,7 +33,6 @@ fn test_alignof_expression_alignas() {
     assert_eq!(output.trim(), "64");
 }
 
-
 #[test]
 fn test_alignof_expression_nested() {
     let source = r#"

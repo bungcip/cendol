@@ -1,0 +1,15 @@
+<<<<<<< SEARCH
+        ("0x80LLU", TokenKind::IntegerConstant(128, Some(IntegerSuffix::ULL), 16)),
+
+        // Octal literals
+=======
+        ("0x80LLU", TokenKind::IntegerConstant(128, Some(IntegerSuffix::ULL), 16)),
+
+        // Binary literals
+        ("0b1010", TokenKind::IntegerConstant(10, None, 2)),
+        ("0B1111", TokenKind::IntegerConstant(15, None, 2)),
+        ("0b1010u", TokenKind::IntegerConstant(10, Some(IntegerSuffix::U), 2)),
+        ("0B1111LL", TokenKind::IntegerConstant(15, Some(IntegerSuffix::LL), 2)),
+
+        // Octal literals
+>>>>>>> REPLACE

@@ -152,4 +152,9 @@ fn test_long_long_cases() {
     // It doesn't fit in signed long.
     // Fits in unsigned long (since unsigned long is 64-bit).
     check_literal_type("void f() { 0x8000000000000000L; }", "unsigned long");
+
+    // C23 Binary Literals
+    check_literal_type("void f() { 0b1010; }", "int");
+    check_literal_type("void f() { 0B1111u; }", "unsigned int");
+    check_literal_type("void f() { 0b1010LL; }", "long long");
 }

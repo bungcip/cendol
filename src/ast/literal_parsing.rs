@@ -36,6 +36,10 @@ pub(crate) fn parse_integer_literal(text: &str) -> Option<(u64, Option<IntegerSu
         (16, stripped)
     } else if let Some(stripped) = number_part.strip_prefix("0X") {
         (16, stripped)
+    } else if let Some(stripped) = number_part.strip_prefix("0b") {
+        (2, stripped)
+    } else if let Some(stripped) = number_part.strip_prefix("0B") {
+        (2, stripped)
     } else if let Some(stripped) = number_part.strip_prefix('0') {
         if stripped.is_empty() {
             return Some((0, suffix, 8));

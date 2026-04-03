@@ -39,3 +39,32 @@ fn test_integer_promotion_bitfield() {
     let (_, result) = run_pipeline(source, CompilePhase::Mir);
     assert!(result.is_ok());
 }
+
+#[test]
+fn test_usual_arithmetic_conversions_coverage() {
+    let source = r#"
+        void test() {
+            int a = 1;
+            unsigned long long b = 2;
+            typeof(a + b) c;
+
+            // Cover integer_promotion where qt is an enum (line 74)
+            enum E { A, B } e = A;
+            typeof(+e) f;
+
+            // Cover integer_promotion where qt rank < int (line 77)
+            short s = 1;
+            typeof(+s) g;
+
+            // Cover default argument promotions
+            void f_decl();
+            float my_float = 1.0f;
+            f_decl(my_float);
+
+            char c_arg = 'a';
+            f_decl(c_arg);
+        }
+    "#;
+    let (_, result) = run_pipeline(source, CompilePhase::SemanticLowering);
+    assert!(result.is_ok());
+}

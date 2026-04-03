@@ -309,5 +309,9 @@ fn test_zero_sized_array_pedantic() {
     assert!(result.is_err());
 
     let diags = driver.get_diagnostics();
-    assert!(diags.iter().any(|d| d.message.contains("size of array is negative")));
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.message.contains("use of GNU zero-length array extension"))
+    );
 }

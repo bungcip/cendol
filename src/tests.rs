@@ -98,6 +98,7 @@ pub mod codegen_regr;
 pub mod codegen_store_truncation;
 pub mod driver_defines;
 pub mod guardian_alias_completeness;
+pub mod guardian_alignas_vla;
 pub mod guardian_alignof_bitfield;
 pub mod guardian_array_init_bounds;
 pub mod guardian_array_init_string;

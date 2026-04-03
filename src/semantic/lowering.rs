@@ -1371,6 +1371,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             );
         }
 
+        if spec_info.alignment.is_some() && self.registry.is_variably_modified(qt.ty()) {
+            self.report_error(span, SemanticErrorKind::AlignasOnVla);
+        }
+
         qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);
 
         // Define variable in symbol table early so it's visible in its own initializer

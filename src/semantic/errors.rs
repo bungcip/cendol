@@ -298,6 +298,7 @@ pub enum SemanticErrorKind {
     CompoundLiteralFunction {
         ty: QualType,
     },
+    AlignasOnVla,
     InvalidAtomicQualifier {
         type_kind: &'static str,
     },
@@ -698,6 +699,9 @@ impl SemanticErrorKind {
                     "compound literal specifies function type '{}'",
                     registry.display_qual_type(*ty)
                 )
+            }
+            SemanticErrorKind::AlignasOnVla => {
+                "alignment specifier cannot be used in a variably modified type".to_string()
             }
             SemanticErrorKind::InvalidAtomicQualifier { type_kind } => {
                 format!("_Atomic qualifier cannot be used with {} type", type_kind)

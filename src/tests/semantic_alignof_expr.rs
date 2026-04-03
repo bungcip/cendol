@@ -34,20 +34,6 @@ fn test_alignof_expression_alignas() {
 }
 
 #[test]
-fn test_alignof_expression_vla_alignas() {
-    let source = r#"
-        int printf(const char*, ...);
-        int main(int argc, char** argv) {
-            char _Alignas(128) arr[argc + 10];
-            printf("%d", (int)_Alignof arr);
-            return 0;
-        }
-    "#;
-    let output = run_c_code_with_output(source);
-    assert_eq!(output.trim(), "128");
-}
-
-#[test]
 fn test_alignof_expression_nested() {
     let source = r#"
         int printf(const char*, ...);

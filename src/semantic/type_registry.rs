@@ -1030,6 +1030,11 @@ impl TypeRegistry {
                     feature: "typeof expr layout",
                 });
             }
+            TypeKind::TypeofUnqualExpr(_) => {
+                return Err(TypeRegistryError::UnsupportedFeature {
+                    feature: "typeof_unqual expr layout",
+                });
+            }
             TypeKind::Error => {
                 return Err(TypeRegistryError::UnsupportedFeature {
                     feature: "error layout",

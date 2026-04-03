@@ -268,6 +268,8 @@ pub enum ParsedTypeSpec {
     AutoType,
     Typeof(ParsedType),
     TypeofExpr(ParsedNodeRef),
+    TypeofUnqual(ParsedType),
+    TypeofUnqualExpr(ParsedNodeRef),
 }
 
 // Alignment specifiers
@@ -361,6 +363,10 @@ impl ParsedTypeSpec {
             }
             ParsedTypeSpec::Typeof(_) => {}
             ParsedTypeSpec::TypeofExpr(expr) => {
+                f(*expr);
+            }
+            ParsedTypeSpec::TypeofUnqual(_) => {}
+            ParsedTypeSpec::TypeofUnqualExpr(expr) => {
                 f(*expr);
             }
             _ => {}

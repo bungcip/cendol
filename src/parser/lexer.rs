@@ -74,6 +74,7 @@ pub enum TokenKind {
     StaticAssert,
     Typedef,
     Typeof,
+    TypeofUnqual,
     Real,
     Imag,
     Attribute,
@@ -228,6 +229,7 @@ impl TokenKind {
                 | Enum
                 | BuiltinVaList
                 | Typeof
+                | TypeofUnqual
                 | AutoType
         )
     }
@@ -313,6 +315,7 @@ impl TokenKind {
             StaticAssert => "_Static_assert",
             Typedef => "typedef",
             Typeof => "typeof",
+            TypeofUnqual => "typeof_unqual",
             Real => "__real__",
             Imag => "__imag__",
             Attribute => "__attribute__",
@@ -553,6 +556,9 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("typeof"), TokenKind::Typeof);
         m.insert(StringId::new("__typeof"), TokenKind::Typeof);
         m.insert(StringId::new("__typeof__"), TokenKind::Typeof);
+        m.insert(StringId::new("typeof_unqual"), TokenKind::TypeofUnqual);
+        m.insert(StringId::new("__typeof_unqual"), TokenKind::TypeofUnqual);
+        m.insert(StringId::new("__typeof_unqual__"), TokenKind::TypeofUnqual);
         m.insert(StringId::new("union"), TokenKind::Union);
         m.insert(StringId::new("unsigned"), TokenKind::Unsigned);
         m.insert(StringId::new("void"), TokenKind::Void);

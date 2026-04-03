@@ -77,6 +77,20 @@ pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
             parser.expect(TK::RightParen)?;
             Ok(ts)
         }
+        TK::TypeofUnqual => {
+            parser.advance();
+            parser.expect(TK::LeftParen)?;
+            let is_type = parser.is_type_name_start();
+            let ts = if is_type {
+                let ty = parse_type_name(parser)?;
+                PTS::TypeofUnqual(ty)
+            } else {
+                let expr = parse_expression(parser, BindingPower::MIN)?;
+                PTS::TypeofUnqualExpr(expr)
+            };
+            parser.expect(TK::RightParen)?;
+            Ok(ts)
+        }
         TK::Struct | TK::Union => {
             parser.advance();
             let is_union = token.kind == TK::Union;

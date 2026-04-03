@@ -2835,6 +2835,19 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     Ok(QualType::unqualified(tr))
                 }
             }
+            ParsedTypeSpec::TypeofUnqual(ty) => {
+                let qt = self.lower_type(*ty, span, false)?;
+                Ok(QualType::unqualified(qt.ty()))
+            }
+            ParsedTypeSpec::TypeofUnqualExpr(expr) => {
+                let expr_node = self.visit_expression(*expr);
+                if let Some(qt) = self.try_infer_type(expr_node) {
+                    Ok(QualType::unqualified(qt.ty()))
+                } else {
+                    let tr = self.registry.alloc(Type::new(TypeKind::TypeofUnqualExpr(expr_node)));
+                    Ok(QualType::unqualified(tr))
+                }
+            }
         }
     }
 
@@ -3327,6 +3340,25 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
+    fn lower_typeof_unqual_parsed_base(&mut self, ty: ParsedType, span: SourceSpan) -> Result<QualType, SemanticError> {
+        let qt = self.lower_type(ty, span, false)?;
+        Ok(QualType::unqualified(qt.ty()))
+    }
+
+    fn lower_typeof_unqual_expr_parsed_base(
+        &mut self,
+        expr: ParsedNodeRef,
+        _span: SourceSpan,
+    ) -> Result<QualType, SemanticError> {
+        let expr_node = self.visit_expression(expr);
+        if let Some(qt) = self.try_infer_type(expr_node) {
+            Ok(QualType::unqualified(qt.ty()))
+        } else {
+            let tr = self.registry.alloc(Type::new(TypeKind::TypeofUnqualExpr(expr_node)));
+            Ok(QualType::unqualified(tr))
+        }
+    }
+
     /// Convert a ParsedBaseTypeNode to a QualType
     fn convert_to_qual_type(
         &mut self,
@@ -3342,6 +3374,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedBaseType::Typedef(name) => self.lower_typedef_parsed_base(*name, span),
             ParsedBaseType::Typeof(ty) => self.lower_typeof_parsed_base(*ty, span),
             ParsedBaseType::TypeofExpr(expr) => self.lower_typeof_expr_parsed_base(*expr, span),
+            ParsedBaseType::TypeofUnqual(ty) => self.lower_typeof_unqual_parsed_base(*ty, span),
+            ParsedBaseType::TypeofUnqualExpr(expr) => self.lower_typeof_unqual_expr_parsed_base(*expr, span),
         }
     }
 }

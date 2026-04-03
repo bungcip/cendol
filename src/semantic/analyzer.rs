@@ -248,7 +248,7 @@ impl<'a> SemanticAnalyzer<'a> {
             Pointer(QualType),
             Function(TypeRef, Arc<[FunctionParameter]>),
             Complex(TypeRef),
-            Typeof(NodeRef),
+            Typeof(NodeRef, bool), // bool is true for unqual
             Alias(TypeRef),
             None,
         }
@@ -269,7 +269,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 ..
             } => Task::Function(*return_type, Arc::clone(parameters)),
             TypeKind::Complex { base_type } => Task::Complex(*base_type),
-            TypeKind::TypeofExpr(expr) => Task::Typeof(*expr),
+            TypeKind::TypeofExpr(expr) => Task::Typeof(*expr, false),
+            TypeKind::TypeofUnqualExpr(expr) => Task::Typeof(*expr, true),
             TypeKind::Alias(inner) => Task::Alias(*inner),
             _ => Task::None,
         };
@@ -296,10 +297,13 @@ impl<'a> SemanticAnalyzer<'a> {
             Task::Complex(base_type) => {
                 self.visit_type_exprs(QualType::unqualified(base_type));
             }
-            Task::Typeof(expr) => {
-                let resolved_qt = self
+            Task::Typeof(expr, unqual) => {
+                let mut resolved_qt = self
                     .visit_node(expr)
                     .unwrap_or(QualType::unqualified(self.registry.type_error));
+                if unqual {
+                    resolved_qt = QualType::unqualified(resolved_qt.ty());
+                }
                 self.registry.types[ty.index()].kind = TypeKind::Alias(resolved_qt.ty());
             }
             Task::Alias(inner) => {

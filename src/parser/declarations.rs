@@ -354,6 +354,7 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<ParsedDecl
             | TokenKind::Enum
             | TokenKind::BuiltinVaList
             | TokenKind::Typeof
+            | TokenKind::TypeofUnqual
             | TokenKind::AutoType => {
                 specifiers.push(ParsedDeclSpec::TypeSpec(parse_type_specifier(parser)?));
                 has_type_specifier = true;

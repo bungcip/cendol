@@ -175,6 +175,11 @@ Action: Always include tests for constraint enforcement that use 'typedef' to en
 Learning: While C11 only defines '_Alignof' for type names (6.5.3.4p2), common extensions (GCC/Clang) allow it for expressions. Because bit-fields do not have a byte-aligned address and their layout is implementation-defined, applying '_Alignof' to a bit-field must be rejected, mirroring the constraint for 'sizeof'. Centralizing these checks in 'visit_sizeof_alignof' ensures consistent enforcement across both operators.
 Action: When supporting language extensions that mirror standard operators (like '_Alignof' mirroring 'sizeof'), always ensure that base-language constraints (like bit-field prohibitions) are also mirrored and correctly diagnosed.
 
+2026-03-25 - [Explicit Cast Constraints and Identity Casts]
+
+Learning: C11 6.5.4p2 mandates that both the target type (if not 'void') and the operand of an explicit cast must have scalar types. This prohibits casting between structures/unions and integers or other non-scalar types. However, common real-world code and existing test suites (like Cendol's codegen tests) often rely on 'identity casts'—casting a structure to its own type (or a compatible one). While strictly a constraint violation in C11, permitting these identity casts as a compiler extension maintains compatibility with standard practice while still rejecting truly invalid non-scalar conversions.
+Action: Enforce scalar constraints for explicit casts in 'visit_expression_node' but implement an explicit exception for identity casts of compatible types to balance standard compliance with practical compatibility.
+
 2026-03-24 - [VLA Star Scope Constraints]
 
 Learning: C11 6.7.6.2p4 restricts the use of `[*]` array size to function prototype scope only. This means it is invalid in file scope, block scope (outside of parameter lists), and even in function definitions (where parameters have block scope). Cendol previously lacked this constraint, potentially allowing invalid VLAs to reach the backend.

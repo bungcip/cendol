@@ -393,6 +393,7 @@ pub enum SemanticErrorKind {
     GnuTypeof,
     GnuDesignatedInitializerRange,
     GnuCaseRange,
+    GnuZeroLengthArray,
     InlineAsmIgnored,
 }
 
@@ -417,6 +418,7 @@ impl SemanticErrorKind {
             SemanticErrorKind::GnuTypeof => Some("gnu-typeof-expression"),
             SemanticErrorKind::GnuDesignatedInitializerRange => Some("gnu-designated-init"),
             SemanticErrorKind::GnuCaseRange => Some("gnu-case-range"),
+            SemanticErrorKind::GnuZeroLengthArray => Some("gnu-zero-length-array"),
             SemanticErrorKind::InlineAsmIgnored => Some("inline-asm"),
             _ => None,
         }
@@ -817,6 +819,7 @@ impl SemanticErrorKind {
                 "use of GNU designated initializer range extension".to_string()
             }
             SemanticErrorKind::GnuCaseRange => "use of GNU case range extension".to_string(),
+            SemanticErrorKind::GnuZeroLengthArray => "use of GNU zero-length array extension".to_string(),
             SemanticErrorKind::InlineAsmIgnored => "inline assembly is currently ignored by cendol".to_string(),
         }
     }

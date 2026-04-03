@@ -2052,9 +2052,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             Some(val) => {
                 // C11 6.7.6.2p1: the expression shall have a value greater than zero
                 // Extension: allow zero-sized arrays unless pedantic-errors is set
-                if val < i64::from(self.lang_opts.pedantic_errors) {
+                if val < 0 {
                     self.report_error(self.ast.get_span(expr), SemanticErrorKind::InvalidArraySize);
                     return ArraySizeType::Incomplete;
+                } else if val == 0 {
+                    self.report_warning(self.ast.get_span(expr), SemanticErrorKind::GnuZeroLengthArray);
                 }
                 ArraySizeType::Constant(val as usize)
             }

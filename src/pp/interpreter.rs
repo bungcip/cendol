@@ -75,6 +75,7 @@ impl PPExpr {
                 | "__builtin_va_end"
                 | "__builtin_va_copy"
                 | "__builtin_expect"
+                | "__builtin_memcmp"
                 | "__builtin_memcpy"
                 | "__builtin_memset"
                 | "__builtin_memmove"

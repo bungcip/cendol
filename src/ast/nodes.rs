@@ -52,6 +52,7 @@ pub(crate) enum NodeKind {
     BuiltinVaEnd(NodeRef),
     BuiltinVaCopy(NodeRef, NodeRef),
     BuiltinExpect(NodeRef, NodeRef),
+    BuiltinMemcmp(NodeRef, NodeRef, NodeRef),
     BuiltinMemcpy(NodeRef, NodeRef, NodeRef),
     BuiltinMemset(NodeRef, NodeRef, NodeRef),
     BuiltinMemmove(NodeRef, NodeRef, NodeRef),
@@ -167,6 +168,7 @@ impl NodeKind {
             NodeKind::BuiltinVaEnd(..) => "BuiltinVaEnd",
             NodeKind::BuiltinVaCopy(..) => "BuiltinVaCopy",
             NodeKind::BuiltinExpect(..) => "BuiltinExpect",
+            NodeKind::BuiltinMemcmp(..) => "BuiltinMemcmp",
             NodeKind::BuiltinMemcpy(..) => "BuiltinMemcpy",
             NodeKind::BuiltinMemset(..) => "BuiltinMemset",
             NodeKind::BuiltinMemmove(..) => "BuiltinMemmove",
@@ -329,6 +331,7 @@ impl NodeKind {
             }
 
             NodeKind::BuiltinChooseExpr(c, t, e)
+            | NodeKind::BuiltinMemcmp(c, t, e)
             | NodeKind::BuiltinMemcpy(c, t, e)
             | NodeKind::BuiltinMemset(c, t, e)
             | NodeKind::BuiltinMemmove(c, t, e) => {

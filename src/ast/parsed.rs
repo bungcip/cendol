@@ -95,6 +95,7 @@ pub enum ParsedNodeKind {
     BuiltinVaEnd(ParsedNodeRef),
     BuiltinVaCopy(ParsedNodeRef, ParsedNodeRef),
     BuiltinExpect(ParsedNodeRef, ParsedNodeRef),
+    BuiltinMemcmp(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinMemcpy(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinMemset(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinMemmove(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
@@ -435,6 +436,7 @@ impl ParsedNodeKind {
             ParsedNodeKind::BuiltinVaEnd(..) => "BuiltinVaEnd",
             ParsedNodeKind::BuiltinVaCopy(..) => "BuiltinVaCopy",
             ParsedNodeKind::BuiltinExpect(..) => "BuiltinExpect",
+            ParsedNodeKind::BuiltinMemcmp(..) => "BuiltinMemcmp",
             ParsedNodeKind::BuiltinMemcpy(..) => "BuiltinMemcpy",
             ParsedNodeKind::BuiltinMemset(..) => "BuiltinMemset",
             ParsedNodeKind::BuiltinMemmove(..) => "BuiltinMemmove",
@@ -571,6 +573,7 @@ impl ParsedNodeKind {
             }
             ParsedNodeKind::TernaryOp(c, t, e)
             | ParsedNodeKind::CaseRange(c, t, e)
+            | ParsedNodeKind::BuiltinMemcmp(c, t, e)
             | ParsedNodeKind::BuiltinMemcpy(c, t, e)
             | ParsedNodeKind::BuiltinMemset(c, t, e)
             | ParsedNodeKind::BuiltinMemmove(c, t, e) => {

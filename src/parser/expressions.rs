@@ -236,6 +236,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinVaEnd => parse_builtin_va_end(parser),
         TokenKind::BuiltinVaCopy => parse_builtin_va_copy(parser),
         TokenKind::BuiltinExpect => parse_builtin_expect(parser),
+        TokenKind::BuiltinMemcmp => parse_builtin_mem(parser, TokenKind::BuiltinMemcmp),
         TokenKind::BuiltinMemcpy => parse_builtin_mem(parser, TokenKind::BuiltinMemcpy),
         TokenKind::BuiltinMemset => parse_builtin_mem(parser, TokenKind::BuiltinMemset),
         TokenKind::BuiltinMemmove => parse_builtin_mem(parser, TokenKind::BuiltinMemmove),
@@ -700,6 +701,7 @@ fn parse_builtin_mem(parser: &mut Parser, kind: TokenKind) -> Result<ParsedNodeR
     let end = parser.expect(TokenKind::RightParen)?.span.end();
 
     let node_kind = match kind {
+        TokenKind::BuiltinMemcmp => ParsedNodeKind::BuiltinMemcmp(arg1, arg2, arg3),
         TokenKind::BuiltinMemcpy => ParsedNodeKind::BuiltinMemcpy(arg1, arg2, arg3),
         TokenKind::BuiltinMemset => ParsedNodeKind::BuiltinMemset(arg1, arg2, arg3),
         TokenKind::BuiltinMemmove => ParsedNodeKind::BuiltinMemmove(arg1, arg2, arg3),

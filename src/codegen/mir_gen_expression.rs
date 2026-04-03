@@ -178,6 +178,21 @@ impl<'a> MirGen<'a> {
                 let _ = self.visit_expression(*c, true); // lower 'c' for side effects or just to process it
                 self.visit_expression(*exp, need_value)
             }
+            NodeKind::BuiltinMemcmp(s1, s2, n) => {
+                let const_void = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
+                let const_void_ptr = self.registry.pointer_to(const_void);
+
+                let cv_ptr_ty = self.lower_type(const_void_ptr);
+                let n_ty = self.get_size_t_type();
+                let ret_ty = self.get_int_type();
+
+                self.emit_builtin_memory_op(
+                    "memcmp",
+                    &[(*s1, cv_ptr_ty), (*s2, cv_ptr_ty), (*n, n_ty)],
+                    ret_ty,
+                    need_value,
+                )
+            }
             NodeKind::BuiltinMemcpy(dest, src, n) | NodeKind::BuiltinMemmove(dest, src, n) => {
                 let void_ptr = self.registry.type_void_ptr;
                 let const_void = QualType::new(self.registry.type_void, TypeQualifiers::CONST);

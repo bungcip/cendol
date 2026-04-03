@@ -2739,6 +2739,22 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*c);
                 ty
             }
+            NodeKind::BuiltinMemcmp(s1, s2, n) => {
+                let const_void_ptr = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
+                let const_void_ptr = QualType::unqualified(self.registry.pointer_to(const_void_ptr));
+                let size_t = QualType::unqualified(self.registry.type_long_unsigned);
+
+                if let Some(s1_ty) = self.visit_node(*s1) {
+                    self.validate_assignment(*s1, const_void_ptr, s1_ty, *s1);
+                }
+                if let Some(s2_ty) = self.visit_node(*s2) {
+                    self.validate_assignment(*s2, const_void_ptr, s2_ty, *s2);
+                }
+                if let Some(n_ty) = self.visit_node(*n) {
+                    self.validate_assignment(*n, size_t, n_ty, *n);
+                }
+                Some(QualType::unqualified(self.registry.type_int))
+            }
             NodeKind::BuiltinMemcpy(dest, src, n) | NodeKind::BuiltinMemmove(dest, src, n) => {
                 let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
                 let const_void_ptr = QualType::new(self.registry.type_void, TypeQualifiers::CONST);

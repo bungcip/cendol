@@ -430,11 +430,14 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     /// ⚡ Bolt: Checks if the node is an LValue.
-    /// This function is optimized to avoid $O(N^2)$ behavior in nested expressions
-    /// by using already-computed value categories from sub-expressions.
+    /// This function is optimized to use the already-computed value category from the side table.
     fn is_lvalue(&self, node: NodeRef) -> bool {
-        let node_kind = self.ast.get_kind(node);
-        match node_kind {
+        self.semantic_info.value_categories[node.index()] == ValueCategory::LValue
+    }
+
+    /// Optimized value category detection using an already-fetched NodeKind.
+    fn is_lvalue_kind(&self, node: NodeRef, kind: &NodeKind) -> bool {
+        match kind {
             NodeKind::Ident(_, sym) => {
                 let symbol = self.symbol_table.get_symbol(*sym);
                 matches!(symbol.kind, SymbolKind::Variable { .. } | SymbolKind::Function { .. })
@@ -452,7 +455,6 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::IndexAccess(..) => true,
             NodeKind::MemberAccess(obj, _, is_arrow) => {
                 // Bolt ⚡: Use cached value category for the object expression.
-                // Sub-expressions are always visited before their parents in visit_node.
                 *is_arrow || self.semantic_info.value_categories[obj.index()] == ValueCategory::LValue
             }
             NodeKind::Literal(Literal::String(_)) => true,
@@ -657,8 +659,9 @@ impl<'a> SemanticAnalyzer<'a> {
         rhs_qt: QualType,
         rhs_node: NodeRef,
     ) -> bool {
-        if self.check_assignment_constraints(lhs_qt, rhs_qt, rhs_node) {
-            self.record_implicit_conversions(lhs_qt, rhs_qt, rhs_node);
+        let is_npc = self.is_null_pointer_constant(rhs_node);
+        if self.check_assignment_constraints(lhs_qt, rhs_qt, rhs_node, is_npc) {
+            self.record_implicit_conversions(lhs_qt, rhs_qt, rhs_node, is_npc);
             true
         } else if self.is_incompatible_struct_pointer_types(lhs_qt, rhs_qt) {
             // Incompatible struct pointer types - report as warning but allow the assignment
@@ -670,7 +673,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 },
             );
             // Still record conversions so the assignment works
-            self.record_implicit_conversions(lhs_qt, rhs_qt, rhs_node);
+            self.record_implicit_conversions(lhs_qt, rhs_qt, rhs_node, is_npc);
             true
         } else if self.is_pointer_signedness_mismatch(lhs_qt, rhs_qt) {
             // Pointers differ only in signedness - report as warning
@@ -681,7 +684,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     found: rhs_qt,
                 },
             );
-            self.record_implicit_conversions(lhs_qt, rhs_qt, rhs_node);
+            self.record_implicit_conversions(lhs_qt, rhs_qt, rhs_node, is_npc);
             true
         } else if self.is_discarding_pointer_qualifiers(lhs_qt, rhs_qt) {
             self.report_warning(
@@ -691,7 +694,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     found: rhs_qt,
                 },
             );
-            self.record_implicit_conversions(lhs_qt, rhs_qt, rhs_node);
+            self.record_implicit_conversions(lhs_qt, rhs_qt, rhs_node, is_npc);
             true
         } else {
             self.report_error(
@@ -1358,7 +1361,8 @@ impl<'a> SemanticAnalyzer<'a> {
         let (_, common_qt) = self.resolve_binary_operation_types(arithmetic_op, lhs, rhs, lhs_qt, rhs_qt)?;
 
         // Check assignment constraints (C11 6.5.16.1)
-        if !self.check_assignment_constraints(lhs_qt, common_qt, rhs) {
+        let is_npc = self.is_null_pointer_constant(rhs);
+        if !self.check_assignment_constraints(lhs_qt, common_qt, rhs, is_npc) {
             self.report_error(
                 node,
                 SemanticErrorKind::TypeMismatch {
@@ -1382,7 +1386,13 @@ impl<'a> SemanticAnalyzer<'a> {
         Some(lhs_qt)
     }
 
-    fn check_assignment_constraints(&self, lhs_qt: QualType, rhs_qt: QualType, rhs: NodeRef) -> bool {
+    fn check_assignment_constraints(
+        &self,
+        lhs_qt: QualType,
+        rhs_qt: QualType,
+        _rhs: NodeRef,
+        is_npc: bool,
+    ) -> bool {
         let lhs_ty_canon = self.registry.canonical_qual_type(lhs_qt);
         let rhs_ty_canon = self.registry.canonical_qual_type(rhs_qt);
 
@@ -1403,7 +1413,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // 3. Pointers
         if lhs_qt.is_pointer() {
-            if self.is_null_pointer_constant(rhs) {
+            if is_npc {
                 return true;
             }
 
@@ -1454,9 +1464,9 @@ impl<'a> SemanticAnalyzer<'a> {
         false
     }
 
-    fn record_implicit_conversions(&mut self, lhs_qt: QualType, mut rhs_qt: QualType, rhs: NodeRef) {
+    fn record_implicit_conversions(&mut self, lhs_qt: QualType, mut rhs_qt: QualType, rhs: NodeRef, is_npc: bool) {
         // 1. Null pointer constant conversion (0 or (void*)0 -> T*)
-        if lhs_qt.is_pointer() && self.is_null_pointer_constant(rhs) {
+        if lhs_qt.is_pointer() && is_npc {
             self.push_conversion(rhs, Conversion::NullPointerConstant);
             if lhs_qt.ty() != self.registry.type_void_ptr {
                 self.push_conversion(
@@ -1570,7 +1580,8 @@ impl<'a> SemanticAnalyzer<'a> {
             self.report_warning(init, SemanticErrorKind::ExcessElements { kind: "array" });
         }
 
-        self.record_implicit_conversions(target_qt, init_qt, init);
+        let is_npc = self.is_null_pointer_constant(init);
+        self.record_implicit_conversions(target_qt, init_qt, init, is_npc);
     }
 
     fn find_member_index(&self, members: &[StructMember], name: NameId) -> Option<usize> {
@@ -1947,11 +1958,13 @@ impl<'a> SemanticAnalyzer<'a> {
         if target_qt.is_record()
             && !has_more_designators
             && let Some(init_ty) = self.visit_node(expr)
-            && self.check_assignment_constraints(target_qt, init_ty, expr)
         {
-            self.record_implicit_conversions(target_qt, init_ty, expr);
-            iter.next();
-            return;
+            let is_npc = self.is_null_pointer_constant(expr);
+            if self.check_assignment_constraints(target_qt, init_ty, expr, is_npc) {
+                self.record_implicit_conversions(target_qt, init_ty, expr, is_npc);
+                iter.next();
+                return;
+            }
         }
 
         // Braced initializer list or Brace elision
@@ -2017,7 +2030,8 @@ impl<'a> SemanticAnalyzer<'a> {
                         crate::semantic::conversions::default_argument_promotions(self.registry, actual_arg_qt);
 
                     if promoted_qt.ty() != actual_arg_qt.ty() {
-                        self.record_implicit_conversions(promoted_qt, actual_arg_qt, arg_node);
+                        let is_npc = self.is_null_pointer_constant(arg_node);
+                        self.record_implicit_conversions(promoted_qt, actual_arg_qt, arg_node, is_npc);
                     }
                 }
             }
@@ -3070,21 +3084,24 @@ impl<'a> SemanticAnalyzer<'a> {
         t = self.prepare_ternary_operand(then, t);
         e = self.prepare_ternary_operand(else_expr, e);
 
+        let then_is_npc = self.is_null_pointer_constant(then);
+        let else_is_npc = self.is_null_pointer_constant(else_expr);
+
         let result_ty = match (t, e) {
             (t, e) if t.is_arithmetic() && e.is_arithmetic() => usual_arithmetic_conversions(self.registry, t, e),
             (t, e) if t.ty() == e.ty() => self.registry.composite_type(t, e),
             (t, _) if t.is_void() => Some(t),
             (_, e) if e.is_void() => Some(e),
-            (t, _) if t.is_pointer() && self.is_null_pointer_constant(else_expr) => Some(t),
-            (_, e) if e.is_pointer() && self.is_null_pointer_constant(then) => Some(e),
+            (t, _) if t.is_pointer() && else_is_npc => Some(t),
+            (_, e) if e.is_pointer() && then_is_npc => Some(e),
             (t, e) if t.is_pointer() && e.is_pointer() => self.common_pointer_type(t, e),
             _ => usual_arithmetic_conversions(self.registry, t, e),
         };
 
         if let Some(res) = result_ty {
             if !res.is_void() {
-                self.record_implicit_conversions(res, t, then);
-                self.record_implicit_conversions(res, e, else_expr);
+                self.record_implicit_conversions(res, t, then, then_is_npc);
+                self.record_implicit_conversions(res, e, else_expr, else_is_npc);
             }
             return Some(res);
         }
@@ -3340,7 +3357,7 @@ impl<'a> SemanticAnalyzer<'a> {
             // set resolved type and value category for this node
             let idx = node.index();
             self.semantic_info.types[idx] = Some(ty);
-            let vc = if self.is_lvalue(node) {
+            let vc = if self.is_lvalue_kind(node, node_kind) {
                 ValueCategory::LValue
             } else {
                 ValueCategory::RValue

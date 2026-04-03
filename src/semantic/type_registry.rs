@@ -314,7 +314,8 @@ impl TypeRegistry {
         }
 
         let inner = self.get(ty);
-        if let TypeKind::Builtin(b) = inner.kind {
+        // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
+        if let TypeKind::Builtin(b) = &inner.kind {
             return self.get_builtin_type(b.to_unsigned());
         }
 
@@ -355,8 +356,9 @@ impl TypeRegistry {
                     });
                 }
                 TypeClass::Alias => {
-                    if let TypeKind::Alias(inner) = self.types[r.index()].kind {
-                        r = inner;
+                    // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
+                    if let TypeKind::Alias(inner) = &self.types[r.index()].kind {
+                        r = *inner;
                         continue;
                     }
                     return Cow::Borrowed(&self.types[r.index()]);
@@ -373,8 +375,9 @@ impl TypeRegistry {
                 return Some(QualType::unqualified(self.reconstruct_pointee(ty)));
             } else {
                 let t = &self.types[ty.index()];
-                if let TypeKind::Alias(inner) = t.kind {
-                    ty = inner;
+                // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
+                if let TypeKind::Alias(inner) = &t.kind {
+                    ty = *inner;
                     continue;
                 }
                 match &t.kind {
@@ -675,8 +678,9 @@ impl TypeRegistry {
 
             let idx = ty.index();
             let repr = &self.types[idx];
-            if let TypeKind::Alias(inner) = repr.kind {
-                ty = inner;
+            // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
+            if let TypeKind::Alias(inner) = &repr.kind {
+                ty = *inner;
             } else {
                 match repr.layout.as_ref() {
                     Some(x) => return Cow::Borrowed(x),
@@ -713,8 +717,9 @@ impl TypeRegistry {
 
             let idx = ty.index();
             let repr = &self.types[idx];
-            if let TypeKind::Alias(inner) = repr.kind {
-                ty = inner;
+            // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
+            if let TypeKind::Alias(inner) = &repr.kind {
+                ty = *inner;
             } else {
                 if let Some(layout) = repr.layout.as_ref() {
                     return Some(Cow::Borrowed(layout));
@@ -1307,8 +1312,9 @@ impl TypeRegistry {
 
         // All inline types are non-alias terminal types, handled above.
         // Registry aliases can be recursive (typedef to another typedef).
-        while let TypeKind::Alias(inner) = self.types[ty.index()].kind {
-            ty = inner;
+        // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
+        while let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
+            ty = *inner;
         }
         QualType::new(ty, qt.qualifiers())
     }

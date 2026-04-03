@@ -56,4 +56,3 @@ fn test_local_alignas_large() {
     "#;
     assert_eq!(run_c_code_exit_status(source), 0);
 }
-

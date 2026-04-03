@@ -1074,16 +1074,18 @@ impl TypeRegistry {
         for (i, member) in members.iter().enumerate() {
             let member_ty = member.member_type.ty();
 
+            if self.is_variably_modified(member_ty) {
+                // C11 6.7.2.1p9: "A member of a structure or union shall not have a variably modified type."
+                // This includes both direct VLAs, pointers to VLAs, and even variably-modified FAMs.
+                return Err(TypeRegistryError::VlaAsStructMember);
+            }
+
             // Special handling for flexible array member (FAM)
             // Need to check if it is incomplete array
             // We can't use is_complete because that recurses. We check TypeKind directly.
             // Bolt ⚡: Optimized to match on reference to avoid cloning ArraySizeType.
             let type_info = self.get(member_ty);
             if let TypeKind::Array { element_type, size } = &type_info.kind {
-                if matches!(size, ArraySizeType::Variable(_)) {
-                    return Err(TypeRegistryError::VlaAsStructMember);
-                }
-
                 if matches!(size, ArraySizeType::Incomplete) {
                     let elem_ty = *element_type;
                     drop(type_info);

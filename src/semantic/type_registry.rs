@@ -1455,6 +1455,11 @@ impl TypeRegistry {
     }
 
     pub(super) fn composite_type(&mut self, a: QualType, b: QualType) -> Option<QualType> {
+        // Bolt ⚡: Early exit for identical types.
+        if a == b {
+            return Some(a);
+        }
+
         if a.qualifiers() != b.qualifiers() {
             return None;
         }

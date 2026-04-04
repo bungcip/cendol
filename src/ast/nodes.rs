@@ -119,7 +119,6 @@ pub(crate) enum NodeKind {
     // --- Declarations & Definitions ---
     // Removed Parser-only Declaration and FunctionDef variants.
     // They are now lowered to semantic nodes immediately or exist only in ParsedAst.
-    EnumConstant(NameId, Option<NodeRef> /* value expr */),
     StaticAssert(NodeRef /* condition */, NodeRef /* message */),
 
     // --- Semantic Nodes (Type-Resolved) ---
@@ -221,7 +220,6 @@ impl NodeKind {
             NodeKind::Default(..) => "Default",
             NodeKind::ExpressionStmt(..) => "ExpressionStmt",
             NodeKind::AsmStmt(..) => "AsmStmt",
-            NodeKind::EnumConstant(..) => "EnumConstant",
             NodeKind::StaticAssert(..) => "StaticAssert",
             NodeKind::VarDecl(..) => "VarDecl",
             NodeKind::FunctionDecl(..) => "FunctionDecl",
@@ -389,7 +387,7 @@ impl NodeKind {
                 f(stmt.body);
             }
 
-            NodeKind::Return(expr) | NodeKind::ExpressionStmt(expr) | NodeKind::EnumConstant(_, expr) => {
+            NodeKind::Return(expr) | NodeKind::ExpressionStmt(expr) => {
                 if let Some(child) = expr {
                     f(*child);
                 }

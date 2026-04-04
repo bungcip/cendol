@@ -2196,12 +2196,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(data.qt)
             }
             NodeKind::VarDecl(data) => self.visit_var_declaration(data, node),
-            NodeKind::EnumConstant(_, value_expr) => {
-                if let Some(expr) = value_expr {
-                    self.visit_node(*expr);
-                }
-                Some(QualType::unqualified(self.registry.type_int))
-            }
             NodeKind::EnumDecl(data) => {
                 for member in data.member_start.range(data.member_len) {
                     self.visit_node(member);
@@ -3323,7 +3317,6 @@ impl<'a> SemanticAnalyzer<'a> {
             | NodeKind::EnumDecl(_)
             | NodeKind::EnumMember(_)
             | NodeKind::TypedefDecl(_)
-            | NodeKind::EnumConstant(..)
             | NodeKind::Param(_)
             | NodeKind::FunctionDecl(_) => self.visit_declaration_node(node, node_kind),
 

@@ -212,7 +212,6 @@ impl AstDumper {
             | NodeKind::InitializerList(_)
             | NodeKind::InitializerItem(_)
             | NodeKind::StaticAssert(_, _)
-            | NodeKind::EnumConstant(_, _)
             | NodeKind::Dummy => {
                 // These don't directly contain TypeRefs
             }
@@ -594,7 +593,6 @@ impl AstDumper {
                 )?
             }
             NodeKind::Param(data) => write!(f, "symbol={:?}, ty={:?}", data.symbol, data.qt)?,
-            NodeKind::EnumConstant(name, value) => write!(f, "{}, {}", name, optional(*value, "auto"))?,
             NodeKind::StaticAssert(cond, msg) => {
                 let message_str = if let NodeKind::Literal(Literal::String(s)) = ast.get_kind(*msg) {
                     s.to_string()

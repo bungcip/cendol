@@ -64,7 +64,11 @@ pub(super) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rh
 pub(super) fn integer_promotion(ctx: &TypeRegistry, qt: QualType, bitfield_width: Option<u16>) -> QualType {
     // Bolt ⚡: Fast-path for non-bitfield types that are already int or wider.
     // Integer promotion only applies to types with lower rank than int (or bitfields).
-    if bitfield_width.is_none() && qt.builtin().is_some_and(|b| b.is_integer() && b.rank() >= BuiltinType::Int.rank()) {
+    if bitfield_width.is_none()
+        && qt
+            .builtin()
+            .is_some_and(|b| b.is_integer() && b.rank() >= BuiltinType::Int.rank())
+    {
         return qt;
     }
 

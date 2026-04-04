@@ -1386,13 +1386,7 @@ impl<'a> SemanticAnalyzer<'a> {
         Some(lhs_qt)
     }
 
-    fn check_assignment_constraints(
-        &self,
-        lhs_qt: QualType,
-        rhs_qt: QualType,
-        _rhs: NodeRef,
-        is_npc: bool,
-    ) -> bool {
+    fn check_assignment_constraints(&self, lhs_qt: QualType, rhs_qt: QualType, _rhs: NodeRef, is_npc: bool) -> bool {
         let lhs_ty_canon = self.registry.canonical_qual_type(lhs_qt);
         let rhs_ty_canon = self.registry.canonical_qual_type(rhs_qt);
 

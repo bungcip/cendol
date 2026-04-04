@@ -168,6 +168,7 @@ impl<'a> ConstEvalCtx<'a> {
                 QualType::unqualified(TypeRef::new(builtin_base.base(), TypeClass::Array, 0, len as u32).unwrap())
             }
             Literal::Nullptr => QualType::unqualified(self.registry.type_nullptr_t),
+            Literal::True | Literal::False => QualType::unqualified(self.registry.type_bool),
         }
     }
 
@@ -220,6 +221,8 @@ impl<'a> ConstEvalCtx<'a> {
         match node_kind {
             NodeKind::Literal(Literal::Int { val, .. }) => Some(*val),
             NodeKind::Literal(Literal::Char(val)) => Some(*val as i64),
+            NodeKind::Literal(Literal::True) => Some(1),
+            NodeKind::Literal(Literal::False) => Some(0),
             NodeKind::Ident(_, sym) => {
                 let symbol = self.symbol_table.get_symbol(*sym);
                 if let SymbolKind::EnumConstant { value } = &symbol.kind {
@@ -332,6 +335,8 @@ impl<'a> ConstEvalCtx<'a> {
             }
             NodeKind::Literal(Literal::Int { val, .. }) => Some(*val as f64),
             NodeKind::Literal(Literal::Char(val)) => Some(*val as f64),
+            NodeKind::Literal(Literal::True) => Some(1.0),
+            NodeKind::Literal(Literal::False) => Some(0.0),
             NodeKind::BinaryOp(op, left, right) => {
                 let l = self.eval_float(*left)?;
                 let r = self.eval_float(*right)?;

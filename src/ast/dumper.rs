@@ -298,6 +298,8 @@ impl AstDumper {
                 char::from_u32(*c as u32).unwrap_or(char::REPLACEMENT_CHARACTER)
             ),
             Literal::Nullptr => "LiteralNullptr".to_string(),
+            Literal::True => "LiteralTrue".to_string(),
+            Literal::False => "LiteralFalse".to_string(),
         }
     }
 

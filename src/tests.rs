@@ -141,6 +141,7 @@ pub mod pragma_pack;
 pub mod semantic_assignment_coverage;
 pub mod semantic_atomic;
 pub mod semantic_bitfield_init;
+pub mod semantic_bool_literals;
 pub mod semantic_brace_elision;
 pub mod semantic_caserange;
 pub mod semantic_complex_cmplx;

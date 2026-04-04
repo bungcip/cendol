@@ -3303,6 +3303,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::new(array_type, TypeQualifiers::empty()))
             }
             Literal::Nullptr => Some(QualType::unqualified(self.registry.type_nullptr_t)),
+            Literal::True | Literal::False => Some(QualType::unqualified(self.registry.type_bool)),
         }
     }
     fn visit_node(&mut self, node: NodeRef) -> Option<QualType> {

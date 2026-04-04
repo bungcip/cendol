@@ -32,7 +32,7 @@ impl ExprValue {
 pub(crate) enum PPExpr {
     Number(ExprValue),
 
-    Identifier,
+    Identifier(StringId),
     Defined(StringId),
     HasInclude(String, bool),
     HasIncludeNext(String, bool),
@@ -49,7 +49,16 @@ impl PPExpr {
     fn evaluate(&self, pp: &Preprocessor, span: SourceSpan) -> Result<ExprValue, PPError> {
         match self {
             PPExpr::Number(n) => Ok(*n),
-            PPExpr::Identifier => Ok(ExprValue::new(0, false)), // C11 6.10.1p4: All remaining identifiers are replaced with 0
+            PPExpr::Identifier(sym) => {
+                let s = sym.as_str();
+                if s == "true" {
+                    Ok(ExprValue::new(1, false))
+                } else if s == "false" {
+                    Ok(ExprValue::new(0, false))
+                } else {
+                    Ok(ExprValue::new(0, false)) // C11 6.10.1p4: All remaining identifiers are replaced with 0
+                }
+            }
             PPExpr::Defined(sym) => Ok(ExprValue::from_bool(pp.is_macro_defined(sym))),
             PPExpr::HasInclude(path, is_angled) => Ok(ExprValue::from_bool(pp.check_header_exists(path, *is_angled))),
             PPExpr::HasIncludeNext(path, is_angled) => {
@@ -593,7 +602,7 @@ impl<'a> Interpreter<'a> {
                 Ok(PPExpr::Number(ExprValue::new(val, is_unsigned)))
             }
             PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(ExprValue::new(*codepoint as u64, false))),
-            PPTokenKind::Identifier(_) => Ok(PPExpr::Identifier),
+            PPTokenKind::Identifier(sym) => Ok(PPExpr::Identifier(*sym)),
             PPTokenKind::LeftParen => {
                 let result = self.parse_conditional()?;
                 self.expect(PPTokenKind::RightParen)?;

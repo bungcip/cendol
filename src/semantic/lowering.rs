@@ -2184,6 +2184,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     Some(QualType::unqualified(array))
                 }
                 Literal::Nullptr => Some(QualType::unqualified(self.registry.type_nullptr_t)),
+                Literal::True | Literal::False => Some(QualType::unqualified(self.registry.type_bool)),
             },
             NodeKind::Ident(_, symbol) => {
                 let sym = self.symbol_table.get_symbol(symbol);

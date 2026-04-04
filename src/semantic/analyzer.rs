@@ -2626,41 +2626,41 @@ impl<'a> SemanticAnalyzer<'a> {
                 let expr_qt = self.visit_node(*expr);
 
                 if let NodeKind::Cast(..) = kind
-                    && !ty.is_void() {
-                        let scalar_target = ty.is_scalar();
-                        let mut scalar_operand = true;
+                    && !ty.is_void()
+                {
+                    let scalar_target = ty.is_scalar();
+                    let mut scalar_operand = true;
 
-                        let mut eqt_decayed = None;
-                        if let Some(mut eqt) = expr_qt {
-                            if eqt.is_array() || eqt.is_function() {
-                                eqt = self.decay(*expr, eqt);
-                            }
-                            eqt_decayed = Some(eqt);
-                            if !eqt.is_scalar() {
-                                scalar_operand = false;
-                            }
+                    let mut eqt_decayed = None;
+                    if let Some(mut eqt) = expr_qt {
+                        if eqt.is_array() || eqt.is_function() {
+                            eqt = self.decay(*expr, eqt);
                         }
-
-                        // C11 6.5.4p2: "Unless the type name specifies a void type, then both the named type
-                        // and the expression shall have scalar types."
-                        // However, as an extension, some compilers allow casting a struct to itself (identity cast).
-                        // We strictly follow C11 here unless it's an identity cast of compatible types.
-                        let is_identity_cast = if let Some(eqt) = eqt_decayed {
-                            self.registry.is_compatible(*ty, eqt)
-                        } else {
-                            false
-                        };
-
-                        if !is_identity_cast {
-                            if !scalar_target {
-                                self.report_error(node, SemanticErrorKind::ExpectedScalarType { found: *ty });
-                            }
-                            if !scalar_operand
-                                && let Some(eqt) = eqt_decayed {
-                                    self.report_error(*expr, SemanticErrorKind::ExpectedScalarType { found: eqt });
-                                }
+                        eqt_decayed = Some(eqt);
+                        if !eqt.is_scalar() {
+                            scalar_operand = false;
                         }
                     }
+
+                    // C11 6.5.4p2: "Unless the type name specifies a void type, then both the named type
+                    // and the expression shall have scalar types."
+                    // However, as an extension, some compilers allow casting a struct to itself (identity cast).
+                    // We strictly follow C11 here unless it's an identity cast of compatible types.
+                    let is_identity_cast = if let Some(eqt) = eqt_decayed {
+                        self.registry.is_compatible(*ty, eqt)
+                    } else {
+                        false
+                    };
+
+                    if !is_identity_cast {
+                        if !scalar_target {
+                            self.report_error(node, SemanticErrorKind::ExpectedScalarType { found: *ty });
+                        }
+                        if !scalar_operand && let Some(eqt) = eqt_decayed {
+                            self.report_error(*expr, SemanticErrorKind::ExpectedScalarType { found: eqt });
+                        }
+                    }
+                }
 
                 Some(*ty)
             }

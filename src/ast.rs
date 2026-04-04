@@ -171,6 +171,11 @@ impl Ast {
         self.semantic_info.as_ref()?.types[node.index()]
     }
 
+    /// Get resolved type for a node. panic if not resolved
+    pub(crate) fn qual_type_of(&self, node: NodeRef) -> QualType {
+        self.get_resolved_type(node).unwrap()
+    }
+
     /// Get the value category for a node (reads from attached semantic_info)
     pub(crate) fn get_value_category(&self, node: NodeRef) -> Option<ValueCategory> {
         self.semantic_info.as_ref()?.value_categories.get(node.index()).copied()

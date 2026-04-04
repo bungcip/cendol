@@ -466,16 +466,31 @@ impl<'a> MirValidator<'a> {
                 }
             }
             Operand::Cast(type_id, inner) => {
-                if self.mir.types.get(type_id.index()).is_none() {
+                let from_ty_id = self.validate_operand(inner);
+                let to_ty = self.mir.types.get(type_id.index());
+
+                if to_ty.is_none() {
                     self.errors.push(ValidationError::TypeNotFound(*type_id));
                 }
+
+                if let (Some(from_id), Some(to_ty)) = (from_ty_id, to_ty)
+                    && let Some(from_ty) = self.mir.types.get(from_id.index())
+                    && from_ty.is_aggregate()
+                    && !from_ty.is_float() // Exempt long double (F80/F128)
+                    && !from_ty.is_complex() // Exempt complex types (Record but conceptually allowed)
+                    && !to_ty.is_pointer()
+                    && (to_ty.is_int() || to_ty.is_float())
+                {
+                    self.errors.push(ValidationError::InvalidCast(from_id, *type_id));
+                }
+
                 // Check if casting a constant value that doesn't fit in the target type
                 if let Operand::Constant(const_id) = inner.as_ref()
                     && let Some(const_value) = self.mir.constants.get(const_id.index())
                 {
                     self.validate_constant_cast(*const_id, const_value, *type_id);
                 }
-                self.validate_operand(inner);
+
                 Some(*type_id)
             }
         }
@@ -509,24 +524,6 @@ impl<'a> MirValidator<'a> {
                 match u {
                     UnaryFloatOp::Neg | UnaryFloatOp::Abs => ta,
                 }
-            }
-            Rvalue::Cast(type_id, op) => {
-                let from_ty_id = self.validate_operand(op);
-                let to_ty = self.mir.types.get(type_id.index());
-
-                if to_ty.is_none() {
-                    self.errors.push(ValidationError::TypeNotFound(*type_id));
-                }
-
-                if let (Some(from_id), Some(to_ty)) = (from_ty_id, to_ty)
-                    && let Some(from_ty) = self.mir.types.get(from_id.index())
-                    && from_ty.is_aggregate()
-                    && !to_ty.is_pointer()
-                    && (to_ty.is_int() || to_ty.is_float())
-                {
-                    self.errors.push(ValidationError::InvalidCast(from_id, *type_id));
-                }
-                Some(*type_id)
             }
             Rvalue::PtrAdd(a, b) | Rvalue::PtrSub(a, b) => {
                 self.validate_operand(a);

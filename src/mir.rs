@@ -237,14 +237,11 @@ pub(crate) enum Rvalue {
     BinaryFloatOp(BinaryFloatOp, Operand, Operand),
     UnaryIntOp(UnaryIntOp, Operand),
     UnaryFloatOp(UnaryFloatOp, Operand),
-    Cast(TypeId, Operand),
     PtrAdd(Operand, Operand),
     PtrSub(Operand, Operand),
     PtrDiff(Operand, Operand),
-    // Aggregate construction
     StructLiteral(Vec<(usize, Operand)>),
     ArrayLiteral(Vec<Operand>),
-    // Memory operations
     BuiltinVaArg(Place, TypeId),
     AtomicLoad(Operand, AtomicMemOrder),
     AtomicExchange(Operand, Operand, AtomicMemOrder),
@@ -413,6 +410,14 @@ impl MirType {
                 | MirType::U64
                 | MirType::Bool
         )
+    }
+
+    pub(super) fn is_complex(&self) -> bool {
+        if let MirType::Record { name, .. } = self {
+            name.as_str().starts_with("_Complex")
+        } else {
+            false
+        }
     }
 
     pub(super) fn width(&self) -> u32 {

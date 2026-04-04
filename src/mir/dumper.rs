@@ -628,14 +628,6 @@ impl<'a> MirDumper<'a> {
                     self.operand_to_string(operand)
                 )?;
             }
-            Rvalue::Cast(type_id, operand) => {
-                write!(
-                    output,
-                    "cast<{}>({})",
-                    self.type_to_string(*type_id),
-                    self.operand_to_string(operand)
-                )?;
-            }
             Rvalue::PtrAdd(base, offset) => {
                 write!(
                     output,

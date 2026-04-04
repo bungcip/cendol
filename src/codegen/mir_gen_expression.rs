@@ -31,14 +31,14 @@ impl<'a> MirGen<'a> {
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access_as_place(*arr, *idx),
             NodeKind::UnaryOp(UnaryOp::Deref, operand) => {
                 let op = self.visit_expression(*operand, true);
-                let op_ty = self.ast.get_resolved_type(*operand).unwrap();
+                let op_ty = self.ast.qual_type_of(*operand);
                 let mir_ty = self.lower_qual_type(op_ty);
                 let conv = self.apply_conversions(op, *operand, mir_ty);
                 self.deref_operand(conv)
             }
             NodeKind::UnaryOp(UnaryOp::Real, operand) => {
                 let base_place = self.visit_expression_as_place(*operand);
-                let operand_ty = self.ast.get_resolved_type(*operand).unwrap();
+                let operand_ty = self.ast.qual_type_of(*operand);
                 if operand_ty.is_complex() {
                     Place::StructField(Box::new(base_place), 0, None)
                 } else {
@@ -47,7 +47,7 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::UnaryOp(UnaryOp::Imag, operand) => {
                 let base_place = self.visit_expression_as_place(*operand);
-                let operand_ty = self.ast.get_resolved_type(*operand).unwrap();
+                let operand_ty = self.ast.qual_type_of(*operand);
                 if operand_ty.is_complex() {
                     Place::StructField(Box::new(base_place), 1, None)
                 } else {
@@ -63,25 +63,13 @@ impl<'a> MirGen<'a> {
     }
 
     fn ensure_place_fallback(&mut self, op: Operand, expr: NodeRef) -> Place {
-        let ty = self.ast.get_resolved_type(expr).unwrap();
+        let ty = self.ast.qual_type_of(expr);
         let mir_ty = self.lower_qual_type(ty);
         self.ensure_place(op, mir_ty)
     }
 
     pub(crate) fn visit_expression(&mut self, expr: NodeRef, need_value: bool) -> Operand {
-        let qt = self.ast.get_resolved_type(expr).unwrap_or_else(|| {
-            let node_kind = self.ast.get_kind(expr);
-            let node_span = self.ast.get_span(expr);
-            let (line, col, file) = self
-                .source_manager
-                .get_presumed_location(node_span.start())
-                .map(|(l, c, f)| (l, c, f.unwrap_or("<unknown>")))
-                .unwrap_or((0, 0, "<unknown>"));
-            panic!(
-                "Type not resolved for node {:?} at {}:{}:{} (span: {:?})",
-                node_kind, file, line, col, node_span
-            );
-        });
+        let qt = self.ast.qual_type_of(expr);
         let node_kind = *self.ast.get_kind(expr);
 
         let mir_ty = self.lower_qual_type(qt);
@@ -601,7 +589,7 @@ impl<'a> MirGen<'a> {
             if let Place::Local(local_id) = &**place
                 && self.vla_map.values().any(|(ptr, _)| ptr == local_id)
             {
-                let symbol_ty = self.ast.get_resolved_type(expr).unwrap();
+                let symbol_ty = self.ast.qual_type_of(expr);
                 if symbol_ty.is_array() {
                     return operand.clone();
                 }
@@ -771,8 +759,14 @@ impl<'a> MirGen<'a> {
         right_expr: NodeRef,
         context_ty: TypeId,
     ) -> (Rvalue, TypeId) {
+        // Apply implicit conversions from semantic info first to match AST
+        let lhs_converted = self.apply_conversions(lhs, left_expr, context_ty);
+        let rhs_converted = self.apply_conversions(rhs, right_expr, context_ty);
+
         // Handle pointer arithmetic
-        if let Some(rval) = self.visit_pointer_arithmetic(op, lhs.clone(), rhs.clone(), left_expr, right_expr) {
+        if let Some(rval) =
+            self.visit_pointer_arithmetic(op, lhs_converted.clone(), rhs_converted.clone(), left_expr, right_expr)
+        {
             let res_ty = match &rval {
                 Rvalue::PtrAdd(base, _) | Rvalue::PtrSub(base, _) => self.get_operand_type(base),
                 Rvalue::PtrDiff(..) => self.lower_type(self.registry.type_long),
@@ -780,10 +774,6 @@ impl<'a> MirGen<'a> {
             };
             return (rval, res_ty);
         }
-
-        // Apply implicit conversions from semantic info first to match AST
-        let lhs_converted = self.apply_conversions(lhs, left_expr, context_ty);
-        let rhs_converted = self.apply_conversions(rhs, right_expr, context_ty);
 
         let lhs_mir_ty = self.get_operand_type(&lhs_converted);
         let rhs_mir_ty = self.get_operand_type(&rhs_converted);
@@ -932,8 +922,8 @@ impl<'a> MirGen<'a> {
         // Lower types and apply conversions locally to check for pointer arithmetic
         // We use the operand's own type as the target for conversion to avoid forcing
         // implicit casts to the result type (which causes issues for Ptr + Int -> Ptr)
-        let lhs_ty = self.ast.get_resolved_type(left_expr).unwrap();
-        let rhs_ty = self.ast.get_resolved_type(right_expr).unwrap();
+        let lhs_ty = self.ast.qual_type_of(left_expr);
+        let rhs_ty = self.ast.qual_type_of(right_expr);
 
         let lhs_mir_target = self.lower_qual_type(lhs_ty);
         let rhs_mir_target = self.lower_qual_type(rhs_ty);
@@ -1138,7 +1128,7 @@ impl<'a> MirGen<'a> {
         self.apply_conversions(final_op, node, mir_ty)
     }
 
-    fn emit_cast(&mut self, operand: Operand, target_ty: TypeId) -> Operand {
+    pub(super) fn emit_cast(&mut self, operand: Operand, target_ty: TypeId) -> Operand {
         if self.get_operand_type(&operand) == target_ty {
             return operand;
         }
@@ -1248,7 +1238,7 @@ impl<'a> MirGen<'a> {
 
             // Apply conversions for function arguments if needed
             // The resolved type of CallArg is same as inner expr.
-            let arg_ty = self.ast.get_resolved_type(arg).unwrap();
+            let arg_ty = self.ast.qual_type_of(arg);
             let arg_mir_ty = self.lower_qual_type(arg_ty);
 
             // Use the parameter type as the target type for conversions, if available
@@ -1288,7 +1278,7 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_member_access_as_place(&mut self, obj: NodeRef, field_name: &NameId, is_arrow: bool) -> Place {
-        let mut obj_qt = self.ast.get_resolved_type(obj).unwrap();
+        let mut obj_qt = self.ast.qual_type_of(obj);
 
         // Handle implicit conversions (like array-to-pointer decay) for arrow access
         if is_arrow && let Some(semantic_info) = &self.ast.semantic_info {
@@ -1358,8 +1348,8 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_index_access_as_place(&mut self, arr: NodeRef, idx: NodeRef) -> Place {
-        let arr_ty = self.ast.get_resolved_type(arr).unwrap();
-        let idx_ty = self.ast.get_resolved_type(idx).unwrap();
+        let arr_ty = self.ast.qual_type_of(arr);
+        let idx_ty = self.ast.qual_type_of(idx);
 
         // Handle both arr[idx] and idx[arr] (subscripting is commutative in C)
         // One must be a pointer/array, the other must be an integer
@@ -1386,7 +1376,7 @@ impl<'a> MirGen<'a> {
             self.deref_operand(result_op)
         } else {
             // Array-based indexing: use Place::ArrayIndex
-            let arr_ty = self.ast.get_resolved_type(sequence).unwrap();
+            let arr_ty = self.ast.qual_type_of(sequence);
             let mir_ty = self.lower_qual_type(arr_ty);
             let arr_place = self.ensure_place(arr_operand, mir_ty);
             Place::ArrayIndex(Box::new(arr_place), Box::new(idx_operand))
@@ -1397,12 +1387,13 @@ impl<'a> MirGen<'a> {
         let operand = self.visit_expression(expr, true);
         let operand_ty = self.ast.get_resolved_type(expr).unwrap();
         let mir_ty = self.lower_qual_type(operand_ty);
+        let operand_converted = self.apply_conversions(operand.clone(), expr, mir_ty);
 
         if self.ast.get_value_category(expr) != Some(ValueCategory::LValue) {
             panic!("Inc/Dec operand must be an lvalue");
         }
 
-        let place = if let Operand::Copy(place) = operand.clone() {
+        let place = if let Operand::Copy(place) = operand {
             place
         } else {
             panic!("Inc/Dec operand is not a place");
@@ -1414,7 +1405,7 @@ impl<'a> MirGen<'a> {
 
         // If it's post-inc/dec and we need the value, save the old value
         let old_value = if is_post && need_value {
-            let rval = Rvalue::Use(operand.clone());
+            let rval = Rvalue::Use(operand_converted.clone());
             let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
             Some(Operand::Copy(Box::new(temp_place)))
         } else {
@@ -1422,7 +1413,7 @@ impl<'a> MirGen<'a> {
         };
 
         // Determine MIR operation and Rvalue
-        let rval = self.create_inc_dec_rvalue(operand, operand_ty, is_inc);
+        let rval = self.create_inc_dec_rvalue(operand_converted, operand_ty, is_inc);
 
         // Perform the assignment
         if is_post && !need_value {
@@ -1845,7 +1836,7 @@ impl<'a> MirGen<'a> {
 
     fn visit_builtin_unary_op(&mut self, kind: &NodeKind, exp: NodeRef, mir_ty: TypeId) -> Operand {
         let operand = self.visit_expression(exp, true);
-        let operand_ty = self.ast.get_resolved_type(exp).unwrap();
+        let operand_ty = self.ast.qual_type_of(exp);
         let operand_mir_ty = self.lower_qual_type(operand_ty);
         let operand_converted = self.apply_conversions(operand, exp, operand_mir_ty);
 

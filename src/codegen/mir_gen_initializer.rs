@@ -222,9 +222,8 @@ impl<'a> MirGen<'a> {
         }
 
         let is_compatible = self
-            .ast
-            .get_resolved_type(initializer)
-            .is_some_and(|ty| self.registry.is_compatible(ty.strip_all(), target_qt.strip_all()));
+            .registry
+            .is_compatible(self.ast.qual_type_of(initializer).strip_all(), target_qt.strip_all());
 
         !is_compatible
     }
@@ -529,9 +528,10 @@ impl<'a> MirGen<'a> {
             _ => {
                 let operand = self.visit_expression(init, true);
                 let mir_target_ty = self.lower_qual_type(target_qt);
+                let conv_op = self.apply_conversions(operand.clone(), init, mir_target_ty);
 
-                if self.get_operand_type(&operand) == mir_target_ty {
-                    return operand;
+                if self.get_operand_type(&conv_op) == mir_target_ty {
+                    return conv_op;
                 }
 
                 // Brace elision: scalar -> aggregate

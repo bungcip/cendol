@@ -208,6 +208,13 @@ impl<'a> SemanticAnalyzer<'a> {
         self.semantic_info.conversions[node.index()].push(conv);
     }
 
+    pub(crate) fn apply_lvalue_conversion(&mut self, node: NodeRef) {
+        if self.semantic_info.value_categories[node.index()] == ValueCategory::LValue {
+            self.semantic_info.value_categories[node.index()] = ValueCategory::RValue;
+            self.push_conversion(node, Conversion::LValueToRValue);
+        }
+    }
+
     fn unwrap_init_item(&self, node: NodeRef) -> (NodeRef, NodeRef, u16) {
         if let NodeKind::InitializerItem(item) = self.ast.get_kind(node) {
             (item.initializer, item.designator_start, item.designator_len)
@@ -871,6 +878,7 @@ impl<'a> SemanticAnalyzer<'a> {
             self.report_error(*expr, SemanticErrorKind::VoidReturnWithValue { name: func_name });
         }
 
+        self.apply_lvalue_conversion(*expr);
         if let Some(expr_ty) = self.visit_node(*expr)
             && let Some(target_ty) = ret_ty
         {
@@ -917,6 +925,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.pointer_to(operand_qt)))
             }
             UnaryOp::Deref => {
+                self.apply_lvalue_conversion(expr);
                 let actual_qt = self.decay(expr, operand_qt);
 
                 if actual_qt.is_pointer() {
@@ -950,6 +959,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             UnaryOp::Plus | UnaryOp::Minus => {
+                self.apply_lvalue_conversion(expr);
                 if operand_qt.is_arithmetic() {
                     // C11 6.5.3.3: The integer promotions are performed on the operand,
                     // and the result has the promoted type.
@@ -973,10 +983,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             UnaryOp::LogicNot => {
+                self.apply_lvalue_conversion(expr);
                 // Logical NOT always returns int type (C11 6.5.3.3)
                 Some(QualType::unqualified(self.registry.type_int))
             }
             UnaryOp::BitNot => {
+                self.apply_lvalue_conversion(expr);
                 if operand_qt.is_integer() {
                     Some(self.apply_integer_promotion(expr, operand_qt))
                 } else if operand_qt.is_complex() {
@@ -1260,6 +1272,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let rhs_ty = self.visit_node(rhs)?;
 
         if op == BinaryOp::Comma {
+            self.apply_lvalue_conversion(lhs);
             let mut rhs_decayed = rhs_ty;
             if rhs_ty.is_array() || rhs_ty.is_function() {
                 rhs_decayed = self.registry.decay(rhs_ty, TypeQualifiers::empty());
@@ -1339,10 +1352,12 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         if let Some(arithmetic_op) = op.without_assignment() {
+            self.apply_lvalue_conversion(rhs);
             return self.visit_compound_assignment(node, arithmetic_op, lhs, rhs, lhs_ty, rhs_ty);
         }
 
         // Simple assignment
+        self.apply_lvalue_conversion(rhs);
         if !self.validate_assignment(node, lhs_ty, rhs_ty, rhs) {
             return None;
         }
@@ -1607,6 +1622,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             _ => {
+                self.apply_lvalue_conversion(init);
                 if let Some(init_qt) = self.visit_node(init) {
                     self.validate_assignment(init, target_qt, init_qt, init);
                 }
@@ -1661,6 +1677,7 @@ impl<'a> SemanticAnalyzer<'a> {
         for _ in 0..2 {
             if let Some(item) = items.next() {
                 let (expr, _, _) = self.unwrap_init_item(item);
+                self.apply_lvalue_conversion(expr);
                 if let Some(init_qt) = self.visit_node(expr) {
                     self.validate_assignment(expr, base_qt, init_qt, expr);
                 }
@@ -1673,6 +1690,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut items = list.init_start.range(list.init_len);
         if let Some(first) = items.next() {
             let (expr, _, _) = self.unwrap_init_item(first);
+            self.apply_lvalue_conversion(expr);
             if let Some(init_qt) = self.visit_node(expr) {
                 self.validate_assignment(expr, target_qt, init_qt, expr);
             }
@@ -1914,6 +1932,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             _ => {
+                self.apply_lvalue_conversion(expr);
                 if let Some(init_ty) = self.visit_node(expr) {
                     self.validate_assignment(expr, target_qt, init_ty, expr);
                 }
@@ -1953,15 +1972,15 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // C11 §6.7.9p13: Struct/Union initialization by compatible expression
-        if target_qt.is_record()
-            && !has_more_designators
-            && let Some(init_ty) = self.visit_node(expr)
-        {
-            let is_npc = self.is_null_pointer_constant(expr);
-            if self.check_assignment_constraints(target_qt, init_ty, expr, is_npc) {
-                self.record_implicit_conversions(target_qt, init_ty, expr, is_npc);
-                iter.next();
-                return;
+        if target_qt.is_record() && !has_more_designators {
+            self.apply_lvalue_conversion(expr);
+            if let Some(init_ty) = self.visit_node(expr) {
+                let is_npc = self.is_null_pointer_constant(expr);
+                if self.check_assignment_constraints(target_qt, init_ty, expr, is_npc) {
+                    self.record_implicit_conversions(target_qt, init_ty, expr, is_npc);
+                    iter.next();
+                    return;
+                }
             }
         }
 
@@ -2010,6 +2029,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
 
             for (i, arg_node) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
+                self.apply_lvalue_conversion(arg_node);
                 let Some(arg_qt) = self.visit_node(arg_node) else {
                     continue;
                 };
@@ -2127,6 +2147,8 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_index_access(&mut self, arr: NodeRef, idx: NodeRef) -> Option<QualType> {
+        self.apply_lvalue_conversion(arr);
+        self.apply_lvalue_conversion(idx);
         let arr_ty = self.visit_node(arr)?;
         let arr_ty = self.decay(arr, arr_ty);
         let idx_ty = self.visit_node(idx)?;
@@ -2381,6 +2403,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::ExpressionStmt(expr) => {
                 if let Some(expr) = expr {
+                    self.apply_lvalue_conversion(*expr);
                     self.visit_node(*expr);
                 }
                 None
@@ -2421,6 +2444,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_switch_statement(&mut self, cond: NodeRef, body: NodeRef, node: NodeRef) -> Option<QualType> {
+        self.apply_lvalue_conversion(cond);
         let cond_ty = self.visit_node(cond);
 
         let (orig_ty, promoted_ty) = if let Some(ty) = cond_ty {
@@ -2587,6 +2611,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 if let NodeKind::Dummy = self.ast.get_kind(*result_expr) {
                     Some(QualType::unqualified(self.registry.type_void))
                 } else {
+                    self.apply_lvalue_conversion(*result_expr);
                     let mut ty = self.visit_node(*result_expr);
                     if let Some(t) = ty
                         && (t.is_array() || t.is_function())
@@ -2617,6 +2642,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
             NodeKind::Cast(ty, expr) | NodeKind::BuiltinVaArg(ty, expr) => {
                 self.visit_type_exprs(*ty);
+                self.apply_lvalue_conversion(*expr);
                 let expr_qt = self.visit_node(*expr);
 
                 if let NodeKind::Cast(..) = kind
@@ -2739,6 +2765,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.type_void))
             }
             NodeKind::BuiltinExpect(exp, c) => {
+                self.apply_lvalue_conversion(*exp);
                 let ty = self.visit_node(*exp);
                 self.visit_node(*c);
                 ty
@@ -2863,6 +2890,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     _ => (None, self.registry.type_int),
                 };
 
+                self.apply_lvalue_conversion(*exp);
                 if let Some(mut arg_qt) = self.visit_node(*exp) {
                     if arg_qt.is_array() || arg_qt.is_function() {
                         arg_qt = self.registry.decay(arg_qt, TypeQualifiers::empty());
@@ -2915,6 +2943,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_builtin_alloca(&mut self, size: NodeRef, _node: NodeRef) -> Option<QualType> {
+        self.apply_lvalue_conversion(size);
         if let Some(size_ty) = self.visit_node(size)
             && !size_ty.is_integer()
         {
@@ -2930,6 +2959,7 @@ impl<'a> SemanticAnalyzer<'a> {
         locality: Option<NodeRef>,
         _node: NodeRef,
     ) -> Option<QualType> {
+        self.apply_lvalue_conversion(addr);
         let addr_ty = self.visit_node(addr)?;
         if !addr_ty.is_pointer() {
             // GCC allows any pointer, including void*
@@ -2943,6 +2973,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         if let Some(rw) = rw {
+            self.apply_lvalue_conversion(rw);
             let rw_ty = self.visit_node(rw)?;
             if !rw_ty.is_integer() {
                 self.report_error(rw, SemanticErrorKind::ExpectedIntegerType { found: rw_ty });
@@ -2961,6 +2992,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         if let Some(locality) = locality {
+            self.apply_lvalue_conversion(locality);
             let loc_ty = self.visit_node(locality)?;
             if !loc_ty.is_integer() {
                 self.report_error(locality, SemanticErrorKind::ExpectedIntegerType { found: loc_ty });
@@ -3022,6 +3054,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn prepare_ternary_operand(&mut self, node: NodeRef, qt: QualType) -> QualType {
+        self.apply_lvalue_conversion(node);
         let mut qt = qt;
         if qt.is_array() || qt.is_function() {
             let decayed = self.registry.decay(qt, TypeQualifiers::empty());
@@ -3065,6 +3098,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_ternary_op(&mut self, cond: NodeRef, then: NodeRef, else_expr: NodeRef) -> Option<QualType> {
+        self.apply_lvalue_conversion(cond);
         self.visit_node(cond);
         let then_ty = self.visit_node(then);
         let else_ty = self.visit_node(else_expr);

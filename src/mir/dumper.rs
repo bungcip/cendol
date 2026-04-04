@@ -271,11 +271,6 @@ impl<'a> MirDumper<'a> {
                 write!(output, "{} = ", self.place_to_string(place))?;
                 self.dump_rvalue(output, rvalue)?;
             }
-            MirStmt::Store(operand, place) => {
-                write!(output, "store ")?;
-                self.dump_operand(output, operand)?;
-                write!(output, ", {}", self.place_to_string(place))?;
-            }
             MirStmt::Call { target, args, dest } => {
                 if let Some(place) = dest {
                     write!(output, "{} = ", self.place_to_string(place))?;
@@ -288,18 +283,6 @@ impl<'a> MirDumper<'a> {
                     self.dump_operand(output, operand)?;
                 }
                 write!(output, ")")?;
-            }
-            MirStmt::Alloc(place, type_id) => {
-                write!(
-                    output,
-                    "{} = alloc {}",
-                    self.place_to_string(place),
-                    self.type_to_string(*type_id)
-                )?;
-            }
-            MirStmt::Dealloc(operand) => {
-                write!(output, "dealloc ")?;
-                self.dump_operand(output, operand)?;
             }
             MirStmt::BuiltinVaStart(ap, last) => {
                 write!(

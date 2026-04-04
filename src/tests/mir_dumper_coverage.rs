@@ -46,9 +46,9 @@ fn test_dump_basic_module() {
         Rvalue::Use(Operand::Constant(const_val_id)),
     ));
 
-    builder.add_stmt(MirStmt::Store(
-        Operand::Copy(Box::new(Place::Local(loc_i32))),
+    builder.add_stmt(MirStmt::Assign(
         Place::Global(global_id),
+        Rvalue::Use(Operand::Copy(Box::new(Place::Local(loc_i32)))),
     ));
 
     builder.set_terminator(Terminator::Return(None));
@@ -75,7 +75,7 @@ fn test_dump_basic_module() {
 
       bb1:
         %loc_i32 = const 42
-        store %loc_i32, @g_val
+        @g_val = %loc_i32
         return
     }
     ");

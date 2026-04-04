@@ -149,16 +149,12 @@ impl MirBlock {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) enum MirStmt {
     Assign(Place, Rvalue),
-    Store(Operand, Place),
     // Function calls - dest is None if void or result is ignored
     Call {
         target: CallTarget,
         args: Vec<Operand>,
         dest: Option<Place>,
     },
-    // Memory operations
-    Alloc(Place, TypeId),
-    Dealloc(Operand),
     BuiltinVaStart(Place, Operand),
     BuiltinVaEnd(Place),
     BuiltinVaCopy(Place, Place),

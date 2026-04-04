@@ -1,8 +1,5 @@
 //! Tests for Struct/Union/Array lowering and access
-use crate::ast::NameId;
-use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::driver::artifact::CompilePhase;
-use crate::mir::{MirStmt, MirType, Operand, Place, Terminator};
 use crate::tests::codegen_common::setup_cranelift;
 use crate::tests::test_utils::run_pass;
 
@@ -94,68 +91,6 @@ fn test_compile_union_field_access() {
     );
     assert!(clif_dump.contains("store"), "expected store instruction in IR");
     assert!(clif_dump.contains("load"), "expected load instruction in IR");
-}
-
-#[test]
-fn test_alloc_dealloc_codegen() {
-    let mut builder = crate::mir::MirBuilder::new(8);
-
-    let int_type_id = builder.add_type(MirType::I32);
-    let ptr_type_id = builder.add_type(MirType::Pointer { pointee: int_type_id });
-    let void_type_id = builder.add_type(MirType::Void);
-
-    let func_id = builder.define_function(
-        NameId::new("main"),
-        vec![],
-        void_type_id,
-        false,
-        crate::mir::MirLinkage::External,
-    );
-    builder.set_current_function(func_id);
-
-    let entry_block_id = builder.create_block();
-    builder.set_current_block(entry_block_id);
-    builder.set_function_entry_block(func_id, entry_block_id);
-
-    let local_p_id = builder.create_local(Some(NameId::new("p")), ptr_type_id, false);
-
-    // p = alloc(...)
-    builder.add_stmt(MirStmt::Alloc(Place::Local(local_p_id), int_type_id));
-
-    // dealloc(p)
-    builder.add_stmt(MirStmt::Dealloc(Operand::Copy(Box::new(Place::Local(local_p_id)))));
-
-    builder.set_terminator(Terminator::Return(None));
-
-    let mir = builder.consume();
-    let lowerer = ClifGen::new(mir);
-    let result = lowerer.visit_module(EmitKind::Clif);
-
-    match result {
-        ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(clif_ir, @"
-            ; Function: main
-            function u0:0() system_v {
-                ss0 = explicit_slot 8, align = 8
-                sig0 = (i64) -> i64 system_v
-                sig1 = (i64) system_v
-                fn0 = u0:1 sig0
-                fn1 = u0:2 sig1
-
-            block0:
-                v0 = iconst.i64 4
-                v1 = call fn0(v0)  ; v0 = 4
-                v4 = stack_addr.i64 ss0
-                store notrap v1, v4
-                v3 = stack_addr.i64 ss0
-                v2 = load.i64 notrap v3
-                call fn1(v2)
-                return
-            }
-            ");
-        }
-        ClifOutput::ObjectFile(_) => panic!("Expected Clif dump, got object file"),
-    }
 }
 
 #[test]

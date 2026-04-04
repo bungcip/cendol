@@ -2298,31 +2298,6 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             }
         }
 
-        MirStmt::Store(operand, place) => {
-            // We need to determine the correct type for the operand
-            let place_type_id = lower_place_type_id(place, ctx.mir, ctx.pointee_to_pointer);
-            let place_type = ctx.mir.get_type(place_type_id);
-
-            if place_type.is_aggregate() {
-                let dest_addr = emit_place_addr(place, ctx);
-                let src_addr = emit_operand(operand, ctx, types::I64);
-                let size = lower_type_size(place_type, ctx.mir) as i64;
-                emit_memcpy(dest_addr, src_addr, size, ctx.builder, ctx.module);
-            } else {
-                let cranelift_type = lower_type(place_type).expect("Cannot store to a void type");
-                let mut value = emit_operand(operand, ctx, cranelift_type);
-
-                // C11 6.3.1.2: Any non-zero scalar assigned to _Bool evaluates to 1
-                if matches!(place_type, MirType::Bool) {
-                    let zero = ctx.builder.ins().iconst(cranelift_type, 0i64);
-                    let is_not_zero = ctx.builder.ins().icmp(IntCC::NotEqual, value, zero);
-                    value = emit_bool_to_int(is_not_zero, cranelift_type, ctx.builder);
-                }
-
-                // Now, store the value into the place
-                emit_place_store(place, value, cranelift_type, ctx);
-            }
-        }
         MirStmt::Call { target, args, dest } => {
             if let Some(dest_place) = dest {
                 // Call with destination - need to store the result
@@ -2352,61 +2327,6 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             }
         }
 
-        MirStmt::Alloc(place, type_id) => {
-            // Get the size of the type to be allocated
-            let alloc_type = ctx.mir.get_type(*type_id);
-            let size = lower_type_size(alloc_type, ctx.mir);
-
-            // Define the `malloc` function signature (size_t -> void*)
-            // In Cranelift, this would be (i64) -> i64 for a 64-bit target
-            let mut malloc_sig = Signature::new(ctx.builder.func.signature.call_conv);
-            malloc_sig.params.push(AbiParam::new(types::I64));
-            malloc_sig.returns.push(AbiParam::new(types::I64));
-
-            // Declare `malloc` if not already declared
-            let malloc_func = ctx
-                .module
-                .declare_function("malloc", Linkage::Import, &malloc_sig)
-                .expect("module operation failed");
-            let local_malloc = ctx.module.declare_func_in_func(malloc_func, ctx.builder.func);
-
-            // Call `malloc` with the calculated size
-            let size_val = ctx.builder.ins().iconst(types::I64, size as i64);
-            let call_inst = ctx.builder.ins().call(local_malloc, &[size_val]);
-            let alloc_ptr = ctx.builder.inst_results(call_inst)[0];
-
-            // Store the returned pointer into the destination place
-            match place {
-                Place::Local(local_id) => {
-                    if let Some(stack_slot) = ctx.stack_slots.get(local_id) {
-                        ctx.builder.ins().stack_store(alloc_ptr, *stack_slot, 0);
-                    }
-                }
-                _ => {
-                    let addr = emit_place_addr(place, ctx);
-                    ctx.builder.ins().store(MemFlags::new(), alloc_ptr, addr, 0);
-                }
-            }
-        }
-
-        MirStmt::Dealloc(operand) => {
-            // Resolve the operand to get the pointer to be freed
-            let ptr_val = emit_operand(operand, ctx, types::I64);
-
-            // Define the `free` function signature (void* -> void)
-            let mut free_sig = Signature::new(ctx.builder.func.signature.call_conv);
-            free_sig.params.push(AbiParam::new(types::I64));
-
-            // Declare `free` if not already declared
-            let free_func = ctx
-                .module
-                .declare_function("free", Linkage::Import, &free_sig)
-                .expect("module operation failed");
-            let local_free = ctx.module.declare_func_in_func(free_func, ctx.builder.func);
-
-            // Call `free` with the pointer
-            ctx.builder.ins().call(local_free, &[ptr_val]);
-        }
         MirStmt::BuiltinVaStart(place, _operand) => {
             let ap_addr = emit_place_addr(place, ctx);
 
@@ -3141,10 +3061,6 @@ impl ClifGen {
                 self.collect_place_reachability(place, wf, rf, rg, wg);
                 self.collect_rvalue_reachability(rvalue, wf, rf, rg, wg);
             }
-            MirStmt::Store(op, place) => {
-                self.collect_operand_reachability(op, wf, rf, rg, wg);
-                self.collect_place_reachability(place, wf, rf, rg, wg);
-            }
             MirStmt::Call { target, args, dest } => {
                 match target {
                     CallTarget::Direct(id) => {
@@ -3161,8 +3077,6 @@ impl ClifGen {
                     self.collect_place_reachability(place, wf, rf, rg, wg);
                 }
             }
-            MirStmt::Alloc(place, _) => self.collect_place_reachability(place, wf, rf, rg, wg),
-            MirStmt::Dealloc(op) => self.collect_operand_reachability(op, wf, rf, rg, wg),
             MirStmt::BuiltinVaStart(p, op) => {
                 self.collect_place_reachability(p, wf, rf, rg, wg);
                 self.collect_operand_reachability(op, wf, rf, rg, wg);

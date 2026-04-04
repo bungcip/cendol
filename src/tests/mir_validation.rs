@@ -207,36 +207,6 @@ fn test_terminator_missing_block() {
 }
 
 #[test]
-fn test_statement_alloc_missing_type() {
-    let mut mir = create_valid_mir();
-    let func_id = mir.module.functions[0];
-    let func = mir.functions.get(func_id.index()).unwrap();
-    let block_id = func.blocks[0];
-    let missing_type_id = TypeId::new(999).unwrap();
-
-    // Create a new statement Alloc(Local(1), missing_type_id)
-    // We reuse existing local 1 or need to create one?
-    // create_valid_mir defines 'main' with no locals/params.
-    // Let's add a local.
-    let local_id = LocalId::new(100).unwrap();
-    let _local = Local::new(None, TypeId::new(1).unwrap(), false);
-    if let Some(func) = mir.functions.get_mut(func_id.index()) {
-        func.locals.push(local_id);
-    }
-
-    let stmt = MirStmt::Alloc(Place::Local(local_id), missing_type_id);
-    mir.statements.push(stmt);
-    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
-    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
-        block.statements.push(stmt_id);
-    }
-
-    let validator = MirValidator::new(&mir);
-    let res = validator.validate();
-    assert!(matches!(res, Err(errors) if errors.contains(&ValidationError::TypeNotFound(missing_type_id))));
-}
-
-#[test]
 fn test_call_arg_count_mismatch() {
     let mut builder = MirBuilder::new(8);
     let i32_ty = builder.add_type(MirType::I32);
@@ -720,41 +690,4 @@ fn test_rvalue_cast_aggregate_invalid() {
     let res = validator.validate();
 
     assert!(matches!(res, Err(errors) if errors.contains(&ValidationError::InvalidCast(struct_ty_id, i32_ty))));
-}
-
-#[test]
-fn test_invalid_cast_in_store() {
-    let mut mir = create_valid_mir();
-    let func_id = mir.module.functions[0];
-    let func = mir.functions.get(func_id.index()).unwrap();
-    let block_id = func.blocks[0];
-
-    // Add float type
-    let f32_ty = TypeId::new(mir.types.len() as u32 + 1).unwrap();
-    mir.types.push(MirType::F32);
-    mir.module.types.push(MirType::F32);
-
-    let i32_ty = TypeId::new(1).unwrap();
-    let local_i32 = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
-    mir.locals.push(Local::new(None, i32_ty, false));
-    let local_f32 = LocalId::new(mir.locals.len() as u32 + 1).unwrap();
-    mir.locals.push(Local::new(None, f32_ty, false));
-
-    if let Some(func) = mir.functions.get_mut(func_id.index()) {
-        func.locals.push(local_i32);
-        func.locals.push(local_f32);
-    }
-
-    let op = Operand::Copy(Box::new(Place::Local(local_f32)));
-    let stmt = MirStmt::Store(op, Place::Local(local_i32));
-
-    mir.statements.push(stmt);
-    let stmt_id = MirStmtId::new(mir.statements.len() as u32).unwrap();
-    if let Some(block) = mir.blocks.get_mut(block_id.index()) {
-        block.statements.push(stmt_id);
-    }
-
-    let validator = MirValidator::new(&mir);
-    let res = validator.validate();
-    assert!(matches!(res, Err(errors) if errors.contains(&ValidationError::InvalidCast(f32_ty, i32_ty))));
 }

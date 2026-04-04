@@ -253,27 +253,8 @@ impl<'a> MirValidator<'a> {
                     self.errors.push(ValidationError::InvalidCast(from, to));
                 }
             }
-            MirStmt::Store(op, place) => {
-                let op_ty = self.validate_operand(op);
-                let place_ty = self.validate_place(place);
-                if let (Some(from), Some(to)) = (op_ty, place_ty)
-                    && from != to
-                    && !self.are_types_compatible(from, to)
-                {
-                    self.errors.push(ValidationError::InvalidCast(from, to));
-                }
-            }
             MirStmt::Call { target, args, dest } => {
                 self.validate_call(target, args, dest);
-            }
-            MirStmt::Alloc(place, type_id) => {
-                self.validate_place(place);
-                if self.mir.types.get(type_id.index()).is_none() {
-                    self.errors.push(ValidationError::TypeNotFound(*type_id));
-                }
-            }
-            MirStmt::Dealloc(op) => {
-                self.validate_operand(op);
             }
             MirStmt::BuiltinVaStart(ap, last) => {
                 self.validate_place(ap);

@@ -3,7 +3,7 @@ use crate::ast::NameId;
 use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::driver::artifact::CompilePhase;
 use crate::mir::ConstValueKind;
-use crate::mir::{MirStmt, MirType, Operand, Place, Terminator};
+use crate::mir::{MirStmt, MirType, Operand, Place, Rvalue, Terminator};
 use crate::tests::codegen_common::setup_cranelift;
 use crate::tests::test_utils::run_pass;
 
@@ -189,7 +189,10 @@ fn test_f128_constant_promotion() {
     let local_id = builder.create_local(None, f128_type_id, false);
 
     // Store it
-    builder.add_stmt(MirStmt::Store(Operand::Constant(const_id), Place::Local(local_id)));
+    builder.add_stmt(MirStmt::Assign(
+        Place::Local(local_id),
+        Rvalue::Use(Operand::Constant(const_id)),
+    ));
 
     builder.set_terminator(Terminator::Return(None));
 
@@ -199,19 +202,65 @@ fn test_f128_constant_promotion() {
 
     match result {
         ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(clif_ir, @"
+            insta::assert_snapshot!(clif_ir, @r"
             ; Function: main
             function u0:0() system_v {
                 ss0 = explicit_slot 16, align = 16
                 gv0 = symbol colocated userextname0
-                sig0 = (i64, i64, i64) -> i64 system_v
-                fn0 = u0:1 sig0
 
             block0:
-                v0 = stack_addr.i64 ss0
-                v1 = symbol_value.i64 gv0
-                v2 = iconst.i64 16
-                v3 = call fn0(v0, v1, v2)  ; v2 = 16
+                v0 = symbol_value.i64 gv0
+                v1 = load.i64 v0
+                v2 = load.i64 v0+8
+                v46 = iconst.i64 15
+                v3 = ushr v2, v46  ; v46 = 15
+                v45 = iconst.i64 1
+                v4 = band v3, v45  ; v45 = 1
+                v44 = iconst.i64 63
+                v5 = ishl v4, v44  ; v44 = 63
+                v43 = iconst.i64 0x7fff
+                v6 = band v2, v43  ; v43 = 0x7fff
+                v42 = iconst.i64 -15360
+                v7 = iadd v6, v42  ; v42 = -15360
+                v41 = iconst.i64 52
+                v8 = ishl v7, v41  ; v41 = 52
+                v40 = iconst.i64 11
+                v9 = ushr v1, v40  ; v40 = 11
+                v39 = iconst.i64 0x000f_ffff_ffff_ffff
+                v10 = band v9, v39  ; v39 = 0x000f_ffff_ffff_ffff
+                v11 = bor v5, v8
+                v12 = bor v11, v10
+                v13 = bitcast.f64 v12
+                v14 = stack_addr.i64 ss0
+                v15 = iconst.i64 0
+                store v15, v14  ; v15 = 0
+                store v15, v14+8  ; v15 = 0
+                v16 = bitcast.i64 v13
+                v38 = iconst.i64 63
+                v17 = ushr v16, v38  ; v38 = 63
+                v37 = iconst.i64 52
+                v18 = ushr v16, v37  ; v37 = 52
+                v36 = iconst.i64 2047
+                v19 = band v18, v36  ; v36 = 2047
+                v35 = iconst.i64 0x000f_ffff_ffff_ffff
+                v20 = band v16, v35  ; v35 = 0x000f_ffff_ffff_ffff
+                v34 = iconst.i64 0x3c00
+                v21 = iadd v19, v34  ; v34 = 0x3c00
+                v33 = iconst.i64 15
+                v22 = ishl v17, v33  ; v33 = 15
+                v23 = bor v22, v21
+                v32 = iconst.i64 11
+                v24 = ishl v20, v32  ; v32 = 11
+                v31 = iconst.i64 0
+                v25 = icmp ne v19, v31  ; v31 = 0
+                v26 = iconst.i64 -9223372036854775808
+                v27 = iconst.i64 0
+                v28 = select v25, v26, v27  ; v26 = -9223372036854775808, v27 = 0
+                v29 = bor v24, v28
+                store v29, v14
+                store v23, v14+8
+                v30 = iconst.i16 0
+                store v30, v14+10  ; v30 = 0
                 return
             }
             ");

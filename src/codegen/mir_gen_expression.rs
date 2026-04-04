@@ -771,8 +771,14 @@ impl<'a> MirGen<'a> {
         right_expr: NodeRef,
         context_ty: TypeId,
     ) -> (Rvalue, TypeId) {
+        // Apply implicit conversions from semantic info first to match AST
+        let lhs_converted = self.apply_conversions(lhs, left_expr, context_ty);
+        let rhs_converted = self.apply_conversions(rhs, right_expr, context_ty);
+
         // Handle pointer arithmetic
-        if let Some(rval) = self.visit_pointer_arithmetic(op, lhs.clone(), rhs.clone(), left_expr, right_expr) {
+        if let Some(rval) =
+            self.visit_pointer_arithmetic(op, lhs_converted.clone(), rhs_converted.clone(), left_expr, right_expr)
+        {
             let res_ty = match &rval {
                 Rvalue::PtrAdd(base, _) | Rvalue::PtrSub(base, _) => self.get_operand_type(base),
                 Rvalue::PtrDiff(..) => self.lower_type(self.registry.type_long),
@@ -780,10 +786,6 @@ impl<'a> MirGen<'a> {
             };
             return (rval, res_ty);
         }
-
-        // Apply implicit conversions from semantic info first to match AST
-        let lhs_converted = self.apply_conversions(lhs, left_expr, context_ty);
-        let rhs_converted = self.apply_conversions(rhs, right_expr, context_ty);
 
         let lhs_mir_ty = self.get_operand_type(&lhs_converted);
         let rhs_mir_ty = self.get_operand_type(&rhs_converted);
@@ -1138,7 +1140,7 @@ impl<'a> MirGen<'a> {
         self.apply_conversions(final_op, node, mir_ty)
     }
 
-    fn emit_cast(&mut self, operand: Operand, target_ty: TypeId) -> Operand {
+    pub(super) fn emit_cast(&mut self, operand: Operand, target_ty: TypeId) -> Operand {
         if self.get_operand_type(&operand) == target_ty {
             return operand;
         }
@@ -1397,12 +1399,13 @@ impl<'a> MirGen<'a> {
         let operand = self.visit_expression(expr, true);
         let operand_ty = self.ast.get_resolved_type(expr).unwrap();
         let mir_ty = self.lower_qual_type(operand_ty);
+        let operand_converted = self.apply_conversions(operand.clone(), expr, mir_ty);
 
         if self.ast.get_value_category(expr) != Some(ValueCategory::LValue) {
             panic!("Inc/Dec operand must be an lvalue");
         }
 
-        let place = if let Operand::Copy(place) = operand.clone() {
+        let place = if let Operand::Copy(place) = operand {
             place
         } else {
             panic!("Inc/Dec operand is not a place");
@@ -1414,7 +1417,7 @@ impl<'a> MirGen<'a> {
 
         // If it's post-inc/dec and we need the value, save the old value
         let old_value = if is_post && need_value {
-            let rval = Rvalue::Use(operand.clone());
+            let rval = Rvalue::Use(operand_converted.clone());
             let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
             Some(Operand::Copy(Box::new(temp_place)))
         } else {
@@ -1422,7 +1425,7 @@ impl<'a> MirGen<'a> {
         };
 
         // Determine MIR operation and Rvalue
-        let rval = self.create_inc_dec_rvalue(operand, operand_ty, is_inc);
+        let rval = self.create_inc_dec_rvalue(operand_converted, operand_ty, is_inc);
 
         // Perform the assignment
         if is_post && !need_value {

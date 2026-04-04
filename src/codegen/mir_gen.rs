@@ -1454,8 +1454,10 @@ impl<'a> MirGen<'a> {
                 }
             }
             Conversion::PointerDecay { to } => self.lower_type(*to),
-            Conversion::LValueToRValue => target_type_id,
-            Conversion::QualifierAdjust { .. } => target_type_id,
+            Conversion::LValueToRValue | Conversion::QualifierAdjust { .. } => {
+                let qt = self.ast.get_resolved_type(node).expect("Type not resolved");
+                self.lower_qual_type(qt.strip_all())
+            }
         };
 
         if matches!(conv, Conversion::LValueToRValue) {
@@ -1473,7 +1475,7 @@ impl<'a> MirGen<'a> {
 
         // Optimization: skip if already same type
         let current_mty = self.get_operand_type(&operand);
-        if current_mty == to_mir_type && !matches!(conv, Conversion::PointerDecay { .. }) {
+        if current_mty == to_mir_type {
             return operand;
         }
 
@@ -1694,13 +1696,13 @@ impl<'a> MirGen<'a> {
                 // Complex to Complex
                 let (real, imag) = self.get_complex_components(operand, from_mir_ty);
 
-                let res_real = self.emit_rvalue_to_operand(Rvalue::Cast(to_element_mir_ty, real), to_element_mir_ty);
-                let res_imag = self.emit_rvalue_to_operand(Rvalue::Cast(to_element_mir_ty, imag), to_element_mir_ty);
+                let res_real = self.emit_cast(real, to_element_mir_ty);
+                let res_imag = self.emit_cast(imag, to_element_mir_ty);
 
                 self.emit_complex_struct(res_real, res_imag, to_mir_ty)
             } else {
                 // Real to Complex
-                let res_real = self.emit_rvalue_to_operand(Rvalue::Cast(to_element_mir_ty, operand), to_element_mir_ty);
+                let res_real = self.emit_cast(operand, to_element_mir_ty);
                 let zero_const = self.create_constant(to_element_mir_ty, ConstValueKind::Float(0.0));
                 let res_imag =
                     self.emit_rvalue_to_operand(Rvalue::Use(Operand::Constant(zero_const)), to_element_mir_ty);
@@ -1710,7 +1712,7 @@ impl<'a> MirGen<'a> {
         } else {
             // Complex to Real
             let (real, _) = self.get_complex_components(operand, from_mir_ty);
-            self.emit_rvalue_to_operand(Rvalue::Cast(to_mir_ty, real), to_mir_ty)
+            self.emit_cast(real, to_mir_ty)
         }
     }
 

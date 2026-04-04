@@ -529,9 +529,10 @@ impl<'a> MirGen<'a> {
             _ => {
                 let operand = self.visit_expression(init, true);
                 let mir_target_ty = self.lower_qual_type(target_qt);
+                let conv_op = self.apply_conversions(operand.clone(), init, mir_target_ty);
 
-                if self.get_operand_type(&operand) == mir_target_ty {
-                    return operand;
+                if self.get_operand_type(&conv_op) == mir_target_ty {
+                    return conv_op;
                 }
 
                 // Brace elision: scalar -> aggregate

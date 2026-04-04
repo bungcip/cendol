@@ -163,11 +163,11 @@ pub(crate) enum MirStmt {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub(crate) enum AtomicMemOrder {
-    Relaxed,
-    Consume,
-    Acquire,
-    Release,
-    AcqRel,
+    // Relaxed,
+    // Consume,
+    // Acquire,
+    // Release,
+    // AcqRel,
     SeqCst,
 }
 
@@ -245,7 +245,6 @@ pub(crate) enum Rvalue {
     StructLiteral(Vec<(usize, Operand)>),
     ArrayLiteral(Vec<Operand>),
     // Memory operations
-    Load(Operand),
     BuiltinVaArg(Place, TypeId),
     AtomicLoad(Operand, AtomicMemOrder),
     AtomicExchange(Operand, Operand, AtomicMemOrder),

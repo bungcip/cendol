@@ -680,9 +680,6 @@ impl<'a> MirDumper<'a> {
                 }
                 write!(output, "]")?;
             }
-            Rvalue::Load(operand) => {
-                write!(output, "load {}", self.operand_to_string(operand))?;
-            }
 
             Rvalue::BuiltinVaArg(ap, ty) => {
                 write!(

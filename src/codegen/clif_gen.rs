@@ -1937,14 +1937,6 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                         diff
                     }
                 }
-                Rvalue::Load(operand) => {
-                    let addr = emit_operand(operand, ctx, types::I64);
-                    if matches!(place_mir_type, MirType::F80 | MirType::F128) && expected_type.is_float() {
-                        emit_x87_to_f64(addr, ctx.builder)
-                    } else {
-                        ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0)
-                    }
-                }
 
                 Rvalue::BinaryIntOp(op, left_operand, right_operand) => {
                     let left_clif_type = lower_operand_type(left_operand, ctx.mir, ctx.pointee_to_pointer);
@@ -3167,7 +3159,6 @@ impl ClifGen {
             | Rvalue::Cast(_, op)
             | Rvalue::PtrAdd(op, _)
             | Rvalue::PtrSub(op, _)
-            | Rvalue::Load(op)
             | Rvalue::AtomicLoad(op, _) => self.collect_operand_reachability(op, wf, rf, rg, wg),
 
             Rvalue::BinaryIntOp(_, l, r)

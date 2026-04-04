@@ -550,10 +550,6 @@ impl<'a> MirValidator<'a> {
                 }
                 None
             }
-            Rvalue::Load(op) => {
-                self.validate_operand(op);
-                None
-            }
 
             Rvalue::BuiltinVaArg(ap, type_id) => {
                 self.validate_place(ap);

@@ -112,6 +112,7 @@ pub mod guardian_bitfield_constraints;
 pub mod guardian_cast_constraints;
 pub mod guardian_compound_literal_constraints;
 pub mod guardian_const_eval_builtins;
+pub mod guardian_fam_union_constraints;
 pub mod guardian_generic_bitfield;
 pub mod guardian_generic_compatibility;
 pub mod guardian_generic_completeness;

@@ -396,22 +396,25 @@ impl TypeRegistry {
 
     /// Check if a type is a structure with a flexible array member (FAM).
     /// C11 6.7.2.1p18: "the last element of a structure ... may have an incomplete array type"
-    pub(crate) fn has_flexible_array_member(&self, mut ty: TypeRef) -> bool {
-        loop {
-            if ty.is_pointer() || ty.is_array() {
-                return false;
-            }
-            if ty.builtin().is_some() {
-                return false;
-            }
+    pub(crate) fn has_flexible_array_member(&self, ty: TypeRef) -> bool {
+        if ty.is_pointer() || ty.is_array() {
+            return false;
+        }
+        if ty.builtin().is_some() {
+            return false;
+        }
 
-            match &self.types[ty.index()].kind {
-                TypeKind::Alias(inner) => ty = *inner,
-                TypeKind::Record {
-                    is_union: false,
-                    members,
-                    ..
-                } => {
+        match &self.types[ty.index()].kind {
+            TypeKind::Alias(inner) => self.has_flexible_array_member(*inner),
+            TypeKind::Record {
+                is_union, members, ..
+            } => {
+                if *is_union {
+                    // A union has a FAM if any of its members recursively has one.
+                    members.iter().any(|m| self.has_flexible_array_member(m.member_type.ty()))
+                } else {
+                    // A structure has a FAM if its last member is an incomplete array
+                    // OR if any member recursively has a FAM (making the whole struct VM/illegal as member).
                     if let Some(last) = members.last()
                         && let TypeKind::Array {
                             size: ArraySizeType::Incomplete,
@@ -420,10 +423,11 @@ impl TypeRegistry {
                     {
                         return true;
                     }
-                    return false;
+                    // Recurse to see if any member has a FAM (nested)
+                    members.iter().any(|m| self.has_flexible_array_member(m.member_type.ty()))
                 }
-                _ => return false,
             }
+            _ => false,
         }
     }
 

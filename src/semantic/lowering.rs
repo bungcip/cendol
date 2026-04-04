@@ -169,6 +169,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         alignment: Option<u32>,
         name: Option<NameId>,
         span: SourceSpan,
+        is_union: bool,
     ) {
         if let Some(width) = bit_field_size {
             if !member_type.is_integer() {
@@ -185,7 +186,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.report_error(span, SemanticErrorKind::NamedZeroWidthBitfield);
             }
         } else {
-            if self.registry.has_flexible_array_member(member_type.ty()) {
+            // C11 6.7.2.1p3: "A structure or union shall not contain a member with... an incomplete type,
+            // except that the last member of a structure with more than one named member may have
+            // incomplete array type".
+            // Crucially, it doesn't explicitly prohibit unions from having such a structure as a member.
+            // If the containing record is a union, we allow it.
+            if !is_union && self.registry.has_flexible_array_member(member_type.ty()) {
                 self.report_error(span, SemanticErrorKind::FlexibleArrayMemberInStruct);
             }
 
@@ -335,7 +341,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let ty = self.resolve_record_tag(tag, is_union, is_definition, span)?;
 
         if let Some(decls) = definition {
-            let members = self.visit_struct_members(decls, span);
+            let members = self.visit_struct_members(decls, span, is_union);
             self.complete_record_symbol(tag, ty, members, span)?;
         }
 
@@ -3149,7 +3155,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     /// Common logic for lowering struct members, used by both TypeSpec::Record lowering
     /// and Declarator::AnonymousRecord handling.
-    fn visit_struct_members(&mut self, member_nodes: &[ParsedNodeRef], span: SourceSpan) -> Vec<StructMember> {
+    fn visit_struct_members(
+        &mut self,
+        member_nodes: &[ParsedNodeRef],
+        span: SourceSpan,
+        is_union: bool,
+    ) -> Vec<StructMember> {
         let mut struct_members = Vec::new();
 
         for &node in member_nodes {
@@ -3220,7 +3231,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             DeclaratorContext { in_parameter: false },
                         );
 
-                        self.validate_member_layout(member_type, bit_field_size, spec_info.alignment, name, id.span);
+                        self.validate_member_layout(
+                            member_type,
+                            bit_field_size,
+                            spec_info.alignment,
+                            name,
+                            id.span,
+                            is_union,
+                        );
 
                         struct_members.push(StructMember {
                             name,

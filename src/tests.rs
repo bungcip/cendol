@@ -46,6 +46,7 @@ pub mod semantic_builtin_unreachable;
 pub mod semantic_builtins;
 pub mod semantic_builtins_bitwise;
 pub mod semantic_conflicting_type_spec;
+pub mod semantic_const_eval_member_access;
 pub mod semantic_control_flow;
 pub mod semantic_deref_check;
 pub mod semantic_empty_decl;

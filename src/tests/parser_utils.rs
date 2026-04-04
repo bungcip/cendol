@@ -521,7 +521,7 @@ where
 
     let mut diag = driver.diagnostics;
     let mut ast = ParsedAst::new();
-    let mut parser = Parser::new(&tokens, &mut ast, &mut diag);
+    let mut parser = Parser::new(&tokens, &mut ast, &mut diag, &driver.config.lang_options);
     let result = parse_fn(&mut parser);
 
     assert!(diag.diagnostics.is_empty());

@@ -1,5 +1,5 @@
 /// supported C standards
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum CStandard {
     #[default]
     C11,

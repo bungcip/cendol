@@ -270,6 +270,16 @@ pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
         None
     };
 
+    if message_node.is_none() && parser.lang_opts.c_standard < crate::lang_options::CStandard::C23 {
+        return Err(ParseError {
+            span: parser.current_token_span_or_empty(),
+            kind: ParseErrorKind::UnexpectedToken {
+                expected: "',' followed by a string literal",
+                found: parser.current_token_kind().unwrap_or(TokenKind::EndOfFile),
+            },
+        });
+    }
+
     parser.expect(TokenKind::RightParen)?;
     let semi = parser.expect(TokenKind::Semicolon)?;
     Ok(parser.push_node(

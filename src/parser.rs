@@ -99,23 +99,30 @@ pub(crate) struct ParserState {
 
 /// Main parser structure
 pub struct Parser<'arena, 'src> {
-    tokens: &'src [Token],
-    current_idx: usize,
-    ast: &'arena mut ParsedAst,
-    diag: &'src mut DiagnosticEngine,
+    pub(crate) tokens: &'src [Token],
+    pub(crate) current_idx: usize,
+    pub(crate) ast: &'arena mut ParsedAst,
+    pub(crate) diag: &'src mut DiagnosticEngine,
+    pub(crate) lang_opts: &'src crate::lang_options::LangOptions,
 
     // Type context for typedef tracking
-    type_context: TypeDefContext,
+    pub(crate) type_context: TypeDefContext,
 }
 
 impl<'arena, 'src> Parser<'arena, 'src> {
     /// Create a new parser
-    pub(crate) fn new(tokens: &'src [Token], ast: &'arena mut ParsedAst, diag: &'src mut DiagnosticEngine) -> Self {
+    pub(crate) fn new(
+        tokens: &'src [Token],
+        ast: &'arena mut ParsedAst,
+        diag: &'src mut DiagnosticEngine,
+        lang_opts: &'src crate::lang_options::LangOptions,
+    ) -> Self {
         Parser {
             tokens,
             current_idx: 0,
             ast,
             diag,
+            lang_opts,
             type_context: TypeDefContext::new(),
         }
     }

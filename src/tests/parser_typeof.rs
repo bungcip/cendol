@@ -6,7 +6,7 @@ fn test_typeof_expr() {
     insta::assert_yaml_snapshot!(decl, @"
     Declaration:
       specifiers:
-        - TypeofExpr(4)
+        - TypeofExpr(5)
       init_declarators:
         - name: x
     ");
@@ -30,7 +30,7 @@ fn test_typeof_comma_expr() {
     insta::assert_yaml_snapshot!(decl, @"
     Declaration:
       specifiers:
-        - TypeofExpr(5)
+        - TypeofExpr(6)
       init_declarators:
         - name: x
     ");

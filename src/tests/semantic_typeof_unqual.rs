@@ -1,9 +1,10 @@
-use super::test_utils::run_pass;
+use super::test_utils::run_pass_with_std;
 use crate::driver::artifact::CompilePhase;
+use crate::lang_options::CStandard;
 
 #[test]
 fn test_typeof_unqual_type_compile() {
-    run_pass(
+    run_pass_with_std(
         r#"
         int main() {
             const int x = 5;
@@ -13,12 +14,13 @@ fn test_typeof_unqual_type_compile() {
         }
         "#,
         CompilePhase::Mir,
+        CStandard::C23,
     );
 }
 
 #[test]
 fn test_typeof_unqual_expr_compile() {
-    run_pass(
+    run_pass_with_std(
         r#"
         int main() {
             const int x = 5;
@@ -28,12 +30,13 @@ fn test_typeof_unqual_expr_compile() {
         }
         "#,
         CompilePhase::Mir,
+        CStandard::C23,
     );
 }
 
 #[test]
 fn test_typeof_unqual_pointer() {
-    run_pass(
+    run_pass_with_std(
         r#"
         int main() {
             int const * p = 0;
@@ -51,5 +54,6 @@ fn test_typeof_unqual_pointer() {
         }
         "#,
         CompilePhase::Mir,
+        CStandard::C23,
     );
 }

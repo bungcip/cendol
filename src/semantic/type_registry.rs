@@ -1099,8 +1099,8 @@ impl TypeRegistry {
             // We can't use is_complete because that recurses. We check TypeKind directly.
             // Bolt ⚡: Optimized to match on reference to avoid cloning ArraySizeType.
             let type_info = self.get(member_ty);
-            if let TypeKind::Array { element_type, size } = &type_info.kind {
-                if matches!(size, ArraySizeType::Incomplete) {
+            if let TypeKind::Array { element_type, size } = &type_info.kind
+                && matches!(size, ArraySizeType::Incomplete) {
                     let elem_ty = *element_type;
                     drop(type_info);
                     if is_union {
@@ -1157,7 +1157,6 @@ impl TypeRegistry {
 
                     continue;
                 }
-            }
             drop(type_info);
 
             let layout = match self.ensure_layout(member_ty) {

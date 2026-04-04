@@ -247,23 +247,27 @@ pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
     let start_loc = start_token.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let condition = parser.parse_expr_assignment()?;
-    parser.expect(TokenKind::Comma)?;
 
-    let token = parser.current_token()?;
-    let message_node = match token.kind {
-        TokenKind::StringLiteral(symbol) => {
-            parser.advance();
-            parser.push_node(ParsedNodeKind::Literal(Literal::String(symbol)), token.span)
-        }
-        _ => {
-            return Err(ParseError {
-                span: token.span,
-                kind: ParseErrorKind::UnexpectedToken {
-                    expected: "string literal",
-                    found: token.kind,
-                },
-            });
-        }
+    let message_node = if parser.accept(TokenKind::Comma).is_some() {
+        let token = parser.current_token()?;
+        let msg_node = match token.kind {
+            TokenKind::StringLiteral(symbol) => {
+                parser.advance();
+                parser.push_node(ParsedNodeKind::Literal(Literal::String(symbol)), token.span)
+            }
+            _ => {
+                return Err(ParseError {
+                    span: token.span,
+                    kind: ParseErrorKind::UnexpectedToken {
+                        expected: "string literal",
+                        found: token.kind,
+                    },
+                });
+            }
+        };
+        Some(msg_node)
+    } else {
+        None
     };
 
     parser.expect(TokenKind::RightParen)?;

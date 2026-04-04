@@ -66,7 +66,7 @@ pub(crate) enum ResolvedNodeKind {
         Option<Box<ResolvedNodeKind>>,
         Box<ResolvedNodeKind>,
     ), // For statement
-    StaticAssert(Box<ResolvedNodeKind>, String),
+    StaticAssert(Box<ResolvedNodeKind>, Option<String>),
     CompoundLiteral(String, Box<ResolvedNodeKind>),
     FunctionDef {
         specifiers: Vec<String>,
@@ -314,7 +314,14 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
             Box::new(resolve_node(ast, for_stmt.body)),
         ),
         ParsedNodeKind::StaticAssert(expr, msg) => {
-            ResolvedNodeKind::StaticAssert(Box::new(resolve_node(ast, *expr)), msg.to_string())
+            let message = msg.map(|m| {
+                if let ParsedNodeKind::Literal(Literal::String(s)) = &ast.get_node(m).kind {
+                    s.to_string()
+                } else {
+                    "<invalid>".to_string()
+                }
+            });
+            ResolvedNodeKind::StaticAssert(Box::new(resolve_node(ast, *expr)), message)
         }
         ParsedNodeKind::CompoundLiteral(ty, init) => {
             // Check if init is an InitializerList, if so use resolve_initializer, otherwise resolve_node

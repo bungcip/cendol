@@ -602,7 +602,17 @@ fn test_static_assert() {
     insta::assert_yaml_snapshot!(&resolved, @r#"
     StaticAssert:
       - LiteralInt: 1
-      - "3"
+      - "\"ok\""
+    "#);
+}
+
+#[test]
+fn test_static_assert_c23_no_message() {
+    let resolved = setup_declaration("_Static_assert(1);");
+    insta::assert_yaml_snapshot!(&resolved, @r#"
+    StaticAssert:
+      - LiteralInt: 1
+      - ~
     "#);
 }
 

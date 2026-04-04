@@ -590,6 +590,7 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("_Noreturn"), TokenKind::Noreturn);
         m.insert(StringId::new("_Pragma"), TokenKind::Pragma);
         m.insert(StringId::new("_Static_assert"), TokenKind::StaticAssert);
+        m.insert(StringId::new("static_assert"), TokenKind::StaticAssert);
         m.insert(StringId::new("_Thread_local"), TokenKind::ThreadLocal);
         m.insert(StringId::new("__attribute__"), TokenKind::Attribute);
         m.insert(StringId::new("__attribute"), TokenKind::Attribute);

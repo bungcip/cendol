@@ -132,9 +132,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         base.merge_qualifiers(add)
     }
 
-    fn check_static_assert(&mut self, cond: ParsedNodeRef, msg: ParsedNodeRef, span: SourceSpan) {
+    fn check_static_assert(&mut self, cond: ParsedNodeRef, msg: Option<ParsedNodeRef>, span: SourceSpan) {
         let cond_node = self.visit_expression(cond);
-        let msg_node = self.visit_expression(msg);
+        let msg_node = msg.map(|m| self.visit_expression(m));
 
         if let Some(cond_ty) = self.ast.get_resolved_type(cond_node)
             && !cond_ty.is_integer()
@@ -148,10 +148,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let const_ctx = self.const_ctx();
         match const_ctx.eval_int(cond_node) {
             Some(0) => {
-                let message = match self.ast.get_kind(msg_node) {
-                    NodeKind::Literal(Literal::String(s)) => s.as_str().to_string(),
-                    _ => String::new(),
-                };
+                let message = msg_node
+                    .and_then(|m| match self.ast.get_kind(m) {
+                        NodeKind::Literal(Literal::String(s)) => Some(s.as_str().to_string()),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
 
                 self.report_error(span, SemanticErrorKind::StaticAssertFailed { message });
             }
@@ -713,7 +715,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     && let Some(target) = target_slots.first()
                 {
                     let lowered_expr = self.visit_expression(*expr);
-                    let lowered_msg = self.visit_expression(*msg);
+                    let lowered_msg = msg.map(|m| self.visit_expression(m));
                     self.ast.kinds[target.index()] = NodeKind::StaticAssert(lowered_expr, lowered_msg);
                     self.ast.spans[target.index()] = span;
                 }
@@ -1643,7 +1645,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             )),
             ParsedNodeKind::StaticAssert(c, m) => lower_simple!(NodeKind::StaticAssert(
                 self.visit_expression(*c),
-                self.visit_expression(*m)
+                m.map(|msg| self.visit_expression(msg))
             )),
 
             // Ternary expressions

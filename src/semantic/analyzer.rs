@@ -3385,10 +3385,12 @@ impl<'a> SemanticAnalyzer<'a> {
 
         match self.const_ctx().eval_int(cond) {
             Some(0) => {
-                let message = match self.ast.get_kind(msg) {
-                    NodeKind::Literal(Literal::String(s)) => s.as_str().to_string(),
-                    _ => String::new(),
-                };
+                let message = msg
+                    .and_then(|m| match self.ast.get_kind(m) {
+                        NodeKind::Literal(Literal::String(s)) => Some(s.as_str().to_string()),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
 
                 self.report_error(node, SemanticErrorKind::StaticAssertFailed { message });
             }

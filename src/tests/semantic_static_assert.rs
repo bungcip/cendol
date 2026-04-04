@@ -10,6 +10,38 @@ fn test_static_assert_in_struct() {
 }
 
 #[test]
+fn test_static_assert_c23_one_arg() {
+    run_pass("_Static_assert(1 == 1); int main() { return 0; }", CompilePhase::Mir);
+}
+
+#[test]
+fn test_static_assert_keyword() {
+    run_pass(
+        "static_assert(1 == 1, \"msg\"); int main() { return 0; }",
+        CompilePhase::Mir,
+    );
+    run_pass("static_assert(1 == 1); int main() { return 0; }", CompilePhase::Mir);
+}
+
+#[test]
+fn test_static_assert_c23_fail_no_msg() {
+    run_fail_with_message("_Static_assert(1 == 0);", "static assertion failed");
+}
+
+#[test]
+fn test_static_assert_fail_with_msg() {
+    run_fail_with_message(
+        "_Static_assert(1 == 0, \"failure message\");",
+        "static assertion failed: \"failure message\"",
+    );
+}
+
+#[test]
+fn test_static_assert_keyword_fail_no_msg() {
+    run_fail_with_message("static_assert(0);", "static assertion failed");
+}
+
+#[test]
 fn test_static_assert_in_union() {
     run_pass(
         "union U { int x; _Static_assert(1, \"msg\"); }; int main() { return 0; }",

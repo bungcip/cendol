@@ -135,7 +135,7 @@ fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpec]) -> Vec<Str
                 ParsedTypeSpec::Record(is_union, tag, def) => {
                     let record_kind = if *is_union { "union" } else { "struct" };
                     let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
-                    let has_body = def.as_ref().is_some_and(|d| d.members.is_some());
+                    let has_body = def.is_some();
 
                     let mut s = record_kind.to_string();
                     if !tag_str.is_empty() {

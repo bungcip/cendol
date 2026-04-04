@@ -206,11 +206,8 @@ fn parse_base_type(parser: &mut Parser, ts: &ParsedTypeSpec) -> Result<ParsedBas
             Ok(parser.alloc_base_type(ParsedBaseType::Builtin(Atomic(*parsed_type))))
         }
         Record(is_union, tag, definition) => {
-            let members = if let Some(def) = definition {
-                def.members
-                    .as_ref()
-                    .map(|m| parse_record_members(parser, m))
-                    .transpose()?
+            let members = if let Some(decls) = definition {
+                Some(parse_record_members(parser, decls)?)
             } else {
                 None
             };

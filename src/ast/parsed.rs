@@ -256,9 +256,9 @@ pub enum ParsedTypeSpec {
     Complex,
     Atomic(ParsedType), // _Bool, _Complex, _Atomic
     Record(
-        bool,                    /* is_union */
-        Option<NameId>,          /* tag */
-        Option<ParsedRecordDef>, /* definition */
+        bool,                       /* is_union */
+        Option<NameId>,             /* tag */
+        Option<Vec<ParsedNodeRef>>, /* field members */
     ),
     Enum(
         Option<NameId>,             /* tag */
@@ -319,13 +319,6 @@ pub struct ParsedGenericAssociation {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedRecordDef {
-    pub tag: Option<NameId>,                 // None if anonymous
-    pub members: Option<Vec<ParsedNodeRef>>, // Field declarations
-    pub is_union: bool,
-}
-
-#[derive(Debug, Clone)]
 pub struct ParsedDesignatedInitializer {
     pub designation: Vec<ParsedDesignator>,
     pub initializer: ParsedNodeRef,
@@ -355,11 +348,9 @@ impl ParsedTypeSpec {
                     f(e);
                 }
             }
-            ParsedTypeSpec::Record(_, _, Some(def)) => {
-                if let Some(members) = &def.members {
-                    for &m in members {
-                        f(m);
-                    }
+            ParsedTypeSpec::Record(_, _, Some(members)) => {
+                for &m in members {
+                    f(m);
                 }
             }
             ParsedTypeSpec::Typeof(_) => {}

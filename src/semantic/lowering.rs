@@ -326,18 +326,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         &mut self,
         is_union: bool,
         tag: Option<NameId>,
-        definition: &Option<ParsedRecordDef>,
+        definition: &Option<Vec<ParsedNodeRef>>,
         span: SourceSpan,
     ) -> Result<QualType, SemanticError> {
         let is_definition = definition.is_some();
         let ty = self.resolve_record_tag(tag, is_union, is_definition, span)?;
 
-        if let Some(def) = definition {
-            let members = def
-                .members
-                .as_ref()
-                .map(|decls| self.visit_struct_members(decls, span))
-                .unwrap_or_default();
+        if let Some(decls) = definition {
+            let members = self.visit_struct_members(decls, span);
             self.complete_record_symbol(tag, ty, members, span)?;
         }
 

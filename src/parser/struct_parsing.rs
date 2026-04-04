@@ -35,11 +35,7 @@ pub(super) fn parse_record_specifier(parser: &mut Parser, is_union: bool) -> Res
             // For now, ignore attribute parsing errors
         }
 
-        Some(ParsedRecordDef {
-            tag,
-            members: Some(members),
-            is_union,
-        })
+        Some(members)
     } else {
         None
     };
@@ -102,11 +98,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
                 specifiers: thin_vec![ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Record(
                     is_union,
                     tag,
-                    Some(ParsedRecordDef {
-                        tag,
-                        members: Some(members),
-                        is_union,
-                    }),
+                    Some(members),
                 ))],
                 init_declarators,
             }

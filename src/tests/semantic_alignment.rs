@@ -1,3 +1,4 @@
+use crate::semantic::types::LayoutKind;
 use crate::tests::semantic_common::{find_layout, find_record_type, find_var_decl, setup_lowering};
 use crate::tests::test_utils::run_fail_with_message;
 
@@ -16,7 +17,7 @@ fn test_struct_member_alignas() {
     assert_eq!(layout.alignment, 8, "Struct S should have alignment 8");
 
     // Offset of 'b' should be 8 (or at least 8-byte aligned)
-    if let crate::semantic::types::LayoutKind::Record { fields, .. } = &layout.kind {
+    if let LayoutKind::RecordFields { fields } = &layout.kind {
         assert_eq!(fields[1].offset, 8, "Member 'b' should be at offset 8");
     } else {
         panic!("Expected Record layout");
@@ -79,7 +80,7 @@ fn test_anonymous_struct_member_alignas() {
     let layout = find_layout(&registry, "S");
     assert_eq!(layout.alignment, 8, "Struct S should have alignment 8");
 
-    if let crate::semantic::types::LayoutKind::Record { fields, .. } = &layout.kind {
+    if let LayoutKind::RecordFields { fields } = &layout.kind {
         // 'c' should be at offset 8 because it has alignment 8
         assert_eq!(fields[1].offset, 8, "Member 'c' should be at offset 8");
     } else {

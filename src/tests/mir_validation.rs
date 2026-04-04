@@ -678,7 +678,10 @@ fn test_rvalue_cast_aggregate_invalid() {
     let local_id = builder.create_local(None, struct_ty_id, false);
 
     // Cast struct to i32 - invalid
-    let rvalue = Rvalue::Cast(i32_ty, Operand::Copy(Box::new(Place::Local(local_id))));
+    let rvalue = Rvalue::Use(Operand::Cast(
+        i32_ty,
+        Box::new(Operand::Copy(Box::new(Place::Local(local_id)))),
+    ));
     let dest_local = builder.create_local(None, i32_ty, false);
     let stmt = MirStmt::Assign(Place::Local(dest_local), rvalue);
     builder.add_stmt(stmt);

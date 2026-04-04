@@ -10,7 +10,7 @@ fn test_c23_bool_literals_basic() {
             return a == true ? 1 : 0;
         }
     ";
-    run_pipeline(src, CompilePhase::Mir);
+    let _ = run_pipeline(src, CompilePhase::Mir);
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn test_c23_bool_literals_types() {
             return 0;
         }
     ";
-    run_pipeline(src, CompilePhase::SemanticLowering);
+    let _ = run_pipeline(src, CompilePhase::SemanticLowering);
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn test_c23_bool_literals_pp() {
 
         int main() { return 0; }
     ";
-    run_pipeline(src, CompilePhase::SemanticLowering);
+    let _ = run_pipeline(src, CompilePhase::SemanticLowering);
 }
 
 #[test]
@@ -72,5 +72,5 @@ fn test_c23_bool_literals_const_eval() {
 
         int main() { return 0; }
     ";
-    run_pipeline(src, CompilePhase::Mir);
+    let _ = run_pipeline(src, CompilePhase::Mir);
 }

@@ -1339,15 +1339,18 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
             emit_type_conversion(val, place_clif_type, expected_type, place_type.is_signed(), ctx.builder)
         }
         Operand::Cast(type_id, inner_operand) => {
-            let inner_type = lower_operand_type(inner_operand, ctx.mir, ctx.pointee_to_pointer);
+            let inner_mir_type =
+                ctx.mir
+                    .get_type(lower_operand_type_id(inner_operand, ctx.mir, ctx.pointee_to_pointer));
+            let inner_type = if matches!(inner_mir_type, MirType::F80 | MirType::F128) {
+                types::F64
+            } else {
+                lower_operand_type(inner_operand, ctx.mir, ctx.pointee_to_pointer)
+            };
             let inner_val = emit_operand(inner_operand, ctx, inner_type);
 
             let mir_type = ctx.mir.get_type(*type_id);
-            let target_type = if mir_type.is_aggregate() {
-                types::I64
-            } else {
-                lower_type(mir_type).unwrap_or(types::I32)
-            };
+            let target_type = lower_type(mir_type).expect("Cannot cast to void type");
 
             let converted = if matches!(mir_type, MirType::Bool) && (inner_type.is_int() || inner_type.is_float()) {
                 let zero = if inner_type.is_int() {
@@ -1798,60 +1801,6 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             // Process the rvalue to get a Cranelift value first
             let rvalue_result = match rvalue {
                 Rvalue::Use(operand) => emit_operand(operand, ctx, expected_type),
-                Rvalue::Cast(type_id, operand) => {
-                    let inner_mir_type =
-                        ctx.mir
-                            .get_type(lower_operand_type_id(operand, ctx.mir, ctx.pointee_to_pointer));
-                    let inner_clif_type = if matches!(inner_mir_type, MirType::F80 | MirType::F128) {
-                        types::F64
-                    } else {
-                        lower_operand_type(operand, ctx.mir, ctx.pointee_to_pointer)
-                    };
-                    let inner_val = emit_operand(operand, ctx, inner_clif_type);
-
-                    let target_mir_type = ctx.mir.get_type(*type_id);
-                    let target_clif_type = lower_type(target_mir_type).expect("Cannot cast to void type");
-
-                    let converted = if matches!(target_mir_type, MirType::Bool)
-                        && (inner_clif_type.is_int() || inner_clif_type.is_float())
-                    {
-                        let zero = if inner_clif_type.is_int() {
-                            ctx.builder.ins().iconst(inner_clif_type, 0i64)
-                        } else if inner_clif_type == types::F32 {
-                            ctx.builder.ins().f32const(0.0)
-                        } else if inner_clif_type == types::F64 {
-                            ctx.builder.ins().f64const(0.0)
-                        } else {
-                            panic!("Unsupported float type");
-                        };
-                        let is_not_zero = if inner_clif_type.is_int() {
-                            ctx.builder.ins().icmp(IntCC::NotEqual, inner_val, zero)
-                        } else {
-                            ctx.builder.ins().fcmp(FloatCC::NotEqual, inner_val, zero)
-                        };
-                        emit_bool_to_int(is_not_zero, target_clif_type, ctx.builder)
-                    } else {
-                        emit_type_conversion(
-                            inner_val,
-                            inner_clif_type,
-                            target_clif_type,
-                            if inner_clif_type.is_float() {
-                                target_mir_type.is_signed()
-                            } else {
-                                is_operand_signed(operand, ctx.mir, ctx.pointee_to_pointer)
-                            },
-                            ctx.builder,
-                        )
-                    };
-
-                    emit_type_conversion(
-                        converted,
-                        target_clif_type,
-                        expected_type,
-                        target_mir_type.is_signed(),
-                        ctx.builder,
-                    )
-                }
                 Rvalue::UnaryIntOp(op, operand) => {
                     let operand_clif_type = lower_operand_type(operand, ctx.mir, ctx.pointee_to_pointer);
                     let val = emit_operand(operand, ctx, operand_clif_type);
@@ -3156,7 +3105,6 @@ impl ClifGen {
             Rvalue::Use(op)
             | Rvalue::UnaryIntOp(_, op)
             | Rvalue::UnaryFloatOp(_, op)
-            | Rvalue::Cast(_, op)
             | Rvalue::PtrAdd(op, _)
             | Rvalue::PtrSub(op, _)
             | Rvalue::AtomicLoad(op, _) => self.collect_operand_reachability(op, wf, rf, rg, wg),

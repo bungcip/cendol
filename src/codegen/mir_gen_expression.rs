@@ -1212,21 +1212,24 @@ impl<'a> MirGen<'a> {
 
         // Get the function type to determine parameter types for conversions
         let func_node_kind = self.ast.get_kind(call_expr.callee);
-        let func_type_kind = if let NodeKind::Ident(_, sym) = func_node_kind {
+        // Bolt ⚡: Avoid cloning TypeKind. Extract parameter types directly.
+        let param_types = if let NodeKind::Ident(_, sym) = func_node_kind {
             let symbol = *sym;
             let func_entry = self.symbol_table.get_symbol(symbol);
-            Some(self.registry.get(func_entry.type_info.ty()).kind.clone())
-        } else {
-            None
-        };
+            let mut qt_params = None;
+            {
+                let type_info = self.registry.get(func_entry.type_info.ty());
+                if let TypeKind::Function { parameters, .. } = &type_info.kind {
+                    qt_params = Some(parameters.iter().map(|p| p.param_type).collect::<Vec<_>>());
+                }
+            }
 
-        let param_types = if let Some(TypeKind::Function { parameters, .. }) = func_type_kind.as_ref() {
-            Some(
-                parameters
-                    .iter()
-                    .map(|param| self.lower_qual_type(param.param_type))
-                    .collect::<Vec<_>>(),
-            )
+            qt_params.map(|params| {
+                params
+                    .into_iter()
+                    .map(|qt| self.lower_qual_type(qt))
+                    .collect::<Vec<_>>()
+            })
         } else {
             None
         };

@@ -41,6 +41,18 @@ struct SwitchCtx {
     vla_state: (NodeRef, usize),
 }
 
+/// Internal task used to extract information from TypeKind without cloning it.
+enum TypeAnalysisTask {
+    Record(Arc<[StructMember]>, bool),
+    Array(TypeRef, ArraySizeType),
+    Function {
+        return_type: TypeRef,
+        parameters: Arc<[FunctionParameter]>,
+        is_variadic: bool,
+    },
+    None,
+}
+
 /// Context for the current function being analyzed.
 #[derive(Debug, Clone, Copy)]
 struct FunctionCtx {
@@ -1641,10 +1653,24 @@ impl<'a> SemanticAnalyzer<'a> {
             return;
         }
 
-        let target_kind = self.registry.get(target_qt.ty()).kind.clone();
-        match &target_kind {
-            TypeKind::Record { members, is_union, .. } => self.visit_record_init(list, target_qt, members, *is_union),
-            TypeKind::Array { element_type, size, .. } => self.visit_array_init(list, target_qt, *element_type, size),
+        // Bolt ⚡: Avoid cloning the entire TypeKind by extracting only the necessary parts.
+        // We use a scoped block to ensure the Cow<Type> is dropped before calling other methods.
+        let task = {
+            let type_info = self.registry.get(target_qt.ty());
+            match &type_info.kind {
+                TypeKind::Record { members, is_union, .. } => {
+                    TypeAnalysisTask::Record(Arc::clone(members), *is_union)
+                }
+                TypeKind::Array { element_type, size, .. } => TypeAnalysisTask::Array(*element_type, *size),
+                _ => TypeAnalysisTask::None,
+            }
+        };
+
+        match task {
+            TypeAnalysisTask::Record(members, is_union) => {
+                self.visit_record_init(list, target_qt, &members, is_union)
+            }
+            TypeAnalysisTask::Array(element_type, size) => self.visit_array_init(list, target_qt, element_type, &size),
             _ => {
                 for item in list.init_start.range(list.init_len) {
                     self.visit_node(self.unwrap_init_item(item).0);
@@ -1830,20 +1856,31 @@ impl<'a> SemanticAnalyzer<'a> {
     where
         I: Iterator<Item = NodeRef>,
     {
-        let target_kind = self.registry.get(target_qt.ty()).kind.clone();
+        // Bolt ⚡: Extract needed info without cloning the entire TypeKind.
+        let task = {
+            let type_info = self.registry.get(target_qt.ty());
+            match &type_info.kind {
+                TypeKind::Record { members, is_union, .. } => {
+                    TypeAnalysisTask::Record(Arc::clone(members), *is_union)
+                }
+                TypeKind::Array { element_type, size, .. } => TypeAnalysisTask::Array(*element_type, *size),
+                _ => TypeAnalysisTask::None,
+            }
+        };
+
         match designator {
             Designator::FieldName(name) => {
-                let TypeKind::Record { members, is_union, .. } = &target_kind else {
+                let TypeAnalysisTask::Record(members, is_union) = task else {
                     return false;
                 };
 
-                let Some(idx) = self.find_member_index(members, name) else {
+                let Some(idx) = self.find_member_index(&members, name) else {
                     return false;
                 };
 
                 self.consume_inits(members[idx].member_type, iter, designator_idx + 1);
 
-                if !*is_union {
+                if !is_union {
                     for i in (idx + 1)..members.len() {
                         if iter.peek().is_none() || self.unwrap_init_item(*iter.peek().unwrap()).2 > 0 {
                             break;
@@ -1854,7 +1891,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 true
             }
             Designator::ArrayIndex(e) | Designator::ArrayRange(e, _) => {
-                let TypeKind::Array { element_type, size, .. } = &target_kind else {
+                let TypeAnalysisTask::Array(element_type, size) = task else {
                     return false;
                 };
 
@@ -1872,13 +1909,13 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                 }
                 self.consume_inits(
-                    QualType::new(*element_type, target_qt.qualifiers()),
+                    QualType::new(element_type, target_qt.qualifiers()),
                     iter,
                     designator_idx + 1,
                 );
 
                 let max_len = if let ArraySizeType::Constant(len) = size {
-                    Some(*len as i64)
+                    Some(len as i64)
                 } else {
                     None
                 };
@@ -1887,7 +1924,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     if iter.peek().is_none() || self.unwrap_init_item(*iter.peek().unwrap()).2 > 0 {
                         break;
                     }
-                    self.consume_inits(QualType::new(*element_type, target_qt.qualifiers()), iter, 0);
+                    self.consume_inits(QualType::new(element_type, target_qt.qualifiers()), iter, 0);
                     current_idx += 1;
                 }
                 true
@@ -1903,11 +1940,20 @@ impl<'a> SemanticAnalyzer<'a> {
     ) where
         I: Iterator<Item = NodeRef>,
     {
-        let target_kind = self.registry.get(target_qt.ty()).kind.clone();
-        match &target_kind {
-            TypeKind::Record { members, is_union, .. } => {
-                let members = members.clone();
-                let is_union = *is_union;
+        // Bolt ⚡: Optimized to avoid cloning TypeKind.
+        let task = {
+            let type_info = self.registry.get(target_qt.ty());
+            match &type_info.kind {
+                TypeKind::Record { members, is_union, .. } => {
+                    TypeAnalysisTask::Record(Arc::clone(members), *is_union)
+                }
+                TypeKind::Array { element_type, size, .. } => TypeAnalysisTask::Array(*element_type, *size),
+                _ => TypeAnalysisTask::None,
+            }
+        };
+
+        match task {
+            TypeAnalysisTask::Record(members, is_union) => {
                 for member in members.iter() {
                     self.consume_inits(member.member_type, iter, 0);
                     if iter.peek().is_none() || self.unwrap_init_item(*iter.peek().unwrap()).2 > 0 || is_union {
@@ -1915,10 +1961,10 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                 }
             }
-            TypeKind::Array { element_type, size, .. } => {
-                let element_qt = QualType::new(*element_type, target_qt.qualifiers());
+            TypeAnalysisTask::Array(element_type, size) => {
+                let element_qt = QualType::new(element_type, target_qt.qualifiers());
                 let max_len = if let ArraySizeType::Constant(len) = size {
-                    Some(*len)
+                    Some(len)
                 } else {
                     None
                 };
@@ -2006,72 +2052,85 @@ impl<'a> SemanticAnalyzer<'a> {
         };
 
         // Get function kind
-        let func_kind = self.registry.get(actual_func_ty).kind.clone();
-
-        if let TypeKind::Function {
-            parameters,
-            is_variadic,
-            ..
-        } = &func_kind
-        {
-            let is_variadic = *is_variadic;
-            let arg_count = call_expr.arg_len as usize;
-
-            // Check argument count validity upfront (no-prototype semantics removed)
-            if !is_variadic && arg_count != parameters.len() {
-                self.report_error(
-                    call_expr.callee,
-                    SemanticErrorKind::InvalidNumberOfArguments {
-                        expected: parameters.len(),
-                        found: arg_count,
-                    },
-                );
+        // Bolt ⚡: Avoid cloning TypeKind.
+        let task = {
+            let type_info = self.registry.get(actual_func_ty);
+            match &type_info.kind {
+                TypeKind::Function {
+                    return_type,
+                    parameters,
+                    is_variadic,
+                    ..
+                } => TypeAnalysisTask::Function {
+                    return_type: *return_type,
+                    parameters: Arc::clone(parameters),
+                    is_variadic: *is_variadic,
+                },
+                _ => TypeAnalysisTask::None,
             }
+        };
 
-            for (i, arg_node) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
-                self.apply_lvalue_conversion(arg_node);
-                let Some(arg_qt) = self.visit_node(arg_node) else {
-                    continue;
-                };
+        match task {
+            TypeAnalysisTask::Function {
+                return_type,
+                parameters,
+                is_variadic,
+            } => {
+                let arg_count = call_expr.arg_len as usize;
 
-                if i < parameters.len() {
-                    let actual_arg_qt = self.decay(arg_node, arg_qt);
-                    self.validate_assignment(arg_node, parameters[i].param_type, actual_arg_qt, arg_node);
-                } else if is_variadic {
-                    let mut actual_arg_qt = arg_qt;
-                    if arg_qt.is_array() || arg_qt.is_function() {
-                        actual_arg_qt = self.registry.decay(arg_qt, TypeQualifiers::empty());
-                        self.push_conversion(arg_node, Conversion::PointerDecay { to: actual_arg_qt.ty() });
-                    }
+                // Check argument count validity upfront (no-prototype semantics removed)
+                if !is_variadic && arg_count != parameters.len() {
+                    self.report_error(
+                        call_expr.callee,
+                        SemanticErrorKind::InvalidNumberOfArguments {
+                            expected: parameters.len(),
+                            found: arg_count,
+                        },
+                    );
+                }
 
-                    let promoted_qt =
-                        crate::semantic::conversions::default_argument_promotions(self.registry, actual_arg_qt);
+                for (i, arg_node) in call_expr.arg_start.range(call_expr.arg_len).enumerate() {
+                    self.apply_lvalue_conversion(arg_node);
+                    let Some(arg_qt) = self.visit_node(arg_node) else {
+                        continue;
+                    };
 
-                    if promoted_qt.ty() != actual_arg_qt.ty() {
-                        let is_npc = self.is_null_pointer_constant(arg_node);
-                        self.record_implicit_conversions(promoted_qt, actual_arg_qt, arg_node, is_npc);
+                    if i < parameters.len() {
+                        let actual_arg_qt = self.decay(arg_node, arg_qt);
+                        self.validate_assignment(arg_node, parameters[i].param_type, actual_arg_qt, arg_node);
+                    } else if is_variadic {
+                        let mut actual_arg_qt = arg_qt;
+                        if arg_qt.is_array() || arg_qt.is_function() {
+                            actual_arg_qt = self.registry.decay(arg_qt, TypeQualifiers::empty());
+                            self.push_conversion(arg_node, Conversion::PointerDecay { to: actual_arg_qt.ty() });
+                        }
+
+                        let promoted_qt =
+                            crate::semantic::conversions::default_argument_promotions(self.registry, actual_arg_qt);
+
+                        if promoted_qt.ty() != actual_arg_qt.ty() {
+                            let is_npc = self.is_null_pointer_constant(arg_node);
+                            self.record_implicit_conversions(promoted_qt, actual_arg_qt, arg_node, is_npc);
+                        }
                     }
                 }
+                Some(QualType::unqualified(return_type))
             }
-        } else {
-            // This is not a function or function pointer, report an error.
-            self.report_error(
-                call_expr.callee,
-                SemanticErrorKind::CalledNonFunctionType {
-                    ty: QualType::unqualified(actual_func_ty),
-                },
-            );
+            _ => {
+                // This is not a function or function pointer, report an error.
+                self.report_error(
+                    call_expr.callee,
+                    SemanticErrorKind::CalledNonFunctionType {
+                        ty: QualType::unqualified(actual_func_ty),
+                    },
+                );
 
-            // Still visit arguments to catch other potential errors within them.
-            for arg_node in call_expr.arg_start.range(call_expr.arg_len) {
-                self.visit_node(arg_node);
+                // Still visit arguments to catch other potential errors within them.
+                for arg_node in call_expr.arg_start.range(call_expr.arg_len) {
+                    self.visit_node(arg_node);
+                }
+                None // Return None as the call is invalid
             }
-            return None; // Return None as the call is invalid
-        }
-
-        match func_kind {
-            TypeKind::Function { return_type, .. } => Some(QualType::unqualified(return_type)),
-            _ => None,
         }
     }
 
@@ -2241,13 +2300,29 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::FunctionDecl(data) => {
                 self.visit_type_exprs(QualType::unqualified(data.ty));
-                let func_type = self.registry.get(data.ty).kind.clone();
-                if let TypeKind::Function {
-                    return_type,
-                    parameters,
-                    ..
-                } = func_type
+
+                // Bolt ⚡: Optimized to avoid cloning TypeKind.
+                let mut params_to_check = Vec::new();
+                let mut return_type_to_check = None;
+
                 {
+                    let type_info = self.registry.get(data.ty);
+                    if let TypeKind::Function {
+                        return_type,
+                        parameters,
+                        ..
+                    } = &type_info.kind
+                    {
+                        return_type_to_check = Some(*return_type);
+                        // Bolt ⚡: Extract parameter types without holding a borrow of self while calling ensure_layout.
+                        params_to_check.reserve(parameters.len());
+                        for p in parameters.iter() {
+                            params_to_check.push(p.param_type.ty());
+                        }
+                    }
+                }
+
+                if let Some(return_type) = return_type_to_check {
                     // Bolt ⚡: Extension: allow incomplete enums in declarations (per GCC/Clang).
                     let is_incomplete_enum = matches!(self.registry.get(return_type).kind, TypeKind::Enum { .. });
                     if !self.registry.is_complete(return_type)
@@ -2256,10 +2331,12 @@ impl<'a> SemanticAnalyzer<'a> {
                     {
                         self.report_error(node, SemanticErrorKind::IncompleteReturnType);
                     }
-                    for param in parameters.iter() {
-                        let _ = self.registry.ensure_layout(param.param_type.ty());
-                    }
                 }
+
+                for param_ty in params_to_check {
+                    let _ = self.registry.ensure_layout(param_ty);
+                }
+
                 None
             }
             _ => None,
@@ -2267,14 +2344,19 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_function_definition(&mut self, data: &Function, node: NodeRef) -> Option<QualType> {
-        let func_ty = self.registry.get(data.ty).kind.clone();
-        let mut ret_type = self.registry.type_error;
-        if let TypeKind::Function { return_type, .. } = func_ty {
-            if !self.registry.is_complete(return_type) && return_type != self.registry.type_void {
-                self.report_error(node, SemanticErrorKind::IncompleteReturnType);
+        // Bolt ⚡: Avoid cloning TypeKind.
+        let ret_type = {
+            let type_info = self.registry.get(data.ty);
+            if let TypeKind::Function { return_type, .. } = &type_info.kind {
+                *return_type
+            } else {
+                self.registry.type_error
             }
-            ret_type = return_type;
         };
+
+        if !self.registry.is_complete(ret_type) && ret_type != self.registry.type_void {
+            self.report_error(node, SemanticErrorKind::IncompleteReturnType);
+        }
 
         let symbol = self.symbol_table.get_symbol(data.symbol);
         let prev_ctx = self.current_function.take();

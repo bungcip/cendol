@@ -222,9 +222,8 @@ impl<'a> MirGen<'a> {
         }
 
         let is_compatible = self
-            .ast
-            .get_resolved_type(initializer)
-            .is_some_and(|ty| self.registry.is_compatible(ty.strip_all(), target_qt.strip_all()));
+            .registry
+            .is_compatible(self.ast.qual_type_of(initializer).strip_all(), target_qt.strip_all());
 
         !is_compatible
     }

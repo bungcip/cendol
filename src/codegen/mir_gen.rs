@@ -22,7 +22,6 @@ use hashbrown::{HashMap, HashSet};
 use target_lexicon::Architecture;
 
 use crate::mir::GlobalId;
-use crate::source_manager::SourceManager;
 
 pub(crate) struct MirGen<'a> {
     pub(crate) ast: &'a Ast,
@@ -43,17 +42,11 @@ pub(crate) struct MirGen<'a> {
     pub(crate) continue_target: Option<MirBlockId>,
     pub(crate) switch_case_map: HashMap<NodeRef, MirBlockId>,
     pub(crate) valist_mir_id: Option<TypeId>,
-    pub(crate) source_manager: &'a SourceManager,
     pub(crate) scope_cleanup: Vec<Vec<LocalId>>,
 }
 
 impl<'a> MirGen<'a> {
-    pub(crate) fn new(
-        ast: &'a Ast,
-        symbol_table: &'a SymbolTable,
-        registry: &'a mut TypeRegistry,
-        source_manager: &'a SourceManager,
-    ) -> Self {
+    pub(crate) fn new(ast: &'a Ast, symbol_table: &'a SymbolTable, registry: &'a mut TypeRegistry) -> Self {
         let mir_builder = MirBuilder::new(8);
         Self {
             ast,
@@ -73,7 +66,6 @@ impl<'a> MirGen<'a> {
             continue_target: None,
             switch_case_map: HashMap::new(),
             valist_mir_id: None,
-            source_manager,
             scope_cleanup: vec![Vec::new()],
         }
     }
@@ -300,7 +292,7 @@ impl<'a> MirGen<'a> {
     pub(super) fn lower_condition(&mut self, condition: NodeRef) -> Operand {
         let cond_operand = self.visit_expression(condition, true);
         // Apply conversions for condition (should be boolean)
-        let cond_ty = self.ast.get_resolved_type(condition).unwrap();
+        let cond_ty = self.ast.qual_type_of(condition);
         let cond_mir_ty = self.lower_qual_type(cond_ty);
         let converted = self.apply_conversions(cond_operand, condition, cond_mir_ty);
         self.cast_operand_to_bool(converted)
@@ -871,7 +863,7 @@ impl<'a> MirGen<'a> {
 
     fn visit_switch_stmt(&mut self, cond: NodeRef, body: NodeRef) {
         let cond_op = self.visit_expression(cond, true);
-        let cond_ty = self.ast.get_resolved_type(cond).unwrap();
+        let cond_ty = self.ast.qual_type_of(cond);
         let mir_ty = self.lower_qual_type(cond_ty);
         let cond_op = self.apply_conversions(cond_op, cond, mir_ty);
 
@@ -1455,13 +1447,13 @@ impl<'a> MirGen<'a> {
             }
             Conversion::PointerDecay { to } => self.lower_type(*to),
             Conversion::LValueToRValue | Conversion::QualifierAdjust { .. } => {
-                let qt = self.ast.get_resolved_type(node).expect("Type not resolved");
+                let qt = self.ast.qual_type_of(node);
                 self.lower_qual_type(qt.strip_all())
             }
         };
 
         if matches!(conv, Conversion::LValueToRValue) {
-            let qt = self.ast.get_resolved_type(node).unwrap();
+            let qt = self.ast.qual_type_of(node);
             if qt.is_atomic() {
                 // Perform atomic load
                 let ptr_operand = match operand {

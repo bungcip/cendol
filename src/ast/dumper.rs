@@ -298,6 +298,7 @@ impl AstDumper {
                 "LiteralChar('{}')",
                 char::from_u32(*c as u32).unwrap_or(char::REPLACEMENT_CHARACTER)
             ),
+            Literal::Nullptr => "LiteralNullptr".to_string(),
         }
     }
 

@@ -579,8 +579,9 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn is_null_pointer_constant(&self, node: NodeRef) -> bool {
         let node_kind = self.ast.get_kind(node);
+        // In C23, nullptr is a null pointer constant
         match node_kind {
-            NodeKind::Literal(Literal::Int { val: 0, .. }) => true,
+            NodeKind::Literal(Literal::Int { val: 0, .. }) | NodeKind::Literal(Literal::Nullptr) => true,
             NodeKind::Cast(qt, inner) if qt.ty() == self.registry.type_void_ptr => {
                 self.is_null_pointer_constant(*inner)
             }
@@ -1462,7 +1463,10 @@ impl<'a> SemanticAnalyzer<'a> {
         // 1. Null pointer constant conversion (0 or (void*)0 -> T*)
         if lhs_qt.is_pointer() && is_npc {
             self.push_conversion(rhs, Conversion::NullPointerConstant);
-            if lhs_qt.ty() != self.registry.type_void_ptr {
+            if lhs_qt.ty() != self.registry.type_void_ptr
+                && lhs_qt.ty() != self.registry.type_bool
+                && rhs_qt.ty() != self.registry.type_nullptr_t
+            {
                 self.push_conversion(
                     rhs,
                     Conversion::PointerCast {
@@ -2621,41 +2625,39 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_type_exprs(*ty);
                 let expr_qt = self.visit_node(*expr);
 
-                if let NodeKind::Cast(..) = kind {
-                    if !ty.is_void() {
-                        let scalar_target = ty.is_scalar();
-                        let mut scalar_operand = true;
+                if let NodeKind::Cast(..) = kind
+                    && !ty.is_void()
+                {
+                    let scalar_target = ty.is_scalar();
+                    let mut scalar_operand = true;
 
-                        let mut eqt_decayed = None;
-                        if let Some(mut eqt) = expr_qt {
-                            if eqt.is_array() || eqt.is_function() {
-                                eqt = self.decay(*expr, eqt);
-                            }
-                            eqt_decayed = Some(eqt);
-                            if !eqt.is_scalar() {
-                                scalar_operand = false;
-                            }
+                    let mut eqt_decayed = None;
+                    if let Some(mut eqt) = expr_qt {
+                        if eqt.is_array() || eqt.is_function() {
+                            eqt = self.decay(*expr, eqt);
                         }
+                        eqt_decayed = Some(eqt);
+                        if !eqt.is_scalar() {
+                            scalar_operand = false;
+                        }
+                    }
 
-                        // C11 6.5.4p2: "Unless the type name specifies a void type, then both the named type
-                        // and the expression shall have scalar types."
-                        // However, as an extension, some compilers allow casting a struct to itself (identity cast).
-                        // We strictly follow C11 here unless it's an identity cast of compatible types.
-                        let is_identity_cast = if let Some(eqt) = eqt_decayed {
-                            self.registry.is_compatible(*ty, eqt)
-                        } else {
-                            false
-                        };
+                    // C11 6.5.4p2: "Unless the type name specifies a void type, then both the named type
+                    // and the expression shall have scalar types."
+                    // However, as an extension, some compilers allow casting a struct to itself (identity cast).
+                    // We strictly follow C11 here unless it's an identity cast of compatible types.
+                    let is_identity_cast = if let Some(eqt) = eqt_decayed {
+                        self.registry.is_compatible(*ty, eqt)
+                    } else {
+                        false
+                    };
 
-                        if !is_identity_cast {
-                            if !scalar_target {
-                                self.report_error(node, SemanticErrorKind::ExpectedScalarType { found: *ty });
-                            }
-                            if !scalar_operand {
-                                if let Some(eqt) = eqt_decayed {
-                                    self.report_error(*expr, SemanticErrorKind::ExpectedScalarType { found: eqt });
-                                }
-                            }
+                    if !is_identity_cast {
+                        if !scalar_target {
+                            self.report_error(node, SemanticErrorKind::ExpectedScalarType { found: *ty });
+                        }
+                        if !scalar_operand && let Some(eqt) = eqt_decayed {
+                            self.report_error(*expr, SemanticErrorKind::ExpectedScalarType { found: eqt });
                         }
                     }
                 }
@@ -3306,6 +3308,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let _ = self.registry.ensure_layout(array_type);
                 Some(QualType::new(array_type, TypeQualifiers::empty()))
             }
+            Literal::Nullptr => Some(QualType::unqualified(self.registry.type_nullptr_t)),
         }
     }
     fn visit_node(&mut self, node: NodeRef) -> Option<QualType> {

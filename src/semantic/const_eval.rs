@@ -167,6 +167,7 @@ impl<'a> ConstEvalCtx<'a> {
                 };
                 QualType::unqualified(TypeRef::new(builtin_base.base(), TypeClass::Array, 0, len as u32).unwrap())
             }
+            Literal::Nullptr => QualType::unqualified(self.registry.type_nullptr_t),
         }
     }
 

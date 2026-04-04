@@ -2187,6 +2187,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     let array = self.registry.array_of(elem, ArraySizeType::Constant(parsed.size));
                     Some(QualType::unqualified(array))
                 }
+                Literal::Nullptr => Some(QualType::unqualified(self.registry.type_nullptr_t)),
             },
             NodeKind::Ident(_, symbol) => {
                 let sym = self.symbol_table.get_symbol(symbol);

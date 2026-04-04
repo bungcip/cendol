@@ -116,6 +116,7 @@ pub enum TokenKind {
     BuiltinAlloca,
     Asm,
     AutoType,
+    Nullptr,
 
     // Reserved identifiers as keywords
     Func,           // __func__
@@ -358,6 +359,7 @@ impl TokenKind {
             BuiltinAlloca => "__builtin_alloca",
             Asm => "asm",
             AutoType => "__auto_type",
+            Nullptr => "nullptr",
             Func => "__func__",
             Function => "__FUNCTION__",
             PrettyFunction => "__PRETTY_FUNCTION__",
@@ -568,6 +570,7 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("while"), TokenKind::While);
         m.insert(StringId::new("__auto_type"), TokenKind::AutoType);
         m.insert(StringId::new("__auto_type__"), TokenKind::AutoType);
+        m.insert(StringId::new("nullptr"), TokenKind::Nullptr);
         m.insert(StringId::new("__real__"), TokenKind::Real);
         m.insert(StringId::new("__builtin_real"), TokenKind::Real);
         m.insert(StringId::new("__imag__"), TokenKind::Imag);

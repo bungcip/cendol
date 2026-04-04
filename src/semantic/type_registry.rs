@@ -117,6 +117,7 @@ pub struct TypeRegistry {
     pub type_signed: TypeRef,
     pub type_valist: TypeRef,
     pub type_complex_marker: TypeRef,
+    pub type_nullptr_t: TypeRef,
     pub type_error: TypeRef,
 }
 
@@ -159,6 +160,7 @@ impl TypeRegistry {
             type_signed: TypeRef::dummy(),
             type_valist: TypeRef::dummy(),
             type_complex_marker: TypeRef::dummy(),
+            type_nullptr_t: TypeRef::dummy(),
             type_error: TypeRef::dummy(),
         };
 
@@ -232,11 +234,14 @@ impl TypeRegistry {
         // 19: Complex (marker)
         self.type_complex_marker = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Complex));
 
+        // 20: nullptr_t
+        self.type_nullptr_t = self.alloc_builtin(TypeKind::NullptrT);
+
         // Pre-calculate void*
         self.type_void_ptr = self.pointer_to(QualType::unqualified(self.type_void));
 
-        // We can assert that the last allocated index was 18
-        debug_assert_eq!(self.types.len() - 1, 19, "Builtin types allocation mismatch");
+        // We can assert that the last allocated index was 20
+        debug_assert_eq!(self.types.len() - 1, 20, "Builtin types allocation mismatch");
 
         // Compute layouts for all builtins immediately
         // This prevents ICEs when code generation assumes builtins have layouts
@@ -260,6 +265,7 @@ impl TypeRegistry {
             self.type_signed,
             self.type_valist,
             self.type_complex_marker,
+            self.type_nullptr_t,
             self.type_void_ptr,
         ];
 
@@ -1040,6 +1046,14 @@ impl TypeRegistry {
                     feature: "typeof_unqual expr layout",
                 });
             }
+            TypeKind::NullptrT => {
+                let ptr_size = self.target_triple.pointer_width().unwrap().bytes() as u64;
+                TypeLayout {
+                    size: ptr_size,
+                    alignment: ptr_size,
+                    kind: LayoutKind::Scalar,
+                }
+            }
             TypeKind::Error => {
                 return Err(TypeRegistryError::UnsupportedFeature {
                     feature: "error layout",
@@ -1344,6 +1358,10 @@ impl TypeRegistry {
         if ty_a == ty_b {
             return true;
         }
+
+        // nullptr_t is implicitly compatible with pointer types in standard contexts
+        // (but strict type equivalence usually distinguishes them. We handle nullptr_t
+        // implicitly converting to any pointer type in Analyzer)
 
         // Bolt ⚡: Fast path for pointers to avoid self.get() and Cow<Type> overhead.
         let pa = self.get_pointee(ty_a);

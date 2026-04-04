@@ -36,4 +36,6 @@ pub enum Literal {
     Char(u64),
     String(NameId),
     Nullptr,
+    True,
+    False,
 }

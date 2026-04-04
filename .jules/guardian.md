@@ -199,3 +199,8 @@ Action: When testing or implementing `_Generic` selection, ensure that the lvalu
 
 Learning: C11 6.7.5p2 explicitly prohibits alignment specifiers (_Alignas) on objects with variably modified types. This includes not only Variable Length Arrays (VLAs) but also any type derived from them, such as pointers to VLAs. Enforcing this during semantic lowering prevents potential backend issues when attempting to align objects whose size is only known at runtime.
 Action: Always verify that constraints on specifiers (like _Alignas) are checked against the full variably-modified status of the type, especially when extensions or standard features (like VLAs) are involved.
+
+2026-03-26 - [Variably Modified Structure Members Constraint]
+
+Learning: C11 6.7.2.1p9 prohibits structure and union members from having a variably modified (VM) type. While direct VLAs were already rejected, pointers to VLAs or multi-dimensional arrays with variable dimensions are also VM types and must be prohibited. Importantly, Flexible Array Members (FAMs) are incomplete arrays and thus technically not 'complete object types', but they are NOT variably modified unless their element type is VM. Centralizing this check in 'TypeRegistry::compute_record_layout' using 'is_variably_modified' ensures that all nested VM types are caught, including VM FAMs like 'int a[][n]', while still permitting standard FAMs like 'int a[]'.
+Action: Always use the recursive 'is_variably_modified' check rather than simple type matching when enforcing C11 constraints on 'objects' or 'members', as VM status can be hidden behind pointers, arrays, or typedefs.

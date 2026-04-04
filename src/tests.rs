@@ -79,6 +79,7 @@ pub mod parser_utils;
 
 pub mod guardian_increment_completeness;
 pub mod guardian_member_completeness;
+pub mod guardian_member_vla_constraints;
 pub mod guardian_pointer_arithmetic_completeness;
 pub mod parser_gcc_extensions;
 pub mod parser_regr_hang;

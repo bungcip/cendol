@@ -826,6 +826,7 @@ pub enum TypeKind {
     TypeofUnqualExpr(crate::ast::NodeRef),
     Alias(TypeRef),
     AutoType,
+    NullptrT,
     #[default]
     Error,
 }
@@ -843,6 +844,7 @@ impl TypeKind {
             TypeKind::Alias(_) | TypeKind::TypeofExpr(_) | TypeKind::TypeofUnqualExpr(_) | TypeKind::AutoType => {
                 TypeClass::Alias
             }
+            TypeKind::NullptrT => TypeClass::Builtin,
         }
     }
 }
@@ -894,6 +896,7 @@ impl Display for TypeKind {
             TypeKind::TypeofUnqualExpr(_) => write!(f, "typeof_unqual(<expr>)"),
             TypeKind::Alias(inner) => write!(f, "alias({:?})", inner),
             TypeKind::AutoType => write!(f, "__auto_type"),
+            TypeKind::NullptrT => write!(f, "nullptr_t"),
             TypeKind::Error => write!(f, "<error>"),
         }
     }

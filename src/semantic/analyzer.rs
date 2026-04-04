@@ -579,8 +579,9 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn is_null_pointer_constant(&self, node: NodeRef) -> bool {
         let node_kind = self.ast.get_kind(node);
+        // In C23, nullptr is a null pointer constant
         match node_kind {
-            NodeKind::Literal(Literal::Int { val: 0, .. }) => true,
+            NodeKind::Literal(Literal::Int { val: 0, .. }) | NodeKind::Literal(Literal::Nullptr) => true,
             NodeKind::Cast(qt, inner) if qt.ty() == self.registry.type_void_ptr => {
                 self.is_null_pointer_constant(*inner)
             }
@@ -1462,7 +1463,10 @@ impl<'a> SemanticAnalyzer<'a> {
         // 1. Null pointer constant conversion (0 or (void*)0 -> T*)
         if lhs_qt.is_pointer() && is_npc {
             self.push_conversion(rhs, Conversion::NullPointerConstant);
-            if lhs_qt.ty() != self.registry.type_void_ptr {
+            if lhs_qt.ty() != self.registry.type_void_ptr
+                && lhs_qt.ty() != self.registry.type_bool
+                && rhs_qt.ty() != self.registry.type_nullptr_t
+            {
                 self.push_conversion(
                     rhs,
                     Conversion::PointerCast {
@@ -2621,8 +2625,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_type_exprs(*ty);
                 let expr_qt = self.visit_node(*expr);
 
-                if let NodeKind::Cast(..) = kind {
-                    if !ty.is_void() {
+                if let NodeKind::Cast(..) = kind
+                    && !ty.is_void() {
                         let scalar_target = ty.is_scalar();
                         let mut scalar_operand = true;
 
@@ -2651,14 +2655,12 @@ impl<'a> SemanticAnalyzer<'a> {
                             if !scalar_target {
                                 self.report_error(node, SemanticErrorKind::ExpectedScalarType { found: *ty });
                             }
-                            if !scalar_operand {
-                                if let Some(eqt) = eqt_decayed {
+                            if !scalar_operand
+                                && let Some(eqt) = eqt_decayed {
                                     self.report_error(*expr, SemanticErrorKind::ExpectedScalarType { found: eqt });
                                 }
-                            }
                         }
                     }
-                }
 
                 Some(*ty)
             }
@@ -3306,6 +3308,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let _ = self.registry.ensure_layout(array_type);
                 Some(QualType::new(array_type, TypeQualifiers::empty()))
             }
+            Literal::Nullptr => Some(QualType::unqualified(self.registry.type_nullptr_t)),
         }
     }
     fn visit_node(&mut self, node: NodeRef) -> Option<QualType> {

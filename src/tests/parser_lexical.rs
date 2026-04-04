@@ -150,6 +150,8 @@ fn test_literals() {
         ("0B1111", TokenKind::IntegerConstant(15, None, 2)),
         ("0b1010u", TokenKind::IntegerConstant(10, Some(IntegerSuffix::U), 2)),
         ("0B1111LL", TokenKind::IntegerConstant(15, Some(IntegerSuffix::LL), 2)),
+        // C23 nullptr
+        ("nullptr", TokenKind::Nullptr),
         // C11 integer suffixes - octal
         ("077u", TokenKind::IntegerConstant(63, Some(IntegerSuffix::U), 8)),
         ("0123l", TokenKind::IntegerConstant(83, Some(IntegerSuffix::L), 8)),

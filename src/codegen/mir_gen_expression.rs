@@ -539,6 +539,7 @@ impl<'a> MirGen<'a> {
                     self.create_constant(mir_ty, ConstValueKind::Int(*val as i64)),
                 )),
                 Literal::String(val) => Some(self.visit_literal_string(val, ty)),
+                Literal::Nullptr => Some(Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Null))),
             },
             _ => None,
         }

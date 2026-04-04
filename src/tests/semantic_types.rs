@@ -16,7 +16,7 @@ fn check_type(source: &str, expected: &str) {
 #[test]
 fn test_typeregistry_default() {
     let registry = crate::semantic::TypeRegistry::default();
-    assert_eq!(registry.types.len(), 20); // dummy + 19 built-ins
+    assert_eq!(registry.types.len(), 21); // dummy + 20 built-ins
 }
 
 #[test]

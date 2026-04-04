@@ -54,6 +54,7 @@ pub mod semantic_expr;
 pub mod semantic_float_init;
 pub mod semantic_functions;
 pub mod semantic_init;
+pub mod semantic_const_eval_member_access;
 pub mod semantic_scope;
 pub mod semantic_typeof;
 pub mod semantic_typeof_unqual;

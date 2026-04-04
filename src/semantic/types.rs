@@ -36,7 +36,7 @@ pub struct TypeLayout {
 pub enum LayoutKind {
     Scalar,
     Array { element: TypeRef, len: u64 },
-    Record { fields: Arc<[FieldLayout]>, is_union: bool },
+    Record { fields: Arc<[FieldLayout]> },
 }
 
 #[derive(Debug, Clone)]
@@ -64,7 +64,7 @@ impl Type {
     ) -> Option<(StructMember, FieldLayout, usize)> {
         if let TypeKind::Record { members, .. } = &self.kind
             && let Some(TypeLayout {
-                kind: LayoutKind::Record { fields, .. },
+                kind: LayoutKind::Record { fields },
                 ..
             }) = &self.layout
         {
@@ -142,7 +142,7 @@ impl Type {
     ) {
         if let TypeKind::Record { members, .. } = &self.kind
             && let Some(TypeLayout {
-                kind: LayoutKind::Record { fields, .. },
+                kind: LayoutKind::Record { fields },
                 ..
             }) = &self.layout
         {

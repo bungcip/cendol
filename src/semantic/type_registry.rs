@@ -959,7 +959,6 @@ impl TypeRegistry {
                                 bit_offset: None,
                             },
                         ]),
-                        is_union: false,
                     },
                 },
                 BuiltinType::Complex => {
@@ -1099,64 +1098,64 @@ impl TypeRegistry {
             // We can't use is_complete because that recurses. We check TypeKind directly.
             // Bolt ⚡: Optimized to match on reference to avoid cloning ArraySizeType.
             let type_info = self.get(member_ty);
-            if let TypeKind::Array { element_type, size } = &type_info.kind {
-                if matches!(size, ArraySizeType::Incomplete) {
-                    let elem_ty = *element_type;
-                    drop(type_info);
-                    if is_union {
-                        // Incomplete types not allowed in union (FAM is only for structures)
-                        return Err(TypeRegistryError::IncompleteArrayInUnion);
-                    }
-
-                    // Must be last member
-                    if i != member_count - 1 {
-                        return Err(TypeRegistryError::FlexibleArrayNotLast);
-                    }
-
-                    // Must have at least one other named member.
-                    // Or rather, "structure with more than one named member".
-                    // If this is the only member, it's invalid.
-                    if member_count < 2 {
-                        return Err(TypeRegistryError::FlexibleArrayInEmptyStruct);
-                    }
-
-                    // If valid FAM:
-                    // Size of structure is as if FAM was omitted.
-                    // But we must respect its alignment for the struct's alignment.
-                    // We need to get the element type to find alignment.
-                    let elem_layout = self.ensure_layout(elem_ty)?;
-
-                    max_align = max_align.max(elem_layout.alignment);
-
-                    // FAM has size 0 for layout purposes of the struct size,
-                    // but its offset is where it would start.
-                    // The standard says: "size of the structure is as if the flexible array member were omitted"
-                    // This means current_size stays as is (after padding for alignment of FAM? No, omitted means omitted).
-                    // "except that it may have more trailing padding than the omission would imply"
-                    // Usually this is interpreted as: sizeof(struct) = max(sizeof(struct_without_fam), offsetof(fam)).
-                    // Or simply: layout the FAM, but don't increment current_size by its size (which is unknown/0).
-                    // But we might need to add padding to current_size to reach FAM alignment?
-                    // "as if the flexible array member were omitted" implies we don't even add padding for it?
-                    // BUT "except that it may have more trailing padding".
-                    // Most compilers align the end of the struct to the alignment of the FAM.
-
-                    // Let's compute offset.
-                    let offset = (current_size + elem_layout.alignment - 1) & !(elem_layout.alignment - 1);
-                    field_layouts.push(FieldLayout {
-                        offset,
-                        bit_width: None,
-                        bit_offset: None,
-                    });
-
-                    // We do NOT update current_size with FAM size (which is effectively 0 or variable).
-                    // But we might update current_size to offset?
-                    // GCC: sizeof(struct { int x; int y[]; }) == 4.
-                    //      sizeof(struct { char c; int y[]; }) == 4 (aligned to 4).
-                    // So we do align current_size.
-                    current_size = offset;
-
-                    continue;
+            if let TypeKind::Array { element_type, size } = &type_info.kind
+                && matches!(size, ArraySizeType::Incomplete)
+            {
+                let elem_ty = *element_type;
+                drop(type_info);
+                if is_union {
+                    // Incomplete types not allowed in union (FAM is only for structures)
+                    return Err(TypeRegistryError::IncompleteArrayInUnion);
                 }
+
+                // Must be last member
+                if i != member_count - 1 {
+                    return Err(TypeRegistryError::FlexibleArrayNotLast);
+                }
+
+                // Must have at least one other named member.
+                // Or rather, "structure with more than one named member".
+                // If this is the only member, it's invalid.
+                if member_count < 2 {
+                    return Err(TypeRegistryError::FlexibleArrayInEmptyStruct);
+                }
+
+                // If valid FAM:
+                // Size of structure is as if FAM was omitted.
+                // But we must respect its alignment for the struct's alignment.
+                // We need to get the element type to find alignment.
+                let elem_layout = self.ensure_layout(elem_ty)?;
+
+                max_align = max_align.max(elem_layout.alignment);
+
+                // FAM has size 0 for layout purposes of the struct size,
+                // but its offset is where it would start.
+                // The standard says: "size of the structure is as if the flexible array member were omitted"
+                // This means current_size stays as is (after padding for alignment of FAM? No, omitted means omitted).
+                // "except that it may have more trailing padding than the omission would imply"
+                // Usually this is interpreted as: sizeof(struct) = max(sizeof(struct_without_fam), offsetof(fam)).
+                // Or simply: layout the FAM, but don't increment current_size by its size (which is unknown/0).
+                // But we might need to add padding to current_size to reach FAM alignment?
+                // "as if the flexible array member were omitted" implies we don't even add padding for it?
+                // BUT "except that it may have more trailing padding".
+                // Most compilers align the end of the struct to the alignment of the FAM.
+
+                // Let's compute offset.
+                let offset = (current_size + elem_layout.alignment - 1) & !(elem_layout.alignment - 1);
+                field_layouts.push(FieldLayout {
+                    offset,
+                    bit_width: None,
+                    bit_offset: None,
+                });
+
+                // We do NOT update current_size with FAM size (which is effectively 0 or variable).
+                // But we might update current_size to offset?
+                // GCC: sizeof(struct { int x; int y[]; }) == 4.
+                //      sizeof(struct { char c; int y[]; }) == 4 (aligned to 4).
+                // So we do align current_size.
+                current_size = offset;
+
+                continue;
             }
             drop(type_info);
 
@@ -1285,7 +1284,6 @@ impl TypeRegistry {
             alignment: max_align,
             kind: LayoutKind::Record {
                 fields: Arc::from(field_layouts),
-                is_union,
             },
         })
     }

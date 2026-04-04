@@ -53,10 +53,8 @@ impl PPExpr {
                 let s = sym.as_str();
                 if s == "true" {
                     Ok(ExprValue::new(1, false))
-                } else if s == "false" {
-                    Ok(ExprValue::new(0, false))
                 } else {
-                    Ok(ExprValue::new(0, false)) // C11 6.10.1p4: All remaining identifiers are replaced with 0
+                    Ok(ExprValue::new(0, false)) // C11 6.10.1p4: All remaining identifiers are replaced with the pp-number 0, including false
                 }
             }
             PPExpr::Defined(sym) => Ok(ExprValue::from_bool(pp.is_macro_defined(sym))),

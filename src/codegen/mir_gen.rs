@@ -147,8 +147,8 @@ impl<'a> MirGen<'a> {
                 let target = self.continue_target.unwrap();
                 self.mb.set_terminator(Terminator::Goto(target));
             }
-            NodeKind::Goto(label_name, _) => self.visit_goto_stmt(&label_name),
-            NodeKind::Label(label_name, stmt, _) => self.visit_label_stmt(&label_name, stmt),
+            NodeKind::Goto(label_name, _) => self.visit_goto_stmt(label_name),
+            NodeKind::Label(label_name, stmt, _) => self.visit_label_stmt(label_name, stmt),
             NodeKind::Switch(cond, body) => self.visit_switch_stmt(cond, body),
             NodeKind::Case(_, stmt) => self.visit_case_default_stmt(node, stmt),
             NodeKind::CaseRange(..) => self.visit_case_default_stmt(node, {
@@ -1911,8 +1911,8 @@ impl<'a> MirGen<'a> {
         node_kind.visit_children(|child| self.scan_for_labels(child));
     }
 
-    fn visit_goto_stmt(&mut self, label_name: &NameId) {
-        if let Some(target_block) = self.label_map.get(label_name).copied() {
+    fn visit_goto_stmt(&mut self, label_name: NameId) {
+        if let Some(target_block) = self.label_map.get(&label_name).copied() {
             self.mb.set_terminator(Terminator::Goto(target_block));
         } else {
             // This should be caught by semantic analysis, but we panic as a safeguard
@@ -1920,8 +1920,8 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_label_stmt(&mut self, label_name: &NameId, statement: NodeRef) {
-        if let Some(label_block) = self.label_map.get(label_name).copied() {
+    fn visit_label_stmt(&mut self, label_name: NameId, statement: NodeRef) {
+        if let Some(label_block) = self.label_map.get(&label_name).copied() {
             // Make sure the current block is terminated before switching
             if !self.mb.current_block_has_terminator() {
                 self.mb.set_terminator(Terminator::Goto(label_block));

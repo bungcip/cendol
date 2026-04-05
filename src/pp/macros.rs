@@ -53,9 +53,9 @@ impl<'src> Preprocessor<'src> {
         let macro_info = m.clone();
 
         let result = if flags.contains(MacroFlags::FUNCTION_LIKE) {
-            self.expand_function_macro(&macro_info, &symbol, token)
+            self.expand_function_macro(&macro_info, symbol, token)
         } else {
-            self.expand_object_macro(&macro_info, &symbol, token)
+            self.expand_object_macro(&macro_info, symbol, token)
         };
 
         result.map(Some)
@@ -82,7 +82,7 @@ impl<'src> Preprocessor<'src> {
     fn expand_virtual_buffer(
         &mut self,
         tokens: &[PPToken],
-        name: &str,
+        name: StringId,
         location: SourceLoc,
     ) -> Result<Vec<PPToken>, PPError> {
         Ok(self.create_virtual_buffer_tokens(tokens, name, location))
@@ -92,14 +92,14 @@ impl<'src> Preprocessor<'src> {
     fn expand_object_macro(
         &mut self,
         macro_info: &MacroInfo,
-        symbol: &StringId,
+        symbol: StringId,
         token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
-        let new_hs = self.hide_sets.insert(token.hide_set, *symbol);
+        let new_hs = self.hide_sets.insert(token.hide_set, symbol);
 
         // No DISABLED flag needed — hide_sets.contains detects self-reference
         // via the virtual buffer's source location (<macro_NAME>).
-        let mut tokens = self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), token.location)?;
+        let mut tokens = self.expand_virtual_buffer(&macro_info.tokens, symbol, token.location)?;
         let mut last_hs = (u32::MAX, 0u32);
         for t in &mut tokens {
             if t.hide_set == 0 {
@@ -118,7 +118,7 @@ impl<'src> Preprocessor<'src> {
     fn expand_function_macro(
         &mut self,
         macro_info: &MacroInfo,
-        symbol: &StringId,
+        symbol: StringId,
         token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
         let (args, rparen_token) = match self.parse_macro_args_from_lexer(macro_info) {
@@ -142,14 +142,14 @@ impl<'src> Preprocessor<'src> {
 
         // Compute new hide set for expanded tokens.
         let intersect_hs = self.hide_sets.intersection(token.hide_set, rparen_token.hide_set);
-        let new_hs = self.hide_sets.insert(intersect_hs, *symbol);
+        let new_hs = self.hide_sets.insert(intersect_hs, symbol);
 
         // Substitute parameters in macro body
-        let substituted = self.substitute_macro(macro_info, *symbol, &args, &expanded_args, intersect_hs, new_hs)?;
+        let substituted = self.substitute_macro(macro_info, symbol, &args, &expanded_args, intersect_hs, new_hs)?;
 
         // No DISABLED flag needed — is_recursive_expansion() detects self-reference
         // via the virtual buffer's source location (<macro_NAME>).
-        self.expand_virtual_buffer(&substituted, symbol.as_str(), token.location)
+        self.expand_virtual_buffer(&substituted, symbol, token.location)
     }
 
     /// Parse macro arguments from the current lexer
@@ -290,7 +290,7 @@ impl<'src> Preprocessor<'src> {
             if token.kind == PPTokenKind::Hash && i + 1 < macro_info.tokens.len() {
                 let next = &macro_info.tokens[i + 1];
                 if let PPTokenKind::Identifier(sym) = next.kind
-                    && sym == self.directive_keywords.va_opt
+                    && sym == self.keywords.va_opt
                     && i + 2 < macro_info.tokens.len()
                     && macro_info.tokens[i + 2].kind == PPTokenKind::LeftParen
                     && let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 2)
@@ -321,7 +321,7 @@ impl<'src> Preprocessor<'src> {
 
             // Handle __VA_OPT__(content)
             if let PPTokenKind::Identifier(sym) = token.kind
-                && sym == self.directive_keywords.va_opt
+                && sym == self.keywords.va_opt
                 && i + 1 < macro_info.tokens.len()
                 && macro_info.tokens[i + 1].kind == PPTokenKind::LeftParen
                 && let Some(rparen_idx) = Self::find_balanced_paren_range(&macro_info.tokens, i + 1)
@@ -730,7 +730,7 @@ impl<'src> Preprocessor<'src> {
             return Ok(None);
         };
 
-        if sym == self.directive_keywords.defined {
+        if sym == self.keywords.defined {
             let next = i + 1;
             let end = match tokens.get(next).map(|t| &t.kind) {
                 Some(PPTokenKind::LeftParen) => Self::find_balanced_paren_range(tokens, next).unwrap_or(next),
@@ -738,7 +738,7 @@ impl<'src> Preprocessor<'src> {
             };
             return Ok(Some(end.min(tokens.len())));
         }
-        if sym == self.directive_keywords.has_include || sym == self.directive_keywords.has_include_next {
+        if sym == self.keywords.has_include || sym == self.keywords.has_include_next {
             let next = i + 1;
             if let Some(PPTokenKind::LeftParen) = tokens.get(next).map(|t| &t.kind) {
                 let arg_start = next + 1;
@@ -763,10 +763,10 @@ impl<'src> Preprocessor<'src> {
             return Ok(Some(next.min(tokens.len())));
         }
 
-        if sym == self.directive_keywords.has_builtin
-            || sym == self.directive_keywords.has_attribute
-            || sym == self.directive_keywords.has_feature
-            || sym == self.directive_keywords.has_extension
+        if sym == self.keywords.has_builtin
+            || sym == self.keywords.has_attribute
+            || sym == self.keywords.has_feature
+            || sym == self.keywords.has_extension
         {
             let next = i + 1;
             let arg_end = tokens
@@ -791,7 +791,7 @@ impl<'src> Preprocessor<'src> {
 
     fn try_handle_pragma_operator_inline(&mut self, tokens: &mut Vec<PPToken>, i: usize) -> bool {
         let token = tokens[i];
-        if !matches!(token.kind, PPTokenKind::Identifier(s) if s == self.directive_keywords.pragma_operator) {
+        if !matches!(token.kind, PPTokenKind::Identifier(s) if s == self.keywords.pragma_operator) {
             return false;
         }
 
@@ -917,7 +917,7 @@ impl<'src> Preprocessor<'src> {
                                 new_hs,
                             )?;
                             let substituted =
-                                self.create_virtual_buffer_tokens(&substituted, symbol.as_str(), tokens[i].location);
+                                self.create_virtual_buffer_tokens(&substituted, symbol, tokens[i].location);
 
                             if substituted.len() <= 10000 {
                                 tokens.splice(i..end_j, substituted);
@@ -927,7 +927,7 @@ impl<'src> Preprocessor<'src> {
                         Some(ExpansionTask::Object(macro_info)) => {
                             let new_hs = self.hide_sets.insert(tokens[i].hide_set, symbol);
                             let mut expanded =
-                                self.expand_virtual_buffer(&macro_info.tokens, symbol.as_str(), tokens[i].location)?;
+                                self.expand_virtual_buffer(&macro_info.tokens, symbol, tokens[i].location)?;
                             for t in &mut expanded {
                                 t.hide_set = new_hs;
                             }
@@ -955,7 +955,7 @@ impl<'src> Preprocessor<'src> {
     fn create_virtual_buffer_tokens(
         &mut self,
         tokens: &[PPToken],
-        macro_name: &str,
+        macro_name: StringId,
         trigger_location: SourceLoc,
     ) -> Vec<PPToken> {
         // Pass 0: Sum up lengths for capacity hint.
@@ -1024,7 +1024,7 @@ impl<'src> Preprocessor<'src> {
 
     pub(super) fn parse_macro_definition_params(
         &mut self,
-        macro_name: &str,
+        macro_name: StringId,
     ) -> Result<(MacroFlags, Vec<StringId>, Option<StringId>), PPError> {
         let mut flags = MacroFlags::FUNCTION_LIKE;
         let mut params = Vec::new();

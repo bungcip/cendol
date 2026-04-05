@@ -26,7 +26,7 @@ impl<'a> MirGen<'a> {
                 }
             }
             NodeKind::MemberAccess(obj, field_name, is_arrow) => {
-                self.visit_member_access_as_place(*obj, field_name, *is_arrow)
+                self.visit_member_access_as_place(*obj, *field_name, *is_arrow)
             }
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access_as_place(*arr, *idx),
             NodeKind::UnaryOp(UnaryOp::Deref, operand) => {
@@ -112,7 +112,7 @@ impl<'a> MirGen<'a> {
                     self.create_dummy_operand()
                 }
             }
-            NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, field_name, *is_arrow),
+            NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
             NodeKind::TernaryOp(cond, then, else_expr) => self.visit_ternary_op(*cond, *then, *else_expr, mir_ty),
             NodeKind::SizeOfExpr(expr) => {
@@ -1256,12 +1256,12 @@ impl<'a> MirGen<'a> {
         None
     }
 
-    fn visit_member_access(&mut self, obj: NodeRef, field_name: &NameId, is_arrow: bool) -> Operand {
+    fn visit_member_access(&mut self, obj: NodeRef, field_name: NameId, is_arrow: bool) -> Operand {
         let current_place = self.visit_member_access_as_place(obj, field_name, is_arrow);
         Operand::Copy(Box::new(current_place))
     }
 
-    fn visit_member_access_as_place(&mut self, obj: NodeRef, field_name: &NameId, is_arrow: bool) -> Place {
+    fn visit_member_access_as_place(&mut self, obj: NodeRef, field_name: NameId, is_arrow: bool) -> Place {
         let mut obj_qt = self.ast.qual_type_of(obj);
 
         // Handle implicit conversions (like array-to-pointer decay) for arrow access
@@ -1288,7 +1288,7 @@ impl<'a> MirGen<'a> {
         if record_ty.is_record() {
             // Validate that the field exists and get its layout information
             let path = self
-                .find_member_path(record_ty, *field_name)
+                .find_member_path(record_ty, field_name)
                 .expect("Field not found - should be caught by semantic analysis");
 
             // Apply the chain of field accesses

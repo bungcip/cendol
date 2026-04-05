@@ -2,7 +2,7 @@ use crate::ast::StringId;
 use crate::ast::literal::IntegerSuffix;
 use crate::ast::literal_parsing;
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::pp::{PPError, PPErrorKind, PPToken, PPTokenKind, Preprocessor};
+use crate::pp::{PPError, PPErrorKind, PPKeywordTable, PPToken, PPTokenKind, Preprocessor};
 use crate::source_manager::{SourceLoc, SourceSpan};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,22 +50,21 @@ impl PPExpr {
         match self {
             PPExpr::Number(n) => Ok(*n),
             PPExpr::Identifier(sym) => {
-                let s = sym.as_str();
-                if s == "true" {
+                if *sym == pp.keywords.c_true {
                     Ok(ExprValue::new(1, false))
                 } else {
                     Ok(ExprValue::new(0, false)) // C11 6.10.1p4: All remaining identifiers (including false) are replaced with 0
                 }
             }
-            PPExpr::Defined(sym) => Ok(ExprValue::from_bool(pp.is_macro_defined(sym))),
+            PPExpr::Defined(sym) => Ok(ExprValue::from_bool(pp.is_macro_defined(*sym))),
             PPExpr::HasInclude(path, is_angled) => Ok(ExprValue::from_bool(pp.check_header_exists(path, *is_angled))),
             PPExpr::HasIncludeNext(path, is_angled) => {
                 Ok(ExprValue::from_bool(pp.check_next_header_exists(path, *is_angled)))
             }
-            PPExpr::HasBuiltin(s) => Ok(ExprValue::from_bool(Self::is_builtin_supported(s.as_str()))),
-            PPExpr::HasAttribute(s) => Ok(ExprValue::from_bool(Self::is_attribute_supported(s.as_str()))),
+            PPExpr::HasBuiltin(s) => Ok(ExprValue::from_bool(Self::is_builtin_supported(*s, &pp.keywords))),
+            PPExpr::HasAttribute(s) => Ok(ExprValue::from_bool(Self::is_attribute_supported(*s, &pp.keywords))),
             PPExpr::HasFeature(s) | PPExpr::HasExtension(s) => {
-                Ok(ExprValue::from_bool(Self::is_feature_supported(s.as_str())))
+                Ok(ExprValue::from_bool(Self::is_feature_supported(*s, &pp.keywords)))
             }
             PPExpr::Binary(op, left, right) => Self::eval_binary(*op, left, right, pp, span),
             PPExpr::Unary(op, operand) => Self::eval_unary(*op, operand, pp, span),
@@ -73,64 +72,61 @@ impl PPExpr {
         }
     }
 
-    fn is_builtin_supported(name: &str) -> bool {
-        matches!(
-            name,
-            "__builtin_va_arg"
-                | "__builtin_va_list"
-                | "__builtin_va_start"
-                | "__builtin_va_end"
-                | "__builtin_va_copy"
-                | "__builtin_expect"
-                | "__builtin_memcmp"
-                | "__builtin_memcpy"
-                | "__builtin_memset"
-                | "__builtin_memmove"
-                | "__builtin_offsetof"
-                | "__builtin_choose_expr"
-                | "__builtin_types_compatible_p"
-                | "__builtin_constant_p"
-                | "__builtin_unreachable"
-                | "__builtin_trap"
-                | "__builtin_prefetch"
-                | "__builtin_alloca"
-                | "__builtin_popcount"
-                | "__builtin_popcountl"
-                | "__builtin_popcountll"
-                | "__builtin_clz"
-                | "__builtin_clzl"
-                | "__builtin_clzll"
-                | "__builtin_ctz"
-                | "__builtin_ctzl"
-                | "__builtin_ctzll"
-                | "__builtin_ffs"
-                | "__builtin_ffsl"
-                | "__builtin_ffsll"
-                | "__builtin_bswap16"
-                | "__builtin_bswap32"
-                | "__builtin_bswap64"
-                | "__builtin_fabs"
-                | "__builtin_fabsf"
-                | "__builtin_fabsl"
-                | "__builtin_inf"
-                | "__builtin_inff"
-                | "__builtin_huge_val"
-                | "__builtin_huge_valf"
-                | "__builtin_nan"
-                | "__builtin_nanf"
-                | "__atomic_load_n"
-                | "__atomic_store_n"
-                | "__atomic_exchange_n"
-                | "__atomic_compare_exchange_n"
-                | "__atomic_fetch_add"
-                | "__atomic_fetch_sub"
-                | "__atomic_fetch_and"
-                | "__atomic_fetch_or"
-                | "__atomic_fetch_xor"
-        )
+    fn is_builtin_supported(name: StringId, kw: &PPKeywordTable) -> bool {
+        name == kw.builtin_va_arg
+            || name == kw.builtin_va_list
+            || name == kw.builtin_va_start
+            || name == kw.builtin_va_end
+            || name == kw.builtin_va_copy
+            || name == kw.builtin_expect
+            || name == kw.builtin_memcmp
+            || name == kw.builtin_memcpy
+            || name == kw.builtin_memset
+            || name == kw.builtin_memmove
+            || name == kw.builtin_offsetof
+            || name == kw.builtin_choose_expr
+            || name == kw.builtin_types_compatible_p
+            || name == kw.builtin_constant_p
+            || name == kw.builtin_unreachable
+            || name == kw.builtin_trap
+            || name == kw.builtin_prefetch
+            || name == kw.builtin_alloca
+            || name == kw.builtin_popcount
+            || name == kw.builtin_popcountl
+            || name == kw.builtin_popcountll
+            || name == kw.builtin_clz
+            || name == kw.builtin_clzl
+            || name == kw.builtin_clzll
+            || name == kw.builtin_ctz
+            || name == kw.builtin_ctzl
+            || name == kw.builtin_ctzll
+            || name == kw.builtin_ffs
+            || name == kw.builtin_ffsl
+            || name == kw.builtin_ffsll
+            || name == kw.builtin_bswap16
+            || name == kw.builtin_bswap32
+            || name == kw.builtin_bswap64
+            || name == kw.builtin_fabs
+            || name == kw.builtin_fabsf
+            || name == kw.builtin_fabsl
+            || name == kw.builtin_inf
+            || name == kw.builtin_inff
+            || name == kw.builtin_huge_val
+            || name == kw.builtin_huge_valf
+            || name == kw.builtin_nan
+            || name == kw.builtin_nanf
+            || name == kw.atomic_load_n
+            || name == kw.atomic_store_n
+            || name == kw.atomic_exchange_n
+            || name == kw.atomic_compare_exchange_n
+            || name == kw.atomic_fetch_add
+            || name == kw.atomic_fetch_sub
+            || name == kw.atomic_fetch_and
+            || name == kw.atomic_fetch_or
+            || name == kw.atomic_fetch_xor
     }
 
-    fn is_attribute_supported(_name: &str) -> bool {
+    fn is_attribute_supported(_name: StringId, _kw: &PPKeywordTable) -> bool {
         // We parse and skip all attributes, so technically we "support" them
         // by not failing, but usually __has_attribute returns 1 only for
         // attributes that have semantic meaning for the compiler.
@@ -138,11 +134,13 @@ impl PPExpr {
         false
     }
 
-    fn is_feature_supported(name: &str) -> bool {
-        matches!(
-            name,
-            "c_static_assert" | "c_generic_selection" | "c_atomic" | "c_alignas" | "c_alignof" | "c_thread_local"
-        )
+    fn is_feature_supported(name: StringId, kw: &PPKeywordTable) -> bool {
+        name == kw.c_static_assert
+            || name == kw.c_generic_selection
+            || name == kw.c_atomic
+            || name == kw.c_alignas
+            || name == kw.c_alignof
+            || name == kw.c_thread_local
     }
 
     fn expr_error(span: SourceSpan) -> PPError {

@@ -49,8 +49,8 @@ pub enum PPErrorKind {
     UnclosedConditional,
     #[error("Invalid universal character name")]
     InvalidUniversalCharacterName,
-    #[error("Macro '{name}' redefined with different value")]
-    MacroRedefined { name: String },
+    #[error("Macro '{0}' redefined with different value")]
+    MacroRedefined(StringId),
 }
 
 #[derive(Debug)]
@@ -181,9 +181,7 @@ mod tests {
         assert_eq!(diag.level, DiagnosticLevel::Error);
 
         let err_macro = PPError {
-            kind: PPErrorKind::MacroRedefined {
-                name: "TEST".to_string(),
-            },
+            kind: PPErrorKind::MacroRedefined(StringId::new("TEST")),
             span: SourceSpan::default(),
         };
         assert_eq!(err_macro.to_string(), "Macro 'TEST' redefined with different value");

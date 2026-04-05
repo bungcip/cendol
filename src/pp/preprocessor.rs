@@ -9,9 +9,8 @@ use std::sync::Arc;
 use super::pp_lexer::PPLexer;
 use crate::pp::error::{PPError, PPErrorKind};
 use crate::pp::interpreter::Interpreter;
-use crate::pp::types::{
-    DirectiveKeywordTable, HideSetTable, IncludeStackInfo, MacroFlags, MacroInfo, PPConditionalInfo, PPConfig,
-};
+use crate::pp::keyword_table::PPKeywordTable;
+use crate::pp::types::{HideSetTable, IncludeStackInfo, MacroFlags, MacroInfo, PPConditionalInfo, PPConfig};
 use crate::pp::{HeaderSearch, PPToken, PPTokenFlags, PPTokenKind};
 use std::path::Path;
 use target_lexicon::{Architecture, OperatingSystem, Triple};
@@ -24,7 +23,7 @@ pub struct Preprocessor<'src> {
     pub(crate) target: Triple,
 
     // Pre-interned directive keywords for fast comparison
-    pub(crate) directive_keywords: DirectiveKeywordTable,
+    pub(crate) keywords: PPKeywordTable,
 
     // Macro management
     pub(crate) macros: HashMap<StringId, MacroInfo>,
@@ -100,7 +99,7 @@ impl<'src> Preprocessor<'src> {
             sm: source_manager,
             diag,
             c_standard: config.c_standard,
-            directive_keywords: DirectiveKeywordTable::new(),
+            keywords: PPKeywordTable::new(),
             macros: HashMap::new(),
             hide_sets: HideSetTable::new(),
             macro_stack: HashMap::new(),
@@ -138,11 +137,11 @@ impl<'src> Preprocessor<'src> {
             return None;
         };
 
-        let (kind, text) = if symbol == self.directive_keywords.line_macro {
+        let (kind, text) = if symbol == self.keywords.line_macro {
             let line = self.sm.get_presumed_location(token.location).map(|p| p.0).unwrap_or(1);
             let text = line.to_string();
             (PPTokenKind::Number(StringId::new(&text)), text)
-        } else if symbol == self.directive_keywords.file_macro {
+        } else if symbol == self.keywords.file_macro {
             let filename = self
                 .sm
                 .get_presumed_location(token.location)
@@ -150,7 +149,7 @@ impl<'src> Preprocessor<'src> {
                 .unwrap_or("<unknown>");
             let text = format!("\"{}\"", filename);
             (PPTokenKind::StringLiteral(StringId::new(&text)), text)
-        } else if symbol == self.directive_keywords.counter_macro {
+        } else if symbol == self.keywords.counter_macro {
             let text = self.get_next_counter().to_string();
             (PPTokenKind::Number(StringId::new(&text)), text)
         } else {
@@ -489,43 +488,43 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Check if a macro is defined
-    pub(crate) fn is_macro_defined(&self, symbol: &StringId) -> bool {
-        self.macros.contains_key(symbol)
+    pub(crate) fn is_macro_defined(&self, symbol: StringId) -> bool {
+        self.macros.contains_key(&symbol)
     }
 
     /// Get the interned symbol for the "defined" operator
     pub(super) fn defined_symbol(&self) -> StringId {
-        self.directive_keywords.defined_symbol()
+        self.keywords.defined_symbol()
     }
 
     /// Get the interned symbol for the "__has_include" operator
     pub(super) fn has_include_symbol(&self) -> StringId {
-        self.directive_keywords.has_include_symbol()
+        self.keywords.has_include_symbol()
     }
 
     /// Get the interned symbol for the "__has_include_next" operator
     pub(super) fn has_include_next_symbol(&self) -> StringId {
-        self.directive_keywords.has_include_next_symbol()
+        self.keywords.has_include_next_symbol()
     }
 
     /// Get the interned symbol for the "__has_builtin" operator
     pub(super) fn has_builtin_symbol(&self) -> StringId {
-        self.directive_keywords.has_builtin_symbol()
+        self.keywords.has_builtin_symbol()
     }
 
     /// Get the interned symbol for the "__has_attribute" operator
     pub(super) fn has_attribute_symbol(&self) -> StringId {
-        self.directive_keywords.has_attribute_symbol()
+        self.keywords.has_attribute_symbol()
     }
 
     /// Get the interned symbol for the "__has_feature" operator
     pub(super) fn has_feature_symbol(&self) -> StringId {
-        self.directive_keywords.has_feature_symbol()
+        self.keywords.has_feature_symbol()
     }
 
     /// Get the interned symbol for the "__has_extension" operator
     pub(super) fn has_extension_symbol(&self) -> StringId {
-        self.directive_keywords.has_extension_symbol()
+        self.keywords.has_extension_symbol()
     }
 
     /// Get the text associated with a token
@@ -688,7 +687,7 @@ impl<'src> Preprocessor<'src> {
                 PPTokenKind::Identifier(symbol) => {
                     if let Some(magic) = self.try_expand_magic_macro(&token) {
                         result_tokens.push(magic);
-                    } else if symbol == self.directive_keywords.pragma_operator {
+                    } else if symbol == self.keywords.pragma_operator {
                         self.handle_pragma_operator()?;
                     } else if let Some(expanded) = self.expand_macro(&token)? {
                         // Bolt ⚡: Efficiently push expanded tokens onto the stack.
@@ -958,11 +957,11 @@ impl<'src> Preprocessor<'src> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ast::StringId, pp::types::DirectiveKind};
+    use crate::{ast::StringId, pp::DirectiveKind};
 
     #[test]
     fn test_is_directive() {
-        let table = DirectiveKeywordTable::new();
+        let table = PPKeywordTable::new();
 
         // Test known directive
         let define_sym = StringId::new("define");

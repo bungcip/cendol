@@ -1,6 +1,6 @@
 use crate::{
     ast::{
-        literal::{FloatSuffix, Literal},
+        literal::{FloatSuffix, IntegerSuffix, Literal},
         nodes::*,
         *,
     },
@@ -3507,11 +3507,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn integer_constant_candidates(
-        &self,
-        suffix: Option<literal::IntegerSuffix>,
-        is_decimal: bool,
-    ) -> SmallVec<[TypeRef; 6]> {
+    fn integer_constant_candidates(&self, suffix: Option<IntegerSuffix>, is_decimal: bool) -> SmallVec<[TypeRef; 6]> {
         match suffix {
             None => {
                 if is_decimal {
@@ -3531,12 +3527,12 @@ impl<'a> SemanticAnalyzer<'a> {
                     ])
                 }
             }
-            Some(literal::IntegerSuffix::U) => SmallVec::from_slice(&[
+            Some(IntegerSuffix::U) => SmallVec::from_slice(&[
                 self.registry.type_int_unsigned,
                 self.registry.type_long_unsigned,
                 self.registry.type_long_long_unsigned,
             ]),
-            Some(literal::IntegerSuffix::L) => {
+            Some(IntegerSuffix::L) => {
                 if is_decimal {
                     SmallVec::from_slice(&[self.registry.type_long, self.registry.type_long_long])
                 } else {
@@ -3548,17 +3544,17 @@ impl<'a> SemanticAnalyzer<'a> {
                     ])
                 }
             }
-            Some(literal::IntegerSuffix::UL) => {
+            Some(IntegerSuffix::UL) => {
                 SmallVec::from_slice(&[self.registry.type_long_unsigned, self.registry.type_long_long_unsigned])
             }
-            Some(literal::IntegerSuffix::LL) => {
+            Some(IntegerSuffix::LL) => {
                 if is_decimal {
                     SmallVec::from_slice(&[self.registry.type_long_long])
                 } else {
                     SmallVec::from_slice(&[self.registry.type_long_long, self.registry.type_long_long_unsigned])
                 }
             }
-            Some(literal::IntegerSuffix::ULL) => SmallVec::from_slice(&[self.registry.type_long_long_unsigned]),
+            Some(IntegerSuffix::ULL) => SmallVec::from_slice(&[self.registry.type_long_long_unsigned]),
         }
     }
 

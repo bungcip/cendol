@@ -1,3 +1,4 @@
+use crate::ast::StringId;
 use crate::pp::{PPConfig, Preprocessor};
 use crate::tests::pp_common::setup_multi_file_pp_snapshot;
 use crate::tests::test_utils::setup_sm_and_diag;
@@ -73,8 +74,8 @@ fn test_include_next_quoted() {
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let _ = pp.process(source_id, &config).unwrap();
 
-    assert!(pp.is_macro_defined(&crate::ast::StringId::new("FOO_1")));
-    assert!(pp.is_macro_defined(&crate::ast::StringId::new("FOO_2")));
+    assert!(pp.is_macro_defined(StringId::new("FOO_1")));
+    assert!(pp.is_macro_defined(StringId::new("FOO_2")));
 }
 
 #[test]
@@ -110,8 +111,8 @@ fn test_include_next_angled() {
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let _ = pp.process(source_id, &config).unwrap();
 
-    assert!(pp.is_macro_defined(&crate::ast::StringId::new("FOO_1")));
-    assert!(pp.is_macro_defined(&crate::ast::StringId::new("FOO_2")));
+    assert!(pp.is_macro_defined(StringId::new("FOO_1")));
+    assert!(pp.is_macro_defined(StringId::new("FOO_2")));
 }
 
 #[test]
@@ -139,8 +140,8 @@ fn test_include_next_builtin() {
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let _ = pp.process(source_id, &config).unwrap();
 
-    assert!(pp.is_macro_defined(&crate::ast::StringId::new("MY_STDDEF_WRAPPER")));
-    assert!(pp.is_macro_defined(&crate::ast::StringId::new("NULL")));
+    assert!(pp.is_macro_defined(StringId::new("MY_STDDEF_WRAPPER")));
+    assert!(pp.is_macro_defined(StringId::new("NULL")));
 }
 
 // Computed Include Tests

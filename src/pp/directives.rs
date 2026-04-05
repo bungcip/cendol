@@ -3,8 +3,8 @@ use crate::diagnostic::{Diagnostic, DiagnosticLevel};
 use crate::pp::error::{PPError, PPErrorKind};
 use crate::pp::pp_lexer::PPLexer;
 use crate::pp::preprocessor::Preprocessor;
-use crate::pp::types::{DirectiveKind, IncludeStackInfo, MacroFlags, MacroInfo, PPConditionalInfo};
-use crate::pp::{PPToken, PPTokenFlags, PPTokenKind, PragmaPackKind};
+use crate::pp::types::{IncludeStackInfo, MacroFlags, MacroInfo, PPConditionalInfo};
+use crate::pp::{DirectiveKind, PPToken, PPTokenFlags, PPTokenKind, PragmaPackKind};
 use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
 use std::path::Path;
 use std::sync::Arc;
@@ -15,7 +15,7 @@ impl<'src> Preprocessor<'src> {
         let token = self.expect_token()?;
 
         match token.kind {
-            PPTokenKind::Identifier(sym) => match self.directive_keywords.is_directive(sym) {
+            PPTokenKind::Identifier(sym) => match self.keywords.is_directive(sym) {
                 Some(kind) => match kind {
                     DirectiveKind::If
                     | DirectiveKind::Ifdef
@@ -177,7 +177,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Handle #define directive
-    fn parse_define_args(&mut self, name: &str) -> Result<(MacroFlags, Vec<StringId>, Option<StringId>), PPError> {
+    fn parse_define_args(&mut self, name: StringId) -> Result<(MacroFlags, Vec<StringId>, Option<StringId>), PPError> {
         let Some(token) = self.lex_token() else {
             return Ok((MacroFlags::empty(), Vec::new(), None));
         };
@@ -233,12 +233,7 @@ impl<'src> Preprocessor<'src> {
             }
 
             if is_different {
-                let err = self.error_loc(
-                    PPErrorKind::MacroRedefined {
-                        name: name.as_str().to_string(),
-                    },
-                    name_token.location,
-                );
+                let err = self.error_loc(PPErrorKind::MacroRedefined(name), name_token.location);
                 self.report_pp_error(err);
             }
         }
@@ -248,7 +243,7 @@ impl<'src> Preprocessor<'src> {
     fn handle_define(&mut self) -> Result<(), PPError> {
         let (name_token, name) = self.expect_identifier()?;
 
-        let (flags, params, variadic) = self.parse_define_args(name.as_str())?;
+        let (flags, params, variadic) = self.parse_define_args(name)?;
 
         // Collect body tokens
         // Use collect_tokens_until_eod which handles the loop and checking for Eod
@@ -267,7 +262,7 @@ impl<'src> Preprocessor<'src> {
         if macro_info.variadic_arg.is_some() {
             for t in macro_info.tokens.iter() {
                 if let PPTokenKind::Identifier(sym) = t.kind
-                    && sym == self.directive_keywords.va_opt
+                    && sym == self.keywords.va_opt
                 {
                     macro_info.flags |= MacroFlags::HAS_VA_OPT;
                     break;
@@ -644,21 +639,21 @@ impl<'src> Preprocessor<'src> {
     fn handle_pragma(&mut self) -> Result<(), PPError> {
         let (token, symbol) = self.expect_identifier()?;
 
-        if symbol == self.directive_keywords.once {
+        if symbol == self.keywords.once {
             if let Some(lexer) = self.lexer_stack.last() {
                 self.once_included.insert(lexer.source_id);
             }
-        } else if symbol == self.directive_keywords.push_macro {
+        } else if symbol == self.keywords.push_macro {
             self.handle_push_macro()?;
-        } else if symbol == self.directive_keywords.pop_macro {
+        } else if symbol == self.keywords.pop_macro {
             self.handle_pop_macro()?;
-        } else if symbol == self.directive_keywords.message {
+        } else if symbol == self.keywords.message {
             self.handle_pragma_message()?;
-        } else if symbol == self.directive_keywords.warning {
+        } else if symbol == self.keywords.warning {
             self.handle_pragma_warning(DiagnosticLevel::Warning)?;
-        } else if symbol == self.directive_keywords.error {
+        } else if symbol == self.keywords.error {
             self.handle_pragma_error(DiagnosticLevel::Error)?;
-        } else if symbol == self.directive_keywords.pack {
+        } else if symbol == self.keywords.pack {
             return self.handle_pragma_pack();
         } else {
             return self.emit_error_loc(PPErrorKind::UnknownPragma(symbol), token.location);
@@ -807,7 +802,7 @@ impl<'src> Preprocessor<'src> {
         } else if let Some(t) = it.next() {
             match t.kind {
                 PPTokenKind::Identifier(sym) => {
-                    if sym == self.directive_keywords.push {
+                    if sym == self.keywords.push {
                         if it.peek().map(|t| t.kind) == Some(PPTokenKind::Comma) {
                             it.next(); // consume ','
                             let val = self.parse_pack_value_from_iter(&mut it, t.location)?;
@@ -815,7 +810,7 @@ impl<'src> Preprocessor<'src> {
                         } else {
                             PragmaPackKind::Push
                         }
-                    } else if sym == self.directive_keywords.pop {
+                    } else if sym == self.keywords.pop {
                         PragmaPackKind::Pop
                     } else {
                         let val = sym.as_str().parse::<u8>().ok();
@@ -834,7 +829,7 @@ impl<'src> Preprocessor<'src> {
                     let val = self.parse_pack_value_from_token(t)?;
                     PragmaPackKind::Set(Some(val))
                 }
-                _ => return self.emit_error_loc(PPErrorKind::UnknownPragma(self.directive_keywords.pack), t.location),
+                _ => return self.emit_error_loc(PPErrorKind::UnknownPragma(self.keywords.pack), t.location),
             }
         } else {
             PragmaPackKind::Set(None)
@@ -843,11 +838,11 @@ impl<'src> Preprocessor<'src> {
         if has_paren {
             if let Some(t) = it.next() {
                 if t.kind != PPTokenKind::RightParen {
-                    return self.emit_error_loc(PPErrorKind::UnknownPragma(self.directive_keywords.pack), t.location);
+                    return self.emit_error_loc(PPErrorKind::UnknownPragma(self.keywords.pack), t.location);
                 }
             } else {
                 return self.emit_error_loc(
-                    PPErrorKind::UnknownPragma(self.directive_keywords.pack),
+                    PPErrorKind::UnknownPragma(self.keywords.pack),
                     self.get_current_location(),
                 );
             }
@@ -869,7 +864,7 @@ impl<'src> Preprocessor<'src> {
 
     fn parse_pack_value_from_token(&self, t: &PPToken) -> Result<u8, PPError> {
         let PPTokenKind::Number(sym) = t.kind else {
-            return self.emit_error_loc(PPErrorKind::UnknownPragma(self.directive_keywords.pack), t.location);
+            return self.emit_error_loc(PPErrorKind::UnknownPragma(self.keywords.pack), t.location);
         };
         let val = sym
             .as_str()
@@ -891,7 +886,7 @@ impl<'src> Preprocessor<'src> {
         if let Some(t) = it.next() {
             self.parse_pack_value_from_token(t)
         } else {
-            self.emit_error_loc(PPErrorKind::UnknownPragma(self.directive_keywords.pack), loc)
+            self.emit_error_loc(PPErrorKind::UnknownPragma(self.keywords.pack), loc)
         }
     }
 

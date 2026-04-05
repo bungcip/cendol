@@ -378,6 +378,13 @@ impl TypeRegistry {
     /// Helper to get the pointee type if the given type is a pointer.
     pub(crate) fn get_pointee(&self, mut ty: TypeRef) -> Option<QualType> {
         loop {
+            // Bolt ⚡: Fast path for non-pointer types to avoid registry lookup and match.
+            // Pointers and aliases (which might resolve to pointers) are the only candidates.
+            let class = ty.class();
+            if class != TypeClass::Pointer && class != TypeClass::Alias {
+                return None;
+            }
+
             if ty.is_inline_pointer() {
                 return Some(QualType::unqualified(self.reconstruct_pointee(ty)));
             } else {
@@ -459,15 +466,14 @@ impl TypeRegistry {
     /// Helper to get the element type if the given type is an array.
     pub(super) fn get_array_element(&self, mut ty: TypeRef) -> Option<TypeRef> {
         loop {
+            // Bolt ⚡: Fast path for non-array types to avoid registry lookup and match.
+            let class = ty.class();
+            if class != TypeClass::Array && class != TypeClass::Alias {
+                return None;
+            }
+
             if ty.is_inline_array() {
                 return Some(self.reconstruct_element(ty));
-            }
-            // Pointers and builtins (that aren't aliases) are never arrays.
-            if ty.is_pointer() {
-                return None;
-            }
-            if ty.builtin().is_some() {
-                return None;
             }
 
             // Bolt ⚡: Direct registry access avoids Cow<Type> allocations in hot loops.

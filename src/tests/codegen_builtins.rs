@@ -66,3 +66,65 @@ fn test_bitwise_runtime() {
     "#;
     assert_eq!(run_c_code_exit_status(source), 0);
 }
+
+#[test]
+fn test_builtin_constant_p_runtime() {
+    let source = r#"
+        int main() {
+            int x = 5;
+            const int y = 10;
+
+            if (__builtin_constant_p(10) != 1) return 1;
+            if (__builtin_constant_p(x) != 0) return 2;
+            if (__builtin_constant_p(y) != 0) return 3;
+            if (__builtin_constant_p(10 + 20) != 1) return 4;
+
+            return 0;
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_builtin_prefetch_codegen() {
+    // Should not crash during MIR generation
+    run_pass("void f(int *p) { __builtin_prefetch(p, 0, 3); }", CompilePhase::Mir);
+}
+
+#[test]
+fn test_builtin_prefetch_side_effects() {
+    // Arguments should still be evaluated for side effects
+    run_pass(
+        "
+        void f(int *p, int *q) {
+            __builtin_prefetch(p = q, 0, 3);
+        }
+    ",
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_codegen_builtin_unreachable() {
+    let source = r#"
+        void test() {
+            if (0) {
+                __builtin_unreachable();
+            }
+        }
+    "#;
+    run_pass(source, CompilePhase::Cranelift);
+}
+
+#[test]
+fn test_unreachable_traps() {
+    // Note: We use -1 to indicate abnormal termination (like a trap/signal)
+    // in our testing environment for run_c_code_exit_status.
+    let code = r#"
+        int main() {
+            __builtin_unreachable();
+            return 0;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(code), -1);
+}

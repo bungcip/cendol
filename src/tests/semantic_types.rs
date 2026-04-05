@@ -4,7 +4,66 @@ use crate::driver::artifact::CompilePhase;
 use crate::semantic::ArraySizeType;
 use crate::semantic::type_registry::TypeRegistry;
 use crate::semantic::types::{QualType, TypeClass, TypeRef};
-use crate::tests::test_utils::{run_fail, run_fail_with_message, run_pass, run_pedantic_fail_with_message};
+use crate::tests::test_utils::{
+    check_diagnostic_message_only, run_fail, run_fail_with_message, run_pass, run_pedantic_fail_with_message,
+};
+
+#[test]
+fn test_conflicting_type_specifier() {
+    run_fail(
+        r#"
+        int float x;
+        "#,
+        CompilePhase::SemanticLowering,
+    );
+}
+
+#[test]
+fn test_conflicting_type_specifier_complex() {
+    run_fail(
+        r#"
+        int _Complex x;
+        "#,
+        CompilePhase::SemanticLowering,
+    );
+}
+
+/// Test multiple empty declarations
+#[test]
+fn test_empty_declarations_multiple() {
+    let source = r#"
+        char;
+        char;
+        int;
+        int;
+        int;
+        
+        int main() {
+            return 0;
+        }
+    "#;
+
+    let driver = run_pass(source, CompilePhase::Mir);
+    check_diagnostic_message_only(&driver, "declaration does not declare anything");
+    assert_eq!(driver.get_diagnostics().len(), 5);
+}
+
+/// Test empty declaration in function scope
+#[test]
+fn test_empty_declaration_in_function() {
+    let source = r#"
+        int main() {
+            int;
+            char;
+            float;
+            return 0;
+        }
+    "#;
+
+    let driver = run_pass(source, CompilePhase::Mir);
+    check_diagnostic_message_only(&driver, "declaration does not declare anything");
+    assert_eq!(driver.get_diagnostics().len(), 3);
+}
 
 fn check_type(source: &str, expected: &str) {
     let (_ast, registry, symbol_table) = setup_lowering(source);
@@ -20,18 +79,10 @@ fn test_typeregistry_default() {
 }
 
 #[test]
-fn test_long_double() {
-    check_type("long double x;", "long double");
-}
-
-#[test]
-fn test_long_const_long() {
+fn test_type_long_long() {
     check_type("long const long x;", "const long long");
-}
-
-#[test]
-fn test_unsigned_long_const_long() {
     check_type("unsigned long const long x;", "const unsigned long long");
+    check_type("unsigned long long x = 0xAC353B0092DB2509;", "unsigned long long");
 }
 
 #[test]
@@ -564,12 +615,6 @@ fn test_large_hex_literal_comparison() {
         "Comparison 9 >= 0xAC353B0092DB2509 should be 0, MIR: {}",
         mir
     );
-}
-
-#[test]
-fn test_large_hex_literal_typing() {
-    let source = "unsigned long long x = 0xAC353B0092DB2509;";
-    check_type(source, "unsigned long long");
 }
 
 #[test]

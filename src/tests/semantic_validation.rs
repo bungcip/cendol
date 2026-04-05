@@ -1,4 +1,5 @@
 use crate::driver::artifact::CompilePhase;
+use crate::tests::codegen_common::run_c_code_with_output;
 use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
@@ -130,4 +131,36 @@ fn rejects_struct_logical_or() {
         "struct A{int a; int b;}; int main(){struct A a; struct A b; b || a; return 3;}",
         "Invalid operands for binary operation",
     );
+}
+
+#[test]
+fn rejects_thread_local_on_function() {
+    let src = "
+        _Thread_local void my_func(void);
+    ";
+    run_fail_with_message(src, "_Thread_local is not allowed here");
+}
+
+#[test]
+fn test_struct_init_in_array_regression() {
+    let source = r#"
+    int printf(const char *fmt, ...);
+    struct Inner {
+      long i;
+    };
+    struct Outer {
+      struct Inner b;
+      int j;
+    };
+    int main(void) {
+        struct Inner v = {3};
+        struct Outer s[] = {v, 6, 7};
+
+        printf("%ld %d %ld %d", s[0].b.i, s[0].j, s[1].b.i, s[1].j);
+        return 0;
+    }
+    "#;
+
+    let output = run_c_code_with_output(source);
+    assert_eq!(output, "3 6 7 0");
 }

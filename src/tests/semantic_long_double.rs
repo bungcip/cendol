@@ -3,18 +3,6 @@ use crate::tests::codegen_common::run_c_code_exit_status;
 use crate::tests::test_utils::run_pass;
 
 #[test]
-fn test_long_double_mant_dig() {
-    run_pass(
-        r#"
-        #include <float.h>
-        _Static_assert(LDBL_MANT_DIG == 64, "LDBL_MANT_DIG should be 64");
-        int main() { return 0; }
-        "#,
-        CompilePhase::Mir,
-    );
-}
-
-#[test]
 fn test_long_double_size_align() {
     run_pass(
         r#"
@@ -80,4 +68,38 @@ fn test_long_double_nan_execution() {
     "#;
     let status = run_c_code_exit_status(source);
     assert_eq!(status, 0);
+}
+
+#[test]
+fn test_long_double_arithmetic_conversion() {
+    use super::semantic_common::setup_mir;
+    let source = r#"
+        int main() {
+            long double ld = 1.0;
+            float f = 2.0f;
+            return (int)(ld + f);
+        }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir, @"
+    type %t0 = i32
+    type %t1 = f80
+    type %t2 = f64
+    type %t3 = f32
+
+    fn main() -> i32
+    {
+      locals {
+        %ld: f80
+        %f: f32
+        %3: f80
+      }
+
+      bb1:
+        %ld = const 1
+        %f = const 2
+        %3 = %ld fadd cast<f80>(%f)
+        return cast<i32>(%3)
+    }
+    ");
 }

@@ -591,39 +591,6 @@ fn test_enum_arithmetic() {
     ");
 }
 
-#[test]
-fn test_long_double_arithmetic_conversion() {
-    let source = r#"
-        int main() {
-            long double ld = 1.0;
-            float f = 2.0f;
-            return (int)(ld + f);
-        }
-    "#;
-    let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @"
-    type %t0 = i32
-    type %t1 = f80
-    type %t2 = f64
-    type %t3 = f32
-
-    fn main() -> i32
-    {
-      locals {
-        %ld: f80
-        %f: f32
-        %3: f80
-      }
-
-      bb1:
-        %ld = const 1
-        %f = const 2
-        %3 = %ld fadd cast<f80>(%f)
-        return cast<i32>(%3)
-    }
-    ");
-}
-
 // Semantic validation tests for lvalue constraints.
 
 #[test]
@@ -996,6 +963,47 @@ fn test_sizeof_bitfield_prohibited() {
         }
         "#,
         "cannot apply 'sizeof' to a bit-field",
+    );
+}
+
+#[test]
+fn test_deref_long() {
+    run_fail_with_message(
+        r#"
+        long foo(long x) { return *x; }
+        "#,
+        "indirection requires pointer operand",
+    );
+}
+
+#[test]
+fn test_deref_int() {
+    run_fail_with_message(
+        r#"
+        int foo(int x) { return *x; }
+        "#,
+        "indirection requires pointer operand",
+    );
+}
+
+#[test]
+fn test_deref_double() {
+    run_fail_with_message(
+        r#"
+        double foo(double x) { return *x; }
+        "#,
+        "indirection requires pointer operand",
+    );
+}
+
+#[test]
+fn test_deref_struct() {
+    run_fail_with_message(
+        r#"
+        struct S { int x; };
+        void foo(struct S s) { *s; }
+        "#,
+        "indirection requires pointer operand",
     );
 }
 

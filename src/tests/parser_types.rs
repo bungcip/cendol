@@ -1,6 +1,66 @@
+use super::parser_utils::setup_declaration;
 use crate::ast::NameId;
+use crate::driver::artifact::CompilePhase;
 use crate::tests::semantic_common::setup_lowering;
-use crate::tests::test_utils::run_fail_with_message;
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
+
+#[test]
+fn test_long_at_eof() {
+    // This hits the simplified Long handling in type_specifiers.rs
+    // and then fails in declaration parsing because no declarator/semicolon is found.
+    run_fail_with_message("long", "Unexpected token");
+}
+
+#[test]
+fn test_type_specifier_invalid_token() {
+    // This is as close as we can get to testing "unreachable" code from C.
+    // It will actually fail in the caller (declaration specifiers) because
+    // it doesn't recognize '(' as a type specifier start.
+    run_fail_with_message("_Atomic(", "Unexpected token");
+}
+
+#[test]
+fn test_merge_type_specifiers_unsigned_unsigned() {
+    // unsigned unsigned int a;
+    let code = "unsigned unsigned int a;";
+    run_pass(code, CompilePhase::Parse);
+}
+
+#[test]
+fn test_typeof_expr() {
+    let decl = setup_declaration("typeof(5 + 3) x;");
+    insta::assert_yaml_snapshot!(decl, @"
+    Declaration:
+      specifiers:
+        - TypeofExpr(5)
+      init_declarators:
+        - name: x
+    ");
+}
+
+#[test]
+fn test_typeof_type() {
+    let decl = setup_declaration("typeof(int) x;");
+    insta::assert_yaml_snapshot!(decl, @r#"
+    Declaration:
+      specifiers:
+        - "Typeof(ParsedType { base: 1, declarator: 1, qualifiers: TypeQualifiers(0x0) })"
+      init_declarators:
+        - name: x
+    "#);
+}
+
+#[test]
+fn test_typeof_comma_expr() {
+    let decl = setup_declaration("typeof((void)0, 5) x;");
+    insta::assert_yaml_snapshot!(decl, @"
+    Declaration:
+      specifiers:
+        - TypeofExpr(6)
+      init_declarators:
+        - name: x
+    ");
+}
 
 fn check_type(source: &str, expected: &str) {
     let (_ast, registry, symbol_table) = setup_lowering(source);

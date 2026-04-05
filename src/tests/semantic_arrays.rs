@@ -315,3 +315,94 @@ fn test_zero_sized_array_pedantic() {
             .any(|d| d.message.contains("use of GNU zero-length array extension"))
     );
 }
+
+#[test]
+fn test_sizeof_array_deref_in_enum() {
+    run_pass(
+        r#"
+        int main() {
+            const char in[] = "hello";
+            enum { in_sz = sizeof in / sizeof *in };
+            return in_sz;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_sizeof_array_deref_global() {
+    run_pass(
+        r#"
+        const char g_in[] = "world";
+        enum { g_in_sz = sizeof g_in / sizeof *g_in };
+        int main() {
+            return g_in_sz;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_sizeof_multi_dim_array_deref() {
+    run_pass(
+        r#"
+        int main() {
+            int a[2][3];
+            enum { 
+                rows = sizeof a / sizeof *a,
+                cols = sizeof *a / sizeof **a 
+            };
+            return rows + cols;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_sizeof_vla_supported() {
+    run_pass(
+        r#"
+        int main() {
+            int n = 10;
+            char arr[n];
+            int size = sizeof(arr);
+            return 0;
+        }
+        "#,
+        CompilePhase::EmitObject,
+    );
+}
+
+#[test]
+fn test_sizeof_array_constant_expression() {
+    run_pass(
+        r#"
+        int main() {
+            char a[10];
+            char b[20];
+            char c[sizeof(a) + sizeof(b)];
+            return 0;
+        }
+        "#,
+        CompilePhase::EmitObject,
+    );
+}
+
+#[test]
+fn test_sizeof_string_literal_constant_expression() {
+    run_pass(
+        r#"
+        #define LUA_SIGNATURE "\x1bLua"
+        #define LUAC_DATA "\x19\x93\r\n\x1a\n"
+
+        int main() {
+            char buff[sizeof(LUA_SIGNATURE) + sizeof(LUAC_DATA)];
+            return 0;
+        }
+        "#,
+        CompilePhase::EmitObject,
+    );
+}

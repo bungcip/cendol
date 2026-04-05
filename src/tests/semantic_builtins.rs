@@ -1,5 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::run_pass;
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn test_atomic_builtins_compilation() {
@@ -240,5 +240,102 @@ fn test_has_builtin_bitwise() {
             return 0;
         }",
         CompilePhase::Preprocess,
+    );
+}
+
+#[test]
+fn test_implicit_builtins() {
+    let source = r#"
+        void test() {
+            float f = __builtin_nanf("");
+            double d = __builtin_nan("");
+            float inf_f = __builtin_inff();
+            double inf = __builtin_inf();
+            double huge = __builtin_huge_val();
+            float huge_f = __builtin_huge_valf();
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_builtin_trap_semantic() {
+    let source = r#"
+        void test() {
+            __builtin_trap();
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_builtin_trap_noreturn() {
+    let source = r#"
+        void test() {
+            __builtin_trap();
+            int x = 1; // unreachable but semantically valid
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_builtin_trap_expression() {
+    let source = r#"
+        void test() {
+            int x = (__builtin_trap(), 1);
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_builtin_alloca_success() {
+    let source = r#"
+        void* test(int n) {
+            return __builtin_alloca(n);
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_builtin_alloca_constant() {
+    let source = r#"
+        void* test() {
+            return __builtin_alloca(100);
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_builtin_alloca_invalid_arg() {
+    let source = r#"
+        void* test() {
+            return __builtin_alloca("invalid");
+        }
+    "#;
+    run_fail_with_message(source, "expected integer type");
+}
+
+#[test]
+fn test_builtin_constant_p() {
+    run_pass(
+        r#"
+            int main() {
+                int x = 5;
+                const int y = 10;
+
+                _Static_assert(__builtin_constant_p(10) == 1, "10 is constant");
+                _Static_assert(__builtin_constant_p(x) == 0, "x is not constant");
+                _Static_assert(__builtin_constant_p(y) == 0, "y is not constant in C");
+                _Static_assert(__builtin_constant_p(10 + 20) == 1, "10+20 is constant");
+
+                int arr[__builtin_constant_p(10) ? 10 : -1]; // Valid array size if true
+                return 0;
+            }
+        "#,
+        CompilePhase::Mir,
     );
 }

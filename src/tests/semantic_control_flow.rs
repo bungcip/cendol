@@ -239,3 +239,28 @@ fn test_noreturn_while_1_infinite() {
     "#;
     run_pass(source, CompilePhase::Mir);
 }
+
+#[test]
+fn test_duplicate_label() {
+    let source = "
+    int main(void) {
+        label: ;
+        label: ;
+        return 0;
+    }
+    ";
+    run_fail_with_message(source, "redefinition");
+}
+
+#[test]
+fn test_goto_label_forward_backward() {
+    let source = "
+    int main(void) {
+        goto L1;
+    L1:
+        goto L1;
+        return 0;
+    }
+    ";
+    run_pass(source, CompilePhase::Mir);
+}

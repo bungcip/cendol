@@ -527,21 +527,45 @@ fn classify_punctuation(pp_token_kind: PPTokenKind) -> TokenKind {
 pub(crate) fn is_keyword(symbol: StringId, std: crate::lang_options::CStandard) -> Option<TokenKind> {
     let kind = keyword_map().get(&symbol).copied()?;
 
-    // C23 keywords
+    // C23 keywords: block certain spellings if standard is older than C23.
+    // e.g. 'static_assert' is a keyword in C23, but in C11 it is only a keyword
+    // when spelled as '_Static_assert'.
     if std < crate::lang_options::CStandard::C23 {
+        let sk = special_keywords();
         match kind {
-            TokenKind::StaticAssert if symbol.as_str() == "static_assert" => return None,
+            TokenKind::StaticAssert if symbol == sk.static_assert => return None,
             TokenKind::Nullptr | TokenKind::True | TokenKind::False => return None,
-            TokenKind::TypeofUnqual if symbol.as_str() == "typeof_unqual" => return None,
-            TokenKind::Bool if symbol.as_str() == "bool" => return None,
-            TokenKind::Alignas if symbol.as_str() == "alignas" => return None,
-            TokenKind::Alignof if symbol.as_str() == "alignof" => return None,
-            TokenKind::ThreadLocal if symbol.as_str() == "thread_local" => return None,
+            TokenKind::TypeofUnqual if symbol == sk.typeof_unqual => return None,
+            TokenKind::Bool if symbol == sk.bool_kw => return None,
+            TokenKind::Alignas if symbol == sk.alignas => return None,
+            TokenKind::Alignof if symbol == sk.alignof => return None,
+            TokenKind::ThreadLocal if symbol == sk.thread_local => return None,
             _ => {}
         }
     }
 
     Some(kind)
+}
+
+struct SpecialKeywords {
+    static_assert: StringId,
+    typeof_unqual: StringId,
+    bool_kw: StringId,
+    alignas: StringId,
+    alignof: StringId,
+    thread_local: StringId,
+}
+
+fn special_keywords() -> &'static SpecialKeywords {
+    static KEYWORDS: std::sync::OnceLock<SpecialKeywords> = std::sync::OnceLock::new();
+    KEYWORDS.get_or_init(|| SpecialKeywords {
+        static_assert: StringId::new("static_assert"),
+        typeof_unqual: StringId::new("typeof_unqual"),
+        bool_kw: StringId::new("bool"),
+        alignas: StringId::new("alignas"),
+        alignof: StringId::new("alignof"),
+        thread_local: StringId::new("thread_local"),
+    })
 }
 
 fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {

@@ -1,6 +1,6 @@
 use super::semantic_common::setup_lowering;
 use crate::ast::literal::Literal;
-use crate::ast::{Ast, NodeKind, NodeRef};
+use crate::ast::{Ast, NodeKind, NodeRef, StringId};
 use crate::semantic::{QualType, SymbolTable, TypeQualifiers, TypeRegistry};
 use serde::Serialize;
 
@@ -8,29 +8,29 @@ use serde::Serialize;
 enum ResolvedAstNode {
     TranslationUnit(Vec<ResolvedAstNode>),
     VarDecl {
-        name: String,
+        name: StringId,
         ty: String,
         init: Option<Box<ResolvedAstNode>>,
         alignment: Option<u16>,
     },
     RecordDecl {
-        name: String,
+        name: StringId,
         members: Vec<ResolvedAstNode>,
     },
     FieldDecl {
-        name: String,
+        name: StringId,
         ty: String,
     },
     EnumDecl {
-        name: String,
+        name: StringId,
         members: Vec<ResolvedAstNode>,
     },
     EnumMember {
-        name: String,
+        name: StringId,
         value: i64,
     },
     Function {
-        name: String,
+        name: StringId,
         body: Box<ResolvedAstNode>,
     },
     FunctionCall {
@@ -45,7 +45,7 @@ enum ResolvedAstNode {
     CompoundStatement(Vec<ResolvedAstNode>),
     Return(Option<Box<ResolvedAstNode>>),
     LiteralInt(i64),
-    Ident(String),
+    Ident(StringId),
     // Fallback for nodes we haven't explicitly mapped yet
     #[serde(untagged)]
     Other(String),
@@ -64,7 +64,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             ResolvedAstNode::TranslationUnit(nodes)
         }
         NodeKind::VarDecl(data) => ResolvedAstNode::VarDecl {
-            name: data.name.as_str().to_string(),
+            name: data.name,
             ty: display_qual_type(registry, data.qt),
             init: data
                 .init
@@ -78,18 +78,12 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
                 .map(|child| resolve_node(ast, registry, symbol_table, child))
                 .collect();
             ResolvedAstNode::RecordDecl {
-                name: data
-                    .name
-                    .map(|n| n.as_str().to_string())
-                    .unwrap_or_else(|| "<anon>".to_string()),
+                name: data.name.unwrap_or_else(|| StringId::new("<anon>")),
                 members,
             }
         }
         NodeKind::FieldDecl(data) => ResolvedAstNode::FieldDecl {
-            name: data
-                .name
-                .map(|n| n.as_str().to_string())
-                .unwrap_or_else(|| "<anon>".to_string()),
+            name: data.name.unwrap_or_else(|| StringId::new("<anon>")),
             ty: display_qual_type(registry, data.qt),
         },
         NodeKind::EnumDecl(data) => {
@@ -99,21 +93,18 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
                 .map(|child| resolve_node(ast, registry, symbol_table, child))
                 .collect();
             ResolvedAstNode::EnumDecl {
-                name: data
-                    .name
-                    .map(|n| n.as_str().to_string())
-                    .unwrap_or_else(|| "<anon>".to_string()),
+                name: data.name.unwrap_or_else(|| StringId::new("<anon>")),
                 members,
             }
         }
         NodeKind::EnumMember(data) => ResolvedAstNode::EnumMember {
-            name: data.name.as_str().to_string(),
+            name: data.name,
             value: data.value,
         },
         NodeKind::Function(data) => {
             let symbol = symbol_table.get_symbol(data.symbol);
             ResolvedAstNode::Function {
-                name: symbol.name.as_str().to_string(),
+                name: symbol.name,
                 body: Box::new(resolve_node(ast, registry, symbol_table, data.body)),
             }
         }
@@ -148,7 +139,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             Literal::Int { val, .. } => ResolvedAstNode::LiteralInt(*val),
             _ => panic!("Not implemented for this literal type"),
         },
-        NodeKind::Ident(name, _) => ResolvedAstNode::Ident(name.as_str().to_string()),
+        NodeKind::Ident(name, _) => ResolvedAstNode::Ident(*name),
         _ => ResolvedAstNode::Other(format!("{:?}", kind)),
     }
 }

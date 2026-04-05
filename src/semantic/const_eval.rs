@@ -5,7 +5,7 @@
 //! static assertions and array sizes.
 
 use crate::ast::literal::{FloatSuffix, IntegerSuffix, Literal};
-use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, UnaryOp};
+use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, StringId, UnaryOp};
 use crate::semantic::literal_utils::parse_string_literal;
 use crate::semantic::types::TypeClass;
 use crate::semantic::{BuiltinType, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeRef, TypeRegistry};
@@ -392,17 +392,22 @@ impl<'a> ConstEvalCtx<'a> {
             }
             NodeKind::FunctionCall(call) => {
                 let callee_kind = self.ast.get_kind(call.callee);
-                let name = match callee_kind {
-                    NodeKind::Ident(name_id, _) => name_id.as_str(),
+                let name_id = match callee_kind {
+                    NodeKind::Ident(name_id, _) => name_id,
                     _ => return None,
                 };
 
-                match name {
-                    "__builtin_inff" | "__builtin_huge_valf" => Some(f32::INFINITY as f64),
-                    "__builtin_inf" | "__builtin_huge_val" => Some(f64::INFINITY),
-                    "__builtin_nanf" => Some(f32::NAN as f64),
-                    "__builtin_nan" => Some(f64::NAN),
-                    _ => None,
+                let bn = builtin_names();
+                if *name_id == bn.inff || *name_id == bn.huge_valf {
+                    Some(f32::INFINITY as f64)
+                } else if *name_id == bn.inf || *name_id == bn.huge_val {
+                    Some(f64::INFINITY)
+                } else if *name_id == bn.nanf {
+                    Some(f32::NAN as f64)
+                } else if *name_id == bn.nan {
+                    Some(f64::NAN)
+                } else {
+                    None
                 }
             }
             _ => self.eval_int(expr).map(|v| v as f64),
@@ -740,4 +745,25 @@ fn eval_offsetof(ctx: &ConstEvalCtx, qt: QualType, expr: NodeRef) -> Option<i64>
     } else {
         None
     }
+}
+
+struct BuiltinNames {
+    inff: StringId,
+    huge_valf: StringId,
+    inf: StringId,
+    huge_val: StringId,
+    nanf: StringId,
+    nan: StringId,
+}
+
+fn builtin_names() -> &'static BuiltinNames {
+    static NAMES: std::sync::OnceLock<BuiltinNames> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| BuiltinNames {
+        inff: StringId::new("__builtin_inff"),
+        huge_valf: StringId::new("__builtin_huge_valf"),
+        inf: StringId::new("__builtin_inf"),
+        huge_val: StringId::new("__builtin_huge_val"),
+        nanf: StringId::new("__builtin_nanf"),
+        nan: StringId::new("__builtin_nan"),
+    })
 }

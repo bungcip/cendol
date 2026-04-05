@@ -1,6 +1,6 @@
 use crate::ast::{BinaryOp, UnaryOp, literal::Literal};
 use crate::ast::{
-    DeclaratorRef, ParsedAst, ParsedDeclSpec, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec,
+    DeclaratorRef, NameId, ParsedAst, ParsedDeclSpec, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec,
 };
 use crate::diagnostic::ParseError;
 use crate::driver::artifact::CompilePhase;
@@ -113,7 +113,7 @@ fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpec]) -> Vec<Str
                 ParsedTypeSpec::Complex => "_Complex".to_string(),
                 ParsedTypeSpec::TypedefName(name) => format!("TypedefName({:?})", name.to_string()),
                 ParsedTypeSpec::Enum(tag, enumerators) => {
-                    let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
+                    let tag_str = tag.unwrap_or_else(|| NameId::new(""));
                     if let Some(enums) = enumerators {
                         let enum_parts: Vec<String> = enums
                             .iter()
@@ -136,13 +136,12 @@ fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpec]) -> Vec<Str
                 }
                 ParsedTypeSpec::Record(is_union, tag, def) => {
                     let record_kind = if *is_union { "union" } else { "struct" };
-                    let tag_str = tag.as_ref().map(|s| s.as_str()).unwrap_or("");
                     let has_body = def.is_some();
 
                     let mut s = record_kind.to_string();
-                    if !tag_str.is_empty() {
+                    if let Some(tag) = tag {
                         s.push(' ');
-                        s.push_str(tag_str);
+                        s.push_str(tag.as_str());
                     }
                     if has_body {
                         s.push_str(" { ... }");

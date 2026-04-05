@@ -29,6 +29,7 @@ pub mod parser_typeof_unqual;
 pub mod semantic_arrays;
 pub mod semantic_auto_type;
 pub mod semantic_builtins;
+pub mod semantic_c23;
 pub mod semantic_control_flow;
 pub mod semantic_enums;
 pub mod semantic_expr;

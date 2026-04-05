@@ -251,6 +251,12 @@ fn test_static_tentative_incomplete_type_prohibited() {
 }
 
 #[test]
+fn test_global_tentative_incomplete_type_prohibited() {
+    run_fail_with_message("struct S; struct S x;", "incomplete type 'struct S'");
+    run_fail_with_message("enum E; enum E x;", "incomplete type 'enum E'");
+}
+
+#[test]
 fn test_no_linkage_incomplete_type_prohibited() {
     run_fail_with_message("void f() { int arr[]; }", "incomplete type 'int[]'");
     run_fail_with_message("void f() { static int arr[]; }", "incomplete type 'int[]'");

@@ -507,13 +507,37 @@ pub(crate) struct DeclSpecInfo {
 }
 
 /// Finalize tentative definitions by converting them to defined state
-fn finalize_tentative_definitions(symbol_table: &mut SymbolTable) {
+fn finalize_tentative_definitions(
+    symbol_table: &mut SymbolTable,
+    registry: &TypeRegistry,
+    diag: &mut DiagnosticEngine,
+) {
     for entry in &mut symbol_table.entries {
         if entry.scope_id == ScopeId::GLOBAL
             && matches!(entry.kind, SymbolKind::Variable { .. })
             && entry.def_state == DefinitionState::Tentative
+            && !registry.is_complete(entry.type_info.ty())
         {
-            entry.def_state = DefinitionState::Defined;
+            // Incomplete arrays at file scope are conceptually completed to have one element (C11 6.9.2p3)
+            if matches!(
+                registry.get(entry.type_info.ty()).kind,
+                TypeKind::Array {
+                    size: ArraySizeType::Incomplete,
+                    ..
+                }
+            ) {
+                continue;
+            }
+
+            let kind = if entry.type_info.ty().builtin() == Some(BuiltinType::Void) {
+                SemanticErrorKind::VariableOfVoidType
+            } else {
+                SemanticErrorKind::IncompleteType { ty: entry.type_info }
+            };
+            let error = SemanticError::new(entry.def_span, kind);
+            for d in error.into_diagnostic(registry) {
+                diag.report_diagnostic(d);
+            }
         }
     }
 }
@@ -527,15 +551,15 @@ pub(crate) fn visit_ast(
     registry: &mut TypeRegistry,
     lang_opts: &crate::lang_options::LangOptions,
 ) {
-    // Finalize tentative definitions
-    finalize_tentative_definitions(symbol_table);
-
     // Create lowering context
     let mut lower_ctx = LowerCtx::new(parsed_ast, ast, diag, symbol_table, registry, lang_opts);
 
     // Perform recursive scope-aware lowering starting from root
     let root = parsed_ast.get_root();
     lower_ctx.visit_node(root);
+
+    // Finalize tentative definitions
+    finalize_tentative_definitions(lower_ctx.symbol_table, lower_ctx.registry, lower_ctx.diag);
 }
 
 impl<'a, 'src> LowerCtx<'a, 'src> {

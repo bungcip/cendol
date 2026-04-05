@@ -178,64 +178,65 @@ impl TypeRegistry {
         // Must match BuiltinType enum values 1..16 sequentially
 
         // 1: Void
-        self.type_void = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Void));
+        self.type_void = self.alloc_builtin(BuiltinType::Void);
 
         // 2: Bool
-        self.type_bool = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Bool));
+        self.type_bool = self.alloc_builtin(BuiltinType::Bool);
 
         // 3: Char (signed)
-        self.type_char = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Char));
+        self.type_char = self.alloc_builtin(BuiltinType::Char);
 
         // 4: SChar (explicit signed char)
-        self.type_schar = self.alloc_builtin(TypeKind::Builtin(BuiltinType::SChar));
+        self.type_schar = self.alloc_builtin(BuiltinType::SChar);
 
         // 5: UChar
-        self.type_char_unsigned = self.alloc_builtin(TypeKind::Builtin(BuiltinType::UChar));
+        self.type_char_unsigned = self.alloc_builtin(BuiltinType::UChar);
 
         // 6: Short
-        self.type_short = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Short));
+        self.type_short = self.alloc_builtin(BuiltinType::Short);
 
         // 7: UShort
-        self.type_short_unsigned = self.alloc_builtin(TypeKind::Builtin(BuiltinType::UShort));
+        self.type_short_unsigned = self.alloc_builtin(BuiltinType::UShort);
 
         // 8: Int
-        self.type_int = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Int));
+        self.type_int = self.alloc_builtin(BuiltinType::Int);
 
         // 9: UInt
-        self.type_int_unsigned = self.alloc_builtin(TypeKind::Builtin(BuiltinType::UInt));
+        self.type_int_unsigned = self.alloc_builtin(BuiltinType::UInt);
 
         // 10: Long
-        self.type_long = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Long));
+        self.type_long = self.alloc_builtin(BuiltinType::Long);
 
         // 11: ULong
-        self.type_long_unsigned = self.alloc_builtin(TypeKind::Builtin(BuiltinType::ULong));
+        self.type_long_unsigned = self.alloc_builtin(BuiltinType::ULong);
 
         // 12: LongLong
-        self.type_long_long = self.alloc_builtin(TypeKind::Builtin(BuiltinType::LongLong));
+        self.type_long_long = self.alloc_builtin(BuiltinType::LongLong);
 
         // 13: ULongLong
-        self.type_long_long_unsigned = self.alloc_builtin(TypeKind::Builtin(BuiltinType::ULongLong));
+        self.type_long_long_unsigned = self.alloc_builtin(BuiltinType::ULongLong);
 
         // 14: Float
-        self.type_float = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Float));
+        self.type_float = self.alloc_builtin(BuiltinType::Float);
 
         // 15: Double
-        self.type_double = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Double));
+        self.type_double = self.alloc_builtin(BuiltinType::Double);
 
         // 16: LongDouble
-        self.type_long_double = self.alloc_builtin(TypeKind::Builtin(BuiltinType::LongDouble));
+        self.type_long_double = self.alloc_builtin(BuiltinType::LongDouble);
 
         // 17: Signed (marker)
-        self.type_signed = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Signed));
+        self.type_signed = self.alloc_builtin(BuiltinType::Signed);
 
-        // 18: VaList
-        self.type_valist = self.alloc_builtin(TypeKind::Builtin(BuiltinType::VaList));
+        // 18: VaList - on x86_64 SysV this is an array of 1 struct
+        let valist_struct = self.alloc_builtin(BuiltinType::VaList);
+        self.type_valist = self.array_of(valist_struct, ArraySizeType::Constant(1));
 
         // 19: Complex (marker)
-        self.type_complex_marker = self.alloc_builtin(TypeKind::Builtin(BuiltinType::Complex));
+        self.type_complex_marker = self.alloc_builtin(BuiltinType::Complex);
 
         // 20: nullptr_t
-        self.type_nullptr_t = self.alloc_builtin(TypeKind::NullptrT);
+        self.type_nullptr_t = self.alloc(Type::new(TypeKind::NullptrT));
 
         // Pre-calculate void*
         self.type_void_ptr = self.pointer_to(QualType::unqualified(self.type_void));
@@ -274,8 +275,8 @@ impl TypeRegistry {
         }
     }
 
-    fn alloc_builtin(&mut self, kind: TypeKind) -> TypeRef {
-        let ty = Type::new(kind);
+    fn alloc_builtin(&mut self, kind: BuiltinType) -> TypeRef {
+        let ty = Type::new(TypeKind::Builtin(kind));
         self.alloc(ty)
     }
 

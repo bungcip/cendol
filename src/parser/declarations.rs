@@ -23,8 +23,8 @@ use crate::ast::parsed::{
 use crate::parser::type_builder::parse_type_name;
 use crate::parser::type_specifiers::parse_type_specifier;
 
-/// parse declaration
-pub(crate) fn parse_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+/// parse declaration or function definition
+pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Result<ParsedNodeRef, ParseError> {
     let trx = parser.start_transaction();
     let start_loc = trx.parser.current_token_span()?.start();
     let dummy = trx.parser.push_dummy();
@@ -87,10 +87,26 @@ pub(crate) fn parse_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErro
         });
     }
 
+    let declarator = super::declarator::parse_declarator(trx.parser)?;
+
+    if allow_function_def && trx.parser.is_token(TokenKind::LeftBrace) {
+        let result = parse_function_definition_tail(trx.parser, specifiers, declarator, start_loc, dummy);
+        if result.is_ok() {
+            trx.commit();
+        }
+        return result;
+    }
+
     let mut init_declarators = ThinVec::new();
+    let mut current_declarator = Some(declarator);
+
     loop {
         let start_span = trx.parser.current_token_span_or_empty();
-        let declarator = super::declarator::parse_declarator(trx.parser)?;
+        let declarator = if let Some(d) = current_declarator.take() {
+            d
+        } else {
+            super::declarator::parse_declarator(trx.parser)?
+        };
 
         let initializer = if trx.parser.accept(TokenKind::Assign).is_some() {
             Some(super::declarations::parse_initializer(trx.parser)?)
@@ -160,13 +176,13 @@ pub(crate) fn parse_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErro
     Ok(node)
 }
 
-fn parse_function_definition(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let start_loc = parser.current_token()?.span.start();
-    let dummy = parser.push_dummy();
-
-    let specifiers = parse_decl_specs(parser)?;
-    let declarator = super::declarator::parse_declarator(parser)?;
-
+fn parse_function_definition_tail(
+    parser: &mut Parser,
+    specifiers: ThinVec<ParsedDeclSpec>,
+    declarator: DeclaratorRef,
+    start_loc: SourceLoc,
+    dummy: ParsedNodeRef,
+) -> Result<ParsedNodeRef, ParseError> {
     parser.type_context.push_scope();
 
     if let Some(range) = super::declarator::get_declarator_params(&parser.ast.parsed_types, declarator) {
@@ -220,18 +236,11 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
             continue;
         }
 
-        let initial_idx = parser.current_idx;
-        match parse_decl(parser) {
+        match parse_decl(parser, true) {
             Ok(declaration) => top_level_declarations.push(declaration),
-            Err(_) => {
-                parser.current_idx = initial_idx;
-                match parse_function_definition(parser) {
-                    Ok(func_def) => top_level_declarations.push(func_def),
-                    Err(e) => {
-                        parser.diag.report(e);
-                        parser.synchronize();
-                    }
-                }
+            Err(e) => {
+                parser.diag.report(e);
+                parser.synchronize();
             }
         }
     }

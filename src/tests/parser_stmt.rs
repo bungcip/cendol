@@ -241,7 +241,7 @@ fn test_ambiguous_compound_statement_with_typedef() {
     let source = "typedef int T; { T x; }";
     let (ast, stmt_result) = setup_source(source, |parser| {
         // Parse the typedef first
-        let _ = declarations::parse_decl(parser).unwrap();
+        let _ = declarations::parse_decl(parser, false).unwrap();
         // Then parse the compound statement
         parse_compound_statement(parser)
     });

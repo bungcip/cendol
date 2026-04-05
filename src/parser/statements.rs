@@ -63,7 +63,7 @@ fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef,
         let mut decl_error = None;
         if parser.starts_declaration() {
             let trx = parser.start_transaction();
-            match super::declarations::parse_decl(trx.parser) {
+            match super::declarations::parse_decl(trx.parser, false) {
                 Ok(decl) => {
                     items.push(decl);
                     trx.commit();
@@ -156,7 +156,7 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError>
     let init = if parser.accept(TokenKind::Semicolon).is_some() {
         None
     } else if parser.starts_declaration() {
-        Some(super::declarations::parse_decl(parser)?)
+        Some(super::declarations::parse_decl(parser, false)?)
     } else {
         let expr = parser.parse_expr_min()?;
         parser.expect(TokenKind::Semicolon)?;

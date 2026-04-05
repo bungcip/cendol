@@ -565,7 +565,7 @@ pub(crate) fn setup_declaration_with_std(source: &str, std: crate::lang_options:
 }
 
 pub(crate) fn setup_declaration_with_errors(source: &str) -> ParseError {
-    let (_, decl_result) = setup_source(source, declarations::parse_decl);
+    let (_, decl_result) = setup_source(source, |p| declarations::parse_decl(p, false));
     match decl_result {
         Ok(_) => panic!("Expected parse error"),
         Err(e) => e,

@@ -161,6 +161,13 @@ fn test_parser_errors() {
         ("void foo() { (int struct S { int x; }) 0; }", "single type specifier"),
         // E. Hex float validation (lexical error in constant parsing)
         ("void foo() { double f = 0x1.0p; }", "Unknown"),
+        // F. Coverage for specific "expected" messages in parse_decl
+        (
+            "void foo() { struct S { int x; } 123; }",
+            "Expected ';' after struct/union definition",
+        ),
+        ("void foo() { enum E { A } 123; }", "Expected ';' after enum definition"),
+        ("void foo() { extern 123; }", "Expected type specifiers"),
     ];
 
     for (source, message) in cases {

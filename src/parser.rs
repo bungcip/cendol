@@ -207,18 +207,29 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Expect a specific token kind, consume it if found
     fn expect(&mut self, expected: TokenKind) -> Result<Token, ParseError> {
-        let token = self.current_token()?;
-        if token.kind == expected {
-            self.advance();
-            Ok(token)
-        } else {
-            Err(ParseError {
-                span: token.span,
+        match self.current_token() {
+            Ok(token) => {
+                if token.kind == expected {
+                    self.advance();
+                    Ok(token)
+                } else {
+                    Err(ParseError {
+                        span: token.span,
+                        kind: ParseErrorKind::UnexpectedToken {
+                            expected: expected.display(),
+                            found: token.kind,
+                        },
+                    })
+                }
+            }
+            Err(e) if matches!(e.kind, ParseErrorKind::UnexpectedEof) => Err(ParseError {
+                span: e.span,
                 kind: ParseErrorKind::UnexpectedToken {
                     expected: expected.display(),
-                    found: token.kind,
+                    found: TokenKind::EndOfFile,
                 },
-            })
+            }),
+            Err(e) => Err(e),
         }
     }
 

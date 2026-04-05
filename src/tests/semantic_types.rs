@@ -590,7 +590,7 @@ fn test_type_registry_display_builtins() {
         (BuiltinType::Double, "double"),
         (BuiltinType::LongDouble, "long double"),
         (BuiltinType::Signed, "signed"),
-        (BuiltinType::VaList, "__builtin_va_list"),
+        (BuiltinType::VaList, "__builtin_va_list[1]"),
         (BuiltinType::Complex, "_Complex (marker)"),
     ];
 

@@ -503,6 +503,7 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) is_inline: bool,
     pub(crate) is_noreturn: bool,
     pub(crate) alignment: Option<u32>,
+    pub(crate) has_auto: bool,
 }
 
 /// Finalize tentative definitions by converting them to defined state
@@ -2941,6 +2942,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
         }
 
+        if info.is_typedef && info.has_auto {
+            self.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
+        }
+
         if info.alignment.is_some() && info.storage == Some(StorageClass::Register) {
             self.report_error(
                 span,
@@ -2984,6 +2989,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             self.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
                         }
                         info.is_thread_local = true;
+                    } else if *sc == StorageClass::Auto {
+                        info.has_auto = true;
+                        if self.lang_opts.c_standard < crate::lang_options::CStandard::C23 {
+                            if info.storage.is_some() {
+                                self.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
+                            }
+                            info.storage = Some(StorageClass::Auto);
+                        }
                     } else {
                         if info.storage.is_some() {
                             self.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
@@ -3029,6 +3042,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     self.registry.complex_type(self.registry.type_double),
                 ));
             }
+        } else if info.has_auto && self.lang_opts.c_standard >= crate::lang_options::CStandard::C23 {
+            info.base_type = Some(QualType::unqualified(
+                self.registry.alloc(Type::new(TypeKind::AutoType)),
+            ));
         }
 
         self.validate_specifier_combinations(&info, span);

@@ -533,6 +533,10 @@ pub(crate) fn is_keyword(symbol: StringId, std: crate::lang_options::CStandard) 
             TokenKind::StaticAssert if symbol.as_str() == "static_assert" => return None,
             TokenKind::Nullptr | TokenKind::True | TokenKind::False => return None,
             TokenKind::TypeofUnqual if symbol.as_str() == "typeof_unqual" => return None,
+            TokenKind::Bool if symbol.as_str() == "bool" => return None,
+            TokenKind::Alignas if symbol.as_str() == "alignas" => return None,
+            TokenKind::Alignof if symbol.as_str() == "alignof" => return None,
+            TokenKind::ThreadLocal if symbol.as_str() == "thread_local" => return None,
             _ => {}
         }
     }
@@ -586,9 +590,13 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("while"), TokenKind::While);
         m.insert(StringId::new("__auto_type"), TokenKind::AutoType);
         m.insert(StringId::new("__auto_type__"), TokenKind::AutoType);
+        m.insert(StringId::new("bool"), TokenKind::Bool);
         m.insert(StringId::new("nullptr"), TokenKind::Nullptr);
         m.insert(StringId::new("true"), TokenKind::True);
         m.insert(StringId::new("false"), TokenKind::False);
+        m.insert(StringId::new("alignas"), TokenKind::Alignas);
+        m.insert(StringId::new("alignof"), TokenKind::Alignof);
+        m.insert(StringId::new("thread_local"), TokenKind::ThreadLocal);
         m.insert(StringId::new("__real__"), TokenKind::Real);
         m.insert(StringId::new("__builtin_real"), TokenKind::Real);
         m.insert(StringId::new("__imag__"), TokenKind::Imag);

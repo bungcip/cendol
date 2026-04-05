@@ -1658,18 +1658,14 @@ impl<'a> SemanticAnalyzer<'a> {
         let task = {
             let type_info = self.registry.get(target_qt.ty());
             match &type_info.kind {
-                TypeKind::Record { members, is_union, .. } => {
-                    TypeAnalysisTask::Record(Arc::clone(members), *is_union)
-                }
+                TypeKind::Record { members, is_union, .. } => TypeAnalysisTask::Record(Arc::clone(members), *is_union),
                 TypeKind::Array { element_type, size, .. } => TypeAnalysisTask::Array(*element_type, *size),
                 _ => TypeAnalysisTask::None,
             }
         };
 
         match task {
-            TypeAnalysisTask::Record(members, is_union) => {
-                self.visit_record_init(list, target_qt, &members, is_union)
-            }
+            TypeAnalysisTask::Record(members, is_union) => self.visit_record_init(list, target_qt, &members, is_union),
             TypeAnalysisTask::Array(element_type, size) => self.visit_array_init(list, target_qt, element_type, &size),
             _ => {
                 for item in list.init_start.range(list.init_len) {
@@ -1860,9 +1856,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let task = {
             let type_info = self.registry.get(target_qt.ty());
             match &type_info.kind {
-                TypeKind::Record { members, is_union, .. } => {
-                    TypeAnalysisTask::Record(Arc::clone(members), *is_union)
-                }
+                TypeKind::Record { members, is_union, .. } => TypeAnalysisTask::Record(Arc::clone(members), *is_union),
                 TypeKind::Array { element_type, size, .. } => TypeAnalysisTask::Array(*element_type, *size),
                 _ => TypeAnalysisTask::None,
             }
@@ -1944,9 +1938,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let task = {
             let type_info = self.registry.get(target_qt.ty());
             match &type_info.kind {
-                TypeKind::Record { members, is_union, .. } => {
-                    TypeAnalysisTask::Record(Arc::clone(members), *is_union)
-                }
+                TypeKind::Record { members, is_union, .. } => TypeAnalysisTask::Record(Arc::clone(members), *is_union),
                 TypeKind::Array { element_type, size, .. } => TypeAnalysisTask::Array(*element_type, *size),
                 _ => TypeAnalysisTask::None,
             }

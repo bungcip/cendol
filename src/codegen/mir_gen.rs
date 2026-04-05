@@ -243,7 +243,11 @@ impl<'a> MirGen<'a> {
                         ..
                     } = &type_info.kind
                     {
-                        fn_data = Some((*return_type, parameters.iter().map(|p| p.param_type).collect::<Vec<_>>(), *is_variadic));
+                        fn_data = Some((
+                            *return_type,
+                            parameters.iter().map(|p| p.param_type).collect::<Vec<_>>(),
+                            *is_variadic,
+                        ));
                     }
                 }
 

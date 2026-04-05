@@ -8,10 +8,10 @@ use crate::mir::{
     MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
 };
 
+use crate::ast;
 use crate::semantic::{
-    ArraySizeType, Conversion, QualType, SymbolKind, SymbolRef, TypeKind, TypeQualifiers, ValueCategory,
+    ArraySizeType, Conversion, QualType, SymbolKind, SymbolRef, TypeKind, TypeQualifiers, TypeRef, ValueCategory,
 };
-use crate::{ast, semantic};
 
 impl<'a> MirGen<'a> {
     fn visit_expression_as_place(&mut self, expr: NodeRef) -> Place {
@@ -157,7 +157,7 @@ impl<'a> MirGen<'a> {
                 self.create_dummy_operand()
             }
             NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(need_value, expr),
-            NodeKind::GenericSelection(gs) => self.visit_generic_selection(gs, need_value, expr),
+            NodeKind::GenericSelection(..) => self.visit_generic_selection(need_value, expr),
             NodeKind::StatementExpr(stmt, result_expr) => self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value),
             NodeKind::Cast(_ty, operand) => self.visit_cast(*operand, mir_ty),
             NodeKind::CompoundLiteral(ty, init) => self.visit_compound_literal(*ty, *init),
@@ -398,7 +398,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(crate) fn visit_type_query(&mut self, ty: semantic::TypeRef, is_size: bool) -> Operand {
+    pub(crate) fn visit_type_query(&mut self, ty: TypeRef, is_size: bool) -> Operand {
         if self.registry.is_variably_modified(ty) {
             if is_size {
                 // sizeof(VLA) — compute dynamically
@@ -422,7 +422,7 @@ impl<'a> MirGen<'a> {
     }
 
     /// Compute sizeof(VLA) at runtime.
-    fn visit_sizeof_vla(&mut self, ty: semantic::TypeRef) -> Operand {
+    fn visit_sizeof_vla(&mut self, ty: TypeRef) -> Operand {
         let type_info = self.registry.get(ty);
         if let TypeKind::Array {
             element_type,
@@ -457,32 +457,13 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_generic_selection(
-        &mut self,
-        _gs: &ast::nodes::GenericSelection,
-        need_value: bool,
-        node: NodeRef,
-    ) -> Operand {
-        let expr_to_lower = *self
-            .ast
-            .semantic_info
-            .as_ref()
-            .unwrap()
-            .generic_selections
-            .get(&node.index())
-            .expect("Generic selection failed (should be caught by Analyzer)");
+    fn visit_generic_selection(&mut self, need_value: bool, node: NodeRef) -> Operand {
+        let expr_to_lower = self.ast.get_generic_selection(node);
         self.visit_expression(expr_to_lower, need_value)
     }
 
     fn visit_builtin_choose_expr(&mut self, need_value: bool, node: NodeRef) -> Operand {
-        let expr_to_lower = *self
-            .ast
-            .semantic_info
-            .as_ref()
-            .unwrap()
-            .choose_expressions
-            .get(&node.index())
-            .expect("__builtin_choose_expr failed (should be caught by Analyzer)");
+        let expr_to_lower = self.ast.get_choose_expression(node);
         self.visit_expression(expr_to_lower, need_value)
     }
 
@@ -1266,7 +1247,7 @@ impl<'a> MirGen<'a> {
         arg_operands
     }
 
-    fn find_member_path(&self, record_ty: semantic::TypeRef, field_name: NameId) -> Option<Vec<usize>> {
+    fn find_member_path(&self, record_ty: TypeRef, field_name: NameId) -> Option<Vec<usize>> {
         let mut base_index = 0;
         let ty = self.registry.get(record_ty);
         if let Some((_, idx)) = ty.find_member_recursive(self.registry, field_name, &mut base_index) {

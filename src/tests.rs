@@ -52,6 +52,7 @@ pub mod semantic_unary_coverage;
 pub mod semantic_validation;
 
 pub mod parser_decl;
+pub mod parser_declarator_coverage;
 pub mod parser_errors;
 pub mod parser_expr;
 pub mod parser_lexical;

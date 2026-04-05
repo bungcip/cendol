@@ -168,6 +168,12 @@ fn test_parser_errors() {
         ),
         ("void foo() { enum E { A } 123; }", "Expected ';' after enum definition"),
         ("void foo() { extern 123; }", "Expected type specifiers"),
+        ("void f(int __attribute__ noreturn);", "expected ), found Int"),
+        ("int __attribute__((noreturn))", "Expected type specifiers"),
+        ("int ", "Expected declarator or identifier after type specifier"),
+        ("int a[10 ;", "expected ], found Semicolon"),
+        ("int f(int ( * );", "expected ), found Semicolon"),
+        ("int f(int ( * [ ] );", "expected ), found Semicolon"),
     ];
 
     for (source, message) in cases {

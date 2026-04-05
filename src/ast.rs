@@ -180,4 +180,26 @@ impl Ast {
     pub(crate) fn get_value_category(&self, node: NodeRef) -> Option<ValueCategory> {
         self.semantic_info.as_ref()?.value_categories.get(node.index()).copied()
     }
+
+    /// get selected expression of generic selection
+    pub(crate) fn get_generic_selection(&self, node: NodeRef) -> NodeRef {
+        self.semantic_info
+            .as_ref()
+            .unwrap()
+            .generic_selections
+            .get(&node.index())
+            .copied()
+            .expect("Generic selection failed (should be caught by Analyzer)")
+    }
+
+    /// get selected branch of choose expression
+    pub(crate) fn get_choose_expression(&self, node: NodeRef) -> NodeRef {
+        self.semantic_info
+            .as_ref()
+            .unwrap()
+            .choose_expressions
+            .get(&node.index())
+            .copied()
+            .expect("Choose expression failed (should be caught by Analyzer)")
+    }
 }

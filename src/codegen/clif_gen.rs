@@ -1117,12 +1117,16 @@ fn emit_x87_to_f64(addr: Value, builder: &mut FunctionBuilder) -> Value {
 
     let exp_x87 = builder.ins().band_imm(hi, 0x7FFF);
     // f64_exp = exp_x87 - 16383 + 1023 = exp_x87 - 15360
-    // We use saturating logic for extreme values
-    let exp_f64 = builder.ins().iadd_imm(exp_x87, -15360);
+    // Handle Special Values (NaN, Inf) where exp_x87 == 0x7FFF
+    let is_special = builder.ins().icmp_imm(IntCC::Equal, exp_x87, 0x7FFF);
+    let exp_f64_normal = builder.ins().iadd_imm(exp_x87, -15360);
+    let exp_f64_special = builder.ins().iconst(types::I64, 0x7FF);
+    let exp_f64 = builder.ins().select(is_special, exp_f64_special, exp_f64_normal);
     let exp_f64_clamped = builder.ins().ishl_imm(exp_f64, 52);
 
     // Mantissa: drop the explicit integer bit (bit 63) and shift to 52 bits
-    let mant_f64 = builder.ins().ushr_imm(lo, 11);
+    let mant_x87_no_int = builder.ins().band_imm(lo, 0x7FFF_FFFF_FFFF_FFFF);
+    let mant_f64 = builder.ins().ushr_imm(mant_x87_no_int, 11);
     let mant_f64_masked = builder.ins().band_imm(mant_f64, 0x000F_FFFF_FFFF_FFFF);
 
     let res_i64 = builder.ins().bor(sign_f64, exp_f64_clamped);
@@ -1146,7 +1150,11 @@ fn emit_f64_to_x87(val: Value, addr: Value, builder: &mut FunctionBuilder) {
     let mant_f64 = builder.ins().band_imm(val_i64, 0x000F_FFFF_FFFF_FFFF);
 
     // x87_exp = exp_f64 - 1023 + 16383 = exp_f64 + 15360
-    let exp_x87 = builder.ins().iadd_imm(exp_f64, 15360);
+    // Handle Special Values (NaN, Inf) where exp_f64 == 0x7FF
+    let is_special = builder.ins().icmp_imm(IntCC::Equal, exp_f64, 0x7FF);
+    let exp_x87_normal = builder.ins().iadd_imm(exp_f64, 15360);
+    let exp_x87_special = builder.ins().iconst(types::I64, 0x7FFF);
+    let exp_x87 = builder.ins().select(is_special, exp_x87_special, exp_x87_normal);
     let hi = builder.ins().ishl_imm(sign, 15);
     let hi = builder.ins().bor(hi, exp_x87);
 
@@ -1350,7 +1358,11 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
             let inner_val = emit_operand(inner_operand, ctx, inner_type);
 
             let mir_type = ctx.mir.get_type(*type_id);
-            let target_type = lower_type(mir_type).expect("Cannot cast to void type");
+            let target_type = if matches!(mir_type, MirType::F80 | MirType::F128) {
+                types::F64
+            } else {
+                lower_type(mir_type).expect("Cannot cast to void type")
+            };
 
             let converted = if matches!(mir_type, MirType::Bool) && (inner_type.is_int() || inner_type.is_float()) {
                 let zero = if inner_type.is_int() {

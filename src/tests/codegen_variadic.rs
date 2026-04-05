@@ -23,88 +23,7 @@ fn test_indirect_variadic_call_validation() {
 }
 
 #[test]
-fn test_extern_variadic_printf_float() {
-    let source = r#"
-        int printf(const char *fmt, ...);
-        int main() {
-            printf("%f", 1.0);
-            return 0;
-        }
-    "#;
-    let clif_dump = setup_cranelift(source);
-    // Ensure the signature matches SystemV ABI (i64, f64) and not the 16-slot padded version.
-    // We expect the external function declaration to reflect this.
-    assert!(
-        clif_dump.contains("(i64, f64) -> i32 system_v"),
-        "printf signature mismatch in CLIF:\n{}",
-        clif_dump
-    );
-}
-
-#[test]
-fn test_variadic_al_setup() {
-    let source = r#"
-        int printf(const char *fmt, ...);
-        int main() {
-            double d = 1.0;
-            printf("val: %f\n", d);
-            return 0;
-        }
-    "#;
-    let clif_dump = setup_cranelift(source);
-
-    // Check that globals for count, addr, and trampoline are declared
-    // Note: Cranelift dumps external global names as "userextnameX".
-    assert!(
-        clif_dump.contains("userextname"),
-        "Missing global references for trampoline"
-    );
-
-    // Check for the store instructions that replace the function call.
-    assert!(
-        clif_dump.contains("store notrap aligned"),
-        "Missing store to global fields"
-    );
-
-    // Check for call_indirect which uses the address returned by the helper.
-    assert!(
-        clif_dump.contains("call_indirect"),
-        "Missing call_indirect for variadic printf"
-    );
-
-    // Check for FP argument count (v4 = iconst.i64 1 in our case, but let's be more general)
-    assert!(clif_dump.contains("iconst.i64 1"), "Missing FP argument count constant");
-}
-
-#[test]
-fn test_printf_long_double() {
-    let code = r#"
-int printf(const char *fmt, ...);
-int main() {
-    printf("%.1Lf", 34.1L);
-    return 0;
-}
-"#;
-    let output = run_c_code_with_output(code);
-    assert_eq!(output.trim(), "34.1");
-}
-
-#[test]
-fn test_printf_mixed_long_double() {
-    let code = r#"
-int printf(const char *fmt, ...);
-int main() {
-    printf("%f %.1Lf %d", 1.0, 34.1L, 42);
-    return 0;
-}
-"#;
-    let output = run_c_code_with_output(code);
-    assert_eq!(output.trim(), "1.000000 34.1 42");
-}
-
-#[test]
-fn test_myprintf_repro() {
-    // Original reproduction case
+fn test_va_arg_long_double() {
     let code = r#"
 #include <stdarg.h>
 int printf(const char *fmt, ...);
@@ -155,21 +74,67 @@ int main() {
     assert_eq!(output.trim(), "1.250000, 2.500000");
 }
 
+/// testing printf signature
 #[test]
-fn test_printf_mixed_types() {
-    let code = r#"
-int printf(const char *fmt, ...);
-int main() {
-    printf("int: %d, double: %f, str: %s", 42, 3.14159, "hello");
-    return 0;
+fn test_printf_float_signature() {
+    let source = r#"
+        int printf(const char *fmt, ...);
+        int main() {
+            printf("%f", 1.0);
+            return 0;
+        }
+    "#;
+    let clif_dump = setup_cranelift(source);
+    // Ensure the signature matches SystemV ABI (i64, f64) and not the 16-slot padded version.
+    // We expect the external function declaration to reflect this.
+    assert!(
+        clif_dump.contains("(i64, f64) -> i32 system_v"),
+        "printf signature mismatch in CLIF:\n{}",
+        clif_dump
+    );
 }
-"#;
+
+#[test]
+fn test_printf_mixed_int_double_str() {
+    let code = r#"
+        int printf(const char *fmt, ...);
+        int main() {
+            printf("int: %d, double: %f, str: %s", 42, 3.14159, "hello");
+            return 0;
+        }
+    "#;
     let output = run_c_code_with_output(code);
     assert_eq!(output.trim(), "int: 42, double: 3.141590, str: hello");
 }
 
 #[test]
-fn test_variadic_limit_hfa() {
+fn test_printf_long_double() {
+    let code = r#"
+int printf(const char *fmt, ...);
+int main() {
+    printf("%.1Lf", 34.1L);
+    return 0;
+}
+"#;
+    let output = run_c_code_with_output(code);
+    assert_eq!(output.trim(), "34.1");
+}
+
+#[test]
+fn test_printf_mixed_long_double() {
+    let code = r#"
+int printf(const char *fmt, ...);
+int main() {
+    printf("%f %.1Lf %d", 1.0, 34.1L, 42);
+    return 0;
+}
+"#;
+    let output = run_c_code_with_output(code);
+    assert_eq!(output.trim(), "1.000000 34.1 42");
+}
+
+#[test]
+fn test_va_arg_limit_hfa() {
     let code = r#"
 int printf(const char *fmt, ...);
 

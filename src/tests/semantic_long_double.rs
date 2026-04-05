@@ -1,4 +1,5 @@
 use crate::driver::artifact::CompilePhase;
+use crate::tests::codegen_common::run_c_code_exit_status;
 use crate::tests::test_utils::run_pass;
 
 #[test]
@@ -59,4 +60,24 @@ fn test_long_double_assignment_lowering() {
         "#,
         CompilePhase::Cranelift,
     );
+}
+
+#[test]
+fn test_long_double_nan_execution() {
+    let source = r#"
+        int main() {
+            long double nan = 0.0 / 0.0;
+            // NaN != NaN is true, NaN == NaN is false
+            if (nan == nan) return 1;
+            if (!(nan != nan)) return 2;
+            
+            // NaN compared to other values
+            if (nan == 0.0L) return 3;
+            if (!(nan != 0.0L)) return 4;
+            
+            return 0;
+        }
+    "#;
+    let status = run_c_code_exit_status(source);
+    assert_eq!(status, 0);
 }

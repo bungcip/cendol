@@ -42,7 +42,7 @@ impl CompilerDriver {
     }
 
     /// Create a new compiler driver from configuration
-    pub(crate) fn from_config(config: CompileConfig) -> Self {
+    pub fn from_config(config: CompileConfig) -> Self {
         let mut diagnostics = DiagnosticEngine::from_warnings(&config.warnings);
         // Default to one error report as requested, or use the configured limit
         diagnostics.set_error_limit(config.fmax_errors.unwrap_or(20));
@@ -72,7 +72,8 @@ impl CompilerDriver {
         }
     }
 
-    pub(crate) fn run_pipeline(&mut self, stop_after: CompilePhase) -> Result<PipelineOutputs, PipelineError> {
+    /// Run the compilation pipeline for all input files
+    pub fn run_pipeline(&mut self, stop_after: CompilePhase) -> Result<PipelineOutputs, PipelineError> {
         let mut outputs = PipelineOutputs {
             units: IndexMap::new(),
             external_object_files: Vec::new(),
@@ -603,7 +604,7 @@ pub enum DriverError {
 
 /// Error that will stop the compilation pipeline
 #[derive(Debug)]
-pub(crate) enum PipelineError {
+pub enum PipelineError {
     Fatal,
     IoError(std::io::Error),
 }

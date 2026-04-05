@@ -32,9 +32,14 @@ tempfile = "3.26"
 insta = { version = "1.40", features = ["yaml", "serde"] }
 serde_yaml = "0.9"
 libc = "0.2"
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [features]
 insta = []
 
 [lints.clippy]
 bool_comparison = "allow" ## reason: `== false` is more readable in some cases
+
+[[bench]]
+name = "compiler_benches"
+harness = false

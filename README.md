@@ -2,13 +2,13 @@
 
 [![codecov](https://codecov.io/gh/bungcip/cendol/graph/badge.svg)](https://codecov.io/gh/bungcip/cendol)
 
-Cendol is a C11 compiler implemented in Rust. It is a learning project to understand the process of building a compiler from scratch, focusing on high-performance compiler architecture and comprehensive C11 standard compliance.
+Cendol is a C23 compiler implemented in Rust. It is a project to understand the process of building a compiler from scratch, focusing on high-performance compiler architecture and comprehensive C23 standard compliance.
 
 ## Features
 
-* **Full C11 Preprocessor**: Complete preprocessor with macro expansion, conditional compilation, file inclusion, and built-in macros (`__FILE__`, `__LINE__`, etc.)
-* **Lexer**: Tokenization of C11 source code with proper handling of literals, keywords, and operators
-* **Parser**: Comprehensive C11 syntax parsing using Pratt parsing for expressions and recursive descent for statements
+* **Full C23 Preprocessor**: Complete preprocessor with macro expansion, conditional compilation, file inclusion, and built-in macros (`__FILE__`, `__LINE__`, etc.)
+* **Lexer**: Tokenization of C23 source code with proper handling of literals, keywords, and operators
+* **Parser**: Comprehensive C23 syntax parsing using Pratt parsing for expressions and recursive descent for statements
 * **Semantic Analysis**: Type checking, symbol resolution, and semantic validation
 * **Code Generation**: Compiles to native object code using Cranelift backend
 * **Linker Integration**: Automatic invocation of system linker (clang) to produce executables
@@ -16,9 +16,10 @@ Cendol is a C11 compiler implemented in Rust. It is a learning project to unders
 
 ## Limitations
 
-* **No Trigraph Support**: Trigraphs (three-character sequences like `??=`, `??<`, etc.) are not supported for simplicity and modern C usage.
+* **No Trigraph Support**: Trigraphs (three-character sequences like `??=`, `??<`, etc.) are not supported. Note: Trigraphs were officially removed in C23.
 * **No Digraph Support**: Digraphs (two-character sequences like `<:`, `:>`, `<%`, `%>`, `%:`, `%:%:`) are not supported. This compiler targets modern C and does not implement legacy digraph tokens.
-* **No K&R Function Declarations**: Functions declared with empty parameter list (e.g., `int foo()`) are treated as having no parameters (equivalent to `int foo(void)`), not as unprototyped functions that accept any number of arguments. Calling such functions with arguments will result in a semantic error. This removes support for K&R (Kernighan & Ritchie) no-prototype semantics.
+* **No K&R Function Declarations**: In compliance with C23, functions declared with an empty parameter list (e.g., `int foo()`) are treated as having no parameters (equivalent to `int foo(void)`).
+* **Limited Inline Assembly Support**: Inline assembly (using `asm` or `__asm__` keywords) has only limited support depending on the Cranelift backend capabilities.
 
 ## Architecture
 
@@ -99,7 +100,7 @@ Comprehensive design documentation is available in the [`design-document/`](desi
 
 This is a learning project, but contributions are welcome! Areas of interest include:
 
-* Additional C11 language features
+* Additional C23 language features
 * Performance optimizations
 * Testing and bug fixes
 * Documentation improvements

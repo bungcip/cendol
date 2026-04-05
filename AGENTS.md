@@ -1,10 +1,10 @@
 # AGENTS.md — Cendol Compiler Conventions
 
-This document describes the coding conventions and patterns used in the **cendol** C11 compiler so that AI agents can contribute effectively.
+This document describes the coding conventions and patterns used in the **cendol** C23 compiler so that AI agents can contribute effectively.
 
 ## Project Overview
 
-Cendol is a C11 compiler written in Rust (2024 edition) that uses **Cranelift** as its code-generation backend. It follows a traditional multi-phase architecture:
+Cendol is a C23 compiler written in Rust (2024 edition) that uses **Cranelift** as its code-generation backend. It follows a traditional multi-phase architecture:
 
 ```
 C source → Preprocessor → Lexer → Parser → Semantic Analysis → MIR → Cranelift IR → Object Code → Linker
@@ -31,27 +31,27 @@ src/
 
 ### Key Dependencies
 
-| Crate | Purpose |
-|---|---|
-| `cranelift` / `cranelift-module` / `cranelift-object` | Native code generation |
-| `clap` | CLI argument parsing |
-| `insta` | Snapshot testing |
-| `annotate-snippets` | Rich diagnostic rendering |
-| `symbol_table` | Interned strings (`NameId` / `GlobalSymbol`) |
-| `bumpalo` | Arena allocation |
-| `hashbrown` / `indexmap` | Hash maps with serde |
-| `thiserror` | Error derive macros |
-| `bitflags` | Type qualifiers, flags |
-| `smallvec` / `thin-vec` | Small-buffer-optimized collections |
+| Crate                                                 | Purpose                                      |
+| ----------------------------------------------------- | -------------------------------------------- |
+| `cranelift` / `cranelift-module` / `cranelift-object` | Native code generation                       |
+| `clap`                                                | CLI argument parsing                         |
+| `insta`                                               | Snapshot testing                             |
+| `annotate-snippets`                                   | Rich diagnostic rendering                    |
+| `symbol_table`                                        | Interned strings (`NameId` / `GlobalSymbol`) |
+| `bumpalo`                                             | Arena allocation                             |
+| `hashbrown` / `indexmap`                              | Hash maps with serde                         |
+| `thiserror`                                           | Error derive macros                          |
+| `bitflags`                                            | Type qualifiers, flags                       |
+| `smallvec` / `thin-vec`                               | Small-buffer-optimized collections           |
 
 ## Formatting & Linting
 
-| Setting | Value | File |
-|---|---|---|
-| Max line width | **120** | `rustfmt.toml` |
-| Newline style | Unix | `rustfmt.toml` |
-| Max function args (clippy) | **8** | `clippy.toml` |
-| `bool_comparison` lint | **allowed** | `Cargo.toml` (`== false` can be more readable) |
+| Setting                    | Value       | File                                           |
+| -------------------------- | ----------- | ---------------------------------------------- |
+| Max line width             | **120**     | `rustfmt.toml`                                 |
+| Newline style              | Unix        | `rustfmt.toml`                                 |
+| Max function args (clippy) | **8**       | `clippy.toml`                                  |
+| `bool_comparison` lint     | **allowed** | `Cargo.toml` (`== false` can be more readable) |
 
 Run `cargo fmt` before committing. Run `cargo clippy` to check for lint issues.
 
@@ -123,15 +123,15 @@ pub struct Ast {
 
 ### Key Differences
 
-| Aspect | `ParsedAst` | `Ast` |
-|---|---|---|
-| Produced by | Parser | Semantic Lowering |
-| Identifiers | `Ident(NameId)` | `Ident(NameId, SymbolRef)` |
-| Declarations | `Declaration(ParsedDeclarationData)` | `VarDecl`, `FunctionDecl`, `TypedefDecl`, etc. |
-| Types | `ParsedType` (syntactic) | `QualType` / `TypeRef` (resolved) |
-| Children storage | `Vec<ParsedNodeRef>` | `NodeRef` + length (flattened) |
-| Node data | Heap-allocated (`Vec`, `Box`, `ThinVec`) | `Copy` structs (cache-friendly) |
-| Scopes | None | `ScopeId` on scope-bearing nodes |
+| Aspect           | `ParsedAst`                              | `Ast`                                          |
+| ---------------- | ---------------------------------------- | ---------------------------------------------- |
+| Produced by      | Parser                                   | Semantic Lowering                              |
+| Identifiers      | `Ident(NameId)`                          | `Ident(NameId, SymbolRef)`                     |
+| Declarations     | `Declaration(ParsedDeclarationData)`     | `VarDecl`, `FunctionDecl`, `TypedefDecl`, etc. |
+| Types            | `ParsedType` (syntactic)                 | `QualType` / `TypeRef` (resolved)              |
+| Children storage | `Vec<ParsedNodeRef>`                     | `NodeRef` + length (flattened)                 |
+| Node data        | Heap-allocated (`Vec`, `Box`, `ThinVec`) | `Copy` structs (cache-friendly)                |
+| Scopes           | None                                     | `ScopeId` on scope-bearing nodes               |
 
 ### Semantic Lowering (`src/semantic/lowering.rs`)
 
@@ -142,7 +142,6 @@ The `LowerCtx` struct orchestrates the conversion from `ParsedAst` → `Ast`:
 - **Scope Construction**: Creates and manages `ScopeId` for block/function/file scopes.
 - **Declarator Processing**: Recursively applies `ParsedDeclarator` chains (pointers, arrays, functions) to build final types.
 - **Constraint Checking**: Enforces C11 rules on storage classes, qualifiers, and declarations.
-
 
 ## Error Handling
 
@@ -182,15 +181,15 @@ _ => unreachable!("ICE: Node {:?} does not have a scope", self.get_kind(node_ref
 
 ## Naming Conventions
 
-| What | Convention | Example |
-|---|---|---|
-| Types/Structs | PascalCase | `SemanticAnalyzer`, `MirFunction` |
-| Functions/methods | snake_case | `visit_node`, `report_error` |
-| Enum variants | PascalCase | `SemanticErrorKind::NotAnLvalue` |
-| Constants | SCREAMING_SNAKE_CASE or PascalCase (for const items in impl blocks) | `NodeRef::ROOT` |
-| Type aliases | PascalCase | `NameId`, `StringId` |
-| Test functions | `test_` prefix + descriptive name | `test_assignment_to_const` |
-| Test files | `<phase>_<feature>.rs` | `semantic_negative.rs`, `parser_expr.rs` |
+| What              | Convention                                                          | Example                                  |
+| ----------------- | ------------------------------------------------------------------- | ---------------------------------------- |
+| Types/Structs     | PascalCase                                                          | `SemanticAnalyzer`, `MirFunction`        |
+| Functions/methods | snake_case                                                          | `visit_node`, `report_error`             |
+| Enum variants     | PascalCase                                                          | `SemanticErrorKind::NotAnLvalue`         |
+| Constants         | SCREAMING_SNAKE_CASE or PascalCase (for const items in impl blocks) | `NodeRef::ROOT`                          |
+| Type aliases      | PascalCase                                                          | `NameId`, `StringId`                     |
+| Test functions    | `test_` prefix + descriptive name                                   | `test_assignment_to_const`               |
+| Test files        | `<phase>_<feature>.rs`                                              | `semantic_negative.rs`, `parser_expr.rs` |
 
 ## Semantic Analyzer Pattern
 
@@ -218,15 +217,15 @@ struct SemanticAnalyzer<'a> {
 
 Test files follow the pattern `<phase>_<topic>.rs`:
 
-| Prefix | Phase | Examples |
-|---|---|---|
-| `pp_` | Preprocessor | `pp_macros.rs`, `pp_conditionals.rs` |
-| `parser_` | Parser | `parser_expr.rs`, `parser_decl.rs` |
-| `semantic_` | Semantic analysis | `semantic_negative.rs`, `semantic_types.rs` |
-| `mir_` | MIR generation | `mir_validation.rs`, `mir_gen_sizeof.rs` |
-| `codegen_` | Code generation | `codegen_basics.rs`, `codegen_structs.rs` |
-| `driver_` | Driver/integration | `driver_ast_dumper.rs` |
-| `guardian_` | Constraint enforcement | `guardian_bitfield_constraints.rs` |
+| Prefix      | Phase                  | Examples                                    |
+| ----------- | ---------------------- | ------------------------------------------- |
+| `pp_`       | Preprocessor           | `pp_macros.rs`, `pp_conditionals.rs`        |
+| `parser_`   | Parser                 | `parser_expr.rs`, `parser_decl.rs`          |
+| `semantic_` | Semantic analysis      | `semantic_negative.rs`, `semantic_types.rs` |
+| `mir_`      | MIR generation         | `mir_validation.rs`, `mir_gen_sizeof.rs`    |
+| `codegen_`  | Code generation        | `codegen_basics.rs`, `codegen_structs.rs`   |
+| `driver_`   | Driver/integration     | `driver_ast_dumper.rs`                      |
+| `guardian_` | Constraint enforcement | `guardian_bitfield_constraints.rs`          |
 
 ### Test Registration
 
@@ -254,6 +253,12 @@ run_pass_with_diagnostic(source, CompilePhase::Mir, "discards qualifiers", 5, 13
 
 // Expect failure with diagnostic at specific line/col
 run_fail_with_diagnostic(source, CompilePhase::Mir, "message", line, col);
+
+// Expect compilation to succeed with a specific C standard
+run_pass_with_std(source, CompilePhase::Cranelift, CStandard::C23);
+
+// Expect compilation to fail with a specific C standard and message
+run_fail_with_message_and_std(source, "message", CStandard::C23);
 ```
 
 ### Semantic Test Helpers (`src/tests/semantic_common.rs`)
@@ -339,7 +344,6 @@ When writing tests, choose the minimum phase needed to validate your assertion.
 
 - `realworld_test.py` — Builds and tests real-world C projects (Lua, c-testsuite, libpng).
 
-
 ## Key Design Principles
 
 1. **Flattened data structures** — AST and MIR use index-based references, not tree pointers.
@@ -369,6 +373,30 @@ cargo test
 # With insta snapshot review
 cargo insta test
 
-# Real-world project tests
-python3 realworld_test.py
+# Real-world project tests (c-testsuite, lua, libpng, etc)
+python3 realworld_test.py <project_name>
 ```
+
+## Running Benchmarks
+
+Cendol uses **Criterion** for performance benchmarking. Benchmarks are located in the `benches/` directory.
+
+### Performance Tracking
+
+When implementing optimizations, use the `compiler_benches` suite to track performance changes in the preprocessor and parser.
+
+```bash
+# Run benchmarks (uses SQLite amalgamation as a heavy workload)
+cargo bench --bench compiler_benches
+```
+
+### Tips for Reliable Benchmarking
+
+1.  **Prepare Data**: Use the `prepare` subcommand to ensure source files are available:
+    ```bash
+    python3 realworld_test.py prepare sqlite
+    ```
+2.  **Quiet Environment**: Close heavy background applications (browsers, IDEs) to reduce system noise.
+3.  **Statistical Stability**: If results are noisy, increase the `sample_size` in `benches/compiler_benches.rs` (default is 30 for SQLite).
+4.  **Baseline Comparison**: Criterion automatically compares results against the last run. "Performance has improved/regressed" messages indicate statistical significance.
+5.  **Direct Execution**: Use `run_pipeline()` instead of `run()` in new benchmarks to avoid CLI/IO overhead.

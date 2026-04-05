@@ -63,13 +63,55 @@ def run_command(cmd, cwd=None):
         sys.exit(1)
 
 def print_usage():
-    print("Usage: ./realworld_test.py <nama-project>|clean|nuke")
+    print("Usage: ./realworld_test.py <nama-project>|clean|nuke|prepare")
     print("\nAvailable projects:")
     for name in PROJECTS:
         print(f"  - {name}")
     print("\nSubcommands:")
-    print("  clean    Runs 'make clean' (or equivalent) in each cloned project directory.")
-    print("  nuke     Removes the 'realworld' directory containing all cloned projects.")
+    print("  prepare <name>  Clones or downloads the project source without building.")
+    print("  clean           Runs 'make clean' (or equivalent) in each cloned project directory.")
+    print("  nuke            Removes the 'realworld' directory containing all cloned projects.")
+
+def prepare_project(project_name, realworld_dir):
+    if project_name not in PROJECTS:
+        print(f"Error: Project '{project_name}' not found.")
+        sys.exit(1)
+
+    config = PROJECTS[project_name]
+    project_dir = os.path.join(realworld_dir, project_name)
+
+    if not os.path.exists(realworld_dir):
+        os.makedirs(realworld_dir)
+
+    # 1. Clone/Download
+    if not os.path.exists(project_dir):
+        if "repo" in config:
+            print(f"Cloning {project_name}...")
+            run_command(["git", "clone", config["repo"], project_name], cwd=realworld_dir)
+        elif "download_url" in config:
+            print(f"Downloading {project_name}...")
+            zip_path = os.path.join(realworld_dir, f"{project_name}.zip")
+            urllib.request.urlretrieve(config["download_url"], zip_path)
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                zf.extractall(realworld_dir)
+            os.remove(zip_path)
+            # The zip extracts to a subdirectory, rename it
+            extracted = [d for d in os.listdir(realworld_dir) if d.startswith("sqlite-") and os.path.isdir(os.path.join(realworld_dir, d))]
+            if extracted:
+                os.rename(os.path.join(realworld_dir, extracted[0]), project_dir)
+    else:
+        if "repo" in config:
+            print(f"Updating {project_name}...")
+            run_command(["git", "pull"], cwd=project_dir)
+        else:
+            print(f"{project_name} already downloaded.")
+
+    # 2. Patching (Usually works by passing CC to make)
+    if "patch_cmd" in config:
+        print(f"Patching {project_name}...")
+        run_command(config["patch_cmd"], cwd=project_dir)
+    
+    return project_dir
 
 def main():
     if len(sys.argv) < 2:
@@ -103,47 +145,21 @@ def main():
                 run_command(config["clean_cmd"], cwd=p_dir)
         return
 
+    if project_name == "prepare":
+        if len(sys.argv) < 3:
+            print("Usage: ./realworld_test.py prepare <project-name>")
+            sys.exit(1)
+        prepare_project(sys.argv[2], realworld_dir)
+        return
+
     if project_name not in PROJECTS:
         print(f"Error: Project '{project_name}' not found.")
         print_usage()
         sys.exit(1)
 
+    project_dir = prepare_project(project_name, realworld_dir)
     config = PROJECTS[project_name]
-    project_dir = os.path.join(realworld_dir, project_name)
     cendol_bin = os.path.join(cendol_root, "target/debug/cendol")
-
-    if not os.path.exists(realworld_dir):
-        os.makedirs(realworld_dir)
-
-    # 1. Clone/Download
-    if not os.path.exists(project_dir):
-        if "repo" in config:
-            print(f"Cloning {project_name}...")
-            run_command(["git", "clone", config["repo"], project_name], cwd=realworld_dir)
-        elif "download_url" in config:
-            print(f"Downloading {project_name}...")
-            zip_path = os.path.join(realworld_dir, f"{project_name}.zip")
-            urllib.request.urlretrieve(config["download_url"], zip_path)
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                zf.extractall(realworld_dir)
-            os.remove(zip_path)
-            # The zip extracts to a subdirectory, rename it
-            extracted = [d for d in os.listdir(realworld_dir) if d.startswith("sqlite-") and os.path.isdir(os.path.join(realworld_dir, d))]
-            if extracted:
-                os.rename(os.path.join(realworld_dir, extracted[0]), project_dir)
-    else:
-        if "repo" in config:
-            print(f"Updating {project_name}...")
-            run_command(["git", "pull"], cwd=project_dir)
-        else:
-            print(f"{project_name} already downloaded.")
-
-    # 2. Patching (Usually works by passing CC to make)
-    # If specific patching is needed, it can be added here.
-    # For now, we'll just use the CC environment variable or pass it to make.
-    if "patch_cmd" in config:
-        print(f"Patching {project_name}...")
-        run_command(config["patch_cmd"], cwd=project_dir)
 
     # Ensure compiler is built
     print("Building cendol...")

@@ -266,7 +266,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, b
             Err(_) => {
                 parser.current_idx = spec_idx;
                 parser.diag.diagnostics.truncate(saved_diags);
-                thin_vec![ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Int)]
+                thin_vec![DeclSpec::TypeSpec(TypeSpec::Int)]
             }
         };
 
@@ -299,12 +299,12 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, b
         let mut alignment = None;
         for spec in &specifiers {
             match spec {
-                ParsedDeclSpec::StorageClass(sc) => storage = Some(*sc),
-                ParsedDeclSpec::FunctionSpec(fs) => match fs {
+                DeclSpec::StorageClass(sc) => storage = Some(*sc),
+                DeclSpec::FunctionSpec(fs) => match fs {
                     FunctionSpec::Inline => is_inline = true,
                     FunctionSpec::Noreturn => is_noreturn = true,
                 },
-                ParsedDeclSpec::AlignmentSpec(align) => alignment = Some(align.clone()),
+                DeclSpec::AlignmentSpec(align) => alignment = Some(align.clone()),
                 _ => {}
             }
         }

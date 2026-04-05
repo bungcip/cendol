@@ -204,31 +204,31 @@ pub struct ParsedInitDeclarator {
 
 #[derive(Debug, Clone)]
 pub struct ParsedDecl {
-    pub specifiers: ThinVec<ParsedDeclSpec>,
+    pub specifiers: ThinVec<DeclSpec>,
     pub init_declarators: ThinVec<ParsedInitDeclarator>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ParsedFunctionDef {
-    pub specifiers: ThinVec<ParsedDeclSpec>,
+    pub specifiers: ThinVec<DeclSpec>,
     pub declarator: super::DeclaratorRef,
     pub body: ParsedNodeRef,
 }
 
 // Declaration specifiers and related types
 #[derive(Debug, Clone)]
-pub enum ParsedDeclSpec {
+pub enum DeclSpec {
     StorageClass(StorageClass),
     TypeQualifier(TypeQualifier),
     FunctionSpec(FunctionSpec),
     AlignmentSpec(ParsedAlignmentSpec),
-    TypeSpec(ParsedTypeSpec),
+    TypeSpec(TypeSpec),
     Attribute,
 }
 
 // Type specifiers
 #[derive(Debug, Clone)]
-pub enum ParsedTypeSpec {
+pub enum TypeSpec {
     Void,
     Char,
     Short,
@@ -330,35 +330,35 @@ pub enum ParsedDesignator {
     ArrayIndex(ParsedNodeRef),
     ArrayRange(ParsedNodeRef, ParsedNodeRef),
 }
-impl ParsedDeclSpec {
+impl DeclSpec {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
-            ParsedDeclSpec::AlignmentSpec(aspec) => aspec.for_each_child(f),
-            ParsedDeclSpec::TypeSpec(ts) => ts.for_each_child(f),
+            DeclSpec::AlignmentSpec(aspec) => aspec.for_each_child(f),
+            DeclSpec::TypeSpec(ts) => ts.for_each_child(f),
             _ => {}
         }
     }
 }
 
-impl ParsedTypeSpec {
+impl TypeSpec {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
-            ParsedTypeSpec::Enum(_, Some(enumerators)) => {
+            TypeSpec::Enum(_, Some(enumerators)) => {
                 for &e in enumerators {
                     f(e);
                 }
             }
-            ParsedTypeSpec::Record(_, _, Some(members)) => {
+            TypeSpec::Record(_, _, Some(members)) => {
                 for &m in members {
                     f(m);
                 }
             }
-            ParsedTypeSpec::Typeof(_) => {}
-            ParsedTypeSpec::TypeofExpr(expr) => {
+            TypeSpec::Typeof(_) => {}
+            TypeSpec::TypeofExpr(expr) => {
                 f(*expr);
             }
-            ParsedTypeSpec::TypeofUnqual(_) => {}
-            ParsedTypeSpec::TypeofUnqualExpr(expr) => {
+            TypeSpec::TypeofUnqual(_) => {}
+            TypeSpec::TypeofUnqualExpr(expr) => {
                 f(*expr);
             }
             _ => {}

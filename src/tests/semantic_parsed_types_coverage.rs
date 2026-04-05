@@ -46,8 +46,7 @@ fn test_alignof_struct_expression() {
 }
 
 #[test]
-fn test_complex_type_specifiers() {
-    // Tests various combinations in merge_parsed_type_specifiers
+fn test_complex_type_specs() {
     run_pass("long long long x; int main() { return 0; }", CompilePhase::Mir);
     run_pass("int long long y; int main() { return 0; }", CompilePhase::Mir);
     run_pass("long long int z; int main() { return 0; }", CompilePhase::Mir);

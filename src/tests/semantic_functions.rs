@@ -331,7 +331,6 @@ fn test_pointer_argument_to_int_parameter() {
     check_diagnostic_message_only(&driver, "expected int, found int*");
 }
 
-// Consolidated from guardian_function_specifiers.rs
 #[test]
 fn test_typedef_inline_prohibited() {
     run_fail_with_message(

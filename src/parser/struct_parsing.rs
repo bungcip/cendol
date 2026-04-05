@@ -14,7 +14,7 @@ use crate::parser::declarations::parse_decl_specs;
 use super::Parser;
 
 /// Parse struct or union specifier with context
-pub(super) fn parse_record_specifier(parser: &mut Parser, is_union: bool) -> Result<ParsedTypeSpec, ParseError> {
+pub(super) fn parse_record_spec(parser: &mut Parser, is_union: bool) -> Result<TypeSpec, ParseError> {
     // Check for __attribute__ after struct/union keyword (GCC extension)
     if parser.is_token(TokenKind::Attribute)
         && let Err(_e) = super::declarations::parse_attribute(parser)
@@ -25,7 +25,7 @@ pub(super) fn parse_record_specifier(parser: &mut Parser, is_union: bool) -> Res
     let tag = parser.accept_name();
 
     let definition = if parser.accept(TokenKind::LeftBrace).is_some() {
-        let members = parse_struct_declaration_list(parser)?;
+        let members = parse_struct_decl_list(parser)?;
         parser.expect(TokenKind::RightBrace)?;
 
         // Check for __attribute__ after struct definition (GCC extension)
@@ -40,11 +40,11 @@ pub(super) fn parse_record_specifier(parser: &mut Parser, is_union: bool) -> Res
         None
     };
 
-    Ok(ParsedTypeSpec::Record(is_union, tag, definition))
+    Ok(TypeSpec::Record(is_union, tag, definition))
 }
 
 /// Parse struct declaration list
-fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseError> {
+fn parse_struct_decl_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseError> {
     let mut declarations = Vec::new();
 
     while !parser.at_eof() && !parser.is_token(TokenKind::RightBrace) {
@@ -57,7 +57,7 @@ fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRe
             continue;
         }
 
-        let declaration = parse_struct_declaration(parser)?;
+        let declaration = parse_struct_decl(parser)?;
         declarations.push(declaration);
     }
 
@@ -65,7 +65,7 @@ fn parse_struct_declaration_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRe
 }
 
 /// Parse struct declaration
-fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     // Check for _Static_assert (C11)
     if let Some(token) = parser.accept(TokenKind::StaticAssert) {
         return super::declarations::parse_static_assert(parser, token);
@@ -83,7 +83,7 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
     let decl = if is_struct || is_union {
         let tag = parser.accept_name();
         if parser.accept(TokenKind::LeftBrace).is_some() {
-            let members = parse_struct_declaration_list(parser)?;
+            let members = parse_struct_decl_list(parser)?;
             parser.expect(TokenKind::RightBrace)?;
 
             let init_declarators = if parser.accept(TokenKind::Semicolon).is_some() {
@@ -95,15 +95,11 @@ fn parse_struct_declaration(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
             };
 
             ParsedDecl {
-                specifiers: thin_vec![ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Record(
-                    is_union,
-                    tag,
-                    Some(members),
-                ))],
+                specifiers: thin_vec![DeclSpec::TypeSpec(TypeSpec::Record(is_union, tag, Some(members),))],
                 init_declarators,
             }
         } else {
-            let specifiers = thin_vec![ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Record(is_union, tag, None,))];
+            let specifiers = thin_vec![DeclSpec::TypeSpec(TypeSpec::Record(is_union, tag, None,))];
             let init_declarators = if parser.accept(TokenKind::Semicolon).is_some() {
                 ThinVec::new()
             } else {

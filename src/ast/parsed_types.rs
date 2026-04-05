@@ -9,8 +9,8 @@ use std::num::NonZeroU32;
 
 use serde::Serialize;
 
-use crate::ast::parsed::{ParsedArraySize, ParsedTypeSpec};
-use crate::ast::{NameId, SourceSpan};
+use crate::ast::parsed::{ParsedArraySize, TypeSpec};
+use crate::ast::{NameId, ParsedNodeRef, ParsedParam, SourceSpan};
 use crate::semantic::TypeQualifiers;
 
 /// Type reference for parsed base types
@@ -77,7 +77,7 @@ pub struct FunctionFlags {
 /// Parsed base type (the fundamental type specifier)
 #[derive(Clone, Debug)]
 pub enum ParsedBaseType {
-    Builtin(ParsedTypeSpec),
+    Builtin(TypeSpec),
 
     Record {
         tag: Option<NameId>,
@@ -92,9 +92,9 @@ pub enum ParsedBaseType {
 
     Typedef(NameId),
     Typeof(ParsedType),
-    TypeofExpr(crate::ast::ParsedNodeRef),
+    TypeofExpr(ParsedNodeRef),
     TypeofUnqual(ParsedType),
-    TypeofUnqualExpr(crate::ast::ParsedNodeRef),
+    TypeofUnqualExpr(ParsedNodeRef),
 }
 
 #[derive(Debug, Clone)]
@@ -118,7 +118,7 @@ pub enum ParsedDeclarator {
 
     BitField {
         inner: DeclaratorRef,
-        width: crate::ast::ParsedNodeRef,
+        width: ParsedNodeRef,
     },
 }
 
@@ -128,7 +128,7 @@ pub enum ParsedDeclarator {
 pub struct ParsedTypeArena {
     base_types: Vec<ParsedBaseType>,
     declarators: Vec<ParsedDeclarator>,
-    params: Vec<crate::ast::ParsedParam>,
+    params: Vec<ParsedParam>,
     struct_members: Vec<ParsedStructMember>,
     enum_constants: Vec<ParsedEnumConstant>,
 }
@@ -149,7 +149,7 @@ impl ParsedTypeArena {
     }
 
     /// Allocate function parameters and return the range
-    pub(crate) fn alloc_params(&mut self, params: Vec<crate::ast::ParsedParam>) -> ParsedParamRange {
+    pub(crate) fn alloc_params(&mut self, params: Vec<ParsedParam>) -> ParsedParamRange {
         let start = self.params.len() as u32;
         self.params.extend(params);
         let len = self.params.len() as u32 - start;
@@ -185,7 +185,7 @@ impl ParsedTypeArena {
     }
 
     /// Get function parameters by range
-    pub(crate) fn get_params(&self, range: ParsedParamRange) -> &[crate::ast::ParsedParam] {
+    pub(crate) fn get_params(&self, range: ParsedParamRange) -> &[ParsedParam] {
         let start = range.start as usize;
         let end = start + range.len as usize;
         &self.params[start..end]

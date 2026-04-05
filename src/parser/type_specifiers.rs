@@ -7,16 +7,16 @@ use crate::ast::*;
 use crate::diagnostic::ParseError;
 use crate::parser::enum_parsing::parse_enum_specifier;
 use crate::parser::expressions::parse_expression;
-use crate::parser::struct_parsing::parse_record_specifier;
+use crate::parser::struct_parsing::parse_record_spec;
 use crate::parser::type_builder::parse_type_name;
 use crate::parser::{BindingPower, TokenKind};
 
 use super::Parser;
 
 /// Parse type specifier
-pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec, ParseError> {
-    use ParsedTypeSpec as PTS;
+pub(super) fn parse_type_spec(parser: &mut Parser) -> Result<TypeSpec, ParseError> {
     use TokenKind as TK;
+    use TypeSpec as TS;
 
     let token = parser.current_token()?;
     match token.kind {
@@ -34,18 +34,18 @@ pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
         | TK::AutoType => {
             parser.advance();
             Ok(match token.kind {
-                TK::Void => PTS::Void,
-                TK::Char => PTS::Char,
-                TK::Short => PTS::Short,
-                TK::Int => PTS::Int,
-                TK::Float => PTS::Float,
-                TK::Double => PTS::Double,
-                TK::Signed => PTS::Signed,
-                TK::Unsigned => PTS::Unsigned,
-                TK::Bool => PTS::Bool,
-                TK::Complex => PTS::Complex,
-                TK::BuiltinVaList => PTS::VaList,
-                TK::AutoType => PTS::AutoType,
+                TK::Void => TS::Void,
+                TK::Char => TS::Char,
+                TK::Short => TS::Short,
+                TK::Int => TS::Int,
+                TK::Float => TS::Float,
+                TK::Double => TS::Double,
+                TK::Signed => TS::Signed,
+                TK::Unsigned => TS::Unsigned,
+                TK::Bool => TS::Bool,
+                TK::Complex => TS::Complex,
+                TK::BuiltinVaList => TS::VaList,
+                TK::AutoType => TS::AutoType,
                 _ => unreachable!(),
             })
         }
@@ -54,13 +54,13 @@ pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
             match parser.current_token_kind() {
                 Some(TK::Long) => {
                     parser.advance();
-                    Ok(PTS::LongLong)
+                    Ok(TS::LongLong)
                 }
                 Some(TK::Double) => {
                     parser.advance();
-                    Ok(PTS::LongDouble)
+                    Ok(TS::LongDouble)
                 }
-                _ => Ok(PTS::Long),
+                _ => Ok(TS::Long),
             }
         }
         TK::Typeof => {
@@ -69,10 +69,10 @@ pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
             let is_type = parser.is_type_name_start();
             let ts = if is_type {
                 let ty = parse_type_name(parser)?;
-                PTS::Typeof(ty)
+                TS::Typeof(ty)
             } else {
                 let expr = parse_expression(parser, BindingPower::MIN)?;
-                PTS::TypeofExpr(expr)
+                TS::TypeofExpr(expr)
             };
             parser.expect(TK::RightParen)?;
             Ok(ts)
@@ -83,10 +83,10 @@ pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
             let is_type = parser.is_type_name_start();
             let ts = if is_type {
                 let ty = parse_type_name(parser)?;
-                PTS::TypeofUnqual(ty)
+                TS::TypeofUnqual(ty)
             } else {
                 let expr = parse_expression(parser, BindingPower::MIN)?;
-                PTS::TypeofUnqualExpr(expr)
+                TS::TypeofUnqualExpr(expr)
             };
             parser.expect(TK::RightParen)?;
             Ok(ts)
@@ -94,7 +94,7 @@ pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
         TK::Struct | TK::Union => {
             parser.advance();
             let is_union = token.kind == TK::Union;
-            parse_record_specifier(parser, is_union)
+            parse_record_spec(parser, is_union)
         }
         TK::Enum => {
             parser.advance();
@@ -102,7 +102,7 @@ pub(super) fn parse_type_specifier(parser: &mut Parser) -> Result<ParsedTypeSpec
         }
         TK::Identifier(symbol) => {
             parser.advance();
-            Ok(PTS::TypedefName(symbol))
+            Ok(TS::TypedefName(symbol))
         }
         _ => unreachable!("ICE: Token {:?} should have been validated", token.kind),
     }

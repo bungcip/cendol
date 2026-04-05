@@ -1,6 +1,6 @@
 use crate::ast::{BinaryOp, UnaryOp, literal::Literal};
 use crate::ast::{
-    DeclaratorRef, NameId, ParsedAst, ParsedDeclSpec, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec,
+    DeclSpec, DeclaratorRef, NameId, ParsedAst, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, TypeSpec,
 };
 use crate::diagnostic::ParseError;
 use crate::driver::artifact::CompilePhase;
@@ -95,24 +95,24 @@ pub(crate) struct ResolvedInitDeclarator {
     initializer: Option<ResolvedNodeKind>,
 }
 
-fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpec]) -> Vec<String> {
+fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
     specifiers
         .iter()
         .map(|s| match s {
-            ParsedDeclSpec::TypeSpec(ts) => match ts {
-                ParsedTypeSpec::Void => "void".to_string(),
-                ParsedTypeSpec::Bool => "_Bool".to_string(),
-                ParsedTypeSpec::Char => "char".to_string(),
-                ParsedTypeSpec::Short => "short".to_string(),
-                ParsedTypeSpec::Int => "int".to_string(),
-                ParsedTypeSpec::Long => "long".to_string(),
-                ParsedTypeSpec::Float => "float".to_string(),
-                ParsedTypeSpec::Double => "double".to_string(),
-                ParsedTypeSpec::Signed => "signed".to_string(),
-                ParsedTypeSpec::Unsigned => "unsigned".to_string(),
-                ParsedTypeSpec::Complex => "_Complex".to_string(),
-                ParsedTypeSpec::TypedefName(name) => format!("TypedefName({:?})", name.to_string()),
-                ParsedTypeSpec::Enum(tag, enumerators) => {
+            DeclSpec::TypeSpec(ts) => match ts {
+                TypeSpec::Void => "void".to_string(),
+                TypeSpec::Bool => "_Bool".to_string(),
+                TypeSpec::Char => "char".to_string(),
+                TypeSpec::Short => "short".to_string(),
+                TypeSpec::Int => "int".to_string(),
+                TypeSpec::Long => "long".to_string(),
+                TypeSpec::Float => "float".to_string(),
+                TypeSpec::Double => "double".to_string(),
+                TypeSpec::Signed => "signed".to_string(),
+                TypeSpec::Unsigned => "unsigned".to_string(),
+                TypeSpec::Complex => "_Complex".to_string(),
+                TypeSpec::TypedefName(name) => format!("TypedefName({:?})", name.to_string()),
+                TypeSpec::Enum(tag, enumerators) => {
                     let tag_str = tag.unwrap_or_else(|| NameId::new(""));
                     if let Some(enums) = enumerators {
                         let enum_parts: Vec<String> = enums
@@ -134,7 +134,7 @@ fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpec]) -> Vec<Str
                         format!("enum {}", tag_str)
                     }
                 }
-                ParsedTypeSpec::Record(is_union, tag, def) => {
+                TypeSpec::Record(is_union, tag, def) => {
                     let record_kind = if *is_union { "union" } else { "struct" };
                     let has_body = def.is_some();
 
@@ -150,11 +150,11 @@ fn resolve_specifiers(ast: &ParsedAst, specifiers: &[ParsedDeclSpec]) -> Vec<Str
                 }
                 _ => format!("{:?}", ts),
             },
-            ParsedDeclSpec::StorageClass(sc) => format!("{:?}", sc),
-            ParsedDeclSpec::TypeQualifier(tq) => format!("TypeQualifier({:?})", tq),
-            ParsedDeclSpec::FunctionSpec(fs) => format!("{:?}", fs),
-            ParsedDeclSpec::AlignmentSpec(aspec) => format!("{:?}", aspec),
-            ParsedDeclSpec::Attribute => "__attribute__".to_string(),
+            DeclSpec::StorageClass(sc) => format!("{:?}", sc),
+            DeclSpec::TypeQualifier(tq) => format!("TypeQualifier({:?})", tq),
+            DeclSpec::FunctionSpec(fs) => format!("{:?}", fs),
+            DeclSpec::AlignmentSpec(aspec) => format!("{:?}", aspec),
+            DeclSpec::Attribute => "__attribute__".to_string(),
         })
         .collect()
 }
@@ -217,7 +217,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
         ParsedNodeKind::AlignOfType(ty) => ResolvedNodeKind::AlignOfType(format!("type_{}", ty.base.get())),
         ParsedNodeKind::AlignOfExpr(expr) => ResolvedNodeKind::AlignOfExpr(Box::new(resolve_node(ast, *expr))),
         ParsedNodeKind::Declaration(decl) => {
-            let specifiers = resolve_specifiers(ast, &decl.specifiers);
+            let specifiers = resolve_specs(ast, &decl.specifiers);
             let init_declarators = decl
                 .init_declarators
                 .iter()
@@ -338,7 +338,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
             ResolvedNodeKind::TranslationUnit(nodes.iter().map(|&n| resolve_node(ast, n)).collect())
         }
         ParsedNodeKind::FunctionDef(def) => {
-            let specifiers = resolve_specifiers(ast, &def.specifiers);
+            let specifiers = resolve_specs(ast, &def.specifiers);
             let name = extract_declarator_name(ast, def.declarator).unwrap_or_else(|| "<unnamed>".to_string());
             let kind_str = extract_declarator_kind(ast, def.declarator);
             let kind = if kind_str == "identifier" { None } else { Some(kind_str) };

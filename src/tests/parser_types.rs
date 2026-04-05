@@ -70,9 +70,9 @@ fn test_type_combinations() {
 }
 
 #[test]
-fn test_type_specifier_combinations() {
+fn test_type_spec_combinations() {
     // Use _Atomic(...) to force the parser's type builder logic (parsed_type_builder.rs)
-    // instead of semantic lowering logic, ensuring coverage of merge_parsed_type_specifiers.
+    // instead of semantic lowering logic, ensuring coverage of merge_parsed_type_specs.
 
     let cases = vec![
         // (Long, Long) via (Long, Int) -> Long + Long

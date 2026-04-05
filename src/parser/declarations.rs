@@ -17,11 +17,11 @@ use crate::ast::nodes::StorageClass;
 use crate::ast::nodes::TypeQualifier;
 // Import all parsed types to be sure
 use crate::ast::parsed::{
-    ParsedAlignmentSpec, ParsedDeclSpec, ParsedDesignatedInitializer, ParsedDesignator, ParsedNodeKind, ParsedNodeRef,
-    ParsedTypeSpec,
+    DeclSpec, ParsedAlignmentSpec, ParsedDesignatedInitializer, ParsedDesignator, ParsedNodeKind, ParsedNodeRef,
+    TypeSpec,
 };
 use crate::parser::type_builder::parse_type_name;
-use crate::parser::type_specifiers::parse_type_specifier;
+use crate::parser::type_specifiers::parse_type_spec;
 
 /// parse declaration or function definition
 pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Result<ParsedNodeRef, ParseError> {
@@ -39,13 +39,10 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
 
     let mut specifiers = parse_decl_specs(trx.parser)?;
 
-    let has_record_enum_type = specifiers.iter().any(|s| {
-        matches!(
-            s,
-            ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Record(_, _, _) | ParsedTypeSpec::Enum(_, _))
-        )
-    });
-    let has_storage_class = specifiers.iter().any(|s| matches!(s, ParsedDeclSpec::StorageClass(_)));
+    let has_record_enum_type = specifiers
+        .iter()
+        .any(|s| matches!(s, DeclSpec::TypeSpec(TypeSpec::Record(_, _, _) | TypeSpec::Enum(_, _))));
+    let has_storage_class = specifiers.iter().any(|s| matches!(s, DeclSpec::StorageClass(_)));
 
     if has_record_enum_type
         && !has_storage_class
@@ -67,10 +64,10 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
             Some(TokenKind::Identifier(_)) | Some(TokenKind::Star) | Some(TokenKind::LeftParen)
         )
     {
-        let message = if let Some(ParsedDeclSpec::TypeSpec(ts)) = specifiers.last() {
+        let message = if let Some(DeclSpec::TypeSpec(ts)) = specifiers.last() {
             match ts {
-                ParsedTypeSpec::Record(_, _, _) => "Expected ';' after struct/union definition",
-                ParsedTypeSpec::Enum(_, _) => "Expected ';' after enum definition",
+                TypeSpec::Record(_, _, _) => "Expected ';' after struct/union definition",
+                TypeSpec::Enum(_, _) => "Expected ';' after enum definition",
                 _ => "Expected declarator or identifier after type specifier",
             }
         } else {
@@ -119,7 +116,7 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
         if let Some(name) = trx.parser.get_declarator_name(declarator) {
             if specifiers
                 .iter()
-                .any(|s| matches!(s, ParsedDeclSpec::StorageClass(StorageClass::Typedef)))
+                .any(|s| matches!(s, DeclSpec::StorageClass(StorageClass::Typedef)))
             {
                 trx.parser.add_typedef(name);
             } else {
@@ -178,7 +175,7 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
 
 fn parse_function_definition_tail(
     parser: &mut Parser,
-    specifiers: ThinVec<ParsedDeclSpec>,
+    specifiers: ThinVec<DeclSpec>,
     declarator: DeclaratorRef,
     start_loc: SourceLoc,
     dummy: ParsedNodeRef,
@@ -298,7 +295,7 @@ pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
 }
 
 /// Parse declaration specifiers
-pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<ParsedDeclSpec>, ParseError> {
+pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>, ParseError> {
     let mut specifiers = ThinVec::new();
     let mut has_type_specifier = false;
 
@@ -320,7 +317,7 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<ParsedDecl
                     _ => unreachable!(),
                 };
                 parser.advance();
-                specifiers.push(ParsedDeclSpec::StorageClass(storage_class));
+                specifiers.push(DeclSpec::StorageClass(storage_class));
             }
 
             TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
@@ -334,7 +331,7 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<ParsedDecl
                             parser.expect(TokenKind::LeftParen)?;
                             let parsed_type = parse_type_name(parser)?;
                             parser.expect(TokenKind::RightParen)?;
-                            specifiers.push(ParsedDeclSpec::TypeSpec(ParsedTypeSpec::Atomic(parsed_type)));
+                            specifiers.push(DeclSpec::TypeSpec(TypeSpec::Atomic(parsed_type)));
                             has_type_specifier = true;
                             continue;
                         }
@@ -343,7 +340,7 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<ParsedDecl
                     _ => unreachable!(),
                 };
                 parser.advance();
-                specifiers.push(ParsedDeclSpec::TypeQualifier(qualifier));
+                specifiers.push(DeclSpec::TypeQualifier(qualifier));
             }
 
             TokenKind::Inline | TokenKind::Noreturn => {
@@ -352,13 +349,13 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<ParsedDecl
                     _ => FunctionSpec::Noreturn,
                 };
                 parser.advance();
-                specifiers.push(ParsedDeclSpec::FunctionSpec(func_spec));
+                specifiers.push(DeclSpec::FunctionSpec(func_spec));
             }
 
             TokenKind::Attribute => {
                 let attrs = parse_attribute(parser)?;
                 specifiers.extend(attrs);
-                specifiers.push(ParsedDeclSpec::Attribute);
+                specifiers.push(DeclSpec::Attribute);
             }
 
             TokenKind::Void
@@ -379,13 +376,13 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<ParsedDecl
             | TokenKind::Typeof
             | TokenKind::TypeofUnqual
             | TokenKind::AutoType => {
-                specifiers.push(ParsedDeclSpec::TypeSpec(parse_type_specifier(parser)?));
+                specifiers.push(DeclSpec::TypeSpec(parse_type_spec(parser)?));
                 has_type_specifier = true;
             }
 
             TokenKind::Identifier(symbol) => {
                 if !has_type_specifier && parser.is_type_name(symbol) {
-                    specifiers.push(ParsedDeclSpec::TypeSpec(parse_type_specifier(parser)?));
+                    specifiers.push(DeclSpec::TypeSpec(parse_type_spec(parser)?));
                     has_type_specifier = true;
                 } else {
                     break;
@@ -410,7 +407,7 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<ParsedDecl
                     ParsedAlignmentSpec::Expr(parser.parse_expr_min()?)
                 };
                 parser.expect(TokenKind::RightParen)?;
-                specifiers.push(ParsedDeclSpec::AlignmentSpec(alignment));
+                specifiers.push(DeclSpec::AlignmentSpec(alignment));
             }
 
             _ => break,
@@ -513,7 +510,7 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<ParsedDesignator>, Parse
 
 /// Parse GCC __attribute__ syntax: __attribute__ (( attribute-list ))
 /// For now, we parse and skip the attribute construct, extracting `noreturn`.
-pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<ParsedDeclSpec>, ParseError> {
+pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, ParseError> {
     parser.expect(TokenKind::Attribute)?;
     parser.expect(TokenKind::LeftParen)?;
     parser.expect(TokenKind::LeftParen)?;
@@ -534,7 +531,7 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<ParsedDeclSpec>
                 let name_noret1 = crate::ast::NameId::new("noreturn");
                 let name_noret2 = crate::ast::NameId::new("__noreturn__");
                 if name == name_noret1 || name == name_noret2 {
-                    specs.push(ParsedDeclSpec::FunctionSpec(crate::ast::FunctionSpec::Noreturn));
+                    specs.push(DeclSpec::FunctionSpec(crate::ast::FunctionSpec::Noreturn));
                 }
             }
             _ => {}

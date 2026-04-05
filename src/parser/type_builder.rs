@@ -19,7 +19,7 @@ use super::Parser;
 /// Build a ParsedType from declaration specifiers and an optional declarator
 pub(crate) fn build_type(
     parser: &mut Parser,
-    specifiers: &ThinVec<ParsedDeclSpec>,
+    specifiers: &ThinVec<DeclSpec>,
     declarator: Option<DeclaratorRef>,
 ) -> Result<ParsedType, ParseError> {
     let (base_type, qualifiers) = parse_base_type_and_qualifiers(parser, specifiers)?;
@@ -37,8 +37,8 @@ pub(crate) fn build_type(
     })
 }
 
-fn merge_type_specifiers(current: ParsedTypeSpec, new: ParsedTypeSpec) -> Result<ParsedTypeSpec, ParseError> {
-    use ParsedTypeSpec::*;
+fn merge_type_specs(current: TypeSpec, new: TypeSpec) -> Result<TypeSpec, ParseError> {
+    use TypeSpec::*;
     match (current, new) {
         // Redundant same types
         (Long, Long) => Ok(LongLong),
@@ -94,28 +94,28 @@ fn merge_type_specifiers(current: ParsedTypeSpec, new: ParsedTypeSpec) -> Result
 /// Parse base type and qualifiers from declaration specifiers
 fn parse_base_type_and_qualifiers(
     parser: &mut Parser,
-    specifiers: &ThinVec<ParsedDeclSpec>,
+    specifiers: &ThinVec<DeclSpec>,
 ) -> Result<(ParsedBaseTypeRef, TypeQualifiers), ParseError> {
     let mut qualifiers = TypeQualifiers::empty();
-    let mut base_type_spec: Option<ParsedTypeSpec> = None;
+    let mut base_type_spec: Option<TypeSpec> = None;
     let mut other_base_type = None;
 
     for spec in specifiers {
         match spec {
-            ParsedDeclSpec::TypeSpec(ts) => match ts {
-                ParsedTypeSpec::Void
-                | ParsedTypeSpec::Char
-                | ParsedTypeSpec::Short
-                | ParsedTypeSpec::Int
-                | ParsedTypeSpec::Long
-                | ParsedTypeSpec::LongLong
-                | ParsedTypeSpec::Float
-                | ParsedTypeSpec::Double
-                | ParsedTypeSpec::LongDouble
-                | ParsedTypeSpec::Signed
-                | ParsedTypeSpec::Unsigned
-                | ParsedTypeSpec::Bool
-                | ParsedTypeSpec::Complex => {
+            DeclSpec::TypeSpec(ts) => match ts {
+                TypeSpec::Void
+                | TypeSpec::Char
+                | TypeSpec::Short
+                | TypeSpec::Int
+                | TypeSpec::Long
+                | TypeSpec::LongLong
+                | TypeSpec::Float
+                | TypeSpec::Double
+                | TypeSpec::LongDouble
+                | TypeSpec::Signed
+                | TypeSpec::Unsigned
+                | TypeSpec::Bool
+                | TypeSpec::Complex => {
                     if other_base_type.is_some() {
                         return Err(ParseError {
                             span: SourceSpan::default(),
@@ -126,7 +126,7 @@ fn parse_base_type_and_qualifiers(
                         });
                     }
                     base_type_spec = Some(match base_type_spec {
-                        Some(curr) => merge_type_specifiers(curr, ts.clone())?,
+                        Some(curr) => merge_type_specs(curr, ts.clone())?,
                         None => ts.clone(),
                     });
                 }
@@ -143,7 +143,7 @@ fn parse_base_type_and_qualifiers(
                     other_base_type = Some(parse_base_type(parser, ts)?);
                 }
             },
-            ParsedDeclSpec::TypeQualifier(q) => {
+            DeclSpec::TypeQualifier(q) => {
                 qualifiers |= match q {
                     TypeQualifier::Const => TypeQualifiers::CONST,
                     TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
@@ -160,15 +160,15 @@ fn parse_base_type_and_qualifiers(
     } else if let Some(node) = other_base_type {
         node
     } else {
-        parser.alloc_base_type(ParsedBaseType::Builtin(ParsedTypeSpec::Int))
+        parser.alloc_base_type(ParsedBaseType::Builtin(TypeSpec::Int))
     };
 
     Ok((base_type, qualifiers))
 }
 
 /// Convert a TypeSpec to a ParsedBaseType
-fn parse_base_type(parser: &mut Parser, ts: &ParsedTypeSpec) -> Result<ParsedBaseTypeRef, ParseError> {
-    use ParsedTypeSpec::*;
+fn parse_base_type(parser: &mut Parser, ts: &TypeSpec) -> Result<ParsedBaseTypeRef, ParseError> {
+    use TypeSpec::*;
     match ts {
         Void | Char | Short | Int | Long | LongLong | UnsignedLong | UnsignedLongLong | UnsignedShort
         | UnsignedChar | SignedChar | SignedShort | SignedLong | SignedLongLong | Float | Double | LongDouble
@@ -278,9 +278,9 @@ fn parse_record_members(
     Ok(parser.alloc_struct_members(parsed_members))
 }
 
-fn extract_alignment(specifiers: &[ParsedDeclSpec], parser: &Parser) -> Option<u32> {
+fn extract_alignment(specifiers: &[DeclSpec], parser: &Parser) -> Option<u32> {
     for spec in specifiers {
-        if let ParsedDeclSpec::AlignmentSpec(align_spec) = spec
+        if let DeclSpec::AlignmentSpec(align_spec) = spec
             && let ParsedAlignmentSpec::Expr(expr) = align_spec
             && let ParsedNodeKind::Literal(Literal::Int { val, .. }) = parser.ast.get_node(*expr).kind
         {

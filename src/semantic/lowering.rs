@@ -15,7 +15,7 @@ use hashbrown::HashMap;
 use smallvec::{SmallVec, smallvec};
 
 use crate::ast::literal::Literal;
-use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, ParsedTypeSpec};
+use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, TypeSpec};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
 use crate::semantic::const_eval::ConstEvalCtx;
@@ -96,7 +96,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn check_function_specifiers(&mut self, info: &DeclSpecInfo, span: SourceSpan) {
+    fn check_function_specs(&mut self, info: &DeclSpecInfo, span: SourceSpan) {
         if info.is_inline {
             self.report_error(span, SemanticErrorKind::InvalidFunctionSpec { spec: "inline" });
         }
@@ -625,14 +625,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 ParsedNodeKind::Declaration(decl) => {
                     if !decl.init_declarators.is_empty() {
                         decl.init_declarators.len()
-                    } else if let Some(ParsedDeclSpec::TypeSpec(ts)) = decl
-                        .specifiers
-                        .iter()
-                        .find(|s| matches!(s, ParsedDeclSpec::TypeSpec(..)))
+                    } else if let Some(DeclSpec::TypeSpec(ts)) =
+                        decl.specifiers.iter().find(|s| matches!(s, DeclSpec::TypeSpec(..)))
                     {
                         match ts {
-                            ParsedTypeSpec::Record(_, _, is_def) if is_def.is_some() => 1,
-                            ParsedTypeSpec::Enum(_, is_def) if is_def.is_some() => 1,
+                            TypeSpec::Record(_, _, is_def) if is_def.is_some() => 1,
+                            TypeSpec::Enum(_, is_def) if is_def.is_some() => 1,
                             _ => 0,
                         }
                     } else {
@@ -866,7 +864,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn visit_function_definition(&mut self, func_def: &ParsedFunctionDef, node: NodeRef, span: SourceSpan) {
-        let spec_info = self.visit_decl_specifiers(&func_def.specifiers, span);
+        let spec_info = self.visit_decl_specs(&func_def.specifiers, span);
         let mut base_qt = spec_info
             .base_type
             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
@@ -1049,7 +1047,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
         target_slots: Option<&[NodeRef]>,
     ) -> SmallVec<[NodeRef; 1]> {
-        let spec_info = self.visit_decl_specifiers(&decl.specifiers, span);
+        let spec_info = self.visit_decl_specs(&decl.specifiers, span);
         let mut base_qt = spec_info
             .base_type
             .unwrap_or(QualType::unqualified(self.registry.type_int));
@@ -1113,7 +1111,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         if let Some(data) = type_kind {
             let node = self.get_or_push_slot(target_slots, span);
-            self.check_function_specifiers(spec_info, span);
+            self.check_function_specs(spec_info, span);
 
             match data {
                 AggType::Record(tag, members, is_union) => {
@@ -1225,7 +1223,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.report_error(init.span, SemanticErrorKind::AutoTypeNotAllowed { context: "typedef" });
             }
 
-            self.check_function_specifiers(spec_info, init.span);
+            self.check_function_specs(spec_info, init.span);
 
             if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
                 self.symbol_table.define_typedef(name, final_ty, span)
@@ -1258,7 +1256,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let is_func = final_ty.is_function();
 
         if !is_func {
-            self.check_function_specifiers(spec_info, span);
+            self.check_function_specs(spec_info, span);
         }
 
         if is_func {
@@ -2817,8 +2815,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.registry.type_long_long
     }
 
-    fn resolve_type_spec(&mut self, ts: &ParsedTypeSpec, span: SourceSpan) -> Result<QualType, SemanticError> {
-        use ParsedTypeSpec::*;
+    fn resolve_type_spec(&mut self, ts: &TypeSpec, span: SourceSpan) -> Result<QualType, SemanticError> {
+        use TypeSpec::*;
         match ts {
             Void => Ok(QualType::unqualified(self.registry.type_void)),
             Char => Ok(QualType::unqualified(self.registry.type_char)),
@@ -2859,11 +2857,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             AutoType => Ok(QualType::unqualified(
                 self.registry.alloc(Type::new(TypeKind::AutoType)),
             )),
-            ParsedTypeSpec::Typeof(ty) => {
+            TypeSpec::Typeof(ty) => {
                 self.report_warning(span, SemanticErrorKind::GnuTypeof);
                 self.lower_type(*ty, span, false)
             }
-            ParsedTypeSpec::TypeofExpr(expr) => {
+            TypeSpec::TypeofExpr(expr) => {
                 self.report_warning(span, SemanticErrorKind::GnuTypeof);
                 let expr_node = self.visit_expression(*expr);
                 if let Some(qt) = self.try_infer_type(expr_node) {
@@ -2873,11 +2871,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     Ok(QualType::unqualified(tr))
                 }
             }
-            ParsedTypeSpec::TypeofUnqual(ty) => {
+            TypeSpec::TypeofUnqual(ty) => {
                 let qt = self.lower_type(*ty, span, false)?;
                 Ok(QualType::unqualified(qt.ty()))
             }
-            ParsedTypeSpec::TypeofUnqualExpr(expr) => {
+            TypeSpec::TypeofUnqualExpr(expr) => {
                 let expr_node = self.visit_expression(*expr);
                 if let Some(qt) = self.try_infer_type(expr_node) {
                     Ok(QualType::unqualified(qt.ty()))
@@ -3002,12 +3000,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn visit_decl_specifiers(&mut self, specs: &[ParsedDeclSpec], span: SourceSpan) -> DeclSpecInfo {
+    fn visit_decl_specs(&mut self, specs: &[DeclSpec], span: SourceSpan) -> DeclSpecInfo {
         let mut info = DeclSpecInfo::default();
 
         for spec in specs {
             match spec {
-                ParsedDeclSpec::StorageClass(sc) => {
+                DeclSpec::StorageClass(sc) => {
                     if *sc == StorageClass::ThreadLocal {
                         if info.is_thread_local {
                             self.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
@@ -3029,7 +3027,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         info.is_typedef |= *sc == StorageClass::Typedef;
                     }
                 }
-                ParsedDeclSpec::TypeQualifier(tq) => {
+                DeclSpec::TypeQualifier(tq) => {
                     info.qualifiers.insert(match tq {
                         TypeQualifier::Const => TypeQualifiers::CONST,
                         TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
@@ -3037,23 +3035,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
                     });
                 }
-                ParsedDeclSpec::TypeSpec(ts) => {
+                DeclSpec::TypeSpec(ts) => {
                     let ty = self.resolve_type_spec(ts, span).unwrap_or_else(|e| {
                         self.report_error(e.span, e.kind);
                         QualType::unqualified(self.registry.type_error)
                     });
                     info.base_type = self.merge_base_type(info.base_type, ty, span);
                 }
-                ParsedDeclSpec::AlignmentSpec(align) => {
+                DeclSpec::AlignmentSpec(align) => {
                     if let Some(val) = self.resolve_alignment(align, span) {
                         info.alignment = Some(std::cmp::max(info.alignment.unwrap_or(0), val));
                     }
                 }
-                ParsedDeclSpec::FunctionSpec(fs) => match fs {
+                DeclSpec::FunctionSpec(fs) => match fs {
                     FunctionSpec::Inline => info.is_inline = true,
                     FunctionSpec::Noreturn => info.is_noreturn = true,
                 },
-                ParsedDeclSpec::Attribute => {}
+                DeclSpec::Attribute => {}
             }
         }
 
@@ -3082,7 +3080,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         for param in params {
             let base_type_node = self.parsed_ast.parsed_types.get_base_type(param.ty.base);
-            if let ParsedBaseType::Builtin(ParsedTypeSpec::AutoType) = base_type_node {
+            if let ParsedBaseType::Builtin(TypeSpec::AutoType) = base_type_node {
                 self.report_error(
                     param.span,
                     SemanticErrorKind::AutoTypeNotAllowed {
@@ -3211,7 +3209,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     self.check_static_assert(*cond, *msg, node.span);
                 }
                 ParsedNodeKind::Declaration(decl) => {
-                    let spec_info = self.visit_decl_specifiers(&decl.specifiers, span);
+                    let spec_info = self.visit_decl_specs(&decl.specifiers, span);
 
                     if let Some(base) = spec_info.base_type
                         && self.registry.get(base.ty()).kind == TypeKind::AutoType
@@ -3252,7 +3250,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             self.report_error(id.span, SemanticErrorKind::AlignmentNotAllowed { context: "bit-field" });
                         }
 
-                        self.check_function_specifiers(&spec_info, id.span);
+                        self.check_function_specs(&spec_info, id.span);
 
                         let name = self.extract_name(id.declarator);
                         if name.is_none() && bit_field_size.is_none() {

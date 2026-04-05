@@ -61,7 +61,7 @@ pub mod semantic_unary_coverage;
 pub mod semantic_validation;
 
 pub mod parser_decl;
-pub mod parser_declarator_coverage;
+pub mod parser_errors;
 pub mod parser_expr;
 pub mod parser_lexical;
 pub mod parser_stmt;
@@ -113,7 +113,6 @@ pub mod mir_gen_function_address;
 pub mod mir_unit;
 pub mod mir_validation;
 pub mod parser_builder_coverage;
-pub mod parser_expect_name_coverage;
 pub mod parser_typedef_shadowing;
 pub mod pp_dumper_coverage;
 pub mod pragma_pack;

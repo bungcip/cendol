@@ -388,21 +388,6 @@ fn test_insane_parentheses_on_pointer_to_array_to_function() {
 }
 
 #[test]
-fn test_array_of_functions_rejected() {
-    let _ = setup_declaration_with_errors("int f[3](int);");
-}
-
-#[test]
-fn test_function_returning_function_rejected() {
-    let _ = setup_declaration_with_errors("int f(int)(float);");
-}
-
-#[test]
-fn test_ellipsis_not_last_parameter_rejected() {
-    let _ = setup_declaration_with_errors("int f(int ..., int);");
-}
-
-#[test]
 fn test_variadic_function_declaration() {
     let resolved = setup_declaration("int printf(const char * restrict format, ...);");
     insta::assert_yaml_snapshot!(&resolved, @r#"
@@ -789,18 +774,6 @@ fn test_enum_with_non_literal_value() {
     - - A
       - ~
     ");
-}
-
-#[test]
-fn test_function_returning_array_rejected() {
-    let err = setup_declaration_with_errors("int f(int)[3];");
-    assert!(matches!(
-        err,
-        crate::diagnostic::ParseError {
-            kind: crate::diagnostic::ParseErrorKind::DeclarationNotAllowed,
-            ..
-        }
-    ));
 }
 
 #[test]

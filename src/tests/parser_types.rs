@@ -2,22 +2,7 @@ use super::parser_utils::setup_declaration;
 use crate::ast::NameId;
 use crate::driver::artifact::CompilePhase;
 use crate::tests::semantic_common::setup_lowering;
-use crate::tests::test_utils::{run_fail_with_message, run_pass};
-
-#[test]
-fn test_long_at_eof() {
-    // This hits the simplified Long handling in type_specifiers.rs
-    // and then fails in declaration parsing because no declarator/semicolon is found.
-    run_fail_with_message("long", "Unexpected token");
-}
-
-#[test]
-fn test_type_specifier_invalid_token() {
-    // This is as close as we can get to testing "unreachable" code from C.
-    // It will actually fail in the caller (declaration specifiers) because
-    // it doesn't recognize '(' as a type specifier start.
-    run_fail_with_message("_Atomic(", "Unexpected token");
-}
+use crate::tests::test_utils::run_pass;
 
 #[test]
 fn test_merge_type_specifiers_unsigned_unsigned() {
@@ -154,10 +139,4 @@ fn test_type_specifier_combinations() {
     for (source, expected) in cases {
         check_type(source, expected);
     }
-}
-
-#[test]
-fn test_conflict_cast() {
-    let src = "void foo() { (int struct S { int x; }) 0; }";
-    run_fail_with_message(src, "single type specifier");
 }

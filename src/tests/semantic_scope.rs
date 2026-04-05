@@ -397,3 +397,11 @@ void f(void) {
 "#;
     run_pass(source, CompilePhase::SemanticLowering);
 }
+#[test]
+fn test_redefinition_function() {
+    let source = r#"
+        void f() {}
+        void f() {}
+    "#;
+    crate::tests::test_utils::run_fail_with_message(source, "redefinition of 'f'");
+}

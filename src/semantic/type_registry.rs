@@ -406,12 +406,12 @@ impl TypeRegistry {
 
         match &self.types[ty.index()].kind {
             TypeKind::Alias(inner) => self.has_flexible_array_member(*inner),
-            TypeKind::Record {
-                is_union, members, ..
-            } => {
+            TypeKind::Record { is_union, members, .. } => {
                 if *is_union {
                     // A union has a FAM if any of its members recursively has one.
-                    members.iter().any(|m| self.has_flexible_array_member(m.member_type.ty()))
+                    members
+                        .iter()
+                        .any(|m| self.has_flexible_array_member(m.member_type.ty()))
                 } else {
                     // A structure has a FAM if its last member is an incomplete array
                     // OR if any member recursively has a FAM (making the whole struct VM/illegal as member).
@@ -424,7 +424,9 @@ impl TypeRegistry {
                         return true;
                     }
                     // Recurse to see if any member has a FAM (nested)
-                    members.iter().any(|m| self.has_flexible_array_member(m.member_type.ty()))
+                    members
+                        .iter()
+                        .any(|m| self.has_flexible_array_member(m.member_type.ty()))
                 }
             }
             _ => false,

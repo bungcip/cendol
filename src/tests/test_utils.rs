@@ -68,6 +68,21 @@ pub(crate) fn run_pass(source: &str, phase: CompilePhase) -> CompilerDriver {
     driver
 }
 
+pub(crate) fn run_pass_with_std(
+    source: &str,
+    phase: CompilePhase,
+    std: crate::lang_options::CStandard,
+) -> CompilerDriver {
+    let mut config = CompileConfig::from_virtual_file(source.to_string(), phase);
+    config.lang_options.c_standard = std;
+    let mut driver = CompilerDriver::from_config(config);
+    let result = driver.run_pipeline(phase).map_err(|e| format!("{:?}", e));
+    if result.is_err() {
+        panic!("Compilation failed unexpectedly: {:?}", driver.get_diagnostics());
+    }
+    driver
+}
+
 pub(crate) fn run_fail(source: &str, phase: CompilePhase) -> CompilerDriver {
     let (driver, result) = run_pipeline(source, phase);
     assert!(result.is_err(), "Compilation should have failed");
@@ -76,6 +91,15 @@ pub(crate) fn run_fail(source: &str, phase: CompilePhase) -> CompilerDriver {
 
 pub(crate) fn run_fail_with_message(source: &str, message: &str) {
     let driver = run_fail(source, CompilePhase::Mir);
+    check_diagnostic_message_only(&driver, message);
+}
+
+pub(crate) fn run_fail_with_message_and_std(source: &str, message: &str, std: crate::lang_options::CStandard) {
+    let mut config = CompileConfig::from_virtual_file(source.to_string(), CompilePhase::Mir);
+    config.lang_options.c_standard = std;
+    let mut driver = CompilerDriver::from_config(config);
+    let result = driver.run_pipeline(CompilePhase::Mir).map_err(|e| format!("{:?}", e));
+    assert!(result.is_err(), "Compilation should have failed");
     check_diagnostic_message_only(&driver, message);
 }
 

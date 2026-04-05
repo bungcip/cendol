@@ -159,7 +159,7 @@ pub enum ParsedNodeKind {
     Declaration(ParsedDecl),
     FunctionDef(ParsedFunctionDef),
     EnumConstant(NameId, Option<ParsedNodeRef>),
-    StaticAssert(ParsedNodeRef, ParsedNodeRef),
+    StaticAssert(ParsedNodeRef, Option<ParsedNodeRef>),
 
     // --- Top Level ---
     TranslationUnit(Vec<ParsedNodeRef>),
@@ -557,10 +557,15 @@ impl ParsedNodeKind {
             | ParsedNodeKind::BuiltinExpect(l, r)
             | ParsedNodeKind::DoWhile(l, r)
             | ParsedNodeKind::Switch(l, r)
-            | ParsedNodeKind::Case(l, r)
-            | ParsedNodeKind::StaticAssert(l, r) => {
+            | ParsedNodeKind::Case(l, r) => {
                 f(*l);
                 f(*r);
+            }
+            ParsedNodeKind::StaticAssert(l, r) => {
+                f(*l);
+                if let Some(msg) = r {
+                    f(*msg);
+                }
             }
             ParsedNodeKind::TernaryOp(c, t, e)
             | ParsedNodeKind::CaseRange(c, t, e)

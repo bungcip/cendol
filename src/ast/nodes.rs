@@ -119,7 +119,7 @@ pub(crate) enum NodeKind {
     // --- Declarations & Definitions ---
     // Removed Parser-only Declaration and FunctionDef variants.
     // They are now lowered to semantic nodes immediately or exist only in ParsedAst.
-    StaticAssert(NodeRef /* condition */, NodeRef /* message */),
+    StaticAssert(NodeRef /* condition */, Option<NodeRef> /* message */),
 
     // --- Semantic Nodes (Type-Resolved) ---
     // declarations of VarDecl/FunctionDecl/TypedefDecl/RecordDecl
@@ -287,8 +287,13 @@ impl NodeKind {
             | NodeKind::AlignOfExpr(child)
             | NodeKind::CompoundLiteral(_, child)
             | NodeKind::Label(_, child, _)
-            | NodeKind::Default(child)
-            | NodeKind::StaticAssert(child, _) => f(*child),
+            | NodeKind::Default(child) => f(*child),
+            NodeKind::StaticAssert(child, msg) => {
+                f(*child);
+                if let Some(m) = msg {
+                    f(*m);
+                }
+            }
 
             NodeKind::BuiltinPrefetch(addr, rw, locality) => {
                 f(*addr);

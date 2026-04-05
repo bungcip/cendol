@@ -10,6 +10,73 @@ fn test_static_assert_in_struct() {
 }
 
 #[test]
+fn test_static_assert_c23_one_arg() {
+    crate::tests::test_utils::run_pass_with_std(
+        "_Static_assert(1 == 1); int main() { return 0; }",
+        CompilePhase::Mir,
+        crate::lang_options::CStandard::C23,
+    );
+}
+
+#[test]
+fn test_static_assert_keyword() {
+    crate::tests::test_utils::run_pass_with_std(
+        "static_assert(1 == 1, \"msg\"); int main() { return 0; }",
+        CompilePhase::Mir,
+        crate::lang_options::CStandard::C23,
+    );
+    crate::tests::test_utils::run_pass_with_std(
+        "static_assert(1 == 1); int main() { return 0; }",
+        CompilePhase::Mir,
+        crate::lang_options::CStandard::C23,
+    );
+}
+
+#[test]
+fn test_static_assert_c23_fail_no_msg() {
+    crate::tests::test_utils::run_fail_with_message_and_std(
+        "_Static_assert(1 == 0);",
+        "static assertion failed",
+        crate::lang_options::CStandard::C23,
+    );
+}
+
+#[test]
+fn test_static_assert_fail_with_msg() {
+    run_fail_with_message(
+        "_Static_assert(1 == 0, \"failure message\");",
+        "static assertion failed: \"failure message\"",
+    );
+}
+
+#[test]
+fn test_static_assert_c11_no_message_fails() {
+    // Current default is C11
+    run_fail_with_message(
+        "_Static_assert(1);",
+        "expected declaration specifiers, found StaticAssert",
+    );
+}
+
+#[test]
+fn test_static_assert_c11_keyword_fails() {
+    // In C11, 'static_assert' is not a keyword, so it should be an undeclared identifier or similar
+    run_fail_with_message(
+        "int main() { static_assert(1, \"ok\"); }",
+        "Undeclared identifier 'static_assert'",
+    );
+}
+
+#[test]
+fn test_static_assert_keyword_fail_no_msg() {
+    crate::tests::test_utils::run_fail_with_message_and_std(
+        "static_assert(0);",
+        "static assertion failed",
+        crate::lang_options::CStandard::C23,
+    );
+}
+
+#[test]
 fn test_static_assert_in_union() {
     run_pass(
         "union U { int x; _Static_assert(1, \"msg\"); }; int main() { return 0; }",

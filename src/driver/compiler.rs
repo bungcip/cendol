@@ -29,7 +29,7 @@ use super::cli::CompileConfig;
 
 /// Main compiler driver
 pub struct CompilerDriver {
-    config: CompileConfig,
+    pub(crate) config: CompileConfig,
     pub(crate) diagnostics: DiagnosticEngine,
     pub(crate) source_manager: SourceManager,
 }
@@ -256,7 +256,7 @@ impl CompilerDriver {
 
     fn run_lexer(&mut self, pp_tokens: &[PPToken]) -> Result<Vec<Token>, PipelineError> {
         let tokens = {
-            let mut lexer = Lexer::new(pp_tokens);
+            let mut lexer = Lexer::new(pp_tokens, self.config.lang_options.c_standard);
             lexer.tokenize_all()
         };
 
@@ -269,7 +269,12 @@ impl CompilerDriver {
     fn run_parser(&mut self, tokens: &[Token]) -> Result<ParsedAst, PipelineError> {
         // Parsing phase
         let mut parsed_ast = ParsedAst::new();
-        let mut parser = Parser::new(tokens, &mut parsed_ast, &mut self.diagnostics);
+        let mut parser = Parser::new(
+            tokens,
+            &mut parsed_ast,
+            &mut self.diagnostics,
+            &self.config.lang_options,
+        );
         match parser.parse_translation_unit() {
             Ok(_) => Ok(parsed_ast),
             Err(e) => {

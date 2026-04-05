@@ -1,4 +1,5 @@
-use crate::tests::test_utils::{run_fail_with_message, run_pipeline};
+use crate::lang_options::CStandard;
+use crate::tests::test_utils::{run_fail_with_message_and_std, run_pass_with_std};
 
 #[test]
 fn test_c23_nullptr() {
@@ -11,7 +12,11 @@ fn test_c23_nullptr() {
             if (nullptr) {}    // acts as boolean false
         }
     "#;
-    let _ = run_pipeline(source, crate::driver::artifact::CompilePhase::SemanticLowering);
+    run_pass_with_std(
+        source,
+        crate::driver::artifact::CompilePhase::SemanticLowering,
+        CStandard::C23,
+    );
 }
 
 #[test]
@@ -21,7 +26,7 @@ fn test_c23_nullptr_invalid_conversions() {
             int x = nullptr;
         }
     "#;
-    run_fail_with_message(source, "type mismatch");
+    run_fail_with_message_and_std(source, "type mismatch", CStandard::C23);
 }
 
 #[test]
@@ -37,5 +42,9 @@ fn test_c23_nullptr_comparison() {
             if (0 == nullptr) {}
         }
     "#;
-    let _ = run_pipeline(source, crate::driver::artifact::CompilePhase::SemanticLowering);
+    run_pass_with_std(
+        source,
+        crate::driver::artifact::CompilePhase::SemanticLowering,
+        CStandard::C23,
+    );
 }

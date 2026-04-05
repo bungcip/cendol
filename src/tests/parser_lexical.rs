@@ -50,7 +50,8 @@ fn test_c11_keywords() {
 
     for keyword in keywords {
         let symbol = StringId::new(keyword);
-        let expected_kind = lexer::is_keyword(symbol).unwrap_or_else(|| panic!("{} should be a keyword", keyword));
+        let expected_kind = lexer::is_keyword(symbol, crate::lang_options::CStandard::C11)
+            .unwrap_or_else(|| panic!("{} should be a keyword", keyword));
 
         let token_kinds = setup_lexer(keyword);
         assert_eq!(token_kinds.len(), 1, "Expected 1 token for keyword: {}", keyword);
@@ -150,8 +151,6 @@ fn test_literals() {
         ("0B1111", TokenKind::IntegerConstant(15, None, 2)),
         ("0b1010u", TokenKind::IntegerConstant(10, Some(IntegerSuffix::U), 2)),
         ("0B1111LL", TokenKind::IntegerConstant(15, Some(IntegerSuffix::LL), 2)),
-        // C23 nullptr
-        ("nullptr", TokenKind::Nullptr),
         // C11 integer suffixes - octal
         ("077u", TokenKind::IntegerConstant(63, Some(IntegerSuffix::U), 8)),
         ("0123l", TokenKind::IntegerConstant(83, Some(IntegerSuffix::L), 8)),
@@ -578,5 +577,38 @@ fn test_lexer_display() {
         // Just verify it doesn't panic and returns a non-empty string
         let display = kind.display();
         assert!(!display.is_empty(), "Display string should not be empty for {:?}", kind);
+    }
+}
+
+fn setup_lexer_with_std(source: &str, std: crate::lang_options::CStandard) -> Vec<TokenKind> {
+    let phase = CompilePhase::Lex;
+    let mut config = crate::driver::cli::CompileConfig::from_virtual_file(source.to_string(), phase);
+    config.lang_options.c_standard = std;
+    let mut driver = crate::driver::compiler::CompilerDriver::from_config(config);
+    let out = driver.run_pipeline(phase).expect("Pipeline failed");
+    let first = out.units.values().next().unwrap();
+    let tokens = first.lexed.clone().unwrap();
+
+    tokens
+        .into_iter()
+        .filter(|t| !matches!(t.kind, TokenKind::EndOfFile))
+        .map(|t| t.kind)
+        .collect()
+}
+
+#[test]
+fn test_c23_keywords() {
+    let keywords = vec![
+        ("nullptr", TokenKind::Nullptr),
+        ("true", TokenKind::True),
+        ("false", TokenKind::False),
+        ("static_assert", TokenKind::StaticAssert),
+        ("typeof_unqual", TokenKind::TypeofUnqual),
+    ];
+
+    for (text, expected_kind) in keywords {
+        let token_kinds = setup_lexer_with_std(text, crate::lang_options::CStandard::C23);
+        assert_eq!(token_kinds.len(), 1, "Expected 1 token for C23 keyword: {}", text);
+        assert_eq!(token_kinds[0], expected_kind, "Failed for C23 keyword: {}", text);
     }
 }

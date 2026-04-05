@@ -413,10 +413,14 @@ impl AstDumper {
 
             PNK::EnumConstant(name, val) => write!(f, "{}, {}", name, optional(*val, "auto"))?,
             PNK::StaticAssert(cond, msg) => {
-                let message_str = if let PNK::Literal(Literal::String(s)) = &ast.get_node(*msg).kind {
-                    s.to_string()
+                let message_str = if let Some(m) = msg {
+                    if let PNK::Literal(Literal::String(s)) = &ast.get_node(*m).kind {
+                        s.to_string()
+                    } else {
+                        "<invalid>".to_string()
+                    }
                 } else {
-                    "<invalid>".to_string()
+                    "<none>".to_string()
                 };
                 write!(f, "{}, \"{}\"", cond.get(), message_str)?
             }
@@ -596,10 +600,14 @@ impl AstDumper {
             }
             NodeKind::Param(data) => write!(f, "symbol={:?}, ty={:?}", data.symbol, data.qt)?,
             NodeKind::StaticAssert(cond, msg) => {
-                let message_str = if let NodeKind::Literal(Literal::String(s)) = ast.get_kind(*msg) {
-                    s.to_string()
+                let message_str = if let Some(m) = msg {
+                    if let NodeKind::Literal(Literal::String(s)) = ast.get_kind(*m) {
+                        s.to_string()
+                    } else {
+                        "<invalid>".to_string()
+                    }
                 } else {
-                    "<invalid>".to_string()
+                    "<none>".to_string()
                 };
                 write!(f, "condition={}, message=\"{}\"", cond.get(), message_str)?
             }

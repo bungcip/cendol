@@ -66,7 +66,7 @@ pub(crate) enum ResolvedNodeKind {
         Option<Box<ResolvedNodeKind>>,
         Box<ResolvedNodeKind>,
     ), // For statement
-    StaticAssert(Box<ResolvedNodeKind>, String),
+    StaticAssert(Box<ResolvedNodeKind>, Option<String>),
     CompoundLiteral(String, Box<ResolvedNodeKind>),
     FunctionDef {
         specifiers: Vec<String>,
@@ -314,7 +314,14 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
             Box::new(resolve_node(ast, for_stmt.body)),
         ),
         ParsedNodeKind::StaticAssert(expr, msg) => {
-            ResolvedNodeKind::StaticAssert(Box::new(resolve_node(ast, *expr)), msg.to_string())
+            let message = msg.map(|m| {
+                if let ParsedNodeKind::Literal(Literal::String(s)) = &ast.get_node(m).kind {
+                    s.to_string()
+                } else {
+                    "<invalid>".to_string()
+                }
+            });
+            ResolvedNodeKind::StaticAssert(Box::new(resolve_node(ast, *expr)), message)
         }
         ParsedNodeKind::CompoundLiteral(ty, init) => {
             // Check if init is an InitializerList, if so use resolve_initializer, otherwise resolve_node
@@ -514,7 +521,7 @@ where
 
     let mut diag = driver.diagnostics;
     let mut ast = ParsedAst::new();
-    let mut parser = Parser::new(&tokens, &mut ast, &mut diag);
+    let mut parser = Parser::new(&tokens, &mut ast, &mut diag, &driver.config.lang_options);
     let result = parse_fn(&mut parser);
 
     assert!(diag.diagnostics.is_empty());
@@ -531,11 +538,29 @@ pub(crate) fn setup_expr(source: &str) -> ResolvedNodeKind {
 }
 
 pub(crate) fn setup_declaration(source: &str) -> ResolvedNodeKind {
-    let (ast, decl_result) = setup_source(source, declarations::parse_decl);
+    setup_declaration_with_std(source, crate::lang_options::CStandard::C11)
+}
 
-    match decl_result {
-        Ok(node) => resolve_node(&ast, node),
-        _ => panic!("Expected declaration"),
+pub(crate) fn setup_declaration_with_std(source: &str, std: crate::lang_options::CStandard) -> ResolvedNodeKind {
+    let phase = CompilePhase::Parse;
+    let mut config = crate::driver::cli::CompileConfig::from_virtual_file(source.to_string(), phase);
+    config.lang_options.c_standard = std;
+    let mut driver = crate::driver::compiler::CompilerDriver::from_config(config);
+    let out = driver.run_pipeline(phase).expect("Pipeline failed");
+    let first = out.units.values().next().unwrap();
+    let ast = first.parsed_ast.clone().unwrap();
+    let root = ast.get_root();
+
+    if let crate::ast::parsed::ParsedNodeKind::TranslationUnit(decls) = &ast.get_node(root).kind {
+        // Find the actual declaration among possibly dummy/semicolon nodes
+        for &node in decls {
+            if !matches!(ast.get_node(node).kind, crate::ast::parsed::ParsedNodeKind::Dummy) {
+                return resolve_node(&ast, node);
+            }
+        }
+        panic!("No declaration found in translation unit");
+    } else {
+        panic!("Expected translation unit");
     }
 }
 

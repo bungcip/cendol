@@ -60,7 +60,7 @@ fn test_const_eval_constant_p() {
 }
 
 #[test]
-fn test_const_eval_inf_nan() {
+fn test_const_eval_builtin_inf_nan() {
     let code = r#"
         _Static_assert(__builtin_inf() > 1e308, "inf");
         _Static_assert(__builtin_inff() > 1e37f, "inff");

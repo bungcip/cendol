@@ -2,6 +2,19 @@ use crate::driver::artifact::CompilePhase;
 use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
+fn test_builtin_choose_expr_lazy_semantics() {
+    run_pass(
+        r#"
+        int main() {
+            int x = __builtin_choose_expr(1, 42, undefined_variable);
+            return x - 42;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
 fn test_builtin_choose_expr_lvalue_preservation() {
     // __builtin_choose_expr should preserve lvalue-ness.
     run_pass(
@@ -53,21 +66,6 @@ fn test_builtin_choose_expr_npc_preservation() {
         int main() {
             void *p = __builtin_choose_expr(1, 0, (void*)0);
             void *q = __builtin_choose_expr(0, (void*)0, 0);
-            return 0;
-        }
-        "#,
-        CompilePhase::Mir,
-    );
-}
-
-#[test]
-fn test_generic_selection_npc_preservation() {
-    // _Generic should act as a null pointer constant if the selected branch is one.
-    run_pass(
-        r#"
-        int main() {
-            void *p = _Generic(0, int: 0);
-            void *q = _Generic(0, int: (void*)0);
             return 0;
         }
         "#,

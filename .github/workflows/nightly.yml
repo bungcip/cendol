@@ -1,0 +1,31 @@
+name: Nightly Tests
+
+on:
+  schedule:
+    - cron: "0 17 * * *" # 00:00 WIB
+  workflow_dispatch:
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Check if already tested
+        id: cache-check
+        uses: actions/cache@v5
+        with:
+          path: .nightly-tested
+          key: nightly-${{ github.sha }}
+
+      - name: Run Tests
+        if: steps.cache-check.outputs.cache-hit != 'true'
+        run: |
+          # The script realworld_test.py handles building cendol internally.
+          # We run tests for tinyexpr and lua as requested.
+          python3 realworld_test.py tinyexpr
+          python3 realworld_test.py lua
+
+          # Mark this commit as tested
+          touch .nightly-tested

@@ -61,6 +61,13 @@ pub(crate) struct DirectiveKeywordTable {
     pub(crate) counter_macro: StringId,
     pub(crate) pragma_operator: StringId,
     pub(crate) va_opt: StringId,
+    pub(crate) once: StringId,
+    pub(crate) push_macro: StringId,
+    pub(crate) pop_macro: StringId,
+    pub(crate) message: StringId,
+    pub(crate) pack: StringId,
+    pub(crate) push: StringId,
+    pub(crate) pop: StringId,
 }
 
 impl Default for DirectiveKeywordTable {
@@ -100,6 +107,13 @@ impl DirectiveKeywordTable {
             counter_macro: StringId::new("__COUNTER__"),
             pragma_operator: StringId::new("_Pragma"),
             va_opt: StringId::new("__VA_OPT__"),
+            once: StringId::new("once"),
+            push_macro: StringId::new("push_macro"),
+            pop_macro: StringId::new("pop_macro"),
+            message: StringId::new("message"),
+            pack: StringId::new("pack"),
+            push: StringId::new("push"),
+            pop: StringId::new("pop"),
         }
     }
 

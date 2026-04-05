@@ -1,3 +1,4 @@
+use crate::ast::StringId;
 use crate::diagnostic::{Diagnostic, DiagnosticLevel};
 use crate::source_manager::SourceSpan;
 
@@ -39,7 +40,9 @@ pub enum PPErrorKind {
     #[error("Expected end of directive")]
     ExpectedEod,
     #[error("Unknown pragma: {0}")]
-    UnknownPragma(String),
+    UnknownPragma(StringId),
+    #[error("Invalid Pragma Pack Value: {0}")]
+    InvalidPragmaPackValue(StringId),
     #[error("Pragma error: {0}")]
     PragmaError(String),
     #[error("Unclosed preprocessor conditional directive")]

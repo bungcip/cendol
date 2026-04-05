@@ -102,7 +102,7 @@ impl<'src> Preprocessor<'src> {
             DirectiveKind::Pragma => self.handle_pragma(),
             DirectiveKind::Error => self.handle_error(),
             DirectiveKind::Warning => self.handle_warning(),
-            _ => unreachable!("Conditional directives handled separately"),
+            _ => unreachable!("ICE: Conditional directives handled separately"),
         }
     }
 
@@ -644,22 +644,24 @@ impl<'src> Preprocessor<'src> {
     fn handle_pragma(&mut self) -> Result<(), PPError> {
         let (token, symbol) = self.expect_identifier()?;
 
-        let pragma_name = symbol.as_str();
-        match pragma_name {
-            "once" => {
-                if let Some(lexer) = self.lexer_stack.last() {
-                    self.once_included.insert(lexer.source_id);
-                }
+        if symbol == self.directive_keywords.once {
+            if let Some(lexer) = self.lexer_stack.last() {
+                self.once_included.insert(lexer.source_id);
             }
-            "push_macro" => self.handle_push_macro()?,
-            "pop_macro" => self.handle_pop_macro()?,
-            "message" => self.handle_pragma_message()?,
-            "warning" => self.handle_pragma_warning(DiagnosticLevel::Warning)?,
-            "error" => self.handle_pragma_error(DiagnosticLevel::Error)?,
-            "pack" => return self.handle_pragma_pack(),
-            _ => {
-                return self.emit_error_loc(PPErrorKind::UnknownPragma(pragma_name.to_string()), token.location);
-            }
+        } else if symbol == self.directive_keywords.push_macro {
+            self.handle_push_macro()?;
+        } else if symbol == self.directive_keywords.pop_macro {
+            self.handle_pop_macro()?;
+        } else if symbol == self.directive_keywords.message {
+            self.handle_pragma_message()?;
+        } else if symbol == self.directive_keywords.warning {
+            self.handle_pragma_warning(DiagnosticLevel::Warning)?;
+        } else if symbol == self.directive_keywords.error {
+            self.handle_pragma_error(DiagnosticLevel::Error)?;
+        } else if symbol == self.directive_keywords.pack {
+            return self.handle_pragma_pack();
+        } else {
+            return self.emit_error_loc(PPErrorKind::UnknownPragma(symbol), token.location);
         }
 
         self.collect_tokens_until_eod();
@@ -805,33 +807,26 @@ impl<'src> Preprocessor<'src> {
         } else if let Some(t) = it.next() {
             match t.kind {
                 PPTokenKind::Identifier(sym) => {
-                    let name = sym.as_str();
-                    match name {
-                        "push" => {
-                            if it.peek().map(|t| t.kind) == Some(PPTokenKind::Comma) {
-                                it.next(); // consume ','
-                                let val = self.parse_pack_value_from_iter(&mut it, t.location)?;
-                                PragmaPackKind::PushSet(val)
-                            } else {
-                                PragmaPackKind::Push
-                            }
+                    if sym == self.directive_keywords.push {
+                        if it.peek().map(|t| t.kind) == Some(PPTokenKind::Comma) {
+                            it.next(); // consume ','
+                            let val = self.parse_pack_value_from_iter(&mut it, t.location)?;
+                            PragmaPackKind::PushSet(val)
+                        } else {
+                            PragmaPackKind::Push
                         }
-                        "pop" => PragmaPackKind::Pop,
-                        _ => {
-                            let val = name.parse::<u8>().ok();
-                            if let Some(v) = val {
-                                if [1, 2, 4, 8, 16].contains(&v) {
-                                    PragmaPackKind::Set(Some(v))
-                                } else {
-                                    return self.emit_error_loc(
-                                        PPErrorKind::UnknownPragma(format!("invalid pack value: {}", v)),
-                                        t.location,
-                                    );
-                                }
+                    } else if sym == self.directive_keywords.pop {
+                        PragmaPackKind::Pop
+                    } else {
+                        let val = sym.as_str().parse::<u8>().ok();
+                        if let Some(v) = val {
+                            if [1, 2, 4, 8, 16].contains(&v) {
+                                PragmaPackKind::Set(Some(v))
                             } else {
-                                return self
-                                    .emit_error_loc(PPErrorKind::UnknownPragma(format!("pack({})", name)), t.location);
+                                return self.emit_error_loc(PPErrorKind::InvalidPragmaPackValue(sym), t.location);
                             }
+                        } else {
+                            return self.emit_error_loc(PPErrorKind::InvalidPragmaPackValue(sym), t.location);
                         }
                     }
                 }
@@ -839,7 +834,7 @@ impl<'src> Preprocessor<'src> {
                     let val = self.parse_pack_value_from_token(t)?;
                     PragmaPackKind::Set(Some(val))
                 }
-                _ => return self.emit_error_loc(PPErrorKind::UnknownPragma("pack".to_string()), t.location),
+                _ => return self.emit_error_loc(PPErrorKind::UnknownPragma(self.directive_keywords.pack), t.location),
             }
         } else {
             PragmaPackKind::Set(None)
@@ -848,11 +843,11 @@ impl<'src> Preprocessor<'src> {
         if has_paren {
             if let Some(t) = it.next() {
                 if t.kind != PPTokenKind::RightParen {
-                    return self.emit_error_loc(PPErrorKind::UnknownPragma("pack".to_string()), t.location);
+                    return self.emit_error_loc(PPErrorKind::UnknownPragma(self.directive_keywords.pack), t.location);
                 }
             } else {
                 return self.emit_error_loc(
-                    PPErrorKind::UnknownPragma("pack".to_string()),
+                    PPErrorKind::UnknownPragma(self.directive_keywords.pack),
                     self.get_current_location(),
                 );
             }
@@ -874,21 +869,17 @@ impl<'src> Preprocessor<'src> {
 
     fn parse_pack_value_from_token(&self, t: &PPToken) -> Result<u8, PPError> {
         let PPTokenKind::Number(sym) = t.kind else {
-            return self.emit_error_loc(PPErrorKind::UnknownPragma("pack".to_string()), t.location);
+            return self.emit_error_loc(PPErrorKind::UnknownPragma(self.directive_keywords.pack), t.location);
         };
-        let val = sym.as_str().parse::<u8>().ok().ok_or_else(|| {
-            self.error_loc(
-                PPErrorKind::UnknownPragma(format!("invalid pack value: {}", sym.as_str())),
-                t.location,
-            )
-        })?;
+        let val = sym
+            .as_str()
+            .parse::<u8>()
+            .ok()
+            .ok_or_else(|| self.error_loc(PPErrorKind::InvalidPragmaPackValue(sym), t.location))?;
         if [1, 2, 4, 8, 16].contains(&val) {
             Ok(val)
         } else {
-            self.emit_error_loc(
-                PPErrorKind::UnknownPragma(format!("invalid pack value: {}", val)),
-                t.location,
-            )
+            self.emit_error_loc(PPErrorKind::InvalidPragmaPackValue(sym), t.location)
         }
     }
 
@@ -900,7 +891,7 @@ impl<'src> Preprocessor<'src> {
         if let Some(t) = it.next() {
             self.parse_pack_value_from_token(t)
         } else {
-            self.emit_error_loc(PPErrorKind::UnknownPragma("pack".to_string()), loc)
+            self.emit_error_loc(PPErrorKind::UnknownPragma(self.directive_keywords.pack), loc)
         }
     }
 

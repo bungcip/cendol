@@ -4,51 +4,6 @@ use crate::tests::codegen_common::{run_c_code_with_output, setup_cranelift};
 use crate::tests::test_utils::run_pass;
 
 #[test]
-fn test_indirect_variadic_call_validation() {
-    run_pass(
-        r#"
-        int variadic(int count, ...) {
-            return count;
-        }
-
-        int main() {
-            int (*func_ptr)(int, ...) = variadic;
-            // Indirect call with extra arguments
-            func_ptr(1, 2, 3);
-            return 0;
-        }
-        "#,
-        CompilePhase::Cranelift,
-    );
-}
-
-#[test]
-fn test_va_arg_long_double() {
-    let code = r#"
-#include <stdarg.h>
-int printf(const char *fmt, ...);
-
-void myprintf(int count, ...) {
-    va_list ap;
-    va_start(ap, count);
-    for (int i = 0; i < count; i++) {
-        long double x = va_arg(ap, long double);
-        printf("%.1Lf ", x);
-    }
-    va_end(ap);
-    printf("\n");
-}
-
-int main() {
-    myprintf(1, 34.1L);
-    return 0;
-}
-"#;
-    let output = run_c_code_with_output(code);
-    assert_eq!(output.trim(), "34.1");
-}
-
-#[test]
 fn test_printf_double() {
     let code = r#"
 int printf(const char *fmt, ...);
@@ -239,4 +194,121 @@ int main() {
 "#;
     let output = run_c_code_with_output(code);
     assert_eq!(output.trim(), "42");
+}
+
+#[test]
+fn test_printf_hfa_mixed_args() {
+    let code = r#"
+int printf(const char *fmt, ...);
+
+struct hfa_float2 { float a, b; } f2 = { 1.1f, 1.2f };
+struct hfa_double1 { double a; } d1 = { 2.2 };
+int i1 = 1;
+int i2 = 2;
+
+void mixed_args(int i1, struct hfa_float2 a, int i2, struct hfa_double1 c)
+{
+    printf("%d %.1f %.1f %d %.1f", i1, a.a, a.b, i2, c.a);
+}
+
+int main() {
+    mixed_args(i1, f2, i2, d1);
+    return 0;
+}
+"#;
+    let output = run_c_code_with_output(code);
+    assert_eq!(output.trim(), "1 1.1 1.2 2 2.2");
+}
+
+#[test]
+fn test_variadic_struct_arg() {
+    let source = r#"
+        #include <stdarg.h>
+        struct S { char x[1]; };
+        void foo(int n, ...) {
+            va_list ap;
+            va_start(ap, n);
+            struct S s = va_arg(ap, struct S);
+        }
+    "#;
+    let clif_dump = setup_cranelift(source);
+
+    // For va_arg with aggregate, we expect:
+    // 1. Calculation of address
+    // 2. No load of the value from that address (in the register path)
+    // 3. A memcpy call to copy from that address to the destination
+
+    assert!(
+        clif_dump.contains("call"),
+        "Expected memcpy call for va_arg aggregate assignment. Dump:\n{}",
+        clif_dump
+    );
+}
+
+#[test]
+fn test_partial_load_struct_arg() {
+    let source = r#"
+        struct S { char x[1]; };
+        void variadic(int n, ...);
+        void caller() {
+            struct S s = {0};
+            variadic(1, s);
+        }
+    "#;
+    let clif_dump = setup_cranelift(source);
+
+    // In caller(), passing `s` to variadic function involves loading it.
+    // Since `s` is 1 byte, we should see partial loading logic (load.i8)
+    // instead of load.i64.
+
+    assert!(
+        clif_dump.contains("load.i8"),
+        "Expected partial load (load.i8) for 1-byte struct argument to variadic function. Dump:\n{}",
+        clif_dump
+    );
+}
+
+#[test]
+fn test_indirect_variadic_call_validation() {
+    run_pass(
+        r#"
+        int variadic(int count, ...) {
+            return count;
+        }
+
+        int main() {
+            int (*func_ptr)(int, ...) = variadic;
+            // Indirect call with extra arguments
+            func_ptr(1, 2, 3);
+            return 0;
+        }
+        "#,
+        CompilePhase::Cranelift,
+    );
+}
+
+#[test]
+fn test_va_arg_long_double() {
+    let code = r#"
+#include <stdarg.h>
+int printf(const char *fmt, ...);
+
+void myprintf(int count, ...) {
+    va_list ap;
+    va_start(ap, count);
+    for (int i = 0; i < count; i++) {
+        long double x = va_arg(ap, long double);
+        printf("%.1Lf ", x);
+    }
+    va_end(ap);
+    printf("\n");
+}
+
+int main() {
+    myprintf(1, 34.1L);
+    return 0;
+}
+"#;
+    let output = run_c_code_with_output(code);
+    assert_eq!(output.trim(), "34.1");
 }

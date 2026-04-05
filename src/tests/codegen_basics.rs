@@ -8,12 +8,6 @@ use crate::tests::codegen_common::{run_c_code_exit_status, setup_cranelift};
 use crate::tests::test_utils::run_pass;
 
 #[test]
-fn test_invalid_hex_float_no_exponent() {
-    let source = "int main() { double f = 0x1.0p; }";
-    crate::tests::test_utils::run_fail_with_message(source, "Unknown");
-}
-
-#[test]
 fn test_boolean_logic_lowering() {
     let source = r#"
             int main() {

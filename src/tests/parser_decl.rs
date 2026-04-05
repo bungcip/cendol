@@ -460,6 +460,27 @@ fn test_bitfield_declaration() {
 }
 
 #[test]
+fn test_bitfield_builder_coverage() {
+    // This test ensures that the ParsedDeclarator::BitField variant is correctly
+    // handled by build_parsed_declarator, even though the bit width expression
+    // is not used for type construction (it's handled in struct member parsing).
+    run_pass(
+        r#"
+        struct S {
+            int x : 3;
+            unsigned int y : 5;
+        };
+        int main() {
+            struct S s;
+            s.x = 1;
+            return 0;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
 fn test_bitfield_with_mixed_members() {
     let resolved =
         setup_declaration("struct Mixed { int regular; int bitfield: 4; int another_regular; unsigned flag: 1; };");

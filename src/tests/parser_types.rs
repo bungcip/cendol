@@ -1,15 +1,6 @@
 use super::parser_utils::setup_declaration;
 use crate::ast::NameId;
-use crate::driver::artifact::CompilePhase;
 use crate::tests::semantic_common::setup_lowering;
-use crate::tests::test_utils::run_pass;
-
-#[test]
-fn test_merge_type_specifiers_unsigned_unsigned() {
-    // unsigned unsigned int a;
-    let code = "unsigned unsigned int a;";
-    run_pass(code, CompilePhase::Parse);
-}
 
 #[test]
 fn test_typeof_expr() {
@@ -18,6 +9,18 @@ fn test_typeof_expr() {
     Declaration:
       specifiers:
         - TypeofExpr(5)
+      init_declarators:
+        - name: x
+    ");
+}
+
+#[test]
+fn test_typeof_comma_expr() {
+    let decl = setup_declaration("typeof((void)0, 5) x;");
+    insta::assert_yaml_snapshot!(decl, @"
+    Declaration:
+      specifiers:
+        - TypeofExpr(6)
       init_declarators:
         - name: x
     ");
@@ -35,18 +38,6 @@ fn test_typeof_type() {
     "#);
 }
 
-#[test]
-fn test_typeof_comma_expr() {
-    let decl = setup_declaration("typeof((void)0, 5) x;");
-    insta::assert_yaml_snapshot!(decl, @"
-    Declaration:
-      specifiers:
-        - TypeofExpr(6)
-      init_declarators:
-        - name: x
-    ");
-}
-
 fn check_type(source: &str, expected: &str) {
     let (_ast, registry, symbol_table) = setup_lowering(source);
     // Assume variable is named 'x'
@@ -62,6 +53,7 @@ fn test_type_combinations() {
     let cases = vec![
         ("short int x;", "short"),
         ("unsigned short int x;", "unsigned short"),
+        ("unsigned unsigned int x;", "unsigned int"),
         ("long int x;", "long"),
         ("signed long int x;", "long"),
         ("unsigned long int x;", "unsigned long"),

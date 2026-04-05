@@ -232,22 +232,34 @@ impl<'a> MirGen<'a> {
                 let linkage = self.calculate_linkage(storage, def_state);
                 let has_definition = def_state == DefinitionState::Defined;
 
-                let func_type_kind = self.registry.get(symbol_type_info.ty()).kind.clone();
-                if let TypeKind::Function {
-                    return_type,
-                    parameters,
-                    is_variadic,
-                    ..
-                } = &func_type_kind
+                // Bolt ⚡: Avoid cloning TypeKind.
+                let mut fn_data = None;
                 {
-                    let return_mir_type = self.lower_type(*return_type);
-                    let param_mir_types = parameters.iter().map(|p| self.lower_qual_type(p.param_type)).collect();
+                    let type_info = self.registry.get(symbol_type_info.ty());
+                    if let TypeKind::Function {
+                        return_type,
+                        parameters,
+                        is_variadic,
+                        ..
+                    } = &type_info.kind
+                    {
+                        fn_data = Some((
+                            *return_type,
+                            parameters.iter().map(|p| p.param_type).collect::<Vec<_>>(),
+                            *is_variadic,
+                        ));
+                    }
+                }
+
+                if let Some((return_type, parameters, is_variadic)) = fn_data {
+                    let return_mir_type = self.lower_type(return_type);
+                    let param_mir_types = parameters.into_iter().map(|p| self.lower_qual_type(p)).collect();
 
                     self.define_or_declare_function(
                         symbol_name,
                         param_mir_types,
                         return_mir_type,
-                        *is_variadic,
+                        is_variadic,
                         has_definition,
                         linkage,
                     );
@@ -1062,16 +1074,46 @@ impl<'a> MirGen<'a> {
                 .expect("Placeholder must exist for recursive type");
         }
 
-        let ast_type_kind = self.registry.get(ty).kind.clone();
+        // Bolt ⚡: Avoid cloning the entire TypeKind.
+        // We use matching on a reference and scoped extraction where needed.
+        enum Task {
+            Record(Option<NameId>, bool, bool),
+            Builtin(BuiltinType),
+            Pointer(QualType),
+            Array(TypeRef, ArraySizeType),
+            Function(TypeRef, Vec<crate::semantic::FunctionParameter>, bool),
+            Complex(TypeRef),
+            Default,
+        }
 
-        match ast_type_kind {
-            TypeKind::Record {
-                tag,
-                is_union,
-                is_complete,
-                ..
-            } => self.lower_recursive_record_pattern(ty, tag, is_union, is_complete),
-            TypeKind::Builtin(b) => {
+        let task = {
+            let type_info = self.registry.get(ty);
+            match &type_info.kind {
+                TypeKind::Record {
+                    tag,
+                    is_union,
+                    is_complete,
+                    ..
+                } => Task::Record(*tag, *is_union, *is_complete),
+                TypeKind::Builtin(b) => Task::Builtin(*b),
+                TypeKind::Pointer { pointee } => Task::Pointer(*pointee),
+                TypeKind::Array { element_type, size } => Task::Array(*element_type, *size),
+                TypeKind::Function {
+                    return_type,
+                    parameters,
+                    is_variadic,
+                    ..
+                } => Task::Function(*return_type, parameters.to_vec(), *is_variadic),
+                TypeKind::Complex { base_type } => Task::Complex(*base_type),
+                _ => Task::Default,
+            }
+        };
+
+        match task {
+            Task::Record(tag, is_union, is_complete) => {
+                self.lower_recursive_record_pattern(ty, tag, is_union, is_complete)
+            }
+            Task::Builtin(b) => {
                 let mir_type = if matches!(b, BuiltinType::VaList) {
                     self.lower_valist_type()
                 } else {
@@ -1079,24 +1121,19 @@ impl<'a> MirGen<'a> {
                 };
                 self.cache_type(ty, mir_type)
             }
-            TypeKind::Pointer { pointee } => {
+            Task::Pointer(pointee) => {
                 let mir_type = self.lower_pointer_type(pointee);
                 self.cache_type(ty, mir_type)
             }
-            TypeKind::Array { element_type, size } => {
+            Task::Array(element_type, size) => {
                 let mir_type = self.lower_array_type(ty, element_type, &size);
                 self.cache_type(ty, mir_type)
             }
-            TypeKind::Function {
-                return_type,
-                parameters,
-                is_variadic,
-                ..
-            } => {
+            Task::Function(return_type, parameters, is_variadic) => {
                 let mir_type = self.lower_function_type(return_type, &parameters, is_variadic);
                 self.cache_type(ty, mir_type)
             }
-            TypeKind::Complex { base_type } => {
+            Task::Complex(base_type) => {
                 let mir_type = self.lower_complex_type(base_type);
                 self.cache_type(ty, mir_type)
             }

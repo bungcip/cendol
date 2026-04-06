@@ -597,44 +597,49 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn is_null_pointer_constant(&self, node: NodeRef) -> bool {
+        // C11 6.3.2.3p3: An integer constant expression with the value 0,
+        // or such an expression cast to type void *, is called a null pointer constant.
+        // In C23, nullptr is also a null pointer constant.
+
         let node_kind = self.ast.get_kind(node);
-        // In C23, nullptr is a null pointer constant
+
         match node_kind {
-            NodeKind::Literal(Literal::Int { val: 0, .. }) | NodeKind::Literal(Literal::Nullptr) => true,
+            NodeKind::Literal(Literal::Nullptr) => return true,
             NodeKind::Cast(qt, inner) if qt.ty() == self.registry.type_void_ptr => {
-                self.is_null_pointer_constant(*inner)
+                return self.is_null_pointer_constant(*inner);
             }
-            NodeKind::UnaryOp(UnaryOp::Real, operand) => self.is_null_pointer_constant(*operand),
-            NodeKind::UnaryOp(UnaryOp::Imag, operand) => {
-                let operand_ty = self.semantic_info.types.get(operand.index()).and_then(|t| *t);
-                if operand_ty.is_some_and(|t| t.is_complex()) {
-                    self.is_null_pointer_constant(*operand)
-                } else {
-                    // __imag__ on real type returns zero, which is a null pointer constant if it's an integer 0.
-                    // But usually __imag__ on integer is not very useful.
-                    // Let's check if the result of __imag__ on real is a constant 0.
-                    // Actually, if operand is real, it's an rvalue anyway, so it might already be handled
-                    // by Literal(Literal::Int { val: 0, .. }) if constant folded.
-                    // But if not folded yet:
-                    false
-                }
-            }
+            // Transparent wrappers that preserve NPC status (DR 481)
             NodeKind::BuiltinChooseExpr(..) => {
                 if let Some(&selected) = self.semantic_info.choose_expressions.get(&node.index()) {
-                    self.is_null_pointer_constant(selected)
-                } else {
-                    false
+                    return self.is_null_pointer_constant(selected);
                 }
             }
             NodeKind::GenericSelection(_) => {
                 if let Some(&selected) = self.semantic_info.generic_selections.get(&node.index()) {
-                    self.is_null_pointer_constant(selected)
-                } else {
-                    false
+                    return self.is_null_pointer_constant(selected);
                 }
             }
-            _ => false,
+            NodeKind::UnaryOp(UnaryOp::Real | UnaryOp::Imag, operand) => {
+                // __real__ and __imag__ on pointers/integers are GCC extensions.
+                // However, Cendol only allows them on real types (integers/floats) and complex types.
+                // If applied to an integer NPC, propagate it.
+                if self.is_null_pointer_constant(*operand) {
+                    return true;
+                }
+            }
+            _ => {}
         }
+
+        self.is_integer_constant_zero(node)
+    }
+
+    fn is_integer_constant_zero(&self, node: NodeRef) -> bool {
+        if let Some(qt) = self.semantic_info.types.get(node.index()).and_then(|t| *t) {
+            if qt.is_integer() {
+                return self.const_ctx().eval_int(node) == Some(0);
+            }
+        }
+        false
     }
 
     /// Checks if the operand is valid for increment/decrement operations (prefix or postfix).

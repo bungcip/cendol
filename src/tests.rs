@@ -87,6 +87,7 @@ pub mod guardian_fam_union_constraints;
 pub mod guardian_generic;
 pub mod guardian_index_completeness;
 pub mod guardian_noreturn_switch;
+pub mod guardian_npc_propagation;
 pub mod guardian_offsetof;
 pub mod guardian_parameter_completeness;
 pub mod guardian_relational_pointer_constraints;

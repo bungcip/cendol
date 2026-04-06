@@ -47,7 +47,6 @@ fn test_choose_expr_npc_propagation() {
     );
 }
 
-
 #[test]
 fn test_real_imag_npc_propagation() {
     run_pass(

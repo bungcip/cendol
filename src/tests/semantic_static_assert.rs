@@ -261,6 +261,8 @@ fn test_static_assert_float_logical_and_comparison() {
         _Static_assert(0.0 || 1.0, "");
         _Static_assert(1.5 != 2.5, "");
         _Static_assert(3.14 > 3.0, "");
+        _Static_assert((_Bool)(2.5 + 1.5), "");
+        _Static_assert(!(_Bool)(1.5 - 1.5), "");
     "#;
     run_pass(code, CompilePhase::Mir);
 }

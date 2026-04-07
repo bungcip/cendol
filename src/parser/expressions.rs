@@ -188,9 +188,9 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
             parser.advance();
             Ok(parser.push_node(ParsedNodeKind::Literal(Literal::String(s)), token.span))
         }
-        TokenKind::CharacterConstant(c) => {
+        TokenKind::CharacterConstant(c, prefix) => {
             parser.advance();
-            Ok(parser.push_node(ParsedNodeKind::Literal(Literal::Char(c)), token.span))
+            Ok(parser.push_node(ParsedNodeKind::Literal(Literal::Char(c, prefix)), token.span))
         }
         TokenKind::Nullptr => {
             parser.advance();

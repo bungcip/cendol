@@ -504,7 +504,7 @@ impl<'a> MirGen<'a> {
                         ))
                     }
                 }
-                Literal::Char(val) => Some(Operand::Constant(
+                Literal::Char(val, _) => Some(Operand::Constant(
                     self.create_constant(mir_ty, ConstValueKind::Int(*val as i64)),
                 )),
                 Literal::String(val) => Some(self.visit_literal_string(val, ty)),

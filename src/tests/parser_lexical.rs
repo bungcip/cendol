@@ -195,8 +195,9 @@ fn test_literals() {
 
     // Character constants
     let char_literals = vec![
-        ("'a'", TokenKind::CharacterConstant(97)),   // 'a' = 97
-        ("'\\n'", TokenKind::CharacterConstant(10)), // '\n' = 10
+        ("'a'", TokenKind::CharacterConstant(97, crate::ast::literal::CharPrefix::None)),   // 'a' = 97
+        ("'\\n'", TokenKind::CharacterConstant(10, crate::ast::literal::CharPrefix::None)), // '\n' = 10
+        ("u8'a'", TokenKind::CharacterConstant(97, crate::ast::literal::CharPrefix::Utf8)), // u8'a'
     ];
 
     for (text, expected_kind) in char_literals {
@@ -422,7 +423,7 @@ fn test_lexer_display() {
     let kinds = vec![
         TokenKind::IntegerConstant(1, None, 10),
         TokenKind::FloatConstant(1.0, None),
-        TokenKind::CharacterConstant(97),
+        TokenKind::CharacterConstant(97, crate::ast::literal::CharPrefix::None),
         TokenKind::StringLiteral(StringId::new("test")),
         TokenKind::Identifier(StringId::new("test")),
         TokenKind::Auto,

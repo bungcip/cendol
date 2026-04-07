@@ -500,7 +500,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn is_numeric_literal(&self, node: NodeRef) -> bool {
         if let NodeKind::Literal(literal) = self.ast.get_kind(node) {
-            matches!(literal, Literal::Int { .. } | Literal::Char(_) | Literal::Float { .. })
+            matches!(literal, Literal::Int { .. } | Literal::Char(..) | Literal::Float { .. })
         } else {
             false
         }
@@ -3404,7 +3404,16 @@ impl<'a> SemanticAnalyzer<'a> {
                 };
                 Some(QualType::unqualified(ty))
             }
-            Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
+            Literal::Char(_, prefix) => {
+                let ty = match prefix {
+                    crate::ast::literal::CharPrefix::Utf8 => self.registry.type_char_unsigned,
+                    crate::ast::literal::CharPrefix::Wide => self.registry.type_int,
+                    crate::ast::literal::CharPrefix::Char16 => self.registry.get_builtin_type(BuiltinType::UShort),
+                    crate::ast::literal::CharPrefix::Char32 => self.registry.get_builtin_type(BuiltinType::UInt),
+                    crate::ast::literal::CharPrefix::None => self.registry.type_int,
+                };
+                Some(QualType::unqualified(ty))
+            }
             Literal::String(name) => {
                 let parsed = parse_string_literal(*name);
                 let element_type = self.registry.get_builtin_type(parsed.builtin_type);

@@ -153,7 +153,16 @@ impl<'a> ConstEvalCtx<'a> {
                 };
                 QualType::unqualified(ty)
             }
-            Literal::Char(_) => QualType::unqualified(self.registry.type_int),
+            Literal::Char(_, prefix) => {
+                let ty = match prefix {
+                    crate::ast::literal::CharPrefix::Utf8 => self.registry.type_char_unsigned,
+                    crate::ast::literal::CharPrefix::Wide => self.registry.type_int,
+                    crate::ast::literal::CharPrefix::Char16 => self.registry.get_builtin_type(crate::semantic::BuiltinType::UShort),
+                    crate::ast::literal::CharPrefix::Char32 => self.registry.get_builtin_type(crate::semantic::BuiltinType::UInt),
+                    crate::ast::literal::CharPrefix::None => self.registry.type_int,
+                };
+                QualType::unqualified(ty)
+            }
             Literal::Float { .. } => QualType::unqualified(self.registry.type_double),
             Literal::String(val) => {
                 let parsed_str = parse_string_literal(*val);
@@ -220,7 +229,7 @@ impl<'a> ConstEvalCtx<'a> {
         let node_kind = self.ast.get_kind(expr_node);
         match node_kind {
             NodeKind::Literal(Literal::Int { val, .. }) => Some(*val),
-            NodeKind::Literal(Literal::Char(val)) => Some(*val as i64),
+            NodeKind::Literal(Literal::Char(val, _)) => Some(*val as i64),
             NodeKind::Literal(Literal::True) => Some(1),
             NodeKind::Literal(Literal::False) => Some(0),
             NodeKind::Ident(_, sym) => {
@@ -334,7 +343,7 @@ impl<'a> ConstEvalCtx<'a> {
                 Some(*val)
             }
             NodeKind::Literal(Literal::Int { val, .. }) => Some(*val as f64),
-            NodeKind::Literal(Literal::Char(val)) => Some(*val as f64),
+            NodeKind::Literal(Literal::Char(val, _)) => Some(*val as f64),
             NodeKind::Literal(Literal::True) => Some(1.0),
             NodeKind::Literal(Literal::False) => Some(0.0),
             NodeKind::BinaryOp(op, left, right) => {

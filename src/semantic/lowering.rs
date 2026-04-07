@@ -497,6 +497,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 pub(crate) struct DeclSpecInfo {
     pub(crate) storage: Option<StorageClass>,
     pub(crate) is_thread_local: bool,
+    pub(crate) is_constexpr: bool,
     pub(crate) qualifiers: TypeQualifiers,
     pub(crate) base_type: Option<QualType>,
     pub(crate) is_typedef: bool,
@@ -1329,6 +1330,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         init: Option<ParsedNodeRef>,
         span: SourceSpan,
     ) {
+        if spec_info.is_constexpr {
+            if init.is_none() {
+                self.report_error(span, SemanticErrorKind::ConstexprRequiresInitializer);
+            }
+            qt = self.merge_qualifiers_with_check(qt.strip_all(), qt.qualifiers() | TypeQualifiers::CONST, span);
+        }
+
         if self.registry.get(qt.ty()).kind == TypeKind::AutoType {
             if let Some(init_node) = init {
                 let ie = self.visit_expression(init_node);
@@ -2952,10 +2960,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn validate_specifier_combinations(&mut self, info: &DeclSpecInfo, span: SourceSpan) {
         let storage_conflict = if info.is_typedef {
-            info.storage.is_some_and(|s| s != StorageClass::Typedef) || info.is_thread_local
+            info.storage.is_some_and(|s| s != StorageClass::Typedef) || info.is_thread_local || info.is_constexpr
         } else if info.is_thread_local {
             info.storage
                 .is_some_and(|s| s != StorageClass::Static && s != StorageClass::Extern)
+        } else if info.is_constexpr {
+            info.storage
+                .is_some_and(|s| s != StorageClass::Static && s != StorageClass::Auto && s != StorageClass::Register)
+                || info.is_thread_local
         } else {
             false
         };
@@ -3011,6 +3023,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             self.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
                         }
                         info.is_thread_local = true;
+                    } else if *sc == StorageClass::Constexpr {
+                        if info.is_constexpr {
+                            self.report_error(span, SemanticErrorKind::ConflictingStorageClasses);
+                        }
+                        info.is_constexpr = true;
                     } else if *sc == StorageClass::Auto {
                         info.has_auto = true;
                         if self.lang_opts.c_standard < crate::lang_options::CStandard::C23 {

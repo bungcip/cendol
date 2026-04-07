@@ -604,6 +604,7 @@ fn test_c23_keywords() {
         ("false", TokenKind::False),
         ("static_assert", TokenKind::StaticAssert),
         ("typeof_unqual", TokenKind::TypeofUnqual),
+        ("constexpr", TokenKind::Constexpr),
     ];
 
     for (text, expected_kind) in keywords {

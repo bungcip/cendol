@@ -25,6 +25,51 @@ fn test_c23_auto_basic() {
 }
 
 #[test]
+fn test_c23_constexpr() {
+    run_pass_with_std(
+        r#"
+        constexpr int a = 42;
+        static constexpr int b = 100;
+
+        int main() {
+            constexpr int c = 5;
+            static constexpr int d = 10;
+            return a + b + c + d;
+        }
+        "#,
+        CompilePhase::Mir,
+        CStandard::C23,
+    );
+
+    run_fail_with_message_and_std(
+        r#"
+        constexpr int a;
+        "#,
+        "constexpr requires an initialized data declaration",
+        CStandard::C23,
+    );
+
+    run_fail_with_message_and_std(
+        r#"
+        int main() {
+            constexpr int a = 5;
+            a = 10;
+        }
+        "#,
+        "cannot assign to read-only location",
+        CStandard::C23,
+    );
+
+    run_fail_with_message_and_std(
+        r#"
+        extern constexpr int a = 5;
+        "#,
+        "conflicting storage class",
+        CStandard::C23,
+    );
+}
+
+#[test]
 fn test_c23_auto_fail_c11() {
     // In C11, auto is only a storage class and requires a type specifier
     run_fail_with_message_and_std(
@@ -54,6 +99,8 @@ fn test_c23_keywords() {
 
             static _Thread_local int t1;
             static thread_local int t2;
+
+            constexpr int c = 42;
 
             typeof(int) a = 1;
 

@@ -24,6 +24,7 @@ pub enum TokenKind {
     Register,
     Static,
     ThreadLocal,
+    Constexpr,
 
     // Type qualifiers
     Const,
@@ -210,7 +211,10 @@ pub enum TokenKind {
 impl TokenKind {
     fn is_storage_class_specifier(&self) -> bool {
         use TokenKind::*;
-        matches!(self, Typedef | Extern | Static | ThreadLocal | Auto | Register)
+        matches!(
+            self,
+            Typedef | Extern | Static | ThreadLocal | Auto | Register | Constexpr
+        )
     }
 
     pub(super) fn is_type_specifier(&self) -> bool {
@@ -279,6 +283,7 @@ impl TokenKind {
             Register => "register",
             Static => "static",
             ThreadLocal => "_Thread_local",
+            Constexpr => "constexpr",
             Const => "const",
             Restrict => "restrict",
             Volatile => "volatile",
@@ -540,6 +545,7 @@ pub(crate) fn is_keyword(symbol: StringId, std: crate::lang_options::CStandard) 
             TokenKind::Alignas if symbol == sk.alignas => return None,
             TokenKind::Alignof if symbol == sk.alignof => return None,
             TokenKind::ThreadLocal if symbol == sk.thread_local => return None,
+            TokenKind::Constexpr if symbol == sk.constexpr => return None,
             _ => {}
         }
     }
@@ -554,6 +560,7 @@ struct SpecialKeywords {
     alignas: StringId,
     alignof: StringId,
     thread_local: StringId,
+    constexpr: StringId,
 }
 
 fn special_keywords() -> &'static SpecialKeywords {
@@ -565,6 +572,7 @@ fn special_keywords() -> &'static SpecialKeywords {
         alignas: StringId::new("alignas"),
         alignof: StringId::new("alignof"),
         thread_local: StringId::new("thread_local"),
+        constexpr: StringId::new("constexpr"),
     })
 }
 
@@ -621,6 +629,7 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("alignas"), TokenKind::Alignas);
         m.insert(StringId::new("alignof"), TokenKind::Alignof);
         m.insert(StringId::new("thread_local"), TokenKind::ThreadLocal);
+        m.insert(StringId::new("constexpr"), TokenKind::Constexpr);
         m.insert(StringId::new("__real__"), TokenKind::Real);
         m.insert(StringId::new("__builtin_real"), TokenKind::Real);
         m.insert(StringId::new("__imag__"), TokenKind::Imag);

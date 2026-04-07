@@ -209,3 +209,8 @@ Action: Always use the recursive 'is_variably_modified' check rather than simple
 
 Learning: C11 6.7.2.1p18 constraints on Flexible Array Members (FAM) have subtle interactions with unions. While a structure with a FAM is a complete type and thus can validly be a member of a union, the resulting union "contains" a FAM recursively. This makes the union type subject to the same nesting constraints as FAM-structures (e.g., it cannot be an array element or a non-last member of another structure). Robust enforcement requires recursive property detection in the type registry and context-aware validation in the semantic lowerer to distinguish between 'allowing' a FAM in a union and 'propagating' its presence for further checks.
 Action: Implement recursive property checks for 'has_flexible_array_member' in the type registry and ensure semantic validation passes correct context (like 'is_union') to avoid false positives during member definition while maintaining strict correctness for nested usage.
+
+2026-04-10 - [_Generic Multiple Match Constraint]
+
+Learning: C11 6.5.1.1p2 mandates that the controlling expression of a `_Generic` selection shall be compatible with at most one generic association. Picking only the first match is insufficient as it silently accepts ambiguous code. Furthermore, associations like `int(*)[10]` and `int(*)[20]` are NOT compatible with each other, but both can be compatible with a controlling expression of type `int(*)[]` (pointer to incomplete array).
+Action: Ensure that `_Generic` selection continues checking all associations even after a match is found, to detect and report ambiguity errors when multiple associations are compatible with the controlling expression.

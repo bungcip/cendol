@@ -59,6 +59,9 @@ impl SemanticError {
             SemanticErrorKind::GenericMultipleDefault { first_def, .. } => {
                 Some(("previous default association is here", *first_def))
             }
+            SemanticErrorKind::GenericMultipleMatches { first_match, .. } => {
+                Some(("other match is here", *first_match))
+            }
             SemanticErrorKind::GenericDuplicateMatch { first_def, .. } => {
                 Some(("previous association is here", *first_def))
             }
@@ -227,6 +230,9 @@ pub enum SemanticErrorKind {
     },
     GenericMultipleDefault {
         first_def: SourceSpan,
+    },
+    GenericMultipleMatches {
+        first_match: SourceSpan,
     },
     GenericDuplicateMatch {
         ty: QualType,
@@ -582,6 +588,9 @@ impl SemanticErrorKind {
             }
             SemanticErrorKind::GenericMultipleDefault { .. } => {
                 "duplicate default association in generic selection".to_string()
+            }
+            SemanticErrorKind::GenericMultipleMatches { .. } => {
+                "controlling expression in '_Generic' selector matches multiple associations".to_string()
             }
             SemanticErrorKind::GenericDuplicateMatch { ty, prev_ty, .. } => format!(
                 "type '{}' in generic association compatible with previously specified type '{}'",

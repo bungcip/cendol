@@ -3626,6 +3626,7 @@ impl<'a> SemanticAnalyzer<'a> {
         // fully type-checked, even if they are not the selected branch.
         // This resolves all identifier types within them.
         let mut selected_expr = None;
+        let mut selected_span = None;
         let mut default_expr = None;
         let mut default_first_span = None;
         // Bolt ⚡: Use SmallVec to avoid heap allocation for small generic selection lists.
@@ -3704,11 +3705,16 @@ impl<'a> SemanticAnalyzer<'a> {
             // Constraint 1: The controlling expression... shall have type compatible with at most one...
             // unqualified_ctrl_ty is the controlling expression type after lvalue conversion (which strips qualifiers).
             // It is compared against the association type (which keeps qualifiers).
-            if self.registry.is_compatible(unqualified_ctrl, assoc_qt) && selected_expr.is_none() {
-                selected_expr = Some(ga.result_expr);
-                self.semantic_info
-                    .generic_selections
-                    .insert(node.index(), ga.result_expr);
+            if self.registry.is_compatible(unqualified_ctrl, assoc_qt) {
+                if let Some(first_match) = selected_span {
+                    self.report_error(assoc_node, SemanticErrorKind::GenericMultipleMatches { first_match });
+                } else {
+                    selected_expr = Some(ga.result_expr);
+                    selected_span = Some(span);
+                    self.semantic_info
+                        .generic_selections
+                        .insert(node.index(), ga.result_expr);
+                }
             }
         }
 

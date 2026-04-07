@@ -157,4 +157,9 @@ fn test_long_long_cases() {
     check_literal_type("void f() { 0b1010; }", "int");
     check_literal_type("void f() { 0B1111u; }", "unsigned int");
     check_literal_type("void f() { 0b1010LL; }", "long long");
+
+    // C23 Digit Separators
+    check_literal_type("void f() { 299'792'458; }", "int");
+    check_literal_type("void f() { 0xFE'DC'BA'98; }", "unsigned int"); // Value 4275878552 fits in unsigned int but not int
+    check_literal_type("void f() { 0b10'10'10; }", "int");
 }

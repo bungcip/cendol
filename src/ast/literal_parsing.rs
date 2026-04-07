@@ -54,7 +54,13 @@ pub(crate) fn parse_integer_literal(text: &str) -> Option<(u64, Option<IntegerSu
     }
 
     // Use built-in radix parsing which is robust and handles overflow checks
-    let val = u64::from_str_radix(digits, base).ok()?;
+    let digits_no_sep = if digits.contains('\'') {
+        std::borrow::Cow::Owned(digits.replace('\'', ""))
+    } else {
+        std::borrow::Cow::Borrowed(digits)
+    };
+
+    let val = u64::from_str_radix(&digits_no_sep, base).ok()?;
     Some((val, suffix, base))
 }
 
@@ -113,7 +119,12 @@ pub(crate) fn parse_float_literal(text: &str) -> Option<(f64, Option<FloatSuffix
         parse_hex_float_literal(text_without_suffix).map(|val| (val, suffix))
     } else {
         // Use Rust's built-in parsing for decimal floats
-        text_without_suffix.parse::<f64>().ok().map(|val| (val, suffix))
+        let text_no_sep = if text_without_suffix.contains('\'') {
+            std::borrow::Cow::Owned(text_without_suffix.replace('\'', ""))
+        } else {
+            std::borrow::Cow::Borrowed(text_without_suffix)
+        };
+        text_no_sep.parse::<f64>().ok().map(|val| (val, suffix))
     }
 }
 
@@ -148,6 +159,8 @@ fn parse_hex_float_literal(text: &str) -> Option<f64> {
             } // Double dot
             has_dot = true;
             chars.next();
+        } else if c == '\'' {
+            chars.next(); // Skip digit separator
         } else if c == 'p' || c == 'P' {
             break;
         } else {
@@ -179,6 +192,8 @@ fn parse_hex_float_literal(text: &str) -> Option<f64> {
                 exp_val = exp_val.checked_mul(10)?.checked_add(d as i32)?;
                 has_exp_digits = true;
                 chars.next();
+            } else if c == '\'' {
+                chars.next(); // Skip digit separator
             } else {
                 break;
             }

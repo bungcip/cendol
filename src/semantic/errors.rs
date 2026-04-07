@@ -590,8 +590,7 @@ impl SemanticErrorKind {
                 "duplicate default association in generic selection".to_string()
             }
             SemanticErrorKind::GenericMultipleMatches { .. } => {
-                "controlling expression in '_Generic' selector matches multiple associations"
-                    .to_string()
+                "controlling expression in '_Generic' selector matches multiple associations".to_string()
             }
             SemanticErrorKind::GenericDuplicateMatch { ty, prev_ty, .. } => format!(
                 "type '{}' in generic association compatible with previously specified type '{}'",

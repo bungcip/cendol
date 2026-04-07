@@ -3707,10 +3707,7 @@ impl<'a> SemanticAnalyzer<'a> {
             // It is compared against the association type (which keeps qualifiers).
             if self.registry.is_compatible(unqualified_ctrl, assoc_qt) {
                 if let Some(first_match) = selected_span {
-                    self.report_error(
-                        assoc_node,
-                        SemanticErrorKind::GenericMultipleMatches { first_match },
-                    );
+                    self.report_error(assoc_node, SemanticErrorKind::GenericMultipleMatches { first_match });
                 } else {
                     selected_expr = Some(ga.result_expr);
                     selected_span = Some(span);

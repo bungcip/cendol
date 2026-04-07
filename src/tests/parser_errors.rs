@@ -160,7 +160,7 @@ fn test_parser_errors() {
         ("_Atomic(", "Unexpected token"),
         ("void foo() { (int struct S { int x; }) 0; }", "single type specifier"),
         // E. Hex float validation (lexical error in constant parsing)
-        ("void foo() { double f = 0x1.0p; }", "Unknown"),
+        ("void foo() { double x = 0x1.0p; }", "Unknown"),
         // F. Coverage for specific "expected" messages in parse_decl
         (
             "void foo() { struct S { int x; } 123; }",
@@ -168,12 +168,12 @@ fn test_parser_errors() {
         ),
         ("void foo() { enum E { A } 123; }", "Expected ';' after enum definition"),
         ("void foo() { extern 123; }", "Expected type specifiers"),
-        ("void f(int __attribute__ noreturn);", "expected ), found Int"),
+        ("void foo(int __attribute__ noreturn);", "expected ), found Int"),
         ("int __attribute__((noreturn))", "Expected type specifiers"),
         ("int ", "Expected declarator or identifier after type specifier"),
-        ("int a[10 ;", "expected ], found Semicolon"),
-        ("int f(int ( * );", "expected ), found Semicolon"),
-        ("int f(int ( * [ ] );", "expected ), found Semicolon"),
+        ("int x[10 ;", "expected ], found Semicolon"),
+        ("int foo(int ( * );", "expected ), found Semicolon"),
+        ("int foo(int ( * [ ] );", "expected ), found Semicolon"),
     ];
 
     for (source, message) in cases {

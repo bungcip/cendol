@@ -34,7 +34,7 @@ pub(crate) fn parse_string_literal(name: NameId) -> ParsedStringLiteral {
     };
 
     let content = match stripped {
-        Some(s) => literal_parsing::unescape_string(s.strip_suffix('"').unwrap_or(s)),
+        Some(s) => literal_parsing::unescape(s.strip_suffix('"').unwrap_or(s)),
         None => raw.to_string(),
     };
 

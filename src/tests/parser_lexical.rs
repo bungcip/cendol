@@ -1,8 +1,9 @@
 use crate::ast::StringId;
+use crate::ast::literal::CharPrefix;
 use crate::ast::literal_parsing::parse_char_literal;
 use crate::ast::literal_parsing::parse_float_literal;
 use crate::ast::literal_parsing::parse_integer_literal;
-use crate::ast::literal_parsing::unescape_string;
+use crate::ast::literal_parsing::unescape;
 use crate::driver::artifact::CompilePhase;
 use crate::parser::{TokenKind, lexer};
 use crate::tests::test_utils;
@@ -56,6 +57,24 @@ fn test_c11_keywords() {
         let token_kinds = setup_lexer(keyword);
         assert_eq!(token_kinds.len(), 1, "Expected 1 token for keyword: {}", keyword);
         assert_eq!(token_kinds[0], expected_kind, "Failed for keyword: {}", keyword);
+    }
+}
+
+#[test]
+fn test_c23_keywords() {
+    let keywords = vec![
+        ("nullptr", TokenKind::Nullptr),
+        ("true", TokenKind::True),
+        ("false", TokenKind::False),
+        ("static_assert", TokenKind::StaticAssert),
+        ("typeof_unqual", TokenKind::TypeofUnqual),
+        ("constexpr", TokenKind::Constexpr),
+    ];
+
+    for (text, expected_kind) in keywords {
+        let token_kinds = setup_lexer_with_std(text, crate::lang_options::CStandard::C23);
+        assert_eq!(token_kinds.len(), 1, "Expected 1 token for C23 keyword: {}", text);
+        assert_eq!(token_kinds[0], expected_kind, "Failed for C23 keyword: {}", text);
     }
 }
 
@@ -195,18 +214,9 @@ fn test_literals() {
 
     // Character constants
     let char_literals = vec![
-        (
-            "'a'",
-            TokenKind::CharacterConstant(97, crate::ast::literal::CharPrefix::None),
-        ), // 'a' = 97
-        (
-            "'\\n'",
-            TokenKind::CharacterConstant(10, crate::ast::literal::CharPrefix::None),
-        ), // '\n' = 10
-        (
-            "u8'a'",
-            TokenKind::CharacterConstant(97, crate::ast::literal::CharPrefix::Utf8),
-        ), // u8'a'
+        ("'a'", TokenKind::CharacterConstant(97, CharPrefix::None)), // 'a' = 97
+        ("'\\n'", TokenKind::CharacterConstant(10, CharPrefix::None)), // '\n' = 10
+        ("u8'a'", TokenKind::CharacterConstant(97, CharPrefix::Utf8)), // u8'a'
     ];
 
     for (text, expected_kind) in char_literals {
@@ -217,8 +227,8 @@ fn test_literals() {
 
     // String literals
     let string_literals = vec![
-        ("\"hello\"", TokenKind::StringLiteral(StringId::new("\"hello\""))),
-        ("\"world\\n\"", TokenKind::StringLiteral(StringId::new("\"world\\n\""))),
+        (r#""hello""#, TokenKind::StringLiteral(StringId::new(r#""hello""#))),
+        (r#""world\n""#, TokenKind::StringLiteral(StringId::new(r#""world\n""#))),
     ];
 
     for (text, expected_kind) in string_literals {
@@ -250,15 +260,15 @@ fn test_string_literal_concatenation() {
     // Test adjacent string literal concatenation (C11 6.4.5)
     let test_cases = vec![
         // Basic concatenation
-        ("\"hello\" \"world\"", "\"helloworld\""),
+        (r#""hello" "world""#, r#""helloworld""#),
         // With whitespace between
-        ("\"hello\"   \"world\"", "\"helloworld\""),
+        (r#""hello"   "world""#, r#""helloworld""#),
         // Multiple concatenations
-        ("\"a\" \"b\" \"c\"", "\"abc\""),
+        (r#""a" "b" "c""#, r#""abc""#),
         // With escape sequences
-        ("\"hello\\n\" \"world\"", "\"hello\\nworld\""),
+        (r#""hello\n" "world""#, r#""hello\nworld""#),
         // Mixed quotes and content
-        ("\"start\" \" middle \" \"end\"", "\"start middle end\""),
+        (r#""start" " middle " "end""#, r#""start middle end""#),
     ];
 
     for (input, expected_content) in test_cases {
@@ -284,7 +294,7 @@ fn test_string_literal_concatenation() {
     }
 
     // Test that non-adjacent strings are not concatenated
-    let token_kinds = setup_lexer("\"hello\" ; \"world\"");
+    let token_kinds = setup_lexer(r#""hello" ; "world""#);
     assert_eq!(token_kinds.len(), 3, "Expected 3 tokens for non-adjacent strings");
     assert!(
         matches!(token_kinds[0], TokenKind::StringLiteral(_)),
@@ -323,16 +333,16 @@ fn test_string_escapes_edge_cases() {
     // Test edge cases in string literal unescaping
     let test_cases = vec![
         // \x with no digits - should keep the x
-        ("\"\\xg\"", "\"\\xg\""),
+        (r#""\xg""#, r#""\xg""#),
         // \x with invalid unicode value (overflow) - should use replacement character
         // \x110000 is > 0x10FFFF
         // Lexer no longer unescapes, so it preserves raw source.
         // Unescaping happens later in parse_string_literal or similar.
-        ("\"\\x110000\"", "\"\\x110000\""),
+        (r#""\x110000""#, r#""\x110000""#),
         // \? escape
-        ("\"\\?\"", "\"\\?\""),
+        (r#""\?""#, r#""\?""#),
         // Unknown escape sequence (e.g. \q) - should keep the character
-        ("\"\\q\"", "\"\\q\""),
+        (r#""\q""#, r#""\q""#),
     ];
 
     for (input, expected) in test_cases {
@@ -387,34 +397,25 @@ fn test_literal_parsing_edge_cases() {
 
     // Test unescape_string edge cases
     // Short octal escape
-    assert_eq!(unescape_string("\\1"), "\x01", "Short octal escape failed");
+    assert_eq!(unescape(r#"\1"#), "\x01", "Short octal escape failed");
     // Octal escape cut by non-octal digit
-    assert_eq!(unescape_string("\\19"), "\x019", "Octal escape cut by non-octal failed");
+    assert_eq!(unescape(r#"\19"#), "\x019", "Octal escape cut by non-octal failed");
     // Hex escape cut by non-hex digit
-    assert_eq!(unescape_string("\\x1G"), "\x01G", "Hex escape cut by non-hex failed");
+    assert_eq!(unescape(r#"\x1G"#), "\x01G", "Hex escape cut by non-hex failed");
 }
 
 #[test]
 fn test_extract_literal_parts_edge_cases() {
-    // Missing trailing quote on the second string literal will cause the PP lexer to emit a
-    // PPTokenKind::StringLiteral containing `"world` (missing the last quote).
-    // When the parser lexer concatenates it with the first string, it will call
-    // `extract_literal_parts("\"world")` which will fail `strip_suffix('"')`
-    // and hit the `unwrap_or(("", ""))` fallback, avoiding a panic and returning
-    // an empty string for the content.
-    let token_kinds = setup_lexer("\"hello\" \"world");
+    let token_kinds = setup_lexer(r#""hello" "world"#);
     assert_eq!(token_kinds.len(), 1, "Expected concatenated literal token");
     if let TokenKind::StringLiteral(sym) = &token_kinds[0] {
-        // Because the fallback returns "", the second part contributes nothing.
-        // It's concatenated as `"hello""`, which the next phase handles or reports error for.
-        // It might be exactly "\"hello\"". Let's not strict assert the result, just that it didn't panic.
         let _ = sym.as_str();
     } else {
         panic!("Expected StringLiteral");
     }
 
     // A prefixed string literal missing trailing quote
-    let token_kinds2 = setup_lexer("L\"hello\" L\"world");
+    let token_kinds2 = setup_lexer(r#"L"hello" L"world"#);
     assert_eq!(token_kinds2.len(), 1, "Expected concatenated literal token");
     if let TokenKind::StringLiteral(sym) = &token_kinds2[0] {
         let _ = sym.as_str();
@@ -604,22 +605,4 @@ fn setup_lexer_with_std(source: &str, std: crate::lang_options::CStandard) -> Ve
         .filter(|t| !matches!(t.kind, TokenKind::EndOfFile))
         .map(|t| t.kind)
         .collect()
-}
-
-#[test]
-fn test_c23_keywords() {
-    let keywords = vec![
-        ("nullptr", TokenKind::Nullptr),
-        ("true", TokenKind::True),
-        ("false", TokenKind::False),
-        ("static_assert", TokenKind::StaticAssert),
-        ("typeof_unqual", TokenKind::TypeofUnqual),
-        ("constexpr", TokenKind::Constexpr),
-    ];
-
-    for (text, expected_kind) in keywords {
-        let token_kinds = setup_lexer_with_std(text, crate::lang_options::CStandard::C23);
-        assert_eq!(token_kinds.len(), 1, "Expected 1 token for C23 keyword: {}", text);
-        assert_eq!(token_kinds[0], expected_kind, "Failed for C23 keyword: {}", text);
-    }
 }

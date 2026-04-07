@@ -216,17 +216,17 @@ fn parse_hex_float_literal(text: &str) -> Option<f64> {
 }
 
 /// Unescape C11 string literal content
-pub(crate) fn unescape_string(s: &str) -> String {
+pub(crate) fn unescape(s: &str) -> String {
     if !s.contains('\\') {
         return s.to_string();
     }
     let mut result = String::with_capacity(s.len());
-    unescape_string_into(s, &mut result);
+    unescape_into(s, &mut result);
     result
 }
 
 /// Unescape C11 string literal content into a buffer
-fn unescape_string_into(s: &str, result: &mut String) {
+fn unescape_into(s: &str, result: &mut String) {
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\\' {
@@ -385,7 +385,7 @@ pub(crate) fn parse_char_literal(s: &str) -> Option<u32> {
         return Some(c as u32);
     }
 
-    let unescaped = unescape_string(s);
+    let unescaped = unescape(s);
     unescaped.chars().next().map(|c| c as u32)
 }
 
@@ -437,42 +437,42 @@ mod tests {
     #[test]
     fn test_escape_sequences() {
         // Test various C escape sequences
-        assert_eq!(unescape_string(r"\n"), "\n");
-        assert_eq!(unescape_string(r"\t"), "\t");
-        assert_eq!(unescape_string(r"\r"), "\r");
-        assert_eq!(unescape_string(r"\b"), "\x08"); // BS
-        assert_eq!(unescape_string(r"\f"), "\x0C"); // FF
-        assert_eq!(unescape_string(r"\v"), "\x0B"); // VT
-        assert_eq!(unescape_string(r"\a"), "\x07"); // BEL
-        assert_eq!(unescape_string(r"\\"), "\\");
-        assert_eq!(unescape_string(r"\'"), "\'");
-        assert_eq!(unescape_string(r#"\""#), "\"");
-        assert_eq!(unescape_string(r"\?"), "?");
+        assert_eq!(unescape(r"\n"), "\n");
+        assert_eq!(unescape(r"\t"), "\t");
+        assert_eq!(unescape(r"\r"), "\r");
+        assert_eq!(unescape(r"\b"), "\x08"); // BS
+        assert_eq!(unescape(r"\f"), "\x0C"); // FF
+        assert_eq!(unescape(r"\v"), "\x0B"); // VT
+        assert_eq!(unescape(r"\a"), "\x07"); // BEL
+        assert_eq!(unescape(r"\\"), "\\");
+        assert_eq!(unescape(r"\'"), "\'");
+        assert_eq!(unescape(r#"\""#), "\"");
+        assert_eq!(unescape(r"\?"), "?");
 
         // Mixed content
-        assert_eq!(unescape_string(r"Hello\nWorld"), "Hello\nWorld");
+        assert_eq!(unescape(r"Hello\nWorld"), "Hello\nWorld");
     }
 
     #[test]
     fn test_escape_edge_cases() {
         // Unknown escape -> keep char (e.g., \q -> q)
-        assert_eq!(unescape_string(r"\q"), "q");
+        assert_eq!(unescape(r"\q"), "q");
 
         // Trailing backslash -> keep backslash
-        assert_eq!(unescape_string(r"foo\"), r"foo\");
+        assert_eq!(unescape(r"foo\"), r"foo\");
 
         // Incomplete UCN -> keep raw
-        assert_eq!(unescape_string(r"\u123"), r"\u123");
-        assert_eq!(unescape_string(r"\U12345"), r"\U12345"); // too short for U
+        assert_eq!(unescape(r"\u123"), r"\u123");
+        assert_eq!(unescape(r"\U12345"), r"\U12345"); // too short for U
 
         // Invalid hex digits in UCN -> keep partial raw
-        assert_eq!(unescape_string(r"\u12z"), r"\u12z");
+        assert_eq!(unescape(r"\u12z"), r"\u12z");
 
         // Invalid codepoint in UCN -> replacement char (U+FFFD)
         // U+D800 is a surrogate, which is invalid in scalar value
-        assert_eq!(unescape_string(r"\uD800"), "\u{FFFD}");
+        assert_eq!(unescape(r"\uD800"), "\u{FFFD}");
 
         // Empty hex escape -> \x
-        assert_eq!(unescape_string(r"\xz"), r"\xz");
+        assert_eq!(unescape(r"\xz"), r"\xz");
     }
 }

@@ -121,7 +121,7 @@ impl<'src> Preprocessor<'src> {
 
     /// Destringize a string literal (remove quotes and handle escapes)
     pub(crate) fn destringize(&self, full_str: &str) -> String {
-        crate::ast::literal_parsing::unescape_string(&full_str[1..full_str.len() - 1])
+        crate::ast::literal_parsing::unescape(&full_str[1..full_str.len() - 1])
     }
 
     /// Tokenize the content of a pragma directive

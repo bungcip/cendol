@@ -306,9 +306,6 @@ fn test_type_mismatch_in_type_name() {
 
 #[test]
 fn test_struct_parsing_coverage() {
-    use crate::driver::artifact::CompilePhase;
-    use crate::tests::test_utils::run_pass;
-
     // 1. Nested Anonymous Struct with Multiple Declarators (Line 107)
     run_pass(
         "struct Outer { struct { int a; } s1, s2; }; int main() { return 0; }",

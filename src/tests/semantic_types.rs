@@ -335,7 +335,7 @@ fn test_reconstruct_type() {
 }
 
 #[test]
-fn test_typeregistry_pointer_canonicalization() {
+fn test_typeregistry_pointer_type_canonicalization() {
     let mut reg = TypeRegistry::new(target_lexicon::Triple::host());
     let int_ty = reg.type_int;
 
@@ -389,7 +389,7 @@ fn test_typeregistry_pointer_canonicalization() {
 }
 
 #[test]
-fn test_complex_type_canonicalization() {
+fn test_typeregistry_complex_type_canonicalization() {
     let mut reg = TypeRegistry::new(target_lexicon::Triple::host());
     let int_ty = reg.type_int;
 
@@ -559,7 +559,7 @@ fn test_struct_copy_init() {
 }
 
 #[test]
-fn test_type_registry_display_builtins() {
+fn test_typeregistry_display_builtins() {
     use crate::semantic::type_registry::TypeRegistry;
     use crate::semantic::types::BuiltinType;
     use target_lexicon::Triple;

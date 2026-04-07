@@ -459,7 +459,6 @@ int main() {
 fn test_hex_float_negative_exponent() {
     run_pass(
         r#"
-        int printf(const char *fmt, ...);
         int main() {
             double d = 0x1.0p-2;
             if (d == 0.25) {

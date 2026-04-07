@@ -1,4 +1,10 @@
-use crate::tests::{semantic_common::setup_mir, test_utils::run_pipeline_to_mir};
+use crate::{
+    driver::artifact::CompilePhase,
+    tests::{
+        semantic_common::setup_mir,
+        test_utils::{run_fail_with_message, run_pass, run_pipeline_to_mir},
+    },
+};
 
 #[test]
 fn test_complex_declarations() {
@@ -441,4 +447,162 @@ fn test_complex_comparison_v2() {
         return %13
     }
     ");
+}
+
+#[test]
+fn test_complex_h_cmplx() {
+    let source = r#"
+        #include <complex.h>
+
+        double complex z1 = CMPLX(1.0, 2.0);
+        float complex z2 = CMPLXF(3.0f, 4.0f);
+
+        int main() {
+            if (creal(z1) != 1.0) return 1;
+            if (cimag(z1) != 2.0) return 1;
+            if (creal(z2) != 3.0f) return 1;
+            if (cimag(z2) != 4.0f) return 1;
+
+            double complex z3 = CMPLX(0.0, -0.0);
+            if (creal(z3) != 0.0) return 1;
+            if (cimag(z3) != -0.0) return 1;
+
+            return 0;
+        }
+    "#;
+    run_pass(source, CompilePhase::Cranelift);
+}
+
+#[test]
+fn test_complex_cmplx_const_eval() {
+    let source = r#"
+        #include <complex.h>
+
+        // CMPLX should be usable in static initializers (constant expressions)
+        static double complex z = CMPLX(1.0, 2.0);
+        
+        _Static_assert(creal(CMPLX(1.0, 2.0)) == 1.0, "real part fail");
+        _Static_assert(cimag(CMPLX(1.0, 2.0)) == 2.0, "imag part fail");
+
+        int main() {
+            return 0;
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_complex_i_usage() {
+    let source = r#"
+        #include <complex.h>
+        
+        int main() {
+            double complex z = 1.0 + 2.0 * I;
+            if (creal(z) != 1.0) return 1;
+            if (cimag(z) != 2.0) return 1;
+            return 0;
+        }
+    "#;
+    run_pass(source, CompilePhase::Cranelift);
+}
+#[test]
+fn test_complex_cmplx_signed_zero() {
+    let source = r#"
+        #include <complex.h>
+        _Static_assert(__builtin_imag(CMPLX(0.0, -0.0)) < 0.0 == 0, "Wait, -0.0 < 0.0 is false");
+        // We can't easily check -0.0 in _Static_assert without bit-casting, which cendol might not support yet.
+        // But we can check if it compiles.
+        double complex z = CMPLX(0.0, -0.0);
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_complex_real_lvalue() {
+    let source = r#"
+        int main() {
+            _Complex double c;
+            __real__ c = 1.0;
+            __imag__ c = 2.0;
+            if (__real__ c != 1.0) return 1;
+            if (__imag__ c != 2.0) return 2;
+            return 0;
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_complex_inc_dec() {
+    let source = r#"
+        int main() {
+            _Complex double c = 1.0 + 2.0i;
+            c++;
+            if (__real__ c != 2.0) return 1;
+            if (__imag__ c != 2.0) return 2;
+
+            ++c;
+            if (__real__ c != 3.0) return 3;
+
+            c--;
+            if (__real__ c != 2.0) return 4;
+
+            --c;
+            if (__real__ c != 1.0) return 5;
+
+            return 0;
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_real_type_lvalue_real_imag() {
+    let source = r#"
+        int main() {
+            double d = 5.0;
+            __real__ d = 10.0;
+            if (d != 10.0) return 1;
+
+            // __imag__ d is an rvalue zero, so this should still be a semantic error if assigned to
+            // but we can read from it
+            double i = __imag__ d;
+            if (i != 0.0) return 2;
+
+            return 0;
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_complex_lvalue_in_expressions() {
+    let source = r#"
+        int main() {
+            _Complex double c = 1.0 + 2.0i;
+            double *p = &(__real__ c);
+            *p = 5.0;
+            if (__real__ c != 5.0) return 1;
+
+            double *q = &(__imag__ c);
+            *q = 10.0;
+            if (__imag__ c != 10.0) return 2;
+
+            return 0;
+        }
+    "#;
+    run_pass(source, CompilePhase::Mir);
+}
+
+#[test]
+fn test_imag_lvalue_rejected() {
+    // __imag__ on a real type is an rvalue (0) and should be rejected for assignment
+    let source = r#"
+        int main() {
+            double d = 5.0;
+            __imag__ d = 1.0;
+            return 0;
+        }
+    "#;
+    run_fail_with_message(source, "Expression is not assignable");
 }

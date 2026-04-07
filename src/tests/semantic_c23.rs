@@ -152,6 +152,22 @@ fn test_c23_auto_multi_declarator() {
 }
 
 #[test]
+fn test_c23_string_literals() {
+    run_pass_with_std(
+        r#"
+        int main() {
+            const unsigned char* s1 = u8"hello";
+            const unsigned short* s2 = u"world";
+            const unsigned int* s3 = U"foo";
+            return 0;
+        }
+        "#,
+        CompilePhase::Mir,
+        CStandard::C23,
+    );
+}
+
+#[test]
 fn test_c23_auto_invalid_contexts() {
     run_fail_with_message_and_std(
         r#"

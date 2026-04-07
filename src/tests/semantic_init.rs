@@ -547,7 +547,7 @@ fn test_unicode_string_init() {
 #[test]
 fn test_u8_string_init() {
     let source = r#"
-        char s8[] = u8"hello";
+        unsigned char s8[] = u8"hello";
 
         int main() {
             if (sizeof(s8) != 6) return 1;

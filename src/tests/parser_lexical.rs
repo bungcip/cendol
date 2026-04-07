@@ -195,9 +195,18 @@ fn test_literals() {
 
     // Character constants
     let char_literals = vec![
-        ("'a'", TokenKind::CharacterConstant(97, crate::ast::literal::CharPrefix::None)),   // 'a' = 97
-        ("'\\n'", TokenKind::CharacterConstant(10, crate::ast::literal::CharPrefix::None)), // '\n' = 10
-        ("u8'a'", TokenKind::CharacterConstant(97, crate::ast::literal::CharPrefix::Utf8)), // u8'a'
+        (
+            "'a'",
+            TokenKind::CharacterConstant(97, crate::ast::literal::CharPrefix::None),
+        ), // 'a' = 97
+        (
+            "'\\n'",
+            TokenKind::CharacterConstant(10, crate::ast::literal::CharPrefix::None),
+        ), // '\n' = 10
+        (
+            "u8'a'",
+            TokenKind::CharacterConstant(97, crate::ast::literal::CharPrefix::Utf8),
+        ), // u8'a'
     ];
 
     for (text, expected_kind) in char_literals {

@@ -1,4 +1,4 @@
-use crate::ast::literal::{FloatSuffix, IntegerSuffix, CharPrefix};
+use crate::ast::literal::{CharPrefix, FloatSuffix, IntegerSuffix};
 use crate::ast::literal_parsing;
 use crate::ast::{PragmaPackKind, StringId};
 use crate::pp::{PPToken, PPTokenKind};

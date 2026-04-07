@@ -39,7 +39,7 @@ pub enum LayoutKind {
     RecordFields { fields: Arc<[FieldLayout]> },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct FieldLayout {
     pub offset: u64,
     pub bit_width: Option<u16>,
@@ -72,7 +72,7 @@ impl Type {
                 let current_offset = fields[i].offset + base_offset;
 
                 if member.name == Some(name) {
-                    let mut field_layout = fields[i].clone();
+                    let mut field_layout = fields[i];
                     field_layout.offset = current_offset;
                     return Some((*member, field_layout, *base_index));
                 }
@@ -147,7 +147,7 @@ impl Type {
             }) = &self.layout
         {
             for (i, member) in members.iter().enumerate() {
-                let mut field_layout = fields[i].clone();
+                let mut field_layout = fields[i];
                 field_layout.offset += base_offset;
                 if member.name.is_none() {
                     let inner_type = registry.get(member.member_type.ty());

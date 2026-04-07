@@ -680,7 +680,16 @@ impl<'src> Preprocessor<'src> {
                     self.handle_directive()?;
                 }
                 // Skip tokens when in conditional compilation skip mode
-                _ if self.is_currently_skipping() => continue,
+                _ if self.is_currently_skipping() => {
+                    // Bolt ⚡: When skipping a disabled block, use the fast-path in the lexer
+                    // to jump directly to the next potential directive.
+                    if self.pending_tokens.is_empty()
+                        && let Some(lexer) = self.lexer_stack.last_mut()
+                    {
+                        lexer.fast_skip_to_directive();
+                    }
+                    continue;
+                }
                 // Skip Eod tokens
                 PPTokenKind::Eod => continue,
                 // Handle identifiers (macros, magic macros, _Pragma)

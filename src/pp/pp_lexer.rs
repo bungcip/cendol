@@ -483,6 +483,47 @@ impl PPLexer {
         }
     }
 
+    /// ⚡ Bolt: Fast skip to the next potential preprocessor directive.
+    /// This is used when skipping disabled conditional blocks (#if 0).
+    /// It scans for the next '#' character at the start of a line,
+    /// correctly handling comments and line splices to avoid false positives.
+    pub(crate) fn fast_skip_to_directive(&mut self) {
+        loop {
+            let mut end = self.position as usize;
+            // First, skip to the next newline.
+            while end < self.buffer.len() {
+                if self.buffer[end] == b'\n' || self.buffer[end] == b'\\' {
+                    break;
+                }
+                end += 1;
+            }
+            self.position = end as u32;
+
+            if self.position as usize >= self.buffer.len() {
+                break;
+            }
+
+            // We reached a newline or a backslash.
+            // If it's a backslash, it might be a line splice or a UCN.
+            // Consume one char and continue.
+            if self.buffer[self.position as usize] == b'\\' {
+                self.next_char();
+                continue;
+            }
+
+            // It's a newline. Consume it and check for '#' at the start of the next line.
+            self.next_char();
+            self.skip_whitespace_and_comments();
+
+            if let Some(b'#') = self.peek_char() {
+                // Found a directive! Stop skipping.
+                break;
+            }
+
+            // Not a directive, continue skipping from the current position.
+        }
+    }
+
     pub(crate) fn next_token(&mut self) -> Option<PPToken> {
         let saved_position = self.position;
         self.skip_whitespace_and_comments();
@@ -1287,5 +1328,42 @@ mod tests {
         let t1 = lexer.next_token().unwrap();
         assert!(matches!(t1.kind, PPTokenKind::Identifier(_)));
         assert_eq!(t1.get_text(), "abcdef");
+    }
+
+    #[test]
+    fn test_fast_skip_to_directive() {
+        let source = b"
+#if 0
+  this is skipped;
+  int x = #not_a_directive;
+  // #fake directive in comment
+  /* #another fake
+     multiline */
+  extern int y;
+#else
+  this is not skipped
+#endif
+";
+        let sid = SourceId::new(2);
+        let mut lexer = PPLexer::new(sid, Arc::from(&source[..]));
+
+        // 1. Initial #if 0
+        let t1 = lexer.next_token().unwrap();
+        assert_eq!(t1.kind, PPTokenKind::Hash);
+        let t2 = lexer.next_token().unwrap();
+        assert_eq!(t2.get_text(), "if");
+        let t3 = lexer.next_token().unwrap();
+        assert_eq!(t3.get_text(), "0");
+        let t4 = lexer.next_token().unwrap();
+        assert_eq!(t4.kind, PPTokenKind::Eod);
+
+        // 2. Fast skip!
+        lexer.fast_skip_to_directive();
+
+        // 3. Should be at #else
+        let t5 = lexer.next_token().unwrap();
+        assert_eq!(t5.kind, PPTokenKind::Hash);
+        let t6 = lexer.next_token().unwrap();
+        assert_eq!(t6.get_text(), "else");
     }
 }

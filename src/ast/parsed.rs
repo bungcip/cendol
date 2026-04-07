@@ -350,7 +350,7 @@ impl TypeSpec {
                     f(e);
                 }
             }
-            TypeSpec::Record(_, _, definition, attributes) => {
+            TypeSpec::Record(.., definition, attributes) => {
                 if let Some(members) = definition {
                     for &m in members {
                         f(m);

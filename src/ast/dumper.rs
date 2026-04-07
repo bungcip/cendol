@@ -139,13 +139,13 @@ impl AstDumper {
             NodeKind::BuiltinVaArg(qual_type, _) | NodeKind::BuiltinOffsetof(qual_type, _) => {
                 types.insert(qual_type.ty());
             }
-            NodeKind::BuiltinVaStart(_, _)
+            NodeKind::BuiltinVaStart(..)
             | NodeKind::BuiltinVaEnd(_)
-            | NodeKind::BuiltinVaCopy(_, _)
-            | NodeKind::BuiltinMemcmp(_, _, _)
-            | NodeKind::BuiltinMemcpy(_, _, _)
-            | NodeKind::BuiltinMemset(_, _, _)
-            | NodeKind::BuiltinMemmove(_, _, _)
+            | NodeKind::BuiltinVaCopy(..)
+            | NodeKind::BuiltinMemcmp(..)
+            | NodeKind::BuiltinMemcpy(..)
+            | NodeKind::BuiltinMemset(..)
+            | NodeKind::BuiltinMemmove(..)
             | NodeKind::BuiltinPopcount(_)
             | NodeKind::BuiltinPopcountL(_)
             | NodeKind::BuiltinPopcountLL(_)
@@ -166,7 +166,7 @@ impl AstDumper {
             | NodeKind::BuiltinFabsl(_)
             | NodeKind::BuiltinPrefetch(..)
             | NodeKind::BuiltinAlloca(_)
-            | NodeKind::BuiltinExpect(_, _)
+            | NodeKind::BuiltinExpect(..)
             | NodeKind::AtomicOp(..) => {}
             NodeKind::VarDecl(var_decl) => {
                 types.insert(var_decl.qt.ty());
@@ -182,7 +182,7 @@ impl AstDumper {
                     types.insert(qual_type.ty());
                 }
             }
-            NodeKind::BuiltinChooseExpr(_, _, _) => {}
+            NodeKind::BuiltinChooseExpr(..) => {}
             NodeKind::BuiltinConstantP(_) => {}
             NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => {}
 
@@ -196,41 +196,41 @@ impl AstDumper {
             | NodeKind::CompoundStmt(_)
             | NodeKind::If(_)
             | NodeKind::While(_)
-            | NodeKind::DoWhile(_, _)
+            | NodeKind::DoWhile(..)
             | NodeKind::For(_)
             | NodeKind::Return(_)
             | NodeKind::Break
             | NodeKind::Continue
-            | NodeKind::Goto(_, _)
-            | NodeKind::Label(_, _, _)
-            | NodeKind::Switch(_, _)
-            | NodeKind::Case(_, _)
-            | NodeKind::CaseRange(_, _, _)
+            | NodeKind::Goto(..)
+            | NodeKind::Label(..)
+            | NodeKind::Switch(..)
+            | NodeKind::Case(..)
+            | NodeKind::CaseRange(..)
             | NodeKind::Default(_)
             | NodeKind::ExpressionStmt(_)
             | NodeKind::AsmStmt(_)
             | NodeKind::InitializerList(_)
             | NodeKind::InitializerItem(_)
-            | NodeKind::StaticAssert(_, _)
+            | NodeKind::StaticAssert(..)
             | NodeKind::Dummy => {
                 // These don't directly contain TypeRefs
             }
 
             // GNU extensions
-            NodeKind::StatementExpr(_, _) => {
+            NodeKind::StatementExpr(..) => {
                 // Doesn't directly contain TypeRef
             }
 
             // Expression nodes with NodeRef children - types handled during traversal
             NodeKind::FunctionCall(_)
-            | NodeKind::BinaryOp(_, _, _)
-            | NodeKind::UnaryOp(_, _)
-            | NodeKind::TernaryOp(_, _, _)
+            | NodeKind::BinaryOp(..)
+            | NodeKind::UnaryOp(..)
+            | NodeKind::TernaryOp(..)
             | NodeKind::PostIncrement(_)
             | NodeKind::PostDecrement(_)
-            | NodeKind::Assignment(_, _, _)
-            | NodeKind::MemberAccess(_, _, _)
-            | NodeKind::IndexAccess(_, _)
+            | NodeKind::Assignment(..)
+            | NodeKind::MemberAccess(..)
+            | NodeKind::IndexAccess(..)
             | NodeKind::SizeOfExpr(_)
             | NodeKind::AlignOfExpr(_) => {
                 // These don't directly contain TypeRefs, they will be handled when we process child nodes

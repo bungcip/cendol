@@ -7,8 +7,8 @@ use crate::{
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
     lang_options::LangOptions,
     semantic::{
-        ArraySizeType, BuiltinType, FunctionParameter, QualType, StructMember, SymbolKind, SymbolRef, SymbolTable,
-        TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
+        ArraySizeType, FunctionParameter, QualType, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind,
+        TypeQualifiers, TypeRef, TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticError, SemanticErrorKind},
@@ -350,7 +350,7 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::DoWhile(body, _) => self.has_default(*body),
             NodeKind::For(for_stmt) => self.has_default(for_stmt.body),
             NodeKind::Label(_, stmt, _) => self.has_default(*stmt),
-            NodeKind::Case(_, stmt) | NodeKind::CaseRange(_, _, stmt) => self.has_default(*stmt),
+            NodeKind::Case(_, stmt) | NodeKind::CaseRange(.., stmt) => self.has_default(*stmt),
             // Nested switch has its own default labels
             NodeKind::Switch(_, _) => false,
             _ => false,
@@ -400,7 +400,7 @@ impl<'a> SemanticAnalyzer<'a> {
             // Do not recurse into nested loops or switches as their breaks belong to them.
             NodeKind::While(_) | NodeKind::For(_) | NodeKind::DoWhile(_, _) | NodeKind::Switch(_, _) => false,
             NodeKind::Label(_, stmt, _) => self.contains_break(*stmt),
-            NodeKind::Case(_, stmt) | NodeKind::CaseRange(_, _, stmt) | NodeKind::Default(stmt) => {
+            NodeKind::Case(_, stmt) | NodeKind::CaseRange(.., stmt) | NodeKind::Default(stmt) => {
                 self.contains_break(*stmt)
             }
             _ => false,
@@ -440,7 +440,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 self.can_fall_through(*body)
             }
-            NodeKind::Case(_, stmt) | NodeKind::CaseRange(_, _, stmt) | NodeKind::Default(stmt) => {
+            NodeKind::Case(_, stmt) | NodeKind::CaseRange(.., stmt) | NodeKind::Default(stmt) => {
                 self.can_fall_through(*stmt)
             }
             NodeKind::Label(_, stmt, _) => self.can_fall_through(*stmt),
@@ -3372,10 +3372,9 @@ impl<'a> SemanticAnalyzer<'a> {
             Literal::Int { val, suffix, base } => {
                 let val_u64 = *val as u64;
                 let is_decimal = *base == 10;
-
-                for ty in self.integer_constant_candidates(*suffix, is_decimal) {
+                for ty in IntegerSuffix::get_candidates(*suffix, self.registry, is_decimal) {
                     let _ = self.registry.ensure_layout(ty);
-                    if self.fits_in_type(val_u64, ty) {
+                    if self.registry.is_value_fitting(val_u64, ty) {
                         return Some(QualType::unqualified(ty));
                     }
                 }
@@ -3385,33 +3384,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.type_long_long_unsigned))
             }
             Literal::Float { suffix, .. } => {
-                let ty = match suffix {
-                    Some(FloatSuffix::F) => self.registry.type_float,
-                    Some(FloatSuffix::L) => self.registry.type_long_double,
-                    Some(FloatSuffix::I) => {
-                        let base = self.registry.type_double;
-                        self.registry.complex_type(base)
-                    }
-                    Some(FloatSuffix::IF) => {
-                        let base = self.registry.type_float;
-                        self.registry.complex_type(base)
-                    }
-                    Some(FloatSuffix::IL) => {
-                        let base = self.registry.type_long_double;
-                        self.registry.complex_type(base)
-                    }
-                    None => self.registry.type_double,
-                };
+                let ty = FloatSuffix::get_type(*suffix, self.registry);
                 Some(QualType::unqualified(ty))
             }
             Literal::Char(_, prefix) => {
-                let ty = match prefix {
-                    crate::ast::literal::CharPrefix::Utf8 => self.registry.type_char_unsigned,
-                    crate::ast::literal::CharPrefix::Wide => self.registry.type_int,
-                    crate::ast::literal::CharPrefix::Char16 => self.registry.get_builtin_type(BuiltinType::UShort),
-                    crate::ast::literal::CharPrefix::Char32 => self.registry.get_builtin_type(BuiltinType::UInt),
-                    crate::ast::literal::CharPrefix::None => self.registry.type_int,
-                };
+                let ty = prefix.get_type(self.registry);
                 Some(QualType::unqualified(ty))
             }
             Literal::String(name) => {
@@ -3518,91 +3495,6 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             None => self.report_error(node, SemanticErrorKind::StaticAssertNotConstant),
             _ => {}
-        }
-    }
-
-    fn integer_constant_candidates(&self, suffix: Option<IntegerSuffix>, is_decimal: bool) -> SmallVec<[TypeRef; 6]> {
-        match suffix {
-            None => {
-                if is_decimal {
-                    SmallVec::from_slice(&[
-                        self.registry.type_int,
-                        self.registry.type_long,
-                        self.registry.type_long_long,
-                    ])
-                } else {
-                    SmallVec::from_slice(&[
-                        self.registry.type_int,
-                        self.registry.type_int_unsigned,
-                        self.registry.type_long,
-                        self.registry.type_long_unsigned,
-                        self.registry.type_long_long,
-                        self.registry.type_long_long_unsigned,
-                    ])
-                }
-            }
-            Some(IntegerSuffix::U) => SmallVec::from_slice(&[
-                self.registry.type_int_unsigned,
-                self.registry.type_long_unsigned,
-                self.registry.type_long_long_unsigned,
-            ]),
-            Some(IntegerSuffix::L) => {
-                if is_decimal {
-                    SmallVec::from_slice(&[self.registry.type_long, self.registry.type_long_long])
-                } else {
-                    SmallVec::from_slice(&[
-                        self.registry.type_long,
-                        self.registry.type_long_unsigned,
-                        self.registry.type_long_long,
-                        self.registry.type_long_long_unsigned,
-                    ])
-                }
-            }
-            Some(IntegerSuffix::UL) => {
-                SmallVec::from_slice(&[self.registry.type_long_unsigned, self.registry.type_long_long_unsigned])
-            }
-            Some(IntegerSuffix::LL) => {
-                if is_decimal {
-                    SmallVec::from_slice(&[self.registry.type_long_long])
-                } else {
-                    SmallVec::from_slice(&[self.registry.type_long_long, self.registry.type_long_long_unsigned])
-                }
-            }
-            Some(IntegerSuffix::ULL) => SmallVec::from_slice(&[self.registry.type_long_long_unsigned]),
-        }
-    }
-
-    fn fits_in_type(&mut self, val: u64, ty: TypeRef) -> bool {
-        let _ = self.registry.ensure_layout(ty);
-        let layout = self.registry.get_layout(ty);
-        let size_bits = layout.size * 8;
-        let is_unsigned = match &self.registry.get(ty).kind {
-            TypeKind::Builtin(b) => matches!(
-                b,
-                BuiltinType::Bool
-                    | BuiltinType::UChar
-                    | BuiltinType::UShort
-                    | BuiltinType::UInt
-                    | BuiltinType::ULong
-                    | BuiltinType::ULongLong
-            ),
-            _ => false,
-        };
-
-        if is_unsigned {
-            if size_bits >= 64 {
-                true
-            } else {
-                val < (1u64 << size_bits)
-            }
-        } else {
-            // Signed max is 2^(n-1) - 1
-            if size_bits >= 64 {
-                val <= i64::MAX as u64
-            } else {
-                let max = (1u64 << (size_bits - 1)) - 1;
-                val <= max
-            }
         }
     }
 

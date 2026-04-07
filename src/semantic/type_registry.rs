@@ -118,16 +118,46 @@ pub struct TypeRegistry {
     pub type_valist: TypeRef,
     pub type_complex_marker: TypeRef,
     pub type_nullptr_t: TypeRef,
+    pub type_complex_float: TypeRef,
+    pub type_complex_double: TypeRef,
+    pub type_complex_long_double: TypeRef,
     pub type_error: TypeRef,
 }
 
-impl Default for TypeRegistry {
-    fn default() -> Self {
-        Self::new(Triple::host())
-    }
-}
-
 impl TypeRegistry {
+    pub fn is_value_fitting(&self, val: u64, ty: TypeRef) -> bool {
+        let layout = self.get_layout(ty);
+        let size_bits = layout.size * 8;
+        let is_unsigned = match &self.get(ty).kind {
+            TypeKind::Builtin(b) => matches!(
+                b,
+                BuiltinType::Bool
+                    | BuiltinType::UChar
+                    | BuiltinType::UShort
+                    | BuiltinType::UInt
+                    | BuiltinType::ULong
+                    | BuiltinType::ULongLong
+            ),
+            TypeKind::Enum { .. } => true,
+            _ => false,
+        };
+
+        if is_unsigned {
+            if size_bits >= 64 {
+                true
+            } else {
+                val < (1u64 << size_bits)
+            }
+        } else {
+            let max_val = if size_bits >= 64 {
+                i64::MAX as u64
+            } else {
+                (1u64 << (size_bits - 1)) - 1
+            };
+            val <= max_val
+        }
+    }
+
     /// Create a new TypeRegistry with builtin types initialized.
     pub(crate) fn new(target_triple: Triple) -> Self {
         let mut reg = TypeRegistry {
@@ -161,6 +191,9 @@ impl TypeRegistry {
             type_valist: TypeRef::dummy(),
             type_complex_marker: TypeRef::dummy(),
             type_nullptr_t: TypeRef::dummy(),
+            type_complex_float: TypeRef::dummy(),
+            type_complex_double: TypeRef::dummy(),
+            type_complex_long_double: TypeRef::dummy(),
             type_error: TypeRef::dummy(),
         };
 
@@ -238,11 +271,18 @@ impl TypeRegistry {
         // 20: nullptr_t
         self.type_nullptr_t = self.alloc(Type::new(TypeKind::NullptrT));
 
+        // 21: complex float
+        self.type_complex_float = self.complex_type(self.type_float);
+        // 22: complex double
+        self.type_complex_double = self.complex_type(self.type_double);
+        // 23: complex long double
+        self.type_complex_long_double = self.complex_type(self.type_long_double);
+
         // Pre-calculate void*
         self.type_void_ptr = self.pointer_to(QualType::unqualified(self.type_void));
 
-        // We can assert that the last allocated index was 20
-        debug_assert_eq!(self.types.len() - 1, 20, "Builtin types allocation mismatch");
+        // We can assert that the last allocated index was 23
+        debug_assert_eq!(self.types.len() - 1, 23, "Builtin types allocation mismatch");
 
         // Compute layouts for all builtins immediately
         // This prevents ICEs when code generation assumes builtins have layouts
@@ -267,6 +307,9 @@ impl TypeRegistry {
             self.type_valist,
             self.type_complex_marker,
             self.type_nullptr_t,
+            self.type_complex_float,
+            self.type_complex_double,
+            self.type_complex_long_double,
             self.type_void_ptr,
         ];
 

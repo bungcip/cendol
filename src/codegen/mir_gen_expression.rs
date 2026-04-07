@@ -1010,7 +1010,7 @@ impl<'a> MirGen<'a> {
 
             // C11 6.5.16p3: An assignment expression has the value of the left operand after the assignment,
             // but is not an lvalue. For bit-fields, this means the value is truncated to the bit-field width.
-            if let Place::StructField(_, _, Some(bit_info)) = &place {
+            if let Place::StructField(.., Some(bit_info)) = &place {
                 return self.apply_bitfield_truncation(final_rhs, bit_info, mir_ty);
             }
 
@@ -1100,7 +1100,7 @@ impl<'a> MirGen<'a> {
         self.emit_assignment(place.clone(), truncated_op.clone());
 
         // C11 6.5.16p3: Bit-field truncation for compound assignment result
-        let final_op = if let Place::StructField(_, _, Some(bit_info)) = &place {
+        let final_op = if let Place::StructField(.., Some(bit_info)) = &place {
             self.apply_bitfield_truncation(truncated_op, bit_info, mir_ty)
         } else {
             truncated_op

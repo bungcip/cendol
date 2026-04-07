@@ -564,7 +564,7 @@ impl<'a> MirValidator<'a> {
                 self.validate_operand(val);
                 None
             }
-            Rvalue::AtomicCompareExchange(ptr, expected, desired, _, _, _) => {
+            Rvalue::AtomicCompareExchange(ptr, expected, desired, ..) => {
                 self.validate_operand(ptr);
                 self.validate_operand(expected);
                 self.validate_operand(desired);

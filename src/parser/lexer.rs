@@ -269,9 +269,9 @@ impl TokenKind {
     pub(crate) fn display(&self) -> &'static str {
         use TokenKind::*;
         match self {
-            IntegerConstant(_, _, _) => "integer constant",
-            FloatConstant(_, _) => "float constant",
-            CharacterConstant(_, _) => "character constant",
+            IntegerConstant(..) => "integer constant",
+            FloatConstant(..) => "float constant",
+            CharacterConstant(..) => "character constant",
             StringLiteral(_) => "string literal",
             Identifier(_) => "identifier",
             Auto => "auto",

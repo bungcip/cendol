@@ -12,7 +12,7 @@ fn test_enum_constant_expression_basic() {
     };
     "#;
 
-    let (_, _, symbol_table) = setup_lowering(source);
+    let (.., symbol_table) = setup_lowering(source);
 
     assert_eq!(find_enum_constant(&symbol_table, "A"), 3, "Enum A should be 3");
     assert_eq!(find_enum_constant(&symbol_table, "B"), 10, "Enum B should be 10");
@@ -28,7 +28,7 @@ fn test_enum_constant_expression_reference() {
     };
     "#;
 
-    let (_, _, symbol_table) = setup_lowering(source);
+    let (.., symbol_table) = setup_lowering(source);
 
     // This is expected to fail or be incorrect with current implementation
     assert_eq!(find_enum_constant(&symbol_table, "B"), 15, "Enum B should be 15");

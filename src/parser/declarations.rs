@@ -39,12 +39,9 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
 
     let mut specifiers = parse_decl_specs(trx.parser)?;
 
-    let has_record_enum_type = specifiers.iter().any(|s| {
-        matches!(
-            s,
-            DeclSpec::TypeSpec(TypeSpec::Record(_, _, _, _) | TypeSpec::Enum(_, _))
-        )
-    });
+    let has_record_enum_type = specifiers
+        .iter()
+        .any(|s| matches!(s, DeclSpec::TypeSpec(TypeSpec::Record(..) | TypeSpec::Enum(..))));
     let has_storage_class = specifiers.iter().any(|s| matches!(s, DeclSpec::StorageClass(_)));
 
     if has_record_enum_type
@@ -69,8 +66,8 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
     {
         let message = if let Some(DeclSpec::TypeSpec(ts)) = specifiers.last() {
             match ts {
-                TypeSpec::Record(_, _, _, _) => "Expected ';' after struct/union definition",
-                TypeSpec::Enum(_, _) => "Expected ';' after enum definition",
+                TypeSpec::Record(..) => "Expected ';' after struct/union definition",
+                TypeSpec::Enum(..) => "Expected ';' after enum definition",
                 _ => "Expected declarator or identifier after type specifier",
             }
         } else {

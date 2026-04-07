@@ -125,49 +125,20 @@ impl<'a> ConstEvalCtx<'a> {
             Literal::Int { val, suffix, base } => {
                 let val_u64 = *val as u64;
                 let is_decimal = *base == 10;
-                let ty = match suffix {
-                    None => {
-                        if is_decimal {
-                            if val_u64 <= i32::MAX as u64 {
-                                self.registry.type_int
-                            } else if val_u64 <= i64::MAX as u64 {
-                                self.registry.type_long_long
-                            } else {
-                                self.registry.type_long_long_unsigned
-                            }
-                        } else if val_u64 <= i32::MAX as u64 {
-                            self.registry.type_int
-                        } else if val_u64 <= u32::MAX as u64 {
-                            self.registry.type_int_unsigned
-                        } else if val_u64 <= i64::MAX as u64 {
-                            self.registry.type_long_long
-                        } else {
-                            self.registry.type_long_long_unsigned
-                        }
+                let mut ty = self.registry.type_long_long_unsigned;
+                for cand in IntegerSuffix::get_candidates(*suffix, self.registry, is_decimal) {
+                    if self.registry.is_value_fitting(val_u64, cand) {
+                        ty = cand;
+                        break;
                     }
-                    Some(IntegerSuffix::U) => self.registry.type_int_unsigned,
-                    Some(IntegerSuffix::L) => self.registry.type_long,
-                    Some(IntegerSuffix::UL) => self.registry.type_long_unsigned,
-                    Some(IntegerSuffix::LL) => self.registry.type_long_long,
-                    Some(IntegerSuffix::ULL) => self.registry.type_long_long_unsigned,
-                };
+                }
                 QualType::unqualified(ty)
             }
             Literal::Char(_, prefix) => {
-                let ty = match prefix {
-                    crate::ast::literal::CharPrefix::Utf8 => self.registry.type_char_unsigned,
-                    crate::ast::literal::CharPrefix::Wide => self.registry.type_int,
-                    crate::ast::literal::CharPrefix::Char16 => {
-                        self.registry.get_builtin_type(crate::semantic::BuiltinType::UShort)
-                    }
-                    crate::ast::literal::CharPrefix::Char32 => {
-                        self.registry.get_builtin_type(crate::semantic::BuiltinType::UInt)
-                    }
-                    crate::ast::literal::CharPrefix::None => self.registry.type_int,
-                };
+                let ty = prefix.get_type(self.registry);
                 QualType::unqualified(ty)
             }
-            Literal::Float { .. } => QualType::unqualified(self.registry.type_double),
+            Literal::Float { suffix, .. } => QualType::unqualified(FloatSuffix::get_type(*suffix, self.registry)),
             Literal::String(val) => {
                 let parsed_str = parse_string_literal(*val);
                 let len = parsed_str.values.len() + 1;

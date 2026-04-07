@@ -278,7 +278,7 @@ fn test_dump_parser_ast() {
     let output = dump_parser_ast("int main() { return 0; }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=main, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=main, symbol=2, ty=TypeRef(base=24, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("main")
     4: CompoundStmt(stmts=5..5)
     5: Return(6)
@@ -291,8 +291,8 @@ fn test_dump_parser_ast_with_functions() {
     let output = dump_parser_ast("int add(int a, int b) { return a + b; } int main() { return add(2, 3); }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..3)
-    2: Function(name=add, symbol=4, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=5..6, body=7)
-    3: Function(name=main, symbol=10, ty=TypeRef(base=22, class=Function, ptr=0, arr=None), params=[], body=13)
+    2: Function(name=add, symbol=4, ty=TypeRef(base=24, class=Function, ptr=0, arr=None), params=5..6, body=7)
+    3: Function(name=main, symbol=10, ty=TypeRef(base=25, class=Function, ptr=0, arr=None), params=[], body=13)
     4: LiteralString("add")
     5: Param(symbol=8, ty=QualType(8))
     6: Param(symbol=9, ty=QualType(8))
@@ -314,12 +314,11 @@ fn test_dump_parser_ast_with_functions() {
 #[test]
 fn test_dump_type_registry() {
     let output = dump_type_registry("int main() { int x = 42; float y = 3.14; return x + (int)y; }");
-    insta::assert_snapshot!(output, @"
-
+    insta::assert_snapshot!(output, @r"
     === TypeRegistry (Used TypeRefs) ===
     TypeRef(8): int
     TypeRef(14): float
-    TypeRef(21): int()
+    TypeRef(24): int()
     ");
 }
 
@@ -328,12 +327,11 @@ fn test_dump_type_registry_with_complex_types() {
     let output = dump_type_registry(
         "struct Point { int x; int y; }; int main() { struct Point p = {1, 2}; int *ptr = &p.x; float arr[10]; return 0; }",
     );
-    insta::assert_snapshot!(output, @"
-
+    insta::assert_snapshot!(output, @r"
     === TypeRegistry (Used TypeRefs) ===
     TypeRef(8): int
-    TypeRef(22): int()
-    TypeRef(21): struct Point
+    TypeRef(25): int()
+    TypeRef(24): struct Point
     TypeRef(8): int*
     TypeRef(14): float[10]
     ");
@@ -346,13 +344,13 @@ fn test_dump_parser_ast_with_designated_initializers() {
     );
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..3)
-    2: RecordDecl(name=Some("Point"), ty=1048597, is_union=false, members=4..5)
-    3: Function(name=main, symbol=3, ty=TypeRef(base=22, class=Function, ptr=0, arr=None), params=[], body=7)
+    2: RecordDecl(name=Some("Point"), ty=1048600, is_union=false, members=4..5)
+    3: Function(name=main, symbol=3, ty=TypeRef(base=25, class=Function, ptr=0, arr=None), params=[], body=7)
     4: FieldDecl(name=Some("x"), ty=Int)
     5: FieldDecl(name=Some("y"), ty=Int)
     6: LiteralString("main")
     7: CompoundStmt(stmts=8..10)
-    8: VarDecl(name=p, ty=TypeRef(base=21, class=Record, ptr=0, arr=None), storage=None, is_tls=false)
+    8: VarDecl(name=p, ty=TypeRef(base=24, class=Record, ptr=0, arr=None), storage=None, is_tls=false)
     9: VarDecl(name=arr, ty=TypeRef(base=8, class=Array, ptr=0, arr=Some(5)), storage=None, is_tls=false)
     10: Return(28)
     11: InitializerList(inits=12..13)
@@ -612,7 +610,7 @@ fn test_parser_ast_control_flow() {
     let output = dump_parser_ast("void f() { if (1) {} while(0) {} do {} while(0); for(;;) {} }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=24, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..8)
     5: If(condition=9, then=10, else=none)
@@ -634,7 +632,7 @@ fn test_parser_ast_switch() {
     let output = dump_parser_ast("void f() { switch(1) { case 1: break; default: continue; } }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=24, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..5)
     5: Switch(6, 7)
@@ -654,7 +652,7 @@ fn test_parser_ast_ops() {
         dump_parser_ast("void f() { int a = 1; int b = 2; int c; c = a + b; c = a > b ? a : b; c += 1; a++; ++b; }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=24, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..12)
     5: VarDecl(name=a, ty=Int, storage=None, is_tls=false)
@@ -695,7 +693,7 @@ fn test_parser_ast_sizeof_alignof() {
     let output = dump_parser_ast("void f() { int a = (int)1.0; int s = sizeof(int) + sizeof(a) + _Alignof(int); }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=24, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..6)
     5: VarDecl(name=a, ty=Int, storage=None, is_tls=false)
@@ -718,13 +716,13 @@ fn test_parser_ast_access() {
     );
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..3)
-    2: RecordDecl(name=Some("S"), ty=1048597, is_union=false, members=4..4)
-    3: Function(name=f, symbol=3, ty=TypeRef(base=22, class=Function, ptr=0, arr=None), params=[], body=6)
+    2: RecordDecl(name=Some("S"), ty=1048600, is_union=false, members=4..4)
+    3: Function(name=f, symbol=3, ty=TypeRef(base=25, class=Function, ptr=0, arr=None), params=[], body=6)
     4: FieldDecl(name=Some("a"), ty=Int)
     5: LiteralString("f")
     6: CompoundStmt(stmts=7..10)
-    7: VarDecl(name=s, ty=TypeRef(base=21, class=Record, ptr=0, arr=None), storage=None, is_tls=false)
-    8: VarDecl(name=p, ty=TypeRef(base=21, class=Pointer, ptr=1, arr=None), storage=None, is_tls=false)
+    7: VarDecl(name=s, ty=TypeRef(base=24, class=Record, ptr=0, arr=None), storage=None, is_tls=false)
+    8: VarDecl(name=p, ty=TypeRef(base=24, class=Pointer, ptr=1, arr=None), storage=None, is_tls=false)
     9: VarDecl(name=arr, ty=TypeRef(base=8, class=Array, ptr=0, arr=Some(10)), storage=None, is_tls=false)
     10: VarDecl(name=x, ty=Int, storage=None, is_tls=false)
     11: LiteralInt(10, None, base=10)
@@ -745,13 +743,13 @@ fn test_parser_ast_compound_literal() {
     let output = dump_parser_ast("struct S { int a; }; void f() { struct S s = (struct S){1}; }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..3)
-    2: RecordDecl(name=Some("S"), ty=1048597, is_union=false, members=4..4)
-    3: Function(name=f, symbol=3, ty=TypeRef(base=22, class=Function, ptr=0, arr=None), params=[], body=6)
+    2: RecordDecl(name=Some("S"), ty=1048600, is_union=false, members=4..4)
+    3: Function(name=f, symbol=3, ty=TypeRef(base=25, class=Function, ptr=0, arr=None), params=[], body=6)
     4: FieldDecl(name=Some("a"), ty=Int)
     5: LiteralString("f")
     6: CompoundStmt(stmts=7..7)
-    7: VarDecl(name=s, ty=TypeRef(base=21, class=Record, ptr=0, arr=None), storage=None, is_tls=false)
-    8: CompoundLiteral(TypeRef(base=21, class=Record, ptr=0, arr=None), 9)
+    7: VarDecl(name=s, ty=TypeRef(base=24, class=Record, ptr=0, arr=None), storage=None, is_tls=false)
+    8: CompoundLiteral(TypeRef(base=24, class=Record, ptr=0, arr=None), 9)
     9: InitializerList(inits=10..10)
     10: InitializerItem(11)
     11: LiteralInt(1, None, base=10)
@@ -763,7 +761,7 @@ fn test_parser_ast_generic() {
     let output = dump_parser_ast("void f() { int x = _Generic(1, int: 1, default: 0); }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=24, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..5)
     5: VarDecl(name=x, ty=Int, storage=None, is_tls=false)
@@ -781,7 +779,7 @@ fn test_parser_ast_gnu_stmt_expr() {
     let output = dump_parser_ast("void f() { int x = ({ int y = 1; y; }); }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=24, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..5)
     5: VarDecl(name=x, ty=Int, storage=None, is_tls=false)
@@ -799,13 +797,13 @@ fn test_parser_ast_builtin_offsetof() {
     let output = dump_parser_ast("struct S { int a; }; void f() { int x = __builtin_offsetof(struct S, a); }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..3)
-    2: RecordDecl(name=Some("S"), ty=1048597, is_union=false, members=4..4)
-    3: Function(name=f, symbol=3, ty=TypeRef(base=22, class=Function, ptr=0, arr=None), params=[], body=6)
+    2: RecordDecl(name=Some("S"), ty=1048600, is_union=false, members=4..4)
+    3: Function(name=f, symbol=3, ty=TypeRef(base=25, class=Function, ptr=0, arr=None), params=[], body=6)
     4: FieldDecl(name=Some("a"), ty=Int)
     5: LiteralString("f")
     6: CompoundStmt(stmts=7..7)
     7: VarDecl(name=x, ty=Int, storage=None, is_tls=false)
-    8: BuiltinOffsetof(TypeRef(base=21, class=Record, ptr=0, arr=None), 9)
+    8: BuiltinOffsetof(TypeRef(base=24, class=Record, ptr=0, arr=None), 9)
     9: MemberAccess(10, a, .)
     "#);
 }
@@ -814,7 +812,7 @@ fn test_parser_ast_labels() {
     let output = dump_parser_ast("void f() { L: goto L; }");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=24, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..5)
     5: Label(L, 6)
@@ -837,16 +835,15 @@ fn test_type_registry_complex() {
         void g(int x, ...); // Variadic
     ",
     );
-    insta::assert_snapshot!(output, @"
-
+    insta::assert_snapshot!(output, @r"
     === TypeRegistry (Used TypeRefs) ===
     TypeRef(8): int
-    TypeRef(25): int[*]
-    TypeRef(23): void(int)
-    TypeRef(26): void(int, ...)
-    TypeRef(21): struct Point
-    TypeRef(22): enum Color
-    TypeRef(24): _Complex double
+    TypeRef(27): int[*]
+    TypeRef(26): void(int)
+    TypeRef(28): void(int, ...)
+    TypeRef(24): struct Point
+    TypeRef(25): enum Color
+    TypeRef(22): _Complex double
     ");
 }
 
@@ -898,7 +895,7 @@ fn test_atomic_ops_and_case_range() {
     );
     insta::assert_snapshot!(output_parser, @r#"
     1: TranslationUnit(decls=2..2)
-    2: Function(name=f, symbol=2, ty=TypeRef(base=21, class=Function, ptr=0, arr=None), params=[], body=4)
+    2: Function(name=f, symbol=2, ty=TypeRef(base=24, class=Function, ptr=0, arr=None), params=[], body=4)
     3: LiteralString("f")
     4: CompoundStmt(stmts=5..6)
     5: VarDecl(name=a, ty=Int, storage=None, is_tls=false)

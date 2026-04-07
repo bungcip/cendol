@@ -153,7 +153,7 @@ impl<'a> MirGen<'a> {
             NodeKind::Case(_, stmt) => self.visit_case_default_stmt(node, stmt),
             NodeKind::CaseRange(..) => self.visit_case_default_stmt(node, {
                 // CaseRange stmt is the 3rd argument
-                if let NodeKind::CaseRange(_, _, stmt) = node_kind {
+                if let NodeKind::CaseRange(.., stmt) = node_kind {
                     stmt
                 } else {
                     unreachable!()

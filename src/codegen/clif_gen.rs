@@ -1769,7 +1769,7 @@ fn emit_place_store(place: &Place, value: Value, expected_type: Type, ctx: &mut 
                 }
             }
         }
-        Place::StructField(_, _, Some(bit_info)) => {
+        Place::StructField(.., Some(bit_info)) => {
             let addr = emit_place_addr(place, ctx);
             let original = ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0);
 
@@ -2198,7 +2198,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                 Rvalue::AtomicExchange(ptr, val, _order) => {
                     lower_atomic_rmw(ptr, val, AtomicRmwOp::Xchg, expected_type, ctx)
                 }
-                Rvalue::AtomicCompareExchange(ptr, expected, desired, _, _, _) => {
+                Rvalue::AtomicCompareExchange(ptr, expected, desired, ..) => {
                     let ptr_val = emit_operand(ptr, ctx, types::I64);
                     let expected_val = emit_operand(expected, ctx, expected_type);
                     let desired_val = emit_operand(desired, ctx, expected_type);
@@ -2624,7 +2624,7 @@ impl ClifGen {
             let use_hack = func.is_variadic
                 && func.linkage != MirLinkage::Import
                 && self.triple.architecture == target_lexicon::Architecture::X86_64;
-            let (_, _, _) = lower_function_signature(func, &self.mir, &mut sig, use_hack);
+            let (..) = lower_function_signature(func, &self.mir, &mut sig, use_hack);
 
             let clif_func_id = self
                 .module
@@ -3129,7 +3129,7 @@ impl ClifGen {
                 self.collect_operand_reachability(l, wf, rf, rg, wg);
                 self.collect_operand_reachability(r, wf, rf, rg, wg);
             }
-            Rvalue::AtomicCompareExchange(p, e, d, _, _, _) => {
+            Rvalue::AtomicCompareExchange(p, e, d, ..) => {
                 self.collect_operand_reachability(p, wf, rf, rg, wg);
                 self.collect_operand_reachability(e, wf, rf, rg, wg);
                 self.collect_operand_reachability(d, wf, rf, rg, wg);

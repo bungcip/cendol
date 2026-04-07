@@ -73,12 +73,6 @@ fn check_type(source: &str, expected: &str) {
 }
 
 #[test]
-fn test_typeregistry_default() {
-    let registry = crate::semantic::TypeRegistry::default();
-    assert_eq!(registry.types.len(), 21); // dummy + 20 built-ins
-}
-
-#[test]
 fn test_type_long_long() {
     check_type("long const long x;", "const long long");
     check_type("unsigned long const long x;", "const unsigned long long");

@@ -14,7 +14,7 @@
 use hashbrown::HashMap;
 use smallvec::{SmallVec, smallvec};
 
-use crate::ast::literal::Literal;
+use crate::ast::literal::{FloatSuffix, Literal};
 use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, TypeSpec};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
@@ -646,7 +646,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         decl.specifiers.iter().find(|s| matches!(s, DeclSpec::TypeSpec(..)))
                     {
                         match ts {
-                            TypeSpec::Record(_, _, is_def, _) if is_def.is_some() => 1,
+                            TypeSpec::Record(.., is_def, _) if is_def.is_some() => 1,
                             TypeSpec::Enum(_, is_def) if is_def.is_some() => 1,
                             _ => 0,
                         }
@@ -2223,21 +2223,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             NodeKind::Literal(l) => match l {
                 Literal::Int { .. } => Some(QualType::unqualified(self.registry.type_int)),
                 Literal::Float { suffix, .. } => {
-                    let ty = match suffix {
-                        Some(crate::ast::literal::FloatSuffix::F) => self.registry.type_float,
-                        Some(crate::ast::literal::FloatSuffix::L) => self.registry.type_long_double,
-                        _ => self.registry.type_double,
-                    };
+                    let ty = FloatSuffix::get_type(suffix, self.registry);
                     Some(QualType::unqualified(ty))
                 }
                 Literal::Char(_, prefix) => {
-                    let ty = match prefix {
-                        crate::ast::literal::CharPrefix::Utf8 => self.registry.type_char_unsigned,
-                        crate::ast::literal::CharPrefix::Wide => self.registry.type_int,
-                        crate::ast::literal::CharPrefix::Char16 => self.registry.get_builtin_type(BuiltinType::UShort),
-                        crate::ast::literal::CharPrefix::Char32 => self.registry.get_builtin_type(BuiltinType::UInt),
-                        crate::ast::literal::CharPrefix::None => self.registry.type_int,
-                    };
+                    let ty = prefix.get_type(self.registry);
                     Some(QualType::unqualified(ty))
                 }
                 Literal::String(s) => {

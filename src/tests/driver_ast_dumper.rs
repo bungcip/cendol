@@ -71,7 +71,7 @@ fn test_dump_parsed_ast_with_enums() {
     let output = dump_parsed_ast("enum Color { RED, GREEN = 2, BLUE } c = RED;");
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2])
-    2: Declaration(ParsedDecl { specifiers: [TypeSpec(Enum(Some("Color"), Some([3, 5, 6])))], init_declarators: [ParsedInitDeclarator { declarator: 1, initializer: Some(7), span: SourceSpan(2199107141670) }] })
+    2: Declaration(ParsedDecl { specifiers: [TypeSpec(Enum(Some("Color"), Some([3, 5, 6]), None))], init_declarators: [ParsedInitDeclarator { declarator: 1, initializer: Some(7), span: SourceSpan(2199107141670) }] })
     3: EnumConstant(RED, auto)
     4: LiteralInt(2, None, base=10)
     5: EnumConstant(GREEN, 4)

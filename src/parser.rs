@@ -107,6 +107,9 @@ pub struct Parser<'arena, 'src> {
 
     // Type context for typedef tracking
     pub(crate) type_context: TypeDefContext,
+
+    /// Flag to indicate if we are parsing an enum's underlying type
+    pub(crate) in_enum_underlying_type: bool,
 }
 
 impl<'arena, 'src> Parser<'arena, 'src> {
@@ -124,6 +127,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             diag,
             lang_opts,
             type_context: TypeDefContext::new(),
+            in_enum_underlying_type: false,
         }
     }
 

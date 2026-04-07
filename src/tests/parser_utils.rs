@@ -1,7 +1,5 @@
 use crate::ast::{BinaryOp, UnaryOp, literal::Literal};
-use crate::ast::{
-    DeclSpec, DeclaratorRef, NameId, ParsedAst, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, TypeSpec,
-};
+use crate::ast::{DeclSpec, DeclaratorRef, ParsedAst, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, TypeSpec};
 use crate::diagnostic::ParseError;
 use crate::driver::artifact::CompilePhase;
 use crate::parser::statements::parse_compound_statement;
@@ -112,8 +110,13 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
                 TypeSpec::Unsigned => "unsigned".to_string(),
                 TypeSpec::Complex => "_Complex".to_string(),
                 TypeSpec::TypedefName(name) => format!("TypedefName({:?})", name.to_string()),
-                TypeSpec::Enum(tag, enumerators) => {
-                    let tag_str = tag.unwrap_or_else(|| NameId::new(""));
+                TypeSpec::Enum(tag, enumerators, underlying_type) => {
+                    let tag_str = tag.map(|t| t.to_string()).unwrap_or_else(|| "".to_string());
+                    let mut s = format!("enum {}", tag_str);
+                    if let Some(ut) = underlying_type {
+                        s.push_str(" : ");
+                        s.push_str(&extract_type_kind(ast, &ut));
+                    }
                     if let Some(enums) = enumerators {
                         let enum_parts: Vec<String> = enums
                             .iter()
@@ -129,10 +132,9 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
                                 _ => "<invalid>".to_string(),
                             })
                             .collect();
-                        format!("enum {} {{ {} }}", tag_str, enum_parts.join(", "))
-                    } else {
-                        format!("enum {}", tag_str)
+                        s.push_str(&format!(" {{ {} }}", enum_parts.join(", ")));
                     }
+                    s
                 }
                 TypeSpec::Record(is_union, tag, def, _) => {
                     let record_kind = if *is_union { "union" } else { "struct" };
@@ -458,12 +460,19 @@ fn extract_base_kind(ast: &ParsedAst, base: crate::ast::ParsedBaseTypeRef) -> St
                 "struct { ... }".to_string()
             }
         }
-        crate::ast::ParsedBaseType::Enum { tag, .. } => {
-            if let Some(tag) = tag {
+        crate::ast::ParsedBaseType::Enum {
+            tag, underlying_type, ..
+        } => {
+            let mut s = if let Some(tag) = tag {
                 format!("enum {}", tag)
             } else {
                 "enum { ... }".to_string()
+            };
+            if let Some(ut) = underlying_type {
+                s.push_str(" : ");
+                s.push_str(&extract_type_kind(ast, &ut));
             }
+            s
         }
         crate::ast::ParsedBaseType::Typedef(name) => name.to_string(),
         crate::ast::ParsedBaseType::Typeof(..) => "typeof(...)".to_string(),

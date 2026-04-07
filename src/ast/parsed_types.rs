@@ -89,6 +89,7 @@ pub enum ParsedBaseType {
     Enum {
         tag: Option<NameId>,
         enumerators: Option<ParsedEnumRange>,
+        underlying_type: Option<ParsedType>,
     },
 
     Typedef(NameId),

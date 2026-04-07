@@ -360,10 +360,27 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         &mut self,
         tag: Option<NameId>,
         enumerators: &Option<Vec<ParsedNodeRef>>,
+        underlying_type: Option<ParsedType>,
         span: SourceSpan,
     ) -> Result<QualType, SemanticError> {
-        let is_definition = enumerators.is_some();
-        let ty = self.resolve_enum_tag(tag, is_definition, span)?;
+        let underlying_qt = if let Some(ut) = underlying_type {
+            let qt = self.lower_type(ut, span, false)?;
+            if !qt.is_integer() || qt.is_enum() {
+                self.report_error(span, SemanticErrorKind::InvalidEnumUnderlyingType { ty: qt });
+            }
+            Some(qt)
+        } else {
+            None
+        };
+
+        let is_definition = enumerators.is_some() || underlying_qt.is_some();
+        let ty = self.resolve_enum_tag(
+            tag,
+            is_definition,
+            underlying_qt.is_some(),
+            underlying_qt.map(|q| q.ty()),
+            span,
+        )?;
 
         if let Some(enums) = enumerators {
             let mut next_value = 0i64;
@@ -389,14 +406,32 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 // C11 6.7.2.2p2: The expression that defines the value of an enumeration
                 // constant shall be an integer constant expression.
-                // GCC/Clang warn (not error) if the value doesn't fit in int,
-                // and use a wider underlying type for the enum.
-                // Note: EnumeratorValueNotRepresentable is mapped to a Warning in into_diagnostic.
-                if !(i32::MIN as i64..=i32::MAX as i64).contains(&value) {
-                    self.report_error(
-                        node.span,
-                        SemanticErrorKind::EnumeratorValueNotRepresentable { name: *name, value },
-                    );
+                // C23 6.7.2.2p4: If there is an underlying type, the value must be representable by it.
+                // Otherwise, it must be representable as an int (or wider implementing type).
+
+                let is_representable = if let Some(uqt) = underlying_qt {
+                    self.registry.get(uqt.ty()).truncate_int(value) == value
+                } else {
+                    (i32::MIN as i64..=i32::MAX as i64).contains(&value)
+                };
+
+                if !is_representable {
+                    if let Some(uqt) = underlying_qt {
+                        let target_ty = StringId::new(self.registry.display_qual_type(uqt));
+                        self.report_error(
+                            node.span,
+                            SemanticErrorKind::EnumeratorValueFixedNotRepresentable {
+                                name: *name,
+                                value,
+                                target_ty,
+                            },
+                        );
+                    } else {
+                        self.report_error(
+                            node.span,
+                            SemanticErrorKind::EnumeratorValueNotRepresentable { name: *name, value },
+                        );
+                    }
                 }
 
                 next_value = value.wrapping_add(1);
@@ -420,12 +455,19 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 });
             }
 
-            self.complete_enum_symbol(tag, ty, enumerators_list, span)?;
+            self.complete_enum_symbol(
+                tag,
+                ty,
+                enumerators_list,
+                underlying_qt.map(|q| q.ty()),
+                underlying_qt.is_some(),
+                span,
+            )?;
 
             // After completion, the underlying type is determined.
             // GCC extension: enum constants have the enum's underlying integer type for _Generic matching.
             // Update the type_info of each enum constant symbol to the underlying integer type.
-            let underlying_type = {
+            let resolved_underlying_type = {
                 let enum_ty_info = self.registry.get(ty);
                 if let crate::semantic::types::TypeKind::Enum { base_type, .. } = &enum_ty_info.kind {
                     QualType::unqualified(*base_type)
@@ -434,8 +476,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
             };
             for sym in constant_syms {
-                self.symbol_table.get_symbol_mut(sym).type_info = underlying_type;
+                self.symbol_table.get_symbol_mut(sym).type_info = resolved_underlying_type;
             }
+        } else if let Some(uqt) = underlying_qt {
+            // C23: definition with underlying type but no enumerators
+            self.complete_enum_symbol(tag, ty, Vec::new(), Some(uqt.ty()), true, span)?;
         }
         Ok(QualType::unqualified(ty))
     }
@@ -639,7 +684,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     {
                         match ts {
                             TypeSpec::Record(.., is_def, _) if is_def.is_some() => 1,
-                            TypeSpec::Enum(_, is_def) if is_def.is_some() => 1,
+                            TypeSpec::Enum(_, is_def, underlying_type)
+                                if is_def.is_some() || underlying_type.is_some() =>
+                            {
+                                1
+                            }
                             _ => 0,
                         }
                     } else {
@@ -2701,39 +2750,68 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         &mut self,
         tag: Option<NameId>,
         is_definition: bool,
+        has_fixed: bool,
+        fixed_base: Option<TypeRef>,
         span: SourceSpan,
     ) -> Result<TypeRef, SemanticError> {
         let Some(tag_name) = tag else {
-            return Ok(self.registry.declare_enum(None, self.registry.type_int));
+            return Ok(self
+                .registry
+                .declare_enum(None, fixed_base.unwrap_or(self.registry.type_int), has_fixed));
         };
 
         let existing = self.symbol_table.lookup_tag(tag_name);
         if let Some((sym, scope_id)) = existing
             && (!is_definition || scope_id == self.symbol_table.current_scope())
         {
-            let (type_info, is_completed, def_span) = {
+            let (type_info, is_completed, def_span, has_enumerators) = {
                 let symbol = self.symbol_table.get_symbol(sym);
-                (symbol.type_info, symbol.is_completed, symbol.def_span)
+                let has_enums =
+                    if let TypeKind::Enum { enumerators, .. } = &self.registry.get(symbol.type_info.ty()).kind {
+                        !enumerators.is_empty()
+                    } else {
+                        false
+                    };
+                (symbol.type_info, symbol.is_completed, symbol.def_span, has_enums)
             };
 
             if is_definition && is_completed {
-                self.report_error(
-                    span,
-                    SemanticErrorKind::Redefinition {
-                        name: tag_name,
-                        first_def: def_span,
-                    },
-                );
+                // C23 allows redefinition only if it was empty or compatible
+                let enum_ty = type_info.ty();
+                let type_info = self.registry.get(enum_ty);
+                if let TypeKind::Enum {
+                    has_fixed_underlying_type: existing_fixed,
+                    ..
+                } = &type_info.kind
+                {
+                    if !existing_fixed && !has_fixed {
+                        self.report_error(
+                            span,
+                            SemanticErrorKind::Redefinition {
+                                name: tag_name,
+                                first_def: def_span,
+                            },
+                        );
+                    } else if has_enumerators {
+                        // C23: only one definition can have an enumerator list
+                        self.report_error(
+                            span,
+                            SemanticErrorKind::Redefinition {
+                                name: tag_name,
+                                first_def: def_span,
+                            },
+                        );
+                    }
+                }
             }
             if !is_definition && !is_completed {
                 self.report_warning(span, SemanticErrorKind::EnumForwardDeclaration);
             }
             Ok(type_info.ty())
         } else {
-            if !is_definition {
-                self.report_warning(span, SemanticErrorKind::EnumForwardDeclaration);
-            }
-            let ty = self.registry.declare_enum(Some(tag_name), self.registry.type_int);
+            let ty =
+                self.registry
+                    .declare_enum(Some(tag_name), fixed_base.unwrap_or(self.registry.type_int), has_fixed);
             self.symbol_table.define_enum(tag_name, ty, span);
             Ok(ty)
         }
@@ -2744,13 +2822,57 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         tag: Option<NameId>,
         ty: TypeRef,
         enumerators: Vec<EnumConstant>,
+        base_type: Option<TypeRef>,
+        has_fixed: bool,
         span: SourceSpan,
     ) -> Result<(), SemanticError> {
         // Determine the underlying type
-        let base_type = self.choose_enum_type(&enumerators);
+        let base_type = base_type.unwrap_or_else(|| self.choose_enum_type(&enumerators));
+
+        let (existing_fixed, existing_base, is_complete, has_enumerators) = {
+            let type_info = self.registry.get(ty);
+            if let TypeKind::Enum {
+                has_fixed_underlying_type: existing_fixed1,
+                base_type: existing_base1,
+                is_complete: is_complete1,
+                enumerators: existing_enumerators1,
+                ..
+            } = &type_info.kind
+            {
+                (
+                    *existing_fixed1,
+                    *existing_base1,
+                    *is_complete1,
+                    !existing_enumerators1.is_empty(),
+                )
+            } else {
+                (false, self.registry.type_int, false, false)
+            }
+        };
+
+        if existing_fixed
+            && has_fixed
+            && !self
+                .registry
+                .is_compatible(QualType::unqualified(existing_base), QualType::unqualified(base_type))
+        {
+            let _existing_str = self.registry.display_qual_type(QualType::unqualified(existing_base));
+            let _new_str = self.registry.display_qual_type(QualType::unqualified(base_type));
+            self.report_error(
+                span,
+                SemanticErrorKind::ConflictingTypes {
+                    name: tag.unwrap_or_else(|| NameId::new("")), // Tag name could be missing if anonymous
+                    first_def: span,                              // This is a bit lazy, should be first_def from symbol
+                },
+            );
+        }
+
+        if is_complete && !enumerators.is_empty() && has_enumerators {
+            // Both have enumerators -> Redefinition
+        }
 
         // Update the type in AST and SymbolTable using the proper completion function
-        self.registry.complete_enum(ty, enumerators, base_type);
+        self.registry.complete_enum(ty, enumerators, base_type, has_fixed);
         if let Err(e) = self.registry.ensure_layout(ty) {
             return Err(SemanticError::new(span, e.to_semantic_kind()));
         }
@@ -2880,7 +3002,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             Complex => Ok(QualType::unqualified(self.registry.type_complex_marker)),
             Atomic(p) => self.resolve_atomic_specifier(*p, span),
             Record(u, t, d, a) => self.resolve_record_specifier(*u, *t, d, a, span),
-            Enum(t, e) => self.resolve_enum_specifier(*t, e, span),
+            Enum(t, e, u) => self.resolve_enum_specifier(*t, e, *u, span),
             TypedefName(n) => self.resolve_typedef_name(*n, span),
             VaList => Ok(QualType::unqualified(self.registry.type_valist)),
             AutoType => Ok(QualType::unqualified(
@@ -3371,10 +3493,27 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         &mut self,
         tag: Option<NameId>,
         enumerators: Option<ParsedEnumRange>,
+        underlying_type: Option<ParsedType>,
         span: SourceSpan,
     ) -> Result<QualType, SemanticError> {
-        let is_definition = enumerators.is_some();
-        let ty = self.resolve_enum_tag(tag, is_definition, span)?;
+        let underlying_qt = if let Some(ut) = underlying_type {
+            let qt = self.lower_type(ut, span, false)?;
+            if !qt.is_integer() || qt.is_enum() {
+                self.report_error(span, SemanticErrorKind::InvalidEnumUnderlyingType { ty: qt });
+            }
+            Some(qt)
+        } else {
+            None
+        };
+
+        let is_definition = enumerators.is_some() || underlying_qt.is_some();
+        let ty = self.resolve_enum_tag(
+            tag,
+            is_definition,
+            underlying_qt.is_some(),
+            underlying_qt.map(|q| q.ty()),
+            span,
+        )?;
 
         if let Some(enum_range) = enumerators {
             let parsed_enums = self.parsed_ast.parsed_types.get_enum_constants(enum_range).to_vec();
@@ -3383,11 +3522,29 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             for m in parsed_enums {
                 let value = m.value.unwrap_or(next_value);
-                if !(i32::MIN as i64..=i32::MAX as i64).contains(&value) {
-                    self.report_error(
-                        m.span,
-                        SemanticErrorKind::EnumeratorValueNotRepresentable { name: m.name, value },
-                    );
+                let is_representable = if let Some(uqt) = underlying_qt {
+                    self.registry.get(uqt.ty()).truncate_int(value) == value
+                } else {
+                    (i32::MIN as i64..=i32::MAX as i64).contains(&value)
+                };
+
+                if !is_representable {
+                    if let Some(uqt) = underlying_qt {
+                        let target_ty = StringId::new(self.registry.display_qual_type(uqt));
+                        self.report_error(
+                            m.span,
+                            SemanticErrorKind::EnumeratorValueFixedNotRepresentable {
+                                name: m.name,
+                                value,
+                                target_ty,
+                            },
+                        );
+                    } else {
+                        self.report_error(
+                            m.span,
+                            SemanticErrorKind::EnumeratorValueNotRepresentable { name: m.name, value },
+                        );
+                    }
                 }
                 next_value = value.wrapping_add(1);
                 let _ = self.symbol_table.define_enum_constant(m.name, value, ty, m.span);
@@ -3399,7 +3556,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 });
             }
 
-            self.complete_enum_symbol(tag, ty, enumerators_list, span)?;
+            self.complete_enum_symbol(
+                tag,
+                ty,
+                enumerators_list,
+                underlying_qt.map(|q| q.ty()),
+                underlying_qt.is_some(),
+                span,
+            )?;
+        } else if let Some(uqt) = underlying_qt {
+            // C23: definition with underlying type but no enumerators
+            self.complete_enum_symbol(tag, ty, Vec::new(), Some(uqt.ty()), true, span)?;
         }
         Ok(QualType::unqualified(ty))
     }
@@ -3474,7 +3641,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedBaseType::Record { tag, members, is_union } => {
                 self.lower_record_parsed_base(*tag, *members, *is_union, span)
             }
-            ParsedBaseType::Enum { tag, enumerators } => self.lower_enum_parsed_base(*tag, *enumerators, span),
+            ParsedBaseType::Enum {
+                tag,
+                enumerators,
+                underlying_type,
+            } => self.lower_enum_parsed_base(*tag, *enumerators, *underlying_type, span),
             ParsedBaseType::Typedef(name) => self.lower_typedef_parsed_base(*name, span),
             ParsedBaseType::Typeof(ty) => self.lower_typeof_parsed_base(*ty, span),
             ParsedBaseType::TypeofExpr(expr) => self.lower_typeof_expr_parsed_base(*expr, span),

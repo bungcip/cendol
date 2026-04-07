@@ -187,3 +187,108 @@ fn test_c23_auto_invalid_contexts() {
         CStandard::C23,
     );
 }
+
+#[test]
+fn test_c23_enum_underlying_type_basic() {
+    run_pass_with_std(
+        r#"
+        enum e : unsigned short {
+            x = 65535
+        };
+        int main() {
+            enum e val = x;
+            return sizeof(val) == 2 ? 0 : 1;
+        }
+        "#,
+        CompilePhase::Mir,
+        CStandard::C23,
+    );
+}
+
+#[test]
+fn test_c23_enum_underlying_type_definition_only() {
+    run_pass_with_std(
+        r#"
+        enum e : int;
+        int main() {
+            return sizeof(enum e) == 4 ? 0 : 1;
+        }
+        "#,
+        CompilePhase::Mir,
+        CStandard::C23,
+    );
+}
+
+#[test]
+fn test_c23_enum_underlying_type_out_of_range() {
+    run_fail_with_message_and_std(
+        r#"
+        enum e : unsigned char {
+            x = 256
+        };
+        "#,
+        "enumerator value 256 for 'x' is not representable",
+        CStandard::C23,
+    );
+}
+
+#[test]
+fn test_c23_enum_underlying_type_invalid_type() {
+    run_fail_with_message_and_std(
+        r#"
+        enum e : float { x };
+        "#,
+        "invalid underlying type 'float' for enum",
+        CStandard::C23,
+    );
+
+    run_fail_with_message_and_std(
+        r#"
+        enum e1 { a };
+        enum e2 : enum e1 { b };
+        "#,
+        "invalid underlying type 'enum e1' for enum",
+        CStandard::C23,
+    );
+}
+
+#[test]
+fn test_c23_enum_underlying_type_redefinition() {
+    run_fail_with_message_and_std(
+        r#"
+        enum e : int { x };
+        enum e : int { y };
+        "#,
+        "redefinition of 'e'",
+        CStandard::C23,
+    );
+}
+
+#[test]
+fn test_c23_enum_underlying_type_forward_decl_compat() {
+    run_pass_with_std(
+        r#"
+        enum e : short;
+        enum e : short { x = 1 };
+        int main() { return 0; }
+        "#,
+        CompilePhase::Mir,
+        CStandard::C23,
+    );
+}
+
+#[test]
+fn test_c23_enum_constant_type() {
+    run_pass_with_std(
+        r#"
+        enum e : unsigned char { x = 1 };
+        int main() {
+            // In C23, x has the underlying type (unsigned char) 
+            // if it's specified, so sizeof(x) should be 1.
+            return sizeof(x) == 1 ? 0 : 1;
+        }
+        "#,
+        CompilePhase::Mir,
+        CStandard::C23,
+    );
+}

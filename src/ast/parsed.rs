@@ -265,6 +265,7 @@ pub enum TypeSpec {
     Enum(
         Option<NameId>,             /* tag */
         Option<Vec<ParsedNodeRef>>, /* enumerators */
+        Option<ParsedType>,         /* underlying type */
     ),
     TypedefName(NameId),
     VaList,
@@ -375,7 +376,7 @@ impl DeclSpec {
 impl TypeSpec {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
-            TypeSpec::Enum(_, Some(enumerators)) => {
+            TypeSpec::Enum(_, Some(enumerators), _) => {
                 for &e in enumerators {
                     f(e);
                 }

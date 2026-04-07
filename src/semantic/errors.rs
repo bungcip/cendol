@@ -1,4 +1,4 @@
-use crate::ast::NameId;
+use crate::ast::{NameId, StringId};
 use crate::diagnostic::{Diagnostic, DiagnosticLevel};
 use crate::semantic::{QualType, TypeRef, TypeRegistry};
 use crate::source_manager::SourceSpan;
@@ -351,6 +351,11 @@ pub enum SemanticErrorKind {
         name: NameId,
         value: i64,
     },
+    EnumeratorValueFixedNotRepresentable {
+        name: NameId,
+        value: i64,
+        target_ty: StringId,
+    },
     FileScopeSpecifiesStorageClass {
         name: NameId,
         specifier: &'static str,
@@ -402,6 +407,9 @@ pub enum SemanticErrorKind {
     GnuCaseRange,
     GnuZeroLengthArray,
     InlineAsmIgnored,
+    InvalidEnumUnderlyingType {
+        ty: QualType,
+    },
 }
 
 impl SemanticErrorKind {
@@ -419,6 +427,7 @@ impl SemanticErrorKind {
             SemanticErrorKind::SwitchCaseOverflow { .. } => Some("switch"),
             SemanticErrorKind::AddressOfArrayAlwaysTrue { .. } => Some("tautological-pointer-compare"),
             SemanticErrorKind::EnumeratorValueNotRepresentable { .. } => Some("enum-conversion"),
+            SemanticErrorKind::EnumeratorValueFixedNotRepresentable { .. } => None,
             SemanticErrorKind::ExcessElements { .. } => Some("excess-initializers"),
             SemanticErrorKind::AlignOfExpression => Some("gnu-alignof-expression"),
             SemanticErrorKind::GnuStatementExpression => Some("gnu-statement-expression"),
@@ -771,6 +780,10 @@ impl SemanticErrorKind {
                 "enumerator value {} for '{}' is not representable as 'int'",
                 value, name
             ),
+            SemanticErrorKind::EnumeratorValueFixedNotRepresentable { name, value, target_ty } => format!(
+                "enumerator value {} for '{}' is not representable as '{}'",
+                value, name, target_ty
+            ),
             SemanticErrorKind::FileScopeSpecifiesStorageClass { name, specifier } => {
                 format!("file-scope declaration of '{}' specifies '{}'", name, specifier)
             }
@@ -795,6 +808,9 @@ impl SemanticErrorKind {
                 "[*] array size only allowed in function prototype scope".to_string()
             }
             SemanticErrorKind::VlaInitializerNotAllowed => "variable-length array may not be initialized".to_string(),
+            SemanticErrorKind::InvalidEnumUnderlyingType { ty } => {
+                format!("invalid underlying type '{}' for enum", registry.display_qual_type(*ty))
+            }
             SemanticErrorKind::OffsetofBitfield => "cannot apply 'offsetof' to a bit-field".to_string(),
             SemanticErrorKind::OffsetofIncompleteType { ty } => {
                 format!("offsetof of incomplete type '{}'", registry.display_qual_type(*ty))

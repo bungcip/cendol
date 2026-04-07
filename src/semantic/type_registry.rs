@@ -696,27 +696,36 @@ impl TypeRegistry {
         }
     }
 
-    pub(super) fn declare_enum(&mut self, tag: Option<NameId>, base_type: TypeRef) -> TypeRef {
+    pub(super) fn declare_enum(&mut self, tag: Option<NameId>, base_type: TypeRef, has_fixed: bool) -> TypeRef {
         self.alloc(Type::new(TypeKind::Enum {
             tag,
             base_type,
             enumerators: Arc::from([]),
             is_complete: false,
+            has_fixed_underlying_type: has_fixed,
         }))
     }
 
-    pub(super) fn complete_enum(&mut self, enum_ty: TypeRef, enumerators: Vec<EnumConstant>, base_type: TypeRef) {
+    pub(super) fn complete_enum(
+        &mut self,
+        enum_ty: TypeRef,
+        enumerators: Vec<EnumConstant>,
+        base_type: TypeRef,
+        has_fixed: bool,
+    ) {
         let ty = &mut self.types[enum_ty.index()];
         match &mut ty.kind {
             TypeKind::Enum {
                 is_complete,
                 enumerators: slot,
                 base_type: base_slot,
+                has_fixed_underlying_type: fixed_slot,
                 ..
             } => {
                 *slot = Arc::from(enumerators);
                 *base_slot = base_type;
                 *is_complete = true;
+                *fixed_slot = has_fixed;
             }
             _ => unreachable!("complete_enum on non-enum"),
         }

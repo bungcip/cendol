@@ -822,6 +822,7 @@ pub enum TypeKind {
         base_type: TypeRef,
         enumerators: Arc<[EnumConstant]>,
         is_complete: bool,
+        has_fixed_underlying_type: bool,
     },
     TypeofExpr(crate::ast::NodeRef),
     TypeofUnqualExpr(crate::ast::NodeRef),
@@ -935,19 +936,28 @@ impl TypeQualifiers {
 
 impl Display for TypeQualifiers {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
+        let mut write_qual = |q: &str| -> std::fmt::Result {
+            if !first {
+                write!(f, " ")?;
+            }
+            write!(f, "{}", q)?;
+            first = false;
+            Ok(())
+        };
+
         if self.contains(TypeQualifiers::CONST) {
-            write!(f, "const")?;
+            write_qual("const")?;
         }
         if self.contains(TypeQualifiers::VOLATILE) {
-            write!(f, "volatile")?;
+            write_qual("volatile")?;
         }
         if self.contains(TypeQualifiers::RESTRICT) {
-            write!(f, "restrict")?;
+            write_qual("restrict")?;
         }
         if self.contains(TypeQualifiers::ATOMIC) {
-            write!(f, "_Atomic")?;
+            write_qual("_Atomic")?;
         }
-
         Ok(())
     }
 }

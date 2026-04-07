@@ -1,7 +1,7 @@
 use super::semantic_common::setup_lowering;
 use crate::ast::literal::Literal;
 use crate::ast::{Ast, NodeKind, NodeRef, StringId};
-use crate::semantic::{QualType, SymbolTable, TypeQualifiers, TypeRegistry};
+use crate::semantic::{SymbolTable, TypeRegistry};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -65,7 +65,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
         }
         NodeKind::VarDecl(data) => ResolvedAstNode::VarDecl {
             name: data.name,
-            ty: display_qual_type(registry, data.qt),
+            ty: registry.display_qual_type(data.qt),
             init: data
                 .init
                 .map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))),
@@ -84,7 +84,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
         }
         NodeKind::FieldDecl(data) => ResolvedAstNode::FieldDecl {
             name: data.name.unwrap_or_else(|| StringId::new("<anon>")),
-            ty: display_qual_type(registry, data.qt),
+            ty: registry.display_qual_type(data.qt),
         },
         NodeKind::EnumDecl(data) => {
             let members = data
@@ -144,47 +144,16 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
     }
 }
 
-fn display_qual_type(registry: &TypeRegistry, qt: QualType) -> String {
-    let mut s = String::new();
-    if qt.is_const() {
-        s.push_str("const ");
-    }
-    if qt.qualifiers().contains(TypeQualifiers::VOLATILE) {
-        s.push_str("volatile ");
-    }
-    if qt.qualifiers().contains(TypeQualifiers::RESTRICT) {
-        s.push_str("restrict ");
-    }
-    if qt.qualifiers().contains(TypeQualifiers::ATOMIC) {
-        s.push_str("_Atomic ");
-    }
-
-    let ty = qt.ty();
-    let type_cow = registry.get(ty);
-    use crate::semantic::TypeKind;
-    let kind = &type_cow.kind;
-
-    match kind {
-        TypeKind::Pointer { pointee } => {
-            let pointee_qt = *pointee;
-            let inner = display_qual_type(registry, pointee_qt);
-            s.push_str(&format!("{} *", inner));
-        }
-        _ => s.push_str(&format!("{}", kind)),
-    }
-    s.trim().to_string()
-}
-
 #[test]
 fn test_const_pointer_init() {
     let (ast, registry, symbol_table) = setup_lowering("const int * const * volatile p;");
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @"
+    insta::assert_yaml_snapshot!(resolved, @r"
     TranslationUnit:
       - VarDecl:
           name: p
-          ty: volatile const const int * *
+          ty: volatile const const int**
           init: ~
           alignment: ~
     ");
@@ -260,7 +229,7 @@ fn test_struct_member_qualifiers_preserved() {
 
     let root = ast.get_root();
     let resolved = resolve_node(&ast, &registry, &symbol_table, root);
-    insta::assert_yaml_snapshot!(resolved, @"
+    insta::assert_yaml_snapshot!(resolved, @r"
     TranslationUnit:
       - RecordDecl:
           name: S
@@ -270,7 +239,7 @@ fn test_struct_member_qualifiers_preserved() {
                 ty: const int
             - FieldDecl:
                 name: y
-                ty: volatile int *
+                ty: volatile int*
     ");
 }
 

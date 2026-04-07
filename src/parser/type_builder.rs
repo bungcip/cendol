@@ -213,13 +213,17 @@ fn parse_base_type(parser: &mut Parser, ts: &TypeSpec) -> Result<ParsedBaseTypeR
                 is_union: *is_union,
             }))
         }
-        Enum(tag, enumerators) => {
+        Enum(tag, enumerators, underlying_type) => {
             let enumerators = enumerators
                 .as_ref()
                 .map(|e| parse_enum_constants(parser, e))
                 .transpose()?;
 
-            Ok(parser.alloc_base_type(ParsedBaseType::Enum { tag: *tag, enumerators }))
+            Ok(parser.alloc_base_type(ParsedBaseType::Enum {
+                tag: *tag,
+                enumerators,
+                underlying_type: *underlying_type,
+            }))
         }
         TypedefName(name) => Ok(parser.alloc_base_type(ParsedBaseType::Typedef(*name))),
         AutoType => Ok(parser.alloc_base_type(ParsedBaseType::Builtin(AutoType))),

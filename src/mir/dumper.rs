@@ -8,6 +8,7 @@
 //! - Constants: const 42, const null
 //! - Types: i8, i16, i32, i64, u8, u16, u32, u64, f32, f64, ptr<T>
 
+use std::fmt;
 use std::fmt::Write;
 
 use super::{
@@ -41,7 +42,7 @@ impl<'a> MirDumper<'a> {
     }
 
     /// Generate the complete MIR dump
-    pub(crate) fn generate_mir_dump(&self) -> Result<String, std::fmt::Error> {
+    pub(crate) fn generate_mir_dump(&self) -> Result<String, fmt::Error> {
         let mut output = String::new();
 
         // Dump module header
@@ -74,12 +75,12 @@ impl<'a> MirDumper<'a> {
     }
 
     /// Dump a single function
-    fn dump_function(&self, output: &mut String, func: &MirFunction) -> Result<(), std::fmt::Error> {
+    fn dump_function(&self, output: &mut String, func: &MirFunction) -> fmt::Result {
         // Function signature
-        let return_type = self.type_to_string(func.return_type);
-        let fn_keyword = match func.linkage {
-            MirLinkage::Import => "extern fn",
-            _ => "fn",
+        let fn_keyword = if matches!(func.linkage, MirLinkage::Import) {
+            "extern fn"
+        } else {
+            "fn"
         };
         write!(output, "{} {}(", fn_keyword, func.name)?;
 
@@ -89,13 +90,19 @@ impl<'a> MirDumper<'a> {
                 write!(output, ", ")?;
             }
             if let Some(param) = self.mir.locals.get(param_id.index()) {
-                let param_type = self.type_to_string(param.type_id);
-                let param_name = param.name.as_ref().map_or("%unnamed".to_string(), |s| s.to_string());
-                write!(output, "%{}: {}", param_name, param_type)?;
+                write!(output, "%")?;
+                if let Some(name) = &param.name {
+                    write!(output, "{}", name)?;
+                } else {
+                    write!(output, "unnamed")?;
+                }
+                write!(output, ": ")?;
+                self.write_type(output, param.type_id)?;
             } else {
                 write!(output, "%param{}: ?", param_id.get())?;
             }
         }
+
         if func.is_variadic {
             if !func.params.is_empty() {
                 write!(output, ", ")?;
@@ -103,7 +110,8 @@ impl<'a> MirDumper<'a> {
             write!(output, "...")?;
         }
 
-        write!(output, ") -> {}", return_type)?;
+        write!(output, ") -> ")?;
+        self.write_type(output, func.return_type)?;
 
         // For extern functions, don't output any body
         if matches!(func.linkage, MirLinkage::Import) {
@@ -117,13 +125,20 @@ impl<'a> MirDumper<'a> {
         writeln!(output, "{{")?;
 
         // Dump locals section
-        if func.locals.is_empty() == false {
+        if !func.locals.is_empty() {
             writeln!(output, "  locals {{")?;
             for &local_id in &func.locals {
                 if let Some(local) = self.mir.locals.get(local_id.index()) {
-                    let local_type = self.type_to_string(local.type_id);
-                    let local_name = self.local_to_string(local_id);
-                    writeln!(output, "    {}: {}", local_name, local_type)?;
+                    write!(output, "    ")?;
+                    write!(output, "%")?;
+                    if let Some(name) = &local.name {
+                        write!(output, "{}", name)?;
+                    } else {
+                        write!(output, "{}", local_id.get())?;
+                    }
+                    write!(output, ": ")?;
+                    self.write_type(output, local.type_id)?;
+                    writeln!(output)?;
                 }
             }
             writeln!(output, "  }}")?;
@@ -136,66 +151,93 @@ impl<'a> MirDumper<'a> {
             }
         }
 
-        writeln!(output, "}}")?;
-        Ok(())
+        writeln!(output, "}}")
     }
 
     /// Dump all type definitions
-    fn dump_types(&self, output: &mut String) -> Result<(), std::fmt::Error> {
+    fn dump_types(&self, output: &mut String) -> fmt::Result {
         for (i, mir_type) in self.mir.module.types.iter().enumerate() {
             let type_id = TypeId::new((i + 1) as u32).unwrap();
-            let type_str = self.type_to_string_with_id(type_id, mir_type);
-            writeln!(output, "{}", type_str)?;
+            let type_index = self.get_type_index_from_type_id(type_id);
+            write!(output, "type %t{} = ", type_index)?;
+            self.write_type_inner(output, type_id, mir_type, true)?;
+            writeln!(output)?;
         }
         Ok(())
     }
 
-    /// Convert MIR type to string representation with type ID
-    fn type_to_string_with_id(&self, type_id: TypeId, mir_type: &MirType) -> String {
-        let type_index = self.get_type_index_from_type_id(type_id);
-        let type_name = format!("%t{}", type_index);
-
+    /// Internal helper to format MIR types
+    fn write_type_inner<W: fmt::Write>(
+        &self,
+        output: &mut W,
+        type_id: TypeId,
+        mir_type: &MirType,
+        is_definition: bool,
+    ) -> fmt::Result {
         match mir_type {
-            MirType::Void => format!("type {} = void", type_name),
-            MirType::Bool => format!("type {} = bool", type_name),
-
-            MirType::I8 => format!("type {} = i8", type_name),
-            MirType::I16 => format!("type {} = i16", type_name),
-            MirType::I32 => format!("type {} = i32", type_name),
-            MirType::I64 => format!("type {} = i64", type_name),
-            MirType::U8 => format!("type {} = u8", type_name),
-            MirType::U16 => format!("type {} = u16", type_name),
-            MirType::U32 => format!("type {} = u32", type_name),
-            MirType::U64 => format!("type {} = u64", type_name),
-            MirType::F32 => format!("type {} = f32", type_name),
-            MirType::F64 => format!("type {} = f64", type_name),
-            MirType::F80 => format!("type {} = f80", type_name),
-            MirType::F128 => format!("type {} = f128", type_name),
+            MirType::Void => write!(output, "void"),
+            MirType::Bool => write!(output, "bool"),
+            MirType::I8 => write!(output, "i8"),
+            MirType::I16 => write!(output, "i16"),
+            MirType::I32 => write!(output, "i32"),
+            MirType::I64 => write!(output, "i64"),
+            MirType::U8 => write!(output, "u8"),
+            MirType::U16 => write!(output, "u16"),
+            MirType::U32 => write!(output, "u32"),
+            MirType::U64 => write!(output, "u64"),
+            MirType::F32 => write!(output, "f32"),
+            MirType::F64 => write!(output, "f64"),
+            MirType::F80 => write!(output, "f80"),
+            MirType::F128 => write!(output, "f128"),
             MirType::Pointer { pointee } => {
-                let pointee_index = self.get_type_index_from_type_id(*pointee);
-                format!("type {} = ptr<%t{}>", type_name, pointee_index)
+                if is_definition {
+                    let index = self.get_type_index_from_type_id(*pointee);
+                    write!(output, "ptr<%t{}>", index)
+                } else {
+                    write!(output, "ptr<")?;
+                    self.write_type(output, *pointee)?;
+                    write!(output, ">")
+                }
             }
             MirType::Array { element, size, .. } => {
-                let elem_index = self.get_type_index_from_type_id(*element);
-                format!("type {} = [{}]%t{}", type_name, size, elem_index)
+                if is_definition {
+                    let index = self.get_type_index_from_type_id(*element);
+                    write!(output, "[{}]%t{}", size, index)
+                } else {
+                    write!(output, "[{}]", size)?;
+                    self.write_type(output, *element)
+                }
             }
             MirType::Function {
                 return_type,
                 params,
                 is_variadic,
             } => {
-                let ret_index = self.get_type_index_from_type_id(*return_type);
-                let mut param_types: Vec<String> = params
-                    .iter()
-                    .map(|&p| {
-                        let param_index = self.get_type_index_from_type_id(p);
-                        format!("%t{}", param_index)
-                    })
-                    .collect();
-                if *is_variadic {
-                    param_types.push("...".to_string());
+                write!(output, "fn(")?;
+                for (i, &p) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(output, ", ")?;
+                    }
+                    if is_definition {
+                        let index = self.get_type_index_from_type_id(p);
+                        write!(output, "%t{}", index)?;
+                    } else {
+                        self.write_type(output, p)?;
+                    }
                 }
-                format!("type {} = fn({}) -> %t{}", type_name, param_types.join(", "), ret_index)
+                if *is_variadic {
+                    if !params.is_empty() {
+                        write!(output, ", ")?;
+                    }
+                    write!(output, "...")?;
+                }
+                write!(output, ") -> ")?;
+                if is_definition {
+                    let index = self.get_type_index_from_type_id(*return_type);
+                    write!(output, "%t{}", index)
+                } else {
+                    self.write_type(output, *return_type)
+                }
             }
             MirType::Record {
                 name,
@@ -204,16 +246,21 @@ impl<'a> MirDumper<'a> {
                 is_union,
                 ..
             } => {
-                let field_strs: Vec<String> = field_names
-                    .iter()
-                    .zip(field_types.iter())
-                    .map(|(fname, fid)| {
-                        let field_index = self.get_type_index_from_type_id(*fid);
-                        format!("{}: %t{}", fname, field_index)
-                    })
-                    .collect();
-                let kind = if *is_union { "union" } else { "struct" };
-                format!("type {} = {} {} {{ {} }}", type_name, kind, name, field_strs.join(", "))
+                if is_definition {
+                    let kind = if *is_union { "union" } else { "struct" };
+                    write!(output, "{} {} {{ ", kind, name)?;
+                    for (i, (fname, fid)) in field_names.iter().zip(field_types.iter()).enumerate() {
+                        if i > 0 {
+                            write!(output, ", ")?;
+                        }
+                        let index = self.get_type_index_from_type_id(*fid);
+                        write!(output, "{}: %t{}", fname, index)?;
+                    }
+                    write!(output, " }}")
+                } else {
+                    let index = self.get_type_index_from_type_id(type_id);
+                    write!(output, "%t{}", index)
+                }
             }
         }
     }
@@ -225,27 +272,28 @@ impl<'a> MirDumper<'a> {
     }
 
     /// Dump a single global variable
-    fn dump_global(&self, output: &mut String, global: &Global) -> Result<(), std::fmt::Error> {
-        let global_type = self.type_to_string(global.type_id);
-        let tls_suffix = if global.is_tls { " (tls)" } else { "" };
-        write!(output, "global @{}: {}{}", global.name, global_type, tls_suffix)?;
-
-        if let Some(const_id) = global.initial_value {
-            // Check if this global represents a string literal
-            if let Some(string_repr) = self.try_format_as_string_literal(&global.name.to_string(), const_id) {
-                write!(output, " = {}", string_repr)?;
-            } else {
-                write!(output, " = {}", self.const_to_string(const_id))?;
-            }
+    fn dump_global(&self, output: &mut String, global: &Global) -> fmt::Result {
+        write!(output, "global @{}: ", global.name)?;
+        self.write_type(output, global.type_id)?;
+        if global.is_tls {
+            write!(output, " (tls)")?;
         }
 
+        if let Some(const_id) = global.initial_value {
+            write!(output, " = ")?;
+            if !self.write_string_literal_if_possible(output, global.name.as_str(), const_id)? {
+                self.write_const(output, const_id)?;
+            }
+        }
         Ok(())
     }
 
     /// Dump a basic block
-    fn dump_block(&self, output: &mut String, block_id: MirBlockId, block: &MirBlock) -> Result<(), std::fmt::Error> {
+    fn dump_block(&self, output: &mut String, block_id: MirBlockId, block: &MirBlock) -> fmt::Result {
         writeln!(output)?;
-        writeln!(output, "  {}:", self.block_to_string(block_id))?;
+        write!(output, "  ")?;
+        self.write_block(output, block_id)?;
+        writeln!(output, ":")?;
 
         // Dump statements in the block
         for &stmt_id in &block.statements {
@@ -259,398 +307,332 @@ impl<'a> MirDumper<'a> {
         // Dump terminator (MUST be explicit)
         write!(output, "    ")?;
         self.dump_terminator(output, &block.terminator)?;
-        writeln!(output)?;
-
-        Ok(())
+        writeln!(output)
     }
 
     /// Dump a statement
-    fn dump_statement(&self, output: &mut String, stmt: &MirStmt) -> Result<(), std::fmt::Error> {
+    fn dump_statement(&self, output: &mut String, stmt: &MirStmt) -> fmt::Result {
         match stmt {
             MirStmt::Assign(place, rvalue) => {
-                write!(output, "{} = ", self.place_to_string(place))?;
-                self.dump_rvalue(output, rvalue)?;
+                self.write_place(output, place)?;
+                write!(output, " = ")?;
+                self.dump_rvalue(output, rvalue)
             }
             MirStmt::Call { target, args, dest } => {
                 if let Some(place) = dest {
-                    write!(output, "{} = ", self.place_to_string(place))?;
+                    self.write_place(output, place)?;
+                    write!(output, " = ")?;
                 }
-                write!(output, "call {}(", self.call_target_to_string(target))?;
+                write!(output, "call ")?;
+                self.write_call_target(output, target)?;
+                write!(output, "(")?;
                 for (i, operand) in args.iter().enumerate() {
                     if i > 0 {
                         write!(output, ", ")?;
                     }
-                    self.dump_operand(output, operand)?;
+                    self.write_operand(output, operand)?;
                 }
-                write!(output, ")")?;
+                write!(output, ")")
             }
             MirStmt::BuiltinVaStart(ap, last) => {
-                write!(
-                    output,
-                    "va_start({}, {})",
-                    self.place_to_string(ap),
-                    self.operand_to_string(last)
-                )?;
+                write!(output, "va_start(")?;
+                self.write_place(output, ap)?;
+                write!(output, ", ")?;
+                self.write_operand(output, last)?;
+                write!(output, ")")
             }
             MirStmt::BuiltinVaEnd(ap) => {
-                write!(output, "va_end({})", self.place_to_string(ap))?;
+                write!(output, "va_end(")?;
+                self.write_place(output, ap)?;
+                write!(output, ")")
             }
             MirStmt::BuiltinVaCopy(dst, src) => {
-                write!(
-                    output,
-                    "va_copy({}, {})",
-                    self.place_to_string(dst),
-                    self.place_to_string(src)
-                )?;
+                write!(output, "va_copy(")?;
+                self.write_place(output, dst)?;
+                write!(output, ", ")?;
+                self.write_place(output, src)?;
+                write!(output, ")")
             }
             MirStmt::AtomicStore(ptr, val, order) => {
-                write!(
-                    output,
-                    "atomic_store({}, {}, {:?})",
-                    self.operand_to_string(ptr),
-                    self.operand_to_string(val),
-                    order
-                )?;
+                write!(output, "atomic_store(")?;
+                self.write_operand(output, ptr)?;
+                write!(output, ", ")?;
+                self.write_operand(output, val)?;
+                write!(output, ", {:?})", order)
             }
         }
-        Ok(())
     }
 
     /// Dump a terminator
-    fn dump_terminator(&self, output: &mut String, terminator: &Terminator) -> Result<(), std::fmt::Error> {
+    fn dump_terminator(&self, output: &mut String, terminator: &Terminator) -> fmt::Result {
         match terminator {
             Terminator::Goto(block_id) => {
-                write!(output, "br {}", self.block_to_string(*block_id))?;
+                write!(output, "br ")?;
+                self.write_block(output, *block_id)
             }
             Terminator::If(cond, then_block, else_block) => {
-                write!(
-                    output,
-                    "cond_br {}, {}, {}",
-                    self.operand_to_string(cond),
-                    self.block_to_string(*then_block),
-                    self.block_to_string(*else_block)
-                )?;
+                write!(output, "cond_br ")?;
+                self.write_operand(output, cond)?;
+                write!(output, ", ")?;
+                self.write_block(output, *then_block)?;
+                write!(output, ", ")?;
+                self.write_block(output, *else_block)
             }
-            Terminator::Return(operand) => match operand {
-                Some(op) => {
-                    write!(output, "return ")?;
-                    self.dump_operand(output, op)?;
+            Terminator::Return(operand) => {
+                write!(output, "return")?;
+                if let Some(op) = operand {
+                    write!(output, " ")?;
+                    self.write_operand(output, op)?;
                 }
-                None => {
-                    write!(output, "return")?;
-                }
-            },
-            Terminator::Unreachable => {
-                write!(output, "unreachable")?;
+                Ok(())
             }
-            Terminator::Trap => {
-                write!(output, "trap")?;
-            }
+            Terminator::Unreachable => write!(output, "unreachable"),
+            Terminator::Trap => write!(output, "trap"),
         }
-        Ok(())
     }
 
     /// Convert MIR type to string representation
-    fn type_to_string(&self, type_id: TypeId) -> String {
+    fn write_type<W: fmt::Write>(&self, output: &mut W, type_id: TypeId) -> fmt::Result {
         if let Some(mir_type) = self.mir.types.get(type_id.index()) {
-            let type_index = self.get_type_index_from_type_id(type_id);
-
-            match mir_type {
-                MirType::Void => "void".to_string(),
-                MirType::Bool => "bool".to_string(),
-
-                MirType::I8 => "i8".to_string(),
-                MirType::I16 => "i16".to_string(),
-                MirType::I32 => "i32".to_string(),
-                MirType::I64 => "i64".to_string(),
-                MirType::U8 => "u8".to_string(),
-                MirType::U16 => "u16".to_string(),
-                MirType::U32 => "u32".to_string(),
-                MirType::U64 => "u64".to_string(),
-                MirType::F32 => "f32".to_string(),
-                MirType::F64 => "f64".to_string(),
-                MirType::F80 => "f80".to_string(),
-                MirType::F128 => "f128".to_string(),
-                MirType::Pointer { pointee } => {
-                    let pointee_type = self.type_to_string(*pointee);
-                    format!("ptr<{}>", pointee_type)
-                }
-                MirType::Array { element, size, .. } => {
-                    let elem_type = self.type_to_string(*element);
-                    format!("[{}]{}", size, elem_type)
-                }
-                MirType::Function {
-                    return_type,
-                    params,
-                    is_variadic,
-                } => {
-                    let ret_type = self.type_to_string(*return_type);
-                    let mut param_types: Vec<String> = params.iter().map(|&p| self.type_to_string(p)).collect();
-                    if *is_variadic {
-                        param_types.push("...".to_string());
-                    }
-                    format!("fn({}) -> {}", param_types.join(", "), ret_type)
-                }
-                MirType::Record { .. } => {
-                    // For aggregate types, use the type ID to keep output concise
-                    format!("%t{}", type_index)
-                }
-            }
+            self.write_type_inner(output, type_id, mir_type, false)
         } else {
-            format!("unknown_type_{}", type_id.get())
+            write!(output, "unknown_type_{}", type_id.get())
         }
     }
 
     /// Convert local ID to string representation
-    fn local_to_string(&self, local_id: LocalId) -> String {
+    fn write_local<W: fmt::Write>(&self, output: &mut W, local_id: LocalId) -> fmt::Result {
+        write!(output, "%")?;
         let local = self.mir.locals.get(local_id.index());
-        let name = match local {
-            Some(local) => {
-                if let Some(name) = &local.name {
-                    format!("{}", name)
-                } else {
-                    format!("{}", local_id.get())
-                }
-            }
-            None => format!("{}", local_id.get()),
-        };
-
-        format!("%{}", name)
+        match local {
+            Some(local) if local.name.is_some() => write!(output, "{}", local.name.as_ref().unwrap()),
+            _ => write!(output, "{}", local_id.get()),
+        }
     }
 
     /// Convert global ID to string representation
-    fn global_to_string(&self, global_id: GlobalId) -> String {
+    fn write_global<W: fmt::Write>(&self, output: &mut W, global_id: GlobalId) -> fmt::Result {
         if let Some(global) = self.mir.globals.get(global_id.index()) {
-            format!("@{}", global.name)
+            write!(output, "@{}", global.name)
         } else {
-            format!("@global_{}", global_id.get())
+            write!(output, "@global_{}", global_id.get())
         }
     }
 
     /// Convert block ID to string representation
-    fn block_to_string(&self, block_id: MirBlockId) -> String {
-        format!("bb{}", block_id.get())
+    fn write_block<W: fmt::Write>(&self, output: &mut W, block_id: MirBlockId) -> fmt::Result {
+        write!(output, "bb{}", block_id.get())
     }
 
     /// Convert function ID to string representation
-    fn function_to_string(&self, func_id: MirFunctionId) -> String {
+    fn write_function_name<W: fmt::Write>(&self, output: &mut W, func_id: MirFunctionId) -> fmt::Result {
         if let Some(func) = self.mir.functions.get(func_id.index()) {
-            format!("{}", func.name)
+            write!(output, "{}", func.name)
         } else {
-            format!("func_{}", func_id.get())
+            write!(output, "func_{}", func_id.get())
         }
     }
 
     /// Convert call target to string representation
-    fn call_target_to_string(&self, call_target: &CallTarget) -> String {
+    fn write_call_target<W: fmt::Write>(&self, output: &mut W, call_target: &CallTarget) -> fmt::Result {
         match call_target {
-            CallTarget::Direct(func_id) => self.function_to_string(*func_id),
-            CallTarget::Indirect(operand) => format!("*{}", self.operand_to_string(operand)),
+            CallTarget::Direct(func_id) => self.write_function_name(output, *func_id),
+            CallTarget::Indirect(operand) => {
+                write!(output, "*")?;
+                self.write_operand(output, operand)
+            }
         }
     }
 
     /// Try to format a constant as a string literal if applicable
-    fn try_format_as_string_literal(&self, global_name: &str, const_id: ConstValueId) -> Option<String> {
-        // Only format as string if the global name starts with .L.str (our anonymous string literals)
+    fn write_string_literal_if_possible<W: fmt::Write>(
+        &self,
+        output: &mut W,
+        global_name: &str,
+        const_id: ConstValueId,
+    ) -> Result<bool, fmt::Error> {
         if !global_name.starts_with(".L.str") {
-            return None;
+            return Ok(false);
         }
 
         if let Some(const_value) = self.mir.constants.get(const_id.index())
             && let ConstValueKind::ArrayLiteral(elements) = &const_value.kind
         {
-            // Try to convert the array elements to a string
-            let mut string_content = String::new();
+            // First, check if all elements are integers (bytes)
+            for &element_id in elements {
+                let element = self.mir.constants.get(element_id.index()).unwrap();
+                if !matches!(element.kind, ConstValueKind::Int(_)) {
+                    return Ok(false);
+                }
+            }
 
+            write!(output, "const \"")?;
             for &element_id in elements {
                 let element = self.mir.constants.get(element_id.index()).unwrap();
                 if let ConstValueKind::Int(byte) = &element.kind {
                     let byte = *byte as u8;
                     if byte == 0 {
-                        // Null terminator - end of string
                         break;
                     }
 
                     match byte {
-                        b'\n' => string_content.push_str("\\n"),
-                        b'\r' => string_content.push_str("\\r"),
-                        b'\t' => string_content.push_str("\\t"),
-                        b'\\' => string_content.push_str("\\\\"),
-                        b'"' => string_content.push_str("\\\""),
-                        b if (32..=126).contains(&b) => string_content.push(b as char),
-                        _ => {
-                            // Use hex escape for other non-printable characters
-                            use std::fmt::Write;
-                            write!(&mut string_content, "\\x{:02x}", byte).ok()?;
-                        }
+                        b'\n' => write!(output, "\\n")?,
+                        b'\r' => write!(output, "\\r")?,
+                        b'\t' => write!(output, "\\t")?,
+                        b'\\' => write!(output, "\\\\")?,
+                        b'"' => write!(output, "\\\"")?,
+                        b if (32..=126).contains(&b) => write!(output, "{}", byte as char)?,
+                        _ => write!(output, "\\x{:02x}", byte)?,
                     }
-                } else {
-                    // Non-integer element, not a string
-                    return None;
                 }
             }
-
-            if !string_content.is_empty() {
-                return Some(format!("const \"{}\"", string_content));
-            }
+            write!(output, "\"")?;
+            return Ok(true);
         }
 
-        None
+        Ok(false)
     }
 
     /// Convert constant ID to string representation
-    fn const_to_string(&self, const_id: ConstValueId) -> String {
+    fn write_const<W: fmt::Write>(&self, output: &mut W, const_id: ConstValueId) -> fmt::Result {
         if let Some(const_value) = self.mir.constants.get(const_id.index()) {
             match &const_value.kind {
-                ConstValueKind::Int(val) => format!("const {}", val),
-                ConstValueKind::Float(val) => format!("const {}", val),
-                ConstValueKind::Bool(val) => format!("const {}", val),
-                ConstValueKind::Null => "const null".to_string(),
-                ConstValueKind::Zero => "const zero".to_string(),
+                ConstValueKind::Int(val) => write!(output, "const {}", val),
+                ConstValueKind::Float(val) => write!(output, "const {}", val),
+                ConstValueKind::Bool(val) => write!(output, "const {}", val),
+                ConstValueKind::Null => write!(output, "const null"),
+                ConstValueKind::Zero => write!(output, "const zero"),
                 ConstValueKind::StructLiteral(fields) => {
                     // Expand struct literal to show field contents
-                    let field_strs: Vec<String> = fields
-                        .iter()
-                        .map(|(field_idx, field_const_id)| {
-                            let field_const_str = self.const_to_string(*field_const_id);
-                            format!("{}: {}", field_idx, field_const_str)
-                        })
-                        .collect();
-                    format!("const struct_literal {{ {} }}", field_strs.join(", "))
+                    write!(output, "const struct_literal {{ ")?;
+                    for (i, (field_idx, field_const_id)) in fields.iter().enumerate() {
+                        if i > 0 {
+                            write!(output, ", ")?;
+                        }
+                        write!(output, "{}: ", field_idx)?;
+                        self.write_const(output, *field_const_id)?;
+                    }
+                    write!(output, " }}")
                 }
                 ConstValueKind::ArrayLiteral(elements) => {
                     // Expand array literal to show element contents
-                    let element_strs: Vec<String> = elements
-                        .iter()
-                        .map(|element_const_id| self.const_to_string(*element_const_id))
-                        .collect();
-                    format!("const array_literal [{}]", element_strs.join(", "))
+                    write!(output, "const array_literal [")?;
+                    for (i, element_const_id) in elements.iter().enumerate() {
+                        if i > 0 {
+                            write!(output, ", ")?;
+                        }
+                        self.write_const(output, *element_const_id)?;
+                    }
+                    write!(output, "]")
                 }
                 ConstValueKind::GlobalAddress(global_id, addend) => {
+                    write!(output, "const ")?;
+                    self.write_global(output, *global_id)?;
                     if *addend != 0 {
-                        format!("const {}+{}", self.global_to_string(*global_id), addend)
+                        write!(output, "+{}", addend)
                     } else {
-                        format!("const {}", self.global_to_string(*global_id))
+                        Ok(())
                     }
                 }
                 ConstValueKind::FunctionAddress(func_id) => {
-                    format!("const {}", self.function_to_string(*func_id))
+                    write!(output, "const ")?;
+                    self.write_function_name(output, *func_id)
                 }
             }
         } else {
-            format!("const unknown_{}", const_id.get())
+            write!(output, "const unknown_{}", const_id.get())
         }
     }
 
     /// Convert place to string representation
-    fn place_to_string(&self, place: &Place) -> String {
+    fn write_place<W: fmt::Write>(&self, output: &mut W, place: &Place) -> fmt::Result {
         match place {
-            Place::Local(local_id) => self.local_to_string(*local_id),
-            Place::Deref(operand) => format!("deref({})", self.operand_to_string(operand)),
-            Place::Global(global_id) => self.global_to_string(*global_id),
+            Place::Local(local_id) => self.write_local(output, *local_id),
+            Place::Deref(operand) => {
+                write!(output, "deref(")?;
+                self.write_operand(output, operand)?;
+                write!(output, ")")
+            }
+            Place::Global(global_id) => self.write_global(output, *global_id),
             Place::StructField(base_place, field_idx, bit_info) => {
-                let bit_str = bit_info
-                    .map(|b| format!(" (bit:{}:{})", b.offset, b.width))
-                    .unwrap_or_default();
-                format!("{}.field_{}{}", self.place_to_string(base_place), field_idx, bit_str)
+                self.write_place(output, base_place)?;
+                write!(output, ".field_{}", field_idx)?;
+                if let Some(b) = bit_info {
+                    write!(output, " (bit:{}:{})", b.offset, b.width)?;
+                }
+                Ok(())
             }
             Place::ArrayIndex(base_place, index) => {
-                format!(
-                    "{}[{}]",
-                    self.place_to_string(base_place),
-                    self.operand_to_string(index)
-                )
+                self.write_place(output, base_place)?;
+                write!(output, "[")?;
+                self.write_operand(output, index)?;
+                write!(output, "]")
             }
         }
     }
 
     /// Convert operand to string representation
-    fn operand_to_string(&self, operand: &Operand) -> String {
+    fn write_operand<W: fmt::Write>(&self, output: &mut W, operand: &Operand) -> fmt::Result {
         match operand {
-            Operand::Copy(place) => self.place_to_string(place),
-            Operand::Constant(const_id) => self.const_to_string(*const_id),
+            Operand::Copy(place) => self.write_place(output, place),
+            Operand::Constant(const_id) => self.write_const(output, *const_id),
             Operand::AddressOf(place) => {
-                format!("addr_of({})", self.place_to_string(place))
+                write!(output, "addr_of(")?;
+                self.write_place(output, place)?;
+                write!(output, ")")
             }
             Operand::Cast(type_id, operand) => {
-                format!(
-                    "cast<{}>({})",
-                    self.type_to_string(*type_id),
-                    self.operand_to_string(operand)
-                )
+                write!(output, "cast<")?;
+                self.write_type(output, *type_id)?;
+                write!(output, ">(")?;
+                self.write_operand(output, operand)?;
+                write!(output, ")")
             }
         }
     }
 
-    /// Dump an operand (for use in statements)
-    fn dump_operand(&self, output: &mut String, operand: &Operand) -> Result<(), std::fmt::Error> {
-        write!(output, "{}", self.operand_to_string(operand))?;
-        Ok(())
-    }
-
     /// Dump an rvalue (for use in assignments)
-    fn dump_rvalue(&self, output: &mut String, rvalue: &Rvalue) -> Result<(), std::fmt::Error> {
+    fn dump_rvalue(&self, output: &mut String, rvalue: &Rvalue) -> fmt::Result {
         match rvalue {
-            Rvalue::Use(operand) => {
-                self.dump_operand(output, operand)?;
-            }
+            Rvalue::Use(operand) => self.write_operand(output, operand),
             Rvalue::BinaryIntOp(op, left, right) => {
-                write!(
-                    output,
-                    "{} {} {}",
-                    self.operand_to_string(left),
-                    self.binary_int_op_to_string(op),
-                    self.operand_to_string(right)
-                )?;
+                self.write_operand(output, left)?;
+                write!(output, " {} ", self.binary_int_op_to_string(op))?;
+                self.write_operand(output, right)
             }
             Rvalue::BinaryFloatOp(op, left, right) => {
-                write!(
-                    output,
-                    "{} {} {}",
-                    self.operand_to_string(left),
-                    self.binary_float_op_to_string(op),
-                    self.operand_to_string(right)
-                )?;
+                self.write_operand(output, left)?;
+                write!(output, " {} ", self.binary_float_op_to_string(op))?;
+                self.write_operand(output, right)
             }
             Rvalue::UnaryIntOp(op, operand) => {
-                write!(
-                    output,
-                    "{} {}",
-                    self.unary_int_op_to_string(op),
-                    self.operand_to_string(operand)
-                )?;
+                write!(output, "{} ", self.unary_int_op_to_string(op))?;
+                self.write_operand(output, operand)
             }
             Rvalue::UnaryFloatOp(op, operand) => {
-                write!(
-                    output,
-                    "{} {}",
-                    self.unary_float_op_to_string(op),
-                    self.operand_to_string(operand)
-                )?;
+                write!(output, "{} ", self.unary_float_op_to_string(op))?;
+                self.write_operand(output, operand)
             }
             Rvalue::PtrAdd(base, offset) => {
-                write!(
-                    output,
-                    "ptradd({}, {})",
-                    self.operand_to_string(base),
-                    self.operand_to_string(offset)
-                )?;
+                write!(output, "ptradd(")?;
+                self.write_operand(output, base)?;
+                write!(output, ", ")?;
+                self.write_operand(output, offset)?;
+                write!(output, ")")
             }
             Rvalue::PtrSub(base, offset) => {
-                write!(
-                    output,
-                    "ptrsub({}, {})",
-                    self.operand_to_string(base),
-                    self.operand_to_string(offset)
-                )?;
+                write!(output, "ptrsub(")?;
+                self.write_operand(output, base)?;
+                write!(output, ", ")?;
+                self.write_operand(output, offset)?;
+                write!(output, ")")
             }
             Rvalue::PtrDiff(left, right) => {
-                write!(
-                    output,
-                    "ptrdiff({}, {})",
-                    self.operand_to_string(left),
-                    self.operand_to_string(right)
-                )?;
+                write!(output, "ptrdiff(")?;
+                self.write_operand(output, left)?;
+                write!(output, ", ")?;
+                self.write_operand(output, right)?;
+                write!(output, ")")
             }
             Rvalue::StructLiteral(fields) => {
                 write!(output, "struct{{")?;
@@ -658,9 +640,10 @@ impl<'a> MirDumper<'a> {
                     if i > 0 {
                         write!(output, ", ")?;
                     }
-                    write!(output, "{}: {}", idx, self.operand_to_string(op))?;
+                    write!(output, "{}: ", idx)?;
+                    self.write_operand(output, op)?;
                 }
-                write!(output, "}}")?;
+                write!(output, "}}")
             }
             Rvalue::ArrayLiteral(elements) => {
                 write!(output, "[")?;
@@ -668,116 +651,107 @@ impl<'a> MirDumper<'a> {
                     if i > 0 {
                         write!(output, ", ")?;
                     }
-                    write!(output, "{}", self.operand_to_string(op))?;
+                    self.write_operand(output, op)?;
                 }
-                write!(output, "]")?;
+                write!(output, "]")
             }
-
             Rvalue::BuiltinVaArg(ap, ty) => {
-                write!(
-                    output,
-                    "va_arg({}, {})",
-                    self.place_to_string(ap),
-                    self.type_to_string(*ty)
-                )?;
+                write!(output, "va_arg(")?;
+                self.write_place(output, ap)?;
+                write!(output, ", ")?;
+                self.write_type(output, *ty)?;
+                write!(output, ")")
             }
             Rvalue::AtomicLoad(ptr, order) => {
-                write!(output, "atomic_load({}, {:?})", self.operand_to_string(ptr), order)?;
+                write!(output, "atomic_load(")?;
+                self.write_operand(output, ptr)?;
+                write!(output, ", {:?})", order)
             }
             Rvalue::AtomicExchange(ptr, val, order) => {
-                write!(
-                    output,
-                    "atomic_xchg({}, {}, {:?})",
-                    self.operand_to_string(ptr),
-                    self.operand_to_string(val),
-                    order
-                )?;
+                write!(output, "atomic_xchg(")?;
+                self.write_operand(output, ptr)?;
+                write!(output, ", ")?;
+                self.write_operand(output, val)?;
+                write!(output, ", {:?})", order)
             }
             Rvalue::AtomicCompareExchange(ptr, expected, desired, weak, success, failure) => {
-                write!(
-                    output,
-                    "atomic_cmpxchg({}, {}, {}, {}, {:?}, {:?})",
-                    self.operand_to_string(ptr),
-                    self.operand_to_string(expected),
-                    self.operand_to_string(desired),
-                    weak,
-                    success,
-                    failure
-                )?;
+                write!(output, "atomic_cmpxchg(")?;
+                self.write_operand(output, ptr)?;
+                write!(output, ", ")?;
+                self.write_operand(output, expected)?;
+                write!(output, ", ")?;
+                self.write_operand(output, desired)?;
+                write!(output, ", {}, {:?}, {:?})", weak, success, failure)
             }
             Rvalue::AtomicFetchOp(op, ptr, val, order) => {
-                write!(
-                    output,
-                    "atomic_fetch_{}({}, {}, {:?})",
-                    self.binary_int_op_to_string(op),
-                    self.operand_to_string(ptr),
-                    self.operand_to_string(val),
-                    order
-                )?;
+                write!(output, "atomic_fetch_{}(", self.binary_int_op_to_string(op))?;
+                self.write_operand(output, ptr)?;
+                write!(output, ", ")?;
+                self.write_operand(output, val)?;
+                write!(output, ", {:?})", order)
             }
         }
-        Ok(())
     }
 
     /// Convert integer binary operation to string representation
-    fn binary_int_op_to_string(&self, op: &super::BinaryIntOp) -> String {
+    fn binary_int_op_to_string(&self, op: &super::BinaryIntOp) -> &'static str {
         match op {
-            super::BinaryIntOp::Add => "+".to_string(),
-            super::BinaryIntOp::Sub => "-".to_string(),
-            super::BinaryIntOp::Mul => "*".to_string(),
-            super::BinaryIntOp::Div => "/".to_string(),
-            super::BinaryIntOp::Mod => "%".to_string(),
-            super::BinaryIntOp::BitAnd => "&".to_string(),
-            super::BinaryIntOp::BitOr => "|".to_string(),
-            super::BinaryIntOp::BitXor => "^".to_string(),
-            super::BinaryIntOp::LShift => "<<".to_string(),
-            super::BinaryIntOp::RShift => ">>".to_string(),
-            super::BinaryIntOp::Eq => "==".to_string(),
-            super::BinaryIntOp::Ne => "!=".to_string(),
-            super::BinaryIntOp::Lt => "<".to_string(),
-            super::BinaryIntOp::Le => "<=".to_string(),
-            super::BinaryIntOp::Gt => ">".to_string(),
-            super::BinaryIntOp::Ge => ">=".to_string(),
+            super::BinaryIntOp::Add => "+",
+            super::BinaryIntOp::Sub => "-",
+            super::BinaryIntOp::Mul => "*",
+            super::BinaryIntOp::Div => "/",
+            super::BinaryIntOp::Mod => "%",
+            super::BinaryIntOp::BitAnd => "&",
+            super::BinaryIntOp::BitOr => "|",
+            super::BinaryIntOp::BitXor => "^",
+            super::BinaryIntOp::LShift => "<<",
+            super::BinaryIntOp::RShift => ">>",
+            super::BinaryIntOp::Eq => "==",
+            super::BinaryIntOp::Ne => "!=",
+            super::BinaryIntOp::Lt => "<",
+            super::BinaryIntOp::Le => "<=",
+            super::BinaryIntOp::Gt => ">",
+            super::BinaryIntOp::Ge => ">=",
         }
     }
 
     /// Convert integer unary operation to string representation
-    fn unary_int_op_to_string(&self, op: &super::UnaryIntOp) -> String {
+    fn unary_int_op_to_string(&self, op: &super::UnaryIntOp) -> &'static str {
         match op {
-            super::UnaryIntOp::Neg => "-".to_string(),
-            super::UnaryIntOp::BitwiseNot => "~".to_string(),
-            super::UnaryIntOp::LogicalNot => "!".to_string(),
-            super::UnaryIntOp::Popcount => "popcount".to_string(),
-            super::UnaryIntOp::Clz => "clz".to_string(),
-            super::UnaryIntOp::Ctz => "ctz".to_string(),
-            super::UnaryIntOp::Bswap16 => "bswap16".to_string(),
-            super::UnaryIntOp::Bswap32 => "bswap32".to_string(),
-            super::UnaryIntOp::Bswap64 => "bswap64".to_string(),
-            super::UnaryIntOp::Ffs => "ffs".to_string(),
+            super::UnaryIntOp::Neg => "-",
+            super::UnaryIntOp::BitwiseNot => "~",
+            super::UnaryIntOp::LogicalNot => "!",
+            super::UnaryIntOp::Popcount => "popcount",
+            super::UnaryIntOp::Clz => "clz",
+            super::UnaryIntOp::Ctz => "ctz",
+            super::UnaryIntOp::Bswap16 => "bswap16",
+            super::UnaryIntOp::Bswap32 => "bswap32",
+            super::UnaryIntOp::Bswap64 => "bswap64",
+            super::UnaryIntOp::Ffs => "ffs",
         }
     }
 
     /// Convert floating-point binary operation to string representation
-    fn binary_float_op_to_string(&self, op: &BinaryFloatOp) -> String {
+    fn binary_float_op_to_string(&self, op: &BinaryFloatOp) -> &'static str {
         match op {
-            BinaryFloatOp::Add => "fadd".to_string(),
-            BinaryFloatOp::Sub => "fsub".to_string(),
-            BinaryFloatOp::Mul => "fmul".to_string(),
-            BinaryFloatOp::Div => "fdiv".to_string(),
-            BinaryFloatOp::Eq => "feq".to_string(),
-            BinaryFloatOp::Ne => "fne".to_string(),
-            BinaryFloatOp::Lt => "flt".to_string(),
-            BinaryFloatOp::Le => "fle".to_string(),
-            BinaryFloatOp::Gt => "fgt".to_string(),
-            BinaryFloatOp::Ge => "fge".to_string(),
+            BinaryFloatOp::Add => "fadd",
+            BinaryFloatOp::Sub => "fsub",
+            BinaryFloatOp::Mul => "fmul",
+            BinaryFloatOp::Div => "fdiv",
+            BinaryFloatOp::Eq => "feq",
+            BinaryFloatOp::Ne => "fne",
+            BinaryFloatOp::Lt => "flt",
+            BinaryFloatOp::Le => "fle",
+            BinaryFloatOp::Gt => "fgt",
+            BinaryFloatOp::Ge => "fge",
         }
     }
 
     /// Convert floating-point unary operation to string representation
-    fn unary_float_op_to_string(&self, op: &UnaryFloatOp) -> String {
+    fn unary_float_op_to_string(&self, op: &UnaryFloatOp) -> &'static str {
         match op {
-            UnaryFloatOp::Neg => "fneg".to_string(),
-            UnaryFloatOp::Abs => "fabs".to_string(),
+            UnaryFloatOp::Neg => "fneg",
+            UnaryFloatOp::Abs => "fabs",
         }
     }
 }

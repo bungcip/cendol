@@ -6,6 +6,7 @@
 
 use crate::ast::literal::{FloatSuffix, IntegerSuffix, Literal};
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, StringId, UnaryOp};
+use crate::semantic::conversions::{integer_promotion, usual_arithmetic_conversions};
 use crate::semantic::literal_utils::parse_string_literal;
 use crate::semantic::types::TypeClass;
 use crate::semantic::{BuiltinType, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeRef, TypeRegistry};
@@ -49,14 +50,8 @@ impl<'a> ConstEvalCtx<'a> {
             | BinaryOp::Mod
             | BinaryOp::BitAnd
             | BinaryOp::BitOr
-            | BinaryOp::BitXor => {
-                crate::semantic::conversions::usual_arithmetic_conversions(self.registry, left_ty, right_ty)
-            }
-            BinaryOp::LShift | BinaryOp::RShift => Some(crate::semantic::conversions::integer_promotion(
-                self.registry,
-                left_ty,
-                None,
-            )),
+            | BinaryOp::BitXor => usual_arithmetic_conversions(self.registry, left_ty, right_ty),
+            BinaryOp::LShift | BinaryOp::RShift => Some(integer_promotion(self.registry, left_ty, None)),
             BinaryOp::Less
             | BinaryOp::LessEqual
             | BinaryOp::Greater
@@ -72,9 +67,7 @@ impl<'a> ConstEvalCtx<'a> {
     fn get_unary_result_type(&self, op: UnaryOp, expr: NodeRef) -> Option<QualType> {
         let qt = self.resolve_type(expr)?;
         match op {
-            UnaryOp::Plus | UnaryOp::Minus | UnaryOp::BitNot => {
-                Some(crate::semantic::conversions::integer_promotion(self.registry, qt, None))
-            }
+            UnaryOp::Plus | UnaryOp::Minus | UnaryOp::BitNot => Some(integer_promotion(self.registry, qt, None)),
             UnaryOp::LogicNot => Some(QualType::unqualified(self.registry.type_int)),
             _ => None,
         }
@@ -121,7 +114,7 @@ impl<'a> ConstEvalCtx<'a> {
     }
 
     fn get_literal_type(&self, literal: &Literal) -> QualType {
-        match literal {
+        let ty = match literal {
             Literal::Int { val, suffix, base } => {
                 let val_u64 = *val as u64;
                 let is_decimal = *base == 10;
@@ -132,13 +125,10 @@ impl<'a> ConstEvalCtx<'a> {
                         break;
                     }
                 }
-                QualType::unqualified(ty)
+                ty
             }
-            Literal::Char(_, prefix) => {
-                let ty = prefix.get_type(self.registry);
-                QualType::unqualified(ty)
-            }
-            Literal::Float { suffix, .. } => QualType::unqualified(FloatSuffix::get_type(*suffix, self.registry)),
+            Literal::Char(_, prefix) => prefix.get_type(self.registry),
+            Literal::Float { suffix, .. } => FloatSuffix::get_type(*suffix, self.registry),
             Literal::String(val) => {
                 let parsed_str = parse_string_literal(*val);
                 let len = parsed_str.values.len() + 1;
@@ -149,11 +139,12 @@ impl<'a> ConstEvalCtx<'a> {
                     BuiltinType::UInt => self.registry.type_int_unsigned,
                     _ => self.registry.type_char,
                 };
-                QualType::unqualified(TypeRef::new(builtin_base.base(), TypeClass::Array, 0, len as u32).unwrap())
+                TypeRef::new(builtin_base.base(), TypeClass::Array, 0, len as u32).unwrap()
             }
-            Literal::Nullptr => QualType::unqualified(self.registry.type_nullptr_t),
-            Literal::True | Literal::False => QualType::unqualified(self.registry.type_bool),
-        }
+            Literal::Nullptr => self.registry.type_nullptr_t,
+            Literal::True | Literal::False => self.registry.type_bool,
+        };
+        QualType::unqualified(ty)
     }
 
     fn eval_complex_part(&self, node: NodeRef, is_real: bool) -> Option<f64> {

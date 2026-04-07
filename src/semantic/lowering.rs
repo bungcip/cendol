@@ -263,43 +263,35 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticErrorKind::FlexibleArrayElementInArray);
         }
 
-        let (has_static, quals) = match size {
-            ParsedArraySize::Expression { qualifiers, .. } => (false, qualifiers),
-            ParsedArraySize::Star { qualifiers } => {
-                if !self.in_prototype {
-                    self.report_error(span, SemanticErrorKind::VlaStarOutsidePrototype);
-                }
-                (false, qualifiers)
+        if size.is_star() && !self.in_prototype {
+            self.report_error(span, SemanticErrorKind::VlaStarOutsidePrototype);
+        }
+
+        let has_static = size.is_static();
+        let quals = size.qualifiers();
+
+        if (has_static || !quals.is_empty()) && !decl_ctx.in_parameter {
+            if has_static {
+                self.report_error(span, SemanticErrorKind::ArrayStaticOutsideParameter);
             }
-            ParsedArraySize::VlaSpec {
-                is_static, qualifiers, ..
-            } => (*is_static, qualifiers),
-            ParsedArraySize::Incomplete => (false, &TypeQualifiers::empty()),
-        };
-
-        if has_static || !quals.is_empty() {
-            let base = self.parsed_ast.parsed_types.get_decl(base);
-            let is_outermost = matches!(base, ParsedDeclarator::Identifier(..));
-
-            if !decl_ctx.in_parameter {
-                if has_static {
-                    self.report_error(span, SemanticErrorKind::ArrayStaticOutsideParameter);
-                }
-                if !quals.is_empty() {
-                    self.report_error(span, SemanticErrorKind::ArrayQualifierOutsideParameter);
-                }
-            } else if !is_outermost {
-                if has_static {
-                    self.report_error(span, SemanticErrorKind::ArrayStaticNotOutermost);
-                }
-                if !quals.is_empty() {
-                    self.report_error(span, SemanticErrorKind::ArrayQualifierNotOutermost);
-                }
+            if !quals.is_empty() {
+                self.report_error(span, SemanticErrorKind::ArrayQualifierOutsideParameter);
+            }
+        } else if (has_static || !quals.is_empty())
+            && !matches!(
+                self.parsed_ast.parsed_types.get_decl(base),
+                ParsedDeclarator::Identifier(..)
+            )
+        {
+            if has_static {
+                self.report_error(span, SemanticErrorKind::ArrayStaticNotOutermost);
+            }
+            if !quals.is_empty() {
+                self.report_error(span, SemanticErrorKind::ArrayQualifierNotOutermost);
             }
         }
 
         let array_size = self.convert_parsed_array_size(size);
-
         let ty = self.registry.array_of(element_qt.ty(), array_size);
         QualType::new(ty, element_qt.qualifiers())
     }
@@ -1920,12 +1912,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 if !inner_quals.is_empty() {
                     return inner_quals;
                 }
-                match size {
-                    ParsedArraySize::Expression { qualifiers, .. } => qualifiers,
-                    ParsedArraySize::Star { qualifiers } => qualifiers,
-                    ParsedArraySize::VlaSpec { qualifiers, .. } => qualifiers,
-                    ParsedArraySize::Incomplete => TypeQualifiers::empty(),
-                }
+                size.qualifiers()
             }
             ParsedDeclarator::BitField { inner, .. } => self.extract_array_param_qualifiers(inner),
         }
@@ -2088,11 +2075,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     /// Convert ParsedArraySize to ArraySizeType
     fn convert_parsed_array_size(&mut self, size: &ParsedArraySize) -> ArraySizeType {
-        match size {
-            ParsedArraySize::Expression { expr, .. } => self.resolve_array_size(Some(*expr)),
-            ParsedArraySize::Star { .. } => ArraySizeType::Star,
-            ParsedArraySize::Incomplete => ArraySizeType::Incomplete,
-            ParsedArraySize::VlaSpec { size, .. } => self.resolve_array_size(*size),
+        if size.is_star() {
+            ArraySizeType::Star
+        } else {
+            self.resolve_array_size(size.size_expr())
         }
     }
 
@@ -3080,12 +3066,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
                 }
                 DeclSpec::TypeQualifier(tq) => {
-                    info.qualifiers.insert(match tq {
-                        TypeQualifier::Const => TypeQualifiers::CONST,
-                        TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
-                        TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
-                        TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
-                    });
+                    info.qualifiers.insert(TypeQualifiers::from_type_qualifier(*tq));
                 }
                 DeclSpec::TypeSpec(ts) => {
                     let ty = self.resolve_type_spec(ts, span).unwrap_or_else(|e| {

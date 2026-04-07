@@ -137,15 +137,12 @@ pub(crate) fn parse_declarator(parser: &mut Parser) -> Result<DeclaratorRef, Par
 fn parse_type_qualifiers(parser: &mut Parser) -> Result<TypeQualifiers, ParseError> {
     let mut qualifiers = TypeQualifiers::empty();
     while let Some(token) = parser.try_current_token() {
-        let q = match token.kind {
-            TokenKind::Const => TypeQualifiers::CONST,
-            TokenKind::Volatile => TypeQualifiers::VOLATILE,
-            TokenKind::Restrict => TypeQualifiers::RESTRICT,
-            TokenKind::Atomic => TypeQualifiers::ATOMIC,
-            _ => break,
-        };
-        qualifiers.insert(q);
-        parser.advance();
+        if let Some(q) = token.kind.as_type_qualifier() {
+            qualifiers.insert(TypeQualifiers::from_type_qualifier(q));
+            parser.advance();
+        } else {
+            break;
+        }
     }
     Ok(qualifiers)
 }

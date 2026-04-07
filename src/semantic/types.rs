@@ -9,7 +9,7 @@ use std::{fmt::Display, num::NonZeroU32};
 use bitflags::bitflags;
 use serde::Serialize;
 
-use crate::ast::{NameId, NodeRef, SourceSpan, StorageClass};
+use crate::ast::{NameId, NodeRef, SourceSpan, StorageClass, TypeQualifier};
 
 /// Type representation (for semantic analysis)
 /// This is a canonical type, distinct from TypeSpec which is a syntax construct.
@@ -919,6 +919,17 @@ bitflags! {
         const VOLATILE = 1 << 1;
         const RESTRICT = 1 << 2;
         const ATOMIC = 1 << 3;
+    }
+}
+
+impl TypeQualifiers {
+    pub(crate) fn from_type_qualifier(q: TypeQualifier) -> Self {
+        match q {
+            TypeQualifier::Const => TypeQualifiers::CONST,
+            TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
+            TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
+            TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
+        }
     }
 }
 

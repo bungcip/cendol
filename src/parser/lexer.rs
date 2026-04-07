@@ -1,6 +1,6 @@
 use crate::ast::literal::{CharPrefix, FloatSuffix, IntegerSuffix};
 use crate::ast::literal_parsing;
-use crate::ast::{PragmaPackKind, StringId};
+use crate::ast::{FunctionSpec, PragmaPackKind, StorageClass, StringId, TypeQualifier};
 use crate::pp::{PPToken, PPTokenKind};
 use crate::source_manager::SourceSpan;
 
@@ -243,12 +243,45 @@ impl TokenKind {
     }
 
     pub(super) fn is_type_qualifier(&self) -> bool {
+        self.as_type_qualifier().is_some()
+    }
+
+    pub(crate) fn as_type_qualifier(&self) -> Option<TypeQualifier> {
         use TokenKind::*;
-        matches!(self, Const | Restrict | Volatile | Atomic)
+        match self {
+            Const => Some(TypeQualifier::Const),
+            Restrict => Some(TypeQualifier::Restrict),
+            Volatile => Some(TypeQualifier::Volatile),
+            Atomic => Some(TypeQualifier::Atomic),
+            _ => None,
+        }
     }
 
     fn is_function_specifier(&self) -> bool {
-        matches!(self, TokenKind::Inline | TokenKind::Noreturn)
+        self.as_function_spec().is_some()
+    }
+
+    pub(crate) fn as_storage_class(&self) -> Option<StorageClass> {
+        use TokenKind::*;
+        match self {
+            Typedef => Some(StorageClass::Typedef),
+            Extern => Some(StorageClass::Extern),
+            Static => Some(StorageClass::Static),
+            Auto => Some(StorageClass::Auto),
+            Register => Some(StorageClass::Register),
+            ThreadLocal => Some(StorageClass::ThreadLocal),
+            Constexpr => Some(StorageClass::Constexpr),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_function_spec(&self) -> Option<FunctionSpec> {
+        use TokenKind::*;
+        match self {
+            Inline => Some(FunctionSpec::Inline),
+            Noreturn => Some(FunctionSpec::Noreturn),
+            _ => None,
+        }
     }
 
     fn is_alignment_specifier(&self) -> bool {

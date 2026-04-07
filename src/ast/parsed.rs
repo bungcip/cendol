@@ -313,6 +313,36 @@ pub enum ParsedArraySize {
     }, // for VLA
 }
 
+impl ParsedArraySize {
+    pub(crate) fn qualifiers(&self) -> TypeQualifiers {
+        match self {
+            ParsedArraySize::Expression { qualifiers, .. } => *qualifiers,
+            ParsedArraySize::Star { qualifiers } => *qualifiers,
+            ParsedArraySize::VlaSpec { qualifiers, .. } => *qualifiers,
+            ParsedArraySize::Incomplete => TypeQualifiers::empty(),
+        }
+    }
+
+    pub(crate) fn is_static(&self) -> bool {
+        match self {
+            ParsedArraySize::VlaSpec { is_static, .. } => *is_static,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn is_star(&self) -> bool {
+        matches!(self, ParsedArraySize::Star { .. })
+    }
+
+    pub(crate) fn size_expr(&self) -> Option<ParsedNodeRef> {
+        match self {
+            ParsedArraySize::Expression { expr, .. } => Some(*expr),
+            ParsedArraySize::VlaSpec { size, .. } => *size,
+            _ => None,
+        }
+    }
+}
+
 // Record definitions
 #[derive(Debug, Clone)]
 pub struct ParsedGenericAssociation {

@@ -12,9 +12,7 @@ use crate::source_manager::{SourceLoc, SourceSpan};
 use thin_vec::ThinVec;
 
 use super::Parser;
-use crate::ast::nodes::FunctionSpec;
-use crate::ast::nodes::StorageClass;
-use crate::ast::nodes::TypeQualifier;
+// StorageClass, FunctionSpec, and TypeQualifier are already available via crate::ast::*
 // Import all parsed types to be sure
 use crate::ast::parsed::{
     DeclSpec, ParsedAlignmentSpec, ParsedDesignatedInitializer, ParsedDesignator, ParsedNodeKind, ParsedNodeRef,
@@ -308,48 +306,30 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
             | TokenKind::Register
             | TokenKind::ThreadLocal
             | TokenKind::Constexpr => {
-                let storage_class = match token.kind {
-                    TokenKind::Typedef => StorageClass::Typedef,
-                    TokenKind::Extern => StorageClass::Extern,
-                    TokenKind::Static => StorageClass::Static,
-                    TokenKind::Auto => StorageClass::Auto,
-                    TokenKind::Register => StorageClass::Register,
-                    TokenKind::ThreadLocal => StorageClass::ThreadLocal,
-                    TokenKind::Constexpr => StorageClass::Constexpr,
-                    _ => unreachable!(),
-                };
+                let storage_class = token.kind.as_storage_class().unwrap();
                 parser.advance();
                 specifiers.push(DeclSpec::StorageClass(storage_class));
             }
 
             TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Atomic => {
-                let qualifier = match token.kind {
-                    TokenKind::Const => TypeQualifier::Const,
-                    TokenKind::Volatile => TypeQualifier::Volatile,
-                    TokenKind::Restrict => TypeQualifier::Restrict,
-                    TokenKind::Atomic => {
-                        if parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::LeftParen) {
-                            parser.advance(); // consume `_Atomic`
-                            parser.expect(TokenKind::LeftParen)?;
-                            let parsed_type = parse_type_name(parser)?;
-                            parser.expect(TokenKind::RightParen)?;
-                            specifiers.push(DeclSpec::TypeSpec(TypeSpec::Atomic(parsed_type)));
-                            has_type_specifier = true;
-                            continue;
-                        }
-                        TypeQualifier::Atomic
-                    }
-                    _ => unreachable!(),
-                };
+                if token.kind == TokenKind::Atomic
+                    && parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::LeftParen)
+                {
+                    parser.advance(); // consume `_Atomic`
+                    parser.expect(TokenKind::LeftParen)?;
+                    let parsed_type = parse_type_name(parser)?;
+                    parser.expect(TokenKind::RightParen)?;
+                    specifiers.push(DeclSpec::TypeSpec(TypeSpec::Atomic(parsed_type)));
+                    has_type_specifier = true;
+                    continue;
+                }
+                let qualifier = token.kind.as_type_qualifier().unwrap();
                 parser.advance();
                 specifiers.push(DeclSpec::TypeQualifier(qualifier));
             }
 
             TokenKind::Inline | TokenKind::Noreturn => {
-                let func_spec = match token.kind {
-                    TokenKind::Inline => FunctionSpec::Inline,
-                    _ => FunctionSpec::Noreturn,
-                };
+                let func_spec = token.kind.as_function_spec().unwrap();
                 parser.advance();
                 specifiers.push(DeclSpec::FunctionSpec(func_spec));
             }

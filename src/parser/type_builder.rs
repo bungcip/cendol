@@ -144,12 +144,7 @@ fn parse_base_type_and_qualifiers(
                 }
             },
             DeclSpec::TypeQualifier(q) => {
-                qualifiers |= match q {
-                    TypeQualifier::Const => TypeQualifiers::CONST,
-                    TypeQualifier::Volatile => TypeQualifiers::VOLATILE,
-                    TypeQualifier::Restrict => TypeQualifiers::RESTRICT,
-                    TypeQualifier::Atomic => TypeQualifiers::ATOMIC,
-                };
+                qualifiers |= TypeQualifiers::from_type_qualifier(*q);
             }
             _ => {}
         }

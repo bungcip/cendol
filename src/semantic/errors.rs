@@ -381,6 +381,7 @@ pub enum SemanticErrorKind {
         ty: QualType,
     },
     AutoTypeRequiresInitializer,
+    ConstexprRequiresInitializer,
     AutoTypeIncompatibleDeduction {
         first: QualType,
         new: QualType,
@@ -805,6 +806,9 @@ impl SemanticErrorKind {
                 )
             }
             SemanticErrorKind::AutoTypeRequiresInitializer => "__auto_type requires an initializer".to_string(),
+            SemanticErrorKind::ConstexprRequiresInitializer => {
+                "constexpr requires an initialized data declaration".to_string()
+            }
             SemanticErrorKind::AutoTypeIncompatibleDeduction { first, new } => format!(
                 "__auto_type deduced as '{}' for one declarator, but '{}' for another",
                 registry.display_qual_type(*first),

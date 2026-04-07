@@ -306,7 +306,8 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
             | TokenKind::Static
             | TokenKind::Auto
             | TokenKind::Register
-            | TokenKind::ThreadLocal => {
+            | TokenKind::ThreadLocal
+            | TokenKind::Constexpr => {
                 let storage_class = match token.kind {
                     TokenKind::Typedef => StorageClass::Typedef,
                     TokenKind::Extern => StorageClass::Extern,
@@ -314,6 +315,7 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
                     TokenKind::Auto => StorageClass::Auto,
                     TokenKind::Register => StorageClass::Register,
                     TokenKind::ThreadLocal => StorageClass::ThreadLocal,
+                    TokenKind::Constexpr => StorageClass::Constexpr,
                     _ => unreachable!(),
                 };
                 parser.advance();

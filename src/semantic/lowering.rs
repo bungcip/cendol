@@ -587,23 +587,22 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn visit_node_entry(&mut self, node: ParsedNodeRef, target_slots: Option<&[NodeRef]>) -> SmallVec<[NodeRef; 1]> {
         let parsed_node = self.parsed_ast.get_node(node);
         let span = parsed_node.span;
-        let kind = parsed_node.kind.clone();
 
-        match kind {
+        match &parsed_node.kind {
             ParsedNodeKind::TranslationUnit(children) => {
-                smallvec![self.visit_translation_unit(&children, span)]
+                smallvec![self.visit_translation_unit(children, span)]
             }
             ParsedNodeKind::CompoundStmt(stmts) => {
-                smallvec![self.visit_compound_statement(&stmts, target_slots, span)]
+                smallvec![self.visit_compound_statement(stmts, target_slots, span)]
             }
-            ParsedNodeKind::Declaration(decl) => self.visit_declaration(&decl, span, target_slots),
+            ParsedNodeKind::Declaration(decl) => self.visit_declaration(decl, span, target_slots),
             ParsedNodeKind::FunctionDef(func_def) => {
                 let res_node = self.get_or_push_slot(target_slots, span);
-                self.visit_function_definition(&func_def, res_node, span);
+                self.visit_function_definition(func_def, res_node, span);
                 smallvec![res_node]
             }
             ParsedNodeKind::PragmaPack(kind) => {
-                self.handle_pragma_pack(kind);
+                self.handle_pragma_pack(*kind);
                 smallvec![]
             }
             // ... other top level kinds ...
@@ -2294,9 +2293,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 if func_ty.is_pointer() {
                     func_ty = self.registry.get_pointee(func_ty)?.ty();
                 }
-                let kind = self.registry.get(func_ty).kind.clone();
-                if let TypeKind::Function { return_type, .. } = kind {
-                    Some(QualType::unqualified(return_type))
+                if let TypeKind::Function { return_type, .. } = &self.registry.get(func_ty).kind {
+                    Some(QualType::unqualified(*return_type))
                 } else {
                     None
                 }
@@ -2517,9 +2515,25 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         // Brace elision logic
-        let type_kind = self.registry.get(element_type).kind.clone();
-        match type_kind {
-            TypeKind::Record { members, .. } => {
+        enum AggTask {
+            Record(Arc<[StructMember]>),
+            Array(TypeRef, usize),
+            Scalar,
+        }
+        let task = {
+            let type_info = self.registry.get(element_type);
+            match &type_info.kind {
+                TypeKind::Record { members, .. } => AggTask::Record(Arc::clone(members)),
+                TypeKind::Array {
+                    element_type,
+                    size: ArraySizeType::Constant(len),
+                } => AggTask::Array(*element_type, *len),
+                _ => AggTask::Scalar,
+            }
+        };
+
+        match task {
+            AggTask::Record(members) => {
                 let mut is_first_member = true;
                 for member in members.iter() {
                     let allow = allow_array_designator && is_first_member;
@@ -2546,39 +2560,34 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
                 }
             }
-            TypeKind::Array { element_type, size } => {
-                if let ArraySizeType::Constant(len) = size {
-                    let mut is_first = true;
-                    for _ in 0..len {
-                        let allow = allow_array_designator && is_first;
-                        self.consume_initializers(element_type, iter, allow);
-                        is_first = false;
+            AggTask::Array(element_type, len) => {
+                let mut is_first = true;
+                for _ in 0..len {
+                    let allow = allow_array_designator && is_first;
+                    self.consume_initializers(element_type, iter, allow);
+                    is_first = false;
 
-                        if iter.peek().is_none() {
-                            return;
-                        }
-                        // Check stopper
-                        if let Some(next) = iter.peek()
-                            && let item_kind = *self.ast.get_kind(*next)
-                            && let NodeKind::InitializerItem(next_init) = item_kind
-                            && next_init.designator_len > 0
-                        {
-                            match *self.ast.get_kind(next_init.designator_start) {
-                                NodeKind::Designator(Designator::ArrayIndex(_))
-                                | NodeKind::Designator(Designator::ArrayRange(_, _)) => {
-                                    return;
-                                }
-                                _ => {}
+                    if iter.peek().is_none() {
+                        return;
+                    }
+                    // Check stopper
+                    if let Some(next) = iter.peek()
+                        && let item_kind = *self.ast.get_kind(*next)
+                        && let NodeKind::InitializerItem(next_init) = item_kind
+                        && next_init.designator_len > 0
+                    {
+                        match *self.ast.get_kind(next_init.designator_start) {
+                            NodeKind::Designator(Designator::ArrayIndex(_))
+                            | NodeKind::Designator(Designator::ArrayRange(_, _)) => {
+                                return;
                             }
+                            _ => {}
                         }
                     }
-                } else {
-                    // Variable/Incomplete array. Consume 1 item for safety.
-                    iter.next();
                 }
             }
-            _ => {
-                // Scalar
+            AggTask::Scalar => {
+                // Scalar or Variable/Incomplete array. Consume 1 item for safety.
                 iter.next();
             }
         }

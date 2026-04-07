@@ -22,6 +22,16 @@ pub enum FloatSuffix {
     IL,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[repr(u8)]
+pub enum CharPrefix {
+    None,
+    Wide,
+    Char16,
+    Char32,
+    Utf8,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum Literal {
     Int {
@@ -33,7 +43,7 @@ pub enum Literal {
         val: f64,
         suffix: Option<FloatSuffix>,
     },
-    Char(u64),
+    Char(u64, CharPrefix),
     String(NameId),
     Nullptr,
     True,

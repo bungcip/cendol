@@ -2230,7 +2230,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     };
                     Some(QualType::unqualified(ty))
                 }
-                Literal::Char(_) => Some(QualType::unqualified(self.registry.type_int)),
+                Literal::Char(_, prefix) => {
+                    let ty = match prefix {
+                        crate::ast::literal::CharPrefix::Utf8 => self.registry.type_char_unsigned,
+                        crate::ast::literal::CharPrefix::Wide => self.registry.type_int,
+                        crate::ast::literal::CharPrefix::Char16 => self.registry.get_builtin_type(BuiltinType::UShort),
+                        crate::ast::literal::CharPrefix::Char32 => self.registry.get_builtin_type(BuiltinType::UInt),
+                        crate::ast::literal::CharPrefix::None => self.registry.type_int,
+                    };
+                    Some(QualType::unqualified(ty))
+                }
                 Literal::String(s) => {
                     let parsed = parse_string_literal(s);
                     let elem = self.registry.get_builtin_type(parsed.builtin_type);

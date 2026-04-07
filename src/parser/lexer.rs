@@ -1,4 +1,4 @@
-use crate::ast::literal::{FloatSuffix, IntegerSuffix};
+use crate::ast::literal::{CharPrefix, FloatSuffix, IntegerSuffix};
 use crate::ast::literal_parsing;
 use crate::ast::{PragmaPackKind, StringId};
 use crate::pp::{PPToken, PPTokenKind};
@@ -11,7 +11,7 @@ pub enum TokenKind {
     // === LITERALS ===
     IntegerConstant(i64, Option<IntegerSuffix>, u32), // Parsed integer literal value, suffix, base
     FloatConstant(f64, Option<FloatSuffix>),          // Parsed float literal value
-    CharacterConstant(u64),                           // Value of character constant
+    CharacterConstant(u64, CharPrefix),               // Value of character constant, Prefix
     StringLiteral(StringId),                          // Interned string literal
 
     // === IDENTIFIERS ===
@@ -271,7 +271,7 @@ impl TokenKind {
         match self {
             IntegerConstant(_, _, _) => "integer constant",
             FloatConstant(_, _) => "float constant",
-            CharacterConstant(_) => "character constant",
+            CharacterConstant(_, _) => "character constant",
             StringLiteral(_) => "string literal",
             Identifier(_) => "identifier",
             Auto => "auto",
@@ -737,7 +737,21 @@ impl<'src> Lexer<'src> {
                 is_keyword(symbol, self.c_standard).unwrap_or(TokenKind::Identifier(symbol))
             }
             PPTokenKind::StringLiteral(symbol) => TokenKind::StringLiteral(symbol),
-            PPTokenKind::CharLiteral(codepoint, _) => TokenKind::CharacterConstant(codepoint.into()),
+            PPTokenKind::CharLiteral(codepoint, symbol) => {
+                let text = symbol.as_str();
+                let prefix = if text.starts_with("u8'") {
+                    CharPrefix::Utf8
+                } else if text.starts_with("L'") {
+                    CharPrefix::Wide
+                } else if text.starts_with("u'") {
+                    CharPrefix::Char16
+                } else if text.starts_with("U'") {
+                    CharPrefix::Char32
+                } else {
+                    CharPrefix::None
+                };
+                TokenKind::CharacterConstant(codepoint.into(), prefix)
+            }
             PPTokenKind::Number(value) => {
                 // Try to parse as integer first, then float, then unknown
                 if let Some((int_val, suffix, base)) = literal_parsing::parse_integer_literal(value.as_str()) {

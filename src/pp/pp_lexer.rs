@@ -570,7 +570,7 @@ impl PPLexer {
                 if ch == b'L' || ch == b'u' || ch == b'U' {
                     let next_ch = self.peek_char();
 
-                    // Check for u8" (UTF-8 string literal)
+                    // Check for u8" (UTF-8 string literal) or u8' (UTF-8 char literal)
                     if ch == b'u' && next_ch == Some(b'8') {
                         let saved_pos = self.position;
                         let saved_at_start = self.at_start_of_line;
@@ -578,8 +578,10 @@ impl PPLexer {
 
                         if self.peek_char() == Some(b'"') {
                             Some(self.lex_string_literal(start_pos, b"u8", flags))
+                        } else if self.peek_char() == Some(b'\'') {
+                            Some(self.lex_char_literal(start_pos, b"u8", flags))
                         } else {
-                            // Backtrack if it's not u8"
+                            // Backtrack if it's not u8" or u8'
                             self.position = saved_pos;
                             self.at_start_of_line = saved_at_start;
                             Some(self.lex_identifier(start_pos, ch, flags))

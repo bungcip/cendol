@@ -293,10 +293,20 @@ impl AstDumper {
                 format!("LiteralFloat({}, {:?})", val, suffix)
             }
             Literal::String(s) => format!("LiteralString(\"{}\")", s),
-            Literal::Char(c) => format!(
-                "LiteralChar('{}')",
-                char::from_u32(*c as u32).unwrap_or(char::REPLACEMENT_CHARACTER)
-            ),
+            Literal::Char(c, prefix) => {
+                let p = match prefix {
+                    crate::ast::literal::CharPrefix::None => "",
+                    crate::ast::literal::CharPrefix::Wide => "L",
+                    crate::ast::literal::CharPrefix::Char16 => "u",
+                    crate::ast::literal::CharPrefix::Char32 => "U",
+                    crate::ast::literal::CharPrefix::Utf8 => "u8",
+                };
+                format!(
+                    "LiteralChar({}'{}')",
+                    p,
+                    char::from_u32(*c as u32).unwrap_or(char::REPLACEMENT_CHARACTER)
+                )
+            }
             Literal::Nullptr => "LiteralNullptr".to_string(),
             Literal::True => "LiteralTrue".to_string(),
             Literal::False => "LiteralFalse".to_string(),

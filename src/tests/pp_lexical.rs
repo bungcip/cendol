@@ -439,16 +439,12 @@ fn test_not_u8_literal() {
 }
 
 #[test]
-fn test_u8_char_literal_not_supported_in_c11() {
-    // C11 doesn't have u8'a', so it should be lexed as Identifier(u8) then CharLiteral('a')
+fn test_u8_char_literal() {
+    // C23 u8'a' should be lexed as a single char literal token
     let source = "u8'a'";
     let mut lexer = create_test_pp_lexer(source);
 
-    test_tokens!(
-        lexer,
-        ("u8", PPTokenKind::Identifier(_)),
-        ("'a'", PPTokenKind::CharLiteral(97, _)),
-    );
+    test_tokens!(lexer, ("u8'a'", PPTokenKind::CharLiteral(97, _)),);
 }
 
 fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {

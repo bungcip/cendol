@@ -633,6 +633,7 @@ impl<'a> SemanticAnalyzer<'a> {
         self.is_integer_constant_zero(node)
     }
 
+    #[allow(clippy::collapsible_if)]
     fn is_integer_constant_zero(&self, node: NodeRef) -> bool {
         if let Some(qt) = self.semantic_info.types.get(node.index()).and_then(|t| *t) {
             if qt.is_integer() {

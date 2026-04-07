@@ -57,6 +57,7 @@ pub struct ParsedStructMember {
     pub ty: ParsedType,
     pub bit_field_size: Option<u16>,
     pub alignment: Option<u32>,
+    pub is_packed: bool,
     pub span: SourceSpan,
 }
 

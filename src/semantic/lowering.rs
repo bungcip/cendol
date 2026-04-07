@@ -170,6 +170,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         name: Option<NameId>,
         span: SourceSpan,
         is_union: bool,
+        is_explicitly_packed: bool,
     ) {
         if let Some(width) = bit_field_size {
             if !member_type.is_integer() {
@@ -195,7 +196,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.report_error(span, SemanticErrorKind::FlexibleArrayMemberInStruct);
             }
 
-            if let Ok(layout) = self.registry.ensure_layout(member_type.ty())
+            if !is_explicitly_packed
+                && let Ok(layout) = self.registry.ensure_layout(member_type.ty())
                 && let Some(req_align) = alignment
             {
                 let natural_align = layout.alignment as u32;
@@ -335,14 +337,28 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         is_union: bool,
         tag: Option<NameId>,
         definition: &Option<Vec<ParsedNodeRef>>,
+        attributes: &[DeclSpec],
         span: SourceSpan,
     ) -> Result<QualType, SemanticError> {
         let is_definition = definition.is_some();
         let ty = self.resolve_record_tag(tag, is_union, is_definition, span)?;
 
         if let Some(decls) = definition {
+            let mut packing = None;
+            let mut alignment = None;
+            for attr in attributes {
+                match attr {
+                    DeclSpec::AttributePacked => packing = Some(1),
+                    DeclSpec::AlignmentSpec(aspec) => {
+                        if let Some(val) = self.resolve_alignment(aspec, span) {
+                            alignment = Some(std::cmp::max(alignment.unwrap_or(0), val));
+                        }
+                    }
+                    _ => {}
+                }
+            }
             let members = self.visit_struct_members(decls, span, is_union);
-            self.complete_record_symbol(tag, ty, members, span)?;
+            self.complete_record_symbol(tag, ty, members, packing, alignment, span)?;
         }
 
         Ok(QualType::unqualified(ty))
@@ -504,6 +520,7 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) is_noreturn: bool,
     pub(crate) alignment: Option<u32>,
     pub(crate) has_auto: bool,
+    pub(crate) is_packed: bool,
 }
 
 /// Finalize tentative definitions by converting them to defined state
@@ -629,7 +646,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         decl.specifiers.iter().find(|s| matches!(s, DeclSpec::TypeSpec(..)))
                     {
                         match ts {
-                            TypeSpec::Record(_, _, is_def) if is_def.is_some() => 1,
+                            TypeSpec::Record(_, _, is_def, _) if is_def.is_some() => 1,
                             TypeSpec::Enum(_, is_def) if is_def.is_some() => 1,
                             _ => 0,
                         }
@@ -1404,6 +1421,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         qt = self.check_redeclaration_compatibility(name, qt, span, spec_info.storage);
 
+        let mut alignment = spec_info.alignment;
+        if spec_info.is_packed && alignment.is_none() {
+            alignment = Some(1);
+        }
+
         // Define variable in symbol table early so it's visible in its own initializer
         let sym_res = self.symbol_table.define_variable(
             name,
@@ -1411,7 +1433,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             spec_info.storage,
             spec_info.is_thread_local,
             None,
-            spec_info.alignment,
+            alignment,
             span,
         );
 
@@ -1474,7 +1496,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             storage: spec_info.storage,
             is_thread_local: spec_info.is_thread_local,
             init: init_expr,
-            alignment: spec_info.alignment.map(|a| a as u16),
+            alignment: alignment.map(|a| a as u16),
         };
         self.ast.kinds[node.index()] = NodeKind::VarDecl(var_decl);
 
@@ -1484,7 +1506,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticErrorKind::Redefinition { name, first_def });
         }
 
-        if let Ok(layout) = self.registry.ensure_layout(qt.ty())
+        if !spec_info.is_packed
+            && let Ok(layout) = self.registry.ensure_layout(qt.ty())
             && let Some(req_align) = spec_info.alignment
         {
             let natural_align = layout.alignment as u32;
@@ -2747,6 +2770,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         tag: Option<NameId>,
         ty: TypeRef,
         members: Vec<StructMember>,
+        packing: Option<u32>,
+        alignment: Option<u32>,
         span: SourceSpan,
     ) -> Result<(), SemanticError> {
         // Validation for name conflicts across anonymous members
@@ -2757,9 +2782,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(error.span, error.kind);
         }
 
+        let final_packing = packing.or(self.current_packing.map(|n| n as u32));
+
         // Update the type in AST and SymbolTable
         self.registry
-            .complete_record(ty, members.clone(), self.current_packing.map(|n| n as u32));
+            .complete_record(ty, members.clone(), final_packing, alignment);
         if let Err(e) = self.registry.ensure_layout(ty) {
             return Err(SemanticError::new(span, e.to_semantic_kind()));
         }
@@ -2850,7 +2877,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             Bool => Ok(QualType::unqualified(self.registry.type_bool)),
             Complex => Ok(QualType::unqualified(self.registry.type_complex_marker)),
             Atomic(p) => self.resolve_atomic_specifier(*p, span),
-            Record(u, t, d) => self.resolve_record_specifier(*u, *t, d, span),
+            Record(u, t, d, a) => self.resolve_record_specifier(*u, *t, d, a, span),
             Enum(t, e) => self.resolve_enum_specifier(*t, e, span),
             TypedefName(n) => self.resolve_typedef_name(*n, span),
             VaList => Ok(QualType::unqualified(self.registry.type_valist)),
@@ -3052,6 +3079,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     FunctionSpec::Noreturn => info.is_noreturn = true,
                 },
                 DeclSpec::Attribute => {}
+                DeclSpec::AttributePacked => {
+                    info.is_packed = true;
+                }
             }
         }
 
@@ -3235,6 +3265,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                 struct_members.push(StructMember {
                                     member_type: qt,
                                     alignment: spec_info.alignment,
+                                    is_packed: spec_info.is_packed,
                                     span,
                                     ..Default::default()
                                 });
@@ -3277,6 +3308,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             name,
                             id.span,
                             is_union,
+                            spec_info.is_packed,
                         );
 
                         struct_members.push(StructMember {
@@ -3284,6 +3316,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             member_type,
                             bit_field_size,
                             alignment: spec_info.alignment,
+                            is_packed: spec_info.is_packed,
                             span: id.span,
                         });
                     }
@@ -3317,12 +3350,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         member_type: self.lower_type(m.ty, span, false)?,
                         bit_field_size: m.bit_field_size,
                         alignment: m.alignment,
+                        is_packed: m.is_packed,
                         span: m.span,
                     })
                 })
                 .collect::<Result<Vec<_>, SemanticError>>()?;
 
-            self.complete_record_symbol(tag, ty, struct_members, span)?;
+            self.complete_record_symbol(tag, ty, struct_members, None, None, span)?;
         }
         Ok(QualType::unqualified(ty))
     }

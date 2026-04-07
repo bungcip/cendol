@@ -634,10 +634,10 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn is_integer_constant_zero(&self, node: NodeRef) -> bool {
-        if let Some(qt) = self.semantic_info.types.get(node.index()).and_then(|t| *t) {
-            if qt.is_integer() {
-                return self.const_ctx().eval_int(node) == Some(0);
-            }
+        if let Some(qt) = self.semantic_info.types.get(node.index()).and_then(|t| *t)
+            && qt.is_integer()
+        {
+            return self.const_ctx().eval_int(node) == Some(0);
         }
         false
     }

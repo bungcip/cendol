@@ -39,9 +39,12 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
 
     let mut specifiers = parse_decl_specs(trx.parser)?;
 
-    let has_record_enum_type = specifiers
-        .iter()
-        .any(|s| matches!(s, DeclSpec::TypeSpec(TypeSpec::Record(_, _, _) | TypeSpec::Enum(_, _))));
+    let has_record_enum_type = specifiers.iter().any(|s| {
+        matches!(
+            s,
+            DeclSpec::TypeSpec(TypeSpec::Record(_, _, _, _) | TypeSpec::Enum(_, _))
+        )
+    });
     let has_storage_class = specifiers.iter().any(|s| matches!(s, DeclSpec::StorageClass(_)));
 
     if has_record_enum_type
@@ -66,7 +69,7 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
     {
         let message = if let Some(DeclSpec::TypeSpec(ts)) = specifiers.last() {
             match ts {
-                TypeSpec::Record(_, _, _) => "Expected ';' after struct/union definition",
+                TypeSpec::Record(_, _, _, _) => "Expected ';' after struct/union definition",
                 TypeSpec::Enum(_, _) => "Expected ';' after enum definition",
                 _ => "Expected declarator or identifier after type specifier",
             }
@@ -509,7 +512,6 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<ParsedDesignator>, Parse
 }
 
 /// Parse GCC __attribute__ syntax: __attribute__ (( attribute-list ))
-/// For now, we parse and skip the attribute construct, extracting `noreturn`.
 pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, ParseError> {
     parser.expect(TokenKind::Attribute)?;
     parser.expect(TokenKind::LeftParen)?;
@@ -517,32 +519,74 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
 
     let mut specs = Vec::new();
     let mut depth = 2;
-    while let Some(token) = parser.try_current_token() {
+
+    while depth > 1 && !parser.at_eof() {
+        if parser.accept(TokenKind::Comma).is_some() {
+            continue;
+        }
+
+        let token = parser.current_token()?;
         match token.kind {
-            TokenKind::LeftParen => depth += 1,
+            TokenKind::Identifier(name) => {
+                let name_str = name.as_str();
+                if name_str == "noreturn" || name_str == "__noreturn__" {
+                    specs.push(DeclSpec::FunctionSpec(crate::ast::FunctionSpec::Noreturn));
+                    parser.advance();
+                } else if name_str == "aligned" || name_str == "__aligned__" {
+                    parser.advance();
+                    if parser.accept(TokenKind::LeftParen).is_some() {
+                        let alignment = if parser.is_type_name_start() {
+                            let parsed_type = parse_type_name(parser)?;
+                            ParsedAlignmentSpec::Type(parsed_type)
+                        } else {
+                            ParsedAlignmentSpec::Expr(parser.parse_expr_min()?)
+                        };
+                        parser.expect(TokenKind::RightParen)?;
+                        specs.push(DeclSpec::AlignmentSpec(alignment));
+                    }
+                } else if name_str == "packed" || name_str == "__packed__" {
+                    specs.push(DeclSpec::AttributePacked);
+                    parser.advance();
+                } else {
+                    // Skip unknown attribute name and potential arguments
+                    parser.advance();
+                    if parser.accept(TokenKind::LeftParen).is_some() {
+                        let mut inner_depth = 1;
+                        while inner_depth > 0 && !parser.at_eof() {
+                            if parser.accept(TokenKind::LeftParen).is_some() {
+                                inner_depth += 1;
+                            } else if parser.accept(TokenKind::RightParen).is_some() {
+                                inner_depth -= 1;
+                            } else {
+                                parser.advance();
+                            }
+                        }
+                    }
+                }
+            }
+            TokenKind::LeftParen => {
+                depth += 1;
+                parser.advance();
+            }
             TokenKind::RightParen => {
                 depth -= 1;
-                if depth == 0 {
-                    parser.advance();
-                    break;
-                }
+                parser.advance();
             }
-            TokenKind::Identifier(name) => {
-                let name_noret1 = crate::ast::NameId::new("noreturn");
-                let name_noret2 = crate::ast::NameId::new("__noreturn__");
-                if name == name_noret1 || name == name_noret2 {
-                    specs.push(DeclSpec::FunctionSpec(crate::ast::FunctionSpec::Noreturn));
-                }
+            _ => {
+                parser.advance();
             }
-            _ => {}
         }
-        parser.advance();
     }
+
+    if depth == 1 {
+        parser.expect(TokenKind::RightParen)?;
+    }
+
     Ok(specs)
 }
 
 /// Parse GCC __asm__ syntax: __asm__ ( string-literal )
-fn parse_asm(parser: &mut Parser) -> Result<(), ParseError> {
+pub(crate) fn parse_asm(parser: &mut Parser) -> Result<(), ParseError> {
     parser.expect(TokenKind::Asm)?;
     parser.expect(TokenKind::LeftParen)?;
 

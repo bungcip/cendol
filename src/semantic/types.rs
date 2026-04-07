@@ -815,6 +815,7 @@ pub enum TypeKind {
         is_complete: bool,
         is_union: bool,
         packing: Option<u32>,
+        alignment: Option<u32>,
     },
     Enum {
         tag: Option<NameId>,
@@ -953,6 +954,7 @@ pub struct StructMember {
     pub member_type: QualType,
     pub bit_field_size: Option<u16>,
     pub alignment: Option<u32>,
+    pub is_packed: bool,
     pub span: SourceSpan,
 }
 

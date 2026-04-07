@@ -134,7 +134,7 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
                         format!("enum {}", tag_str)
                     }
                 }
-                TypeSpec::Record(is_union, tag, def) => {
+                TypeSpec::Record(is_union, tag, def, _) => {
                     let record_kind = if *is_union { "union" } else { "struct" };
                     let has_body = def.is_some();
 
@@ -155,6 +155,7 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
             DeclSpec::FunctionSpec(fs) => format!("{:?}", fs),
             DeclSpec::AlignmentSpec(aspec) => format!("{:?}", aspec),
             DeclSpec::Attribute => "__attribute__".to_string(),
+            DeclSpec::AttributePacked => "packed".to_string(),
         })
         .collect()
 }

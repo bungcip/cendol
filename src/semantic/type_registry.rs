@@ -624,21 +624,30 @@ impl TypeRegistry {
             is_complete: false,
             is_union,
             packing: None,
+            alignment: None,
         }))
     }
 
-    pub(crate) fn complete_record(&mut self, record: TypeRef, members: Vec<StructMember>, packing: Option<u32>) {
+    pub(crate) fn complete_record(
+        &mut self,
+        record: TypeRef,
+        members: Vec<StructMember>,
+        packing: Option<u32>,
+        alignment: Option<u32>,
+    ) {
         let ty = &mut self.types[record.index()];
         match &mut ty.kind {
             TypeKind::Record {
                 is_complete,
                 members: slot,
                 packing: packing_slot,
+                alignment: alignment_slot,
                 ..
             } => {
                 *slot = Arc::from(members);
                 *is_complete = true;
                 *packing_slot = packing;
+                *alignment_slot = alignment;
             }
             _ => unreachable!("complete_record on non-record"),
         }
@@ -1031,13 +1040,14 @@ impl TypeRegistry {
                 is_complete,
                 is_union,
                 packing,
+                alignment,
                 ..
             } => {
                 if !is_complete {
                     // This is the correct error when sizeof is used on an incomplete type.
                     return Err(TypeRegistryError::SizeOfIncompleteType { ty });
                 }
-                self.compute_record_layout(&members, is_union, packing)?
+                self.compute_record_layout(&members, is_union, packing, alignment)?
             }
 
             TypeKind::Enum { base_type, .. } => self.ensure_layout(base_type)?.into_owned(),
@@ -1081,8 +1091,9 @@ impl TypeRegistry {
         members: &[StructMember],
         is_union: bool,
         packing: Option<u32>,
+        alignment: Option<u32>,
     ) -> Result<TypeLayout, TypeRegistryError> {
-        let mut max_align = 1;
+        let mut max_align = alignment.map(|a| a as u64).unwrap_or(1);
         let mut current_size = 0;
         let mut field_layouts = Vec::with_capacity(members.len());
 
@@ -1192,6 +1203,9 @@ impl TypeRegistry {
                 }
             };
             let mut member_align = layout.alignment;
+            if member.is_packed {
+                member_align = 1;
+            }
             if let Some(req_align) = member.alignment {
                 member_align = member_align.max(req_align as u64);
             }

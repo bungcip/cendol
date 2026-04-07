@@ -224,6 +224,7 @@ pub enum DeclSpec {
     AlignmentSpec(ParsedAlignmentSpec),
     TypeSpec(TypeSpec),
     Attribute,
+    AttributePacked,
 }
 
 // Type specifiers
@@ -259,6 +260,7 @@ pub enum TypeSpec {
         bool,                       /* is_union */
         Option<NameId>,             /* tag */
         Option<Vec<ParsedNodeRef>>, /* field members */
+        Vec<DeclSpec>,              /* attributes */
     ),
     Enum(
         Option<NameId>,             /* tag */
@@ -348,9 +350,14 @@ impl TypeSpec {
                     f(e);
                 }
             }
-            TypeSpec::Record(_, _, Some(members)) => {
-                for &m in members {
-                    f(m);
+            TypeSpec::Record(_, _, definition, attributes) => {
+                if let Some(members) = definition {
+                    for &m in members {
+                        f(m);
+                    }
+                }
+                for attr in attributes {
+                    attr.for_each_child(f);
                 }
             }
             TypeSpec::Typeof(_) => {}

@@ -205,7 +205,7 @@ fn parse_base_type(parser: &mut Parser, ts: &TypeSpec) -> Result<ParsedBaseTypeR
 
             Ok(parser.alloc_base_type(ParsedBaseType::Builtin(Atomic(*parsed_type))))
         }
-        Record(is_union, tag, definition) => {
+        Record(is_union, tag, definition, _) => {
             let members = if let Some(decls) = definition {
                 Some(parse_record_members(parser, decls)?)
             } else {
@@ -263,12 +263,14 @@ fn parse_record_members(
                 if let Some(member_name) = get_declarator_name(&parser.ast.parsed_types, init_decl.declarator) {
                     let member_parsed_type = build_type(parser, &decl.specifiers, Some(init_decl.declarator))?;
                     let alignment = extract_alignment(&decl.specifiers, parser);
+                    let is_packed = extract_is_packed(&decl.specifiers);
 
                     parsed_members.push(ParsedStructMember {
                         name: Some(member_name),
                         ty: member_parsed_type,
                         bit_field_size: None,
                         alignment,
+                        is_packed,
                         span: init_decl.span,
                     });
                 }
@@ -280,14 +282,25 @@ fn parse_record_members(
 
 fn extract_alignment(specifiers: &[DeclSpec], parser: &Parser) -> Option<u32> {
     for spec in specifiers {
-        if let DeclSpec::AlignmentSpec(align_spec) = spec
-            && let ParsedAlignmentSpec::Expr(expr) = align_spec
-            && let ParsedNodeKind::Literal(Literal::Int { val, .. }) = parser.ast.get_node(*expr).kind
-        {
-            return Some(val as u32);
+        if let DeclSpec::AlignmentSpec(align_spec) = spec {
+            match align_spec {
+                ParsedAlignmentSpec::Expr(expr) => {
+                    if let ParsedNodeKind::Literal(Literal::Int { val, .. }) = parser.ast.get_node(*expr).kind {
+                        return Some(val as u32);
+                    }
+                }
+                ParsedAlignmentSpec::Type(_) => {
+                    // Type-based alignment is harder to extract during parsing without a registry.
+                    // For now, we skip it here. It will be handled during lowering.
+                }
+            }
         }
     }
     None
+}
+
+fn extract_is_packed(specifiers: &[DeclSpec]) -> bool {
+    specifiers.iter().any(|s| matches!(s, DeclSpec::AttributePacked))
 }
 
 fn parse_enum_constants(parser: &mut Parser, enum_nodes: &[ParsedNodeRef]) -> Result<ParsedEnumRange, ParseError> {

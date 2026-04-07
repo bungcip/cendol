@@ -4,8 +4,9 @@
 
 use hashbrown::HashSet;
 use std::fmt;
+use std::fmt::Formatter;
 
-use crate::ast::literal::Literal;
+use crate::ast::literal::{CharPrefix, Literal};
 use crate::ast::parsed::{ParsedAst, ParsedNodeKind, ParsedNodeRef};
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind, NodeRef};
 use crate::semantic::{SymbolRef, SymbolTable, TypeRef, TypeRegistry};
@@ -13,7 +14,7 @@ use crate::semantic::{SymbolRef, SymbolTable, TypeRef, TypeRegistry};
 pub(crate) struct ParsedAstDisplay<'a>(pub(crate) &'a ParsedAst);
 
 impl<'a> fmt::Display for ParsedAstDisplay<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let ast = self.0;
         for (i, node) in ast.nodes.iter().enumerate() {
             if matches!(node.kind, ParsedNodeKind::Dummy) {
@@ -32,7 +33,7 @@ pub(crate) struct AstDisplay<'a> {
 }
 
 impl<'a> fmt::Display for AstDisplay<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let ast = self.ast;
         for (i, kind) in ast.kinds.iter().enumerate() {
             if matches!(kind, NodeKind::Dummy) {
@@ -51,7 +52,7 @@ pub(crate) struct TypeRegistryDisplay<'a> {
 }
 
 impl<'a> fmt::Display for TypeRegistryDisplay<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // Collect all TypeRefs used in the AST
         let mut used_types = HashSet::new();
 
@@ -238,94 +239,109 @@ impl AstDumper {
         }
     }
 
-    /// Get function name from symbol entry reference
-    fn get_function_name(symbol: SymbolRef, symbol_table: Option<&SymbolTable>) -> String {
+    /// Write function name from symbol entry reference
+    fn write_function_name(
+        f: &mut Formatter<'_>,
+        symbol: SymbolRef,
+        symbol_table: Option<&SymbolTable>,
+    ) -> fmt::Result {
         if let Some(table) = symbol_table {
             let entry = table.get_symbol(symbol);
-            return entry.name.to_string();
+            return write!(f, "{}", entry.name);
         }
-        format!("func_{}", symbol.get())
+        write!(f, "func_{}", symbol.get())
     }
 
-    /// Format a DesignatedInitializer for display
-    fn format_designated_initializer(init: &DesignatedInitializer, ast: &Ast) -> String {
-        let mut result = String::new();
+    /// Write a DesignatedInitializer for display
+    fn write_designated_initializer(f: &mut Formatter<'_>, init: &DesignatedInitializer, ast: &Ast) -> fmt::Result {
         for designator in init.designator_start.range(init.designator_len) {
             match ast.get_kind(designator) {
                 NodeKind::Designator(d) => match d {
                     Designator::FieldName(name) => {
-                        result.push_str(&format!(".{}", name));
+                        write!(f, ".{}", name)?;
                     }
                     Designator::ArrayIndex(index) => {
-                        result.push_str(&format!("[{}]", index.get()));
+                        write!(f, "[{}]", index.get())?;
                     }
                     Designator::ArrayRange(start, end) => {
-                        result.push_str(&format!("[{} ... {}]", start.get(), end.get()));
+                        write!(f, "[{} ... {}]", start.get(), end.get())?;
                     }
                 },
-                _ => result.push_str("<invalid designator>"),
+                _ => write!(f, "<invalid designator>")?,
             }
         }
 
         if init.designator_len > 0 {
-            result.push_str(" = ");
+            write!(f, " = ")?;
         }
 
-        result.push_str(&init.initializer.get().to_string());
-        result
+        write!(f, "{}", init.initializer.get())
     }
 
-    fn format_range(label: &str, start: NodeRef, len: u16) -> String {
+    fn write_range(f: &mut Formatter<'_>, label: &str, start: NodeRef, len: u16) -> fmt::Result {
         if len > 0 {
             let s = start.get();
-            format!("{}={}..{}", label, s, s + len as u32 - 1)
+            write!(f, "{}={}..{}", label, s, s + len as u32 - 1)
         } else {
-            format!("{}=[]", label)
+            write!(f, "{}=[]", label)
         }
     }
 
-    fn format_literal(literal: &Literal) -> String {
+    fn format_literal(f: &mut Formatter<'_>, literal: &Literal) -> fmt::Result {
         match literal {
             Literal::Int { val, suffix, base } => {
-                format!("LiteralInt({:?}, {:?}, base={})", val, suffix, base)
+                write!(f, "LiteralInt({:?}, {:?}, base={})", val, suffix, base)
             }
             Literal::Float { val, suffix } => {
-                format!("LiteralFloat({}, {:?})", val, suffix)
+                write!(f, "LiteralFloat({}, {:?})", val, suffix)
             }
-            Literal::String(s) => format!("LiteralString(\"{}\")", s),
+            Literal::String(s) => write!(f, "LiteralString(\"{}\")", s),
             Literal::Char(c, prefix) => {
                 let p = match prefix {
-                    crate::ast::literal::CharPrefix::None => "",
-                    crate::ast::literal::CharPrefix::Wide => "L",
-                    crate::ast::literal::CharPrefix::Char16 => "u",
-                    crate::ast::literal::CharPrefix::Char32 => "U",
-                    crate::ast::literal::CharPrefix::Utf8 => "u8",
+                    CharPrefix::None => "",
+                    CharPrefix::Wide => "L",
+                    CharPrefix::Char16 => "u",
+                    CharPrefix::Char32 => "U",
+                    CharPrefix::Utf8 => "u8",
                 };
-                format!(
+                write!(
+                    f,
                     "LiteralChar({}'{}')",
                     p,
                     char::from_u32(*c as u32).unwrap_or(char::REPLACEMENT_CHARACTER)
                 )
             }
-            Literal::Nullptr => "LiteralNullptr".to_string(),
-            Literal::True => "LiteralTrue".to_string(),
-            Literal::False => "LiteralFalse".to_string(),
+            Literal::Nullptr => write!(f, "LiteralNullptr"),
+            Literal::True => write!(f, "LiteralTrue"),
+            Literal::False => write!(f, "LiteralFalse"),
         }
     }
 
-    fn format_list(nodes: &[ParsedNodeRef]) -> String {
-        nodes.iter().map(|n| n.get().to_string()).collect::<Vec<_>>().join(", ")
+    fn write_list(f: &mut Formatter<'_>, nodes: &[ParsedNodeRef]) -> fmt::Result {
+        for (i, n) in nodes.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", n.get())?;
+        }
+        Ok(())
     }
 
     /// Dump a single parsed parsed node kind
-    fn dump_parsed_node(f: &mut fmt::Formatter<'_>, kind: &ParsedNodeKind, ast: &ParsedAst) -> fmt::Result {
-        fn optional(node: Option<ParsedNodeRef>, text: &'static str) -> String {
-            node.map(|n| n.get().to_string()).unwrap_or(text.to_string())
-        }
+    fn dump_parsed_node(f: &mut Formatter<'_>, kind: &ParsedNodeKind, ast: &ParsedAst) -> fmt::Result {
+        let optional = |f: &mut Formatter<'_>, node: Option<ParsedNodeRef>, text: &'static str| -> fmt::Result {
+            match node {
+                Some(n) => write!(f, "{}", n.get()),
+                None => write!(f, "{}", text),
+            }
+        };
         use crate::ast::ParsedNodeKind as PNK;
 
         match kind {
-            PNK::Literal(literal) => return writeln!(f, "{}", Self::format_literal(literal)),
+            PNK::Literal(literal) => {
+                Self::format_literal(f, literal)?;
+                return writeln!(f);
+            }
             PNK::Break | PNK::Continue | PNK::EmptyStmt | PNK::Dummy | PNK::BuiltinUnreachable | PNK::BuiltinTrap => {
                 return writeln!(f, "{}", kind.tagname());
             }
@@ -362,13 +378,12 @@ impl AstDumper {
             | PNK::PostDecrement(n1)
             | PNK::Default(n1) => write!(f, "{}", n1.get())?,
 
-            PNK::BuiltinPrefetch(addr, rw, locality) => write!(
-                f,
-                "addr={}, rw={}, locality={}",
-                addr.get(),
-                optional(*rw, "none"),
-                optional(*locality, "none")
-            )?,
+            PNK::BuiltinPrefetch(addr, rw, locality) => {
+                write!(f, "addr={}, rw=", addr.get())?;
+                optional(f, *rw, "none")?;
+                write!(f, ", locality=")?;
+                optional(f, *locality, "none")?
+            }
 
             // Two NodeRefs: Tag(n1.get(), n2.get())
             PNK::GnuStatementExpr(n1, n2)
@@ -399,29 +414,42 @@ impl AstDumper {
             PNK::BuiltinTypesCompatibleP(t1, t2) => write!(f, "{:?}, {:?}", t1, t2)?,
 
             PNK::FunctionCall(callee, args) => {
-                write!(f, "callee={}, args=[{}]", callee.get(), Self::format_list(args))?
+                write!(f, "callee={}, args=[", callee.get())?;
+                Self::write_list(f, args)?;
+                write!(f, "]")?
             }
             PNK::MemberAccess(obj, field, arrow) => {
                 write!(f, "{}, {}, {}", obj.get(), field, if *arrow { "->" } else { "." })?
             }
 
-            PNK::AtomicOp(op, args) => write!(f, "{:?}, args=[{}]", op, Self::format_list(args))?,
+            PNK::AtomicOp(op, args) => {
+                write!(f, "{:?}, args=[", op)?;
+                Self::write_list(f, args)?;
+                write!(f, "]")?
+            }
             PNK::GenericSelection(ctrl, assocs) => write!(f, "{}, {:?}", ctrl.get(), assocs)?,
 
-            PNK::CompoundStmt(stmts) => write!(f, "stmts=[{}]", Self::format_list(stmts))?,
+            PNK::CompoundStmt(stmts) => {
+                write!(f, "stmts=[")?;
+                Self::write_list(f, stmts)?;
+                write!(f, "]")?
+            }
             PNK::If(data) => write!(f, "{:?}", data)?,
             PNK::While(data) => write!(f, "{:?}", data)?,
             PNK::For(data) => write!(f, "{:?}", data)?,
             PNK::Declaration(data) => write!(f, "{:?}", data)?,
             PNK::FunctionDef(data) => write!(f, "{:?}", data)?,
             PNK::DoWhile(body, cond) => write!(f, "body={}, cond={}", body.get(), cond.get())?,
-            PNK::Return(expr) => write!(f, "{}", optional(*expr, "void"))?,
+            PNK::Return(expr) => optional(f, *expr, "void")?,
             PNK::Goto(label) => write!(f, "{}", label)?,
             PNK::Label(label, stmt) => write!(f, "{}, {}", label, stmt.get())?,
-            PNK::ExpressionStmt(expr) => write!(f, "{}", optional(*expr, "empty"))?,
+            PNK::ExpressionStmt(expr) => optional(f, *expr, "empty")?,
             PNK::AsmStmt(expr) => write!(f, "{}", expr.get())?,
 
-            PNK::EnumConstant(name, val) => write!(f, "{}, {}", name, optional(*val, "auto"))?,
+            PNK::EnumConstant(name, val) => {
+                write!(f, "{}, ", name)?;
+                optional(f, *val, "auto")?
+            }
             PNK::StaticAssert(cond, msg) => {
                 let message_str = if let Some(m) = msg {
                     if let PNK::Literal(Literal::String(s)) = &ast.get_node(*m).kind {
@@ -435,7 +463,11 @@ impl AstDumper {
                 write!(f, "{}, \"{}\"", cond.get(), message_str)?
             }
 
-            PNK::TranslationUnit(decls) => write!(f, "decls=[{}]", Self::format_list(decls))?,
+            PNK::TranslationUnit(decls) => {
+                write!(f, "decls=[")?;
+                Self::write_list(f, decls)?;
+                write!(f, "]")?
+            }
             PNK::InitializerList(inits) => write!(f, "{:?}", inits)?,
             PNK::PragmaPack(kind_pack) => write!(f, "{:?}", kind_pack)?,
             _ => unreachable!(),
@@ -445,18 +477,19 @@ impl AstDumper {
     }
 
     /// Dump a single AST node kind
-    fn dump_node(
-        f: &mut fmt::Formatter<'_>,
-        kind: &NodeKind,
-        ast: &Ast,
-        symbol_table: Option<&SymbolTable>,
-    ) -> fmt::Result {
-        fn optional(node: Option<NodeRef>, text: &'static str) -> String {
-            node.map(|n| n.get().to_string()).unwrap_or(text.to_string())
-        }
+    fn dump_node(f: &mut Formatter<'_>, kind: &NodeKind, ast: &Ast, symbol_table: Option<&SymbolTable>) -> fmt::Result {
+        let optional = |f: &mut Formatter<'_>, node: Option<NodeRef>, text: &'static str| -> fmt::Result {
+            match node {
+                Some(n) => write!(f, "{}", n.get()),
+                None => write!(f, "{}", text),
+            }
+        };
 
         match kind {
-            NodeKind::Literal(literal) => return writeln!(f, "{}", Self::format_literal(literal)),
+            NodeKind::Literal(literal) => {
+                Self::format_literal(f, literal)?;
+                return writeln!(f);
+            }
             NodeKind::Break
             | NodeKind::Continue
             | NodeKind::Dummy
@@ -470,7 +503,7 @@ impl AstDumper {
         write!(f, "{}(", kind.tagname())?;
 
         match kind {
-            NodeKind::TranslationUnit(tu) => write!(f, "{}", Self::format_range("decls", tu.decl_start, tu.decl_len))?,
+            NodeKind::TranslationUnit(tu) => Self::write_range(f, "decls", tu.decl_start, tu.decl_len)?,
             NodeKind::Ident(sym, _) => write!(f, "{}", sym)?,
 
             // One NodeRef: Tag(n1.get())
@@ -501,13 +534,12 @@ impl AstDumper {
             | NodeKind::SizeOfExpr(n)
             | NodeKind::AlignOfExpr(n) => write!(f, "{}", n.get())?,
 
-            NodeKind::BuiltinPrefetch(addr, rw, locality) => write!(
-                f,
-                "addr={}, rw={}, locality={}",
-                addr.get(),
-                optional(*rw, "none"),
-                optional(*locality, "none")
-            )?,
+            NodeKind::BuiltinPrefetch(addr, rw, locality) => {
+                write!(f, "addr={}, rw=", addr.get())?;
+                optional(f, *rw, "none")?;
+                write!(f, ", locality=")?;
+                optional(f, *locality, "none")?
+            }
 
             // Two NodeRefs: Tag(n1.get(), n2.get())
             NodeKind::IndexAccess(n1, n2)
@@ -545,68 +577,63 @@ impl AstDumper {
 
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => write!(f, "{}, {}", t1, t2)?,
 
-            NodeKind::FunctionCall(call_expr) => write!(
-                f,
-                "callee={}, {}",
-                call_expr.callee.get(),
-                Self::format_range("args", call_expr.arg_start, call_expr.arg_len)
-            )?,
+            NodeKind::FunctionCall(call_expr) => {
+                write!(f, "callee={}, ", call_expr.callee.get())?;
+                Self::write_range(f, "args", call_expr.arg_start, call_expr.arg_len)?
+            }
 
             NodeKind::MemberAccess(obj, field, is_arrow) => {
                 write!(f, "{}, {}, {}", obj.get(), field, if *is_arrow { "->" } else { "." })?
             }
 
             NodeKind::AtomicOp(op, args_start, args_len) => {
-                write!(f, "{:?}, {}", op, Self::format_range("args", *args_start, *args_len))?
+                write!(f, "{:?}, ", op)?;
+                Self::write_range(f, "args", *args_start, *args_len)?
             }
 
-            NodeKind::GenericSelection(gs) => write!(
-                f,
-                "control={}, {}",
-                gs.control.get(),
-                Self::format_range("associations", gs.assoc_start, gs.assoc_len)
-            )?,
+            NodeKind::GenericSelection(gs) => {
+                write!(f, "control={}, ", gs.control.get())?;
+                Self::write_range(f, "associations", gs.assoc_start, gs.assoc_len)?
+            }
             NodeKind::GenericAssociation(ga) => write!(f, "ty={:?}, result_expr={}", ga.ty, ga.result_expr.get())?,
 
-            NodeKind::CompoundStmt(cs) => write!(f, "{}", Self::format_range("stmts", cs.stmt_start, cs.stmt_len))?,
-            NodeKind::If(if_stmt) => write!(
-                f,
-                "condition={}, then={}, else={}",
-                if_stmt.condition.get(),
-                if_stmt.then_branch.get(),
-                optional(if_stmt.else_branch, "none")
-            )?,
+            NodeKind::CompoundStmt(cs) => Self::write_range(f, "stmts", cs.stmt_start, cs.stmt_len)?,
+            NodeKind::If(if_stmt) => {
+                write!(
+                    f,
+                    "condition={}, then={}, else=",
+                    if_stmt.condition.get(),
+                    if_stmt.then_branch.get()
+                )?;
+                optional(f, if_stmt.else_branch, "none")?
+            }
             NodeKind::While(while_stmt) => write!(
                 f,
                 "condition={}, body={}",
                 while_stmt.condition.get(),
                 while_stmt.body.get()
             )?,
-            NodeKind::For(for_stmt) => write!(
-                f,
-                "init={}, condition={}, increment={}, body={}",
-                optional(for_stmt.init, "none"),
-                optional(for_stmt.condition, "none"),
-                optional(for_stmt.increment, "none"),
-                for_stmt.body.get()
-            )?,
-            NodeKind::Return(expr) => write!(f, "{}", optional(*expr, "void"))?,
+            NodeKind::For(for_stmt) => {
+                write!(f, "init=")?;
+                optional(f, for_stmt.init, "none")?;
+                write!(f, ", condition=")?;
+                optional(f, for_stmt.condition, "none")?;
+                write!(f, ", increment=")?;
+                optional(f, for_stmt.increment, "none")?;
+                write!(f, ", body={}", for_stmt.body.get())?
+            }
+            NodeKind::Return(expr) => optional(f, *expr, "void")?,
             NodeKind::Goto(label, _) => write!(f, "{}", label)?,
             NodeKind::Label(label, stmt, _) => write!(f, "{}, {}", label, stmt.get())?,
-            NodeKind::ExpressionStmt(expr) => write!(f, "{}", optional(*expr, "none"))?,
+            NodeKind::ExpressionStmt(expr) => optional(f, *expr, "none")?,
             NodeKind::AsmStmt(expr) => write!(f, "{}", expr.get())?,
 
             NodeKind::Function(data) => {
-                let func_name = Self::get_function_name(data.symbol, symbol_table);
-                write!(
-                    f,
-                    "name={}, symbol={:?}, ty={}, {}, body={}",
-                    func_name,
-                    data.symbol,
-                    data.ty,
-                    Self::format_range("params", data.param_start, data.param_len),
-                    data.body.get()
-                )?
+                write!(f, "name=")?;
+                Self::write_function_name(f, data.symbol, symbol_table)?;
+                write!(f, ", symbol={:?}, ty={}, ", data.symbol, data.ty)?;
+                Self::write_range(f, "params", data.param_start, data.param_len)?;
+                write!(f, ", body={}", data.body.get())?
             }
             NodeKind::Param(data) => write!(f, "symbol={:?}, ty={:?}", data.symbol, data.qt)?,
             NodeKind::StaticAssert(cond, msg) => {
@@ -634,27 +661,24 @@ impl AstDumper {
                 decl.storage
             )?,
             NodeKind::TypedefDecl(decl) => write!(f, "name={}, ty={}", decl.name, decl.qt)?,
-            NodeKind::RecordDecl(decl) => write!(
-                f,
-                "name={:?}, ty={}, is_union={}, {}",
-                decl.name,
-                decl.ty.get(),
-                decl.is_union,
-                Self::format_range("members", decl.member_start, decl.member_len)
-            )?,
-            NodeKind::FieldDecl(decl) => write!(f, "name={:?}, ty={}", decl.name, decl.qt)?,
-            NodeKind::EnumDecl(decl) => write!(
-                f,
-                "name={:?}, ty={}, {}",
-                decl.name,
-                decl.ty.get(),
-                Self::format_range("members", decl.member_start, decl.member_len)
-            )?,
-            NodeKind::EnumMember(member) => write!(f, "name={}, value={}", member.name, member.value)?,
-            NodeKind::InitializerList(list) => {
-                write!(f, "{}", Self::format_range("inits", list.init_start, list.init_len))?
+            NodeKind::RecordDecl(decl) => {
+                write!(
+                    f,
+                    "name={:?}, ty={}, is_union={}, ",
+                    decl.name,
+                    decl.ty.get(),
+                    decl.is_union
+                )?;
+                Self::write_range(f, "members", decl.member_start, decl.member_len)?
             }
-            NodeKind::InitializerItem(init) => write!(f, "{}", Self::format_designated_initializer(init, ast))?,
+            NodeKind::FieldDecl(decl) => write!(f, "name={:?}, ty={}", decl.name, decl.qt)?,
+            NodeKind::EnumDecl(decl) => {
+                write!(f, "name={:?}, ty={}, ", decl.name, decl.ty.get())?;
+                Self::write_range(f, "members", decl.member_start, decl.member_len)?
+            }
+            NodeKind::EnumMember(member) => write!(f, "name={}, value={}", member.name, member.value)?,
+            NodeKind::InitializerList(list) => Self::write_range(f, "inits", list.init_start, list.init_len)?,
+            NodeKind::InitializerItem(init) => Self::write_designated_initializer(f, init, ast)?,
             NodeKind::Designator(d) => match d {
                 Designator::FieldName(name) => write!(f, ".{}", name)?,
                 Designator::ArrayIndex(idx) => write!(f, "[{}]", idx.get())?,

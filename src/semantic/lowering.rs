@@ -1521,6 +1521,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             && let Some(et) = element_type
             && let Some(len) = self.deduce_array_size_full(ie, et)
         {
+            if len == 0 && self.lang_opts.c_standard >= crate::lang_options::CStandard::C23 {
+                self.report_error(
+                    span,
+                    SemanticErrorKind::ZeroOrNegativeSizeArray { name },
+                );
+            }
             qt = QualType::new(
                 self.registry.array_of(et, ArraySizeType::Constant(len)),
                 qt.qualifiers(),

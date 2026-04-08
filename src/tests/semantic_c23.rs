@@ -292,3 +292,23 @@ fn test_c23_enum_constant_type() {
         CStandard::C23,
     );
 }
+
+#[test]
+fn test_empty_initializer_array_of_unknown_size() {
+    // Array of unknown size initialized with empty initializer is invalid in C23.
+    crate::tests::test_utils::run_fail_with_message_and_std(
+        "int arr[] = {};",
+        "zero or negative size array 'arr'",
+        crate::lang_options::CStandard::C23,
+    );
+}
+
+#[test]
+fn test_empty_initializer_array_of_known_size() {
+    // Empty initializer is allowed for known size array in C23.
+    crate::tests::test_utils::run_pass_with_std(
+        "int arr[5] = {};",
+        crate::driver::artifact::CompilePhase::SemanticLowering,
+        crate::lang_options::CStandard::C23,
+    );
+}

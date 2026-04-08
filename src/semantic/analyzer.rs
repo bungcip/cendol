@@ -220,7 +220,9 @@ impl<'a> SemanticAnalyzer<'a> {
         self.semantic_info.conversions[node.index()].push(conv);
     }
 
-    pub(crate) fn apply_lvalue_conversion(&mut self, node: NodeRef) {
+    /// Internal helper to apply lvalue-to-rvalue conversion to a node.
+    /// This is private because it is only used during the semantic analysis pass.
+    fn apply_lvalue_conversion(&mut self, node: NodeRef) {
         if self.semantic_info.value_categories[node.index()] == ValueCategory::LValue {
             self.semantic_info.value_categories[node.index()] = ValueCategory::RValue;
             self.push_conversion(node, Conversion::LValueToRValue);

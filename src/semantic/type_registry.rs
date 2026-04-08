@@ -125,7 +125,9 @@ pub struct TypeRegistry {
 }
 
 impl TypeRegistry {
-    pub fn is_value_fitting(&self, val: u64, ty: TypeRef) -> bool {
+    /// Checks if a given u64 value can fit into the specified type.
+    /// This is used internally during semantic analysis and constant evaluation.
+    pub(crate) fn is_value_fitting(&self, val: u64, ty: TypeRef) -> bool {
         let layout = self.get_layout(ty);
         let size_bits = layout.size * 8;
         let is_unsigned = match &self.get(ty).kind {

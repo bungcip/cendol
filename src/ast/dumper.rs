@@ -168,6 +168,7 @@ impl AstDumper {
             | NodeKind::BuiltinPrefetch(..)
             | NodeKind::BuiltinAlloca(_)
             | NodeKind::BuiltinExpect(..)
+            | NodeKind::BuiltinComplex(..)
             | NodeKind::AtomicOp(..) => {}
             NodeKind::VarDecl(var_decl) => {
                 types.insert(var_decl.qt.ty());
@@ -392,7 +393,8 @@ impl AstDumper {
             | PNK::Case(n1, n2)
             | PNK::BuiltinVaStart(n1, n2)
             | PNK::BuiltinVaCopy(n1, n2)
-            | PNK::BuiltinExpect(n1, n2) => write!(f, "{}, {}", n1.get(), n2.get())?,
+            | PNK::BuiltinExpect(n1, n2)
+            | PNK::BuiltinComplex(n1, n2) => write!(f, "{}, {}", n1.get(), n2.get())?,
 
             // Three NodeRefs: Tag(n1.get(), n2.get(), n3.get())
             PNK::TernaryOp(n1, n2, n3) | PNK::BuiltinChooseExpr(n1, n2, n3) | PNK::CaseRange(n1, n2, n3) => {
@@ -549,7 +551,8 @@ impl AstDumper {
             | NodeKind::Switch(n1, n2)
             | NodeKind::BuiltinVaStart(n1, n2)
             | NodeKind::BuiltinVaCopy(n1, n2)
-            | NodeKind::BuiltinExpect(n1, n2) => write!(f, "{}, {}", n1.get(), n2.get())?,
+            | NodeKind::BuiltinExpect(n1, n2)
+            | NodeKind::BuiltinComplex(n1, n2) => write!(f, "{}, {}", n1.get(), n2.get())?,
 
             // Three NodeRefs: Tag(n1.get(), n2.get(), n3.get())
             NodeKind::TernaryOp(n1, n2, n3)

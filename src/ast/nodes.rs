@@ -52,6 +52,7 @@ pub(crate) enum NodeKind {
     BuiltinVaEnd(NodeRef),
     BuiltinVaCopy(NodeRef, NodeRef),
     BuiltinExpect(NodeRef, NodeRef),
+    BuiltinComplex(NodeRef, NodeRef),
     BuiltinMemcmp(NodeRef, NodeRef, NodeRef),
     BuiltinMemcpy(NodeRef, NodeRef, NodeRef),
     BuiltinMemset(NodeRef, NodeRef, NodeRef),
@@ -167,6 +168,7 @@ impl NodeKind {
             NodeKind::BuiltinVaEnd(..) => "BuiltinVaEnd",
             NodeKind::BuiltinVaCopy(..) => "BuiltinVaCopy",
             NodeKind::BuiltinExpect(..) => "BuiltinExpect",
+            NodeKind::BuiltinComplex(..) => "BuiltinComplex",
             NodeKind::BuiltinMemcmp(..) => "BuiltinMemcmp",
             NodeKind::BuiltinMemcpy(..) => "BuiltinMemcpy",
             NodeKind::BuiltinMemset(..) => "BuiltinMemset",
@@ -288,6 +290,10 @@ impl NodeKind {
             | NodeKind::CompoundLiteral(_, child)
             | NodeKind::Label(_, child, _)
             | NodeKind::Default(child) => f(*child),
+            NodeKind::BuiltinComplex(l, r) => {
+                f(*l);
+                f(*r);
+            }
             NodeKind::StaticAssert(child, msg) => {
                 f(*child);
                 if let Some(m) = msg {

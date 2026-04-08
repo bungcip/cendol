@@ -2849,6 +2849,25 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*c);
                 ty
             }
+            NodeKind::BuiltinComplex(real, imag) => {
+                self.apply_lvalue_conversion(*real);
+                self.apply_lvalue_conversion(*imag);
+                let real_ty = self.visit_node(*real)?;
+                let imag_ty = self.visit_node(*imag)?;
+
+                if !real_ty.is_real() {
+                    self.report_error(*real, SemanticErrorKind::InvalidUnaryOperand { ty: real_ty });
+                    return None;
+                }
+                if !imag_ty.is_real() {
+                    self.report_error(*imag, SemanticErrorKind::InvalidUnaryOperand { ty: imag_ty });
+                    return None;
+                }
+
+                let common_real =
+                    crate::semantic::conversions::usual_arithmetic_conversions(self.registry, real_ty, imag_ty)?;
+                Some(QualType::unqualified(self.registry.complex_type(common_real.ty())))
+            }
             NodeKind::BuiltinMemcmp(s1, s2, n) => {
                 let const_void_ptr = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
                 let const_void_ptr = QualType::unqualified(self.registry.pointer_to(const_void_ptr));

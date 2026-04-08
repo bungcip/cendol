@@ -166,6 +166,20 @@ impl<'a> MirGen<'a> {
                 let _ = self.visit_expression(*c, true); // lower 'c' for side effects or just to process it
                 self.visit_expression(*exp, need_value)
             }
+            NodeKind::BuiltinComplex(real, imag) => {
+                let real_op = self.visit_expression(*real, true);
+                let imag_op = self.visit_expression(*imag, true);
+
+                let common_real_ty = match self.mb.get_type(mir_ty) {
+                    MirType::Record { field_types, .. } => field_types[0],
+                    _ => panic!("Expected complex record type"),
+                };
+
+                let real_converted = self.apply_conversions(real_op, *real, common_real_ty);
+                let imag_converted = self.apply_conversions(imag_op, *imag, common_real_ty);
+
+                self.emit_complex_struct(real_converted, imag_converted, mir_ty)
+            }
             NodeKind::BuiltinMemcmp(s1, s2, n) => {
                 let const_void = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
                 let const_void_ptr = self.registry.pointer_to(const_void);

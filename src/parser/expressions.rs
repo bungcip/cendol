@@ -248,6 +248,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinVaEnd => parse_builtin_va_end(parser),
         TokenKind::BuiltinVaCopy => parse_builtin_va_copy(parser),
         TokenKind::BuiltinExpect => parse_builtin_expect(parser),
+        TokenKind::BuiltinComplex => parse_builtin_complex(parser),
         TokenKind::BuiltinMemcmp => parse_builtin_mem(parser, TokenKind::BuiltinMemcmp),
         TokenKind::BuiltinMemcpy => parse_builtin_mem(parser, TokenKind::BuiltinMemcpy),
         TokenKind::BuiltinMemset => parse_builtin_mem(parser, TokenKind::BuiltinMemset),
@@ -700,6 +701,16 @@ fn parse_builtin_expect(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError
     let c = parser.parse_expr_assignment()?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(ParsedNodeKind::BuiltinExpect(exp, c), SourceSpan::new(start, end)))
+}
+
+fn parse_builtin_complex(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let start = parser.expect(TokenKind::BuiltinComplex)?.span.start();
+    parser.expect(TokenKind::LeftParen)?;
+    let real = parser.parse_expr_assignment()?;
+    parser.expect(TokenKind::Comma)?;
+    let imag = parser.parse_expr_assignment()?;
+    let end = parser.expect(TokenKind::RightParen)?.span.end();
+    Ok(parser.push_node(ParsedNodeKind::BuiltinComplex(real, imag), SourceSpan::new(start, end)))
 }
 
 fn parse_builtin_mem(parser: &mut Parser, kind: TokenKind) -> Result<ParsedNodeRef, ParseError> {

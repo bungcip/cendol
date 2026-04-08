@@ -85,6 +85,7 @@ pub enum TokenKind {
     BuiltinVaEnd,
     BuiltinVaCopy,
     BuiltinExpect,
+    BuiltinComplex,
     BuiltinMemcmp,
     BuiltinMemcpy,
     BuiltinMemset,
@@ -367,6 +368,7 @@ impl TokenKind {
             BuiltinVaEnd => "__builtin_va_end",
             BuiltinVaCopy => "__builtin_va_copy",
             BuiltinExpect => "__builtin_expect",
+            BuiltinComplex => "__builtin_complex",
             BuiltinMemcmp => "__builtin_memcmp",
             BuiltinMemcpy => "__builtin_memcpy",
             BuiltinMemset => "__builtin_memset",
@@ -687,6 +689,7 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__builtin_va_end"), TokenKind::BuiltinVaEnd);
         m.insert(StringId::new("__builtin_va_copy"), TokenKind::BuiltinVaCopy);
         m.insert(StringId::new("__builtin_expect"), TokenKind::BuiltinExpect);
+        m.insert(StringId::new("__builtin_complex"), TokenKind::BuiltinComplex);
         m.insert(StringId::new("__builtin_memcmp"), TokenKind::BuiltinMemcmp);
         m.insert(StringId::new("__builtin_memcpy"), TokenKind::BuiltinMemcpy);
         m.insert(StringId::new("__builtin_memset"), TokenKind::BuiltinMemset);

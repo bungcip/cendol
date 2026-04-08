@@ -95,6 +95,7 @@ pub enum ParsedNodeKind {
     BuiltinVaEnd(ParsedNodeRef),
     BuiltinVaCopy(ParsedNodeRef, ParsedNodeRef),
     BuiltinExpect(ParsedNodeRef, ParsedNodeRef),
+    BuiltinComplex(ParsedNodeRef, ParsedNodeRef),
     BuiltinMemcmp(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinMemcpy(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinMemset(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
@@ -525,6 +526,7 @@ impl ParsedNodeKind {
             ParsedNodeKind::TranslationUnit(..) => "TranslationUnit",
             ParsedNodeKind::InitializerList(..) => "InitializerList",
             ParsedNodeKind::PragmaPack(..) => "PragmaPack",
+            ParsedNodeKind::BuiltinComplex(..) => "BuiltinComplex",
             ParsedNodeKind::Dummy => "Dummy",
         }
     }
@@ -593,6 +595,7 @@ impl ParsedNodeKind {
             | ParsedNodeKind::BuiltinVaStart(l, r)
             | ParsedNodeKind::BuiltinVaCopy(l, r)
             | ParsedNodeKind::BuiltinExpect(l, r)
+            | ParsedNodeKind::BuiltinComplex(l, r)
             | ParsedNodeKind::DoWhile(l, r)
             | ParsedNodeKind::Switch(l, r)
             | ParsedNodeKind::Case(l, r) => {

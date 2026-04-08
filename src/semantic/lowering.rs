@@ -1711,6 +1711,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.visit_expression(*e),
                 self.visit_expression(*c)
             )),
+            ParsedNodeKind::BuiltinComplex(real, imag) => lower_simple!(NodeKind::BuiltinComplex(
+                self.visit_expression(*real),
+                self.visit_expression(*imag)
+            )),
             ParsedNodeKind::BuiltinMemcmp(s1, s2, n) => lower_simple!(NodeKind::BuiltinMemcmp(
                 self.visit_expression(*s1),
                 self.visit_expression(*s2),

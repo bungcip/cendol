@@ -826,8 +826,6 @@ fn emit_function_call(call_target: &CallTarget, args: &[Operand], ctx: &mut Body
                 emit_operand(func_operand, ctx, types::I64)
             };
 
-            // Assuming function pointers point to internal functions requiring the hack.
-            // TODO: Distinguish between internal and external function pointers if possible.
             (
                 return_type_id,
                 param_types,
@@ -2296,7 +2294,7 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                 let gp_const = ctx.builder.ins().iconst(types::I32, effective_gp as i64);
                 ctx.builder.ins().store(MemFlags::new(), gp_const, ap_addr, 0);
 
-                // 2. fp_offset = 176 (unused as we map everything to I64 GPRs in current hack)
+                // 2. fp_offset = 176 (all FP args are passed in GPRs due to variadic hack)
                 let fp_val = ctx.builder.ins().iconst(types::I32, 176);
                 ctx.builder.ins().store(MemFlags::new(), fp_val, ap_addr, 4);
 

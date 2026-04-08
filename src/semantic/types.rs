@@ -560,8 +560,6 @@ impl TypeRef {
     pub(crate) fn is_inline_array(self) -> bool {
         self.class() == TypeClass::Array && self.array_len().is_some()
     }
-    // --- Legacy/Compat helpers ---
-
     #[inline]
     pub(crate) fn builtin(self) -> Option<BuiltinType> {
         if self.is_builtin() {

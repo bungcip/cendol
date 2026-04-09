@@ -5,7 +5,6 @@ use crate::pp::preprocessor::Preprocessor;
 use crate::pp::types::{MacroFlags, MacroInfo};
 use crate::pp::{PPToken, PPTokenFlags, PPTokenKind};
 use crate::source_manager::{FileKind, SourceId, SourceLoc, SourceManager};
-use std::borrow::Cow;
 
 impl<'src> Preprocessor<'src> {
     /// Expand a macro if it exists
@@ -121,7 +120,7 @@ impl<'src> Preprocessor<'src> {
         symbol: StringId,
         token: &PPToken,
     ) -> Result<Vec<PPToken>, PPError> {
-        let (args, rparen_token) = match self.parse_macro_args_from_lexer(macro_info) {
+        let (mut args, rparen_token) = match self.parse_macro_args_from_lexer(macro_info) {
             Ok(args) => args,
             Err(PPError {
                 kind: PPErrorKind::InvalidMacroParameter,
@@ -131,6 +130,8 @@ impl<'src> Preprocessor<'src> {
             }
             Err(e) => return Err(e),
         };
+
+        let (is_variadic_empty, is_va_missing) = self.precalculate_variadic_args(macro_info, &mut args);
 
         // Pre-expand arguments (prescan)
         let mut expanded_args = Vec::with_capacity(args.len());
@@ -145,7 +146,16 @@ impl<'src> Preprocessor<'src> {
         let new_hs = self.hide_sets.insert(intersect_hs, symbol);
 
         // Substitute parameters in macro body
-        let substituted = self.substitute_macro(macro_info, symbol, &args, &expanded_args, intersect_hs, new_hs)?;
+        let substituted = self.substitute_macro(
+            macro_info,
+            symbol,
+            &args,
+            &expanded_args,
+            intersect_hs,
+            new_hs,
+            is_variadic_empty,
+            is_va_missing,
+        )?;
 
         // No DISABLED flag needed — is_recursive_expansion() detects self-reference
         // via the virtual buffer's source location (<macro_NAME>).
@@ -213,6 +223,23 @@ impl<'src> Preprocessor<'src> {
     /// This optimization uses `SourceLoc::builtin()` for synthetic commas to avoid
     /// creating thousands of tiny virtual buffers and unique `SourceId`s, which
     /// significantly reduces memory pressure and `SourceManager` churn in large projects.
+    /// Pre-calculates combined variadic tokens (with commas) and other variadic metadata.
+    /// Bolt ⚡: This optimization allows get_macro_param_tokens to return &[PPToken] instead of Cow,
+    /// eliminating redundant allocations in the substitution hot-path.
+    fn precalculate_variadic_args(&mut self, macro_info: &MacroInfo, args: &mut Vec<Vec<PPToken>>) -> (bool, bool) {
+        if macro_info.variadic_arg.is_some() {
+            let start = macro_info.parameter_list.len();
+            let is_empty = self.is_variadic_args_empty(macro_info, args);
+            let is_missing = args.len() <= start;
+            let combined = self.collect_variadic_args_with_commas(args, start);
+            args.truncate(start);
+            args.push(combined);
+            (is_empty, is_missing)
+        } else {
+            (false, false)
+        }
+    }
+
     fn collect_variadic_args_with_commas(&mut self, args: &[Vec<PPToken>], start_index: usize) -> Vec<PPToken> {
         // ⚡ Bolt: Pre-allocate result vector and avoid redundant clones.
         let mut total_tokens = 0;
@@ -243,17 +270,20 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn get_macro_param_tokens<'a>(
-        &mut self,
+        &self,
         macro_info: &MacroInfo,
         symbol: StringId,
         args: &'a [Vec<PPToken>],
-    ) -> Option<Cow<'a, [PPToken]>> {
+    ) -> Option<&'a [PPToken]> {
         if let Some(idx) = macro_info.parameter_list.iter().position(|&p| p == symbol) {
-            return Some(Cow::Borrowed(&args[idx]));
+            return Some(&args[idx]);
         }
         if macro_info.variadic_arg == Some(symbol) {
-            let start = macro_info.parameter_list.len();
-            return Some(Cow::Owned(self.collect_variadic_args_with_commas(args, start)));
+            // Combined variadic tokens are stored at the index matching parameter_list.len()
+            let idx = macro_info.parameter_list.len();
+            if idx < args.len() {
+                return Some(&args[idx]);
+            }
         }
         None
     }
@@ -266,22 +296,23 @@ impl<'src> Preprocessor<'src> {
         args[start..].iter().all(|arg| arg.is_empty())
     }
 
-    fn resolve_va_opt<'a>(
+    fn resolve_va_opt(
         &mut self,
-        macro_info: &'a MacroInfo,
+        macro_info: &MacroInfo,
         symbol: StringId,
         args: &[Vec<PPToken>],
         expanded_args: &[Vec<PPToken>],
         intersect_hs: u32,
         new_hs: u32,
-    ) -> Result<Cow<'a, [PPToken]>, PPError> {
+        is_variadic_empty: bool,
+    ) -> Result<Option<Vec<PPToken>>, PPError> {
         if !macro_info.flags.contains(MacroFlags::HAS_VA_OPT) {
-            return Ok(Cow::Borrowed(&macro_info.tokens));
+            return Ok(None);
         }
 
         let mut resolved = Vec::with_capacity(macro_info.tokens.len());
         let mut i = 0;
-        let is_empty = self.is_variadic_args_empty(macro_info, args);
+        let is_empty = is_variadic_empty;
 
         while i < macro_info.tokens.len() {
             let token = &macro_info.tokens[i];
@@ -305,6 +336,8 @@ impl<'src> Preprocessor<'src> {
                             expanded_args,
                             intersect_hs,
                             new_hs,
+                            is_empty,
+                            false, // __VA_OPT__ content substitution doesn't use GNU comma swallowing
                         )?;
                         let mut stringified = self.stringify_tokens(&substituted, token.location)?;
                         stringified.hide_set = token.hide_set;
@@ -338,7 +371,7 @@ impl<'src> Preprocessor<'src> {
             i += 1;
         }
 
-        Ok(Cow::Owned(resolved))
+        Ok(Some(resolved))
     }
 
     /// Substitute parameters in macro body
@@ -350,16 +383,22 @@ impl<'src> Preprocessor<'src> {
         expanded_args: &[Vec<PPToken>],
         intersect_hs: u32,
         new_hs: u32,
+        is_variadic_empty: bool,
+        is_va_missing: bool,
     ) -> Result<Vec<PPToken>, PPError> {
-        let tokens_cow = self.resolve_va_opt(macro_info, symbol, args, expanded_args, intersect_hs, new_hs)?;
+        let tokens =
+            self.resolve_va_opt(macro_info, symbol, args, expanded_args, intersect_hs, new_hs, is_variadic_empty)?;
+        let tokens_ref = tokens.as_deref().unwrap_or(&macro_info.tokens);
         self.substitute_tokens_slice(
             macro_info,
-            &tokens_cow,
+            tokens_ref,
             symbol,
             args,
             expanded_args,
             intersect_hs,
             new_hs,
+            is_variadic_empty,
+            is_va_missing,
         )
     }
 
@@ -372,6 +411,8 @@ impl<'src> Preprocessor<'src> {
         expanded_args: &[Vec<PPToken>],
         intersect_hs: u32,
         new_hs: u32,
+        _is_variadic_empty: bool,
+        is_va_missing: bool,
     ) -> Result<Vec<PPToken>, PPError> {
         let mut result = Vec::with_capacity(tokens_slice.len());
         let mut i = 0;
@@ -379,6 +420,7 @@ impl<'src> Preprocessor<'src> {
 
         // Bolt ⚡: Single-item cache for hide-set updates.
         let mut last_hs = (u32::MAX, 0u32);
+        let arg_empty_hs = if intersect_hs == 0 { new_hs } else { self.hide_sets.insert(0, symbol) };
 
         while i < tokens_slice.len() {
             let token = &tokens_slice[i];
@@ -391,7 +433,7 @@ impl<'src> Preprocessor<'src> {
                     if let PPTokenKind::Identifier(sym) = next.kind
                         && let Some(arg) = self.get_macro_param_tokens(macro_info, sym, args)
                     {
-                        let mut stringified = self.stringify_tokens(&arg, token.location)?;
+                        let mut stringified = self.stringify_tokens(arg, token.location)?;
                         // Bolt ⚡: Stringified tokens always start with an empty hide-set (0).
                         stringified.hide_set = new_hs;
                         result.push(stringified);
@@ -412,7 +454,8 @@ impl<'src> Preprocessor<'src> {
                     let right_token = &tokens_slice[i + 1];
                     let left = if last_token_produced_output { result.pop() } else { None };
 
-                    let (pasted, produced_output) = self.perform_token_pasting(macro_info, left, right_token, args)?;
+                    let (pasted, produced_output) =
+                        self.perform_token_pasting(macro_info, left, right_token, args, is_va_missing)?;
 
                     result.extend(pasted);
                     last_token_produced_output = produced_output;
@@ -426,23 +469,28 @@ impl<'src> Preprocessor<'src> {
                         if param_tokens.is_empty() {
                             last_token_produced_output = false;
                         } else {
-                            for mut t in param_tokens.iter().copied() {
-                                // Bolt ⚡: Hide-set intersection logic for arguments (Dave Prosser algorithm).
-                                if t.hide_set == 0 {
-                                    // 0 intersected with intersect_hs is 0. 0 unioned with symbol is just {symbol}.
-                                    if last_hs.0 != 0 {
-                                        last_hs = (0, self.hide_sets.insert(0, symbol));
-                                    }
-                                    t.hide_set = last_hs.1;
-                                } else {
-                                    if t.hide_set != last_hs.0 {
-                                        let intersected = self.hide_sets.intersection(t.hide_set, intersect_hs);
-                                        let updated = self.hide_sets.insert(intersected, symbol);
-                                        last_hs = (t.hide_set, updated);
-                                    }
-                                    t.hide_set = last_hs.1;
+                            if intersect_hs == 0 {
+                                // Bolt ⚡: Fast-path for top-level macro calls. All tokens receive new_hs.
+                                let start_idx = result.len();
+                                result.extend_from_slice(param_tokens);
+                                for t in &mut result[start_idx..] {
+                                    t.hide_set = new_hs;
                                 }
-                                result.push(t);
+                            } else {
+                                for mut t in param_tokens.iter().copied() {
+                                    // Bolt ⚡: Hide-set intersection logic for arguments (Dave Prosser algorithm).
+                                    if t.hide_set == 0 {
+                                        t.hide_set = arg_empty_hs;
+                                    } else {
+                                        if t.hide_set != last_hs.0 {
+                                            let intersected = self.hide_sets.intersection(t.hide_set, intersect_hs);
+                                            let updated = self.hide_sets.insert(intersected, symbol);
+                                            last_hs = (t.hide_set, updated);
+                                        }
+                                        t.hide_set = last_hs.1;
+                                    }
+                                    result.push(t);
+                                }
                             }
                             last_token_produced_output = true;
                         }
@@ -475,12 +523,12 @@ impl<'src> Preprocessor<'src> {
         left: Option<PPToken>,
         right_token: &PPToken,
         args: &[Vec<PPToken>],
+        is_va_missing: bool,
     ) -> Result<(Vec<PPToken>, bool), PPError> {
         let right_tokens = if let PPTokenKind::Identifier(sym) = right_token.kind {
-            self.get_macro_param_tokens(macro_info, sym, args)
-                .unwrap_or(Cow::Borrowed(std::slice::from_ref(right_token)))
+            self.get_macro_param_tokens(macro_info, sym, args).unwrap_or(std::slice::from_ref(right_token))
         } else {
-            Cow::Borrowed(std::slice::from_ref(right_token))
+            std::slice::from_ref(right_token)
         };
 
         if right_tokens.is_empty() {
@@ -489,7 +537,7 @@ impl<'src> Preprocessor<'src> {
             let is_variadic =
                 matches!(right_token.kind, PPTokenKind::Identifier(s) if macro_info.variadic_arg == Some(s));
 
-            if is_comma && is_variadic && args.len() <= macro_info.parameter_list.len() {
+            if is_comma && is_variadic && is_va_missing {
                 // GNU Comma Swallowing extension: swallow the comma only when
                 // no variadic arguments were provided at all (e.g. M(a,b) for
                 // #define M(x,y,...)).  When an explicit empty variadic argument
@@ -513,7 +561,7 @@ impl<'src> Preprocessor<'src> {
             Ok((pasted, pasted_count > 0 || right_tokens.len() > 1))
         } else {
             // Right is not empty, Left is empty: empty ## right -> right.
-            Ok((right_tokens.into_owned(), true))
+            Ok((right_tokens.to_vec(), true))
         }
     }
 
@@ -894,7 +942,9 @@ impl<'src> Preprocessor<'src> {
                     };
 
                     match task {
-                        Some(ExpansionTask::Function(macro_info, end_j, args)) => {
+                        Some(ExpansionTask::Function(macro_info, end_j, mut args)) => {
+                            let (is_variadic_empty, is_va_missing) = self.precalculate_variadic_args(&macro_info, &mut args);
+
                             // Pre-expand arguments (prescan)
                             let mut expanded_args = Vec::with_capacity(args.len());
                             for arg in &args {
@@ -915,6 +965,8 @@ impl<'src> Preprocessor<'src> {
                                 &expanded_args,
                                 intersect_hs,
                                 new_hs,
+                                is_variadic_empty,
+                                is_va_missing,
                             )?;
                             let substituted =
                                 self.create_virtual_buffer_tokens(&substituted, symbol, tokens[i].location);

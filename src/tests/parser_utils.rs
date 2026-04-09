@@ -115,7 +115,7 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
                     let mut s = format!("enum {}", tag_str);
                     if let Some(ut) = underlying_type {
                         s.push_str(" : ");
-                        s.push_str(&extract_type_kind(ast, &ut));
+                        s.push_str(&extract_type_kind(ast, ut));
                     }
                     if let Some(enums) = enumerators {
                         let enum_parts: Vec<String> = enums

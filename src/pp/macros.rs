@@ -386,8 +386,15 @@ impl<'src> Preprocessor<'src> {
         is_variadic_empty: bool,
         is_va_missing: bool,
     ) -> Result<Vec<PPToken>, PPError> {
-        let tokens =
-            self.resolve_va_opt(macro_info, symbol, args, expanded_args, intersect_hs, new_hs, is_variadic_empty)?;
+        let tokens = self.resolve_va_opt(
+            macro_info,
+            symbol,
+            args,
+            expanded_args,
+            intersect_hs,
+            new_hs,
+            is_variadic_empty,
+        )?;
         let tokens_ref = tokens.as_deref().unwrap_or(&macro_info.tokens);
         self.substitute_tokens_slice(
             macro_info,
@@ -420,7 +427,11 @@ impl<'src> Preprocessor<'src> {
 
         // Bolt ⚡: Single-item cache for hide-set updates.
         let mut last_hs = (u32::MAX, 0u32);
-        let arg_empty_hs = if intersect_hs == 0 { new_hs } else { self.hide_sets.insert(0, symbol) };
+        let arg_empty_hs = if intersect_hs == 0 {
+            new_hs
+        } else {
+            self.hide_sets.insert(0, symbol)
+        };
 
         while i < tokens_slice.len() {
             let token = &tokens_slice[i];
@@ -526,7 +537,8 @@ impl<'src> Preprocessor<'src> {
         is_va_missing: bool,
     ) -> Result<(Vec<PPToken>, bool), PPError> {
         let right_tokens = if let PPTokenKind::Identifier(sym) = right_token.kind {
-            self.get_macro_param_tokens(macro_info, sym, args).unwrap_or(std::slice::from_ref(right_token))
+            self.get_macro_param_tokens(macro_info, sym, args)
+                .unwrap_or(std::slice::from_ref(right_token))
         } else {
             std::slice::from_ref(right_token)
         };
@@ -943,7 +955,8 @@ impl<'src> Preprocessor<'src> {
 
                     match task {
                         Some(ExpansionTask::Function(macro_info, end_j, mut args)) => {
-                            let (is_variadic_empty, is_va_missing) = self.precalculate_variadic_args(&macro_info, &mut args);
+                            let (is_variadic_empty, is_va_missing) =
+                                self.precalculate_variadic_args(&macro_info, &mut args);
 
                             // Pre-expand arguments (prescan)
                             let mut expanded_args = Vec::with_capacity(args.len());

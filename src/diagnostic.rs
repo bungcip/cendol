@@ -1,6 +1,6 @@
 use crate::{
     parser::TokenKind,
-    source_manager::{SourceManager, SourceSpan},
+    source_manager::{FileKind, SourceManager, SourceSpan},
 };
 use hashbrown::HashSet;
 use std::io::IsTerminal;
@@ -261,15 +261,8 @@ impl DiagnosticEngine {
         while let Some(file_info) = source_manager.get_file_info(current_id) {
             if let Some(include_loc) = file_info.include_loc {
                 // Determine if this is a macro expansion (virtual file) or an include
-                let is_macro = file_info.path.to_str().is_some_and(|s| s.starts_with("<macro_"));
-                let note_msg = if is_macro {
-                    let macro_name = file_info
-                        .path
-                        .to_str()
-                        .unwrap()
-                        .trim_start_matches("<macro_")
-                        .trim_end_matches('>');
-                    format!("expanded from macro '{}'", macro_name)
+                let note_msg = if file_info.kind == FileKind::MacroExpansion {
+                    format!("expanded from macro '{}'", file_info.path.to_string_lossy())
                 } else {
                     "included from here".to_string()
                 };

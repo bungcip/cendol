@@ -680,7 +680,7 @@ impl<'src> Preprocessor<'src> {
         virtual_buffer.extend_from_slice(right_text.as_bytes());
         let virtual_id = self.sm.add_virtual_buffer(
             virtual_buffer,
-            "pasted-tokens",
+            "<pasted-tokens>",
             Some(left.location),
             FileKind::PastedToken,
         );
@@ -1064,7 +1064,7 @@ impl<'src> Preprocessor<'src> {
 
         let virtual_id = self.sm.add_virtual_buffer(
             buffer,
-            &format!("macro_{}", macro_name),
+            macro_name.as_str(),
             Some(trigger_location),
             FileKind::MacroExpansion,
         );

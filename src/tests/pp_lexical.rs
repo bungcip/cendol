@@ -280,6 +280,81 @@ fn test_char_literal_escapes() {
     );
 }
 
+// Digraphs
+#[test]
+fn test_all_digraph_tokens() {
+    let source = "<: :> <% %> %: %:%:";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(
+        lexer,
+        ("[", PPTokenKind::LeftBracket),
+        ("]", PPTokenKind::RightBracket),
+        ("{", PPTokenKind::LeftBrace),
+        ("}", PPTokenKind::RightBrace),
+        ("#", PPTokenKind::Hash),
+        ("##", PPTokenKind::HashHash),
+    );
+}
+
+#[test]
+fn test_digraph_edge_cases() {
+    let source = "%:% %:%: : :> < <: <%%";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(
+        lexer,
+        ("#", PPTokenKind::Hash),
+        ("%", PPTokenKind::Percent),
+        ("##", PPTokenKind::HashHash),
+        (":", PPTokenKind::Colon),
+        ("]", PPTokenKind::RightBracket),
+        ("<", PPTokenKind::Less),
+        ("[", PPTokenKind::LeftBracket),
+        ("{", PPTokenKind::LeftBrace),
+        ("%", PPTokenKind::Percent),
+    );
+}
+
+#[test]
+fn test_digraph_hash_starts_pp_line() {
+    let source = "%:define X 1\n%: ifdef X\nOK\n%: endif";
+    let tokens = setup_pp_snapshot(source);
+
+    insta::assert_yaml_snapshot!(tokens, @"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
+#[test]
+fn test_digraph_hashhash_pasting() {
+    let source = r#"
+#define CONCAT(a, b) a %:%: b
+CONCAT(x, y)
+"#;
+    let tokens = setup_pp_snapshot(source);
+    insta::assert_yaml_snapshot!(tokens, @"
+    - kind: Identifier
+      text: xy
+    ");
+}
+
+#[test]
+fn test_digraph_in_skipping_block() {
+    let source = r#"
+#if 0
+%: define X 1
+#endif
+OK
+"#;
+    let tokens = setup_pp_snapshot(source);
+    insta::assert_yaml_snapshot!(tokens, @"
+    - kind: Identifier
+      text: OK
+    ");
+}
+
 // UCNs
 #[test]
 fn test_ucn_identifier() {

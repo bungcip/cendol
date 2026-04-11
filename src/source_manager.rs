@@ -334,7 +334,9 @@ impl SourceManager {
         kind: FileKind,
     ) -> SourceId {
         let line_starts = compute_line_starts(&buffer);
-        let path_buf = PathBuf::from(format!("<{}>", name));
+        // Bolt ⚡: Avoid redundant format! call. The caller is responsible for
+        // providing a descriptive name (e.g., macro name or "<pasted-tokens>").
+        let path_buf = PathBuf::from(name);
         self.add_file_entry(Arc::from(buffer), path_buf, line_starts, include_loc, kind)
     }
 

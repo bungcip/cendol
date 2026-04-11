@@ -64,6 +64,66 @@ fn test_all_punctuation_tokens() {
 }
 
 #[test]
+fn test_digraph_in_macro() {
+    let src = r#"
+#define LBRACKET <:
+#define RBRACKET :>
+int a LBRACKET 5 RBRACKET;
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens);
+}
+
+#[test]
+fn test_digraph_tokens() {
+    let source = "<: :> <% %> %: %:%:";
+    let mut lexer = create_test_pp_lexer(source);
+
+    // Digraphs should be lexed as their equivalent punctuators, but with length of 2 (or 4 for %:%:)
+    // and token text matching the punctuator they represent.
+    // wait, get_text() for LeftBracket returns "[".
+    // test_tokens! macro compares t.get_text() with the first argument.
+
+    let t1 = lexer.next_token().unwrap();
+    assert_eq!(t1.kind, PPTokenKind::LeftBracket);
+    assert_eq!(t1.length, 2);
+
+    let t2 = lexer.next_token().unwrap();
+    assert_eq!(t2.kind, PPTokenKind::RightBracket);
+    assert_eq!(t2.length, 2);
+
+    let t3 = lexer.next_token().unwrap();
+    assert_eq!(t3.kind, PPTokenKind::LeftBrace);
+    assert_eq!(t3.length, 2);
+
+    let t4 = lexer.next_token().unwrap();
+    assert_eq!(t4.kind, PPTokenKind::RightBrace);
+    assert_eq!(t4.length, 2);
+
+    let t5 = lexer.next_token().unwrap();
+    assert_eq!(t5.kind, PPTokenKind::Hash);
+    assert_eq!(t5.length, 2);
+
+    let t6 = lexer.next_token().unwrap();
+    assert_eq!(t6.kind, PPTokenKind::HashHash);
+    assert_eq!(t6.length, 4);
+}
+
+#[test]
+fn test_digraph_hash_starts_pp_line() {
+    let source = "%:define X 1";
+    let mut lexer = create_test_pp_lexer(source);
+
+    let t1 = lexer.next_token().unwrap();
+    assert_eq!(t1.kind, PPTokenKind::Hash);
+    assert_eq!(t1.length, 2);
+    assert!(t1.flags.contains(PPTokenFlags::STARTS_PP_LINE));
+
+    let t2 = lexer.next_token().unwrap();
+    assert_eq!(t2.get_text(), "define");
+}
+
+#[test]
 fn test_all_keyword_tokens() {
     let source = "if ifdef ifndef elif else endif define undef include line pragma error warning";
     let mut lexer = create_test_pp_lexer(source);

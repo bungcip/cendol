@@ -1,0 +1,17 @@
+---
+source: src/tests/pp_lexical.rs
+assertion_line: 74
+expression: tokens
+---
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: a
+- kind: LeftBracket
+  text: "["
+- kind: Number
+  text: "5"
+- kind: RightBracket
+  text: "]"
+- kind: Semicolon
+  text: ;

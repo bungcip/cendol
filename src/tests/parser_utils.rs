@@ -368,10 +368,10 @@ fn extract_declarator_name(ast: &ParsedAst, declarator: DeclaratorRef) -> Option
     let declarator = ast.parsed_types.get_decl(declarator);
     match declarator {
         ParsedDeclarator::Identifier(name) => name.map(|n| n.to_string()),
-        ParsedDeclarator::Pointer { inner, .. } => extract_declarator_name(ast, inner),
-        ParsedDeclarator::Array { inner, .. } => extract_declarator_name(ast, inner),
-        ParsedDeclarator::Function { inner, .. } => extract_declarator_name(ast, inner),
-        ParsedDeclarator::BitField { inner, .. } => extract_declarator_name(ast, inner),
+        ParsedDeclarator::Pointer { inner, .. } => extract_declarator_name(ast, *inner),
+        ParsedDeclarator::Array { inner, .. } => extract_declarator_name(ast, *inner),
+        ParsedDeclarator::Function { inner, .. } => extract_declarator_name(ast, *inner),
+        ParsedDeclarator::BitField { inner, .. } => extract_declarator_name(ast, *inner),
     }
 }
 
@@ -386,7 +386,7 @@ fn extract_declarator_kind(ast: &ParsedAst, declarator: DeclaratorRef) -> String
             }
         }
         ParsedDeclarator::Pointer { inner, .. } => {
-            let inner_kind = extract_declarator_kind(ast, inner);
+            let inner_kind = extract_declarator_kind(ast, *inner);
             if inner_kind == "identifier" || inner_kind == "abstract" {
                 "pointer".to_string()
             } else {
@@ -394,7 +394,7 @@ fn extract_declarator_kind(ast: &ParsedAst, declarator: DeclaratorRef) -> String
             }
         }
         ParsedDeclarator::Array { inner, .. } => {
-            let inner_kind = extract_declarator_kind(ast, inner);
+            let inner_kind = extract_declarator_kind(ast, *inner);
             if inner_kind == "identifier" || inner_kind == "abstract" {
                 "array".to_string()
             } else {
@@ -404,12 +404,12 @@ fn extract_declarator_kind(ast: &ParsedAst, declarator: DeclaratorRef) -> String
         ParsedDeclarator::Function {
             inner, params, flags, ..
         } => {
-            let return_type = extract_declarator_kind(ast, inner);
+            let return_type = extract_declarator_kind(ast, *inner);
             let mut param_str = if params.len == 0 {
                 "void".to_string()
             } else {
                 ast.parsed_types
-                    .get_params(params)
+                    .get_params(*params)
                     .iter()
                     .map(|param| extract_type_kind(ast, &param.ty))
                     .collect::<Vec<_>>()
@@ -432,7 +432,7 @@ fn extract_declarator_kind(ast: &ParsedAst, declarator: DeclaratorRef) -> String
             format!("function({}) -> {}", param_str, return_type_str)
         }
         ParsedDeclarator::BitField { inner, .. } => {
-            let inner_kind = extract_declarator_kind(ast, inner);
+            let inner_kind = extract_declarator_kind(ast, *inner);
             format!("bitfield {}", inner_kind)
         }
     }
@@ -453,7 +453,7 @@ fn extract_base_kind(ast: &ParsedAst, base: crate::ast::ParsedBaseTypeRef) -> St
             result
         }
         crate::ast::ParsedBaseType::Record { tag, is_union, .. } => {
-            let kind = if is_union { "union" } else { "struct" };
+            let kind = if *is_union { "union" } else { "struct" };
             if let Some(tag) = tag {
                 format!("{} {}", kind, tag)
             } else {

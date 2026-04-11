@@ -3,7 +3,7 @@
 //! This module defines the syntactic type representations used during parsing,
 //! distinct from the semantic type system used during analysis. These types
 //! are only relevant in the Parser phase and will be converted to semantic
-//! types during the SymbolResolver phase.
+//! types during the SemanticLowering phase.
 
 use std::num::NonZeroU32;
 

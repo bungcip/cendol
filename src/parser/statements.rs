@@ -93,7 +93,7 @@ fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef,
 
     let end = parser.expect(TokenKind::RightBrace)?.span;
     let span = start.merge(end);
-    let node = parser.replace_node(dummy, ParsedNodeKind::CompoundStmt(items), span);
+    let node = parser.replace_node(dummy, ParsedNodeKind::CompoundStmt(items.into_boxed_slice()), span);
     Ok((node, end.end()))
 }
 

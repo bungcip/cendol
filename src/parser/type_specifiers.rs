@@ -5,7 +5,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::ParseError;
-use crate::parser::enum_parsing::parse_enum_specifier;
+use crate::parser::enum_parsing::parse_enum_spec;
 use crate::parser::expressions::parse_expression;
 use crate::parser::struct_parsing::parse_record_spec;
 use crate::parser::type_builder::parse_type_name;
@@ -98,7 +98,7 @@ pub(super) fn parse_type_spec(parser: &mut Parser) -> Result<TypeSpec, ParseErro
         }
         TK::Enum => {
             parser.advance();
-            parse_enum_specifier(parser)
+            parse_enum_spec(parser)
         }
         TK::Identifier(symbol) => {
             parser.advance();

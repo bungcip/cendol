@@ -1835,7 +1835,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::SizeOfType(t) => lower_simple!(NodeKind::SizeOfType(self.visit_type(*t, span))),
             ParsedNodeKind::AlignOfType(t) => lower_simple!(NodeKind::AlignOfType(self.visit_type(*t, span))),
             ParsedNodeKind::AlignOfExpr(e) => lower_simple!(NodeKind::AlignOfExpr(self.visit_expression(*e))),
-            ParsedNodeKind::BuiltinTypesCompatibleP(t1, t2) => {
+            ParsedNodeKind::BuiltinTypesCompatibleP(boxed) => {
+                let (t1, t2) = &**boxed;
                 lower_simple!(NodeKind::BuiltinTypesCompatibleP(
                     self.visit_type(*t1, span),
                     self.visit_type(*t2, span)
@@ -1872,13 +1873,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::FunctionCall(func, args) => {
                 let node = self.get_or_push_slot(target_slots, span);
-                let kind = self.visit_function_call(*func, args, span);
+                let kind = self.visit_function_call(*func, args.as_ref(), span);
                 self.ast.kinds[node.index()] = kind;
                 smallvec![node]
             }
             ParsedNodeKind::AtomicOp(op, args) => {
                 let node = self.get_or_push_slot(target_slots, span);
-                let kind = self.visit_atomic_op(*op, args, span);
+                let kind = self.visit_atomic_op(*op, args.as_ref(), span);
                 self.ast.kinds[node.index()] = kind;
                 smallvec![node]
             }
@@ -1887,13 +1888,13 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::GenericSelection(ctrl, assocs) => {
                 let node = self.get_or_push_slot(target_slots, span);
-                let kind = self.visit_generic_selection(*ctrl, assocs, span);
+                let kind = self.visit_generic_selection(*ctrl, assocs.as_ref(), span);
                 self.ast.kinds[node.index()] = kind;
                 smallvec![node]
             }
             ParsedNodeKind::InitializerList(inits) => {
                 let node = self.get_or_push_slot(target_slots, span);
-                let kind = self.visit_initializer_list(inits, span);
+                let kind = self.visit_initializer_list(inits.as_ref(), span);
                 self.ast.kinds[node.index()] = kind;
                 smallvec![node]
             }

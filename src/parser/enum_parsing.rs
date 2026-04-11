@@ -9,7 +9,7 @@ use crate::parser::TokenKind;
 use super::Parser;
 
 /// Parse enum specifier
-pub(super) fn parse_enum_specifier(parser: &mut Parser) -> Result<TypeSpec, ParseError> {
+pub(super) fn parse_enum_spec(parser: &mut Parser) -> Result<TypeSpec, ParseError> {
     let tag = parser.accept_name();
 
     let original_in_underlying = parser.in_enum_underlying_type;

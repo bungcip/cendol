@@ -131,13 +131,13 @@ impl AstDumper {
                 types.insert(t1.ty());
                 types.insert(t2.ty());
             }
-            NodeKind::SizeOfType(qual_type) | NodeKind::AlignOfType(qual_type) => {
-                types.insert(qual_type.ty());
-            }
             NodeKind::CompoundLiteral(qual_type, _) => {
                 types.insert(qual_type.ty());
             }
             NodeKind::BuiltinVaArg(qual_type, _) | NodeKind::BuiltinOffsetof(qual_type, _) => {
+                types.insert(qual_type.ty());
+            }
+            NodeKind::SizeOfType(qual_type) | NodeKind::AlignOfType(qual_type) => {
                 types.insert(qual_type.ty());
             }
             NodeKind::BuiltinVaStart(..)
@@ -413,7 +413,10 @@ impl AstDumper {
             // TypeRef only: Tag(ty)
             PNK::SizeOfType(ty) | PNK::AlignOfType(ty) => write!(f, "{:?}", ty)?,
 
-            PNK::BuiltinTypesCompatibleP(t1, t2) => write!(f, "{:?}, {:?}", t1, t2)?,
+            PNK::BuiltinTypesCompatibleP(boxed) => {
+                let (t1, t2) = &**boxed;
+                write!(f, "{:?}, {:?}", t1, t2)?
+            }
 
             PNK::FunctionCall(callee, args) => {
                 write!(f, "callee={}, args=[", callee.get())?;

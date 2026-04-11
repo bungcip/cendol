@@ -242,7 +242,7 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
 
     Ok(parser.replace_node(
         dummy,
-        ParsedNodeKind::TranslationUnit(top_level_declarations),
+        ParsedNodeKind::TranslationUnit(top_level_declarations.into_boxed_slice()),
         SourceSpan::new(start_loc, end_loc),
     ))
 }
@@ -428,7 +428,7 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
                 };
 
                 ParsedDesignatedInitializer {
-                    designation: Vec::new(),
+                    designation: Vec::new().into_boxed_slice(),
                     initializer: inner,
                 }
             };
@@ -441,7 +441,7 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
 
         let end_token = parser.expect(TokenKind::RightBrace)?;
         let span = SourceSpan::new(span.start(), end_token.span.end());
-        Ok(parser.push_node(ParsedNodeKind::InitializerList(initializers), span))
+        Ok(parser.push_node(ParsedNodeKind::InitializerList(initializers.into_boxed_slice()), span))
     } else {
         parser.parse_expr_assignment()
     }
@@ -452,7 +452,7 @@ fn parse_designated_initializer(parser: &mut Parser) -> Result<ParsedDesignatedI
     let designation = if parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
         parse_designation(parser)?
     } else {
-        Vec::new()
+        Vec::new().into_boxed_slice()
     };
 
     parser.expect(TokenKind::Assign)?;
@@ -465,7 +465,7 @@ fn parse_designated_initializer(parser: &mut Parser) -> Result<ParsedDesignatedI
 }
 
 /// Parse designation
-fn parse_designation(parser: &mut Parser) -> Result<Vec<ParsedDesignator>, ParseError> {
+fn parse_designation(parser: &mut Parser) -> Result<Box<[ParsedDesignator]>, ParseError> {
     let mut designators = Vec::new();
 
     while parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
@@ -487,7 +487,7 @@ fn parse_designation(parser: &mut Parser) -> Result<Vec<ParsedDesignator>, Parse
         }
     }
 
-    Ok(designators)
+    Ok(designators.into_boxed_slice())
 }
 
 /// Parse GCC __attribute__ syntax: __attribute__ (( attribute-list ))

@@ -415,7 +415,7 @@ fn parse_function_call(parser: &mut Parser, function: ParsedNodeRef) -> Result<P
     let args = super::utils::expr_patterns::parse_expr_list(parser, BindingPower::ASSIGNMENT)?;
     let right_paren = parser.expect(TokenKind::RightParen)?;
     let span = parser.ast.get_node(function).span.merge(right_paren.span);
-    Ok(parser.push_node(ParsedNodeKind::FunctionCall(function, args), span))
+    Ok(parser.push_node(ParsedNodeKind::FunctionCall(function, args.into_boxed_slice()), span))
 }
 
 fn parse_index_access(parser: &mut Parser, array: ParsedNodeRef) -> Result<ParsedNodeRef, ParseError> {
@@ -482,7 +482,7 @@ fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseEr
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.replace_node(
         dummy,
-        ParsedNodeKind::GenericSelection(controlling_expr, associations),
+        ParsedNodeKind::GenericSelection(controlling_expr, associations.into_boxed_slice()),
         SourceSpan::new(start, end),
     ))
 }
@@ -810,7 +810,7 @@ fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<ParsedNodeRef
     let ty2 = parse_type_name(parser)?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(
-        ParsedNodeKind::BuiltinTypesCompatibleP(ty1, ty2),
+        ParsedNodeKind::BuiltinTypesCompatibleP(Box::new((ty1, ty2))),
         SourceSpan::new(start, end),
     ))
 }
@@ -820,7 +820,10 @@ fn parse_atomic_op(parser: &mut Parser, op: AtomicOp) -> Result<ParsedNodeRef, P
     parser.expect(TokenKind::LeftParen)?;
     let args = parse_expr_list(parser, BindingPower::ASSIGNMENT)?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok(parser.push_node(ParsedNodeKind::AtomicOp(op, args), SourceSpan::new(start, end)))
+    Ok(parser.push_node(
+        ParsedNodeKind::AtomicOp(op, args.into_boxed_slice()),
+        SourceSpan::new(start, end),
+    ))
 }
 
 fn parse_builtin_prefetch(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {

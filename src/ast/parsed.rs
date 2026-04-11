@@ -84,7 +84,7 @@ pub enum ParsedNodeKind {
     PostDecrement(ParsedNodeRef),
 
     Assignment(BinaryOp, ParsedNodeRef, ParsedNodeRef),
-    FunctionCall(ParsedNodeRef, Vec<ParsedNodeRef>),
+    FunctionCall(ParsedNodeRef, Box<[ParsedNodeRef]>),
     MemberAccess(ParsedNodeRef, NameId, bool),
     IndexAccess(ParsedNodeRef, ParsedNodeRef),
 
@@ -100,7 +100,7 @@ pub enum ParsedNodeKind {
     BuiltinMemcpy(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinMemset(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinMemmove(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
-    BuiltinTypesCompatibleP(ParsedType, ParsedType),
+    BuiltinTypesCompatibleP(Box<(ParsedType, ParsedType)>),
     BuiltinPopcount(ParsedNodeRef),
     BuiltinPopcountL(ParsedNodeRef),
     BuiltinPopcountLL(ParsedNodeRef),
@@ -121,21 +121,21 @@ pub enum ParsedNodeKind {
     BuiltinFabsl(ParsedNodeRef),
     BuiltinPrefetch(ParsedNodeRef, Option<ParsedNodeRef>, Option<ParsedNodeRef>),
     BuiltinAlloca(ParsedNodeRef),
-    AtomicOp(AtomicOp, Vec<ParsedNodeRef>),
+    AtomicOp(AtomicOp, Box<[ParsedNodeRef]>),
     SizeOfExpr(ParsedNodeRef),
     SizeOfType(ParsedType),
     AlignOfExpr(ParsedNodeRef),
     AlignOfType(ParsedType),
 
     CompoundLiteral(ParsedType, ParsedNodeRef),
-    GenericSelection(ParsedNodeRef, Vec<ParsedGenericAssociation>),
+    GenericSelection(ParsedNodeRef, Box<[ParsedGenericAssociation]>),
     BuiltinChooseExpr(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinConstantP(ParsedNodeRef),
     BuiltinUnreachable,
     BuiltinTrap,
 
     // --- Statements ---
-    CompoundStmt(Vec<ParsedNodeRef>),
+    CompoundStmt(Box<[ParsedNodeRef]>),
     If(ParsedIfStmt),
     While(ParsedWhileStmt),
     DoWhile(ParsedNodeRef, ParsedNodeRef),
@@ -163,10 +163,10 @@ pub enum ParsedNodeKind {
     StaticAssert(ParsedNodeRef, Option<ParsedNodeRef>),
 
     // --- Top Level ---
-    TranslationUnit(Vec<ParsedNodeRef>),
+    TranslationUnit(Box<[ParsedNodeRef]>),
 
     // --- InitializerList ---
-    InitializerList(Vec<ParsedDesignatedInitializer>),
+    InitializerList(Box<[ParsedDesignatedInitializer]>),
 
     // --- Pragma Pack ---
     PragmaPack(PragmaPackKind),
@@ -284,8 +284,6 @@ pub enum ParsedAlignmentSpec {
     Expr(ParsedNodeRef), // _Alignas(constant-expression)
 }
 
-// Declarators are now in parsed_types.rs and are arena-based (DeclaratorRef)
-
 #[derive(Debug, Clone)]
 pub struct ParsedParam {
     pub name: Option<NameId>,
@@ -354,7 +352,7 @@ pub struct ParsedGenericAssociation {
 
 #[derive(Debug, Clone)]
 pub struct ParsedDesignatedInitializer {
-    pub designation: Vec<ParsedDesignator>,
+    pub designation: Box<[ParsedDesignator]>,
     pub initializer: ParsedNodeRef,
 }
 
@@ -437,9 +435,6 @@ impl ParsedFunctionDef {
         for spec in &self.specifiers {
             spec.for_each_child(f);
         }
-        // declarator is now a ref, we might need to recurse into it if it contains exprs
-        // But most declarator exprs are array sizes which are already covered in AST nodes?
-        // Actually, array sizes ARE expressions (ParsedNodeRef).
         f(self.body);
     }
 }
@@ -535,7 +530,7 @@ impl ParsedNodeKind {
         match self {
             ParsedNodeKind::Literal(_)
             | ParsedNodeKind::Ident(_)
-            | ParsedNodeKind::BuiltinTypesCompatibleP(_, _)
+            | ParsedNodeKind::BuiltinTypesCompatibleP(_)
             | ParsedNodeKind::SizeOfType(_)
             | ParsedNodeKind::AlignOfType(_)
             | ParsedNodeKind::BuiltinUnreachable
@@ -620,18 +615,18 @@ impl ParsedNodeKind {
             }
             ParsedNodeKind::FunctionCall(c, args) => {
                 f(*c);
-                for a in args {
+                for a in args.as_ref() {
                     f(*a);
                 }
             }
-            ParsedNodeKind::AtomicOp(_, args) => {
-                for a in args {
+            ParsedNodeKind::AtomicOp(_op, args) => {
+                for a in args.as_ref() {
                     f(*a);
                 }
             }
             ParsedNodeKind::GenericSelection(c, assocs) => {
                 f(*c);
-                for a in assocs {
+                for a in assocs.as_ref() {
                     f(a.result_expr);
                 }
             }
@@ -641,7 +636,7 @@ impl ParsedNodeKind {
                 f(*e);
             }
             ParsedNodeKind::CompoundStmt(stmts) | ParsedNodeKind::TranslationUnit(stmts) => {
-                for s in stmts {
+                for s in stmts.as_ref() {
                     f(*s);
                 }
             }
@@ -686,9 +681,9 @@ impl ParsedNodeKind {
                 data.for_each_child(f);
             }
             ParsedNodeKind::InitializerList(inits) => {
-                for init in inits {
+                for init in inits.as_ref() {
                     f(init.initializer);
-                    for d in &init.designation {
+                    for d in init.designation.as_ref() {
                         match d {
                             ParsedDesignator::ArrayIndex(idx) => f(*idx),
                             ParsedDesignator::ArrayRange(s, e) => {

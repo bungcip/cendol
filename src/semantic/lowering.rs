@@ -2212,7 +2212,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             _ => return None,
         };
 
-        let func_ty = self.registry.function_type(ret_ty, params, false, false);
+        let func_ty = self.registry.function_type(QualType::unqualified(ret_ty), params, false, false);
 
         // Save current scope and switch to global for implicit decl
         let old_scope = self.symbol_table.current_scope();
@@ -2345,7 +2345,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     func_ty = self.registry.get_pointee(func_ty)?.ty();
                 }
                 if let TypeKind::Function { return_type, .. } = &self.registry.get(func_ty).kind {
-                    Some(QualType::unqualified(*return_type))
+                    Some(QualType::unqualified(return_type.ty()))
                 } else {
                     None
                 }
@@ -2706,7 +2706,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let is_noreturn = spec_info.map(|s| s.is_noreturn).unwrap_or(false);
                 let function_type =
                     self.registry
-                        .function_type(current_type.ty(), processed_params, flags.is_variadic, is_noreturn);
+                        .function_type(current_type, processed_params, flags.is_variadic, is_noreturn);
                 self.apply_declarator(QualType::unqualified(function_type), inner, span, spec_info, ctx)
             }
             ParsedDeclarator::BitField { inner, .. } => {

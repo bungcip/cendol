@@ -46,7 +46,7 @@ enum TypeAnalysisTask {
     Record(Arc<[StructMember]>, bool),
     Array(TypeRef, ArraySizeType),
     Function {
-        return_type: TypeRef,
+        return_type: QualType,
         parameters: Arc<[FunctionParameter]>,
         is_variadic: bool,
     },
@@ -267,7 +267,7 @@ impl<'a> SemanticAnalyzer<'a> {
         enum Task {
             Array(TypeRef, Option<NodeRef>),
             Pointer(QualType),
-            Function(TypeRef, Arc<[FunctionParameter]>),
+            Function(QualType, Arc<[FunctionParameter]>),
             Complex(TypeRef),
             Typeof(NodeRef, bool), // bool is true for unqual
             Alias(TypeRef),
@@ -310,7 +310,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_type_exprs(pointee);
             }
             Task::Function(return_type, parameters) => {
-                self.visit_type_exprs(QualType::unqualified(return_type));
+                self.visit_type_exprs(return_type);
                 for param in parameters.iter() {
                     self.visit_type_exprs(param.param_type);
                 }
@@ -1472,8 +1472,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 // Check compatibility ignoring top-level qualifiers of the pointed-to type
                 // (e.g. char is compatible with char, even if one is const)
                 if !self.registry.is_compatible(
-                    QualType::unqualified(lhs_base.ty()),
-                    QualType::unqualified(rhs_base.ty()),
+                    lhs_base.strip_all(),
+                    rhs_base.strip_all(),
                 ) {
                     return false;
                 }
@@ -2113,7 +2113,7 @@ impl<'a> SemanticAnalyzer<'a> {
                         }
                     }
                 }
-                Some(QualType::unqualified(return_type))
+                Some(QualType::unqualified(return_type.ty()))
             }
             _ => {
                 // This is not a function or function pointer, report an error.
@@ -2322,10 +2322,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
 
                 if let Some(return_type) = return_type_to_check {
+                    let return_ty = return_type.ty();
                     // Bolt ⚡: Extension: allow incomplete enums in declarations (per GCC/Clang).
-                    let is_incomplete_enum = matches!(self.registry.get(return_type).kind, TypeKind::Enum { .. });
-                    if !self.registry.is_complete(return_type)
-                        && return_type != self.registry.type_void
+                    let is_incomplete_enum = matches!(self.registry.get(return_ty).kind, TypeKind::Enum { .. });
+                    if !self.registry.is_complete(return_ty)
+                        && return_ty != self.registry.type_void
                         && !is_incomplete_enum
                     {
                         self.report_error(node, SemanticErrorKind::IncompleteReturnType);
@@ -2349,18 +2350,18 @@ impl<'a> SemanticAnalyzer<'a> {
             if let TypeKind::Function { return_type, .. } = &type_info.kind {
                 *return_type
             } else {
-                self.registry.type_error
+                QualType::unqualified(self.registry.type_error)
             }
         };
 
-        if !self.registry.is_complete(ret_type) && ret_type != self.registry.type_void {
+        if !self.registry.is_complete(ret_type.ty()) && ret_type.ty() != self.registry.type_void {
             self.report_error(node, SemanticErrorKind::IncompleteReturnType);
         }
 
         let symbol = self.symbol_table.get_symbol(data.symbol);
         let prev_ctx = self.current_function.take();
         self.current_function = Some(FunctionCtx {
-            ret_type: QualType::unqualified(ret_type),
+            ret_type,
             name: symbol.name,
             is_noreturn: data.is_noreturn,
         });

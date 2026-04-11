@@ -140,3 +140,4 @@ pub mod regr_struct_bitfield;
 pub mod regr_vla_sizeof;
 pub mod semantic_alignof_expr;
 pub mod semantic_usual_arithmetic_conversions;
+pub mod guardian_function_type_compatibility;

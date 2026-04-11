@@ -802,7 +802,7 @@ pub enum TypeKind {
         size: ArraySizeType,
     },
     Function {
-        return_type: TypeRef,
+        return_type: QualType,
         parameters: Arc<[FunctionParameter]>,
         is_variadic: bool,
         is_noreturn: bool,

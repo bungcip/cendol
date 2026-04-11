@@ -612,7 +612,7 @@ impl TypeRegistry {
 
     pub(crate) fn function_type(
         &mut self,
-        return_type: TypeRef,
+        return_type: QualType,
         params: Vec<FunctionParameter>,
         is_variadic: bool,
         is_noreturn: bool,
@@ -1531,7 +1531,7 @@ impl TypeRegistry {
                 if var_a != var_b {
                     return false;
                 }
-                if !self.is_compatible(QualType::unqualified(*ret_a), QualType::unqualified(*ret_b)) {
+                if !self.is_compatible(*ret_a, *ret_b) {
                     return false;
                 }
                 if params_a.len() != params_b.len() {
@@ -1659,7 +1659,7 @@ impl TypeRegistry {
                 drop(type_a);
                 drop(type_b);
 
-                let composite_ret = self.composite_type(QualType::unqualified(ret_a), QualType::unqualified(ret_b))?;
+                let composite_ret = self.composite_type(ret_a, ret_b)?;
                 if params_a.len() != params_b.len() {
                     return None;
                 }
@@ -1677,7 +1677,7 @@ impl TypeRegistry {
                         storage: p_b.storage.or(p_a.storage),
                     });
                 }
-                let res_ty = self.function_type(composite_ret.ty(), composite_params, var_a, noreturn_a || noreturn_b);
+                let res_ty = self.function_type(composite_ret, composite_params, var_a, noreturn_a || noreturn_b);
                 Some(QualType::new(res_ty, a.qualifiers()))
             }
             _ => {
@@ -1794,7 +1794,7 @@ impl TypeRegistry {
                     parameters,
                     ..
                 } => {
-                    if self.is_variably_modified(*return_type) {
+                    if self.is_variably_modified(return_type.ty()) {
                         return true;
                     }
                     return parameters.iter().any(|p| self.is_variably_modified(p.param_type.ty()));
@@ -1866,7 +1866,7 @@ impl TypeRegistry {
                 is_variadic,
                 ..
             } => {
-                let ret_str = self.display_type(*return_type);
+                let ret_str = self.display_qual_type(*return_type);
                 let params_str = parameters
                     .iter()
                     .map(|p| self.display_qual_type(p.param_type))
@@ -1889,7 +1889,7 @@ impl TypeRegistry {
 /// Most C functions have <= 8 parameters, allowing the key to remain on the stack.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct FnSigKey {
-    return_type: TypeRef,
+    return_type: QualType,
     params: SmallVec<[QualType; 8]>,
     is_variadic: bool,
     is_noreturn: bool,

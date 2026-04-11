@@ -452,3 +452,19 @@ fn test_ternary_with_comma_in_middle() {
       - Ident: d
     ");
 }
+
+#[test]
+fn test_sizeof_compound_literal_postfix() {
+    let resolved = setup_expr("sizeof(int[]){1, 2, 3}[1]");
+    insta::assert_yaml_snapshot!(&resolved, @"
+    SizeOfExpr:
+      IndexAccess:
+        - CompoundLiteral:
+            - parsed_type_1
+            - InitializerList:
+                - LiteralInt: 1
+                - LiteralInt: 2
+                - LiteralInt: 3
+        - LiteralInt: 1
+    ");
+}

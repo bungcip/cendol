@@ -342,11 +342,11 @@ pub(crate) fn is_abstract_declarator_start(parser: &Parser) -> bool {
 pub(crate) fn get_declarator_name(arena: &ParsedTypeArena, declarator: DeclaratorRef) -> Option<NameId> {
     let declarator = arena.get_decl(declarator);
     match declarator {
-        ParsedDeclarator::Identifier(name) => name,
-        ParsedDeclarator::Pointer { inner, .. } => get_declarator_name(arena, inner),
-        ParsedDeclarator::Array { inner, .. } => get_declarator_name(arena, inner),
-        ParsedDeclarator::Function { inner, .. } => get_declarator_name(arena, inner),
-        ParsedDeclarator::BitField { inner, .. } => get_declarator_name(arena, inner),
+        ParsedDeclarator::Identifier(name) => *name,
+        ParsedDeclarator::Pointer { inner, .. } => get_declarator_name(arena, *inner),
+        ParsedDeclarator::Array { inner, .. } => get_declarator_name(arena, *inner),
+        ParsedDeclarator::Function { inner, .. } => get_declarator_name(arena, *inner),
+        ParsedDeclarator::BitField { inner, .. } => get_declarator_name(arena, *inner),
     }
 }
 
@@ -355,14 +355,14 @@ pub(super) fn get_declarator_params(arena: &ParsedTypeArena, declarator: Declara
     let declarator = arena.get_decl(declarator);
     match declarator {
         ParsedDeclarator::Function { inner, params, .. } => {
-            if let Some(inner_params) = get_declarator_params(arena, inner) {
+            if let Some(inner_params) = get_declarator_params(arena, *inner) {
                 Some(inner_params)
             } else {
-                Some(params)
+                Some(*params)
             }
         }
-        ParsedDeclarator::Pointer { inner, .. } => get_declarator_params(arena, inner),
-        ParsedDeclarator::Array { inner, .. } => get_declarator_params(arena, inner),
+        ParsedDeclarator::Pointer { inner, .. } => get_declarator_params(arena, *inner),
+        ParsedDeclarator::Array { inner, .. } => get_declarator_params(arena, *inner),
         _ => None,
     }
 }

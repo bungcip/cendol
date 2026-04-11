@@ -1471,10 +1471,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
                 // Check compatibility ignoring top-level qualifiers of the pointed-to type
                 // (e.g. char is compatible with char, even if one is const)
-                if !self.registry.is_compatible(
-                    lhs_base.strip_all(),
-                    rhs_base.strip_all(),
-                ) {
+                if !self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all()) {
                     return false;
                 }
 

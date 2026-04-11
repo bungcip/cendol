@@ -2212,7 +2212,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             _ => return None,
         };
 
-        let func_ty = self.registry.function_type(QualType::unqualified(ret_ty), params, false, false);
+        let func_ty = self
+            .registry
+            .function_type(QualType::unqualified(ret_ty), params, false, false);
 
         // Save current scope and switch to global for implicit decl
         let old_scope = self.symbol_table.current_scope();

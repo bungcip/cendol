@@ -61,7 +61,7 @@ fn test_dump_parsed_ast_with_structs() {
     4: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: 2, initializer: None, span: SourceSpan(2199040032794) }] })
     5: LiteralInt(1, None, base=10)
     6: LiteralInt(2, None, base=10)
-    7: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 5 }, ParsedDesignatedInitializer { designation: [], initializer: 6 }])
+    7: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 5, is_gnu_obsolete: false }, ParsedDesignatedInitializer { designation: [], initializer: 6, is_gnu_obsolete: false }])
     "#
     );
 }
@@ -135,7 +135,7 @@ fn test_dump_parsed_ast_with_pointers() {
 #[test]
 fn test_dump_parsed_ast_with_arrays() {
     let output = dump_parsed_ast("int arr[5] = {1, 2, 3, 4, 5}; int* ptr_arr[3];");
-    insta::assert_snapshot!(output, @r"
+    insta::assert_snapshot!(output, @"
     1: TranslationUnit(decls=[2, 10])
     2: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: 2, initializer: Some(9), span: SourceSpan(2199308468235) }] })
     3: LiteralInt(5, None, base=10)
@@ -144,7 +144,7 @@ fn test_dump_parsed_ast_with_arrays() {
     6: LiteralInt(3, None, base=10)
     7: LiteralInt(4, None, base=10)
     8: LiteralInt(5, None, base=10)
-    9: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 4 }, ParsedDesignatedInitializer { designation: [], initializer: 5 }, ParsedDesignatedInitializer { designation: [], initializer: 6 }, ParsedDesignatedInitializer { designation: [], initializer: 7 }, ParsedDesignatedInitializer { designation: [], initializer: 8 }])
+    9: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 4, is_gnu_obsolete: false }, ParsedDesignatedInitializer { designation: [], initializer: 5, is_gnu_obsolete: false }, ParsedDesignatedInitializer { designation: [], initializer: 6, is_gnu_obsolete: false }, ParsedDesignatedInitializer { designation: [], initializer: 7, is_gnu_obsolete: false }, ParsedDesignatedInitializer { designation: [], initializer: 8, is_gnu_obsolete: false }])
     10: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: 5, initializer: None, span: SourceSpan(2199056810028) }] })
     11: LiteralInt(3, None, base=10)
     ");
@@ -474,7 +474,7 @@ fn test_parsed_ast_compound_literal() {
     5: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: 3, body: 6 })
     6: CompoundStmt(stmts=[11])
     7: LiteralInt(1, None, base=10)
-    8: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 7 }])
+    8: InitializerList([ParsedDesignatedInitializer { designation: [], initializer: 7, is_gnu_obsolete: false }])
     9: CompoundLiteral(ParsedType { base: 1, declarator: 4, qualifiers: TypeQualifiers(0x0) }, 8)
     10: MemberAccess(9, a, .)
     11: Return(10)

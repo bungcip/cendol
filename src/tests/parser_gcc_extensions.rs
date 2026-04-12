@@ -143,3 +143,18 @@ fn test_gnu_statement_expression_empty() {
       - Empty
     ");
 }
+
+#[test]
+fn test_gnu_obsolete_designated_initializer() {
+    let resolved = setup_declaration("struct S s = { a: 1 };");
+    insta::assert_yaml_snapshot!(&resolved, @"
+    Declaration:
+      specifiers:
+        - struct S
+      init_declarators:
+        - name: s
+          initializer:
+            InitializerList:
+              - LiteralInt: 1
+    ");
+}

@@ -73,13 +73,13 @@ int main(void) { int a[10] = { [0 ... 9] = 1 }; return a[0] - 1; }
 ❌ Fails with --pedantic-errors
 
 ## 8. GNU designated initializers (obsolete colons)
-**Description**: Allows initializing a struct field using `fieldname: value` instead of standard `.fieldname = value`. Cendol does not support this legacy syntax.
+**Description**: Allows initializing a struct field using `fieldname: value` instead of standard `.fieldname = value`.
 **C code snippet**:
 ```c
 struct S { int a; }; int main(void) { struct S s = { a: 1 }; return s.a - 1; }
 ```
 **Expected behavior**:
-❌ Fails with GNU extensions enabled (Unsupported)
+✅ Compiles with GNU extensions enabled
 ❌ Fails with --pedantic-errors
 
 ## 9. Case ranges

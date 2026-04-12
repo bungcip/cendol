@@ -1945,7 +1945,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let declarator = parsed_type.declarator;
         let qualifiers = parsed_type.qualifiers;
 
-        let base = self.convert_to_qual_type(&base_type_node, span)?;
+        let base = self.convert_to_qual_type(base_type_node, span)?;
         let qbase = self.merge_qualifiers_with_check(base, qualifiers, span);
 
         let final_type = self.apply_declarator(qbase, declarator, span, None, DeclaratorContext { in_parameter });
@@ -2091,6 +2091,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         for (i, init) in inits.iter().enumerate() {
+            if init.is_gnu_obsolete {
+                self.report_warning(span, SemanticErrorKind::GnuObsoleteDesignatedInitializer);
+            }
             let expr = self.visit_expression(init.initializer);
             let designator_count = init.designation.len() as u16;
             let mut designator_dummies = Vec::with_capacity(designator_count as usize);

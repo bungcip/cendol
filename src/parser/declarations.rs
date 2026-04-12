@@ -420,6 +420,17 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
         while !parser.at_eof() && !parser.is_token(TokenKind::RightBrace) {
             let initializer = if parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
                 parse_designated_initializer(parser)?
+            } else if matches!(parser.current_token_kind(), Some(TokenKind::Identifier(_)))
+                && parser.peek_token(0).map(|t| t.kind) == Some(TokenKind::Colon)
+            {
+                let (field_name, _) = parser.expect_name()?;
+                parser.expect(TokenKind::Colon)?;
+                let inner = parse_initializer(parser)?;
+                ParsedDesignatedInitializer {
+                    designation: vec![ParsedDesignator::FieldName(field_name)].into_boxed_slice(),
+                    initializer: inner,
+                    is_gnu_obsolete: true,
+                }
             } else {
                 let inner = if parser.is_token(TokenKind::LeftBrace) {
                     parse_initializer(parser)?
@@ -430,6 +441,7 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
                 ParsedDesignatedInitializer {
                     designation: Vec::new().into_boxed_slice(),
                     initializer: inner,
+                    is_gnu_obsolete: false,
                 }
             };
 
@@ -461,6 +473,7 @@ fn parse_designated_initializer(parser: &mut Parser) -> Result<ParsedDesignatedI
     Ok(ParsedDesignatedInitializer {
         designation,
         initializer,
+        is_gnu_obsolete: false,
     })
 }
 

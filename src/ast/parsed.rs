@@ -354,6 +354,7 @@ pub struct ParsedGenericAssociation {
 pub struct ParsedDesignatedInitializer {
     pub designation: Box<[ParsedDesignator]>,
     pub initializer: ParsedNodeRef,
+    pub is_gnu_obsolete: bool,
 }
 
 #[derive(Debug, Clone)]

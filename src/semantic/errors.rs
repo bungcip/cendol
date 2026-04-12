@@ -37,6 +37,7 @@ impl SemanticError {
             | SemanticErrorKind::GnuStatementExpression
             | SemanticErrorKind::GnuTypeof
             | SemanticErrorKind::GnuDesignatedInitializerRange
+            | SemanticErrorKind::GnuObsoleteDesignatedInitializer
             | SemanticErrorKind::GnuCaseRange
             | SemanticErrorKind::InlineAsmIgnored
             | SemanticErrorKind::ExcessElements { .. } => DiagnosticLevel::Warning,
@@ -407,6 +408,7 @@ pub enum SemanticErrorKind {
     GnuStatementExpression,
     GnuTypeof,
     GnuDesignatedInitializerRange,
+    GnuObsoleteDesignatedInitializer,
     GnuCaseRange,
     GnuZeroLengthArray,
     InlineAsmIgnored,
@@ -436,6 +438,7 @@ impl SemanticErrorKind {
             SemanticErrorKind::GnuStatementExpression => Some("gnu-statement-expression"),
             SemanticErrorKind::GnuTypeof => Some("gnu-typeof-expression"),
             SemanticErrorKind::GnuDesignatedInitializerRange => Some("gnu-designated-init"),
+            SemanticErrorKind::GnuObsoleteDesignatedInitializer => Some("gnu-obsolete-designated-init"),
             SemanticErrorKind::GnuCaseRange => Some("gnu-case-range"),
             SemanticErrorKind::GnuZeroLengthArray => Some("gnu-zero-length-array"),
             SemanticErrorKind::InlineAsmIgnored => Some("inline-asm"),
@@ -852,6 +855,9 @@ impl SemanticErrorKind {
             SemanticErrorKind::GnuTypeof => "use of GNU typeof extension".to_string(),
             SemanticErrorKind::GnuDesignatedInitializerRange => {
                 "use of GNU designated initializer range extension".to_string()
+            }
+            SemanticErrorKind::GnuObsoleteDesignatedInitializer => {
+                "use of GNU obsolete designated initializer extension".to_string()
             }
             SemanticErrorKind::GnuCaseRange => "use of GNU case range extension".to_string(),
             SemanticErrorKind::GnuZeroLengthArray => "use of GNU zero-length array extension".to_string(),

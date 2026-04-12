@@ -47,10 +47,11 @@ pub(crate) enum ResolvedNodeKind {
     Return(Option<Box<ResolvedNodeKind>>),  // Return statement
     Break,                                  // Break statement
     Continue,                               // Continue statement
-    Switch(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Switch statement
+    Switch(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>),
+    BuiltinAlloca(Box<ResolvedNodeKind>),
     Case(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Case statement
     CaseRange(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // GNU Case range statement
-    Default(Box<ResolvedNodeKind>),         // Default statement
+    Default(Box<ResolvedNodeKind>),                     // Default statement
     If(
         Box<ResolvedNodeKind>,
         Box<ResolvedNodeKind>,
@@ -360,6 +361,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
         }
         ParsedNodeKind::EmptyStmt | ParsedNodeKind::Dummy => ResolvedNodeKind::Empty,
         // Add more cases as needed for other ParsedNodeKind variants used in tests
+        ParsedNodeKind::BuiltinAlloca(expr) => ResolvedNodeKind::BuiltinAlloca(Box::new(resolve_node(ast, *expr))),
         _ => panic!("Unsupported ParsedNodeKind for resolution: {:?}", node.kind),
     }
 }

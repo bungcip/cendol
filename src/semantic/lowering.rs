@@ -77,14 +77,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     /// Report a semantic error and mark context as having errors
     /// Report a semantic error
-    pub(crate) fn report_error(&mut self, span: SourceSpan, kind: SemanticErrorKind) {
+    fn report_error(&mut self, span: SourceSpan, kind: SemanticErrorKind) {
         let error = SemanticError::new(span, kind);
         for diag in error.into_diagnostic(self.registry) {
             self.diag.report_diagnostic(diag);
         }
     }
 
-    pub(crate) fn report_warning(&mut self, span: SourceSpan, kind: SemanticErrorKind) {
+    fn report_warning(&mut self, span: SourceSpan, kind: SemanticErrorKind) {
         if self.lang_opts.pedantic_errors {
             self.report_error(span, kind);
         } else {

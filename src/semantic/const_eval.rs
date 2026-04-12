@@ -180,6 +180,13 @@ impl<'a> ConstEvalCtx<'a> {
                 }
             }
             NodeKind::Cast(_, expr) => self.eval_complex_part(*expr, is_real),
+            NodeKind::BuiltinComplex(real, imag) => {
+                if is_real {
+                    self.eval_float(*real)
+                } else {
+                    self.eval_float(*imag)
+                }
+            }
             _ => {
                 if is_real {
                     self.eval_float(node)
@@ -294,6 +301,7 @@ impl<'a> ConstEvalCtx<'a> {
             NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
                 self.eval_float(*exp).map(|v| v.abs() as i64)
             }
+            NodeKind::BuiltinComplex(real, _) => self.eval_int(*real),
             _ => None,
         }
     }
@@ -365,6 +373,7 @@ impl<'a> ConstEvalCtx<'a> {
             NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
                 self.eval_float(*exp).map(|v| v.abs())
             }
+            NodeKind::BuiltinComplex(real, _) => self.eval_float(*real),
             NodeKind::FunctionCall(call) => {
                 let callee_kind = self.ast.get_kind(call.callee);
                 let name_id = match callee_kind {

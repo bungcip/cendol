@@ -1,0 +1,6 @@
+---
+source: src/tests/parser_expr.rs
+expression: "&resolved"
+---
+BuiltinAlloca:
+  LiteralInt: 42

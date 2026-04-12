@@ -51,7 +51,7 @@ pub(crate) enum ResolvedNodeKind {
     BuiltinAlloca(Box<ResolvedNodeKind>),
     Case(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Case statement
     CaseRange(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // GNU Case range statement
-    Default(Box<ResolvedNodeKind>),         // Default statement
+    Default(Box<ResolvedNodeKind>),                     // Default statement
     If(
         Box<ResolvedNodeKind>,
         Box<ResolvedNodeKind>,

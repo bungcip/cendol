@@ -2323,10 +2323,9 @@ impl<'a> SemanticAnalyzer<'a> {
 
                 if let Some(return_type) = return_type_to_check {
                     // Bolt ⚡: Extension: allow incomplete enums in declarations (per GCC/Clang).
-                    let is_incomplete_enum = matches!(self.registry.get(return_type).kind, TypeKind::Enum { .. });
                     if !self.registry.is_complete(return_type)
                         && return_type != self.registry.type_void
-                        && !is_incomplete_enum
+                        && !return_type.is_enum()
                     {
                         self.report_error(node, SemanticErrorKind::IncompleteReturnType);
                     }
@@ -3254,7 +3253,7 @@ impl<'a> SemanticAnalyzer<'a> {
             self.report_warning(node, SemanticErrorKind::AlignOfExpression);
         }
 
-        let is_function = matches!(self.registry.get(ty).kind, TypeKind::Function { .. });
+        let is_function = ty.is_function();
         let is_complete = self.registry.is_complete(ty);
 
         if is_function {

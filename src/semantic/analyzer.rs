@@ -2851,10 +2851,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 ty
             }
             NodeKind::BuiltinComplex(real, imag) => {
-                self.apply_lvalue_conversion(*real);
-                self.apply_lvalue_conversion(*imag);
                 let real_ty = self.visit_node(*real)?;
                 let imag_ty = self.visit_node(*imag)?;
+                self.apply_lvalue_conversion(*real);
+                self.apply_lvalue_conversion(*imag);
 
                 if !real_ty.is_real() {
                     self.report_error(*real, SemanticErrorKind::InvalidUnaryOperand { ty: real_ty });

@@ -6,6 +6,18 @@ use crate::pp::types::{MacroFlags, MacroInfo};
 use crate::pp::{PPToken, PPTokenFlags, PPTokenKind};
 use crate::source_manager::{FileKind, SourceId, SourceLoc, SourceManager};
 
+#[derive(Clone, Copy)]
+struct SubstitutionCtx<'a> {
+    macro_info: &'a MacroInfo,
+    symbol: StringId,
+    args: &'a [Vec<PPToken>],
+    expanded_args: &'a [Vec<PPToken>],
+    intersect_hs: u32,
+    new_hs: u32,
+    is_variadic_empty: bool,
+    is_va_missing: bool,
+}
+
 impl<'src> Preprocessor<'src> {
     /// Expand a macro if it exists
     pub(super) fn expand_macro(&mut self, token: &PPToken) -> Result<Option<Vec<PPToken>>, PPError> {
@@ -146,16 +158,16 @@ impl<'src> Preprocessor<'src> {
         let new_hs = self.hide_sets.insert(intersect_hs, symbol);
 
         // Substitute parameters in macro body
-        let substituted = self.substitute_macro(
+        let substituted = self.substitute_macro(SubstitutionCtx {
             macro_info,
             symbol,
-            &args,
-            &expanded_args,
+            args: &args,
+            expanded_args: &expanded_args,
             intersect_hs,
             new_hs,
             is_variadic_empty,
             is_va_missing,
-        )?;
+        })?;
 
         // No DISABLED flag needed — is_recursive_expansion() detects self-reference
         // via the virtual buffer's source location (<macro_NAME>).
@@ -296,23 +308,15 @@ impl<'src> Preprocessor<'src> {
         args[start..].iter().all(|arg| arg.is_empty())
     }
 
-    fn resolve_va_opt(
-        &mut self,
-        macro_info: &MacroInfo,
-        symbol: StringId,
-        args: &[Vec<PPToken>],
-        expanded_args: &[Vec<PPToken>],
-        intersect_hs: u32,
-        new_hs: u32,
-        is_variadic_empty: bool,
-    ) -> Result<Option<Vec<PPToken>>, PPError> {
+    fn resolve_va_opt(&mut self, ctx: &SubstitutionCtx) -> Result<Option<Vec<PPToken>>, PPError> {
+        let macro_info = ctx.macro_info;
         if !macro_info.flags.contains(MacroFlags::HAS_VA_OPT) {
             return Ok(None);
         }
 
         let mut resolved = Vec::with_capacity(macro_info.tokens.len());
         let mut i = 0;
-        let is_empty = is_variadic_empty;
+        let is_empty = ctx.is_variadic_empty;
 
         while i < macro_info.tokens.len() {
             let token = &macro_info.tokens[i];
@@ -328,17 +332,9 @@ impl<'src> Preprocessor<'src> {
                 {
                     if !is_empty {
                         let content = &macro_info.tokens[i + 3..rparen_idx - 1];
-                        let substituted = self.substitute_tokens_slice(
-                            macro_info,
-                            content,
-                            symbol,
-                            args,
-                            expanded_args,
-                            intersect_hs,
-                            new_hs,
-                            is_empty,
-                            false, // __VA_OPT__ content substitution doesn't use GNU comma swallowing
-                        )?;
+                        let mut content_ctx = *ctx;
+                        content_ctx.is_va_missing = false; // __VA_OPT__ content substitution doesn't use GNU comma swallowing
+                        let substituted = self.substitute_tokens_slice(content, &content_ctx)?;
                         let mut stringified = self.stringify_tokens(&substituted, token.location)?;
                         stringified.hide_set = token.hide_set;
                         resolved.push(stringified);
@@ -375,51 +371,16 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Substitute parameters in macro body
-    fn substitute_macro(
-        &mut self,
-        macro_info: &MacroInfo,
-        symbol: StringId,
-        args: &[Vec<PPToken>],
-        expanded_args: &[Vec<PPToken>],
-        intersect_hs: u32,
-        new_hs: u32,
-        is_variadic_empty: bool,
-        is_va_missing: bool,
-    ) -> Result<Vec<PPToken>, PPError> {
-        let tokens = self.resolve_va_opt(
-            macro_info,
-            symbol,
-            args,
-            expanded_args,
-            intersect_hs,
-            new_hs,
-            is_variadic_empty,
-        )?;
-        let tokens_ref = tokens.as_deref().unwrap_or(&macro_info.tokens);
-        self.substitute_tokens_slice(
-            macro_info,
-            tokens_ref,
-            symbol,
-            args,
-            expanded_args,
-            intersect_hs,
-            new_hs,
-            is_variadic_empty,
-            is_va_missing,
-        )
+    fn substitute_macro(&mut self, ctx: SubstitutionCtx) -> Result<Vec<PPToken>, PPError> {
+        let tokens = self.resolve_va_opt(&ctx)?;
+        let tokens_ref = tokens.as_deref().unwrap_or(&ctx.macro_info.tokens);
+        self.substitute_tokens_slice(tokens_ref, &ctx)
     }
 
     fn substitute_tokens_slice(
         &mut self,
-        macro_info: &MacroInfo,
         tokens_slice: &[PPToken],
-        symbol: StringId,
-        args: &[Vec<PPToken>],
-        expanded_args: &[Vec<PPToken>],
-        intersect_hs: u32,
-        new_hs: u32,
-        _is_variadic_empty: bool,
-        is_va_missing: bool,
+        ctx: &SubstitutionCtx,
     ) -> Result<Vec<PPToken>, PPError> {
         let mut result = Vec::with_capacity(tokens_slice.len());
         let mut i = 0;
@@ -427,10 +388,10 @@ impl<'src> Preprocessor<'src> {
 
         // Bolt ⚡: Single-item cache for hide-set updates.
         let mut last_hs = (u32::MAX, 0u32);
-        let arg_empty_hs = if intersect_hs == 0 {
-            new_hs
+        let arg_empty_hs = if ctx.intersect_hs == 0 {
+            ctx.new_hs
         } else {
-            self.hide_sets.insert(0, symbol)
+            self.hide_sets.insert(0, ctx.symbol)
         };
 
         while i < tokens_slice.len() {
@@ -442,11 +403,11 @@ impl<'src> Preprocessor<'src> {
                     let mut matched = false;
 
                     if let PPTokenKind::Identifier(sym) = next.kind
-                        && let Some(arg) = self.get_macro_param_tokens(macro_info, sym, args)
+                        && let Some(arg) = self.get_macro_param_tokens(ctx.macro_info, sym, ctx.args)
                     {
                         let mut stringified = self.stringify_tokens(arg, token.location)?;
                         // Bolt ⚡: Stringified tokens always start with an empty hide-set (0).
-                        stringified.hide_set = new_hs;
+                        stringified.hide_set = ctx.new_hs;
                         result.push(stringified);
                         last_token_produced_output = true;
                         i += 2;
@@ -457,7 +418,7 @@ impl<'src> Preprocessor<'src> {
                     }
                     // Fallback: output isolated hash token
                     let mut t = *token;
-                    t.hide_set = new_hs;
+                    t.hide_set = ctx.new_hs;
                     result.push(t);
                     last_token_produced_output = true;
                 }
@@ -466,7 +427,7 @@ impl<'src> Preprocessor<'src> {
                     let left = if last_token_produced_output { result.pop() } else { None };
 
                     let (pasted, produced_output) =
-                        self.perform_token_pasting(macro_info, left, right_token, args, is_va_missing)?;
+                        self.perform_token_pasting(ctx.macro_info, left, right_token, ctx.args, ctx.is_va_missing)?;
 
                     result.extend(pasted);
                     last_token_produced_output = produced_output;
@@ -475,17 +436,17 @@ impl<'src> Preprocessor<'src> {
                 }
                 PPTokenKind::Identifier(sym) => {
                     let next_is_hh = i + 1 < tokens_slice.len() && tokens_slice[i + 1].kind == PPTokenKind::HashHash;
-                    let src = if next_is_hh { args } else { expanded_args };
-                    if let Some(param_tokens) = self.get_macro_param_tokens(macro_info, sym, src) {
+                    let src = if next_is_hh { ctx.args } else { ctx.expanded_args };
+                    if let Some(param_tokens) = self.get_macro_param_tokens(ctx.macro_info, sym, src) {
                         if param_tokens.is_empty() {
                             last_token_produced_output = false;
                         } else {
-                            if intersect_hs == 0 {
+                            if ctx.intersect_hs == 0 {
                                 // Bolt ⚡: Fast-path for top-level macro calls. All tokens receive new_hs.
                                 let start_idx = result.len();
                                 result.extend_from_slice(param_tokens);
                                 for t in &mut result[start_idx..] {
-                                    t.hide_set = new_hs;
+                                    t.hide_set = ctx.new_hs;
                                 }
                             } else {
                                 for mut t in param_tokens.iter().copied() {
@@ -494,8 +455,8 @@ impl<'src> Preprocessor<'src> {
                                         t.hide_set = arg_empty_hs;
                                     } else {
                                         if t.hide_set != last_hs.0 {
-                                            let intersected = self.hide_sets.intersection(t.hide_set, intersect_hs);
-                                            let updated = self.hide_sets.insert(intersected, symbol);
+                                            let intersected = self.hide_sets.intersection(t.hide_set, ctx.intersect_hs);
+                                            let updated = self.hide_sets.insert(intersected, ctx.symbol);
                                             last_hs = (t.hide_set, updated);
                                         }
                                         t.hide_set = last_hs.1;
@@ -508,7 +469,7 @@ impl<'src> Preprocessor<'src> {
                     } else {
                         let mut t = *token;
                         // Bolt ⚡: Body tokens always start with an empty hide-set (0).
-                        t.hide_set = new_hs;
+                        t.hide_set = ctx.new_hs;
                         result.push(t);
                         last_token_produced_output = true;
                     }
@@ -516,7 +477,7 @@ impl<'src> Preprocessor<'src> {
                 _ => {
                     let mut t = *token;
                     // Bolt ⚡: Body tokens always start with an empty hide-set (0).
-                    t.hide_set = new_hs;
+                    t.hide_set = ctx.new_hs;
                     result.push(t);
                     last_token_produced_output = true;
                 }
@@ -971,16 +932,16 @@ impl<'src> Preprocessor<'src> {
                                 .intersection(tokens[i].hide_set, tokens[end_j - 1].hide_set);
                             let new_hs = self.hide_sets.insert(intersect_hs, symbol);
 
-                            let substituted = self.substitute_macro(
-                                &macro_info,
+                            let substituted = self.substitute_macro(SubstitutionCtx {
+                                macro_info: &macro_info,
                                 symbol,
-                                &args,
-                                &expanded_args,
+                                args: &args,
+                                expanded_args: &expanded_args,
                                 intersect_hs,
                                 new_hs,
                                 is_variadic_empty,
                                 is_va_missing,
-                            )?;
+                            })?;
                             let substituted =
                                 self.create_virtual_buffer_tokens(&substituted, symbol, tokens[i].location);
 

@@ -117,3 +117,7 @@
 ## 2025-06-01 - Redundant Enum Clones in Hot Matching Paths
 **Learning:** Matching on an enum by value from a shared reference (e.g., `if let Variant(inner) = self.vec[idx].field`) triggers a full clone of the enum if it's not `Copy`. In our compiler, `TypeKind` contains `Arc` fields and is large, making these clones extremely expensive in hot paths like type canonicalization and layout calculation.
 **Action:** Always match on references (`&self.vec[idx].field`) when the data inside the variant is `Copy` (like `TypeRef`) or when a borrow is sufficient. This avoids unnecessary `Arc` reference count increments and large memory copies.
+
+## 2025-06-03 - Lexer Comment Skipping and Eod Tokens
+**Learning:** Attempting to optimize lexer comment skipping by directly scanning the raw buffer is risky because it can bypass the logic for tracking the end of preprocessing lines. If the scanning logic consumes a newline character that was supposed to trigger an `Eod` token (monitored via `in_directive_line`), the preprocessor will fail to identify the end of a directive, causing subsequent lines to be incorrectly interpreted.
+**Action:** Always prefer high-level lexer methods like `next_char()` or `peek_char()` in state-sensitive contexts, or explicitly replicate all state tracking (including `at_start_of_line`, `in_directive_line`, and line-splice handling) when scanning raw buffers.

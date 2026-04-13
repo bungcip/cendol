@@ -130,8 +130,9 @@ impl TypeRegistry {
     pub(crate) fn is_value_fitting(&self, val: u64, ty: TypeRef) -> bool {
         let layout = self.get_layout(ty);
         let size_bits = layout.size * 8;
-        let is_unsigned = match &self.get(ty).kind {
-            TypeKind::Builtin(b) => matches!(
+        // Bolt ⚡: Use TypeRef fast-path for builtins to avoid get() and TypeKind matching.
+        let is_unsigned = if let Some(b) = ty.builtin() {
+            matches!(
                 b,
                 BuiltinType::Bool
                     | BuiltinType::UChar
@@ -139,9 +140,12 @@ impl TypeRegistry {
                     | BuiltinType::UInt
                     | BuiltinType::ULong
                     | BuiltinType::ULongLong
-            ),
-            TypeKind::Enum { .. } => true,
-            _ => false,
+            )
+        } else {
+            match &self.get(ty).kind {
+                TypeKind::Enum { .. } => true,
+                _ => false,
+            }
         };
 
         if is_unsigned {

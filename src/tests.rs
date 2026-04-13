@@ -132,6 +132,7 @@ pub mod semantic_shift_float;
 pub mod semantic_static_assert;
 
 pub mod guardian_choose_expr;
+pub mod parser_struct_attributes_coverage;
 pub mod regr_bitfield_assign_eval;
 pub mod regr_float_cast;
 pub mod regr_fp_const_eval;
@@ -141,4 +142,3 @@ pub mod regr_struct_bitfield;
 pub mod regr_vla_sizeof;
 pub mod semantic_alignof_expr;
 pub mod semantic_usual_arithmetic_conversions;
-pub mod parser_struct_attributes_coverage;

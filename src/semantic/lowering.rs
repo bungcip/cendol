@@ -1884,6 +1884,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 body: self.visit_single_statement(stmt.body),
             })),
             ParsedNodeKind::For(stmt) => {
+                let res_node = self.get_or_push_slot(target_slots, span);
                 let scope_id = self.symbol_table.push_scope();
                 let child_start = self.push_dummy(span);
                 let condition_dummy = self.push_dummy(span);
@@ -1901,13 +1902,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 let body = self.visit_single_statement(stmt.body);
 
-                let res = lower_simple!(NodeKind::For(ForStmt {
-                    child_start,
-                    body,
-                    scope_id,
-                }));
+                self.ast.set_kind(
+                    res_node,
+                    NodeKind::For(ForStmt {
+                        child_start,
+                        body,
+                        scope_id,
+                    }),
+                );
                 self.symbol_table.pop_scope();
-                res
+                smallvec![res_node]
             }
 
             // Type-related expressions

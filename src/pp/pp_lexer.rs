@@ -384,6 +384,33 @@ impl PPLexer {
             b'%' => {
                 if consume_if!(b'=') {
                     token!(PPTokenKind::ModAssign, 2)
+                } else if consume_if!(b':') {
+                    if consume_if!(b'%') {
+                        if consume_if!(b':') {
+                            token!(PPTokenKind::HashHash, 4)
+                        } else {
+                            // Backtrack: we consumed "%:%" but not ":". This is a "%:" followed by "%".
+                            // This would be weird but we should just return Hash (which is "%:")
+                            // and leave the "%" for the next token.
+                            // We need to restore state.
+                            self.position -= 1;
+                            let mut token_flags = flags;
+                            if is_at_start_of_line {
+                                token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                                self.in_directive_line = true;
+                            }
+                            token!(PPTokenKind::Hash, 2, token_flags)
+                        }
+                    } else {
+                        let mut token_flags = flags;
+                        if is_at_start_of_line {
+                            token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                            self.in_directive_line = true;
+                        }
+                        token!(PPTokenKind::Hash, 2, token_flags)
+                    }
+                } else if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBrace, 2)
                 } else {
                     token!(PPTokenKind::Percent, 1)
                 }
@@ -411,6 +438,10 @@ impl PPLexer {
                     }
                 } else if consume_if!(b'=') {
                     token!(PPTokenKind::LessEqual, 2)
+                } else if consume_if!(b':') {
+                    token!(PPTokenKind::LeftBracket, 2)
+                } else if consume_if!(b'%') {
+                    token!(PPTokenKind::LeftBrace, 2)
                 } else {
                     token!(PPTokenKind::Less, 1)
                 }
@@ -470,7 +501,13 @@ impl PPLexer {
                 token!(PPTokenKind::Dot, 1)
             }
             b'?' => token!(PPTokenKind::Question, 1),
-            b':' => token!(PPTokenKind::Colon, 1),
+            b':' => {
+                if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBracket, 2)
+                } else {
+                    token!(PPTokenKind::Colon, 1)
+                }
+            }
             b',' => token!(PPTokenKind::Comma, 1),
             b';' => token!(PPTokenKind::Semicolon, 1),
             b'(' => token!(PPTokenKind::LeftParen, 1),
@@ -1367,5 +1404,36 @@ mod tests {
         assert_eq!(t5.kind, PPTokenKind::Hash);
         let t6 = lexer.next_token().unwrap();
         assert_eq!(t6.get_text(), "else");
+    }
+
+    #[test]
+    fn test_lex_digraphs() {
+        let source = b"<: :> <% %> %: %:%:";
+        let sid = SourceId::new(2);
+        let mut lexer = PPLexer::new(sid, Arc::from(&source[..]));
+
+        let t1 = lexer.next_token().unwrap();
+        assert_eq!(t1.kind, PPTokenKind::LeftBracket);
+        assert_eq!(t1.get_text(), "[");
+
+        let t2 = lexer.next_token().unwrap();
+        assert_eq!(t2.kind, PPTokenKind::RightBracket);
+        assert_eq!(t2.get_text(), "]");
+
+        let t3 = lexer.next_token().unwrap();
+        assert_eq!(t3.kind, PPTokenKind::LeftBrace);
+        assert_eq!(t3.get_text(), "{");
+
+        let t4 = lexer.next_token().unwrap();
+        assert_eq!(t4.kind, PPTokenKind::RightBrace);
+        assert_eq!(t4.get_text(), "}");
+
+        let t5 = lexer.next_token().unwrap();
+        assert_eq!(t5.kind, PPTokenKind::Hash);
+        assert_eq!(t5.get_text(), "#");
+
+        let t6 = lexer.next_token().unwrap();
+        assert_eq!(t6.kind, PPTokenKind::HashHash);
+        assert_eq!(t6.get_text(), "##");
     }
 }

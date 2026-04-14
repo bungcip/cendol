@@ -588,9 +588,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     false
                 }
             }
-            NodeKind::MemberAccess(obj, _, is_arrow) => {
-                !is_arrow && self.is_register_variable(*obj)
-            }
+            NodeKind::MemberAccess(obj, _, is_arrow) => !is_arrow && self.is_register_variable(*obj),
             NodeKind::IndexAccess(arr, _) => {
                 let arr_ty = self.semantic_info.types.get(arr.index()).and_then(|t| *t);
                 arr_ty.is_some_and(|t| t.is_array()) && self.is_register_variable(*arr)

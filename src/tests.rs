@@ -92,6 +92,7 @@ pub mod guardian_noreturn_switch;
 pub mod guardian_npc_propagation;
 pub mod guardian_offsetof;
 pub mod guardian_parameter_completeness;
+pub mod guardian_register_constraints;
 pub mod guardian_relational_pointer_constraints;
 pub mod guardian_sizeof_alignof;
 pub mod guardian_ternary_pointer_constraints;

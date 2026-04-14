@@ -3302,6 +3302,7 @@ impl<'a> SemanticAnalyzer<'a> {
             self.report_error(node, err);
         } else if let Some(e) = expr
             && self.get_bitfield_width(e).is_some()
+            && self.is_lvalue(e)
         {
             let err = if is_alignof {
                 SemanticErrorKind::AlignOfBitfield

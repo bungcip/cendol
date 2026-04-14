@@ -515,6 +515,10 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn decay(&mut self, node: NodeRef, qt: QualType) -> QualType {
         if qt.is_array() || qt.is_function() {
+            if qt.is_array() && self.is_register_variable(node) {
+                self.report_error(node, SemanticErrorKind::AddressOfRegister);
+            }
+
             let decayed = self.registry.decay(qt, TypeQualifiers::empty());
             self.push_conversion(node, Conversion::PointerDecay { to: decayed.ty() });
             decayed
@@ -522,7 +526,6 @@ impl<'a> SemanticAnalyzer<'a> {
             qt
         }
     }
-
     fn get_bitfield_width(&self, node: NodeRef) -> Option<u16> {
         match self.ast.get_kind(node) {
             NodeKind::MemberAccess(obj, field_name, is_arrow) => {
@@ -584,6 +587,13 @@ impl<'a> SemanticAnalyzer<'a> {
                 } else {
                     false
                 }
+            }
+            NodeKind::MemberAccess(obj, _, is_arrow) => {
+                !is_arrow && self.is_register_variable(*obj)
+            }
+            NodeKind::IndexAccess(arr, _) => {
+                let arr_ty = self.semantic_info.types.get(arr.index()).and_then(|t| *t);
+                arr_ty.is_some_and(|t| t.is_array()) && self.is_register_variable(*arr)
             }
             NodeKind::BuiltinChooseExpr(..) => {
                 if let Some(&selected) = self.semantic_info.choose_expressions.get(&node.index()) {
@@ -1523,8 +1533,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // 2. Array/Function-to-pointer decay
         if lhs_qt.is_pointer() && (rhs_qt.is_array() || rhs_qt.is_function()) {
-            rhs_qt = self.registry.decay(rhs_qt, TypeQualifiers::empty());
-            self.push_conversion(rhs, Conversion::PointerDecay { to: rhs_qt.ty() });
+            rhs_qt = self.decay(rhs, rhs_qt);
         }
 
         // 3. Qualifier adjustment
@@ -2723,8 +2732,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     if let Some(t) = ty
                         && (t.is_array() || t.is_function())
                     {
-                        let decayed = self.registry.decay(t, TypeQualifiers::empty());
-                        self.push_conversion(*result_expr, Conversion::PointerDecay { to: decayed.ty() });
+                        let decayed = self.decay(*result_expr, t);
                         ty = Some(decayed);
                     }
                     ty
@@ -3181,8 +3189,7 @@ impl<'a> SemanticAnalyzer<'a> {
         self.apply_lvalue_conversion(node);
         let mut qt = qt;
         if qt.is_array() || qt.is_function() {
-            let decayed = self.registry.decay(qt, TypeQualifiers::empty());
-            self.push_conversion(node, Conversion::PointerDecay { to: decayed.ty() });
+            let decayed = self.decay(node, qt);
             qt = decayed;
         } else if !qt.qualifiers().is_empty() {
             self.push_conversion(
@@ -3560,7 +3567,7 @@ impl<'a> SemanticAnalyzer<'a> {
         // association. Before comparison, array and function types decay to pointers.
         let decayed_ctrl = if ctrl.is_array() || ctrl.is_function() {
             // Qualifiers on the array/function type itself are discarded during decay.
-            self.registry.decay(ctrl, TypeQualifiers::empty())
+            self.decay(gs.control, ctrl)
         } else {
             ctrl
         };

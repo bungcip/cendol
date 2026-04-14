@@ -214,3 +214,8 @@ Action: Implement recursive property checks for 'has_flexible_array_member' in t
 
 Learning: C11 6.5.1.1p2 mandates that the controlling expression of a `_Generic` selection shall be compatible with at most one generic association. Picking only the first match is insufficient as it silently accepts ambiguous code. Furthermore, associations like `int(*)[10]` and `int(*)[20]` are NOT compatible with each other, but both can be compatible with a controlling expression of type `int(*)[]` (pointer to incomplete array).
 Action: Ensure that `_Generic` selection continues checking all associations even after a match is found, to detect and report ambiguity errors when multiple associations are compatible with the controlling expression.
+
+2026-04-15 - [Register Aggregate Member Address Constraints]
+
+Learning: C11 6.7.1p6 prohibits taking the address of any part of an object declared with the 'register' storage class. This includes not only the object itself but also its members (for structs/unions) and elements (for arrays). Crucially, this prohibition extends to implicit address-of operations, such as array-to-pointer decay. Enforcing this requires 'is_register_variable' to be recursive for 'MemberAccess' and 'IndexAccess', and 'decay' to explicitly check for the 'register' property on its operand.
+Action: Always verify that storage-class-specific constraints are propagated and checked through aggregate access and implicit conversions.

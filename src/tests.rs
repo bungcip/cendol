@@ -133,6 +133,7 @@ pub mod semantic_shift_float;
 pub mod semantic_static_assert;
 
 pub mod guardian_choose_expr;
+pub mod guardian_sizeof_rvalue_bitfield;
 pub mod parser_struct_attributes_coverage;
 pub mod regr_bitfield_assign_eval;
 pub mod regr_float_cast;

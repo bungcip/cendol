@@ -284,6 +284,11 @@ impl SymbolTable {
         }
     }
 
+    /// fetch a symbol in exact current scope without looking to parent scope if not exist
+    pub(crate) fn fetch_current(&self, name: NameId, ns: Namespace) -> Option<SymbolRef> {
+        self.fetch(name, self.current_scope_id, ns)
+    }
+
     fn push_symbol(&mut self, entry: Symbol) -> SymbolRef {
         let index = self.entries.len() as u32 + 1;
         self.entries.push(entry);
@@ -454,7 +459,7 @@ impl SymbolTable {
         let symbol = self.create_symbol(name, SymbolKind::Typedef { aliased_type: ty }, ty, span);
 
         // Check for redefinition in the SAME scope
-        if let Some(existing) = self.fetch(name, self.current_scope_id, Namespace::Ordinary) {
+        if let Some(existing) = self.fetch_current(name, Namespace::Ordinary) {
             return Err(SymbolTableError::InvalidRedefinition { name, existing });
         }
 
@@ -475,7 +480,7 @@ impl SymbolTable {
             QualType::unqualified(ty),
             span,
         );
-        if let Some(existing) = self.fetch(name, self.current_scope_id, Namespace::Ordinary) {
+        if let Some(existing) = self.fetch_current(name, Namespace::Ordinary) {
             return Err(SymbolTableError::InvalidRedefinition { name, existing });
         }
 
@@ -522,7 +527,7 @@ impl SymbolTable {
         ty: TypeRef,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
-        if let Some(existing) = self.fetch(name, self.current_scope_id, Namespace::Label) {
+        if let Some(existing) = self.fetch_current(name, Namespace::Label) {
             return Err(SymbolTableError::InvalidRedefinition { name, existing });
         }
         let symbol = self.create_symbol(name, SymbolKind::Label, QualType::unqualified(ty), span);

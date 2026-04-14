@@ -1090,10 +1090,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // 1. Visit parameters and copy to [0..param_len]
         for (i, param) in parameters.iter().enumerate() {
             let pname = param.name.unwrap_or_else(|| NameId::new("<unnamed>"));
-            let sym = match self
-                .symbol_table
-                .fetch(pname, self.symbol_table.current_scope(), Namespace::Ordinary)
-            {
+            let sym = match self.symbol_table.fetch_current(pname, Namespace::Ordinary) {
                 Some(s) => s,
                 None => self
                     .symbol_table
@@ -1224,12 +1221,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         .type_to_tag_sym
                         .get(&qt.ty())
                         .copied()
-                        .or_else(|| {
-                            tag.and_then(|t| {
-                                self.symbol_table
-                                    .fetch(t, self.symbol_table.current_scope(), Namespace::Tag)
-                            })
-                        })
+                        .or_else(|| tag.and_then(|t| self.symbol_table.fetch_current(t, Namespace::Tag)))
                         .expect("ICE: Record tag symbol not found during lowering");
 
                     self.ast.set_kind(
@@ -1249,7 +1241,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         // Find symbol for enum constant
                         let symbol = self
                             .symbol_table
-                            .fetch(e.name, self.symbol_table.current_scope(), Namespace::Ordinary)
+                            .fetch_current(e.name, Namespace::Ordinary)
                             .expect("ICE: Enum constant symbol not found during lowering");
 
                         let member = self.ast.push_node(
@@ -1269,12 +1261,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         .type_to_tag_sym
                         .get(&qt.ty())
                         .copied()
-                        .or_else(|| {
-                            tag.and_then(|t| {
-                                self.symbol_table
-                                    .fetch(t, self.symbol_table.current_scope(), Namespace::Tag)
-                            })
-                        })
+                        .or_else(|| tag.and_then(|t| self.symbol_table.fetch_current(t, Namespace::Tag)))
                         .expect("ICE: Enum tag symbol not found during lowering");
 
                     self.ast.set_kind(
@@ -1373,9 +1360,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 existing
             } else {
-                self.symbol_table
-                    .fetch(name, self.symbol_table.current_scope(), Namespace::Ordinary)
-                    .unwrap()
+                self.symbol_table.fetch_current(name, Namespace::Ordinary).unwrap()
             };
 
             self.ast.set_kind(node, NodeKind::TypedefDecl(TypedefDecl { symbol }));

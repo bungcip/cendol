@@ -5,7 +5,7 @@
 //! These functions ensure that no semantic types (TypeRef) are created
 //! during parsing, only syntactic types (ParsedType).
 
-use crate::ast::literal::Literal;
+use crate::ast::literal::LitVal;
 use crate::ast::*;
 use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::parser::TokenKind;
@@ -22,7 +22,7 @@ pub(crate) fn build_type(
     specifiers: &ThinVec<DeclSpec>,
     declarator: Option<DeclaratorRef>,
 ) -> Result<ParsedType, ParseError> {
-    let (base_type, qualifiers) = parse_base_type_and_qualifiers(parser, specifiers)?;
+    let (base, qualifiers) = parse_base_type_and_qualifiers(parser, specifiers)?;
 
     let declarator = if let Some(d) = declarator {
         d
@@ -31,7 +31,7 @@ pub(crate) fn build_type(
     };
 
     Ok(ParsedType {
-        base: base_type,
+        base,
         declarator,
         qualifiers,
     })
@@ -284,7 +284,9 @@ fn extract_alignment(specifiers: &[DeclSpec], parser: &Parser) -> Option<u32> {
         if let DeclSpec::AlignmentSpec(align_spec) = spec {
             match align_spec {
                 ParsedAlignmentSpec::Expr(expr) => {
-                    if let ParsedNodeKind::Literal(Literal::Int { val, .. }) = parser.ast.get_node(*expr).kind {
+                    if let ParsedNodeKind::Literal(lit) = parser.ast.get_node(*expr).kind
+                        && let LitVal::Int { val, .. } = *parser.ast.literals.get(lit)
+                    {
                         return Some(val as u32);
                     }
                 }
@@ -310,11 +312,12 @@ fn parse_enum_constants(parser: &mut Parser, enum_nodes: &[ParsedNodeRef]) -> Re
             parsed_enums.push(ParsedEnumConstant {
                 name: *name,
                 value: value_expr.as_ref().and_then(|expr| {
-                    if let ParsedNodeKind::Literal(Literal::Int { val, .. }) = parser.ast.get_node(*expr).kind {
-                        Some(val)
-                    } else {
-                        None
+                    if let ParsedNodeKind::Literal(lit) = parser.ast.get_node(*expr).kind
+                        && let LitVal::Int { val, .. } = *parser.ast.literals.get(lit)
+                    {
+                        return Some(val);
                     }
+                    None
                 }),
                 span: enum_node.span,
             });

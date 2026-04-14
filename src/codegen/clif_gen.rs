@@ -137,13 +137,13 @@ pub(crate) struct SignatureLoweringContext<'a> {
 /// Helper to emit integer constants
 fn emit_const_int(val: i64, layout: &MirType, output: &mut Vec<u8>) {
     match layout {
-        MirType::I8 | MirType::U8 => output.extend_from_slice(&(val as i8).to_le_bytes()),
-        MirType::I16 | MirType::U16 => output.extend_from_slice(&(val as i16).to_le_bytes()),
-        MirType::I32 | MirType::U32 => output.extend_from_slice(&(val as i32).to_le_bytes()),
-        MirType::I64 | MirType::U64 => output.extend_from_slice(&val.to_le_bytes()),
+        MirType::I8 | MirType::U8 => output.extend_from_slice(&(val as u8).to_le_bytes()),
+        MirType::I16 | MirType::U16 => output.extend_from_slice(&(val as u16).to_le_bytes()),
+        MirType::I32 | MirType::U32 => output.extend_from_slice(&(val as u32).to_le_bytes()),
+        MirType::I64 | MirType::U64 => output.extend_from_slice(&(val as u64).to_le_bytes()),
         MirType::Bool => output.push(if val != 0 { 1u8 } else { 0u8 }),
-        MirType::Pointer { .. } => output.extend_from_slice(&val.to_le_bytes()),
-        _ => output.extend_from_slice(&(val as i32).to_le_bytes()),
+        MirType::Pointer { .. } => output.extend_from_slice(&(val as u64).to_le_bytes()),
+        _ => output.extend_from_slice(&(val as u32).to_le_bytes()),
     }
 }
 
@@ -425,7 +425,7 @@ fn emit_const(
         ConstValueKind::Int(val) => emit_const_int(*val, ty, output),
         ConstValueKind::Float(val) => emit_const_float(*val, ty, output),
         ConstValueKind::Bool(val) => output.push(if *val { 1u8 } else { 0u8 }),
-        ConstValueKind::Null => output.extend_from_slice(&0i64.to_le_bytes()),
+        ConstValueKind::Null => output.extend_from_slice(&0u64.to_le_bytes()),
         ConstValueKind::Zero => output.extend(std::iter::repeat_n(0, lower_type_size(ty, ctx.mir) as usize)),
         ConstValueKind::GlobalAddress(global_id, addend) => {
             if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module) {
@@ -436,7 +436,7 @@ fn emit_const(
                 let global_val = mod_obj.declare_data_in_data(data_id, dd);
                 dd.write_data_addr(offset, global_val, *addend);
             }
-            output.extend_from_slice(&0i64.to_le_bytes());
+            output.extend_from_slice(&0u64.to_le_bytes());
         }
         ConstValueKind::FunctionAddress(func_id) => {
             if let (Some(dd), Some(mod_obj)) = (&mut data_description, &mut module)
@@ -1217,9 +1217,10 @@ fn emit_constant_to_memory(const_id: ConstValueId, ctx: &mut BodyEmitContext) ->
 
 fn truncate_const(val: i64, ty: Type) -> i64 {
     match ty {
-        types::I8 => val as i8 as i64,
-        types::I16 => val as i16 as i64,
-        types::I32 => val as i32 as i64,
+        types::I8 => (val as i8) as i64,
+        types::I16 => (val as i16) as i64,
+        types::I32 => (val as i32) as i64,
+        types::I64 => val,
         _ => val,
     }
 }
@@ -1278,7 +1279,7 @@ fn emit_operand(operand: &Operand, ctx: &mut BodyEmitContext, expected_type: Typ
                 }
                 ConstValueKind::Bool(val) => {
                     let int_val = if *val { 1 } else { 0 };
-                    ctx.builder.ins().iconst(expected_type, int_val)
+                    ctx.builder.ins().iconst(expected_type, int_val as i64)
                 }
                 ConstValueKind::Null => ctx.builder.ins().iconst(expected_type, 0i64),
                 ConstValueKind::GlobalAddress(global_id, addend) => {

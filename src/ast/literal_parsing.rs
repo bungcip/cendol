@@ -25,14 +25,14 @@ fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
 
 /// Parse C11 integer literal syntax
 /// Returns (value, suffix, base)
-pub(crate) fn parse_integer_literal(text: &str) -> Option<(u64, Option<IntegerSuffix>, u32)> {
+pub(crate) fn parse_integer_literal(text: &str) -> Option<(i64, Option<IntegerSuffix>, u8)> {
     let (number_part, suffix) = strip_integer_suffix(text);
 
     if number_part.is_empty() {
         return None;
     }
 
-    let (base, digits) = if let Some(stripped) = number_part.strip_prefix("0x") {
+    let (radix, digits) = if let Some(stripped) = number_part.strip_prefix("0x") {
         (16, stripped)
     } else if let Some(stripped) = number_part.strip_prefix("0X") {
         (16, stripped)
@@ -60,8 +60,8 @@ pub(crate) fn parse_integer_literal(text: &str) -> Option<(u64, Option<IntegerSu
         std::borrow::Cow::Borrowed(digits)
     };
 
-    let val = u64::from_str_radix(&digits_no_sep, base).ok()?;
-    Some((val, suffix, base))
+    let val = u64::from_str_radix(&digits_no_sep, radix).ok()?;
+    Some((val as i64, suffix, radix as u8))
 }
 
 fn strip_float_suffix(text: &str) -> (&str, Option<FloatSuffix>) {

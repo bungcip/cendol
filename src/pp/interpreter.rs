@@ -7,18 +7,18 @@ use crate::source_manager::{SourceLoc, SourceSpan};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ExprValue {
-    pub value: u64,
+    pub value: i64,
     pub is_unsigned: bool,
 }
 
 impl ExprValue {
-    fn new(value: u64, is_unsigned: bool) -> Self {
+    fn new(value: i64, is_unsigned: bool) -> Self {
         ExprValue { value, is_unsigned }
     }
 
     fn from_bool(b: bool) -> Self {
         ExprValue {
-            value: u64::from(b),
+            value: if b { 1 } else { 0 },
             is_unsigned: false,
         }
     }
@@ -143,11 +143,8 @@ impl PPExpr {
             || name == kw.c_thread_local
     }
 
-    fn expr_error(span: SourceSpan) -> PPError {
-        PPError {
-            kind: PPErrorKind::InvalidConditionalExpression,
-            span,
-        }
+    fn error(kind: PPErrorKind, span: SourceSpan) -> PPError {
+        PPError { kind, span }
     }
 
     fn eval_unary(op: UnaryOp, operand: &PPExpr, pp: &Preprocessor, span: SourceSpan) -> Result<ExprValue, PPError> {
@@ -219,9 +216,9 @@ impl PPExpr {
             BinaryOp::RShift => {
                 let shift = rv as u32;
                 if l.is_unsigned {
-                    ExprValue::new(lv.wrapping_shr(shift), true)
+                    ExprValue::new((lv as u64).wrapping_shr(shift) as i64, true)
                 } else {
-                    ExprValue::new(((lv as i64).wrapping_shr(shift)) as u64, false)
+                    ExprValue::new(lv.wrapping_shr(shift), false)
                 }
             }
             BinaryOp::Add => ExprValue::new(lv.wrapping_add(rv), is_unsigned),
@@ -234,54 +231,38 @@ impl PPExpr {
     }
 
     fn cmp(
-        lv: u64,
-        rv: u64,
+        lv: i64,
+        rv: i64,
         is_unsigned: bool,
         signed_f: fn(&i64, &i64) -> bool,
         unsigned_f: fn(&u64, &u64) -> bool,
     ) -> ExprValue {
         ExprValue::from_bool(if is_unsigned {
-            unsigned_f(&lv, &rv)
+            unsigned_f(&(lv as u64), &(rv as u64))
         } else {
-            signed_f(&(lv as i64), &(rv as i64))
+            signed_f(&lv, &rv)
         })
     }
 
-    fn eval_div(lv: u64, rv: u64, is_unsigned: bool, span: SourceSpan) -> Result<ExprValue, PPError> {
+    fn eval_div(lv: i64, rv: i64, is_unsigned: bool, span: SourceSpan) -> Result<ExprValue, PPError> {
         if rv == 0 {
-            return Err(Self::expr_error(span));
+            return Err(Self::error(PPErrorKind::DivisionByZero, span));
         }
         Ok(if is_unsigned {
-            ExprValue::new(lv / rv, true)
+            ExprValue::new(((lv as u64) / (rv as u64)) as i64, true)
         } else {
-            let (ls, rs) = (lv as i64, rv as i64);
-            ExprValue::new(
-                if ls == i64::MIN && rs == -1 {
-                    ls as u64
-                } else {
-                    (ls / rs) as u64
-                },
-                false,
-            )
+            ExprValue::new(if lv == i64::MIN && rv == -1 { lv } else { lv / rv }, false)
         })
     }
 
-    fn eval_mod(lv: u64, rv: u64, is_unsigned: bool, span: SourceSpan) -> Result<ExprValue, PPError> {
+    fn eval_mod(lv: i64, rv: i64, is_unsigned: bool, span: SourceSpan) -> Result<ExprValue, PPError> {
         if rv == 0 {
-            return Err(Self::expr_error(span));
+            return Err(Self::error(PPErrorKind::RemainderByZero, span));
         }
         Ok(if is_unsigned {
-            ExprValue::new(lv % rv, true)
+            ExprValue::new(((lv as u64) % (rv as u64)) as i64, true)
         } else {
-            let (ls, rs) = (lv as i64, rv as i64);
-            ExprValue::new(
-                if ls == i64::MIN && rs == -1 {
-                    0
-                } else {
-                    (ls % rs) as u64
-                },
-                false,
-            )
+            ExprValue::new(if lv == i64::MIN && rv == -1 { 0 } else { lv % rv }, false)
         })
     }
 }
@@ -592,12 +573,12 @@ impl<'a> Interpreter<'a> {
                 let text = sym.as_str();
                 let (val, suffix, _) = literal_parsing::parse_integer_literal(text).ok_or_else(|| self.error())?;
                 let mut is_unsigned = matches!(suffix, Some(IntegerSuffix::U | IntegerSuffix::UL | IntegerSuffix::ULL));
-                if !is_unsigned && val > i64::MAX as u64 {
+                if !is_unsigned && (val as u64) > i64::MAX as u64 {
                     is_unsigned = true;
                 }
                 Ok(PPExpr::Number(ExprValue::new(val, is_unsigned)))
             }
-            PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(ExprValue::new(*codepoint as u64, false))),
+            PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(ExprValue::new(*codepoint as i64, false))),
             PPTokenKind::Identifier(sym) => Ok(PPExpr::Identifier(*sym)),
             PPTokenKind::LeftParen => {
                 let result = self.parse_conditional()?;

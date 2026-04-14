@@ -186,39 +186,67 @@ impl Type {
         }
     }
 
+    pub(crate) fn width(&self) -> u32 {
+        match &self.kind {
+            TypeKind::Builtin(b) => match b {
+                BuiltinType::Bool => 1,
+                BuiltinType::Char | BuiltinType::SChar | BuiltinType::UChar => 8,
+                BuiltinType::Short | BuiltinType::UShort => 16,
+                BuiltinType::Int | BuiltinType::UInt | BuiltinType::Signed => 32,
+                BuiltinType::Long | BuiltinType::ULong => 64,
+                BuiltinType::LongLong | BuiltinType::ULongLong => 64, // Standard says at least 64
+                BuiltinType::Float => 32,
+                BuiltinType::Double => 64,
+                BuiltinType::LongDouble => 128, // Often 80-bit padded to 128 or 128-bit
+                _ => 0,
+            },
+            TypeKind::Pointer { .. } => 64,
+            TypeKind::Enum { enumerators, .. } => {
+                if enumerators.is_empty() {
+                    32 // Default to int
+                } else {
+                    // C says enum type is determined by values.
+                    // For now, assume it fits in 32 or 64.
+                    // This will be refined during layout ensures.
+                    if enumerators
+                        .iter()
+                        .all(|e| e.value >= i32::MIN as i64 && e.value <= i32::MAX as i64)
+                    {
+                        32
+                    } else {
+                        64
+                    }
+                }
+            }
+            _ => {
+                if let Some(layout) = &self.layout {
+                    (layout.size * 8) as u32
+                } else {
+                    0
+                }
+            }
+        }
+    }
+
     pub(crate) fn truncate_int(&self, val: i64) -> i64 {
         if !self.is_int() && !self.is_pointer() {
             return val;
         }
 
-        let width = if let Some(layout) = &self.layout {
-            layout.size * 8
-        } else {
-            // Fallback for builtin types if layout is not yet computed
-            match &self.kind {
-                TypeKind::Builtin(b) => match b {
-                    BuiltinType::Bool => 1,
-                    BuiltinType::Char | BuiltinType::SChar | BuiltinType::UChar => 8,
-                    BuiltinType::Short | BuiltinType::UShort => 16,
-                    BuiltinType::Int | BuiltinType::UInt | BuiltinType::Signed => 32,
-                    _ => 64,
-                },
-                TypeKind::Pointer { .. } => 64,
-                TypeKind::Enum { .. } => 32,
-                _ => 64,
-            }
-        };
-
+        let width = self.width();
         if width >= 64 {
             return val;
         }
 
-        let mask = (1u64 << width) - 1;
+        // Apply bitmask for the width
+        let mask = if width > 0 { (1u64 << width) - 1 } else { 0 };
         let truncated = (val as u64) & mask;
 
         if self.is_signed() {
+            // Sign-extend if the MSB of the truncated value is set
             let sign_bit = 1u64 << (width - 1);
             if (truncated & sign_bit) != 0 {
+                // To sign-extend, we set all bits above 'width' to 1
                 return (truncated | !mask) as i64;
             }
         }
@@ -321,7 +349,7 @@ impl BuiltinType {
                 | Self::ULong
                 | Self::LongLong
                 | Self::ULongLong
-                | Self::Signed // signed int
+                | Self::Signed
         )
     }
     pub(crate) fn is_char(self) -> bool {
@@ -560,6 +588,12 @@ impl TypeRef {
     pub(crate) fn is_inline_array(self) -> bool {
         self.class() == TypeClass::Array && self.array_len().is_some()
     }
+
+    #[inline]
+    pub(crate) fn is_signed(self) -> bool {
+        self.builtin().is_some_and(|b| b.is_signed())
+    }
+
     #[inline]
     pub(crate) fn builtin(self) -> Option<BuiltinType> {
         if self.is_builtin() {
@@ -765,6 +799,11 @@ impl QualType {
     #[inline]
     pub(crate) fn is_scalar(self) -> bool {
         self.ty().is_scalar()
+    }
+
+    #[inline]
+    pub(crate) fn is_signed(self) -> bool {
+        self.ty().is_signed()
     }
 
     /// Merge additional qualifiers into this qualified type.
@@ -977,7 +1016,7 @@ pub struct StructMember {
     pub span: SourceSpan,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct EnumConstant {
     pub name: NameId,
     pub value: i64,

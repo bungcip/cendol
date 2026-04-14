@@ -41,9 +41,15 @@ fn test_member_alignas_type() {
 
 #[test]
 fn test_alignas_zero() {
-    let (ast, _, _) = setup_lowering(r#"_Alignas(0) int x;"#);
-    let x = find_var_decl(&ast, "x");
-    assert_eq!(x.alignment, None, "_Alignas(0) should have no effect (None alignment)");
+    let (ast, _, symbol_table) = setup_lowering(r#"_Alignas(0) int x;"#);
+    let x = find_var_decl(&ast, &symbol_table, "x");
+    let sym = symbol_table.get_symbol(x.symbol);
+    let alignment = if let crate::semantic::SymbolKind::Variable { alignment, .. } = &sym.kind {
+        *alignment
+    } else {
+        None
+    };
+    assert_eq!(alignment, None, "_Alignas(0) should have no effect (None alignment)");
 }
 
 #[test]

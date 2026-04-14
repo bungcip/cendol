@@ -6,7 +6,7 @@ use hashbrown::HashSet;
 use std::fmt;
 use std::fmt::Formatter;
 
-use crate::ast::literal::{CharPrefix, Literal};
+use crate::ast::literal::LitVal;
 use crate::ast::parsed::{ParsedAst, ParsedNodeKind, ParsedNodeRef};
 use crate::ast::{Ast, DesignatedInitializer, Designator, NodeKind, NodeRef};
 use crate::semantic::{SymbolRef, SymbolTable, TypeRef, TypeRegistry};
@@ -103,23 +103,23 @@ impl AstDumper {
     fn collect_types(kind: &NodeKind, types: &mut HashSet<TypeRef>) {
         match kind {
             NodeKind::Designator(_) => {}
-            NodeKind::Function(data) => {
-                types.insert(data.ty);
+            NodeKind::Function(_) => {
+                // Function type is now looked up from symbol table, not stored directly
             }
             NodeKind::Param(data) => {
                 types.insert(data.qt.ty());
             }
-            NodeKind::FunctionDecl(func_decl) => {
-                types.insert(func_decl.ty);
+            NodeKind::FunctionDecl(_) => {
+                // Type is in Symbol
             }
-            NodeKind::RecordDecl(record_decl) => {
-                types.insert(record_decl.ty);
+            NodeKind::RecordDecl(_) => {
+                // Type is in Symbol
             }
             NodeKind::FieldDecl(field_decl) => {
                 types.insert(field_decl.qt.ty());
             }
-            NodeKind::EnumDecl(enum_decl) => {
-                types.insert(enum_decl.ty);
+            NodeKind::EnumDecl(_) => {
+                // Type is in Symbol
             }
             NodeKind::EnumMember(_) => {}
 
@@ -170,11 +170,11 @@ impl AstDumper {
             | NodeKind::BuiltinExpect(..)
             | NodeKind::BuiltinComplex(..)
             | NodeKind::AtomicOp(..) => {}
-            NodeKind::VarDecl(var_decl) => {
-                types.insert(var_decl.qt.ty());
+            NodeKind::VarDecl(_) => {
+                // VarDecl type is now looked up from symbol table, not stored directly
             }
-            NodeKind::TypedefDecl(typedef_decl) => {
-                types.insert(typedef_decl.qt.ty());
+            NodeKind::TypedefDecl(_) => {
+                // Type is in Symbol
             }
             NodeKind::GenericSelection(_) => {
                 // GenericSelection doesn't contain TypeRefs directly.
@@ -288,33 +288,21 @@ impl AstDumper {
         }
     }
 
-    fn format_literal(f: &mut Formatter<'_>, literal: &Literal) -> fmt::Result {
+    fn format_literal(f: &mut Formatter<'_>, literal: &LitVal) -> fmt::Result {
         match literal {
-            Literal::Int { val, suffix, base } => {
-                write!(f, "LiteralInt({:?}, {:?}, base={})", val, suffix, base)
+            LitVal::Int { val, suffix, radix } => {
+                write!(f, "LiteralInt({}, {:?}, base={})", val, suffix, radix)
             }
-            Literal::Float { val, suffix } => {
-                write!(f, "LiteralFloat({}, {:?})", val, suffix)
+            LitVal::Float { suffix, .. } => {
+                write!(f, "LiteralFloat({}, {:?})", literal.as_f64(), suffix)
             }
-            Literal::String(s) => write!(f, "LiteralString(\"{}\")", s),
-            Literal::Char(c, prefix) => {
-                let p = match prefix {
-                    CharPrefix::None => "",
-                    CharPrefix::Wide => "L",
-                    CharPrefix::Char16 => "u",
-                    CharPrefix::Char32 => "U",
-                    CharPrefix::Utf8 => "u8",
-                };
-                write!(
-                    f,
-                    "LiteralChar({}'{}')",
-                    p,
-                    char::from_u32(*c as u32).unwrap_or(char::REPLACEMENT_CHARACTER)
-                )
+            LitVal::String(s) => write!(f, "LiteralString(\"{}\")", s),
+            LitVal::Char(c, prefix) => {
+                write!(f, "LiteralChar({}, {:?})", c, prefix)
             }
-            Literal::Nullptr => write!(f, "LiteralNullptr"),
-            Literal::True => write!(f, "LiteralTrue"),
-            Literal::False => write!(f, "LiteralFalse"),
+            LitVal::Nullptr => write!(f, "LiteralNull"),
+            LitVal::True => write!(f, "LiteralTrue"),
+            LitVal::False => write!(f, "LiteralFalse"),
         }
     }
 
@@ -340,7 +328,7 @@ impl AstDumper {
 
         match kind {
             PNK::Literal(literal) => {
-                Self::format_literal(f, literal)?;
+                Self::format_literal(f, ast.literals.get(*literal))?;
                 return writeln!(f);
             }
             PNK::Break | PNK::Continue | PNK::EmptyStmt | PNK::Dummy | PNK::BuiltinUnreachable | PNK::BuiltinTrap => {
@@ -457,8 +445,12 @@ impl AstDumper {
             }
             PNK::StaticAssert(cond, msg) => {
                 let message_str = if let Some(m) = msg {
-                    if let PNK::Literal(Literal::String(s)) = &ast.get_node(*m).kind {
-                        s.to_string()
+                    if let PNK::Literal(lit) = &ast.get_node(*m).kind {
+                        if let LitVal::String(s) = ast.literals.get(*lit) {
+                            s.to_string()
+                        } else {
+                            "<invalid>".to_string()
+                        }
                     } else {
                         "<invalid>".to_string()
                     }
@@ -492,7 +484,7 @@ impl AstDumper {
 
         match kind {
             NodeKind::Literal(literal) => {
-                Self::format_literal(f, literal)?;
+                Self::format_literal(f, ast.literals.get(*literal))?;
                 return writeln!(f);
             }
             NodeKind::Break
@@ -620,12 +612,7 @@ impl AstDumper {
                 while_stmt.body.get()
             )?,
             NodeKind::For(for_stmt) => {
-                write!(f, "init=")?;
-                optional(f, for_stmt.init, "none")?;
-                write!(f, ", condition=")?;
-                optional(f, for_stmt.condition, "none")?;
-                write!(f, ", increment=")?;
-                optional(f, for_stmt.increment, "none")?;
+                write!(f, "child_start={}", for_stmt.child_start.get())?;
                 write!(f, ", body={}", for_stmt.body.get())?
             }
             NodeKind::Return(expr) => optional(f, *expr, "void")?,
@@ -637,52 +624,88 @@ impl AstDumper {
             NodeKind::Function(data) => {
                 write!(f, "name=")?;
                 Self::write_function_name(f, data.symbol, symbol_table)?;
-                write!(f, ", symbol={:?}, ty={}, ", data.symbol, data.ty)?;
-                Self::write_range(f, "params", data.param_start, data.param_len)?;
-                write!(f, ", body={}", data.body.get())?
+                write!(f, ", symbol={:?}, ", data.symbol)?;
+
+                let body_node = NodeRef::new(data.child_start.get() + data.param_len as u32).expect("NodeRef overflow");
+                Self::write_range(f, "params", data.child_start, data.param_len)?;
+                write!(f, ", body={}", body_node.get())?
             }
             NodeKind::Param(data) => write!(f, "symbol={:?}, ty={:?}", data.symbol, data.qt)?,
             NodeKind::StaticAssert(cond, msg) => {
                 let message_str = if let Some(m) = msg {
-                    if let NodeKind::Literal(Literal::String(s)) = ast.get_kind(*m) {
-                        s.to_string()
-                    } else {
-                        "<invalid>".to_string()
+                    match ast.get_kind(*m) {
+                        NodeKind::Literal(lit_id) => {
+                            let val = ast.literals.get(*lit_id);
+                            if let LitVal::String(s) = val {
+                                s.to_string()
+                            } else {
+                                "<not-a-string-literal>".to_string()
+                            }
+                        }
+                        _ => "<invalid>".to_string(),
                     }
                 } else {
                     "<none>".to_string()
                 };
                 write!(f, "condition={}, message=\"{}\"", cond.get(), message_str)?
             }
-            NodeKind::VarDecl(decl) => write!(
-                f,
-                "name={}, ty={}, storage={:?}, is_tls={}",
-                decl.name, decl.qt, decl.storage, decl.is_thread_local
-            )?,
-            NodeKind::FunctionDecl(decl) => write!(
-                f,
-                "name={}, ty={}, storage={:?}",
-                decl.name,
-                decl.ty.get(),
-                decl.storage
-            )?,
-            NodeKind::TypedefDecl(decl) => write!(f, "name={}, ty={}", decl.name, decl.qt)?,
+            NodeKind::VarDecl(decl) => {
+                write!(f, "symbol={:?}", decl.symbol)?;
+                if let Some(st) = symbol_table {
+                    let sym = st.get_symbol(decl.symbol);
+                    write!(f, ", name={}, ty={}", sym.name, sym.type_info)?;
+                }
+                if let Some(init) = decl.init {
+                    write!(f, ", init={}", init.get())?;
+                }
+            }
+            NodeKind::FunctionDecl(decl) => {
+                write!(f, "symbol={:?}", decl.symbol)?;
+                if let Some(st) = symbol_table {
+                    let sym = st.get_symbol(decl.symbol);
+                    let storage = match sym.kind {
+                        crate::semantic::symbol_table::SymbolKind::Function { storage, .. } => storage,
+                        _ => None,
+                    };
+                    write!(f, ", name={}, ty={}, storage={:?}", sym.name, sym.type_info, storage)?;
+                }
+            }
+            NodeKind::TypedefDecl(decl) => {
+                write!(f, "symbol={:?}", decl.symbol)?;
+                if let Some(st) = symbol_table {
+                    let sym = st.get_symbol(decl.symbol);
+                    if let crate::semantic::symbol_table::SymbolKind::Typedef { aliased_type } = sym.kind {
+                        write!(f, ", name={}, qt={}", sym.name, aliased_type)?;
+                    }
+                }
+            }
             NodeKind::RecordDecl(decl) => {
-                write!(
-                    f,
-                    "name={:?}, ty={}, is_union={}, ",
-                    decl.name,
-                    decl.ty.get(),
-                    decl.is_union
-                )?;
+                write!(f, "symbol={:?}", decl.symbol)?;
+                if let Some(st) = symbol_table {
+                    let sym = st.get_symbol(decl.symbol);
+                    write!(f, ", name={:?}, ty={}", sym.name, sym.type_info)?;
+                }
+                write!(f, ", ")?;
                 Self::write_range(f, "members", decl.member_start, decl.member_len)?
             }
             NodeKind::FieldDecl(decl) => write!(f, "name={:?}, ty={}", decl.name, decl.qt)?,
             NodeKind::EnumDecl(decl) => {
-                write!(f, "name={:?}, ty={}, ", decl.name, decl.ty.get())?;
+                write!(f, "symbol={:?}", decl.symbol)?;
+                if let Some(st) = symbol_table {
+                    let sym = st.get_symbol(decl.symbol);
+                    write!(f, ", name={:?}, ty={}, ", sym.name, sym.type_info)?;
+                }
                 Self::write_range(f, "members", decl.member_start, decl.member_len)?
             }
-            NodeKind::EnumMember(member) => write!(f, "name={}, value={}", member.name, member.value)?,
+            NodeKind::EnumMember(member) => {
+                write!(f, "symbol={:?}", member.symbol)?;
+                if let Some(st) = symbol_table {
+                    let sym = st.get_symbol(member.symbol);
+                    if let crate::semantic::symbol_table::SymbolKind::EnumConstant { value } = sym.kind {
+                        write!(f, ", name={}, value={}", sym.name, value)?;
+                    }
+                }
+            }
             NodeKind::InitializerList(list) => Self::write_range(f, "inits", list.init_start, list.init_len)?,
             NodeKind::InitializerItem(init) => Self::write_designated_initializer(f, init, ast)?,
             NodeKind::Designator(d) => match d {

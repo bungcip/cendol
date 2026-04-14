@@ -7,19 +7,19 @@
 use serde::Serialize;
 
 use crate::{
-    ast::{NameId, NodeRef, SymbolRef, TypeRef},
+    ast::{NameId, NodeRef, SymbolRef, literal::LitRef},
     semantic::{QualType, ScopeId},
 };
+use std::num::NonZeroU32;
 
 /// The core enum defining all possible AST node types for C11.
 /// Variants use NodeIndex for child references, enabling flattened storage.
 /// Maintained original structure for compatibility, but moved to this module.
-use crate::ast::literal::Literal;
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) enum NodeKind {
     // --- Literals (Inline storage for common types) ---
-    Literal(Literal),
+    Literal(LitRef),
 
     // --- Expressions ---
     // Ident now includes a resolved SymbolRef after semantic analysis
@@ -386,14 +386,9 @@ impl NodeKind {
             }
 
             NodeKind::For(stmt) => {
-                if let Some(init) = stmt.init {
-                    f(init);
-                }
-                if let Some(cond) = stmt.condition {
-                    f(cond);
-                }
-                if let Some(inc) = stmt.increment {
-                    f(inc);
+                // child_start points to 3 consecutive nodes: init, cond, inc
+                for child in stmt.child_start.range(3u32) {
+                    f(child);
                 }
                 f(stmt.body);
             }
@@ -427,10 +422,9 @@ impl NodeKind {
             }
 
             NodeKind::Function(data) => {
-                for child in data.param_start.range(data.param_len) {
+                for child in data.child_start.range(data.param_len as u32 + 1) {
                     f(child);
                 }
-                f(data.body);
             }
 
             NodeKind::TranslationUnit(data) => {
@@ -483,9 +477,7 @@ pub(crate) struct WhileStmt {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct ForStmt {
-    pub(crate) init: Option<NodeRef>, // Can be Declaration or Expression
-    pub(crate) condition: Option<NodeRef>,
-    pub(crate) increment: Option<NodeRef>,
+    pub(crate) child_start: NodeRef, // index to 3 nodes: init, condition, increment. NodeKind::Dummy is used if missing
     pub(crate) body: NodeRef,
     pub(crate) scope_id: ScopeId,
 }
@@ -514,12 +506,8 @@ pub(crate) struct InitializerList {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct Function {
     pub(crate) symbol: SymbolRef,
-    pub(crate) ty: TypeRef, // function type, not the return type
-    pub(crate) is_noreturn: bool,
-    pub(crate) param_start: NodeRef,
+    pub(crate) child_start: NodeRef, // points to [param1, param2, ..., body]
     pub(crate) param_len: u16,
-    pub(crate) body: NodeRef, // compound statement
-    pub(crate) scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -531,44 +519,34 @@ pub(crate) struct Param {
 // Semantic node data structures (type-resolved)
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct VarDecl {
-    pub(crate) name: NameId,
-    pub(crate) qt: QualType,
-    pub(crate) storage: Option<StorageClass>,
-    pub(crate) is_thread_local: bool,
-    pub(crate) init: Option<NodeRef>,  // InitializerList or Expression
-    pub(crate) alignment: Option<u16>, // Max alignment in bytes
+    pub(crate) symbol: SymbolRef,
+    pub(crate) init: Option<NodeRef>, // InitializerList or Expression
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct FunctionDecl {
-    pub(crate) name: NameId,
-    pub(crate) ty: TypeRef,
-    pub(crate) storage: Option<StorageClass>,
+    pub(crate) symbol: SymbolRef,
     pub(crate) scope_id: ScopeId,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct TypedefDecl {
-    pub(crate) name: NameId,
-    pub(crate) qt: QualType,
+    pub(crate) symbol: SymbolRef,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct RecordDecl {
-    pub(crate) name: Option<NameId>,
-    pub(crate) ty: TypeRef,
+    pub(crate) symbol: SymbolRef,
     pub(crate) member_start: NodeRef,
     /// index where FieldDecl located
     pub(crate) member_len: u16,
-
-    pub(crate) is_union: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct FieldDecl {
     pub(crate) name: Option<NameId>,
     pub(crate) qt: QualType, // object type
-    pub(crate) alignment: Option<u32>,
+    pub(crate) alignment: Option<NonZeroU32>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -580,16 +558,14 @@ pub(crate) struct CallExpr {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct EnumDecl {
-    pub(crate) name: Option<NameId>,
-    pub(crate) ty: TypeRef,
+    pub(crate) symbol: SymbolRef,
     pub(crate) member_start: NodeRef,
     pub(crate) member_len: u16,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct EnumMember {
-    pub(crate) name: NameId,
-    pub(crate) value: i64,
+    pub(crate) symbol: SymbolRef,
     pub(crate) init_expr: Option<NodeRef>,
 }
 
@@ -654,6 +630,7 @@ pub enum UnaryOp {
 
 // Binary Operators (includes assignment types)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[repr(u8)]
 pub enum AtomicOp {
     LoadN,
     StoreN,

@@ -125,38 +125,38 @@ pub struct TypeRegistry {
 }
 
 impl TypeRegistry {
-    /// Checks if a given u64 value can fit into the specified type.
-    /// This is used internally during semantic analysis and constant evaluation.
-    pub(crate) fn is_value_fitting(&self, val: u64, ty: TypeRef) -> bool {
-        let layout = self.get_layout(ty);
-        let size_bits = layout.size * 8;
-        let is_unsigned = match &self.get(ty).kind {
-            TypeKind::Builtin(b) => matches!(
-                b,
-                BuiltinType::Bool
-                    | BuiltinType::UChar
-                    | BuiltinType::UShort
-                    | BuiltinType::UInt
-                    | BuiltinType::ULong
-                    | BuiltinType::ULongLong
-            ),
-            TypeKind::Enum { .. } => true,
-            _ => false,
-        };
+    pub(crate) fn is_value_fitting(&self, val: i64, ty_ref: TypeRef) -> bool {
+        let ty = self.get(ty_ref);
+        if !ty.is_int() {
+            return false;
+        }
 
-        if is_unsigned {
-            if size_bits >= 64 {
-                true
+        let width = ty.width();
+        if ty.is_signed() {
+            let max = if width >= 64 {
+                i64::MAX
             } else {
-                val < (1u64 << size_bits)
-            }
-        } else {
-            let max_val = if size_bits >= 64 {
-                i64::MAX as u64
-            } else {
-                (1u64 << (size_bits - 1)) - 1
+                (1i64 << (width - 1)) - 1
             };
-            val <= max_val
+            let min = if width >= 64 { i64::MIN } else { -(1i64 << (width - 1)) };
+            val >= min && val <= max
+        } else {
+            if val < 0 {
+                return false;
+            }
+            let max = if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
+            (val as u64) <= max
+        }
+    }
+
+    pub(crate) fn is_literal_fitting(&self, val: i64, ty_ref: TypeRef) -> bool {
+        if val < 0 {
+            // All literals are parsed as >= 0. If bits are negative in i64, it's [2^63, 2^64-1].
+            // This only fits in 64-bit unsigned types.
+            let ty = self.get(ty_ref);
+            !ty.is_signed() && ty.is_int() && ty.width() >= 64
+        } else {
+            self.is_value_fitting(val, ty_ref)
         }
     }
 
@@ -270,20 +270,23 @@ impl TypeRegistry {
         // 19: Complex (marker)
         self.type_complex_marker = self.alloc_builtin(BuiltinType::Complex);
 
-        // 20: nullptr_t
+        // -- Allocated builtins (beyond the 1..19 sequence) --
+
+        // nullptr_t
         self.type_nullptr_t = self.alloc(Type::new(TypeKind::NullptrT));
 
-        // 21: complex float
+        // complex float
         self.type_complex_float = self.complex_type(self.type_float);
-        // 22: complex double
+        // complex double
         self.type_complex_double = self.complex_type(self.type_double);
-        // 23: complex long double
+        // complex long double
         self.type_complex_long_double = self.complex_type(self.type_long_double);
 
         // Pre-calculate void*
         self.type_void_ptr = self.pointer_to(QualType::unqualified(self.type_void));
 
-        // We can assert that the last allocated index was 23
+        // We can assert that the last allocated index was 25
+        // (19 builtins + nullptr_t + 3 complex types = 23)
         debug_assert_eq!(self.types.len() - 1, 23, "Builtin types allocation mismatch");
 
         // Compute layouts for all builtins immediately
@@ -994,16 +997,11 @@ impl TypeRegistry {
                     alignment: 8,
                     kind: LayoutKind::Scalar,
                 },
-                BuiltinType::LongDouble => {
-                    // On x86_64, long double is typically 80-bit (10 bytes) but padded to 16 bytes for alignment.
-                    // We use 16 bytes to match the System V ABI size.
-                    let size = 16;
-                    TypeLayout {
-                        size,
-                        alignment: size,
-                        kind: LayoutKind::Scalar,
-                    }
-                }
+                BuiltinType::LongDouble => TypeLayout {
+                    size: 16,
+                    alignment: 16,
+                    kind: LayoutKind::Scalar,
+                },
                 BuiltinType::Signed => TypeLayout {
                     size: 4,
                     alignment: 4,
@@ -1038,7 +1036,9 @@ impl TypeRegistry {
                     },
                 },
                 BuiltinType::Complex => {
-                    return Err(TypeRegistryError::SizeOfIncompleteType { ty });
+                    return Err(TypeRegistryError::UnsupportedFeature {
+                        feature: "Complex builtin type (marker only)",
+                    });
                 }
             },
 

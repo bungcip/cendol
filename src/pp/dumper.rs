@@ -125,9 +125,28 @@ impl<'a> PPDumper<'a> {
                 let slice = &current_buffer[last_pos as usize..token_start as usize];
                 // Convert to string, assuming UTF-8 (preprocessor should ensure this)
                 if let Ok(text) = std::str::from_utf8(slice) {
-                    // Only print slices that are all whitespace to avoid printing directive text
-                    if text.chars().all(|c| c.is_whitespace()) {
-                        write!(writer, "{}", text)?;
+                    // Only print slices that are all whitespace to avoid printing directive text.
+                    // However, we MUST preserve newlines to separate tokens.
+                    let is_all_whitespace = text.chars().all(|c| c.is_whitespace());
+                    let has_newline = text.contains('\n');
+
+                    if is_all_whitespace {
+                        if self.suppress_line_markers && has_newline {
+                            writeln!(writer)?;
+                        } else {
+                            write!(writer, "{}", text)?;
+                        }
+                    } else if has_newline {
+                        // Gap contains non-whitespace (directives, comments)
+                        if self.suppress_line_markers {
+                            writeln!(writer)?;
+                        } else {
+                            for c in text.chars() {
+                                if c == '\n' {
+                                    writeln!(writer)?;
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -2,8 +2,13 @@ use crate::driver::artifact::CompilePhase;
 use crate::tests::semantic_common::{setup_lowering, setup_mir};
 use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pass_with_diagnostic_message};
 
-fn find_var_type(ast: &crate::ast::Ast, target_name: &str) -> crate::semantic::types::QualType {
-    crate::tests::semantic_common::find_var_decl(ast, target_name).qt
+fn find_var_type(
+    ast: &crate::ast::Ast,
+    symbol_table: &crate::semantic::SymbolTable,
+    target_name: &str,
+) -> crate::semantic::types::QualType {
+    let var_decl = crate::tests::semantic_common::find_var_decl(ast, symbol_table, target_name);
+    symbol_table.get_symbol(var_decl.symbol).type_info
 }
 
 #[test]
@@ -15,8 +20,8 @@ fn test_array_of_qualified_type() {
             }
         "#;
 
-    let (ast, registry, _) = setup_lowering(source);
-    let ty = find_var_type(&ast, "arr");
+    let (ast, registry, symbol_table) = setup_lowering(source);
+    let ty = find_var_type(&ast, &symbol_table, "arr");
     assert_eq!(registry.display_qual_type(ty), "const int[5]");
 }
 
@@ -29,8 +34,8 @@ fn test_multidimensional_array_qualified() {
             }
         "#;
 
-    let (ast, registry, _) = setup_lowering(source);
-    let ty = find_var_type(&ast, "arr");
+    let (ast, registry, symbol_table) = setup_lowering(source);
+    let ty = find_var_type(&ast, &symbol_table, "arr");
     assert_eq!(registry.display_qual_type(ty), "const int[3][2]");
 }
 
@@ -47,8 +52,11 @@ fn test_array_declaration_with_constant_size() {
 
     // Ensure compilation passes and check the type
     run_pass(source, CompilePhase::Mir);
-    let (ast, registry, _) = setup_lowering(source);
-    assert_eq!(registry.display_qual_type(find_var_type(&ast, "arr")), "int[2]");
+    let (ast, registry, symbol_table) = setup_lowering(source);
+    assert_eq!(
+        registry.display_qual_type(find_var_type(&ast, &symbol_table, "arr")),
+        "int[2]"
+    );
 }
 
 #[test]
@@ -66,7 +74,7 @@ fn test_vla_ice_fix() {
             }
         "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @"
+    insta::assert_snapshot!(mir, @r"
     type %t0 = void
     type %t1 = i32
     type %t2 = i8

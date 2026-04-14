@@ -49,8 +49,8 @@ impl<'src> Preprocessor<'src> {
                 } else {
                     match kind {
                         DirectiveKind::If => {
-                            let tokens = self.parse_conditional_expression().unwrap_or_default();
-                            let cond = self.evaluate_conditional_expression(tokens).unwrap_or(false);
+                            let tokens = self.parse_conditional_expression()?;
+                            let cond = self.evaluate_conditional_expression(tokens)?;
                             self.handle_if_directive(cond)
                         }
                         DirectiveKind::Ifdef => self.handle_ifdef(),
@@ -61,8 +61,8 @@ impl<'src> Preprocessor<'src> {
             }
             DirectiveKind::Elif => {
                 if self.should_evaluate_conditional() {
-                    let tokens = self.parse_conditional_expression().unwrap_or_default();
-                    let cond = self.evaluate_conditional_expression(tokens).unwrap_or(false);
+                    let tokens = self.parse_conditional_expression()?;
+                    let cond = self.evaluate_conditional_expression(tokens)?;
                     self.handle_elif_directive(cond, location)
                 } else {
                     self.handle_elif_directive(false, location)

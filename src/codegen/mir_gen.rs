@@ -16,7 +16,7 @@ use crate::semantic::SymbolTable;
 use crate::semantic::TypeKind;
 
 use crate::semantic::const_eval::ConstEvalCtx;
-use crate::semantic::{Conversion, Namespace, ScopeId};
+use crate::semantic::{Conversion, ScopeId};
 use crate::semantic::{DefinitionState, TypeRef, TypeRegistry};
 use hashbrown::{HashMap, HashSet};
 use target_lexicon::Architecture;
@@ -216,7 +216,7 @@ impl<'a> MirGen<'a> {
         for sym in global_symbols {
             let (symbol_name, symbol_type_info, is_function, def_state, storage) = {
                 let symbol = self.symbol_table.get_symbol(sym);
-                let (is_func, storage) = if let SymbolKind::Function { storage } = &symbol.kind {
+                let (is_func, storage) = if let SymbolKind::Function { storage, .. } = &symbol.kind {
                     (true, *storage)
                 } else {
                     (false, None)
@@ -348,9 +348,14 @@ impl<'a> MirGen<'a> {
         self.current_block = Some(entry_block_id);
         self.mb.set_current_block(entry_block_id);
 
-        // Pre-scan for all labels in the function body to create their MIR blocks upfront.
-        self.label_map.clear();
-        self.scan_for_labels(function.body);
+        let param_len = if let SymbolKind::Function { param_len, .. } = &symbol_entry.kind {
+            *param_len
+        } else {
+            0
+        };
+
+        let body_node = NodeRef::new(function.child_start.get() + param_len as u32).expect("NodeRef overflow");
+        self.scan_for_labels(body_node);
 
         // Parameter locals are now created in `define_function`. We just need to
         // map the SymbolRef to the LocalId.
@@ -358,14 +363,14 @@ impl<'a> MirGen<'a> {
         self.vla_map.clear();
         let mir_params = self.mb.get_functions().get(func_id.index()).unwrap().params.clone();
 
-        for (i, param) in function.param_start.range(function.param_len).enumerate() {
+        for (i, param) in function.child_start.range(param_len).enumerate() {
             if let NodeKind::Param(param) = self.ast.get_kind(param) {
                 let local_id = mir_params[i];
                 self.local_map.insert(param.symbol, local_id);
             }
         }
 
-        self.visit_node(function.body);
+        self.visit_node(body_node);
 
         // Handle implicit return if control falls off the end
         if !self.mb.current_block_has_terminator() {
@@ -391,13 +396,12 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_var_decl(&mut self, var_decl: &VarDecl) {
-        let mir_type_id = self.lower_qual_type(var_decl.qt);
-        let (entry, _) = self
-            .symbol_table
-            .lookup(var_decl.name, self.current_scope_id, Namespace::Ordinary)
-            .unwrap();
+        let sym = var_decl.symbol;
+        let symbol = self.symbol_table.get_symbol(sym);
+        let qt = symbol.type_info;
+        let mir_type_id = self.lower_qual_type(qt);
 
-        self.visit_variable(entry, mir_type_id);
+        self.visit_variable(sym, mir_type_id);
     }
 
     pub(super) fn visit_variable(&mut self, sym: SymbolRef, mir_type_id: TypeId) {
@@ -858,17 +862,33 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_for_stmt(&mut self, for_stmt: &ForStmt) {
-        let init_fn = for_stmt.init.map(|init| move |this: &mut Self| this.visit_node(init));
+        let init_node = NodeRef::new(for_stmt.child_start.get()).unwrap();
+        let cond_node = NodeRef::new(for_stmt.child_start.get() + 1).unwrap();
+        let inc_node = NodeRef::new(for_stmt.child_start.get() + 2).unwrap();
 
-        let cond_fn = for_stmt
-            .condition
-            .map(|cond| move |this: &mut Self| this.lower_condition(cond));
+        let has_init = !matches!(self.ast.get_kind(init_node), NodeKind::Dummy);
+        let has_cond = !matches!(self.ast.get_kind(cond_node), NodeKind::Dummy);
+        let has_inc = !matches!(self.ast.get_kind(inc_node), NodeKind::Dummy);
 
-        let inc_fn = for_stmt.increment.map(|inc| {
-            move |this: &mut Self| {
-                this.visit_expression(inc, false);
-            }
-        });
+        let init_fn = if has_init {
+            Some(move |this: &mut Self| this.visit_node(init_node))
+        } else {
+            None
+        };
+
+        let cond_fn = if has_cond {
+            Some(move |this: &mut Self| this.lower_condition(cond_node))
+        } else {
+            None
+        };
+
+        let inc_fn = if has_inc {
+            Some(move |this: &mut Self| {
+                this.visit_expression(inc_node, false);
+            })
+        } else {
+            None
+        };
 
         self.emit_loop_generic(init_fn, cond_fn, |this| this.visit_node(for_stmt.body), inc_fn, false);
     }
@@ -1374,7 +1394,13 @@ impl<'a> MirGen<'a> {
     }
 
     fn lower_record_type(&mut self, ty: TypeRef, tag: &Option<NameId>, is_union: bool, is_complete: bool) -> MirType {
-        let name = tag.unwrap_or_else(|| NameId::new("anonymous"));
+        let name = tag.unwrap_or_else(|| {
+            self.ast
+                .semantic_info
+                .as_ref()
+                .and_then(|info| info.anonymous_tags.get(&ty).copied())
+                .unwrap_or_else(|| NameId::new("anonymous"))
+        });
 
         let (size, alignment, field_layouts, field_names, field_types) = if is_complete {
             let mut flat_members = Vec::new();

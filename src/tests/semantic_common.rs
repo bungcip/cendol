@@ -90,12 +90,12 @@ pub(crate) fn find_record_type<'a>(registry: &'a TypeRegistry, name: &str) -> &'
         .unwrap_or_else(|| panic!("Record type '{}' not found in registry", name))
 }
 
-pub(crate) fn find_var_decl<'a>(ast: &'a Ast, name: &str) -> &'a VarDecl {
+pub(crate) fn find_var_decl<'a>(ast: &'a Ast, symbol_table: &SymbolTable, name: &str) -> &'a VarDecl {
     ast.kinds
         .iter()
         .find_map(|kind| {
             if let NodeKind::VarDecl(data) = kind
-                && data.name.as_str() == name
+                && symbol_table.get_symbol(data.symbol).name.as_str() == name
             {
                 Some(data)
             } else {

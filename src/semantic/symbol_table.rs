@@ -74,6 +74,8 @@ pub enum SymbolKind {
     },
     Function {
         storage: Option<StorageClass>,
+        is_noreturn: bool,
+        param_len: u16,
     },
     Typedef {
         aliased_type: QualType,
@@ -391,10 +393,21 @@ impl SymbolTable {
         name: NameId,
         ty: TypeRef,
         storage: Option<StorageClass>,
+        is_noreturn: bool,
+        param_len: u16,
         is_definition: bool,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
-        let mut symbol = self.create_symbol(name, SymbolKind::Function { storage }, QualType::unqualified(ty), span);
+        let mut symbol = self.create_symbol(
+            name,
+            SymbolKind::Function {
+                storage,
+                is_noreturn,
+                param_len,
+            },
+            QualType::unqualified(ty),
+            span,
+        );
 
         // Function declarations are "DeclaredOnly" by default, or "Defined" if it's a function definition
         symbol.def_state = if is_definition {

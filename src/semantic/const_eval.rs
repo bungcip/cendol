@@ -4,7 +4,7 @@
 //! at compile time, as required by the C11 standard for contexts like
 //! static assertions and array sizes.
 
-use crate::ast::literal::{FloatSuffix, IntegerSuffix, Literal};
+use crate::ast::literal::{FloatSuffix, IntegerSuffix, LitVal};
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, StringId, UnaryOp};
 use crate::semantic::conversions::{integer_promotion, usual_arithmetic_conversions};
 use crate::semantic::literal_utils::parse_string_literal;
@@ -108,28 +108,30 @@ impl<'a> ConstEvalCtx<'a> {
                 }
             }
             NodeKind::Cast(target_ty, _) => Some(*target_ty),
-            NodeKind::Literal(literal) => Some(self.get_literal_type(literal)),
+            NodeKind::Literal(literal_id) => {
+                let literal = self.ast.literals.get(*literal_id);
+                Some(self.get_literal_type(literal))
+            }
             _ => None,
         }
     }
 
-    fn get_literal_type(&self, literal: &Literal) -> QualType {
+    fn get_literal_type(&self, literal: &LitVal) -> QualType {
         let ty = match literal {
-            Literal::Int { val, suffix, base } => {
-                let val_u64 = *val as u64;
-                let is_decimal = *base == 10;
+            LitVal::Int { val, suffix, radix } => {
+                let is_decimal = *radix == 10;
                 let mut ty = self.registry.type_long_long_unsigned;
                 for cand in IntegerSuffix::get_candidates(*suffix, self.registry, is_decimal) {
-                    if self.registry.is_value_fitting(val_u64, cand) {
+                    if self.registry.is_literal_fitting(*val, cand) {
                         ty = cand;
                         break;
                     }
                 }
                 ty
             }
-            Literal::Char(_, prefix) => prefix.get_type(self.registry),
-            Literal::Float { suffix, .. } => FloatSuffix::get_type(*suffix, self.registry),
-            Literal::String(val) => {
+            LitVal::Char(_, prefix) => prefix.get_type(self.registry),
+            LitVal::Float { suffix, .. } => FloatSuffix::get_type(*suffix, self.registry),
+            LitVal::String(val) => {
                 let parsed_str = parse_string_literal(*val);
                 let len = parsed_str.values.len() + 1;
                 let builtin_base = match parsed_str.builtin_type {
@@ -141,30 +143,37 @@ impl<'a> ConstEvalCtx<'a> {
                 };
                 TypeRef::new(builtin_base.base(), TypeClass::Array, 0, len as u32).unwrap()
             }
-            Literal::Nullptr => self.registry.type_nullptr_t,
-            Literal::True | Literal::False => self.registry.type_bool,
+            LitVal::Nullptr => self.registry.type_nullptr_t,
+            LitVal::True | LitVal::False => self.registry.type_bool,
         };
         QualType::unqualified(ty)
     }
 
     fn eval_complex_part(&self, node: NodeRef, is_real: bool) -> Option<f64> {
         match self.ast.get_kind(node) {
-            NodeKind::Literal(Literal::Float { val, suffix }) => match suffix {
-                Some(FloatSuffix::I) | Some(FloatSuffix::IF) | Some(FloatSuffix::IL) => {
-                    if is_real {
-                        Some(0.0)
-                    } else {
-                        Some(*val)
+            NodeKind::Literal(lid) => {
+                let literal = self.ast.literals.get(*lid);
+                if let lit @ LitVal::Float { suffix, .. } = literal {
+                    match suffix {
+                        Some(FloatSuffix::I) | Some(FloatSuffix::IF) | Some(FloatSuffix::IL) => {
+                            if is_real {
+                                Some(0.0)
+                            } else {
+                                Some(lit.as_f64())
+                            }
+                        }
+                        _ => {
+                            if is_real {
+                                Some(lit.as_f64())
+                            } else {
+                                Some(0.0)
+                            }
+                        }
                     }
+                } else {
+                    None
                 }
-                _ => {
-                    if is_real {
-                        Some(*val)
-                    } else {
-                        Some(0.0)
-                    }
-                }
-            },
+            }
             NodeKind::CompoundLiteral(_, init_list) => {
                 if let NodeKind::InitializerList(list) = self.ast.get_kind(*init_list) {
                     let index = if is_real { 0 } else { 1 };
@@ -201,10 +210,16 @@ impl<'a> ConstEvalCtx<'a> {
     pub(crate) fn eval_int(&self, expr_node: NodeRef) -> Option<i64> {
         let node_kind = self.ast.get_kind(expr_node);
         match node_kind {
-            NodeKind::Literal(Literal::Int { val, .. }) => Some(*val),
-            NodeKind::Literal(Literal::Char(val, _)) => Some(*val as i64),
-            NodeKind::Literal(Literal::True) => Some(1),
-            NodeKind::Literal(Literal::False) => Some(0),
+            NodeKind::Literal(literal_id) => {
+                let literal = self.ast.literals.get(*literal_id);
+                match literal {
+                    LitVal::Int { val, .. } => Some(*val),
+                    LitVal::Char(val, _) => Some(*val as i64),
+                    LitVal::True => Some(1),
+                    LitVal::False => Some(0),
+                    _ => None,
+                }
+            }
             NodeKind::Ident(_, sym) => {
                 let symbol = self.symbol_table.get_symbol(*sym);
                 if let SymbolKind::EnumConstant { value } = &symbol.kind {
@@ -308,18 +323,25 @@ impl<'a> ConstEvalCtx<'a> {
 
     pub(crate) fn eval_float(&self, expr: NodeRef) -> Option<f64> {
         match self.ast.get_kind(expr) {
-            NodeKind::Literal(Literal::Float { val, .. }) => {
-                if let Some(qt) = self.get_resolved_type(expr)
-                    && qt.builtin() == Some(BuiltinType::Float)
-                {
-                    return Some((*val as f32) as f64);
+            NodeKind::Literal(literal_id) => {
+                let literal = self.ast.literals.get(*literal_id);
+                match literal {
+                    lit @ LitVal::Float { .. } => {
+                        let fval = lit.as_f64();
+                        if let Some(qt) = self.get_resolved_type(expr)
+                            && qt.builtin() == Some(BuiltinType::Float)
+                        {
+                            return Some((fval as f32) as f64);
+                        }
+                        Some(fval)
+                    }
+                    LitVal::Int { val, .. } => Some(*val as f64),
+                    LitVal::Char(val, _) => Some(*val as f64),
+                    LitVal::True => Some(1.0),
+                    LitVal::False => Some(0.0),
+                    _ => None,
                 }
-                Some(*val)
             }
-            NodeKind::Literal(Literal::Int { val, .. }) => Some(*val as f64),
-            NodeKind::Literal(Literal::Char(val, _)) => Some(*val as f64),
-            NodeKind::Literal(Literal::True) => Some(1.0),
-            NodeKind::Literal(Literal::False) => Some(0.0),
             NodeKind::BinaryOp(op, left, right) => {
                 let l = self.eval_float(*left)?;
                 let r = self.eval_float(*right)?;
@@ -602,18 +624,30 @@ impl<'a> ConstEvalCtx<'a> {
                 return None;
             }
             let op_kind = self.ast.get_kind(expr);
-            if !matches!(op_kind, NodeKind::Literal(Literal::Float { .. }) | NodeKind::Cast(..)) {
+            if !matches!(op_kind, NodeKind::Literal(_) | NodeKind::Cast(..)) {
                 return None;
             }
             if !f_val.is_finite() {
                 return None;
             }
 
-            const I64_MIN_F64: f64 = i64::MIN as f64;
-            const I64_MAX_PLUS_1_F64: f64 = 9223372036854775808.0; // 2^63
-
             let truncated = f_val.trunc();
-            if !(I64_MIN_F64..I64_MAX_PLUS_1_F64).contains(&truncated) {
+            let width = self.registry.get(target_qt.ty()).width();
+            let (min, max) = if target_qt.is_signed() {
+                if width >= 64 {
+                    (i64::MIN as f64, i64::MAX as f64)
+                } else {
+                    (-(1i64 << (width - 1)) as f64, (1i64 << (width - 1)) as f64)
+                }
+            } else {
+                if width >= 64 {
+                    (0.0, u64::MAX as f64)
+                } else {
+                    (0.0, (1u64 << width) as f64)
+                }
+            };
+
+            if !(min..max).contains(&truncated) {
                 return None;
             }
             return Some(self.truncate_to_type(truncated as i64, target_qt));

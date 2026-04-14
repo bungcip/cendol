@@ -1,6 +1,7 @@
 use crate::{
     ast::{
-        literal::{FloatSuffix, IntegerSuffix, Literal},
+        NodeRef,
+        literal::{FloatSuffix, IntegerSuffix, LitRef, LitVal},
         nodes::*,
         *,
     },
@@ -21,7 +22,6 @@ use hashbrown::{HashMap, HashSet};
 use smallvec::{SmallVec, smallvec};
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CaseRangeInterval {
     start: i64,
     end: i64,
@@ -71,6 +71,7 @@ pub struct SemanticInfo {
     pub generic_selections: HashMap<usize, NodeRef>, // Maps NodeIndex of GenericSelection to selected result_expr
     pub choose_expressions: HashMap<usize, NodeRef>, // Maps NodeIndex of BuiltinChooseExpr to selected branch
     pub offsetof_results: HashMap<usize, i64>,       // Maps NodeIndex of BuiltinOffsetof to computed offset
+    pub anonymous_tags: HashMap<TypeRef, NameId>,    // Maps TypeRef to its stable anonymous name ($anonN)
 }
 
 impl SemanticInfo {
@@ -82,6 +83,7 @@ impl SemanticInfo {
             generic_selections: HashMap::new(),
             choose_expressions: HashMap::new(),
             offsetof_results: HashMap::new(),
+            anonymous_tags: HashMap::new(),
         }
     }
 }
@@ -423,7 +425,9 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::DoWhile(body, condition) => !self.is_always_true(*condition) || self.contains_break(*body),
             NodeKind::For(for_stmt) => {
-                for_stmt.condition.is_some_and(|c| !self.is_always_true(c)) || self.contains_break(for_stmt.body)
+                let cond = NodeRef::new(for_stmt.child_start.get() + 1).unwrap();
+                let has_condition = !matches!(self.ast.get_kind(cond), NodeKind::Dummy);
+                (has_condition && !self.is_always_true(cond)) || self.contains_break(for_stmt.body)
             }
             NodeKind::CompoundStmt(cs) => {
                 for stmt in cs.stmt_start.range(cs.stmt_len) {
@@ -478,7 +482,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 // Bolt ⚡: Use cached value category for the object expression.
                 *is_arrow || self.semantic_info.value_categories[obj.index()] == ValueCategory::LValue
             }
-            NodeKind::Literal(Literal::String(_)) => true,
+            NodeKind::Literal(l) if matches!(self.ast.literals.get(*l), LitVal::String(_)) => true,
             NodeKind::CompoundLiteral(..) => true,
             NodeKind::BuiltinChooseExpr(..) => {
                 // Bolt ⚡: Use cached value category for the selected expression.
@@ -501,8 +505,9 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn is_numeric_literal(&self, node: NodeRef) -> bool {
-        if let NodeKind::Literal(literal) = self.ast.get_kind(node) {
-            matches!(literal, Literal::Int { .. } | Literal::Char(..) | Literal::Float { .. })
+        if let NodeKind::Literal(lit_id) = self.ast.get_kind(node) {
+            let val = self.ast.literals.get(*lit_id);
+            matches!(val, LitVal::Int { .. } | LitVal::Char(..) | LitVal::Float { .. })
         } else {
             false
         }
@@ -606,7 +611,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let node_kind = self.ast.get_kind(node);
 
         match node_kind {
-            NodeKind::Literal(Literal::Nullptr) => return true,
+            NodeKind::Literal(l) if matches!(self.ast.literals.get(*l), LitVal::Nullptr) => return true,
             NodeKind::Cast(qt, inner) if qt.ty() == self.registry.type_void_ptr => {
                 return self.is_null_pointer_constant(*inner);
             }
@@ -858,13 +863,17 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_for_statement(&mut self, stmt: &ForStmt) {
-        if let Some(init) = stmt.init {
+        let init = NodeRef::new(stmt.child_start.get()).unwrap();
+        let cond = NodeRef::new(stmt.child_start.get() + 1).unwrap();
+        let inc = NodeRef::new(stmt.child_start.get() + 2).unwrap();
+
+        if !matches!(self.ast.get_kind(init), NodeKind::Dummy) {
             self.visit_node(init);
         }
-        if let Some(cond) = stmt.condition {
+        if !matches!(self.ast.get_kind(cond), NodeKind::Dummy) {
             self.check_scalar_condition(cond);
         }
-        if let Some(inc) = stmt.increment {
+        if !matches!(self.ast.get_kind(inc), NodeKind::Dummy) {
             self.visit_node(inc);
         }
         self.loop_depth += 1;
@@ -1635,7 +1644,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let list = *list;
                 self.visit_init_list(&list, target_qt);
             }
-            NodeKind::Literal(Literal::String(_)) if target_qt.is_array() => {
+            NodeKind::Literal(l) if matches!(self.ast.literals.get(*l), LitVal::String(_)) && target_qt.is_array() => {
                 if let Some(init_qt) = self.visit_node(init) {
                     self.check_string_array_init(init, target_qt, init_qt);
                 }
@@ -1800,18 +1809,20 @@ impl<'a> SemanticAnalyzer<'a> {
             && list.init_len == 1
         {
             let (expr, _, d_len) = self.unwrap_init_item(list.init_start);
-            if d_len == 0 && matches!(self.ast.get_kind(expr), NodeKind::Literal(Literal::String(_))) {
+            if d_len == 0
+                && matches!(self.ast.get_kind(expr), NodeKind::Literal(l) if matches!(self.ast.literals.get(*l), LitVal::String(_)))
+            {
                 self.visit_node(expr);
                 return;
             }
         }
 
         let max_index = if let ArraySizeType::Constant(n) = array_size {
-            Some(*n as i64)
+            Some(*n)
         } else {
             None
         };
-        let mut current_idx = 0i64;
+        let mut current_idx = 0;
         let mut iter = list.init_start.range(list.init_len).peekable();
 
         while let Some(item) = iter.peek().copied() {
@@ -1839,7 +1850,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
 
             if let Some(max) = max_index
-                && current_idx >= max
+                && current_idx >= max as i64
             {
                 self.report_warning(item, SemanticErrorKind::ExcessElements { kind: "array" });
             }
@@ -1896,7 +1907,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     return false;
                 };
 
-                let mut end_idx = 0i64;
+                let mut end_idx = 0;
                 if let Designator::ArrayRange(s, end) = designator {
                     self.visit_node(s);
                     self.visit_node(end);
@@ -1916,12 +1927,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 );
 
                 let max_len = if let ArraySizeType::Constant(len) = size {
-                    Some(len as i64)
+                    Some(len)
                 } else {
                     None
                 };
                 let mut current_idx = end_idx + 1;
-                while max_len.is_none() || current_idx < max_len.unwrap() {
+                while max_len.is_none() || current_idx < max_len.unwrap() as i64 {
                     if iter.peek().is_none() || self.unwrap_init_item(*iter.peek().unwrap()).2 > 0 {
                         break;
                     }
@@ -2009,7 +2020,7 @@ impl<'a> SemanticAnalyzer<'a> {
             && d_len == 0
             && let Some(element_ty) = self.registry.get_array_element(target_qt.ty())
             && (element_ty.is_char() || element_ty.is_wchar_t())
-            && matches!(self.ast.get_kind(expr), NodeKind::Literal(Literal::String(_)))
+            && matches!(self.ast.get_kind(expr), NodeKind::Literal(l) if matches!(self.ast.literals.get(*l), LitVal::String(_)))
         {
             self.visit_node(expr);
             iter.next();
@@ -2294,18 +2305,20 @@ impl<'a> SemanticAnalyzer<'a> {
                 None
             }
             NodeKind::TypedefDecl(data) => {
-                self.visit_type_exprs(data.qt);
+                let sym = self.symbol_table.get_symbol(data.symbol);
+                self.visit_type_exprs(sym.type_info);
                 None
             }
             NodeKind::FunctionDecl(data) => {
-                self.visit_type_exprs(QualType::unqualified(data.ty));
+                let sym = self.symbol_table.get_symbol(data.symbol);
+                self.visit_type_exprs(sym.type_info);
 
                 // Bolt ⚡: Optimized to avoid cloning TypeKind.
                 let mut params_to_check = Vec::new();
                 let mut return_type_to_check = None;
 
                 {
-                    let type_info = self.registry.get(data.ty);
+                    let type_info = self.registry.get(sym.type_info.ty());
                     if let TypeKind::Function {
                         return_type,
                         parameters,
@@ -2343,8 +2356,9 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_function_definition(&mut self, data: &Function, node: NodeRef) -> Option<QualType> {
         // Bolt ⚡: Avoid cloning TypeKind.
+        let func_ty = self.symbol_table.get_symbol(data.symbol).type_info.ty();
         let ret_type = {
-            let type_info = self.registry.get(data.ty);
+            let type_info = self.registry.get(func_ty);
             if let TypeKind::Function { return_type, .. } = &type_info.kind {
                 *return_type
             } else {
@@ -2357,22 +2371,32 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         let symbol = self.symbol_table.get_symbol(data.symbol);
+        let (param_len, is_noreturn) = if let SymbolKind::Function {
+            param_len, is_noreturn, ..
+        } = &symbol.kind
+        {
+            (*param_len, *is_noreturn)
+        } else {
+            unreachable!("ICE: Function node refers to non-function symbol")
+        };
+
         let prev_ctx = self.current_function.take();
         self.current_function = Some(FunctionCtx {
             ret_type: QualType::unqualified(ret_type),
             name: symbol.name,
-            is_noreturn: data.is_noreturn,
+            is_noreturn,
         });
 
-        for param in data.param_start.range(data.param_len) {
+        for param in data.child_start.range(param_len) {
             self.visit_node(param);
         }
 
-        self.visit_node(data.body);
+        let body_node = NodeRef::new(data.child_start.get() + param_len as u32).expect("NodeRef overflow");
+        self.visit_node(body_node);
 
         if let Some(ctx) = self.current_function
             && ctx.is_noreturn
-            && self.can_fall_through(data.body)
+            && self.can_fall_through(body_node)
         {
             self.report_error(node, SemanticErrorKind::NoreturnFunctionFallsOff { name: ctx.name });
         }
@@ -2398,10 +2422,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
                 // Note where VLA is declared
                 if let NodeKind::VarDecl(var_data) = self.ast.get_kind(vla) {
-                    notes.push((
-                        self.ast.get_span(vla),
-                        SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name },
-                    ));
+                    let name = self.symbol_table.get_symbol(var_data.symbol).name;
+                    notes.push((self.ast.get_span(vla), SemanticErrorKind::NoteVLADeclaredHere { name }));
                 }
 
                 self.report_error_with_notes(
@@ -2419,27 +2441,34 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_var_declaration(&mut self, data: &VarDecl, node: NodeRef) -> Option<QualType> {
-        if self.registry.is_variably_modified(data.qt.ty()) {
+        let sym = self.symbol_table.get_symbol(data.symbol);
+        let qt = sym.type_info;
+        let storage = if let SymbolKind::Variable { storage, .. } = &sym.kind {
+            *storage
+        } else {
+            None
+        };
+
+        if self.registry.is_variably_modified(qt.ty()) {
             self.active_vlas.push(node);
         }
-        if data.qt.is_void() {
+        if qt.is_void() {
             self.report_error(node, SemanticErrorKind::VariableOfVoidType);
         }
-        self.visit_type_exprs(data.qt);
-        let _ = self.registry.ensure_layout(data.qt.ty());
-        if data.init.is_some() && matches!(data.storage, Some(StorageClass::Extern)) && self.current_function.is_some()
-        {
+        self.visit_type_exprs(qt);
+        let _ = self.registry.ensure_layout(qt.ty());
+        if data.init.is_some() && matches!(storage, Some(StorageClass::Extern)) && self.current_function.is_some() {
             self.report_error(node, SemanticErrorKind::InvalidInitializer);
         }
 
         if let Some(init) = data.init {
             // C11 6.7.9p3: VLA may not be initialized
-            if self.registry.is_variably_modified(data.qt.ty()) {
+            if self.registry.is_variably_modified(qt.ty()) {
                 self.report_error(node, SemanticErrorKind::VlaInitializerNotAllowed);
             }
-            self.visit_init(init, data.qt);
+            self.visit_init(init, qt);
         }
-        Some(data.qt)
+        Some(qt)
     }
 
     fn visit_statement_node(&mut self, node: NodeRef, kind: &NodeKind) -> Option<QualType> {
@@ -2493,7 +2522,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(*expr);
                 None
             }
-            NodeKind::StaticAssert(..) => {
+            NodeKind::StaticAssert(_expr, _msg) => {
                 self.deferred_checks.push(DeferredCheck::StaticAssert(node));
                 None
             }
@@ -2605,10 +2634,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // Also note where the VLA was declared
         if let NodeKind::VarDecl(var_data) = self.ast.get_kind(vla) {
-            notes.push((
-                self.ast.get_span(vla),
-                SemanticErrorKind::NoteVLADeclaredHere { name: var_data.name },
-            ));
+            let name = self.symbol_table.get_symbol(var_data.symbol).name;
+            notes.push((self.ast.get_span(vla), SemanticErrorKind::NoteVLADeclaredHere { name }));
         }
 
         self.report_error_with_notes(node, SemanticErrorKind::JumpIntoScopeVLA { is_switch: true }, notes);
@@ -2674,7 +2701,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_expression_node(&mut self, node: NodeRef, kind: &NodeKind) -> Option<QualType> {
         match kind {
-            NodeKind::Literal(literal) => self.visit_literal(literal),
+            NodeKind::Literal(l) => self.visit_literal(*l),
             NodeKind::Ident(_, sym) => {
                 let symbol = self.symbol_table.get_symbol(*sym);
                 // Use symbol.type_info for all symbols including enum constants.
@@ -2865,8 +2892,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     return None;
                 }
 
-                let common_real =
-                    crate::semantic::conversions::usual_arithmetic_conversions(self.registry, real_ty, imag_ty)?;
+                let common_real = usual_arithmetic_conversions(self.registry, real_ty, imag_ty)?;
                 Some(QualType::unqualified(self.registry.complex_type(common_real.ty())))
             }
             NodeKind::BuiltinMemcmp(s1, s2, n) => {
@@ -3034,14 +3060,14 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
                 self.visit_builtin_choose_expr(*cond, *true_expr, *false_expr, node)
             }
-            NodeKind::BuiltinConstantP(expr) => self.visit_builtin_constant_p(*expr, node),
-            NodeKind::BuiltinPrefetch(addr, rw, locality) => self.visit_builtin_prefetch(*addr, *rw, *locality, node),
-            NodeKind::BuiltinAlloca(size) => self.visit_builtin_alloca(*size, node),
+            NodeKind::BuiltinConstantP(expr) => self.visit_builtin_constant_p(*expr),
+            NodeKind::BuiltinPrefetch(addr, rw, locality) => self.visit_builtin_prefetch(*addr, *rw, *locality),
+            NodeKind::BuiltinAlloca(size) => self.visit_builtin_alloca(*size),
             _ => None,
         }
     }
 
-    fn visit_builtin_alloca(&mut self, size: NodeRef, _node: NodeRef) -> Option<QualType> {
+    fn visit_builtin_alloca(&mut self, size: NodeRef) -> Option<QualType> {
         self.apply_lvalue_conversion(size);
         if let Some(size_ty) = self.visit_node(size)
             && !size_ty.is_integer()
@@ -3056,7 +3082,6 @@ impl<'a> SemanticAnalyzer<'a> {
         addr: NodeRef,
         rw: Option<NodeRef>,
         locality: Option<NodeRef>,
-        _node: NodeRef,
     ) -> Option<QualType> {
         self.apply_lvalue_conversion(addr);
         let addr_ty = self.visit_node(addr)?;
@@ -3118,7 +3143,7 @@ impl<'a> SemanticAnalyzer<'a> {
         Some(QualType::unqualified(self.registry.type_void))
     }
 
-    fn visit_builtin_constant_p(&mut self, expr: NodeRef, _node: NodeRef) -> Option<QualType> {
+    fn visit_builtin_constant_p(&mut self, expr: NodeRef) -> Option<QualType> {
         self.visit_node(expr);
         // __builtin_constant_p always evaluates to an int
         Some(QualType::unqualified(self.registry.type_int))
@@ -3387,14 +3412,14 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_literal(&mut self, literal: &Literal) -> Option<QualType> {
-        match literal {
-            Literal::Int { val, suffix, base } => {
-                let val_u64 = *val as u64;
-                let is_decimal = *base == 10;
+    fn visit_literal(&mut self, lid: LitRef) -> Option<QualType> {
+        let val = self.ast.literals.get(lid);
+        match val {
+            LitVal::Int { val, suffix, radix } => {
+                let is_decimal = *radix == 10;
                 for ty in IntegerSuffix::get_candidates(*suffix, self.registry, is_decimal) {
                     let _ = self.registry.ensure_layout(ty);
-                    if self.registry.is_value_fitting(val_u64, ty) {
+                    if self.registry.is_literal_fitting(*val, ty) {
                         return Some(QualType::unqualified(ty));
                     }
                 }
@@ -3403,15 +3428,15 @@ impl<'a> SemanticAnalyzer<'a> {
                 // but usually it's the widest supported type)
                 Some(QualType::unqualified(self.registry.type_long_long_unsigned))
             }
-            Literal::Float { suffix, .. } => {
+            LitVal::Float { suffix, .. } => {
                 let ty = FloatSuffix::get_type(*suffix, self.registry);
                 Some(QualType::unqualified(ty))
             }
-            Literal::Char(_, prefix) => {
+            LitVal::Char(_, prefix) => {
                 let ty = prefix.get_type(self.registry);
                 Some(QualType::unqualified(ty))
             }
-            Literal::String(name) => {
+            LitVal::String(name) => {
                 let parsed = parse_string_literal(*name);
                 let element_type = self.registry.get_builtin_type(parsed.builtin_type);
 
@@ -3421,8 +3446,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 let _ = self.registry.ensure_layout(array_type);
                 Some(QualType::new(array_type, TypeQualifiers::empty()))
             }
-            Literal::Nullptr => Some(QualType::unqualified(self.registry.type_nullptr_t)),
-            Literal::True | Literal::False => Some(QualType::unqualified(self.registry.type_bool)),
+            LitVal::Nullptr => Some(QualType::unqualified(self.registry.type_nullptr_t)),
+            LitVal::True | LitVal::False => Some(QualType::unqualified(self.registry.type_bool)),
         }
     }
     fn visit_node(&mut self, node: NodeRef) -> Option<QualType> {
@@ -3506,7 +3531,13 @@ impl<'a> SemanticAnalyzer<'a> {
             Some(0) => {
                 let message = msg
                     .and_then(|m| match self.ast.get_kind(m) {
-                        NodeKind::Literal(Literal::String(s)) => Some(s.as_str().to_string()),
+                        NodeKind::Literal(l) => {
+                            if let LitVal::String(s) = self.ast.literals.get(*l) {
+                                Some(s.as_str().to_string())
+                            } else {
+                                None
+                            }
+                        }
                         _ => None,
                     })
                     .unwrap_or_default();

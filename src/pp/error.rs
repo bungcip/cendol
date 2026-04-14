@@ -25,6 +25,10 @@ pub enum PPErrorKind {
     ErrorDirective(String),
     #[error("Invalid conditional expression")]
     InvalidConditionalExpression,
+    #[error("division by zero in preprocessor expression")]
+    DivisionByZero,
+    #[error("remainder by zero in preprocessor expression")]
+    RemainderByZero,
     #[error("Invalid #line directive")]
     InvalidLineDirective,
     #[error("Multiple #else directives")]

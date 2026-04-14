@@ -172,16 +172,17 @@ impl<'a> MirValidator<'a> {
         let Some(target_ty) = self.mir.types.get(target_type_id.index()) else {
             return;
         };
-        let ConstValueKind::Int(value) = const_value.kind else {
+        let ConstValueKind::Int(value_u) = const_value.kind else {
             return;
         };
+        let value = value_u;
 
         let (min, max) = match target_ty {
             MirType::I8 | MirType::U8 => (-128, 255),
             MirType::I16 | MirType::U16 => (-32_768, 65_535),
             MirType::I32 | MirType::U32 => (-2_147_483_648, 4_294_967_295),
             MirType::Bool => (0, 1),
-            _ => return, // No validation for other types
+            _ => return, // No validation for I64/U64 or other types (always fits in 64 bits)
         };
 
         if value < min || value > max {

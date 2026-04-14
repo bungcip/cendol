@@ -26,7 +26,7 @@ use std::num::NonZeroU32;
 pub type NameId = symbol_table::GlobalSymbol;
 pub type StringId = NameId;
 
-use crate::semantic::{QualType, ScopeId, SemanticInfo, SymbolRef, TypeRef, ValueCategory};
+use crate::semantic::{QualType, ScopeId, SemanticInfo, SymbolRef, ValueCategory};
 pub use crate::source_manager::{SourceId, SourceSpan};
 
 // Submodules
@@ -50,8 +50,9 @@ pub use nodes::{BinaryOp, UnaryOp};
 /// Contains all AST nodes, types, symbol entries in contiguous vectors.
 #[derive(Clone, Default)]
 pub struct Ast {
-    pub kinds: Vec<NodeKind>,
-    pub spans: Vec<SourceSpan>,
+    pub(crate) kinds: Vec<NodeKind>,
+    pub(crate) spans: Vec<SourceSpan>,
+    pub literals: literal::LiteralTable,
     pub semantic_info: Option<SemanticInfo>, // Populated after type resolution
 }
 
@@ -70,21 +71,25 @@ impl Ast {
     }
 
     /// Add a dummy node to the AST and return its reference
+    #[inline]
     pub(crate) fn push_dummy(&mut self, span: SourceSpan) -> NodeRef {
         self.push_node(NodeKind::Dummy, span)
     }
 
     /// Get node kind by reference
+    #[inline]
     pub(crate) fn get_kind(&self, node: NodeRef) -> &NodeKind {
         &self.kinds[node.index()]
     }
 
     /// Get node span by reference
+    #[inline]
     pub(crate) fn get_span(&self, node: NodeRef) -> SourceSpan {
         self.spans[node.index()]
     }
 
     /// get root node ref
+    #[inline]
     pub(crate) fn get_root(&self) -> NodeRef {
         NodeRef::ROOT
     }
@@ -92,7 +97,10 @@ impl Ast {
     pub(crate) fn scope_of(&self, node: NodeRef) -> ScopeId {
         match &self.kinds[node.index()] {
             NodeKind::TranslationUnit(data) => data.scope_id,
-            NodeKind::Function(data) => data.scope_id,
+            NodeKind::Function(data) => {
+                let body_node = NodeRef::new(data.child_start.get() + data.param_len as u32).unwrap();
+                self.scope_of(body_node) // delegate to CompoundStmt body (last child)
+            }
             NodeKind::FunctionDecl(data) => data.scope_id,
             NodeKind::CompoundStmt(data) => data.scope_id,
             NodeKind::For(data) => data.scope_id,
@@ -101,8 +109,21 @@ impl Ast {
     }
 
     /// attach semantic info side table for AST (populated after type resolution)
+    #[inline]
     pub(crate) fn attach_semantic_info(&mut self, semantic_info: SemanticInfo) {
         self.semantic_info = Some(semantic_info);
+    }
+
+    /// set the kind of an existing node
+    #[inline]
+    pub(crate) fn set_kind(&mut self, node: NodeRef, kind: NodeKind) {
+        self.kinds[node.index()] = kind;
+    }
+
+    /// set the span of an existing node
+    #[inline]
+    pub(crate) fn set_span(&mut self, node: NodeRef, span: SourceSpan) {
+        self.spans[node.index()] = span;
     }
 }
 
@@ -113,14 +134,17 @@ pub struct NodeRef(NonZeroU32);
 impl NodeRef {
     pub const ROOT: NodeRef = NodeRef(NonZeroU32::new(1).unwrap());
 
+    #[inline]
     pub(crate) fn new(value: u32) -> Option<Self> {
         NonZeroU32::new(value).map(Self)
     }
 
+    #[inline]
     pub(crate) fn get(self) -> u32 {
         self.0.get()
     }
 
+    #[inline]
     pub(crate) fn index(self) -> usize {
         (self.get() - 1) as usize
     }

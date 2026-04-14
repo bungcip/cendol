@@ -1,4 +1,4 @@
-use crate::ast::literal::{FloatSuffix, Literal};
+use crate::ast::literal::{FloatSuffix, LitVal};
 use crate::ast::nodes::AtomicOp;
 use crate::ast::{BinaryOp, CallExpr, NameId, NodeKind, NodeRef, StorageClass, UnaryOp};
 use crate::codegen::mir_gen::MirGen;
@@ -494,42 +494,45 @@ impl<'a> MirGen<'a> {
     fn visit_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
         let mir_ty = self.lower_qual_type(ty);
         match node_kind {
-            NodeKind::Literal(literal) => match literal {
-                Literal::Int { val, .. } => Some(Operand::Constant(
-                    self.create_constant(mir_ty, ConstValueKind::Int(*val)),
-                )),
-                Literal::Float { val, suffix } => {
-                    if matches!(suffix, Some(FloatSuffix::I | FloatSuffix::IF | FloatSuffix::IL)) {
-                        let ty_info = self.mb.get_type(mir_ty);
-                        if let MirType::Record { field_types, .. } = ty_info {
-                            let elem_ty = field_types[0];
-                            let zero = self.create_constant(elem_ty, ConstValueKind::Float(0.0));
-                            let imag = self.create_constant(elem_ty, ConstValueKind::Float(*val));
-                            Some(Operand::Constant(self.create_constant(
-                                mir_ty,
-                                ConstValueKind::StructLiteral(vec![(0, zero), (1, imag)]),
-                            )))
+            NodeKind::Literal(literal_id) => {
+                let val = self.ast.literals.get(*literal_id);
+                match val {
+                    LitVal::Int { val, .. } => Some(Operand::Constant(
+                        self.create_constant(mir_ty, ConstValueKind::Int(*val)),
+                    )),
+                    lit @ LitVal::Float { suffix, .. } => {
+                        if matches!(suffix, Some(FloatSuffix::I | FloatSuffix::IF | FloatSuffix::IL)) {
+                            let ty_info = self.mb.get_type(mir_ty);
+                            if let MirType::Record { field_types, .. } = ty_info {
+                                let elem_ty = field_types[0];
+                                let zero = self.create_constant(elem_ty, ConstValueKind::Float(0.0));
+                                let imag = self.create_constant(elem_ty, ConstValueKind::Float(lit.as_f64()));
+                                Some(Operand::Constant(self.create_constant(
+                                    mir_ty,
+                                    ConstValueKind::StructLiteral(vec![(0, zero), (1, imag)]),
+                                )))
+                            } else {
+                                unreachable!("Complex float must lower to a record type")
+                            }
                         } else {
-                            unreachable!("Complex float must lower to a record type")
+                            Some(Operand::Constant(
+                                self.create_constant(mir_ty, ConstValueKind::Float(lit.as_f64())),
+                            ))
                         }
-                    } else {
-                        Some(Operand::Constant(
-                            self.create_constant(mir_ty, ConstValueKind::Float(*val)),
-                        ))
                     }
+                    LitVal::Char(val, _) => Some(Operand::Constant(
+                        self.create_constant(mir_ty, ConstValueKind::Int(*val as i64)),
+                    )),
+                    LitVal::String(val) => Some(self.visit_literal_string(val, ty)),
+                    LitVal::Nullptr => Some(Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Null))),
+                    LitVal::True => Some(Operand::Constant(
+                        self.create_constant(mir_ty, ConstValueKind::Bool(true)),
+                    )),
+                    LitVal::False => Some(Operand::Constant(
+                        self.create_constant(mir_ty, ConstValueKind::Bool(false)),
+                    )),
                 }
-                Literal::Char(val, _) => Some(Operand::Constant(
-                    self.create_constant(mir_ty, ConstValueKind::Int(*val as i64)),
-                )),
-                Literal::String(val) => Some(self.visit_literal_string(val, ty)),
-                Literal::Nullptr => Some(Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Null))),
-                Literal::True => Some(Operand::Constant(
-                    self.create_constant(mir_ty, ConstValueKind::Bool(true)),
-                )),
-                Literal::False => Some(Operand::Constant(
-                    self.create_constant(mir_ty, ConstValueKind::Bool(false)),
-                )),
-            },
+            }
             _ => None,
         }
     }

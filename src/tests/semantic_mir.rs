@@ -554,7 +554,7 @@ fn test_function_with_many_return_types() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
     type %t1 = f64
     type %t2 = i8
@@ -956,7 +956,7 @@ fn test_increment_decrement() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
 
     fn main() -> i32

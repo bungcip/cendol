@@ -1,7 +1,7 @@
 use super::semantic_common::setup_lowering;
-use crate::ast::literal::Literal;
+use crate::ast::literal::LitVal;
 use crate::ast::{Ast, NodeKind, NodeRef, StringId};
-use crate::semantic::{SymbolTable, TypeRegistry};
+use crate::semantic::{SymbolKind, SymbolTable, TypeRegistry};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -63,22 +63,31 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
                 .collect();
             ResolvedAstNode::TranslationUnit(nodes)
         }
-        NodeKind::VarDecl(data) => ResolvedAstNode::VarDecl {
-            name: data.name,
-            ty: registry.display_qual_type(data.qt),
-            init: data
-                .init
-                .map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))),
-            alignment: data.alignment,
-        },
+        NodeKind::VarDecl(data) => {
+            let sym = symbol_table.get_symbol(data.symbol);
+            let alignment = if let crate::semantic::SymbolKind::Variable { alignment, .. } = &sym.kind {
+                alignment.map(|a| a as u16)
+            } else {
+                None
+            };
+            ResolvedAstNode::VarDecl {
+                name: sym.name,
+                ty: registry.display_qual_type(sym.type_info),
+                init: data
+                    .init
+                    .map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))),
+                alignment,
+            }
+        }
         NodeKind::RecordDecl(data) => {
+            let symbol = symbol_table.get_symbol(data.symbol);
             let members = data
                 .member_start
                 .range(data.member_len)
                 .map(|child| resolve_node(ast, registry, symbol_table, child))
                 .collect();
             ResolvedAstNode::RecordDecl {
-                name: data.name.unwrap_or_else(|| StringId::new("<anon>")),
+                name: symbol.name,
                 members,
             }
         }
@@ -87,25 +96,35 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
             ty: registry.display_qual_type(data.qt),
         },
         NodeKind::EnumDecl(data) => {
+            let symbol = symbol_table.get_symbol(data.symbol);
             let members = data
                 .member_start
                 .range(data.member_len)
                 .map(|child| resolve_node(ast, registry, symbol_table, child))
                 .collect();
             ResolvedAstNode::EnumDecl {
-                name: data.name.unwrap_or_else(|| StringId::new("<anon>")),
+                name: symbol.name,
                 members,
             }
         }
-        NodeKind::EnumMember(data) => ResolvedAstNode::EnumMember {
-            name: data.name,
-            value: data.value,
-        },
+        NodeKind::EnumMember(data) => {
+            let symbol = symbol_table.get_symbol(data.symbol);
+            let value = if let SymbolKind::EnumConstant { value } = symbol.kind {
+                value
+            } else {
+                panic!("Expected EnumConstant symbol kind");
+            };
+            ResolvedAstNode::EnumMember {
+                name: symbol.name,
+                value,
+            }
+        }
         NodeKind::Function(data) => {
             let symbol = symbol_table.get_symbol(data.symbol);
+            let body_node = NodeRef::new(data.child_start.get() + data.param_len as u32).expect("NodeRef overflow");
             ResolvedAstNode::Function {
                 name: symbol.name,
-                body: Box::new(resolve_node(ast, registry, symbol_table, data.body)),
+                body: Box::new(resolve_node(ast, registry, symbol_table, body_node)),
             }
         }
         NodeKind::FunctionCall(call) => {
@@ -135,10 +154,13 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
         NodeKind::Return(expr) => {
             ResolvedAstNode::Return(expr.map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))))
         }
-        NodeKind::Literal(literal) => match literal {
-            Literal::Int { val, .. } => ResolvedAstNode::LiteralInt(*val),
-            _ => panic!("Not implemented for this literal type"),
-        },
+        NodeKind::Literal(literal_id) => {
+            let literal = ast.literals.get(*literal_id);
+            match *literal {
+                LitVal::Int { val, .. } => ResolvedAstNode::LiteralInt(val),
+                _ => panic!("Not implemented for this literal type"),
+            }
+        }
         NodeKind::Ident(name, _) => ResolvedAstNode::Ident(*name),
         _ => ResolvedAstNode::Other(format!("{:?}", kind)),
     }

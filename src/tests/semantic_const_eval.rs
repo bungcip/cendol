@@ -21,7 +21,7 @@ fn evaluate_program(source: &str) -> String {
         panic!("Root is not a TranslationUnit");
     }
 
-    let init_expr = crate::tests::semantic_common::find_var_decl(&ast, "test_var")
+    let init_expr = crate::tests::semantic_common::find_var_decl(&ast, &symbol_table, "test_var")
         .init
         .expect("Could not find test_var initializer");
 

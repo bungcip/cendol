@@ -830,18 +830,7 @@ impl<'src> Preprocessor<'src> {
         let mut interpreter = Interpreter::new(tokens, self);
         let result = interpreter.evaluate();
 
-        match result {
-            Ok(val) => Ok(val.is_truthy()),
-            Err(_) => {
-                // For complex expressions that can't be parsed, emit a warning and treat as false
-                self.report_warning(
-                    self.get_current_location(),
-                    "Invalid conditional expression in preprocessor directive",
-                );
-                // Return false for unparseable expressions to allow compilation to continue
-                Ok(false)
-            }
-        }
+        result.map(|val| val.is_truthy())
     }
 
     /// Lex the next token

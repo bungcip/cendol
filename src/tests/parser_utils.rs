@@ -1,4 +1,5 @@
-use crate::ast::{BinaryOp, UnaryOp, literal::Literal};
+use crate::ast::literal::LitVal;
+use crate::ast::{BinaryOp, ParsedBaseType, ParsedBaseTypeRef, UnaryOp};
 use crate::ast::{DeclSpec, DeclaratorRef, ParsedAst, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, TypeSpec};
 use crate::diagnostic::ParseError;
 use crate::driver::artifact::CompilePhase;
@@ -167,14 +168,14 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
 pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNodeKind {
     let node = ast.get_node(node);
     match &node.kind {
-        ParsedNodeKind::Literal(literal) => match literal {
-            Literal::Int { val, .. } => ResolvedNodeKind::LiteralInt(*val),
-            Literal::Float { val, .. } => ResolvedNodeKind::LiteralFloat(*val),
-            Literal::String(s) => ResolvedNodeKind::LiteralString(s.to_string()),
-            Literal::Char(c, prefix) => ResolvedNodeKind::LiteralChar(*c, *prefix),
-            Literal::Nullptr => ResolvedNodeKind::LiteralNullptr,
-            Literal::True => ResolvedNodeKind::LiteralTrue,
-            Literal::False => ResolvedNodeKind::LiteralFalse,
+        ParsedNodeKind::Literal(lit) => match ast.literals.get(*lit) {
+            LitVal::Int { val, .. } => ResolvedNodeKind::LiteralInt(*val),
+            lit @ LitVal::Float { .. } => ResolvedNodeKind::LiteralFloat(lit.as_f64()),
+            LitVal::String(s) => ResolvedNodeKind::LiteralString(s.to_string()),
+            LitVal::Char(c, prefix) => ResolvedNodeKind::LiteralChar(*c, *prefix),
+            LitVal::Nullptr => ResolvedNodeKind::LiteralNullptr,
+            LitVal::True => ResolvedNodeKind::LiteralTrue,
+            LitVal::False => ResolvedNodeKind::LiteralFalse,
         },
         ParsedNodeKind::Ident(symbol) => ResolvedNodeKind::Ident(symbol.to_string()),
         ParsedNodeKind::UnaryOp(op, operand) => ResolvedNodeKind::UnaryOp(*op, Box::new(resolve_node(ast, *operand))),
@@ -318,8 +319,12 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
         ),
         ParsedNodeKind::StaticAssert(expr, msg) => {
             let message = msg.map(|m| {
-                if let ParsedNodeKind::Literal(Literal::String(s)) = &ast.get_node(m).kind {
-                    s.to_string()
+                if let ParsedNodeKind::Literal(lit) = &ast.get_node(m).kind {
+                    if let LitVal::String(s) = ast.literals.get(*lit) {
+                        s.to_string()
+                    } else {
+                        "<invalid>".to_string()
+                    }
                 } else {
                     "<invalid>".to_string()
                 }
@@ -440,10 +445,10 @@ fn extract_declarator_kind(ast: &ParsedAst, declarator: DeclaratorRef) -> String
     }
 }
 
-fn extract_base_kind(ast: &ParsedAst, base: crate::ast::ParsedBaseTypeRef) -> String {
+fn extract_base_kind(ast: &ParsedAst, base: ParsedBaseTypeRef) -> String {
     let base = ast.parsed_types.get_base_type(base);
     match base {
-        crate::ast::ParsedBaseType::Builtin(spec) => {
+        ParsedBaseType::Builtin(spec) => {
             let s = format!("{:?}", spec);
             let mut result = String::new();
             for (i, c) in s.chars().enumerate() {
@@ -454,7 +459,7 @@ fn extract_base_kind(ast: &ParsedAst, base: crate::ast::ParsedBaseTypeRef) -> St
             }
             result
         }
-        crate::ast::ParsedBaseType::Record { tag, is_union, .. } => {
+        ParsedBaseType::Record { tag, is_union, .. } => {
             let kind = if *is_union { "union" } else { "struct" };
             if let Some(tag) = tag {
                 format!("{} {}", kind, tag)
@@ -462,7 +467,7 @@ fn extract_base_kind(ast: &ParsedAst, base: crate::ast::ParsedBaseTypeRef) -> St
                 "struct { ... }".to_string()
             }
         }
-        crate::ast::ParsedBaseType::Enum {
+        ParsedBaseType::Enum {
             tag, underlying_type, ..
         } => {
             let mut s = if let Some(tag) = tag {
@@ -476,11 +481,11 @@ fn extract_base_kind(ast: &ParsedAst, base: crate::ast::ParsedBaseTypeRef) -> St
             }
             s
         }
-        crate::ast::ParsedBaseType::Typedef(name) => name.to_string(),
-        crate::ast::ParsedBaseType::Typeof(..) => "typeof(...)".to_string(),
-        crate::ast::ParsedBaseType::TypeofExpr(..) => "typeof(...)".to_string(),
-        crate::ast::ParsedBaseType::TypeofUnqual(..) => "typeof_unqual(...)".to_string(),
-        crate::ast::ParsedBaseType::TypeofUnqualExpr(..) => "typeof_unqual(...)".to_string(),
+        ParsedBaseType::Typedef(name) => name.to_string(),
+        ParsedBaseType::Typeof(..) => "typeof(...)".to_string(),
+        ParsedBaseType::TypeofExpr(..) => "typeof(...)".to_string(),
+        ParsedBaseType::TypeofUnqual(..) => "typeof_unqual(...)".to_string(),
+        ParsedBaseType::TypeofUnqualExpr(..) => "typeof_unqual(...)".to_string(),
     }
 }
 
@@ -562,10 +567,10 @@ pub(crate) fn setup_declaration_with_std(source: &str, std: crate::lang_options:
     let ast = first.parsed_ast.clone().unwrap();
     let root = ast.get_root();
 
-    if let crate::ast::parsed::ParsedNodeKind::TranslationUnit(decls) = &ast.get_node(root).kind {
+    if let ParsedNodeKind::TranslationUnit(decls) = &ast.get_node(root).kind {
         // Find the actual declaration among possibly dummy/semicolon nodes
         for &node in decls {
-            if !matches!(ast.get_node(node).kind, crate::ast::parsed::ParsedNodeKind::Dummy) {
+            if !matches!(ast.get_node(node).kind, ParsedNodeKind::Dummy) {
                 return resolve_node(&ast, node);
             }
         }

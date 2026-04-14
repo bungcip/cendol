@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 
 use crate::ast;
-use crate::ast::literal::Literal;
+use crate::ast::literal::LitVal;
 use crate::ast::{Designator, NodeKind, NodeRef};
 use crate::codegen::mir_gen::MirGen;
 use crate::mir::{ConstValueKind, MirArrayLayout, MirLinkage, MirType, Operand, Place, Rvalue};
@@ -214,7 +214,8 @@ impl<'a> MirGen<'a> {
             return false;
         }
 
-        if let NodeKind::Literal(Literal::String(_)) = init_kind
+        if let NodeKind::Literal(lit) = init_kind
+            && let LitVal::String(_) = self.ast.literals.get(*lit)
             && let TypeKind::Array { element_type, .. } = kind
             && self.registry.is_char_type(*element_type)
         {
@@ -503,14 +504,21 @@ impl<'a> MirGen<'a> {
                 )
             }
             // ...
-            (NodeKind::Literal(Literal::String(val)), TypeKind::Array { element_type, size }) => {
+            (NodeKind::Literal(lit), TypeKind::Array { element_type, size })
+                if matches!(self.ast.literals.get(*lit), LitVal::String(_)) =>
+            {
+                let val = if let LitVal::String(v) = self.ast.literals.get(*lit) {
+                    *v
+                } else {
+                    unreachable!()
+                };
                 let fixed_size = if let ArraySizeType::Constant(s) = size {
                     Some(*s)
                 } else {
                     None
                 };
                 Operand::Constant(self.create_array_const_from_string(
-                    val,
+                    &val,
                     fixed_size,
                     Some(QualType::unqualified(*element_type)),
                 ))

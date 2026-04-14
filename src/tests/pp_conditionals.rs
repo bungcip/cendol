@@ -608,7 +608,7 @@ LOGICNOT_1_OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: PLUS_OK
     - kind: Identifier
@@ -669,21 +669,8 @@ FAIL_INDIRECT_LOCAL
 
 #[test]
 fn test_pp_arithmetic_edge_cases() {
+    // This test now only covers the overflow cases, as division by zero is now fatal.
     let src = r#"
-/* Division by zero */
-#if 1 / 0
-FAIL_DIV_ZERO
-#else
-OK_DIV_ZERO
-#endif
-
-/* Modulo by zero */
-#if 1 % 0
-FAIL_MOD_ZERO
-#else
-OK_MOD_ZERO
-#endif
-
 /* Signed overflow division: INT64_MIN / -1 */
 /* -9223372036854775807 - 1 constructs INT64_MIN as signed */
 #if ((-9223372036854775807 - 1) / -1) == (-9223372036854775807 - 1)
@@ -700,11 +687,7 @@ FAIL_MOD_OVERFLOW
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @"
-    - kind: Identifier
-      text: OK_DIV_ZERO
-    - kind: Identifier
-      text: OK_MOD_ZERO
+    insta::assert_yaml_snapshot!(tokens, @r"
     - kind: Identifier
       text: OK_DIV_OVERFLOW
     - kind: Identifier
@@ -754,7 +737,8 @@ OK
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
     assert!(!diags.is_empty());
-    assert!(diags[0].contains("Invalid conditional expression"));
+    assert!(diags[0].contains("Fatal Error"));
+    assert!(diags[0].contains("DivisionByZero"));
 }
 
 #[test]
@@ -798,7 +782,8 @@ OK
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
     assert!(!diags.is_empty());
-    assert!(diags[0].contains("Invalid conditional expression"));
+    assert!(diags[0].contains("Fatal Error"));
+    assert!(diags[0].contains("RemainderByZero"));
 }
 
 #[test]

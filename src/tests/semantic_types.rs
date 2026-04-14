@@ -694,23 +694,24 @@ fn test_is_value_fitting_coverage() {
     // Unsigned 64-bit type
     let ty_unsigned_long_long = registry.type_long_long_unsigned;
     assert!(registry.is_value_fitting(12345, ty_unsigned_long_long));
-    assert!(registry.is_value_fitting(u64::MAX, ty_unsigned_long_long));
+    assert!(!registry.is_value_fitting(-1, ty_unsigned_long_long));
 
     // Signed 64-bit type
     let ty_signed_long_long = registry.type_long_long;
     assert!(registry.is_value_fitting(12345, ty_signed_long_long));
-    assert!(registry.is_value_fitting(i64::MAX as u64, ty_signed_long_long));
-    assert!(!registry.is_value_fitting(u64::MAX, ty_signed_long_long));
+    assert!(registry.is_value_fitting(i64::MAX, ty_signed_long_long));
+    assert!(registry.is_value_fitting(i64::MIN, ty_signed_long_long));
 
     // Unsigned 32-bit type
     let ty_unsigned_int = registry.type_int_unsigned;
     assert!(registry.is_value_fitting(12345, ty_unsigned_int));
-    assert!(registry.is_value_fitting(u32::MAX as u64, ty_unsigned_int));
-    assert!(!registry.is_value_fitting(u64::MAX, ty_unsigned_int));
+    assert!(registry.is_value_fitting(u32::MAX as i64, ty_unsigned_int));
+    assert!(!registry.is_value_fitting(-1, ty_unsigned_int));
 
     // Signed 32-bit type
     let ty_signed_int = registry.type_int;
     assert!(registry.is_value_fitting(12345, ty_signed_int));
-    assert!(registry.is_value_fitting(i32::MAX as u64, ty_signed_int));
-    assert!(!registry.is_value_fitting(u32::MAX as u64, ty_signed_int));
+    assert!(registry.is_value_fitting(i32::MAX as i64, ty_signed_int));
+    assert!(registry.is_value_fitting(i32::MIN as i64, ty_signed_int));
+    assert!(!registry.is_value_fitting(u32::MAX as i64, ty_signed_int));
 }

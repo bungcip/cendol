@@ -1,7 +1,7 @@
 use crate::{
     ast::{
         AtomicOp, BinaryOp, FunctionSpec, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp,
-        literal::Literal,
+        literal::LitRef,
     },
     semantic::TypeQualifiers,
 };
@@ -17,7 +17,7 @@ pub enum PragmaPackKind {
     Set(Option<u8>),
 }
 
-use super::ParsedTypeArena;
+use super::{ParsedTypeArena, literal::LiteralTable};
 
 /// Node reference type for referencing child nodes in ParsedAst.
 pub type ParsedNodeRef = NonZeroU32;
@@ -28,6 +28,7 @@ pub type ParsedNodeRef = NonZeroU32;
 pub struct ParsedAst {
     pub nodes: Vec<ParsedNode>,
     pub parsed_types: ParsedTypeArena,
+    pub literals: LiteralTable,
 }
 
 impl ParsedAst {
@@ -71,7 +72,7 @@ impl ParsedNode {
 #[derive(Debug, Clone)]
 pub enum ParsedNodeKind {
     // --- Literals ---
-    Literal(Literal),
+    Literal(LitRef),
 
     // --- Expressions ---
     Ident(NameId), // No symbol ref yet

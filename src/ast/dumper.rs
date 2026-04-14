@@ -626,7 +626,7 @@ impl AstDumper {
                 Self::write_function_name(f, data.symbol, symbol_table)?;
                 write!(f, ", symbol={:?}, ", data.symbol)?;
 
-                let body_node = NodeRef::new(data.child_start.get() + data.param_len as u32).expect("NodeRef overflow");
+                let body_node = data.child_start.add_offset(data.param_len);
                 Self::write_range(f, "params", data.child_start, data.param_len)?;
                 write!(f, ", body={}", body_node.get())?
             }

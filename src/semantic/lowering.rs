@@ -1201,8 +1201,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             match data {
                 AggType::Record(tag, members) => {
-                    let member_start_idx = self.ast.kinds.len() as u32 + 1;
-                    let member_start = NodeRef::new(member_start_idx).expect("NodeRef overflow");
+                    let member_start = self.ast.next_node_ref();
                     let member_len = members.len() as u16;
 
                     for m in members.iter() {

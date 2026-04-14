@@ -354,7 +354,7 @@ impl<'a> MirGen<'a> {
             0
         };
 
-        let body_node = NodeRef::new(function.child_start.get() + param_len as u32).expect("NodeRef overflow");
+        let body_node = function.child_start.add_offset(param_len);
         self.scan_for_labels(body_node);
 
         // Parameter locals are now created in `define_function`. We just need to
@@ -862,9 +862,9 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_for_stmt(&mut self, for_stmt: &ForStmt) {
-        let init_node = NodeRef::new(for_stmt.child_start.get()).unwrap();
-        let cond_node = NodeRef::new(for_stmt.child_start.get() + 1).unwrap();
-        let inc_node = NodeRef::new(for_stmt.child_start.get() + 2).unwrap();
+        let init_node = for_stmt.child_start;
+        let cond_node = for_stmt.child_start.add_offset(1);
+        let inc_node = for_stmt.child_start.add_offset(2);
 
         let has_init = !matches!(self.ast.get_kind(init_node), NodeKind::Dummy);
         let has_cond = !matches!(self.ast.get_kind(cond_node), NodeKind::Dummy);

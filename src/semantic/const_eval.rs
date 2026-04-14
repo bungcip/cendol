@@ -178,7 +178,7 @@ impl<'a> ConstEvalCtx<'a> {
                 if let NodeKind::InitializerList(list) = self.ast.get_kind(*init_list) {
                     let index = if is_real { 0 } else { 1 };
                     if (index as u16) < list.init_len {
-                        let item = NodeRef::new(list.init_start.get() + index as u32).expect("NodeRef overflow");
+                        let item = list.init_start.add_offset(index);
                         if let NodeKind::InitializerItem(item) = self.ast.get_kind(item) {
                             return self.eval_float(item.initializer);
                         }

@@ -64,9 +64,16 @@ impl Ast {
 
     /// Add a node to the AST and return its reference
     pub(crate) fn push_node(&mut self, kind: NodeKind, span: SourceSpan) -> NodeRef {
-        let index = self.kinds.len() as u32 + 1; // Start from 1 for NonZeroU32
+        let node = self.next_node_ref();
         self.kinds.push(kind);
         self.spans.push(span);
+        node
+    }
+
+    /// get the reference of the next node to be pushed
+    #[inline]
+    pub(crate) fn next_node_ref(&self) -> NodeRef {
+        let index = self.kinds.len() as u32 + 1; // Start from 1 for NonZeroU32
         NodeRef::new(index).expect("NodeRef overflow")
     }
 
@@ -98,7 +105,7 @@ impl Ast {
         match &self.kinds[node.index()] {
             NodeKind::TranslationUnit(data) => data.scope_id,
             NodeKind::Function(data) => {
-                let body_node = NodeRef::new(data.child_start.get() + data.param_len as u32).unwrap();
+                let body_node = data.child_start.add_offset(data.param_len);
                 self.scope_of(body_node) // delegate to CompoundStmt body (last child)
             }
             NodeKind::FunctionDecl(data) => data.scope_id,
@@ -142,6 +149,11 @@ impl NodeRef {
     #[inline]
     pub(crate) fn get(self) -> u32 {
         self.0.get()
+    }
+
+    #[inline]
+    pub(crate) fn add_offset(self, offset: u16) -> Self {
+        NodeRef::new(self.get() + offset as u32).expect("NodeRef overflow")
     }
 
     #[inline]

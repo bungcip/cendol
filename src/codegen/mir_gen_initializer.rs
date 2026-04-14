@@ -126,7 +126,7 @@ impl<'a> MirGen<'a> {
                     (Some((initializer, designator)), active_path)
                 } else {
                     let (d_start, d_len) = designator.unwrap();
-                    let next_d_start = NodeRef::new(d_start.get() + 1).unwrap();
+                    let next_d_start = d_start.add_offset(1);
                     let next_d_len = d_len - 1;
                     (Some((initializer, Some((next_d_start, next_d_len)))), Vec::new())
                 };
@@ -329,7 +329,7 @@ impl<'a> MirGen<'a> {
             let operand = if let Some((d_start, d_len)) = designator_info
                 && d_len > 1
             {
-                let next_d_start = NodeRef::new(d_start.get() + 1).unwrap();
+                let next_d_start = d_start.add_offset(1);
                 let next_d_len = d_len - 1;
                 let next_pending = Some((initializer, Some((next_d_start, next_d_len))));
 

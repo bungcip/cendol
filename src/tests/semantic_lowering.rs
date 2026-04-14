@@ -121,7 +121,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
         }
         NodeKind::Function(data) => {
             let symbol = symbol_table.get_symbol(data.symbol);
-            let body_node = NodeRef::new(data.child_start.get() + data.param_len as u32).expect("NodeRef overflow");
+            let body_node = data.child_start.add_offset(data.param_len);
             ResolvedAstNode::Function {
                 name: symbol.name,
                 body: Box::new(resolve_node(ast, registry, symbol_table, body_node)),

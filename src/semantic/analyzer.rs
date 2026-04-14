@@ -425,7 +425,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             NodeKind::DoWhile(body, condition) => !self.is_always_true(*condition) || self.contains_break(*body),
             NodeKind::For(for_stmt) => {
-                let cond = NodeRef::new(for_stmt.child_start.get() + 1).unwrap();
+                let cond = for_stmt.child_start.add_offset(1);
                 let has_condition = !matches!(self.ast.get_kind(cond), NodeKind::Dummy);
                 (has_condition && !self.is_always_true(cond)) || self.contains_break(for_stmt.body)
             }
@@ -863,9 +863,9 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_for_statement(&mut self, stmt: &ForStmt) {
-        let init = NodeRef::new(stmt.child_start.get()).unwrap();
-        let cond = NodeRef::new(stmt.child_start.get() + 1).unwrap();
-        let inc = NodeRef::new(stmt.child_start.get() + 2).unwrap();
+        let init = stmt.child_start;
+        let cond = stmt.child_start.add_offset(1);
+        let inc = stmt.child_start.add_offset(2);
 
         if !matches!(self.ast.get_kind(init), NodeKind::Dummy) {
             self.visit_node(init);
@@ -1752,7 +1752,7 @@ impl<'a> SemanticAnalyzer<'a> {
             let (_expr, d_start, d_len) = self.unwrap_init_item(item);
 
             if d_len > 0 {
-                let designator = NodeRef::new(d_start.get()).unwrap();
+                let designator = d_start;
                 if let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(designator) {
                     if let Some(idx) = self.find_member_index(members, *name) {
                         member_idx = idx;
@@ -1828,7 +1828,7 @@ impl<'a> SemanticAnalyzer<'a> {
         while let Some(item) = iter.peek().copied() {
             let (_, d_start, d_len) = self.unwrap_init_item(item);
             if d_len > 0 {
-                let designator = NodeRef::new(d_start.get()).unwrap();
+                let designator = d_start;
                 if let NodeKind::Designator(d) = self.ast.get_kind(designator) {
                     match d {
                         Designator::ArrayIndex(e) => {
@@ -2006,7 +2006,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let has_more_designators = (designator_idx as u16) < d_len;
 
         if has_more_designators {
-            let designator_node = NodeRef::new(d_start.get() + designator_idx as u32).unwrap();
+            let designator_node = d_start.add_offset(designator_idx as u16);
             let kind = *self.ast.get_kind(designator_node);
             if let NodeKind::Designator(d) = kind
                 && self.handle_designated_init(target_qt, iter, designator_idx, d)
@@ -2391,7 +2391,7 @@ impl<'a> SemanticAnalyzer<'a> {
             self.visit_node(param);
         }
 
-        let body_node = NodeRef::new(data.child_start.get() + param_len as u32).expect("NodeRef overflow");
+        let body_node = data.child_start.add_offset(param_len);
         self.visit_node(body_node);
 
         if let Some(ctx) = self.current_function

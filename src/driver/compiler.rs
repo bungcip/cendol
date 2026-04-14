@@ -330,7 +330,7 @@ impl CompilerDriver {
         for (i, kind) in ast.kinds.iter().enumerate() {
             let parent_idx = i + 1;
             kind.visit_children(|child| {
-                let child_idx = child.get() as usize;
+                let child_idx = child.raw() as usize;
                 if child_idx <= parent_idx {
                     panic!(
                         "ICE: AST invariant violation: parent index ({}) >= child index ({}) for node {:?}",

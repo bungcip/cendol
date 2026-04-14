@@ -2596,10 +2596,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                     max_index = max_index.max(current_index);
 
-                    let start_item = iter.peek().map(|n| n.get());
+                    let start_item = iter.peek().map(|n| n.raw());
                     self.consume_initializers(element_type, &mut iter, true);
 
-                    if let Some(end_item) = iter.peek().map(|n| n.get())
+                    if let Some(end_item) = iter.peek().map(|n| n.raw())
                         && start_item == Some(end_item)
                     {
                         iter.next();

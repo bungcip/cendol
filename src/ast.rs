@@ -147,26 +147,26 @@ impl NodeRef {
     }
 
     #[inline]
-    pub(crate) fn get(self) -> u32 {
+    pub(crate) fn raw(self) -> u32 {
         self.0.get()
     }
 
     #[inline]
     pub(crate) fn add_offset(self, offset: u16) -> Self {
-        NodeRef::new(self.get() + offset as u32).expect("NodeRef overflow")
+        NodeRef::new(self.raw() + offset as u32).expect("NodeRef overflow")
     }
 
     #[inline]
     pub(crate) fn index(self) -> usize {
-        (self.get() - 1) as usize
+        (self.raw() - 1) as usize
     }
 
     /// Create an iterator over a range of consecutive NodeRefs, starting from `self`.
     #[inline]
     pub(crate) fn range(self, len: impl Into<u32>) -> NodeRefRange {
         NodeRefRange {
-            current: self.get(),
-            end: self.get() + len.into(),
+            current: self.raw(),
+            end: self.raw() + len.into(),
         }
     }
 }

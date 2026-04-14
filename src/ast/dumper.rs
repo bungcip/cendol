@@ -262,10 +262,10 @@ impl AstDumper {
                         write!(f, ".{}", name)?;
                     }
                     Designator::ArrayIndex(index) => {
-                        write!(f, "[{}]", index.get())?;
+                        write!(f, "[{}]", index.raw())?;
                     }
                     Designator::ArrayRange(start, end) => {
-                        write!(f, "[{} ... {}]", start.get(), end.get())?;
+                        write!(f, "[{} ... {}]", start.raw(), end.raw())?;
                     }
                 },
                 _ => write!(f, "<invalid designator>")?,
@@ -276,12 +276,12 @@ impl AstDumper {
             write!(f, " = ")?;
         }
 
-        write!(f, "{}", init.initializer.get())
+        write!(f, "{}", init.initializer.raw())
     }
 
     fn write_range(f: &mut Formatter<'_>, label: &str, start: NodeRef, len: u16) -> fmt::Result {
         if len > 0 {
-            let s = start.get();
+            let s = start.raw();
             write!(f, "{}={}..{}", label, s, s + len as u32 - 1)
         } else {
             write!(f, "{}=[]", label)
@@ -477,7 +477,7 @@ impl AstDumper {
     fn dump_node(f: &mut Formatter<'_>, kind: &NodeKind, ast: &Ast, symbol_table: Option<&SymbolTable>) -> fmt::Result {
         let optional = |f: &mut Formatter<'_>, node: Option<NodeRef>, text: &'static str| -> fmt::Result {
             match node {
-                Some(n) => write!(f, "{}", n.get()),
+                Some(n) => write!(f, "{}", n.raw()),
                 None => write!(f, "{}", text),
             }
         };
@@ -529,10 +529,10 @@ impl AstDumper {
             | NodeKind::BuiltinFabsl(n)
             | NodeKind::BuiltinConstantP(n)
             | NodeKind::SizeOfExpr(n)
-            | NodeKind::AlignOfExpr(n) => write!(f, "{}", n.get())?,
+            | NodeKind::AlignOfExpr(n) => write!(f, "{}", n.raw())?,
 
             NodeKind::BuiltinPrefetch(addr, rw, locality) => {
-                write!(f, "addr={}, rw=", addr.get())?;
+                write!(f, "addr={}, rw=", addr.raw())?;
                 optional(f, *rw, "none")?;
                 write!(f, ", locality=")?;
                 optional(f, *locality, "none")?
@@ -547,7 +547,7 @@ impl AstDumper {
             | NodeKind::BuiltinVaStart(n1, n2)
             | NodeKind::BuiltinVaCopy(n1, n2)
             | NodeKind::BuiltinExpect(n1, n2)
-            | NodeKind::BuiltinComplex(n1, n2) => write!(f, "{}, {}", n1.get(), n2.get())?,
+            | NodeKind::BuiltinComplex(n1, n2) => write!(f, "{}, {}", n1.raw(), n2.raw())?,
 
             // Three NodeRefs: Tag(n1.get(), n2.get(), n3.get())
             NodeKind::TernaryOp(n1, n2, n3)
@@ -556,19 +556,19 @@ impl AstDumper {
             | NodeKind::BuiltinMemcpy(n1, n2, n3)
             | NodeKind::BuiltinMemset(n1, n2, n3)
             | NodeKind::BuiltinMemmove(n1, n2, n3)
-            | NodeKind::CaseRange(n1, n2, n3) => write!(f, "{}, {}, {}", n1.get(), n2.get(), n3.get())?,
+            | NodeKind::CaseRange(n1, n2, n3) => write!(f, "{}, {}, {}", n1.raw(), n2.raw(), n3.raw())?,
 
             // Binary Op / Assignment: Tag(op, l.get(), r.get())
-            NodeKind::UnaryOp(op, n) => write!(f, "{:?}, {}", op, n.get())?,
+            NodeKind::UnaryOp(op, n) => write!(f, "{:?}, {}", op, n.raw())?,
             NodeKind::BinaryOp(op, l, r) | NodeKind::Assignment(op, l, r) => {
-                write!(f, "{:?}, {}, {}", op, l.get(), r.get())?
+                write!(f, "{:?}, {}, {}", op, l.raw(), r.raw())?
             }
 
             // TypeRef and NodeRef: Tag(ty, n.get())
             NodeKind::Cast(ty, n)
             | NodeKind::CompoundLiteral(ty, n)
             | NodeKind::BuiltinVaArg(ty, n)
-            | NodeKind::BuiltinOffsetof(ty, n) => write!(f, "{}, {}", ty, n.get())?,
+            | NodeKind::BuiltinOffsetof(ty, n) => write!(f, "{}, {}", ty, n.raw())?,
 
             // TypeRef only: Tag(ty)
             NodeKind::SizeOfType(ty) | NodeKind::AlignOfType(ty) => write!(f, "{}", ty)?,
@@ -576,12 +576,12 @@ impl AstDumper {
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => write!(f, "{}, {}", t1, t2)?,
 
             NodeKind::FunctionCall(call_expr) => {
-                write!(f, "callee={}, ", call_expr.callee.get())?;
+                write!(f, "callee={}, ", call_expr.callee.raw())?;
                 Self::write_range(f, "args", call_expr.arg_start, call_expr.arg_len)?
             }
 
             NodeKind::MemberAccess(obj, field, is_arrow) => {
-                write!(f, "{}, {}, {}", obj.get(), field, if *is_arrow { "->" } else { "." })?
+                write!(f, "{}, {}, {}", obj.raw(), field, if *is_arrow { "->" } else { "." })?
             }
 
             NodeKind::AtomicOp(op, args_start, args_len) => {
@@ -590,36 +590,36 @@ impl AstDumper {
             }
 
             NodeKind::GenericSelection(gs) => {
-                write!(f, "control={}, ", gs.control.get())?;
+                write!(f, "control={}, ", gs.control.raw())?;
                 Self::write_range(f, "associations", gs.assoc_start, gs.assoc_len)?
             }
-            NodeKind::GenericAssociation(ga) => write!(f, "ty={:?}, result_expr={}", ga.ty, ga.result_expr.get())?,
+            NodeKind::GenericAssociation(ga) => write!(f, "ty={:?}, result_expr={}", ga.ty, ga.result_expr.raw())?,
 
             NodeKind::CompoundStmt(cs) => Self::write_range(f, "stmts", cs.stmt_start, cs.stmt_len)?,
             NodeKind::If(if_stmt) => {
                 write!(
                     f,
                     "condition={}, then={}, else=",
-                    if_stmt.condition.get(),
-                    if_stmt.then_branch.get()
+                    if_stmt.condition.raw(),
+                    if_stmt.then_branch.raw()
                 )?;
                 optional(f, if_stmt.else_branch, "none")?
             }
             NodeKind::While(while_stmt) => write!(
                 f,
                 "condition={}, body={}",
-                while_stmt.condition.get(),
-                while_stmt.body.get()
+                while_stmt.condition.raw(),
+                while_stmt.body.raw()
             )?,
             NodeKind::For(for_stmt) => {
-                write!(f, "child_start={}", for_stmt.child_start.get())?;
-                write!(f, ", body={}", for_stmt.body.get())?
+                write!(f, "child_start={}", for_stmt.child_start.raw())?;
+                write!(f, ", body={}", for_stmt.body.raw())?
             }
             NodeKind::Return(expr) => optional(f, *expr, "void")?,
             NodeKind::Goto(label, _) => write!(f, "{}", label)?,
-            NodeKind::Label(label, stmt, _) => write!(f, "{}, {}", label, stmt.get())?,
+            NodeKind::Label(label, stmt, _) => write!(f, "{}, {}", label, stmt.raw())?,
             NodeKind::ExpressionStmt(expr) => optional(f, *expr, "none")?,
-            NodeKind::AsmStmt(expr) => write!(f, "{}", expr.get())?,
+            NodeKind::AsmStmt(expr) => write!(f, "{}", expr.raw())?,
 
             NodeKind::Function(data) => {
                 write!(f, "name=")?;
@@ -628,7 +628,7 @@ impl AstDumper {
 
                 let body_node = data.child_start.add_offset(data.param_len);
                 Self::write_range(f, "params", data.child_start, data.param_len)?;
-                write!(f, ", body={}", body_node.get())?
+                write!(f, ", body={}", body_node.raw())?
             }
             NodeKind::Param(data) => write!(f, "symbol={:?}, ty={:?}", data.symbol, data.qt)?,
             NodeKind::StaticAssert(cond, msg) => {
@@ -647,7 +647,7 @@ impl AstDumper {
                 } else {
                     "<none>".to_string()
                 };
-                write!(f, "condition={}, message=\"{}\"", cond.get(), message_str)?
+                write!(f, "condition={}, message=\"{}\"", cond.raw(), message_str)?
             }
             NodeKind::VarDecl(decl) => {
                 write!(f, "symbol={:?}", decl.symbol)?;
@@ -656,7 +656,7 @@ impl AstDumper {
                     write!(f, ", name={}, ty={}", sym.name, sym.type_info)?;
                 }
                 if let Some(init) = decl.init {
-                    write!(f, ", init={}", init.get())?;
+                    write!(f, ", init={}", init.raw())?;
                 }
             }
             NodeKind::FunctionDecl(decl) => {
@@ -710,8 +710,8 @@ impl AstDumper {
             NodeKind::InitializerItem(init) => Self::write_designated_initializer(f, init, ast)?,
             NodeKind::Designator(d) => match d {
                 Designator::FieldName(name) => write!(f, ".{}", name)?,
-                Designator::ArrayIndex(idx) => write!(f, "[{}]", idx.get())?,
-                Designator::ArrayRange(start, end) => write!(f, "[{} ... {}]", start.get(), end.get())?,
+                Designator::ArrayIndex(idx) => write!(f, "[{}]", idx.raw())?,
+                Designator::ArrayRange(start, end) => write!(f, "[{} ... {}]", start.raw(), end.raw())?,
             },
             _ => unreachable!(),
         }

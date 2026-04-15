@@ -347,6 +347,40 @@ impl PPLexer {
                     token!(PPTokenKind::Hash, 1, token_flags)
                 }
             }
+            b':' => {
+                if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBracket, 2)
+                } else {
+                    token!(PPTokenKind::Colon, 1)
+                }
+            }
+            b'%' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::ModAssign, 2)
+                } else if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBrace, 2)
+                } else if consume_if!(b':') {
+                    // Check if it's %:%: without consuming unless matched
+                    let saved_pos = self.position;
+                    let c1 = self.next_char().map(|(c, _)| c);
+                    let c2 = self.next_char().map(|(c, _)| c);
+
+                    if c1 == Some(b'%') && c2 == Some(b':') {
+                        token!(PPTokenKind::HashHash, 4)
+                    } else {
+                        // Restore position, it was just %:
+                        self.position = saved_pos;
+                        let mut token_flags = flags;
+                        if is_at_start_of_line {
+                            token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                            self.in_directive_line = true;
+                        }
+                        token!(PPTokenKind::Hash, 2, token_flags)
+                    }
+                } else {
+                    token!(PPTokenKind::Percent, 1)
+                }
+            }
             b'+' => {
                 if consume_if!(b'+') {
                     token!(PPTokenKind::Increment, 2)
@@ -381,13 +415,6 @@ impl PPLexer {
                     token!(PPTokenKind::Slash, 1)
                 }
             }
-            b'%' => {
-                if consume_if!(b'=') {
-                    token!(PPTokenKind::ModAssign, 2)
-                } else {
-                    token!(PPTokenKind::Percent, 1)
-                }
-            }
             b'=' => {
                 if consume_if!(b'=') {
                     token!(PPTokenKind::Equal, 2)
@@ -411,6 +438,10 @@ impl PPLexer {
                     }
                 } else if consume_if!(b'=') {
                     token!(PPTokenKind::LessEqual, 2)
+                } else if consume_if!(b':') {
+                    token!(PPTokenKind::LeftBracket, 2)
+                } else if consume_if!(b'%') {
+                    token!(PPTokenKind::LeftBrace, 2)
                 } else {
                     token!(PPTokenKind::Less, 1)
                 }
@@ -470,7 +501,6 @@ impl PPLexer {
                 token!(PPTokenKind::Dot, 1)
             }
             b'?' => token!(PPTokenKind::Question, 1),
-            b':' => token!(PPTokenKind::Colon, 1),
             b',' => token!(PPTokenKind::Comma, 1),
             b';' => token!(PPTokenKind::Semicolon, 1),
             b'(' => token!(PPTokenKind::LeftParen, 1),
@@ -515,9 +545,21 @@ impl PPLexer {
             self.next_char();
             self.skip_whitespace_and_comments();
 
-            if let Some(b'#') = self.peek_char() {
-                // Found a directive! Stop skipping.
-                break;
+            if let Some(ch) = self.peek_char() {
+                if ch == b'#' {
+                    // Found a directive! Stop skipping.
+                    break;
+                } else if ch == b'%' {
+                    let saved_pos = self.position;
+                    let _ = self.next_char(); // Consume '%'
+                    let c2 = self.next_char().map(|(c, _)| c);
+                    if c2 == Some(b':') {
+                        // Restore position so the token can be properly lexed.
+                        self.position = saved_pos;
+                        break;
+                    }
+                    self.position = saved_pos;
+                }
             }
 
             // Not a directive, continue skipping from the current position.
@@ -1367,5 +1409,63 @@ mod tests {
         assert_eq!(t5.kind, PPTokenKind::Hash);
         let t6 = lexer.next_token().unwrap();
         assert_eq!(t6.get_text(), "else");
+    }
+
+    #[test]
+    fn test_fast_skip_to_directive_digraph() {
+        let source = b"
+#if 0
+  this is skipped;
+%:else
+  this is not skipped
+%:endif
+";
+        let sid = SourceId::new(2);
+        let mut lexer = PPLexer::new(sid, Arc::from(&source[..]));
+
+        // 1. Initial #if 0
+        let t1 = lexer.next_token().unwrap();
+        assert_eq!(t1.kind, PPTokenKind::Hash);
+        let t2 = lexer.next_token().unwrap();
+        assert_eq!(t2.get_text(), "if");
+        let t3 = lexer.next_token().unwrap();
+        assert_eq!(t3.get_text(), "0");
+        let t4 = lexer.next_token().unwrap();
+        assert_eq!(t4.kind, PPTokenKind::Eod);
+
+        // 2. Fast skip!
+        lexer.fast_skip_to_directive();
+
+        // 3. Should be at %:else
+        let t5 = lexer.next_token().unwrap();
+        assert_eq!(t5.kind, PPTokenKind::Hash);
+        let t6 = lexer.next_token().unwrap();
+        assert_eq!(t6.get_text(), "else");
+    }
+
+    #[test]
+    fn test_digraphs() {
+        let source = b"<: :> <% %> %: %:%:";
+        let sid = SourceId::new(2);
+        let mut lexer = PPLexer::new(sid, Arc::from(&source[..]));
+
+        let t1 = lexer.next_token().unwrap();
+        assert_eq!(t1.kind, PPTokenKind::LeftBracket);
+
+        let t2 = lexer.next_token().unwrap();
+        assert_eq!(t2.kind, PPTokenKind::RightBracket);
+
+        let t3 = lexer.next_token().unwrap();
+        assert_eq!(t3.kind, PPTokenKind::LeftBrace);
+
+        let t4 = lexer.next_token().unwrap();
+        assert_eq!(t4.kind, PPTokenKind::RightBrace);
+
+        let t5 = lexer.next_token().unwrap();
+        assert_eq!(t5.kind, PPTokenKind::Hash);
+
+        let t6 = lexer.next_token().unwrap();
+        assert_eq!(t6.kind, PPTokenKind::HashHash);
+
     }
 }

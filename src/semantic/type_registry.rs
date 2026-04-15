@@ -126,11 +126,13 @@ pub struct TypeRegistry {
 
 impl TypeRegistry {
     pub(crate) fn is_value_fitting(&self, val: i64, ty_ref: TypeRef) -> bool {
-        let ty = self.get(ty_ref);
-        if !ty.is_int() {
+        // Bolt ⚡: Optimization: use ty_ref property checks before calling get().
+        // This avoids Cow<Type> allocations for non-integer types (like pointers).
+        if !ty_ref.is_integer() {
             return false;
         }
 
+        let ty = self.get(ty_ref);
         let width = ty.width();
         if ty.is_signed() {
             let max = if width >= 64 {
@@ -528,6 +530,40 @@ impl TypeRegistry {
             match &self.types[ty.index()].kind {
                 TypeKind::Alias(inner) => ty = *inner,
                 TypeKind::Array { element_type, .. } => return Some(*element_type),
+                _ => return None,
+            }
+        }
+    }
+
+    pub(crate) fn is_noreturn_function(&self, mut ty: TypeRef) -> bool {
+        loop {
+            // Bolt ⚡: Fast path to avoid registry lookup for non-function types.
+            let class = ty.class();
+            if class != TypeClass::Function && class != TypeClass::Alias {
+                return false;
+            }
+
+            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
+            match &self.types[ty.index()].kind {
+                TypeKind::Alias(inner) => ty = *inner,
+                TypeKind::Function { is_noreturn, .. } => return *is_noreturn,
+                _ => return false,
+            }
+        }
+    }
+
+    pub(crate) fn get_complex_base(&self, mut ty: TypeRef) -> Option<TypeRef> {
+        loop {
+            // Bolt ⚡: Fast path to avoid registry lookup for non-complex types.
+            let class = ty.class();
+            if class != TypeClass::Complex && class != TypeClass::Alias {
+                return None;
+            }
+
+            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
+            match &self.types[ty.index()].kind {
+                TypeKind::Alias(inner) => ty = *inner,
+                TypeKind::Complex { base_type } => return Some(*base_type),
                 _ => return None,
             }
         }

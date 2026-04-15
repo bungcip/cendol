@@ -49,6 +49,7 @@ fn bench_compiler_stages(c: &mut Criterion) {
 
     group.bench_function("preprocess_sqlite", |b| run_stage(b, CompilePhase::Preprocess));
     group.bench_function("parse_sqlite", |b| run_stage(b, CompilePhase::Parse));
+    group.bench_function("analyze_sqlite", |b| run_stage(b, CompilePhase::Mir));
 
     group.finish();
 }

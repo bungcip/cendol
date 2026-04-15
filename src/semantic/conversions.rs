@@ -1,17 +1,16 @@
 //! Implements C11 semantic conversions, such as usual arithmetic conversions
 //! and integer promotions.
 
-use crate::semantic::{BuiltinType, QualType, TypeKind, TypeRegistry};
+use crate::semantic::{BuiltinType, QualType, TypeRegistry};
 
 /// Performs the "usual arithmetic conversions" as specified in C11 6.3.1.8.
 pub(super) fn usual_arithmetic_conversions(ctx: &TypeRegistry, lhs: QualType, rhs: QualType) -> Option<QualType> {
     if lhs.is_floating() || rhs.is_floating() {
         let get_real = |qt: QualType| {
             if qt.is_complex() {
-                match &ctx.get(qt.ty()).kind {
-                    TypeKind::Complex { base_type } => Some(*base_type),
-                    _ => unreachable!("ICE: Complex type has non-complex kind"),
-                }
+                // Bolt ⚡: Optimization: use registry.get_complex_base() helper.
+                // This avoids redundant Cow<Type> allocations for complex types.
+                ctx.get_complex_base(qt.ty())
             } else {
                 Some(qt.ty())
             }

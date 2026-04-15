@@ -371,7 +371,7 @@ fn test_assign_valid_null_ptr() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @"
+    insta::assert_snapshot!(mir, @r"
     type %t0 = i32
     type %t1 = ptr<%t0>
     type %t2 = void
@@ -384,8 +384,8 @@ fn test_assign_valid_null_ptr() {
       }
 
       bb1:
-        %p = cast<ptr<i32>>(const 0)
-        %p = cast<ptr<i32>>(const 0)
+        %p = const 0
+        %p = const 0
         return const 0
     }
     ");
@@ -836,7 +836,7 @@ fn test_comma_operator_types() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @"
+    insta::assert_snapshot!(mir, @r"
     type %t0 = void
     type %t1 = i32
     type %t2 = i8
@@ -853,7 +853,7 @@ fn test_comma_operator_types() {
 
       bb1:
         %x = const 0
-        %p = cast<ptr<i8>>(const 0)
+        %p = const 0
         %x = %x + const 1
         %q = %p
         return

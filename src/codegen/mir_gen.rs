@@ -730,17 +730,7 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_return_stmt(&mut self, expr: &Option<NodeRef>) {
-        let operand = expr.map(|expr| {
-            let expr_operand = self.visit_expression(expr, true);
-            // Apply conversions for return value if needed
-            if self.current_function.is_some() {
-                let func = self.get_current_func();
-                let return_mir_ty = func.return_type;
-                self.apply_conversions(expr_operand, expr, return_mir_ty)
-            } else {
-                expr_operand
-            }
-        });
+        let operand = expr.map(|expr| self.visit_expression(expr, true));
         self.mb.set_terminator(Terminator::Return(operand));
     }
 
@@ -749,9 +739,13 @@ impl<'a> MirGen<'a> {
         let else_block = self.mb.create_block();
         let merge_block = self.mb.create_block();
 
-        let cond_converted = self.lower_condition(if_stmt.condition);
-        self.mb
-            .set_terminator(Terminator::If(cond_converted, then_block, else_block));
+        let mut cond_op = self.visit_expression(if_stmt.condition, true);
+        let bool_ty = self.lower_type(self.registry.type_bool);
+        if self.get_operand_type(&cond_op) != bool_ty {
+            cond_op = self.emit_cast(cond_op, bool_ty);
+        }
+
+        self.mb.set_terminator(Terminator::If(cond_op, then_block, else_block));
 
         self.mb.set_current_block(then_block);
         self.visit_node(if_stmt.then_branch);
@@ -844,7 +838,14 @@ impl<'a> MirGen<'a> {
     fn visit_while_stmt(&mut self, while_stmt: &WhileStmt) {
         self.emit_loop_generic(
             None::<fn(&mut Self)>,
-            Some(|this: &mut Self| this.lower_condition(while_stmt.condition)),
+            Some(|this: &mut Self| {
+                let mut op = this.visit_expression(while_stmt.condition, true);
+                let bool_ty = this.lower_type(this.registry.type_bool);
+                if this.get_operand_type(&op) != bool_ty {
+                    op = this.emit_cast(op, bool_ty);
+                }
+                op
+            }),
             |this| this.visit_node(while_stmt.body),
             None::<fn(&mut Self)>,
             false,
@@ -854,7 +855,14 @@ impl<'a> MirGen<'a> {
     fn visit_do_while_stmt(&mut self, body: NodeRef, condition: NodeRef) {
         self.emit_loop_generic(
             None::<fn(&mut Self)>,
-            Some(|this: &mut Self| this.lower_condition(condition)),
+            Some(|this: &mut Self| {
+                let mut op = this.visit_expression(condition, true);
+                let bool_ty = this.lower_type(this.registry.type_bool);
+                if this.get_operand_type(&op) != bool_ty {
+                    op = this.emit_cast(op, bool_ty);
+                }
+                op
+            }),
             |this| this.visit_node(body),
             None::<fn(&mut Self)>,
             true,
@@ -877,7 +885,14 @@ impl<'a> MirGen<'a> {
         };
 
         let cond_fn = if has_cond {
-            Some(move |this: &mut Self| this.lower_condition(cond_node))
+            Some(move |this: &mut Self| {
+                let mut op = this.visit_expression(cond_node, true);
+                let bool_ty = this.lower_type(this.registry.type_bool);
+                if this.get_operand_type(&op) != bool_ty {
+                    op = this.emit_cast(op, bool_ty);
+                }
+                op
+            })
         } else {
             None
         };
@@ -895,10 +910,6 @@ impl<'a> MirGen<'a> {
 
     fn visit_switch_stmt(&mut self, cond: NodeRef, body: NodeRef) {
         let cond_op = self.visit_expression(cond, true);
-        let cond_ty = self.ast.qual_type_of(cond);
-        let mir_ty = self.lower_qual_type(cond_ty);
-        let cond_op = self.apply_conversions(cond_op, cond, mir_ty);
-
         let cond_ty_id = self.get_operand_type(&cond_op);
 
         let merge_block = self.mb.create_block();
@@ -1864,6 +1875,22 @@ impl<'a> MirGen<'a> {
                                 ConstValueKind::Float(if val { 1.0 } else { 0.0 })
                             } else {
                                 ConstValueKind::Int(if val { 1 } else { 0 })
+                            }
+                        }
+                        ConstValueKind::Zero => {
+                            if mir_type.is_float() {
+                                ConstValueKind::Float(0.0)
+                            } else {
+                                ConstValueKind::Int(0)
+                            }
+                        }
+                        ConstValueKind::GlobalAddress(_, _) | ConstValueKind::FunctionAddress(_) => {
+                            if mir_type.is_int() || mir_type.is_bool() {
+                                ConstValueKind::Int(1)
+                            } else if mir_type.is_float() {
+                                ConstValueKind::Float(1.0)
+                            } else {
+                                inner_const.kind
                             }
                         }
                         kind => kind,

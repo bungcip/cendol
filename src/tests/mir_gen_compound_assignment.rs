@@ -23,7 +23,7 @@ fn test_compound_assignment_truncation() {
     // 3. Assignment of truncated result to f->a
     // 4. Conversion of truncated result back to u64 (for return)
 
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = u64
     type %t1 = struct foo { a: %t2 }
     type %t2 = u8
@@ -37,9 +37,9 @@ fn test_compound_assignment_truncation() {
       }
 
       bb1:
-        %3 = cast<u64>(cast<i32>(deref(%param0).field_0)) + %param1
+        %3 = cast<u64>(deref(%param0).field_0) + %param1
         deref(%param0).field_0 = cast<u8>(%3)
-        return cast<u64>(cast<u8>(cast<u64>(cast<u8>(%3))))
+        return cast<u64>(cast<u8>(%3))
     }
     ");
 }
@@ -60,7 +60,7 @@ fn test_compound_assignment_truncation_16() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = u64
     type %t1 = struct foo { b: %t2 }
     type %t2 = u16
@@ -74,9 +74,9 @@ fn test_compound_assignment_truncation_16() {
       }
 
       bb1:
-        %3 = cast<u64>(cast<i32>(deref(%param0).field_0)) + %param1
+        %3 = cast<u64>(deref(%param0).field_0) + %param1
         deref(%param0).field_0 = cast<u16>(%3)
-        return cast<u64>(cast<u16>(cast<u64>(cast<u16>(%3))))
+        return cast<u64>(cast<u16>(%3))
     }
     ");
 }
@@ -113,7 +113,7 @@ fn test_compound_assignment_truncation_32() {
       bb1:
         %3 = cast<u64>(deref(%param0).field_0) + %param1
         deref(%param0).field_0 = cast<u32>(%3)
-        return cast<u64>(cast<u32>(cast<u64>(cast<u32>(%3))))
+        return cast<u64>(cast<u32>(%3))
     }
     ");
 }

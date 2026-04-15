@@ -382,6 +382,10 @@ impl MirType {
         matches!(self, MirType::Void)
     }
 
+    pub(super) fn is_bool(&self) -> bool {
+        matches!(self, MirType::Bool)
+    }
+
     pub(super) fn is_pointer(&self) -> bool {
         matches!(self, MirType::Pointer { .. })
     }

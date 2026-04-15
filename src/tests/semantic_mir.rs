@@ -1218,7 +1218,7 @@ fn test_ternary_with_mixed_pointer_integer() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
     type %t1 = void
     type %t2 = ptr<%t1>
@@ -1266,7 +1266,7 @@ fn test_ternary_with_mixed_pointer_integer() {
         cond_br cast<bool>(%i), bb8, bb9
 
       bb8:
-        %6 = cast<ptr<i32>>(const 0)
+        %6 = const 0
         br bb10
 
       bb9:
@@ -1282,7 +1282,7 @@ fn test_ternary_with_mixed_pointer_integer() {
         br bb13
 
       bb12:
-        %7 = cast<ptr<i32>>(const 0)
+        %7 = const 0
         br bb13
 
       bb13:

@@ -78,14 +78,14 @@ impl<'a> MirGen<'a> {
             return const_op;
         }
 
-        match &node_kind {
+        let operand = match &node_kind {
             NodeKind::Literal(_) => self.visit_literal(&node_kind, qt).expect("Failed to lower literal"),
             NodeKind::Ident(_, sym) => self.visit_ident(*sym),
             NodeKind::UnaryOp(op, operand) => self.visit_unary_op(*op, *operand, mir_ty),
             NodeKind::PostIncrement(operand) => self.visit_inc_dec_expr(*operand, true, true, need_value),
             NodeKind::PostDecrement(operand) => self.visit_inc_dec_expr(*operand, false, true, need_value),
             NodeKind::BinaryOp(op, left, right) => self.visit_binary_op(*op, *left, *right, mir_ty),
-            NodeKind::Assignment(op, left, right) => self.visit_assignment_expr(expr, *op, *left, *right, mir_ty),
+            NodeKind::Assignment(op, left, right) => self.visit_assignment_expr(*op, *left, *right, mir_ty),
             NodeKind::FunctionCall(call_expr) => {
                 // Check for builtin float constant functions
                 if let Some(builtin_op) = self.try_visit_builtin_float_const(call_expr, mir_ty) {
@@ -112,9 +112,6 @@ impl<'a> MirGen<'a> {
                     self.create_dummy_operand()
                 }
             }
-            NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
-            NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
-            NodeKind::TernaryOp(cond, then, else_expr) => self.visit_ternary_op(*cond, *then, *else_expr, mir_ty),
             NodeKind::SizeOfExpr(expr) => {
                 let ty = self
                     .ast
@@ -152,10 +149,6 @@ impl<'a> MirGen<'a> {
                 };
                 Operand::Constant(self.create_constant(mir_ty, kind))
             }
-            NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => {
-                self.mb.set_terminator(Terminator::Trap);
-                self.create_dummy_operand()
-            }
             NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(need_value, expr),
             NodeKind::GenericSelection(..) => self.visit_generic_selection(need_value, expr),
             NodeKind::StatementExpr(stmt, result_expr) => self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value),
@@ -170,15 +163,14 @@ impl<'a> MirGen<'a> {
                 let real_op = self.visit_expression(*real, true);
                 let imag_op = self.visit_expression(*imag, true);
 
-                let common_real_ty = match self.mb.get_type(mir_ty) {
+                let _common_real_ty = match self.mb.get_type(mir_ty) {
                     MirType::Record { field_types, .. } => field_types[0],
                     _ => panic!("Expected complex record type"),
                 };
 
-                let real_converted = self.apply_conversions(real_op, *real, common_real_ty);
-                let imag_converted = self.apply_conversions(imag_op, *imag, common_real_ty);
-
-                self.emit_complex_struct(real_converted, imag_converted, mir_ty)
+                // Internal operands need their own conversions applied (since they are visited via visit_expression)
+                // but the result structure itself doesn't have a record in semantic_info usually.
+                self.emit_complex_struct(real_op, imag_op, mir_ty)
             }
             NodeKind::BuiltinMemcmp(s1, s2, n) => {
                 let const_void = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
@@ -254,13 +246,10 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::BuiltinAlloca(size) => {
                 let size_op = self.visit_expression(*size, true);
-                let size_t = self.get_size_t_type();
-                let size_conv = self.apply_conversions(size_op, *size, size_t);
-
                 let void_ptr_mir = self.lower_type(self.registry.type_void_ptr);
                 let (temp_local, temp_place) = self.create_temp_local(void_ptr_mir);
 
-                self.emit_malloc_call(temp_local, size_conv);
+                self.emit_malloc_call(temp_local, size_op);
                 Operand::Copy(Box::new(temp_place))
             }
             NodeKind::AtomicOp(op, args_start, args_len) => self.visit_atomic_op(*op, *args_start, *args_len, mir_ty),
@@ -270,8 +259,25 @@ impl<'a> MirGen<'a> {
             NodeKind::InitializerList(_) | NodeKind::InitializerItem(_) => {
                 panic!("InitializerList or InitializerItem not implemented");
             }
-            _ => unreachable!(),
+            NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
+            NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
+            NodeKind::TernaryOp(cond, then, else_expr) => self.visit_ternary_op(*cond, *then, *else_expr, mir_ty),
+            NodeKind::BuiltinUnreachable => {
+                self.mb.set_terminator(Terminator::Trap);
+                self.create_dummy_operand()
+            }
+            NodeKind::BuiltinTrap => {
+                self.mb.set_terminator(Terminator::Trap);
+                self.create_dummy_operand()
+            }
+            _ => unreachable!("Unhandled node kind in visit_expression: {:?}", node_kind),
+        };
+
+        if !need_value {
+            return operand;
         }
+
+        self.apply_conversions(operand, expr, mir_ty)
     }
 
     fn try_constant_fold(&mut self, expr: NodeRef, kind: &NodeKind, qt: QualType) -> Option<Operand> {
@@ -548,15 +554,57 @@ impl<'a> MirGen<'a> {
                 let is_inc = matches!(op, UnaryOp::PreIncrement);
                 self.visit_inc_dec_expr(expr, is_inc, false, true)
             }
-            UnaryOp::AddrOf => self.visit_unary_addrof(expr),
+            UnaryOp::AddrOf => {
+                let operand = self.visit_expression(expr, true);
+
+                match operand {
+                    Operand::Copy(place) => {
+                        // Special case for VLA: &vla should evaluate to the value of the pointer local.
+                        if let Place::Local(local_id) = &*place
+                            && self.vla_map.values().any(|(ptr, _)| ptr == local_id)
+                            && self.ast.qual_type_of(expr).is_array()
+                        {
+                            return Operand::Copy(place);
+                        }
+
+                        // Simplify &(*p) -> p, but only if we are inside a function.
+                        // In global initializers, we prefer to keep the Place structure
+                        // so that place_to_global_offset can handle it without materializing temporaries.
+                        if self.current_function.is_some()
+                            && let Place::Deref(deref_op) = *place
+                        {
+                            return *deref_op;
+                        }
+
+                        Operand::AddressOf(place)
+                    }
+                    Operand::Constant(_) => {
+                        // Function address constant usually has FunctionType, but &func results in Pointer(FunctionType).
+                        // This ensures the constant is cast to the expected pointer type in the MIR.
+                        if self.get_operand_type(&operand) != mir_ty {
+                            return self.emit_cast(operand, mir_ty);
+                        }
+                        operand
+                    }
+                    _ => {
+                        // Fallback for any other lvalue representation
+                        let place = self.visit_expression_as_place(expr);
+                        if self.current_function.is_some()
+                            && let Place::Deref(deref_op) = place
+                        {
+                            return *deref_op;
+                        }
+                        Operand::AddressOf(Box::new(place))
+                    }
+                }
+            }
             UnaryOp::Deref => self.visit_unary_deref(expr),
             UnaryOp::Real => {
                 if self.ast.get_value_category(expr) == Some(ValueCategory::LValue) {
                     let place = self.visit_expression_as_place(expr);
                     Operand::Copy(Box::new(place))
                 } else {
-                    let operand = self.visit_expression(expr, true);
-                    self.apply_conversions(operand, expr, mir_ty)
+                    self.visit_expression(expr, true)
                 }
             }
             UnaryOp::Imag => {
@@ -570,55 +618,18 @@ impl<'a> MirGen<'a> {
             }
             _ => {
                 let operand = self.visit_expression(expr, true);
-                let operand_converted = self.apply_conversions(operand, expr, mir_ty);
-                let operand_ty = self.get_operand_type(&operand_converted);
+                let operand_ty = self.get_operand_type(&operand);
                 let mir_type = self.mb.get_type(operand_ty);
 
-                let rval = mir_gen_ops::emit_unary_rvalue(op, operand_converted, mir_type.is_float());
+                let rval = mir_gen_ops::emit_unary_rvalue(op, operand, mir_type.is_float());
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
         }
     }
 
-    fn visit_unary_addrof(&mut self, expr: NodeRef) -> Operand {
-        let operand = self.visit_expression(expr, true);
-        if let Operand::Copy(ref place) = operand {
-            // Special case for VLA: &vla should evaluate to the value of the pointer local.
-            if let Place::Local(local_id) = &**place
-                && self.vla_map.values().any(|(ptr, _)| ptr == local_id)
-            {
-                let symbol_ty = self.ast.qual_type_of(expr);
-                if symbol_ty.is_array() {
-                    return operand.clone();
-                }
-            }
-            Operand::AddressOf(place.clone())
-        } else if let Operand::Constant(const_id) = operand
-            && self.ast.get_value_category(expr) == Some(ValueCategory::LValue)
-            && matches!(
-                self.mb.get_constants().get(const_id.index()),
-                Some(ConstValue {
-                    kind: ConstValueKind::FunctionAddress(_) | ConstValueKind::GlobalAddress(_, _),
-                    ..
-                })
-            )
-        {
-            // Function address constant has FunctionType, but &func results in Pointer(FunctionType).
-            let func_ty = self.get_operand_type(&operand);
-            let ptr_ty = self.mb.add_type(MirType::Pointer { pointee: func_ty });
-            Operand::Cast(ptr_ty, Box::new(operand))
-        } else {
-            panic!("Cannot take address of a non-lvalue");
-        }
-    }
-
     fn visit_unary_deref(&mut self, expr: NodeRef) -> Operand {
         let operand = self.visit_expression(expr, true);
-        let operand_ty = self.ast.get_resolved_type(expr).unwrap();
-        let target_mir_ty = self.lower_qual_type(operand_ty);
-        let operand_converted = self.apply_conversions(operand, expr, target_mir_ty);
-
-        let place = self.deref_operand(operand_converted);
+        let place = self.deref_operand(operand);
         Operand::Copy(Box::new(place))
     }
 
@@ -736,9 +747,7 @@ impl<'a> MirGen<'a> {
 
         if matches!(op, BinaryOp::Comma) {
             self.visit_expression(left, false);
-            let rhs = self.visit_expression(right, true);
-            // Apply conversions for RHS to match result type (comma result type is RHS type)
-            return self.apply_conversions(rhs, right, mir_ty);
+            return self.visit_expression(right, true);
         }
 
         let lhs = self.visit_expression(left, true);
@@ -757,14 +766,8 @@ impl<'a> MirGen<'a> {
         right_expr: NodeRef,
         context_ty: TypeId,
     ) -> (Rvalue, TypeId) {
-        // Apply implicit conversions from semantic info first to match AST
-        let lhs_converted = self.apply_conversions(lhs, left_expr, context_ty);
-        let rhs_converted = self.apply_conversions(rhs, right_expr, context_ty);
-
         // Handle pointer arithmetic
-        if let Some(rval) =
-            self.visit_pointer_arithmetic(op, lhs_converted.clone(), rhs_converted.clone(), left_expr, right_expr)
-        {
+        if let Some(rval) = self.visit_pointer_arithmetic(op, lhs.clone(), rhs.clone(), left_expr, right_expr) {
             let res_ty = match &rval {
                 Rvalue::PtrAdd(base, _) | Rvalue::PtrSub(base, _) => self.get_operand_type(base),
                 Rvalue::PtrDiff(..) => self.lower_type(self.registry.type_long),
@@ -773,8 +776,8 @@ impl<'a> MirGen<'a> {
             return (rval, res_ty);
         }
 
-        let lhs_mir_ty = self.get_operand_type(&lhs_converted);
-        let rhs_mir_ty = self.get_operand_type(&rhs_converted);
+        let lhs_mir_ty = self.get_operand_type(&lhs);
+        let rhs_mir_ty = self.get_operand_type(&rhs);
 
         let lhs_is_complex = self.mb.get_type(lhs_mir_ty).is_aggregate()
             && self.ast.get_resolved_type(left_expr).is_some_and(|t| t.is_complex());
@@ -782,13 +785,12 @@ impl<'a> MirGen<'a> {
             && self.ast.get_resolved_type(right_expr).is_some_and(|t| t.is_complex());
 
         if lhs_is_complex || rhs_is_complex {
-            let op = self.visit_complex_binary_op(op, lhs_converted, rhs_converted, context_ty);
+            let op = self.visit_complex_binary_op(op, lhs, rhs, context_ty);
             return (Rvalue::Use(op), context_ty);
         }
 
         // Ensure both operands have the same type for MIR operations.
-        let (lhs_unified, rhs_unified) =
-            self.unify_binary_operands(lhs_converted, rhs_converted, lhs_mir_ty, rhs_mir_ty);
+        let (lhs_unified, rhs_unified) = self.unify_binary_operands(lhs, rhs, lhs_mir_ty, rhs_mir_ty);
 
         let lhs_final = lhs_unified;
         let rhs_final = rhs_unified;
@@ -985,14 +987,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_assignment_expr(
-        &mut self,
-        node: NodeRef,
-        op: BinaryOp,
-        left: NodeRef,
-        right: NodeRef,
-        mir_ty: TypeId,
-    ) -> Operand {
+    fn visit_assignment_expr(&mut self, op: BinaryOp, left: NodeRef, right: NodeRef, mir_ty: TypeId) -> Operand {
         debug_assert!(
             op.is_assignment(),
             "visit_assignment_expr called with non-assignment operator: {:?}",
@@ -1012,26 +1007,24 @@ impl<'a> MirGen<'a> {
         let lhs_ty = self.ast.get_resolved_type(left).unwrap();
 
         if let Some(compound_op) = op.without_assignment() {
-            self.visit_compound_assignment(node, compound_op, place, rhs_op, left, right, mir_ty)
+            self.visit_compound_assignment(compound_op, place, rhs_op, left, right, mir_ty)
         } else {
             // Simple assignment, just use the RHS
-            let final_rhs = self.apply_conversions(rhs_op, right, mir_ty);
-
             if lhs_ty.is_atomic() {
                 let ptr = Operand::AddressOf(Box::new(place.clone()));
                 self.mb
-                    .add_stmt(MirStmt::AtomicStore(ptr, final_rhs.clone(), AtomicMemOrder::SeqCst));
+                    .add_stmt(MirStmt::AtomicStore(ptr, rhs_op.clone(), AtomicMemOrder::SeqCst));
             } else {
-                self.emit_assignment(place.clone(), final_rhs.clone());
+                self.emit_assignment(place.clone(), rhs_op.clone());
             }
 
             // C11 6.5.16p3: An assignment expression has the value of the left operand after the assignment,
             // but is not an lvalue. For bit-fields, this means the value is truncated to the bit-field width.
             if let Place::StructField(.., Some(bit_info)) = &place {
-                return self.apply_bitfield_truncation(final_rhs, bit_info, mir_ty);
+                return self.apply_bitfield_truncation(rhs_op, bit_info, mir_ty);
             }
 
-            final_rhs
+            rhs_op
         }
     }
 
@@ -1073,7 +1066,6 @@ impl<'a> MirGen<'a> {
 
     fn visit_compound_assignment(
         &mut self,
-        node: NodeRef,
         compound_op: BinaryOp,
         place: Place,
         rhs_op: Operand,
@@ -1117,13 +1109,11 @@ impl<'a> MirGen<'a> {
         self.emit_assignment(place.clone(), truncated_op.clone());
 
         // C11 6.5.16p3: Bit-field truncation for compound assignment result
-        let final_op = if let Place::StructField(.., Some(bit_info)) = &place {
+        if let Place::StructField(.., Some(bit_info)) = &place {
             self.apply_bitfield_truncation(truncated_op, bit_info, mir_ty)
         } else {
             truncated_op
-        };
-
-        self.apply_conversions(final_op, node, mir_ty)
+        }
     }
 
     pub(super) fn emit_cast(&mut self, operand: Operand, target_ty: TypeId) -> Operand {
@@ -1313,9 +1303,7 @@ impl<'a> MirGen<'a> {
             // Resolve base place
             let mut current_place = if is_arrow {
                 let obj_op = self.visit_expression(obj, true);
-                let obj_mir_ty = self.lower_qual_type(obj_qt);
-                let obj_op_converted = self.apply_conversions(obj_op, obj, obj_mir_ty);
-                self.deref_operand(obj_op_converted)
+                self.deref_operand(obj_op)
             } else {
                 self.visit_expression_as_place(obj)
             };
@@ -1363,7 +1351,14 @@ impl<'a> MirGen<'a> {
         };
 
         // In C, arr[idx] is equivalent to *(arr + idx)
-        let arr_operand = self.visit_expression(sequence, true);
+        // However, for global initialization, we prefer to stay as ArrayIndex if possible
+        // to avoid emitting instructions (PtrAdd) that would require temporary locals.
+        let arr_operand = if self.current_function.is_none() && arr_ty.is_array() {
+            let p = self.visit_expression_as_place(sequence);
+            Operand::Copy(Box::new(p))
+        } else {
+            self.visit_expression(sequence, true)
+        };
         let idx_operand = self.visit_expression(index, true);
 
         // Check if the base operand is already a pointer in MIR (e.g., VLA locals stored as pointers)
@@ -1388,7 +1383,6 @@ impl<'a> MirGen<'a> {
         let operand = self.visit_expression(expr, true);
         let operand_ty = self.ast.get_resolved_type(expr).unwrap();
         let mir_ty = self.lower_qual_type(operand_ty);
-        let operand_converted = self.apply_conversions(operand.clone(), expr, mir_ty);
 
         if self.ast.get_value_category(expr) != Some(ValueCategory::LValue) {
             panic!("Inc/Dec operand must be an lvalue");
@@ -1406,7 +1400,7 @@ impl<'a> MirGen<'a> {
 
         // If it's post-inc/dec and we need the value, save the old value
         let old_value = if is_post && need_value {
-            let rval = Rvalue::Use(operand_converted.clone());
+            let rval = Rvalue::Use(Operand::Copy(place.clone()));
             let (_, temp_place) = self.create_temp_local_with_assignment(rval, mir_ty);
             Some(Operand::Copy(Box::new(temp_place)))
         } else {
@@ -1414,7 +1408,7 @@ impl<'a> MirGen<'a> {
         };
 
         // Determine MIR operation and Rvalue
-        let rval = self.create_inc_dec_rvalue(operand_converted, operand_ty, is_inc);
+        let rval = self.create_inc_dec_rvalue(Operand::Copy(place.clone()), operand_ty, is_inc);
 
         // Perform the assignment
         if is_post && !need_value {

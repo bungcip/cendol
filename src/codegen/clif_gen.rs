@@ -92,8 +92,8 @@ fn lower_type_alignment(mir_type: &MirType, _mir: &MirProgram) -> u64 {
         MirType::I32 | MirType::U32 | MirType::F32 => 4,
         MirType::I64 | MirType::U64 | MirType::F64 | MirType::Pointer { .. } | MirType::Function { .. } => 8,
         MirType::F80 | MirType::F128 => 16,
-        MirType::Record { layout, .. } => layout.alignment,
-        MirType::Array { layout, .. } => layout.align,
+        MirType::Record { layout, .. } => layout.align as u64,
+        MirType::Array { layout, .. } => layout.align as u64,
         MirType::Void => 1,
     }
 }

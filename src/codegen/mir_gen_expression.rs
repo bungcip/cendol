@@ -430,14 +430,14 @@ impl<'a> MirGen<'a> {
                     let elem = *element_type;
                     let _ = self.registry.ensure_layout(elem);
                     let layout = self.registry.get_layout(elem);
-                    return self.create_size_t_operand(layout.alignment);
+                    return self.create_size_t_operand(layout.alignment as u64);
                 }
             }
             return self.create_dummy_operand();
         }
         let _ = self.registry.ensure_layout(ty);
         let layout = self.registry.get_layout(ty);
-        let val = if is_size { layout.size } else { layout.alignment };
+        let val = if is_size { layout.size } else { layout.alignment as u64 };
         self.create_size_t_operand(val)
     }
 

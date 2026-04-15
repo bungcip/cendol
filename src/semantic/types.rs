@@ -28,7 +28,7 @@ pub struct Type {
 #[derive(Debug, Clone)]
 pub struct TypeLayout {
     pub size: u64,
-    pub alignment: u64,
+    pub alignment: u16,
     pub kind: LayoutKind,
 }
 
@@ -852,7 +852,7 @@ pub enum TypeKind {
         is_complete: bool,
         is_union: bool,
         packing: Option<u32>,
-        alignment: Option<u32>,
+        alignment: Option<u16>,
     },
     Enum {
         tag: Option<NameId>,
@@ -1011,7 +1011,7 @@ pub struct StructMember {
     pub name: Option<NameId>,
     pub member_type: QualType,
     pub bit_field_size: Option<u16>,
-    pub alignment: Option<u32>,
+    pub alignment: Option<u16>,
     pub is_packed: bool,
     pub span: SourceSpan,
 }

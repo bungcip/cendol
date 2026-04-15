@@ -104,7 +104,7 @@ fn test_mir_type_is_aggregate() {
         is_union: false,
         layout: MirRecordLayout {
             size: 0,
-            alignment: 1,
+            align: 1,
             fields: vec![],
         },
     };
@@ -190,7 +190,7 @@ fn test_mir_type_width() {
         is_union: false,
         layout: MirRecordLayout {
             size: 0,
-            alignment: 1,
+            align: 1,
             fields: vec![],
         },
     };

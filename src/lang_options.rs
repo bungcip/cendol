@@ -14,6 +14,12 @@ pub struct LangOptions {
     pub pedantic_errors: bool,
 }
 
+impl LangOptions {
+    pub(crate) fn is_pedantic(&self) -> bool {
+        self.pedantic || self.pedantic_errors
+    }
+}
+
 impl CStandard {
     /// Check if C11 standard is enabled
     pub(crate) fn is_c11(&self) -> bool {

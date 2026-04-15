@@ -9,6 +9,7 @@ use crate::mir::{
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
+use crate::semantic::FunctionParameter;
 use crate::semantic::QualType;
 use crate::semantic::SymbolKind;
 use crate::semantic::SymbolRef;
@@ -572,7 +573,7 @@ impl<'a> MirGen<'a> {
         name: NameId,
         size_expr: NodeRef,
         element_type: TypeRef,
-        alignment: Option<u32>,
+        alignment: Option<u16>,
     ) {
         // Get element size dynamically (the element type might itself be a VLA)
         let element_size_operand = self.visit_type_query(element_type, true);
@@ -616,7 +617,7 @@ impl<'a> MirGen<'a> {
         &mut self,
         name: Option<NameId>,
         mir_type_id: TypeId,
-        alignment: Option<u32>,
+        alignment: Option<u16>,
         size_operand: Operand,
     ) -> LocalId {
         let ptr_mir_ty = self.mb.add_type(MirType::Pointer { pointee: mir_type_id });
@@ -664,7 +665,7 @@ impl<'a> MirGen<'a> {
     }
 
     /// Emit a posix_memalign call and store the result in the given local.
-    fn emit_posix_memalign_call(&mut self, dest_local: LocalId, alignment: u32, size_operand: Operand) {
+    fn emit_posix_memalign_call(&mut self, dest_local: LocalId, alignment: u16, size_operand: Operand) {
         let name = NameId::new("posix_memalign");
         let size_t_ty = self.get_size_t_type();
         let void_ty = self.mb.add_type(MirType::Void);
@@ -1112,7 +1113,7 @@ impl<'a> MirGen<'a> {
             Builtin(BuiltinType),
             Pointer(QualType),
             Array(TypeRef, ArraySizeType),
-            Function(TypeRef, Vec<crate::semantic::FunctionParameter>, bool),
+            Function(TypeRef, Vec<FunctionParameter>, bool),
             Complex(TypeRef),
             Default,
         }
@@ -1192,7 +1193,7 @@ impl<'a> MirGen<'a> {
             is_union: false,
             layout: MirRecordLayout {
                 size: 0,
-                alignment: 0,
+                align: 0,
                 fields: Vec::new(),
             },
         };
@@ -1221,7 +1222,7 @@ impl<'a> MirGen<'a> {
 
         let record_layout = MirRecordLayout {
             size: 24,
-            alignment: 8,
+            align: 8,
             fields: vec![
                 MirFieldLayout::new(0),
                 MirFieldLayout::new(4),
@@ -1311,7 +1312,7 @@ impl<'a> MirGen<'a> {
                     size: *s,
                     layout: MirArrayLayout {
                         size: layout_size,
-                        align: layout_align,
+                        align: layout_align as u16,
                         stride: element_layout.size,
                     },
                 }
@@ -1342,7 +1343,7 @@ impl<'a> MirGen<'a> {
     fn lower_function_type(
         &mut self,
         return_type: TypeRef,
-        parameters: &[crate::semantic::FunctionParameter],
+        parameters: &[FunctionParameter],
         is_variadic: bool,
     ) -> MirType {
         let return_type = self.lower_type(return_type);
@@ -1385,7 +1386,7 @@ impl<'a> MirGen<'a> {
             is_union: false,
             layout: MirRecordLayout {
                 size: element_size * 2,
-                alignment: element_align,
+                align: element_align,
                 fields: vec![
                     MirFieldLayout {
                         offset: 0,
@@ -1449,7 +1450,7 @@ impl<'a> MirGen<'a> {
             is_union,
             layout: MirRecordLayout {
                 size,
-                alignment,
+                align: alignment,
                 fields: field_layouts,
             },
         }

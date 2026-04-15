@@ -49,25 +49,23 @@ impl TypeRegistryError {
     /// Convert this type registry error to a SemanticErrorKind with an optional span.
     /// This allows the TypeRegistry to remain decoupled from source location tracking
     /// while still providing rich error information to the semantic analyzer.
-    pub(super) fn to_semantic_kind(&self) -> super::errors::SemanticErrorKind {
-        use super::errors::SemanticErrorKind;
+    pub(crate) fn to_semantic_kind(&self) -> super::errors::SemanticError {
+        use super::errors::SemanticError;
         match self {
-            TypeRegistryError::RecursiveType { ty } => SemanticErrorKind::RecursiveType { ty: *ty },
-            TypeRegistryError::SizeOfIncompleteType { ty } => SemanticErrorKind::SizeOfIncompleteType { ty: *ty },
-            TypeRegistryError::SizeOfFunctionType => SemanticErrorKind::SizeOfFunctionType,
-            TypeRegistryError::VlaAsStructMember => SemanticErrorKind::UnsupportedFeature {
+            TypeRegistryError::RecursiveType { ty } => SemanticError::RecursiveType { ty: *ty },
+            TypeRegistryError::SizeOfIncompleteType { ty } => SemanticError::SizeOfIncompleteType { ty: *ty },
+            TypeRegistryError::SizeOfFunctionType => SemanticError::SizeOfFunctionType,
+            TypeRegistryError::VlaAsStructMember => SemanticError::UnsupportedFeature {
                 feature: "variably modified type (VLA) as struct member",
             },
-            TypeRegistryError::IncompleteArrayInUnion => SemanticErrorKind::UnsupportedFeature {
+            TypeRegistryError::IncompleteArrayInUnion => SemanticError::UnsupportedFeature {
                 feature: "incomplete/VLA array in union",
             },
-            TypeRegistryError::FlexibleArrayNotLast => SemanticErrorKind::FlexibleArrayNotLast,
-            TypeRegistryError::FlexibleArrayInEmptyStruct => SemanticErrorKind::FlexibleArrayInEmptyStruct,
-            TypeRegistryError::MemberHasFunctionType { name } => {
-                SemanticErrorKind::MemberHasFunctionType { name: *name }
-            }
-            TypeRegistryError::IncompleteMemberType { ty } => SemanticErrorKind::IncompleteType { ty: *ty },
-            TypeRegistryError::UnsupportedFeature { feature } => SemanticErrorKind::UnsupportedFeature { feature },
+            TypeRegistryError::FlexibleArrayNotLast => SemanticError::FlexibleArrayNotLast,
+            TypeRegistryError::FlexibleArrayInEmptyStruct => SemanticError::FlexibleArrayInEmptyStruct,
+            TypeRegistryError::MemberHasFunctionType { name } => SemanticError::MemberHasFunctionType { name: *name },
+            TypeRegistryError::IncompleteMemberType { ty } => SemanticError::IncompleteType { ty: *ty },
+            TypeRegistryError::UnsupportedFeature { feature } => SemanticError::UnsupportedFeature { feature },
         }
     }
 }
@@ -717,7 +715,7 @@ impl TypeRegistry {
         record: TypeRef,
         members: Vec<StructMember>,
         packing: Option<u32>,
-        alignment: Option<u32>,
+        alignment: Option<u16>,
     ) {
         let ty = &mut self.types[record.index()];
         match &mut ty.kind {
@@ -876,7 +874,7 @@ impl TypeRegistry {
                             };
                             Some(Cow::Owned(TypeLayout {
                                 size,
-                                alignment: size,
+                                alignment: size as u16,
                                 kind: LayoutKind::Scalar,
                             }))
                         }
@@ -940,7 +938,7 @@ impl TypeRegistry {
     pub(crate) fn get_array_layout(&self, ty: TypeRef) -> (u64, u64, TypeRef, u64) {
         let layout = self.get_layout(ty);
         match layout.kind {
-            LayoutKind::Array { element, len } => (layout.size, layout.alignment, element, len),
+            LayoutKind::Array { element, len } => (layout.size, layout.alignment as u64, element, len),
             _ => panic!("ICE: layout is not array"),
         }
     }
@@ -1024,7 +1022,7 @@ impl TypeRegistry {
                     };
                     TypeLayout {
                         size,
-                        alignment: size,
+                        alignment: size as u16,
                         kind: LayoutKind::Scalar,
                     }
                 }
@@ -1087,7 +1085,7 @@ impl TypeRegistry {
                 };
                 TypeLayout {
                     size,
-                    alignment: size,
+                    alignment: size as u16,
                     kind: LayoutKind::Scalar,
                 }
             }
@@ -1162,7 +1160,7 @@ impl TypeRegistry {
                 let ptr_size = self.target_triple.pointer_width().unwrap().bytes() as u64;
                 TypeLayout {
                     size: ptr_size,
-                    alignment: ptr_size,
+                    alignment: ptr_size as u16,
                     kind: LayoutKind::Scalar,
                 }
             }
@@ -1181,9 +1179,9 @@ impl TypeRegistry {
         members: &[StructMember],
         is_union: bool,
         packing: Option<u32>,
-        alignment: Option<u32>,
+        alignment: Option<u16>,
     ) -> Result<TypeLayout, TypeRegistryError> {
-        let mut max_align = alignment.map(|a| a as u64).unwrap_or(1);
+        let mut max_align = alignment.unwrap_or(1);
         let mut current_size = 0;
         let mut field_layouts = Vec::with_capacity(members.len());
 
@@ -1255,7 +1253,8 @@ impl TypeRegistry {
                 // Most compilers align the end of the struct to the alignment of the FAM.
 
                 // Let's compute offset.
-                let offset = (current_size + elem_layout.alignment - 1) & !(elem_layout.alignment - 1);
+                let align_u64 = elem_layout.alignment as u64;
+                let offset = (current_size + align_u64 - 1) & !(align_u64 - 1);
                 field_layouts.push(FieldLayout {
                     offset,
                     bit_width: None,
@@ -1297,10 +1296,10 @@ impl TypeRegistry {
                 member_align = 1;
             }
             if let Some(req_align) = member.alignment {
-                member_align = member_align.max(req_align as u64);
+                member_align = member_align.max(req_align);
             }
             if let Some(p) = packing {
-                member_align = member_align.min(p as u64);
+                member_align = member_align.min(p as u16);
             }
 
             let is_unnamed_bitfield = member.name.is_none() && member.bit_field_size.is_some();
@@ -1325,7 +1324,8 @@ impl TypeRegistry {
             } else if let Some(bits) = member.bit_field_size {
                 if bits == 0 {
                     // Force alignment to next storage unit
-                    current_size = (current_size + member_align - 1) & !(member_align - 1);
+                    let align_u64 = member_align as u64;
+                    current_size = (current_size + align_u64 - 1) & !(align_u64 - 1);
                     current_unit_offset = None;
                     current_unit_bit_offset = 0;
                     current_unit_size = 0;
@@ -1355,7 +1355,8 @@ impl TypeRegistry {
                         });
                         current_unit_bit_offset += bits as u64;
                     } else {
-                        let offset = (current_size + member_align - 1) & !(member_align - 1);
+                        let align_u64 = member_align as u64;
+                        let offset = (current_size + align_u64 - 1) & !(align_u64 - 1);
                         field_layouts.push(FieldLayout {
                             offset,
                             bit_width: Some(bits),
@@ -1383,7 +1384,8 @@ impl TypeRegistry {
                 current_unit_bit_offset = 0;
                 current_unit_size = 0;
 
-                let offset = (current_size + member_align - 1) & !(member_align - 1);
+                let align_u64 = member_align as u64;
+                let offset = (current_size + align_u64 - 1) & !(align_u64 - 1);
                 field_layouts.push(FieldLayout {
                     offset,
                     bit_width: None,
@@ -1394,7 +1396,8 @@ impl TypeRegistry {
         }
 
         // Final size is padded to the record's max alignment
-        let final_size = (current_size + max_align - 1) & !(max_align - 1);
+        let align_u64 = max_align as u64;
+        let final_size = (current_size + align_u64 - 1) & !(align_u64 - 1);
 
         Ok(TypeLayout {
             size: final_size,

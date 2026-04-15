@@ -603,7 +603,7 @@ fn test_place_field_out_of_bounds() {
         is_union: false,
         layout: MirRecordLayout {
             size: 4,
-            alignment: 4,
+            align: 4,
             fields: vec![MirFieldLayout::new(0).signed(true)],
         },
     };
@@ -657,7 +657,7 @@ fn test_rvalue_cast_aggregate_invalid() {
         is_union: false,
         layout: MirRecordLayout {
             size: 4,
-            alignment: 4,
+            align: 4,
             fields: vec![MirFieldLayout::new(0).signed(true)],
         },
     };

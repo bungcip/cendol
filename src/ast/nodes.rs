@@ -10,7 +10,6 @@ use crate::{
     ast::{NameId, NodeRef, SymbolRef, literal::LitRef},
     semantic::{QualType, ScopeId},
 };
-use std::num::NonZeroU32;
 
 /// The core enum defining all possible AST node types for C11.
 /// Variants use NodeIndex for child references, enabling flattened storage.
@@ -546,7 +545,7 @@ pub(crate) struct RecordDecl {
 pub(crate) struct FieldDecl {
     pub(crate) name: Option<NameId>,
     pub(crate) qt: QualType, // object type
-    pub(crate) alignment: Option<NonZeroU32>,
+    pub(crate) alignment: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]

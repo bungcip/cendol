@@ -279,7 +279,7 @@ fn parse_record_members(
     Ok(parser.alloc_struct_members(parsed_members))
 }
 
-fn extract_alignment(specifiers: &[DeclSpec], parser: &Parser) -> Option<u32> {
+fn extract_alignment(specifiers: &[DeclSpec], parser: &Parser) -> Option<u16> {
     for spec in specifiers {
         if let DeclSpec::AlignmentSpec(align_spec) = spec {
             match align_spec {
@@ -287,7 +287,7 @@ fn extract_alignment(specifiers: &[DeclSpec], parser: &Parser) -> Option<u32> {
                     if let ParsedNodeKind::Literal(lit) = parser.ast.get_node(*expr).kind
                         && let LitVal::Int { val, .. } = *parser.ast.literals.get(lit)
                     {
-                        return Some(val as u32);
+                        return Some(val as u16);
                     }
                 }
                 ParsedAlignmentSpec::Type(_) => {

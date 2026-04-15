@@ -497,14 +497,14 @@ impl MirFieldLayout {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct MirRecordLayout {
     pub(crate) size: u64,
-    pub(crate) alignment: u64,
+    pub(crate) align: u16,
     pub(crate) fields: Vec<MirFieldLayout>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub(crate) struct MirArrayLayout {
     pub(crate) size: u64,
-    pub(crate) align: u64,
+    pub(crate) align: u16,
     pub(crate) stride: u64,
 }
 
@@ -537,7 +537,7 @@ pub(crate) struct Local {
     pub(crate) name: Option<NameId>,
     pub(crate) type_id: TypeId,
     pub(crate) is_param: bool,
-    pub(crate) alignment: Option<u32>, // Alignment in bytes
+    pub(crate) alignment: Option<u16>, // Alignment in bytes
 }
 
 impl Local {
@@ -559,7 +559,7 @@ pub(crate) struct Global {
     pub(crate) is_constant: bool,
     pub(crate) is_tls: bool,
     pub(crate) initial_value: Option<ConstValueId>,
-    pub(crate) alignment: Option<u32>, // Max alignment in bytes
+    pub(crate) alignment: Option<u16>, // Max alignment in bytes
     pub(crate) linkage: MirLinkage,
 }
 
@@ -686,7 +686,7 @@ impl MirBuilder {
         local_id
     }
 
-    pub(crate) fn set_local_alignment(&mut self, local_id: LocalId, alignment: u32) {
+    pub(crate) fn set_local_alignment(&mut self, local_id: LocalId, alignment: u16) {
         if let Some(local) = self.locals.get_mut(local_id.index()) {
             local.alignment = Some(alignment);
         }
@@ -857,7 +857,7 @@ impl MirBuilder {
         }
     }
 
-    pub(crate) fn set_global_alignment(&mut self, global_id: GlobalId, alignment: u32) {
+    pub(crate) fn set_global_alignment(&mut self, global_id: GlobalId, alignment: u16) {
         if let Some(global) = self.globals.get_mut(global_id.index()) {
             global.alignment = Some(alignment);
         }

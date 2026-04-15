@@ -56,7 +56,7 @@ pub struct ParsedStructMember {
     pub name: Option<NameId>,
     pub ty: ParsedType,
     pub bit_field_size: Option<u16>,
-    pub alignment: Option<u32>,
+    pub alignment: Option<u16>,
     pub is_packed: bool,
     pub span: SourceSpan,
 }

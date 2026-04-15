@@ -70,7 +70,7 @@ pub enum SymbolKind {
         storage: Option<StorageClass>,
         // Initializer might be an AST node or a constant value
         initializer: Option<NodeRef>,
-        alignment: Option<u32>, // Max alignment in bytes
+        alignment: Option<u16>, // Max alignment in bytes
     },
     Function {
         storage: Option<StorageClass>,
@@ -325,7 +325,7 @@ impl SymbolTable {
         storage: Option<StorageClass>,
         is_thread_local: bool,
         initializer: Option<NodeRef>,
-        alignment: Option<u32>,
+        alignment: Option<u16>,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
         let is_global = self.current_scope_id == ScopeId::GLOBAL;

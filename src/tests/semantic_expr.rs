@@ -371,7 +371,7 @@ fn test_assign_valid_null_ptr() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = ptr<%t0>
     type %t2 = void
@@ -836,7 +836,7 @@ fn test_comma_operator_types() {
         }
     "#;
     let mir = setup_mir(src);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = void
     type %t1 = i32
     type %t2 = i8
@@ -1070,7 +1070,7 @@ fn test_usual_arithmetic_conversions_signed_wins() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = u32
     type %t2 = i64

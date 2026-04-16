@@ -297,3 +297,27 @@ fn test_integer_truncation_no_panic() {
     let output = run_c_code_exit_status(code);
     assert_eq!(output, 0);
 }
+
+#[test]
+fn test_deeply_nested_unary_ops_stack_overflow() {
+    // Generate a very long sequence of unary operators
+    let mut source = String::from("int main() { int x = 0; int *p = &x; return ");
+    for _ in 0..160 {
+        source.push_str("!");
+    }
+    source.push_str("x; }");
+
+    // Run in a thread with a tightly constrained stack
+    // This perfectly mimics GitHub CI bounds under `llvm-cov` to prevent future regressions.
+    let handle = std::thread::Builder::new()
+        .stack_size(512 * 1024) // 512 KB
+        .name("tight_stack_test".to_string())
+        .spawn(move || {
+            crate::tests::codegen_common::setup_cranelift(&source);
+        })
+        .unwrap();
+
+    handle
+        .join()
+        .expect("Thread panicked, likely due to stack overflow in deeply nested unary operations.");
+}

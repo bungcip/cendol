@@ -303,25 +303,56 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     }
 }
 
-fn parse_unary_operator(parser: &mut Parser, token: Token) -> Result<ParsedNodeRef, ParseError> {
-    let op = match token.kind {
-        TokenKind::Plus => UnaryOp::Plus,
-        TokenKind::Minus => UnaryOp::Minus,
-        TokenKind::Not => UnaryOp::LogicNot,
-        TokenKind::Tilde => UnaryOp::BitNot,
-        TokenKind::Increment => UnaryOp::PreIncrement,
-        TokenKind::Decrement => UnaryOp::PreDecrement,
-        TokenKind::Star => UnaryOp::Deref,
-        TokenKind::And => UnaryOp::AddrOf,
-        TokenKind::Real => UnaryOp::Real,
-        TokenKind::Imag => UnaryOp::Imag,
-        _ => unreachable!(),
-    };
+fn parse_unary_operator(parser: &mut Parser, mut token: Token) -> Result<ParsedNodeRef, ParseError> {
+    let mut ops = Vec::new();
 
-    parser.advance();
-    let operand_node = parser.parse_expr_bp(BindingPower::UNARY)?;
-    let span = token.span.merge(parser.ast.get_node(operand_node).span);
-    Ok(parser.push_node(ParsedNodeKind::UnaryOp(op, operand_node), span))
+    loop {
+        let op = match token.kind {
+            TokenKind::Plus => UnaryOp::Plus,
+            TokenKind::Minus => UnaryOp::Minus,
+            TokenKind::Not => UnaryOp::LogicNot,
+            TokenKind::Tilde => UnaryOp::BitNot,
+            TokenKind::Increment => UnaryOp::PreIncrement,
+            TokenKind::Decrement => UnaryOp::PreDecrement,
+            TokenKind::Star => UnaryOp::Deref,
+            TokenKind::And => UnaryOp::AddrOf,
+            TokenKind::Real => UnaryOp::Real,
+            TokenKind::Imag => UnaryOp::Imag,
+            _ => break,
+        };
+
+        ops.push((op, token.span));
+        parser.advance();
+
+        if let Some(next_token) = parser.try_current_token() {
+            match next_token.kind {
+                TokenKind::Plus
+                | TokenKind::Minus
+                | TokenKind::Not
+                | TokenKind::Tilde
+                | TokenKind::Increment
+                | TokenKind::Decrement
+                | TokenKind::Star
+                | TokenKind::And
+                | TokenKind::Real
+                | TokenKind::Imag => {
+                    token = next_token;
+                }
+                _ => break,
+            }
+        } else {
+            break;
+        }
+    }
+
+    let mut current_node = parser.parse_expr_bp(BindingPower::UNARY)?;
+
+    for (op, span) in ops.into_iter().rev() {
+        let full_span = span.merge(parser.ast.get_node(current_node).span);
+        current_node = parser.push_node(ParsedNodeKind::UnaryOp(op, current_node), full_span);
+    }
+
+    Ok(current_node)
 }
 
 fn parse_infix(

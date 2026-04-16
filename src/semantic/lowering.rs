@@ -1676,7 +1676,31 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             // Unary expressions
             ParsedNodeKind::UnaryOp(op, e) => {
-                lower_simple!(NodeKind::UnaryOp(*op, self.visit_expression(*e)))
+                let mut e = *e;
+                let res_node = self.get_or_push_slot(target_slots, span);
+                let mut ops = Vec::new();
+                ops.push((*op, span, res_node));
+
+                loop {
+                    let child = self.parsed_ast.get_node(e);
+                    if let ParsedNodeKind::UnaryOp(child_op, child_e) = &child.kind {
+                        let inner_node = self.push_dummy(child.span);
+                        ops.push((*child_op, child.span, inner_node));
+                        e = *child_e;
+                    } else {
+                        break;
+                    }
+                }
+
+                let mut current_inner = self.visit_expression(e);
+
+                for (op, span, node_ref) in ops.into_iter().rev() {
+                    self.ast.set_kind(node_ref, NodeKind::UnaryOp(op, current_inner));
+                    self.ast.set_span(node_ref, span);
+                    current_inner = node_ref;
+                }
+
+                smallvec![res_node]
             }
             ParsedNodeKind::PostIncrement(e) => {
                 lower_simple!(NodeKind::PostIncrement(self.visit_expression(*e)))

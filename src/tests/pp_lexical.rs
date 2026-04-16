@@ -492,7 +492,11 @@ fn test_dump_preprocessed_output_with_macros() {
 int x = TEN;
 "#;
     let content = dump_pp_output(src, false);
-    insta::assert_snapshot!(content, @"int x = 10;");
+    insta::assert_snapshot!(content, @"
+
+
+    int x = 10;
+    ");
 }
 
 #[test]
@@ -502,7 +506,10 @@ fn test_dump_preprocessed_output_suppress_line_markers() {
 int x = TEN;
 "#;
     let content = dump_pp_output(src, true);
-    insta::assert_snapshot!(content, @"int x = 10;");
+    insta::assert_snapshot!(content, @"
+
+    int x = 10;
+    ");
 }
 
 #[test]

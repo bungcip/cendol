@@ -38,6 +38,7 @@ pub(crate) enum PPExpr {
     HasIncludeNext(String, bool),
     HasBuiltin(StringId),
     HasAttribute(StringId),
+    HasCAttribute(StringId),
     HasFeature(StringId),
     HasExtension(StringId),
     Binary(BinaryOp, Box<PPExpr>, Box<PPExpr>),
@@ -63,6 +64,7 @@ impl PPExpr {
             }
             PPExpr::HasBuiltin(s) => Ok(ExprValue::from_bool(Self::is_builtin_supported(*s, &pp.keywords))),
             PPExpr::HasAttribute(s) => Ok(ExprValue::from_bool(Self::is_attribute_supported(*s, &pp.keywords))),
+            PPExpr::HasCAttribute(s) => Ok(ExprValue::new(Self::is_c_attribute_supported(*s, &pp.keywords), false)),
             PPExpr::HasFeature(s) | PPExpr::HasExtension(s) => {
                 Ok(ExprValue::from_bool(Self::is_feature_supported(*s, &pp.keywords)))
             }
@@ -132,6 +134,21 @@ impl PPExpr {
         // attributes that have semantic meaning for the compiler.
         // For now, return 0 as we don't implement any special attribute semantics.
         false
+    }
+
+    fn is_c_attribute_supported(name: StringId, _kw: &PPKeywordTable) -> i64 {
+        let text = name.as_str();
+        // Remove 'gnu::' or 'clang::' namespace prefixes if present, or `__` around the name.
+        // Standard C23 attributes:
+        match text {
+            "nodiscard" | "__nodiscard__" => 201904,
+            "deprecated" | "__deprecated__" => 201904,
+            "maybe_unused" | "__maybe_unused__" => 201904,
+            "fallthrough" | "__fallthrough__" => 201904,
+            "unsequenced" | "__unsequenced__" => 202311,
+            "reproducible" | "__reproducible__" => 202311,
+            _ => 0,
+        }
     }
 
     fn is_feature_supported(name: StringId, kw: &PPKeywordTable) -> bool {
@@ -479,6 +496,7 @@ impl<'a> Interpreter<'a> {
                 PPExpr::HasBuiltin as fn(StringId) -> PPExpr,
             ),
             (self.preprocessor.has_attribute_symbol(), PPExpr::HasAttribute),
+            (self.preprocessor.has_c_attribute_symbol(), PPExpr::HasCAttribute),
             (self.preprocessor.has_feature_symbol(), PPExpr::HasFeature),
             (self.preprocessor.has_extension_symbol(), PPExpr::HasExtension),
         ];

@@ -23,7 +23,7 @@ fn test_compound_assignment_truncation() {
     // 3. Assignment of truncated result to f->a
     // 4. Conversion of truncated result back to u64 (for return)
 
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = u64
     type %t1 = struct foo { a: %t2 }
     type %t2 = u8
@@ -60,7 +60,7 @@ fn test_compound_assignment_truncation_16() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = u64
     type %t1 = struct foo { b: %t2 }
     type %t2 = u16

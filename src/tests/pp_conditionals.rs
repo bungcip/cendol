@@ -608,7 +608,7 @@ LOGICNOT_1_OK
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: PLUS_OK
     - kind: Identifier
@@ -687,7 +687,7 @@ FAIL_MOD_OVERFLOW
 #endif
 "#;
     let tokens = setup_pp_snapshot(src);
-    insta::assert_yaml_snapshot!(tokens, @r"
+    insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
       text: OK_DIV_OVERFLOW
     - kind: Identifier

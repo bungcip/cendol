@@ -214,3 +214,8 @@ Action: Implement recursive property checks for 'has_flexible_array_member' in t
 
 Learning: C11 6.5.1.1p2 mandates that the controlling expression of a `_Generic` selection shall be compatible with at most one generic association. Picking only the first match is insufficient as it silently accepts ambiguous code. Furthermore, associations like `int(*)[10]` and `int(*)[20]` are NOT compatible with each other, but both can be compatible with a controlling expression of type `int(*)[]` (pointer to incomplete array).
 Action: Ensure that `_Generic` selection continues checking all associations even after a match is found, to detect and report ambiguity errors when multiple associations are compatible with the controlling expression.
+
+2026-04-15 - [Logical NOT Scalar Constraint and Decay]
+
+Learning: C11 6.5.3.3p1 requires the operand of the unary ! operator to have a scalar type. While aggregates like structures and unions must be rejected, arrays and functions are permitted because they undergo implicit decay to pointers (which are scalar) in this context. Enforcing the scalar constraint before decay leads to false negatives for valid C code.
+Action: Always ensure that implicit conversions (like lvalue conversion and decay) are applied before enforcing type category constraints (like scalar or arithmetic) on operator operands, unless the operator specifically suppresses them (like sizeof or &).

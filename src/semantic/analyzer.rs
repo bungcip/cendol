@@ -1108,8 +1108,13 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             UnaryOp::LogicNot => {
                 self.apply_lvalue_conversion(expr);
-                // Logical NOT always returns int type (C11 6.5.3.3)
-                Some(QualType::unqualified(self.registry.type_int))
+                let decayed_qt = self.decay(expr, operand_qt);
+                if self.require_scalar(node, decayed_qt) {
+                    // Logical NOT always returns int type (C11 6.5.3.3)
+                    Some(QualType::unqualified(self.registry.type_int))
+                } else {
+                    None
+                }
             }
             UnaryOp::BitNot => {
                 self.apply_lvalue_conversion(expr);

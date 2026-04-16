@@ -60,6 +60,39 @@ fn test_has_feature() {
 }
 
 #[test]
+fn test_has_c_attribute() {
+    let src = r#"
+#if __has_c_attribute(nodiscard)
+    has_nodiscard
+#endif
+
+#if __has_c_attribute(non_existent)
+    has_non_existent
+#else
+    no_non_existent
+#endif
+
+#if __has_c_attribute(nodiscard) == 201904
+    has_nodiscard_value
+#endif
+
+#if __has_c_attribute(unsequenced) == 202311
+    has_unsequenced_value
+#endif
+"#;
+    assert_yaml_snapshot!(setup_pp_snapshot(src), @"
+    - kind: Identifier
+      text: has_nodiscard
+    - kind: Identifier
+      text: no_non_existent
+    - kind: Identifier
+      text: has_nodiscard_value
+    - kind: Identifier
+      text: has_unsequenced_value
+    ");
+}
+
+#[test]
 fn test_has_attribute() {
     let src = r#"
 #if __has_attribute(aligned)

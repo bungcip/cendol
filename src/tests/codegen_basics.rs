@@ -196,7 +196,7 @@ fn test_f128_constant_promotion() {
 
     match result {
         ClifOutput::ClifDump(clif_ir) => {
-            insta::assert_snapshot!(clif_ir, @r"
+            insta::assert_snapshot!(clif_ir, @"
             ; Function: main
             function u0:0() system_v {
                 ss0 = explicit_slot 16, align = 16

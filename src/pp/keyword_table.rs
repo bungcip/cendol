@@ -45,6 +45,7 @@ pub struct PPKeywordTable {
     pub(crate) has_include_next: StringId,
     pub(crate) has_builtin: StringId,
     pub(crate) has_attribute: StringId,
+    pub(crate) has_c_attribute: StringId,
     pub(crate) has_feature: StringId,
     pub(crate) has_extension: StringId,
     pub(crate) line_macro: StringId,
@@ -149,6 +150,7 @@ impl PPKeywordTable {
             has_include_next: StringId::new("__has_include_next"),
             has_builtin: StringId::new("__has_builtin"),
             has_attribute: StringId::new("__has_attribute"),
+            has_c_attribute: StringId::new("__has_c_attribute"),
             has_feature: StringId::new("__has_feature"),
             has_extension: StringId::new("__has_extension"),
             line_macro: StringId::new("__LINE__"),
@@ -285,6 +287,11 @@ impl PPKeywordTable {
     /// Get the interned symbol for the "__has_attribute" operator
     pub(crate) fn has_attribute_symbol(&self) -> StringId {
         self.has_attribute
+    }
+
+    /// Get the interned symbol for the "__has_c_attribute" operator
+    pub(crate) fn has_c_attribute_symbol(&self) -> StringId {
+        self.has_c_attribute
     }
 
     /// Get the interned symbol for the "__has_feature" operator

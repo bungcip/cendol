@@ -617,11 +617,11 @@ fn test_static_assert() {
 #[test]
 fn test_static_assert_c23_no_message() {
     let resolved = setup_declaration_with_std("_Static_assert(1);", crate::lang_options::CStandard::C23);
-    insta::assert_yaml_snapshot!(&resolved, @r#"
+    insta::assert_yaml_snapshot!(&resolved, @"
     StaticAssert:
       - LiteralInt: 1
       - ~
-    "#);
+    ");
 }
 
 #[test]

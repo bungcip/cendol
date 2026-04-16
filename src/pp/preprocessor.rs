@@ -517,6 +517,11 @@ impl<'src> Preprocessor<'src> {
         self.keywords.has_attribute_symbol()
     }
 
+    /// Get the interned symbol for the "__has_c_attribute" operator
+    pub(super) fn has_c_attribute_symbol(&self) -> StringId {
+        self.keywords.has_c_attribute_symbol()
+    }
+
     /// Get the interned symbol for the "__has_feature" operator
     pub(super) fn has_feature_symbol(&self) -> StringId {
         self.keywords.has_feature_symbol()

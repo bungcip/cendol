@@ -105,7 +105,7 @@ fn test_initializer_list_crash_regression() {
         struct contains_empty ce = { { (1) }, (empty_s){}, 022, };
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = struct contains_empty { a: %t1, empty: %t2, b: %t1 }
     type %t1 = u8
     type %t2 = struct anonymous {  }

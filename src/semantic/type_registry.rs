@@ -126,11 +126,13 @@ pub struct TypeRegistry {
 
 impl TypeRegistry {
     pub(crate) fn is_value_fitting(&self, val: i64, ty_ref: TypeRef) -> bool {
-        let ty = self.get(ty_ref);
-        if !ty.is_int() {
+        // Bolt ⚡: Use is_integer() as early guard to avoid self.get() and Cow<Type>
+        // allocations for non-integer types (like records, functions, etc.)
+        if !ty_ref.is_integer() {
             return false;
         }
 
+        let ty = self.get(ty_ref);
         let width = ty.width();
         if ty.is_signed() {
             let max = if width >= 64 {
@@ -150,11 +152,16 @@ impl TypeRegistry {
     }
 
     pub(crate) fn is_literal_fitting(&self, val: i64, ty_ref: TypeRef) -> bool {
+        // Bolt ⚡: Early guard to avoid self.get() for non-integers.
+        if !ty_ref.is_integer() {
+            return false;
+        }
+
         if val < 0 {
             // All literals are parsed as >= 0. If bits are negative in i64, it's [2^63, 2^64-1].
             // This only fits in 64-bit unsigned types.
             let ty = self.get(ty_ref);
-            !ty.is_signed() && ty.is_int() && ty.width() >= 64
+            !ty.is_signed() && ty.width() >= 64
         } else {
             self.is_value_fitting(val, ty_ref)
         }
@@ -382,44 +389,46 @@ impl TypeRegistry {
     /// Returns Cow because inline types are constructed on the fly.
     #[inline]
     pub(crate) fn get(&self, mut r: TypeRef) -> Cow<'_, Type> {
-        loop {
-            // Bolt ⚡: Use TypeClass for fast dispatch.
-            // This avoids redundant matches and property checks for terminal types.
-            match r.class() {
-                TypeClass::Pointer if r.is_inline_pointer() => {
-                    let pointee = self.reconstruct_pointee(r);
-                    return Cow::Owned(Type {
-                        kind: TypeKind::Pointer {
-                            pointee: QualType::unqualified(pointee),
-                        },
-                        layout: Some(TypeLayout {
-                            size: 8,
-                            alignment: 8,
-                            kind: LayoutKind::Scalar,
-                        }),
-                    });
-                }
-                TypeClass::Array if r.is_inline_array() => {
-                    let element = self.reconstruct_element(r);
-                    let len = r.array_len().unwrap() as u64;
-                    return Cow::Owned(Type {
-                        kind: TypeKind::Array {
-                            element_type: element,
-                            size: ArraySizeType::Constant(len as usize),
-                        },
-                        layout: None,
-                    });
-                }
-                TypeClass::Alias => {
-                    // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
-                    if let TypeKind::Alias(inner) = &self.types[r.index()].kind {
-                        r = *inner;
-                        continue;
-                    }
-                    return Cow::Borrowed(&self.types[r.index()]);
-                }
-                _ => return Cow::Borrowed(&self.types[r.index()]),
+        // Bolt ⚡: Fast path for non-alias terminal types to avoid loop and class match.
+        let class = r.class();
+        if class != TypeClass::Alias {
+            if class == TypeClass::Pointer && r.is_inline_pointer() {
+                let pointee = self.reconstruct_pointee(r);
+                return Cow::Owned(Type {
+                    kind: TypeKind::Pointer {
+                        pointee: QualType::unqualified(pointee),
+                    },
+                    layout: Some(TypeLayout {
+                        size: 8,
+                        alignment: 8,
+                        kind: LayoutKind::Scalar,
+                    }),
+                });
             }
+            if class == TypeClass::Array && r.is_inline_array() {
+                let element = self.reconstruct_element(r);
+                let len = r.array_len().unwrap() as u64;
+                return Cow::Owned(Type {
+                    kind: TypeKind::Array {
+                        element_type: element,
+                        size: ArraySizeType::Constant(len as usize),
+                    },
+                    layout: None,
+                });
+            }
+            return Cow::Borrowed(&self.types[r.index()]);
+        }
+
+        loop {
+            // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
+            if let TypeKind::Alias(inner) = &self.types[r.index()].kind {
+                r = *inner;
+                if r.class() != TypeClass::Alias {
+                    return self.get(r);
+                }
+                continue;
+            }
+            return Cow::Borrowed(&self.types[r.index()]);
         }
     }
 
@@ -486,6 +495,40 @@ impl TypeRegistry {
                 }
             }
             _ => false,
+        }
+    }
+
+    pub(crate) fn is_noreturn_function(&self, mut ty: TypeRef) -> bool {
+        loop {
+            let class = ty.class();
+            if class != TypeClass::Function && class != TypeClass::Alias {
+                return false;
+            }
+
+            match &self.types[ty.index()].kind {
+                TypeKind::Alias(inner) => {
+                    ty = *inner;
+                }
+                TypeKind::Function { is_noreturn, .. } => return *is_noreturn,
+                _ => return false,
+            }
+        }
+    }
+
+    pub(crate) fn get_complex_base(&self, mut ty: TypeRef) -> Option<TypeRef> {
+        loop {
+            let class = ty.class();
+            if class != TypeClass::Complex && class != TypeClass::Alias {
+                return None;
+            }
+
+            match &self.types[ty.index()].kind {
+                TypeKind::Alias(inner) => {
+                    ty = *inner;
+                }
+                TypeKind::Complex { base_type } => return Some(*base_type),
+                _ => return None,
+            }
         }
     }
 
@@ -955,11 +998,62 @@ impl TypeRegistry {
     }
 
     fn compute_layout_internal(&mut self, ty: TypeRef) -> Result<TypeLayout, TypeRegistryError> {
-        // We clone Kind to release borrow on self
-        let type_kind = self.get(ty).kind.clone();
+        /// Internal task to extract only needed info from TypeKind while holding a reference
+        /// to avoid cloning the entire Kind (which contains Arcs and large Record/Enum data).
+        enum LayoutTask {
+            Builtin(BuiltinType),
+            Pointer,
+            Complex(TypeRef),
+            Array(TypeRef, ArraySizeType),
+            Function,
+            Record {
+                members: Arc<[StructMember]>,
+                is_complete: bool,
+                is_union: bool,
+                packing: Option<u32>,
+                alignment: Option<u32>,
+            },
+            Enum(TypeRef),
+            Alias(TypeRef),
+            Unsupported(&'static str),
+            NullptrT,
+            Error,
+        }
 
-        let layout = match type_kind {
-            TypeKind::Builtin(b) => match b {
+        let task = {
+            let type_info = self.get(ty);
+            match &type_info.kind {
+                TypeKind::Builtin(b) => LayoutTask::Builtin(*b),
+                TypeKind::Pointer { .. } => LayoutTask::Pointer,
+                TypeKind::Complex { base_type } => LayoutTask::Complex(*base_type),
+                TypeKind::Array { element_type, size } => LayoutTask::Array(*element_type, *size),
+                TypeKind::Function { .. } => LayoutTask::Function,
+                TypeKind::Record {
+                    members,
+                    is_complete,
+                    is_union,
+                    packing,
+                    alignment,
+                    ..
+                } => LayoutTask::Record {
+                    members: Arc::clone(members),
+                    is_complete: *is_complete,
+                    is_union: *is_union,
+                    packing: *packing,
+                    alignment: *alignment,
+                },
+                TypeKind::Enum { base_type, .. } => LayoutTask::Enum(*base_type),
+                TypeKind::Alias(inner) => LayoutTask::Alias(*inner),
+                TypeKind::AutoType => LayoutTask::Unsupported("__auto_type layout"),
+                TypeKind::TypeofExpr(_) => LayoutTask::Unsupported("typeof expr layout"),
+                TypeKind::TypeofUnqualExpr(_) => LayoutTask::Unsupported("typeof_unqual expr layout"),
+                TypeKind::NullptrT => LayoutTask::NullptrT,
+                _ => LayoutTask::Error,
+            }
+        };
+
+        let layout = match task {
+            LayoutTask::Builtin(b) => match b {
                 BuiltinType::Void => {
                     return Err(TypeRegistryError::SizeOfIncompleteType { ty });
                 }
@@ -1042,7 +1136,7 @@ impl TypeRegistry {
                 }
             },
 
-            TypeKind::Pointer { .. } => {
+            LayoutTask::Pointer => {
                 let size = match self.target_triple.pointer_width() {
                     Ok(PointerWidth::U16) => 2,
                     Ok(PointerWidth::U32) => 4,
@@ -1056,7 +1150,7 @@ impl TypeRegistry {
                 }
             }
 
-            TypeKind::Complex { base_type } => {
+            LayoutTask::Complex(base_type) => {
                 let base_layout = self.ensure_layout(base_type)?;
                 TypeLayout {
                     size: base_layout.size * 2,
@@ -1065,7 +1159,7 @@ impl TypeRegistry {
                 }
             }
 
-            TypeKind::Array { element_type, size } => match size {
+            LayoutTask::Array(element_type, size) => match size {
                 ArraySizeType::Constant(len) => {
                     let element_layout = self.ensure_layout(element_type)?;
                     let total_size = element_layout.size * len as u64;
@@ -1085,17 +1179,16 @@ impl TypeRegistry {
                 }
             },
 
-            TypeKind::Function { .. } => {
+            LayoutTask::Function => {
                 return Err(TypeRegistryError::SizeOfFunctionType);
             }
 
-            TypeKind::Record {
+            LayoutTask::Record {
                 members,
                 is_complete,
                 is_union,
                 packing,
                 alignment,
-                ..
             } => {
                 if !is_complete {
                     // This is the correct error when sizeof is used on an incomplete type.
@@ -1104,25 +1197,13 @@ impl TypeRegistry {
                 self.compute_record_layout(&members, is_union, packing, alignment)?
             }
 
-            TypeKind::Enum { base_type, .. } => self.ensure_layout(base_type)?.into_owned(),
+            LayoutTask::Enum(base_type) => self.ensure_layout(base_type)?.into_owned(),
 
-            TypeKind::Alias(inner) => self.ensure_layout(inner)?.into_owned(),
-            TypeKind::AutoType => {
-                return Err(TypeRegistryError::UnsupportedFeature {
-                    feature: "__auto_type layout",
-                });
+            LayoutTask::Alias(inner) => self.ensure_layout(inner)?.into_owned(),
+            LayoutTask::Unsupported(feature) => {
+                return Err(TypeRegistryError::UnsupportedFeature { feature });
             }
-            TypeKind::TypeofExpr(_) => {
-                return Err(TypeRegistryError::UnsupportedFeature {
-                    feature: "typeof expr layout",
-                });
-            }
-            TypeKind::TypeofUnqualExpr(_) => {
-                return Err(TypeRegistryError::UnsupportedFeature {
-                    feature: "typeof_unqual expr layout",
-                });
-            }
-            TypeKind::NullptrT => {
+            LayoutTask::NullptrT => {
                 let ptr_size = self.target_triple.pointer_width().unwrap().bytes() as u64;
                 TypeLayout {
                     size: ptr_size,
@@ -1130,7 +1211,7 @@ impl TypeRegistry {
                     kind: LayoutKind::Scalar,
                 }
             }
-            TypeKind::Error => {
+            LayoutTask::Error => {
                 return Err(TypeRegistryError::UnsupportedFeature {
                     feature: "error layout",
                 });

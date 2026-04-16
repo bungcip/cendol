@@ -444,12 +444,10 @@ impl<'a> SemanticAnalyzer<'a> {
             NodeKind::FunctionCall(call) => {
                 if let Some(callee_type) = self.semantic_info.types[call.callee.index()] {
                     let mut ty = callee_type.ty();
-                    while let TypeKind::Pointer { pointee } = &self.registry.get(ty).kind {
+                    while let Some(pointee) = self.registry.get_pointee(ty) {
                         ty = pointee.ty();
                     }
-                    if let TypeKind::Function { is_noreturn, .. } = &self.registry.get(ty).kind {
-                        return *is_noreturn;
-                    }
+                    return self.registry.is_noreturn_function(ty);
                 }
                 false
             }
@@ -1062,8 +1060,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             UnaryOp::Real | UnaryOp::Imag => {
-                if let TypeKind::Complex { base_type } = &self.registry.get(operand_qt.ty()).kind {
-                    Some(QualType::new(*base_type, operand_qt.qualifiers()))
+                if let Some(base_type) = self.registry.get_complex_base(operand_qt.ty()) {
+                    Some(QualType::new(base_type, operand_qt.qualifiers()))
                 } else if self.require_arithmetic(node, operand_qt) {
                     if op == UnaryOp::Real {
                         Some(operand_qt)
@@ -3658,8 +3656,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
             // C11 6.5.1.1p2: The type name in a generic association shall specify a complete object type
             // other than a variably modified type.
-            let assoc_ty_kind = &self.registry.get(assoc_qt.ty()).kind;
-            if matches!(assoc_ty_kind, TypeKind::Function { .. }) {
+            // Bolt ⚡: Use is_function() check to avoid self.get() and Cow<Type> allocation.
+            if assoc_qt.is_function() {
                 self.report_error(
                     assoc_node,
                     SemanticErrorKind::GenericFunctionAssociation { ty: assoc_qt },

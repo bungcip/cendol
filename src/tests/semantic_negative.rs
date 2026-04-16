@@ -354,3 +354,32 @@ fn test_pointer_sub_incomplete() {
         "Invalid operands for binary operation",
     );
 }
+
+#[test]
+fn test_logic_not_on_struct_prohibited() {
+    // C11 6.5.3.3p1: The operand of the unary ! operator shall have scalar type.
+    run_fail_with_message(
+        r#"
+        struct S { int x; };
+        int main() {
+            struct S s = {0};
+            return !s;
+        }
+        "#,
+        "expected scalar type",
+    );
+}
+
+#[test]
+fn test_logic_not_on_union_prohibited() {
+    run_fail_with_message(
+        r#"
+        union U { int x; };
+        int main() {
+            union U u = {0};
+            return !u;
+        }
+        "#,
+        "expected scalar type",
+    );
+}

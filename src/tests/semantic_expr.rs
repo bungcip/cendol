@@ -1093,3 +1093,31 @@ fn test_usual_arithmetic_conversions_signed_wins() {
     }
     ");
 }
+
+#[test]
+fn test_logic_not_on_array_allowed() {
+    // Array decays to pointer, which is scalar.
+    run_pass(
+        r#"
+        int main() {
+            int x[10];
+            return !x;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_logic_not_on_function_allowed() {
+    // Function decays to pointer, which is scalar.
+    run_pass(
+        r#"
+        void foo() {}
+        int main() {
+            return !foo;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}

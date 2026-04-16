@@ -1102,6 +1102,25 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             UnaryOp::LogicNot => {
                 self.apply_lvalue_conversion(expr);
+
+                let mut actual_qt = operand_qt;
+
+                if actual_qt.is_array()
+                    && let NodeKind::Ident(name, _) = self.ast.get_kind(expr)
+                {
+                    self.report_warning(node, SemanticError::AddressOfArrayAlwaysTrue { name: *name });
+                }
+
+                if actual_qt.is_array() || actual_qt.is_function() {
+                    actual_qt = self.decay(expr, actual_qt);
+                    self.semantic_info.types[expr.index()] = Some(actual_qt);
+                }
+
+                if !actual_qt.is_scalar() {
+                    self.report_error(node, SemanticError::ExpectedScalarType { found: actual_qt });
+                    return None;
+                }
+
                 // Logical NOT always returns int type (C11 6.5.3.3)
                 Some(QualType::unqualified(self.registry.type_int))
             }

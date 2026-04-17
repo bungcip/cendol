@@ -713,7 +713,7 @@ impl TypeRegistry {
     pub(crate) fn complete_record(
         &mut self,
         record: TypeRef,
-        members: Vec<StructMember>,
+        members: Arc<[StructMember]>,
         packing: Option<u32>,
         alignment: Option<u16>,
     ) {
@@ -726,7 +726,7 @@ impl TypeRegistry {
                 alignment: alignment_slot,
                 ..
             } => {
-                *slot = Arc::from(members);
+                *slot = members;
                 *is_complete = true;
                 *packing_slot = packing;
                 *alignment_slot = alignment;
@@ -748,7 +748,7 @@ impl TypeRegistry {
     pub(super) fn complete_enum(
         &mut self,
         enum_ty: TypeRef,
-        enumerators: Vec<EnumConstant>,
+        enumerators: Arc<[EnumConstant]>,
         base_type: TypeRef,
         has_fixed: bool,
     ) {
@@ -761,7 +761,7 @@ impl TypeRegistry {
                 has_fixed_underlying_type: fixed_slot,
                 ..
             } => {
-                *slot = Arc::from(enumerators);
+                *slot = enumerators;
                 *base_slot = base_type;
                 *is_complete = true;
                 *fixed_slot = has_fixed;
@@ -989,11 +989,46 @@ impl TypeRegistry {
     }
 
     fn compute_layout_internal(&mut self, ty: TypeRef) -> Result<TypeLayout, TypeRegistryError> {
-        // We clone Kind to release borrow on self
-        let type_kind = self.get(ty).kind.clone();
+        // Bolt ⚡: Optimization: Extract only necessary metadata from TypeKind
+        // to avoid cloning the full enum (which contains Arc pointers and is large).
+        // This releases the borrow on self early.
+        let task = {
+            let type_info = self.get(ty);
+            match &type_info.kind {
+                TypeKind::Builtin(b) => LayoutTask::Builtin(*b),
+                TypeKind::Pointer { .. } => LayoutTask::Pointer,
+                TypeKind::Complex { base_type } => LayoutTask::Complex(*base_type),
+                TypeKind::Array { element_type, size } => match size {
+                    ArraySizeType::Constant(len) => LayoutTask::Array(*element_type, *len),
+                    _ => LayoutTask::Unsupported("incomplete/VLA array layout"),
+                },
+                TypeKind::Function { .. } => LayoutTask::Function,
+                TypeKind::Record {
+                    members,
+                    is_complete,
+                    is_union,
+                    packing,
+                    alignment,
+                    ..
+                } => {
+                    if !is_complete {
+                        LayoutTask::Incomplete
+                    } else {
+                        LayoutTask::Record(Arc::clone(members), *is_union, *packing, *alignment)
+                    }
+                }
+                TypeKind::Enum { base_type, .. } => LayoutTask::Enum(*base_type),
+                TypeKind::Alias(inner) => LayoutTask::Alias(*inner),
+                TypeKind::AutoType => LayoutTask::Unsupported("__auto_type layout"),
+                TypeKind::TypeofExpr(_) => LayoutTask::Unsupported("typeof expr layout"),
+                TypeKind::TypeofUnqualExpr(_) => LayoutTask::Unsupported("typeof_unqual expr layout"),
+                TypeKind::NullptrT => LayoutTask::NullptrT,
+                TypeKind::Error => LayoutTask::Unsupported("error layout"),
+            }
+        };
 
-        let layout = match type_kind {
-            TypeKind::Builtin(b) => match b {
+        let layout = match task {
+            LayoutTask::Builtin(b) => match b {
                 BuiltinType::Void => {
                     return Err(TypeRegistryError::SizeOfIncompleteType { ty });
                 }
@@ -1076,7 +1111,7 @@ impl TypeRegistry {
                 }
             },
 
-            TypeKind::Pointer { .. } => {
+            LayoutTask::Pointer => {
                 let size = match self.target_triple.pointer_width() {
                     Ok(PointerWidth::U16) => 2,
                     Ok(PointerWidth::U32) => 4,
@@ -1090,7 +1125,7 @@ impl TypeRegistry {
                 }
             }
 
-            TypeKind::Complex { base_type } => {
+            LayoutTask::Complex(base_type) => {
                 let base_layout = self.ensure_layout(base_type)?;
                 TypeLayout {
                     size: base_layout.size * 2,
@@ -1099,75 +1134,43 @@ impl TypeRegistry {
                 }
             }
 
-            TypeKind::Array { element_type, size } => match size {
-                ArraySizeType::Constant(len) => {
-                    let element_layout = self.ensure_layout(element_type)?;
-                    let total_size = element_layout.size * len as u64;
-                    TypeLayout {
-                        size: total_size,
-                        alignment: element_layout.alignment,
-                        kind: LayoutKind::Array {
-                            element: element_type,
-                            len: len as u64,
-                        },
-                    }
+            LayoutTask::Array(element_type, len) => {
+                let element_layout = self.ensure_layout(element_type)?;
+                let total_size = element_layout.size * len as u64;
+                TypeLayout {
+                    size: total_size,
+                    alignment: element_layout.alignment,
+                    kind: LayoutKind::Array {
+                        element: element_type,
+                        len: len as u64,
+                    },
                 }
-                _ => {
-                    return Err(TypeRegistryError::UnsupportedFeature {
-                        feature: "incomplete/VLA array layout",
-                    });
-                }
-            },
+            }
 
-            TypeKind::Function { .. } => {
+            LayoutTask::Function => {
                 return Err(TypeRegistryError::SizeOfFunctionType);
             }
 
-            TypeKind::Record {
-                members,
-                is_complete,
-                is_union,
-                packing,
-                alignment,
-                ..
-            } => {
-                if !is_complete {
-                    // This is the correct error when sizeof is used on an incomplete type.
-                    return Err(TypeRegistryError::SizeOfIncompleteType { ty });
-                }
+            LayoutTask::Record(members, is_union, packing, alignment) => {
                 self.compute_record_layout(&members, is_union, packing, alignment)?
             }
 
-            TypeKind::Enum { base_type, .. } => self.ensure_layout(base_type)?.into_owned(),
+            LayoutTask::Enum(base_type) => self.ensure_layout(base_type)?.into_owned(),
 
-            TypeKind::Alias(inner) => self.ensure_layout(inner)?.into_owned(),
-            TypeKind::AutoType => {
-                return Err(TypeRegistryError::UnsupportedFeature {
-                    feature: "__auto_type layout",
-                });
+            LayoutTask::Alias(inner) => self.ensure_layout(inner)?.into_owned(),
+            LayoutTask::Incomplete => {
+                return Err(TypeRegistryError::SizeOfIncompleteType { ty });
             }
-            TypeKind::TypeofExpr(_) => {
-                return Err(TypeRegistryError::UnsupportedFeature {
-                    feature: "typeof expr layout",
-                });
+            LayoutTask::Unsupported(feature) => {
+                return Err(TypeRegistryError::UnsupportedFeature { feature });
             }
-            TypeKind::TypeofUnqualExpr(_) => {
-                return Err(TypeRegistryError::UnsupportedFeature {
-                    feature: "typeof_unqual expr layout",
-                });
-            }
-            TypeKind::NullptrT => {
+            LayoutTask::NullptrT => {
                 let ptr_size = self.target_triple.pointer_width().unwrap().bytes() as u64;
                 TypeLayout {
                     size: ptr_size,
                     alignment: ptr_size as u16,
                     kind: LayoutKind::Scalar,
                 }
-            }
-            TypeKind::Error => {
-                return Err(TypeRegistryError::UnsupportedFeature {
-                    feature: "error layout",
-                });
             }
         };
 
@@ -1922,6 +1925,21 @@ impl TypeRegistry {
 // ================================================================
 // Helper types
 // ================================================================
+
+/// Internal task used to extract information from TypeKind without cloning it.
+enum LayoutTask {
+    Builtin(BuiltinType),
+    Pointer,
+    Array(TypeRef, usize),
+    Complex(TypeRef),
+    Function,
+    Record(Arc<[StructMember]>, bool, Option<u32>, Option<u16>),
+    Enum(TypeRef),
+    Alias(TypeRef),
+    Incomplete,
+    NullptrT,
+    Unsupported(&'static str),
+}
 
 /// Key for canonicalizing function types.
 /// Bolt ⚡: Uses SmallVec to avoid heap allocations during function type lookups.

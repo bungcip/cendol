@@ -3082,8 +3082,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // Both have enumerators -> Redefinition
         }
 
+        let enumerators = Arc::from(enumerators);
+
         // Update the type in AST and SymbolTable using the proper completion function
-        self.registry.complete_enum(ty, enumerators, base_type, has_fixed);
+        self.registry
+            .complete_enum(ty, Arc::clone(&enumerators), base_type, has_fixed);
         if let Err(e) = self.registry.ensure_layout(ty) {
             return Err(SemanticDiag::new(span, e.to_semantic_kind()));
         }
@@ -3119,9 +3122,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let final_packing = packing.or(self.current_packing.map(|n| n as u32));
 
+        let members = Arc::from(members);
+
         // Update the type in AST and SymbolTable
         self.registry
-            .complete_record(ty, members.clone(), final_packing, alignment);
+            .complete_record(ty, Arc::clone(&members), final_packing, alignment);
         if let Err(e) = self.registry.ensure_layout(ty) {
             return Err(SemanticDiag::new(span, e.to_semantic_kind()));
         }
@@ -3138,7 +3143,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             } = &mut entry.kind
             {
                 *is_complete = true;
-                *entry_members = Arc::from(members);
+                *entry_members = members;
             }
         }
         Ok(())

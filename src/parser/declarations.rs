@@ -508,11 +508,10 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
         let token = parser.current_token()?;
         match token.kind {
             TokenKind::Identifier(name) => {
-                let name_str = name.as_str();
-                if name_str == "noreturn" || name_str == "__noreturn__" {
+                if name == parser.keywords.attr_noreturn || name == parser.keywords.attr_noreturn_underscore {
                     specs.push(DeclSpec::FunctionSpec(crate::ast::FunctionSpec::Noreturn));
                     parser.advance();
-                } else if name_str == "aligned" || name_str == "__aligned__" {
+                } else if name == parser.keywords.attr_aligned || name == parser.keywords.attr_aligned_underscore {
                     parser.advance();
                     if parser.accept(TokenKind::LeftParen).is_some() {
                         let alignment = if parser.is_type_name_start() {
@@ -524,7 +523,7 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
                         parser.expect(TokenKind::RightParen)?;
                         specs.push(DeclSpec::AlignmentSpec(alignment));
                     }
-                } else if name_str == "packed" || name_str == "__packed__" {
+                } else if name == parser.keywords.attr_packed || name == parser.keywords.attr_packed_underscore {
                     specs.push(DeclSpec::AttributePacked);
                     parser.advance();
                 } else {

@@ -46,6 +46,29 @@ pub(crate) struct LowerCtx<'a, 'src> {
     pub(crate) lang_opts: &'a crate::lang_options::LangOptions,
     pub(crate) anon_counter: u32,
     pub(crate) type_to_tag_sym: HashMap<TypeRef, SymbolRef>,
+    pub(crate) keywords: LoweringKeywords,
+}
+
+pub(crate) struct LoweringKeywords {
+    pub(crate) builtin_nanf: NameId,
+    pub(crate) builtin_nan: NameId,
+    pub(crate) builtin_inff: NameId,
+    pub(crate) builtin_inf: NameId,
+    pub(crate) builtin_huge_val: NameId,
+    pub(crate) builtin_huge_valf: NameId,
+}
+
+impl LoweringKeywords {
+    fn new() -> Self {
+        LoweringKeywords {
+            builtin_nanf: NameId::new("__builtin_nanf"),
+            builtin_nan: NameId::new("__builtin_nan"),
+            builtin_inff: NameId::new("__builtin_inff"),
+            builtin_inf: NameId::new("__builtin_inf"),
+            builtin_huge_val: NameId::new("__builtin_huge_val"),
+            builtin_huge_valf: NameId::new("__builtin_huge_valf"),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -76,6 +99,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             lang_opts,
             anon_counter: 0,
             type_to_tag_sym: HashMap::new(),
+            keywords: LoweringKeywords::new(),
         }
     }
 
@@ -2303,10 +2327,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         if let Some(sym) = self.symbol_table.lookup_symbol(name) {
             sym
         } else {
-            let name_str = name.as_str();
-            if name_str.starts_with("__builtin_")
-                && let Some(sym) = self.handle_builtin_implicit_decl(name, name_str, span)
-            {
+            if let Some(sym) = self.handle_builtin_implicit_decl(name, span) {
                 return sym;
             }
             self.report_error(span, SemanticError::UndeclaredIdentifier { name });
@@ -2314,32 +2335,34 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn handle_builtin_implicit_decl(&mut self, name: NameId, name_str: &str, span: SourceSpan) -> Option<SymbolRef> {
-        let (params, ret_ty) = match name_str {
-            "__builtin_nanf" | "__builtin_nan" => {
-                let char_const = QualType::new(self.registry.type_char, TypeQualifiers::CONST);
-                let char_ptr = QualType::unqualified(self.registry.pointer_to(char_const));
-                let params = vec![FunctionParameter {
-                    param_type: char_ptr,
-                    name: None,
-                    storage: None,
-                }];
-                let ret = if name_str == "__builtin_nanf" {
-                    self.registry.type_float
-                } else {
-                    self.registry.type_double
-                };
-                (params, ret)
-            }
-            "__builtin_inff" | "__builtin_inf" | "__builtin_huge_val" | "__builtin_huge_valf" => {
-                let ret = if name_str.ends_with('f') {
-                    self.registry.type_float
-                } else {
-                    self.registry.type_double
-                };
-                (vec![], ret)
-            }
-            _ => return None,
+    fn handle_builtin_implicit_decl(&mut self, name: NameId, span: SourceSpan) -> Option<SymbolRef> {
+        let (params, ret_ty) = if name == self.keywords.builtin_nanf || name == self.keywords.builtin_nan {
+            let char_const = QualType::new(self.registry.type_char, TypeQualifiers::CONST);
+            let char_ptr = QualType::unqualified(self.registry.pointer_to(char_const));
+            let params = vec![FunctionParameter {
+                param_type: char_ptr,
+                name: None,
+                storage: None,
+            }];
+            let ret = if name == self.keywords.builtin_nanf {
+                self.registry.type_float
+            } else {
+                self.registry.type_double
+            };
+            (params, ret)
+        } else if name == self.keywords.builtin_inff
+            || name == self.keywords.builtin_inf
+            || name == self.keywords.builtin_huge_val
+            || name == self.keywords.builtin_huge_valf
+        {
+            let ret = if name == self.keywords.builtin_inff || name == self.keywords.builtin_huge_valf {
+                self.registry.type_float
+            } else {
+                self.registry.type_double
+            };
+            (vec![], ret)
+        } else {
+            return None;
         };
 
         let func_ty = self.registry.function_type(ret_ty, params, false, false);

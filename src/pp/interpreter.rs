@@ -136,18 +136,25 @@ impl PPExpr {
         false
     }
 
-    fn is_c_attribute_supported(name: StringId, _kw: &PPKeywordTable) -> i64 {
-        let text = name.as_str();
-        // Remove 'gnu::' or 'clang::' namespace prefixes if present, or `__` around the name.
-        // Standard C23 attributes:
-        match text {
-            "nodiscard" | "__nodiscard__" => 201904,
-            "deprecated" | "__deprecated__" => 201904,
-            "maybe_unused" | "__maybe_unused__" => 201904,
-            "fallthrough" | "__fallthrough__" => 201904,
-            "unsequenced" | "__unsequenced__" => 202311,
-            "reproducible" | "__reproducible__" => 202311,
-            _ => 0,
+    fn is_c_attribute_supported(name: StringId, kw: &PPKeywordTable) -> i64 {
+        if name == kw.attr_nodiscard
+            || name == kw.attr_nodiscard_underscore
+            || name == kw.attr_deprecated
+            || name == kw.attr_deprecated_underscore
+            || name == kw.attr_maybe_unused
+            || name == kw.attr_maybe_unused_underscore
+            || name == kw.attr_fallthrough
+            || name == kw.attr_fallthrough_underscore
+        {
+            201904
+        } else if name == kw.attr_unsequenced
+            || name == kw.attr_unsequenced_underscore
+            || name == kw.attr_reproducible
+            || name == kw.attr_reproducible_underscore
+        {
+            202311
+        } else {
+            0
         }
     }
 

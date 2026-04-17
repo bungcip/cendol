@@ -107,9 +107,33 @@ pub struct Parser<'arena, 'src> {
 
     // Type context for typedef tracking
     pub(crate) type_context: TypeDefContext,
+    pub(crate) keywords: ParserKeywords,
 
     /// Flag to indicate if we are parsing an enum's underlying type
     pub(crate) in_enum_underlying_type: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ParserKeywords {
+    pub(crate) attr_noreturn: NameId,
+    pub(crate) attr_noreturn_underscore: NameId,
+    pub(crate) attr_aligned: NameId,
+    pub(crate) attr_aligned_underscore: NameId,
+    pub(crate) attr_packed: NameId,
+    pub(crate) attr_packed_underscore: NameId,
+}
+
+impl ParserKeywords {
+    fn new() -> Self {
+        ParserKeywords {
+            attr_noreturn: NameId::new("noreturn"),
+            attr_noreturn_underscore: NameId::new("__noreturn__"),
+            attr_aligned: NameId::new("aligned"),
+            attr_aligned_underscore: NameId::new("__aligned__"),
+            attr_packed: NameId::new("packed"),
+            attr_packed_underscore: NameId::new("__packed__"),
+        }
+    }
 }
 
 impl<'arena, 'src> Parser<'arena, 'src> {
@@ -127,6 +151,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
             diag,
             lang_opts,
             type_context: TypeDefContext::new(),
+            keywords: ParserKeywords::new(),
             in_enum_underlying_type: false,
         }
     }

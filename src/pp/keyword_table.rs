@@ -118,6 +118,18 @@ pub struct PPKeywordTable {
     pub(crate) c_alignas: StringId,
     pub(crate) c_alignof: StringId,
     pub(crate) c_thread_local: StringId,
+    pub(crate) attr_nodiscard: StringId,
+    pub(crate) attr_nodiscard_underscore: StringId,
+    pub(crate) attr_deprecated: StringId,
+    pub(crate) attr_deprecated_underscore: StringId,
+    pub(crate) attr_maybe_unused: StringId,
+    pub(crate) attr_maybe_unused_underscore: StringId,
+    pub(crate) attr_fallthrough: StringId,
+    pub(crate) attr_fallthrough_underscore: StringId,
+    pub(crate) attr_unsequenced: StringId,
+    pub(crate) attr_unsequenced_underscore: StringId,
+    pub(crate) attr_reproducible: StringId,
+    pub(crate) attr_reproducible_underscore: StringId,
 }
 
 impl Default for PPKeywordTable {
@@ -223,6 +235,18 @@ impl PPKeywordTable {
             c_alignas: StringId::new("c_alignas"),
             c_alignof: StringId::new("c_alignof"),
             c_thread_local: StringId::new("c_thread_local"),
+            attr_nodiscard: StringId::new("nodiscard"),
+            attr_nodiscard_underscore: StringId::new("__nodiscard__"),
+            attr_deprecated: StringId::new("deprecated"),
+            attr_deprecated_underscore: StringId::new("__deprecated__"),
+            attr_maybe_unused: StringId::new("maybe_unused"),
+            attr_maybe_unused_underscore: StringId::new("__maybe_unused__"),
+            attr_fallthrough: StringId::new("fallthrough"),
+            attr_fallthrough_underscore: StringId::new("__fallthrough__"),
+            attr_unsequenced: StringId::new("unsequenced"),
+            attr_unsequenced_underscore: StringId::new("__unsequenced__"),
+            attr_reproducible: StringId::new("reproducible"),
+            attr_reproducible_underscore: StringId::new("__reproducible__"),
         }
     }
 

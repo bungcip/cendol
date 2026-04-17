@@ -1765,29 +1765,25 @@ impl<'a> MirGen<'a> {
     fn try_visit_builtin_float_const(&mut self, call_expr: &CallExpr, mir_ty: TypeId) -> Option<Operand> {
         // Check if callee is an identifier
         let callee_kind = self.ast.get_kind(call_expr.callee);
-        let name = match callee_kind {
-            NodeKind::Ident(name_id, _) => name_id.as_str(),
+        let name_id = match callee_kind {
+            NodeKind::Ident(name_id, _) => *name_id,
             _ => return None,
         };
 
-        match name {
-            "__builtin_inff" | "__builtin_huge_valf" => {
-                let val = f32::INFINITY as f64;
-                Some(self.create_float_operand(val, mir_ty))
-            }
-            "__builtin_inf" | "__builtin_huge_val" => {
-                let val = f64::INFINITY;
-                Some(self.create_float_operand(val, mir_ty))
-            }
-            "__builtin_nanf" => {
-                let val = f32::NAN as f64;
-                Some(self.create_float_operand(val, mir_ty))
-            }
-            "__builtin_nan" => {
-                let val = f64::NAN;
-                Some(self.create_float_operand(val, mir_ty))
-            }
-            _ => None,
+        if name_id == self.keywords.builtin_inff || name_id == self.keywords.builtin_huge_valf {
+            let val = f32::INFINITY as f64;
+            Some(self.create_float_operand(val, mir_ty))
+        } else if name_id == self.keywords.builtin_inf || name_id == self.keywords.builtin_huge_val {
+            let val = f64::INFINITY;
+            Some(self.create_float_operand(val, mir_ty))
+        } else if name_id == self.keywords.builtin_nanf {
+            let val = f32::NAN as f64;
+            Some(self.create_float_operand(val, mir_ty))
+        } else if name_id == self.keywords.builtin_nan {
+            let val = f64::NAN;
+            Some(self.create_float_operand(val, mir_ty))
+        } else {
+            None
         }
     }
 

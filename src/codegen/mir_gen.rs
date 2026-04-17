@@ -44,6 +44,31 @@ pub(crate) struct MirGen<'a> {
     pub(crate) switch_case_map: HashMap<NodeRef, MirBlockId>,
     pub(crate) valist_mir_id: Option<TypeId>,
     pub(crate) scope_cleanup: Vec<Vec<LocalId>>,
+    pub(crate) keywords: MirGenKeywords,
+}
+
+pub(crate) struct MirGenKeywords {
+    pub(crate) main: NameId,
+    pub(crate) builtin_nanf: NameId,
+    pub(crate) builtin_nan: NameId,
+    pub(crate) builtin_inff: NameId,
+    pub(crate) builtin_inf: NameId,
+    pub(crate) builtin_huge_valf: NameId,
+    pub(crate) builtin_huge_val: NameId,
+}
+
+impl MirGenKeywords {
+    fn new() -> Self {
+        Self {
+            main: NameId::new("main"),
+            builtin_nanf: NameId::new("__builtin_nanf"),
+            builtin_nan: NameId::new("__builtin_nan"),
+            builtin_inff: NameId::new("__builtin_inff"),
+            builtin_inf: NameId::new("__builtin_inf"),
+            builtin_huge_valf: NameId::new("__builtin_huge_valf"),
+            builtin_huge_val: NameId::new("__builtin_huge_val"),
+        }
+    }
 }
 
 impl<'a> MirGen<'a> {
@@ -68,6 +93,7 @@ impl<'a> MirGen<'a> {
             switch_case_map: HashMap::new(),
             valist_mir_id: None,
             scope_cleanup: vec![Vec::new()],
+            keywords: MirGenKeywords::new(),
         }
     }
 
@@ -381,7 +407,7 @@ impl<'a> MirGen<'a> {
 
             if matches!(ret_ty, MirType::Void) {
                 self.mb.set_terminator(Terminator::Return(None));
-            } else if func_name.as_str() == "main" && ret_ty.is_int() {
+            } else if func_name == self.keywords.main && ret_ty.is_int() {
                 // main() implicitly returns 0
                 let zero = self.create_int_operand(0);
                 self.mb.set_terminator(Terminator::Return(Some(zero)));

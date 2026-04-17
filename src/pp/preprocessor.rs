@@ -55,6 +55,7 @@ pub struct Preprocessor<'src> {
     pub(crate) include_depth: usize,
     pub(crate) max_include_depth: usize,
     pub(crate) counter: u32,
+    eof_emitted: bool,
 }
 
 impl<'src> Preprocessor<'src> {
@@ -115,6 +116,7 @@ impl<'src> Preprocessor<'src> {
             max_include_depth: config.max_include_depth,
             target: config.target.clone(),
             counter: 0,
+            eof_emitted: false,
         };
 
         // Initialize built-in headers
@@ -663,18 +665,14 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Process source file and return preprocessed tokens
-    pub(crate) fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPError> {
-        // Initialize lexer for main file
-        let buffer_len = self.sm.get_buffer(source_id).len() as u32;
+    /// Start processing a source file by initializing the lexer stack
+    pub(crate) fn start_processing(&mut self, source_id: SourceId) {
         let buffer = self.sm.get_buffer_arc(source_id);
-
         self.lexer_stack.push(PPLexer::new(source_id, buffer));
+    }
 
-        // ⚡ Bolt: Pre-allocate the result_tokens vector using a capacity hint based on buffer size.
-        // A common estimate for C code is around 8 bytes per token.
-        // This avoids multiple costly reallocations for large source files.
-        let mut result_tokens = Vec::with_capacity(buffer_len as usize / 8);
-
+    /// Retrieve the next fully processed and expanded token from the preprocessor stream
+    pub(crate) fn next_token(&mut self) -> Result<Option<PPToken>, PPError> {
         while let Some(token) = self.lex_token() {
             match token.kind {
                 // Handle directive
@@ -700,7 +698,7 @@ impl<'src> Preprocessor<'src> {
                 // Handle identifiers (macros, magic macros, _Pragma)
                 PPTokenKind::Identifier(symbol) => {
                     if let Some(magic) = self.try_expand_magic_macro(&token) {
-                        result_tokens.push(magic);
+                        return Ok(Some(magic));
                     } else if symbol == self.keywords.pragma_operator {
                         self.handle_pragma_operator()?;
                     } else if let Some(expanded) = self.expand_macro(&token)? {
@@ -709,25 +707,44 @@ impl<'src> Preprocessor<'src> {
                         // a manual loop of individual `push_front` calls on a VecDeque.
                         self.pending_tokens.extend(expanded.into_iter().rev());
                     } else {
-                        result_tokens.push(token);
+                        return Ok(Some(token));
                     }
                 }
                 // All other tokens
-                _ => result_tokens.push(token),
+                _ => return Ok(Some(token)),
             }
         }
 
-        // Add EOF token
-        result_tokens.push(PPToken::new(
-            PPTokenKind::Eof,
-            PPTokenFlags::empty(),
-            SourceLoc::new(source_id, buffer_len),
-            0,
-        ));
-
+        // Ensure we catch unbalanced conditionals at EOF
         if !self.conditional_stack.is_empty() {
             let loc = self.get_current_location();
+            // Clear the stack so we don't infinitely report this error on subsequent calls
+            self.conditional_stack.clear();
             return self.emit_error_loc(PPErrorKind::UnclosedConditional, loc);
+        }
+
+        if !self.eof_emitted {
+            self.eof_emitted = true;
+            return Ok(Some(PPToken::new(
+                PPTokenKind::Eof,
+                PPTokenFlags::empty(),
+                self.get_current_location(),
+                0,
+            )));
+        }
+
+        Ok(None)
+    }
+
+    /// Process source file and return preprocessed tokens (for non-streaming compatibility)
+    pub(crate) fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPError> {
+        let buffer_len = self.sm.get_buffer(source_id).len() as u32;
+        self.start_processing(source_id);
+
+        let mut result_tokens = Vec::with_capacity(buffer_len as usize / 8);
+
+        while let Some(token) = self.next_token()? {
+            result_tokens.push(token);
         }
 
         Ok(result_tokens)

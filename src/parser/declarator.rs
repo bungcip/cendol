@@ -29,7 +29,7 @@ enum DeclaratorKind {
 /// Returns the token immediately following the attribute if the structure is valid, or None.
 ///
 /// Expects: Attribute (( ... ))
-fn peek_past_attribute(parser: &Parser, mut start_offset: u32) -> Option<Token> {
+fn peek_past_attribute(parser: &mut Parser, mut start_offset: u32) -> Option<Token> {
     // Check for multiple attributes
     loop {
         // start_offset points to Attribute
@@ -40,7 +40,7 @@ fn peek_past_attribute(parser: &Parser, mut start_offset: u32) -> Option<Token> 
         // If not ((, then it's not a GCC attribute (or it's ill-formed), stop
         if let Some(t) = parser.peek_token(start_offset) {
             if t.kind != TokenKind::LeftParen {
-                return parser.peek_token(start_offset).cloned();
+                return parser.peek_token(start_offset);
             }
         } else {
             return None;
@@ -73,8 +73,7 @@ fn peek_past_attribute(parser: &Parser, mut start_offset: u32) -> Option<Token> 
         // Check if there is another one.
         if let Some(t) = parser.peek_token(start_offset) {
             if t.kind != TokenKind::Attribute {
-                // Not an attribute, so we are done
-                return Some(*t);
+                return Some(t);
             }
             // It is an attribute, loop again (start_offset points to it)
         } else {
@@ -257,12 +256,12 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, b
 
         let start_idx = parser.current_idx;
         let spec_idx = parser.current_idx;
-        let saved_diags = parser.diag.diagnostics.len();
+        let saved_diags = parser.diag().diagnostics.len();
         let specifiers = match parse_decl_specs(parser) {
             Ok(s) => s,
             Err(_) => {
                 parser.current_idx = spec_idx;
-                parser.diag.diagnostics.truncate(saved_diags);
+                parser.diag().diagnostics.truncate(saved_diags);
                 thin_vec![DeclSpec::TypeSpec(TypeSpec::Int)]
             }
         };
@@ -325,7 +324,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, b
 }
 
 /// Check if current token starts an abstract declarator
-pub(crate) fn is_abstract_declarator_start(parser: &Parser) -> bool {
+pub(crate) fn is_abstract_declarator_start(parser: &mut Parser) -> bool {
     if let Some(token) = parser.try_current_token() {
         match token.kind {
             TokenKind::Star => true,        // pointer

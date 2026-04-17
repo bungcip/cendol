@@ -761,17 +761,26 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
     })
 }
 
+use crate::pp::error::PPError;
+
 /// Lexer state machine
 pub struct Lexer<'src> {
-    // Current position in token stream
-    tokens: &'src [PPToken],
+    pub(crate) preprocessor: &'src mut crate::pp::Preprocessor<'src>,
+    pub(crate) pp_lookahead: Option<PPToken>,
     c_standard: crate::lang_options::CStandard,
 }
 
 impl<'src> Lexer<'src> {
     /// Create a new lexer with the given preprocessor token stream
-    pub(crate) fn new(tokens: &'src [PPToken], c_standard: crate::lang_options::CStandard) -> Self {
-        Lexer { tokens, c_standard }
+    pub(crate) fn new(
+        preprocessor: &'src mut crate::pp::Preprocessor<'src>,
+        c_standard: crate::lang_options::CStandard,
+    ) -> Self {
+        Lexer {
+            pp_lookahead: None,
+            preprocessor,
+            c_standard,
+        }
     }
 
     /// Classify a preprocessor token into a lexical token
@@ -815,44 +824,59 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    /// Get all tokens from the stream
-    pub(crate) fn tokenize_all(&mut self) -> Vec<Token> {
-        // Bolt ⚡: Pre-allocate the tokens vector with the capacity of the preprocessor tokens.
-        // This is a reasonable estimate that reduces the number of reallocations,
-        // as the number of lexical tokens is usually similar to the number of preprocessor tokens.
-        let mut tokens = Vec::with_capacity(self.tokens.len());
-        let mut current_token_iter = self.tokens.iter().peekable();
+    /// Retrieve the next preprocessor token, respecting lookahead
+    fn next_pp_token(&mut self) -> Result<Option<PPToken>, PPError> {
+        if let Some(token) = self.pp_lookahead.take() {
+            return Ok(Some(token));
+        }
+        self.preprocessor.next_token()
+    }
 
-        while let Some(pptoken) = current_token_iter.next() {
-            if let PPTokenKind::StringLiteral(symbol) = pptoken.kind {
-                let start_span = SourceSpan::new_with_length(
-                    pptoken.location.source_id(),
-                    pptoken.location.offset(),
-                    pptoken.length as u32,
-                );
+    /// Peek at the next preprocessor token
+    fn peek_pp_token(&mut self) -> Result<Option<PPToken>, PPError> {
+        if self.pp_lookahead.is_none() {
+            self.pp_lookahead = self.preprocessor.next_token()?;
+        }
+        Ok(self.pp_lookahead)
+    }
 
-                // Fast path for single string literals
-                if !matches!(
-                    current_token_iter.peek(),
-                    Some(PPToken {
-                        kind: PPTokenKind::StringLiteral(_),
-                        ..
-                    })
-                ) {
-                    tokens.push(Token {
-                        kind: self.classify_token(pptoken),
-                        span: start_span,
-                    });
-                    continue;
-                }
+    /// Retrieve the next lexed token from the stream
+    pub(crate) fn tokenize_all(&mut self) -> Result<Vec<Token>, PPError> {
+        let mut tokens = Vec::new();
+        while let Some(token) = self.next_token()? {
+            let is_eof = matches!(token.kind, TokenKind::EndOfFile);
+            tokens.push(token);
+            if is_eof {
+                break;
+            }
+        }
+        Ok(tokens)
+    }
 
+    pub(crate) fn next_token(&mut self) -> Result<Option<Token>, PPError> {
+        let pptoken = match self.next_pp_token()? {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+
+        if let PPTokenKind::StringLiteral(symbol) = pptoken.kind {
+            let start_span = SourceSpan::new_with_length(
+                pptoken.location.source_id(),
+                pptoken.location.offset(),
+                pptoken.length as u32,
+            );
+
+            // Fast path: no adjacent string literal
+            if let Some(next) = self.peek_pp_token()?
+                && matches!(next.kind, PPTokenKind::StringLiteral(_))
+            {
                 // Slow path: Concatenate adjacent string literals
                 let (mut prefix, first_content) = Self::extract_literal_parts(symbol.as_str()).unwrap_or(("", ""));
                 let mut content = String::from(first_content);
                 let mut final_span = start_span;
 
-                while let Some(next) = current_token_iter.peek() {
-                    if let PPTokenKind::StringLiteral(next_symbol) = next.kind {
+                while let Some(peek_next) = self.peek_pp_token()? {
+                    if let PPTokenKind::StringLiteral(next_symbol) = peek_next.kind {
                         let (next_prefix, next_content) =
                             Self::extract_literal_parts(next_symbol.as_str()).unwrap_or(("", ""));
                         if prefix.is_empty() {
@@ -860,41 +884,38 @@ impl<'src> Lexer<'src> {
                         }
                         content.push_str(next_content);
                         final_span = SourceSpan::new_with_length(
-                            next.location.source_id(),
-                            next.location.offset(),
-                            next.length as u32,
+                            peek_next.location.source_id(),
+                            peek_next.location.offset(),
+                            peek_next.length as u32,
                         );
-                        current_token_iter.next();
+                        self.next_pp_token()?; // consume it
                     } else {
                         break;
                     }
                 }
 
-                tokens.push(Token {
+                return Ok(Some(Token {
                     kind: TokenKind::StringLiteral(StringId::new(format!("{}\"{}\"", prefix, content))),
                     span: start_span.merge(final_span),
-                });
-                continue;
+                }));
             }
 
-            // For all other tokens, process normally
-            let token = Token {
-                kind: self.classify_token(pptoken),
-                span: SourceSpan::new_with_length(
-                    pptoken.location.source_id(),
-                    pptoken.location.offset(),
-                    pptoken.length as u32,
-                ),
-            };
-
-            let is_eof = matches!(token.kind, TokenKind::EndOfFile);
-            tokens.push(token);
-            if is_eof {
-                break;
-            }
+            return Ok(Some(Token {
+                kind: self.classify_token(&pptoken),
+                span: start_span,
+            }));
         }
 
-        tokens
+        let token = Token {
+            kind: self.classify_token(&pptoken),
+            span: SourceSpan::new_with_length(
+                pptoken.location.source_id(),
+                pptoken.location.offset(),
+                pptoken.length as u32,
+            ),
+        };
+
+        Ok(Some(token))
     }
 
     /// Extract parts from a string literal symbol: (prefix, content_without_quotes)

@@ -43,14 +43,14 @@ pub(crate) mod expr_patterns {
     }
 }
 
-pub(crate) struct ParserTransaction<'a, 'arena, 'src> {
-    pub(crate) parser: &'a mut Parser<'arena, 'src>,
+pub(crate) struct ParserTransaction<'a, 'arena, 'src, 'lexer> {
+    pub(crate) parser: &'a mut Parser<'arena, 'src, 'lexer>,
     state: ParserState,
     committed: bool,
 }
 
-impl<'a, 'arena, 'src> ParserTransaction<'a, 'arena, 'src> {
-    pub(crate) fn new(parser: &'a mut Parser<'arena, 'src>) -> Self {
+impl<'a, 'arena, 'src, 'lexer> ParserTransaction<'a, 'arena, 'src, 'lexer> {
+    pub(crate) fn new(parser: &'a mut Parser<'arena, 'src, 'lexer>) -> Self {
         let state = parser.save_state();
         Self {
             parser,
@@ -64,7 +64,7 @@ impl<'a, 'arena, 'src> ParserTransaction<'a, 'arena, 'src> {
     }
 }
 
-impl<'a, 'arena, 'src> Drop for ParserTransaction<'a, 'arena, 'src> {
+impl<'a, 'arena, 'src, 'lexer> Drop for ParserTransaction<'a, 'arena, 'src, 'lexer> {
     fn drop(&mut self) {
         if !self.committed {
             self.parser.restore_state(self.state.clone());

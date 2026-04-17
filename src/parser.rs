@@ -4,6 +4,8 @@
 //! It orchestrates the parsing process by delegating to specialized sub-modules for
 //! different language constructs.
 
+use std::collections::VecDeque;
+
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError, ParseErrorKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
@@ -98,12 +100,14 @@ pub(crate) struct ParserState {
 }
 
 /// Main parser structure
-pub struct Parser<'arena, 'src> {
-    pub(crate) tokens: &'src [Token],
+pub struct Parser<'arena, 'src, 'lexer> {
+    pub(crate) lexer: &'lexer mut Lexer<'src>,
     pub(crate) current_idx: usize,
     pub(crate) ast: &'arena mut ParsedAst,
-    pub(crate) diag: &'src mut DiagnosticEngine,
     pub(crate) lang_opts: &'src crate::lang_options::LangOptions,
+
+    // Token caching for lookahead and backtracking
+    pub(crate) token_cache: VecDeque<Token>,
 
     // Type context for typedef tracking
     pub(crate) type_context: TypeDefContext,
@@ -136,37 +140,63 @@ impl ParserKeywords {
     }
 }
 
-impl<'arena, 'src> Parser<'arena, 'src> {
+impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     /// Create a new parser
     pub(crate) fn new(
-        tokens: &'src [Token],
+        lexer: &'lexer mut Lexer<'src>,
         ast: &'arena mut ParsedAst,
-        diag: &'src mut DiagnosticEngine,
         lang_opts: &'src crate::lang_options::LangOptions,
     ) -> Self {
         Parser {
-            tokens,
+            lexer,
             current_idx: 0,
             ast,
-            diag,
             lang_opts,
+            token_cache: VecDeque::new(),
             type_context: TypeDefContext::new(),
             keywords: ParserKeywords::new(),
             in_enum_underlying_type: false,
         }
     }
 
+    /// Access the diagnostic engine via the lexer
+    pub(crate) fn diag(&mut self) -> &mut DiagnosticEngine {
+        self.lexer.preprocessor.diag
+    }
+
     /// Get the current token (returns None if at end of input)
-    fn try_current_token(&self) -> Option<Token> {
-        self.tokens.get(self.current_idx).cloned()
+    fn try_current_token(&mut self) -> Option<Token> {
+        self.ensure_cached(self.current_idx);
+        self.token_cache.get(self.current_idx).cloned()
+    }
+
+    fn ensure_cached(&mut self, index: usize) {
+        while self.token_cache.len() <= index {
+            match self.lexer.next_token() {
+                Ok(Some(token)) => {
+                    self.token_cache.push_back(token);
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    self.lexer.preprocessor.diag.report(e);
+                    let span = self.token_cache.back().map(|t| t.span).unwrap_or_default();
+                    self.token_cache.push_back(Token {
+                        kind: TokenKind::EndOfFile,
+                        span,
+                    });
+                    break;
+                }
+            }
+        }
     }
 
     /// Get the current token (returns error if at end of input)
-    fn current_token(&self) -> Result<Token, ParseError> {
+    fn current_token(&mut self) -> Result<Token, ParseError> {
+        let idx = self.current_idx;
         self.try_current_token().ok_or_else(|| {
             let span = self
-                .tokens
-                .get(self.current_idx.saturating_sub(1))
+                .token_cache
+                .get(idx.saturating_sub(1))
                 .map(|token| token.span)
                 .unwrap_or_default();
             ParseError {
@@ -177,17 +207,17 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Get the current token kind
-    fn current_token_kind(&self) -> Option<TokenKind> {
+    fn current_token_kind(&mut self) -> Option<TokenKind> {
         self.try_current_token().map(|t| t.kind)
     }
 
     /// Get the current token location
-    pub(super) fn current_token_span(&self) -> Result<SourceSpan, ParseError> {
+    pub(super) fn current_token_span(&mut self) -> Result<SourceSpan, ParseError> {
         Ok(self.current_token()?.span)
     }
 
     /// Get the current token location (infallible, returns empty span on EOF)
-    pub(super) fn current_token_span_or_empty(&self) -> SourceSpan {
+    pub(super) fn current_token_span_or_empty(&mut self) -> SourceSpan {
         self.try_current_token().map(|t| t.span).unwrap_or_default()
     }
 
@@ -200,26 +230,30 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     pub(super) fn last_token_span(&self) -> Option<SourceSpan> {
         self.current_idx
             .checked_sub(1)
-            .and_then(|i| self.tokens.get(i))
+            .and_then(|i| self.token_cache.get(i))
             .map(|t| t.span)
     }
 
     /// Get the span of a token at a specific index
-    pub(super) fn get_token_span(&self, index: usize) -> Option<SourceSpan> {
-        self.tokens.get(index).map(|token| token.span)
+    pub(super) fn get_token_span(&mut self, index: usize) -> Option<SourceSpan> {
+        self.ensure_cached(index);
+        self.token_cache.get(index).map(|token| token.span)
     }
 
     /// Peek at the next token without consuming it
-    fn peek_token(&self, next_index: u32) -> Option<&Token> {
-        self.tokens.get(self.current_idx + 1 + next_index as usize)
+    fn peek_token(&mut self, next_index: u32) -> Option<Token> {
+        let target_idx = self.current_idx + 1 + next_index as usize;
+        self.ensure_cached(target_idx);
+        self.token_cache.get(target_idx).cloned()
     }
 
     /// Advance to the next token and return previous token
     fn advance(&mut self) -> Option<Token> {
-        if self.current_idx < self.tokens.len() {
-            let token = &self.tokens[self.current_idx];
+        self.ensure_cached(self.current_idx);
+        if self.current_idx < self.token_cache.len() {
+            let token = self.token_cache[self.current_idx];
             self.current_idx += 1;
-            Some(*token)
+            Some(token)
         } else {
             None
         }
@@ -263,17 +297,17 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Check if current token matches any of the given kinds
-    fn matches(&self, kinds: &[TokenKind]) -> bool {
+    fn matches(&mut self, kinds: &[TokenKind]) -> bool {
         self.current_token_kind().map(|k| kinds.contains(&k)).unwrap_or(false)
     }
 
     /// Check if current token matches the given kind
-    fn is_token(&self, kind: TokenKind) -> bool {
+    fn is_token(&mut self, kind: TokenKind) -> bool {
         self.current_token_kind() == Some(kind)
     }
 
     /// Check if we are at the end of the token stream
-    fn at_eof(&self) -> bool {
+    fn at_eof(&mut self) -> bool {
         self.current_token_kind() == Some(TokenKind::EndOfFile) || self.current_token_kind().is_none()
     }
 
@@ -381,7 +415,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
     }
 
     /// Check if current token starts an abstract declarator
-    fn is_abstract_declarator_start(&self) -> bool {
+    fn is_abstract_declarator_start(&mut self) -> bool {
         declarator::is_abstract_declarator_start(self)
     }
 
@@ -398,12 +432,12 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if a cast expression starts at the current position
     /// This is called after consuming an opening parenthesis
-    fn is_cast_expression_start(&self) -> bool {
+    fn is_cast_expression_start(&mut self) -> bool {
         expressions::is_cast_expression_start(self)
     }
 
     /// Check if the given token can start a type name.
-    pub(super) fn is_type_name_start_token(&self, token: &Token) -> bool {
+    pub(super) fn is_type_name_start_token(&self, token: Token) -> bool {
         match token.kind {
             TokenKind::Attribute => true,
             TokenKind::Identifier(symbol) => self.is_type_name(symbol),
@@ -413,9 +447,9 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 
     /// Check if the current token can start a type name.
     /// This is a lightweight check used for disambiguation.
-    pub(super) fn is_type_name_start(&self) -> bool {
+    pub(super) fn is_type_name_start(&mut self) -> bool {
         if let Some(token) = self.try_current_token() {
-            self.is_type_name_start_token(&token)
+            self.is_type_name_start_token(token)
         } else {
             false
         }
@@ -470,26 +504,27 @@ impl<'arena, 'src> Parser<'arena, 'src> {
         self.type_context.add_typedef(symbol);
     }
 
-    fn save_state(&self) -> ParserState {
+    fn save_state(&mut self) -> ParserState {
+        let diag_len = self.diag().diagnostics.len();
         ParserState {
             current_idx: self.current_idx,
-            diag_len: self.diag.diagnostics.len(),
+            diag_len,
             type_context_last_scope_len: self.type_context.get_last_scope_len(),
         }
     }
 
     fn restore_state(&mut self, state: ParserState) {
         self.current_idx = state.current_idx;
-        self.diag.diagnostics.truncate(state.diag_len);
+        self.diag().diagnostics.truncate(state.diag_len);
         self.type_context.truncate_last_scope(state.type_context_last_scope_len);
     }
 
-    pub(super) fn start_transaction(&mut self) -> utils::ParserTransaction<'_, 'arena, 'src> {
+    pub(crate) fn start_transaction(&mut self) -> utils::ParserTransaction<'_, 'arena, 'src, 'lexer> {
         utils::ParserTransaction::new(self)
     }
 
     /// Check if the current token can start a declaration
-    pub(super) fn starts_declaration(&self) -> bool {
+    pub(super) fn starts_declaration(&mut self) -> bool {
         self.try_current_token().is_some_and(|token| {
             let is_typedef = matches!(token.kind, TokenKind::Identifier(s) if self.is_type_name(s));
             token.kind.is_declaration_start(is_typedef)
@@ -498,7 +533,7 @@ impl<'arena, 'src> Parser<'arena, 'src> {
 }
 
 /// contain functions related to AST nodes
-impl<'arena, 'src> Parser<'arena, 'src> {
+impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     /// Push a node to the AST and return its reference
     #[inline]
     pub(super) fn push_node(&mut self, kind: ParsedNodeKind, span: SourceSpan) -> ParsedNodeRef {

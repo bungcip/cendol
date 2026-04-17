@@ -648,7 +648,7 @@ fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     Ok(parser.push_node(kind, SourceSpan::new(start, end)))
 }
 
-pub(crate) fn is_cast_expression_start(parser: &Parser) -> bool {
+pub(crate) fn is_cast_expression_start(parser: &mut Parser) -> bool {
     parser.is_type_name_start()
 }
 
@@ -778,7 +778,8 @@ fn parse_builtin_offsetof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErr
     let ty = parse_type_name(parser)?;
     parser.expect(TokenKind::Comma)?;
 
-    let mut node = parser.push_node(ParsedNodeKind::Dummy, parser.previous_token_span());
+    let span = parser.previous_token_span();
+    let mut node = parser.push_node(ParsedNodeKind::Dummy, span);
     let (name, span) = parser.expect_name()?;
     node = parser.push_node(ParsedNodeKind::MemberAccess(node, name, false), span);
 

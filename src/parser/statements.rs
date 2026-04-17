@@ -85,7 +85,7 @@ fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef,
         match parse_statement(parser) {
             Ok(stmt) => items.push(stmt),
             Err(stmt_err) => {
-                parser.diag.report(decl_error.unwrap_or(stmt_err));
+                parser.diag().report(decl_error.unwrap_or(stmt_err));
                 parser.synchronize_until(&[TokenKind::RightBrace]);
             }
         }

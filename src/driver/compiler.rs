@@ -14,14 +14,14 @@ use crate::codegen::{ClifGen, ClifOutput, EmitKind};
 use crate::diagnostic::DiagnosticEngine;
 use crate::driver::cli::PathOrBuffer;
 use crate::mir::validation::MirValidator;
-use crate::parser::{Lexer, Token};
+use crate::parser::Lexer;
 
 use super::artifact::{CompileArtifact, CompilePhase, PipelineOutputs};
 use crate::codegen::MirGen;
 use crate::mir::MirProgram;
 use crate::mir::dumper::{MirDumpConfig, MirDumper};
 use crate::parser::Parser;
-use crate::pp::{PPToken, Preprocessor, dumper::PPDumper};
+use crate::pp::{Preprocessor, dumper::PPDumper};
 use crate::semantic::{SymbolTable, TypeRegistry};
 use crate::source_manager::SourceManager;
 
@@ -148,31 +148,68 @@ impl CompilerDriver {
         let timing_enabled = self.config.timing;
         let total_start = if timing_enabled { Some(Instant::now()) } else { None };
 
-        // Preprocessing phase
-        let t0 = Instant::now();
-        let pp_tokens = self.run_preprocessor(source_id)?;
-        if timing_enabled {
-            eprintln!("[TIMING] Preprocessor: {:?}", t0.elapsed());
+        // Pipeline Initialization
+        let mut preprocessor = Preprocessor::new(
+            &mut self.source_manager,
+            &mut self.diagnostics,
+            &self.config.preprocessor,
+        );
+
+        // Apply user-defined macros
+        for (name, value) in &self.config.defines {
+            preprocessor.define_user_macro(name, value.as_deref());
         }
+
+        let t0 = Instant::now();
         if stop_after == CompilePhase::Preprocess {
+            let pp_tokens = match preprocessor.process(source_id, &self.config.preprocessor) {
+                Ok(t) => t,
+                Err(e) => {
+                    self.diagnostics.report_diagnostic(e.into());
+                    return Err(PipelineError::Fatal);
+                }
+            };
+            if timing_enabled {
+                eprintln!("[TIMING] Preprocessor: {:?}", t0.elapsed());
+            }
             out.preprocessed = Some(pp_tokens);
             return Ok(out);
         }
 
-        // Lexing phase
+        // Initialize Lexer on streaming preprocessor
+        preprocessor.start_processing(source_id);
+        let mut lexer = Lexer::new(&mut preprocessor, self.config.lang_options.c_standard);
+
         let t1 = Instant::now();
-        let tokens = self.run_lexer(&pp_tokens)?;
-        if timing_enabled {
-            eprintln!("[TIMING] Lexer: {:?}", t1.elapsed());
-        }
         if stop_after == CompilePhase::Lex {
+            let tokens = match lexer.tokenize_all() {
+                Ok(t) => t,
+                Err(e) => {
+                    self.diagnostics.report_diagnostic(e.into());
+                    return Err(PipelineError::Fatal);
+                }
+            };
+            self.check_diagnostics_and_return_if_error()?;
+            if timing_enabled {
+                eprintln!("[TIMING] Lexer: {:?}", t1.elapsed());
+            }
             out.lexed = Some(tokens);
             return Ok(out);
         }
 
-        // parsing phase
         let t2 = Instant::now();
-        let parsed_ast = self.run_parser(&tokens)?;
+        let mut parsed_ast = ParsedAst::new();
+        let mut parser = Parser::new(&mut lexer, &mut parsed_ast, &self.config.lang_options);
+
+        match parser.parse_translation_unit() {
+            Ok(_) => {}
+            Err(e) => {
+                self.diagnostics.report(e);
+                return Err(PipelineError::Fatal);
+            }
+        }
+        // self.check_diagnostics_and_return_if_error()?;
+
         if timing_enabled {
             eprintln!("[TIMING] Parser: {:?}", t2.elapsed());
         }
@@ -180,7 +217,6 @@ impl CompilerDriver {
             out.parsed_ast = Some(parsed_ast);
             return Ok(out);
         }
-
         // semantic lowering (Symbol Resolution & AST Construction)
         let t3 = Instant::now();
         let (ast, symbol_table, registry) = self.visit_parsed_ast(parsed_ast)?;
@@ -230,59 +266,6 @@ impl CompilerDriver {
         }
 
         Ok(out)
-    }
-
-    fn run_preprocessor(&mut self, source_id: SourceId) -> Result<Vec<PPToken>, PipelineError> {
-        let mut preprocessor = Preprocessor::new(
-            &mut self.source_manager,
-            &mut self.diagnostics,
-            &self.config.preprocessor,
-        );
-
-        // Apply user-defined macros
-        for (name, value) in &self.config.defines {
-            preprocessor.define_user_macro(name, value.as_deref());
-        }
-
-        // Preprocessor is dropped here, releasing the borrow on diagnostics
-        match preprocessor.process(source_id, &self.config.preprocessor) {
-            Ok(t) => Ok(t),
-            Err(e) => {
-                // Report the specific preprocessor error
-                self.diagnostics.report_diagnostic(e.into());
-                Err(PipelineError::Fatal)
-            }
-        }
-    }
-
-    fn run_lexer(&mut self, pp_tokens: &[PPToken]) -> Result<Vec<Token>, PipelineError> {
-        let tokens = {
-            let mut lexer = Lexer::new(pp_tokens, self.config.lang_options.c_standard);
-            lexer.tokenize_all()
-        };
-
-        // Check for lexing errors and stop if any
-        self.check_diagnostics_and_return_if_error()?;
-
-        Ok(tokens)
-    }
-
-    fn run_parser(&mut self, tokens: &[Token]) -> Result<ParsedAst, PipelineError> {
-        // Parsing phase
-        let mut parsed_ast = ParsedAst::new();
-        let mut parser = Parser::new(
-            tokens,
-            &mut parsed_ast,
-            &mut self.diagnostics,
-            &self.config.lang_options,
-        );
-        match parser.parse_translation_unit() {
-            Ok(_) => Ok(parsed_ast),
-            Err(e) => {
-                self.diagnostics.report(e);
-                Err(PipelineError::Fatal)
-            }
-        }
     }
 
     fn visit_parsed_ast(&mut self, parsed_ast: ParsedAst) -> Result<(Ast, SymbolTable, TypeRegistry), PipelineError> {

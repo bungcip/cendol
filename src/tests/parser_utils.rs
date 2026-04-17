@@ -523,24 +523,35 @@ fn resolve_initializer(ast: &ParsedAst, initializer: ParsedNodeRef) -> ResolvedN
     }
 }
 
-/// Generic helper function for parsing source code with common setup
 pub(crate) fn setup_source<F, T>(source: &str, parse_fn: F) -> (ParsedAst, T)
 where
-    F: FnOnce(&mut Parser<'_, '_>) -> T,
+    F: FnOnce(&mut Parser<'_, '_, '_>) -> T,
 {
-    let phase = CompilePhase::Lex;
-    let (driver, out) = test_utils::run_pipeline(source, phase);
-    let mut out = out.unwrap();
-    let first = out.units.first_mut().unwrap();
-    let artifact = first.1;
-    let tokens = artifact.lexed.clone().unwrap();
+    let config = crate::driver::cli::CompileConfig::from_virtual_file(source.to_string(), CompilePhase::Parse);
+    let mut diagnostics = crate::diagnostic::DiagnosticEngine::default();
+    let mut source_manager = crate::source_manager::SourceManager::new();
+    let source_id = source_manager.add_virtual_buffer(
+        source.as_bytes().to_vec(),
+        "test.c",
+        None,
+        crate::source_manager::FileKind::Real,
+    );
 
-    let mut diag = driver.diagnostics;
+    let mut preprocessor = crate::pp::Preprocessor::new(&mut source_manager, &mut diagnostics, &config.preprocessor);
+    preprocessor.start_processing(source_id);
+    let mut lexer = crate::parser::lexer::Lexer::new(&mut preprocessor, config.lang_options.c_standard);
+
     let mut ast = ParsedAst::new();
-    let mut parser = Parser::new(&tokens, &mut ast, &mut diag, &driver.config.lang_options);
-    let result = parse_fn(&mut parser);
+    let result = {
+        let mut parser = Parser::new(&mut lexer, &mut ast, &config.lang_options);
+        parse_fn(&mut parser)
+    };
 
-    assert!(diag.diagnostics.is_empty());
+    assert!(
+        diagnostics.diagnostics.is_empty(),
+        "Expected no diagnostics, but found: {:?}",
+        diagnostics.diagnostics
+    );
     (ast, result)
 }
 

@@ -518,3 +518,44 @@ fn test_invalid_ucn() {
     let (_, diags) = setup_preprocessor_test_with_diagnostics(src, None).unwrap();
     assert!(!diags.is_empty(), "Expected diagnostics for invalid UCN");
 }
+
+#[test]
+fn test_digraphs() {
+    let source = "<: :> <% %> %: %:%:";
+    let mut lexer = create_test_pp_lexer(source);
+
+    test_tokens!(
+        lexer,
+        ("[", PPTokenKind::LeftBracket),
+        ("]", PPTokenKind::RightBracket),
+        ("{", PPTokenKind::LeftBrace),
+        ("}", PPTokenKind::RightBrace),
+        ("#", PPTokenKind::Hash),
+        ("##", PPTokenKind::HashHash),
+    );
+
+    // Verify token lengths
+    let mut lexer = create_test_pp_lexer(source);
+    let t1 = lexer.next_token().unwrap(); // <:
+    assert_eq!(t1.length, 2);
+    let t2 = lexer.next_token().unwrap(); // :>
+    assert_eq!(t2.length, 2);
+    let t3 = lexer.next_token().unwrap(); // <%
+    assert_eq!(t3.length, 2);
+    let t4 = lexer.next_token().unwrap(); // %>
+    assert_eq!(t4.length, 2);
+    let t5 = lexer.next_token().unwrap(); // %:
+    assert_eq!(t5.length, 2);
+    let t6 = lexer.next_token().unwrap(); // %:%:
+    assert_eq!(t6.length, 4);
+}
+
+#[test]
+fn test_digraph_hash_starts_pp_line() {
+    let source = "%:define X 1";
+    let mut lexer = create_test_pp_lexer(source);
+    let token = lexer.next_token().unwrap();
+    assert_eq!(token.kind, PPTokenKind::Hash);
+    assert_eq!(token.length, 2);
+    assert!(token.flags.contains(PPTokenFlags::STARTS_PP_LINE));
+}

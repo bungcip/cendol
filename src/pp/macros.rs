@@ -572,7 +572,9 @@ impl<'src> Preprocessor<'src> {
         let mut result = String::with_capacity(total_len);
         result.push('"');
 
-        cache.reset();
+        // Bolt ⚡: No need to reset the cache here. Keeping the cached buffer
+        // from the last token of the first pass might save a lookup for the
+        // first token of the second pass if they share the same SourceId.
         for (i, token) in tokens.iter().enumerate() {
             if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                 result.push(' ');
@@ -1129,11 +1131,6 @@ impl<'a> SourceBufferCache<'a> {
             last_sid: None,
             last_buffer: None,
         }
-    }
-
-    fn reset(&mut self) {
-        self.last_sid = None;
-        self.last_buffer = None;
     }
 
     fn get_token_bytes<'b>(&'b mut self, token: &'b PPToken) -> &'b [u8] {

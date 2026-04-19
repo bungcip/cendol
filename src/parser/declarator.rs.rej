@@ -1,0 +1,9 @@
+--- declarator.rs
++++ declarator.rs
+@@ -331,6 +331,7 @@
+         ParsedDeclarator::Pointer { inner, .. } => get_declarator_name(arena, *inner),
+         ParsedDeclarator::Array { inner, .. } => get_declarator_name(arena, *inner),
+         ParsedDeclarator::Function { inner, .. } => get_declarator_name(arena, *inner),
++        ParsedDeclarator::BitField { .. } => None,
+     }
+ }

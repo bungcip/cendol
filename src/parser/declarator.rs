@@ -38,20 +38,14 @@ fn peek_past_attribute(parser: &mut Parser, mut start_offset: u32) -> Option<Tok
 
         // Expect ((
         // If not ((, then it's not a GCC attribute (or it's ill-formed), stop
-        if let Some(t) = parser.peek_token(start_offset) {
-            if t.kind != TokenKind::LeftParen {
-                return parser.peek_token(start_offset);
-            }
-        } else {
-            return None;
+        let t1 = parser.peek_token(start_offset)?;
+        if t1.kind != TokenKind::LeftParen {
+            return Some(t1);
         }
         start_offset += 1;
 
-        if let Some(t) = parser.peek_token(start_offset) {
-            if t.kind != TokenKind::LeftParen {
-                return None;
-            }
-        } else {
+        let t2 = parser.peek_token(start_offset)?;
+        if t2.kind != TokenKind::LeftParen {
             return None;
         }
         start_offset += 1;
@@ -71,14 +65,11 @@ fn peek_past_attribute(parser: &mut Parser, mut start_offset: u32) -> Option<Tok
 
         // Now we are past one attribute.
         // Check if there is another one.
-        if let Some(t) = parser.peek_token(start_offset) {
-            if t.kind != TokenKind::Attribute {
-                return Some(t);
-            }
-            // It is an attribute, loop again (start_offset points to it)
-        } else {
-            return None;
+        let t_next = parser.peek_token(start_offset)?;
+        if t_next.kind != TokenKind::Attribute {
+            return Some(t_next);
         }
+        // It is an attribute, loop again (start_offset points to it)
     }
 }
 
@@ -116,17 +107,16 @@ pub(crate) fn parse_declarator(parser: &mut Parser) -> Result<DeclaratorRef, Par
         let inner = parse_declarator(parser)?;
         parser.expect(TokenKind::RightParen)?;
         inner
-    } else if let Some(token) = parser.try_current_token() {
-        match token.kind {
-            TokenKind::Identifier(symbol) => {
+    } else {
+        let token = parser.try_current_token();
+        match token.map(|t| t.kind) {
+            Some(TokenKind::Identifier(symbol)) => {
                 parser.advance();
                 parser.alloc_decl(ParsedDeclarator::Identifier(Some(symbol)))
             }
-            _ if parser.is_abstract_declarator_start() => parse_abstract_declarator(parser)?,
+            Some(_) if parser.is_abstract_declarator_start() => parse_abstract_declarator(parser)?,
             _ => parser.alloc_decl(ParsedDeclarator::Identifier(None)),
         }
-    } else {
-        parser.alloc_decl(ParsedDeclarator::Identifier(None))
     };
 
     let trailing = parse_trailing_declarators(parser, base, false)?;
@@ -325,16 +315,12 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, b
 
 /// Check if current token starts an abstract declarator
 pub(crate) fn is_abstract_declarator_start(parser: &mut Parser) -> bool {
-    if let Some(token) = parser.try_current_token() {
-        match token.kind {
-            TokenKind::Star => true,        // pointer
-            TokenKind::LeftParen => true,   // parenthesized abstract declarator
-            TokenKind::LeftBracket => true, // array
-            _ => false,
-        }
-    } else {
-        false
-    }
+    parser.try_current_token().is_some_and(|token| {
+        matches!(
+            token.kind,
+            TokenKind::Star | TokenKind::LeftParen | TokenKind::LeftBracket
+        )
+    })
 }
 
 /// Extract the declared name from a declarator, if any
@@ -372,92 +358,56 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarato
     }
 
     let pointers = parse_leading_pointers(parser)?;
-    let base = if let Some(token) = parser.try_current_token() {
-        match token.kind {
-            TokenKind::Identifier(symbol) if parser.is_type_name(symbol) => {
-                parser.advance();
-                if let Some(token) = parser.peek_token(0) {
-                    if let TokenKind::Identifier(name) = token.kind {
-                        parser.advance();
-                        parser.alloc_decl(ParsedDeclarator::Identifier(Some(name)))
-                    } else {
-                        parser.alloc_decl(ParsedDeclarator::Identifier(None))
-                    }
+    let token = parser.try_current_token();
+    let base = match token.map(|t| t.kind) {
+        Some(TokenKind::LeftParen) => {
+            let is_param = parser.peek_token(0).is_some_and(|next| {
+                if next.kind == TokenKind::Attribute {
+                    peek_past_attribute(parser, 0).is_some_and(|t| t.kind != TokenKind::Star)
                 } else {
-                    parser.alloc_decl(ParsedDeclarator::Identifier(None))
+                    parser.is_type_name_start_token(next) || next.kind == TokenKind::RightParen
                 }
-            }
-            TokenKind::Int => {
-                parser.advance();
-                if let Some(token) = parser.peek_token(0) {
-                    if let TokenKind::Identifier(name) = token.kind {
-                        parser.advance();
-                        parser.alloc_decl(ParsedDeclarator::Identifier(Some(name)))
-                    } else {
-                        parser.alloc_decl(ParsedDeclarator::Identifier(None))
-                    }
-                } else {
-                    parser.alloc_decl(ParsedDeclarator::Identifier(None))
-                }
-            }
-            TokenKind::LeftParen => {
-                let is_param = if let Some(next) = parser.peek_token(0) {
-                    if next.kind == TokenKind::Attribute {
-                        peek_past_attribute(parser, 0).is_some_and(|t| t.kind != TokenKind::Star)
-                    } else {
-                        parser.is_type_name_start_token(next) || next.kind == TokenKind::RightParen
-                    }
-                } else {
-                    false
-                };
+            });
 
-                if is_param {
-                    parser.alloc_decl(ParsedDeclarator::Identifier(None))
+            if is_param {
+                parser.alloc_decl(ParsedDeclarator::Identifier(None))
+            } else {
+                parser.advance(); // consume '('
+                if parser.accept(TokenKind::RightParen).is_some() {
+                    let inner = parser.alloc_decl(ParsedDeclarator::Identifier(None));
+                    let params = parser.alloc_params(Vec::new());
+                    parser.alloc_decl(ParsedDeclarator::Function {
+                        inner,
+                        params,
+                        flags: FunctionFlags { is_variadic: false },
+                    })
                 } else {
-                    parser.advance(); // consume '('
+                    let inner = parse_abstract_declarator(parser)?;
                     if parser.accept(TokenKind::RightParen).is_some() {
-                        let inner = parser.alloc_decl(ParsedDeclarator::Identifier(None));
-                        let params = parser.alloc_params(Vec::new());
+                        inner
+                    } else if parser.accept(TokenKind::LeftParen).is_some() {
+                        let (params, is_variadic) = parse_function_parameters(parser)?;
+                        parser.expect(TokenKind::RightParen)?;
                         parser.alloc_decl(ParsedDeclarator::Function {
                             inner,
                             params,
-                            flags: FunctionFlags { is_variadic: false },
+                            flags: FunctionFlags { is_variadic },
                         })
                     } else {
-                        let inner = parse_abstract_declarator(parser)?;
-                        if parser.accept(TokenKind::RightParen).is_some() {
-                            inner
-                        } else if parser.accept(TokenKind::LeftParen).is_some() {
-                            let (params, is_variadic) = parse_function_parameters(parser)?;
-                            parser.expect(TokenKind::RightParen)?;
-                            parser.alloc_decl(ParsedDeclarator::Function {
-                                inner,
-                                params,
-                                flags: FunctionFlags { is_variadic },
-                            })
-                        } else {
-                            return Err(ParseError {
-                                span: parser.current_token_span_or_empty(),
-                                kind: ParseErrorKind::UnexpectedToken {
-                                    expected: "')'",
-                                    found: parser.current_token_kind().unwrap_or(TokenKind::EndOfFile),
-                                },
-                            });
-                        }
+                        parser.expect(TokenKind::RightParen)?;
+                        inner // Unreachable due to expect, but safe
                     }
                 }
             }
-            TokenKind::LeftBracket => {
-                parser.advance();
-                let size = parse_array_size(parser)?;
-                parser.expect(TokenKind::RightBracket)?;
-                let inner = parser.alloc_decl(ParsedDeclarator::Identifier(None));
-                parser.alloc_decl(ParsedDeclarator::Array { inner, size })
-            }
-            _ => parser.alloc_decl(ParsedDeclarator::Identifier(None)),
         }
-    } else {
-        parser.alloc_decl(ParsedDeclarator::Identifier(None))
+        Some(TokenKind::LeftBracket) => {
+            parser.advance();
+            let size = parse_array_size(parser)?;
+            parser.expect(TokenKind::RightBracket)?;
+            let inner = parser.alloc_decl(ParsedDeclarator::Identifier(None));
+            parser.alloc_decl(ParsedDeclarator::Array { inner, size })
+        }
+        _ => parser.alloc_decl(ParsedDeclarator::Identifier(None)),
     };
 
     let trailing = parse_trailing_declarators(parser, base, true)?;

@@ -477,7 +477,7 @@ fn extract_base_kind(ast: &ParsedAst, base: ParsedBaseTypeRef) -> String {
             };
             if let Some(ut) = underlying_type {
                 s.push_str(" : ");
-                s.push_str(&extract_type_kind(ast, &ut));
+                s.push_str(&extract_type_kind(ast, ut));
             }
             s
         }

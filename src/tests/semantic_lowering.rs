@@ -65,8 +65,8 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
         }
         NodeKind::VarDecl(data) => {
             let sym = symbol_table.get_symbol(data.symbol);
-            let alignment = if let crate::semantic::SymbolKind::Variable { alignment, .. } = &sym.kind {
-                alignment.map(|a| a as u16)
+            let alignment = if let SymbolKind::Variable { alignment, .. } = sym.kind {
+                alignment
             } else {
                 None
             };

@@ -302,7 +302,7 @@ fn test_deeply_nested_unary_ops_stack_overflow() {
     // Generate a very long sequence of unary operators
     let mut source = String::from("int main() { int x = 0; int *p = &x; return ");
     for _ in 0..160 {
-        source.push_str("!");
+        source.push('!');
     }
     source.push_str("x; }");
 

@@ -83,7 +83,14 @@ impl<'a> PPDumper<'a> {
                 // For macro-expanded tokens, just print the canonical spelling
                 // No whitespace reconstruction for Level A - these tokens don't have
                 // meaningful source locations for whitespace calculation
-                write!(writer, "{}", token.get_text())?;
+                if let Some(buf) = self.source_manager.get_buffer_safe(token.location.source_id()) {
+                    let start = token.location.offset() as usize;
+                    let end = start + token.length as usize;
+                    if end <= buf.len() {
+                        let text = unsafe { std::str::from_utf8_unchecked(&buf[start..end]) };
+                        write!(writer, "{}", text)?;
+                    }
+                }
                 last_was_macro_expanded = true;
                 last_macro_orig_line = orig_line;
                 // Don't update last_pos for macro-expanded tokens

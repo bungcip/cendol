@@ -1,7 +1,9 @@
 use crate::ast::StringId;
 use crate::pp::{PPConfig, PPTokenFlags, PPTokenKind, Preprocessor, dumper::PPDumper};
 use crate::test_tokens;
-use crate::tests::pp_common::{create_test_pp_lexer, setup_pp_snapshot, setup_preprocessor_test_with_diagnostics};
+use crate::tests::pp_common::{
+    create_test_pp_lexer, setup_pp_snapshot, setup_preprocessor_test_with_sm_and_diagnostics,
+};
 use crate::tests::test_utils::setup_sm_and_diag;
 
 // Lexer basic tests
@@ -94,9 +96,9 @@ fn test_all_literal_tokens() {
     test_tokens!(
         lexer,
         ("variable", PPTokenKind::Identifier(_)),
-        ("\"string\"", PPTokenKind::StringLiteral(_)),
-        ("'c'", PPTokenKind::CharLiteral(_, _)),
-        ("123", PPTokenKind::Number(_)),
+        ("\"string\"", PPTokenKind::StringLiteral),
+        ("'c'", PPTokenKind::CharLiteral(_)),
+        ("123", PPTokenKind::Number),
     );
 }
 
@@ -107,8 +109,8 @@ fn test_adjacent_string_literals_not_combined() {
 
     test_tokens!(
         lexer,
-        ("\"hello\"", PPTokenKind::StringLiteral(_)),
-        ("\"world\"", PPTokenKind::StringLiteral(_)),
+        ("\"hello\"", PPTokenKind::StringLiteral),
+        ("\"world\"", PPTokenKind::StringLiteral),
     );
 }
 
@@ -146,10 +148,10 @@ fn test_wide_character_literals() {
 
     test_tokens!(
         lexer,
-        ("L'a'", PPTokenKind::CharLiteral(97, _)),
-        ("u'b'", PPTokenKind::CharLiteral(98, _)),
-        ("U'c'", PPTokenKind::CharLiteral(99, _)),
-        ("'\\0'", PPTokenKind::CharLiteral(0, _)),
+        ("L'a'", PPTokenKind::CharLiteral(97)),
+        ("u'b'", PPTokenKind::CharLiteral(98)),
+        ("U'c'", PPTokenKind::CharLiteral(99)),
+        ("'\\0'", PPTokenKind::CharLiteral(0)),
     );
 }
 
@@ -160,9 +162,9 @@ fn test_wide_string_literals() {
 
     test_tokens!(
         lexer,
-        ("L\"hello\"", PPTokenKind::StringLiteral(_)),
-        ("u\"world\"", PPTokenKind::StringLiteral(_)),
-        ("U\"test\"", PPTokenKind::StringLiteral(_)),
+        ("L\"hello\"", PPTokenKind::StringLiteral),
+        ("u\"world\"", PPTokenKind::StringLiteral),
+        ("U\"test\"", PPTokenKind::StringLiteral),
     );
 }
 
@@ -176,7 +178,7 @@ fn test_eod_token_production() {
         ("#", PPTokenKind::Hash),
         ("define", PPTokenKind::Identifier(_)),
         ("x", PPTokenKind::Identifier(_)),
-        ("1", PPTokenKind::Number(_)),
+        ("1", PPTokenKind::Number),
         ("", PPTokenKind::Eod),
     );
 }
@@ -216,7 +218,7 @@ fn test_eod_at_eof_in_directive() {
         ("#", PPTokenKind::Hash),
         ("define", PPTokenKind::Identifier(_)),
         ("x", PPTokenKind::Identifier(_)),
-        ("1", PPTokenKind::Number(_)),
+        ("1", PPTokenKind::Number),
         ("", PPTokenKind::Eod),
     );
 }
@@ -234,7 +236,7 @@ fn test_various_bmp_characters() {
 
     for (source, expected) in test_cases {
         let mut lexer = create_test_pp_lexer(source);
-        test_tokens!(lexer, (expected, PPTokenKind::StringLiteral(_)));
+        test_tokens!(lexer, (expected, PPTokenKind::StringLiteral));
     }
 }
 
@@ -245,9 +247,9 @@ fn test_hex_float_literal() {
 
     test_tokens!(
         lexer,
-        ("0x1p+1", PPTokenKind::Number(_)),
-        ("0x1.fp-2", PPTokenKind::Number(_)),
-        ("0x1P+1", PPTokenKind::Number(_)),
+        ("0x1p+1", PPTokenKind::Number),
+        ("0x1.fp-2", PPTokenKind::Number),
+        ("0x1P+1", PPTokenKind::Number),
     );
 }
 
@@ -258,9 +260,9 @@ fn test_hex_literal_minus_sign_regression() {
 
     test_tokens!(
         lexer,
-        ("0xf", PPTokenKind::Number(_)),
+        ("0xf", PPTokenKind::Number),
         ("-", PPTokenKind::Minus),
-        ("1", PPTokenKind::Number(_)),
+        ("1", PPTokenKind::Number),
     );
 }
 
@@ -270,13 +272,13 @@ fn test_char_literal_escapes() {
     let mut lexer = create_test_pp_lexer(source);
     test_tokens!(
         lexer,
-        (r"'\1'", PPTokenKind::CharLiteral(1, _)),
-        (r"'\10'", PPTokenKind::CharLiteral(8, _)),
-        (r"'\100'", PPTokenKind::CharLiteral(64, _)),
-        (r"'\x01'", PPTokenKind::CharLiteral(1, _)),
-        (r"'\x0e'", PPTokenKind::CharLiteral(14, _)),
-        (r"'\x10'", PPTokenKind::CharLiteral(16, _)),
-        (r"'\x40'", PPTokenKind::CharLiteral(64, _)),
+        (r"'\1'", PPTokenKind::CharLiteral(1)),
+        (r"'\10'", PPTokenKind::CharLiteral(8)),
+        (r"'\100'", PPTokenKind::CharLiteral(64)),
+        (r"'\x01'", PPTokenKind::CharLiteral(1)),
+        (r"'\x0e'", PPTokenKind::CharLiteral(14)),
+        (r"'\x10'", PPTokenKind::CharLiteral(16)),
+        (r"'\x40'", PPTokenKind::CharLiteral(64)),
     );
 }
 
@@ -287,8 +289,8 @@ fn test_ucn_identifier() {
 #define \u00E4 10
 int x = \u00E4;
 "#;
-    let (tokens, _) = setup_preprocessor_test_with_diagnostics(src, None).unwrap();
-    assert!(tokens.iter().any(|t| t.get_text() == "10"));
+    let (tokens, _, _) = setup_preprocessor_test_with_sm_and_diagnostics(src, None).unwrap();
+    assert!(tokens.iter().any(|t| t.text == "10"));
 }
 
 #[test]
@@ -297,8 +299,8 @@ fn test_raw_utf8_identifier() {
 #define ä 20
 int x = ä;
 "#;
-    let (tokens, _) = setup_preprocessor_test_with_diagnostics(src, None).unwrap();
-    assert!(tokens.iter().any(|t| t.get_text() == "20"));
+    let (tokens, _, _) = setup_preprocessor_test_with_sm_and_diagnostics(src, None).unwrap();
+    assert!(tokens.iter().any(|t| t.text == "20"));
 }
 
 #[test]
@@ -306,8 +308,8 @@ fn test_ucn_string_literal() {
     let src = r#"
 char *s = "\u00E4";
 "#;
-    let (tokens, _) = setup_preprocessor_test_with_diagnostics(src, None).unwrap();
-    let s_token = tokens.iter().find(|t| t.get_text().contains(r#"\u00E4"#));
+    let (tokens, _, _) = setup_preprocessor_test_with_sm_and_diagnostics(src, None).unwrap();
+    let s_token = tokens.iter().find(|t| t.text.contains(r#"\u00E4"#));
     assert!(s_token.is_some());
 }
 
@@ -355,8 +357,8 @@ fn test_line_splicing_comprehensive() {
         lexer,
         ("hello", PPTokenKind::Identifier(_)),
         ("helloworld", PPTokenKind::Identifier(_)),
-        ("123456", PPTokenKind::Number(_)),
-        ("\"helloworld\"", PPTokenKind::StringLiteral(_)),
+        ("123456", PPTokenKind::Number),
+        ("\"helloworld\"", PPTokenKind::StringLiteral),
     );
 }
 
@@ -414,7 +416,7 @@ fn test_u8_string_literal() {
     let source = "u8\"hello\"";
     let mut lexer = create_test_pp_lexer(source);
 
-    test_tokens!(lexer, ("u8\"hello\"", PPTokenKind::StringLiteral(_)),);
+    test_tokens!(lexer, ("u8\"hello\"", PPTokenKind::StringLiteral),);
 }
 
 #[test]
@@ -422,7 +424,7 @@ fn test_u8_string_literal_with_escapes() {
     let source = "u8\"hello\\nworld\\u00E4\"";
     let mut lexer = create_test_pp_lexer(source);
 
-    test_tokens!(lexer, ("u8\"hello\\nworld\\u00E4\"", PPTokenKind::StringLiteral(_)),);
+    test_tokens!(lexer, ("u8\"hello\\nworld\\u00E4\"", PPTokenKind::StringLiteral),);
 }
 
 #[test]
@@ -434,7 +436,7 @@ fn test_not_u8_literal() {
         lexer,
         ("u8", PPTokenKind::Identifier(_)),
         ("+", PPTokenKind::Plus),
-        ("1", PPTokenKind::Number(_)),
+        ("1", PPTokenKind::Number),
     );
 }
 
@@ -444,7 +446,7 @@ fn test_u8_char_literal() {
     let source = "u8'a'";
     let mut lexer = create_test_pp_lexer(source);
 
-    test_tokens!(lexer, ("u8'a'", PPTokenKind::CharLiteral(97, _)),);
+    test_tokens!(lexer, ("u8'a'", PPTokenKind::CharLiteral(97)),);
 }
 
 fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {
@@ -515,6 +517,6 @@ int x = TEN;
 #[test]
 fn test_invalid_ucn() {
     let src = r#"const char* s = "\uZZZZ";"#; // malformed UCN in string literal
-    let (_, diags) = setup_preprocessor_test_with_diagnostics(src, None).unwrap();
+    let (_, _, diags) = setup_preprocessor_test_with_sm_and_diagnostics(src, None).unwrap();
     assert!(!diags.is_empty(), "Expected diagnostics for invalid UCN");
 }

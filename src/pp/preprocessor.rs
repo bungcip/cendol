@@ -1,7 +1,7 @@
 use crate::ast::StringId;
 use crate::diagnostic::{Diagnostic, DiagnosticEngine, DiagnosticLevel};
 use crate::lang_options::CStandard;
-use crate::source_manager::{SourceId, SourceLoc, SourceManager, SourceSpan};
+use crate::source_manager::{FileKind, SourceId, SourceLoc, SourceManager, SourceSpan};
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use hashbrown::{HashMap, HashSet};
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use crate::pp::interpreter::Interpreter;
 use crate::pp::keyword_table::PPKeywordTable;
 use crate::pp::types::{HideSetTable, IncludeStackInfo, MacroFlags, MacroInfo, PPConditionalInfo, PPConfig};
 use crate::pp::{HeaderSearch, PPToken, PPTokenFlags, PPTokenKind};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use target_lexicon::{Architecture, OperatingSystem, Triple};
 
 /// Main preprocessor structure
@@ -142,7 +142,7 @@ impl<'src> Preprocessor<'src> {
         let (kind, text) = if symbol == self.keywords.line_macro {
             let line = self.sm.get_presumed_location(token.location).map(|p| p.0).unwrap_or(1);
             let text = line.to_string();
-            (PPTokenKind::Number(StringId::new(&text)), text)
+            (PPTokenKind::Number, text)
         } else if symbol == self.keywords.file_macro {
             let filename = self
                 .sm
@@ -150,15 +150,23 @@ impl<'src> Preprocessor<'src> {
                 .and_then(|p| p.2)
                 .unwrap_or("<unknown>");
             let text = format!("\"{}\"", filename);
-            (PPTokenKind::StringLiteral(StringId::new(&text)), text)
+            (PPTokenKind::StringLiteral, text)
         } else if symbol == self.keywords.counter_macro {
             let text = self.get_next_counter().to_string();
-            (PPTokenKind::Number(StringId::new(&text)), text)
+            (PPTokenKind::Number, text)
         } else {
             return None;
         };
 
-        Some(PPToken::text(kind, PPTokenFlags::MACRO_EXPANDED, token.location, &text))
+        let source_id = self.sm.add_virtual_buffer(
+            text.as_bytes().to_vec(),
+            "<magic-macro>",
+            Some(token.location),
+            FileKind::MacroExpansion,
+        );
+        let loc = SourceLoc::new(source_id, 0);
+
+        Some(PPToken::text(kind, PPTokenFlags::MACRO_EXPANDED, loc, &text))
     }
 
     /// Get the next value for __COUNTER__
@@ -399,12 +407,19 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to define a built-in macro with a specific number value
     fn define_builtin_macro_with_val(&mut self, name: &str, value: &str) {
+        let source_id = self.sm.add_virtual_buffer(
+            value.as_bytes().to_vec(),
+            "<builtin>",
+            None,
+            crate::source_manager::FileKind::MacroExpansion,
+        );
+
         self.define_builtin_macro(
             name,
             vec![PPToken::new(
-                PPTokenKind::Number(StringId::new(value)),
+                PPTokenKind::Number,
                 PPTokenFlags::empty(),
-                SourceLoc::builtin(),
+                SourceLoc::new(source_id, 0),
                 value.len() as u16,
             )],
         );
@@ -412,12 +427,19 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to define a built-in macro with a string value
     fn define_builtin_macro_string(&mut self, name: &str, value: &str) {
+        let source_id = self.sm.add_virtual_buffer(
+            value.as_bytes().to_vec(),
+            "<builtin>",
+            None,
+            crate::source_manager::FileKind::MacroExpansion,
+        );
+
         self.define_builtin_macro(
             name,
             vec![PPToken::new(
-                PPTokenKind::StringLiteral(StringId::new(value)),
+                PPTokenKind::StringLiteral,
                 PPTokenFlags::empty(),
-                SourceLoc::builtin(),
+                SourceLoc::new(source_id, 0),
                 value.len() as u16,
             )],
         );
@@ -534,26 +556,41 @@ impl<'src> Preprocessor<'src> {
         self.keywords.has_extension_symbol()
     }
 
-    /// Get the text associated with a token
-    pub(super) fn get_token_text(&self, token: &PPToken) -> &str {
-        let buffer = self.sm.get_buffer(token.location.source_id());
-        let start = token.location.offset() as usize;
-        let end = start + token.length as usize;
-        if end <= buffer.len() {
-            unsafe { std::str::from_utf8_unchecked(&buffer[start..end]) }
+    /// Get the text associated with a token, de-splicing if necessary
+    pub(crate) fn get_token_text(&self, token: &PPToken) -> std::borrow::Cow<'_, str> {
+        token.get_text_with_sm(self.sm)
+    }
+
+    /// Get the current directory of the file at the top of the lexer stack
+    pub(super) fn get_current_dir(&self) -> &Path {
+        self.lexer_stack
+            .last()
+            .and_then(|lexer| self.sm.get_file_info(lexer.source_id))
+            .and_then(|info| info.path.parent())
+            .unwrap_or(Path::new("."))
+    }
+
+    /// Load a header file from a resolved path
+    pub(super) fn load_resolved_header(
+        &mut self,
+        path: &str,
+        resolved: Option<PathBuf>,
+        loc: SourceLoc,
+    ) -> Result<Option<SourceId>, PPError> {
+        if let Some(path_buf) = resolved {
+            let id = self
+                .sm
+                .add_file_from_path(&path_buf, Some(loc))
+                .map_err(|_| self.error_loc(PPErrorKind::FileNotFound { path: path.to_string() }, loc))?;
+            Ok(Some(id))
         } else {
-            ""
+            Ok(None)
         }
     }
 
     /// Check if a header exists
     pub(super) fn check_header_exists(&self, path: &str, is_angled: bool) -> bool {
-        let current_dir = self
-            .lexer_stack
-            .last()
-            .and_then(|lexer| self.sm.get_file_info(lexer.source_id))
-            .and_then(|info| info.path.parent())
-            .unwrap_or(Path::new("."));
+        let current_dir = self.get_current_dir();
 
         if is_angled && self.built_in_headers.contains_key(path) {
             return true;
@@ -565,12 +602,7 @@ impl<'src> Preprocessor<'src> {
 
     /// Check if a header exists for #include_next
     pub(super) fn check_next_header_exists(&self, path: &str, is_angled: bool) -> bool {
-        let current_dir = self
-            .lexer_stack
-            .last()
-            .and_then(|lexer| self.sm.get_file_info(lexer.source_id))
-            .and_then(|info| info.path.parent())
-            .unwrap_or(Path::new("."));
+        let current_dir = self.get_current_dir();
 
         self.header_search
             .resolve_next_path(path, is_angled, current_dir)
@@ -603,10 +635,10 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expect a string literal token
-    pub(super) fn expect_string_literal(&mut self) -> Result<(StringId, SourceLoc), PPError> {
+    pub(super) fn expect_string_literal(&mut self) -> Result<(String, SourceLoc), PPError> {
         let token = self.expect_token()?;
-        if let PPTokenKind::StringLiteral(s) = token.kind {
-            Ok((s, token.location))
+        if let PPTokenKind::StringLiteral = token.kind {
+            Ok((self.get_token_text(&token).to_string(), token.location))
         } else {
             self.emit_error_loc(PPErrorKind::InvalidDirective, token.location)
         }
@@ -651,16 +683,14 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Helper to extract content of a string literal, stripping quotes.
-    pub(super) fn extract_string_literal_content(
+    pub(super) fn extract_literal_content<'a>(
         &self,
-        symbol: StringId,
+        text: &'a str,
         location: SourceLoc,
         error_kind: PPErrorKind,
-    ) -> Result<String, PPError> {
-        let s = symbol.as_str();
-        s.strip_prefix('"')
+    ) -> Result<&'a str, PPError> {
+        text.strip_prefix('"')
             .and_then(|s| s.strip_suffix('"'))
-            .map(|s| s.to_string())
             .ok_or_else(|| self.error_loc(error_kind, location))
     }
 
@@ -946,8 +976,7 @@ impl<'src> Preprocessor<'src> {
             level,
             message: message.into(),
             span,
-            hints: Vec::new(),
-            warning_name: None,
+            ..Default::default()
         };
         self.diag.report_diagnostic(diag);
     }

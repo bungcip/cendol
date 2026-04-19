@@ -7,14 +7,14 @@ fn check_literal_type(source: &str, expected_type_str: &str) {
     // Find the Literal node.
     let mut found = false;
     for (i, kind) in ast.kinds.iter().enumerate() {
-        if let NodeKind::Literal(lid) = kind {
-            if matches!(ast.literals.get(*lid), LitVal::Int { .. }) {
-                let ty = ast.semantic_info.as_ref().unwrap().types[i].expect("Literal type not resolved");
-                let ty_str = registry.display_qual_type(ty);
-                assert_eq!(ty_str, expected_type_str, "Type mismatch for source: {}", source);
-                found = true;
-                break;
-            }
+        if let NodeKind::Literal(lid) = kind
+            && matches!(ast.literals.get(*lid), LitVal::Int { .. })
+        {
+            let ty = ast.semantic_info.as_ref().unwrap().types[i].expect("Literal type not resolved");
+            let ty_str = registry.display_qual_type(ty);
+            assert_eq!(ty_str, expected_type_str, "Type mismatch for source: {}", source);
+            found = true;
+            break;
         }
     }
     assert!(found, "Literal not found in AST for source: {}", source);

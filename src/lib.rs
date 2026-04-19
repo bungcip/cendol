@@ -4,7 +4,6 @@ pub(crate) mod diagnostic;
 pub mod driver;
 mod lang_options;
 pub(crate) mod mir;
-
 mod parser;
 mod pp;
 mod semantic;

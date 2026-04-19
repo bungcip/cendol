@@ -74,15 +74,9 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to convert tokens to their string representation
     pub(super) fn tokens_to_string(&self, tokens: &[PPToken]) -> String {
-        // Bolt ⚡: Optimized two-pass string building.
-        // We use the token's length field for the first pass as it's a fast u16 access.
-        let total_len: usize = tokens.iter().map(|t| t.length as usize).sum();
-
-        let mut result = String::with_capacity(total_len);
-        let mut cache = SourceBufferCache::new(self.sm);
-
+        let mut result = String::new();
         for token in tokens {
-            result.push_str(cache.get_token_text(token));
+            result.push_str(&self.get_token_text(token));
         }
         result
     }
@@ -539,79 +533,42 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Stringify tokens for # operator
-    fn stringify_tokens(&self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPError> {
-        // Bolt ⚡: Use a two-pass approach to build the stringified token efficiently.
-        let mut total_len = 2; // For the opening and closing quotes
-        let mut cache = SourceBufferCache::new(self.sm);
-
-        for (i, token) in tokens.iter().enumerate() {
-            if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
-                total_len += 1;
-            }
-
-            // Bolt ⚡: Hoist the escape check. Only string and character literals require internal
-            // escaping (backslashes and quotes) during macro stringification. For all other
-            // tokens (identifiers, numbers, operators), we can use the raw length directly.
-            if matches!(
-                token.kind,
-                PPTokenKind::StringLiteral(_) | PPTokenKind::CharLiteral(_, _)
-            ) {
-                let bytes = cache.get_token_bytes(token);
-                for &b in bytes {
-                    if b == b'"' || b == b'\\' {
-                        total_len += 2;
-                    } else {
-                        total_len += 1;
-                    }
-                }
-            } else {
-                total_len += token.length as usize;
-            }
-        }
-
-        let mut result = String::with_capacity(total_len);
+    fn stringify_tokens(&mut self, tokens: &[PPToken], _location: SourceLoc) -> Result<PPToken, PPError> {
+        let mut result = String::new();
         result.push('"');
 
-        // Bolt ⚡: No need to reset the cache here. Keeping the cached buffer
-        // from the last token of the first pass might save a lookup for the
-        // first token of the second pass if they share the same SourceId.
         for (i, token) in tokens.iter().enumerate() {
             if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                 result.push(' ');
             }
 
-            // Bolt ⚡: Hoist the escape check. Most tokens can be appended directly, avoiding
-            // the overhead of the scanning loop and segmenting the string.
-            if matches!(
-                token.kind,
-                PPTokenKind::StringLiteral(_) | PPTokenKind::CharLiteral(_, _)
-            ) {
-                let bytes = cache.get_token_bytes(token);
-                let mut last_start = 0;
-                for (j, &b) in bytes.iter().enumerate() {
-                    if b == b'"' || b == b'\\' {
-                        if j > last_start {
-                            result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..j]) });
-                        }
+            let text = self.get_token_text(token);
+
+            if matches!(token.kind, PPTokenKind::StringLiteral | PPTokenKind::CharLiteral(_)) {
+                for c in text.chars() {
+                    if c == '"' || c == '\\' {
                         result.push('\\');
-                        result.push(b as char);
-                        last_start = j + 1;
                     }
-                }
-                if last_start < bytes.len() {
-                    result.push_str(unsafe { std::str::from_utf8_unchecked(&bytes[last_start..]) });
+                    result.push(c);
                 }
             } else {
-                result.push_str(cache.get_token_text(token));
+                result.push_str(&text);
             }
         }
 
         result.push('"');
 
+        let source_id = self.sm.add_virtual_buffer(
+            result.as_bytes().to_vec(),
+            "<stringified-tokens>",
+            Some(_location),
+            FileKind::MacroExpansion,
+        );
+
         Ok(PPToken::new(
-            PPTokenKind::StringLiteral(StringId::new(&result)),
+            PPTokenKind::StringLiteral,
             PPTokenFlags::empty(),
-            location,
+            SourceLoc::new(source_id, 0),
             result.len() as u16,
         ))
     }
@@ -731,7 +688,7 @@ impl<'src> Preprocessor<'src> {
         while j < args.len() && expansions < 1000 {
             if j == 0
                 && !args.is_empty()
-                && (args[0].kind == PPTokenKind::Less || matches!(args[0].kind, PPTokenKind::StringLiteral(_)))
+                && (args[0].kind == PPTokenKind::Less || args[0].kind == PPTokenKind::StringLiteral)
             {
                 break;
             }
@@ -769,7 +726,7 @@ impl<'src> Preprocessor<'src> {
                     && let Some(arg_end) = Self::find_balanced_paren_range(tokens, next)
                 {
                     match arg_t.kind {
-                        PPTokenKind::Less | PPTokenKind::StringLiteral(_) => {
+                        PPTokenKind::Less | PPTokenKind::StringLiteral => {
                             return Ok(Some(arg_end));
                         }
                         _ => {
@@ -821,10 +778,10 @@ impl<'src> Preprocessor<'src> {
         // Need at least 3 more tokens: ( "string" )
         if i + 3 < tokens.len()
             && tokens[i + 1].kind == PPTokenKind::LeftParen
-            && let PPTokenKind::StringLiteral(sym) = tokens[i + 2].kind
+            && let PPTokenKind::StringLiteral = tokens[i + 2].kind
             && tokens[i + 3].kind == PPTokenKind::RightParen
         {
-            let content = self.destringize(sym.as_str());
+            let content = self.destringize(&self.get_token_text(&tokens[i + 2]));
             self.perform_pragma(&content);
             tokens.drain(i..i + 4);
             return true;
@@ -1143,19 +1100,11 @@ impl<'a> SourceBufferCache<'a> {
             self.last_buffer = Some(b);
             b
         } else {
-            return token.get_text().as_bytes();
+            return &[];
         };
 
         let start = token.location.offset() as usize;
         let end = start + token.length as usize;
-        if end <= buffer.len() {
-            &buffer[start..end]
-        } else {
-            token.get_text().as_bytes()
-        }
-    }
-
-    fn get_token_text<'b>(&'b mut self, token: &'b PPToken) -> &'b str {
-        unsafe { std::str::from_utf8_unchecked(self.get_token_bytes(token)) }
+        if end <= buffer.len() { &buffer[start..end] } else { &[] }
     }
 }

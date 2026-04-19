@@ -538,8 +538,8 @@ impl<'a> Interpreter<'a> {
         let token = self.current()?;
 
         let (path, is_angled) = match &token.kind {
-            PPTokenKind::StringLiteral(sym) => {
-                let s = sym.as_str();
+            PPTokenKind::StringLiteral => {
+                let s = self.preprocessor.get_token_text(token);
                 if s.starts_with('"') && s.ends_with('"') {
                     self.advance();
                     (s[1..s.len() - 1].to_string(), false)
@@ -559,7 +559,7 @@ impl<'a> Interpreter<'a> {
                         self.advance();
                         break;
                     }
-                    path_str.push_str(self.preprocessor.get_token_text(t));
+                    path_str.push_str(&self.preprocessor.get_token_text(t));
                     self.advance();
                 }
                 (path_str, true)
@@ -594,16 +594,16 @@ impl<'a> Interpreter<'a> {
         let token = self.next()?;
 
         match &token.kind {
-            PPTokenKind::Number(sym) => {
-                let text = sym.as_str();
-                let (val, suffix, _) = literal_parsing::parse_integer_literal(text).ok_or_else(|| self.error())?;
+            PPTokenKind::Number => {
+                let text = self.preprocessor.get_token_text(token);
+                let (val, suffix, _) = literal_parsing::parse_integer_literal(&text).ok_or_else(|| self.error())?;
                 let mut is_unsigned = matches!(suffix, Some(IntegerSuffix::U | IntegerSuffix::UL | IntegerSuffix::ULL));
                 if !is_unsigned && (val as u64) > i64::MAX as u64 {
                     is_unsigned = true;
                 }
                 Ok(PPExpr::Number(ExprValue::new(val, is_unsigned)))
             }
-            PPTokenKind::CharLiteral(codepoint, _) => Ok(PPExpr::Number(ExprValue::new(*codepoint as i64, false))),
+            PPTokenKind::CharLiteral(codepoint) => Ok(PPExpr::Number(ExprValue::new(*codepoint as i64, false))),
             PPTokenKind::Identifier(sym) => Ok(PPExpr::Identifier(*sym)),
             PPTokenKind::LeftParen => {
                 let result = self.parse_conditional()?;

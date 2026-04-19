@@ -239,6 +239,56 @@ impl NodeKind {
         }
     }
 
+    pub(crate) fn is_builtin(&self) -> bool {
+        matches!(
+            self,
+            NodeKind::BuiltinVaArg(..)
+                | NodeKind::BuiltinOffsetof(..)
+                | NodeKind::BuiltinVaStart(..)
+                | NodeKind::BuiltinVaEnd(..)
+                | NodeKind::BuiltinVaCopy(..)
+                | NodeKind::BuiltinExpect(..)
+                | NodeKind::BuiltinComplex(..)
+                | NodeKind::BuiltinMemcmp(..)
+                | NodeKind::BuiltinMemcpy(..)
+                | NodeKind::BuiltinMemset(..)
+                | NodeKind::BuiltinMemmove(..)
+                | NodeKind::BuiltinTypesCompatibleP(..)
+                | NodeKind::BuiltinPopcount(..)
+                | NodeKind::BuiltinPopcountL(..)
+                | NodeKind::BuiltinPopcountLL(..)
+                | NodeKind::BuiltinClz(..)
+                | NodeKind::BuiltinClzL(..)
+                | NodeKind::BuiltinClzLL(..)
+                | NodeKind::BuiltinCtz(..)
+                | NodeKind::BuiltinCtzL(..)
+                | NodeKind::BuiltinCtzLL(..)
+                | NodeKind::BuiltinFfs(..)
+                | NodeKind::BuiltinFfsL(..)
+                | NodeKind::BuiltinFfsLL(..)
+                | NodeKind::BuiltinBswap16(..)
+                | NodeKind::BuiltinBswap32(..)
+                | NodeKind::BuiltinBswap64(..)
+                | NodeKind::BuiltinFabs(..)
+                | NodeKind::BuiltinFabsf(..)
+                | NodeKind::BuiltinFabsl(..)
+                | NodeKind::BuiltinPrefetch(..)
+                | NodeKind::BuiltinAlloca(..)
+                | NodeKind::BuiltinChooseExpr(..)
+                | NodeKind::BuiltinConstantP(..)
+                | NodeKind::GenericSelection(..)
+                | NodeKind::BuiltinUnreachable
+                | NodeKind::BuiltinTrap
+        )
+    }
+
+    pub(crate) fn is_type_query(&self) -> bool {
+        matches!(
+            self,
+            NodeKind::SizeOfExpr(..) | NodeKind::SizeOfType(..) | NodeKind::AlignOfExpr(..) | NodeKind::AlignOfType(..)
+        )
+    }
+
     pub(crate) fn visit_children<F: FnMut(NodeRef)>(&self, mut f: F) {
         match self {
             NodeKind::Literal(_)

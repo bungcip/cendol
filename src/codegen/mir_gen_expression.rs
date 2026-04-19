@@ -71,14 +71,14 @@ impl<'a> MirGen<'a> {
     pub(crate) fn visit_expression(&mut self, expr: NodeRef, need_value: bool) -> Operand {
         let qt = self.ast.qual_type_of(expr);
         let node_kind = *self.ast.get_kind(expr);
-
         let mir_ty = self.lower_qual_type(qt);
 
         if let Some(const_op) = self.try_constant_fold(expr, &node_kind, qt) {
-            if need_value {
-                return self.apply_conversions(const_op, expr, mir_ty);
-            }
-            return const_op;
+            return if need_value {
+                self.apply_conversions(const_op, expr, mir_ty)
+            } else {
+                const_op
+            };
         }
 
         let operand = match &node_kind {
@@ -90,38 +90,77 @@ impl<'a> MirGen<'a> {
             NodeKind::BinaryOp(op, left, right) => self.visit_binary_op(*op, *left, *right, mir_ty),
             NodeKind::Assignment(op, left, right) => self.visit_assignment_expr(*op, *left, *right, mir_ty),
             NodeKind::FunctionCall(call_expr) => {
-                // Check for builtin float constant functions
-                if let Some(builtin_op) = self.try_visit_builtin_float_const(call_expr, mir_ty) {
-                    if need_value {
-                        return self.apply_conversions(builtin_op, expr, mir_ty);
-                    }
-                    return builtin_op;
-                }
-
-                let is_void = self.mb.get_type(mir_ty).is_void();
-                let temp_place = if need_value && !is_void {
-                    let (_, temp_place) = self.create_temp_local(mir_ty);
-                    Some(temp_place)
-                } else {
-                    None
-                };
-
-                self.visit_function_call(call_expr, temp_place.clone());
-
-                if need_value {
-                    if is_void {
-                        self.create_dummy_operand()
-                    } else {
-                        Operand::Copy(Box::new(temp_place.unwrap()))
-                    }
-                } else {
-                    self.create_dummy_operand()
-                }
+                self.visit_function_call_expression(call_expr, expr, mir_ty, need_value)
             }
-            NodeKind::SizeOfExpr(expr) => {
+            _ if node_kind.is_type_query() => self.visit_type_query_expression(&node_kind, expr, mir_ty, need_value),
+            NodeKind::StatementExpr(stmt, result_expr) => self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value),
+            NodeKind::Cast(_ty, operand) => self.visit_cast(*operand, mir_ty),
+            NodeKind::CompoundLiteral(ty, init) => self.visit_compound_literal(*ty, *init),
+            _ if node_kind.is_builtin() || matches!(node_kind, NodeKind::AtomicOp(..)) => {
+                self.visit_builtin_expression(&node_kind, expr, mir_ty, need_value)
+            }
+            NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
+            NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
+            NodeKind::TernaryOp(cond, then, else_expr) => self.visit_ternary_op(*cond, *then, *else_expr, mir_ty),
+            _ => unreachable!("Unhandled node kind in visit_expression: {:?}", node_kind),
+        };
+
+        if !need_value {
+            return operand;
+        }
+
+        self.apply_conversions(operand, expr, mir_ty)
+    }
+
+    fn visit_function_call_expression(
+        &mut self,
+        call_expr: &CallExpr,
+        expr: NodeRef,
+        mir_ty: TypeId,
+        need_value: bool,
+    ) -> Operand {
+        // Check for builtin float constant functions
+        if let Some(builtin_op) = self.try_visit_builtin_float_const(call_expr, mir_ty) {
+            return if need_value {
+                self.apply_conversions(builtin_op, expr, mir_ty)
+            } else {
+                builtin_op
+            };
+        }
+
+        let is_void = self.mb.get_type(mir_ty).is_void();
+        let temp_place = if need_value && !is_void {
+            let (_, temp_place) = self.create_temp_local(mir_ty);
+            Some(temp_place)
+        } else {
+            None
+        };
+
+        self.visit_function_call(call_expr, temp_place.clone());
+
+        if need_value {
+            if is_void {
+                self.create_dummy_operand()
+            } else {
+                Operand::Copy(Box::new(temp_place.unwrap()))
+            }
+        } else {
+            self.create_dummy_operand()
+        }
+    }
+
+    fn visit_type_query_expression(
+        &mut self,
+        node_kind: &NodeKind,
+        expr: NodeRef,
+        mir_ty: TypeId,
+        need_value: bool,
+    ) -> Operand {
+        match node_kind {
+            NodeKind::SizeOfExpr(inner_expr) => {
                 let ty = self
                     .ast
-                    .get_resolved_type(*expr)
+                    .get_resolved_type(*inner_expr)
                     .expect("SizeOf operand type missing")
                     .ty();
                 self.visit_type_query(ty, true)
@@ -136,10 +175,11 @@ impl<'a> MirGen<'a> {
                         && let Some(align) = alignment
                     {
                         let op = self.create_size_t_operand(*align as u64);
-                        if need_value {
-                            return self.apply_conversions(op, expr, mir_ty);
-                        }
-                        return op;
+                        return if need_value {
+                            self.apply_conversions(op, expr, mir_ty)
+                        } else {
+                            op
+                        };
                     }
                 }
 
@@ -150,6 +190,18 @@ impl<'a> MirGen<'a> {
                     .ty();
                 self.visit_type_query(ty, false)
             }
+            _ => unreachable!(),
+        }
+    }
+
+    fn visit_builtin_expression(
+        &mut self,
+        node_kind: &NodeKind,
+        expr: NodeRef,
+        mir_ty: TypeId,
+        need_value: bool,
+    ) -> Operand {
+        match node_kind {
             NodeKind::BuiltinOffsetof(..) | NodeKind::BuiltinTypesCompatibleP(..) | NodeKind::BuiltinConstantP(..) => {
                 let val = self.const_ctx().eval_int(expr).expect("Builtin should be constant");
                 let kind = if self.mb.get_type(mir_ty).is_float() {
@@ -161,9 +213,6 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(need_value, expr),
             NodeKind::GenericSelection(..) => self.visit_generic_selection(need_value, expr),
-            NodeKind::StatementExpr(stmt, result_expr) => self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value),
-            NodeKind::Cast(_ty, operand) => self.visit_cast(*operand, mir_ty),
-            NodeKind::CompoundLiteral(ty, init) => self.visit_compound_literal(*ty, *init),
             NodeKind::BuiltinVaArg(ty, expr) => self.visit_builtin_va_arg(*ty, *expr),
             NodeKind::BuiltinExpect(exp, c) => {
                 let _ = self.visit_expression(*c, true); // lower 'c' for side effects or just to process it
@@ -243,7 +292,7 @@ impl<'a> MirGen<'a> {
             | NodeKind::BuiltinBswap64(exp)
             | NodeKind::BuiltinFabs(exp)
             | NodeKind::BuiltinFabsf(exp)
-            | NodeKind::BuiltinFabsl(exp) => self.visit_builtin_unary_op(&node_kind, *exp, mir_ty),
+            | NodeKind::BuiltinFabsl(exp) => self.visit_builtin_unary_op(node_kind, *exp, mir_ty),
             NodeKind::BuiltinPrefetch(addr, rw, locality) => {
                 let _ = self.visit_expression(*addr, true);
                 if let Some(rw) = rw {
@@ -264,30 +313,14 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::AtomicOp(op, args_start, args_len) => self.visit_atomic_op(*op, *args_start, *args_len, mir_ty),
             NodeKind::BuiltinVaStart(..) | NodeKind::BuiltinVaEnd(..) | NodeKind::BuiltinVaCopy(..) => {
-                self.visit_builtin_void(&node_kind)
+                self.visit_builtin_void(node_kind)
             }
-            NodeKind::InitializerList(_) | NodeKind::InitializerItem(_) => {
-                panic!("InitializerList or InitializerItem not implemented");
-            }
-            NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
-            NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
-            NodeKind::TernaryOp(cond, then, else_expr) => self.visit_ternary_op(*cond, *then, *else_expr, mir_ty),
-            NodeKind::BuiltinUnreachable => {
+            NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => {
                 self.mb.set_terminator(Terminator::Trap);
                 self.create_dummy_operand()
             }
-            NodeKind::BuiltinTrap => {
-                self.mb.set_terminator(Terminator::Trap);
-                self.create_dummy_operand()
-            }
-            _ => unreachable!("Unhandled node kind in visit_expression: {:?}", node_kind),
-        };
-
-        if !need_value {
-            return operand;
+            _ => unreachable!("Unhandled node kind in visit_builtin_expression: {:?}", node_kind),
         }
-
-        self.apply_conversions(operand, expr, mir_ty)
     }
 
     fn try_constant_fold(&mut self, expr: NodeRef, kind: &NodeKind, qt: QualType) -> Option<Operand> {

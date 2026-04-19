@@ -1,7 +1,7 @@
 use crate::pp::PPConfig;
 use crate::tests::pp_common::{
     setup_pp_snapshot, setup_pp_snapshot_with_diags, setup_pp_snapshot_with_diags_and_config,
-    setup_preprocessor_test_with_diagnostics,
+    setup_preprocessor_test_with_sm_and_diagnostics,
 };
 use chrono::{TimeZone, Utc};
 
@@ -240,8 +240,8 @@ fn test_brace_comma_separation() {
 #define CNT(x, y) 2
 CNT({1, 2})
 "#;
-    let (tokens, _) = setup_preprocessor_test_with_diagnostics(src, None).unwrap();
-    assert!(tokens.iter().any(|t| t.get_text() == "2"));
+    let (tokens, _, _) = setup_preprocessor_test_with_sm_and_diagnostics(src, None).unwrap();
+    assert!(tokens.iter().any(|t| t.text == "2"));
 }
 
 #[test]
@@ -720,7 +720,7 @@ fn test_empty_macro_arg() {
 #define M(x) x
 int y = M();
 "#;
-    let Ok((_, diags)) = setup_preprocessor_test_with_diagnostics(src, None) else {
+    let Ok((_, _, diags)) = setup_preprocessor_test_with_sm_and_diagnostics(src, None) else {
         panic!("PP Error");
     };
     assert!(diags.is_empty(), "Expected no diagnostics, got: {:?}", diags);
@@ -1077,17 +1077,17 @@ HASH3(1)
 #define BAD_PARAM(1) bar
 #define BAD_PARAM2(a, 1) bar
 "#;
-    let _ = crate::tests::pp_common::setup_preprocessor_test_with_diagnostics(src, None);
+    let _ = crate::tests::pp_common::setup_preprocessor_test_with_sm_and_diagnostics(src, None);
 
     let gnu_ellip_err = r#"
 #define QUX2(args... b) bar
 "#;
-    let _ = crate::tests::pp_common::setup_preprocessor_test_with_diagnostics(gnu_ellip_err, None);
+    let _ = crate::tests::pp_common::setup_preprocessor_test_with_sm_and_diagnostics(gnu_ellip_err, None);
 
     let c99_ellip_err = r#"
 #define BAZ2(..., b) bar
 "#;
-    let _ = crate::tests::pp_common::setup_preprocessor_test_with_diagnostics(c99_ellip_err, None);
+    let _ = crate::tests::pp_common::setup_preprocessor_test_with_sm_and_diagnostics(c99_ellip_err, None);
 
     let src_stringify = r#"
 #define STRINGIFY(...) #__VA_ARGS__

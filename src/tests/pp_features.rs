@@ -157,7 +157,7 @@ fn test_has_include_next() {
     let debug_tokens: Vec<DebugToken> = tokens
         .iter()
         .filter(|t| !matches!(t.kind, crate::pp::PPTokenKind::Eof | crate::pp::PPTokenKind::Eod))
-        .map(DebugToken::from)
+        .map(|t| DebugToken::from_token(t, &sm))
         .collect();
 
     assert_yaml_snapshot!(debug_tokens, @"

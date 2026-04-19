@@ -1,3 +1,4 @@
+use crate::diagnostic::Diagnostic;
 use crate::pp::*;
 use crate::source_manager::SourceManager;
 use crate::tests::test_utils::setup_sm_and_diag;
@@ -9,26 +10,24 @@ pub struct DebugToken {
     pub text: String,
 }
 
-impl From<&PPToken> for DebugToken {
-    fn from(token: &PPToken) -> Self {
-        let kind_str = match &token.kind {
-            PPTokenKind::Identifier(_) => "Identifier".to_string(),
-            PPTokenKind::StringLiteral(_) => "StringLiteral".to_string(),
-            PPTokenKind::Number(_) => "Number".to_string(),
-            PPTokenKind::CharLiteral(_, _) => "CharLiteral".to_string(),
-            k => format!("{:?}", k),
+impl DebugToken {
+    pub fn from_token(token: &PPToken, sm: &SourceManager) -> Self {
+        let name = token.kind.kind_name();
+        let kind = if name.is_empty() {
+            format!("{:?}", token.kind)
+        } else {
+            name.to_string()
         };
 
-        DebugToken {
-            kind: kind_str,
-            text: token.get_text().to_string(),
-        }
+        let text = token.get_text_with_sm(sm).into_owned();
+
+        DebugToken { kind, text }
     }
 }
 
 pub(crate) fn setup_pp_snapshot(src: &str) -> Vec<DebugToken> {
-    let (tokens, _) = setup_preprocessor_test_with_diagnostics(src, None).unwrap();
-    tokens.iter().map(DebugToken::from).collect()
+    let (tokens, _) = setup_preprocessor_test_with_sm(src, None).unwrap();
+    tokens
 }
 
 pub(crate) fn setup_pp_snapshot_with_diags(src: &str) -> (Vec<DebugToken>, Vec<String>) {
@@ -40,11 +39,10 @@ pub(crate) fn setup_pp_snapshot_with_diags_and_config(
     config: Option<PPConfig>,
 ) -> (Vec<DebugToken>, Vec<String>) {
     // Return a Result-like structure for the snapshot
-    match setup_preprocessor_test_with_diagnostics(src, config) {
-        Ok((tokens, diags)) => {
-            let debug_tokens = tokens.iter().map(DebugToken::from).collect();
+    match setup_preprocessor_test_with_sm_and_diagnostics(src, config) {
+        Ok((tokens, _sm, diags)) => {
             let debug_diags = diags.iter().map(|d| format!("{:?}: {}", d.level, d.message)).collect();
-            (debug_tokens, debug_diags)
+            (tokens, debug_diags)
         }
         Err(e) => (vec![], vec![format!("Fatal Error: {:?}", e)]),
     }
@@ -55,44 +53,52 @@ pub(crate) fn setup_multi_file_pp_snapshot(
     main_file: &str,
     config: Option<PPConfig>,
 ) -> (Vec<DebugToken>, Vec<String>) {
-    match setup_multi_file_pp_with_diagnostics(files, main_file, config) {
-        Ok((tokens, diags)) => {
-            let debug_tokens = tokens.iter().map(DebugToken::from).collect();
+    match setup_multi_file_pp_with_sm_and_diagnostics(files, main_file, config) {
+        Ok((tokens, _sm, diags)) => {
             let debug_diags = diags.iter().map(|d| format!("{:?}: {}", d.level, d.message)).collect();
-            (debug_tokens, debug_diags)
+            (tokens, debug_diags)
         }
         Err(e) => (vec![], vec![format!("Fatal Error: {:?}", e)]),
     }
 }
 
-/// Helper function to set up preprocessor testing and return diagnostics
-pub(crate) fn setup_preprocessor_test_with_diagnostics(
+/// Helper function to set up preprocessor testing and return sm
+pub(crate) fn setup_preprocessor_test_with_sm(
     src: &str,
     config: Option<PPConfig>,
-) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PPError> {
-    setup_multi_file_pp_with_diagnostics(vec![("<test>", src)], "<test>", config)
+) -> Result<(Vec<DebugToken>, SourceManager), PPError> {
+    let (tokens, sm, _) = setup_multi_file_pp_with_sm_and_diagnostics(vec![("<test>", src)], "<test>", config)?;
+    Ok((tokens, sm))
 }
 
-fn setup_multi_file_pp_with_diagnostics(
+pub(crate) fn setup_preprocessor_test_with_sm_and_diagnostics(
+    src: &str,
+    config: Option<PPConfig>,
+) -> Result<(Vec<DebugToken>, SourceManager, Vec<Diagnostic>), PPError> {
+    setup_multi_file_pp_with_sm_and_diagnostics(vec![("<test>", src)], "<test>", config)
+}
+
+fn setup_multi_file_pp_with_sm_and_diagnostics(
     files: Vec<(&str, &str)>,
     main_file_name: &str,
     config: Option<PPConfig>,
-) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PPError> {
-    let (tokens, diagnostics) = setup_multi_file_pp_with_diagnostics_raw(files, main_file_name, config)?;
+) -> Result<(Vec<DebugToken>, SourceManager, Vec<Diagnostic>), PPError> {
+    let (tokens, sm, diagnostics) = setup_multi_file_pp_with_diagnostics_raw(files, main_file_name, config)?;
 
-    let significant_tokens: Vec<_> = tokens
-        .into_iter()
+    let debug_tokens: Vec<DebugToken> = tokens
+        .iter()
         .filter(|t| !matches!(t.kind, PPTokenKind::Eof | PPTokenKind::Eod))
+        .map(|t| DebugToken::from_token(t, &sm))
         .collect();
 
-    Ok((significant_tokens, diagnostics))
+    Ok((debug_tokens, sm, diagnostics))
 }
 
 fn setup_multi_file_pp_with_diagnostics_raw(
     files: Vec<(&str, &str)>,
     main_file_name: &str,
     config: Option<PPConfig>,
-) -> Result<(Vec<PPToken>, Vec<crate::diagnostic::Diagnostic>), PPError> {
+) -> Result<(Vec<PPToken>, SourceManager, Vec<Diagnostic>), PPError> {
     // Initialize logging for tests
     let _ = env_logger::try_init();
 
@@ -112,10 +118,10 @@ fn setup_multi_file_pp_with_diagnostics_raw(
 
     let main_id = main_id.expect("Main file not found in provided files");
 
-    let mut preprocessor = Preprocessor::new(&mut sm, &mut diag, &config);
+    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
 
-    let tokens = preprocessor.process(main_id, &config)?;
-    Ok((tokens, diag.diagnostics))
+    let tokens = pp.process(main_id, &config)?;
+    Ok((tokens, sm, diag.diagnostics.clone()))
 }
 
 pub struct TestLexer {
@@ -125,6 +131,10 @@ pub struct TestLexer {
 impl TestLexer {
     pub(crate) fn next_token(&mut self) -> Option<PPToken> {
         self.lexer.next_token()
+    }
+
+    pub(crate) fn get_token_text(&self, token: &PPToken) -> std::borrow::Cow<'_, str> {
+        token.get_text_from_buffer(&self.lexer.buffer)
     }
 }
 
@@ -142,7 +152,7 @@ macro_rules! test_tokens {
             let token = $lexer.next_token().unwrap();
             match token.kind {
                 $expected => {
-                    assert_eq!(token.get_text(), $input, "Token text mismatch for {}", stringify!($expected));
+                    assert_eq!($lexer.get_token_text(&token).as_ref(), $input, "Token text mismatch for {}", stringify!($expected));
                 },
                 _ => panic!("Expected {:?}, got {:?}", stringify!($expected), token.kind),
             }

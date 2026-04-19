@@ -444,18 +444,13 @@ impl AstDumper {
                 optional(f, *val, "auto")?
             }
             PNK::StaticAssert(cond, msg) => {
-                let message_str = if let Some(m) = msg {
-                    if let PNK::Literal(lit) = &ast.get_node(*m).kind {
-                        if let LitVal::String(s) = ast.literals.get(*lit) {
-                            s.to_string()
-                        } else {
-                            "<invalid>".to_string()
-                        }
-                    } else {
-                        "<invalid>".to_string()
-                    }
-                } else {
-                    "<none>".to_string()
+                let message_str = match msg.map(|m| &ast.get_node(m).kind) {
+                    Some(PNK::Literal(lit)) => match ast.literals.get(*lit) {
+                        LitVal::String(s) => s.to_string(),
+                        _ => "<invalid>".to_string(),
+                    },
+                    Some(_) => "<invalid>".to_string(),
+                    None => "<none>".to_string(),
                 };
                 write!(f, "{}, \"{}\"", cond.get(), message_str)?
             }
@@ -632,20 +627,13 @@ impl AstDumper {
             }
             NodeKind::Param(data) => write!(f, "symbol={:?}, ty={:?}", data.symbol, data.qt)?,
             NodeKind::StaticAssert(cond, msg) => {
-                let message_str = if let Some(m) = msg {
-                    match ast.get_kind(*m) {
-                        NodeKind::Literal(lit_id) => {
-                            let val = ast.literals.get(*lit_id);
-                            if let LitVal::String(s) = val {
-                                s.to_string()
-                            } else {
-                                "<not-a-string-literal>".to_string()
-                            }
-                        }
-                        _ => "<invalid>".to_string(),
-                    }
-                } else {
-                    "<none>".to_string()
+                let message_str = match msg.map(|m| ast.get_kind(m)) {
+                    Some(NodeKind::Literal(lit_id)) => match ast.literals.get(*lit_id) {
+                        LitVal::String(s) => s.to_string(),
+                        _ => "<not-a-string-literal>".to_string(),
+                    },
+                    Some(_) => "<invalid>".to_string(),
+                    None => "<none>".to_string(),
                 };
                 write!(f, "condition={}, message=\"{}\"", cond.raw(), message_str)?
             }

@@ -6,7 +6,6 @@ use crate::pp::preprocessor::Preprocessor;
 use crate::pp::types::{IncludeStackInfo, MacroFlags, MacroInfo, PPConditionalInfo};
 use crate::pp::{DirectiveKind, PPToken, PPTokenFlags, PPTokenKind, PragmaPackKind};
 use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
-use std::path::Path;
 use std::sync::Arc;
 
 impl<'src> Preprocessor<'src> {
@@ -214,11 +213,19 @@ impl<'src> Preprocessor<'src> {
                 || existing.parameter_list != macro_info.parameter_list
                 || existing.variadic_arg != macro_info.variadic_arg
                 || existing.tokens.len() != macro_info.tokens.len()
-                || existing
-                    .tokens
-                    .iter()
-                    .zip(macro_info.tokens.iter())
-                    .any(|(a, b)| a.kind != b.kind);
+                || existing.tokens.iter().zip(macro_info.tokens.iter()).any(|(a, b)| {
+                    if a.kind != b.kind {
+                        return true;
+                    }
+                    // For tokens that store text externally, compare the text
+                    match a.kind {
+                        PPTokenKind::Identifier(_) => false, // Already covered by a.kind != b.kind (stores sym)
+                        PPTokenKind::Number | PPTokenKind::StringLiteral | PPTokenKind::CharLiteral(_) => {
+                            self.get_token_text(a) != self.get_token_text(b)
+                        }
+                        _ => false,
+                    }
+                });
 
             if existing.flags.contains(MacroFlags::BUILTIN) {
                 if is_different {
@@ -299,86 +306,34 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn do_handle_include(&mut self, is_next: bool) -> Result<(), PPError> {
-        let token = self.expect_token()?;
-        let mut eod_consumed = false;
+        let first_token = self.expect_token()?;
 
-        let (path_str, is_angled) = match token.kind {
-            PPTokenKind::StringLiteral(symbol) => {
-                let path =
-                    self.extract_string_literal_content(symbol, token.location, PPErrorKind::InvalidIncludePath)?;
-                (path, false)
+        let mut tokens = vec![first_token];
+        while let Some(t) = self.lex_token() {
+            if t.kind == PPTokenKind::Eod {
+                break;
             }
-            PPTokenKind::Less => {
-                let mut path_parts = Vec::new();
-                while let Some(t) = self.lex_token() {
-                    if t.kind == PPTokenKind::Greater {
-                        break;
-                    }
-                    path_parts.push(t);
-                }
-                (self.tokens_to_string(&path_parts), true)
+            tokens.push(t);
+        }
+
+        let (path_str, is_angled) = match tokens[0].kind {
+            PPTokenKind::StringLiteral | PPTokenKind::Less => {
+                self.parse_include_path_tokens(&tokens, first_token.location)?
             }
             _ => {
-                // Computed include
-                let mut tokens = vec![token];
-                while let Some(t) = self.lex_token() {
-                    if t.kind == PPTokenKind::Eod {
-                        break;
-                    }
-                    tokens.push(t);
-                }
-                eod_consumed = true;
                 self.expand_tokens(&mut tokens, false)?;
-
-                if tokens.is_empty() {
-                    return self.emit_error_loc(PPErrorKind::InvalidIncludePath, token.location);
-                }
-
-                let first = &tokens[0];
-                match first.kind {
-                    PPTokenKind::StringLiteral(symbol) => {
-                        if tokens.len() > 1 {
-                            return self.emit_error_loc(PPErrorKind::ExpectedEod, tokens[1].location);
-                        }
-                        let path = self.extract_string_literal_content(
-                            symbol,
-                            first.location,
-                            PPErrorKind::InvalidIncludePath,
-                        )?;
-                        (path, false)
-                    }
-                    PPTokenKind::Less => {
-                        let mut path_parts = Vec::new();
-                        let mut greater_idx = None;
-                        for (i, t) in tokens.iter().enumerate().skip(1) {
-                            if t.kind == PPTokenKind::Greater {
-                                greater_idx = Some(i);
-                                break;
-                            }
-                            path_parts.push(*t);
-                        }
-                        let idx = greater_idx
-                            .ok_or_else(|| self.error_loc(PPErrorKind::InvalidIncludePath, token.location))?;
-                        if idx + 1 < tokens.len() {
-                            return self.emit_error_loc(PPErrorKind::ExpectedEod, tokens[idx + 1].location);
-                        }
-                        (self.tokens_to_string(&path_parts), true)
-                    }
-                    _ => {
-                        return self.emit_error_loc(PPErrorKind::InvalidIncludePath, token.location);
-                    }
-                }
+                self.parse_include_path_tokens(&tokens, first_token.location)?
             }
         };
 
         if self.include_depth >= self.max_include_depth {
-            return self.emit_error_loc(PPErrorKind::IncludeDepthExceeded, token.location);
+            return self.emit_error_loc(PPErrorKind::IncludeDepthExceeded, first_token.location);
         }
 
         let include_source_id = if is_next {
-            self.resolve_next_include_path(&path_str, is_angled, token.location)?
+            self.resolve_next_include_path(&path_str, is_angled, first_token.location)?
         } else {
-            self.resolve_include_path(&path_str, is_angled, token.location)?
+            self.resolve_include_path(&path_str, is_angled, first_token.location)?
         };
 
         if self.once_included.contains(&include_source_id) {
@@ -389,15 +344,47 @@ impl<'src> Preprocessor<'src> {
             file_id: include_source_id,
         });
 
-        if !eod_consumed {
-            self.expect_eod()?;
-        }
-
         let buffer = self.sm.get_buffer_arc(include_source_id);
         self.lexer_stack.push(PPLexer::new(include_source_id, buffer));
         self.include_depth += 1;
 
         Ok(())
+    }
+
+    fn parse_include_path_tokens(&self, tokens: &[PPToken], diag_loc: SourceLoc) -> Result<(String, bool), PPError> {
+        if tokens.is_empty() {
+            return self.emit_error_loc(PPErrorKind::InvalidIncludePath, diag_loc);
+        }
+
+        let first = &tokens[0];
+        match first.kind {
+            PPTokenKind::StringLiteral => {
+                if tokens.len() > 1 {
+                    return self.emit_error_loc(PPErrorKind::ExpectedEod, tokens[1].location);
+                }
+                let text = self.get_token_text(first);
+                let path = self
+                    .extract_literal_content(&text, first.location, PPErrorKind::InvalidIncludePath)?
+                    .to_string();
+                Ok((path, false))
+            }
+            PPTokenKind::Less => {
+                let mut greater_idx = None;
+                for (i, t) in tokens.iter().enumerate().skip(1) {
+                    if t.kind == PPTokenKind::Greater {
+                        greater_idx = Some(i);
+                        break;
+                    }
+                }
+                let idx = greater_idx.ok_or_else(|| self.error_loc(PPErrorKind::InvalidIncludePath, diag_loc))?;
+                if idx + 1 < tokens.len() {
+                    return self.emit_error_loc(PPErrorKind::ExpectedEod, tokens[idx + 1].location);
+                }
+                let path_parts = &tokens[1..idx];
+                Ok((self.tokens_to_string(path_parts), true))
+            }
+            _ => self.emit_error_loc(PPErrorKind::InvalidIncludePath, diag_loc),
+        }
     }
 
     fn handle_include(&mut self) -> Result<(), PPError> {
@@ -409,20 +396,11 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn resolve_include_path(&mut self, path: &str, is_angled: bool, loc: SourceLoc) -> Result<SourceId, PPError> {
-        let current_dir = self
-            .lexer_stack
-            .last()
-            .and_then(|lexer| self.sm.get_file_info(lexer.source_id))
-            .and_then(|info| info.path.parent())
-            .unwrap_or(Path::new("."));
-
+        let current_dir = self.get_current_dir();
         let resolved = self.header_search.resolve_path(path, is_angled, current_dir);
 
-        if let Some(path_buf) = resolved {
-            return self
-                .sm
-                .add_file_from_path(&path_buf, Some(loc))
-                .map_err(|_| self.error_loc(PPErrorKind::FileNotFound { path: path.to_string() }, loc));
+        if let Some(id) = self.load_resolved_header(path, resolved, loc)? {
+            return Ok(id);
         }
 
         let fallback_id = if is_angled {
@@ -439,20 +417,11 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn resolve_next_include_path(&mut self, path: &str, is_angled: bool, loc: SourceLoc) -> Result<SourceId, PPError> {
-        let current_dir = self
-            .lexer_stack
-            .last()
-            .and_then(|lexer| self.sm.get_file_info(lexer.source_id))
-            .and_then(|info| info.path.parent())
-            .unwrap_or(Path::new("."));
-
+        let current_dir = self.get_current_dir();
         let resolved = self.header_search.resolve_next_path(path, is_angled, current_dir);
 
-        if let Some(path_buf) = resolved {
-            return self
-                .sm
-                .add_file_from_path(&path_buf, Some(loc))
-                .map_err(|_| self.error_loc(PPErrorKind::FileNotFound { path: path.to_string() }, loc));
+        if let Some(id) = self.load_resolved_header(path, resolved, loc)? {
+            return Ok(id);
         }
 
         if is_angled && let Some(id) = self.built_in_file_ids.get(path).copied() {
@@ -573,12 +542,12 @@ impl<'src> Preprocessor<'src> {
             .split_first()
             .ok_or_else(|| self.error_loc(PPErrorKind::InvalidLineDirective, SourceLoc::builtin()))?;
 
-        let PPTokenKind::Number(symbol) = first.kind else {
+        let PPTokenKind::Number = first.kind else {
             return self.emit_error_loc(PPErrorKind::InvalidLineDirective, first.location);
         };
 
-        let line_num = symbol
-            .as_str()
+        let symbol_text = self.get_token_text(first);
+        let line_num = symbol_text
             .parse::<u32>()
             .ok()
             .filter(|&n| n > 0)
@@ -587,10 +556,14 @@ impl<'src> Preprocessor<'src> {
         let filename = match rest {
             [] => None,
             [t] => {
-                let PPTokenKind::StringLiteral(s) = t.kind else {
+                let PPTokenKind::StringLiteral = t.kind else {
                     return self.emit_error_loc(PPErrorKind::InvalidLineDirective, t.location);
                 };
-                Some(self.extract_string_literal_content(s, t.location, PPErrorKind::InvalidLineDirective)?)
+                let text = self.get_token_text(t);
+                Some(
+                    self.extract_literal_content(&text, t.location, PPErrorKind::InvalidLineDirective)?
+                        .to_string(),
+                )
             }
             _ => return self.emit_error_loc(PPErrorKind::InvalidLineDirective, first.location),
         };
@@ -665,10 +638,9 @@ impl<'src> Preprocessor<'src> {
 
     fn parse_pragma_macro_name(&mut self) -> Result<StringId, PPError> {
         self.expect_kind(PPTokenKind::LeftParen)?;
-        let (symbol, token_loc) = self.expect_string_literal()?;
+        let (text, token_loc) = self.expect_string_literal()?;
 
-        let name = self.extract_string_literal_content(symbol, token_loc, PPErrorKind::InvalidDirective)?;
-
+        let name = self.extract_literal_content(&text, token_loc, PPErrorKind::InvalidDirective)?;
         self.expect_kind(PPTokenKind::RightParen)?;
 
         Ok(StringId::new(name))
@@ -705,10 +677,10 @@ impl<'src> Preprocessor<'src> {
         self.expand_tokens(&mut tokens, false)?;
 
         tokens.into_iter().try_fold(String::new(), |mut acc, t| {
-            let PPTokenKind::StringLiteral(symbol) = t.kind else {
+            let PPTokenKind::StringLiteral = t.kind else {
                 return self.emit_error_loc(PPErrorKind::InvalidDirective, t.location);
             };
-            acc.push_str(&self.destringize(symbol.as_str()));
+            acc.push_str(&self.destringize(&self.get_token_text(&t)));
             Ok(acc)
         })
     }
@@ -825,7 +797,7 @@ impl<'src> Preprocessor<'src> {
                         }
                     }
                 }
-                PPTokenKind::Number(_) => {
+                PPTokenKind::Number => {
                     let val = self.parse_pack_value_from_token(t)?;
                     PragmaPackKind::Set(Some(val))
                 }
@@ -863,18 +835,23 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn parse_pack_value_from_token(&self, t: &PPToken) -> Result<u8, PPError> {
-        let PPTokenKind::Number(sym) = t.kind else {
+        let PPTokenKind::Number = t.kind else {
             return self.emit_error_loc(PPErrorKind::UnknownPragma(self.keywords.pack), t.location);
         };
-        let val = sym
-            .as_str()
-            .parse::<u8>()
-            .ok()
-            .ok_or_else(|| self.error_loc(PPErrorKind::InvalidPragmaPackValue(sym), t.location))?;
+        let val_text = self.get_token_text(t);
+        let val = val_text.parse::<u8>().ok().ok_or_else(|| {
+            self.error_loc(
+                PPErrorKind::InvalidPragmaPackValue(StringId::new(&val_text)),
+                t.location,
+            )
+        })?;
         if [1, 2, 4, 8, 16].contains(&val) {
             Ok(val)
         } else {
-            self.emit_error_loc(PPErrorKind::InvalidPragmaPackValue(sym), t.location)
+            self.emit_error_loc(
+                PPErrorKind::InvalidPragmaPackValue(StringId::new(&val_text)),
+                t.location,
+            )
         }
     }
 

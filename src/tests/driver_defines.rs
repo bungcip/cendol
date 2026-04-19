@@ -38,10 +38,10 @@ fn test_driver_defines() {
 #[test]
 fn test_driver_defines_with_value() {
     let source = r#"
-int main(void) { return VALUE; }
+int main(void) { return SUCCESS; }
 "#;
 
-    let tokens = compile_with_defines(source, &[("VALUE", Some("123"))]);
-    let has_value = tokens.iter().any(|t| t.get_text() == "123");
-    assert!(has_value, "Output should contain '123' when VALUE is set to 123");
+    let tokens = compile_with_defines(source, &[("SUCCESS", Some("ok"))]);
+    let has_value = tokens.iter().any(|t| t.get_text() == "ok");
+    assert!(has_value, "Output should contain 'ok' when SUCCESS is set to ok");
 }

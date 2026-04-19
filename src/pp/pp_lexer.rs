@@ -685,25 +685,22 @@ impl PPLexer {
                 let saved_pos = self.position;
                 let saved_at_start = self.at_start_of_line;
 
-                match self.lex_ucn(false) {
-                    Some(Ok(_)) => {
-                        // Valid UCN start. Backtrack to just after `\` so lex_identifier can re-parse it.
-                        self.position = saved_pos;
-                        self.at_start_of_line = saved_at_start;
-                        Some(self.lex_identifier(start_pos, ch, flags))
-                    }
-                    _ => {
-                        // Not a UCN or invalid.
-                        // Backtrack to just after `\` (saved_pos).
-                        self.position = saved_pos;
-                        self.at_start_of_line = saved_at_start;
-                        Some(PPToken::new(
-                            PPTokenKind::Unknown,
-                            flags,
-                            SourceLoc::new(self.source_id, start_pos),
-                            1,
-                        ))
-                    }
+                if self.lex_ucn(false).is_some() {
+                    // Valid UCN start. Backtrack to just after `\` so lex_identifier can re-parse it.
+                    self.position = saved_pos;
+                    self.at_start_of_line = saved_at_start;
+                    Some(self.lex_identifier(start_pos, ch, flags))
+                } else {
+                    // Not a UCN or invalid.
+                    // Backtrack to just after `\` (saved_pos).
+                    self.position = saved_pos;
+                    self.at_start_of_line = saved_at_start;
+                    Some(PPToken::new(
+                        PPTokenKind::Unknown,
+                        flags,
+                        SourceLoc::new(self.source_id, start_pos),
+                        1,
+                    ))
                 }
             }
             0x80..=0xFF => {
@@ -936,11 +933,8 @@ impl PPLexer {
 
     /// Try to parse a UCN.
     /// Assumes the leading backslash has already been consumed.
-    /// Returns:
-    /// - None: Not a UCN (didn't consume anything).
-    /// - Some(Ok(char)): Valid UCN.
-    /// - Some(Err(())): Invalid UCN.
-    fn lex_ucn(&mut self, allow_basic_charset: bool) -> Option<Result<char, ()>> {
+    /// Returns Some(char) if a valid UCN was parsed, None otherwise.
+    fn lex_ucn(&mut self, allow_basic_charset: bool) -> Option<char> {
         let is_u = match self.peek_char() {
             Some(b'u') => true,
             Some(b'U') => false,
@@ -968,31 +962,27 @@ impl PPLexer {
         }
 
         if digits_found != digits_needed {
-            return Some(Err(()));
+            return None;
         }
 
         // Validation
         // 1. Range
         if code_point > 0x10FFFF {
-            return Some(Err(()));
+            return None;
         }
 
         // 2. Surrogates
         if (0xD800..=0xDFFF).contains(&code_point) {
-            return Some(Err(()));
+            return None;
         }
 
         // 3. Basic Source Character Set
         // 0000-009F excluding $, @, `
         if !allow_basic_charset && code_point < 0xA0 && code_point != 0x24 && code_point != 0x40 && code_point != 0x60 {
-            return Some(Err(()));
+            return None;
         }
 
-        if let Some(c) = char::from_u32(code_point) {
-            Some(Ok(c))
-        } else {
-            Some(Err(()))
-        }
+        char::from_u32(code_point)
     }
 
     fn lex_identifier(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
@@ -1027,15 +1017,8 @@ impl PPLexer {
 
         // Handle first character
         if first_ch == b'\\' {
-            if let Some(res) = self.lex_ucn(false) {
-                match res {
-                    Ok(c) => {
-                        text.push(c);
-                    }
-                    _ => {
-                        unreachable!("ICE: already checked for UCN");
-                    }
-                }
+            if let Some(c) = self.lex_ucn(false) {
+                text.push(c);
             }
         } else if first_ch >= 0x80 {
             // UTF-8 start
@@ -1098,16 +1081,13 @@ impl PPLexer {
 
             // Check for UCN
             if ch == b'\\' {
-                match self.lex_ucn(false) {
-                    Some(Ok(c)) => {
-                        text.push(c);
-                        continue;
-                    }
-                    _ => {
-                        // Not a valid UCN. Backtrack and stop identifier
-                        self.position = saved_pos;
-                        break;
-                    }
+                if let Some(c) = self.lex_ucn(false) {
+                    text.push(c);
+                    continue;
+                } else {
+                    // Not a valid UCN. Backtrack and stop identifier
+                    self.position = saved_pos;
+                    break;
                 }
             }
 
@@ -1209,19 +1189,16 @@ impl PPLexer {
                 // Handle escape sequences, including line splicing
 
                 // Check for UCN first
-                match self.lex_ucn(true) {
-                    Some(Ok(_)) => {
-                        // Valid UCN.
-                        continue;
-                    }
-                    Some(Err(_)) => {
-                        // Invalid UCN.
-                        *has_invalid_ucn = true;
-                        continue;
-                    }
-                    None => {
-                        // Not a UCN (e.g. \n or \t or whatever)
-                        // Fall through to existing logic
+                if let Some(p_ch) = self.peek_char() {
+                    if p_ch == b'u' || p_ch == b'U' {
+                        if self.lex_ucn(true).is_some() {
+                            // Valid UCN.
+                            continue;
+                        } else {
+                            // Invalid UCN.
+                            *has_invalid_ucn = true;
+                            continue;
+                        }
                     }
                 }
 

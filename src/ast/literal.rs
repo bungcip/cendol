@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[repr(u8)]
 #[allow(clippy::upper_case_acronyms)]
-pub enum IntegerSuffix {
+pub enum IntSuffix {
     L,
     LL,
     U,
@@ -14,7 +14,7 @@ pub enum IntegerSuffix {
     ULL,
 }
 
-impl IntegerSuffix {
+impl IntSuffix {
     pub(crate) fn get_candidates(
         suffix: Option<Self>,
         registry: &TypeRegistry,
@@ -35,12 +35,12 @@ impl IntegerSuffix {
                     ])
                 }
             }
-            Some(IntegerSuffix::U) => SmallVec::from_slice(&[
+            Some(IntSuffix::U) => SmallVec::from_slice(&[
                 registry.type_int_unsigned,
                 registry.type_long_unsigned,
                 registry.type_long_long_unsigned,
             ]),
-            Some(IntegerSuffix::L) => {
+            Some(IntSuffix::L) => {
                 if is_decimal {
                     SmallVec::from_slice(&[registry.type_long, registry.type_long_long])
                 } else {
@@ -52,17 +52,17 @@ impl IntegerSuffix {
                     ])
                 }
             }
-            Some(IntegerSuffix::UL) => {
+            Some(IntSuffix::UL) => {
                 SmallVec::from_slice(&[registry.type_long_unsigned, registry.type_long_long_unsigned])
             }
-            Some(IntegerSuffix::LL) => {
+            Some(IntSuffix::LL) => {
                 if is_decimal {
                     SmallVec::from_slice(&[registry.type_long_long])
                 } else {
                     SmallVec::from_slice(&[registry.type_long_long, registry.type_long_long_unsigned])
                 }
             }
-            Some(IntegerSuffix::ULL) => SmallVec::from_slice(&[registry.type_long_long_unsigned]),
+            Some(IntSuffix::ULL) => SmallVec::from_slice(&[registry.type_long_long_unsigned]),
         }
     }
 }
@@ -132,7 +132,7 @@ impl LitRef {
 pub enum LitVal {
     Int {
         val: i64,
-        suffix: Option<IntegerSuffix>,
+        suffix: Option<IntSuffix>,
         radix: u8,
     },
     Float {

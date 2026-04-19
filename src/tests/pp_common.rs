@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use crate::diagnostic::Diagnostic;
+use crate::pp::pp_lexer::PPLexer;
 use crate::pp::*;
-use crate::source_manager::SourceManager;
+use crate::source_manager::{FileKind, SourceManager};
 use crate::tests::test_utils::setup_sm_and_diag;
 use serde::Serialize;
 
@@ -26,7 +29,7 @@ impl DebugToken {
 }
 
 pub(crate) fn setup_pp_snapshot(src: &str) -> Vec<DebugToken> {
-    let (tokens, _) = setup_preprocessor_test_with_sm(src, None).unwrap();
+    let (tokens, _) = setup_pp_with_sm(src, None).unwrap();
     tokens
 }
 
@@ -39,7 +42,7 @@ pub(crate) fn setup_pp_snapshot_with_diags_and_config(
     config: Option<PPConfig>,
 ) -> (Vec<DebugToken>, Vec<String>) {
     // Return a Result-like structure for the snapshot
-    match setup_preprocessor_test_with_sm_and_diagnostics(src, config) {
+    match setup_pp_with_sm_and_diagnostics(src, config) {
         Ok((tokens, _sm, diags)) => {
             let debug_diags = diags.iter().map(|d| format!("{:?}: {}", d.level, d.message)).collect();
             (tokens, debug_diags)
@@ -63,7 +66,7 @@ pub(crate) fn setup_multi_file_pp_snapshot(
 }
 
 /// Helper function to set up preprocessor testing and return sm
-pub(crate) fn setup_preprocessor_test_with_sm(
+pub(crate) fn setup_pp_with_sm(
     src: &str,
     config: Option<PPConfig>,
 ) -> Result<(Vec<DebugToken>, SourceManager), PPError> {
@@ -71,7 +74,7 @@ pub(crate) fn setup_preprocessor_test_with_sm(
     Ok((tokens, sm))
 }
 
-pub(crate) fn setup_preprocessor_test_with_sm_and_diagnostics(
+pub(crate) fn setup_pp_with_sm_and_diagnostics(
     src: &str,
     config: Option<PPConfig>,
 ) -> Result<(Vec<DebugToken>, SourceManager, Vec<Diagnostic>), PPError> {
@@ -110,12 +113,7 @@ fn setup_multi_file_pp_with_diagnostics_raw(
 
     let mut main_id = None;
     for (name, content) in files {
-        let id = sm.add_buffer(
-            content.as_bytes().to_vec(),
-            name,
-            None,
-            crate::source_manager::FileKind::Real,
-        );
+        let id = sm.add_buffer(content.as_bytes().to_vec(), name, None, FileKind::Real);
         if name == main_file_name {
             main_id = Some(id);
         }
@@ -130,7 +128,7 @@ fn setup_multi_file_pp_with_diagnostics_raw(
 }
 
 pub struct TestLexer {
-    lexer: crate::pp::pp_lexer::PPLexer,
+    lexer: PPLexer,
 }
 
 impl TestLexer {
@@ -145,13 +143,8 @@ impl TestLexer {
 
 pub(crate) fn create_test_pp_lexer(src: &str) -> TestLexer {
     let mut source_manager = SourceManager::new();
-    let id = source_manager.add_buffer(
-        src.as_bytes().to_vec(),
-        "<test>",
-        None,
-        crate::source_manager::FileKind::Real,
-    );
-    let lexer = crate::pp::pp_lexer::PPLexer::new(id, std::sync::Arc::from(src.as_bytes().to_vec()));
+    let id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>", None, FileKind::Real);
+    let lexer = PPLexer::new(id, Arc::from(src.as_bytes().to_vec()));
     TestLexer { lexer }
 }
 

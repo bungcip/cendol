@@ -1,25 +1,15 @@
 use crate::pp::{PPToken, PPTokenFlags, PPTokenKind, dumper::PPDumper};
-use crate::source_manager::{SourceLoc, SourceManager};
+use crate::source_manager::{FileKind, SourceLoc, SourceManager};
 
 #[test]
 fn test_dumper_with_includes() {
     let mut sm = SourceManager::new();
 
     // Create file 1
-    let id1 = sm.add_buffer(
-        b"int x;".to_vec(),
-        "file1.c",
-        None,
-        crate::source_manager::FileKind::Real,
-    );
+    let id1 = sm.add_buffer(b"int x;".to_vec(), "file1.c", None, FileKind::Real);
 
     // Create file 2
-    let id2 = sm.add_buffer(
-        b"int y;".to_vec(),
-        "file2.h",
-        None,
-        crate::source_manager::FileKind::Real,
-    );
+    let id2 = sm.add_buffer(b"int y;".to_vec(), "file2.h", None, FileKind::Real);
 
     // Construct tokens
     // File 1: int x;

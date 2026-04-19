@@ -138,59 +138,47 @@ fn test_operators_and_punctuation() {
 
 #[test]
 fn test_literals() {
-    use crate::ast::literal::IntegerSuffix;
+    use crate::ast::literal::IntSuffix;
     // Integer constants
     let int_literals = vec![
         ("42", TokenKind::IntegerConstant(42, None, 10)),
         ("0x1A", TokenKind::IntegerConstant(26, None, 16)),
         ("077", TokenKind::IntegerConstant(63, None, 8)),
         // C11 integer suffixes - decimal
-        ("1ll", TokenKind::IntegerConstant(1, Some(IntegerSuffix::LL), 10)),
-        ("42u", TokenKind::IntegerConstant(42, Some(IntegerSuffix::U), 10)),
-        ("123l", TokenKind::IntegerConstant(123, Some(IntegerSuffix::L), 10)),
-        ("456ul", TokenKind::IntegerConstant(456, Some(IntegerSuffix::UL), 10)),
-        ("789lu", TokenKind::IntegerConstant(789, Some(IntegerSuffix::UL), 10)),
-        (
-            "1000ull",
-            TokenKind::IntegerConstant(1000, Some(IntegerSuffix::ULL), 10),
-        ),
-        (
-            "2000llu",
-            TokenKind::IntegerConstant(2000, Some(IntegerSuffix::ULL), 10),
-        ),
+        ("1ll", TokenKind::IntegerConstant(1, Some(IntSuffix::LL), 10)),
+        ("42u", TokenKind::IntegerConstant(42, Some(IntSuffix::U), 10)),
+        ("123l", TokenKind::IntegerConstant(123, Some(IntSuffix::L), 10)),
+        ("456ul", TokenKind::IntegerConstant(456, Some(IntSuffix::UL), 10)),
+        ("789lu", TokenKind::IntegerConstant(789, Some(IntSuffix::UL), 10)),
+        ("1000ull", TokenKind::IntegerConstant(1000, Some(IntSuffix::ULL), 10)),
+        ("2000llu", TokenKind::IntegerConstant(2000, Some(IntSuffix::ULL), 10)),
         // C11 integer suffixes - hexadecimal
-        ("0x1Au", TokenKind::IntegerConstant(26, Some(IntegerSuffix::U), 16)),
-        ("0xFFll", TokenKind::IntegerConstant(255, Some(IntegerSuffix::LL), 16)),
-        ("0x10UL", TokenKind::IntegerConstant(16, Some(IntegerSuffix::UL), 16)),
-        ("0x20LU", TokenKind::IntegerConstant(32, Some(IntegerSuffix::UL), 16)),
-        ("0x40ULL", TokenKind::IntegerConstant(64, Some(IntegerSuffix::ULL), 16)),
-        ("0x80LLU", TokenKind::IntegerConstant(128, Some(IntegerSuffix::ULL), 16)),
+        ("0x1Au", TokenKind::IntegerConstant(26, Some(IntSuffix::U), 16)),
+        ("0xFFll", TokenKind::IntegerConstant(255, Some(IntSuffix::LL), 16)),
+        ("0x10UL", TokenKind::IntegerConstant(16, Some(IntSuffix::UL), 16)),
+        ("0x20LU", TokenKind::IntegerConstant(32, Some(IntSuffix::UL), 16)),
+        ("0x40ULL", TokenKind::IntegerConstant(64, Some(IntSuffix::ULL), 16)),
+        ("0x80LLU", TokenKind::IntegerConstant(128, Some(IntSuffix::ULL), 16)),
         // C23 integer suffixes - binary
         ("0b1010", TokenKind::IntegerConstant(10, None, 2)),
         ("0B1111", TokenKind::IntegerConstant(15, None, 2)),
-        ("0b1010u", TokenKind::IntegerConstant(10, Some(IntegerSuffix::U), 2)),
-        ("0B1111LL", TokenKind::IntegerConstant(15, Some(IntegerSuffix::LL), 2)),
+        ("0b1010u", TokenKind::IntegerConstant(10, Some(IntSuffix::U), 2)),
+        ("0B1111LL", TokenKind::IntegerConstant(15, Some(IntSuffix::LL), 2)),
         // C11 integer suffixes - octal
-        ("077u", TokenKind::IntegerConstant(63, Some(IntegerSuffix::U), 8)),
-        ("0123l", TokenKind::IntegerConstant(83, Some(IntegerSuffix::L), 8)),
-        ("0777ul", TokenKind::IntegerConstant(511, Some(IntegerSuffix::UL), 8)),
-        ("0123lu", TokenKind::IntegerConstant(83, Some(IntegerSuffix::UL), 8)),
-        ("0777ull", TokenKind::IntegerConstant(511, Some(IntegerSuffix::ULL), 8)),
-        ("0123llu", TokenKind::IntegerConstant(83, Some(IntegerSuffix::ULL), 8)),
+        ("077u", TokenKind::IntegerConstant(63, Some(IntSuffix::U), 8)),
+        ("0123l", TokenKind::IntegerConstant(83, Some(IntSuffix::L), 8)),
+        ("0777ul", TokenKind::IntegerConstant(511, Some(IntSuffix::UL), 8)),
+        ("0123lu", TokenKind::IntegerConstant(83, Some(IntSuffix::UL), 8)),
+        ("0777ull", TokenKind::IntegerConstant(511, Some(IntSuffix::ULL), 8)),
+        ("0123llu", TokenKind::IntegerConstant(83, Some(IntSuffix::ULL), 8)),
         // Case insensitive suffixes
-        ("1LL", TokenKind::IntegerConstant(1, Some(IntegerSuffix::LL), 10)),
-        ("42U", TokenKind::IntegerConstant(42, Some(IntegerSuffix::U), 10)),
-        ("123L", TokenKind::IntegerConstant(123, Some(IntegerSuffix::L), 10)),
-        ("456UL", TokenKind::IntegerConstant(456, Some(IntegerSuffix::UL), 10)),
-        ("789LU", TokenKind::IntegerConstant(789, Some(IntegerSuffix::UL), 10)),
-        (
-            "1000ULL",
-            TokenKind::IntegerConstant(1000, Some(IntegerSuffix::ULL), 10),
-        ),
-        (
-            "2000LLU",
-            TokenKind::IntegerConstant(2000, Some(IntegerSuffix::ULL), 10),
-        ),
+        ("1LL", TokenKind::IntegerConstant(1, Some(IntSuffix::LL), 10)),
+        ("42U", TokenKind::IntegerConstant(42, Some(IntSuffix::U), 10)),
+        ("123L", TokenKind::IntegerConstant(123, Some(IntSuffix::L), 10)),
+        ("456UL", TokenKind::IntegerConstant(456, Some(IntSuffix::UL), 10)),
+        ("789LU", TokenKind::IntegerConstant(789, Some(IntSuffix::UL), 10)),
+        ("1000ULL", TokenKind::IntegerConstant(1000, Some(IntSuffix::ULL), 10)),
+        ("2000LLU", TokenKind::IntegerConstant(2000, Some(IntSuffix::ULL), 10)),
     ];
 
     for (text, expected_kind) in int_literals {

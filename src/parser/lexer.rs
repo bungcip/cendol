@@ -1,4 +1,4 @@
-use crate::ast::literal::{CharPrefix, FloatSuffix, IntegerSuffix};
+use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix};
 use crate::ast::literal_parsing;
 use crate::ast::{FunctionSpec, PragmaPackKind, StorageClass, StringId, TypeQualifier};
 use crate::pp::{PPToken, PPTokenKind};
@@ -10,10 +10,10 @@ use smallvec::SmallVec;
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum TokenKind {
     // === LITERALS ===
-    IntegerConstant(i64, Option<IntegerSuffix>, u8), // Parsed integer literal value, suffix, radix
-    FloatConstant(f64, Option<FloatSuffix>),         // Parsed float literal value
-    CharacterConstant(u64, CharPrefix),              // Value of character constant, Prefix
-    StringLiteral(StringId),                         // Interned string literal
+    IntegerConstant(i64, Option<IntSuffix>, u8), // Parsed integer literal value, suffix, radix
+    FloatConstant(f64, Option<FloatSuffix>),     // Parsed float literal value
+    CharacterConstant(u64, CharPrefix),          // Value of character constant, Prefix
+    StringLiteral(StringId),                     // Interned string literal
 
     // === IDENTIFIERS ===
     Identifier(StringId), // Interned identifier

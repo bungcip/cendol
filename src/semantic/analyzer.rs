@@ -1,7 +1,7 @@
 use crate::{
     ast::{
         NodeRef,
-        literal::{FloatSuffix, IntegerSuffix, LitRef, LitVal},
+        literal::{FloatSuffix, IntSuffix, LitRef, LitVal},
         nodes::*,
         *,
     },
@@ -705,14 +705,13 @@ impl<'a> SemanticAnalyzer<'a> {
                     return self.is_null_pointer_constant(selected);
                 }
             }
-            NodeKind::UnaryOp(UnaryOp::Real | UnaryOp::Imag, operand) => {
+            NodeKind::UnaryOp(UnaryOp::Real | UnaryOp::Imag, operand)
                 // __real__ and __imag__ on pointers/integers are GCC extensions.
                 // However, Cendol only allows them on real types (integers/floats) and complex types.
                 // If applied to an integer NPC, propagate it.
-                if self.is_null_pointer_constant(*operand) {
+                if self.is_null_pointer_constant(*operand) => {
                     return true;
                 }
-            }
             _ => {}
         }
 
@@ -3456,7 +3455,7 @@ impl<'a> SemanticAnalyzer<'a> {
         match val {
             LitVal::Int { val, suffix, radix } => {
                 let is_decimal = *radix == 10;
-                for ty in IntegerSuffix::get_candidates(*suffix, self.registry, is_decimal) {
+                for ty in IntSuffix::get_candidates(*suffix, self.registry, is_decimal) {
                     let _ = self.registry.ensure_layout(ty);
                     if self.registry.is_literal_fitting(*val, ty) {
                         return Some(QualType::unqualified(ty));

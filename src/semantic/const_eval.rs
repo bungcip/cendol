@@ -4,7 +4,7 @@
 //! at compile time, as required by the C11 standard for contexts like
 //! static assertions and array sizes.
 
-use crate::ast::literal::{FloatSuffix, IntegerSuffix, LitVal};
+use crate::ast::literal::{FloatSuffix, IntSuffix, LitVal};
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, StringId, UnaryOp};
 use crate::semantic::conversions::{integer_promotion, usual_arithmetic_conversions};
 use crate::semantic::literal_utils::parse_string_literal;
@@ -121,7 +121,7 @@ impl<'a> ConstEvalCtx<'a> {
             LitVal::Int { val, suffix, radix } => {
                 let is_decimal = *radix == 10;
                 let mut ty = self.registry.type_long_long_unsigned;
-                for cand in IntegerSuffix::get_candidates(*suffix, self.registry, is_decimal) {
+                for cand in IntSuffix::get_candidates(*suffix, self.registry, is_decimal) {
                     if self.registry.is_literal_fitting(*val, cand) {
                         ty = cand;
                         break;

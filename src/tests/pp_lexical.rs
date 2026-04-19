@@ -1,9 +1,8 @@
 use crate::ast::StringId;
 use crate::pp::{PPConfig, PPTokenFlags, PPTokenKind, Preprocessor, dumper::PPDumper};
+use crate::source_manager::FileKind;
 use crate::test_tokens;
-use crate::tests::pp_common::{
-    create_test_pp_lexer, setup_pp_snapshot, setup_preprocessor_test_with_sm_and_diagnostics,
-};
+use crate::tests::pp_common::{create_test_pp_lexer, setup_pp_snapshot, setup_pp_with_sm_and_diagnostics};
 use crate::tests::test_utils::setup_sm_and_diag;
 
 // Lexer basic tests
@@ -289,7 +288,7 @@ fn test_ucn_identifier() {
 #define \u00E4 10
 int x = \u00E4;
 "#;
-    let (tokens, _, _) = setup_preprocessor_test_with_sm_and_diagnostics(src, None).unwrap();
+    let (tokens, _, _) = setup_pp_with_sm_and_diagnostics(src, None).unwrap();
     assert!(tokens.iter().any(|t| t.text == "10"));
 }
 
@@ -299,7 +298,7 @@ fn test_raw_utf8_identifier() {
 #define ä 20
 int x = ä;
 "#;
-    let (tokens, _, _) = setup_preprocessor_test_with_sm_and_diagnostics(src, None).unwrap();
+    let (tokens, _, _) = setup_pp_with_sm_and_diagnostics(src, None).unwrap();
     assert!(tokens.iter().any(|t| t.text == "20"));
 }
 
@@ -308,7 +307,7 @@ fn test_ucn_string_literal() {
     let src = r#"
 char *s = "\u00E4";
 "#;
-    let (tokens, _, _) = setup_preprocessor_test_with_sm_and_diagnostics(src, None).unwrap();
+    let (tokens, _, _) = setup_pp_with_sm_and_diagnostics(src, None).unwrap();
     let s_token = tokens.iter().find(|t| t.text.contains(r#"\u00E4"#));
     assert!(s_token.is_some());
 }
@@ -452,12 +451,7 @@ fn test_u8_char_literal() {
 fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {
     let (mut sm, mut diag) = setup_sm_and_diag();
     let config = PPConfig::default();
-    let source_id = sm.add_buffer(
-        src.as_bytes().to_vec(),
-        "<test>",
-        None,
-        crate::source_manager::FileKind::Real,
-    );
+    let source_id = sm.add_buffer(src.as_bytes().to_vec(), "<test>", None, FileKind::Real);
 
     let mut preprocessor = Preprocessor::new(&mut sm, &mut diag, &config);
     let tokens = preprocessor.process(source_id, &config).unwrap();
@@ -522,6 +516,6 @@ int x = TEN;
 #[test]
 fn test_invalid_ucn() {
     let src = r#"const char* s = "\uZZZZ";"#; // malformed UCN in string literal
-    let (_, _, diags) = setup_preprocessor_test_with_sm_and_diagnostics(src, None).unwrap();
+    let (_, _, diags) = setup_pp_with_sm_and_diagnostics(src, None).unwrap();
     assert!(!diags.is_empty(), "Expected diagnostics for invalid UCN");
 }

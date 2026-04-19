@@ -1,10 +1,15 @@
 use crate::ast::literal::LitVal;
 use crate::ast::{BinaryOp, ParsedBaseType, ParsedBaseTypeRef, UnaryOp};
 use crate::ast::{DeclSpec, DeclaratorRef, ParsedAst, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, TypeSpec};
-use crate::diagnostic::ParseError;
+use crate::diagnostic::{DiagnosticEngine, ParseError};
+use crate::driver::CompilerDriver;
 use crate::driver::artifact::CompilePhase;
+use crate::driver::cli::CompileConfig;
+use crate::lang_options::CStandard;
 use crate::parser::statements::parse_compound_statement;
-use crate::parser::{Parser, declarations, statements};
+use crate::parser::{BindingPower, Lexer, Parser, declarations, statements};
+use crate::pp::Preprocessor;
+use crate::source_manager::{FileKind, SourceManager};
 use crate::tests::test_utils;
 use serde::Serialize;
 
@@ -527,19 +532,14 @@ pub(crate) fn setup_source<F, T>(source: &str, parse_fn: F) -> (ParsedAst, T)
 where
     F: FnOnce(&mut Parser<'_, '_, '_>) -> T,
 {
-    let config = crate::driver::cli::CompileConfig::from_virtual_file(source.to_string(), CompilePhase::Parse);
-    let mut diagnostics = crate::diagnostic::DiagnosticEngine::default();
-    let mut source_manager = crate::source_manager::SourceManager::new();
-    let source_id = source_manager.add_buffer(
-        source.as_bytes().to_vec(),
-        "test.c",
-        None,
-        crate::source_manager::FileKind::Real,
-    );
+    let config = CompileConfig::from_virtual_file(source.to_string(), CompilePhase::Parse);
+    let mut de = DiagnosticEngine::default();
+    let mut sm = SourceManager::new();
+    let source_id = sm.add_buffer(source.as_bytes().to_vec(), "test.c", None, FileKind::Real);
 
-    let mut preprocessor = crate::pp::Preprocessor::new(&mut source_manager, &mut diagnostics, &config.preprocessor);
+    let mut preprocessor = Preprocessor::new(&mut sm, &mut de, &config.preprocessor);
     preprocessor.start_processing(source_id);
-    let mut lexer = crate::parser::lexer::Lexer::new(&mut preprocessor, config.lang_options.c_standard);
+    let mut lexer = Lexer::new(&mut preprocessor, config.lang_options.c_standard);
 
     let mut ast = ParsedAst::new();
     let result = {
@@ -548,31 +548,29 @@ where
     };
 
     assert!(
-        diagnostics.diagnostics.is_empty(),
+        de.diagnostics.is_empty(),
         "Expected no diagnostics, but found: {:?}",
-        diagnostics.diagnostics
+        de.diagnostics
     );
     (ast, result)
 }
 
 pub(crate) fn setup_expr(source: &str) -> ResolvedNodeKind {
-    let (ast, expr_result) = setup_source(source, |parser| {
-        parser.parse_expression(crate::parser::BindingPower::MIN)
-    });
+    let (ast, expr_result) = setup_source(source, |parser| parser.parse_expression(BindingPower::MIN));
 
     let node = expr_result.unwrap();
     resolve_node(&ast, node)
 }
 
 pub(crate) fn setup_declaration(source: &str) -> ResolvedNodeKind {
-    setup_declaration_with_std(source, crate::lang_options::CStandard::C11)
+    setup_declaration_with_std(source, CStandard::C11)
 }
 
-pub(crate) fn setup_declaration_with_std(source: &str, std: crate::lang_options::CStandard) -> ResolvedNodeKind {
+pub(crate) fn setup_declaration_with_std(source: &str, std: CStandard) -> ResolvedNodeKind {
     let phase = CompilePhase::Parse;
-    let mut config = crate::driver::cli::CompileConfig::from_virtual_file(source.to_string(), phase);
+    let mut config = CompileConfig::from_virtual_file(source.to_string(), phase);
     config.lang_options.c_standard = std;
-    let mut driver = crate::driver::compiler::CompilerDriver::from_config(config);
+    let mut driver = CompilerDriver::from_config(config);
     let out = driver.run_pipeline(phase).expect("Pipeline failed");
     let first = out.units.values().next().unwrap();
     let ast = first.parsed_ast.clone().unwrap();

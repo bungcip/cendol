@@ -1,20 +1,20 @@
-use crate::ast::literal::{FloatSuffix, IntegerSuffix};
+use crate::ast::literal::{FloatSuffix, IntSuffix};
 use std::char;
 use std::iter::Peekable;
 use std::str::Chars;
 
-const INTEGER_SUFFIXES: &[(&str, IntegerSuffix)] = &[
-    ("ull", IntegerSuffix::ULL),
-    ("llu", IntegerSuffix::ULL),
-    ("ul", IntegerSuffix::UL),
-    ("lu", IntegerSuffix::UL),
-    ("ll", IntegerSuffix::LL),
-    ("u", IntegerSuffix::U),
-    ("l", IntegerSuffix::L),
+const INTEGER_SUFFIXES: &[(&str, IntSuffix)] = &[
+    ("ull", IntSuffix::ULL),
+    ("llu", IntSuffix::ULL),
+    ("ul", IntSuffix::UL),
+    ("lu", IntSuffix::UL),
+    ("ll", IntSuffix::LL),
+    ("u", IntSuffix::U),
+    ("l", IntSuffix::L),
 ];
 
 /// Strip integer literal suffix (u, l, ll, ul, ull, etc.)
-fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
+fn strip_integer_suffix(text: &str) -> (&str, Option<IntSuffix>) {
     for &(suffix, variant) in INTEGER_SUFFIXES {
         if text.len() >= suffix.len() && text[text.len() - suffix.len()..].eq_ignore_ascii_case(suffix) {
             return (&text[..text.len() - suffix.len()], Some(variant));
@@ -25,7 +25,7 @@ fn strip_integer_suffix(text: &str) -> (&str, Option<IntegerSuffix>) {
 
 /// Parse C11 integer literal syntax
 /// Returns (value, suffix, base)
-pub(crate) fn parse_integer_literal(text: &str) -> Option<(i64, Option<IntegerSuffix>, u8)> {
+pub(crate) fn parse_integer_literal(text: &str) -> Option<(i64, Option<IntSuffix>, u8)> {
     let (number_part, suffix) = strip_integer_suffix(text);
 
     if number_part.is_empty() {

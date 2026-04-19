@@ -214,3 +214,16 @@ fn test_pointer_qualifiers_coverage() {
           kind: pointer to pointer
     ");
 }
+
+#[test]
+fn test_get_declarator_name_bitfield_param() {
+    let resolved = setup_declaration("int f(int x : 5);");
+    insta::assert_yaml_snapshot!(&resolved, @"
+    Declaration:
+      specifiers:
+        - int
+      init_declarators:
+        - name: f
+          kind: function(bitfield identifier to int) -> int
+    ");
+}

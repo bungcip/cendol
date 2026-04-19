@@ -452,7 +452,12 @@ fn test_u8_char_literal() {
 fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {
     let (mut sm, mut diag) = setup_sm_and_diag();
     let config = PPConfig::default();
-    let source_id = sm.add_buffer(src.as_bytes().to_vec(), "<test>", None);
+    let source_id = sm.add_buffer(
+        src.as_bytes().to_vec(),
+        "<test>",
+        None,
+        crate::source_manager::FileKind::Real,
+    );
 
     let mut preprocessor = Preprocessor::new(&mut sm, &mut diag, &config);
     let tokens = preprocessor.process(source_id, &config).unwrap();

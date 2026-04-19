@@ -123,11 +123,14 @@ impl CompilerDriver {
             }
 
             let source_id = match input_file {
-                PathOrBuffer::Path(path) => match self.source_manager.add_file_from_path(&path, None) {
+                PathOrBuffer::Path(path) => match self.source_manager.add_file(&path, None) {
                     Ok(id) => id,
                     Err(e) => return Err(PipelineError::IoError(e)),
                 },
-                PathOrBuffer::Buffer(path, buffer) => self.source_manager.add_buffer(buffer, &path, None),
+                PathOrBuffer::Buffer(path, buffer) => {
+                    self.source_manager
+                        .add_buffer(buffer, &path, None, crate::source_manager::FileKind::Real)
+                }
             };
 
             let unit_output = self.run_translation_unit(source_id, stop_after)?;

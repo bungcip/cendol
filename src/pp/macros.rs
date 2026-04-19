@@ -558,7 +558,7 @@ impl<'src> Preprocessor<'src> {
 
         result.push('"');
 
-        let source_id = self.sm.add_virtual_buffer(
+        let source_id = self.sm.add_buffer(
             result.as_bytes().to_vec(),
             "<stringified-tokens>",
             Some(_location),
@@ -598,7 +598,7 @@ impl<'src> Preprocessor<'src> {
         let mut virtual_buffer = Vec::with_capacity(left_text.len() + right_text.len());
         virtual_buffer.extend_from_slice(left_text.as_bytes());
         virtual_buffer.extend_from_slice(right_text.as_bytes());
-        let virtual_id = self.sm.add_virtual_buffer(
+        let virtual_id = self.sm.add_buffer(
             virtual_buffer,
             "<pasted-tokens>",
             Some(left.location),
@@ -983,7 +983,7 @@ impl<'src> Preprocessor<'src> {
             }
         }
 
-        let virtual_id = self.sm.add_virtual_buffer(
+        let virtual_id = self.sm.add_buffer(
             buffer,
             macro_name.as_str(),
             Some(trigger_location),

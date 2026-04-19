@@ -125,6 +125,7 @@ impl<'src> Preprocessor<'src> {
                 content.as_bytes().to_vec(),
                 name,
                 None, // No include location for initialization
+                FileKind::Builtin,
             );
             preprocessor.built_in_file_ids.insert(name.to_string(), source_id);
         }
@@ -158,7 +159,7 @@ impl<'src> Preprocessor<'src> {
             return None;
         };
 
-        let source_id = self.sm.add_virtual_buffer(
+        let source_id = self.sm.add_buffer(
             text.as_bytes().to_vec(),
             "<magic-macro>",
             Some(token.location),
@@ -407,12 +408,9 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to define a built-in macro with a specific number value
     fn define_builtin_macro_with_val(&mut self, name: &str, value: &str) {
-        let source_id = self.sm.add_virtual_buffer(
-            value.as_bytes().to_vec(),
-            "<builtin>",
-            None,
-            crate::source_manager::FileKind::MacroExpansion,
-        );
+        let source_id = self
+            .sm
+            .add_buffer(value.as_bytes().to_vec(), "<builtin>", None, FileKind::MacroExpansion);
 
         self.define_builtin_macro(
             name,
@@ -427,12 +425,9 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to define a built-in macro with a string value
     fn define_builtin_macro_string(&mut self, name: &str, value: &str) {
-        let source_id = self.sm.add_virtual_buffer(
-            value.as_bytes().to_vec(),
-            "<builtin>",
-            None,
-            crate::source_manager::FileKind::MacroExpansion,
-        );
+        let source_id = self
+            .sm
+            .add_buffer(value.as_bytes().to_vec(), "<builtin>", None, FileKind::MacroExpansion);
 
         self.define_builtin_macro(
             name,
@@ -447,7 +442,12 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to lex a macro value string into tokens
     fn lex_macro_value(&mut self, value: &str, source_name: &str) -> Vec<PPToken> {
-        let source_id = self.sm.add_buffer(value.as_bytes().to_vec(), source_name, None);
+        let kind = if source_name == "<command-line>" {
+            FileKind::Synthetic
+        } else {
+            FileKind::Builtin
+        };
+        let source_id = self.sm.add_buffer(value.as_bytes().to_vec(), source_name, None, kind);
         let buffer = self.sm.get_buffer_arc(source_id);
         let mut lexer = PPLexer::new(source_id, buffer);
 
@@ -580,7 +580,7 @@ impl<'src> Preprocessor<'src> {
         if let Some(path_buf) = resolved {
             let id = self
                 .sm
-                .add_file_from_path(&path_buf, Some(loc))
+                .add_file(&path_buf, Some(loc))
                 .map_err(|_| self.error(PPErrorKind::FileNotFound { path: path.to_string() }, loc))?;
             Ok(Some(id))
         } else {

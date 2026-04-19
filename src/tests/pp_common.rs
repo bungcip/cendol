@@ -110,7 +110,12 @@ fn setup_multi_file_pp_with_diagnostics_raw(
 
     let mut main_id = None;
     for (name, content) in files {
-        let id = sm.add_buffer(content.as_bytes().to_vec(), name, None);
+        let id = sm.add_buffer(
+            content.as_bytes().to_vec(),
+            name,
+            None,
+            crate::source_manager::FileKind::Real,
+        );
         if name == main_file_name {
             main_id = Some(id);
         }
@@ -140,7 +145,12 @@ impl TestLexer {
 
 pub(crate) fn create_test_pp_lexer(src: &str) -> TestLexer {
     let mut source_manager = SourceManager::new();
-    let id = source_manager.add_buffer(src.as_bytes().to_vec(), "<test>", None);
+    let id = source_manager.add_buffer(
+        src.as_bytes().to_vec(),
+        "<test>",
+        None,
+        crate::source_manager::FileKind::Real,
+    );
     let lexer = crate::pp::pp_lexer::PPLexer::new(id, std::sync::Arc::from(src.as_bytes().to_vec()));
     TestLexer { lexer }
 }

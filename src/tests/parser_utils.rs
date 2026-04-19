@@ -530,7 +530,7 @@ where
     let config = crate::driver::cli::CompileConfig::from_virtual_file(source.to_string(), CompilePhase::Parse);
     let mut diagnostics = crate::diagnostic::DiagnosticEngine::default();
     let mut source_manager = crate::source_manager::SourceManager::new();
-    let source_id = source_manager.add_virtual_buffer(
+    let source_id = source_manager.add_buffer(
         source.as_bytes().to_vec(),
         "test.c",
         None,

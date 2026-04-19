@@ -70,7 +70,7 @@ fn test_include_next_quoted() {
     config.quoted_include_paths.push(dir1.path().to_path_buf());
 
     let (mut sm, mut diag) = setup_sm_and_diag();
-    let source_id = sm.add_file_from_path(&main_path, None).unwrap();
+    let source_id = sm.add_file(&main_path, None).unwrap();
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let _ = pp.process(source_id, &config).unwrap();
 
@@ -107,7 +107,7 @@ fn test_include_next_angled() {
     config.angled_include_paths.push(dir1.path().to_path_buf());
 
     let (mut sm, mut diag) = setup_sm_and_diag();
-    let source_id = sm.add_file_from_path(&main_path, None).unwrap();
+    let source_id = sm.add_file(&main_path, None).unwrap();
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let _ = pp.process(source_id, &config).unwrap();
 
@@ -136,7 +136,7 @@ fn test_include_next_builtin() {
     config.angled_include_paths.push(dir.path().to_path_buf());
 
     let (mut sm, mut diag) = setup_sm_and_diag();
-    let source_id = sm.add_file_from_path(&main_path, None).unwrap();
+    let source_id = sm.add_file(&main_path, None).unwrap();
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let _ = pp.process(source_id, &config).unwrap();
 

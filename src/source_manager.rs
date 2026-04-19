@@ -223,6 +223,10 @@ impl PartialOrd for LineDirective {
 pub enum FileKind {
     /// A real file on disk
     Real,
+    /// A built-in header (e.g. stddef.h)
+    Builtin,
+    /// Synthetic content (command line defines, magic macros, etc)
+    Synthetic,
     /// A virtual buffer for macro expansion or pasted tokens
     MacroExpansion,
 }
@@ -305,26 +309,18 @@ impl SourceManager {
 
     /// Add a file to the source manager from a file path
     /// Since we only support UTF-8, we can read directly as bytes and assume validity
-    pub(crate) fn add_file_from_path(
+    pub(crate) fn add_file(
         &mut self,
         path: &std::path::Path,
         include_loc: Option<SourceLoc>,
     ) -> Result<SourceId, std::io::Error> {
         let buffer = std::fs::read(path)?;
         let path_str = path.to_str().unwrap_or("<invalid-utf8>");
-        Ok(self.add_buffer(buffer, path_str, include_loc))
+        Ok(self.add_buffer(buffer, path_str, include_loc, FileKind::Real))
     }
 
     /// Add a buffer to the source manager with raw bytes (UTF-8 assumed)
-    pub(crate) fn add_buffer(&mut self, buffer: Vec<u8>, path: &str, include_loc: Option<SourceLoc>) -> SourceId {
-        let path_buf = PathBuf::from(path);
-        // Standard buffers get empty line_starts initially; they are calculated/set later if needed
-        self.add_file_entry(Arc::from(buffer), path_buf, Vec::new(), include_loc, FileKind::Real)
-    }
-
-    /// Add a virtual buffer for macro expansions (Level B support)
-    /// Virtual buffers contain expanded macro text with proper sequential locations
-    pub(crate) fn add_virtual_buffer(
+    pub(crate) fn add_buffer(
         &mut self,
         buffer: Vec<u8>,
         name: &str,
@@ -332,12 +328,12 @@ impl SourceManager {
         kind: FileKind,
     ) -> SourceId {
         let line_starts = if kind == FileKind::MacroExpansion {
+            // Macro expansions are usually treated as single lines for diagnostic purposes
             vec![0]
         } else {
             compute_line_starts(&buffer)
         };
 
-        // Bolt ⚡: The caller provides a descriptive name (e.g., macro name or "<pasted-tokens>").
         let path_buf = PathBuf::from(name);
         self.add_file_entry(Arc::from(buffer), path_buf, line_starts, include_loc, kind)
     }
@@ -360,8 +356,8 @@ impl SourceManager {
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
-        if kind == FileKind::Real {
-            // Only map path for real files (not virtual ones usually).
+        if kind == FileKind::Real || kind == FileKind::Builtin {
+            // Only map path for real files and built-in headers.
             // This avoids unnecessary map insertions for short-lived virtual buffers.
             self.path_to_id.insert(path.clone(), file_id);
         }

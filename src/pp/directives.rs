@@ -5,7 +5,7 @@ use crate::pp::pp_lexer::PPLexer;
 use crate::pp::preprocessor::Preprocessor;
 use crate::pp::types::{IncludeStackInfo, MacroFlags, MacroInfo, PPConditionalInfo};
 use crate::pp::{DirectiveKind, PPToken, PPTokenFlags, PPTokenKind, PragmaPackKind};
-use crate::source_manager::{SourceId, SourceLoc, SourceSpan};
+use crate::source_manager::{FileKind, SourceId, SourceLoc, SourceSpan};
 use std::sync::Arc;
 
 impl<'src> Preprocessor<'src> {
@@ -126,9 +126,12 @@ impl<'src> Preprocessor<'src> {
     /// Tokenize the content of a pragma directive
     fn tokenize_pragma_content(&mut self, pragma_content: &str) -> Vec<PPToken> {
         // Create a buffer for the pragma content
-        let source_id = self
-            .sm
-            .add_buffer(pragma_content.as_bytes().to_vec(), "<_Pragma>", None);
+        let source_id = self.sm.add_buffer(
+            pragma_content.as_bytes().to_vec(),
+            "<_Pragma>",
+            None,
+            FileKind::Synthetic,
+        );
         let buffer = self.sm.get_buffer_arc(source_id);
         let mut temp_lexer = PPLexer::new(source_id, buffer);
 

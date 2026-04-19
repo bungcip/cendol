@@ -743,8 +743,12 @@ impl<'src> Preprocessor<'src> {
         let loc = self.get_current_location();
 
         if tokens.is_empty() {
-            let token =
-                PPToken::new(PPTokenKind::PragmaPack(PragmaPackKind::Set(None)), PPTokenFlags::empty(), loc, 0);
+            let token = PPToken::new(
+                PPTokenKind::PragmaPack(PragmaPackKind::Set(None)),
+                PPTokenFlags::empty(),
+                loc,
+                0,
+            );
             self.pending_tokens.push(token);
             return Ok(());
         }
@@ -769,9 +773,9 @@ impl<'src> Preprocessor<'src> {
                 PPTokenKind::Identifier(sym) if sym == self.keywords.push => {
                     if it.peek().map(|t| t.kind) == Some(PPTokenKind::Comma) {
                         it.next(); // consume ','
-                        let val_token = it.next().ok_or_else(|| {
-                            self.error(PPErrorKind::UnknownPragma(self.keywords.pack), t.location)
-                        })?;
+                        let val_token = it
+                            .next()
+                            .ok_or_else(|| self.error(PPErrorKind::UnknownPragma(self.keywords.pack), t.location))?;
                         PragmaPackKind::PushSet(self.parse_pragma_pack_value(val_token)?)
                     } else {
                         PragmaPackKind::Push
@@ -801,7 +805,12 @@ impl<'src> Preprocessor<'src> {
             return self.emit_error(PPErrorKind::ExpectedEod, t.location);
         }
 
-        self.pending_tokens.push(PPToken::new(PPTokenKind::PragmaPack(kind), PPTokenFlags::empty(), loc, 0));
+        self.pending_tokens.push(PPToken::new(
+            PPTokenKind::PragmaPack(kind),
+            PPTokenFlags::empty(),
+            loc,
+            0,
+        ));
 
         Ok(())
     }

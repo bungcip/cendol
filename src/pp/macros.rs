@@ -1022,7 +1022,7 @@ impl<'src> Preprocessor<'src> {
                 PPTokenKind::RightParen => break,
                 PPTokenKind::Ellipsis => {
                     flags |= MacroFlags::C99_VARARGS;
-                    variadic = Some(StringId::new("__VA_ARGS__"));
+                    variadic = Some(self.keywords.va_args);
                     if !matches!(self.lex_token().map(|t| t.kind), Some(PPTokenKind::RightParen)) {
                         return self.emit_error(PPErrorKind::InvalidMacroParameter, param_token.location);
                     }

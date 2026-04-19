@@ -832,13 +832,13 @@ impl PPLexer {
     /// The predicate receives the current state and the character.
     /// It should return `true` to consume the character, or `false` to stop.
     /// The closure can modify state (e.g., tracking scientific notation 'e').
-    fn consume_while<F, S>(
+    fn consume_while<S, F>(
         &mut self,
         mut state: S,
         first_ch: u8,
         start_pos: u32,
         mut pred: F,
-    ) -> std::borrow::Cow<'_, str>
+    ) -> (std::borrow::Cow<'_, str>, u32, bool)
     where
         F: FnMut(&mut S, u8) -> bool,
     {
@@ -865,7 +865,11 @@ impl PPLexer {
             self.position = end as u32;
             let bytes = &self.buffer[start_pos as usize..end];
             // Safety: verified all bytes are ASCII < 0x80.
-            return std::borrow::Cow::Borrowed(unsafe { std::str::from_utf8_unchecked(bytes) });
+            return (
+                std::borrow::Cow::Borrowed(unsafe { std::str::from_utf8_unchecked(bytes) }),
+                self.position,
+                self.has_splice,
+            );
         }
 
         // Slow path: build an owned String to handle splices, trigraphs, and UTF-8.
@@ -895,7 +899,11 @@ impl PPLexer {
             break;
         }
         // Safety: identifiers and numbers are guaranteed valid UTF-8 by caller predicates.
-        std::borrow::Cow::Owned(String::from_utf8(chars).expect("invalid utf-8 in textual token"))
+        (
+            std::borrow::Cow::Owned(String::from_utf8(chars).expect("invalid utf-8 in textual token")),
+            self.position,
+            self.has_splice,
+        )
     }
 
     /// Generic helper for lexing textual tokens (numbers)
@@ -907,22 +915,22 @@ impl PPLexer {
         state: S,
         pred: F,
         kind: PPTokenKind,
-    ) -> PPToken
+    ) -> (PPToken, Cow<'_, str>)
     where
         F: FnMut(&mut S, u8) -> bool,
     {
-        let _text = self.consume_while(state, first_ch, start_pos, pred);
+        let source_id = self.source_id;
+        let (text, final_pos, has_splice) = self.consume_while(state, first_ch, start_pos, pred);
+
         let mut final_flags = flags;
-        if self.has_splice {
+        if has_splice {
             final_flags.insert(PPTokenFlags::HAS_SPLICES);
         }
-        let length = self.position - start_pos;
+        let length = final_pos - start_pos;
 
-        PPToken::new(
-            kind,
-            final_flags,
-            SourceLoc::new(self.source_id, start_pos),
-            length as u16,
+        (
+            PPToken::new(kind, final_flags, SourceLoc::new(source_id, start_pos), length as u16),
+            text,
         )
     }
 
@@ -991,43 +999,27 @@ impl PPLexer {
     }
 
     fn lex_identifier(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
-        // Bolt ⚡: Try fast path first — borrow from buffer if the entire identifier is simple ASCII.
-        // This avoids heap allocation for a String and is the most common case.
-        let mut end = self.position as usize;
-        // Ensure first_ch is simple ASCII (and not backslash for UCN) and wasn't produced by a splice.
-        let mut simple = (first_ch.is_ascii_alphabetic() || first_ch == b'_') && self.position == start_pos + 1;
+        if first_ch < 0x80 && first_ch != b'\\' {
+            let (token, text) = self.lex_textual_token(
+                start_pos,
+                first_ch,
+                flags,
+                (),
+                |_, ch| ch.is_ascii_alphanumeric() || ch == b'_',
+                PPTokenKind::Identifier(StringId::new("")),
+            );
 
-        if simple {
-            while end < self.buffer.len() {
-                let ch = self.buffer[end];
-                if ch.is_ascii_alphanumeric() || ch == b'_' {
-                    end += 1;
-                } else if ch < 0x80 && ch != b'\\' && ch != b'?' {
-                    // Other ASCII (punctuation, space, etc.), DEFINITELY ends identifier.
-                    break;
-                } else {
-                    // Backslash, Question mark, or Non-ASCII.
-                    // Could be part of identifier (UCN, splice, UTF-8).
-                    // Fall back to slow path to be safe.
-                    simple = false;
-                    break;
-                }
-            }
-        }
+            let symbol = StringId::new(&text);
+            drop(text);
 
-        if simple {
-            let len = end - start_pos as usize;
-            if len <= 0xFFFF {
-                self.position = end as u32;
-                let bytes = &self.buffer[start_pos as usize..end];
-                // Safety: verified all bytes are ASCII < 0x80.
-                let text = unsafe { std::str::from_utf8_unchecked(bytes) };
-                let symbol = StringId::new(text);
+            // If we didn't stop because of a \, trigraph, or non-ASCII, then we're finished.
+            let next = self.peek_char();
+            if next.is_none() || (next.unwrap() < 0x80 && next.unwrap() != b'\\' && next.unwrap() != b'?') {
                 return PPToken::new(
                     PPTokenKind::Identifier(symbol),
-                    flags,
-                    SourceLoc::new(self.source_id, start_pos),
-                    len as u16,
+                    token.flags,
+                    token.location,
+                    token.length,
                 );
             }
         }
@@ -1189,6 +1181,7 @@ impl PPLexer {
             },
             PPTokenKind::Number,
         )
+        .0
     }
 
     fn lex_common_literal_body(&mut self, delimiter: u8, chars: &mut Vec<u8>, has_invalid_ucn: &mut bool) {

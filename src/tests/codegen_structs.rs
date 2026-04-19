@@ -82,7 +82,6 @@ fn test_compile_union_field_access() {
         "#;
 
     let clif_dump = setup_cranelift(source);
-    println!("{}", clif_dump);
 
     // Expect loads/stores with zero offset (union fields share offset 0)
     assert!(

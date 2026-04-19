@@ -252,9 +252,6 @@ fn test_call_arg_count_mismatch() {
         expected_type: i32_ty,
         actual_type: f32_ty,
     };
-    if let Err(e) = &res {
-        println!("Errors: {:?}", e);
-    }
     assert!(matches!(res, Err(errors) if errors.contains(&expected_err)));
 }
 
@@ -309,9 +306,6 @@ fn test_constant_value_out_of_range() {
         value: 300,
         type_id: u8_ty_id,
     };
-    if let Err(e) = &res {
-        println!("Errors: {:?}", e);
-    }
     assert!(matches!(res, Err(errors) if errors.contains(&expected_err)));
 }
 

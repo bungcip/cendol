@@ -1,6 +1,24 @@
 use crate::tests::test_utils::run_fail_with_message;
 
 #[test]
+fn test_struct_member_constraints() {
+    // C11 6.7.2.1p3: "A structure or union shall not contain a member with... function type
+    // or incomplete type."
+
+    // 1. Member with function type
+    run_fail_with_message("struct S { void f(void); };", "member 'f' has function type");
+
+    // 2. Member with incomplete struct type
+    run_fail_with_message(
+        "struct Incomplete; struct S { struct Incomplete i; };",
+        "incomplete type 'struct Incomplete'",
+    );
+
+    // 3. Direct recursive definition (detected as recursion)
+    run_fail_with_message("struct S { struct S s; };", "recursive type definition: struct S");
+}
+
+#[test]
 fn test_struct_member_vla_prohibited() {
     // C11 6.7.2.1p9: A member of a structure or union shall not have a variably modified type.
     run_fail_with_message(

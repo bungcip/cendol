@@ -1,5 +1,6 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_fail_with_message, run_pass};
+use crate::lang_options::CStandard;
+use crate::tests::test_utils::{run_fail_with_message, run_fail_with_message_and_std, run_pass, run_pass_with_std};
 
 /// basic static assert which just check pass and fail
 #[test]
@@ -35,34 +36,30 @@ fn test_static_assert_in_struct() {
 
 #[test]
 fn test_static_assert_c23_one_arg() {
-    crate::tests::test_utils::run_pass_with_std(
+    run_pass_with_std(
         "_Static_assert(1 == 1); int main() { return 0; }",
         CompilePhase::Mir,
-        crate::lang_options::CStandard::C23,
+        CStandard::C23,
     );
 }
 
 #[test]
 fn test_static_assert_keyword() {
-    crate::tests::test_utils::run_pass_with_std(
-        "static_assert(1 == 1, \"msg\"); int main() { return 0; }",
+    run_pass_with_std(
+        r#"static_assert(1 == 1, "msg"); int main() { return 0; }"#,
         CompilePhase::Mir,
-        crate::lang_options::CStandard::C23,
+        CStandard::C23,
     );
-    crate::tests::test_utils::run_pass_with_std(
+    run_pass_with_std(
         "static_assert(1 == 1); int main() { return 0; }",
         CompilePhase::Mir,
-        crate::lang_options::CStandard::C23,
+        CStandard::C23,
     );
 }
 
 #[test]
 fn test_static_assert_c23_fail_no_msg() {
-    crate::tests::test_utils::run_fail_with_message_and_std(
-        "_Static_assert(1 == 0);",
-        "static assertion failed",
-        crate::lang_options::CStandard::C23,
-    );
+    run_fail_with_message_and_std("_Static_assert(1 == 0);", "static assertion failed", CStandard::C23);
 }
 
 #[test]

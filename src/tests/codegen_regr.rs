@@ -41,8 +41,7 @@ fn test_nested_struct_compound_literal_init() {
     "#;
 
     // This should not crash with "StructLiteral with non-record type"
-    let clif_dump = setup_cranelift(source);
-    println!("{}", clif_dump);
+    let _ = setup_cranelift(source);
 }
 #[test]
 fn test_movi_unsigned_constant_codegen() {

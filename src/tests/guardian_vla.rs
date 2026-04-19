@@ -1,5 +1,18 @@
-use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils::{run_fail_with_message, run_pass};
+use crate::{
+    driver::artifact::CompilePhase,
+    tests::test_utils::{run_fail_with_message, run_pass},
+};
+
+#[test]
+fn test_vla_non_integer_size() {
+    // C11 6.7.6.2p1: "The expression shall have an integer type."
+
+    // Test with pointer type
+    run_fail_with_message("void f(void* p) { int a[p]; }", "size of array has non-integer type");
+
+    // Test with floating type (non-literal)
+    run_fail_with_message("void f(double d) { int a[d]; }", "size of array has non-integer type");
+}
 
 #[test]
 fn test_vla_star_outside_prototype_scope() {

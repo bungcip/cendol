@@ -1,6 +1,6 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::codegen_common::run_c_code_with_output;
-use crate::tests::test_utils::run_pass;
+use crate::tests::codegen_common::{run_c_code_exit_status, run_c_code_with_output};
+use crate::tests::test_utils::{run_pass, run_pedantic_fail_with_message};
 
 #[test]
 fn test_alignof_expression_basic() {
@@ -10,13 +10,9 @@ fn test_alignof_expression_basic() {
             return _Alignof x;
         }
     "#;
-    // int alignment is typically 4
-    let output = run_c_code_with_output(source);
-    if output.trim().is_empty() {
-        run_pass(source, CompilePhase::Cranelift);
-    } else {
-        assert!(output.contains("4") || output.trim() == "4");
-    }
+    // int alignment is typically 4 on our target
+    let exit_status = run_c_code_exit_status(source);
+    assert_eq!(exit_status, 4);
 }
 
 #[test]
@@ -74,21 +70,7 @@ fn test_alignof_expression_pedantic() {
     run_pass(source, CompilePhase::Mir);
 
     // 2. With pedantic-errors, it should fail
-    use crate::driver::cli::{Cli, PathOrBuffer};
-    use crate::driver::compiler::CompilerDriver;
-    use clap::Parser;
-
-    let cli = Cli::parse_from(["cendol", "test.c", "--pedantic-errors"]);
-    let mut config = cli.into_config().unwrap();
-    config.input_files = vec![PathOrBuffer::Buffer("test.c".to_string(), source.as_bytes().to_vec())];
-    config.stop_after = CompilePhase::Mir;
-
-    let mut driver = CompilerDriver::from_config(config);
-    let result = driver.run_pipeline(CompilePhase::Mir);
-
-    assert!(result.is_err(), "Should fail with --pedantic-errors");
-    let diagnostics = driver.get_diagnostics();
-    assert!(diagnostics.iter().any(|d| d.message.contains("GNU extension")));
+    run_pedantic_fail_with_message(source, "GNU extension");
 }
 
 #[test]

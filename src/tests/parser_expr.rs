@@ -472,5 +472,8 @@ fn test_sizeof_compound_literal_postfix() {
 #[test]
 fn test_builtin_alloca() {
     let resolved = setup_expr("__builtin_alloca(42)");
-    insta::assert_yaml_snapshot!(&resolved);
+    insta::assert_yaml_snapshot!(&resolved, @"
+    BuiltinAlloca:
+      LiteralInt: 42    
+    ");
 }

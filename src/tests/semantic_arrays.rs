@@ -1,13 +1,16 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::semantic_common::{setup_lowering, setup_mir};
-use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pass_with_diagnostic_message};
+use crate::tests::codegen_common::run_c_code_exit_status;
+use crate::tests::semantic_common::{find_var_decl, setup_lowering, setup_mir};
+use crate::tests::test_utils::{
+    run_fail_with_message, run_pass, run_pass_with_diagnostic_message, run_pedantic_fail_with_message,
+};
 
 fn find_var_type(
     ast: &crate::ast::Ast,
     symbol_table: &crate::semantic::SymbolTable,
     target_name: &str,
 ) -> crate::semantic::types::QualType {
-    let var_decl = crate::tests::semantic_common::find_var_decl(ast, symbol_table, target_name);
+    let var_decl = find_var_decl(ast, symbol_table, target_name);
     symbol_table.get_symbol(var_decl.symbol).type_info
 }
 
@@ -302,26 +305,7 @@ fn test_zero_sized_array() {
 
 #[test]
 fn test_zero_sized_array_pedantic() {
-    use crate::driver::cli::{Cli, PathOrBuffer};
-    use clap::Parser;
-
-    let source = "int main() { int a[0]; }".to_string();
-    let cli = Cli::parse_from(["cendol", "test.c", "--pedantic-errors"]);
-    let mut config = cli.into_config().unwrap();
-    // Use buffer instead of path to avoid needing a real file on disk
-    config.input_files = vec![PathOrBuffer::Buffer("test.c".to_string(), source.into_bytes())];
-
-    let mut driver = crate::driver::compiler::CompilerDriver::from_config(config);
-
-    let result = driver.run_pipeline(CompilePhase::SemanticLowering);
-    assert!(result.is_err());
-
-    let diags = driver.get_diagnostics();
-    assert!(
-        diags
-            .iter()
-            .any(|d| d.message.contains("use of GNU zero-length array extension"))
-    );
+    run_pedantic_fail_with_message("int main() { int a[0]; }", "use of GNU zero-length array extension");
 }
 
 #[test]
@@ -413,4 +397,44 @@ fn test_sizeof_string_literal_constant_expression() {
         "#,
         CompilePhase::EmitObject,
     );
+}
+
+#[test]
+fn test_vla_sizeof_parameters() {
+    let source = r#"
+    int fn(int sz, char (*arr)[sz]) {
+        return sizeof *arr;
+    }
+
+    int main() {
+        int sz = 10;
+        char a[sz];
+        if (fn(sz, &a) != 10) return 1;
+        
+        sz = 20;
+        char b[sz];
+        if (fn(sz, &b) != 20) return 1;
+        
+        return 0;
+    }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
+}
+
+#[test]
+fn test_vla_scoping_advanced() {
+    let source = r#"
+    int f(int n, int m, int a[n][m]) {
+        return sizeof a[0];
+    }
+
+    int main() {
+        int m = 5;
+        int n = 3;
+        int a[3][5];
+        if (f(n, m, a) != 5 * sizeof(int)) return 1;
+        return 0;
+    }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
 }

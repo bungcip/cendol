@@ -1,7 +1,7 @@
 use crate::driver::artifact::CompilePhase;
 use crate::tests::codegen_common::run_c_code_exit_status;
 use crate::tests::semantic_common::setup_mir;
-use crate::tests::test_utils::{run_fail, run_fail_with_message, run_pass};
+use crate::tests::test_utils::{check_diagnostic_message_only, run_fail, run_fail_with_message, run_pass};
 
 #[test]
 fn test_sizeof_logic_not_is_int_size() {
@@ -247,41 +247,15 @@ fn test_pointer_signedness_mismatch() {
         }
     "#;
     let driver = run_pass(source, CompilePhase::Mir);
-    let warnings: Vec<_> = driver
-        .diagnostics
-        .diagnostics
-        .iter()
-        .filter(|d| d.level == crate::diagnostic::DiagnosticLevel::Warning)
-        .collect();
-
-    if driver.diagnostics.has_errors() {
-        for e in driver
-            .diagnostics
-            .diagnostics
-            .iter()
-            .filter(|d| d.level == crate::diagnostic::DiagnosticLevel::Error)
-        {
-            println!("Error: {}", e.message);
-        }
-        panic!("Pointer signedness mismatch should not be an error");
-    }
-
-    assert!(
-        !warnings.is_empty(),
-        "Expected warnings for pointer signedness mismatch. Found: {:?}",
-        driver.diagnostics.diagnostics
+    check_diagnostic_message_only(
+        &driver,
+        "pointer targets in assignment differ in signedness (passing 'unsigned int*' to 'int*')",
     );
-    assert_eq!(warnings.len(), 2);
-    assert!(
-        warnings[0]
-            .message
-            .contains("pointer targets in assignment differ in signedness (passing 'unsigned int*' to 'int*')")
+    check_diagnostic_message_only(
+        &driver,
+        "pointer targets in assignment differ in signedness (passing 'int*' to 'unsigned int*')",
     );
-    assert!(
-        warnings[1]
-            .message
-            .contains("pointer targets in assignment differ in signedness (passing 'int*' to 'unsigned int*')")
-    );
+    assert_eq!(driver.get_diagnostics().len(), 2);
 }
 
 #[test]
@@ -702,25 +676,8 @@ fn test_sizeof_layout_crash() {
 }
 
 #[test]
-fn test_static_assert_fail() {
-    run_fail("void main() { _Static_assert(0, \"message\"); }", CompilePhase::Mir);
-}
-
-#[test]
-fn test_static_assert_sizeof() {
-    run_pass(
-        "void main() { _Static_assert(sizeof(int) == 4, \"size of int is not 4\"); }",
-        CompilePhase::Mir,
-    );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_long_long_literal_suffix() {
-        let source = r#"
+fn test_long_long_literal_suffix() {
+    let source = r#"
             int main() {
                 long long a = -2147483648LL;
                 long long b = 2147483648LL;
@@ -730,8 +687,8 @@ mod tests {
                 return 0;
             }
         "#;
-        let mir = setup_mir(source);
-        insta::assert_snapshot!(mir, @"
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir, @"
         type %t0 = i32
         type %t1 = i64
 
@@ -750,7 +707,6 @@ mod tests {
             return const 0
         }
         ");
-    }
 }
 
 #[test]
@@ -789,7 +745,7 @@ fn test_nested_qualifier_preservation() {
         }
     ";
     let driver = run_fail(code, CompilePhase::Mir);
-    crate::tests::test_utils::check_diagnostic_message_only(&driver, "cannot assign to read-only location");
+    check_diagnostic_message_only(&driver, "cannot assign to read-only location");
     assert_eq!(driver.get_diagnostics().len(), 2);
 }
 

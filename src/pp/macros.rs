@@ -645,7 +645,7 @@ impl<'src> Preprocessor<'src> {
             virtual_buffer,
             "<pasted-tokens>",
             Some(left.location),
-            FileKind::PastedToken,
+            FileKind::MacroExpansion,
         );
 
         // Create a temporary lexer to lex the pasted text
@@ -1007,7 +1007,7 @@ impl<'src> Preprocessor<'src> {
                     last_preserve_val
                 } else {
                     let val = self.sm.get_file_info(sid).is_some_and(|info| {
-                        info.kind == FileKind::PastedToken || info.kind == FileKind::MacroExpansion
+                        info.kind == FileKind::MacroExpansion
                     });
                     last_preserve_sid = Some(sid);
                     last_preserve_val = val;

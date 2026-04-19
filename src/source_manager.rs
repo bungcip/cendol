@@ -223,10 +223,8 @@ impl PartialOrd for LineDirective {
 pub enum FileKind {
     /// A real file on disk
     Real,
-    /// A virtual buffer for macro expansion
+    /// A virtual buffer for macro expansion or pasted tokens
     MacroExpansion,
-    /// A virtual buffer for pasted tokens (## operator)
-    PastedToken,
 }
 
 /// Stores all #line directives for a single file, sorted by physical line
@@ -333,10 +331,7 @@ impl SourceManager {
         include_loc: Option<SourceLoc>,
         kind: FileKind,
     ) -> SourceId {
-        // Bolt ⚡: Macro expansion and token-pasting virtual buffers are guaranteed
-        // to be single-line in our preprocessor. Skipping compute_line_starts
-        // avoids redundant buffer scans in the macro expansion hot path.
-        let line_starts = if kind == FileKind::MacroExpansion || kind == FileKind::PastedToken {
+        let line_starts = if kind == FileKind::MacroExpansion {
             vec![0]
         } else {
             compute_line_starts(&buffer)

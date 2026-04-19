@@ -1061,3 +1061,41 @@ CAST(unsigned, CAST_U(i))
       text: )
     ");
 }
+
+#[test]
+fn test_macro_invalid_parameters_and_edge_cases() {
+    let src = r#"
+#define FOO(a, 1) bar
+#define BAR(a, a) bar
+#define QUX(a ; b) bar
+#define HASH1(a) #
+HASH1(1)
+#define HASH2(a) # 1
+HASH2(1)
+#define HASH3(a) # +
+HASH3(1)
+#define BAD_PARAM(1) bar
+#define BAD_PARAM2(a, 1) bar
+"#;
+    let _ = crate::tests::pp_common::setup_preprocessor_test_with_diagnostics(src, None);
+
+    let gnu_ellip_err = r#"
+#define QUX2(args... b) bar
+"#;
+    let _ = crate::tests::pp_common::setup_preprocessor_test_with_diagnostics(gnu_ellip_err, None);
+
+    let c99_ellip_err = r#"
+#define BAZ2(..., b) bar
+"#;
+    let _ = crate::tests::pp_common::setup_preprocessor_test_with_diagnostics(c99_ellip_err, None);
+
+    let src_stringify = r#"
+#define STRINGIFY(...) #__VA_ARGS__
+STRINGIFY(1)
+"#;
+    let tokens = crate::tests::pp_common::setup_pp_snapshot(src_stringify);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: StringLiteral
+      text: "\"1\""
+    "#);
+}

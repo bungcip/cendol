@@ -43,7 +43,7 @@ impl<'a> PPDumper<'a> {
                 break;
             }
         }
-        let mut current_buffer = self.source_manager.get_buffer(current_file_id);
+        let mut current_buffer = self.source_manager.get_buffer_safe(current_file_id).unwrap_or(&[]);
         let mut last_pos = 0u32;
         let mut last_was_macro_expanded = false;
         let mut last_macro_orig_line: Option<u32> = None;
@@ -113,7 +113,7 @@ impl<'a> PPDumper<'a> {
                 }
 
                 current_file_id = token.location.source_id();
-                current_buffer = self.source_manager.get_buffer(current_file_id);
+                current_buffer = self.source_manager.get_buffer_safe(current_file_id).unwrap_or(&[]);
                 last_pos = token.location.offset();
             }
 

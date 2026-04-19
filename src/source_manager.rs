@@ -333,9 +333,16 @@ impl SourceManager {
         include_loc: Option<SourceLoc>,
         kind: FileKind,
     ) -> SourceId {
-        let line_starts = compute_line_starts(&buffer);
-        // Bolt ⚡: Avoid redundant format! call. The caller is responsible for
-        // providing a descriptive name (e.g., macro name or "<pasted-tokens>").
+        // Bolt ⚡: Macro expansion and token-pasting virtual buffers are guaranteed
+        // to be single-line in our preprocessor. Skipping compute_line_starts
+        // avoids redundant buffer scans in the macro expansion hot path.
+        let line_starts = if kind == FileKind::MacroExpansion || kind == FileKind::PastedToken {
+            vec![0]
+        } else {
+            compute_line_starts(&buffer)
+        };
+
+        // Bolt ⚡: The caller provides a descriptive name (e.g., macro name or "<pasted-tokens>").
         let path_buf = PathBuf::from(name);
         self.add_file_entry(Arc::from(buffer), path_buf, line_starts, include_loc, kind)
     }

@@ -373,31 +373,9 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarato
                 parser.alloc_decl(ParsedDeclarator::Identifier(None))
             } else {
                 parser.advance(); // consume '('
-                if parser.accept(TokenKind::RightParen).is_some() {
-                    let inner = parser.alloc_decl(ParsedDeclarator::Identifier(None));
-                    let params = parser.alloc_params(Vec::new());
-                    parser.alloc_decl(ParsedDeclarator::Function {
-                        inner,
-                        params,
-                        flags: FunctionFlags { is_variadic: false },
-                    })
-                } else {
-                    let inner = parse_abstract_declarator(parser)?;
-                    if parser.accept(TokenKind::RightParen).is_some() {
-                        inner
-                    } else if parser.accept(TokenKind::LeftParen).is_some() {
-                        let (params, is_variadic) = parse_function_parameters(parser)?;
-                        parser.expect(TokenKind::RightParen)?;
-                        parser.alloc_decl(ParsedDeclarator::Function {
-                            inner,
-                            params,
-                            flags: FunctionFlags { is_variadic },
-                        })
-                    } else {
-                        parser.expect(TokenKind::RightParen)?;
-                        inner // Unreachable due to expect, but safe
-                    }
-                }
+                let inner = parse_abstract_declarator(parser)?;
+                parser.expect(TokenKind::RightParen)?;
+                inner
             }
         }
         Some(TokenKind::LeftBracket) => {

@@ -2075,11 +2075,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error))
     }
 
-    // fn visit_type_as_param(&mut self, ty: ParsedType, span: SourceSpan) -> QualType {
-    //     self.lower_type(ty, span, true)
-    //         .unwrap_or_else(|_| QualType::unqualified(self.registry.type_error))
-    // }
-
     fn lower_type(
         &mut self,
         parsed_type: ParsedType,

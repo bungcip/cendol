@@ -320,3 +320,20 @@ fn test_deeply_nested_unary_ops_stack_overflow() {
         .join()
         .expect("Thread panicked, likely due to stack overflow in deeply nested unary operations.");
 }
+
+#[test]
+fn test_void_cast_on_array_parameter_regression() {
+    let source = r#"
+        void f(int a[const volatile 10]) {
+            (void)a;
+        }
+        int main() {
+            int x[10];
+            f(x);
+            return 0;
+        }
+    "#;
+    // This previously panicked in clif_gen due to the (void)a cast.
+    let status = run_c_code_exit_status(source);
+    assert_eq!(status, 0);
+}

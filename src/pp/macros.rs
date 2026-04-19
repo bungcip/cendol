@@ -1006,9 +1006,10 @@ impl<'src> Preprocessor<'src> {
                 let preserve_original_loc = if Some(sid) == last_preserve_sid {
                     last_preserve_val
                 } else {
-                    let val = self.sm.get_file_info(sid).is_some_and(|info| {
-                        info.kind == FileKind::MacroExpansion
-                    });
+                    let val = self
+                        .sm
+                        .get_file_info(sid)
+                        .is_some_and(|info| info.kind == FileKind::MacroExpansion);
                     last_preserve_sid = Some(sid);
                     last_preserve_val = val;
                     val

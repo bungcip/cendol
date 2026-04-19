@@ -1624,7 +1624,14 @@ impl<'a> MirGen<'a> {
                     Operand::Cast(to_mir_type, Box::new(operand))
                 }
             }
-            _ => Operand::Cast(target_type_id, Box::new(operand)),
+            _ => {
+                let target_mty = self.mb.get_type(target_type_id);
+                if target_mty.is_void() || matches!(target_mty, MirType::Array { .. } | MirType::Record { .. }) {
+                    operand
+                } else {
+                    Operand::Cast(target_type_id, Box::new(operand))
+                }
+            }
         }
     }
 

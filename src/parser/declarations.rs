@@ -82,7 +82,7 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
         });
     }
 
-    let declarator = super::declarator::parse_declarator(trx.parser)?;
+    let declarator = super::declarator::parse_declarator(trx.parser, false)?;
 
     if allow_function_def && trx.parser.is_token(TokenKind::LeftBrace) {
         let result = parse_function_definition_tail(trx.parser, specifiers, declarator, start_loc, dummy);
@@ -100,7 +100,7 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
         let declarator = if let Some(d) = current_declarator.take() {
             d
         } else {
-            super::declarator::parse_declarator(trx.parser)?
+            super::declarator::parse_declarator(trx.parser, false)?
         };
 
         let initializer = if trx.parser.accept(TokenKind::Assign).is_some() {

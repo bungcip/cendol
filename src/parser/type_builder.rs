@@ -241,7 +241,7 @@ pub(crate) fn parse_type_name(parser: &mut Parser) -> Result<ParsedType, ParseEr
 
     // Parse abstract declarator (optional)
     let declarator = if parser.is_abstract_declarator_start() {
-        Some(parse_abstract_declarator(parser)?)
+        Some(parse_abstract_declarator(parser, false)?)
     } else {
         None
     };

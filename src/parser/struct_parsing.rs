@@ -158,7 +158,7 @@ fn parse_init_declarators(parser: &mut Parser) -> Result<ThinVec<ParsedInitDecla
     let mut decls = ThinVec::new();
     loop {
         let start = parser.current_token_span_or_empty();
-        let declarator = super::declarator::parse_declarator(parser)?;
+        let declarator = super::declarator::parse_declarator(parser, true)?;
         let span = start.merge(parser.last_token_span().unwrap_or(start));
         decls.push(ParsedInitDeclarator {
             declarator,

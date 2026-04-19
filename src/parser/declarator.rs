@@ -96,7 +96,7 @@ fn validate_declarator(
     Ok(())
 }
 
-pub(crate) fn parse_declarator(parser: &mut Parser) -> Result<DeclaratorRef, ParseError> {
+pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Result<DeclaratorRef, ParseError> {
     while parser.is_token(TokenKind::Attribute) {
         let _ = super::declarations::parse_attribute(parser);
     }
@@ -104,7 +104,7 @@ pub(crate) fn parse_declarator(parser: &mut Parser) -> Result<DeclaratorRef, Par
     let pointers = parse_leading_pointers(parser)?;
 
     let base = if parser.accept(TokenKind::LeftParen).is_some() {
-        let inner = parse_declarator(parser)?;
+        let inner = parse_declarator(parser, allow_bitfield)?;
         parser.expect(TokenKind::RightParen)?;
         inner
     } else {
@@ -114,12 +114,12 @@ pub(crate) fn parse_declarator(parser: &mut Parser) -> Result<DeclaratorRef, Par
                 parser.advance();
                 parser.alloc_decl(ParsedDeclarator::Identifier(Some(symbol)))
             }
-            Some(_) if parser.is_abstract_declarator_start() => parse_abstract_declarator(parser)?,
+            Some(_) if parser.is_abstract_declarator_start() => parse_abstract_declarator(parser, allow_bitfield)?,
             _ => parser.alloc_decl(ParsedDeclarator::Identifier(None)),
         }
     };
 
-    let trailing = parse_trailing_declarators(parser, base, false)?;
+    let trailing = parse_trailing_declarators(parser, base, allow_bitfield)?;
     Ok(reconstruct_declarator_chain(parser, pointers, trailing))
 }
 
@@ -170,7 +170,7 @@ fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<DeclaratorComponent
 fn parse_trailing_declarators(
     parser: &mut Parser,
     mut base: DeclaratorRef,
-    in_type_name: bool,
+    allow_bitfield: bool,
 ) -> Result<DeclaratorRef, ParseError> {
     while let Some(token) = parser.try_current_token() {
         match token.kind {
@@ -192,7 +192,7 @@ fn parse_trailing_declarators(
                     flags: FunctionFlags { is_variadic },
                 });
             }
-            TokenKind::Colon if in_type_name == false => {
+            TokenKind::Colon if allow_bitfield => {
                 parser.advance();
                 let width = parser.parse_expr_assignment()?;
                 base = parser.alloc_decl(ParsedDeclarator::BitField { inner: base, width });
@@ -259,12 +259,12 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, b
         let declarator = if !parser.matches(&[TokenKind::Comma, TokenKind::RightParen, TokenKind::Ellipsis]) {
             let decl_idx = parser.current_idx;
             let res = if parser.is_token(TokenKind::LeftParen) {
-                parse_abstract_declarator(parser).or_else(|_| {
+                parse_abstract_declarator(parser, false).or_else(|_| {
                     parser.current_idx = decl_idx;
-                    parse_declarator(parser)
+                    parse_declarator(parser, false)
                 })
             } else {
-                parse_declarator(parser)
+                parse_declarator(parser, false)
             };
             res.ok()
         } else {
@@ -352,7 +352,10 @@ pub(super) fn get_declarator_params(arena: &ParsedTypeArena, declarator: Declara
     }
 }
 
-pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<DeclaratorRef, ParseError> {
+pub(crate) fn parse_abstract_declarator(
+    parser: &mut Parser,
+    allow_bitfield: bool,
+) -> Result<DeclaratorRef, ParseError> {
     while parser.is_token(TokenKind::Attribute) {
         let _ = super::declarations::parse_attribute(parser);
     }
@@ -373,7 +376,7 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarato
                 parser.alloc_decl(ParsedDeclarator::Identifier(None))
             } else {
                 parser.advance(); // consume '('
-                let inner = parse_abstract_declarator(parser)?;
+                let inner = parse_abstract_declarator(parser, allow_bitfield)?;
                 parser.expect(TokenKind::RightParen)?;
                 inner
             }
@@ -388,6 +391,6 @@ pub(crate) fn parse_abstract_declarator(parser: &mut Parser) -> Result<Declarato
         _ => parser.alloc_decl(ParsedDeclarator::Identifier(None)),
     };
 
-    let trailing = parse_trailing_declarators(parser, base, true)?;
+    let trailing = parse_trailing_declarators(parser, base, allow_bitfield)?;
     Ok(reconstruct_declarator_chain(parser, pointers, trailing))
 }

@@ -174,6 +174,9 @@ fn test_parser_errors() {
         ("int x[10 ;", "expected ], found Semicolon"),
         ("int foo(int ( * );", "expected ), found Semicolon"),
         ("int foo(int ( * [ ] );", "expected ), found Semicolon"),
+        ("int f(int x : 5);", "expected ), found Colon"),
+        ("int f(int : 5);", "expected ), found Colon"),
+        ("int x : 5;", "expected ';' after declaration, found Colon"),
     ];
 
     for (source, message) in cases {

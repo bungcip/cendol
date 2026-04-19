@@ -128,3 +128,46 @@ fn test_bool_increment_bitfield() {
         "Post-increment on a _Bool bitfield starting at 1 should remain 1"
     );
 }
+
+/// Test that implicit conversion from an even non-zero integer to _Bool results in 1.
+/// This is a regression test for a bug where bitwise masking incorrectly resulted in 0.
+#[test]
+fn test_bool_implicit_from_even_int() {
+    let source = r#"
+        int main(void) {
+            _Bool b = 42;
+            return b;
+        }
+    "#;
+    let exit_code = run_c_code_exit_status(source);
+    assert_eq!(exit_code, 1, "Implicit conversion of 42 to _Bool should result in 1");
+}
+
+/// Test that implicit conversion from float to _Bool results in 1 for non-zero.
+#[test]
+fn test_bool_implicit_from_float() {
+    let source = r#"
+        int main(void) {
+            _Bool b = 0.5f;
+            _Bool b2 = 0.0f;
+            return b && !b2;
+        }
+    "#;
+    let exit_code = run_c_code_exit_status(source);
+    assert_eq!(exit_code, 1, "Float to _Bool conversion should work correctly");
+}
+
+/// Test that implicit conversion from pointer to _Bool results in 1 for non-null.
+#[test]
+fn test_bool_implicit_from_pointer() {
+    let source = r#"
+        int main(void) {
+            int x = 0;
+            _Bool b = &x;
+            _Bool b2 = (void*)0;
+            return b && !b2;
+        }
+    "#;
+    let exit_code = run_c_code_exit_status(source);
+    assert_eq!(exit_code, 1, "Pointer to _Bool conversion should work correctly");
+}

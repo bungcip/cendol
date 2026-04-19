@@ -172,6 +172,10 @@ impl Type {
         matches!(self.kind, TypeKind::Pointer { .. })
     }
 
+    pub(crate) fn is_bool(&self) -> bool {
+        matches!(self.kind, TypeKind::Builtin(BuiltinType::Bool))
+    }
+
     pub(crate) fn is_signed(&self) -> bool {
         match &self.kind {
             TypeKind::Builtin(b) => b.is_signed(),
@@ -229,6 +233,10 @@ impl Type {
     }
 
     pub(crate) fn truncate_int(&self, val: i64) -> i64 {
+        if self.is_bool() {
+            return (val != 0) as i64;
+        }
+
         if !self.is_int() && !self.is_pointer() {
             return val;
         }

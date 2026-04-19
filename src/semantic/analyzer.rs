@@ -8,8 +8,8 @@ use crate::{
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
     lang_options::LangOptions,
     semantic::{
-        ArraySizeType, FunctionParameter, QualType, StructMember, SymbolKind, SymbolRef, SymbolTable, TypeKind,
-        TypeQualifiers, TypeRef, TypeRegistry,
+        ArraySizeType, BuiltinType, FunctionParameter, QualType, StructMember, SymbolKind, SymbolRef, SymbolTable,
+        TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticDiag, SemanticError},
@@ -1663,6 +1663,7 @@ impl<'a> SemanticAnalyzer<'a> {
         } else if lhs_qt.is_arithmetic() && rhs_qt.is_arithmetic() {
             // If it's a constant literal, check if conversion changes value
             if self.is_numeric_literal(rhs)
+                && !lhs_qt.ty().builtin().is_some_and(|b| b == BuiltinType::Bool)
                 && let Some(val) = self.const_ctx().eval_int(rhs)
             {
                 let truncated = self.registry.get(lhs_qt.ty()).as_ref().truncate_int(val);

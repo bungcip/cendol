@@ -439,6 +439,10 @@ impl MirType {
     /// Truncate an integer value to the width of this type.
     /// Handles sign extension if this is a signed type.
     pub(super) fn truncate_int(&self, val: i64) -> i64 {
+        if self.is_bool() {
+            return (val != 0) as i64;
+        }
+
         if !self.is_int() && !self.is_pointer() {
             return val;
         }

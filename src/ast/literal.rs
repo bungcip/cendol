@@ -170,7 +170,7 @@ pub struct LiteralTable {
 }
 
 impl LiteralTable {
-    pub fn insert(&mut self, val: LitVal) -> LitRef {
+    pub(crate) fn insert(&mut self, val: LitVal) -> LitRef {
         if let Some(&id) = self.map.get(&val) {
             return id;
         }
@@ -181,7 +181,7 @@ impl LiteralTable {
         id
     }
 
-    pub fn get(&self, lit: LitRef) -> &LitVal {
+    pub(crate) fn get(&self, lit: LitRef) -> &LitVal {
         &self.values[(lit.get() - 1) as usize]
     }
 }

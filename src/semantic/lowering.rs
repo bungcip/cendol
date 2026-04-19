@@ -950,27 +950,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn check_function_redeclaration(
         &mut self,
-        name: NameId,
-        new_ty: QualType,
-        span: SourceSpan,
-        first_def: SourceSpan,
-        existing_ty: QualType,
+        _name: NameId,
+        _new_ty: QualType,
+        _span: SourceSpan,
+        _first_def: SourceSpan,
+        _existing_ty: QualType,
     ) {
-        // Check for _Noreturn mismatch
-        let get_noreturn = |qt: QualType, registry: &TypeRegistry| {
-            if let TypeKind::Function { is_noreturn, .. } = &registry.get(qt.ty()).kind {
-                *is_noreturn
-            } else {
-                false
-            }
-        };
-
-        let existing_is_noreturn = get_noreturn(existing_ty, self.registry);
-        let new_is_noreturn = get_noreturn(new_ty, self.registry);
-
-        if existing_is_noreturn != new_is_noreturn {
-            self.report_error(span, SemanticError::ConflictingTypes { name, first_def });
-        }
+        // GCC and Clang allow _Noreturn to be present on only some declarations of a function.
+        // We allow this and merge the property in composite_type.
     }
 
     fn visit_function_definition(&mut self, func_def: &ParsedFunctionDef, node: NodeRef, span: SourceSpan) {
@@ -2336,7 +2323,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn handle_builtin_implicit_decl(&mut self, name: NameId, span: SourceSpan) -> Option<SymbolRef> {
-        let (params, ret_ty) = if name == self.keywords.builtin_nanf || name == self.keywords.builtin_nan {
+        let (params, ret_qt) = if name == self.keywords.builtin_nanf || name == self.keywords.builtin_nan {
             let char_const = QualType::new(self.registry.type_char, TypeQualifiers::CONST);
             let char_ptr = QualType::unqualified(self.registry.pointer_to(char_const));
             let params = vec![FunctionParameter {
@@ -2345,9 +2332,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 storage: None,
             }];
             let ret = if name == self.keywords.builtin_nanf {
-                self.registry.type_float
+                QualType::unqualified(self.registry.type_float)
             } else {
-                self.registry.type_double
+                QualType::unqualified(self.registry.type_double)
             };
             (params, ret)
         } else if name == self.keywords.builtin_inff
@@ -2356,16 +2343,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             || name == self.keywords.builtin_huge_valf
         {
             let ret = if name == self.keywords.builtin_inff || name == self.keywords.builtin_huge_valf {
-                self.registry.type_float
+                QualType::unqualified(self.registry.type_float)
             } else {
-                self.registry.type_double
+                QualType::unqualified(self.registry.type_double)
             };
             (vec![], ret)
         } else {
             return None;
         };
 
-        let func_ty = self.registry.function_type(ret_ty, params, false, false);
+        let func_ty = self.registry.function_type(ret_qt, params, false, false);
 
         // Save current scope and switch to global for implicit decl
         let old_scope = self.symbol_table.current_scope();
@@ -2485,7 +2472,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     func_ty = self.registry.get_pointee(func_ty)?.ty();
                 }
                 if let TypeKind::Function { return_type, .. } = &self.registry.get(func_ty).kind {
-                    Some(QualType::unqualified(*return_type))
+                    Some(*return_type)
                 } else {
                     None
                 }
@@ -2876,7 +2863,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let is_noreturn = spec_info.map(|s| s.is_noreturn).unwrap_or(false);
                 let function_type =
                     self.registry
-                        .function_type(current_type.ty(), processed_params, flags.is_variadic, is_noreturn);
+                        .function_type(current_type, processed_params, flags.is_variadic, is_noreturn);
                 self.apply_declarator(QualType::unqualified(function_type), *inner, span, spec_info, ctx)
             }
             ParsedDeclarator::BitField { inner, .. } => {

@@ -279,7 +279,7 @@ impl<'a> MirGen<'a> {
                 }
 
                 if let Some((return_type, parameters, is_variadic)) = fn_data {
-                    let return_mir_type = self.lower_type(return_type);
+                    let return_mir_type = self.lower_type(return_type.ty());
                     let param_mir_types = parameters.into_iter().map(|p| self.lower_qual_type(p)).collect();
 
                     self.define_or_declare_function(
@@ -1139,7 +1139,7 @@ impl<'a> MirGen<'a> {
             Builtin(BuiltinType),
             Pointer(QualType),
             Array(TypeRef, ArraySizeType),
-            Function(TypeRef, Vec<FunctionParameter>, bool),
+            Function(QualType, Vec<FunctionParameter>, bool),
             Complex(TypeRef),
             Default,
         }
@@ -1368,11 +1368,11 @@ impl<'a> MirGen<'a> {
 
     fn lower_function_type(
         &mut self,
-        return_type: TypeRef,
+        return_type: QualType,
         parameters: &[FunctionParameter],
         is_variadic: bool,
     ) -> MirType {
-        let return_type = self.lower_type(return_type);
+        let return_type = self.lower_type(return_type.ty());
         let mut params = Vec::new();
         for p in parameters {
             let param_ty_id = self.lower_qual_type(p.param_type);

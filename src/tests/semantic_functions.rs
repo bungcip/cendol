@@ -264,9 +264,11 @@ fn test_noreturn_declaration_mismatch() {
     let code = r#"
     _Noreturn void foo();
     void foo() {
+        while(1);
     }
     "#;
-    run_fail_with_message(code, "conflicting types for 'foo'");
+    // GCC and Clang allow this mismatch.
+    run_pass(code, CompilePhase::Mir);
 }
 
 #[test]

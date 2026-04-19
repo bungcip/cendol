@@ -75,6 +75,9 @@ impl<'a> MirGen<'a> {
         let mir_ty = self.lower_qual_type(qt);
 
         if let Some(const_op) = self.try_constant_fold(expr, &node_kind, qt) {
+            if need_value {
+                return self.apply_conversions(const_op, expr, mir_ty);
+            }
             return const_op;
         }
 
@@ -89,6 +92,9 @@ impl<'a> MirGen<'a> {
             NodeKind::FunctionCall(call_expr) => {
                 // Check for builtin float constant functions
                 if let Some(builtin_op) = self.try_visit_builtin_float_const(call_expr, mir_ty) {
+                    if need_value {
+                        return self.apply_conversions(builtin_op, expr, mir_ty);
+                    }
                     return builtin_op;
                 }
 
@@ -122,20 +128,24 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::SizeOfType(qt) => self.visit_type_query(qt.ty(), true),
             NodeKind::AlignOfType(qt) => self.visit_type_query(qt.ty(), false),
-            NodeKind::AlignOfExpr(expr) => {
+            NodeKind::AlignOfExpr(inner_expr) => {
                 // If the expression is a direct reference to a variable, it might have a custom alignment.
-                if let NodeKind::Ident(_, sym) = self.ast.get_kind(*expr) {
+                if let NodeKind::Ident(_, sym) = self.ast.get_kind(*inner_expr) {
                     let symbol = self.symbol_table.get_symbol(*sym);
                     if let SymbolKind::Variable { alignment, .. } = &symbol.kind
                         && let Some(align) = alignment
                     {
-                        return self.create_size_t_operand(*align as u64);
+                        let op = self.create_size_t_operand(*align as u64);
+                        if need_value {
+                            return self.apply_conversions(op, expr, mir_ty);
+                        }
+                        return op;
                     }
                 }
 
                 let ty = self
                     .ast
-                    .get_resolved_type(*expr)
+                    .get_resolved_type(*inner_expr)
                     .expect("AlignOf operand type missing")
                     .ty();
                 self.visit_type_query(ty, false)

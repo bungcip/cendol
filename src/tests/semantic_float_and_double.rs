@@ -1,4 +1,10 @@
-use crate::tests::{codegen_common::run_c_code_exit_status, test_utils::run_fail_with_message};
+use crate::{
+    driver::artifact::CompilePhase,
+    tests::{
+        codegen_common::run_c_code_exit_status,
+        test_utils::{run_fail_with_message, run_pass},
+    },
+};
 
 #[test]
 fn test_double_init_with_int() {
@@ -213,4 +219,52 @@ fn test_nan_bool_conversion() {
         }
     "#;
     assert_eq!(run_c_code_exit_status(source), 0);
+}
+
+#[test]
+fn test_regression_int_to_double_unary_minus() {
+    run_pass(
+        r#"
+        int main() {
+            double x;
+            x = -5;
+            return 0;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_regression_nan_float_to_double() {
+    run_pass(
+        r#"
+        double test_nan() {
+            return __builtin_nanf("");
+        }
+        int main() {
+            test_nan();
+            return 0;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_regression_for_loop_init_int_to_double() {
+    run_pass(
+        r#"
+        void foo() {
+            double x;
+            for (x = -5; x < 5; x += .2) {
+            }
+        }
+        int main() {
+            foo();
+            return 0;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
 }

@@ -581,7 +581,7 @@ impl<'src> Preprocessor<'src> {
             let id = self
                 .sm
                 .add_file_from_path(&path_buf, Some(loc))
-                .map_err(|_| self.error_loc(PPErrorKind::FileNotFound { path: path.to_string() }, loc))?;
+                .map_err(|_| self.error(PPErrorKind::FileNotFound { path: path.to_string() }, loc))?;
             Ok(Some(id))
         } else {
             Ok(None)
@@ -614,14 +614,14 @@ impl<'src> Preprocessor<'src> {
         match self.lex_token() {
             Some(token) if token.kind == PPTokenKind::Eod => Ok(()),
             None => Ok(()), // End of file is acceptable
-            Some(token) => self.emit_error_loc(PPErrorKind::ExpectedEod, token.location),
+            Some(token) => self.emit_error(PPErrorKind::ExpectedEod, token.location),
         }
     }
 
     /// Expect a token, and fail with UnexpectedEndOfFile if None is returned
     pub(super) fn expect_token(&mut self) -> Result<PPToken, PPError> {
         self.lex_token()
-            .ok_or_else(|| self.error(PPErrorKind::UnexpectedEndOfFile, self.get_current_span()))
+            .ok_or_else(|| self.error_span(PPErrorKind::UnexpectedEndOfFile, self.get_current_span()))
     }
 
     /// Expect a token of a specific kind
@@ -630,7 +630,7 @@ impl<'src> Preprocessor<'src> {
         if token.kind == kind {
             Ok(token)
         } else {
-            self.emit_error_loc(PPErrorKind::InvalidDirective, token.location)
+            self.emit_error(PPErrorKind::InvalidDirective, token.location)
         }
     }
 
@@ -640,7 +640,7 @@ impl<'src> Preprocessor<'src> {
         if let PPTokenKind::StringLiteral = token.kind {
             Ok((self.get_token_text(&token).to_string(), token.location))
         } else {
-            self.emit_error_loc(PPErrorKind::InvalidDirective, token.location)
+            self.emit_error(PPErrorKind::InvalidDirective, token.location)
         }
     }
 
@@ -650,7 +650,7 @@ impl<'src> Preprocessor<'src> {
         if let PPTokenKind::Identifier(sym) = token.kind {
             Ok((token, sym))
         } else {
-            self.emit_error_loc(PPErrorKind::ExpectedIdentifier, token.location)
+            self.emit_error(PPErrorKind::ExpectedIdentifier, token.location)
         }
     }
 
@@ -667,7 +667,7 @@ impl<'src> Preprocessor<'src> {
         let mut depth = 1;
         while let Some(t) = self.lex_token() {
             if t.kind == PPTokenKind::Eod {
-                return self.emit_error_loc(PPErrorKind::UnexpectedEndOfFile, t.location);
+                return self.emit_error(PPErrorKind::UnexpectedEndOfFile, t.location);
             }
             if t.kind == open {
                 depth += 1;
@@ -679,7 +679,7 @@ impl<'src> Preprocessor<'src> {
             }
             tokens.push(t);
         }
-        self.emit_error_loc(PPErrorKind::UnexpectedEndOfFile, self.get_current_location())
+        self.emit_error(PPErrorKind::UnexpectedEndOfFile, self.get_current_location())
     }
 
     /// Helper to extract content of a string literal, stripping quotes.
@@ -691,7 +691,7 @@ impl<'src> Preprocessor<'src> {
     ) -> Result<&'a str, PPError> {
         text.strip_prefix('"')
             .and_then(|s| s.strip_suffix('"'))
-            .ok_or_else(|| self.error_loc(error_kind, location))
+            .ok_or_else(|| self.error(error_kind, location))
     }
 
     /// Process source file and return preprocessed tokens
@@ -750,7 +750,7 @@ impl<'src> Preprocessor<'src> {
             let loc = self.get_current_location();
             // Clear the stack so we don't infinitely report this error on subsequent calls
             self.conditional_stack.clear();
-            return self.emit_error_loc(PPErrorKind::UnclosedConditional, loc);
+            return self.emit_error(PPErrorKind::UnclosedConditional, loc);
         }
 
         if !self.eof_emitted {
@@ -794,22 +794,24 @@ impl<'src> Preprocessor<'src> {
         SourceSpan::new(loc, loc)
     }
 
-    fn error(&self, kind: PPErrorKind, span: SourceSpan) -> PPError {
+    fn error_span(&self, kind: PPErrorKind, span: SourceSpan) -> PPError {
         PPError { kind, span }
     }
 
-    pub(super) fn error_loc(&self, kind: PPErrorKind, loc: SourceLoc) -> PPError {
+    /// create PPError with SourceSpan from SourceLoc
+    pub(super) fn error(&self, kind: PPErrorKind, loc: SourceLoc) -> PPError {
         PPError {
             kind,
             span: SourceSpan::new(loc, loc),
         }
     }
 
-    pub(super) fn emit_error<T>(&self, kind: PPErrorKind, span: SourceSpan) -> Result<T, PPError> {
+    pub(super) fn emit_error_span<T>(&self, kind: PPErrorKind, span: SourceSpan) -> Result<T, PPError> {
         Err(PPError { kind, span })
     }
 
-    pub(super) fn emit_error_loc<T>(&self, kind: PPErrorKind, loc: SourceLoc) -> Result<T, PPError> {
+    /// emit Result<PPError> with SourceSpan from SourceLoc
+    pub(super) fn emit_error<T>(&self, kind: PPErrorKind, loc: SourceLoc) -> Result<T, PPError> {
         Err(PPError {
             kind,
             span: SourceSpan::new(loc, loc),
@@ -836,7 +838,7 @@ impl<'src> Preprocessor<'src> {
 
         if tokens.is_empty() {
             let loc = self.get_current_location();
-            return self.emit_error_loc(PPErrorKind::InvalidConditionalExpression, loc);
+            return self.emit_error(PPErrorKind::InvalidConditionalExpression, loc);
         }
 
         Ok(tokens)
@@ -876,7 +878,7 @@ impl<'src> Preprocessor<'src> {
     fn evaluate_arithmetic_expression(&mut self, tokens: &[PPToken]) -> Result<bool, PPError> {
         if tokens.is_empty() {
             let loc = self.get_current_location();
-            return self.emit_error_loc(PPErrorKind::InvalidConditionalExpression, loc);
+            return self.emit_error(PPErrorKind::InvalidConditionalExpression, loc);
         }
 
         let mut interpreter = Interpreter::new(tokens, self);
@@ -911,7 +913,7 @@ impl<'src> Preprocessor<'src> {
             if let Some(lexer) = self.lexer_stack.last_mut() {
                 if let Some(token) = lexer.next_token() {
                     if token.flags.contains(PPTokenFlags::HAS_INVALID_UCN) {
-                        let err = self.error_loc(PPErrorKind::InvalidUniversalCharacterName, token.location);
+                        let err = self.error(PPErrorKind::InvalidUniversalCharacterName, token.location);
                         self.report_pp_error(err);
                     }
                     return Some(token);

@@ -132,7 +132,7 @@ impl<'src> Preprocessor<'src> {
                 kind: PPErrorKind::InvalidMacroParameter,
                 ..
             }) => {
-                return self.emit_error_loc(PPErrorKind::InvalidMacroParameter, token.location);
+                return self.emit_error(PPErrorKind::InvalidMacroParameter, token.location);
             }
             Err(e) => return Err(e),
         };
@@ -173,7 +173,7 @@ impl<'src> Preprocessor<'src> {
         let token = self.expect_token()?;
         if token.kind != PPTokenKind::LeftParen {
             self.pending_tokens.push(token);
-            return self.emit_error_loc(PPErrorKind::InvalidMacroParameter, token.location);
+            return self.emit_error(PPErrorKind::InvalidMacroParameter, token.location);
         }
 
         let mut args = Vec::with_capacity(macro_info.parameter_list.len());
@@ -212,7 +212,7 @@ impl<'src> Preprocessor<'src> {
                         return Ok((args, t));
                     }
 
-                    return self.emit_error_loc(PPErrorKind::InvalidMacroParameter, macro_info.location);
+                    return self.emit_error(PPErrorKind::InvalidMacroParameter, macro_info.location);
                 }
                 PPTokenKind::Comma if depth == 0 => {
                     args.push(std::mem::take(&mut current_arg));
@@ -221,7 +221,7 @@ impl<'src> Preprocessor<'src> {
             }
         }
 
-        self.emit_error(PPErrorKind::UnexpectedEndOfFile, self.get_current_span())
+        self.emit_error_span(PPErrorKind::UnexpectedEndOfFile, self.get_current_span())
     }
 
     /// Helper to collect variadic arguments with commas inserted
@@ -582,7 +582,7 @@ impl<'src> Preprocessor<'src> {
         let left_text = if left_end <= left_buffer.len() {
             unsafe { std::str::from_utf8_unchecked(&left_buffer[left_start..left_end]) }
         } else {
-            return self.emit_error_loc(PPErrorKind::InvalidTokenPasting, left.location);
+            return self.emit_error(PPErrorKind::InvalidTokenPasting, left.location);
         };
 
         let right_buffer = self.sm.get_buffer(right.location.source_id());
@@ -591,7 +591,7 @@ impl<'src> Preprocessor<'src> {
         let right_text = if right_end <= right_buffer.len() {
             unsafe { std::str::from_utf8_unchecked(&right_buffer[right_start..right_end]) }
         } else {
-            return self.emit_error_loc(PPErrorKind::InvalidTokenPasting, right.location);
+            return self.emit_error(PPErrorKind::InvalidTokenPasting, right.location);
         };
 
         // ⚡ Bolt: Avoid redundant format! and clone by building the byte buffer directly.
@@ -1024,13 +1024,13 @@ impl<'src> Preprocessor<'src> {
                     flags |= MacroFlags::C99_VARARGS;
                     variadic = Some(StringId::new("__VA_ARGS__"));
                     if !matches!(self.lex_token().map(|t| t.kind), Some(PPTokenKind::RightParen)) {
-                        return self.emit_error_loc(PPErrorKind::InvalidMacroParameter, param_token.location);
+                        return self.emit_error(PPErrorKind::InvalidMacroParameter, param_token.location);
                     }
                     break;
                 }
                 PPTokenKind::Identifier(sym) => {
                     if params.contains(&sym) {
-                        return self.emit_error_loc(PPErrorKind::InvalidMacroParameter, param_token.location);
+                        return self.emit_error(PPErrorKind::InvalidMacroParameter, param_token.location);
                     }
                     params.push(sym);
 
@@ -1042,7 +1042,7 @@ impl<'src> Preprocessor<'src> {
                             variadic = Some(params.pop().unwrap());
                             flags |= MacroFlags::GNU_VARARGS;
                             if !matches!(self.lex_token().map(|t| t.kind), Some(PPTokenKind::RightParen)) {
-                                return self.emit_error_loc(PPErrorKind::InvalidMacroParameter, sep.location);
+                                return self.emit_error(PPErrorKind::InvalidMacroParameter, sep.location);
                             }
                             break;
                         }

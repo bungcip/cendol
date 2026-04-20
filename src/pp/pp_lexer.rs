@@ -685,25 +685,22 @@ impl PPLexer {
                 let saved_pos = self.position;
                 let saved_at_start = self.at_start_of_line;
 
-                match self.lex_ucn(false) {
-                    Some(Ok(_)) => {
-                        // Valid UCN start. Backtrack to just after `\` so lex_identifier can re-parse it.
-                        self.position = saved_pos;
-                        self.at_start_of_line = saved_at_start;
-                        Some(self.lex_identifier(start_pos, ch, flags))
-                    }
-                    _ => {
-                        // Not a UCN or invalid.
-                        // Backtrack to just after `\` (saved_pos).
-                        self.position = saved_pos;
-                        self.at_start_of_line = saved_at_start;
-                        Some(PPToken::new(
-                            PPTokenKind::Unknown,
-                            flags,
-                            SourceLoc::new(self.source_id, start_pos),
-                            1,
-                        ))
-                    }
+                if self.lex_ucn(false).is_some() {
+                    // Valid UCN start. Backtrack to just after `\` so lex_identifier can re-parse it.
+                    self.position = saved_pos;
+                    self.at_start_of_line = saved_at_start;
+                    Some(self.lex_identifier(start_pos, ch, flags))
+                } else {
+                    // Not a UCN or invalid.
+                    // Backtrack to just after `\` (saved_pos).
+                    self.position = saved_pos;
+                    self.at_start_of_line = saved_at_start;
+                    Some(PPToken::new(
+                        PPTokenKind::Unknown,
+                        flags,
+                        SourceLoc::new(self.source_id, start_pos),
+                        1,
+                    ))
                 }
             }
             0x80..=0xFF => {
@@ -936,11 +933,8 @@ impl PPLexer {
 
     /// Try to parse a UCN.
     /// Assumes the leading backslash has already been consumed.
-    /// Returns:
-    /// - None: Not a UCN (didn't consume anything).
-    /// - Some(Ok((char, raw_string))): Valid UCN.
-    /// - Some(Err(raw_string)): Invalid UCN (consumed raw_string).
-    fn lex_ucn(&mut self, allow_basic_charset: bool) -> Option<Result<(char, String), String>> {
+    /// Returns Some(char) if a valid UCN was parsed, None otherwise.
+    fn lex_ucn(&mut self, allow_basic_charset: bool) -> Option<char> {
         let is_u = match self.peek_char() {
             Some(b'u') => true,
             Some(b'U') => false,
@@ -950,13 +944,15 @@ impl PPLexer {
         self.next_char(); // Consume u/U
 
         let digits_needed = if is_u { 4 } else { 8 };
-        let mut hex_str = String::new();
+        let mut code_point = 0u32;
+        let mut digits_found = 0;
 
         for _ in 0..digits_needed {
             if let Some(ch) = self.peek_char() {
-                if ch.is_ascii_hexdigit() {
+                if let Some(digit) = (ch as char).to_digit(16) {
                     self.next_char();
-                    hex_str.push(ch as char);
+                    code_point = (code_point << 4) | digit;
+                    digits_found += 1;
                 } else {
                     break;
                 }
@@ -965,37 +961,28 @@ impl PPLexer {
             }
         }
 
-        let prefix = if is_u { "\\u" } else { "\\U" };
-        let raw_string = format!("{}{}", prefix, hex_str);
-
-        if hex_str.len() != digits_needed {
-            return Some(Err(raw_string));
+        if digits_found != digits_needed {
+            return None;
         }
-
-        let code_point = u32::from_str_radix(&hex_str, 16).unwrap();
 
         // Validation
         // 1. Range
         if code_point > 0x10FFFF {
-            return Some(Err(raw_string));
+            return None;
         }
 
         // 2. Surrogates
         if (0xD800..=0xDFFF).contains(&code_point) {
-            return Some(Err(raw_string));
+            return None;
         }
 
         // 3. Basic Source Character Set
         // 0000-009F excluding $, @, `
         if !allow_basic_charset && code_point < 0xA0 && code_point != 0x24 && code_point != 0x40 && code_point != 0x60 {
-            return Some(Err(raw_string));
+            return None;
         }
 
-        if let Some(c) = char::from_u32(code_point) {
-            Some(Ok((c, raw_string)))
-        } else {
-            Some(Err(raw_string))
-        }
+        char::from_u32(code_point)
     }
 
     fn lex_identifier(&mut self, start_pos: u32, first_ch: u8, flags: PPTokenFlags) -> PPToken {
@@ -1030,15 +1017,8 @@ impl PPLexer {
 
         // Handle first character
         if first_ch == b'\\' {
-            if let Some(res) = self.lex_ucn(false) {
-                match res {
-                    Ok((c, _)) => {
-                        text.push(c);
-                    }
-                    _ => {
-                        unreachable!("ICE: already checked for UCN");
-                    }
-                }
+            if let Some(c) = self.lex_ucn(false) {
+                text.push(c);
             }
         } else if first_ch >= 0x80 {
             // UTF-8 start
@@ -1101,16 +1081,13 @@ impl PPLexer {
 
             // Check for UCN
             if ch == b'\\' {
-                match self.lex_ucn(false) {
-                    Some(Ok((c, _))) => {
-                        text.push(c);
-                        continue;
-                    }
-                    _ => {
-                        // Not a valid UCN. Backtrack and stop identifier
-                        self.position = saved_pos;
-                        break;
-                    }
+                if let Some(c) = self.lex_ucn(false) {
+                    text.push(c);
+                    continue;
+                } else {
+                    // Not a valid UCN. Backtrack and stop identifier
+                    self.position = saved_pos;
+                    break;
                 }
             }
 
@@ -1184,7 +1161,7 @@ impl PPLexer {
         .0
     }
 
-    fn lex_common_literal_body(&mut self, delimiter: u8, chars: &mut Vec<u8>, has_invalid_ucn: &mut bool) {
+    fn lex_common_literal_body(&mut self, delimiter: u8, has_invalid_ucn: &mut bool) {
         loop {
             // Bolt ⚡: Fast path for simple characters.
             // Directly scan the buffer for characters that don't need special handling
@@ -1199,14 +1176,12 @@ impl PPLexer {
             }
 
             if end > self.position as usize {
-                chars.extend_from_slice(&self.buffer[self.position as usize..end]);
                 self.position = end as u32;
             }
 
             let Some((ch, _)) = self.next_char() else {
                 break;
             };
-            chars.push(ch);
 
             if ch == delimiter {
                 break; // End of literal
@@ -1214,36 +1189,27 @@ impl PPLexer {
                 // Handle escape sequences, including line splicing
 
                 // Check for UCN first
-                match self.lex_ucn(true) {
-                    Some(Ok((_, raw))) => {
-                        // Valid UCN. Append raw bytes.
-                        // \ is already pushed. raw contains \u...
-                        // So append raw[1..]
-                        chars.extend_from_slice(&raw.as_bytes()[1..]);
-                        continue;
-                    }
-                    Some(Err(raw)) => {
-                        // Invalid UCN.
-                        *has_invalid_ucn = true;
-                        chars.extend_from_slice(&raw.as_bytes()[1..]);
-                        continue;
-                    }
-                    None => {
-                        // Not a UCN (e.g. \n or \t or whatever)
-                        // Fall through to existing logic
+                if let Some(p_ch) = self.peek_char() {
+                    if p_ch == b'u' || p_ch == b'U' {
+                        if self.lex_ucn(true).is_some() {
+                            // Valid UCN.
+                            continue;
+                        } else {
+                            // Invalid UCN.
+                            *has_invalid_ucn = true;
+                            continue;
+                        }
                     }
                 }
 
-                if let Some((next_ch, _)) = self.next_char() {
-                    chars.push(next_ch);
-                }
+                self.next_char();
             } else if ch >= 0x80 {
                 // Handle UTF-8 multi-byte characters
                 if self.is_valid_utf8_start(ch) {
                     // Consume continuation bytes for valid UTF-8 sequences
                     while let Some(continuation_ch) = self.peek_char() {
                         if (0x80..0xC0).contains(&continuation_ch) {
-                            chars.push(self.next_char().unwrap().0);
+                            self.next_char();
                         } else {
                             break;
                         }
@@ -1254,27 +1220,23 @@ impl PPLexer {
     }
 
     /// Shared logic for lexing quoted literals (strings and chars)
-    fn lex_quoted_literal(&mut self, prefix: &[u8], delimiter: u8) -> bool {
-        let mut chars = prefix.to_vec();
-
-        if prefix.is_empty() || prefix.last() != Some(&delimiter) {
+    fn lex_quoted_literal(&mut self, ends_with_delimiter: bool, delimiter: u8) -> bool {
+        if !ends_with_delimiter {
             // consume the quote
-            let (quote, _) = if let Some(res) = self.next_char() {
-                res
-            } else {
+            if self.next_char().is_none() {
                 return false;
             };
-            chars.push(quote);
         }
 
         let mut has_invalid_ucn = false;
-        self.lex_common_literal_body(delimiter, &mut chars, &mut has_invalid_ucn);
+        self.lex_common_literal_body(delimiter, &mut has_invalid_ucn);
 
         has_invalid_ucn
     }
 
     fn lex_string_literal(&mut self, start_pos: u32, prefix: &[u8], flags: PPTokenFlags) -> PPToken {
-        let invalid_ucn = self.lex_quoted_literal(prefix, b'"');
+        let ends_with_delimiter = !prefix.is_empty() && prefix.last() == Some(&b'"');
+        let invalid_ucn = self.lex_quoted_literal(ends_with_delimiter, b'"');
         let mut final_flags = flags;
         if invalid_ucn {
             final_flags |= PPTokenFlags::HAS_INVALID_UCN;
@@ -1303,7 +1265,8 @@ impl PPLexer {
     }
 
     fn lex_char_literal(&mut self, start_pos: u32, prefix: &[u8], flags: PPTokenFlags) -> PPToken {
-        let invalid_ucn = self.lex_quoted_literal(prefix, b'\'');
+        let ends_with_delimiter = !prefix.is_empty() && prefix.last() == Some(&b'\'');
+        let invalid_ucn = self.lex_quoted_literal(ends_with_delimiter, b'\'');
         let mut final_flags = flags;
         if invalid_ucn {
             final_flags |= PPTokenFlags::HAS_INVALID_UCN;
@@ -1317,13 +1280,13 @@ impl PPLexer {
         let raw_buffer = &self.buffer[start_pos as usize..self.position as usize];
         let raw_text = unsafe { std::str::from_utf8_unchecked(raw_buffer) };
         let de_spliced = if final_flags.contains(PPTokenFlags::HAS_SPLICES) {
-            de_splice(raw_text)
+            Cow::Owned(de_splice(raw_text))
         } else {
-            raw_text.to_string()
+            Cow::Borrowed(raw_text)
         };
 
         // Parse character literal content from de-spliced text
-        let quote_start = if !prefix.is_empty() && prefix.last() == Some(&b'\'') {
+        let quote_start = if ends_with_delimiter {
             prefix.len() - 1
         } else {
             prefix.len()

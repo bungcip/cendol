@@ -59,6 +59,7 @@ pub mod parser_stmt;
 pub mod parser_types;
 pub mod parser_utils;
 
+pub mod guardian_parameter_compatibility;
 pub mod guardian_increment_completeness;
 pub mod guardian_pointer_arithmetic_completeness;
 pub mod guardian_struct_member;

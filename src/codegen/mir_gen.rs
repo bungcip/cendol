@@ -1414,18 +1414,8 @@ impl<'a> MirGen<'a> {
                 size: element_size * 2,
                 align: element_align,
                 fields: vec![
-                    MirFieldLayout {
-                        offset: 0,
-                        bit_width: None,
-                        bit_offset: None,
-                        is_signed: true,
-                    },
-                    MirFieldLayout {
-                        offset: element_size,
-                        bit_width: None,
-                        bit_offset: None,
-                        is_signed: true,
-                    },
+                    MirFieldLayout::new(0).signed(true),
+                    MirFieldLayout::new(element_size).signed(true),
                 ],
             },
         }
@@ -1456,12 +1446,7 @@ impl<'a> MirGen<'a> {
                 field_types.push(self.lower_qual_type(m.member_type));
 
                 let fl = &flat_fields[idx];
-                field_layouts.push(MirFieldLayout {
-                    offset: fl.offset,
-                    bit_width: fl.bit_width,
-                    bit_offset: fl.bit_offset,
-                    is_signed: self.registry.get(m.member_type.ty()).is_signed(),
-                });
+                field_layouts.push(MirFieldLayout::from(fl).signed(self.registry.get(m.member_type.ty()).is_signed()));
             }
             let layout = ty.layout.as_ref().unwrap();
             (layout.size, layout.alignment, field_layouts, field_names, field_types)

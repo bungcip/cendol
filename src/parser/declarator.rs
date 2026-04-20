@@ -331,7 +331,7 @@ pub(crate) fn get_declarator_name(arena: &ParsedTypeArena, declarator: Declarato
         ParsedDeclarator::Pointer { inner, .. } => get_declarator_name(arena, *inner),
         ParsedDeclarator::Array { inner, .. } => get_declarator_name(arena, *inner),
         ParsedDeclarator::Function { inner, .. } => get_declarator_name(arena, *inner),
-        ParsedDeclarator::BitField { inner, .. } => get_declarator_name(arena, *inner),
+        _ => unreachable!(),
     }
 }
 

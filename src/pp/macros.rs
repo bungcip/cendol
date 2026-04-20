@@ -879,28 +879,30 @@ impl<'src> Preprocessor<'src> {
 
         if m.flags.contains(MacroFlags::FUNCTION_LIKE) {
             // Try function-like expansion
-            if i + 1 < tokens.len() && tokens[i + 1].kind == PPTokenKind::LeftParen
-                && let Some(end_idx) = Self::find_balanced_paren_range(tokens, i + 1) {
-                    let args = Self::collect_macro_args_from_slice(m, tokens, i + 2, end_idx - 1);
+            if i + 1 < tokens.len()
+                && tokens[i + 1].kind == PPTokenKind::LeftParen
+                && let Some(end_idx) = Self::find_balanced_paren_range(tokens, i + 1)
+            {
+                let args = Self::collect_macro_args_from_slice(m, tokens, i + 2, end_idx - 1);
 
-                    let expected = m.parameter_list.len();
-                    let valid = if m.variadic_arg.is_some() {
-                        args.len() >= expected
-                    } else {
-                        args.len() == expected
-                    };
+                let expected = m.parameter_list.len();
+                let valid = if m.variadic_arg.is_some() {
+                    args.len() >= expected
+                } else {
+                    args.len() == expected
+                };
 
-                    if valid {
-                        m.flags |= MacroFlags::USED;
-                        let info = m.clone();
-                        return Some(ExpansionTask::Function {
-                            info,
-                            symbol,
-                            end_idx,
-                            args,
-                        });
-                    }
+                if valid {
+                    m.flags |= MacroFlags::USED;
+                    let info = m.clone();
+                    return Some(ExpansionTask::Function {
+                        info,
+                        symbol,
+                        end_idx,
+                        args,
+                    });
                 }
+            }
             None
         } else {
             // Object-like expansion

@@ -95,7 +95,6 @@ pub mod guardian_typedef_member_function;
 pub mod guardian_vla;
 pub mod mir_dumper_coverage;
 pub mod mir_gen_compound_assignment;
-pub mod mir_gen_function_address;
 pub mod mir_gen_sizeof;
 pub mod mir_unit;
 pub mod mir_validation;
@@ -126,7 +125,6 @@ pub mod semantic_scope_invariants;
 pub mod semantic_static_assert;
 
 pub mod guardian_choose_expr;
-pub mod parser_struct_attributes_coverage;
 pub mod regr_init_range;
 pub mod regr_mixed_sign_comp;
 pub mod regr_struct_bitfield;

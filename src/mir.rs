@@ -11,6 +11,7 @@ use serde::Serialize;
 use std::num::NonZeroU32;
 
 use crate::ast::NameId;
+use crate::semantic::FieldLayout;
 
 pub mod dumper;
 pub mod validation;
@@ -487,13 +488,21 @@ impl MirFieldLayout {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn signed(self, value: bool) -> Self {
         Self {
             offset: self.offset,
             bit_offset: self.bit_offset,
             bit_width: self.bit_width,
             is_signed: value,
+        }
+    }
+
+    pub(crate) fn from(fl: &FieldLayout) -> Self {
+        Self {
+            offset: fl.offset,
+            bit_width: fl.bit_width,
+            bit_offset: fl.bit_offset,
+            is_signed: false,
         }
     }
 }

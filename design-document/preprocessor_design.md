@@ -309,7 +309,7 @@ int x = invalid_syntax; // Error reported at original.c:51
 - **UTF-8 Only**: The preprocessor assumes and only supports UTF-8 encoded source files (no validation performed for performance)
 - **Direct Buffer Access**: Works directly with byte buffers from SourceManager, avoiding string conversions
 - **Unsafe UTF-8 Operations**: Uses `unsafe` operations assuming UTF-8 validity for maximum performance
-- **No Trigraph or Digraph Support**: For simplicity and modern C usage, trigraphs and digraphs will not be supported
+- **No Trigraph Support**: For simplicity and modern C usage, trigraphs will not be supported
 
 ### Integration with Compiler Pipeline
 

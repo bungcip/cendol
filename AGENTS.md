@@ -351,7 +351,7 @@ When writing tests, choose the minimum phase needed to validate your assertion.
 3. **Continue on error** — The compiler reports as many errors as possible rather than stopping at the first one.
 4. **C11 strict compliance** — Follow the C11 standard closely. Constraint violations are tracked in `.jules/guardian.md`.
 5. **No K&R style** — Empty parameter lists `int foo()` are treated as `int foo(void)`.
-6. **No trigraphs/digraphs** — Not supported; modern C only.
+6. **No trigraphs** — Not supported; modern C only.
 7. **Minimize allocations** — Use `SmallVec`, `Cow`, `Arc<[T]>`, and pre-allocated buffers in hot paths.
 
 ## Adding New Features

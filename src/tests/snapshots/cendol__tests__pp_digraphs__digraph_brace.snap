@@ -1,0 +1,16 @@
+---
+source: src/tests/pp_digraphs.rs
+expression: tokens
+---
+- kind: LeftBrace
+  text: "{"
+- kind: Number
+  text: "1"
+- kind: Semicolon
+  text: ;
+- kind: Number
+  text: "2"
+- kind: Semicolon
+  text: ;
+- kind: RightBrace
+  text: "}"

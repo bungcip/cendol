@@ -17,7 +17,6 @@ Cendol is a C23 compiler implemented in Rust. It is a project to understand the 
 ## Limitations
 
 * **No Trigraph Support**: Trigraphs (three-character sequences like `??=`, `??<`, etc.) are not supported. Note: Trigraphs were officially removed in C23.
-* **No Digraph Support**: Digraphs (two-character sequences like `<:`, `:>`, `<%`, `%>`, `%:`, `%:%:`) are not supported. This compiler targets modern C and does not implement legacy digraph tokens.
 * **No K&R Function Declarations**: In compliance with C23, functions declared with an empty parameter list (e.g., `int foo()`) are treated as having no parameters (equivalent to `int foo(void)`).
 * **Limited Inline Assembly Support**: Inline assembly (using `asm` or `__asm__` keywords) has only limited support depending on the Cranelift backend capabilities.
 

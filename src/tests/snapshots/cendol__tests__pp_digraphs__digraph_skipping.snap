@@ -1,0 +1,12 @@
+---
+source: src/tests/pp_digraphs.rs
+expression: tokens
+---
+- kind: Identifier
+  text: this
+- kind: Identifier
+  text: is
+- kind: Identifier
+  text: not
+- kind: Identifier
+  text: skipped

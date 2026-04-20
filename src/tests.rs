@@ -20,6 +20,7 @@ pub mod pp_conditionals;
 pub mod pp_directives;
 pub mod pp_features;
 pub mod pp_includes;
+pub mod pp_digraphs;
 pub mod pp_internal;
 pub mod pp_lexical;
 pub mod pp_macros;

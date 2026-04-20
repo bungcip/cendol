@@ -1,0 +1,6 @@
+---
+source: src/tests/pp_digraphs.rs
+expression: tokens
+---
+- kind: Number
+  text: "12"

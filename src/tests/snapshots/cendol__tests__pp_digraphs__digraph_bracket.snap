@@ -1,0 +1,14 @@
+---
+source: src/tests/pp_digraphs.rs
+expression: tokens
+---
+- kind: LeftBracket
+  text: "["
+- kind: Number
+  text: "1"
+- kind: Comma
+  text: ","
+- kind: Number
+  text: "2"
+- kind: RightBracket
+  text: "]"

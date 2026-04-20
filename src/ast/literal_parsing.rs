@@ -475,4 +475,16 @@ mod tests {
         // Empty hex escape -> \x
         assert_eq!(unescape(r"\xz"), r"\xz");
     }
+
+    #[test]
+    fn test_hex_float_edge_cases() {
+        // Covers line 123 (digit separator in decimal float)
+        assert_eq!(super::parse_float_literal("1'0.5"), Some((10.5, None)));
+
+        // Covers line 163 (digit separator in hex float mantissa)
+        assert_eq!(super::parse_hex_float_literal("0x1'A.5p2"), Some(105.25));
+
+        // Covers line 196, 197 (digit separator in hex float exponent)
+        assert_eq!(super::parse_hex_float_literal("0x1.0p1'0"), Some(1024.0));
+    }
 }

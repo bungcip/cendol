@@ -140,6 +140,39 @@ pub enum PathOrBuffer {
     Buffer(String, Vec<u8>),
 }
 
+impl PathOrBuffer {
+    pub(crate) fn is_external_object(&self) -> bool {
+        match self {
+            PathOrBuffer::Path(path) => {
+                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                    let is_known_ext = matches!(ext, "o" | "obj" | "a" | "so" | "dylib" | "dll");
+                    let is_versioned_so = || {
+                        let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        filename.contains(".so.") || filename.contains(".dylib.")
+                    };
+                    is_known_ext || is_versioned_so()
+                } else {
+                    false
+                }
+            }
+            PathOrBuffer::Buffer(_, _) => false,
+        }
+    }
+
+    pub(crate) fn is_source_file(&self) -> bool {
+        match self {
+            PathOrBuffer::Path(path) => {
+                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                    matches!(ext, "c" | "i")
+                } else {
+                    false
+                }
+            }
+            PathOrBuffer::Buffer(_, _) => true,
+        }
+    }
+}
+
 /// Configuration for compilation
 #[derive(Debug, Default)]
 pub struct CompileConfig {

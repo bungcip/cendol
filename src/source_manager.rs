@@ -315,18 +315,19 @@ impl SourceManager {
         include_loc: Option<SourceLoc>,
     ) -> Result<SourceId, std::io::Error> {
         let buffer = std::fs::read(path)?;
-        let path_str = path.to_str().unwrap_or("<invalid-utf8>");
-        Ok(self.add_buffer(buffer, path_str, include_loc, FileKind::Real))
+        Ok(self.add_buffer(buffer, path.to_path_buf(), include_loc, FileKind::Real))
     }
 
     /// Add a buffer to the source manager with raw bytes (UTF-8 assumed)
     pub(crate) fn add_buffer(
         &mut self,
         buffer: Vec<u8>,
-        name: &str,
+        path: impl Into<PathBuf>,
         include_loc: Option<SourceLoc>,
         kind: FileKind,
     ) -> SourceId {
+        let path = path.into();
+
         // Bolt ⚡: Ensure line starts are always computed upon file addition.
         // This centralizes line tracking and avoids redundant $O(N)$ scans later.
         let line_starts = if kind == FileKind::MacroExpansion {
@@ -338,8 +339,6 @@ impl SourceManager {
 
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
-
-        let path = PathBuf::from(name);
         if kind == FileKind::Real || kind == FileKind::Builtin {
             // Only map path for real files and built-in headers.
             // This avoids unnecessary map insertions for short-lived virtual buffers.

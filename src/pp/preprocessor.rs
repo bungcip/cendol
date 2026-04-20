@@ -440,6 +440,20 @@ impl<'src> Preprocessor<'src> {
         );
     }
 
+    /// Helper to tokenize a string into a list of tokens, ignoring Eod/Eof.
+    pub(crate) fn tokenize_synthetic(&mut self, content: &str, name: &str, kind: FileKind) -> (Vec<PPToken>, SourceId) {
+        let source_id = self.sm.add_buffer(content.as_bytes().to_vec(), name, None, kind);
+        let buffer = self.sm.get_buffer_arc(source_id);
+        let lexer = PPLexer::new(source_id, buffer);
+
+        // Bolt ⚡: Use Iterator implementation for concise token collection.
+        let tokens = lexer
+            .filter(|t| !matches!(t.kind, PPTokenKind::Eod | PPTokenKind::Eof))
+            .collect();
+
+        (tokens, source_id)
+    }
+
     /// Helper to lex a macro value string into tokens
     fn lex_macro_value(&mut self, value: &str, source_name: &str) -> Vec<PPToken> {
         let kind = if source_name == "<command-line>" {
@@ -447,18 +461,7 @@ impl<'src> Preprocessor<'src> {
         } else {
             FileKind::Builtin
         };
-        let source_id = self.sm.add_buffer(value.as_bytes().to_vec(), source_name, None, kind);
-        let buffer = self.sm.get_buffer_arc(source_id);
-        let mut lexer = PPLexer::new(source_id, buffer);
-
-        let mut tokens = Vec::new();
-        while let Some(token) = lexer.next_token() {
-            if matches!(token.kind, PPTokenKind::Eod | PPTokenKind::Eof) {
-                continue;
-            }
-            tokens.push(token);
-        }
-        tokens
+        self.tokenize_synthetic(value, source_name, kind).0
     }
 
     /// Helper to define a built-in macro by lexing its value
@@ -818,6 +821,19 @@ impl<'src> Preprocessor<'src> {
         })
     }
 
+    /// Collect tokens until Eod (end of directive line)
+    pub(super) fn collect_tokens_until_eod(&mut self) -> Vec<PPToken> {
+        // ⚡ Bolt: Use a small initial capacity to avoid reallocations for common short expressions.
+        let mut tokens = Vec::with_capacity(32);
+        while let Some(token) = self.lex_token() {
+            if token.kind == PPTokenKind::Eod {
+                break;
+            }
+            tokens.push(token);
+        }
+        tokens
+    }
+
     /// Check if we are currently skipping tokens
     pub(super) fn is_currently_skipping(&self) -> bool {
         // Bolt ⚡: Optimized to O(1) by checking only the top of the stack.
@@ -827,18 +843,10 @@ impl<'src> Preprocessor<'src> {
 
     /// Parse a conditional expression for #if and #elif
     pub(super) fn parse_conditional_expression(&mut self) -> Result<Vec<PPToken>, PPError> {
-        // ⚡ Bolt: Use a small initial capacity to avoid reallocations for common short expressions.
-        let mut tokens = Vec::with_capacity(16);
-        while let Some(token) = self.lex_token() {
-            if token.kind == PPTokenKind::Eod {
-                break;
-            }
-            tokens.push(token);
-        }
+        let tokens = self.collect_tokens_until_eod();
 
         if tokens.is_empty() {
-            let loc = self.get_current_location();
-            return self.emit_error(PPErrorKind::InvalidConditionalExpression, loc);
+            return self.emit_error(PPErrorKind::InvalidConditionalExpression, self.get_current_location());
         }
 
         Ok(tokens)

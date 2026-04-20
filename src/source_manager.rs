@@ -327,6 +327,8 @@ impl SourceManager {
         include_loc: Option<SourceLoc>,
         kind: FileKind,
     ) -> SourceId {
+        // Bolt ⚡: Ensure line starts are always computed upon file addition.
+        // This centralizes line tracking and avoids redundant $O(N)$ scans later.
         let line_starts = if kind == FileKind::MacroExpansion {
             // Macro expansions are usually treated as single lines for diagnostic purposes
             vec![0]
@@ -334,28 +336,10 @@ impl SourceManager {
             compute_line_starts(&buffer)
         };
 
-        let path_buf = PathBuf::from(name);
-        self.add_file_entry(Arc::from(buffer), path_buf, line_starts, include_loc, kind)
-    }
-
-    /// Helper to add a file entry and update maps
-    fn add_file_entry(
-        &mut self,
-        buffer: Arc<[u8]>,
-        path: PathBuf,
-        mut line_starts: Vec<u32>,
-        include_loc: Option<SourceLoc>,
-        kind: FileKind,
-    ) -> SourceId {
-        // Bolt ⚡: Ensure line starts are always computed upon file addition.
-        // This centralizes line tracking and avoids redundant $O(N)$ scans later.
-        if line_starts.is_empty() {
-            line_starts = compute_line_starts(&buffer);
-        }
-
         let file_id = SourceId::new(self.next_file_id);
         self.next_file_id += 1;
 
+        let path = PathBuf::from(name);
         if kind == FileKind::Real || kind == FileKind::Builtin {
             // Only map path for real files and built-in headers.
             // This avoids unnecessary map insertions for short-lived virtual buffers.
@@ -364,7 +348,7 @@ impl SourceManager {
 
         let file_info = FileInfo {
             path,
-            buffer,
+            buffer: Arc::from(buffer),
             cached_string: std::sync::OnceLock::new(),
             kind,
             line_starts,

@@ -1318,6 +1318,14 @@ impl PPLexer {
     }
 }
 
+impl Iterator for PPLexer {
+    type Item = PPToken;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_token()
+    }
+}
+
 /// Remove line splices (backslash followed by optional whitespace and newline) from text.
 pub(crate) fn de_splice(raw: &str) -> String {
     let mut result = String::with_capacity(raw.len());

@@ -125,31 +125,13 @@ impl<'src> Preprocessor<'src> {
 
     /// Tokenize the content of a pragma directive
     fn tokenize_pragma_content(&mut self, pragma_content: &str) -> Vec<PPToken> {
-        // Create a buffer for the pragma content
-        let source_id = self.sm.add_buffer(
-            pragma_content.as_bytes().to_vec(),
-            "<_Pragma>",
-            None,
-            FileKind::Synthetic,
-        );
-        let buffer = self.sm.get_buffer_arc(source_id);
-        let mut temp_lexer = PPLexer::new(source_id, buffer);
-
-        // Collect all tokens from the pragma content
-        let mut tokens = Vec::new();
-        while let Some(token) = temp_lexer.next_token() {
-            if matches!(token.kind, PPTokenKind::Eod | PPTokenKind::Eof) {
-                continue;
-            }
-            tokens.push(token);
-        }
+        let (mut tokens, source_id) = self.tokenize_synthetic(pragma_content, "<_Pragma>", FileKind::Synthetic);
 
         // Determine location for the synthetic EOD
-        let eod_loc = if let Some(last) = tokens.last() {
-            last.location
-        } else {
-            SourceLoc::new(source_id, 0)
-        };
+        let eod_loc = tokens
+            .last()
+            .map(|t| t.location)
+            .unwrap_or(SourceLoc::new(source_id, 0));
 
         // Append EOD token to mark end of pragma
         tokens.push(PPToken::new(PPTokenKind::Eod, PPTokenFlags::empty(), eod_loc, 0));
@@ -287,15 +269,12 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn handle_undef(&mut self) -> Result<(), PPError> {
-        let (name_token, name) = self.expect_identifier()?;
+        let (token, name) = self.expect_identifier()?;
 
         if let Some(existing) = self.macros.get(&name)
             && existing.flags.contains(MacroFlags::BUILTIN)
         {
-            self.report_warning(
-                name_token.location,
-                format!("Undefining built-in macro '{}'", name.as_str()),
-            );
+            self.report_warning(token.location, format!("Undefining built-in macro '{}'", name.as_str()));
             self.expect_eod()?;
             return Ok(());
         }
@@ -311,13 +290,9 @@ impl<'src> Preprocessor<'src> {
     fn do_handle_include(&mut self, is_next: bool) -> Result<(), PPError> {
         let first_token = self.expect_token()?;
 
-        let mut tokens = vec![first_token];
-        while let Some(t) = self.lex_token() {
-            if t.kind == PPTokenKind::Eod {
-                break;
-            }
-            tokens.push(t);
-        }
+        let mut tokens = std::iter::once(first_token)
+            .chain(self.collect_tokens_until_eod())
+            .collect::<Vec<_>>();
 
         let (path_str, is_angled) = match tokens[0].kind {
             PPTokenKind::StringLiteral | PPTokenKind::Less => {
@@ -334,22 +309,20 @@ impl<'src> Preprocessor<'src> {
         }
 
         let include_source_id = if is_next {
-            self.resolve_next_include_path(&path_str, is_angled, first_token.location)?
+            self.resolve_next_include_path(&path_str, is_angled, first_token.location)
         } else {
-            self.resolve_include_path(&path_str, is_angled, first_token.location)?
-        };
+            self.resolve_include_path(&path_str, is_angled, first_token.location)
+        }?;
 
-        if self.once_included.contains(&include_source_id) {
-            return Ok(());
+        if !self.once_included.contains(&include_source_id) {
+            self.include_stack.push(IncludeStackInfo {
+                file_id: include_source_id,
+            });
+
+            let buffer = self.sm.get_buffer_arc(include_source_id);
+            self.lexer_stack.push(PPLexer::new(include_source_id, buffer));
+            self.include_depth += 1;
         }
-
-        self.include_stack.push(IncludeStackInfo {
-            file_id: include_source_id,
-        });
-
-        let buffer = self.sm.get_buffer_arc(include_source_id);
-        self.lexer_stack.push(PPLexer::new(include_source_id, buffer));
-        self.include_depth += 1;
 
         Ok(())
     }
@@ -526,18 +499,6 @@ impl<'src> Preprocessor<'src> {
             return self.emit_error(PPErrorKind::UnmatchedEndif, location);
         }
         self.expect_eod()
-    }
-
-    fn collect_tokens_until_eod(&mut self) -> Vec<PPToken> {
-        // ⚡ Bolt: Use a small initial capacity to avoid reallocations for common macro bodies and directives.
-        let mut tokens = Vec::with_capacity(32);
-        while let Some(token) = self.lex_token() {
-            if token.kind == PPTokenKind::Eod {
-                break;
-            }
-            tokens.push(token);
-        }
-        tokens
     }
 
     fn parse_line_directive_args(&self, tokens: &[PPToken]) -> Result<(u32, Option<String>), PPError> {
@@ -819,18 +780,16 @@ impl<'src> Preprocessor<'src> {
     }
 
     fn parse_pragma_pack_value(&self, t: &PPToken) -> Result<u8, PPError> {
-        let val_text = match t.kind {
-            PPTokenKind::Number => self.get_token_text(t).to_string(),
-            PPTokenKind::Identifier(sym) => sym.as_str().to_string(),
+        let text = match t.kind {
+            PPTokenKind::Number => self.get_token_text(t),
+            PPTokenKind::Identifier(sym) => std::borrow::Cow::Borrowed(sym.as_str()),
             _ => return self.emit_error(PPErrorKind::UnknownPragma(self.keywords.pack), t.location),
         };
 
-        let val = val_text.parse::<u8>().ok().filter(|v| [1, 2, 4, 8, 16].contains(v));
-
-        match val {
-            Some(v) => Ok(v),
-            None => {
-                let sym = StringId::new(&val_text);
+        match text.parse::<u8>() {
+            Ok(v) if matches!(v, 1 | 2 | 4 | 8 | 16) => Ok(v),
+            _ => {
+                let sym = StringId::new(&text);
                 self.emit_error(PPErrorKind::InvalidPragmaPackValue(sym), t.location)
             }
         }

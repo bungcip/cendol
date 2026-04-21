@@ -136,8 +136,11 @@ impl FloatSuffix {
 
     pub(crate) fn get_type(self, registry: &TypeRegistry) -> TypeRef {
         match self {
-            Self::F | Self::IF => registry.type_float,
-            Self::L | Self::IL => registry.type_long_double,
+            Self::F => registry.type_float,
+            Self::IF => registry.type_complex_float,
+            Self::L => registry.type_long_double,
+            Self::IL => registry.type_complex_long_double,
+            Self::I => registry.type_complex_double,
             _ => registry.type_double,
         }
     }

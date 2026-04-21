@@ -788,10 +788,11 @@ impl<'a> MirGen<'a> {
         let lhs_mir_ty = self.get_operand_type(&lhs);
         let rhs_mir_ty = self.get_operand_type(&rhs);
 
-        let lhs_is_complex = self.mb.get_type(lhs_mir_ty).is_aggregate()
-            && self.ast.get_resolved_type(left_expr).is_some_and(|t| t.is_complex());
-        let rhs_is_complex = self.mb.get_type(rhs_mir_ty).is_aggregate()
-            && self.ast.get_resolved_type(right_expr).is_some_and(|t| t.is_complex());
+        let lhs_mir_type = self.mb.get_type(lhs_mir_ty);
+        let rhs_mir_type = self.mb.get_type(rhs_mir_ty);
+
+        let lhs_is_complex = lhs_mir_type.is_complex();
+        let rhs_is_complex = rhs_mir_type.is_complex();
 
         if lhs_is_complex || rhs_is_complex {
             let op = self.visit_complex_binary_op(op, lhs, rhs, context_ty);
@@ -1659,9 +1660,12 @@ impl<'a> MirGen<'a> {
         let (lhs_real, lhs_imag) = self.get_complex_components(lhs, lhs_ty);
         let (rhs_real, rhs_imag) = self.get_complex_components(rhs, rhs_ty);
 
-        let element_ty = match self.mb.get_type(lhs_ty) {
-            MirType::Record { field_types, .. } => field_types[0],
-            _ => panic!("Expected complex record type"),
+        let element_ty = if let MirType::Record { field_types, .. } = self.mb.get_type(lhs_ty) {
+            field_types[0]
+        } else if let MirType::Record { field_types, .. } = self.mb.get_type(rhs_ty) {
+            field_types[0]
+        } else {
+            panic!("Expected at least one complex record type in visit_complex_binary_op");
         };
 
         match op {

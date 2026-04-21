@@ -1508,6 +1508,8 @@ impl<'a> MirGen<'a> {
     ) -> Operand {
         let to_ty = match conv {
             Conversion::IntegerCast { to, .. }
+            | Conversion::FloatingCast { to, .. }
+            | Conversion::ComplexCast { to, .. }
             | Conversion::IntegerPromotion { to, .. }
             | Conversion::PointerCast { to, .. } => Some(*to),
             Conversion::PointerDecay { to } => Some(*to),
@@ -1516,6 +1518,8 @@ impl<'a> MirGen<'a> {
 
         let from_ty = match conv {
             Conversion::IntegerCast { from, .. }
+            | Conversion::FloatingCast { from, .. }
+            | Conversion::ComplexCast { from, .. }
             | Conversion::IntegerPromotion { from, .. }
             | Conversion::PointerCast { from, .. } => Some(*from),
             _ => None,
@@ -1529,6 +1533,8 @@ impl<'a> MirGen<'a> {
 
         let to_mir_type = match conv {
             Conversion::IntegerCast { to, .. }
+            | Conversion::FloatingCast { to, .. }
+            | Conversion::ComplexCast { to, .. }
             | Conversion::IntegerPromotion { to, .. }
             | Conversion::PointerCast { to, .. } => self.lower_type(*to),
             Conversion::NullPointerConstant => {
@@ -1568,7 +1574,10 @@ impl<'a> MirGen<'a> {
         }
 
         match conv {
-            Conversion::IntegerCast { .. } | Conversion::IntegerPromotion { .. } | Conversion::PointerCast { .. } => {
+            Conversion::IntegerCast { .. }
+            | Conversion::IntegerPromotion { .. }
+            | Conversion::PointerCast { .. }
+            | Conversion::FloatingCast { .. } => {
                 // Fold constant casts if types are compatible
                 if let Some(const_id) = self.operand_to_const_id(&operand) {
                     let const_val = self.mb.get_constants()[const_id.index()].clone();
@@ -1602,6 +1611,7 @@ impl<'a> MirGen<'a> {
                     Operand::Cast(to_mir_type, Box::new(operand))
                 }
             }
+            Conversion::ComplexCast { from, to } => self.emit_complex_conversion(operand, Some(*from), *to),
             Conversion::NullPointerConstant => {
                 let ty_id = self.lower_type(self.registry.type_int);
                 Operand::Cast(
@@ -1852,10 +1862,22 @@ impl<'a> MirGen<'a> {
     }
 
     pub(super) fn get_complex_components(&mut self, operand: Operand, ty: TypeId) -> (Operand, Operand) {
-        let place = self.ensure_place(operand, ty);
-        let real = Operand::Copy(Box::new(Place::StructField(Box::new(place.clone()), 0, None)));
-        let imag = Operand::Copy(Box::new(Place::StructField(Box::new(place), 1, None)));
-        (real, imag)
+        let mir_ty = self.mb.get_type(ty);
+        if let MirType::Record { .. } = mir_ty {
+            let place = self.ensure_place(operand, ty);
+            let real = Operand::Copy(Box::new(Place::StructField(Box::new(place.clone()), 0, None)));
+            let imag = Operand::Copy(Box::new(Place::StructField(Box::new(place), 1, None)));
+            (real, imag)
+        } else {
+            // Real to complex components
+            let zero = if mir_ty.is_float() {
+                ConstValueKind::Float(0.0)
+            } else {
+                ConstValueKind::Int(0)
+            };
+            let imag = Operand::Constant(self.create_constant(ty, zero));
+            (operand, imag)
+        }
     }
 
     pub(super) fn emit_float_binop(

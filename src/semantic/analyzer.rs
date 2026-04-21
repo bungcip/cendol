@@ -108,6 +108,12 @@ pub enum Conversion {
     /// int → long, unsigned → unsigned long, etc
     IntegerCast { from: TypeRef, to: TypeRef },
 
+    /// float -> double, etc
+    FloatingCast { from: TypeRef, to: TypeRef },
+
+    /// real -> complex or complex -> complex (with precision change)
+    ComplexCast { from: TypeRef, to: TypeRef },
+
     /// void* ↔ T*
     PointerCast { from: TypeRef, to: TypeRef },
 
@@ -221,6 +227,22 @@ impl<'a> SemanticAnalyzer<'a> {
             return;
         }
         conversions.push(conv);
+    }
+
+    fn push_arithmetic_cast(&mut self, node: NodeRef, from: TypeRef, to: TypeRef) {
+        if from == to {
+            return;
+        }
+
+        let conv = if from.is_complex() || to.is_complex() {
+            Conversion::ComplexCast { from, to }
+        } else if from.is_floating() || to.is_floating() {
+            Conversion::FloatingCast { from, to }
+        } else {
+            Conversion::IntegerCast { from, to }
+        };
+
+        self.push_conversion(node, conv);
     }
 
     /// Internal helper to apply lvalue-to-rvalue conversion to a node.
@@ -1443,17 +1465,13 @@ impl<'a> SemanticAnalyzer<'a> {
             // resolve_binary_operation_types might be called multiple times in some complex nested scenarios
             let needs_push = match self.semantic_info.conversions[lhs.index()].last() {
                 Some(Conversion::IntegerCast { to, .. }) => *to != lhs_target,
+                Some(Conversion::FloatingCast { to, .. }) => *to != lhs_target,
+                Some(Conversion::ComplexCast { to, .. }) => *to != lhs_target,
                 _ => true,
             };
 
             if needs_push {
-                self.push_conversion(
-                    lhs,
-                    Conversion::IntegerCast {
-                        from: lhs_promoted.ty(),
-                        to: lhs_target,
-                    },
-                );
+                self.push_arithmetic_cast(lhs, lhs_promoted.ty(), lhs_target);
             }
         }
 
@@ -1461,17 +1479,13 @@ impl<'a> SemanticAnalyzer<'a> {
         if rhs_promoted.ty() != rhs_target || self.is_numeric_literal(rhs) {
             let needs_push = match self.semantic_info.conversions[rhs.index()].last() {
                 Some(Conversion::IntegerCast { to, .. }) => *to != rhs_target,
+                Some(Conversion::FloatingCast { to, .. }) => *to != rhs_target,
+                Some(Conversion::ComplexCast { to, .. }) => *to != rhs_target,
                 _ => true,
             };
 
             if needs_push {
-                self.push_conversion(
-                    rhs,
-                    Conversion::IntegerCast {
-                        from: rhs_promoted.ty(),
-                        to: rhs_target,
-                    },
-                );
+                self.push_arithmetic_cast(rhs, rhs_promoted.ty(), rhs_target);
             }
         }
 
@@ -1531,13 +1545,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         if lhs_qt.ty() != common_qt.ty() {
-            self.push_conversion(
-                node,
-                Conversion::IntegerCast {
-                    from: common_qt.ty(),
-                    to: lhs_qt.ty(),
-                },
-            );
+            self.push_arithmetic_cast(node, common_qt.ty(), lhs_qt.ty());
         }
 
         Some(lhs_qt)
@@ -1683,13 +1691,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
 
-            self.push_conversion(
-                rhs,
-                Conversion::IntegerCast {
-                    from: rhs_qt.ty(),
-                    to: lhs_qt.ty(),
-                },
-            );
+            self.push_arithmetic_cast(rhs, rhs_qt.ty(), lhs_qt.ty());
         }
     }
 

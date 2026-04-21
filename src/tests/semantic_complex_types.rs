@@ -1,6 +1,7 @@
 use crate::{
     driver::artifact::CompilePhase,
     tests::{
+        codegen_common::run_c_code_exit_status,
         semantic_common::setup_mir,
         test_utils::{run_fail_with_message, run_pass, run_pipeline_to_mir},
     },
@@ -56,6 +57,20 @@ fn test_complex_addition() {
         }
     "#;
     let _mir = run_pipeline_to_mir(source);
+}
+
+#[test]
+fn test_complex_creal_cimag() {
+    let source = r#"
+        #include <complex.h>
+        int main() {
+            double _Complex z = 1.0 + 2.0 * I;
+            if (creal(z) != 1.0) return 1;
+            if (cimag(z) != 2.0) return 2;
+            return 0;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
 }
 
 #[test]

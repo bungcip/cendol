@@ -141,7 +141,7 @@ fn test_integer_literals() {
 #[test]
 #[rustfmt::skip]
 fn test_float_literals() {
-    check_lit!("3.14", LitVal::from_f64(3.14, FloatSuffix::None));
+    check_lit!("1.23", LitVal::from_f64(1.23, FloatSuffix::None));
     check_lit!("1.0f", LitVal::from_f64(1.0, FloatSuffix::F));
     check_lit!("2.0L", LitVal::from_f64(2.0, FloatSuffix::L));
     check_lit!("1e10", LitVal::from_f64(1e10, FloatSuffix::None));

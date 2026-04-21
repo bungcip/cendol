@@ -42,6 +42,7 @@ const INTERN_INDEX_MASK: u64 = (1u64 << 58) - 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[repr(u8)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum IntSuffix {
     None = 0,
     L = 1,
@@ -111,6 +112,7 @@ impl IntSuffix {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[repr(u8)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum FloatSuffix {
     None = 0,
     F = 1,
@@ -271,7 +273,7 @@ impl LitRef {
     }
 
     pub fn from_int(value: i64, suffix: IntSuffix, radix: u8) -> Self {
-        if value >= INT_MIN_SMALL && value <= INT_MAX_SMALL {
+        if (INT_MIN_SMALL..=INT_MAX_SMALL).contains(&value) {
             let payload = ((value as u64) & INT_VALUE_MASK)
                 | ((suffix as u64) << INT_SUFFIX_SHIFT)
                 | (((radix as u64) & INT_RADIX_MASK) << INT_RADIX_SHIFT);

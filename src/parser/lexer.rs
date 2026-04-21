@@ -822,7 +822,7 @@ impl<'src> Lexer<'src> {
                 } else {
                     CharPrefix::None
                 };
-                let lit = LitRef::from_char(codepoint.into(), prefix);
+                let lit = LitRef::from_char(codepoint, prefix);
                 TokenKind::Literal(lit)
             }
             PPTokenKind::Number => {

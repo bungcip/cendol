@@ -48,7 +48,7 @@ pub enum IntSuffix {
     LL = 2,
     U = 3,
     UL = 4,
-    ULL = 5,
+    Ull = 5,
 }
 
 impl IntSuffix {
@@ -58,7 +58,7 @@ impl IntSuffix {
             2 => Self::LL,
             3 => Self::U,
             4 => Self::UL,
-            5 => Self::ULL,
+            5 => Self::Ull,
             _ => Self::None,
         }
     }
@@ -104,7 +104,7 @@ impl IntSuffix {
                     SmallVec::from_slice(&[registry.type_long_long, registry.type_long_long_unsigned])
                 }
             }
-            IntSuffix::ULL => SmallVec::from_slice(&[registry.type_long_long_unsigned]),
+            IntSuffix::Ull => SmallVec::from_slice(&[registry.type_long_long_unsigned]),
         }
     }
 }
@@ -271,7 +271,7 @@ impl LitRef {
     }
 
     pub fn from_int(value: i64, suffix: IntSuffix, radix: u8) -> Self {
-        if value >= INT_MIN_SMALL && value <= INT_MAX_SMALL {
+        if (INT_MIN_SMALL..=INT_MAX_SMALL).contains(&value) {
             let payload = ((value as u64) & INT_VALUE_MASK)
                 | ((suffix as u64) << INT_SUFFIX_SHIFT)
                 | (((radix as u64) & INT_RADIX_MASK) << INT_RADIX_SHIFT);

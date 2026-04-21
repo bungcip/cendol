@@ -1189,16 +1189,16 @@ impl PPLexer {
                 // Handle escape sequences, including line splicing
 
                 // Check for UCN first
-                if let Some(p_ch) = self.peek_char() {
-                    if p_ch == b'u' || p_ch == b'U' {
-                        if self.lex_ucn(true).is_some() {
-                            // Valid UCN.
-                            continue;
-                        } else {
-                            // Invalid UCN.
-                            *has_invalid_ucn = true;
-                            continue;
-                        }
+                if let Some(p_ch) = self.peek_char()
+                    && (p_ch == b'u' || p_ch == b'U')
+                {
+                    if self.lex_ucn(true).is_some() {
+                        // Valid UCN.
+                        continue;
+                    } else {
+                        // Invalid UCN.
+                        *has_invalid_ucn = true;
+                        continue;
                     }
                 }
 

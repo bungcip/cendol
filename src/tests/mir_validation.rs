@@ -379,7 +379,7 @@ fn test_call_void_with_dest() {
 fn test_operand_missing_constant() {
     let invalid_id = ConstValueId::new(999).unwrap();
     check_err(
-        ValidationError::IllegalOperation(format!("Constant 999 not found")),
+        ValidationError::IllegalOperation("Constant 999 not found".to_string()),
         |m| {
             let block_id = m.functions[m.module.functions[0].index()].blocks[0];
             m.blocks[block_id.index()].terminator = Terminator::Return(Some(Operand::Constant(invalid_id)));

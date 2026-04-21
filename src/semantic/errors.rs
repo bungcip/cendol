@@ -56,6 +56,10 @@ impl SemanticDiag {
             | SemanticError::RedefinitionWithDifferentType { first_def, .. } => {
                 Some(("previous definition is here", *first_def))
             }
+            SemanticError::AlignmentMandatoryInFirstDeclaration { first_def, .. }
+            | SemanticError::ConflictingAlignment { first_def, .. } => {
+                Some(("previous declaration is here", *first_def))
+            }
             SemanticError::GenericMultipleDefault { first_def, .. } => {
                 Some(("previous default association is here", *first_def))
             }
@@ -304,6 +308,14 @@ pub enum SemanticError {
         ty: QualType,
     },
     AlignasOnVla,
+    AlignmentMandatoryInFirstDeclaration {
+        name: NameId,
+        first_def: SourceSpan,
+    },
+    ConflictingAlignment {
+        name: NameId,
+        first_def: SourceSpan,
+    },
     InvalidAtomicQualifier {
         type_kind: &'static str,
     },
@@ -718,6 +730,13 @@ impl SemanticError {
                 )
             }
             SemanticError::AlignasOnVla => "alignment specifier cannot be used in a variably modified type".to_string(),
+            SemanticError::AlignmentMandatoryInFirstDeclaration { name, .. } => format!(
+                "alignment specifier must be specified in the first declaration of '{}'",
+                name
+            ),
+            SemanticError::ConflictingAlignment { name, .. } => {
+                format!("conflicting alignment specifiers for '{}'", name)
+            }
             SemanticError::InvalidAtomicQualifier { type_kind } => {
                 format!("_Atomic qualifier cannot be used with {} type", type_kind)
             }

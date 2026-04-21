@@ -1274,64 +1274,58 @@ impl<'a> MirGen<'a> {
         let mut obj_qt = self.ast.qual_type_of(obj);
 
         // Handle implicit conversions (like array-to-pointer decay) for arrow access
-        if is_arrow && let Some(semantic_info) = &self.ast.semantic_info {
-            let idx = obj.index();
-            if idx < semantic_info.conversions.len() {
-                for conv in &semantic_info.conversions[idx] {
-                    if let Conversion::PointerDecay { to } = conv {
-                        obj_qt = QualType::unqualified(*to);
-                    }
+        let record_ty = if is_arrow {
+            for conv in &self.ast.semantic_info.conversions[obj.index()] {
+                if let Conversion::PointerDecay { to } = conv {
+                    obj_qt = QualType::unqualified(*to);
                 }
             }
-        }
-
-        let record_ty = if is_arrow {
             self.registry
                 .get_pointee(obj_qt.ty())
-                .expect("Arrow access on non-pointer type")
+                .expect("ICE: Arrow access on non-pointer type")
                 .ty()
         } else {
             obj_qt.ty()
         };
 
-        if record_ty.is_record() {
-            // Validate that the field exists and get its layout information
-            let path = self
-                .find_member_path(record_ty, field_name)
-                .expect("Field not found - should be caught by semantic analysis");
-
-            // Apply the chain of field accesses
-
-            // Resolve base place
-            let mut current_place = if is_arrow {
-                let obj_op = self.visit_expression(obj, true);
-                self.deref_operand(obj_op)
-            } else {
-                self.visit_expression_as_place(obj)
-            };
-
-            for field_idx in path {
-                let struct_ty = self.get_place_type(&current_place);
-                let mir_type = self.mb.get_type(struct_ty);
-                let bit_info = if let MirType::Record { layout, .. } = mir_type {
-                    let field = &layout.fields[field_idx];
-                    field.bit_width.and_then(|w| {
-                        field.bit_offset.map(|o| BitFieldInfo {
-                            width: w,
-                            offset: o,
-                            is_signed: field.is_signed,
-                        })
-                    })
-                } else {
-                    None
-                };
-                current_place = Place::StructField(Box::new(current_place), field_idx, bit_info);
-            }
-
-            current_place
-        } else {
-            panic!("Member access on non-record type");
+        if record_ty.is_record() == false {
+            panic!("ICE: Member access on non-record type");
         }
+
+        // Validate that the field exists and get its layout information
+        let path = self
+            .find_member_path(record_ty, field_name)
+            .expect("ICE: Field not found - should be caught by semantic analysis");
+
+        // Apply the chain of field accesses
+
+        // Resolve base place
+        let mut current_place = if is_arrow {
+            let obj_op = self.visit_expression(obj, true);
+            self.deref_operand(obj_op)
+        } else {
+            self.visit_expression_as_place(obj)
+        };
+
+        for field_idx in path {
+            let struct_ty = self.get_place_type(&current_place);
+            let mir_type = self.mb.get_type(struct_ty);
+            let bit_info = if let MirType::Record { layout, .. } = mir_type {
+                let field = &layout.fields[field_idx];
+                field.bit_width.and_then(|w| {
+                    field.bit_offset.map(|o| BitFieldInfo {
+                        width: w,
+                        offset: o,
+                        is_signed: field.is_signed,
+                    })
+                })
+            } else {
+                None
+            };
+            current_place = Place::StructField(Box::new(current_place), field_idx, bit_info);
+        }
+
+        current_place
     }
 
     fn visit_index_access(&mut self, arr: NodeRef, idx: NodeRef) -> Operand {
@@ -1349,7 +1343,7 @@ impl<'a> MirGen<'a> {
         } else if idx_ty.is_array() || idx_ty.is_pointer() {
             (idx, arr)
         } else {
-            panic!("Index access: neither operand is an array or pointer type");
+            panic!("ICE: Index access: neither operand is an array or pointer type");
         };
 
         // In C, arr[idx] is equivalent to *(arr + idx)

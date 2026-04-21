@@ -102,7 +102,7 @@ impl<'a> MirGen<'a> {
             ast: self.ast,
             symbol_table: self.symbol_table,
             registry: self.registry,
-            semantic_info: self.ast.semantic_info.as_ref(),
+            semantic_info: &self.ast.semantic_info,
         }
     }
 
@@ -1435,8 +1435,9 @@ impl<'a> MirGen<'a> {
         let name = tag.unwrap_or_else(|| {
             self.ast
                 .semantic_info
-                .as_ref()
-                .and_then(|info| info.anonymous_tags.get(&ty).copied())
+                .anonymous_tags
+                .get(&ty)
+                .copied()
                 .unwrap_or_else(|| NameId::new("anonymous"))
         });
 
@@ -1769,15 +1770,14 @@ impl<'a> MirGen<'a> {
 
     pub(super) fn apply_conversions(&mut self, operand: Operand, node: NodeRef, target: TypeId) -> Operand {
         // Look up conversions for this node in semantic_info
-        if let Some(semantic_info) = &self.ast.semantic_info {
-            let idx = node.index();
-            if idx < semantic_info.conversions.len() {
-                let mut result = operand;
-                for conv in &semantic_info.conversions[idx] {
-                    result = self.emit_conversion(result, conv, target, node);
-                }
-                return result;
+        let semantic_info = &self.ast.semantic_info;
+        let idx = node.index();
+        if idx < semantic_info.conversions.len() {
+            let mut result = operand;
+            for conv in &semantic_info.conversions[idx] {
+                result = self.emit_conversion(result, conv, target, node);
             }
+            return result;
         }
         operand
     }

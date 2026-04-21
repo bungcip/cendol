@@ -16,16 +16,16 @@ pub(crate) struct ConstEvalCtx<'a> {
     pub(crate) ast: &'a Ast,
     pub(crate) symbol_table: &'a SymbolTable,
     pub(crate) registry: &'a TypeRegistry,
-    pub(crate) semantic_info: Option<&'a SemanticInfo>,
+    pub(crate) semantic_info: &'a SemanticInfo,
 }
 
 impl<'a> ConstEvalCtx<'a> {
     fn get_resolved_type(&self, node: NodeRef) -> Option<QualType> {
-        if let Some(info) = self.semantic_info {
-            info.types.get(node.index()).and_then(|t| *t)
-        } else {
-            self.ast.get_resolved_type(node)
-        }
+        self.semantic_info
+            .types
+            .get(node.index())
+            .and_then(|t| *t)
+            .or_else(|| self.ast.get_resolved_type(node))
     }
 
     /// Resolve type of a node, with inference fallback if semantic info is missing.
@@ -111,10 +111,6 @@ impl<'a> ConstEvalCtx<'a> {
             NodeKind::Literal(literal) => Some(self.get_literal_type(&literal.get_val())),
             _ => None,
         }
-    }
-
-    fn get_info(&self) -> Option<&'a SemanticInfo> {
-        self.semantic_info.or(self.ast.semantic_info.as_ref())
     }
 
     fn get_literal_type(&self, literal: &LitVal) -> QualType {
@@ -213,8 +209,7 @@ impl<'a> ConstEvalCtx<'a> {
             NodeKind::AlignOfExpr(expr) => self.eval_alignof(Some(*expr), None),
             NodeKind::AlignOfType(qt) => self.eval_alignof(None, Some(*qt)),
             NodeKind::GenericSelection(_) => {
-                let info = self.get_info()?;
-                let selected = info.generic_selections.get(&expr_node.index())?;
+                let selected = self.semantic_info.generic_selections.get(&expr_node.index())?;
                 self.eval_int(*selected)
             }
             NodeKind::BuiltinConstantP(expr) => {
@@ -222,9 +217,7 @@ impl<'a> ConstEvalCtx<'a> {
             }
             NodeKind::BuiltinExpect(exp, _) => self.eval_int(*exp),
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
-                if let Some(info) = self.get_info()
-                    && let Some(&selected) = info.choose_expressions.get(&expr_node.index())
-                {
+                if let Some(&selected) = self.semantic_info.choose_expressions.get(&expr_node.index()) {
                     return self.eval_int(selected);
                 }
                 if self.eval_int(*cond)? != 0 {
@@ -242,9 +235,7 @@ impl<'a> ConstEvalCtx<'a> {
             }
             NodeKind::Cast(target_qt, expr) => self.eval_cast(*target_qt, *expr),
             NodeKind::BuiltinOffsetof(ty, expr) => {
-                if let Some(info) = self.get_info()
-                    && let Some(&offset) = info.offsetof_results.get(&expr_node.index())
-                {
+                if let Some(&offset) = self.semantic_info.offsetof_results.get(&expr_node.index()) {
                     return Some(offset);
                 }
                 eval_offsetof(self, *ty, *expr)
@@ -349,9 +340,7 @@ impl<'a> ConstEvalCtx<'a> {
             }
             NodeKind::BuiltinExpect(exp, _) => self.eval_float(*exp),
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
-                if let Some(info) = self.get_info()
-                    && let Some(&selected) = info.choose_expressions.get(&expr.index())
-                {
+                if let Some(&selected) = self.semantic_info.choose_expressions.get(&expr.index()) {
                     return self.eval_float(selected);
                 }
                 if self.eval_int(*cond)? != 0 {

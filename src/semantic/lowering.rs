@@ -585,7 +585,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ast: self.ast,
             symbol_table: self.symbol_table,
             registry: self.registry,
-            semantic_info: None,
+            semantic_info: &self.ast.semantic_info,
         }
     }
 }
@@ -1900,7 +1900,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     ast: self.ast,
                     symbol_table: self.symbol_table,
                     registry: self.registry,
-                    semantic_info: None,
+                    semantic_info: &self.ast.semantic_info,
                 };
 
                 let (lowered_true, lowered_false) = match ctx.eval_int(lowered_cond) {
@@ -2921,9 +2921,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // Store unique mapping for anonymous tags and update side table with stable name
         if tag.is_none() {
             self.type_to_tag_sym.insert(ty, sym);
-            if let Some(info) = &mut self.ast.semantic_info {
-                info.anonymous_tags.insert(ty, tag_name);
-            }
+            self.ast.semantic_info.anonymous_tags.insert(ty, tag_name);
         }
 
         Ok(ty)
@@ -3001,9 +2999,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // Store unique mapping for anonymous tags and update side table with stable name
             if tag.is_none() {
                 self.type_to_tag_sym.insert(ty, sym);
-                if let Some(info) = &mut self.ast.semantic_info {
-                    info.anonymous_tags.insert(ty, tag_name);
-                }
+                self.ast.semantic_info.anonymous_tags.insert(ty, tag_name);
             }
             Ok(ty)
         } else {
@@ -3013,9 +3009,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // Store unique mapping for anonymous tags and update side table with stable name
             if tag.is_none() {
                 self.type_to_tag_sym.insert(ty, sym);
-                if let Some(info) = &mut self.ast.semantic_info {
-                    info.anonymous_tags.insert(ty, tag_name);
-                }
+                self.ast.semantic_info.anonymous_tags.insert(ty, tag_name);
             }
             Ok(ty)
         }

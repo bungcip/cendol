@@ -62,7 +62,7 @@ struct FunctionCtx {
 
 /// Side table containing semantic information for AST nodes.
 /// Parallel vectors indexed by node index (NodeRef.index()).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SemanticInfo {
     pub types: Vec<Option<QualType>>,
     pub conversions: Vec<SmallVec<[Conversion; 1]>>,
@@ -87,9 +87,10 @@ impl SemanticInfo {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ValueCategory {
     LValue,
+    #[default]
     RValue,
 }
 
@@ -337,7 +338,7 @@ impl<'a> SemanticAnalyzer<'a> {
             ast: self.ast,
             symbol_table: self.symbol_table,
             registry: self.registry,
-            semantic_info: Some(self.semantic_info),
+            semantic_info: self.semantic_info,
         }
     }
 

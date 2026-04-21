@@ -52,13 +52,13 @@ pub use nodes::{BinaryOp, UnaryOp};
 pub struct Ast {
     pub(crate) kinds: Vec<NodeKind>,
     pub(crate) spans: Vec<SourceSpan>,
-    pub semantic_info: Option<SemanticInfo>, // Populated after type resolution
+    pub semantic_info: SemanticInfo, // Populated after type resolution
 }
 
 impl Ast {
     /// Create a new empty AST
     pub(crate) fn new() -> Self {
-        Ast::default()
+        Self::default()
     }
 
     /// Add a node to the AST and return its reference
@@ -117,7 +117,7 @@ impl Ast {
     /// attach semantic info side table for AST (populated after type resolution)
     #[inline]
     pub(crate) fn attach_semantic_info(&mut self, semantic_info: SemanticInfo) {
-        self.semantic_info = Some(semantic_info);
+        self.semantic_info = semantic_info;
     }
 
     /// set the kind of an existing node
@@ -203,7 +203,7 @@ impl ExactSizeIterator for NodeRefRange {}
 impl Ast {
     /// Get the resolved type for a node (reads from attached semantic_info)
     pub(crate) fn get_resolved_type(&self, node: NodeRef) -> Option<QualType> {
-        self.semantic_info.as_ref()?.types[node.index()]
+        self.semantic_info.types.get(node.index()).and_then(|t| *t)
     }
 
     /// Get resolved type for a node. panic if not resolved
@@ -213,14 +213,12 @@ impl Ast {
 
     /// Get the value category for a node (reads from attached semantic_info)
     pub(crate) fn get_value_category(&self, node: NodeRef) -> Option<ValueCategory> {
-        self.semantic_info.as_ref()?.value_categories.get(node.index()).copied()
+        self.semantic_info.value_categories.get(node.index()).copied()
     }
 
     /// get selected expression of generic selection
     pub(crate) fn get_generic_selection(&self, node: NodeRef) -> NodeRef {
         self.semantic_info
-            .as_ref()
-            .unwrap()
             .generic_selections
             .get(&node.index())
             .copied()
@@ -230,8 +228,6 @@ impl Ast {
     /// get selected branch of choose expression
     pub(crate) fn get_choose_expression(&self, node: NodeRef) -> NodeRef {
         self.semantic_info
-            .as_ref()
-            .unwrap()
             .choose_expressions
             .get(&node.index())
             .copied()

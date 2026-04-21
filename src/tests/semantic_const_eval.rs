@@ -29,7 +29,7 @@ fn evaluate_program(source: &str) -> String {
         ast: &ast,
         symbol_table: &symbol_table,
         registry: &registry,
-        semantic_info: ast.semantic_info.as_ref(),
+        semantic_info: &ast.semantic_info,
     };
 
     let result = ctx.eval_int(init_expr);

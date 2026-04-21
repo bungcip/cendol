@@ -10,7 +10,7 @@ fn check_literal_type(source: &str, expected_type_str: &str) {
         if let NodeKind::Literal(lid) = kind
             && lid.kind() == LitKind::Int
         {
-            let ty = ast.semantic_info.as_ref().unwrap().types[i].expect("Literal type not resolved");
+            let ty = ast.semantic_info.types[i].expect("Literal type not resolved");
             let ty_str = registry.display_qual_type(ty);
             assert_eq!(ty_str, expected_type_str, "Type mismatch for source: {}", source);
             found = true;

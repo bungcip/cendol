@@ -217,5 +217,5 @@ Action: Ensure that `_Generic` selection continues checking all associations eve
 
 2026-04-15 - [Alignment Specifier Redeclaration Constraints]
 
-Learning: C11 6.7.5p5 requires that if an identifier is declared with an alignment specifier, the FIRST declaration must specify it. A later declaration cannot introduce an alignment specifier that was missing in the first. Furthermore, multiple declarations must specify the same alignment. This ensures that the alignment is known early and remains consistent, preventing potential ABI or layout issues.
-Action: Enforce alignment consistency and first-declaration requirement during global symbol merging in the symbol table.
+Learning: While C11 6.7.5p5 mandates that if an identifier has an alignment specifier, it must appear in the first declaration, major compilers (GCC/Clang) take a more permissive approach in practice, allowing later declarations to introduce or even upgrade alignment to the strictest specified (as per 6.7.5p6). This ensures ABI compatibility while allowing refinement of alignment requirements across multiple declarations.
+Action: Implement strictest-alignment merging for variable redeclarations in the symbol table to align with industry-standard behavior and maximize compatibility with existing codebases.

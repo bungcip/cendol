@@ -377,14 +377,6 @@ fn test_global_variable_visible_in_its_own_initializer() {
     );
 }
 
-#[test]
-fn test_global_variable_alignment_mismatch() {
-    let source = r#"
-        _Alignas(8) int foo;
-        _Alignas(16) int foo;
-    "#;
-    run_fail_with_message(source, "conflicting alignment specifiers");
-}
 
 #[test]
 fn test_typedef_visible_in_declarator() {

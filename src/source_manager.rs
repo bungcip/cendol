@@ -520,19 +520,16 @@ impl SourceManager {
     }
 }
 
-/// ⚡ Bolt: Two-pass optimization to avoid multiple reallocations of line_starts vector.
+/// ⚡ Bolt: Optimized line start calculation using memchr.
 fn compute_line_starts(buffer: &[u8]) -> Vec<u32> {
-    // First pass: count newlines to determine required capacity.
-    let newline_count = buffer.iter().filter(|&&b| b == b'\n').count();
+    // Two-pass approach using memchr is significantly faster than manual byte loops.
+    // First pass counts newlines to pre-allocate exactly.
+    let newline_count = memchr::memchr_iter(b'\n', buffer).count();
     let mut line_starts = Vec::with_capacity(newline_count + 1);
-    line_starts.push(0); // First line starts at offset 0
+    line_starts.push(0);
 
-    // Second pass: populate line starts.
-    for (i, &byte) in buffer.iter().enumerate() {
-        if byte == b'\n' {
-            line_starts.push((i + 1) as u32);
-        }
-    }
+    // Second pass populates the offsets.
+    line_starts.extend(memchr::memchr_iter(b'\n', buffer).map(|pos| (pos + 1) as u32));
     line_starts
 }
 

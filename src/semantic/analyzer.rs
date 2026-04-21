@@ -323,11 +323,15 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_type_exprs(&mut self, qt: QualType) {
         let ty = qt.ty();
 
-        // ⚡ Bolt: Fast-path for built-in types.
-        // Built-in types (int, float, void, etc.) cannot contain nested
-        // expressions and thus don't need recursion or HashSet tracking.
-        if ty.builtin().is_some() {
-            return;
+        // ⚡ Bolt: Fast-path for types that cannot contain nested expressions.
+        // This includes builtins, records, enums, and complex types.
+        // Skipping these avoids expensive HashSet insertions and lookups.
+        match ty.class() {
+            crate::semantic::types::TypeClass::Builtin
+            | crate::semantic::types::TypeClass::Record
+            | crate::semantic::types::TypeClass::Enum
+            | crate::semantic::types::TypeClass::Complex => return,
+            _ => {}
         }
 
         if !self.checked_types.insert(ty) {

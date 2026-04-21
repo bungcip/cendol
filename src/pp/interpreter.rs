@@ -597,7 +597,7 @@ impl<'a> Interpreter<'a> {
             PPTokenKind::Number => {
                 let text = self.preprocessor.get_token_text(token);
                 let (val, suffix, _) = literal_parsing::parse_integer_literal(&text).ok_or_else(|| self.error())?;
-                let mut is_unsigned = matches!(suffix, Some(IntSuffix::U | IntSuffix::UL | IntSuffix::ULL));
+                let mut is_unsigned = matches!(suffix, Some(IntSuffix::U | IntSuffix::UL | IntSuffix::Ull));
                 if !is_unsigned && (val as u64) > i64::MAX as u64 {
                     is_unsigned = true;
                 }

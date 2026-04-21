@@ -129,7 +129,7 @@ fn test_integer_literals() {
     check_lit!("42", LitVal::Int { value: 42, suffix: IntSuffix::None, radix: 10 });
     check_lit!("0x1A", LitVal::Int { value: 26, suffix: IntSuffix::None, radix: 16 });
     check_lit!("077u", LitVal::Int { value: 63, suffix: IntSuffix::U, radix: 8 });
-    check_lit!("123llu", LitVal::Int { value: 123, suffix: IntSuffix::ULL, radix: 10 });
+    check_lit!("123llu", LitVal::Int { value: 123, suffix: IntSuffix::Ull, radix: 10 });
     check_lit!("0b1010", LitVal::Int { value: 10, suffix: IntSuffix::None, radix: 2 });
     // C23 separators
     check_lit!("1'234", LitVal::Int { value: 1234, suffix: IntSuffix::None, radix: 10 });

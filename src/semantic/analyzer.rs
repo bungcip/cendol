@@ -1308,9 +1308,9 @@ impl<'a> SemanticAnalyzer<'a> {
             lhs
         } else if is_equality && rhs.is_pointer() {
             rhs
-        } else if is_equality && lhs.is_arithmetic() && rhs.is_arithmetic() {
-            self.check_uac(node, lhs, rhs)?
-        } else if !is_equality && lhs.is_real() && rhs.is_real() {
+        } else if (is_equality && lhs.is_arithmetic() && rhs.is_arithmetic())
+            || (!is_equality && lhs.is_real() && rhs.is_real())
+        {
             self.check_uac(node, lhs, rhs)?
         } else {
             self.report_error(

@@ -474,6 +474,6 @@ fn test_builtin_alloca() {
     let resolved = setup_expr("__builtin_alloca(42)");
     insta::assert_yaml_snapshot!(&resolved, @"
     BuiltinAlloca:
-      LiteralInt: 42    
+      LiteralInt: 42
     ");
 }

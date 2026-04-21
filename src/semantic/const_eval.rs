@@ -114,7 +114,7 @@ impl<'a> ConstEvalCtx<'a> {
     }
 
     fn get_info(&self) -> Option<&'a SemanticInfo> {
-        self.semantic_info.or_else(|| self.ast.semantic_info.as_ref())
+        self.semantic_info.or(self.ast.semantic_info.as_ref())
     }
 
     fn get_literal_type(&self, literal: &LitVal) -> QualType {
@@ -133,7 +133,7 @@ impl<'a> ConstEvalCtx<'a> {
             LitVal::Char(_, prefix) => prefix.get_type(self.registry),
             LitVal::Float { suffix, .. } => suffix.get_type(self.registry),
             LitVal::String { value, prefix } => {
-                let parsed_str = lower_string_literal(&value, *prefix);
+                let parsed_str = lower_string_literal(value, *prefix);
                 let builtin_base = match parsed_str.builtin_type {
                     BuiltinType::Char => self.registry.type_char,
                     BuiltinType::Int => self.registry.type_int,

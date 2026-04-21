@@ -4,8 +4,8 @@ use std::iter::Peekable;
 use std::str::Chars;
 
 const INTEGER_SUFFIXES: &[(&str, IntSuffix)] = &[
-    ("ull", IntSuffix::ULL),
-    ("llu", IntSuffix::ULL),
+    ("ull", IntSuffix::Ull),
+    ("llu", IntSuffix::Ull),
     ("ul", IntSuffix::UL),
     ("lu", IntSuffix::UL),
     ("ll", IntSuffix::LL),

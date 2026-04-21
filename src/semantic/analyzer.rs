@@ -1,7 +1,7 @@
 use crate::{
     ast::{
         NodeRef,
-        literal::{FloatSuffix, IntSuffix, LitRef, LitVal},
+        literal::{LitKind, LitRef, LitVal},
         nodes::*,
         *,
     },
@@ -13,7 +13,7 @@ use crate::{
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticDiag, SemanticError},
-        literal_utils::parse_string_literal,
+        literal_utils::lower_string_literal,
     },
 };
 
@@ -259,7 +259,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn is_string_literal(&self, node: NodeRef) -> bool {
-        matches!(self.ast.get_kind(node), NodeKind::Literal(l) if matches!(self.ast.literals.get(*l), LitVal::String(_)))
+        matches!(self.ast.get_kind(node), NodeKind::Literal(l) if l.kind() == LitKind::String)
     }
 
     fn check_uac(&mut self, node: NodeRef, lhs_promoted: QualType, rhs_promoted: QualType) -> Option<QualType> {
@@ -553,7 +553,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 // Bolt ⚡: Use cached value category for the object expression.
                 *is_arrow || self.semantic_info.value_categories[obj.index()] == ValueCategory::LValue
             }
-            NodeKind::Literal(l) if matches!(self.ast.literals.get(*l), LitVal::String(_)) => true,
+            NodeKind::Literal(l) if l.kind() == LitKind::String => true,
             NodeKind::CompoundLiteral(..) => true,
             NodeKind::BuiltinChooseExpr(..) => {
                 // Bolt ⚡: Use cached value category for the selected expression.
@@ -576,9 +576,8 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn is_numeric_literal(&self, node: NodeRef) -> bool {
-        if let NodeKind::Literal(lit_id) = self.ast.get_kind(node) {
-            let val = self.ast.literals.get(*lit_id);
-            matches!(val, LitVal::Int { .. } | LitVal::Char(..) | LitVal::Float { .. })
+        if let NodeKind::Literal(lit) = self.ast.get_kind(node) {
+            matches!(lit.kind(), LitKind::Int | LitKind::Char | LitKind::Float)
         } else {
             false
         }
@@ -690,7 +689,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let node_kind = self.ast.get_kind(node);
 
         match node_kind {
-            NodeKind::Literal(l) if matches!(self.ast.literals.get(*l), LitVal::Nullptr) => return true,
+            NodeKind::Literal(l) if l.kind() == LitKind::Nullptr => return true,
             NodeKind::Cast(qt, inner) if qt.ty() == self.registry.type_void_ptr => {
                 return self.is_null_pointer_constant(*inner);
             }
@@ -1160,223 +1159,224 @@ impl<'a> SemanticAnalyzer<'a> {
         rhs_promoted: QualType,
     ) -> Option<(QualType, QualType)> {
         match op {
-            // Pointer + pointer is invalid (C11 6.5.6)
-            BinaryOp::Add if lhs_promoted.is_pointer() && rhs_promoted.is_pointer() => {
-                self.report_error(
-                    node,
-                    SemanticError::InvalidBinaryOperands {
-                        left_ty: lhs_promoted,
-                        right_ty: rhs_promoted,
-                    },
-                );
-                None
+            BinaryOp::Add if lhs_promoted.is_pointer() || rhs_promoted.is_pointer() => {
+                self.analyze_pointer_arithmetic(node, op, lhs_promoted, rhs_promoted)
             }
-            // Pointer + integer = pointer
-            BinaryOp::Add if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => {
-                // Pointer addition requires pointer to a complete object type (C11 6.5.6p2)
-                if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty())
-                    && (!self.registry.is_complete(pointee.ty()) || pointee.is_function())
-                {
-                    self.report_error(
-                        node,
-                        SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_promoted,
-                            right_ty: rhs_promoted,
-                        },
-                    );
-                    return None;
-                }
-                Some((lhs_promoted, lhs_promoted))
+            BinaryOp::Sub if lhs_promoted.is_pointer() || rhs_promoted.is_pointer() => {
+                self.analyze_pointer_arithmetic(node, op, lhs_promoted, rhs_promoted)
             }
-            BinaryOp::Add if lhs_promoted.is_integer() && rhs_promoted.is_pointer() => {
-                // Pointer addition requires pointer to a complete object type (C11 6.5.6p2)
-                if let Some(pointee) = self.registry.get_pointee(rhs_promoted.ty())
-                    && (!self.registry.is_complete(pointee.ty()) || pointee.is_function())
-                {
-                    self.report_error(
-                        node,
-                        SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_promoted,
-                            right_ty: rhs_promoted,
-                        },
-                    );
-                    return None;
-                }
-                Some((rhs_promoted, rhs_promoted))
-            }
+            BinaryOp::Equal
+            | BinaryOp::NotEqual
+            | BinaryOp::Less
+            | BinaryOp::LessEqual
+            | BinaryOp::Greater
+            | BinaryOp::GreaterEqual => self.analyze_comparison(node, op, lhs_promoted, rhs_promoted),
+            BinaryOp::LogicAnd | BinaryOp::LogicOr => self.analyze_logical(node, lhs_promoted, rhs_promoted),
+            BinaryOp::LShift | BinaryOp::RShift => self.analyze_shift(node, lhs_promoted, rhs_promoted),
+            _ => self.analyze_arithmetic(node, lhs_promoted, rhs_promoted),
+        }
+    }
 
-            // Pointer - integer = pointer
-            BinaryOp::Sub if lhs_promoted.is_pointer() && rhs_promoted.is_integer() => {
-                // Pointer subtraction requires pointer to a complete object type (C11 6.5.6p2)
-                if let Some(pointee) = self.registry.get_pointee(lhs_promoted.ty())
-                    && (!self.registry.is_complete(pointee.ty()) || pointee.is_function())
-                {
-                    self.report_error(
-                        node,
-                        SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_promoted,
-                            right_ty: rhs_promoted,
-                        },
-                    );
-                    return None;
-                }
-                Some((lhs_promoted, lhs_promoted))
-            }
-
-            // Pointer - pointer = integer (ptrdiff_t)
-            BinaryOp::Sub if lhs_promoted.is_pointer() && rhs_promoted.is_pointer() => {
-                let lhs_base = self.registry.get_pointee(lhs_promoted.ty()).unwrap();
-                let rhs_base = self.registry.get_pointee(rhs_promoted.ty()).unwrap();
-
-                let compatible = self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all());
-                let complete_lhs = self.registry.is_complete(lhs_base.ty());
-                let complete_rhs = self.registry.is_complete(rhs_base.ty());
-                let is_func_lhs = lhs_base.is_function();
-                let is_func_rhs = rhs_base.is_function();
-
-                if !compatible || !complete_lhs || !complete_rhs || is_func_lhs || is_func_rhs {
-                    self.report_error(
-                        node,
-                        SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_promoted,
-                            right_ty: rhs_promoted,
-                        },
-                    );
-                    return None;
-                }
-
-                Some((QualType::unqualified(self.registry.type_int), lhs_promoted))
-            }
-
-            // Pointer/Integer comparisons
-            BinaryOp::Equal | BinaryOp::NotEqual => {
-                let common = if lhs_promoted.is_pointer() && rhs_promoted.is_pointer() {
-                    let lhs_base = self.registry.get_pointee(lhs_promoted.ty()).unwrap();
-                    let rhs_base = self.registry.get_pointee(rhs_promoted.ty()).unwrap();
-
-                    if lhs_base.is_void() || rhs_base.is_void() {
-                        QualType::unqualified(self.registry.type_void_ptr)
-                    } else if self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all()) {
-                        lhs_promoted
-                    } else {
-                        self.report_warning(
-                            node,
-                            SemanticError::IncompatiblePointerComparison {
-                                lhs: lhs_promoted,
-                                rhs: rhs_promoted,
-                            },
-                        );
-                        lhs_promoted
-                    }
-                } else if lhs_promoted.is_pointer() {
-                    lhs_promoted
-                } else if rhs_promoted.is_pointer() {
-                    rhs_promoted
-                } else {
-                    self.check_uac(node, lhs_promoted, rhs_promoted)?
-                };
-                Some((QualType::unqualified(self.registry.type_int), common))
-            }
-
-            BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
-                let common = if lhs_promoted.is_pointer() && rhs_promoted.is_pointer() {
-                    let lhs_base = self.registry.get_pointee(lhs_promoted.ty()).unwrap();
-                    let rhs_base = self.registry.get_pointee(rhs_promoted.ty()).unwrap();
-
-                    if lhs_base.is_function() || rhs_base.is_function() {
-                        self.report_error(
-                            node,
-                            SemanticError::InvalidBinaryOperands {
-                                left_ty: lhs_promoted,
-                                right_ty: rhs_promoted,
-                            },
-                        );
-                        return None;
-                    }
-
-                    if lhs_base != rhs_base {
-                        self.report_warning(
-                            node,
-                            SemanticError::IncompatiblePointerComparison {
-                                lhs: lhs_promoted,
-                                rhs: rhs_promoted,
-                            },
-                        );
-                    }
-                    lhs_promoted
-                } else if lhs_promoted.is_real() && rhs_promoted.is_real() {
-                    self.check_uac(node, lhs_promoted, rhs_promoted)?
+    fn analyze_pointer_arithmetic(
+        &mut self,
+        node: NodeRef,
+        op: BinaryOp,
+        lhs: QualType,
+        rhs: QualType,
+    ) -> Option<(QualType, QualType)> {
+        match op {
+            BinaryOp::Add => {
+                if lhs.is_pointer() && rhs.is_integer() {
+                    self.check_pointer_arithmetic_operand(node, lhs, rhs, lhs)?;
+                    Some((lhs, lhs))
+                } else if lhs.is_integer() && rhs.is_pointer() {
+                    self.check_pointer_arithmetic_operand(node, lhs, rhs, rhs)?;
+                    Some((rhs, rhs))
                 } else {
                     self.report_error(
                         node,
                         SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_promoted,
-                            right_ty: rhs_promoted,
-                        },
-                    );
-                    return None;
-                };
-                Some((QualType::unqualified(self.registry.type_int), common))
-            }
-
-            // Logical operations
-            BinaryOp::LogicAnd | BinaryOp::LogicOr => {
-                // C11 6.5.13/6.5.14: Each operand shall have scalar type
-                if !lhs_promoted.is_scalar() || !rhs_promoted.is_scalar() {
-                    self.report_error(
-                        node,
-                        SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_promoted,
-                            right_ty: rhs_promoted,
-                        },
-                    );
-                    return None;
-                }
-                // Result has type int (C11 6.5.13/6.5.14)
-                Some((QualType::unqualified(self.registry.type_int), lhs_promoted))
-            }
-
-            // Shift operations
-            BinaryOp::LShift | BinaryOp::RShift => {
-                if !lhs_promoted.is_integer() || !rhs_promoted.is_integer() {
-                    self.report_error(
-                        node,
-                        SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_promoted,
-                            right_ty: rhs_promoted,
-                        },
-                    );
-                    return None;
-                }
-                // C11 6.5.7: result is type of promoted left operand
-                Some((lhs_promoted, lhs_promoted))
-            }
-
-            // For other operations, use usual arithmetic conversions
-            _ => {
-                if !lhs_promoted.is_arithmetic() || !rhs_promoted.is_arithmetic() {
-                    self.report_error(
-                        node,
-                        SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_promoted,
-                            right_ty: rhs_promoted,
-                        },
-                    );
-                    return None;
-                }
-                if let Some(ty) = usual_arithmetic_conversions(self.registry, lhs_promoted, rhs_promoted) {
-                    Some((ty, ty))
-                } else {
-                    self.report_error(
-                        node,
-                        SemanticError::InvalidBinaryOperands {
-                            left_ty: lhs_promoted,
-                            right_ty: rhs_promoted,
+                            left_ty: lhs,
+                            right_ty: rhs,
                         },
                     );
                     None
                 }
             }
+            BinaryOp::Sub => {
+                if lhs.is_pointer() && rhs.is_integer() {
+                    self.check_pointer_arithmetic_operand(node, lhs, rhs, lhs)?;
+                    Some((lhs, lhs))
+                } else if lhs.is_pointer() && rhs.is_pointer() {
+                    let lhs_base = self.registry.get_pointee(lhs.ty()).unwrap();
+                    let rhs_base = self.registry.get_pointee(rhs.ty()).unwrap();
+
+                    let compatible = self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all());
+                    let complete_lhs = self.registry.is_complete(lhs_base.ty());
+                    let complete_rhs = self.registry.is_complete(rhs_base.ty());
+                    let is_func_lhs = lhs_base.is_function();
+                    let is_func_rhs = rhs_base.is_function();
+
+                    if !compatible || !complete_lhs || !complete_rhs || is_func_lhs || is_func_rhs {
+                        self.report_error(
+                            node,
+                            SemanticError::InvalidBinaryOperands {
+                                left_ty: lhs,
+                                right_ty: rhs,
+                            },
+                        );
+                        return None;
+                    }
+
+                    Some((QualType::unqualified(self.registry.type_int), lhs))
+                } else {
+                    self.report_error(
+                        node,
+                        SemanticError::InvalidBinaryOperands {
+                            left_ty: lhs,
+                            right_ty: rhs,
+                        },
+                    );
+                    None
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn check_pointer_arithmetic_operand(
+        &mut self,
+        node: NodeRef,
+        lhs: QualType,
+        rhs: QualType,
+        ptr_ty: QualType,
+    ) -> Option<()> {
+        if let Some(pointee) = self.registry.get_pointee(ptr_ty.ty())
+            && (!self.registry.is_complete(pointee.ty()) || pointee.is_function())
+        {
+            self.report_error(
+                node,
+                SemanticError::InvalidBinaryOperands {
+                    left_ty: lhs,
+                    right_ty: rhs,
+                },
+            );
+            return None;
+        }
+        Some(())
+    }
+
+    fn analyze_comparison(
+        &mut self,
+        node: NodeRef,
+        op: BinaryOp,
+        lhs: QualType,
+        rhs: QualType,
+    ) -> Option<(QualType, QualType)> {
+        let is_equality = matches!(op, BinaryOp::Equal | BinaryOp::NotEqual);
+        let common = if lhs.is_pointer() && rhs.is_pointer() {
+            let lhs_base = self.registry.get_pointee(lhs.ty()).unwrap();
+            let rhs_base = self.registry.get_pointee(rhs.ty()).unwrap();
+
+            if is_equality {
+                if lhs_base.is_void() || rhs_base.is_void() {
+                    QualType::unqualified(self.registry.type_void_ptr)
+                } else if self.registry.is_compatible(lhs_base.strip_all(), rhs_base.strip_all()) {
+                    lhs
+                } else {
+                    self.report_warning(node, SemanticError::IncompatiblePointerComparison { lhs, rhs });
+                    lhs
+                }
+            } else {
+                if lhs_base.is_function() || rhs_base.is_function() {
+                    self.report_error(
+                        node,
+                        SemanticError::InvalidBinaryOperands {
+                            left_ty: lhs,
+                            right_ty: rhs,
+                        },
+                    );
+                    return None;
+                }
+
+                if lhs_base != rhs_base {
+                    self.report_warning(node, SemanticError::IncompatiblePointerComparison { lhs, rhs });
+                }
+                lhs
+            }
+        } else if is_equality && lhs.is_pointer() {
+            lhs
+        } else if is_equality && rhs.is_pointer() {
+            rhs
+        } else if is_equality && lhs.is_arithmetic() && rhs.is_arithmetic() {
+            self.check_uac(node, lhs, rhs)?
+        } else if !is_equality && lhs.is_real() && rhs.is_real() {
+            self.check_uac(node, lhs, rhs)?
+        } else {
+            self.report_error(
+                node,
+                SemanticError::InvalidBinaryOperands {
+                    left_ty: lhs,
+                    right_ty: rhs,
+                },
+            );
+            return None;
+        };
+
+        Some((QualType::unqualified(self.registry.type_int), common))
+    }
+
+    fn analyze_logical(&mut self, node: NodeRef, lhs: QualType, rhs: QualType) -> Option<(QualType, QualType)> {
+        if !lhs.is_scalar() || !rhs.is_scalar() {
+            self.report_error(
+                node,
+                SemanticError::InvalidBinaryOperands {
+                    left_ty: lhs,
+                    right_ty: rhs,
+                },
+            );
+            return None;
+        }
+        Some((QualType::unqualified(self.registry.type_int), lhs))
+    }
+
+    fn analyze_shift(&mut self, node: NodeRef, lhs: QualType, rhs: QualType) -> Option<(QualType, QualType)> {
+        if !lhs.is_integer() || !rhs.is_integer() {
+            self.report_error(
+                node,
+                SemanticError::InvalidBinaryOperands {
+                    left_ty: lhs,
+                    right_ty: rhs,
+                },
+            );
+            return None;
+        }
+        Some((lhs, lhs))
+    }
+
+    fn analyze_arithmetic(&mut self, node: NodeRef, lhs: QualType, rhs: QualType) -> Option<(QualType, QualType)> {
+        if !lhs.is_arithmetic() || !rhs.is_arithmetic() {
+            self.report_error(
+                node,
+                SemanticError::InvalidBinaryOperands {
+                    left_ty: lhs,
+                    right_ty: rhs,
+                },
+            );
+            return None;
+        }
+
+        if let Some(ty) = usual_arithmetic_conversions(self.registry, lhs, rhs) {
+            Some((ty, ty))
+        } else {
+            self.report_error(
+                node,
+                SemanticError::InvalidBinaryOperands {
+                    left_ty: lhs,
+                    right_ty: rhs,
+                },
+            );
+            None
         }
     }
 
@@ -3451,13 +3451,13 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_literal(&mut self, lid: LitRef) -> Option<QualType> {
-        let val = self.ast.literals.get(lid);
+        let val = lid.get_val();
         match val {
-            LitVal::Int { val, suffix, radix } => {
-                let is_decimal = *radix == 10;
-                for ty in IntSuffix::get_candidates(*suffix, self.registry, is_decimal) {
+            LitVal::Int { value, suffix, radix } => {
+                let is_decimal = radix == 10;
+                for ty in suffix.get_candidates(self.registry, is_decimal) {
                     let _ = self.registry.ensure_layout(ty);
-                    if self.registry.is_literal_fitting(*val, ty) {
+                    if self.registry.is_literal_fitting(value, ty) {
                         return Some(QualType::unqualified(ty));
                     }
                 }
@@ -3467,15 +3467,15 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(self.registry.type_long_long_unsigned))
             }
             LitVal::Float { suffix, .. } => {
-                let ty = FloatSuffix::get_type(*suffix, self.registry);
+                let ty = suffix.get_type(self.registry);
                 Some(QualType::unqualified(ty))
             }
             LitVal::Char(_, prefix) => {
                 let ty = prefix.get_type(self.registry);
                 Some(QualType::unqualified(ty))
             }
-            LitVal::String(name) => {
-                let parsed = parse_string_literal(*name);
+            LitVal::String { value, prefix } => {
+                let parsed = lower_string_literal(&value, prefix);
                 let element_type = self.registry.get_builtin_type(parsed.builtin_type);
 
                 let array_type = self
@@ -3570,7 +3570,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let message = msg
                     .and_then(|m| match self.ast.get_kind(m) {
                         NodeKind::Literal(l) => {
-                            if let LitVal::String(s) = self.ast.literals.get(*l) {
+                            if let LitVal::String { value: s, .. } = l.get_val() {
                                 Some(s.as_str().to_string())
                             } else {
                                 None

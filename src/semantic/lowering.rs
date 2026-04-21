@@ -14,13 +14,13 @@
 use hashbrown::HashMap;
 use smallvec::{SmallVec, smallvec};
 
-use crate::ast::literal::{FloatSuffix, LitRef, LitVal};
+use crate::ast::literal::{LitKind, LitRef, LitVal, StrPrefix};
 use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, TypeSpec};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticDiag, SemanticError};
-use crate::semantic::literal_utils::parse_string_literal;
+use crate::semantic::literal_utils::lower_string_literal;
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, BuiltinType, EnumConstant, Namespace, ScopeId, StructMember, SymbolKind, SymbolRef, SymbolTable,
@@ -182,7 +182,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 let message = msg_node
                     .and_then(|m| match self.ast.get_kind(m) {
                         NodeKind::Literal(literal_id) => {
-                            if let LitVal::String(s) = self.ast.literals.get(*literal_id) {
+                            if let LitVal::String { value: s, .. } = literal_id.get_val() {
                                 Some(s.as_str().to_string())
                             } else {
                                 None
@@ -1066,7 +1066,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             // Create string literal for initializer
             let func_name_id = NameId::new(&func_name_str);
-            let init_literal = self.ast.literals.insert(LitVal::String(func_name_id));
+            let init_literal = LitRef::from_string(func_name_id.as_str(), StrPrefix::None);
             let init_node = self.push_dummy(span);
             self.ast.set_kind(init_node, NodeKind::Literal(init_literal));
 
@@ -1685,9 +1685,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         match &node.kind {
             // Simple leaves
             ParsedNodeKind::Literal(l) => {
-                let val = self.parsed_ast.literals.get(*l);
-                let lit = self.ast.literals.insert(*val);
-                lower_simple!(NodeKind::Literal(lit))
+                lower_simple!(NodeKind::Literal(*l))
             }
             ParsedNodeKind::Ident(name) => {
                 lower_simple!(NodeKind::Ident(*name, self.resolve_ident(*name, span)))
@@ -2296,7 +2294,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         // C11 6.7.6.2p1: Check if the expression is a float literal (non-integer type)
         if let NodeKind::Literal(literal_id) = self.ast.get_kind(expr)
-            && matches!(self.ast.literals.get(*literal_id), LitVal::Float { .. })
+            && literal_id.kind() == LitKind::Float
         {
             self.report_error(self.ast.get_span(expr), SemanticError::ArraySizeNotInteger);
             return ArraySizeType::Incomplete;
@@ -2547,19 +2545,19 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn get_literal_type(&mut self, lit: LitRef) -> Option<QualType> {
-        let val = self.ast.literals.get(lit);
+        let val = lit.get_val();
         match val {
             LitVal::Int { .. } => Some(QualType::unqualified(self.registry.type_int)),
             LitVal::Float { suffix, .. } => {
-                let ty = FloatSuffix::get_type(*suffix, self.registry);
+                let ty = suffix.get_type(self.registry);
                 Some(QualType::unqualified(ty))
             }
             LitVal::Char(_, prefix) => {
                 let ty = prefix.get_type(self.registry);
                 Some(QualType::unqualified(ty))
             }
-            LitVal::String(s) => {
-                let parsed = parse_string_literal(*s);
+            LitVal::String { value: s, prefix } => {
+                let parsed = lower_string_literal(&s, prefix);
                 let elem = self.registry.get_builtin_type(parsed.builtin_type);
                 let array = self.registry.array_of(elem, ArraySizeType::Constant(parsed.size));
                 Some(QualType::unqualified(array))
@@ -2572,8 +2570,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn try_deduce_string_initializer_size(&mut self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
         match self.ast.get_kind(init_node) {
             NodeKind::Literal(literal_id) => {
-                if let LitVal::String(s) = self.ast.literals.get(*literal_id) {
-                    let parsed = parse_string_literal(*s);
+                if let LitVal::String { value, prefix } = literal_id.get_val() {
+                    let parsed = lower_string_literal(&value, prefix);
                     Some(parsed.size)
                 } else {
                     None
@@ -2584,9 +2582,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item)
                     && item.designator_len == 0
                     && let NodeKind::Literal(literal_id) = self.ast.get_kind(item.initializer)
-                    && let LitVal::String(s) = self.ast.literals.get(*literal_id)
+                    && let LitVal::String { value, prefix } = literal_id.get_val()
                 {
-                    let parsed = parse_string_literal(*s);
+                    let parsed = lower_string_literal(&value, prefix);
                     let string_elem_type = self.registry.get_builtin_type(parsed.builtin_type);
 
                     if self.registry.is_compatible(
@@ -2687,7 +2685,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             {
                 let kind = *self.ast.get_kind(init.initializer);
                 if let NodeKind::Literal(lid) = kind
-                    && matches!(self.ast.literals.get(lid), LitVal::String(_))
+                    && lid.kind() == LitKind::String
                 {
                     iter.next();
                     return;

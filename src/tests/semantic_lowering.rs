@@ -154,13 +154,10 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
         NodeKind::Return(expr) => {
             ResolvedAstNode::Return(expr.map(|r| Box::new(resolve_node(ast, registry, symbol_table, r))))
         }
-        NodeKind::Literal(literal_id) => {
-            let literal = ast.literals.get(*literal_id);
-            match *literal {
-                LitVal::Int { val, .. } => ResolvedAstNode::LiteralInt(val),
-                _ => panic!("Not implemented for this literal type"),
-            }
-        }
+        NodeKind::Literal(literal_id) => match literal_id.get_val() {
+            LitVal::Int { value, .. } => ResolvedAstNode::LiteralInt(value),
+            _ => panic!("Not implemented for this literal type"),
+        },
         NodeKind::Ident(name, _) => ResolvedAstNode::Ident(*name),
         _ => ResolvedAstNode::Other(format!("{:?}", kind)),
     }

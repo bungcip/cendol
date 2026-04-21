@@ -285,9 +285,9 @@ fn extract_alignment(specifiers: &[DeclSpec], parser: &Parser) -> Option<u16> {
             match align_spec {
                 ParsedAlignmentSpec::Expr(expr) => {
                     if let ParsedNodeKind::Literal(lit) = parser.ast.get_node(*expr).kind
-                        && let LitVal::Int { val, .. } = *parser.ast.literals.get(lit)
+                        && let LitVal::Int { value, .. } = lit.get_val()
                     {
-                        return Some(val as u16);
+                        return Some(value as u16);
                     }
                 }
                 ParsedAlignmentSpec::Type(_) => {
@@ -313,9 +313,9 @@ fn parse_enum_constants(parser: &mut Parser, enum_nodes: &[ParsedNodeRef]) -> Re
                 name: *name,
                 value: value_expr.as_ref().and_then(|expr| {
                     if let ParsedNodeKind::Literal(lit) = parser.ast.get_node(*expr).kind
-                        && let LitVal::Int { val, .. } = *parser.ast.literals.get(lit)
+                        && let LitVal::Int { value, .. } = lit.get_val()
                     {
-                        return Some(val);
+                        return Some(value);
                     }
                     None
                 }),

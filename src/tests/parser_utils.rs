@@ -173,11 +173,11 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
 pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNodeKind {
     let node = ast.get_node(node);
     match &node.kind {
-        ParsedNodeKind::Literal(lit) => match ast.literals.get(*lit) {
-            LitVal::Int { val, .. } => ResolvedNodeKind::LiteralInt(*val),
+        ParsedNodeKind::Literal(lit) => match lit.get_val() {
+            LitVal::Int { value, .. } => ResolvedNodeKind::LiteralInt(value),
             lit @ LitVal::Float { .. } => ResolvedNodeKind::LiteralFloat(lit.as_f64()),
-            LitVal::String(s) => ResolvedNodeKind::LiteralString(s.to_string()),
-            LitVal::Char(c, prefix) => ResolvedNodeKind::LiteralChar(*c, *prefix),
+            LitVal::String { value, .. } => ResolvedNodeKind::LiteralString(value),
+            LitVal::Char(c, prefix) => ResolvedNodeKind::LiteralChar(c as u64, prefix),
             LitVal::Nullptr => ResolvedNodeKind::LiteralNullptr,
             LitVal::True => ResolvedNodeKind::LiteralTrue,
             LitVal::False => ResolvedNodeKind::LiteralFalse,
@@ -325,8 +325,8 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
         ParsedNodeKind::StaticAssert(expr, msg) => {
             let message = msg.map(|m| {
                 if let ParsedNodeKind::Literal(lit) = &ast.get_node(m).kind {
-                    if let LitVal::String(s) = ast.literals.get(*lit) {
-                        s.to_string()
+                    if let LitVal::String { value, .. } = lit.get_val() {
+                        value.clone()
                     } else {
                         "<invalid>".to_string()
                     }

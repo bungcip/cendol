@@ -3,9 +3,9 @@ use crate::ast::*;
 use crate::mir::MirArrayLayout;
 use crate::mir::MirProgram;
 use crate::mir::{
-    self, AtomicMemOrder, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, LocalId, MirBlockId, MirBuilder,
-    MirFieldLayout, MirFunctionId, MirLinkage, MirRecordLayout, MirStmt, MirType, Operand, Place, Rvalue, Terminator,
-    TypeId,
+    self, AtomicMemOrder, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, GlobalDecl, LocalId, MirBlockId,
+    MirBuilder, MirFieldLayout, MirFunctionId, MirLinkage, MirRecordLayout, MirStmt, MirType, Operand, Place, Rvalue,
+    Terminator, TypeId,
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
@@ -109,6 +109,11 @@ impl<'a> MirGen<'a> {
     // create dummy operand
     pub(super) fn create_dummy_operand(&mut self) -> Operand {
         self.create_int_operand(9999)
+    }
+
+    pub(crate) fn create_anon_global(&mut self, mir_ty: TypeId, init_const: ConstValueId) -> GlobalId {
+        let name = self.mb.get_next_anon_global_name();
+        self.mb.create_global(GlobalDecl::anonymous(name, mir_ty, init_const))
     }
 
     pub(crate) fn visit_module(&mut self) -> MirProgram {
@@ -484,9 +489,14 @@ impl<'a> MirGen<'a> {
 
         let linkage = self.calculate_linkage(storage, symbol.def_state);
 
-        let global_id =
-            self.mb
-                .create_global_with_init(global_name, mir_type_id, symbol.is_const(), is_tls, linkage, None);
+        let global_id = self.mb.create_global(GlobalDecl {
+            name: global_name,
+            type_id: mir_type_id,
+            is_constant: symbol.is_const(),
+            is_tls,
+            linkage,
+            initial_value: None,
+        });
 
         if let Some(align) = alignment {
             self.mb.set_global_alignment(global_id, align);

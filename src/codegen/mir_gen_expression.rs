@@ -1,4 +1,4 @@
-use crate::ast::literal::{FloatSuffix, LitVal};
+use crate::ast::literal::LitVal;
 use crate::ast::nodes::AtomicOp;
 use crate::ast::{BinaryOp, CallExpr, NameId, NodeKind, NodeRef, StorageClass, UnaryOp};
 use crate::codegen::mir_gen::MirGen;
@@ -542,48 +542,31 @@ impl<'a> MirGen<'a> {
 
     fn visit_literal(&mut self, node_kind: &NodeKind, ty: QualType) -> Option<Operand> {
         let mir_ty = self.lower_qual_type(ty);
-        match node_kind {
-            NodeKind::Literal(literal_id) => {
-                let val = self.ast.literals.get(*literal_id);
-                match val {
-                    LitVal::Int { val, .. } => Some(Operand::Constant(
-                        self.create_constant(mir_ty, ConstValueKind::Int(*val)),
-                    )),
-                    lit @ LitVal::Float { suffix, .. } => {
-                        if matches!(suffix, Some(FloatSuffix::I | FloatSuffix::IF | FloatSuffix::IL)) {
-                            let ty_info = self.mb.get_type(mir_ty);
-                            if let MirType::Record { field_types, .. } = ty_info {
-                                let elem_ty = field_types[0];
-                                let zero = self.create_constant(elem_ty, ConstValueKind::Float(0.0));
-                                let imag = self.create_constant(elem_ty, ConstValueKind::Float(lit.as_f64()));
-                                Some(Operand::Constant(self.create_constant(
-                                    mir_ty,
-                                    ConstValueKind::StructLiteral(vec![(0, zero), (1, imag)]),
-                                )))
-                            } else {
-                                unreachable!("Complex float must lower to a record type")
-                            }
-                        } else {
-                            Some(Operand::Constant(
-                                self.create_constant(mir_ty, ConstValueKind::Float(lit.as_f64())),
-                            ))
-                        }
-                    }
-                    LitVal::Char(val, _) => Some(Operand::Constant(
-                        self.create_constant(mir_ty, ConstValueKind::Int(*val as i64)),
-                    )),
-                    LitVal::String(val) => Some(self.visit_literal_string(val, ty)),
-                    LitVal::Nullptr => Some(Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Null))),
-                    LitVal::True => Some(Operand::Constant(
-                        self.create_constant(mir_ty, ConstValueKind::Bool(true)),
-                    )),
-                    LitVal::False => Some(Operand::Constant(
-                        self.create_constant(mir_ty, ConstValueKind::Bool(false)),
-                    )),
-                }
+        let NodeKind::Literal(literal_id) = node_kind else {
+            return None;
+        };
+
+        let val = literal_id.get_val();
+        let const_kind = match val {
+            LitVal::Int { value, .. } => ConstValueKind::Int(value),
+            LitVal::Char(val, _) => ConstValueKind::Int(val as i64),
+            LitVal::Nullptr => ConstValueKind::Null,
+            LitVal::True => ConstValueKind::Bool(true),
+            LitVal::False => ConstValueKind::Bool(false),
+            lit @ LitVal::Float { suffix, .. } if suffix.is_imaginary() => {
+                let MirType::Record { field_types, .. } = self.mb.get_type(mir_ty) else {
+                    unreachable!("Complex float must lower to a record type");
+                };
+                let elem_ty = field_types[0];
+                let zero = self.create_constant(elem_ty, ConstValueKind::Float(0.0));
+                let imag = self.create_constant(elem_ty, ConstValueKind::Float(lit.as_f64()));
+                ConstValueKind::StructLiteral(vec![(0, zero), (1, imag)])
             }
-            _ => None,
-        }
+            lit @ LitVal::Float { .. } => ConstValueKind::Float(lit.as_f64()),
+            LitVal::String { value, prefix } => return Some(self.visit_literal_string(value, prefix, ty)),
+        };
+
+        Some(Operand::Constant(self.create_constant(mir_ty, const_kind)))
     }
 
     fn visit_unary_op(&mut self, op: UnaryOp, expr: NodeRef, mir_ty: TypeId) -> Operand {
@@ -594,62 +577,11 @@ impl<'a> MirGen<'a> {
 
         match op {
             UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
-                let is_inc = matches!(op, UnaryOp::PreIncrement);
-                self.visit_inc_dec_expr(expr, is_inc, false, true)
+                self.visit_inc_dec_expr(expr, op == UnaryOp::PreIncrement, false, true)
             }
-            UnaryOp::AddrOf => {
-                let operand = self.visit_expression(expr, true);
-
-                match operand {
-                    Operand::Copy(place) => {
-                        // Special case for VLA: &vla should evaluate to the value of the pointer local.
-                        if let Place::Local(local_id) = &*place
-                            && self.vla_map.values().any(|(ptr, _)| ptr == local_id)
-                            && self.ast.qual_type_of(expr).is_array()
-                        {
-                            return Operand::Copy(place);
-                        }
-
-                        // Simplify &(*p) -> p, but only if we are inside a function.
-                        // In global initializers, we prefer to keep the Place structure
-                        // so that place_to_global_offset can handle it without materializing temporaries.
-                        if self.current_function.is_some()
-                            && let Place::Deref(deref_op) = *place
-                        {
-                            return *deref_op;
-                        }
-
-                        Operand::AddressOf(place)
-                    }
-                    Operand::Constant(_) => {
-                        // Function address constant usually has FunctionType, but &func results in Pointer(FunctionType).
-                        // This ensures the constant is cast to the expected pointer type in the MIR.
-                        if self.get_operand_type(&operand) != mir_ty {
-                            return self.emit_cast(operand, mir_ty);
-                        }
-                        operand
-                    }
-                    _ => {
-                        // Fallback for any other lvalue representation
-                        let place = self.visit_expression_as_place(expr);
-                        if self.current_function.is_some()
-                            && let Place::Deref(deref_op) = place
-                        {
-                            return *deref_op;
-                        }
-                        Operand::AddressOf(Box::new(place))
-                    }
-                }
-            }
+            UnaryOp::AddrOf => self.visit_addrof(expr, mir_ty),
             UnaryOp::Deref => self.visit_unary_deref(expr),
-            UnaryOp::Real => {
-                if self.ast.get_value_category(expr) == Some(ValueCategory::LValue) {
-                    let place = self.visit_expression_as_place(expr);
-                    Operand::Copy(Box::new(place))
-                } else {
-                    self.visit_expression(expr, true)
-                }
-            }
+            UnaryOp::Real => self.visit_expression(expr, true),
             UnaryOp::Imag => {
                 let _ = self.visit_expression(expr, false);
                 let kind = if self.mb.get_type(mir_ty).is_float() {
@@ -662,12 +594,46 @@ impl<'a> MirGen<'a> {
             _ => {
                 let operand = self.visit_expression(expr, true);
                 let operand_ty = self.get_operand_type(&operand);
-                let mir_type = self.mb.get_type(operand_ty);
-
-                let rval = mir_gen_ops::emit_unary_rvalue(op, operand, mir_type.is_float());
+                let is_float = self.mb.get_type(operand_ty).is_float();
+                let rval = mir_gen_ops::emit_unary_rvalue(op, operand, is_float);
                 self.emit_rvalue_to_operand(rval, mir_ty)
             }
         }
+    }
+
+    fn visit_addrof(&mut self, expr: NodeRef, mir_ty: TypeId) -> Operand {
+        let operand = self.visit_expression(expr, true);
+
+        let place = match operand {
+            Operand::Copy(place) => {
+                // Special case for VLA: &vla should evaluate to the value of the pointer local.
+                if let Place::Local(local_id) = &*place
+                    && self.vla_map.values().any(|(ptr, _)| ptr == local_id)
+                    && self.ast.qual_type_of(expr).is_array()
+                {
+                    return Operand::Copy(place);
+                }
+                *place
+            }
+            Operand::Constant(_) => {
+                // Function address constant usually has FunctionType, but &func results in Pointer(FunctionType).
+                return if self.get_operand_type(&operand) != mir_ty {
+                    self.emit_cast(operand, mir_ty)
+                } else {
+                    operand
+                };
+            }
+            _ => self.visit_expression_as_place(expr),
+        };
+
+        // Simplify &(*p) -> p
+        if self.current_function.is_some()
+            && let Place::Deref(deref_op) = &place
+        {
+            return *deref_op.clone();
+        }
+
+        Operand::AddressOf(Box::new(place))
     }
 
     fn visit_unary_deref(&mut self, expr: NodeRef) -> Operand {
@@ -927,28 +893,20 @@ impl<'a> MirGen<'a> {
                     return *inner;
                 }
 
-                let unwrapped = self.unwrap_cast_if_int(*inner.clone());
+                let unwrapped = self.unwrap_cast_if_int(*inner);
                 let unwrapped_ty = self.get_operand_type(&unwrapped);
                 if self.mb.get_type(unwrapped_ty).is_int() {
-                    return unwrapped;
+                    unwrapped
+                } else {
+                    Operand::Cast(ty, Box::new(unwrapped))
                 }
-
-                Operand::Cast(ty, inner)
             }
             Operand::Constant(const_id) => {
-                let val_opt = {
-                    let const_val = self.mb.get_constants().get(const_id.index()).unwrap();
-                    if let ConstValueKind::Int(val) = const_val.kind {
-                        Some(val)
-                    } else {
-                        None
-                    }
-                };
-
-                if let Some(val) = val_opt {
-                    return self.create_int_operand(val);
+                if let ConstValueKind::Int(val) = self.mb.get_constant(const_id).kind {
+                    self.create_int_operand(val)
+                } else {
+                    Operand::Constant(const_id)
                 }
-                Operand::Constant(const_id)
             }
             _ => op,
         }

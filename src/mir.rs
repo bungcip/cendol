@@ -590,6 +590,41 @@ impl Global {
     }
 }
 
+/// Global declaration configuration
+pub(crate) struct GlobalDecl {
+    pub(crate) name: NameId,
+    pub(crate) type_id: TypeId,
+    pub(crate) is_constant: bool,
+    pub(crate) is_tls: bool,
+    pub(crate) linkage: MirLinkage,
+    pub(crate) initial_value: Option<ConstValueId>,
+}
+
+impl GlobalDecl {
+    #[cfg(test)]
+    pub(crate) fn new(name: NameId, type_id: TypeId, linkage: MirLinkage) -> Self {
+        Self {
+            name,
+            type_id,
+            is_constant: false,
+            is_tls: false,
+            linkage,
+            initial_value: None,
+        }
+    }
+
+    pub(crate) fn anonymous(name: NameId, type_id: TypeId, init: ConstValueId) -> Self {
+        Self {
+            name,
+            type_id,
+            is_constant: true,
+            is_tls: false,
+            linkage: MirLinkage::Internal,
+            initial_value: Some(init),
+        }
+    }
+}
+
 /// MIR Builder - Builds MIR from AST
 pub(crate) struct MirBuilder {
     module: MirModule,
@@ -844,20 +879,12 @@ impl MirBuilder {
     }
 
     /// Create a new global variable with initial value
-    pub(crate) fn create_global_with_init(
-        &mut self,
-        name: NameId,
-        type_id: TypeId,
-        is_constant: bool,
-        is_tls: bool,
-        linkage: MirLinkage,
-        initial_value: Option<ConstValueId>,
-    ) -> GlobalId {
+    pub(crate) fn create_global(&mut self, decl: GlobalDecl) -> GlobalId {
         let global_id = GlobalId::new(self.next_global_id).unwrap();
         self.next_global_id += 1;
 
-        let mut global = Global::new(name, type_id, is_constant, is_tls, linkage);
-        global.initial_value = initial_value;
+        let mut global = Global::new(decl.name, decl.type_id, decl.is_constant, decl.is_tls, decl.linkage);
+        global.initial_value = decl.initial_value;
         self.globals.push(global);
         self.module.globals.push(global_id);
 

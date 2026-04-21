@@ -17,7 +17,7 @@ pub enum PragmaPackKind {
     Set(Option<u8>),
 }
 
-use super::{ParsedTypeArena, literal::LiteralTable};
+use super::ParsedTypeArena;
 
 /// Node reference type for referencing child nodes in ParsedAst.
 pub type ParsedNodeRef = NonZeroU32;
@@ -28,7 +28,6 @@ pub type ParsedNodeRef = NonZeroU32;
 pub struct ParsedAst {
     pub nodes: Vec<ParsedNode>,
     pub parsed_types: ParsedTypeArena,
-    pub literals: LiteralTable,
 }
 
 impl ParsedAst {

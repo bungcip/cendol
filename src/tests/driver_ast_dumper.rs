@@ -86,7 +86,7 @@ fn test_dump_parsed_ast_with_strings() {
     insta::assert_snapshot!(output, @r#"
     1: TranslationUnit(decls=[2])
     2: Declaration(ParsedDecl { specifiers: [TypeSpec(Char)], init_declarators: [ParsedInitDeclarator { declarator: 2, initializer: Some(3), span: SourceSpan(2199308468234) }] })
-    3: LiteralString(""Hello, world!"")
+    3: LiteralString("Hello, world!")
     "#);
 }
 
@@ -180,7 +180,7 @@ fn test_dump_parsed_ast_with_loops() {
     22: CompoundStmt(stmts=[23])
     23: ExpressionStmt(27)
     24: Ident(printf)
-    25: LiteralString(""%d"")
+    25: LiteralString("%d")
     26: Ident(j)
     27: FunctionCall(callee=24, args=[25, 26])
     28: CompoundStmt(stmts=[29])
@@ -213,7 +213,7 @@ fn test_dump_parsed_ast_with_conditional() {
     9: CompoundStmt(stmts=[10])
     10: ExpressionStmt(13)
     11: Ident(printf)
-    12: LiteralString(""x is greater than 5"")
+    12: LiteralString("x is greater than 5")
     13: FunctionCall(callee=11, args=[12])
     14: Ident(x)
     15: LiteralInt(5, None, base=10)
@@ -221,12 +221,12 @@ fn test_dump_parsed_ast_with_conditional() {
     17: CompoundStmt(stmts=[18])
     18: ExpressionStmt(21)
     19: Ident(printf)
-    20: LiteralString(""x is less than 5"")
+    20: LiteralString("x is less than 5")
     21: FunctionCall(callee=19, args=[20])
     22: CompoundStmt(stmts=[23])
     23: ExpressionStmt(26)
     24: Ident(printf)
-    25: LiteralString(""x is 5"")
+    25: LiteralString("x is 5")
     26: FunctionCall(callee=24, args=[25])
     27: If(ParsedIfStmt { condition: 16, then_branch: 17, else_branch: Some(22) })
     28: If(ParsedIfStmt { condition: 8, then_branch: 9, else_branch: Some(27) })
@@ -251,20 +251,20 @@ fn test_dump_parsed_ast_with_switch() {
     8: LiteralInt(1, None, base=10)
     9: ExpressionStmt(12)
     10: Ident(printf)
-    11: LiteralString(""1"")
+    11: LiteralString("1")
     12: FunctionCall(callee=10, args=[11])
     13: Case(8, 9)
     14: Break
     15: LiteralInt(2, None, base=10)
     16: ExpressionStmt(19)
     17: Ident(printf)
-    18: LiteralString(""2"")
+    18: LiteralString("2")
     19: FunctionCall(callee=17, args=[18])
     20: Case(15, 16)
     21: Break
     22: ExpressionStmt(25)
     23: Ident(printf)
-    24: LiteralString(""default"")
+    24: LiteralString("default")
     25: FunctionCall(callee=23, args=[24])
     26: Default(22)
     27: Switch(6, 7)
@@ -577,16 +577,16 @@ fn test_parsed_ast_static_assert() {
     insta::assert_snapshot!(parsed, @r#"
     1: TranslationUnit(decls=[5])
     3: LiteralInt(1, None, base=10)
-    4: LiteralString(""msg"")
-    5: StaticAssert(3, ""msg"")
+    4: LiteralString("msg")
+    5: StaticAssert(3, "msg")
     "#);
 
     let ast = dump_parser_ast(source);
     insta::assert_snapshot!(ast, @r#"
     1: TranslationUnit(decls=2..2)
-    2: StaticAssert(condition=3, message=""msg"")
+    2: StaticAssert(condition=3, message="msg")
     3: LiteralInt(1, None, base=10)
-    4: LiteralString(""msg"")
+    4: LiteralString("msg")
     "#);
 }
 

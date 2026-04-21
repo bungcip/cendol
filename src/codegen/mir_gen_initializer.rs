@@ -1,19 +1,16 @@
 use std::iter::Peekable;
 
-use crate::ast;
-use crate::ast::literal::LitVal;
+use crate::ast::literal::{LitKind, LitVal, StrPrefix};
+use crate::ast::nodes::InitializerList;
+use crate::ast::{self, NameId};
 use crate::ast::{Designator, NodeKind, NodeRef};
 use crate::codegen::mir_gen::MirGen;
-use crate::mir::{ConstValueKind, MirArrayLayout, MirLinkage, MirType, Operand, Place, Rvalue};
+use crate::mir::{ConstValueKind, MirArrayLayout, MirType, Operand, Place, Rvalue};
+use crate::semantic::literal_utils::lower_string_literal;
 use crate::semantic::{ArraySizeType, FieldLayout, QualType, StructMember, TypeKind, TypeRef};
 
 impl<'a> MirGen<'a> {
-    fn visit_init_list(
-        &mut self,
-        list: &ast::nodes::InitializerList,
-        target_ty: QualType,
-        destination: Option<Place>,
-    ) -> Operand {
+    fn visit_init_list(&mut self, list: &InitializerList, target_ty: QualType, destination: Option<Place>) -> Operand {
         let range = list.init_start.range(list.init_len);
         let mut iter = range.peekable();
         let fields = self.visit_struct_fields_recursive(&mut iter, None, &[], target_ty);
@@ -35,13 +32,12 @@ impl<'a> MirGen<'a> {
         pending_path: &[usize],
         target_qt: QualType,
     ) -> Vec<(usize, Operand)> {
-        let TypeKind::Record { members, .. } = &self.registry.get(target_qt.ty()).kind else {
-            return Vec::new();
+        let type_info = self.registry.get(target_qt.ty());
+        let (members, is_union) = match &type_info.kind {
+            TypeKind::Record { members, is_union, .. } => (members.clone(), *is_union),
+            _ => return Vec::new(),
         };
-        let is_union = self.registry.get(target_qt.ty()).is_union();
-        let members = members.clone();
 
-        // Precalculate flattened offsets for hierarchical members
         let mut hierarchical_offsets = Vec::with_capacity(members.len());
         let mut offset = 0;
         for m in members.iter() {
@@ -68,46 +64,20 @@ impl<'a> MirGen<'a> {
             let (initializer, designator) = if is_pending {
                 pending.unwrap()
             } else {
-                if let NodeKind::InitializerItem(init) = self.ast.get_kind(item) {
-                    (
-                        init.initializer,
-                        (init.designator_len > 0).then_some((init.designator_start, init.designator_len)),
-                    )
-                } else {
+                let NodeKind::InitializerItem(init) = self.ast.get_kind(item) else {
                     iter.next();
                     continue;
-                }
+                };
+                (
+                    init.initializer,
+                    (init.designator_len > 0).then_some((init.designator_start, init.designator_len)),
+                )
             };
 
-            let (field_idx, active_path) = if is_pending && !pending_path.is_empty() {
-                (pending_path[0], pending_path[1..].to_vec())
-            } else {
-                match designator {
-                    Some((d_start, _)) => {
-                        if let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(d_start) {
-                            if let Some((idx, p)) = self.find_member_recursive(&members, *name) {
-                                (idx, p)
-                            } else {
-                                break;
-                            }
-                        } else {
-                            if is_pending {
-                                panic!("Array designator in struct initializer");
-                            }
-                            break;
-                        }
-                    }
-                    None => {
-                        let mut pos = current_pos;
-                        while pos < members.len()
-                            && members[pos].name.is_none()
-                            && members[pos].bit_field_size.is_some()
-                        {
-                            pos += 1;
-                        }
-                        (pos, Vec::new())
-                    }
-                }
+            let Some((field_idx, active_path)) =
+                self.resolve_init_field_target(&members, current_pos, designator, pending_path, is_pending)
+            else {
+                break;
             };
 
             if field_idx >= members.len() {
@@ -120,79 +90,7 @@ impl<'a> MirGen<'a> {
 
             let m = &members[field_idx];
             let flat_base = hierarchical_offsets[field_idx];
-
-            let value = if !active_path.is_empty() || (designator.is_some() && designator.unwrap().1 > 1) {
-                let (next_pending, next_path) = if !active_path.is_empty() {
-                    (Some((initializer, designator)), active_path)
-                } else {
-                    let (d_start, d_len) = designator.unwrap();
-                    let next_d_start = d_start.add_offset(1);
-                    let next_d_len = d_len - 1;
-                    (Some((initializer, Some((next_d_start, next_d_len)))), Vec::new())
-                };
-
-                match &self.registry.get(m.member_type.ty()).kind {
-                    TypeKind::Record { .. } => {
-                        let fields = self.visit_struct_fields_recursive(iter, next_pending, &next_path, m.member_type);
-                        if m.name.is_none() {
-                            fields
-                        } else {
-                            vec![(0, self.finalize_struct_init(fields, m.member_type, None))]
-                        }
-                    }
-                    TypeKind::Array { element_type, size } => {
-                        let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
-                        let op = self.visit_array_init_from_iter(
-                            iter,
-                            next_pending,
-                            QualType::unqualified(*element_type),
-                            array_size,
-                            m.member_type,
-                            None,
-                        );
-                        vec![(0, op)]
-                    }
-                    _ => unreachable!("Designator path on non-aggregate"),
-                }
-            } else if self.should_recurse_aggregate(m.member_type, initializer) {
-                let next_pending = Some((initializer, None));
-                match &self.registry.get(m.member_type.ty()).kind {
-                    TypeKind::Record { .. } => {
-                        let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], m.member_type);
-                        if m.name.is_none() {
-                            fields
-                        } else {
-                            vec![(0, self.finalize_struct_init(fields, m.member_type, None))]
-                        }
-                    }
-                    TypeKind::Array { element_type, size } => {
-                        let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
-                        let op = self.visit_array_init_from_iter(
-                            iter,
-                            next_pending,
-                            QualType::unqualified(*element_type),
-                            array_size,
-                            m.member_type,
-                            None,
-                        );
-                        vec![(0, op)]
-                    }
-                    _ => unreachable!(),
-                }
-            } else if matches!(self.ast.get_kind(initializer), NodeKind::InitializerList(_))
-                && m.name.is_none()
-                && m.member_type.is_record()
-            {
-                // Anonymous member initialized with braces
-                let NodeKind::InitializerList(list) = self.ast.get_kind(initializer) else {
-                    unreachable!()
-                };
-                let range = list.init_start.range(list.init_len);
-                let mut sub_iter = range.peekable();
-                self.visit_struct_fields_recursive(&mut sub_iter, None, &[], m.member_type)
-            } else {
-                vec![(0, self.visit_init(initializer, m.member_type, None))]
-            };
+            let value = self.visit_nested_aggregate_init(iter, initializer, designator, active_path, m);
 
             for (sub_idx, op) in value {
                 field_operands.push((flat_base + sub_idx, op));
@@ -201,6 +99,118 @@ impl<'a> MirGen<'a> {
             current_pos = if is_union { members.len() } else { field_idx + 1 };
         }
         field_operands
+    }
+
+    fn resolve_init_field_target(
+        &self,
+        members: &[StructMember],
+        current_pos: usize,
+        designator: Option<(NodeRef, u16)>,
+        pending_path: &[usize],
+        is_pending: bool,
+    ) -> Option<(usize, Vec<usize>)> {
+        if is_pending && !pending_path.is_empty() {
+            return Some((pending_path[0], pending_path[1..].to_vec()));
+        }
+
+        match designator {
+            Some((d_start, _)) => {
+                if let NodeKind::Designator(Designator::FieldName(name)) = self.ast.get_kind(d_start) {
+                    self.find_member_recursive(members, *name)
+                } else {
+                    if is_pending {
+                        panic!("Array designator in struct initializer");
+                    }
+                    None
+                }
+            }
+            None => {
+                let mut pos = current_pos;
+                while pos < members.len() && members[pos].name.is_none() && members[pos].bit_field_size.is_some() {
+                    pos += 1;
+                }
+                Some((pos, Vec::new()))
+            }
+        }
+    }
+
+    fn visit_nested_aggregate_init(
+        &mut self,
+        iter: &mut Peekable<impl Iterator<Item = NodeRef>>,
+        initializer: NodeRef,
+        designator: Option<(NodeRef, u16)>,
+        active_path: Vec<usize>,
+        m: &StructMember,
+    ) -> Vec<(usize, Operand)> {
+        if !active_path.is_empty() || (designator.is_some() && designator.unwrap().1 > 1) {
+            let (next_pending, next_path) = if !active_path.is_empty() {
+                (Some((initializer, designator)), active_path)
+            } else {
+                let (d_start, d_len) = designator.unwrap();
+                (
+                    Some((initializer, Some((d_start.add_offset(1), d_len - 1)))),
+                    Vec::new(),
+                )
+            };
+
+            match &self.registry.get(m.member_type.ty()).kind {
+                TypeKind::Record { .. } => {
+                    let fields = self.visit_struct_fields_recursive(iter, next_pending, &next_path, m.member_type);
+                    if m.name.is_none() {
+                        fields
+                    } else {
+                        vec![(0, self.finalize_struct_init(fields, m.member_type, None))]
+                    }
+                }
+                TypeKind::Array { element_type, size } => {
+                    let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
+                    let op = self.visit_array_init_from_iter(
+                        iter,
+                        next_pending,
+                        QualType::unqualified(*element_type),
+                        array_size,
+                        m.member_type,
+                        None,
+                    );
+                    vec![(0, op)]
+                }
+                _ => unreachable!("Designator path on non-aggregate"),
+            }
+        } else if self.should_recurse_aggregate(m.member_type, initializer) {
+            let next_pending = Some((initializer, None));
+            match &self.registry.get(m.member_type.ty()).kind {
+                TypeKind::Record { .. } => {
+                    let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], m.member_type);
+                    if m.name.is_none() {
+                        fields
+                    } else {
+                        vec![(0, self.finalize_struct_init(fields, m.member_type, None))]
+                    }
+                }
+                TypeKind::Array { element_type, size } => {
+                    let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
+                    let op = self.visit_array_init_from_iter(
+                        iter,
+                        next_pending,
+                        QualType::unqualified(*element_type),
+                        array_size,
+                        m.member_type,
+                        None,
+                    );
+                    vec![(0, op)]
+                }
+                _ => unreachable!(),
+            }
+        } else if let NodeKind::InitializerList(list) = self.ast.get_kind(initializer)
+            && m.name.is_none()
+            && m.member_type.is_record()
+        {
+            let range = list.init_start.range(list.init_len);
+            let mut sub_iter = range.peekable();
+            self.visit_struct_fields_recursive(&mut sub_iter, None, &[], m.member_type)
+        } else {
+            vec![(0, self.visit_init(initializer, m.member_type, None))]
+        }
     }
 
     fn should_recurse_aggregate(&self, target_qt: QualType, initializer: NodeRef) -> bool {
@@ -215,7 +225,7 @@ impl<'a> MirGen<'a> {
         }
 
         if let NodeKind::Literal(lit) = init_kind
-            && let LitVal::String(_) = self.ast.literals.get(*lit)
+            && lit.kind() == LitKind::String
             && let TypeKind::Array { element_type, .. } = kind
             && self.registry.is_char_type(*element_type)
         {
@@ -274,7 +284,6 @@ impl<'a> MirGen<'a> {
         let mut first_item_processed = false;
 
         loop {
-            // Determine next item
             let (item, is_pending) = if pending.is_some() && !first_item_processed {
                 first_item_processed = true;
                 (NodeRef::ROOT, true)
@@ -284,7 +293,7 @@ impl<'a> MirGen<'a> {
                 break;
             };
 
-            let (initializer, designator_info) = if is_pending {
+            let (initializer, designator) = if is_pending {
                 pending.unwrap()
             } else {
                 let NodeKind::InitializerItem(init) = self.ast.get_kind(item) else {
@@ -293,101 +302,24 @@ impl<'a> MirGen<'a> {
                 };
                 (
                     init.initializer,
-                    if init.designator_len > 0 {
-                        Some((init.designator_start, init.designator_len))
-                    } else {
-                        None
-                    },
+                    (init.designator_len > 0).then_some((init.designator_start, init.designator_len)),
                 )
             };
 
-            // Stop if we have filled the array with positional initializers
-            if designator_info.is_none() && size > 0 && current_idx >= size {
+            if designator.is_none() && size > 0 && current_idx >= size {
                 break;
             }
 
-            let (start, end) = if let Some((d_start, _)) = designator_info {
-                match self.ast.get_kind(d_start) {
-                    NodeKind::Designator(Designator::ArrayIndex(_))
-                    | NodeKind::Designator(Designator::ArrayRange(_, _)) => self.resolve_designator_range(d_start),
-                    _ => {
-                        // Field designator or other. Not for array.
-                        if !is_pending {
-                            break;
-                        }
-                        panic!("Field designator in array initializer");
-                    }
-                }
-            } else {
-                (current_idx, current_idx)
+            let Some((start, end)) = self.resolve_array_init_range(current_idx, designator, is_pending) else {
+                break;
             };
 
             if !is_pending {
                 iter.next();
             }
 
-            let operand = if let Some((d_start, d_len)) = designator_info
-                && d_len > 1
-            {
-                let next_d_start = d_start.add_offset(1);
-                let next_d_len = d_len - 1;
-                let next_pending = Some((initializer, Some((next_d_start, next_d_len))));
+            let operand = self.visit_array_element_init(iter, initializer, designator, element_qt);
 
-                match &self.registry.get(element_qt.ty()).kind {
-                    TypeKind::Record { .. } => {
-                        let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt);
-                        self.finalize_struct_init(fields, element_qt, None)
-                    }
-                    TypeKind::Array {
-                        element_type: inner_elem,
-                        size: inner_size,
-                    } => {
-                        let array_size = if let ArraySizeType::Constant(s) = inner_size {
-                            *s
-                        } else {
-                            0
-                        };
-                        self.visit_array_init_from_iter(
-                            iter,
-                            next_pending,
-                            QualType::unqualified(*inner_elem),
-                            array_size,
-                            element_qt,
-                            None,
-                        )
-                    }
-                    _ => unreachable!("Designator path on non-aggregate"),
-                }
-            } else if self.should_recurse_aggregate(element_qt, initializer) {
-                let next_pending = Some((initializer, None));
-                match &self.registry.get(element_qt.ty()).kind {
-                    TypeKind::Record { .. } => {
-                        let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt);
-                        self.finalize_struct_init(fields, element_qt, None)
-                    }
-                    TypeKind::Array {
-                        element_type: inner_elem,
-                        size: inner_size,
-                    } => {
-                        let array_size = if let ArraySizeType::Constant(s) = inner_size {
-                            *s
-                        } else {
-                            0
-                        };
-                        self.visit_array_init_from_iter(
-                            iter,
-                            next_pending,
-                            QualType::unqualified(*inner_elem),
-                            array_size,
-                            element_qt,
-                            None,
-                        )
-                    }
-                    _ => unreachable!(),
-                }
-            } else {
-                self.visit_init(initializer, element_qt, None)
-            };
             if end >= elements.len() {
                 elements.resize(end + 1, None);
             }
@@ -404,6 +336,85 @@ impl<'a> MirGen<'a> {
             .collect();
 
         self.finalize_array_init(final_elements, target_ty, destination)
+    }
+
+    fn resolve_array_init_range(
+        &mut self,
+        current_idx: usize,
+        designator: Option<(NodeRef, u16)>,
+        is_pending: bool,
+    ) -> Option<(usize, usize)> {
+        if let Some((d_start, _)) = designator {
+            match self.ast.get_kind(d_start) {
+                NodeKind::Designator(Designator::ArrayIndex(_))
+                | NodeKind::Designator(Designator::ArrayRange(_, _)) => Some(self.resolve_designator_range(d_start)),
+                _ => {
+                    if is_pending {
+                        panic!("Field designator in array initializer");
+                    }
+                    None
+                }
+            }
+        } else {
+            Some((current_idx, current_idx))
+        }
+    }
+
+    fn visit_array_element_init(
+        &mut self,
+        iter: &mut Peekable<impl Iterator<Item = NodeRef>>,
+        initializer: NodeRef,
+        designator: Option<(NodeRef, u16)>,
+        element_qt: QualType,
+    ) -> Operand {
+        if let Some((d_start, d_len)) = designator
+            && d_len > 1
+        {
+            let next_d_start = d_start.add_offset(1);
+            let next_d_len = d_len - 1;
+            let next_pending = Some((initializer, Some((next_d_start, next_d_len))));
+
+            match &self.registry.get(element_qt.ty()).kind {
+                TypeKind::Record { .. } => {
+                    let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt);
+                    self.finalize_struct_init(fields, element_qt, None)
+                }
+                TypeKind::Array { element_type, size } => {
+                    let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
+                    self.visit_array_init_from_iter(
+                        iter,
+                        next_pending,
+                        QualType::unqualified(*element_type),
+                        array_size,
+                        element_qt,
+                        None,
+                    )
+                }
+                _ => unreachable!("Designator path on non-aggregate"),
+            }
+        } else if self.should_recurse_aggregate(element_qt, initializer) {
+            let next_pending = Some((initializer, None));
+            match &self.registry.get(element_qt.ty()).kind {
+                TypeKind::Record { .. } => {
+                    let fields = self.visit_struct_fields_recursive(iter, next_pending, &[], element_qt);
+                    self.finalize_struct_init(fields, element_qt, None)
+                }
+                TypeKind::Array { element_type, size } => {
+                    let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
+                    self.visit_array_init_from_iter(
+                        iter,
+                        next_pending,
+                        QualType::unqualified(*element_type),
+                        array_size,
+                        element_qt,
+                        None,
+                    )
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            self.visit_init(initializer, element_qt, None)
+        }
     }
 
     fn finalize_initializer_generic<T, C, R>(
@@ -486,14 +497,65 @@ impl<'a> MirGen<'a> {
     }
 
     pub(crate) fn visit_init(&mut self, init: NodeRef, target_qt: QualType, destination: Option<Place>) -> Operand {
-        let kind = *self.ast.get_kind(init);
-        let target_type = self.registry.get(target_qt.ty()).into_owned();
+        let kind = self.ast.get_kind(init);
 
-        match (&kind, &target_type.kind) {
-            (NodeKind::InitializerList(list), TypeKind::Record { .. } | TypeKind::Complex { .. }) => {
-                self.visit_init_list(list, target_qt, destination)
+        if let NodeKind::InitializerList(list) = kind {
+            return self.visit_list_init(list, target_qt, destination);
+        }
+
+        if let NodeKind::Literal(lit) = kind
+            && lit.kind() == LitKind::String
+        {
+            let array_info = if let TypeKind::Array { element_type, size } = &self.registry.get(target_qt.ty()).kind {
+                Some((*element_type, *size))
+            } else {
+                None
+            };
+
+            if let Some((element_type, size)) = array_info {
+                return self.visit_string_array_init(init, element_type, &size);
             }
-            (NodeKind::InitializerList(list), TypeKind::Array { element_type, size }) => {
+        }
+
+        let operand = self.visit_expression(init, true);
+        let mir_target_ty = self.lower_qual_type(target_qt);
+        let conv_op = self.apply_conversions(operand.clone(), init, mir_target_ty);
+
+        if self.get_operand_type(&conv_op) == mir_target_ty {
+            conv_op
+        } else {
+            // Brace elision: scalar -> aggregate
+            self.visit_brace_elision(operand, init, target_qt, destination)
+        }
+    }
+
+    fn visit_string_array_init(&mut self, lit_node: NodeRef, element_type: TypeRef, size: &ArraySizeType) -> Operand {
+        let NodeKind::Literal(lit) = self.ast.get_kind(lit_node) else {
+            unreachable!()
+        };
+        let (val, prefix) = if let LitVal::String { value, prefix } = lit.get_val() {
+            (value, prefix)
+        } else {
+            unreachable!()
+        };
+        let fixed_size = if let ArraySizeType::Constant(s) = size {
+            Some(*s)
+        } else {
+            None
+        };
+        Operand::Constant(self.create_array_const_from_string(
+            val,
+            prefix,
+            fixed_size,
+            Some(QualType::unqualified(element_type)),
+        ))
+    }
+
+    fn visit_list_init(&mut self, list: &InitializerList, target_qt: QualType, destination: Option<Place>) -> Operand {
+        let target_type = self.registry.get(target_qt.ty());
+        match &target_type.kind {
+            TypeKind::Record { .. } | TypeKind::Complex { .. } => self.visit_init_list(list, target_qt, destination),
+            TypeKind::Array { element_type, size } => {
                 let array_size = if let ArraySizeType::Constant(s) = size { *s } else { 0 };
                 self.visit_array_init(
                     list,
@@ -503,58 +565,29 @@ impl<'a> MirGen<'a> {
                     destination,
                 )
             }
-            // ...
-            (NodeKind::Literal(lit), TypeKind::Array { element_type, size })
-                if matches!(self.ast.literals.get(*lit), LitVal::String(_)) =>
-            {
-                let val = if let LitVal::String(v) = self.ast.literals.get(*lit) {
-                    *v
-                } else {
-                    unreachable!()
-                };
-                let fixed_size = if let ArraySizeType::Constant(s) = size {
-                    Some(*s)
-                } else {
-                    None
-                };
-                Operand::Constant(self.create_array_const_from_string(
-                    &val,
-                    fixed_size,
-                    Some(QualType::unqualified(*element_type)),
-                ))
-            }
-            (NodeKind::InitializerList(list), _) => {
+            _ => {
+                // Scalar initialized with braces: { x } or {}
                 if list.init_len == 0 {
                     let mir_ty = self.lower_qual_type(target_qt);
-                    return Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Zero));
+                    Operand::Constant(self.create_constant(mir_ty, ConstValueKind::Zero))
+                } else {
+                    let NodeKind::InitializerItem(item) = self.ast.get_kind(list.init_start) else {
+                        unreachable!()
+                    };
+                    self.visit_init(item.initializer, target_qt, destination)
                 }
-                let NodeKind::InitializerItem(item) = self.ast.get_kind(list.init_start) else {
-                    unreachable!()
-                };
-                self.visit_init(item.initializer, target_qt, destination)
-            }
-            _ => {
-                let operand = self.visit_expression(init, true);
-                let mir_target_ty = self.lower_qual_type(target_qt);
-                let conv_op = self.apply_conversions(operand.clone(), init, mir_target_ty);
-
-                if self.get_operand_type(&conv_op) == mir_target_ty {
-                    return conv_op;
-                }
-
-                // Brace elision: scalar -> aggregate
-                self.visit_brace_elision(operand, init, target_qt, destination)
             }
         }
     }
 
     fn create_array_const_from_string(
         &mut self,
-        val: &ast::NameId,
+        content: String,
+        prefix: StrPrefix,
         fixed_size: Option<usize>,
         elem_ty: Option<QualType>,
     ) -> crate::mir::ConstValueId {
-        let parsed = crate::semantic::literal_utils::parse_string_literal(*val);
+        let parsed = lower_string_literal(&content, prefix);
         let size = fixed_size.unwrap_or(parsed.size);
 
         let (mir_elem_ty, layout) = if let Some(qt) = elem_ty {
@@ -588,18 +621,17 @@ impl<'a> MirGen<'a> {
         self.create_constant(array_ty, ConstValueKind::ArrayLiteral(constants))
     }
 
-    pub(super) fn visit_literal_string(&mut self, val: &ast::NameId, qt: QualType) -> Operand {
+    pub(super) fn visit_literal_string(&mut self, content: String, prefix: StrPrefix, qt: QualType) -> Operand {
         let mir_ty = self.lower_qual_type(qt);
-        let elem_ty = match &self.registry.get(qt.ty()).kind {
-            TypeKind::Array { element_type, .. } => *element_type,
-            _ => self.registry.type_char,
-        };
+        let elem_ty = self
+            .registry
+            .get(qt.ty())
+            .get_array_element()
+            .unwrap_or(self.registry.type_char);
 
-        let array_const = self.create_array_const_from_string(val, None, Some(QualType::unqualified(elem_ty)));
-        let name = self.mb.get_next_anon_global_name();
-        let global_id =
-            self.mb
-                .create_global_with_init(name, mir_ty, true, false, MirLinkage::Internal, Some(array_const));
+        let array_const =
+            self.create_array_const_from_string(content, prefix, None, Some(QualType::unqualified(elem_ty)));
+        let global_id = self.create_anon_global(mir_ty, array_const);
 
         Operand::Constant(self.create_constant(mir_ty, ConstValueKind::GlobalAddress(global_id, 0)))
     }
@@ -612,10 +644,7 @@ impl<'a> MirGen<'a> {
                 .eval_init_to_const(init, ty)
                 .expect("Global compound literal init must be const");
 
-            let name = self.mb.get_next_anon_global_name();
-            let global_id =
-                self.mb
-                    .create_global_with_init(name, mir_ty, true, false, MirLinkage::Internal, Some(init_const));
+            let global_id = self.create_anon_global(mir_ty, init_const);
 
             Operand::Copy(Box::new(Place::Global(global_id)))
         } else {
@@ -692,7 +721,7 @@ impl<'a> MirGen<'a> {
         flat_members.len()
     }
 
-    fn find_member_recursive(&self, members: &[StructMember], name: crate::ast::NameId) -> Option<(usize, Vec<usize>)> {
+    fn find_member_recursive(&self, members: &[StructMember], name: NameId) -> Option<(usize, Vec<usize>)> {
         for (i, m) in members.iter().enumerate() {
             if m.name == Some(name) {
                 return Some((i, Vec::new()));

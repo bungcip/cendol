@@ -52,7 +52,6 @@ pub use nodes::{BinaryOp, UnaryOp};
 pub struct Ast {
     pub(crate) kinds: Vec<NodeKind>,
     pub(crate) spans: Vec<SourceSpan>,
-    pub literals: literal::LiteralTable,
     pub semantic_info: Option<SemanticInfo>, // Populated after type resolution
 }
 

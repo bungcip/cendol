@@ -1,4 +1,4 @@
-use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix};
+use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix, LitRef, LitVal, StrPrefix};
 use crate::ast::literal_parsing;
 use crate::ast::{FunctionSpec, PragmaPackKind, StorageClass, StringId, TypeQualifier};
 use crate::pp::{PPToken, PPTokenKind};
@@ -10,10 +10,7 @@ use smallvec::SmallVec;
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum TokenKind {
     // === LITERALS ===
-    IntegerConstant(i64, Option<IntSuffix>, u8), // Parsed integer literal value, suffix, radix
-    FloatConstant(f64, Option<FloatSuffix>),     // Parsed float literal value
-    CharacterConstant(u64, CharPrefix),          // Value of character constant, Prefix
-    StringLiteral(StringId),                     // Interned string literal
+    Literal(LitRef),
 
     // === IDENTIFIERS ===
     Identifier(StringId), // Interned identifier
@@ -119,9 +116,6 @@ pub enum TokenKind {
     BuiltinAlloca,
     Asm,
     AutoType,
-    Nullptr,
-    True,
-    False,
 
     // Reserved identifiers as keywords
     Func,           // __func__
@@ -207,6 +201,7 @@ pub enum TokenKind {
     // === SPECIAL TOKENS ===
     EndOfFile,
     Unknown,
+    Invalid, // Lexing error
     PragmaPack(PragmaPackKind),
 }
 
@@ -308,10 +303,7 @@ impl TokenKind {
     pub(crate) fn display(&self) -> &'static str {
         use TokenKind::*;
         match self {
-            IntegerConstant(..) => "integer constant",
-            FloatConstant(..) => "float constant",
-            CharacterConstant(..) => "character constant",
-            StringLiteral(_) => "string literal",
+            Literal(_) => "literal",
             Identifier(_) => "identifier",
             Auto => "auto",
             Extern => "extern",
@@ -402,11 +394,6 @@ impl TokenKind {
             BuiltinAlloca => "__builtin_alloca",
             Asm => "asm",
             AutoType => "__auto_type",
-            Nullptr => "nullptr",
-            True => "true",
-            False => "false",
-            Func => "__func__",
-            Function => "__FUNCTION__",
             PrettyFunction => "__PRETTY_FUNCTION__",
             BuiltinAtomicLoadN => "__atomic_load_n",
             BuiltinAtomicStoreN => "__atomic_store_n",
@@ -466,6 +453,31 @@ impl TokenKind {
             EndOfFile => "end of file",
             Unknown => "unknown token",
             PragmaPack(_) => "#pragma pack",
+            Func => "__func__",
+            Function => "__FUNCTION__",
+            Invalid => "invalid token",
+        }
+    }
+}
+
+impl std::fmt::Display for TokenKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenKind::Literal(lit) => match lit.get_val() {
+                LitVal::Int { value, .. } => write!(f, "{}", value),
+                LitVal::Float { bits, .. } => write!(f, "{}", f64::from_bits(bits)),
+                LitVal::String { value, .. } => write!(f, "\"{}\"", value),
+                LitVal::Char(c, _prefix) => {
+                    if let Some(ch) = char::from_u32(c) {
+                        write!(f, "'{}'", ch)
+                    } else {
+                        write!(f, "'\\u{{{:x}}}'", c)
+                    }
+                }
+                _ => write!(f, "{}", self.display()),
+            },
+            TokenKind::Identifier(sym) => write!(f, "{}", sym.as_str()),
+            _ => write!(f, "{}", self.display()),
         }
     }
 }
@@ -575,7 +587,9 @@ pub(crate) fn is_keyword(symbol: StringId, std: crate::lang_options::CStandard) 
         let sk = special_keywords();
         match kind {
             TokenKind::StaticAssert if symbol == sk.static_assert => return None,
-            TokenKind::Nullptr | TokenKind::True | TokenKind::False => return None,
+            TokenKind::Literal(lit) if lit == LitRef::NULLPTR || lit == LitRef::TRUE || lit == LitRef::FALSE => {
+                return None;
+            }
             TokenKind::TypeofUnqual if symbol == sk.typeof_unqual => return None,
             TokenKind::Bool if symbol == sk.bool_kw => return None,
             TokenKind::Alignas if symbol == sk.alignas => return None,
@@ -659,9 +673,9 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__auto_type"), TokenKind::AutoType);
         m.insert(StringId::new("__auto_type__"), TokenKind::AutoType);
         m.insert(StringId::new("bool"), TokenKind::Bool);
-        m.insert(StringId::new("nullptr"), TokenKind::Nullptr);
-        m.insert(StringId::new("true"), TokenKind::True);
-        m.insert(StringId::new("false"), TokenKind::False);
+        m.insert(StringId::new("nullptr"), TokenKind::Literal(LitRef::NULLPTR));
+        m.insert(StringId::new("true"), TokenKind::Literal(LitRef::TRUE));
+        m.insert(StringId::new("false"), TokenKind::Literal(LitRef::FALSE));
         m.insert(StringId::new("alignas"), TokenKind::Alignas);
         m.insert(StringId::new("alignof"), TokenKind::Alignof);
         m.insert(StringId::new("thread_local"), TokenKind::ThreadLocal);
@@ -792,9 +806,8 @@ impl<'src> Lexer<'src> {
                 is_keyword(symbol, self.c_standard).unwrap_or(TokenKind::Identifier(symbol))
             }
             PPTokenKind::StringLiteral => {
-                let text = self.preprocessor.get_token_text(pptoken);
-                let sym = StringId::new(&*text);
-                TokenKind::StringLiteral(sym)
+                // This is now handled in next_token to support concatenation
+                unreachable!("String literal should be handled in next_token")
             }
             PPTokenKind::CharLiteral(codepoint) => {
                 let text = self.preprocessor.get_token_text(pptoken);
@@ -809,17 +822,19 @@ impl<'src> Lexer<'src> {
                 } else {
                     CharPrefix::None
                 };
-                TokenKind::CharacterConstant(codepoint.into(), prefix)
+                let lit = LitRef::from_char(codepoint.into(), prefix);
+                TokenKind::Literal(lit)
             }
             PPTokenKind::Number => {
                 let text = self.preprocessor.get_token_text(pptoken);
                 // Try to parse as integer first, then float, then unknown
-                if let Some((val, suffix, radix)) = literal_parsing::parse_integer_literal(&text) {
-                    TokenKind::IntegerConstant(val, suffix, radix)
+                if let Some((value, suffix, radix)) = literal_parsing::parse_integer_literal(&text) {
+                    let lit = LitRef::from_int(value, suffix.unwrap_or(IntSuffix::None), radix);
+                    TokenKind::Literal(lit)
                 } else if let Some((float_val, suffix)) = literal_parsing::parse_float_literal(&text) {
-                    TokenKind::FloatConstant(float_val, suffix)
+                    TokenKind::Literal(LitRef::from_f64(float_val, suffix.unwrap_or(FloatSuffix::None)))
                 } else {
-                    TokenKind::Unknown // Could not parse as integer or float
+                    TokenKind::Invalid
                 }
             }
             PPTokenKind::Eof => TokenKind::EndOfFile,
@@ -883,10 +898,19 @@ impl<'src> Lexer<'src> {
             }
 
             if string_tokens.len() == 1 {
-                // Fast path: single string literal
                 let text = self.preprocessor.get_token_text(&string_tokens[0]);
+                let (prefix_str, content) = Self::extract_literal_parts(&text).unwrap_or(("", &text));
+                let prefix = match prefix_str {
+                    "u8" => StrPrefix::Utf8,
+                    "L" => StrPrefix::Wide,
+                    "u" => StrPrefix::Utf16,
+                    "U" => StrPrefix::Utf32,
+                    _ => StrPrefix::None,
+                };
+
+                let unescaped = literal_parsing::unescape(content);
                 return Ok(Some(Token {
-                    kind: TokenKind::StringLiteral(StringId::new(&*text)),
+                    kind: TokenKind::Literal(LitRef::from_string(&unescaped, prefix)),
                     span,
                 }));
             }
@@ -909,8 +933,18 @@ impl<'src> Lexer<'src> {
                 }
             }
 
+            let unescaped = literal_parsing::unescape(&content);
             return Ok(Some(Token {
-                kind: TokenKind::StringLiteral(StringId::new(format!("{}\"{}\"", prefix, content))),
+                kind: TokenKind::Literal(LitRef::from_string(
+                    &unescaped,
+                    match prefix {
+                        "u8" => StrPrefix::Utf8,
+                        "L" => StrPrefix::Wide,
+                        "u" => StrPrefix::Utf16,
+                        "U" => StrPrefix::Utf32,
+                        _ => StrPrefix::None,
+                    },
+                )),
                 span: span.merge(last_span),
             }));
         }

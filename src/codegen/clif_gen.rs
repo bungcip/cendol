@@ -300,8 +300,7 @@ fn emit_const_struct(
 
     // Emit each field at its proper offset
     for (field_index, field_const_id) in fields {
-        if *field_index < record_layout.fields.len() {
-            let field_layout = &record_layout.fields[*field_index];
+        if let Some(field_layout) = record_layout.fields.get(*field_index) {
             let field_offset = field_layout.offset as usize;
 
             let mut field_bytes = Vec::new();
@@ -314,7 +313,7 @@ fn emit_const_struct(
                 base_offset + field_offset as u32,
             );
 
-            // Copy the field bytes into the struct buffer
+            // Copy the field bytes into the struct buffer, resizing if necessary
             let required_size = field_offset + field_bytes.len();
             if required_size > struct_bytes.len() {
                 struct_bytes.resize(required_size, 0);
@@ -322,30 +321,25 @@ fn emit_const_struct(
 
             if let Some(bit_width) = field_layout.bit_width {
                 let bit_offset = field_layout.bit_offset.unwrap_or(0);
-                // For bitfields, we need to pack the bits.
-                // We assume little-endian for now as it's the primary target.
+
+                // Pack bitfield into the storage unit.
                 let mut val = 0u64;
-                for (i, &b) in field_bytes.iter().enumerate() {
-                    if i < 8 {
-                        val |= (b as u64) << (i * 8);
-                    }
+                for (i, &b) in field_bytes.iter().enumerate().take(8) {
+                    val |= (b as u64) << (i * 8);
                 }
 
-                let mask = if bit_width == 64 {
-                    !0u64
-                } else {
-                    (1u64 << bit_width) - 1
-                };
+                let mask = if bit_width == 64 { !0 } else { (1u64 << bit_width) - 1 };
                 let packed_val = (val & mask) << bit_offset;
+                let full_mask = mask << bit_offset;
 
-                for i in 0..field_bytes.len() {
-                    let byte_idx = field_offset + i;
-                    if byte_idx < struct_bytes.len() {
-                        let shift = i * 8;
-                        let byte_mask = (mask << bit_offset) >> shift;
-                        struct_bytes[byte_idx] &= !(byte_mask as u8);
-                        struct_bytes[byte_idx] |= (packed_val >> shift) as u8;
-                    }
+                for (i, byte) in struct_bytes[field_offset..]
+                    .iter_mut()
+                    .enumerate()
+                    .take(field_bytes.len())
+                {
+                    let byte_mask = (full_mask >> (i * 8)) as u8;
+                    let byte_val = (packed_val >> (i * 8)) as u8;
+                    *byte = (*byte & !byte_mask) | byte_val;
                 }
             } else {
                 struct_bytes[field_offset..field_offset + field_bytes.len()].copy_from_slice(&field_bytes);

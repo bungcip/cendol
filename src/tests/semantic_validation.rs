@@ -65,7 +65,7 @@ fn rejects_variable_as_typedef_in_cast() {
             (my_var) 1;
         }
     "#,
-        "Unexpected token: expected ;, found IntegerConstant(1, None, 10)",
+        "Unexpected token: expected ;, found 1",
     );
 }
 

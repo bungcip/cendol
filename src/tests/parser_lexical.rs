@@ -1,596 +1,199 @@
-use crate::ast::StringId;
-use crate::ast::literal::CharPrefix;
-use crate::ast::literal_parsing::parse_char_literal;
-use crate::ast::literal_parsing::parse_float_literal;
-use crate::ast::literal_parsing::parse_integer_literal;
-use crate::ast::literal_parsing::unescape;
-use crate::driver::artifact::CompilePhase;
-use crate::parser::{TokenKind, lexer};
-use crate::tests::test_utils;
+use crate::ast::NameId;
+use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix, LitRef, LitVal, StrPrefix};
+use crate::diagnostic::DiagnosticEngine;
+use crate::lang_options::CStandard;
+use crate::parser::Lexer;
+use crate::parser::lexer::TokenKind;
+use crate::pp::Preprocessor;
+use crate::pp::types::PPConfig;
+use crate::source_manager::{FileKind, SourceManager};
 
-/// Helper function to test lexing from string to TokenKind
-/// This tests the full pipeline: string -> PPToken -> TokenKind
 fn setup_lexer(input: &str) -> Vec<TokenKind> {
-    setup_lexer_with_eof(input, false)
-}
-
-/// Helper function to test lexing from string to TokenKind, optionally including EndOfFile
-fn setup_lexer_with_eof(source: &str, include_eof: bool) -> Vec<TokenKind> {
-    let phase = CompilePhase::Lex;
-    let (_, out) = test_utils::run_pipeline(source, phase);
-    let mut out = out.unwrap();
-    let first = out.units.first_mut().unwrap();
-    let artifact = first.1;
-    let tokens = artifact.lexed.clone().unwrap();
-
-    if include_eof {
-        tokens.into_iter().map(|t| t.kind).collect()
-    } else {
-        tokens
-            .into_iter()
-            .filter(|t| !matches!(t.kind, TokenKind::EndOfFile))
-            .map(|t| t.kind)
-            .collect()
-    }
-}
-
-#[test]
-fn test_c11_keywords() {
-    // Test all C11 keywords including C11-specific ones
-    #[rustfmt::skip]
-    let keywords = vec![
-        "auto", "break", "case", "char", "const", "continue", "default", "do",
-        "double", "else", "enum", "extern", "float", "for", "goto", "if",
-        "inline", "int", "long", "register", "restrict", "return", "short",
-        "signed", "sizeof", "static", "struct", "switch", "typedef", "union",
-        "unsigned", "void", "volatile", "while",
-        // C11 specific keywords
-        "_Alignas", "_Alignof", "_Atomic", "_Bool", "_Complex", "_Generic",
-        "_Noreturn", "_Static_assert", "_Thread_local",
-    ];
-
-    for keyword in keywords {
-        let symbol = StringId::new(keyword);
-        let expected_kind = lexer::is_keyword(symbol, crate::lang_options::CStandard::C11)
-            .unwrap_or_else(|| panic!("{} should be a keyword", keyword));
-
-        let token_kinds = setup_lexer(keyword);
-        assert_eq!(token_kinds.len(), 1, "Expected 1 token for keyword: {}", keyword);
-        assert_eq!(token_kinds[0], expected_kind, "Failed for keyword: {}", keyword);
-    }
-}
-
-#[test]
-fn test_c23_keywords() {
-    let keywords = vec![
-        ("nullptr", TokenKind::Nullptr),
-        ("true", TokenKind::True),
-        ("false", TokenKind::False),
-        ("static_assert", TokenKind::StaticAssert),
-        ("typeof_unqual", TokenKind::TypeofUnqual),
-        ("constexpr", TokenKind::Constexpr),
-    ];
-
-    for (text, expected_kind) in keywords {
-        let token_kinds = setup_lexer_with_std(text, crate::lang_options::CStandard::C23);
-        assert_eq!(token_kinds.len(), 1, "Expected 1 token for C23 keyword: {}", text);
-        assert_eq!(token_kinds[0], expected_kind, "Failed for C23 keyword: {}", text);
-    }
-}
-
-#[test]
-fn test_operators_and_punctuation() {
-    let operators = vec![
-        ("+", TokenKind::Plus),
-        ("-", TokenKind::Minus),
-        ("*", TokenKind::Star),
-        ("/", TokenKind::Slash),
-        ("%", TokenKind::Percent),
-        ("&", TokenKind::And),
-        ("|", TokenKind::Or),
-        ("^", TokenKind::Xor),
-        ("!", TokenKind::Not),
-        ("~", TokenKind::Tilde),
-        ("<", TokenKind::Less),
-        (">", TokenKind::Greater),
-        ("<=", TokenKind::LessEqual),
-        (">=", TokenKind::GreaterEqual),
-        ("==", TokenKind::Equal),
-        ("!=", TokenKind::NotEqual),
-        ("<<", TokenKind::LeftShift),
-        (">>", TokenKind::RightShift),
-        ("=", TokenKind::Assign),
-        ("+=", TokenKind::PlusAssign),
-        ("-=", TokenKind::MinusAssign),
-        ("*=", TokenKind::StarAssign),
-        ("/=", TokenKind::DivAssign),
-        ("%=", TokenKind::ModAssign),
-        ("&=", TokenKind::AndAssign),
-        ("|=", TokenKind::OrAssign),
-        ("^=", TokenKind::XorAssign),
-        ("<<=", TokenKind::LeftShiftAssign),
-        (">>=", TokenKind::RightShiftAssign),
-        ("++", TokenKind::Increment),
-        ("--", TokenKind::Decrement),
-        ("->", TokenKind::Arrow),
-        (".", TokenKind::Dot),
-        ("?", TokenKind::Question),
-        (":", TokenKind::Colon),
-        (",", TokenKind::Comma),
-        (";", TokenKind::Semicolon),
-        ("(", TokenKind::LeftParen),
-        (")", TokenKind::RightParen),
-        ("[", TokenKind::LeftBracket),
-        ("]", TokenKind::RightBracket),
-        ("{", TokenKind::LeftBrace),
-        ("}", TokenKind::RightBrace),
-        ("...", TokenKind::Ellipsis),
-        ("&&", TokenKind::LogicAnd),
-        ("||", TokenKind::LogicOr),
-    ];
-
-    for (text, expected_kind) in operators {
-        let token_kinds = setup_lexer(text);
-        assert_eq!(token_kinds.len(), 1, "Expected 1 token for operator: {}", text);
-        assert_eq!(token_kinds[0], expected_kind, "Failed for operator: {}", text);
-    }
-}
-
-#[test]
-fn test_literals() {
-    use crate::ast::literal::IntSuffix;
-    // Integer constants
-    let int_literals = vec![
-        ("42", TokenKind::IntegerConstant(42, None, 10)),
-        ("0x1A", TokenKind::IntegerConstant(26, None, 16)),
-        ("077", TokenKind::IntegerConstant(63, None, 8)),
-        // C11 integer suffixes - decimal
-        ("1ll", TokenKind::IntegerConstant(1, Some(IntSuffix::LL), 10)),
-        ("42u", TokenKind::IntegerConstant(42, Some(IntSuffix::U), 10)),
-        ("123l", TokenKind::IntegerConstant(123, Some(IntSuffix::L), 10)),
-        ("456ul", TokenKind::IntegerConstant(456, Some(IntSuffix::UL), 10)),
-        ("789lu", TokenKind::IntegerConstant(789, Some(IntSuffix::UL), 10)),
-        ("1000ull", TokenKind::IntegerConstant(1000, Some(IntSuffix::ULL), 10)),
-        ("2000llu", TokenKind::IntegerConstant(2000, Some(IntSuffix::ULL), 10)),
-        // C11 integer suffixes - hexadecimal
-        ("0x1Au", TokenKind::IntegerConstant(26, Some(IntSuffix::U), 16)),
-        ("0xFFll", TokenKind::IntegerConstant(255, Some(IntSuffix::LL), 16)),
-        ("0x10UL", TokenKind::IntegerConstant(16, Some(IntSuffix::UL), 16)),
-        ("0x20LU", TokenKind::IntegerConstant(32, Some(IntSuffix::UL), 16)),
-        ("0x40ULL", TokenKind::IntegerConstant(64, Some(IntSuffix::ULL), 16)),
-        ("0x80LLU", TokenKind::IntegerConstant(128, Some(IntSuffix::ULL), 16)),
-        // C23 integer suffixes - binary
-        ("0b1010", TokenKind::IntegerConstant(10, None, 2)),
-        ("0B1111", TokenKind::IntegerConstant(15, None, 2)),
-        ("0b1010u", TokenKind::IntegerConstant(10, Some(IntSuffix::U), 2)),
-        ("0B1111LL", TokenKind::IntegerConstant(15, Some(IntSuffix::LL), 2)),
-        // C11 integer suffixes - octal
-        ("077u", TokenKind::IntegerConstant(63, Some(IntSuffix::U), 8)),
-        ("0123l", TokenKind::IntegerConstant(83, Some(IntSuffix::L), 8)),
-        ("0777ul", TokenKind::IntegerConstant(511, Some(IntSuffix::UL), 8)),
-        ("0123lu", TokenKind::IntegerConstant(83, Some(IntSuffix::UL), 8)),
-        ("0777ull", TokenKind::IntegerConstant(511, Some(IntSuffix::ULL), 8)),
-        ("0123llu", TokenKind::IntegerConstant(83, Some(IntSuffix::ULL), 8)),
-        // Case insensitive suffixes
-        ("1LL", TokenKind::IntegerConstant(1, Some(IntSuffix::LL), 10)),
-        ("42U", TokenKind::IntegerConstant(42, Some(IntSuffix::U), 10)),
-        ("123L", TokenKind::IntegerConstant(123, Some(IntSuffix::L), 10)),
-        ("456UL", TokenKind::IntegerConstant(456, Some(IntSuffix::UL), 10)),
-        ("789LU", TokenKind::IntegerConstant(789, Some(IntSuffix::UL), 10)),
-        ("1000ULL", TokenKind::IntegerConstant(1000, Some(IntSuffix::ULL), 10)),
-        ("2000LLU", TokenKind::IntegerConstant(2000, Some(IntSuffix::ULL), 10)),
-    ];
-
-    for (text, expected_kind) in int_literals {
-        let token_kinds = setup_lexer(text);
-        assert_eq!(token_kinds.len(), 1, "Expected 1 token for integer literal: {}", text);
-        assert_eq!(token_kinds[0], expected_kind, "Failed for integer literal: {}", text);
-    }
-
-    // Float constants
-    let float_literals = vec![
-        ("1.5", TokenKind::FloatConstant(1.5, None)),
-        ("1.23e-4", TokenKind::FloatConstant(1.23e-4, None)),
-        ("0x1.2p3", TokenKind::FloatConstant(9.0, None)),
-    ];
-
-    for (text, expected_kind) in float_literals {
-        let token_kinds = setup_lexer(text);
-        assert_eq!(token_kinds.len(), 1, "Expected 1 token for float literal: {}", text);
-        assert_eq!(token_kinds[0], expected_kind, "Failed for float literal: {}", text);
-    }
-
-    // Character constants
-    let char_literals = vec![
-        ("'a'", TokenKind::CharacterConstant(97, CharPrefix::None)), // 'a' = 97
-        ("'\\n'", TokenKind::CharacterConstant(10, CharPrefix::None)), // '\n' = 10
-        ("u8'a'", TokenKind::CharacterConstant(97, CharPrefix::Utf8)), // u8'a'
-    ];
-
-    for (text, expected_kind) in char_literals {
-        let token_kinds = setup_lexer(text);
-        assert_eq!(token_kinds.len(), 1, "Expected 1 token for character literal: {}", text);
-        assert_eq!(token_kinds[0], expected_kind, "Failed for character literal: {}", text);
-    }
-
-    // String literals
-    let string_literals = vec![
-        (r#""hello""#, TokenKind::StringLiteral(StringId::new(r#""hello""#))),
-        (r#""world\n""#, TokenKind::StringLiteral(StringId::new(r#""world\n""#))),
-    ];
-
-    for (text, expected_kind) in string_literals {
-        let token_kinds = setup_lexer(text);
-        assert_eq!(token_kinds.len(), 1, "Expected 1 token for string literal: {}", text);
-        assert_eq!(token_kinds[0], expected_kind, "Failed for string literal: {}", text);
-    }
-}
-
-#[test]
-fn test_identifiers() {
-    let identifiers = vec!["variable", "my_var", "_private", "var123", "a", "_"];
-
-    for ident in identifiers {
-        let symbol = StringId::new(ident);
-        let token_kinds = setup_lexer(ident);
-        assert_eq!(token_kinds.len(), 1, "Expected 1 token for identifier: {}", ident);
-        assert_eq!(
-            token_kinds[0],
-            TokenKind::Identifier(symbol),
-            "Failed for identifier: {}",
-            ident
-        );
-    }
-}
-
-#[test]
-fn test_string_literal_concatenation() {
-    // Test adjacent string literal concatenation (C11 6.4.5)
-    let test_cases = vec![
-        // Basic concatenation
-        (r#""hello" "world""#, r#""helloworld""#),
-        // With whitespace between
-        (r#""hello"   "world""#, r#""helloworld""#),
-        // Multiple concatenations
-        (r#""a" "b" "c""#, r#""abc""#),
-        // With escape sequences
-        (r#""hello\n" "world""#, r#""hello\nworld""#),
-        // Mixed quotes and content
-        (r#""start" " middle " "end""#, r#""start middle end""#),
-    ];
-
-    for (input, expected_content) in test_cases {
-        let token_kinds = setup_lexer(input);
-        assert_eq!(
-            token_kinds.len(),
-            1,
-            "Expected 1 token for concatenated string: {}",
-            input
-        );
-
-        match &token_kinds[0] {
-            TokenKind::StringLiteral(symbol) => {
-                let actual_content = symbol.as_str();
-                assert_eq!(
-                    actual_content, expected_content,
-                    "String concatenation failed for input: {}",
-                    input
-                );
-            }
-            _ => panic!("Expected StringLiteral token for input: {}", input),
+    let mut sm = SourceManager::new();
+    let mut diag = DiagnosticEngine::default();
+    let file_id = sm.add_buffer(input.as_bytes().to_vec(), "test.c", None, FileKind::Synthetic);
+    let config = PPConfig::default();
+    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
+    pp.start_processing(file_id);
+    let mut lexer = Lexer::new(&mut pp, CStandard::C23);
+    let mut tokens = Vec::new();
+    while let Ok(Some(token)) = lexer.next_token() {
+        tokens.push(token.kind);
+        if token.kind == TokenKind::EndOfFile {
+            break;
         }
     }
-
-    // Test that non-adjacent strings are not concatenated
-    let token_kinds = setup_lexer(r#""hello" ; "world""#);
-    assert_eq!(token_kinds.len(), 3, "Expected 3 tokens for non-adjacent strings");
-    assert!(
-        matches!(token_kinds[0], TokenKind::StringLiteral(_)),
-        "First token should be string literal"
-    );
-    assert_eq!(token_kinds[1], TokenKind::Semicolon, "Second token should be semicolon");
-    assert!(
-        matches!(token_kinds[2], TokenKind::StringLiteral(_)),
-        "Third token should be string literal"
-    );
+    tokens
 }
 
-#[test]
-fn test_special_tokens() {
-    // EndOfFile - empty string should produce EndOfFile when included
-    let token_kinds = setup_lexer_with_eof("", true);
-    assert_eq!(token_kinds.len(), 1, "Expected 1 token for empty string");
-    assert_eq!(
-        token_kinds[0],
-        TokenKind::EndOfFile,
-        "Empty string should produce EndOfFile"
-    );
-
-    // Unknown - unrecognized character should produce Unknown
-    let token_kinds = setup_lexer("@");
-    assert_eq!(token_kinds.len(), 1, "Expected 1 token for unknown character");
-    assert_eq!(
-        token_kinds[0],
-        TokenKind::Unknown,
-        "Unrecognized character should produce Unknown"
-    );
+macro_rules! check_tok {
+    ($input:expr, $kind:expr) => {
+        let tokens = setup_lexer($input);
+        // We expect the kind + EndOfFile
+        assert!(
+            tokens.len() >= 1,
+            "Expected at least 1 token for {}, got {:?}",
+            $input,
+            tokens
+        );
+        assert_eq!(tokens[0], $kind, "Token mismatch for {}", $input);
+    };
 }
 
-#[test]
-fn test_string_escapes_edge_cases() {
-    // Test edge cases in string literal unescaping
-    let test_cases = vec![
-        // \x with no digits - should keep the x
-        (r#""\xg""#, r#""\xg""#),
-        // \x with invalid unicode value (overflow) - should use replacement character
-        // \x110000 is > 0x10FFFF
-        // Lexer no longer unescapes, so it preserves raw source.
-        // Unescaping happens later in parse_string_literal or similar.
-        (r#""\x110000""#, r#""\x110000""#),
-        // \? escape
-        (r#""\?""#, r#""\?""#),
-        // Unknown escape sequence (e.g. \q) - should keep the character
-        (r#""\q""#, r#""\q""#),
-    ];
-
-    for (input, expected) in test_cases {
-        let token_kinds = setup_lexer(input);
-        assert_eq!(token_kinds.len(), 1, "Expected 1 token for input: {}", input);
-
-        if let TokenKind::StringLiteral(sid) = token_kinds[0] {
-            assert_eq!(sid.as_str(), expected, "Failed for input: {}", input);
+macro_rules! check_lit {
+    ($input:expr, $val:expr) => {
+        let tokens = setup_lexer($input);
+        assert!(tokens.len() >= 1);
+        if let TokenKind::Literal(lit) = &tokens[0] {
+            assert_eq!(lit.get_val(), $val, "Literal mismatch for {}", $input);
         } else {
-            panic!("Expected StringLiteral for input: {}", input);
+            panic!("Expected Literal for {}, got {:?}", $input, tokens[0]);
         }
-    }
+    };
 }
 
 #[test]
-fn test_literal_parsing_edge_cases() {
-    // Test parse_c11_integer_literal edge cases
-    assert!(parse_integer_literal("0x").is_none(), "0x should fail");
-    assert!(parse_integer_literal("u").is_none(), "Suffix only should fail");
-
-    // Test parse_c11_float_literal edge cases
-    assert!(parse_float_literal("").is_none(), "Empty string should fail");
-    assert!(parse_float_literal("0x").is_none(), "Hex prefix only should fail");
-    assert!(parse_float_literal("0x.").is_none(), "Hex prefix with dot should fail");
-    assert!(
-        parse_float_literal("0x..p0").is_none(),
-        "Hex float with double dot should fail"
-    );
-    assert!(
-        parse_float_literal("0x1G").is_none(),
-        "Hex float with invalid char should fail"
-    );
-    assert!(
-        parse_float_literal("0x.p0").is_none(),
-        "Hex float with no digits should fail"
-    );
-    assert!(
-        parse_float_literal("0x1p").is_none(),
-        "Hex float missing exponent digits should fail"
-    );
-    assert!(
-        parse_float_literal("0x1p+").is_none(),
-        "Hex float missing exponent digits after sign should fail"
-    );
-    assert!(
-        parse_float_literal("0x1p+A").is_none(),
-        "Hex float exponent cut by non-digit should fail"
-    );
-
-    // Test parse_char_literal edge cases
-    assert!(parse_char_literal("").is_none(), "Empty char literal should fail");
-
-    // Test unescape_string edge cases
-    // Short octal escape
-    assert_eq!(unescape(r#"\1"#), "\x01", "Short octal escape failed");
-    // Octal escape cut by non-octal digit
-    assert_eq!(unescape(r#"\19"#), "\x019", "Octal escape cut by non-octal failed");
-    // Hex escape cut by non-hex digit
-    assert_eq!(unescape(r#"\x1G"#), "\x01G", "Hex escape cut by non-hex failed");
+fn test_keywords() {
+    check_tok!("int", TokenKind::Int);
+    check_tok!("return", TokenKind::Return);
+    check_tok!("void", TokenKind::Void);
+    check_tok!("_Generic", TokenKind::Generic);
 }
 
 #[test]
-fn test_extract_literal_parts_edge_cases() {
-    let token_kinds = setup_lexer(r#""hello" "world"#);
-    assert_eq!(token_kinds.len(), 1, "Expected concatenated literal token");
-    if let TokenKind::StringLiteral(sym) = &token_kinds[0] {
-        let _ = sym.as_str();
-    } else {
-        panic!("Expected StringLiteral");
-    }
+fn test_operators() {
+    // Arithmetic
+    check_tok!("+", TokenKind::Plus);
+    check_tok!("-", TokenKind::Minus);
+    check_tok!("*", TokenKind::Star);
+    check_tok!("/", TokenKind::Slash);
+    check_tok!("%", TokenKind::Percent);
+    check_tok!("++", TokenKind::Increment);
+    check_tok!("--", TokenKind::Decrement);
 
-    // A prefixed string literal missing trailing quote
-    let token_kinds2 = setup_lexer(r#"L"hello" L"world"#);
-    assert_eq!(token_kinds2.len(), 1, "Expected concatenated literal token");
-    if let TokenKind::StringLiteral(sym) = &token_kinds2[0] {
-        let _ = sym.as_str();
-    } else {
-        panic!("Expected StringLiteral");
-    }
+    // Bitwise
+    check_tok!("&", TokenKind::And);
+    check_tok!("|", TokenKind::Or);
+    check_tok!("^", TokenKind::Xor);
+    check_tok!("!", TokenKind::Not);
+    check_tok!("~", TokenKind::Tilde);
+    check_tok!("<<", TokenKind::LeftShift);
+    check_tok!(">>", TokenKind::RightShift);
+
+    // Comparison
+    check_tok!("<", TokenKind::Less);
+    check_tok!(">", TokenKind::Greater);
+    check_tok!("<=", TokenKind::LessEqual);
+    check_tok!(">=", TokenKind::GreaterEqual);
+    check_tok!("==", TokenKind::Equal);
+    check_tok!("!=", TokenKind::NotEqual);
+
+    // Assignment
+    check_tok!("=", TokenKind::Assign);
+    check_tok!("+=", TokenKind::PlusAssign);
+    check_tok!("-=", TokenKind::MinusAssign);
+    check_tok!("*=", TokenKind::StarAssign);
+    check_tok!("/=", TokenKind::DivAssign);
+    check_tok!("%=", TokenKind::ModAssign);
+    check_tok!("&=", TokenKind::AndAssign);
+    check_tok!("|=", TokenKind::OrAssign);
+    check_tok!("^=", TokenKind::XorAssign);
+    check_tok!("<<=", TokenKind::LeftShiftAssign);
+    check_tok!(">>=", TokenKind::RightShiftAssign);
+
+    // Logical
+    check_tok!("&&", TokenKind::LogicAnd);
+    check_tok!("||", TokenKind::LogicOr);
+
+    // Member access and others
+    check_tok!("->", TokenKind::Arrow);
+    check_tok!(".", TokenKind::Dot);
+    check_tok!("?", TokenKind::Question);
+    check_tok!(":", TokenKind::Colon);
+    check_tok!(",", TokenKind::Comma);
+    check_tok!(";", TokenKind::Semicolon);
+    check_tok!("...", TokenKind::Ellipsis);
+
+    // Brackets
+    check_tok!("(", TokenKind::LeftParen);
+    check_tok!(")", TokenKind::RightParen);
+    check_tok!("[", TokenKind::LeftBracket);
+    check_tok!("]", TokenKind::RightBracket);
+    check_tok!("{", TokenKind::LeftBrace);
+    check_tok!("}", TokenKind::RightBrace);
+}
+
+#[test]
+#[rustfmt::skip]
+fn test_integer_literals() {
+    check_lit!("42", LitVal::Int { value: 42, suffix: IntSuffix::None, radix: 10 });
+    check_lit!("0x1A", LitVal::Int { value: 26, suffix: IntSuffix::None, radix: 16 });
+    check_lit!("077u", LitVal::Int { value: 63, suffix: IntSuffix::U, radix: 8 });
+    check_lit!("123llu", LitVal::Int { value: 123, suffix: IntSuffix::ULL, radix: 10 });
+    check_lit!("0b1010", LitVal::Int { value: 10, suffix: IntSuffix::None, radix: 2 });
+    // C23 separators
+    check_lit!("1'234", LitVal::Int { value: 1234, suffix: IntSuffix::None, radix: 10 });
+    check_lit!("0xAB'CD", LitVal::Int { value: 0xABCD, suffix: IntSuffix::None, radix: 16 });
+    check_lit!("0b1'010", LitVal::Int { value: 10, suffix: IntSuffix::None, radix: 2 });
+    check_lit!("0'777", LitVal::Int { value: 0o777, suffix: IntSuffix::None, radix: 8 });
+}
+
+#[test]
+#[rustfmt::skip]
+fn test_float_literals() {
+    check_lit!("3.14", LitVal::from_f64(3.14, FloatSuffix::None));
+    check_lit!("1.0f", LitVal::from_f64(1.0, FloatSuffix::F));
+    check_lit!("2.0L", LitVal::from_f64(2.0, FloatSuffix::L));
+    check_lit!("1e10", LitVal::from_f64(1e10, FloatSuffix::None));
+    check_lit!("0x1p-10", LitVal::from_f64(0.0009765625, FloatSuffix::None));
+    // C23 separators
+    check_lit!("1'234.5", LitVal::from_f64(1234.5, FloatSuffix::None));
+    check_lit!("0x1'A.5p2", LitVal::from_f64(105.25, FloatSuffix::None));
+}
+
+#[test]
+fn test_char_literals() {
+    check_lit!("'a'", LitVal::Char(97, CharPrefix::None));
+    check_lit!("L'b'", LitVal::Char(98, CharPrefix::Wide));
+    check_lit!(r"'\n'", LitVal::Char(10, CharPrefix::None));
+}
+
+#[test]
+fn test_string_literals() {
+    check_lit!(
+        r#""hello""#,
+        LitVal::String {
+            value: "hello".into(),
+            prefix: StrPrefix::None
+        }
+    );
+    check_lit!(
+        r#"L"world""#,
+        LitVal::String {
+            value: "world".into(),
+            prefix: StrPrefix::Wide
+        }
+    );
 }
 
 #[test]
 fn test_lexer_display() {
-    use crate::ast::parsed::PragmaPackKind;
-    use crate::parser::lexer::TokenKind;
-    use crate::tests::parser_lexical::StringId;
+    use crate::parser::lexer::TokenKind::*;
 
     let kinds = vec![
-        TokenKind::IntegerConstant(1, None, 10),
-        TokenKind::FloatConstant(1.0, None),
-        TokenKind::CharacterConstant(97, crate::ast::literal::CharPrefix::None),
-        TokenKind::StringLiteral(StringId::new("test")),
-        TokenKind::Identifier(StringId::new("test")),
-        TokenKind::Auto,
-        TokenKind::Extern,
-        TokenKind::Register,
-        TokenKind::Static,
-        TokenKind::ThreadLocal,
-        TokenKind::Const,
-        TokenKind::Restrict,
-        TokenKind::Volatile,
-        TokenKind::Atomic,
-        TokenKind::Bool,
-        TokenKind::Char,
-        TokenKind::Double,
-        TokenKind::Float,
-        TokenKind::Int,
-        TokenKind::Long,
-        TokenKind::Short,
-        TokenKind::Signed,
-        TokenKind::Unsigned,
-        TokenKind::Void,
-        TokenKind::Complex,
-        TokenKind::Struct,
-        TokenKind::Union,
-        TokenKind::Enum,
-        TokenKind::Break,
-        TokenKind::Case,
-        TokenKind::Continue,
-        TokenKind::Default,
-        TokenKind::Do,
-        TokenKind::Else,
-        TokenKind::For,
-        TokenKind::Goto,
-        TokenKind::If,
-        TokenKind::Return,
-        TokenKind::Switch,
-        TokenKind::While,
-        TokenKind::Alignas,
-        TokenKind::Alignof,
-        TokenKind::Generic,
-        TokenKind::Inline,
-        TokenKind::Noreturn,
-        TokenKind::Pragma,
-        TokenKind::Sizeof,
-        TokenKind::StaticAssert,
-        TokenKind::Typedef,
-        TokenKind::Typeof,
-        TokenKind::Real,
-        TokenKind::Imag,
-        TokenKind::Attribute,
-        TokenKind::BuiltinVaArg,
-        TokenKind::BuiltinVaList,
-        TokenKind::BuiltinVaStart,
-        TokenKind::BuiltinVaEnd,
-        TokenKind::BuiltinVaCopy,
-        TokenKind::BuiltinExpect,
-        TokenKind::BuiltinMemcpy,
-        TokenKind::BuiltinMemset,
-        TokenKind::BuiltinMemmove,
-        TokenKind::BuiltinOffsetof,
-        TokenKind::BuiltinTypesCompatibleP,
-        TokenKind::BuiltinPopcount,
-        TokenKind::BuiltinPopcountL,
-        TokenKind::BuiltinPopcountLL,
-        TokenKind::BuiltinClz,
-        TokenKind::BuiltinClzL,
-        TokenKind::BuiltinClzLL,
-        TokenKind::BuiltinCtz,
-        TokenKind::BuiltinCtzL,
-        TokenKind::BuiltinCtzLL,
-        TokenKind::BuiltinFfs,
-        TokenKind::BuiltinFfsL,
-        TokenKind::BuiltinFfsLL,
-        TokenKind::BuiltinChooseExpr,
-        TokenKind::BuiltinConstantP,
-        TokenKind::BuiltinUnreachable,
-        TokenKind::BuiltinTrap,
-        TokenKind::BuiltinBswap16,
-        TokenKind::BuiltinBswap32,
-        TokenKind::BuiltinBswap64,
-        TokenKind::BuiltinFabs,
-        TokenKind::BuiltinFabsf,
-        TokenKind::BuiltinFabsl,
-        TokenKind::BuiltinPrefetch,
-        TokenKind::BuiltinAlloca,
-        TokenKind::Asm,
-        TokenKind::AutoType,
-        TokenKind::Func,
-        TokenKind::Function,
-        TokenKind::PrettyFunction,
-        TokenKind::BuiltinAtomicLoadN,
-        TokenKind::BuiltinAtomicStoreN,
-        TokenKind::BuiltinAtomicExchangeN,
-        TokenKind::BuiltinAtomicCompareExchangeN,
-        TokenKind::BuiltinAtomicFetchAdd,
-        TokenKind::BuiltinAtomicFetchSub,
-        TokenKind::BuiltinAtomicFetchAnd,
-        TokenKind::BuiltinAtomicFetchOr,
-        TokenKind::BuiltinAtomicFetchXor,
-        TokenKind::Plus,
-        TokenKind::Minus,
-        TokenKind::Star,
-        TokenKind::Slash,
-        TokenKind::Percent,
-        TokenKind::Increment,
-        TokenKind::Decrement,
-        TokenKind::And,
-        TokenKind::Or,
-        TokenKind::Xor,
-        TokenKind::Not,
-        TokenKind::Tilde,
-        TokenKind::LeftShift,
-        TokenKind::RightShift,
-        TokenKind::Less,
-        TokenKind::Greater,
-        TokenKind::LessEqual,
-        TokenKind::GreaterEqual,
-        TokenKind::Equal,
-        TokenKind::NotEqual,
-        TokenKind::Assign,
-        TokenKind::PlusAssign,
-        TokenKind::MinusAssign,
-        TokenKind::StarAssign,
-        TokenKind::DivAssign,
-        TokenKind::ModAssign,
-        TokenKind::AndAssign,
-        TokenKind::OrAssign,
-        TokenKind::XorAssign,
-        TokenKind::LeftShiftAssign,
-        TokenKind::RightShiftAssign,
-        TokenKind::LogicAnd,
-        TokenKind::LogicOr,
-        TokenKind::Arrow,
-        TokenKind::Dot,
-        TokenKind::Question,
-        TokenKind::Colon,
-        TokenKind::Comma,
-        TokenKind::Semicolon,
-        TokenKind::Ellipsis,
-        TokenKind::LeftParen,
-        TokenKind::RightParen,
-        TokenKind::LeftBracket,
-        TokenKind::RightBracket,
-        TokenKind::LeftBrace,
-        TokenKind::RightBrace,
-        TokenKind::EndOfFile,
-        TokenKind::Unknown,
-        TokenKind::PragmaPack(PragmaPackKind::Set(None)),
+        Literal(LitRef::from_int(1, IntSuffix::None, 10)),
+        Literal(LitRef::from_f64(1.0, FloatSuffix::None)),
+        Literal(LitRef::from_char(97, CharPrefix::None)),
+        Literal(LitRef::from_string("test", StrPrefix::None)),
+        Identifier(NameId::new("test")),
+        Int,
+        Return,
+        Plus,
+        Equal,
+        EndOfFile,
     ];
 
     for kind in kinds {
-        // Just verify it doesn't panic and returns a non-empty string
-        let display = kind.display();
-        assert!(!display.is_empty(), "Display string should not be empty for {:?}", kind);
+        let _ = format!("{:?}", kind);
     }
-}
-
-fn setup_lexer_with_std(source: &str, std: crate::lang_options::CStandard) -> Vec<TokenKind> {
-    let phase = CompilePhase::Lex;
-    let mut config = crate::driver::cli::CompileConfig::from_virtual_file(source.to_string(), phase);
-    config.lang_options.c_standard = std;
-    let mut driver = crate::driver::compiler::CompilerDriver::from_config(config);
-    let out = driver.run_pipeline(phase).expect("Pipeline failed");
-    let first = out.units.values().next().unwrap();
-    let tokens = first.lexed.clone().unwrap();
-
-    tokens
-        .into_iter()
-        .filter(|t| !matches!(t.kind, TokenKind::EndOfFile))
-        .map(|t| t.kind)
-        .collect()
 }

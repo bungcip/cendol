@@ -290,13 +290,13 @@ impl AstDumper {
 
     fn format_literal(f: &mut Formatter<'_>, literal: &LitVal) -> fmt::Result {
         match literal {
-            LitVal::Int { val, suffix, radix } => {
-                write!(f, "LiteralInt({}, {:?}, base={})", val, suffix, radix)
+            LitVal::Int { value, suffix, radix } => {
+                write!(f, "LiteralInt({}, {:?}, base={})", value, suffix, radix)
             }
             LitVal::Float { suffix, .. } => {
                 write!(f, "LiteralFloat({}, {:?})", literal.as_f64(), suffix)
             }
-            LitVal::String(s) => write!(f, "LiteralString(\"{}\")", s),
+            LitVal::String { value, .. } => write!(f, "LiteralString(\"{}\")", value),
             LitVal::Char(c, prefix) => {
                 write!(f, "LiteralChar({}, {:?})", c, prefix)
             }
@@ -328,7 +328,7 @@ impl AstDumper {
 
         match kind {
             PNK::Literal(literal) => {
-                Self::format_literal(f, ast.literals.get(*literal))?;
+                Self::format_literal(f, &literal.get_val())?;
                 return writeln!(f);
             }
             PNK::Break | PNK::Continue | PNK::EmptyStmt | PNK::Dummy | PNK::BuiltinUnreachable | PNK::BuiltinTrap => {
@@ -445,8 +445,8 @@ impl AstDumper {
             }
             PNK::StaticAssert(cond, msg) => {
                 let message_str = match msg.map(|m| &ast.get_node(m).kind) {
-                    Some(PNK::Literal(lit)) => match ast.literals.get(*lit) {
-                        LitVal::String(s) => s.to_string(),
+                    Some(PNK::Literal(lit)) => match lit.get_val() {
+                        LitVal::String { value, .. } => value.clone(),
                         _ => "<invalid>".to_string(),
                     },
                     Some(_) => "<invalid>".to_string(),
@@ -479,7 +479,7 @@ impl AstDumper {
 
         match kind {
             NodeKind::Literal(literal) => {
-                Self::format_literal(f, ast.literals.get(*literal))?;
+                Self::format_literal(f, &literal.get_val())?;
                 return writeln!(f);
             }
             NodeKind::Break
@@ -628,8 +628,8 @@ impl AstDumper {
             NodeKind::Param(data) => write!(f, "symbol={:?}, ty={:?}", data.symbol, data.qt)?,
             NodeKind::StaticAssert(cond, msg) => {
                 let message_str = match msg.map(|m| ast.get_kind(m)) {
-                    Some(NodeKind::Literal(lit_id)) => match ast.literals.get(*lit_id) {
-                        LitVal::String(s) => s.to_string(),
+                    Some(NodeKind::Literal(lit)) => match lit.get_val() {
+                        LitVal::String { value, .. } => value.clone(),
                         _ => "<not-a-string-literal>".to_string(),
                     },
                     Some(_) => "<invalid>".to_string(),

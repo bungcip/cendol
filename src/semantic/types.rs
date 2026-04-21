@@ -160,22 +160,29 @@ impl Type {
         }
     }
 
-    pub(crate) fn is_union(&self) -> bool {
-        matches!(self.kind, TypeKind::Record { is_union: true, .. })
+    pub(crate) fn get_array_element(&self) -> Option<TypeRef> {
+        match &self.kind {
+            TypeKind::Array { element_type, .. } => Some(*element_type),
+            _ => None,
+        }
     }
 
+    #[inline]
     pub(crate) fn is_int(&self) -> bool {
         matches!(self.kind, TypeKind::Builtin(b) if b.is_integer()) || matches!(self.kind, TypeKind::Enum { .. })
     }
 
+    #[inline]
     pub(crate) fn is_pointer(&self) -> bool {
         matches!(self.kind, TypeKind::Pointer { .. })
     }
 
+    #[inline]
     pub(crate) fn is_bool(&self) -> bool {
         matches!(self.kind, TypeKind::Builtin(BuiltinType::Bool))
     }
 
+    #[inline]
     pub(crate) fn is_signed(&self) -> bool {
         match &self.kind {
             TypeKind::Builtin(b) => b.is_signed(),

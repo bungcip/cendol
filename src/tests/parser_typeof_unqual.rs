@@ -5,7 +5,7 @@ use crate::lang_options::CStandard;
 fn test_typeof_unqual_c11_fails() {
     crate::tests::test_utils::run_fail_with_message(
         "typeof_unqual(int) x;",
-        "expected declaration specifiers, found Identifier(\"typeof_unqual\")",
+        "expected declaration specifiers, found typeof_unqual",
     );
 }
 

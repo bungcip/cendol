@@ -3,7 +3,6 @@
 //! This module handles all expression parsing logic, including the Pratt parser
 //! implementation for operator precedence and associativity.
 
-use crate::ast::literal::LitVal;
 use crate::ast::{parsed::*, *};
 use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::parser::type_builder::parse_type_name;
@@ -176,39 +175,8 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
             };
             Ok(parser.push_node(ParsedNodeKind::Ident(symbol), token.span))
         }
-        TokenKind::IntegerConstant(val, suffix, radix) => {
+        TokenKind::Literal(lit) => {
             parser.advance();
-            let lit = parser.ast.literals.insert(LitVal::Int { val, suffix, radix });
-            Ok(parser.push_node(ParsedNodeKind::Literal(lit), token.span))
-        }
-        TokenKind::FloatConstant(val, suffix) => {
-            parser.advance();
-            let lit = parser.ast.literals.insert(LitVal::from_f64(val, suffix));
-            Ok(parser.push_node(ParsedNodeKind::Literal(lit), token.span))
-        }
-        TokenKind::StringLiteral(s) => {
-            parser.advance();
-            let lit = parser.ast.literals.insert(LitVal::String(s));
-            Ok(parser.push_node(ParsedNodeKind::Literal(lit), token.span))
-        }
-        TokenKind::CharacterConstant(c, prefix) => {
-            parser.advance();
-            let lit = parser.ast.literals.insert(LitVal::Char(c, prefix));
-            Ok(parser.push_node(ParsedNodeKind::Literal(lit), token.span))
-        }
-        TokenKind::Nullptr => {
-            parser.advance();
-            let lit = parser.ast.literals.insert(LitVal::Nullptr);
-            Ok(parser.push_node(ParsedNodeKind::Literal(lit), token.span))
-        }
-        TokenKind::True => {
-            parser.advance();
-            let lit = parser.ast.literals.insert(LitVal::True);
-            Ok(parser.push_node(ParsedNodeKind::Literal(lit), token.span))
-        }
-        TokenKind::False => {
-            parser.advance();
-            let lit = parser.ast.literals.insert(LitVal::False);
             Ok(parser.push_node(ParsedNodeKind::Literal(lit), token.span))
         }
         TokenKind::LeftParen => {

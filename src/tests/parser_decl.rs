@@ -607,11 +607,11 @@ fn test_designated_initializer_struct_with_range() {
 #[test]
 fn test_static_assert() {
     let resolved = setup_declaration("_Static_assert(1, \"ok\");");
-    insta::assert_yaml_snapshot!(&resolved, @r#"
+    insta::assert_yaml_snapshot!(&resolved, @r"
     StaticAssert:
       - LiteralInt: 1
-      - "\"ok\""
-    "#);
+      - ok
+    ");
 }
 
 #[test]

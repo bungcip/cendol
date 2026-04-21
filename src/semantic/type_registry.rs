@@ -462,7 +462,7 @@ impl TypeRegistry {
 
         match &self.types[ty.index()].kind {
             TypeKind::Alias(inner) => self.has_flexible_array_member(*inner),
-            TypeKind::Record { is_union, members, .. } => {
+            TypeKind::Record { members, is_union, .. } => {
                 if *is_union {
                     // A union has a FAM if any of its members recursively has one.
                     members
@@ -624,6 +624,20 @@ impl TypeRegistry {
     }
 
     pub(crate) fn array_of(&mut self, elem: TypeRef, size: ArraySizeType) -> TypeRef {
+        if let Some(arr) = self.find_array_type(elem, size) {
+            return arr;
+        }
+
+        let key = (elem, size);
+        let arr = self.alloc(Type::new(TypeKind::Array {
+            element_type: elem,
+            size,
+        }));
+        self.array_cache.insert(key, arr);
+        arr
+    }
+
+    pub(crate) fn find_array_type(&self, elem: TypeRef, size: ArraySizeType) -> Option<TypeRef> {
         // Try inline
         if let ArraySizeType::Constant(len) = size
             && len <= 31
@@ -631,20 +645,11 @@ impl TypeRegistry {
             && elem.array_len().is_none()
         {
             // Check if elem is Simple
-            return TypeRef::new(elem.base(), TypeClass::Array, 0, len as u32).unwrap();
+            return Some(TypeRef::new(elem.base(), TypeClass::Array, 0, len as u32).unwrap());
         }
 
         let key = (elem, size);
-        if let Some(&arr) = self.array_cache.get(&key) {
-            return arr;
-        }
-
-        let arr = self.alloc(Type::new(TypeKind::Array {
-            element_type: elem,
-            size,
-        }));
-        self.array_cache.insert(key, arr);
-        arr
+        self.array_cache.get(&key).copied()
     }
 
     pub(crate) fn function_type(
@@ -1594,7 +1599,6 @@ impl TypeRegistry {
     }
 
     pub(super) fn composite_type(&mut self, a: QualType, b: QualType) -> Option<QualType> {
-        // Bolt ⚡: Early exit for identical types.
         if a == b {
             return Some(a);
         }
@@ -1610,117 +1614,25 @@ impl TypeRegistry {
         let ty_a = a.ty();
         let ty_b = b.ty();
 
-        // Bolt ⚡: Fast path for pointers to avoid self.get() and Cow<Type> overhead.
-        let pa = self.get_pointee(ty_a);
-        let pb = self.get_pointee(ty_b);
-        if pa.is_some() || pb.is_some() {
-            return if let (Some(pa), Some(pb)) = (pa, pb) {
-                let composite_pointee = self.composite_type(pa, pb)?;
-                let res_ty = self.pointer_to(composite_pointee);
-                Some(QualType::new(res_ty, a.qualifiers()))
-            } else {
-                None
-            };
+        // Bolt ⚡: Fast path for pointers.
+        if let (Some(pa), Some(pb)) = (self.get_pointee(ty_a), self.get_pointee(ty_b)) {
+            return self.composite_pointer_type(a, pa, pb);
         }
 
-        // Bolt ⚡: Fast path for arrays to avoid self.get() and Cow<Type> overhead.
-        let ea = self.get_array_element(ty_a);
-        let eb = self.get_array_element(ty_b);
-        if ea.is_some() || eb.is_some() {
-            return if let (Some(ea), Some(eb)) = (ea, eb) {
-                let composite_elem = self.composite_type(QualType::unqualified(ea), QualType::unqualified(eb))?;
-
-                // Resolve sizes for array composite logic.
-                // Inline arrays are always constant size; registry arrays can be complex.
-                let sa = if ty_a.is_inline_array() {
-                    ArraySizeType::Constant(ty_a.array_len().unwrap() as usize)
-                } else {
-                    match &self.types[ty_a.index()].kind {
-                        TypeKind::Array { size, .. } => *size,
-                        _ => unreachable!(),
-                    }
-                };
-
-                let sb = if ty_b.is_inline_array() {
-                    ArraySizeType::Constant(ty_b.array_len().unwrap() as usize)
-                } else {
-                    match &self.types[ty_b.index()].kind {
-                        TypeKind::Array { size, .. } => *size,
-                        _ => unreachable!(),
-                    }
-                };
-
-                let composite_size = match (sa, sb) {
-                    (ArraySizeType::Incomplete, s) => s,
-                    (s, ArraySizeType::Incomplete) => s,
-                    (ArraySizeType::Constant(sa), ArraySizeType::Constant(sb)) if sa == sb => {
-                        ArraySizeType::Constant(sa)
-                    }
-                    (ArraySizeType::Star, s) => s,
-                    (s, ArraySizeType::Star) => s,
-                    _ => return None,
-                };
-                let res_ty = self.array_of(composite_elem.ty(), composite_size);
-                Some(QualType::new(res_ty, a.qualifiers()))
-            } else {
-                None
-            };
+        // Bolt ⚡: Fast path for arrays.
+        if let (Some(ea), Some(eb)) = (self.get_array_element(ty_a), self.get_array_element(ty_b)) {
+            return self.composite_array_type(a, ty_a, ty_b, ea, eb);
         }
 
         // Fallback for registry-only types (Functions, Records, Enums).
-        // Since these are never inline, self.get() returns Cow::Borrowed which is cheap.
         let type_a = self.get(ty_a);
         let type_b = self.get(ty_b);
 
         match (&type_a.kind, &type_b.kind) {
-            (
-                TypeKind::Function {
-                    return_type: ret_a,
-                    parameters: params_a,
-                    is_variadic: var_a,
-                    is_noreturn: noreturn_a,
-                },
-                TypeKind::Function {
-                    return_type: ret_b,
-                    parameters: params_b,
-                    is_variadic: var_b,
-                    is_noreturn: noreturn_b,
-                },
-            ) => {
-                if var_a != var_b {
-                    return None;
-                }
-                let ret_a = *ret_a;
-                let ret_b = *ret_b;
-                let params_a = params_a.clone();
-                let params_b = params_b.clone();
-                let var_a = *var_a;
-                let noreturn_a = *noreturn_a;
-                let noreturn_b = *noreturn_b;
-
-                drop(type_a);
-                drop(type_b);
-
-                let composite_ret = self.composite_type(QualType::unqualified(ret_a), QualType::unqualified(ret_b))?;
-                if params_a.len() != params_b.len() {
-                    return None;
-                }
-                let mut composite_params = Vec::with_capacity(params_a.len());
-                for (p_a, p_b) in params_a.iter().zip(params_b.iter()) {
-                    // C11 6.7.6.3p15: each parameter declared with qualified type is taken as
-                    // having the unqualified version of its declared type.
-                    let type_a = QualType::unqualified(p_a.param_type.ty());
-                    let type_b = QualType::unqualified(p_b.param_type.ty());
-                    let cp = self.composite_type(type_a, type_b)?;
-
-                    composite_params.push(FunctionParameter {
-                        param_type: cp,
-                        name: p_b.name.or(p_a.name),
-                        storage: p_b.storage.or(p_a.storage),
-                    });
-                }
-                let res_ty = self.function_type(composite_ret.ty(), composite_params, var_a, noreturn_a || noreturn_b);
-                Some(QualType::new(res_ty, a.qualifiers()))
+            (TypeKind::Function { .. }, TypeKind::Function { .. }) => {
+                let type_a = type_a.into_owned();
+                let type_b = type_b.into_owned();
+                self.composite_function_type(a, &type_a, &type_b)
             }
             _ => {
                 if self.is_compatible(a, b) {
@@ -1730,6 +1642,99 @@ impl TypeRegistry {
                 }
             }
         }
+    }
+
+    fn composite_pointer_type(&mut self, a: QualType, pa: QualType, pb: QualType) -> Option<QualType> {
+        let composite_pointee = self.composite_type(pa, pb)?;
+        let res_ty = self.pointer_to(composite_pointee);
+        Some(QualType::new(res_ty, a.qualifiers()))
+    }
+
+    fn composite_array_type(
+        &mut self,
+        a: QualType,
+        ty_a: TypeRef,
+        ty_b: TypeRef,
+        ea: TypeRef,
+        eb: TypeRef,
+    ) -> Option<QualType> {
+        let composite_elem = self.composite_type(QualType::unqualified(ea), QualType::unqualified(eb))?;
+
+        let sa = if ty_a.is_inline_array() {
+            ArraySizeType::Constant(ty_a.array_len().unwrap() as usize)
+        } else {
+            match &self.types[ty_a.index()].kind {
+                TypeKind::Array { size, .. } => *size,
+                _ => unreachable!(),
+            }
+        };
+
+        let sb = if ty_b.is_inline_array() {
+            ArraySizeType::Constant(ty_b.array_len().unwrap() as usize)
+        } else {
+            match &self.types[ty_b.index()].kind {
+                TypeKind::Array { size, .. } => *size,
+                _ => unreachable!(),
+            }
+        };
+
+        let composite_size = match (sa, sb) {
+            (ArraySizeType::Incomplete, s) => s,
+            (s, ArraySizeType::Incomplete) => s,
+            (ArraySizeType::Constant(sa), ArraySizeType::Constant(sb)) if sa == sb => ArraySizeType::Constant(sa),
+            (ArraySizeType::Star, s) => s,
+            (s, ArraySizeType::Star) => s,
+            _ => return None,
+        };
+
+        let res_ty = self.array_of(composite_elem.ty(), composite_size);
+        Some(QualType::new(res_ty, a.qualifiers()))
+    }
+
+    fn composite_function_type(&mut self, a: QualType, type_a: &Type, type_b: &Type) -> Option<QualType> {
+        let (ret_a, params_a, var_a, noreturn_a) = match &type_a.kind {
+            TypeKind::Function {
+                return_type,
+                parameters,
+                is_variadic,
+                is_noreturn,
+            } => (*return_type, parameters, *is_variadic, *is_noreturn),
+            _ => unreachable!(),
+        };
+        let (ret_b, params_b, var_b, noreturn_b) = match &type_b.kind {
+            TypeKind::Function {
+                return_type,
+                parameters,
+                is_variadic,
+                is_noreturn,
+            } => (*return_type, parameters, *is_variadic, *is_noreturn),
+            _ => unreachable!(),
+        };
+
+        if var_a != var_b {
+            return None;
+        }
+
+        let composite_ret = self.composite_type(QualType::unqualified(ret_a), QualType::unqualified(ret_b))?;
+        if params_a.len() != params_b.len() {
+            return None;
+        }
+
+        let mut composite_params = Vec::with_capacity(params_a.len());
+        for (p_a, p_b) in params_a.iter().zip(params_b.iter()) {
+            let type_a = QualType::unqualified(p_a.param_type.ty());
+            let type_b = QualType::unqualified(p_b.param_type.ty());
+            let cp = self.composite_type(type_a, type_b)?;
+
+            composite_params.push(FunctionParameter {
+                param_type: cp,
+                name: p_b.name.or(p_a.name),
+                storage: p_b.storage.or(p_a.storage),
+            });
+        }
+
+        let res_ty = self.function_type(composite_ret.ty(), composite_params, var_a, noreturn_a || noreturn_b);
+        Some(QualType::new(res_ty, a.qualifiers()))
     }
 
     pub(crate) fn is_complete(&self, mut ty: TypeRef) -> bool {

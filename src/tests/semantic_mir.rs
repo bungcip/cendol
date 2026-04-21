@@ -554,7 +554,7 @@ fn test_function_with_many_return_types() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @"
+    insta::assert_snapshot!(mir_dump, @r"
     type %t0 = i32
     type %t1 = f64
     type %t2 = i8
@@ -658,7 +658,7 @@ fn test_function_with_many_return_types() {
     {
 
       bb12:
-        return const 3.14
+        return const 3.140000104904175
     }
 
     fn fn_llong() -> i64

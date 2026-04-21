@@ -4,12 +4,12 @@
 //! at compile time, as required by the C11 standard for contexts like
 //! static assertions and array sizes.
 
-use crate::ast::literal::{FloatSuffix, IntSuffix, LitVal};
+use crate::ast::literal::{FloatSuffix, LitVal};
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, StringId, UnaryOp};
 use crate::semantic::conversions::{integer_promotion, usual_arithmetic_conversions};
-use crate::semantic::literal_utils::parse_string_literal;
-use crate::semantic::types::TypeClass;
-use crate::semantic::{BuiltinType, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeRef, TypeRegistry};
+use crate::semantic::literal_utils::lower_string_literal;
+use crate::semantic::types::ArraySizeType;
+use crate::semantic::{BuiltinType, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeRegistry};
 
 /// Context for constant expression evaluation
 pub(crate) struct ConstEvalCtx<'a> {
@@ -108,21 +108,22 @@ impl<'a> ConstEvalCtx<'a> {
                 }
             }
             NodeKind::Cast(target_ty, _) => Some(*target_ty),
-            NodeKind::Literal(literal_id) => {
-                let literal = self.ast.literals.get(*literal_id);
-                Some(self.get_literal_type(literal))
-            }
+            NodeKind::Literal(literal) => Some(self.get_literal_type(&literal.get_val())),
             _ => None,
         }
     }
 
+    fn get_info(&self) -> Option<&'a SemanticInfo> {
+        self.semantic_info.or_else(|| self.ast.semantic_info.as_ref())
+    }
+
     fn get_literal_type(&self, literal: &LitVal) -> QualType {
         let ty = match literal {
-            LitVal::Int { val, suffix, radix } => {
+            LitVal::Int { value, suffix, radix } => {
                 let is_decimal = *radix == 10;
                 let mut ty = self.registry.type_long_long_unsigned;
-                for cand in IntSuffix::get_candidates(*suffix, self.registry, is_decimal) {
-                    if self.registry.is_literal_fitting(*val, cand) {
+                for cand in suffix.get_candidates(self.registry, is_decimal) {
+                    if self.registry.is_literal_fitting(*value, cand) {
                         ty = cand;
                         break;
                     }
@@ -130,18 +131,20 @@ impl<'a> ConstEvalCtx<'a> {
                 ty
             }
             LitVal::Char(_, prefix) => prefix.get_type(self.registry),
-            LitVal::Float { suffix, .. } => FloatSuffix::get_type(*suffix, self.registry),
-            LitVal::String(val) => {
-                let parsed_str = parse_string_literal(*val);
-                let len = parsed_str.values.len() + 1;
+            LitVal::Float { suffix, .. } => suffix.get_type(self.registry),
+            LitVal::String { value, prefix } => {
+                let parsed_str = lower_string_literal(&value, *prefix);
                 let builtin_base = match parsed_str.builtin_type {
                     BuiltinType::Char => self.registry.type_char,
                     BuiltinType::Int => self.registry.type_int,
                     BuiltinType::UShort => self.registry.type_short_unsigned,
                     BuiltinType::UInt => self.registry.type_int_unsigned,
+                    BuiltinType::UChar => self.registry.type_char_unsigned,
                     _ => self.registry.type_char,
                 };
-                TypeRef::new(builtin_base.base(), TypeClass::Array, 0, len as u32).unwrap()
+                self.registry
+                    .find_array_type(builtin_base, ArraySizeType::Constant(parsed_str.size))
+                    .unwrap_or(self.registry.type_error)
             }
             LitVal::Nullptr => self.registry.type_nullptr_t,
             LitVal::True | LitVal::False => self.registry.type_bool,
@@ -152,24 +155,9 @@ impl<'a> ConstEvalCtx<'a> {
     fn eval_complex_part(&self, node: NodeRef, is_real: bool) -> Option<f64> {
         match self.ast.get_kind(node) {
             NodeKind::Literal(lid) => {
-                let literal = self.ast.literals.get(*lid);
-                if let lit @ LitVal::Float { suffix, .. } = literal {
-                    match suffix {
-                        Some(FloatSuffix::I) | Some(FloatSuffix::IF) | Some(FloatSuffix::IL) => {
-                            if is_real {
-                                Some(0.0)
-                            } else {
-                                Some(lit.as_f64())
-                            }
-                        }
-                        _ => {
-                            if is_real {
-                                Some(lit.as_f64())
-                            } else {
-                                Some(0.0)
-                            }
-                        }
-                    }
+                if let lit @ LitVal::Float { suffix, .. } = &lid.get_val() {
+                    let is_imaginary = matches!(suffix, FloatSuffix::I | FloatSuffix::IF | FloatSuffix::IL);
+                    Some(if is_real == is_imaginary { 0.0 } else { lit.as_f64() })
                 } else {
                     None
                 }
@@ -178,8 +166,8 @@ impl<'a> ConstEvalCtx<'a> {
                 if let NodeKind::InitializerList(list) = self.ast.get_kind(*init_list) {
                     let index = if is_real { 0 } else { 1 };
                     if index < list.init_len {
-                        let item = list.init_start.add_offset(index);
-                        if let NodeKind::InitializerItem(item) = self.ast.get_kind(item) {
+                        let item_kind = self.ast.get_kind(list.init_start.add_offset(index));
+                        if let NodeKind::InitializerItem(item) = item_kind {
                             return self.eval_float(item.initializer);
                         }
                     }
@@ -189,19 +177,13 @@ impl<'a> ConstEvalCtx<'a> {
                 }
             }
             NodeKind::Cast(_, expr) => self.eval_complex_part(*expr, is_real),
-            NodeKind::BuiltinComplex(real, imag) => {
-                if is_real {
-                    self.eval_float(*real)
-                } else {
-                    self.eval_float(*imag)
-                }
-            }
+            NodeKind::BuiltinComplex(real, imag) => self.eval_float(if is_real { *real } else { *imag }),
             _ => {
                 if is_real {
                     self.eval_float(node)
                 } else {
                     let qt = self.resolve_type(node)?;
-                    if qt.is_complex() { None } else { Some(0.0) }
+                    (!qt.is_complex()).then_some(0.0)
                 }
             }
         }
@@ -210,22 +192,18 @@ impl<'a> ConstEvalCtx<'a> {
     pub(crate) fn eval_int(&self, expr_node: NodeRef) -> Option<i64> {
         let node_kind = self.ast.get_kind(expr_node);
         match node_kind {
-            NodeKind::Literal(literal_id) => {
-                let literal = self.ast.literals.get(*literal_id);
-                match literal {
-                    LitVal::Int { val, .. } => Some(*val),
-                    LitVal::Char(val, _) => Some(*val as i64),
-                    LitVal::True => Some(1),
-                    LitVal::False => Some(0),
-                    _ => None,
-                }
-            }
+            NodeKind::Literal(lit) => match lit.get_val() {
+                LitVal::Int { value, .. } => Some(value),
+                LitVal::Char(value, _) => Some(value as i64),
+                LitVal::True => Some(1),
+                LitVal::False => Some(0),
+                _ => None,
+            },
             NodeKind::Ident(_, sym) => {
                 let symbol = self.symbol_table.get_symbol(*sym);
-                if let SymbolKind::EnumConstant { value } = &symbol.kind {
-                    Some(*value)
-                } else {
-                    None
+                match &symbol.kind {
+                    SymbolKind::EnumConstant { value } => Some(*value),
+                    _ => None,
                 }
             }
             NodeKind::BinaryOp(op, left, right) => self.eval_binary(*op, *left, *right),
@@ -235,35 +213,28 @@ impl<'a> ConstEvalCtx<'a> {
             NodeKind::AlignOfExpr(expr) => self.eval_alignof(Some(*expr), None),
             NodeKind::AlignOfType(qt) => self.eval_alignof(None, Some(*qt)),
             NodeKind::GenericSelection(_) => {
-                let info = self.semantic_info.or(self.ast.semantic_info.as_ref());
-                if let Some(info) = info
-                    && let Some(selected_expr) = info.generic_selections.get(&expr_node.index())
-                {
-                    return self.eval_int(*selected_expr);
-                }
-                None
+                let info = self.get_info()?;
+                let selected = info.generic_selections.get(&expr_node.index())?;
+                self.eval_int(*selected)
             }
             NodeKind::BuiltinConstantP(expr) => {
                 Some((self.eval_int(*expr).is_some() || self.eval_float(*expr).is_some()) as i64)
             }
             NodeKind::BuiltinExpect(exp, _) => self.eval_int(*exp),
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
-                let info = self.semantic_info.or(self.ast.semantic_info.as_ref());
-                if let Some(info) = info
-                    && let Some(selected_expr) = info.choose_expressions.get(&expr_node.index())
+                if let Some(info) = self.get_info()
+                    && let Some(&selected) = info.choose_expressions.get(&expr_node.index())
                 {
-                    return self.eval_int(*selected_expr);
+                    return self.eval_int(selected);
                 }
-                let cond_val = self.eval_int(*cond)?;
-                if cond_val != 0 {
+                if self.eval_int(*cond)? != 0 {
                     self.eval_int(*true_expr)
                 } else {
                     self.eval_int(*false_expr)
                 }
             }
             NodeKind::TernaryOp(cond, then_expr, else_expr) => {
-                let cond_val = self.eval_int(*cond)?;
-                if cond_val != 0 {
+                if self.eval_int(*cond)? != 0 {
                     self.eval_int(*then_expr)
                 } else {
                     self.eval_int(*else_expr)
@@ -271,7 +242,7 @@ impl<'a> ConstEvalCtx<'a> {
             }
             NodeKind::Cast(target_qt, expr) => self.eval_cast(*target_qt, *expr),
             NodeKind::BuiltinOffsetof(ty, expr) => {
-                if let Some(info) = self.semantic_info
+                if let Some(info) = self.get_info()
                     && let Some(&offset) = info.offsetof_results.get(&expr_node.index())
                 {
                     return Some(offset);
@@ -295,24 +266,26 @@ impl<'a> ConstEvalCtx<'a> {
                     NodeKind::BuiltinClzLL(_) => self.registry.type_long_long,
                     _ => unreachable!(),
                 };
-                let width = self.registry.get(target_ty).layout.as_ref()?.size * 8;
-                let mask = if width == 64 { !0u64 } else { (1u64 << width) - 1 };
-                let val_truncated = (val as u64) & mask;
-                Some(val_truncated.leading_zeros() as i64 - (64 - width as i64))
+                let width = self.registry.get(target_ty).width() as i64;
+                let val_truncated = (val as u64) & if width == 64 { !0u64 } else { (1u64 << width) - 1 };
+                Some(val_truncated.leading_zeros() as i64 - (64 - width))
             }
             NodeKind::BuiltinCtz(exp) | NodeKind::BuiltinCtzL(exp) | NodeKind::BuiltinCtzLL(exp) => {
                 let val = self.eval_int(*exp)?;
-                if val == 0 {
-                    return None;
-                }
-                Some(val.trailing_zeros() as i64)
+                (val != 0).then(|| val.trailing_zeros() as i64)
             }
             NodeKind::BuiltinFfs(exp) | NodeKind::BuiltinFfsL(exp) | NodeKind::BuiltinFfsLL(exp) => self
                 .eval_int(*exp)
                 .map(|v| if v == 0 { 0 } else { (v.trailing_zeros() + 1) as i64 }),
-            NodeKind::BuiltinBswap16(exp) => self.eval_int(*exp).map(|v| (v as u16).swap_bytes() as i64),
-            NodeKind::BuiltinBswap32(exp) => self.eval_int(*exp).map(|v| (v as u32).swap_bytes() as i64),
-            NodeKind::BuiltinBswap64(exp) => self.eval_int(*exp).map(|v| (v as u64).swap_bytes() as i64),
+            NodeKind::BuiltinBswap16(exp) | NodeKind::BuiltinBswap32(exp) | NodeKind::BuiltinBswap64(exp) => {
+                let val = self.eval_int(*exp)?;
+                Some(match node_kind {
+                    NodeKind::BuiltinBswap16(_) => (val as u16).swap_bytes() as i64,
+                    NodeKind::BuiltinBswap32(_) => (val as u32).swap_bytes() as i64,
+                    NodeKind::BuiltinBswap64(_) => (val as u64).swap_bytes() as i64,
+                    _ => unreachable!(),
+                })
+            }
             NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
                 self.eval_float(*exp).map(|v| v.abs() as i64)
             }
@@ -323,25 +296,22 @@ impl<'a> ConstEvalCtx<'a> {
 
     pub(crate) fn eval_float(&self, expr: NodeRef) -> Option<f64> {
         match self.ast.get_kind(expr) {
-            NodeKind::Literal(literal_id) => {
-                let literal = self.ast.literals.get(*literal_id);
-                match literal {
-                    lit @ LitVal::Float { .. } => {
-                        let fval = lit.as_f64();
-                        if let Some(qt) = self.get_resolved_type(expr)
-                            && qt.builtin() == Some(BuiltinType::Float)
-                        {
-                            return Some((fval as f32) as f64);
-                        }
-                        Some(fval)
+            NodeKind::Literal(lit) => match lit.get_val() {
+                lit @ LitVal::Float { .. } => {
+                    let fval = lit.as_f64();
+                    if let Some(qt) = self.get_resolved_type(expr)
+                        && qt.builtin() == Some(BuiltinType::Float)
+                    {
+                        return Some((fval as f32) as f64);
                     }
-                    LitVal::Int { val, .. } => Some(*val as f64),
-                    LitVal::Char(val, _) => Some(*val as f64),
-                    LitVal::True => Some(1.0),
-                    LitVal::False => Some(0.0),
-                    _ => None,
+                    Some(fval)
                 }
-            }
+                LitVal::Int { value, .. } => Some(value as f64),
+                LitVal::Char(value, _) => Some(value as f64),
+                LitVal::True => Some(1.0),
+                LitVal::False => Some(0.0),
+                _ => None,
+            },
             NodeKind::BinaryOp(op, left, right) => {
                 let l = self.eval_float(*left)?;
                 let r = self.eval_float(*right)?;
@@ -379,14 +349,12 @@ impl<'a> ConstEvalCtx<'a> {
             }
             NodeKind::BuiltinExpect(exp, _) => self.eval_float(*exp),
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
-                let info = self.semantic_info.or(self.ast.semantic_info.as_ref());
-                if let Some(info) = info
-                    && let Some(selected_expr) = info.choose_expressions.get(&expr.index())
+                if let Some(info) = self.get_info()
+                    && let Some(&selected) = info.choose_expressions.get(&expr.index())
                 {
-                    return self.eval_float(*selected_expr);
+                    return self.eval_float(selected);
                 }
-                let cond_val = self.eval_int(*cond)?;
-                if cond_val != 0 {
+                if self.eval_int(*cond)? != 0 {
                     self.eval_float(*true_expr)
                 } else {
                     self.eval_float(*false_expr)

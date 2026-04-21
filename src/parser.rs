@@ -6,6 +6,7 @@
 
 use std::collections::VecDeque;
 
+use crate::ast::literal::{LitKind, LitRef};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError, ParseErrorKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
@@ -493,6 +494,25 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
                 span: token.span,
                 kind: ParseErrorKind::UnexpectedToken {
                     expected: "identifier",
+                    found: token.kind,
+                },
+            })
+        }
+    }
+
+    /// expect and accept a string literal, returning the literal or error
+    fn expect_string_literal(&mut self) -> Result<(LitRef, SourceSpan), ParseError> {
+        let token = self.current_token()?;
+        if let TokenKind::Literal(lit) = token.kind
+            && lit.kind() == LitKind::String
+        {
+            self.advance();
+            Ok((lit, token.span))
+        } else {
+            Err(ParseError {
+                span: token.span,
+                kind: ParseErrorKind::UnexpectedToken {
+                    expected: "string literal",
                     found: token.kind,
                 },
             })

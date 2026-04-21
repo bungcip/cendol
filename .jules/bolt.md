@@ -117,3 +117,7 @@
 ## 2025-06-01 - Redundant Enum Clones in Hot Matching Paths
 **Learning:** Matching on an enum by value from a shared reference (e.g., `if let Variant(inner) = self.vec[idx].field`) triggers a full clone of the enum if it's not `Copy`. In our compiler, `TypeKind` contains `Arc` fields and is large, making these clones extremely expensive in hot paths like type canonicalization and layout calculation.
 **Action:** Always match on references (`&self.vec[idx].field`) when the data inside the variant is `Copy` (like `TypeRef`) or when a borrow is sufficient. This avoids unnecessary `Arc` reference count increments and large memory copies.
+
+## 2026-04-21 - SIMD-accelerated Line Start Calculation
+**Learning:** Manual byte-by-byte scanning for character offsets (like newlines) is a significant bottleneck when processing large source files or many virtual buffers. The `memchr` crate provides highly optimized SIMD implementations that can be 5-10x faster than naive loops. In macro-heavy workloads, this overhead is compounded by the frequent creation of virtual expansion buffers.
+**Action:** Use `memchr::memchr_iter` for all high-frequency character scanning tasks. When calculating line starts, use a two-pass approach: first count with `.count()` to pre-allocate exact capacity, then populate. This avoids both slow iteration and redundant reallocations.

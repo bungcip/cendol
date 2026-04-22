@@ -185,6 +185,8 @@ pub enum SemanticError {
     MemberHasFunctionType {
         name: NameId,
     },
+    FunctionReturningArray,
+    FunctionReturningFunction,
     MemberNotFound {
         name: NameId,
         ty: QualType,
@@ -532,6 +534,8 @@ impl SemanticError {
             SemanticError::MemberHasFunctionType { name } => {
                 format!("member '{}' has function type", name)
             }
+            SemanticError::FunctionReturningArray => "function cannot return an array type".to_string(),
+            SemanticError::FunctionReturningFunction => "function cannot return a function type".to_string(),
             SemanticError::MemberNotFound { name, ty } => {
                 format!("no member named '{}' in '{}'", name, registry.display_qual_type(*ty))
             }

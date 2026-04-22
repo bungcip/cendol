@@ -1019,9 +1019,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             );
         }
 
-        // C11 6.7.1p4: _Thread_local shall only appear in the declaration of an object
         if spec_info.is_thread_local {
             self.report_error(span, SemanticError::ThreadLocalNotAllowed);
+        }
+
+        if spec_info.alignment.is_some() {
+            self.report_error(span, SemanticError::AlignmentNotAllowed { context: "function" });
         }
 
         final_qt = self.check_redeclaration_compatibility(func_name, final_qt, span, spec_info.storage);
@@ -1604,6 +1607,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let init_expr = init.map(|n| {
             let ie = self.visit_expression(n);
+            if (is_global || spec_info.storage == Some(StorageClass::Static)) && !self.is_constant_expr(ie) {
+                self.report_error(self.ast.get_span(ie), SemanticError::NonConstantInitializer);
+            }
             if let Ok(sym) = sym_res {
                 let (already_defined, first_def) = {
                     let symbol = self.symbol_table.get_symbol(sym);
@@ -2436,6 +2442,119 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     /// Try to infer the type of an expression node during lowering.
     /// This is limited because full semantic analysis hasn't run yet.
+    fn is_constant_expr(&self, node: NodeRef) -> bool {
+        match self.ast.get_kind(node) {
+            NodeKind::Literal(_) => true,
+            NodeKind::Ident(_, sym) => {
+                let symbol = self.symbol_table.get_symbol(*sym);
+                if matches!(symbol.kind, SymbolKind::EnumConstant { .. }) {
+                    return true;
+                }
+                // Function designators and array names are effectively constants (pointers)
+                if symbol.is_function() || symbol.type_info.is_array() {
+                    return symbol.has_static_duration();
+                }
+                false
+            }
+            NodeKind::UnaryOp(UnaryOp::AddrOf, expr) => self.is_static_duration_object(*expr),
+            NodeKind::BinaryOp(op, l, r) => {
+                if *op == BinaryOp::Comma {
+                    return false;
+                }
+                self.is_constant_expr(*l) && self.is_constant_expr(*r)
+            }
+            NodeKind::UnaryOp(op, e) => match op {
+                UnaryOp::AddrOf => unreachable!(),
+                UnaryOp::Deref => false,
+                _ => self.is_constant_expr(*e),
+            },
+            NodeKind::Cast(_, e) => self.is_constant_expr(*e),
+            NodeKind::TernaryOp(c, t, e) => {
+                self.is_constant_expr(*c) && self.is_constant_expr(*t) && self.is_constant_expr(*e)
+            }
+            NodeKind::InitializerList(list) => {
+                for item in list.init_start.range(list.init_len) {
+                    if let NodeKind::InitializerItem(ii) = self.ast.get_kind(item) {
+                        if !self.is_constant_expr(ii.initializer) {
+                            return false;
+                        }
+                    }
+                }
+                true
+            }
+            NodeKind::CompoundLiteral(_, init_list) => {
+                if self.symbol_table.current_scope() != ScopeId::GLOBAL {
+                    return false;
+                }
+                if let NodeKind::InitializerList(list) = self.ast.get_kind(*init_list) {
+                    for item in list.init_start.range(list.init_len) {
+                        if let NodeKind::InitializerItem(ii) = self.ast.get_kind(item) {
+                            if !self.is_constant_expr(ii.initializer) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                true
+            }
+            NodeKind::SizeOfExpr(_)
+            | NodeKind::SizeOfType(_)
+            | NodeKind::AlignOfExpr(_)
+            | NodeKind::AlignOfType(_)
+            | NodeKind::BuiltinConstantP(_)
+            | NodeKind::BuiltinTypesCompatibleP(..)
+            | NodeKind::BuiltinPopcount(_)
+            | NodeKind::BuiltinPopcountL(_)
+            | NodeKind::BuiltinPopcountLL(_)
+            | NodeKind::BuiltinClz(_)
+            | NodeKind::BuiltinClzL(_)
+            | NodeKind::BuiltinClzLL(_)
+            | NodeKind::BuiltinCtz(_)
+            | NodeKind::BuiltinCtzL(_)
+            | NodeKind::BuiltinCtzLL(_)
+            | NodeKind::BuiltinFfs(_)
+            | NodeKind::BuiltinFfsL(_)
+            | NodeKind::BuiltinFfsLL(_)
+            | NodeKind::BuiltinBswap16(_)
+            | NodeKind::BuiltinBswap32(_)
+            | NodeKind::BuiltinBswap64(_)
+            | NodeKind::BuiltinFabs(_)
+            | NodeKind::BuiltinFabsf(_)
+            | NodeKind::BuiltinFabsl(_)
+            | NodeKind::BuiltinExpect(..)
+            | NodeKind::BuiltinChooseExpr(..)
+            | NodeKind::BuiltinOffsetof(..) => true,
+
+            NodeKind::GenericSelection(gs) => {
+                for assoc_node in gs.assoc_start.range(gs.assoc_len) {
+                    if let NodeKind::GenericAssociation(assoc) = self.ast.get_kind(assoc_node) {
+                        if !self.is_constant_expr(assoc.result_expr) {
+                            return false;
+                        }
+                    }
+                }
+                true
+            }
+            _ => self.const_ctx().eval_int(node).is_some() || self.const_ctx().eval_float(node).is_some(),
+        }
+    }
+
+    fn is_static_duration_object(&self, node: NodeRef) -> bool {
+        match self.ast.get_kind(node) {
+            NodeKind::Ident(_, sym) => {
+                let symbol = self.symbol_table.get_symbol(*sym);
+                symbol.has_static_duration()
+            }
+            NodeKind::IndexAccess(base, index) => {
+                self.is_static_duration_object(*base) && self.is_constant_expr(*index)
+            }
+            NodeKind::MemberAccess(base, ..) => self.is_static_duration_object(*base),
+            NodeKind::CompoundLiteral(..) => self.symbol_table.current_scope() == ScopeId::GLOBAL,
+            NodeKind::Cast(_, e) => self.is_static_duration_object(*e),
+            _ => false,
+        }
+    }
+
     fn try_infer_type(&mut self, node: NodeRef) -> Option<QualType> {
         use crate::semantic::conversions::{integer_promotion, usual_arithmetic_conversions};
 
@@ -2871,10 +2990,20 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.apply_declarator(modified_current, *inner, span, spec_info, ctx)
             }
             ParsedDeclarator::Array { inner, size } => {
+                if current_type.is_function() {
+                    self.report_error(span, SemanticError::FunctionReturningFunction);
+                }
                 let array_qt = self.lower_array_declarator(*inner, size, current_type, span, ctx);
                 self.apply_declarator(array_qt, *inner, span, spec_info, ctx)
             }
             ParsedDeclarator::Function { params, flags, inner } => {
+                if current_type.is_array() {
+                    self.report_error(span, SemanticError::FunctionReturningArray);
+                }
+                if current_type.is_function() {
+                    self.report_error(span, SemanticError::FunctionReturningFunction);
+                }
+
                 if self.registry.get(current_type.ty()).kind == TypeKind::AutoType {
                     self.report_error(
                         span,

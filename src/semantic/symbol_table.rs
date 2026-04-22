@@ -59,6 +59,20 @@ impl Symbol {
             _ => false,
         }
     }
+
+    pub(crate) fn has_static_duration(&self) -> bool {
+        match &self.kind {
+            SymbolKind::Variable { is_global, storage, .. } => {
+                *is_global || *storage == Some(StorageClass::Static) || *storage == Some(StorageClass::Extern)
+            }
+            SymbolKind::Function { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn is_function(&self) -> bool {
+        matches!(self.kind, SymbolKind::Function { .. })
+    }
 }
 
 /// Defines the kind of symbol.

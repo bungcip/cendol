@@ -214,3 +214,8 @@ Action: Implement recursive property checks for 'has_flexible_array_member' in t
 
 Learning: C11 6.5.1.1p2 mandates that the controlling expression of a `_Generic` selection shall be compatible with at most one generic association. Picking only the first match is insufficient as it silently accepts ambiguous code. Furthermore, associations like `int(*)[10]` and `int(*)[20]` are NOT compatible with each other, but both can be compatible with a controlling expression of type `int(*)[]` (pointer to incomplete array).
 Action: Ensure that `_Generic` selection continues checking all associations even after a match is found, to detect and report ambiguity errors when multiple associations are compatible with the controlling expression.
+
+2026-04-11 - [Block-Scope Function Declarations and Lazy MIR Lowering]
+
+Learning: C11 prohibits 'static' storage class for function declarations in block scope. Furthermore, 'extern' function declarations in block scope can be missed by a global 'pre-declare' pass that only scans top-level symbols. If these block-scope declarations are referenced, the MIR generator must handle them lazily by declaring the function on-the-fly using symbol table metadata, otherwise it may encounter unexpected 'None' values when resolving identifiers to function addresses.
+Action: Enforce storage class constraints for block-scope functions in semantic lowering and implement lazy, metadata-driven function declaration in the MIR generator to ensure robust handling of all valid C scope-linkage combinations.

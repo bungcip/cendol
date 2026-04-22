@@ -93,6 +93,7 @@ pub mod guardian_sizeof_alignof;
 pub mod guardian_ternary_pointer_constraints;
 pub mod guardian_typedef_member_function;
 pub mod guardian_vla;
+pub mod guardian_block_scope_func;
 pub mod mir_dumper_coverage;
 pub mod mir_gen_compound_assignment;
 pub mod mir_gen_sizeof;

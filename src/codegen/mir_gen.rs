@@ -2057,7 +2057,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn calculate_linkage(&self, storage: Option<StorageClass>, def_state: DefinitionState) -> MirLinkage {
+    pub(super) fn calculate_linkage(&self, storage: Option<StorageClass>, def_state: DefinitionState) -> MirLinkage {
         match storage {
             Some(StorageClass::Static) => MirLinkage::Internal,
             Some(StorageClass::Extern) if def_state == DefinitionState::DeclaredOnly => MirLinkage::Import,

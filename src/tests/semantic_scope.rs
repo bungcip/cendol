@@ -377,7 +377,6 @@ fn test_global_variable_visible_in_its_own_initializer() {
     );
 }
 
-
 #[test]
 fn test_typedef_visible_in_declarator() {
     let source = r#"

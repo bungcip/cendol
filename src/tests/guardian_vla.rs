@@ -61,3 +61,21 @@ fn test_vla_star_in_prototype_scope() {
     // Valid: prototype with qualifiers
     run_pass("void f(int a[static 10], int b[*]);", CompilePhase::SemanticLowering);
 }
+
+#[test]
+fn test_vla_pointer_initialization() {
+    // C11 6.7.9p3: "The type of the entity to be initialized shall be ... not a variable length array type."
+    // A pointer to a VLA is NOT a VLA type, although it is a variably modified type.
+    // So it CAN be initialized.
+    run_pass("void f(int n) { int (*p)[n] = 0; }", CompilePhase::Mir);
+}
+
+#[test]
+fn test_nested_vla_initialization_rejected() {
+    // int a[10][n] is a VLA type because its total size is variable.
+    // It should be rejected.
+    run_fail_with_message(
+        "void f(int n) { int a[10][n] = {0}; }",
+        "variable-length array may not be initialized",
+    );
+}

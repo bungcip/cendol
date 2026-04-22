@@ -2530,7 +2530,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if let Some(init) = data.init {
             // C11 6.7.9p3: VLA may not be initialized
-            if self.registry.is_variably_modified(qt.ty()) {
+            if self.registry.is_vla_type(qt.ty()) {
                 self.report_error(node, SemanticError::VlaInitializerNotAllowed);
             }
             self.visit_init(init, qt);

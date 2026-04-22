@@ -1857,16 +1857,21 @@ impl TypeRegistry {
     /// This distinction matters for C11 6.5.2.5p1 (compound literals).
     pub(crate) fn is_vla_type(&self, mut ty: TypeRef) -> bool {
         loop {
-            // Inline pointers and inline arrays are never VLA types.
-            if ty.is_inline_pointer() || ty.is_inline_array() {
+            if ty.is_inline_pointer() || ty.builtin().is_some() {
                 return false;
             }
-            if ty.builtin().is_some() {
-                return false;
+            if ty.is_inline_array() {
+                ty = self.reconstruct_element(ty);
+                continue;
             }
             match &self.types[ty.index()].kind {
                 TypeKind::Alias(inner) => ty = *inner,
-                TypeKind::Array { size, .. } => return matches!(size, ArraySizeType::Variable(_)),
+                TypeKind::Array { element_type, size } => {
+                    if matches!(size, ArraySizeType::Variable(_)) {
+                        return true;
+                    }
+                    ty = *element_type;
+                }
                 _ => return false,
             }
         }

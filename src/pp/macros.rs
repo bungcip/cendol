@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::ast::StringId;
 use crate::pp::error::{PPError, PPErrorKind};
 use crate::pp::pp_lexer::PPLexer;
@@ -87,7 +89,8 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to convert tokens to their string representation
     pub(super) fn tokens_to_string(&self, tokens: &[PPToken]) -> String {
-        let mut result = String::new();
+        // Bolt ⚡: Pre-calculate capacity to avoid redundant reallocations.
+        let mut result = String::with_capacity(tokens.iter().map(|t| t.length as usize).sum());
         for token in tokens {
             result.push_str(&self.get_token_text(token));
         }
@@ -547,32 +550,39 @@ impl<'src> Preprocessor<'src> {
 
     /// Stringify tokens for # operator
     fn stringify_tokens(&mut self, tokens: &[PPToken], _location: SourceLoc) -> Result<PPToken, PPError> {
-        let mut result = String::new();
-        result.push('"');
+        // Bolt ⚡: Pre-calculate capacity and use Vec<u8> to avoid multiple reallocations and redundant UTF-8 validation.
+        // We add a small margin (extra 8 bytes) to account for some escaped characters.
+        let capacity = 10 + tokens.len() + tokens.iter().map(|t| t.length as usize).sum::<usize>();
+        let mut result = Vec::with_capacity(capacity);
+        result.push(b'"');
+
+        let mut cache = SourceBufferCache::new(self.sm);
 
         for (i, token) in tokens.iter().enumerate() {
             if i > 0 && token.flags.contains(PPTokenFlags::LEADING_SPACE) {
-                result.push(' ');
+                result.push(b' ');
             }
 
-            let text = self.get_token_text(token);
+            let text = cache.get_token_text(token);
 
             if matches!(token.kind, PPTokenKind::StringLiteral | PPTokenKind::CharLiteral(_)) {
-                for c in text.chars() {
-                    if c == '"' || c == '\\' {
-                        result.push('\\');
+                // Bolt ⚡: High-speed byte-based iteration for escaping.
+                for &b in text.as_bytes() {
+                    if b == b'"' || b == b'\\' {
+                        result.push(b'\\');
                     }
-                    result.push(c);
+                    result.push(b);
                 }
             } else {
-                result.push_str(&text);
+                result.extend_from_slice(text.as_bytes());
             }
         }
 
-        result.push('"');
+        result.push(b'"');
+        let final_len = result.len();
 
         let source_id = self.sm.add_buffer(
-            result.as_bytes().to_vec(),
+            result,
             "<stringified-tokens>",
             Some(_location),
             FileKind::MacroExpansion,
@@ -582,7 +592,7 @@ impl<'src> Preprocessor<'src> {
             PPTokenKind::StringLiteral,
             PPTokenFlags::empty(),
             SourceLoc::new(source_id, 0),
-            result.len() as u16,
+            final_len as u16,
         ))
     }
 
@@ -1125,5 +1135,29 @@ impl<'a> SourceBufferCache<'a> {
         let start = token.location.offset() as usize;
         let end = start + token.length as usize;
         if end <= buffer.len() { &buffer[start..end] } else { &[] }
+    }
+
+    fn get_token_text<'b>(&'b mut self, token: &'b PPToken) -> Cow<'b, str> {
+        if let PPTokenKind::Identifier(sym) = &token.kind {
+            return Cow::Borrowed(sym.as_str());
+        }
+
+        if let Some(fixed) = token.kind.get_fixed_text() {
+            return Cow::Borrowed(fixed);
+        }
+
+        let bytes = self.get_token_bytes(token);
+        if bytes.is_empty() {
+            return Cow::Borrowed("");
+        }
+
+        // Safety: Preprocessor tokens are guaranteed to be valid UTF-8 by the lexer.
+        let raw = unsafe { std::str::from_utf8_unchecked(bytes) };
+
+        if !token.flags.contains(PPTokenFlags::HAS_SPLICES) {
+            Cow::Borrowed(raw)
+        } else {
+            Cow::Owned(crate::pp::pp_lexer::de_splice(raw))
+        }
     }
 }

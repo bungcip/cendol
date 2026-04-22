@@ -41,8 +41,7 @@ fn bench_compiler_stages(c: &mut Criterion) {
                 preprocessor: PreprocessorOptions { max_include_depth: 100 },
                 ..Default::default()
             };
-            let config = cli.into_config().expect("Failed to create config");
-            let mut driver = CompilerDriver::from_config(config);
+            let mut driver = CompilerDriver::new(cli).expect("Failed to create driver");
             let _ = driver.run_pipeline(phase);
         })
     };

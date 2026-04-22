@@ -991,6 +991,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             .extract_name(func_def.declarator)
             .expect("Function definition must have a name");
 
+        let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
+
         if spec_info.storage == Some(StorageClass::Auto) {
             self.report_error(
                 span,
@@ -1005,6 +1007,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 SemanticError::InvalidStorageClassForFunction {
                     name: func_name,
                     specifier: "register",
+                },
+            );
+        } else if !is_global && spec_info.storage == Some(StorageClass::Static) {
+            self.report_error(
+                span,
+                SemanticError::InvalidStorageClassForFunction {
+                    name: func_name,
+                    specifier: "static",
                 },
             );
         }
@@ -1415,6 +1425,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         spec_info: &DeclSpecInfo,
         span: SourceSpan,
     ) {
+        let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
+
         if spec_info.storage == Some(StorageClass::Auto) {
             self.report_error(
                 span,
@@ -1429,6 +1441,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 SemanticError::InvalidStorageClassForFunction {
                     name,
                     specifier: "register",
+                },
+            );
+        } else if !is_global && spec_info.storage == Some(StorageClass::Static) {
+            self.report_error(
+                span,
+                SemanticError::InvalidStorageClassForFunction {
+                    name,
+                    specifier: "static",
                 },
             );
         }

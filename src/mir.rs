@@ -123,10 +123,6 @@ impl MirFunction {
         );
         Self::new(name, return_type, linkage)
     }
-
-    fn new_extern(name: NameId, return_type: TypeId) -> Self {
-        Self::new(name, return_type, MirLinkage::Import)
-    }
 }
 
 /// MIR Block - Basic block with statements and terminator
@@ -822,8 +818,19 @@ impl MirBuilder {
         return_type: TypeId,
         is_variadic: bool,
     ) -> MirFunctionId {
+        self.declare_function_with_linkage(name, param_types, return_type, is_variadic, MirLinkage::Import)
+    }
+
+    pub(crate) fn declare_function_with_linkage(
+        &mut self,
+        name: NameId,
+        param_types: Vec<TypeId>,
+        return_type: TypeId,
+        is_variadic: bool,
+        linkage: MirLinkage,
+    ) -> MirFunctionId {
         let func_id = MirFunctionId::new(self.functions.len() as u32 + 1).unwrap();
-        let mut func = MirFunction::new_extern(name, return_type);
+        let mut func = MirFunction::new(name, return_type, linkage);
         func.is_variadic = is_variadic;
 
         // Create locals for each parameter.

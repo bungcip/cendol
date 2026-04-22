@@ -687,15 +687,54 @@ impl<'a> MirGen<'a> {
                     Operand::Copy(Box::new(Place::Local(*local_id)))
                 }
             }
-            SymbolKind::Function { .. } => {
-                let func_id = self
+            SymbolKind::Function { storage, .. } => {
+                let func_id = if let Some((i, _)) = self
                     .mb
                     .get_functions()
                     .iter()
                     .enumerate()
                     .find(|(_, f)| f.name == entry.name)
-                    .map(|(i, _)| MirFunctionId::new((i + 1) as u32).unwrap())
-                    .unwrap();
+                {
+                    MirFunctionId::new((i + 1) as u32).unwrap()
+                } else {
+                    // Lazy declaration for block-scope functions
+                    let linkage = self.calculate_linkage(*storage, entry.def_state);
+                    let mut fn_data = None;
+                    {
+                        let type_info = self.registry.get(entry.type_info.ty());
+                        if let TypeKind::Function {
+                            return_type,
+                            parameters,
+                            is_variadic,
+                            ..
+                        } = &type_info.kind
+                        {
+                            fn_data = Some((
+                                *return_type,
+                                parameters.iter().map(|p| p.param_type).collect::<Vec<_>>(),
+                                *is_variadic,
+                            ));
+                        }
+                    }
+
+                    if let Some((return_type, parameters, is_variadic)) = fn_data {
+                        let return_mir_type = self.lower_type(return_type);
+                        let param_mir_types = parameters.into_iter().map(|p| self.lower_qual_type(p)).collect();
+
+                        self.mb.declare_function_with_linkage(
+                            entry.name,
+                            param_mir_types,
+                            return_mir_type,
+                            is_variadic,
+                            linkage,
+                        )
+                    } else {
+                        let return_mir_type = self.get_int_type();
+                        self.mb
+                            .declare_function_with_linkage(entry.name, vec![], return_mir_type, false, linkage)
+                    }
+                };
+
                 let func_type = self.get_function_type(func_id);
                 Operand::Constant(self.create_constant(func_type, ConstValueKind::FunctionAddress(func_id)))
             }

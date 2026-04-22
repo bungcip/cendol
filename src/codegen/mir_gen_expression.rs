@@ -730,13 +730,8 @@ impl<'a> MirGen<'a> {
                         )
                     } else {
                         let return_mir_type = self.get_int_type();
-                        self.mb.declare_function_with_linkage(
-                            entry.name,
-                            vec![],
-                            return_mir_type,
-                            false,
-                            linkage,
-                        )
+                        self.mb
+                            .declare_function_with_linkage(entry.name, vec![], return_mir_type, false, linkage)
                     }
                 };
 

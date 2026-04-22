@@ -361,12 +361,14 @@ impl PPLexer {
 
         let saved_position = self.position;
         let saved_at_start_of_line = self.at_start_of_line;
+        let saved_has_splice = self.has_splice;
 
         let result = self.next_char();
 
         // Restore state
         self.position = saved_position;
         self.at_start_of_line = saved_at_start_of_line;
+        self.has_splice = saved_has_splice;
 
         result.map(|(ch, _)| ch)
     }
@@ -462,6 +464,35 @@ impl PPLexer {
             b'%' => {
                 if consume_if!(b'=') {
                     token!(PPTokenKind::ModAssign, 2)
+                } else if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBrace, 2)
+                } else if consume_if!(b':') {
+                    if self.peek_char() == Some(b'%') {
+                        let saved_pos = self.position;
+                        let saved_at_start = self.at_start_of_line;
+                        let saved_has_splice = self.has_splice;
+                        self.next_char();
+                        if consume_if!(b':') {
+                            token!(PPTokenKind::HashHash, 4)
+                        } else {
+                            self.position = saved_pos;
+                            self.at_start_of_line = saved_at_start;
+                            self.has_splice = saved_has_splice;
+                            let mut token_flags = flags;
+                            if is_at_start_of_line {
+                                token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                                self.in_directive_line = true;
+                            }
+                            token!(PPTokenKind::Hash, 2, token_flags)
+                        }
+                    } else {
+                        let mut token_flags = flags;
+                        if is_at_start_of_line {
+                            token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                            self.in_directive_line = true;
+                        }
+                        token!(PPTokenKind::Hash, 2, token_flags)
+                    }
                 } else {
                     token!(PPTokenKind::Percent, 1)
                 }
@@ -489,6 +520,10 @@ impl PPLexer {
                     }
                 } else if consume_if!(b'=') {
                     token!(PPTokenKind::LessEqual, 2)
+                } else if consume_if!(b':') {
+                    token!(PPTokenKind::LeftBracket, 2)
+                } else if consume_if!(b'%') {
+                    token!(PPTokenKind::LeftBrace, 2)
                 } else {
                     token!(PPTokenKind::Less, 1)
                 }
@@ -535,6 +570,7 @@ impl PPLexer {
             b'.' => 'ellipsis: {
                 let pos_after_first = self.position;
                 let at_start_after_first = self.at_start_of_line;
+                let has_splice_after_first = self.has_splice;
                 if self.peek_char() == Some(b'.') {
                     self.next_char(); // Consume second '.'
                     if self.peek_char() == Some(b'.') {
@@ -544,11 +580,18 @@ impl PPLexer {
                     // It was '..', which is not a valid C token. Backtrack to handle it as a single '.'
                     self.position = pos_after_first;
                     self.at_start_of_line = at_start_after_first;
+                    self.has_splice = has_splice_after_first;
                 }
                 token!(PPTokenKind::Dot, 1)
             }
             b'?' => token!(PPTokenKind::Question, 1),
-            b':' => token!(PPTokenKind::Colon, 1),
+            b':' => {
+                if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBracket, 2)
+                } else {
+                    token!(PPTokenKind::Colon, 1)
+                }
+            }
             b',' => token!(PPTokenKind::Comma, 1),
             b';' => token!(PPTokenKind::Semicolon, 1),
             b'(' => token!(PPTokenKind::LeftParen, 1),
@@ -1074,6 +1117,8 @@ impl PPLexer {
 
             // Fallback for tricky cases (Splices, UCNs, UTF-8)
             let saved_pos = self.position;
+            let saved_at_start = self.at_start_of_line;
+            let saved_has_splice = self.has_splice;
             let (ch, _) = match self.next_char() {
                 Some(res) => res,
                 None => break,
@@ -1087,6 +1132,8 @@ impl PPLexer {
                 } else {
                     // Not a valid UCN. Backtrack and stop identifier
                     self.position = saved_pos;
+                    self.at_start_of_line = saved_at_start;
+                    self.has_splice = saved_has_splice;
                     break;
                 }
             }
@@ -1108,6 +1155,8 @@ impl PPLexer {
                 } else {
                     // Invalid UTF-8, backtrack
                     self.position = saved_pos;
+                    self.at_start_of_line = saved_at_start;
+                    self.has_splice = saved_has_splice;
                     break;
                 }
             }
@@ -1120,6 +1169,8 @@ impl PPLexer {
 
             // Not part of identifier, backtrack!
             self.position = saved_pos;
+            self.at_start_of_line = saved_at_start;
+            self.has_splice = saved_has_splice;
             break;
         }
 
@@ -1443,5 +1494,45 @@ mod tests {
         assert_eq!(t5.kind, PPTokenKind::Hash);
         let t6 = lexer.next_token().unwrap();
         assert_eq!(lexer.get_token_text(&t6), "else");
+    }
+
+    #[test]
+    fn test_digraphs() {
+        let sid = SourceId::new(2);
+        let source = b"<: :> <% %> %: %:%: %:define";
+        let mut lexer = PPLexer::new(sid, Arc::from(&source[..]));
+
+        // Digraphs
+        // <: -> LeftBracket
+        let t = lexer.next_token().unwrap();
+        assert_eq!(t.kind, PPTokenKind::LeftBracket);
+
+        // :> -> RightBracket
+        let t = lexer.next_token().unwrap();
+        assert_eq!(t.kind, PPTokenKind::RightBracket);
+
+        // <% -> LeftBrace
+        let t = lexer.next_token().unwrap();
+        assert_eq!(t.kind, PPTokenKind::LeftBrace);
+
+        // %> -> RightBrace
+        let t = lexer.next_token().unwrap();
+        assert_eq!(t.kind, PPTokenKind::RightBrace);
+
+        // %: -> Hash
+        let t = lexer.next_token().unwrap();
+        assert_eq!(t.kind, PPTokenKind::Hash);
+
+        // %:%: -> HashHash
+        let t = lexer.next_token().unwrap();
+        assert_eq!(t.kind, PPTokenKind::HashHash);
+
+        // %: at start of line -> Hash (STARTS_PP_LINE)
+        let source2 = b"%:define TEST";
+        let mut lexer2 = PPLexer::new(sid, Arc::from(&source2[..]));
+        let t = lexer2.next_token().unwrap();
+        assert_eq!(t.kind, PPTokenKind::Hash);
+        assert!(t.flags.contains(PPTokenFlags::STARTS_PP_LINE));
+        assert!(lexer2.in_directive_line);
     }
 }

@@ -286,7 +286,6 @@ impl LitRef {
         }
     }
 
-
     pub(crate) fn from_char(ch: u32, prefix: CharPrefix) -> Self {
         Self((TAG_CHAR << TAG_SHIFT) | ch as u64 | ((prefix as u64) << CHAR_PREFIX_SHIFT))
     }

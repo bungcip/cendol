@@ -145,7 +145,7 @@ impl FloatSuffix {
         }
     }
 
-    pub fn is_imaginary(self) -> bool {
+    pub(crate) fn is_imaginary(self) -> bool {
         matches!(self, Self::I | Self::IF | Self::IL)
     }
 }
@@ -275,7 +275,7 @@ impl LitRef {
         self.0 & PAYLOAD_MASK
     }
 
-    pub fn from_int(value: i64, suffix: IntSuffix, radix: u8) -> Self {
+    pub(crate) fn from_int(value: i64, suffix: IntSuffix, radix: u8) -> Self {
         if (INT_MIN_SMALL..=INT_MAX_SMALL).contains(&value) {
             let payload = ((value as u64) & INT_VALUE_MASK)
                 | ((suffix as u64) << INT_SUFFIX_SHIFT)
@@ -286,15 +286,11 @@ impl LitRef {
         }
     }
 
-    // pub fn from_bool(v: bool) -> Self {
-    //     if v { Self::TRUE } else { Self::FALSE }
-    // }
-
-    pub fn from_char(ch: u32, prefix: CharPrefix) -> Self {
+    pub(crate) fn from_char(ch: u32, prefix: CharPrefix) -> Self {
         Self((TAG_CHAR << TAG_SHIFT) | ch as u64 | ((prefix as u64) << CHAR_PREFIX_SHIFT))
     }
 
-    pub fn from_string(s: &str, prefix: StrPrefix) -> Self {
+    pub(crate) fn from_string(s: &str, prefix: StrPrefix) -> Self {
         let bytes = s.as_bytes();
         if bytes.len() <= STR_MAX_SMALL_LEN && bytes.is_ascii() {
             let mut packed = 0u64;
@@ -311,7 +307,7 @@ impl LitRef {
         }
     }
 
-    pub fn from_f64(value: f64, suffix: FloatSuffix) -> Self {
+    pub(crate) fn from_f64(value: f64, suffix: FloatSuffix) -> Self {
         match suffix {
             FloatSuffix::F => {
                 let bits = (value as f32).to_bits() as u64;
@@ -324,7 +320,7 @@ impl LitRef {
         }
     }
 
-    pub fn get_val(self) -> LitVal {
+    pub(crate) fn get_val(self) -> LitVal {
         match self.tag() {
             TAG_INT => {
                 let p = self.payload();
@@ -396,7 +392,7 @@ impl LitRef {
     }
 
     #[inline]
-    pub fn kind(self) -> LitKind {
+    pub(crate) fn kind(self) -> LitKind {
         match self.tag() {
             TAG_INT => LitKind::Int,
             TAG_BOOL => LitKind::Bool,
@@ -427,14 +423,14 @@ impl LiteralTable {
         id
     }
 
-    pub fn get(&self, id: u32) -> &LitVal {
+    pub(crate) fn get(&self, id: u32) -> &LitVal {
         &self.values[id as usize]
     }
 }
 
 static LITERAL_TABLE: OnceLock<RwLock<LiteralTable>> = OnceLock::new();
 
-pub fn global_literal_table() -> &'static RwLock<LiteralTable> {
+pub(crate) fn global_literal_table() -> &'static RwLock<LiteralTable> {
     LITERAL_TABLE.get_or_init(|| RwLock::new(LiteralTable::default()))
 }
 

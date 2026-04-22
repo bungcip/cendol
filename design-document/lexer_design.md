@@ -2,106 +2,39 @@
 
 ## Overview
 
-The lexer (or tokenizer) converts a preprocessor token stream into a lexical token stream. It recognizes keywords, identifiers, literals, operators, and punctuation according to C11 lexical rules, and performs string literal concatenation as required by the C11 standard.
+The lexer (or tokenizer) transforms a stream of preprocessing tokens into a stream of lexical tokens. It classifies identifiers, keywords, literals, and operators according to the C23 standard.
 
-## Key Responsibilities
+## Responsibilities
 
-- **Token Conversion**: Convert preprocessing tokens (`PPToken`) to lexical tokens (`Token`)
-- **Keyword Recognition**: Identify C11 keywords using optimized symbol table lookup
-- **Literal Parsing**: Parse integer, float, character, and string literals with C11 syntax support
-- **String Literal Concatenation**: Perform string literal concatenation as per C11 6.4.5
-- **Token Classification**: Classify preprocessing tokens into appropriate lexical categories
-- **Source Location Tracking**: Maintain accurate source location information
+1. **Token Conversion**: Map `PPToken` (from the preprocessor) to `Token`.
+2. **Keyword Recognition**: Identify interned identifiers that match C23 keywords.
+3. **Literal Parsing**: Parse the raw source text of numeric and character literals into their representation format (e.g., `i64` for integers).
+4. **String Concatenation**: Automatically merge adjacent string literals as required by Phase 6 of C translation.
 
-## Token Types
+## Token Representation
 
-The lexer produces various token types including:
-
-### Literals
-- `IntegerConstant(i64, Option<IntegerSuffix>, u32)`: Parsed value, suffix, and numeric base.
-- `FloatConstant(f64, Option<FloatSuffix>)`: Parsed value and suffix.
-- `CharLiteral(u64, StringId)`: Character value and raw text symbol.
-- `StringLiteral(StringId)`: Interned string literal.
-
-### Identifiers
-- `Ident(StringId)`: Interned identifier name.
-
-### Keywords
-The lexer recognizes all standard C11 keywords (storage class specifiers, type qualifiers, type specifiers, control flow) and maps them to specific `TokenKind` variants.
-
-### Keywords (Builtin & Extensions)
-- `BuiltinVaArg`, `BuiltinVaStart`, `BuiltinVaEnd`, `BuiltinVaCopy`
-- `BuiltinExpect`, `BuiltinOffsetof`
-- `BuiltinAtomic*` (various atomic operations)
-- `Asm` (GCC extension support)
-
-### Special Tokens
-- `EndOfFile`, `Unknown`
-
-### Operators (Arithmetic)
-- `Plus`, `Minus`, `Star`, `Slash`, `Percent`, `Increment`, `Decrement`
-
-### Operators (Bitwise)
-- `And`, `Or`, `Xor`, `Not`, `Tilde`, `LeftShift`, `RightShift`
-
-### Operators (Comparison)
-- `Less`, `Greater`, `LessEqual`, `GreaterEqual`, `Equal`, `NotEqual`
-
-### Operators (Assignment)
-- `Assign`, `PlusAssign`, `MinusAssign`, `StarAssign`, `DivAssign`, `ModAssign`, `AndAssign`, `OrAssign`, `XorAssign`, `LeftShiftAssign`, `RightShiftAssign`
-
-### Operators (Logical)
-- `LogicAnd`, `LogicOr`
-
-### Punctuation
-- `Arrow`, `Dot`, `Question`, `Colon`, `Comma`, `Semicolon`, `Ellipsis`
-- Brackets: `LeftParen`, `RightParen`, `LeftBracket`, `RightBracket`, `LeftBrace`, `RightBrace`
+Each `Token` consists of:
+- `TokenKind`: The category (e.g., `Ident`, `Plus`, `IntegerConstant`).
+- `SourceLoc`: The primary location of the token.
+- `SourceSpan`: The full span of the token.
 
 ## Implementation Details
 
-### Optimized Keyword Recognition
+### Optimized Keyword Lookup
+Given the high frequency of identifiers, keywords are identified using a pre-populated hash map of interned `NameId`s.
 
-The lexer uses a pre-initialized hash map for keyword recognition, providing O(1) lookup performance:
+### Integer Literals (C23 Support)
+The lexer supports the expanded C23 integer literal grammar:
+- **Bases**: Decimal, Hexadecimal, Octal, and **Binary** (`0b...`).
+- **Separators**: Digit separators (`'`) are filtered during parsing.
+- **Suffixes**: Includes support for standard suffixes (`u`, `l`, `ll`) and new C23 suffixes (`wb`, `uwb` for bit-precise integers).
 
-```rust
-fn is_keyword(symbol: StringId) -> Option<TokenKind> {
-    keyword_map().get(&symbol).copied()
-}
+### Floating-Point Literals
+Supports decimal and hexadecimal floating-point formats, including E/P notation and `f`, `l`, `d` suffixes.
 
-fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
-    // Pre-populated map of all C11 keywords
-}
-```
+### String Literals
+Handles standard strings, `u8`, `u`, `U`, and `L` prefixed literals. Concatenation occurs before the parser sees the tokens, ensuring that ` "hello" "world" ` is treated as a single `"helloworld"` token.
 
-### Integer Literal Parsing
+## Lexer State Machine
 
-Optimized integer parsing that handles C11 format including:
-- Decimal, octal, and hexadecimal formats
-- Various suffixes (u, l, ll, ul, ull, etc.)
-- Proper base detection and validation
-
-### Float Literal Parsing
-
-Comprehensive float parsing supporting:
-- Decimal and hexadecimal floating-point literals (C99/C11)
-- Scientific notation (e.g., 1.23e-4)
-- Various suffixes (f, F, l, L)
-- Hexadecimal float format (0x1.2p3)
-
-### String Literal Concatenation
-
-The lexer implements C11-compliant string literal concatenation (6.4.5) by:
-- Detecting adjacent string literals in the token stream
-- Concatenating their content in a single pass
-- Creating a single token representing the concatenated string
-
-### Performance Optimizations
-
-- **Symbol Interning**: All identifiers and string literals use interned strings for memory efficiency and fast comparison
-- **Optimized Suffix Stripping**: Fast integer/float suffix removal using byte-level operations
-- **Match-based Classification**: Optimized punctuation token classification using match statements
-- **Contiguous Processing**: Efficient processing of token streams without unnecessary allocations
-
-## Input/Output Interface
-
-The lexer takes a slice of preprocessing tokens (`&[PPToken]`) and produces a vector of lexical tokens (`Vec<Token>`), maintaining source location information throughout the conversion process.
+The lexer is implemented as a simple iterator-based converter. Because the preprocessor already handles the heavy lifting of reading bytes and identifying tokens, the lexical phase is extremely fast and mostly involves classification and literal conversion.

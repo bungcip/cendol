@@ -2,68 +2,41 @@
 
 ## Overview
 
-This document outlines the design for implementing a robust semantic lowering phase that transforms parser AST declarations into type-resolved, codegen-ready semantic nodes. The lowering phase will be integrated into the existing semantic analysis pipeline.
+The Semantic Lowering phase is the "First Stage" of semantic analysis. It is responsible for bridging the gap between the purely syntactic `ParsedAst` produced by the parser and the enriched, type-resolved `Ast` used by the analyzer and codegen.
 
-## Current Architecture Analysis
+## Core Responsibilities
 
-The current semantic analysis consists of four phases:
+1. **Symbol Registration**: Identify all declarations (variables, functions, typedefs, types) and register them in the `SymbolTable`.
+2. **Type Resolution**: Map syntactic type specifiers (e.g., `int`, `struct S`) and declarators (pointers, arrays, functions) to canonical `TypeRef`s in the `TypeRegistry`.
+3. **Scope Management**: Construct the hierarchical scope tree (`ScopeId`) and link declarations to their appropriate scopes.
+4. **AST Transformation**: Convert generic `ParsedNode`s into specialized semantic `NodeKind` variants (e.g., `VarDecl`, `FunctionDecl`).
 
-1. **Symbol Collection**: Collects symbols and builds the symbol table
-2. **Name Resolution**: Resolves identifiers to symbol table entries
-3. **Type Resolution**: Sets resolved types on AST nodes
-4. **Type Checking**: Validates type compatibility and safety
+## The `LowerCtx`
 
-## Architecture
+The lowering process is managed by `LowerCtx` (in `src/semantic/lowering.rs`). It maintains the state of:
+- The current scope being processed.
+- The symbol table and type registry being populated.
+- Maps between `ParsedNodeRef` and resulting `NodeRef`s.
 
-The semantic lowering phase bridges the gap between the syntactic `ParsedAst` and the semantic `Ast`. It processes declarations, handles scope management, and populates the symbol table and type registry.
+## Lowering Algorithm
 
-## Core Components
+### 1. Specifier Processing
+C declarations mix storage classes (`static`, `extern`), qualifiers (`const`, `volatile`), and type specifiers. The lowering phase extracts these into a `DeclSpecInfo` structure before processing individual declarators.
 
-### 1. Lowering Context (`LowerCtx`)
+### 2. Declarator Application
+C's "declaration mimics usage" syntax (e.g., `int (*f[5])(void)`) is handled by recursively applying declarator layers to a base type. The lowering phase traverses the `ParsedDeclarator` chain to build the final `QualType`.
 
-```rust
-pub(crate) struct LowerCtx<'a, 'src> {
-    pub(crate) parsed_ast: &'a ParsedAst,
-    pub(crate) ast: &'a mut Ast,
-    pub(crate) diag: &'src mut DiagnosticEngine,
-    pub(crate) symbol_table: &'a mut SymbolTable,
-    pub(crate) registry: &'a mut TypeRegistry,
-    pub(crate) has_errors: bool,
-    // ...
-}
-```
+### 3. Symbol Insertion
+Once a name and its final type are resolved:
+- A new `Symbol` is created.
+- The symbol is inserted into the current scope.
+- If a redefinition is detected (e.g., duplicate variable name in same block), a semantic error is reported.
 
-### 2. Declaration Specifier Info (`DeclSpecInfo`)
+### 4. Tag Resolution
+Struct, union, and enum tags are tracked in a separate namespace (as required by C). The lowerer handles forward declarations (`struct S;`) and ensures multiple declarations of the same tag resolve to the same underlying type entity.
 
-Consolidates storage classes, type qualifiers, and base types from a list of `ParsedDeclSpecifier` nodes.
+## Handling C23 Features
 
-### 3. Core Logic
-
-- **`visit_ast`**: The entry point. Iterates through the `TranslationUnit` children and lowers each one.
-- **`lower_declaration`**: Processes `ParsedNodeKind::Declaration`. It handles one or more `ParsedInitDeclarator` items sharing the same specifiers.
-- **`lower_function_def`**: Processes `ParsedNodeKind::FunctionDef`, creating a semantic `Function` node and lowering its body.
-- **`apply_parsed_declarator`**: Recursively transforms a base `QualType` based on pointer, array, or function declarators.
-
-## Type Resolution
-
-1. **Base Type Resolution**: `convert_parsed_base_type_to_qual_type` maps syntactic type specifiers (like `int`, `struct S`, `typedef_name`) to a canonical `QualType`.
-2. **Declarator Application**: `apply_parsed_declarator` adds layers (pointers, arrays, function types) to the base type.
-3. **Type Registry**: All unique types are interned in the `TypeRegistry`.
-
-## Symbol Table Integration
-
-Lowering creates symbol entries for all declared names:
-- **Variables**: `VarDecl` nodes.
-- **Functions**: `FunctionDecl` or `Function` nodes.
-- **Typedefs**: `TypedefDecl` nodes.
-- **Tags**: Struct, union, and enum tags are tracked for forward declarations and completion.
-
-## Scope Management
-
-Hierarchical scopes are constructed during lowering:
-- **File Scope**: Global declarations.
-- **Function Scope**: Parameters and labels.
-- **Block Scope**: Local variables.
-- **Prototype Scope**: Parameters in function declarations.
-
-This design provides a solid foundation for implementing a robust semantic lowering phase that integrates seamlessly with the existing semantic analysis pipeline while providing the necessary infrastructure for type resolution and code generation.
+- **Enhanced Enums**: Lowering handles the `: underlying_type` syntax and ensures enumerators are checked against this type.
+- **`constexpr`**: (Future) Lowering will flag declarations with the `constexpr` storage class for subsequent evaluation.
+- **Attributes**: The lowerer processes `[[...]]` attributes (currently limited) to influence symbol properties like linkage or visibility.

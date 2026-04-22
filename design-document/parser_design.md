@@ -2,39 +2,41 @@
 
 ## Overview
 
-The parser converts a lexical token stream into a flattened Abstract Syntax Tree (AST) according to C11 grammar rules. It uses a recursive descent approach with Pratt parsing for expressions, and includes sophisticated disambiguation mechanisms for C's complex grammar.
+The Cendol parser consumes lexical tokens and constructs a `ParsedAst`. It is designed for high performance and strict C23 grammar compliance.
 
-## Key Responsibilities
+## Parsing Strategy
 
-- **Syntax Analysis**: Parse tokens according to C11 grammar with proper operator precedence
-- **AST Construction**: Build a syntactic `ParsedAst` from tokens with index-based references.
+The parser uses a hybrid approach:
+1. **Pratt Parsing (Top-Down Operator Precedence)**: Used for all expressions. This handles C's complex operator precedence (15+ levels) efficiently and with minimal recursion.
+2. **Recursive Descent**: Used for statements, declarations, and high-level program structure.
 
-## Implementation Approach
+## Core Responsibilities
 
-The parser produces a `ParsedAst`, which is a purely syntactic representation of the C code. This tree is then lowered into a semantic `Ast` in the next phase.
+- **Syntactic Validation**: Ensure the token stream follows C23 grammar rules.
+- **Disambiguation**: Resolve the "typedef name" vs "identifier" ambiguity using a `TypeDefContext`.
+- **AST Construction**: Populate the `ParsedAst` vectors with nodes and syntactic types.
+- **Error Recovery**: Synchronize to statement/block boundaries after a syntax error to report multiple diagnostics.
 
-### Recursive Descent for Statements and Declarations
-- Top-down parsing for control flow and declaration constructs.
-- Specialized handling for C's complex declarator syntax.
-- Disambiguation between variable declarations and function definitions.
+## Disambiguation and Context
 
-### Pratt Parsing for Expressions
-- Handles all C11 operators with correct precedence and associativity.
-- Uses `BindingPower` to manage operator precedence.
-- Efficiently handles prefix, infix, and postfix operators.
+C grammar is famously context-sensitive. The parser maintains a `TypeDefContext` that tracks names currently defined as typedefs in the current scope. This allows the parser to determine if `A * B;` is a declaration of pointer `B` or a multiplication of `A` and `B`.
 
-## Core Components
+## Expression Parsing (Pratt)
 
-### Parser Structure
-- `Parser` struct: Orchestrates parsing, managing tokens from the `Lexer`.
-- `ParsedAst`: Contiguous storage for `ParsedNode`s.
-- `TypeDefContext`: Tracks typedefs to resolve the C "typedef name" ambiguity.
+Pratt parsing allows each operator to define its "binding power" and its own parsing function (`nud` for prefix, `led` for infix). This eliminates the need for deeply nested recursive functions for each precedence level (e.g., `parse_mult_expr`, `parse_add_expr`).
 
-### Disambiguation
-C's grammar is famously ambiguous regarding identifiers vs. type names. The `Parser` uses `TypeDefContext` to track active typedefs and distinguish between declarations and expressions using lookahead and context-sensitive checks.
+## Statement and Declaration Parsing
 
-## Error Handling
+The parser follows a traditional recursive descent structure for high-level constructs:
+- `parse_external_declaration` (Top level)
+- `parse_statement` (Handles `if`, `while`, `for`, etc.)
+- `parse_declaration` (Handles variable and type declarations)
+- `parse_declarator` (Handles C's recursive declarator syntax)
 
-The parser implements robust error recovery:
-- **Synchronization**: Skips tokens until a safe point (like a semicolon or closing brace) after an error.
-- **Diagnostic Reporting**: Leverages the `DiagnosticEngine` to report multiple errors in a single pass.
+## Handling C23 Features
+
+The parser is updated for C23:
+- Supports `static_assert` as a declaration and statement.
+- Supports `nullptr`.
+- Correctly parses the `: underlying_type` syntax for enumerations.
+- Handles `[[...]]` attribute syntax at various positions (declarations, statements).

@@ -2,90 +2,53 @@
 
 ## Overview
 
-Semantic analysis is a multi-phase process that checks the syntactically correct AST for semantic correctness and transforms it into a fully annotated form ready for MIR generation. This includes symbol resolution, type checking, scope management, and ensuring that the program follows the rules of the C language.
+Semantic analysis is the process of validating the program's logic and types. It operates on the semantically resolved `Ast` produced by the lowering phase. The primary output is a `SemanticInfo` side table that maps AST nodes to their resolved properties (types, value categories, etc.).
 
-## Key Components
+## Core Responsibilities
 
-1. **Symbol Table**: Maintains mappings between identifiers and their declarations using flattened storage
-2. **Type Registry**: Manages canonical types and type relationships
-3. **Name Resolver**: Resolves identifiers to their symbol table entries
-4. **Type Checker**: Validates type compatibility and performs type resolution
-5. **Symbol Resolver**: Initial symbol collection and AST transformation
-6. **AST-to-MIR Lowerer**: Converts annotated AST to typed MIR representation
+1. **Type Validation**: Ensure operands are compatible for all operations (arithmetic, logical, assignments).
+2. **Implicit Conversion Tracking**: Identify where the C standard requires implicit conversions (integer promotion, usual arithmetic conversions, array-to-pointer decay) and record them.
+3. **Value Category Analysis**: Determine if an expression is an `LValue` (modifiable or not) or an `RValue`.
+4. **Control Flow Validation**: Enforce rules for `break`, `continue`, `goto`, and `return` (e.g., `break` must be inside a loop or switch).
+5. **Constant Evaluation**: Evaluate constant expressions at compile-time (required for array sizes, enum constants, and `_Static_assert`).
 
-## Multi-Phase Process
+## The `SemanticAnalyzer`
 
-The semantic analysis process is split into two major phases, followed by MIR generation:
+The analyzer (in `src/semantic/analyzer.rs`) uses a visitor-like pattern to traverse the `Ast`.
 
-### 1. Semantic Lowering Phase
-- **Entry point**: `visit_ast` in `lowering.rs`.
-- **Goal**: Transform syntactic `ParsedAst` into semantic `Ast`.
-- **Activities**:
-    - Build `SymbolTable` and `TypeRegistry`.
-    - Construct hierarchical `Scope` structure.
-    - Resolve declarations (variables, functions, typedefs, types).
-    - Map `ParsedNode`s to one or more `NodeRef`s in the semantic `Ast`.
-- **Details**: See [semantic_lowering_design.md](file:///home/bungcip/cendol/design-document/semantic_lowering_design.md).
+### 1. Expression Analysis
+For every expression node, the analyzer:
+- Visits sub-expressions.
+- Performs type inference based on operator rules.
+- Checks constraints (e.g., cannot take the address of a register variable).
+- Propagates `LValue` status to the parent node.
+- Stores the final `QualType` in the `SemanticInfo`.
 
-### 2. Semantic Analysis Phase
-- **Entry point**: `visit_ast` in `analyzer.rs`.
-- **Goal**: Perform type checking and semantic validation on the resolved `Ast`.
-- **Activities**:
-    - Verify type compatibility and safety.
-    - Analyze and record implicit conversions (e.g., integer promotion, array-to-pointer decay).
-    - Determine value categories (LValue/RValue).
-    - Populate `SemanticInfo` side tables.
-- **Details**: See [semantic_analysis_design.md](file:///home/bungcip/cendol/design-document/semantic_analysis_design.md).
+### 2. Statement Analysis
+For statement nodes, the analyzer:
+- Checks condition types (must be scalar).
+- Manages loop and switch depths to validate jump statements.
+- Resolves `goto` targets to their label definitions.
 
-### 3. MIR Generation Phase
-- **Entry point**: `MirGen::visit_module`.
-- **Goal**: Convert annotated `Ast` with `SemanticInfo` into MIR.
-- **Details**: See [mir_design.md](file:///home/bungcip/cendol/design-document/mir_design.md).
+## Type Compatibility and Conversions
 
-## Symbol Table Design
+C has complex rules for type compatibility, especially for pointers and composite types. The analyzer leverages the `TypeRegistry` and its own conversion logic to:
+- Handle pointer assignment rules (including `void*` and qualifiers).
+- Perform "usual arithmetic conversions" to find a common type for binary operators.
+- Record implicit casts (e.g., `int` to `float`) so the codegen can emit the correct instructions.
 
-The symbol table uses flattened storage for efficiency:
+## Constant Expression Evaluation
 
-- `SymbolTable`: Main container with `Vec<Symbol>` for flattened storage
-- `SymbolRef`: Index-based reference to symbol entries
-- `ScopeId`: Identifier for hierarchical scope management
-- `SymbolKind`: Enum for different symbol types (Variable, Function, Typedef, etc.)
+The `ConstEvalCtx` (in `src/semantic/const_eval.rs`) provides a specialized execution environment for C constant expressions. It is used during analysis to:
+- Compute the values of `enum` constants.
+- Determine the length of array types (if not a VLA).
+- Validate `_Static_assert` conditions.
+- Compute branch targets for `switch` statements (`case` values).
 
-## Type System Integration
+## Error Reporting
 
-The semantic analysis integrates with the type system through:
-
-- `TypeRegistry`: Manages canonical types with flattened storage
-- `QualType`: Qualified types with type and qualifiers
-- `TypeRef`: Index-based reference to types
-- `TypeKind`: Enum for different type kinds (Int, Pointer, Array, etc.)
-
-## Semantic Information Side Table
-
-After semantic analysis, the AST is augmented with semantic information:
-
-- `SemanticInfo`: Side table with parallel vectors indexed by node index
-- `types`: Resolved types for each node (Vec<Option<QualType>>)
-- `conversions`: Implicit conversions for each node
-- `value_categories`: LValue/RValue categorization (Vec<ValueCategory>)
-
-## Error Handling
-
-Semantic analysis includes comprehensive error handling:
-
-- Rich diagnostic reporting with source location information
-- Non-blocking analysis that continues despite errors
-- Detailed error messages with context
-- Phase-specific error recovery strategies
-
-## Validation
-
-Multiple validation steps ensure semantic correctness:
-
-- Symbol resolution validation
-- Type compatibility validation
-- Scope rule validation
-- Implicit conversion validation
-- LValue/RValue categorization validation
-
-This multi-phase approach ensures that semantic analysis is both comprehensive and efficient, preparing the AST for MIR generation and code generation.
+The semantic analyzer is the primary source of compiler errors. It reports:
+- **Type Mismatches**: e.g., assigning a struct to an integer.
+- **Symbol Errors**: e.g., using an undeclared variable (already largely handled by the lowering phase).
+- **Constraint Violations**: e.g., applying `sizeof` to an incomplete type or function.
+- **Standard-Specific Violations**: e.g., using C23 features in C11 mode.

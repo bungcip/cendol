@@ -10,8 +10,8 @@ The preprocessor is organized into specialized modules:
 
 1. **preprocessor.rs**: Main orchestrator, directive handling, and macro expansion logic.
 2. **pp_lexer.rs**: Specialized lexer for preprocessing tokens (`PPToken`).
-3. **interpreter.rs**: Evaluation of `#if` and `#elif` expressions.
-4. **header_search.rs**: Logic for resolving `#include` paths.
+3. **directives.rs**: Evaluation of `#if`, `#elif`, `#elifdef`, and `#elifndef` expressions.
+4. **header_search.rs**: Logic for resolving `#include` and `#embed` paths.
 5. **dumper.rs**: Utility for emitting preprocessed output.
 
 ### Data Structures
@@ -98,8 +98,10 @@ bitflags::bitflags! {
    - **#undef**: Remove macro from table
    - **#include**: Resolve file path and switch input buffers
    - **#if/#ifdef/#ifndef**: Evaluate condition and update conditional stack
-   - **#elif/#else/#endif**: Manage conditional compilation flow
+   - **#elif/#elifdef/#elifndef**: Manage alternate conditions
+   - **#else/#endif**: Manage conditional compilation flow
    - **#line**: Update source location information using LineMap for diagnostic remapping
+   - **#embed**: C23 resource inclusion (experimental)
    - **#pragma**: Handle implementation-specific directives
 
 4. **Macro Expansion** (Rescan and Further Replacement Algorithm):
@@ -299,7 +301,7 @@ int x = invalid_syntax; // Error reported at original.c:51
 
 ### Key Features
 
-- **Standards Compliance**: Full C11 preprocessor support
+- **Standards Compliance**: Full C23 preprocessor support (including `#elifdef`, etc.)
 - **Efficient Token Management**: Reuse of token objects and buffers
 - **Modular Architecture**: Separable components for different preprocessing tasks
 - **Diagnostic Integration**: Comprehensive error and warning reporting
@@ -309,7 +311,7 @@ int x = invalid_syntax; // Error reported at original.c:51
 - **UTF-8 Only**: The preprocessor assumes and only supports UTF-8 encoded source files (no validation performed for performance)
 - **Direct Buffer Access**: Works directly with byte buffers from SourceManager, avoiding string conversions
 - **Unsafe UTF-8 Operations**: Uses `unsafe` operations assuming UTF-8 validity for maximum performance
-- **No Trigraph or Digraph Support**: For simplicity and modern C usage, trigraphs and digraphs will not be supported
+- **No Trigraph or Digraph Support**: Digraphs and Trigraphs are not supported. Trigraphs were officially removed in C23.
 
 ### Integration with Compiler Pipeline
 

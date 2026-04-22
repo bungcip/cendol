@@ -112,7 +112,7 @@ Action: Always use `TypeRegistry::get(ty)` or similar resolution helpers when ch
 
 2025-06-05 - [sizeof and _Alignof Semantic Constraints]
 
-Learning: C11 6.5.3.4p1 explicitly prohibits `sizeof` and `_Alignof` on function types and incomplete types (including `void`), and `sizeof` on bit-fields. While function-to-pointer decay typically happens in expressions, it is suppressed inside `sizeof` (6.3.2.1p3), meaning the operator correctly sees the function type and must trigger a constraint violation. Similarly, `_Alignof` requires a complete object type, distinguishing it from `sizeof` which can sometimes handle VLAs (though Cendol currently marks VLA sizeof as an unsupported feature).
+Learning: C11 6.5.3.4p1 explicitly prohibits `sizeof` and `_Alignof` on function types and incomplete types (including `void`), and `sizeof` on bit-fields. While function-to-pointer decay typically happens in expressions, it is suppressed inside `sizeof` (6.3.2.1p3), meaning the operator correctly sees the function type and must trigger a constraint violation. Similarly, `_Alignof` requires a complete object type, distinguishing it from `sizeof` which correctly handles VLAs at runtime.
 Action: Always verify that operators which suppress standard conversions (like `sizeof`, `_Alignof`, and `&`) are tested against the original types they receive, especially for types that are normally transformed (like functions or arrays).
 
 2025-06-06 - [Compound Literal Semantic Constraints]

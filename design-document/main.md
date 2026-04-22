@@ -1,4 +1,4 @@
-# Cendol - C11 Compiler Design Document
+# Cendol - C23 Compiler Design Document
 
 ## Table of Contents
 1. [Overview](#overview)
@@ -12,21 +12,19 @@
 7. [Semantic Analysis Phase](semantic_analysis_design.md)
 8. [MIR Generation](mir_design.md)
 9. [Code Generation](codegen_design.md)
-10. [AST Dumper Phase](ast_dumper_design.md)
-11. [Data Flow and Integration](data_flow_design.md)
-12. [Performance Considerations](performance_design.md)
-13. [Error Handling Strategy](error_handling_design.md)
+10. [Data Flow and Integration](data_flow_design.md)
+11. [Performance Considerations](performance_design.md)
+12. [Error Handling Strategy](error_handling_design.md)
 
 ## Overview
 
-This document outlines the design for Cendol, a high-performance C11 compiler written in Rust. The compiler follows a modern multi-phase architecture optimized for performance, cache efficiency, and comprehensive C11 standard compliance. The design features a flattened AST representation, a dedicated MIR (Middle Intermediate Representation) for semantic analysis and optimization, and Cranelift-based code generation.
+This document outlines the design for Cendol, a high-performance C23 compiler written in Rust. The compiler follows a modern multi-phase architecture optimized for performance, cache efficiency, and comprehensive C23 standard compliance. The design features a flattened AST representation, a dedicated MIR (Middle Intermediate Representation) for semantic analysis and optimization, and Cranelift-based code generation.
 
 ### Design Goals
-- **Performance**: Minimize memory allocations and maximize cache locality
-- **Standards Compliance**: Full C11 support including all optional features
-- **Modularity**: Clear separation of concerns between phases
-- **Extensibility**: Easy to extend for future C standards and optimizations
-- **Debuggability**: Comprehensive error reporting and debugging support
+- **Performance**: Minimize memory allocations and maximize cache locality using flattened data structures.
+- **Standards Compliance**: Comprehensive C23 support including new literal types, digit separators, and enhanced preprocessor features.
+- **Modularity**: Clear separation between purely syntactic (`ParsedAst`) and semantically resolved (`Ast`) representation.
+- **Extensibility**: Backend-agnostic design with a typed MIR that serves as the bridge to native code generation.
 
 ## Architecture Overview
 
@@ -53,86 +51,35 @@ graph TD
 
 ### Key Design Decisions
 
-1. **Flattened AST Storage**: All AST nodes in contiguous vectors for superior cache performance
-2. **Global Symbol Interning**: Thread-safe symbol interning using `symbol_table` crate
-3. **Packed Source Locations**: Efficient `SourceLoc` (4 bytes) and `SourceSpan` (8 bytes)
-4. **Index-based References**: `NodeRef`, `TypeRef`, `SymbolRef` for fast access
-5. **Bit Flags**: Compact boolean storage using `bitflags` crate for flags
-6. **Rich Diagnostics**: IDE-quality error reporting with `annotate_snippets`
-7. **MIR-based Design**: Dedicated Mid-level Intermediate Representation for semantic analysis and optimization
-8. **Cranelift Integration**: Efficient code generation through Cranelift backend
+1. **Flattened AST Storage**: Contiguous vectors for nodes, reducing pointer indirection and improving cache locality.
+2. **Two-Stage AST**: A clear boundary between the parser's syntactic output and the analyzer's semantic output.
+3. **Index-based References**: `NodeRef`, `TypeRef`, and `SymbolRef` are compact indices rather than heap pointers.
+4. **Side Table Metadata**: Semantic information (types, value categories) is stored in parallel vectors indexed by `NodeRef`.
+5. **MIR-based Backend**: A typed Mid-level IR that abstracts away C-specific details for the code generator.
+6. **Rich Diagnostics**: IDE-quality error reporting with full source context and multiple errors per pass.
 
 ## Compiler Pipeline Phases
 
 ### 1. Preprocessor Phase
-Transforms C source code by handling macro expansion, conditional compilation, and file inclusion. Produces a stream of preprocessing tokens (`PPToken`).
-
-**Key Features:**
-- Modular architecture with separate lexer (`pp_lexer.rs`), expression parser (`expr_parser.rs`), and main preprocessor (`preprocessor.rs`)
-- Full macro expansion including token pasting and stringification
-- Include file resolution with header search paths and include guard detection
-- Conditional compilation (`#if`, `#ifdef`, `#ifndef`, etc.)
+Transforms C source code by handling macro expansion, conditional compilation, and file inclusion. Produces a stream of preprocessing tokens (`PPToken`). Supports C23 features like `#elifdef`, `#elifndef`, and `__has_c_attribute`.
 
 ### 2. Lexer Phase
-Converts the `PPToken` stream into a lexical `Token` stream.
-
-**Key Features:**
-- Buffers preprocessor output for efficient token consumption
-- Identifies C keywords and interned identifiers
-- Handles numeric and string literals according to C11 rules
+Converts the `PPToken` stream into a lexical `Token` stream. Recognizes C23 binary literals, digit separators, and new keywords like `nullptr`, `constexpr`, and `static_assert`.
 
 ### 3. Parser Phase
-Constructs a `ParsedAst` from the token stream using Pratt parsing for expressions and recursive descent for statements/declarations.
-
-**Key Features:**
-- Produces a preliminary "flattened" AST representation (`ParsedAst`)
-- Pratt parser for efficient expression parsing with C11 precedence
-- Sophisticated disambiguation for C declarations and type names
-- Error recovery with synchronization points
+Constructs a `ParsedAst` using Pratt parsing for expressions and recursive descent for statements. Handles the syntactic structure of declarations without resolving symbols or types.
 
 ### 4. Semantic Lowering Phase
-Transforms `ParsedAst` into a semantic `Ast`, populates the `SymbolTable` and `TypeRegistry`, and constructs scopes.
-
-**Key Features:**
-- Declaration lowering (mapping C declarations to symbols)
-- Scope construction and name resolution
-- Initial type resolution and registry population
-- Transformation of parser-specific nodes into semantic-ready nodes
+Transforms the purely syntactic `ParsedAst` into a semantic `Ast`. This phase resolves identifiers to symbols, computes types for declarations (pointers, arrays, functions), and manages hierarchical scopes.
 
 ### 5. Semantic Analysis Phase
-Performs type checking and validation on the semantic `Ast`, producing a `SemanticInfo` side table.
-
-**Key Features:**
-- Comprehensive type checking and compatibility validation
-- Expression type resolution (attaching types to all expressions)
-- Implicit conversion analysis (integer promotion, usual arithmetic conversions)
-- LValue/RValue and modifiability checks
-- Constant expression evaluation
+Performs type checking and validation on the `Ast`. It computes types for all expression nodes, resolves implicit conversions (decay, promotion), and validates C23 semantic constraints. Results are stored in the `SemanticInfo` side table.
 
 ### 6. MIR Generation Phase
-Transforms the analyzed `Ast` (and its `SemanticInfo`) into a typed, explicit Mid-level Intermediate Representation (MIR).
+Lowers the analyzed `Ast` into a typed `MirModule`. Expressions are flattened into sequences of statements, and high-level control flow is converted into basic blocks and terminators.
 
-**Key Features:**
-- Typed MIR with explicit control flow and basic blocks
-- Lowering of C constructs to simple MIR operations
-- Explicit memory operations and type conversions
-- Preservation of type information for downstream optimization
-
-### 7. MIR Validation Phase
-Ensures the correctness of the generated MIR before passing it to the code generator.
-
-**Key Features:**
-- Type consistency checks
-- Control flow graph validation
-- Invariant verification for MIR operations
-
-### 8. Code Generation Phase
-Generates target machine code using the Cranelift backend and handles linking.
-
-**Key Features:**
-- Cranelift-based code generation from MIR
-- Support for emitting Cranelift IR, object files, or executables
-- Integration with system linker (`LinkGen`) for final artifact creation
+### 7. Code Generation Phase
+Generates target machine code using the Cranelift backend. It maps MIR operations to target instructions and produces object files or final executables by invoking the system linker.
 
 ## Supporting Infrastructure
 

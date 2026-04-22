@@ -6,20 +6,25 @@ Cendol is a C23 compiler implemented in Rust. It is a project to understand the 
 
 ## Features
 
-* **Full C23 Preprocessor**: Complete preprocessor with macro expansion, conditional compilation, file inclusion, and built-in macros (`__FILE__`, `__LINE__`, etc.)
-* **Lexer**: Tokenization of C23 source code with proper handling of literals, keywords, and operators
-* **Parser**: Comprehensive C23 syntax parsing using Pratt parsing for expressions and recursive descent for statements
-* **Semantic Analysis**: Type checking, symbol resolution, and semantic validation
-* **Code Generation**: Compiles to native object code using Cranelift backend
-* **Linker Integration**: Automatic invocation of system linker (clang) to produce executables
-* **Rich Diagnostics**: Error reporting with source location tracking
+- **Full C23 Preprocessor**: Complete preprocessor with macro expansion, conditional compilation, file inclusion, and built-in macros (`__FILE__`, `__LINE__`, etc.)
+- **Lexer**: Tokenization of C23 source code with proper handling of literals, keywords, and operators
+- **Parser**: Comprehensive C23 syntax parsing using Pratt parsing for expressions and recursive descent for statements
+- **Semantic Analysis**: Type checking, symbol resolution, and semantic validation
+- **Code Generation**: Compiles to native object code using Cranelift backend
+- **Linker Integration**: Automatic invocation of system linker (clang) to produce executables
+- **Rich Diagnostics**: Error reporting with source location tracking
 
 ## Limitations
 
-* **No Trigraph Support**: Trigraphs (three-character sequences like `??=`, `??<`, etc.) are not supported. Note: Trigraphs were officially removed in C23.
-* **No Digraph Support**: Digraphs (two-character sequences like `<:`, `:>`, `<%`, `%>`, `%:`, `%:%:`) are not supported. This compiler targets modern C and does not implement legacy digraph tokens.
-* **No K&R Function Declarations**: In compliance with C23, functions declared with an empty parameter list (e.g., `int foo()`) are treated as having no parameters (equivalent to `int foo(void)`).
-* **Limited Inline Assembly Support**: Inline assembly (using `asm` or `__asm__` keywords) has only limited support depending on the Cranelift backend capabilities.
+- **No Trigraph Support**: Trigraphs (three-character sequences like `??=`, `??<`, etc.) are not supported. Note: Trigraphs were officially removed in C23.
+- **No Digraph Support**: Digraphs (two-character sequences like `<:`, `:>`, `<%`, `%>`, `%:`, `%:%:`) are not supported.
+- **No K&R Function Declarations**: Functions declared with an empty parameter list (e.g., `int foo()`) are treated as `int foo(void)`, following C23.
+- **Missing C23 Language Features**:
+  - **Bit-precise integers** (`_BitInt(N)`) are not yet implemented.
+  - **Decimal floating-point types** (`_Decimal32`, `_Decimal64`, `_Decimal128`) are not supported.
+  - **C23 Attribute Syntax** (`[[...]]`) is not yet parsed.
+  - **`#embed` Directive**: The C23 resource inclusion directive is not implemented.
+- **No Standard Library**: Cendol does not provide its own `libc` and relies on the system's C library for headers and linking.
 
 ## Architecture
 
@@ -37,9 +42,9 @@ Cendol follows a traditional multi-phase compiler architecture optimized for per
 
 ### Prerequisites
 
-* Rust 2024 edition or later
-* Cargo
-* Clang (used as the system linker)
+- Rust 2024 edition or later
+- Cargo
+- Clang (used as the system linker)
 
 ### Building
 
@@ -63,25 +68,25 @@ To compile a C file to an executable:
 cargo run -- -o <output_file> <input_file>
 ```
 
-
 #### Other Options
 
-* `-E`: Preprocess only, output preprocessed source to stdout
-* `-P`: Suppress line markers in preprocessor output
-* `-C`: Retain comments in preprocessor output
-* `-I <path>`: Add include search path
-* `-D <name>[=<value>]`: Define preprocessor macro
-* `--verbose`: Enable verbose diagnostic output
+- `-E`: Preprocess only, output preprocessed source to stdout
+- `-P`: Suppress line markers in preprocessor output
+- `-C`: Retain comments in preprocessor output
+- `-I <path>`: Add include search path
+- `-D <name>[=<value>]`: Define preprocessor macro
+- `--verbose`: Enable verbose diagnostic output
 
 #### Examples
 
 Preprocess a file:
+
 ```bash
 cargo run -- -E test.c
 ```
 
-
 Define macros and include paths:
+
 ```bash
 cargo run -- -D DEBUG=1 -I /usr/include test.c
 ```
@@ -90,20 +95,20 @@ cargo run -- -D DEBUG=1 -I /usr/include test.c
 
 Comprehensive design documentation is available in the [`design-document/`](design-document/) directory:
 
-* [Main Architecture](design-document/main.md) - Overall compiler design and goals
-* [Preprocessor Design](design-document/preprocessor_design.md) - Preprocessing phase details
-* [Lexer Design](design-document/lexer_design.md) - Tokenization strategy
-* [Parser Design](design-document/parser_design.md) - AST construction
-* [Semantic Analysis](design-document/semantic_analysis_design.md) - Type checking and validation
+- [Main Architecture](design-document/main.md) - Overall compiler design and goals
+- [Preprocessor Design](design-document/preprocessor_design.md) - Preprocessing phase details
+- [Lexer Design](design-document/lexer_design.md) - Tokenization strategy
+- [Parser Design](design-document/parser_design.md) - AST construction
+- [Semantic Analysis](design-document/semantic_analysis_design.md) - Type checking and validation
 
 ## Contributing
 
 This is a learning project, but contributions are welcome! Areas of interest include:
 
-* Additional C23 language features
-* Performance optimizations
-* Testing and bug fixes
-* Documentation improvements
+- Additional C23 language features
+- Performance optimizations
+- Testing and bug fixes
+- Documentation improvements
 
 ## AI-Friendly Contributions
 

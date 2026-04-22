@@ -53,7 +53,7 @@ The code generator produces a `ClifOutput` enum:
 
 - **Type Mapping**: `lower_type` converts `MirType` to Cranelift types (e.g., `I64`, `F32`, or `I8` for various C sizes).
 - **Variadic Support**: Specialized logic for SysV x86_64 ABI, including register save areas and overflow buffers.
-- **Aggregate Handling**: Structs and arrays are handled via memory operations (`load`/`store`) or packed into registers for small structs.
+- **Aggregate Handling**: Structs and arrays are handled via memory operations (`load`/`store`) or passed via registers according to the target ABI (e.g. SysV x86_64).
 - **Optimization**: Leverages Cranelift's internal optimization passes and register allocator.
 
 ## Validation

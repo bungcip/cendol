@@ -2,58 +2,68 @@
 
 ## Overview
 
-The AST design for Cendol follows a two-stage approach:
-1.  **Syntactic AST (`ParsedAst`)**: A direct representation of the source code produced by the parser.
-2.  **Semantic AST (`Ast`)**: A lowered, type-resolved representation used for analysis and code generation.
+Cendol uses a unique Two-Stage AST architecture, optimized for both memory efficiency and cache locality. All AST nodes are stored in contiguous vectors and referenced by compact, 32-bit indices.
 
-Both trees utilize a flattened storage approach optimized for cache performance and memory efficiency, using index-based references.
+## The Two-Stage Approach
 
-## Key Design Principles
+### 1. Syntactic AST (`ParsedAst`)
+Produced directly by the parser.
+- **Goal**: Rapidly capture the source structure without semantic overhead.
+- **Nodes**: `ParsedNode`.
+- **References**: `ParsedNodeRef`.
+- **Properties**: Purely syntactic; identifiers are just names (`NameId`), and types are just syntactic specifiers.
 
-1.  **Two-Stage Representation**: Separation of concerns between parsing (syntax) and analysis (semantics).
-2.  **Flattened Storage**: All nodes stored in contiguous vectors (`Vec<NodeKind>`, `Vec<ParsedNodeKind>`) for cache-friendly access.
-3.  **Index-based References**: Use `NodeRef` / `ParsedNodeRef` (NonZeroU32) instead of pointers.
-4.  **Packed Data Structures**: Minimize memory footprint with compact representations.
-5.  **Semantic Side Tables**: Semantic information (types, value categories) stored in `SemanticInfo` for the `Ast`.
+### 2. Semantic AST (`Ast`)
+Produced by the lowering phase.
+- **Goal**: Represent the program in a form ready for type analysis and codegen.
+- **Nodes**: `NodeKind`.
+- **References**: `NodeRef`.
+- **Properties**: Analyzed and resolved. Identifiers carry a `SymbolRef`. Nodes are linked to a specific scope.
 
-## AST Structure
+## Flattened Storage
 
-### Syntactic AST (`ParsedAst`)
+To avoid the performance penalties of traditional pointer-heavy trees (fragmented allocations, cache misses), Cendol uses "Side Tables":
 
-Holds the raw output of the parser.
--   `ParsedAst` struct: Container with `nodes` and `parsed_types`.
--   `ParsedNodeKind` enum: Variants representing syntactic constructs (e.g., `Declaration`, `FunctionDef`).
--   `ParsedTypeArena`: Storage for syntactic type representations (`ParsedType`).
+| Feature | Implementation |
+| :--- | :--- |
+| **Node Kinds** | Contiguous `Vec<NodeKind>` |
+| **Source Spans** | Contiguous `Vec<SourceSpan>` |
+| **Semantic Info** | Contiguous `Vec<Option<QualType>>` (Parallel to Node kinds) |
 
-### Semantic AST (`Ast`)
+This layout ensures that traversing the AST (which often requires checking only the kind or type) is extremely fast.
 
-Holds the analyzed and resolved program structure.
--   `Ast` struct: Container with `kinds` (nodes), `spans`, and optional `semantic_info`.
--   `NodeKind` enum: Variants representing semantic constructs (e.g., `VarDecl`, `BinaryOp` with resolved behavior).
--   `SemanticInfo`: Side table containing resolved `QualType`s, implicit conversions, and value categories.
+## Node Construction
 
-## Node Design
+Nodes in Cendol are designed to be small and `Copy`. Large data structures (like those representing an `If` statement's multiple branches) are stored in specialized data structs referenced by the `NodeKind`.
 
-### `NodeKind` (Semantic Nodes)
+### Example: Binary Operation
+In a traditional tree:
+```rust
+struct BinaryOp {
+    left: Box<Node>,
+    right: Box<Node>,
+    op: OpKind,
+    resolved_type: Type,
+}
+```
 
-The `NodeKind` enum represents semantically resolved constructs. Key aspects include:
-- **Expressions**: `Ident`, `UnaryOp`, `BinaryOp`, `TernaryOp`, `Cast`, `SizeOfExpr`, `ImplicitCast`, `GenericSelection`, `FunctionCall`.
-- **Statements**: `CompoundStatement`, `If`, `While`, `DoWhile`, `For`, `Return`, `Break`, `Continue`, `Goto`, `Label`, `Switch`, `Case`, `Default`.
-- **Declarations**: `VarDecl`, `FunctionDecl`, `TypedefDecl`, `RecordDecl`, `FieldDecl`, `EnumDecl`, `EnumMember`, `Function`, `Param`.
-- **Infrastructure**: `TranslationUnit`, `InitializerList`, `InitializerItem`, `Designator`, `Dummy`.
+In Cendol's `Ast`:
+```rust
+enum NodeKind {
+    BinaryOp(BinaryOpData),
+    // ...
+}
 
-Large variants use auxiliary data structures (e.g., `FunctionData`, `IfStmt`) to keep `NodeKind` compact and cache-friendly.
+struct BinaryOpData {
+    left: NodeRef,
+    right: NodeRef,
+    op: BinaryOpKind,
+}
+```
+The `resolved_type` is stored in the `SemanticInfo` side table.
 
-### `ParsedNodeKind` (Syntactic Nodes)
+## Navigation and Modification
 
-`ParsedNodeKind` is purely syntactic and lacks semantic resolution:
-- **Declarations**: Uses generic `Declaration(ParsedDeclarationData)` and `FunctionDef(ParsedFunctionDefData)` instead of specific semantic variants.
-- **Types**: Uses `ParsedType` (syntactic representation) instead of `QualType`.
-- **Expressions**: Standard C operators, but without symbol or type resolution (e.g., `Ident(NameId)`).
-
-## Memory Layout
-
-- **Contiguous Storage**: Both `Ast` and `ParsedAst` use `Vec<NodeKind>` and `Vec<ParsedNodeKind>` for optimal cache performance.
-- **Index-based References**: `NodeRef` and `ParsedNodeRef` are `NonZeroU32` wrappers that index into these vectors.
-- **Compactness**: Shared data structures across nodes are boxed or stored as indices to minimize `NodeKind` size.
-- **Side Tables**: Any data that doesn't fit the uniform node structure is stored in side tables (e.g., `SemanticInfo`).
+- **Children**: Accessed via `NodeRef` indices.
+- **Dynamic Growth**: Flattened vectors can grow dynamically, though the driver typically pre-allocates for large files.
+- **Immutability**: Once a phase finishes (e.g., Lowering), the AST nodes are generally immutable, but side-tables (`SemanticInfo`) can be populated incrementally.

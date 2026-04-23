@@ -990,6 +990,10 @@ impl<'src> Preprocessor<'src> {
         macro_name: StringId,
         trigger_location: SourceLoc,
     ) -> Vec<PPToken> {
+        if tokens.is_empty() {
+            return Vec::new();
+        }
+
         let mut buffer = Vec::with_capacity(tokens.iter().map(|t| t.length as usize).sum());
         let mut metadata = Vec::with_capacity(tokens.len());
 

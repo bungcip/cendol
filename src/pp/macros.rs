@@ -549,7 +549,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Stringify tokens for # operator
-    fn stringify_tokens(&mut self, tokens: &[PPToken], _location: SourceLoc) -> Result<PPToken, PPError> {
+    fn stringify_tokens(&mut self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPError> {
         // Bolt ⚡: Pre-calculate capacity and use Vec<u8> to avoid multiple reallocations and redundant UTF-8 validation.
         // We add a small margin (extra 8 bytes) to account for some escaped characters.
         let capacity = 10 + tokens.len() + tokens.iter().map(|t| t.length as usize).sum::<usize>();
@@ -584,7 +584,7 @@ impl<'src> Preprocessor<'src> {
         let source_id = self.sm.add_buffer(
             result,
             "<stringified-tokens>",
-            Some(_location),
+            Some(location),
             FileKind::MacroExpansion,
         );
 

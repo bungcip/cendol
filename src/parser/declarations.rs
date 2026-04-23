@@ -137,6 +137,9 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
         if trx.parser.is_token(TokenKind::Attribute) {
             let attrs = super::declarations::parse_attribute(trx.parser)?;
             specifiers.extend(attrs);
+        } else if trx.parser.at_c23_attribute_start() {
+            let attrs = super::declarations::parse_c23_attribute(trx.parser)?;
+            specifiers.extend(attrs);
         } else if trx.parser.is_token(TokenKind::Asm) {
             let _ = super::declarations::parse_asm(trx.parser);
         } else {
@@ -322,6 +325,11 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
                 let attrs = parse_attribute(parser)?;
                 specifiers.extend(attrs);
                 specifiers.push(DeclSpec::Attribute);
+            }
+
+            TokenKind::LeftBracket if parser.at_c23_attribute_start() => {
+                let attrs = parse_c23_attribute(parser)?;
+                specifiers.extend(attrs);
             }
 
             TokenKind::Void
@@ -543,6 +551,55 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
     if depth == 1 {
         parser.expect(TokenKind::RightParen)?;
     }
+
+    Ok(specs)
+}
+
+/// Parse C23 attribute syntax: [[ attribute-list ]]
+pub(crate) fn parse_c23_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, ParseError> {
+    parser.expect(TokenKind::LeftBracket)?;
+    parser.expect(TokenKind::LeftBracket)?;
+
+    let mut specs = Vec::new();
+    while !parser.at_eof() && !parser.is_token(TokenKind::RightBracket) {
+        if parser.accept(TokenKind::Comma).is_some() {
+            continue;
+        }
+
+        if let Some(TokenKind::Identifier(_)) = parser.current_token_kind() {
+            parser.advance();
+
+            // Check for scoped attribute prefix ::
+            if parser.is_token(TokenKind::Colon) && parser.peek_token(0).is_some_and(|t| t.kind == TokenKind::Colon) {
+                parser.advance(); // :
+                parser.advance(); // :
+                parser.expect_name()?;
+            }
+
+            // Check for arguments ( ... )
+            if parser.accept(TokenKind::LeftParen).is_some() {
+                let mut depth = 1;
+                while depth > 0 && !parser.at_eof() {
+                    if parser.is_token(TokenKind::LeftParen) {
+                        depth += 1;
+                    } else if parser.is_token(TokenKind::RightParen) {
+                        depth -= 1;
+                    }
+                    parser.advance();
+                }
+            }
+            specs.push(DeclSpec::Attribute);
+        } else {
+            // Empty attribute or unexpected token
+            if !parser.is_token(TokenKind::RightBracket) && !parser.is_token(TokenKind::Comma) {
+                // Skip unexpected token to avoid infinite loop
+                parser.advance();
+            }
+        }
+    }
+
+    parser.expect(TokenKind::RightBracket)?;
+    parser.expect(TokenKind::RightBracket)?;
 
     Ok(specs)
 }

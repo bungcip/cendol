@@ -97,8 +97,12 @@ fn validate_declarator(
 }
 
 pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Result<DeclaratorRef, ParseError> {
-    while parser.is_token(TokenKind::Attribute) {
-        let _ = super::declarations::parse_attribute(parser);
+    while parser.is_token(TokenKind::Attribute) || parser.at_c23_attribute_start() {
+        if parser.is_token(TokenKind::Attribute) {
+            let _ = super::declarations::parse_attribute(parser);
+        } else {
+            let _ = super::declarations::parse_c23_attribute(parser);
+        }
     }
 
     let pointers = parse_leading_pointers(parser)?;

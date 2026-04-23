@@ -1338,7 +1338,7 @@ impl<'a> MirGen<'a> {
         let element = self.lower_type(element_type);
 
         match size {
-            ArraySizeType::Constant(s) => {
+            ArraySizeType::Constant(s) if !self.registry.is_vla_type(ty) => {
                 let _ = self.registry.ensure_layout(ty);
                 let (layout_size, layout_align, element_ty, _) = self.registry.get_array_layout(ty);
                 let element_layout = self.registry.get_layout(element_ty);

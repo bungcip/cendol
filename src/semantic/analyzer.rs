@@ -6,7 +6,7 @@ use crate::{
         *,
     },
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
-    lang_options::LangOptions,
+    lang_options::{CStandard, LangOptions},
     semantic::{
         ArraySizeType, BuiltinType, FunctionParameter, QualType, StructMember, SymbolKind, SymbolRef, SymbolTable,
         TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
@@ -2531,7 +2531,15 @@ impl<'a> SemanticAnalyzer<'a> {
         if let Some(init) = data.init {
             // C11 6.7.9p3: VLA may not be initialized
             if self.registry.is_vla_type(qt.ty()) {
-                self.report_error(node, SemanticError::VlaInitializerNotAllowed);
+                let is_empty_init = if let NodeKind::InitializerList(list) = self.ast.get_kind(init) {
+                    list.init_len == 0
+                } else {
+                    false
+                };
+
+                if !is_empty_init || self.lang_opts.c_standard < CStandard::C23 {
+                    self.report_error(node, SemanticError::VlaInitializerNotAllowed);
+                }
             }
             self.visit_init(init, qt);
         }

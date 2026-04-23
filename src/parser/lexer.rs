@@ -291,7 +291,7 @@ impl TokenKind {
             || self.is_type_qualifier()
             || self.is_function_specifier()
             || self.is_alignment_specifier()
-            || matches!(self, TokenKind::Attribute)
+            || matches!(self, TokenKind::Attribute | TokenKind::LeftBracket)
     }
 
     pub(super) fn is_declaration_start(&self, is_typedef: bool) -> bool {

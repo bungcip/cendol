@@ -17,11 +17,23 @@ use super::Parser;
 pub(super) fn parse_record_spec(parser: &mut Parser, is_union: bool) -> Result<TypeSpec, ParseError> {
     let mut attributes = Vec::new();
 
-    // Check for __attribute__ after struct/union keyword (GCC extension)
-    if parser.is_token(TokenKind::Attribute)
-        && let Ok(attrs) = super::declarations::parse_attribute(parser)
-    {
-        attributes.extend(attrs);
+    // Check for attributes after struct/union keyword
+    loop {
+        if parser.is_token(TokenKind::Attribute) {
+            if let Ok(attrs) = super::declarations::parse_attribute(parser) {
+                attributes.extend(attrs);
+            } else {
+                break;
+            }
+        } else if parser.at_c23_attribute_start() {
+            if let Ok(attrs) = super::declarations::parse_c23_attribute(parser) {
+                attributes.extend(attrs);
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
     }
 
     let tag = parser.accept_name();
@@ -30,11 +42,23 @@ pub(super) fn parse_record_spec(parser: &mut Parser, is_union: bool) -> Result<T
         let members = parse_struct_decl_list(parser)?;
         parser.expect(TokenKind::RightBrace)?;
 
-        // Check for __attribute__ after struct definition (GCC extension)
-        if parser.is_token(TokenKind::Attribute)
-            && let Ok(attrs) = super::declarations::parse_attribute(parser)
-        {
-            attributes.extend(attrs);
+        // Check for attributes after struct definition
+        loop {
+            if parser.is_token(TokenKind::Attribute) {
+                if let Ok(attrs) = super::declarations::parse_attribute(parser) {
+                    attributes.extend(attrs);
+                } else {
+                    break;
+                }
+            } else if parser.at_c23_attribute_start() {
+                if let Ok(attrs) = super::declarations::parse_c23_attribute(parser) {
+                    attributes.extend(attrs);
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
         }
 
         Some(members)
@@ -89,8 +113,12 @@ fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
             parser.expect(TokenKind::RightBrace)?;
 
             let mut attributes = Vec::new();
-            while parser.is_token(TokenKind::Attribute) {
-                attributes.extend(super::declarations::parse_attribute(parser)?);
+            while parser.is_token(TokenKind::Attribute) || parser.at_c23_attribute_start() {
+                if parser.is_token(TokenKind::Attribute) {
+                    attributes.extend(super::declarations::parse_attribute(parser)?);
+                } else {
+                    attributes.extend(super::declarations::parse_c23_attribute(parser)?);
+                }
             }
 
             let init_declarators = if parser.accept(TokenKind::Semicolon).is_some() {
@@ -98,8 +126,12 @@ fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
             } else {
                 let decls = parse_init_declarators(parser)?;
                 loop {
-                    if parser.is_token(TokenKind::Attribute) {
-                        attributes.extend(super::declarations::parse_attribute(parser)?);
+                    if parser.is_token(TokenKind::Attribute) || parser.at_c23_attribute_start() {
+                        if parser.is_token(TokenKind::Attribute) {
+                            attributes.extend(super::declarations::parse_attribute(parser)?);
+                        } else {
+                            attributes.extend(super::declarations::parse_c23_attribute(parser)?);
+                        }
                     } else {
                         break;
                     }
@@ -137,6 +169,8 @@ fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         loop {
             if parser.is_token(TokenKind::Attribute) {
                 specifiers.extend(super::declarations::parse_attribute(parser)?);
+            } else if parser.at_c23_attribute_start() {
+                specifiers.extend(super::declarations::parse_c23_attribute(parser)?);
             } else if parser.is_token(TokenKind::Asm) {
                 let _ = super::declarations::parse_asm(parser);
             } else {

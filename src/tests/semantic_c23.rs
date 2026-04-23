@@ -304,3 +304,41 @@ fn test_empty_initializer_array_of_known_size() {
     // Empty initializer is allowed for known size array in C23.
     run_pass_with_std("int arr[5] = {};", CompilePhase::SemanticLowering, CStandard::C23);
 }
+#[test]
+fn test_c23_vla_empty_init() {
+    // Empty initializer is allowed for VLA in C23.
+    run_pass_with_std(
+        r#"
+        void test(int n) {
+            int vla[n] = {};
+        }
+        "#,
+        CompilePhase::Mir,
+        CStandard::C23,
+    );
+
+    // Multi-dimensional VLA with constant outer dimension
+    run_pass_with_std(
+        r#"
+        void test(int n) {
+            int vla[10][n] = {};
+        }
+        "#,
+        CompilePhase::Mir,
+        CStandard::C23,
+    );
+}
+
+#[test]
+fn test_c23_vla_empty_init_fail_c11() {
+    // Empty initializer for VLA is NOT allowed in C11.
+    run_fail_with_message_and_std(
+        r#"
+        void test(int n) {
+            int vla[n] = {};
+        }
+        "#,
+        "variable-length array may not be initialized",
+        CStandard::C11,
+    );
+}

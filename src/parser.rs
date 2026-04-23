@@ -9,6 +9,7 @@ use std::collections::VecDeque;
 use crate::ast::literal::{LitKind, LitRef};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError, ParseErrorKind};
+use crate::lang_options::CStandard;
 use crate::source_manager::{SourceLoc, SourceSpan};
 
 pub mod declarations;
@@ -449,6 +450,9 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     /// Check if the current token can start a type name.
     /// This is a lightweight check used for disambiguation.
     pub(super) fn is_type_name_start(&mut self) -> bool {
+        if self.at_c23_attribute_start() {
+            return true;
+        }
         if let Some(token) = self.try_current_token() {
             self.is_type_name_start_token(token)
         } else {
@@ -545,10 +549,19 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
 
     /// Check if the current token can start a declaration
     pub(super) fn starts_declaration(&mut self) -> bool {
+        if self.at_c23_attribute_start() {
+            return true;
+        }
         self.try_current_token().is_some_and(|token| {
             let is_typedef = matches!(token.kind, TokenKind::Identifier(s) if self.is_type_name(s));
             token.kind.is_declaration_start(is_typedef)
         })
+    }
+
+    pub(super) fn at_c23_attribute_start(&mut self) -> bool {
+        self.lang_opts.c_standard >= CStandard::C23
+            && self.is_token(TokenKind::LeftBracket)
+            && self.peek_token(1).is_some_and(|t| t.kind == TokenKind::LeftBracket)
     }
 }
 

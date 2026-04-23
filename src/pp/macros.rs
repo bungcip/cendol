@@ -581,12 +581,9 @@ impl<'src> Preprocessor<'src> {
         result.push(b'"');
         let final_len = result.len();
 
-        let source_id = self.sm.add_buffer(
-            result,
-            "<stringified-tokens>",
-            Some(location),
-            FileKind::MacroExpansion,
-        );
+        let source_id = self
+            .sm
+            .add_buffer(result, "<stringified-tokens>", Some(location), FileKind::MacroExpansion);
 
         Ok(PPToken::new(
             PPTokenKind::StringLiteral,

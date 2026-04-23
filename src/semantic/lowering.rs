@@ -2474,10 +2474,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             NodeKind::InitializerList(list) => {
                 for item in list.init_start.range(list.init_len) {
-                    if let NodeKind::InitializerItem(ii) = self.ast.get_kind(item) {
-                        if !self.is_constant_expr(ii.initializer) {
-                            return false;
-                        }
+                    if let NodeKind::InitializerItem(ii) = self.ast.get_kind(item)
+                        && !self.is_constant_expr(ii.initializer)
+                    {
+                        return false;
                     }
                 }
                 true
@@ -2488,10 +2488,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 if let NodeKind::InitializerList(list) = self.ast.get_kind(*init_list) {
                     for item in list.init_start.range(list.init_len) {
-                        if let NodeKind::InitializerItem(ii) = self.ast.get_kind(item) {
-                            if !self.is_constant_expr(ii.initializer) {
-                                return false;
-                            }
+                        if let NodeKind::InitializerItem(ii) = self.ast.get_kind(item)
+                            && !self.is_constant_expr(ii.initializer)
+                        {
+                            return false;
                         }
                     }
                 }
@@ -2527,10 +2527,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             NodeKind::GenericSelection(gs) => {
                 for assoc_node in gs.assoc_start.range(gs.assoc_len) {
-                    if let NodeKind::GenericAssociation(assoc) = self.ast.get_kind(assoc_node) {
-                        if !self.is_constant_expr(assoc.result_expr) {
-                            return false;
-                        }
+                    if let NodeKind::GenericAssociation(assoc) = self.ast.get_kind(assoc_node)
+                        && !self.is_constant_expr(assoc.result_expr)
+                    {
+                        return false;
                     }
                 }
                 true

@@ -74,6 +74,37 @@ impl PPExpr {
         }
     }
 
+    fn get_is_unsigned(&self, pp: &Preprocessor) -> bool {
+        match self {
+            PPExpr::Number(n) => n.is_unsigned,
+            PPExpr::Identifier(_) => false,
+            PPExpr::Defined(_) => false,
+            PPExpr::HasInclude(_, _) => false,
+            PPExpr::HasIncludeNext(_, _) => false,
+            PPExpr::HasBuiltin(_) => false,
+            PPExpr::HasAttribute(_) => false,
+            PPExpr::HasCAttribute(_) => false,
+            PPExpr::HasFeature(_) | PPExpr::HasExtension(_) => false,
+            PPExpr::Binary(op, left, right) => match op {
+                BinaryOp::LogicAnd
+                | BinaryOp::LogicOr
+                | BinaryOp::Equal
+                | BinaryOp::NotEqual
+                | BinaryOp::Less
+                | BinaryOp::LessEqual
+                | BinaryOp::Greater
+                | BinaryOp::GreaterEqual => false,
+                BinaryOp::LShift | BinaryOp::RShift => left.get_is_unsigned(pp),
+                _ => left.get_is_unsigned(pp) || right.get_is_unsigned(pp),
+            },
+            PPExpr::Unary(op, operand) => match op {
+                UnaryOp::LogicNot => false,
+                _ => operand.get_is_unsigned(pp),
+            },
+            PPExpr::Conditional(_, true_e, false_e) => true_e.get_is_unsigned(pp) || false_e.get_is_unsigned(pp),
+        }
+    }
+
     fn is_builtin_supported(name: StringId, kw: &PPKeywordTable) -> bool {
         name == kw.builtin_va_arg
             || name == kw.builtin_va_list
@@ -190,10 +221,12 @@ impl PPExpr {
         span: SourceSpan,
     ) -> Result<ExprValue, PPError> {
         let c = cond.evaluate(pp, span)?;
-        let t = true_e.evaluate(pp, span)?;
-        let f = false_e.evaluate(pp, span)?;
-        let is_unsigned = t.is_unsigned || f.is_unsigned;
-        let chosen = if c.is_truthy() { t } else { f };
+        let chosen = if c.is_truthy() {
+            true_e.evaluate(pp, span)?
+        } else {
+            false_e.evaluate(pp, span)?
+        };
+        let is_unsigned = true_e.get_is_unsigned(pp) || false_e.get_is_unsigned(pp);
         Ok(if is_unsigned {
             ExprValue::new(chosen.value, true)
         } else {

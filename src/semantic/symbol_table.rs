@@ -647,7 +647,7 @@ impl SymbolTable {
             Ok(sym)
         } else {
             // Symbol doesn't exist, add it
-            Ok(self.add_symbol(name, new_entry))
+            Ok(self.add_symbol_in_scope(name, new_entry, ScopeId::GLOBAL))
         }
     }
 }

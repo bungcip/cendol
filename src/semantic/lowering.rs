@@ -1048,7 +1048,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // Get parameters calculated earlier
         let param_len = parameters.len() as u16;
 
-        if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) = self.symbol_table.define_function(
+        let func_sym = match self.symbol_table.define_function(
             func_name,
             final_qt.ty(),
             spec_info.storage,
@@ -1057,19 +1057,23 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             true,
             span,
         ) {
-            let entry = self.symbol_table.get_symbol(existing);
-            if entry.def_state == DefinitionState::Defined {
-                let first_def = entry.def_span;
-                self.report_error(
-                    span,
-                    SemanticError::Redefinition {
-                        name: func_name,
-                        first_def,
-                    },
-                );
+            Ok(sym) => sym,
+            Err(SymbolTableError::InvalidRedefinition { existing, .. }) => {
+                let entry = self.symbol_table.get_symbol(existing);
+                if entry.def_state == DefinitionState::Defined {
+                    let first_def = entry.def_span;
+                    self.report_error(
+                        span,
+                        SemanticError::Redefinition {
+                            name: func_name,
+                            first_def,
+                        },
+                    );
+                }
+                existing
             }
-        }
-        let func_sym = self.symbol_table.lookup_symbol(func_name).unwrap();
+        };
+
         let scope_id = self.symbol_table.push_scope();
 
         // Implement __func__ (C11 6.4.2.2)
@@ -3601,9 +3605,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let old_in_prototype = self.in_prototype;
         self.in_prototype = !is_definition;
 
-        if !is_definition {
+        let pushed_scope = if !is_definition || self.symbol_table.current_scope() == ScopeId::GLOBAL {
             self.symbol_table.push_scope();
-        }
+            true
+        } else {
+            false
+        };
 
         for param in params {
             let span = param.span;
@@ -3688,7 +3695,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             });
         }
 
-        if !is_definition {
+        if pushed_scope {
             self.symbol_table.pop_scope();
         }
 

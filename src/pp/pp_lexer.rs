@@ -1001,7 +1001,7 @@ impl PPLexer {
 
             // If we didn't stop because of a \, trigraph, or non-ASCII, then we're finished.
             let next = self.peek_char();
-            if next.is_none() || (next.unwrap() < 0x80 && next.unwrap() != b'\\' && next.unwrap() != b'?') {
+            if next.is_none() || (next.unwrap() < 0x80 && next.unwrap() != b'\\') {
                 return PPToken::new(
                     PPTokenKind::Identifier(symbol),
                     token.flags,
@@ -1009,6 +1009,11 @@ impl PPLexer {
                     token.length,
                 );
             }
+
+            // Fall through to slow path: backtrack to just after the first character
+            // so the slow path can correctly re-lex the entire identifier including UCNs and splices.
+            self.position = start_pos + 1;
+            self.has_splice = token.flags.contains(PPTokenFlags::HAS_SPLICES);
         }
 
         // ⚡ Bolt: Pre-allocate the string with a reasonable capacity to avoid

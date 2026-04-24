@@ -134,3 +134,5 @@ pub mod regr_shadowing;
 pub mod regr_struct_bitfield;
 pub mod semantic_alignof_expr;
 pub mod semantic_usual_arithmetic_conversions;
+pub mod regr_sds_l1;
+pub mod regr_identifier_truncation;

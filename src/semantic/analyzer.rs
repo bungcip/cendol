@@ -778,6 +778,9 @@ impl<'a> SemanticAnalyzer<'a> {
         if !self.is_lvalue(node) || qt.is_array() || qt.is_function() {
             self.report_error(node, SemanticError::NotAnLvalue);
             false
+        } else if !self.registry.is_complete(qt.ty()) {
+            self.report_error(node, SemanticError::IncompleteType { ty: qt });
+            false
         } else if self.registry.is_const_recursive(qt) {
             self.report_error(node, SemanticError::AssignmentToReadOnly);
             false

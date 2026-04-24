@@ -568,12 +568,12 @@ impl PPLexer {
     pub(crate) fn fast_skip_to_directive(&mut self) {
         loop {
             let mut end = self.position as usize;
-            // First, skip to the next newline.
-            while end < self.buffer.len() {
-                if self.buffer[end] == b'\n' || self.buffer[end] == b'\\' {
-                    break;
-                }
-                end += 1;
+            // First, skip to the next newline or backslash.
+            // ⚡ Bolt: Use memchr2 for SIMD-accelerated scanning of the buffer.
+            if let Some(pos) = memchr::memchr2(b'\n', b'\\', &self.buffer[end..]) {
+                end += pos;
+            } else {
+                end = self.buffer.len();
             }
             self.position = end as u32;
 

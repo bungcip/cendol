@@ -121,3 +121,7 @@
 ## 2026-04-21 - SIMD-accelerated Line Start Calculation
 **Learning:** Manual byte-by-byte scanning for character offsets (like newlines) is a significant bottleneck when processing large source files or many virtual buffers. The `memchr` crate provides highly optimized SIMD implementations that can be 5-10x faster than naive loops. In macro-heavy workloads, this overhead is compounded by the frequent creation of virtual expansion buffers.
 **Action:** Use `memchr::memchr_iter` for all high-frequency character scanning tasks. When calculating line starts, use a two-pass approach: first count with `.count()` to pre-allocate exact capacity, then populate. This avoids both slow iteration and redundant reallocations.
+
+## 2026-04-24 - Memoization of Hide-Set Operations
+**Learning:** During macro expansion, Dave Prosser's algorithm frequently performs union and intersection operations on hide-sets. Since hide-set IDs are stable within a translation unit, these O(N) merge operations and subsequent content-based interning are highly redundant when applied to the same pairs of IDs.
+**Action:** Implement memoization caches for `union`, `intersection`, and `insert` operations in the `HideSetTable`. This turns repeated set operations into O(1) hash map lookups on simple ID pairs, significantly reducing preprocessor overhead for complex macros.

@@ -28,6 +28,9 @@ bitflags::bitflags! {
 pub(crate) struct HideSetTable {
     pub(crate) sets: Vec<Arc<[StringId]>>,
     pub(crate) map: HashMap<Arc<[StringId]>, u32>,
+    pub(crate) union_cache: HashMap<(u32, u32), u32>,
+    pub(crate) intersection_cache: HashMap<(u32, u32), u32>,
+    pub(crate) insert_cache: HashMap<(u32, StringId), u32>,
 }
 
 impl Default for HideSetTable {
@@ -42,7 +45,13 @@ impl HideSetTable {
         let empty: Arc<[StringId]> = Arc::from([]);
         let mut map = HashMap::new();
         map.insert(empty.clone(), 0);
-        Self { sets: vec![empty], map }
+        Self {
+            sets: vec![empty],
+            map,
+            union_cache: HashMap::new(),
+            intersection_cache: HashMap::new(),
+            insert_cache: HashMap::new(),
+        }
     }
 
     #[cfg(test)]
@@ -79,6 +88,13 @@ impl HideSetTable {
         if id1 == id2 {
             return id1;
         }
+
+        // Bolt ⚡: Check cache first to avoid merge and interning overhead.
+        let key = if id1 < id2 { (id1, id2) } else { (id2, id1) };
+        if let Some(&res) = self.intersection_cache.get(&key) {
+            return res;
+        }
+
         let set1 = &self.sets[id1 as usize];
         let set2 = &self.sets[id2 as usize];
 
@@ -97,7 +113,9 @@ impl HideSetTable {
             }
         }
 
-        self.intern_canonical(result)
+        let res = self.intern_canonical(result);
+        self.intersection_cache.insert(key, res);
+        res
     }
 
     pub(super) fn union(&mut self, id1: u32, id2: u32) -> u32 {
@@ -110,6 +128,13 @@ impl HideSetTable {
         if id1 == id2 {
             return id1;
         }
+
+        // Bolt ⚡: Check cache first to avoid merge and interning overhead.
+        let key = if id1 < id2 { (id1, id2) } else { (id2, id1) };
+        if let Some(&res) = self.union_cache.get(&key) {
+            return res;
+        }
+
         let set1 = &self.sets[id1 as usize];
         let set2 = &self.sets[id2 as usize];
 
@@ -136,12 +161,19 @@ impl HideSetTable {
         result.extend_from_slice(&set1[i..]);
         result.extend_from_slice(&set2[j..]);
 
-        self.intern_canonical(result)
+        let res = self.intern_canonical(result);
+        self.union_cache.insert(key, res);
+        res
     }
 
     pub(super) fn insert(&mut self, id: u32, symbol: StringId) -> u32 {
+        // Bolt ⚡: Check cache first.
+        if let Some(&res) = self.insert_cache.get(&(id, symbol)) {
+            return res;
+        }
+
         let existing = &self.sets[id as usize];
-        match existing.binary_search(&symbol) {
+        let res = match existing.binary_search(&symbol) {
             Ok(_) => id,
             Err(pos) => {
                 let mut new_set = SmallVec::<[StringId; 4]>::new();
@@ -150,7 +182,10 @@ impl HideSetTable {
                 new_set.extend_from_slice(&existing[pos..]);
                 self.intern_canonical(new_set)
             }
-        }
+        };
+
+        self.insert_cache.insert((id, symbol), res);
+        res
     }
 
     pub(super) fn contains(&self, id: u32, symbol: StringId) -> bool {

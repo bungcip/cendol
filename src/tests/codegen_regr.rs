@@ -337,3 +337,25 @@ fn test_void_cast_on_array_parameter_regression() {
     let status = run_c_code_exit_status(source);
     assert_eq!(status, 0);
 }
+
+#[test]
+fn test_label_map_cleared_between_functions() {
+    let source = r#"
+        int f1() {
+            int x = 0;
+            goto retry;
+        retry:
+            return x;
+        }
+
+        int main() {
+            int y = 1;
+            goto retry;
+        retry:
+            return f1() + y - 1;
+        }
+    "#;
+    // This should not panic during clif_gen due to label block IDs leaking across functions.
+    let status = run_c_code_exit_status(source);
+    assert_eq!(status, 0);
+}

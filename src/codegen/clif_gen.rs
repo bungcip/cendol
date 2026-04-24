@@ -2338,7 +2338,9 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
 fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
     match terminator {
         Terminator::Goto(target) => {
-            let target_cl_block = ctx.clif_blocks.get(target).expect("Target block not found");
+            let target_cl_block = ctx.clif_blocks.get(target).unwrap_or_else(|| {
+                panic!("Target block {:?} not found in function {}", target, ctx.func.name);
+            });
             ctx.builder.ins().jump(*target_cl_block, &[]);
             ctx.worklist.push(*target);
         }
@@ -2346,8 +2348,12 @@ fn visit_terminator(terminator: &Terminator, ctx: &mut BodyEmitContext) {
         Terminator::If(cond, then_bb, else_bb) => {
             let cond_val = emit_operand(cond, ctx, types::I32);
 
-            let then_cl_block = ctx.clif_blocks.get(then_bb).expect("Then block not found");
-            let else_cl_block = ctx.clif_blocks.get(else_bb).expect("Else block not found");
+            let then_cl_block = ctx.clif_blocks.get(then_bb).unwrap_or_else(|| {
+                panic!("Then block {:?} not found in function {}", then_bb, ctx.func.name);
+            });
+            let else_cl_block = ctx.clif_blocks.get(else_bb).unwrap_or_else(|| {
+                panic!("Else block {:?} not found in function {}", else_bb, ctx.func.name);
+            });
 
             ctx.builder
                 .ins()

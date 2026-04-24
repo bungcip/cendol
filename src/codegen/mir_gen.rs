@@ -387,6 +387,7 @@ impl<'a> MirGen<'a> {
         };
 
         let body_node = function.child_start.add_offset(param_len);
+        self.label_map.clear();
         self.scan_for_labels(body_node);
 
         // Parameter locals are now created in `define_function`. We just need to

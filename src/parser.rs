@@ -561,7 +561,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     pub(super) fn at_c23_attribute_start(&mut self) -> bool {
         self.lang_opts.c_standard >= CStandard::C23
             && self.is_token(TokenKind::LeftBracket)
-            && self.peek_token(1).is_some_and(|t| t.kind == TokenKind::LeftBracket)
+            && self.peek_token(0).is_some_and(|t| t.kind == TokenKind::LeftBracket)
     }
 }
 

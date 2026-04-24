@@ -624,8 +624,6 @@ impl GlobalDecl {
 /// MIR Builder - Builds MIR from AST
 pub(crate) struct MirBuilder {
     module: MirModule,
-    current_function: Option<MirFunctionId>,
-    current_block: Option<MirBlockId>,
     next_local_id: u32,
     next_block_id: u32,
     next_stmt_id: u32,
@@ -642,6 +640,13 @@ pub(crate) struct MirBuilder {
     constants: Vec<ConstValue>,
     // Statement storage with ID mapping
     statements: Vec<MirStmt>,
+}
+
+/// Builder for constructing a specific MIR function body
+pub(crate) struct MirFunctionBuilder<'a> {
+    pub(crate) builder: &'a mut MirBuilder,
+    pub(crate) function_id: MirFunctionId,
+    pub(crate) current_block: Option<MirBlockId>,
 }
 
 /// Complete semantic analysis output containing the full MIR program representation
@@ -691,8 +696,6 @@ impl MirBuilder {
         module.pointer_width = pointer_width;
         Self {
             module,
-            current_function: None,
-            current_block: None,
             next_local_id: 1,
             next_block_id: 1,
             next_stmt_id: 1,
@@ -710,6 +713,14 @@ impl MirBuilder {
         }
     }
 
+    pub(crate) fn find_function_by_name(&self, name: NameId) -> Option<MirFunctionId> {
+        self.functions
+            .iter()
+            .enumerate()
+            .find(|(_, f)| f.name == name)
+            .map(|(i, _)| MirFunctionId::new((i + 1) as u32).unwrap())
+    }
+
     pub(crate) fn create_local(&mut self, name: Option<NameId>, type_id: TypeId, is_param: bool) -> LocalId {
         let local_id = LocalId::new(self.next_local_id).unwrap();
         self.next_local_id += 1;
@@ -717,9 +728,33 @@ impl MirBuilder {
         let local = Local::new(name, type_id, is_param);
         self.locals.push(local);
 
-        if let Some(func_id) = self.current_function
-            && let Some(func) = self.functions.get_mut(func_id.index())
-        {
+        local_id
+    }
+
+    pub(crate) fn set_local_alignment(&mut self, local_id: LocalId, alignment: u16) {
+        if let Some(local) = self.locals.get_mut(local_id.index()) {
+            local.alignment = Some(alignment);
+        }
+    }
+
+    pub(crate) fn build_function(
+        &mut self,
+        func_id: MirFunctionId,
+        current_block: Option<MirBlockId>,
+    ) -> MirFunctionBuilder<'_> {
+        MirFunctionBuilder {
+            builder: self,
+            function_id: func_id,
+            current_block,
+        }
+    }
+}
+
+impl<'a> MirFunctionBuilder<'a> {
+    pub(crate) fn create_local(&mut self, name: Option<NameId>, type_id: TypeId, is_param: bool) -> LocalId {
+        let local_id = self.builder.create_local(name, type_id, is_param);
+
+        if let Some(func) = self.builder.functions.get_mut(self.function_id.index()) {
             if is_param {
                 func.params.push(local_id);
             } else {
@@ -731,28 +766,25 @@ impl MirBuilder {
     }
 
     pub(crate) fn set_local_alignment(&mut self, local_id: LocalId, alignment: u16) {
-        if let Some(local) = self.locals.get_mut(local_id.index()) {
-            local.alignment = Some(alignment);
-        }
+        self.builder.set_local_alignment(local_id, alignment);
     }
 
     /// Create a new basic block
     pub(crate) fn create_block(&mut self) -> MirBlockId {
-        let func_id = self.current_function.expect("no current function");
-        let func = &self.functions[func_id.index()];
+        let func = &self.builder.functions[self.function_id.index()];
 
         assert!(
             func.linkage != MirLinkage::Import,
             "cannot create blocks for extern function"
         );
 
-        let block_id = MirBlockId::new(self.next_block_id).unwrap();
-        self.next_block_id += 1;
+        let block_id = MirBlockId::new(self.builder.next_block_id).unwrap();
+        self.builder.next_block_id += 1;
 
         let block = MirBlock::new();
-        self.blocks.push(block);
+        self.builder.blocks.push(block);
 
-        if let Some(func) = self.functions.get_mut(func_id.index()) {
+        if let Some(func) = self.builder.functions.get_mut(self.function_id.index()) {
             func.blocks.push(block_id);
         }
 
@@ -761,14 +793,14 @@ impl MirBuilder {
 
     /// Add a statement to the current block
     pub(crate) fn add_stmt(&mut self, stmt: MirStmt) -> MirStmtId {
-        let stmt_id = MirStmtId::new(self.next_stmt_id).unwrap();
-        self.next_stmt_id += 1;
+        let stmt_id = MirStmtId::new(self.builder.next_stmt_id).unwrap();
+        self.builder.next_stmt_id += 1;
 
         // Store statement
-        self.statements.push(stmt);
+        self.builder.statements.push(stmt);
 
         if let Some(block_id) = self.current_block
-            && let Some(block) = self.blocks.get_mut(block_id.index())
+            && let Some(block) = self.builder.blocks.get_mut(block_id.index())
         {
             // Only add statement if the block is not yet terminated
             if matches!(block.terminator, Terminator::Unreachable) {
@@ -782,7 +814,7 @@ impl MirBuilder {
     /// Set the terminator for the current block
     pub(crate) fn set_terminator(&mut self, terminator: Terminator) {
         if let Some(block_id) = self.current_block
-            && let Some(block) = self.blocks.get_mut(block_id.index())
+            && let Some(block) = self.builder.blocks.get_mut(block_id.index())
         {
             // Only overwrite if the current terminator is Unreachable (default)
             // This preserves existing control flow (e.g. from goto) and prevents
@@ -794,22 +826,23 @@ impl MirBuilder {
     }
 
     /// Set the current block
+    #[cfg(test)]
     pub(crate) fn set_current_block(&mut self, block_id: MirBlockId) {
         self.current_block = Some(block_id);
     }
 
-    /// Check if the current block has a non-unreachable terminator
-    /// Since terminators always exist, this checks if the terminator is meaningful
-    /// (i.e., not just the default Unreachable terminator)
     pub(crate) fn current_block_has_terminator(&self) -> bool {
         if let Some(block_id) = self.current_block
-            && let Some(block) = self.blocks.get(block_id.index())
+            && let Some(block) = self.builder.blocks.get(block_id.index())
         {
-            return !matches!(block.terminator, Terminator::Unreachable);
+            !matches!(block.terminator, Terminator::Unreachable)
+        } else {
+            true // No current block means we can't add terminators
         }
-        false
     }
+}
 
+impl MirBuilder {
     /// Declare a function (extern - no body)
     pub(crate) fn declare_function(
         &mut self,
@@ -834,14 +867,11 @@ impl MirBuilder {
         func.is_variadic = is_variadic;
 
         // Create locals for each parameter.
-        // Temporarily clear current_function so these params don't get added to the function currently being compiled.
-        let saved_func = self.current_function.take();
         for (i, &param_type) in param_types.iter().enumerate() {
             let param_name = Some(NameId::new(format!("param{}", i)));
             let local_id = self.create_local(param_name, param_type, true);
             func.params.push(local_id);
         }
-        self.current_function = saved_func;
 
         self.functions.push(func);
         self.module.functions.push(func_id);
@@ -873,16 +903,6 @@ impl MirBuilder {
         self.module.functions.push(func_id);
 
         func_id
-    }
-
-    /// Set current function
-    pub(crate) fn set_current_function(&mut self, func_id: MirFunctionId) {
-        self.current_function = Some(func_id);
-        if let Some(func) = self.functions.get(func_id.index())
-            && let Some(entry_block) = func.entry_block
-        {
-            self.current_block = Some(entry_block);
-        }
     }
 
     /// Create a new global variable with initial value

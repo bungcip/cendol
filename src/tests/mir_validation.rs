@@ -15,17 +15,17 @@ fn create_valid_mir() -> MirProgram {
     // Define a function: fn main() -> i32
     let func_name = NameId::new("main");
     let func_id = builder.define_function(func_name, vec![], i32_ty, false, crate::mir::MirLinkage::External);
-    builder.set_current_function(func_id);
 
-    // Create a block
-    let block_id = builder.create_block();
-    builder.set_function_entry_block(func_id, block_id);
-    builder.set_current_block(block_id);
-
-    // Add a return statement
     let const_val_id = builder.create_constant(i32_ty, ConstValueKind::Int(0));
     let operand = Operand::Constant(const_val_id);
-    builder.set_terminator(Terminator::Return(Some(operand)));
+
+    {
+        let mut fb = builder.build_function(func_id, None);
+        let block_id = fb.create_block();
+        fb.builder.set_function_entry_block(func_id, block_id);
+        fb.set_current_block(block_id);
+        fb.set_terminator(Terminator::Return(Some(operand)));
+    }
 
     builder.consume()
 }

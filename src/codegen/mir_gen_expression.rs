@@ -5,7 +5,7 @@ use crate::codegen::mir_gen::MirGen;
 use crate::codegen::mir_gen_ops;
 use crate::mir::{
     AtomicMemOrder, BinaryFloatOp, BinaryIntOp, BitFieldInfo, CallTarget, ConstValue, ConstValueKind, MirBlockId,
-    MirFunctionId, MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
+    MirStmt, MirType, Operand, Place, Rvalue, Terminator, TypeId, UnaryFloatOp, UnaryIntOp,
 };
 
 use crate::ast;
@@ -316,7 +316,7 @@ impl<'a> MirGen<'a> {
                 self.visit_builtin_void(node_kind)
             }
             NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => {
-                self.mb.set_terminator(Terminator::Trap);
+                self.set_terminator(Terminator::Trap);
                 self.create_dummy_operand()
             }
             _ => unreachable!("Unhandled node kind in visit_builtin_expression: {:?}", node_kind),
@@ -327,9 +327,29 @@ impl<'a> MirGen<'a> {
         // Attempt constant folding for arithmetic/logical operations that are not simple literals
         if !matches!(
             kind,
-            NodeKind::BinaryOp(..) | NodeKind::UnaryOp(..) | NodeKind::TernaryOp(..) | NodeKind::Cast(..)
+            NodeKind::BinaryOp(..)
+                | NodeKind::UnaryOp(..)
+                | NodeKind::TernaryOp(..)
+                | NodeKind::Cast(..)
+                | NodeKind::BuiltinComplex(..)
         ) {
             return None;
+        }
+
+        if let NodeKind::BuiltinComplex(real, imag) = kind
+            && let (Some(rv), Some(iv)) = (self.const_ctx().eval_float(*real), self.const_ctx().eval_float(*imag))
+        {
+            let ty_id = self.lower_qual_type(qt);
+            let MirType::Record { field_types, .. } = self.mb.get_type(ty_id) else {
+                return None;
+            };
+            let elem_ty = field_types[0];
+            let r_const = self.create_constant(elem_ty, ConstValueKind::Float(rv));
+            let i_const = self.create_constant(elem_ty, ConstValueKind::Float(iv));
+            return Some(Operand::Constant(self.create_constant(
+                ty_id,
+                ConstValueKind::StructLiteral(vec![(0, r_const), (1, i_const)]),
+            )));
         }
 
         // Try floating-point constant folding first for float types
@@ -373,7 +393,7 @@ impl<'a> MirGen<'a> {
                 }
 
                 let node_kind = self.ast.get_kind(stmt);
-                if self.mb.current_block_has_terminator() {
+                if self.current_block_has_terminator() {
                     if let NodeKind::Label(..) = node_kind {
                         // OK
                     } else {
@@ -429,30 +449,30 @@ impl<'a> MirGen<'a> {
         let mut cond_op = self.visit_expression(cond, true);
         cond_op = self.cast_operand_to_bool(cond_op);
 
-        let then_block = self.mb.create_block();
-        let else_block = self.mb.create_block();
-        let exit_block = self.mb.create_block();
+        let then_block = self.create_block();
+        let else_block = self.create_block();
+        let exit_block = self.create_block();
 
-        self.mb.set_terminator(Terminator::If(cond_op, then_block, else_block));
+        self.set_terminator(Terminator::If(cond_op, then_block, else_block));
 
         // Result local
         let result_local = if !is_void {
-            Some(self.mb.create_local(None, mir_ty, false))
+            Some(self.create_local(None, mir_ty, false))
         } else {
             None
         };
 
         for (target_block, expr) in [(then_block, then_expr), (else_block, else_expr)] {
-            self.mb.set_current_block(target_block);
+            self.set_current_block(target_block);
             let val = self.visit_expression(expr, !is_void);
             if let Some(local) = result_local {
                 let val_conv = self.apply_conversions(val, expr, mir_ty);
                 self.emit_assignment(Place::Local(local), val_conv);
             }
-            self.mb.set_terminator(Terminator::Goto(exit_block));
+            self.set_terminator(Terminator::Goto(exit_block));
         }
 
-        self.mb.set_current_block(exit_block);
+        self.set_current_block(exit_block);
 
         if let Some(local) = result_local {
             Operand::Copy(Box::new(Place::Local(local)))
@@ -604,16 +624,20 @@ impl<'a> MirGen<'a> {
     fn visit_addrof(&mut self, expr: NodeRef, mir_ty: TypeId) -> Operand {
         let operand = self.visit_expression(expr, true);
 
-        let place = match operand {
+        match &operand {
             Operand::Copy(place) => {
                 // Special case for VLA: &vla should evaluate to the value of the pointer local.
-                if let Place::Local(local_id) = &*place
-                    && self.vla_map.values().any(|(ptr, _)| ptr == local_id)
+                if let Place::Local(local_id) = &**place
+                    && self.func_state_mut().vla_map.values().any(|(ptr, _)| ptr == local_id)
                     && self.ast.qual_type_of(expr).is_array()
                 {
-                    return Operand::Copy(place);
+                    return operand;
                 }
-                *place
+
+                // Simplify &(*p) -> p
+                if let Place::Deref(deref_op) = &**place {
+                    return *deref_op.clone();
+                }
             }
             Operand::Constant(_) => {
                 // Function address constant usually has FunctionType, but &func results in Pointer(FunctionType).
@@ -623,14 +647,17 @@ impl<'a> MirGen<'a> {
                     operand
                 };
             }
+            _ => {}
+        }
+
+        let place = match operand {
+            Operand::Copy(place) => *place,
             _ => self.visit_expression_as_place(expr),
         };
 
-        // Simplify &(*p) -> p
-        if self.current_function.is_some()
-            && let Place::Deref(deref_op) = &place
-        {
-            return *deref_op.clone();
+        // Simplify &(*p) -> p (in case it came from visit_expression_as_place)
+        if let Place::Deref(deref_op) = place {
+            return *deref_op;
         }
 
         Operand::AddressOf(Box::new(place))
@@ -649,97 +676,31 @@ impl<'a> MirGen<'a> {
             SymbolKind::Variable { is_global, storage, .. } => {
                 let is_static_local = *storage == Some(StorageClass::Static);
                 if *is_global || is_static_local {
-                    // Lazy lowering for globals/statics (e.g. __func__) that might not be lowered yet
-                    if !self.global_map.contains_key(&sym) {
-                        let qt = entry.type_info;
-                        let mir_ty = self.lower_qual_type(qt);
-                        self.visit_variable(sym, mir_ty);
-                    }
-
-                    let global_id = match self.global_map.get(&sym) {
-                        Some(id) => id,
-                        None => {
-                            panic!(
-                                "Global variable '{}' not found in MIR map even after lazy lowering attempt. Visited? {:?}",
-                                entry.name,
-                                self.global_map.keys()
-                            );
-                        }
-                    };
-                    Operand::Copy(Box::new(Place::Global(*global_id)))
-                } else if let Some(&(ptr_local_id, _)) = self.vla_map.get(&sym) {
+                    let global_id = self.get_or_lower_global(sym);
+                    Operand::Copy(Box::new(Place::Global(global_id)))
+                } else if let Some(&(ptr_local_id, _)) = self.func_state_mut().vla_map.get(&sym) {
                     // For VLA, the identifier refers to the dynamically allocated memory.
-                    // If it is an array type (VLA), the identifier refers to the base of the array.
-                    // If it is a scalar (highly-aligned fallback), we must Deref to get the value.
-                    let symbol = self.symbol_table.get_symbol(sym);
-                    let is_array = symbol.type_info.is_array();
-
+                    let is_array = entry.type_info.is_array();
                     if is_array {
-                        // Return the pointer local directly. ArrayIndex and decay will handle it.
+                        // Array refers to the base pointer directly.
                         Operand::Copy(Box::new(Place::Local(ptr_local_id)))
                     } else {
-                        // Return Deref(p) so it behaves like a normal scalar variable.
+                        // Scalar fallback: Deref the pointer to get the value.
                         let ptr_op = Operand::Copy(Box::new(Place::Local(ptr_local_id)));
                         Operand::Copy(Box::new(Place::Deref(Box::new(ptr_op))))
                     }
                 } else {
-                    let local_id = self.local_map.get(&sym).unwrap();
-                    Operand::Copy(Box::new(Place::Local(*local_id)))
+                    let local_id = *self.func_state_mut().local_map.get(&sym).expect("Local not found");
+                    Operand::Copy(Box::new(Place::Local(local_id)))
                 }
             }
-            SymbolKind::Function { storage, .. } => {
-                let func_id = if let Some((i, _)) = self
-                    .mb
-                    .get_functions()
-                    .iter()
-                    .enumerate()
-                    .find(|(_, f)| f.name == entry.name)
-                {
-                    MirFunctionId::new((i + 1) as u32).unwrap()
-                } else {
-                    // Lazy declaration for block-scope functions
-                    let linkage = self.calculate_linkage(*storage, entry.def_state);
-                    let mut fn_data = None;
-                    {
-                        let type_info = self.registry.get(entry.type_info.ty());
-                        if let TypeKind::Function {
-                            return_type,
-                            parameters,
-                            is_variadic,
-                            ..
-                        } = &type_info.kind
-                        {
-                            fn_data = Some((
-                                *return_type,
-                                parameters.iter().map(|p| p.param_type).collect::<Vec<_>>(),
-                                *is_variadic,
-                            ));
-                        }
-                    }
-
-                    if let Some((return_type, parameters, is_variadic)) = fn_data {
-                        let return_mir_type = self.lower_type(return_type);
-                        let param_mir_types = parameters.into_iter().map(|p| self.lower_qual_type(p)).collect();
-
-                        self.mb.declare_function_with_linkage(
-                            entry.name,
-                            param_mir_types,
-                            return_mir_type,
-                            is_variadic,
-                            linkage,
-                        )
-                    } else {
-                        let return_mir_type = self.get_int_type();
-                        self.mb
-                            .declare_function_with_linkage(entry.name, vec![], return_mir_type, false, linkage)
-                    }
-                };
-
+            SymbolKind::Function { .. } => {
+                let func_id = self.get_or_declare_function(sym);
                 let func_type = self.get_function_type(func_id);
                 Operand::Constant(self.create_constant(func_type, ConstValueKind::FunctionAddress(func_id)))
             }
             SymbolKind::EnumConstant { value } => self.create_int_operand(*value),
-            _ => panic!("Unexpected symbol kind"),
+            _ => panic!("Unexpected symbol kind: {:?}", entry.kind),
         }
     }
 
@@ -863,31 +824,29 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_bool_normalization(&mut self, value_op: Operand, result_place: Place, merge_block: MirBlockId) {
-        let true_block = self.mb.create_block();
-        let false_block = self.mb.create_block();
+        let true_block = self.create_block();
+        let false_block = self.create_block();
 
-        self.mb
-            .set_terminator(Terminator::If(value_op, true_block, false_block));
+        self.set_terminator(Terminator::If(value_op, true_block, false_block));
 
-        self.mb.set_current_block(true_block);
+        self.set_current_block(true_block);
         let one_op = self.create_int_operand(1);
-        self.mb
-            .add_stmt(MirStmt::Assign(result_place.clone(), Rvalue::Use(one_op)));
-        self.mb.set_terminator(Terminator::Goto(merge_block));
+        self.add_stmt(MirStmt::Assign(result_place.clone(), Rvalue::Use(one_op)));
+        self.set_terminator(Terminator::Goto(merge_block));
 
-        self.mb.set_current_block(false_block);
+        self.set_current_block(false_block);
         let zero_op = self.create_int_operand(0);
-        self.mb.add_stmt(MirStmt::Assign(result_place, Rvalue::Use(zero_op)));
-        self.mb.set_terminator(Terminator::Goto(merge_block));
+        self.add_stmt(MirStmt::Assign(result_place, Rvalue::Use(zero_op)));
+        self.set_terminator(Terminator::Goto(merge_block));
     }
 
     fn visit_logical_op(&mut self, op: BinaryOp, left: NodeRef, right: NodeRef, mir_ty: TypeId) -> Operand {
         // Short-circuiting logic for && and ||
         let (_res_local, res_place) = self.create_temp_local(mir_ty);
 
-        let eval_rhs_block = self.mb.create_block();
-        let merge_block = self.mb.create_block();
-        let short_circuit_block = self.mb.create_block();
+        let eval_rhs_block = self.create_block();
+        let merge_block = self.create_block();
+        let short_circuit_block = self.create_block();
 
         // 1. Evaluate LHS
         let lhs_op = self.lower_condition(left);
@@ -903,24 +862,22 @@ impl<'a> MirGen<'a> {
         };
 
         // if lhs { goto true_target } else { goto false_target }
-        self.mb
-            .set_terminator(Terminator::If(lhs_op, true_target, false_target));
+        self.set_terminator(Terminator::If(lhs_op, true_target, false_target));
 
         // Short circuit case
-        self.mb.set_current_block(short_circuit_block);
-        self.mb
-            .add_stmt(MirStmt::Assign(res_place.clone(), Rvalue::Use(short_circuit_val)));
-        self.mb.set_terminator(Terminator::Goto(merge_block));
+        self.set_current_block(short_circuit_block);
+        self.add_stmt(MirStmt::Assign(res_place.clone(), Rvalue::Use(short_circuit_val)));
+        self.set_terminator(Terminator::Goto(merge_block));
 
         // 2. Evaluate RHS
-        self.mb.set_current_block(eval_rhs_block);
+        self.set_current_block(eval_rhs_block);
         let rhs_val = self.lower_condition(right);
 
         self.visit_bool_normalization(rhs_val, res_place.clone(), merge_block);
 
         // Merge
-        self.mb.set_current_block(merge_block);
-        self.current_block = Some(merge_block);
+        self.set_current_block(merge_block);
+        self.set_current_block(merge_block);
 
         Operand::Copy(Box::new(res_place))
     }
@@ -1053,8 +1010,7 @@ impl<'a> MirGen<'a> {
             // Simple assignment, just use the RHS
             if lhs_ty.is_atomic() {
                 let ptr = Operand::AddressOf(Box::new(place.clone()));
-                self.mb
-                    .add_stmt(MirStmt::AtomicStore(ptr, rhs_op.clone(), AtomicMemOrder::SeqCst));
+                self.add_stmt(MirStmt::AtomicStore(ptr, rhs_op.clone(), AtomicMemOrder::SeqCst));
             } else {
                 self.emit_assignment(place.clone(), rhs_op.clone());
             }
@@ -1233,7 +1189,7 @@ impl<'a> MirGen<'a> {
             args: arg_operands,
             dest: dest_place,
         };
-        self.mb.add_stmt(stmt);
+        self.add_stmt(stmt);
     }
 
     fn visit_function_call_args(&mut self, call_expr: &ast::nodes::CallExpr) -> Vec<Operand> {
@@ -1388,7 +1344,7 @@ impl<'a> MirGen<'a> {
         // In C, arr[idx] is equivalent to *(arr + idx)
         // However, for global initialization, we prefer to stay as ArrayIndex if possible
         // to avoid emitting instructions (PtrAdd) that would require temporary locals.
-        let arr_operand = if self.current_function.is_none() && arr_ty.is_array() {
+        let arr_operand = if self.func_state.is_none() && arr_ty.is_array() {
             let p = self.visit_expression_as_place(sequence);
             Operand::Copy(Box::new(p))
         } else {
@@ -1448,7 +1404,7 @@ impl<'a> MirGen<'a> {
         // Perform the assignment
         if is_post && !need_value {
             // Optimization: assign directly to place if old value not needed
-            self.mb.add_stmt(MirStmt::Assign(*place.clone(), rval));
+            self.add_stmt(MirStmt::Assign(*place.clone(), rval));
         } else {
             // If we needed old value (is_post), or if it is pre-inc (need new value),
             // we compute to a temp first to ensure correctness and return the right value.
@@ -1583,7 +1539,7 @@ impl<'a> MirGen<'a> {
             }
             _ => unreachable!(),
         };
-        self.mb.add_stmt(stmt);
+        self.add_stmt(stmt);
         self.create_int_operand(0)
     }
 
@@ -1602,7 +1558,7 @@ impl<'a> MirGen<'a> {
                 let ptr = args[0].clone();
                 let val = args[1].clone();
                 // args[2] is memorder, ignored
-                self.mb.add_stmt(MirStmt::AtomicStore(ptr, val, order));
+                self.add_stmt(MirStmt::AtomicStore(ptr, val, order));
                 self.create_dummy_operand()
             }
             AtomicOp::ExchangeN => {
@@ -1657,17 +1613,16 @@ impl<'a> MirGen<'a> {
         let (_, success_place) = self.create_temp_local_with_assignment(cmp_rval, mir_ty);
         let success_op = Operand::Copy(Box::new(success_place));
 
-        let update_block = self.mb.create_block();
-        let end_block = self.mb.create_block();
+        let update_block = self.create_block();
+        let end_block = self.create_block();
 
-        self.mb
-            .set_terminator(Terminator::If(success_op.clone(), end_block, update_block));
+        self.set_terminator(Terminator::If(success_op.clone(), end_block, update_block));
 
-        self.mb.set_current_block(update_block);
-        self.mb.add_stmt(MirStmt::Assign(expected_place, Rvalue::Use(old_val)));
-        self.mb.set_terminator(Terminator::Goto(end_block));
+        self.set_current_block(update_block);
+        self.add_stmt(MirStmt::Assign(expected_place, Rvalue::Use(old_val)));
+        self.set_terminator(Terminator::Goto(end_block));
 
-        self.mb.set_current_block(end_block);
+        self.set_current_block(end_block);
         success_op
     }
 
@@ -1850,7 +1805,7 @@ impl<'a> MirGen<'a> {
             None
         };
 
-        self.mb.add_stmt(MirStmt::Call {
+        self.add_stmt(MirStmt::Call {
             target: CallTarget::Direct(target),
             args: arg_ops,
             dest: dest_place.clone(),

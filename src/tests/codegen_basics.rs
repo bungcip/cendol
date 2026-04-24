@@ -171,24 +171,26 @@ fn test_f128_constant_promotion() {
         false,
         crate::mir::MirLinkage::External,
     );
-    builder.set_current_function(func_id);
-    let block_id = builder.create_block();
-    builder.set_current_block(block_id);
-    builder.set_function_entry_block(func_id, block_id);
 
-    // Create F128 constant from f64 value
     let const_id = builder.create_constant(f128_type_id, ConstValueKind::Float(34.1));
 
-    // Create a local to hold it
-    let local_id = builder.create_local(None, f128_type_id, false);
+    {
+        let mut fb = builder.build_function(func_id, None);
+        let block_id = fb.create_block();
+        fb.builder.set_function_entry_block(func_id, block_id);
+        fb.set_current_block(block_id);
 
-    // Store it
-    builder.add_stmt(MirStmt::Assign(
-        Place::Local(local_id),
-        Rvalue::Use(Operand::Constant(const_id)),
-    ));
+        // Create a local to hold it
+        let local_id = fb.create_local(None, f128_type_id, false);
 
-    builder.set_terminator(Terminator::Return(None));
+        // Store it
+        fb.add_stmt(MirStmt::Assign(
+            Place::Local(local_id),
+            Rvalue::Use(Operand::Constant(const_id)),
+        ));
+
+        fb.set_terminator(Terminator::Return(None));
+    }
 
     let mir = builder.consume();
     let lowerer = ClifGen::new(mir);

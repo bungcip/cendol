@@ -25,30 +25,33 @@ fn test_dump_basic_module() {
         false,
         crate::mir::MirLinkage::External,
     );
-    builder.set_current_function(func_id);
 
-    let block_id = builder.create_block();
-    builder.set_function_entry_block(func_id, block_id);
-    builder.set_current_block(block_id);
+    // Create block for function
+    let _block_id = {
+        let mut fb = builder.build_function(func_id, None);
+        let block_id = fb.create_block();
+        fb.builder.set_function_entry_block(func_id, block_id);
+        fb.set_current_block(block_id);
 
-    // Locals
-    let loc_i32 = builder.create_local(Some(NameId::new("loc_i32")), i32_ty, false);
+        use crate::mir::{MirStmt, Operand, Place, Rvalue, Terminator};
 
-    // Some instructions
-    use crate::mir::{MirStmt, Operand, Place, Rvalue, Terminator};
+        // Locals
+        let loc_i32 = fb.create_local(Some(NameId::new("loc_i32")), i32_ty, false);
 
-    let const_val_id = builder.create_constant(i32_ty, crate::mir::ConstValueKind::Int(42));
-    builder.add_stmt(MirStmt::Assign(
-        Place::Local(loc_i32),
-        Rvalue::Use(Operand::Constant(const_val_id)),
-    ));
+        let const_val_id = fb.builder.create_constant(i32_ty, crate::mir::ConstValueKind::Int(42));
+        fb.add_stmt(MirStmt::Assign(
+            Place::Local(loc_i32),
+            Rvalue::Use(Operand::Constant(const_val_id)),
+        ));
 
-    builder.add_stmt(MirStmt::Assign(
-        Place::Global(global_id),
-        Rvalue::Use(Operand::Copy(Box::new(Place::Local(loc_i32)))),
-    ));
+        fb.add_stmt(MirStmt::Assign(
+            Place::Global(global_id),
+            Rvalue::Use(Operand::Copy(Box::new(Place::Local(loc_i32)))),
+        ));
 
-    builder.set_terminator(Terminator::Return(None));
+        fb.set_terminator(Terminator::Return(None));
+        block_id
+    };
 
     let mir = builder.consume();
     let config = MirDumpConfig::default();

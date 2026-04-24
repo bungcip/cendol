@@ -3,9 +3,9 @@ use crate::ast::*;
 use crate::mir::MirArrayLayout;
 use crate::mir::MirProgram;
 use crate::mir::{
-    self, AtomicMemOrder, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, GlobalDecl, LocalId, MirBlockId,
-    MirBuilder, MirFieldLayout, MirFunctionId, MirLinkage, MirRecordLayout, MirStmt, MirType, Operand, Place, Rvalue,
-    Terminator, TypeId,
+    AtomicMemOrder, BinaryIntOp, CallTarget, ConstValueId, ConstValueKind, GlobalDecl, LocalId, MirBlockId, MirBuilder,
+    MirFieldLayout, MirFunctionId, MirLinkage, MirRecordLayout, MirStmt, MirType, Operand, Place, Rvalue, Terminator,
+    TypeId,
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
@@ -24,26 +24,45 @@ use target_lexicon::Architecture;
 
 use crate::mir::GlobalId;
 
+pub(crate) struct FunctionState {
+    pub(crate) func_id: MirFunctionId,
+    pub(crate) current_block: Option<MirBlockId>,
+    pub(crate) local_map: HashMap<SymbolRef, LocalId>,
+    pub(crate) vla_map: HashMap<SymbolRef, (LocalId, LocalId)>,
+    pub(crate) label_map: HashMap<NameId, MirBlockId>,
+    pub(crate) break_target: Option<MirBlockId>,
+    pub(crate) continue_target: Option<MirBlockId>,
+    pub(crate) switch_case_map: HashMap<NodeRef, MirBlockId>,
+    pub(crate) scope_cleanup: Vec<Vec<LocalId>>,
+}
+
+impl FunctionState {
+    fn new(func_id: MirFunctionId, entry_block: MirBlockId) -> Self {
+        Self {
+            func_id,
+            current_block: Some(entry_block),
+            local_map: HashMap::new(),
+            vla_map: HashMap::new(),
+            label_map: HashMap::new(),
+            break_target: None,
+            continue_target: None,
+            switch_case_map: HashMap::new(),
+            scope_cleanup: Vec::new(),
+        }
+    }
+}
+
 pub(crate) struct MirGen<'a> {
     pub(crate) ast: &'a Ast,
     pub(crate) symbol_table: &'a SymbolTable, // Now immutable
     pub(crate) mb: MirBuilder,
-    pub(crate) current_function: Option<MirFunctionId>,
-    pub(crate) current_block: Option<MirBlockId>,
-    pub(crate) current_scope_id: ScopeId,
     pub(crate) registry: &'a mut TypeRegistry,
-    pub(crate) local_map: HashMap<SymbolRef, LocalId>,
     pub(crate) global_map: HashMap<SymbolRef, GlobalId>,
-    /// VLA variables: maps SymbolRef → (pointer_local_id, size_local_id)
-    pub(crate) vla_map: HashMap<SymbolRef, (LocalId, LocalId)>,
-    pub(crate) label_map: HashMap<NameId, MirBlockId>,
     pub(crate) type_cache: HashMap<TypeRef, TypeId>,
     pub(crate) type_conversion_in_progress: HashSet<TypeRef>,
-    pub(crate) break_target: Option<MirBlockId>,
-    pub(crate) continue_target: Option<MirBlockId>,
-    pub(crate) switch_case_map: HashMap<NodeRef, MirBlockId>,
     pub(crate) valist_mir_id: Option<TypeId>,
-    pub(crate) scope_cleanup: Vec<Vec<LocalId>>,
+    pub(crate) current_scope_id: ScopeId,
+    pub(crate) func_state: Option<FunctionState>,
     pub(crate) keywords: MirGenKeywords,
 }
 
@@ -72,28 +91,135 @@ impl MirGenKeywords {
 }
 
 impl<'a> MirGen<'a> {
+    pub(crate) fn create_block(&mut self) -> MirBlockId {
+        let (func_id, current_block) = self.get_func_info();
+        let mut fb = self.mb.build_function(func_id, current_block);
+        fb.create_block()
+    }
+
+    pub(crate) fn set_current_block(&mut self, block_id: MirBlockId) {
+        let state = self.func_state_mut();
+        state.current_block = Some(block_id);
+    }
+
+    pub(crate) fn add_stmt(&mut self, stmt: MirStmt) -> crate::mir::MirStmtId {
+        let (func_id, current_block) = self.get_func_info();
+        let mut fb = self.mb.build_function(func_id, current_block);
+        fb.add_stmt(stmt)
+    }
+
+    pub(crate) fn set_terminator(&mut self, terminator: crate::mir::Terminator) {
+        let (func_id, current_block) = self.get_func_info();
+        let mut fb = self.mb.build_function(func_id, current_block);
+        fb.set_terminator(terminator)
+    }
+
+    pub(crate) fn current_block_has_terminator(&mut self) -> bool {
+        let (func_id, current_block) = self.get_func_info();
+        let fb = self.mb.build_function(func_id, current_block);
+        fb.current_block_has_terminator()
+    }
+
+    pub(crate) fn create_local(&mut self, name: Option<NameId>, type_id: TypeId, is_param: bool) -> LocalId {
+        let (func_id, current_block) = self.get_func_info();
+        let mut fb = self.mb.build_function(func_id, current_block);
+        fb.create_local(name, type_id, is_param)
+    }
+
+    pub(crate) fn set_local_alignment(&mut self, local_id: LocalId, alignment: u16) {
+        let (func_id, current_block) = self.get_func_info();
+        let mut fb = self.mb.build_function(func_id, current_block);
+        fb.set_local_alignment(local_id, alignment)
+    }
+
+    pub(super) fn func_state_mut(&mut self) -> &mut FunctionState {
+        self.func_state.as_mut().expect("Not in a function")
+    }
+
+    pub(super) fn get_func_info(&self) -> (MirFunctionId, Option<MirBlockId>) {
+        let state = self.func_state.as_ref().expect("Not in a function");
+        (state.func_id, state.current_block)
+    }
+
+    pub(super) fn get_or_lower_global(&mut self, sym: SymbolRef) -> GlobalId {
+        if let Some(id) = self.global_map.get(&sym) {
+            return *id;
+        }
+
+        let entry = self.symbol_table.get_symbol(sym);
+        let qt = entry.type_info;
+        let mir_ty = self.lower_qual_type(qt);
+        self.visit_variable(sym, mir_ty);
+
+        *self
+            .global_map
+            .get(&sym)
+            .expect("Global should be lowered by visit_variable")
+    }
+
+    pub(super) fn get_or_declare_function(&mut self, sym: SymbolRef) -> MirFunctionId {
+        let entry = self.symbol_table.get_symbol(sym);
+        if let Some(id) = self.mb.find_function_by_name(entry.name) {
+            return id;
+        }
+
+        let storage = if let SymbolKind::Function { storage, .. } = &entry.kind {
+            *storage
+        } else {
+            None
+        };
+
+        let linkage = self.calculate_linkage(storage, entry.def_state);
+        let has_definition = entry.def_state == DefinitionState::Defined;
+
+        let mut fn_data = None;
+        {
+            let type_info = self.registry.get(entry.type_info.ty());
+            if let TypeKind::Function {
+                return_type,
+                parameters,
+                is_variadic,
+                ..
+            } = &type_info.kind
+            {
+                fn_data = Some((
+                    *return_type,
+                    parameters.iter().map(|p| p.param_type).collect::<Vec<_>>(),
+                    *is_variadic,
+                ));
+            }
+        }
+
+        if let Some((return_type, parameters, is_variadic)) = fn_data {
+            let return_mir_type = self.lower_type(return_type);
+            let param_mir_types = parameters.into_iter().map(|p| self.lower_qual_type(p)).collect();
+
+            self.define_or_declare_function(
+                entry.name,
+                param_mir_types,
+                return_mir_type,
+                is_variadic,
+                has_definition,
+                linkage,
+            )
+        } else {
+            let return_mir_type = self.get_int_type();
+            self.define_or_declare_function(entry.name, vec![], return_mir_type, false, has_definition, linkage)
+        }
+    }
     pub(crate) fn new(ast: &'a Ast, symbol_table: &'a SymbolTable, registry: &'a mut TypeRegistry) -> Self {
-        let mir_builder = MirBuilder::new(8);
         Self {
             ast,
             symbol_table,
-            mb: mir_builder,
-            current_function: None,
-            current_block: None,
-            current_scope_id: ScopeId::GLOBAL,
-            local_map: HashMap::new(),
-            global_map: HashMap::new(),
-            vla_map: HashMap::new(),
-            label_map: HashMap::new(),
+            mb: MirBuilder::new(8),
             registry,
+            global_map: HashMap::new(),
             type_cache: HashMap::new(),
             type_conversion_in_progress: HashSet::new(),
-            break_target: None,
-            continue_target: None,
-            switch_case_map: HashMap::new(),
             valist_mir_id: None,
-            scope_cleanup: vec![Vec::new()],
             keywords: MirGenKeywords::new(),
+            current_scope_id: ScopeId::GLOBAL,
+            func_state: None,
         }
     }
 
@@ -172,25 +298,18 @@ impl<'a> MirGen<'a> {
                 // Ignore inline assembly in Cranelift backend for now
             }
             NodeKind::Break => {
-                let target = self.break_target.unwrap();
-                self.mb.set_terminator(Terminator::Goto(target));
+                let target = self.func_state_mut().break_target.unwrap();
+                self.set_terminator(Terminator::Goto(target));
             }
             NodeKind::Continue => {
-                let target = self.continue_target.unwrap();
-                self.mb.set_terminator(Terminator::Goto(target));
+                let target = self.func_state_mut().continue_target.unwrap();
+                self.set_terminator(Terminator::Goto(target));
             }
             NodeKind::Goto(label_name, _) => self.visit_goto_stmt(label_name),
             NodeKind::Label(label_name, stmt, _) => self.visit_label_stmt(label_name, stmt),
             NodeKind::Switch(cond, body) => self.visit_switch_stmt(cond, body),
             NodeKind::Case(_, stmt) => self.visit_case_default_stmt(node, stmt),
-            NodeKind::CaseRange(..) => self.visit_case_default_stmt(node, {
-                // CaseRange stmt is the 3rd argument
-                if let NodeKind::CaseRange(.., stmt) = node_kind {
-                    stmt
-                } else {
-                    unreachable!()
-                }
-            }),
+            NodeKind::CaseRange(.., stmt) => self.visit_case_default_stmt(node, stmt),
             NodeKind::Default(stmt) => self.visit_case_default_stmt(node, stmt),
 
             // Expressions used as statements (without ExpressionStatement wrapper)
@@ -236,9 +355,6 @@ impl<'a> MirGen<'a> {
     }
 
     fn predeclare_global_functions(&mut self) {
-        // Ensure all global functions (including declarations) have a MIR representation.
-        // This is done before traversing the AST to ensure that function calls
-        // can be resolved even if the function is defined later in the file or is external.
         let global_scope = self.symbol_table.get_scope(ScopeId::GLOBAL);
         let mut global_symbols: Vec<_> = global_scope.symbols.values().copied().collect();
 
@@ -246,67 +362,8 @@ impl<'a> MirGen<'a> {
         global_symbols.sort_by_key(|s| self.symbol_table.get_symbol(*s).name);
 
         for sym in global_symbols {
-            let (symbol_name, symbol_type_info, is_function, def_state, storage) = {
-                let symbol = self.symbol_table.get_symbol(sym);
-                let (is_func, storage) = if let SymbolKind::Function { storage, .. } = &symbol.kind {
-                    (true, *storage)
-                } else {
-                    (false, None)
-                };
-                (symbol.name, symbol.type_info, is_func, symbol.def_state, storage)
-            };
-
-            if is_function {
-                if self.mb.get_functions().iter().any(|f| f.name == symbol_name) {
-                    continue;
-                }
-
-                let linkage = self.calculate_linkage(storage, def_state);
-                let has_definition = def_state == DefinitionState::Defined;
-
-                // Bolt ⚡: Avoid cloning TypeKind.
-                let mut fn_data = None;
-                {
-                    let type_info = self.registry.get(symbol_type_info.ty());
-                    if let TypeKind::Function {
-                        return_type,
-                        parameters,
-                        is_variadic,
-                        ..
-                    } = &type_info.kind
-                    {
-                        fn_data = Some((
-                            *return_type,
-                            parameters.iter().map(|p| p.param_type).collect::<Vec<_>>(),
-                            *is_variadic,
-                        ));
-                    }
-                }
-
-                if let Some((return_type, parameters, is_variadic)) = fn_data {
-                    let return_mir_type = self.lower_type(return_type);
-                    let param_mir_types = parameters.into_iter().map(|p| self.lower_qual_type(p)).collect();
-
-                    self.define_or_declare_function(
-                        symbol_name,
-                        param_mir_types,
-                        return_mir_type,
-                        is_variadic,
-                        has_definition,
-                        linkage,
-                    );
-                } else {
-                    // This case should ideally not be reached for a SymbolKind::Function
-                    let return_mir_type = self.get_int_type();
-                    self.define_or_declare_function(
-                        symbol_name,
-                        vec![],
-                        return_mir_type,
-                        false,
-                        has_definition,
-                        linkage,
-                    );
-                }
+            if let SymbolKind::Function { .. } = self.symbol_table.get_symbol(sym).kind {
+                self.get_or_declare_function(sym);
             }
         }
     }
@@ -343,14 +400,14 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_compound_statement(&mut self, cs: &nodes::CompoundStmt) {
-        self.scope_cleanup.push(Vec::new());
+        self.func_state_mut().scope_cleanup.push(Vec::new());
         for stmt in cs.stmt_start.range(cs.stmt_len) {
             // We visit all statements regardless of whether the current block is terminated.
             // MirBuilder will suppress statement addition to terminated blocks, but we need
             // to traverse to find nested labels/cases which start new reachable blocks.
             self.visit_node(stmt)
         }
-        let cleanup = self.scope_cleanup.pop().unwrap();
+        let cleanup = self.func_state_mut().scope_cleanup.pop().unwrap();
         for ptr_local_id in cleanup {
             let ptr_op = Operand::Copy(Box::new(Place::Local(ptr_local_id)));
             self.emit_free_call(ptr_op);
@@ -361,24 +418,19 @@ impl<'a> MirGen<'a> {
         let symbol_entry = self.symbol_table.get_symbol(function.symbol);
         let func_name = symbol_entry.name;
 
-        // Find the existing function in the MIR builder. It should have been created by the pre-pass.
         let func_id = self
             .mb
-            .get_functions()
-            .iter()
-            .enumerate()
-            .find(|(_, f)| f.name == func_name)
-            .map(|(i, _)| MirFunctionId::new((i + 1) as u32).unwrap())
-            .expect("Function not found in MIR builder, pre-pass failed?");
+            .find_function_by_name(func_name)
+            .expect("Function not found in MIR builder");
 
-        self.current_function = Some(func_id);
-        self.mb.set_current_function(func_id);
+        let entry_block_id = {
+            let mut fb = self.mb.build_function(func_id, None);
+            let entry_block_id = fb.create_block();
+            fb.builder.set_function_entry_block(func_id, entry_block_id);
+            entry_block_id
+        };
 
-        // Since we use define_function for functions with bodies, we should always have a body here
-        let entry_block_id = self.mb.create_block();
-        self.mb.set_function_entry_block(func_id, entry_block_id);
-        self.current_block = Some(entry_block_id);
-        self.mb.set_current_block(entry_block_id);
+        self.func_state = Some(FunctionState::new(func_id, entry_block_id));
 
         let param_len = if let SymbolKind::Function { param_len, .. } = &symbol_entry.kind {
             *param_len
@@ -386,46 +438,44 @@ impl<'a> MirGen<'a> {
             0
         };
 
+        self.map_parameters(func_id, function, param_len);
+
         let body_node = function.child_start.add_offset(param_len);
-        self.label_map.clear();
         self.scan_for_labels(body_node);
+        self.visit_node(body_node);
 
-        // Parameter locals are now created in `define_function`. We just need to
-        // map the SymbolRef to the LocalId.
-        self.local_map.clear();
-        self.vla_map.clear();
+        self.emit_implicit_return(func_id, func_name);
+
+        self.func_state = None;
+    }
+
+    fn map_parameters(&mut self, func_id: MirFunctionId, function: &Function, param_len: u16) {
         let mir_params = self.mb.get_functions().get(func_id.index()).unwrap().params.clone();
-
         for (i, param) in function.child_start.range(param_len).enumerate() {
             if let NodeKind::Param(param) = self.ast.get_kind(param) {
                 let local_id = mir_params[i];
-                self.local_map.insert(param.symbol, local_id);
+                self.func_state_mut().local_map.insert(param.symbol, local_id);
             }
         }
+    }
 
-        self.visit_node(body_node);
-
-        // Handle implicit return if control falls off the end
-        if !self.mb.current_block_has_terminator() {
-            let func_def = self.get_current_func();
-            let ret_ty_id = func_def.return_type;
-            let ret_ty = self.mb.get_type(ret_ty_id);
-
-            if matches!(ret_ty, MirType::Void) {
-                self.mb.set_terminator(Terminator::Return(None));
-            } else if func_name == self.keywords.main && ret_ty.is_int() {
-                // main() implicitly returns 0
-                let zero = self.create_int_operand(0);
-                self.mb.set_terminator(Terminator::Return(Some(zero)));
-            } else {
-                // Falling off the end of a non-void function is undefined behavior.
-                // We leave it as Unreachable (default) or explicitly set it.
-                self.mb.set_terminator(Terminator::Unreachable);
-            }
+    fn emit_implicit_return(&mut self, func_id: MirFunctionId, func_name: NameId) {
+        if self.current_block_has_terminator() {
+            return;
         }
 
-        self.current_function = None;
-        self.current_block = None;
+        let func_def = self.mb.get_functions().get(func_id.index()).unwrap();
+        let ret_ty_id = func_def.return_type;
+        let ret_ty = self.mb.get_type(ret_ty_id).clone();
+
+        if matches!(ret_ty, crate::mir::MirType::Void) {
+            self.set_terminator(Terminator::Return(None));
+        } else if func_name == self.keywords.main && ret_ty.is_int() {
+            let zero = self.create_int_operand(0);
+            self.set_terminator(Terminator::Return(Some(zero)));
+        } else {
+            self.set_terminator(Terminator::Unreachable);
+        }
     }
 
     fn visit_var_decl(&mut self, var_decl: &VarDecl) {
@@ -446,7 +496,7 @@ impl<'a> MirGen<'a> {
         };
 
         // Treat static locals as globals for MIR generation purposes (lifetime/storage)
-        let is_global = self.current_function.is_none() || is_global_sym || storage == Some(StorageClass::Static);
+        let is_global = self.func_state.is_none() || is_global_sym || storage == Some(StorageClass::Static);
 
         if is_global {
             self.visit_global_symbol(sym, mir_type_id);
@@ -461,31 +511,22 @@ impl<'a> MirGen<'a> {
         }
 
         let symbol = self.symbol_table.get_symbol(sym);
-        let (init, alignment, name, ty, storage, is_tls) = if let SymbolKind::Variable {
-            initializer,
+        let SymbolKind::Variable {
+            initializer: init,
             alignment,
             storage,
-            is_thread_local,
+            is_thread_local: is_tls,
             ..
-        } = &symbol.kind
-        {
-            (
-                *initializer,
-                *alignment,
-                symbol.name,
-                symbol.type_info,
-                *storage,
-                *is_thread_local,
-            )
-        } else {
+        } = symbol.kind
+        else {
             unreachable!()
         };
 
         let global_name = if symbol.scope_id == ScopeId::GLOBAL {
-            name
+            symbol.name
         } else {
             // Mangle name for static local to avoid collision
-            crate::ast::NameId::new(format!("{}.{}", name, sym.get()))
+            crate::ast::NameId::new(format!("{}.{}", symbol.name, sym.get()))
         };
 
         let linkage = self.calculate_linkage(storage, symbol.def_state);
@@ -507,9 +548,9 @@ impl<'a> MirGen<'a> {
 
         // Static locals must be evaluated as constants, even if we are inside a function.
         // We temporarily unset current_function to force constant evaluation mode.
-        let saved_func = self.current_function.take();
-        let initial_value_id = init.and_then(|init| self.eval_init_to_const(init, ty));
-        self.current_function = saved_func;
+        let saved_state = self.func_state.take();
+        let initial_value_id = init.and_then(|init| self.eval_init_to_const(init, symbol.type_info));
+        self.func_state = saved_state;
 
         let final_init = initial_value_id.or_else(|| {
             if symbol.def_state == DefinitionState::Tentative {
@@ -526,65 +567,71 @@ impl<'a> MirGen<'a> {
 
     fn visit_local_symbol(&mut self, sym: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(sym);
-        let (init, alignment, name, qt) = if let SymbolKind::Variable {
-            initializer, alignment, ..
-        } = &symbol.kind
-        {
-            (*initializer, *alignment, symbol.name, symbol.type_info)
-        } else {
+        let SymbolKind::Variable {
+            initializer: init,
+            alignment,
+            ..
+        } = symbol.kind
+        else {
             unreachable!()
         };
+        let name = symbol.name;
+        let qt = symbol.type_info;
 
-        // Check if this is a VLA type
+        // 1. Handle VLA type
         if let Some((size_expr, element_type)) = self.get_vla_info(qt.ty()) {
             self.visit_vla_local(sym, name, size_expr, element_type, alignment);
             return;
         }
 
-        // Fallback for highly aligned locals: treat as fixed-size VLA if alignment > 16.
-        // This works around backend limitations in stack realignment.
+        // 2. Handle highly aligned locals (fallback to heap to ensure alignment)
         if let Some(align) = alignment
             && align > 16
         {
-            let mir_type = self.mb.get_type(mir_type_id);
-            let size = self.get_type_size(mir_type);
-            let size_op = self.create_size_t_operand(size as u64);
-            let ptr_local_id = self.emit_heap_alloc(Some(name), mir_type_id, alignment, size_op);
-
-            // We need a dummy size local for the vla_map entry, although it won't be used for sizeof.
-            let size_t_ty = self.get_size_t_type();
-            let dummy_size_local = self.mb.create_local(None, size_t_ty, false);
-            self.vla_map.insert(sym, (ptr_local_id, dummy_size_local));
-
-            // Initialize if needed
-            if let Some(initializer) = init {
-                let init_operand = self.visit_init(
-                    initializer,
-                    qt,
-                    Some(Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(
-                        ptr_local_id,
-                    )))))),
-                );
-                self.emit_assignment(
-                    Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(ptr_local_id))))),
-                    init_operand,
-                );
-            }
+            self.visit_aligned_local(sym, name, mir_type_id, qt, init, align);
             return;
         }
 
-        let local_id = self.mb.create_local(Some(name), mir_type_id, false);
+        // 3. Standard local variable
+        let local_id = self.create_local(Some(name), mir_type_id, false);
         if let Some(align) = alignment {
-            self.mb.set_local_alignment(local_id, align);
+            self.set_local_alignment(local_id, align);
         }
 
-        self.local_map.insert(sym, local_id);
+        self.func_state_mut().local_map.insert(sym, local_id);
 
         if let Some(initializer) = init {
             let init_operand = self.visit_init(initializer, qt, Some(Place::Local(local_id)));
-            // If visit_initializer used the destination, it returns Operand::Copy(destination)
-            // emit_assignment will then emit Place::Local(local_id) = Place::Local(local_id), which is fine or can be skipped.
             self.emit_assignment(Place::Local(local_id), init_operand);
+        }
+    }
+
+    fn visit_aligned_local(
+        &mut self,
+        sym: SymbolRef,
+        name: NameId,
+        mir_type_id: TypeId,
+        qt: QualType,
+        init: Option<NodeRef>,
+        alignment: u16,
+    ) {
+        let mir_type = self.mb.get_type(mir_type_id);
+        let size = self.get_type_size(mir_type);
+        let size_op = self.create_size_t_operand(size as u64);
+        let ptr_local_id = self.emit_heap_alloc(Some(name), mir_type_id, Some(alignment), size_op);
+
+        // We need a dummy size local for the vla_map entry, although it won't be used for sizeof.
+        let size_t_ty = self.get_size_t_type();
+        let dummy_size_local = self.create_local(None, size_t_ty, false);
+        self.func_state_mut()
+            .vla_map
+            .insert(sym, (ptr_local_id, dummy_size_local));
+
+        // Initialize if needed
+        if let Some(initializer) = init {
+            let deref_place = Place::Deref(Box::new(Operand::Copy(Box::new(Place::Local(ptr_local_id)))));
+            let init_operand = self.visit_init(initializer, qt, Some(deref_place.clone()));
+            self.emit_assignment(deref_place, init_operand);
         }
     }
 
@@ -612,40 +659,35 @@ impl<'a> MirGen<'a> {
         element_type: TypeRef,
         alignment: Option<u16>,
     ) {
-        // Get element size dynamically (the element type might itself be a VLA)
-        let element_size_operand = self.visit_type_query(element_type, true);
-        let element_mir_ty = self.lower_type(element_type);
-        let size_t_mir_ty = self.get_size_t_type();
+        let size_t_ty = self.get_size_t_type();
 
-        // Evaluate the VLA size expression at runtime to get the count
-        let count_operand = self.visit_expression(size_expr, true);
-
-        // Cast count to size_t if needed
-        let count_ty = self.get_operand_type(&count_operand);
-        let count_as_size_t = if count_ty != size_t_mir_ty {
-            Operand::Cast(size_t_mir_ty, Box::new(count_operand))
+        // 1. Get count and element size (dynamically, as the element type might itself be a VLA)
+        let count_op = self.visit_expression(size_expr, true);
+        let count_op = self.apply_conversions(count_op, size_expr, size_t_ty);
+        let count_op = if self.get_operand_type(&count_op) != size_t_ty {
+            Operand::Cast(size_t_ty, Box::new(count_op))
         } else {
-            count_operand
+            count_op
         };
 
-        // Compute total_size = count * element_size
-        let total_size_rvalue =
-            Rvalue::BinaryIntOp(crate::mir::BinaryIntOp::Mul, count_as_size_t, element_size_operand);
-        let total_size_operand = self.emit_rvalue_to_operand(total_size_rvalue, size_t_mir_ty);
+        let elem_size_op = self.visit_type_query(element_type, true);
+        let elem_mir_ty = self.lower_type(element_type);
 
-        // Create size local (holds total byte size for sizeof)
-        let size_local_id = self.mb.create_local(None, size_t_mir_ty, false);
-        // Store the size for sizeof
-        self.emit_assignment(Place::Local(size_local_id), total_size_operand.clone());
+        // 2. Compute total byte size: total_size = count * element_size
+        let total_size_op = self.emit_rvalue_to_operand(
+            Rvalue::BinaryIntOp(crate::mir::BinaryIntOp::Mul, count_op, elem_size_op),
+            size_t_ty,
+        );
 
-        // Allocate memory
-        let ptr_local_id = self.emit_heap_alloc(Some(name), element_mir_ty, alignment, total_size_operand);
+        // 3. Allocate and map locals
+        let size_local_id = self.create_local(None, size_t_ty, false);
+        self.emit_assignment(Place::Local(size_local_id), total_size_op.clone());
 
-        // Map: symbol → pointer local (for visit_ident)
-        // Also map in local_map so existing code can find it
-        self.local_map.insert(sym, ptr_local_id);
-        // Map in vla_map for sizeof support and special access handling
-        self.vla_map.insert(sym, (ptr_local_id, size_local_id));
+        let ptr_local_id = self.emit_heap_alloc(Some(name), elem_mir_ty, alignment, total_size_op);
+
+        let func_state = self.func_state_mut();
+        func_state.local_map.insert(sym, ptr_local_id);
+        func_state.vla_map.insert(sym, (ptr_local_id, size_local_id));
     }
 
     /// Helper to emit heap allocation for a local (VLA or highly-aligned).
@@ -660,9 +702,9 @@ impl<'a> MirGen<'a> {
         let ptr_mir_ty = self.mb.add_type(MirType::Pointer { pointee: mir_type_id });
 
         // Create pointer local (holds the allocated memory address)
-        let ptr_local_id = self.mb.create_local(name, ptr_mir_ty, false);
+        let ptr_local_id = self.create_local(name, ptr_mir_ty, false);
         if let Some(align) = alignment {
-            self.mb.set_local_alignment(ptr_local_id, align);
+            self.set_local_alignment(ptr_local_id, align);
         }
 
         // Allocate memory: use posix_memalign if alignment is specified and > 8, otherwise malloc.
@@ -675,7 +717,7 @@ impl<'a> MirGen<'a> {
         }
 
         // Register for cleanup at end of current scope
-        if let Some(current_scope_cleanup) = self.scope_cleanup.last_mut() {
+        if let Some(current_scope_cleanup) = self.func_state_mut().scope_cleanup.last_mut() {
             current_scope_cleanup.push(ptr_local_id);
         }
 
@@ -694,7 +736,7 @@ impl<'a> MirGen<'a> {
         let malloc_func_id = self.find_or_declare_extern_function(malloc_name, vec![size_t_ty], ptr_ty, false);
 
         // Call malloc(size) and store result in dest_local
-        self.mb.add_stmt(MirStmt::Call {
+        self.add_stmt(MirStmt::Call {
             target: CallTarget::Direct(malloc_func_id),
             args: vec![size_operand],
             dest: Some(Place::Local(dest_local)),
@@ -718,7 +760,7 @@ impl<'a> MirGen<'a> {
         let dest_addr_casted = Operand::Cast(ptr_ptr_ty, Box::new(dest_addr));
 
         // Call posix_memalign(&dest_local, alignment, size)
-        self.mb.add_stmt(MirStmt::Call {
+        self.add_stmt(MirStmt::Call {
             target: CallTarget::Direct(func_id),
             args: vec![dest_addr_casted, align_operand, size_operand],
             dest: None, // Ignore return value (should ideally check for ENOMEM/EINVAL)
@@ -742,7 +784,7 @@ impl<'a> MirGen<'a> {
         };
 
         // Call free(ptr)
-        self.mb.add_stmt(MirStmt::Call {
+        self.add_stmt(MirStmt::Call {
             target: CallTarget::Direct(func_id),
             args: vec![ptr_casted],
             dest: None,
@@ -769,13 +811,13 @@ impl<'a> MirGen<'a> {
 
     fn visit_return_stmt(&mut self, expr: &Option<NodeRef>) {
         let operand = expr.map(|expr| self.visit_expression(expr, true));
-        self.mb.set_terminator(Terminator::Return(operand));
+        self.set_terminator(Terminator::Return(operand));
     }
 
     fn visit_if_stmt(&mut self, if_stmt: &IfStmt) {
-        let then_block = self.mb.create_block();
-        let else_block = self.mb.create_block();
-        let merge_block = self.mb.create_block();
+        let then_block = self.create_block();
+        let else_block = self.create_block();
+        let merge_block = self.create_block();
 
         let mut cond_op = self.visit_expression(if_stmt.condition, true);
         let bool_ty = self.lower_type(self.registry.type_bool);
@@ -783,24 +825,23 @@ impl<'a> MirGen<'a> {
             cond_op = self.emit_cast(cond_op, bool_ty);
         }
 
-        self.mb.set_terminator(Terminator::If(cond_op, then_block, else_block));
+        self.set_terminator(Terminator::If(cond_op, then_block, else_block));
 
-        self.mb.set_current_block(then_block);
+        self.set_current_block(then_block);
         self.visit_node(if_stmt.then_branch);
-        if !self.mb.current_block_has_terminator() {
-            self.mb.set_terminator(Terminator::Goto(merge_block));
+        if !self.current_block_has_terminator() {
+            self.set_terminator(Terminator::Goto(merge_block));
         }
 
-        self.mb.set_current_block(else_block);
+        self.set_current_block(else_block);
         if let Some(else_branch) = &if_stmt.else_branch {
             self.visit_node(*else_branch);
         }
-        if !self.mb.current_block_has_terminator() {
-            self.mb.set_terminator(Terminator::Goto(merge_block));
+        if !self.current_block_has_terminator() {
+            self.set_terminator(Terminator::Goto(merge_block));
         }
 
-        self.mb.set_current_block(merge_block);
-        self.current_block = Some(merge_block);
+        self.set_current_block(merge_block);
     }
 
     fn emit_loop_generic<I, C, B, Inc>(
@@ -816,15 +857,15 @@ impl<'a> MirGen<'a> {
         B: FnOnce(&mut Self),
         Inc: FnOnce(&mut Self),
     {
-        let cond_block = self.mb.create_block();
-        let body_block = self.mb.create_block();
+        let cond_block = self.create_block();
+        let body_block = self.create_block();
         let increment_block = if inc_fn.is_some() {
-            self.mb.create_block()
+            self.create_block()
         } else {
             // If there's no increment block (e.g. while/do-while), "continue" goes to condition
             cond_block
         };
-        let exit_block = self.mb.create_block();
+        let exit_block = self.create_block();
 
         // Continue target depends on whether we have an increment step
         let continue_target = increment_block;
@@ -836,41 +877,40 @@ impl<'a> MirGen<'a> {
 
             if is_do_while {
                 // do-while: jump straight to body
-                this.mb.set_terminator(Terminator::Goto(body_block));
+                this.set_terminator(Terminator::Goto(body_block));
             } else {
                 // for/while: jump to condition
-                this.mb.set_terminator(Terminator::Goto(cond_block));
+                this.set_terminator(Terminator::Goto(cond_block));
             }
 
             // Condition block
-            this.mb.set_current_block(cond_block);
+            this.set_current_block(cond_block);
             if let Some(cond) = cond_fn {
                 let cond_val = cond(this);
-                this.mb.set_terminator(Terminator::If(cond_val, body_block, exit_block));
+                this.set_terminator(Terminator::If(cond_val, body_block, exit_block));
             } else {
                 // No condition (e.g. for(;;)) -> infinite loop
-                this.mb.set_terminator(Terminator::Goto(body_block));
+                this.set_terminator(Terminator::Goto(body_block));
             }
 
             // Body block
-            this.mb.set_current_block(body_block);
+            this.set_current_block(body_block);
             body_fn(this);
 
             // After body, jump to increment (or condition if no increment)
-            if !this.mb.current_block_has_terminator() {
-                this.mb.set_terminator(Terminator::Goto(increment_block));
+            if !this.current_block_has_terminator() {
+                this.set_terminator(Terminator::Goto(increment_block));
             }
 
             // Increment block (only if it exists and is distinct from cond_block)
             if let Some(inc) = inc_fn {
-                this.mb.set_current_block(increment_block);
+                this.set_current_block(increment_block);
                 inc(this);
-                this.mb.set_terminator(Terminator::Goto(cond_block));
+                this.set_terminator(Terminator::Goto(cond_block));
             }
         });
 
-        self.mb.set_current_block(exit_block);
-        self.current_block = Some(exit_block);
+        self.set_current_block(exit_block);
     }
 
     fn visit_while_stmt(&mut self, while_stmt: &WhileStmt) {
@@ -950,10 +990,10 @@ impl<'a> MirGen<'a> {
         let cond_op = self.visit_expression(cond, true);
         let cond_ty_id = self.get_operand_type(&cond_op);
 
-        let merge_block = self.mb.create_block();
+        let merge_block = self.create_block();
 
-        let saved_break = self.break_target;
-        self.break_target = Some(merge_block);
+        let saved_break = self.func_state_mut().break_target;
+        self.func_state_mut().break_target = Some(merge_block);
 
         // Collect cases
         let cases = self.collect_switch_cases(body);
@@ -963,8 +1003,8 @@ impl<'a> MirGen<'a> {
         let mut default_block = None;
 
         for (node, start_val, end_val) in cases {
-            let block = self.mb.create_block();
-            self.switch_case_map.insert(node, block);
+            let block = self.create_block();
+            self.func_state_mut().switch_case_map.insert(node, block);
 
             if let Some(start) = start_val {
                 case_blocks.push((start, end_val, block));
@@ -978,7 +1018,7 @@ impl<'a> MirGen<'a> {
         let bool_type_id = self.lower_type(self.registry.type_bool);
 
         for (start_id, end_id_opt, target_block) in case_blocks {
-            let next_test_block = self.mb.create_block();
+            let next_test_block = self.create_block();
             let start_const = self.mb.get_constants().get(start_id.index()).unwrap().clone();
 
             // Re-create constant with the same type as condition to ensure safe comparison
@@ -1016,52 +1056,50 @@ impl<'a> MirGen<'a> {
                 self.emit_rvalue_to_operand(eq_rvalue, bool_type_id)
             };
 
-            self.mb
-                .set_terminator(Terminator::If(cmp_op, target_block, next_test_block));
+            self.set_terminator(Terminator::If(cmp_op, target_block, next_test_block));
 
-            self.mb.set_current_block(next_test_block);
-            self.current_block = Some(next_test_block);
+            self.set_current_block(next_test_block);
         }
 
         // Final jump to default or merge
-        self.mb.set_terminator(Terminator::Goto(fallback_block));
+        self.set_terminator(Terminator::Goto(fallback_block));
 
         // Lower body
         // Start a dummy unreachable block for the body entry (to catch unreachable statements)
-        let body_entry_dummy = self.mb.create_block();
+        let body_entry_dummy = self.create_block();
         // Do not jump to it. It is unreachable.
 
-        self.mb.set_current_block(body_entry_dummy);
-        self.current_block = Some(body_entry_dummy);
+        self.set_current_block(body_entry_dummy);
 
         self.visit_node(body);
 
         // If body falls through, go to merge
-        if self.mb.current_block_has_terminator() == false {
+        if self.current_block_has_terminator() == false {
             // Check if terminator is Unreachable (default) - if so, we can replace it or just leave it?
             // `current_block_has_terminator` returns false if it is Unreachable.
             // But if we are in body_entry_dummy and it's empty, we shouldn't jump to merge.
             // Actually, if execution falls through the body, it should hit merge.
             // But valid C code falling through end of switch goes to next stmt (merge).
-            self.mb.set_terminator(Terminator::Goto(merge_block));
+            self.set_terminator(Terminator::Goto(merge_block));
         }
 
-        self.break_target = saved_break;
-        self.mb.set_current_block(merge_block);
-        self.current_block = Some(merge_block);
+        self.func_state_mut().break_target = saved_break;
+        self.set_current_block(merge_block);
     }
 
     fn visit_case_default_stmt(&mut self, node: NodeRef, stmt: NodeRef) {
-        let target_block = *self.switch_case_map.get(&node).expect("Case/Default not mapped");
+        let target_block = *self
+            .func_state_mut()
+            .switch_case_map
+            .get(&node)
+            .expect("Case/Default not mapped");
 
         // Fallthrough from previous block
-        if !self.mb.current_block_has_terminator() {
-            self.mb.set_terminator(Terminator::Goto(target_block));
+        if !self.current_block_has_terminator() {
+            self.set_terminator(Terminator::Goto(target_block));
         }
 
-        self.mb.set_current_block(target_block);
-        self.current_block = Some(target_block);
-
+        self.set_current_block(target_block);
         self.visit_node(stmt);
     }
 
@@ -1108,7 +1146,7 @@ impl<'a> MirGen<'a> {
     }
 
     pub(super) fn emit_assignment(&mut self, place: Place, operand: Operand) {
-        if self.mb.current_block_has_terminator() {
+        if self.current_block_has_terminator() {
             return;
         }
 
@@ -1121,7 +1159,7 @@ impl<'a> MirGen<'a> {
 
         let rvalue = Rvalue::Use(operand);
         let stmt = MirStmt::Assign(place, rvalue);
-        self.mb.add_stmt(stmt);
+        self.add_stmt(stmt);
     }
 
     pub(super) fn lower_qual_type(&mut self, qt: QualType) -> TypeId {
@@ -1823,7 +1861,7 @@ impl<'a> MirGen<'a> {
     }
 
     pub(super) fn create_temp_local(&mut self, type_id: TypeId) -> (LocalId, Place) {
-        let local_id = self.mb.create_local(None, type_id, false);
+        let local_id = self.create_local(None, type_id, false);
         let place = Place::Local(local_id);
         (local_id, place)
     }
@@ -1835,7 +1873,7 @@ impl<'a> MirGen<'a> {
     pub(super) fn create_temp_local_with_assignment(&mut self, rvalue: Rvalue, type_id: TypeId) -> (LocalId, Place) {
         let (local_id, place) = self.create_temp_local(type_id);
         let assign_stmt = MirStmt::Assign(place.clone(), rvalue);
-        self.mb.add_stmt(assign_stmt);
+        self.add_stmt(assign_stmt);
         (local_id, place)
     }
 
@@ -1858,8 +1896,36 @@ impl<'a> MirGen<'a> {
             // Any side effects in the Rvalue's operands were already emitted.
             return self.create_dummy_operand();
         }
+
+        if let Some(const_id) = self.try_fold_rvalue_to_const(&rvalue, type_id) {
+            return Operand::Constant(const_id);
+        }
+
         let (_, place) = self.create_temp_local_with_assignment(rvalue, type_id);
         Operand::Copy(Box::new(place))
+    }
+
+    pub(super) fn try_fold_rvalue_to_const(&mut self, rvalue: &Rvalue, type_id: TypeId) -> Option<ConstValueId> {
+        match rvalue {
+            Rvalue::Use(op) => self.operand_to_const_id(op),
+            Rvalue::StructLiteral(fields) => {
+                let mut const_fields = Vec::with_capacity(fields.len());
+                for (idx, op) in fields {
+                    let const_id = self.operand_to_const_id(op)?;
+                    const_fields.push((*idx, const_id));
+                }
+                Some(self.create_constant(type_id, ConstValueKind::StructLiteral(const_fields)))
+            }
+            Rvalue::ArrayLiteral(elements) => {
+                let mut const_elements = Vec::with_capacity(elements.len());
+                for op in elements {
+                    let const_id = self.operand_to_const_id(op)?;
+                    const_elements.push(const_id);
+                }
+                Some(self.create_constant(type_id, ConstValueKind::ArrayLiteral(const_elements)))
+            }
+            _ => None,
+        }
     }
 
     pub(super) fn get_complex_components(&mut self, operand: Operand, ty: TypeId) -> (Operand, Operand) {
@@ -1979,7 +2045,7 @@ impl<'a> MirGen<'a> {
                     // For now, only return initial_value if offset is 0 and the place is the exact global base.
                     if offset == 0 && matches!(&**place, Place::Global(_)) {
                         let global = self.mb.get_global(global_id);
-                        if self.current_function.is_none() || global.is_constant {
+                        if self.func_state.is_none() || global.is_constant {
                             return global.initial_value;
                         }
                     }
@@ -1996,29 +2062,30 @@ impl<'a> MirGen<'a> {
     where
         F: FnOnce(&mut Self),
     {
-        let old_break = self.break_target.replace(break_target);
-        let old_continue = self.continue_target.replace(continue_target);
+        let old_break = self.func_state_mut().break_target.replace(break_target);
+        let old_continue = self.func_state_mut().continue_target.replace(continue_target);
 
         f(self);
 
-        self.break_target = old_break;
-        self.continue_target = old_continue;
+        let state = self.func_state_mut();
+        state.break_target = old_break;
+        state.continue_target = old_continue;
     }
 
     fn scan_for_labels(&mut self, node: NodeRef) {
         let node_kind = *self.ast.get_kind(node);
         if let NodeKind::Label(name, _, _) = node_kind
-            && !self.label_map.contains_key(&name)
+            && !self.func_state_mut().label_map.contains_key(&name)
         {
-            let block_id = self.mb.create_block();
-            self.label_map.insert(name, block_id);
+            let block_id = self.create_block();
+            self.func_state_mut().label_map.insert(name, block_id);
         }
         node_kind.visit_children(|child| self.scan_for_labels(child));
     }
 
     fn visit_goto_stmt(&mut self, label_name: NameId) {
-        if let Some(target_block) = self.label_map.get(&label_name).copied() {
-            self.mb.set_terminator(Terminator::Goto(target_block));
+        if let Some(target_block) = self.func_state_mut().label_map.get(&label_name).copied() {
+            self.set_terminator(Terminator::Goto(target_block));
         } else {
             // This should be caught by semantic analysis, but we panic as a safeguard
             panic!("Goto to undefined label '{}'", label_name.as_str());
@@ -2026,23 +2093,22 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_label_stmt(&mut self, label_name: NameId, statement: NodeRef) {
-        if let Some(label_block) = self.label_map.get(&label_name).copied() {
-            // Make sure the current block is terminated before switching
-            if !self.mb.current_block_has_terminator() {
-                self.mb.set_terminator(Terminator::Goto(label_block));
-            }
+        let label_block = *self
+            .func_state_mut()
+            .label_map
+            .get(&label_name)
+            .expect("Label was not pre-scanned");
 
-            self.mb.set_current_block(label_block);
-            self.current_block = Some(label_block);
-
-            // Now, lower the statement that follows the label
-            self.visit_node(statement);
-        } else {
-            panic!("Label '{}' was not pre-scanned", label_name.as_str());
+        // Make sure the current block is terminated before switching (fallthrough)
+        if !self.current_block_has_terminator() {
+            self.set_terminator(Terminator::Goto(label_block));
         }
+
+        self.set_current_block(label_block);
+        self.visit_node(statement);
     }
 
-    fn define_or_declare_function(
+    pub(super) fn define_or_declare_function(
         &mut self,
         name: NameId,
         params: Vec<TypeId>,
@@ -2050,24 +2116,22 @@ impl<'a> MirGen<'a> {
         variadic: bool,
         is_def: bool,
         linkage: MirLinkage,
-    ) {
+    ) -> MirFunctionId {
         if is_def {
-            self.mb.define_function(name, params, ret, variadic, linkage);
+            self.mb.define_function(name, params, ret, variadic, linkage)
         } else {
-            self.mb.declare_function(name, params, ret, variadic);
+            self.mb
+                .declare_function_with_linkage(name, params, ret, variadic, linkage)
         }
     }
 
     pub(super) fn calculate_linkage(&self, storage: Option<StorageClass>, def_state: DefinitionState) -> MirLinkage {
+        if def_state == DefinitionState::DeclaredOnly {
+            return MirLinkage::Import;
+        }
         match storage {
             Some(StorageClass::Static) => MirLinkage::Internal,
-            Some(StorageClass::Extern) if def_state == DefinitionState::DeclaredOnly => MirLinkage::Import,
             _ => MirLinkage::External,
         }
-    }
-
-    fn get_current_func(&self) -> &mir::MirFunction {
-        let func_id = self.current_function.expect("Not in a function");
-        self.mb.get_function(func_id)
     }
 }

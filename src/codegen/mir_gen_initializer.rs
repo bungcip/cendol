@@ -430,12 +430,12 @@ impl<'a> MirGen<'a> {
         R: FnOnce(T) -> Rvalue,
     {
         let mir_ty = self.lower_qual_type(target_ty);
-        if self.current_function.is_none() {
+        if self.func_state.is_none() {
             let const_kind = create_const(self, data);
             Operand::Constant(self.create_constant(mir_ty, const_kind))
         } else if let Some(place) = destination {
             let rval = create_rvalue(data);
-            self.mb.add_stmt(crate::mir::MirStmt::Assign(place.clone(), rval));
+            self.add_stmt(crate::mir::MirStmt::Assign(place.clone(), rval));
             Operand::Copy(Box::new(place))
         } else {
             let rval = create_rvalue(data);
@@ -639,7 +639,7 @@ impl<'a> MirGen<'a> {
     pub(super) fn visit_compound_literal(&mut self, ty: QualType, init: NodeRef) -> Operand {
         let mir_ty = self.lower_qual_type(ty);
 
-        if self.current_function.is_none() {
+        if self.func_state.is_none() {
             let init_const = self
                 .eval_init_to_const(init, ty)
                 .expect("Global compound literal init must be const");

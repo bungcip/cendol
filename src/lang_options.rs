@@ -27,14 +27,22 @@ impl CStandard {
     }
 }
 
+impl std::str::FromStr for CStandard {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "c11" => Ok(CStandard::C11),
+            "c17" => Ok(CStandard::C17),
+            "c23" => Ok(CStandard::C23),
+            _ => Err(format!("invalid C standard: {}", s)),
+        }
+    }
+}
+
 impl From<&str> for CStandard {
     fn from(s: &str) -> Self {
-        match s {
-            "c11" => CStandard::C11,
-            "c17" => CStandard::C17,
-            "c23" => CStandard::C23,
-            _ => CStandard::C11, // default to C11
-        }
+        s.parse().unwrap_or(CStandard::C11)
     }
 }
 

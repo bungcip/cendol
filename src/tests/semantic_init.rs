@@ -269,7 +269,7 @@ fn test_local_mixed_array_struct_designators() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @"
+    insta::assert_snapshot!(mir, @r"
     type %t0 = i32
     type %t1 = struct S { arr: %t2, val: %t0 }
     type %t2 = [3]%t0
@@ -278,12 +278,10 @@ fn test_local_mixed_array_struct_designators() {
     {
       locals {
         %s: %t1
-        %2: [3]i32
       }
 
       bb1:
-        %2 = [const zero, const 10, const zero]
-        %s = struct{0: %2, 1: const 99}
+        %s = struct{0: const array_literal [const zero, const 10, const zero], 1: const 99}
         return const 0
     }
     ");
@@ -298,7 +296,7 @@ fn test_local_nested_array_init() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @"
+    insta::assert_snapshot!(mir, @r"
     type %t0 = i32
     type %t1 = [2]%t0
     type %t2 = [2]%t1
@@ -307,14 +305,10 @@ fn test_local_nested_array_init() {
     {
       locals {
         %grid: [2][2]i32
-        %2: [2]i32
-        %3: [2]i32
       }
 
       bb1:
-        %2 = [const 1, const 2]
-        %3 = [const 3, const 4]
-        %grid = [%2, %3]
+        %grid = [const array_literal [const 1, const 2], const array_literal [const 3, const 4]]
         return const 0
     }
     ");
@@ -329,7 +323,7 @@ fn test_local_nested_array_init_with_designators() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @"
+    insta::assert_snapshot!(mir, @r"
     type %t0 = i32
     type %t1 = [2]%t0
     type %t2 = [2]%t1
@@ -338,14 +332,10 @@ fn test_local_nested_array_init_with_designators() {
     {
       locals {
         %grid: [2][2]i32
-        %2: [2]i32
-        %3: [2]i32
       }
 
       bb1:
-        %2 = [const 3, const 4]
-        %3 = [const 1, const 2]
-        %grid = [%3, %2]
+        %grid = [const array_literal [const 1, const 2], const array_literal [const 3, const 4]]
         return const 0
     }
     ");

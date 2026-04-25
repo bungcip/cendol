@@ -136,3 +136,4 @@ pub mod semantic_alignof_expr;
 pub mod semantic_usual_arithmetic_conversions;
 pub mod regr_sds_l1;
 pub mod regr_identifier_truncation;
+pub mod semantic_recursive_type;

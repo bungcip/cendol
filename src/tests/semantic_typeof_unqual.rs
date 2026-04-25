@@ -40,10 +40,6 @@ fn test_typeof_unqual_pointer() {
         r#"
         int main() {
             int const * p = 0;
-            // typeof_unqual(p) is `int const *`, because the top-level pointer is unqualified.
-            // But wait, typeof_unqual strips top-level qualifiers.
-            // If p is `const int *`, it's a pointer to const int.
-            // The pointer itself is unqualified. typeof_unqual(p) == `const int *`.
             typeof_unqual(p) y = 0;
 
             int * const p2 = 0;

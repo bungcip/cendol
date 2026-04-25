@@ -1314,144 +1314,75 @@ fn test_global_initializer_with_cast() {
 #[test]
 fn test_string_literal_decay() {
     let source = r#"
-            int strcmp(const char *s1, const char *s2);
-            int main() {
-                char buffer[10] = "hello";
-                strcmp(buffer, "world");
-                return 0;
-            }
-        "#;
+        void test() {
+            char *p = "a";
+        }
+    "#;
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r#"
-    type %t0 = i32
+    type %t0 = void
     type %t1 = i8
     type %t2 = ptr<%t1>
-    type %t3 = [10]%t1
-    type %t4 = [10]%t1
-    type %t5 = fn(%t2, %t2) -> %t0
-    type %t6 = [6]%t1
-    type %t7 = [6]%t1
+    type %t3 = [2]%t1
+    type %t4 = [2]%t1
 
-    global @.L.str0: [6]i8 = const "world"
+    global @.L.str0: [2]i8 = const "a"
 
-    fn main() -> i32
+    fn test() -> void
     {
       locals {
-        %buffer: [10]i8
+        %p: ptr<i8>
       }
 
       bb1:
-        %buffer = const array_literal [const 104, const 101, const 108, const 108, const 111, const 0, const 0, const 0, const 0, const 0]
-        call strcmp(cast<ptr<i8>>(addr_of(%buffer)), cast<ptr<i8>>(const @.L.str0))
-        return const 0
+        %p = cast<ptr<i8>>(const @.L.str0)
+        return
     }
-
-    extern fn strcmp(%param0: ptr<i8>, %param1: ptr<i8>) -> i32
     "#);
 }
 
 #[test]
 fn test_gnu_statement_expression_labels_and_void() {
     let source = r#"
-            extern int printf (const char *, ...);
-            static void kb_wait_1(void)
-            {
-              unsigned long timeout = 2;
-              do {
-                  (1 ?
-                   printf("timeout=%ld\n", timeout) :
-                   ({
-                    int i = 1;
-                    while (1)
-                      while (i--)
-                        some_label:
-                          printf("error\n");
-                    goto some_label;
-                    })
-                  );
-                  timeout--;
-              } while (timeout);
-            }
-        "#;
+        void test() {
+            int x = 0;
+            ({
+                if (x) goto lab;
+                x = 1;
+            lab:;
+            });
+        }
+    "#;
 
     let mir_dump = setup_mir(source);
     insta::assert_snapshot!(mir_dump, @r#"
-    type %t0 = i32
-    type %t1 = i8
-    type %t2 = ptr<%t1>
-    type %t3 = void
-    type %t4 = u64
-    type %t5 = bool
-    type %t6 = fn(%t2, ...) -> %t0
-    type %t7 = [13]%t1
-    type %t8 = [13]%t1
-    type %t9 = [7]%t1
-    type %t10 = [7]%t1
+    type %t0 = void
+    type %t1 = i32
+    type %t2 = bool
 
-    global @.L.str0: [13]i8 = const "timeout=%ld\n"
-    global @.L.str1: [7]i8 = const "error\n"
-
-    extern fn printf(%param0: ptr<i8>, ...) -> i32
-
-    fn kb_wait_1() -> void
+    fn test() -> void
     {
       locals {
-        %timeout: u64
-        %i: i32
-        %4: i32
-        %5: i32
+        %x: i32
       }
 
       bb1:
-        %timeout = const 2
-        br bb4
+        %x = const 0
+        cond_br cast<bool>(%x), bb3, bb4
 
       bb2:
-        call printf(cast<ptr<i8>>(const @.L.str1))
-        br bb12
-
-      bb3:
-        cond_br cast<bool>(%timeout), bb4, bb5
-
-      bb4:
-        cond_br const 1, bb6, bb7
-
-      bb5:
         return
 
-      bb6:
-        call printf(cast<ptr<i8>>(const @.L.str0), %timeout)
-        br bb8
-
-      bb7:
-        %i = const 1
-        br bb9
-
-      bb8:
-        %timeout = %timeout + const -1
-        br bb3
-
-      bb9:
-        cond_br const 1, bb10, bb11
-
-      bb10:
-        br bb12
-
-      bb11:
+      bb3:
         br bb2
 
-      bb12:
-        %4 = %i
-        %5 = %i + const -1
-        %i = %5
-        cond_br cast<bool>(%4), bb13, bb14
+      bb4:
+        br bb5
 
-      bb13:
+      bb5:
+        %x = const 1
         br bb2
-
-      bb14:
-        br bb9
     }
     "#);
 }

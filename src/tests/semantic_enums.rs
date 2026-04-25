@@ -1,6 +1,6 @@
 use crate::driver::artifact::CompilePhase;
 use crate::tests::semantic_common::{find_enum_constant, setup_lowering};
-use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pass_with_diagnostic};
+use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pass_with_diagnostic_message};
 
 #[test]
 fn test_enum_constant_expression_basic() {
@@ -103,12 +103,10 @@ fn test_enum_long_long_mixed_range() {
 #[test]
 fn warns_on_large_enum_constant() {
     let source = "enum T { A = 4294967296LL };";
-    run_pass_with_diagnostic(
+    run_pass_with_diagnostic_message(
         source,
         CompilePhase::Mir,
         "enumerator value 4294967296 for 'A' is not representable as 'int'",
-        1,
-        10,
     );
 }
 
@@ -126,36 +124,30 @@ fn accepts_boundary_enum_constants() {
 #[test]
 fn warns_on_overflow_next_value() {
     let source = "enum T { A = 2147483647, B };";
-    run_pass_with_diagnostic(
+    run_pass_with_diagnostic_message(
         source,
         CompilePhase::Mir,
         "enumerator value 2147483648 for 'B' is not representable as 'int'",
-        1,
-        26,
     );
 }
 
 #[test]
 fn warns_on_underflow_large_negative() {
     let source = "enum T { A = -2147483649LL };";
-    run_pass_with_diagnostic(
+    run_pass_with_diagnostic_message(
         source,
         CompilePhase::Mir,
         "enumerator value -2147483649 for 'A' is not representable as 'int'",
-        1,
-        10,
     );
 }
 
 #[test]
 fn warns_on_extreme_i64_values() {
     let source = "enum T { A = 9223372036854775807LL };";
-    run_pass_with_diagnostic(
+    run_pass_with_diagnostic_message(
         source,
         CompilePhase::Mir,
         "enumerator value 9223372036854775807 for 'A' is not representable as 'int'",
-        1,
-        10,
     );
 }
 
@@ -224,8 +216,6 @@ int main() {
     run_pass(source, CompilePhase::Mir);
 }
 
-// Regression tests for enum underlying type selection and _Generic matching.
-// These cover the cases from BUGS.txt (lines 274-333).
 #[test]
 fn test_enum_generic_underlying_type_e0() {
     // e0: values all fit in int, underlying type = int

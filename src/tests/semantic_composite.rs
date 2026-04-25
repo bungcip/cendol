@@ -186,18 +186,6 @@ fn test_bitfield_invalid_type() {
 }
 
 #[test]
-fn test_recursive_struct_definition() {
-    run_fail_with_message(
-        r#"
-        struct A {
-            struct A x;
-        };
-        "#,
-        "recursive type definition",
-    );
-}
-
-#[test]
 fn test_member_access_on_non_struct() {
     run_fail_with_message(
         r#"

@@ -750,24 +750,21 @@ impl PPLexer {
 
     fn skip_whitespace_and_comments(&mut self) {
         loop {
-            // Skip whitespace, handling line splicing
-            // But don't skip newlines if we're in a directive line (let them be processed as tokens)
+            let start_pos = self.position;
 
             // ⚡ Bolt: Fast path for skipping common whitespace characters.
-            // This avoids the overhead of `peek_char` and `next_char` for the majority of whitespace.
             while (self.position as usize) < self.buffer.len() {
-                let ch = self.buffer[self.position as usize];
-                if ch == b' ' || ch == b'\t' || ch == b'\r' || ch == b'\x0c' || ch == b'\x0b' {
-                    self.position += 1;
-                } else if ch == b'\n' && !self.in_directive_line {
-                    self.position += 1;
-                    self.at_start_of_line = true;
-                } else {
-                    // Trigraphs, line splices, or non-whitespace.
-                    break;
+                match self.buffer[self.position as usize] {
+                    b' ' | b'\t' | b'\r' | b'\x0c' | b'\x0b' => self.position += 1,
+                    b'\n' if !self.in_directive_line => {
+                        self.position += 1;
+                        self.at_start_of_line = true;
+                    }
+                    _ => break,
                 }
             }
 
+            // Slow path for trigraphs and line splices
             while let Some(ch) = self.peek_char() {
                 if ch.is_ascii_whitespace() && !(ch == b'\n' && self.in_directive_line) {
                     if ch == b'\n' {
@@ -779,77 +776,72 @@ impl PPLexer {
                 }
             }
 
-            if self.position as usize >= self.buffer.len() {
-                break;
-            }
+            // Try to skip a comment
+            if self.peek_char() == Some(b'/') {
+                let saved = (self.position, self.at_start_of_line);
+                self.next_char(); // consume /
 
-            // ⚡ Bolt: Fast-path for skipping comment check.
-            // If the next character is not '/', it cannot be the start of a comment.
-            // We peek first to avoid the overhead of saving state and multi-character
-            // consumption for the vast majority of tokens.
-            if self.peek_char() != Some(b'/') {
-                break;
-            }
-
-            // Check for comments by temporarily consuming
-            let saved_position = self.position;
-            let saved_at_start = self.at_start_of_line;
-
-            let ch1 = self.next_char().map(|(c, _)| c);
-            let ch2 = self.next_char().map(|(c, _)| c);
-
-            if ch1 == Some(b'/') && ch2 == Some(b'/') {
-                // Line comment, skip to end of line
-                // ⚡ Bolt: Fast path for line comments using memchr
-                loop {
-                    let start = self.position as usize;
-                    if start >= self.buffer.len() {
-                        break;
+                match self.peek_char() {
+                    Some(b'/') => {
+                        self.next_char(); // consume second /
+                        self.skip_to_end_of_line_comment();
+                        continue;
                     }
-                    if let Some(pos) = memchr::memchr2(b'\n', b'\\', &self.buffer[start..]) {
-                        self.position += pos as u32;
-                        if self.buffer[self.position as usize] == b'\n' {
-                            self.next_char(); // consume \n properly (updates at_start_of_line)
-                            break;
-                        } else {
-                            // Backslash, use slow path for potential line splicing
-                            self.next_char();
-                        }
-                    } else {
-                        self.position = self.buffer.len() as u32;
-                        break;
+                    Some(b'*') => {
+                        self.next_char(); // consume *
+                        self.skip_to_end_of_block_comment();
+                        continue;
+                    }
+                    _ => {
+                        // Not a comment, restore position
+                        self.position = saved.0;
+                        self.at_start_of_line = saved.1;
                     }
                 }
-            } else if ch1 == Some(b'/') && ch2 == Some(b'*') {
-                // Block comment, skip to */
-                // ⚡ Bolt: Fast path for block comments using memchr
-                loop {
-                    let start = self.position as usize;
-                    if start >= self.buffer.len() {
+            }
+
+            if self.position == start_pos {
+                break;
+            }
+        }
+    }
+
+    fn skip_to_end_of_line_comment(&mut self) {
+        // ⚡ Bolt: Fast path for line comments using memchr
+        while (self.position as usize) < self.buffer.len() {
+            let start = self.position as usize;
+            if let Some(pos) = memchr::memchr2(b'\n', b'\\', &self.buffer[start..]) {
+                self.position += pos as u32;
+                if self.buffer[self.position as usize] == b'\n' {
+                    self.next_char(); // consume \n properly (updates at_start_of_line)
+                    return;
+                }
+                self.next_char(); // handle backslash (potential line splice)
+            } else {
+                self.position = self.buffer.len() as u32;
+                return;
+            }
+        }
+    }
+
+    fn skip_to_end_of_block_comment(&mut self) {
+        // ⚡ Bolt: Fast path for block comments using memchr
+        while (self.position as usize) < self.buffer.len() {
+            let start = self.position as usize;
+            if let Some(pos) = memchr::memchr2(b'*', b'\\', &self.buffer[start..]) {
+                self.position += pos as u32;
+                if self.buffer[self.position as usize] == b'*' {
+                    self.position += 1;
+                    if self.peek_char() == Some(b'/') {
+                        self.next_char(); // consume /
                         break;
                     }
-                    if let Some(pos) = memchr::memchr2(b'*', b'\\', &self.buffer[start..]) {
-                        self.position += pos as u32;
-                        if self.buffer[self.position as usize] == b'*' {
-                            self.position += 1;
-                            if self.peek_char() == Some(b'/') {
-                                self.next_char(); // consume /
-                                break;
-                            }
-                        } else {
-                            // Backslash, use slow path for potential line splicing
-                            self.next_char();
-                        }
-                    } else {
-                        self.position = self.buffer.len() as u32;
-                        break;
-                    }
+                } else {
+                    self.next_char(); // handle backslash (potential line splice)
                 }
             } else {
-                // Not a comment, restore position
-                self.position = saved_position;
-                self.at_start_of_line = saved_at_start;
-                break;
+                self.position = self.buffer.len() as u32;
+                return;
             }
         }
     }

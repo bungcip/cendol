@@ -1,5 +1,7 @@
 use crate::driver::artifact::CompilePhase;
 use crate::tests::test_utils::run_fail_with_message;
+use crate::tests::test_utils::run_pass_with_diagnostic;
+use crate::tests::test_utils::run_pass_with_diagnostic_message;
 
 // A. Lvalue & Assignment Constraints
 #[test]
@@ -72,8 +74,6 @@ fn test_deref_incomplete_type() {
 
 #[test]
 fn test_pointer_comparison_incompatible() {
-    use crate::tests::test_utils::run_pass_with_diagnostic;
-
     // Should warn but proceed
     let source = r#"
         int main() {
@@ -111,7 +111,6 @@ fn test_designated_init_field_not_found() {
 
 #[test]
 fn test_scalar_init_brace_list() {
-    use crate::tests::test_utils::run_pass_with_diagnostic_message;
     run_pass_with_diagnostic_message(
         r#"
         int main() {
@@ -276,7 +275,6 @@ fn test_function_parameter_incomplete_type_prohibited() {
 // Consolidated from guardian_pointer_assignment_qualifiers.rs and guardian_restrict_constraints.rs
 #[test]
 fn test_pointer_assignment_discards_const_warning() {
-    use crate::tests::test_utils::run_pass_with_diagnostic;
     run_pass_with_diagnostic(
         r#"
         int main() {

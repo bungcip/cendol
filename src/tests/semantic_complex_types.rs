@@ -524,9 +524,7 @@ fn test_complex_i_usage() {
 fn test_complex_cmplx_signed_zero() {
     let source = r#"
         #include <complex.h>
-        _Static_assert(__builtin_imag(CMPLX(0.0, -0.0)) < 0.0 == 0, "Wait, -0.0 < 0.0 is false");
-        // We can't easily check -0.0 in _Static_assert without bit-casting, which cendol might not support yet.
-        // But we can check if it compiles.
+        _Static_assert(__builtin_imag(CMPLX(0.0, -0.0)) < 0.0 == 0, "-0.0 < 0.0 is false");
         double complex z = CMPLX(0.0, -0.0);
     "#;
     run_pass(source, CompilePhase::Mir);

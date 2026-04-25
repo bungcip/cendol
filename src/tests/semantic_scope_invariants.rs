@@ -1,6 +1,5 @@
 use crate::driver::artifact::CompilePhase;
-use crate::tests::test_utils;
-use crate::tests::test_utils::run_fail_with_message;
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
 fn test_function_scope_and_linkage_invariants() {
@@ -17,15 +16,10 @@ fn test_function_scope_and_linkage_invariants() {
     run_fail_with_message(r#"void f() { int x; int x; }"#, "redefinition of 'x'");
 
     // 5. Allows shadowing in nested blocks
-    let (_, result) = test_utils::run_pipeline(r#"void f(int x) { { float x = 1.0; } }"#, CompilePhase::Mir);
-    assert!(result.is_ok(), "Shadowing in nested block should be allowed");
+    run_pass(r#"void f(int x) { { float x = 1.0; } }"#, CompilePhase::Mir);
 
     // 6. Correctly handles linkage inheritance (extern after static is OK)
-    let (_, result) = test_utils::run_pipeline(r#"static void f(void); extern void f(void) {}"#, CompilePhase::Mir);
-    assert!(
-        result.is_ok(),
-        "extern after static should be allowed and inherit linkage"
-    );
+    run_pass(r#"static void f(void); extern void f(void) {}"#, CompilePhase::Mir);
 
     // 7. Rejects linkage conflict (static after extern)
     run_fail_with_message(
@@ -34,5 +28,5 @@ fn test_function_scope_and_linkage_invariants() {
     );
 
     // 8. Rejects implicit __func__ redefinition
-    test_utils::run_fail(r#"void f() { int __func__; }"#, CompilePhase::Mir);
+    run_fail_with_message(r#"void f() { int __func__; }"#, "Unexpected token");
 }

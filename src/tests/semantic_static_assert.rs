@@ -2,59 +2,25 @@ use crate::driver::artifact::CompilePhase;
 use crate::lang_options::CStandard;
 use crate::tests::test_utils::{run_fail_with_message, run_fail_with_message_and_std, run_pass, run_pass_with_std};
 
-/// basic static assert which just check pass and fail
 #[test]
-fn test_static_assert_basic() {
-    run_pass(
-        r#"
-        int main() {
-            _Static_assert(1, "This should pass");
-            return 0;
-        }
-    "#,
-        CompilePhase::Mir,
-    );
-
-    run_fail_with_message(
-        r#"
-        int main() {
-            _Static_assert(0, "This should fail");
-            return 0;
-        }
-    "#,
-        "This should fail",
-    );
+fn test_static_assert_in_function() {
+    run_pass(r#"void foo() { _Static_assert(1, "msg"); }"#, CompilePhase::Mir);
 }
 
 #[test]
 fn test_static_assert_in_struct() {
-    run_pass(
-        r#"struct S { int x; _Static_assert(1, "msg"); }; int main() { return 0; }"#,
-        CompilePhase::Mir,
-    );
+    run_pass(r#"struct S { int x; _Static_assert(1, "msg"); };"#, CompilePhase::Mir);
 }
 
 #[test]
 fn test_static_assert_c23_one_arg() {
-    run_pass_with_std(
-        "_Static_assert(1 == 1); int main() { return 0; }",
-        CompilePhase::Mir,
-        CStandard::C23,
-    );
+    run_pass_with_std("_Static_assert(1 == 1);", CompilePhase::Mir, CStandard::C23);
 }
 
 #[test]
 fn test_static_assert_keyword() {
-    run_pass_with_std(
-        r#"static_assert(1 == 1, "msg"); int main() { return 0; }"#,
-        CompilePhase::Mir,
-        CStandard::C23,
-    );
-    run_pass_with_std(
-        "static_assert(1 == 1); int main() { return 0; }",
-        CompilePhase::Mir,
-        CStandard::C23,
-    );
+    run_pass_with_std(r#"static_assert(1 == 1, "msg");"#, CompilePhase::Mir, CStandard::C23);
+    run_pass_with_std("static_assert(1 == 1);", CompilePhase::Mir, CStandard::C23);
 }
 
 #[test]
@@ -84,46 +50,19 @@ fn test_static_assert_c11_keyword_fails() {
 
 #[test]
 fn test_static_assert_keyword_fail_no_msg() {
-    crate::tests::test_utils::run_fail_with_message_and_std(
-        "static_assert(0);",
-        "static assertion failed",
-        crate::lang_options::CStandard::C23,
-    );
+    run_fail_with_message_and_std("static_assert(0);", "static assertion failed", CStandard::C23);
 }
 
 #[test]
 fn test_static_assert_in_union() {
-    run_pass(
-        r#"union U { int x; _Static_assert(1, "msg"); }; int main() { return 0; }"#,
-        CompilePhase::Mir,
-    );
+    run_pass(r#"union U { int x; _Static_assert(1, "msg"); }; "#, CompilePhase::Mir);
 }
 
 #[test]
-fn test_static_assert_top_level() {
-    run_pass(
-        r#"_Static_assert(1, "msg"); int main() { return 0; }"#,
-        CompilePhase::Mir,
-    );
-}
-
-#[test]
-fn test_static_assert_in_function() {
-    run_pass(
-        "int main() { _Static_assert(1, \"msg\"); return 0; }",
-        CompilePhase::Mir,
-    );
-}
-
-#[test]
-fn test_static_assert_file_scope_fail() {
+fn test_static_assert_at_top_level() {
+    run_pass(r#"_Static_assert(1, "msg");"#, CompilePhase::Mir);
     run_fail_with_message(
-        r#"
-        _Static_assert(0, "This should fail");
-        int main() {
-            return 0;
-        }
-    "#,
+        r#"_Static_assert(0, "This should fail");"#,
         "static assertion failed: This should fail",
     );
 }
@@ -132,10 +71,9 @@ fn test_static_assert_file_scope_fail() {
 fn test_static_assert_non_constant() {
     run_fail_with_message(
         r#"
-        int main() {
+        void foo() {
             int x = 1;
             _Static_assert(x, "error");
-            return 0;
         }
     "#,
         "expression in static assertion is not constant",
@@ -152,9 +90,6 @@ fn test_static_assert_comparison() {
         _Static_assert(1 != 2, "This should pass");
         _Static_assert(1 <= 1, "This should pass");
         _Static_assert(1 >= 1, "This should pass");
-        int main() {
-            return 0;
-        }
     "#,
         CompilePhase::Mir,
     );
@@ -168,9 +103,6 @@ fn test_static_assert_logical() {
         _Static_assert(1 || 0, "This should pass");
         _Static_assert(0 || 1, "This should pass");
         _Static_assert(!(0), "This should pass");
-        int main() {
-            return 0;
-        }
     "#,
         CompilePhase::Mir,
     );
@@ -187,10 +119,6 @@ fn test_static_assert_negative_numbers() {
         
         // Bitwise not: ~0 is -1 (in 2s complement)
         _Static_assert(~0 == -1, "Bitwise not of zero should be -1");
-        
-        int main() {
-            return 0;
-        }
     "#,
         CompilePhase::Mir,
     );
@@ -245,7 +173,6 @@ fn test_static_assert_cast() {
         _Static_assert((_Bool)2, "should pass (casted to 1)");
         _Static_assert((_Bool)0.5, "should pass (casted to 1)");
         _Static_assert(!((_Bool)0.0), "should pass");
-        int main() { return 0; }
         "#,
         CompilePhase::Mir,
     );

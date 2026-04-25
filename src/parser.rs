@@ -252,13 +252,9 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     /// Advance to the next token and return previous token
     fn advance(&mut self) -> Option<Token> {
         self.ensure_cached(self.current_idx);
-        if self.current_idx < self.token_cache.len() {
-            let token = self.token_cache[self.current_idx];
-            self.current_idx += 1;
-            Some(token)
-        } else {
-            None
-        }
+        let token = self.token_cache.get(self.current_idx).cloned()?;
+        self.current_idx += 1;
+        Some(token)
     }
 
     /// Accept a specific token kind if found, consume it and return it, otherwise nothing happens
@@ -287,14 +283,13 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
                     })
                 }
             }
-            Err(e) if matches!(e.kind, ParseErrorKind::UnexpectedEof) => Err(ParseError {
+            Err(e) => Err(ParseError {
                 span: e.span,
                 kind: ParseErrorKind::UnexpectedToken {
                     expected: expected.display(),
                     found: TokenKind::EndOfFile,
                 },
             }),
-            Err(e) => Err(e),
         }
     }
 
@@ -325,14 +320,11 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     fn synchronize_until(&mut self, stop_before: &[TokenKind]) {
         let mut brace_depth: i32 = 0;
         let mut paren_depth: i32 = 0;
-        let mut any_advance = false;
-        let mut stopped_at_stop_token = false;
 
         while let Some(token) = self.try_current_token() {
             // If we're at balanced depth and the current token is one the caller
             // wants to handle, stop WITHOUT consuming it.
             if brace_depth <= 0 && paren_depth <= 0 && stop_before.contains(&token.kind) {
-                stopped_at_stop_token = true;
                 break;
             }
 
@@ -340,12 +332,10 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
                 TokenKind::LeftBrace => {
                     brace_depth += 1;
                     self.advance();
-                    any_advance = true;
                 }
                 TokenKind::RightBrace => {
                     brace_depth -= 1;
                     self.advance();
-                    any_advance = true;
                     if brace_depth < 0 {
                         break; // Unmatched brace, stop here
                     }
@@ -353,38 +343,28 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
                 TokenKind::LeftParen => {
                     paren_depth += 1;
                     self.advance();
-                    any_advance = true;
                 }
                 TokenKind::RightParen => {
                     paren_depth -= 1;
                     self.advance();
-                    any_advance = true;
                     if paren_depth < 0 {
                         break; // Unmatched paren, stop here
                     }
                 }
                 TokenKind::Semicolon => {
                     self.advance();
-                    any_advance = true;
                     if brace_depth == 0 && paren_depth == 0 {
                         break;
                     }
                 }
                 TokenKind::EndOfFile => {
                     self.advance();
-                    any_advance = true;
                     break;
                 }
                 _ => {
                     self.advance();
-                    any_advance = true;
                 }
             }
-        }
-
-        // Force advance only if we didn't advance AND didn't stop at a designated stop token
-        if !any_advance && !stopped_at_stop_token {
-            self.advance();
         }
     }
 
@@ -453,11 +433,8 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         if self.at_c23_attribute_start() {
             return true;
         }
-        if let Some(token) = self.try_current_token() {
-            self.is_type_name_start_token(token)
-        } else {
-            false
-        }
+        self.try_current_token()
+            .is_some_and(|token| self.is_type_name_start_token(token))
     }
 
     /// Parse cast expression given the already parsed type and right paren token

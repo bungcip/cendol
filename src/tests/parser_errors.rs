@@ -1,6 +1,7 @@
 use crate::driver::artifact::CompilePhase;
+use crate::lang_options::CStandard;
 use crate::tests::parser_utils::{setup_declaration, setup_translation_unit};
-use crate::tests::test_utils::{run_fail_with_message, run_pass};
+use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pass_with_std};
 
 #[test]
 fn test_invalid_attributes_recovery() {
@@ -125,12 +126,12 @@ fn test_parser_errors() {
         ("void foo(+);", "expected ), found +"),
         ("void foo(+x);", "expected ), found +"),
         ("void foo(int x, +);", "expected ), found +"),
-        ("int foo(){foo(1}", "expected )"),
+        ("void foo(){foo(1}", "expected )"),
         ("void foo() { int x[] = {1, 2; }", "expected }"),
         ("void foo() { struct S { int x; ", "expected }"),
-        ("int foo(int x, int y", "expected )"),
+        ("void foo(int x, int y", "expected )"),
         ("void foo(int ( + ));", "expected ), found +"),
-        ("int foo(int ..., int);", "expected ), found ..."),
+        ("void foo(int ..., int);", "expected ), found ..."),
         // B. Context-specific "expected identifier" errors
         ("void foo() { struct S s; s . 1; }", "expected identifier, found 1"),
         ("void foo() { struct S *s; s->1; }", "expected identifier, found 1"),
@@ -166,11 +167,21 @@ fn test_parser_errors() {
         ("int __attribute__((noreturn))", "Expected type specifiers"),
         ("int ", "Expected declarator or identifier after type specifier"),
         ("int x[10 ;", "expected ], found ;"),
-        ("int foo(int ( * );", "expected ), found ;"),
-        ("int foo(int ( * [ ] );", "expected ), found ;"),
-        ("int f(int x : 5);", "expected ), found :"),
-        ("int f(int : 5);", "expected ), found :"),
+        ("void foo(int ( * );", "expected ), found ;"),
+        ("void foo(int ( * [ ] );", "expected ), found ;"),
+        ("void foo(int x : 5);", "expected ), found :"),
+        ("void foo(int : 5);", "expected ), found :"),
         ("int x : 5;", "expected ';' after declaration, found :"),
+        // G. Coverage for synchronization and lexer errors
+        (r#"#error "custom error""#, "custom error"),
+        ("#endif", "Unmatched #endif"),
+        (r#"#error "fail""#, "fail"),
+        ("int x = +; }", "found ;"),
+        ("int x =", "found end of file"),
+        ("_Alignas(", "found end of file"),
+        ("void foo() { (", "found end of file"),
+        ("void foo() { { int x = +; } }", "found ;"),
+        ("[[maybe_unused]]", "found ["),
     ];
 
     for (source, message) in cases {
@@ -271,5 +282,19 @@ fn test_abstract_declarator_builder_coverage() {
         }
         "#,
         CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_is_type_name_start_c23_attr() {
+    // Triggers return true on C23 attribute start in is_type_name_start
+    run_pass_with_std(
+        r#"
+        void foo() {
+            int x = ([[maybe_unused]] int)1;
+        }
+        "#,
+        CompilePhase::Parse,
+        CStandard::C23,
     );
 }

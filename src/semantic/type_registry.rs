@@ -46,7 +46,7 @@ pub(crate) enum TypeRegistryError {
 }
 
 impl TypeRegistryError {
-    /// Convert this type registry error to a SemanticErrorKind with an optional span.
+    /// Convert this type registry error to a SemanticError with an optional span.
     /// This allows the TypeRegistry to remain decoupled from source location tracking
     /// while still providing rich error information to the semantic analyzer.
     pub(crate) fn to_semantic_kind(&self) -> super::errors::SemanticError {

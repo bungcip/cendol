@@ -154,14 +154,14 @@ The `LowerCtx` struct orchestrates the conversion from `ParsedAst` → `Ast`:
 ### Error Types
 
 - **Parse errors**: `ParseError` with `ParseErrorKind` enum (in `diagnostic.rs`).
-- **Semantic errors**: `SemanticError` with `SemanticErrorKind` enum (in `semantic/errors.rs`).
+- **Semantic errors**: `SemanticDiag` with `SemanticError` enum (in `semantic/errors.rs`).
 - Each error kind implements `display()` → human-readable message.
 - Errors convert to `Vec<Diagnostic>` via `into_diagnostic()` / `IntoDiagnostic` trait.
 
 ```rust
 // Semantic error reporting pattern
-self.report_error(node, SemanticErrorKind::NotAnLvalue);
-self.report_warning(node, SemanticErrorKind::AddressOfArrayAlwaysTrue { name });
+self.report_error(node, SemanticError::NotAnLvalue);
+self.report_warning(node, SemanticError::AddressOfArrayAlwaysTrue { name });
 ```
 
 ### ICE (Internal Compiler Error)

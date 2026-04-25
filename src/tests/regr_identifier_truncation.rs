@@ -1,4 +1,3 @@
-
 use crate::tests::semantic_common::setup_analysis;
 
 #[test]

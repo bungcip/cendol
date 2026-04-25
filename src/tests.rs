@@ -127,12 +127,12 @@ pub mod semantic_scope_invariants;
 pub mod semantic_static_assert;
 
 pub mod guardian_choose_expr;
+pub mod regr_identifier_truncation;
 pub mod regr_init_range;
 pub mod regr_mixed_sign_comp;
 pub mod regr_pp_short_circuit;
+pub mod regr_sds_l1;
 pub mod regr_shadowing;
 pub mod regr_struct_bitfield;
 pub mod semantic_alignof_expr;
 pub mod semantic_usual_arithmetic_conversions;
-pub mod regr_sds_l1;
-pub mod regr_identifier_truncation;

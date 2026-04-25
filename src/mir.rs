@@ -12,6 +12,7 @@ use std::num::NonZeroU32;
 
 use crate::ast::NameId;
 use crate::semantic::FieldLayout;
+use hashbrown::HashMap;
 
 pub mod dumper;
 pub mod validation;
@@ -640,6 +641,9 @@ pub(crate) struct MirBuilder {
     constants: Vec<ConstValue>,
     // Statement storage with ID mapping
     statements: Vec<MirStmt>,
+    // ⚡ Bolt: Fast name lookup for functions and globals.
+    // This avoids linear scans in projects with many functions (like sqlite).
+    function_name_map: HashMap<NameId, MirFunctionId>,
 }
 
 /// Builder for constructing a specific MIR function body
@@ -710,15 +714,12 @@ impl MirBuilder {
             types: Vec::new(),
             constants: Vec::new(),
             statements: Vec::new(),
+            function_name_map: HashMap::new(),
         }
     }
 
     pub(crate) fn find_function_by_name(&self, name: NameId) -> Option<MirFunctionId> {
-        self.functions
-            .iter()
-            .enumerate()
-            .find(|(_, f)| f.name == name)
-            .map(|(i, _)| MirFunctionId::new((i + 1) as u32).unwrap())
+        self.function_name_map.get(&name).copied()
     }
 
     pub(crate) fn create_local(&mut self, name: Option<NameId>, type_id: TypeId, is_param: bool) -> LocalId {
@@ -875,6 +876,7 @@ impl MirBuilder {
 
         self.functions.push(func);
         self.module.functions.push(func_id);
+        self.function_name_map.insert(name, func_id);
 
         func_id
     }
@@ -901,6 +903,7 @@ impl MirBuilder {
 
         self.functions.push(func);
         self.module.functions.push(func_id);
+        self.function_name_map.insert(name, func_id);
 
         func_id
     }

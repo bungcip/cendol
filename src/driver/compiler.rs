@@ -253,45 +253,44 @@ impl CompilerDriver {
         );
 
         self.check_diagnostics_and_return_if_error()?;
+
+        #[cfg(debug_assertions)]
         self.validate_ast_invariants(&ast);
 
         Ok((ast, symbol_table, registry))
     }
 
     fn validate_ast_invariants(&self, ast: &Ast) {
-        #[cfg(debug_assertions)]
-        {
-            use crate::ast::NodeKind;
-            for kind in &ast.kinds {
-                match kind {
-                    NodeKind::BinaryOp(op, ..) if op.is_assignment() => {
-                        panic!(
-                            "ICE: NodeKind::BinaryOp with assignment operator {:?}, use NodeKind::Assignment instead",
-                            op
-                        );
-                    }
-                    NodeKind::Assignment(op, ..) if !op.is_assignment() => {
-                        panic!(
-                            "ICE: NodeKind::Assignment with non-assignment operator {:?}, use NodeKind::BinaryOp instead",
-                            op
-                        );
-                    }
-                    _ => {}
+        use crate::ast::NodeKind;
+        for kind in &ast.kinds {
+            match kind {
+                NodeKind::BinaryOp(op, ..) if op.is_assignment() => {
+                    panic!(
+                        "ICE: NodeKind::BinaryOp with assignment operator {:?}, use NodeKind::Assignment instead",
+                        op
+                    );
                 }
+                NodeKind::Assignment(op, ..) if !op.is_assignment() => {
+                    panic!(
+                        "ICE: NodeKind::Assignment with non-assignment operator {:?}, use NodeKind::BinaryOp instead",
+                        op
+                    );
+                }
+                _ => {}
             }
+        }
 
-            for (i, kind) in ast.kinds.iter().enumerate() {
-                let parent_idx = i + 1;
-                kind.visit_children(|child| {
-                    let child_idx = child.raw() as usize;
-                    if child_idx <= parent_idx {
-                        panic!(
-                            "ICE: AST invariant violation: parent index ({}) >= child index ({}) for node {:?}",
-                            parent_idx, child_idx, kind
-                        );
-                    }
-                });
-            }
+        for (i, kind) in ast.kinds.iter().enumerate() {
+            let parent_idx = i + 1;
+            kind.visit_children(|child| {
+                let child_idx = child.raw() as usize;
+                if child_idx <= parent_idx {
+                    panic!(
+                        "ICE: AST invariant violation: parent index ({}) >= child index ({}) for node {:?}",
+                        parent_idx, child_idx, kind
+                    );
+                }
+            });
         }
     }
 

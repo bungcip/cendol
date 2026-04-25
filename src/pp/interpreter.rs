@@ -74,7 +74,7 @@ impl PPExpr {
         }
     }
 
-    fn get_is_unsigned(&self, pp: &Preprocessor) -> bool {
+    fn get_is_unsigned(&self) -> bool {
         match self {
             PPExpr::Number(n) => n.is_unsigned,
             PPExpr::Identifier(_) => false,
@@ -94,14 +94,14 @@ impl PPExpr {
                 | BinaryOp::LessEqual
                 | BinaryOp::Greater
                 | BinaryOp::GreaterEqual => false,
-                BinaryOp::LShift | BinaryOp::RShift => left.get_is_unsigned(pp),
-                _ => left.get_is_unsigned(pp) || right.get_is_unsigned(pp),
+                BinaryOp::LShift | BinaryOp::RShift => left.get_is_unsigned(),
+                _ => left.get_is_unsigned() || right.get_is_unsigned(),
             },
             PPExpr::Unary(op, operand) => match op {
                 UnaryOp::LogicNot => false,
-                _ => operand.get_is_unsigned(pp),
+                _ => operand.get_is_unsigned(),
             },
-            PPExpr::Conditional(_, true_e, false_e) => true_e.get_is_unsigned(pp) || false_e.get_is_unsigned(pp),
+            PPExpr::Conditional(_, true_e, false_e) => true_e.get_is_unsigned() || false_e.get_is_unsigned(),
         }
     }
 
@@ -226,7 +226,7 @@ impl PPExpr {
         } else {
             false_e.evaluate(pp, span)?
         };
-        let is_unsigned = true_e.get_is_unsigned(pp) || false_e.get_is_unsigned(pp);
+        let is_unsigned = true_e.get_is_unsigned() || false_e.get_is_unsigned();
         Ok(if is_unsigned {
             ExprValue::new(chosen.value, true)
         } else {

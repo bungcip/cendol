@@ -800,21 +800,51 @@ impl PPLexer {
 
             if ch1 == Some(b'/') && ch2 == Some(b'/') {
                 // Line comment, skip to end of line
-                while let Some((ch, _)) = self.next_char() {
-                    if ch == b'\n' {
+                // ⚡ Bolt: Fast path for line comments using memchr
+                loop {
+                    let start = self.position as usize;
+                    if start >= self.buffer.len() {
+                        break;
+                    }
+                    if let Some(pos) = memchr::memchr2(b'\n', b'\\', &self.buffer[start..]) {
+                        self.position += pos as u32;
+                        if self.buffer[self.position as usize] == b'\n' {
+                            self.next_char(); // consume \n properly (updates at_start_of_line)
+                            break;
+                        } else {
+                            // Backslash, use slow path for potential line splicing
+                            self.next_char();
+                        }
+                    } else {
+                        self.position = self.buffer.len() as u32;
                         break;
                     }
                 }
-                // Continue loop
             } else if ch1 == Some(b'/') && ch2 == Some(b'*') {
                 // Block comment, skip to */
-                while let Some((ch, _)) = self.next_char() {
-                    if ch == b'*' && self.peek_char() == Some(b'/') {
-                        self.next_char(); // consume '/'
+                // ⚡ Bolt: Fast path for block comments using memchr
+                loop {
+                    let start = self.position as usize;
+                    if start >= self.buffer.len() {
+                        break;
+                    }
+                    if let Some(pos) = memchr::memchr2(b'*', b'\\', &self.buffer[start..]) {
+                        self.position += pos as u32;
+                        if self.buffer[self.position as usize] == b'*' {
+                            self.position += 1;
+                            if self.peek_char() == Some(b'/') {
+                                self.next_char(); // consume /
+                                break;
+                            }
+                        } else {
+                            // Backslash, use slow path for potential line splicing
+                            self.next_char();
+                        }
+                    } else {
+                        self.position = self.buffer.len() as u32;
                         break;
                     }
                 }
-                // Continue loop
             } else {
                 // Not a comment, restore position
                 self.position = saved_position;

@@ -1,7 +1,7 @@
 use crate::diagnostic::DiagnosticEngine;
 use crate::pp::{HeaderSearch, PPConfig, Preprocessor};
 use crate::source_manager::SourceManager;
-use crate::tests::test_utils::setup_sm_and_diag;
+use crate::tests::test_utils::setup_sm_and_de;
 
 fn create_dummy_preprocessor<'a>(sm: &'a mut SourceManager, diag: &'a mut DiagnosticEngine) -> Preprocessor<'a> {
     let config = PPConfig::default();
@@ -141,7 +141,7 @@ fn test_header_search_include_next() {
 
 #[test]
 fn test_destringize() {
-    let (mut sm, mut diag) = setup_sm_and_diag();
+    let (mut sm, mut diag) = setup_sm_and_de();
     let pp = create_dummy_preprocessor(&mut sm, &mut diag);
 
     // Test case 1: No escape sequences

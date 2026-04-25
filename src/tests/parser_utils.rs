@@ -1,7 +1,7 @@
 use crate::ast::literal::LitVal;
 use crate::ast::{BinaryOp, ParsedBaseType, ParsedBaseTypeRef, UnaryOp};
 use crate::ast::{DeclSpec, DeclaratorRef, ParsedAst, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, TypeSpec};
-use crate::diagnostic::{DiagnosticEngine, ParseError};
+use crate::diagnostic::ParseError;
 use crate::driver::CompilerDriver;
 use crate::driver::artifact::CompilePhase;
 use crate::driver::cli::CompileConfig;
@@ -9,8 +9,8 @@ use crate::lang_options::CStandard;
 use crate::parser::statements::parse_compound_statement;
 use crate::parser::{BindingPower, Lexer, Parser, declarations, statements};
 use crate::pp::Preprocessor;
-use crate::source_manager::{FileKind, SourceManager};
-use crate::tests::test_utils;
+use crate::source_manager::FileKind;
+use crate::tests::test_utils::setup_sm_and_de;
 use serde::Serialize;
 
 /// Resolved AST node kind for testing - replaces NodeRef with actual content
@@ -232,8 +232,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
                 .init_declarators
                 .iter()
                 .map(|init_decl| {
-                    let name =
-                        extract_declarator_name(ast, init_decl.declarator).unwrap_or_else(|| "<unnamed>".to_string());
+                    let name = extract_declarator_name(ast, init_decl.declarator);
                     let kind_str = extract_declarator_kind(ast, init_decl.declarator);
                     let kind = if kind_str == "identifier" { None } else { Some(kind_str) };
                     let initializer = init_decl
@@ -353,7 +352,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
         }
         ParsedNodeKind::FunctionDef(def) => {
             let specifiers = resolve_specs(ast, &def.specifiers);
-            let name = extract_declarator_name(ast, def.declarator).unwrap_or_else(|| "<unnamed>".to_string());
+            let name = extract_declarator_name(ast, def.declarator);
             let kind_str = extract_declarator_kind(ast, def.declarator);
             let kind = if kind_str == "identifier" { None } else { Some(kind_str) };
 
@@ -376,10 +375,10 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
     }
 }
 
-fn extract_declarator_name(ast: &ParsedAst, declarator: DeclaratorRef) -> Option<String> {
+fn extract_declarator_name(ast: &ParsedAst, declarator: DeclaratorRef) -> String {
     let declarator = ast.parsed_types.get_decl(declarator);
     match declarator {
-        ParsedDeclarator::Identifier(name) => name.map(|n| n.to_string()),
+        ParsedDeclarator::Identifier(name) => name.map(|n| n.to_string()).unwrap_or_else(|| "<unnamed>".to_string()),
         ParsedDeclarator::Pointer { inner, .. } => extract_declarator_name(ast, *inner),
         ParsedDeclarator::Array { inner, .. } => extract_declarator_name(ast, *inner),
         ParsedDeclarator::Function { inner, .. } => extract_declarator_name(ast, *inner),
@@ -533,8 +532,7 @@ where
     F: FnOnce(&mut Parser<'_, '_, '_>) -> T,
 {
     let config = CompileConfig::from_virtual_file(source.to_string(), CompilePhase::Parse);
-    let mut de = DiagnosticEngine::default();
-    let mut sm = SourceManager::new();
+    let (mut sm, mut de) = setup_sm_and_de();
     let source_id = sm.add_buffer(source.as_bytes().to_vec(), "test.c", None, FileKind::Real);
 
     let mut preprocessor = Preprocessor::new(&mut sm, &mut de, &config.preprocessor);
@@ -567,25 +565,12 @@ pub(crate) fn setup_declaration(source: &str) -> ResolvedNodeKind {
 }
 
 pub(crate) fn setup_declaration_with_std(source: &str, std: CStandard) -> ResolvedNodeKind {
-    let phase = CompilePhase::Parse;
-    let mut config = CompileConfig::from_virtual_file(source.to_string(), phase);
-    config.lang_options.c_standard = std;
-    let mut driver = CompilerDriver::from_config(config);
-    let out = driver.run_pipeline(phase).expect("Pipeline failed");
-    let first = out.units.values().next().unwrap();
-    let ast = first.parsed_ast.clone().unwrap();
-    let root = ast.get_root();
-
-    if let ParsedNodeKind::TranslationUnit(decls) = &ast.get_node(root).kind {
-        // Find the actual declaration among possibly dummy/semicolon nodes
-        for &node in decls {
-            if !matches!(ast.get_node(node).kind, ParsedNodeKind::Dummy) {
-                return resolve_node(&ast, node);
-            }
-        }
-        panic!("No declaration found in translation unit");
-    } else {
-        panic!("Expected translation unit");
+    match setup_translation_unit_with_std(source, std) {
+        ResolvedNodeKind::TranslationUnit(nodes) => nodes
+            .into_iter()
+            .find(|n| !matches!(n, ResolvedNodeKind::Empty))
+            .expect("No declaration found in translation unit"),
+        _ => panic!("Expected translation unit"),
     }
 }
 
@@ -618,12 +603,17 @@ pub(crate) fn setup_compound(source: &str) -> ResolvedNodeKind {
 }
 
 pub(crate) fn setup_translation_unit(source: &str) -> ResolvedNodeKind {
+    setup_translation_unit_with_std(source, CStandard::C11)
+}
+
+pub(crate) fn setup_translation_unit_with_std(source: &str, std: CStandard) -> ResolvedNodeKind {
     let phase = CompilePhase::Parse;
-    let (_, out) = test_utils::run_pipeline(source, phase);
-    let mut out = out.unwrap();
-    let first = out.units.first_mut().unwrap();
-    let artifact = first.1;
-    let ast = artifact.parsed_ast.clone().unwrap();
+    let mut config = CompileConfig::from_virtual_file(source.to_string(), phase);
+    config.lang_options.c_standard = std;
+    let mut driver = CompilerDriver::from_config(config);
+    let out = driver.run_pipeline(phase).expect("Pipeline failed");
+    let first = out.units.values().next().unwrap();
+    let ast = first.parsed_ast.clone().unwrap();
     let root = ast.get_root();
     resolve_node(&ast, root)
 }

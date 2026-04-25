@@ -1,19 +1,18 @@
 use crate::ast::NameId;
 use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix, LitRef, LitVal, StrPrefix};
-use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::CStandard;
 use crate::parser::Lexer;
 use crate::parser::lexer::TokenKind;
 use crate::pp::Preprocessor;
 use crate::pp::types::PPConfig;
-use crate::source_manager::{FileKind, SourceManager};
+use crate::source_manager::FileKind;
+use crate::tests::test_utils::setup_sm_and_de;
 
 fn setup_lexer(input: &str) -> Vec<TokenKind> {
-    let mut sm = SourceManager::new();
-    let mut diag = DiagnosticEngine::default();
+    let (mut sm, mut de) = setup_sm_and_de();
     let file_id = sm.add_buffer(input.as_bytes().to_vec(), "test.c", None, FileKind::Synthetic);
     let config = PPConfig::default();
-    let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
+    let mut pp = Preprocessor::new(&mut sm, &mut de, &config);
     pp.start_processing(file_id);
     let mut lexer = Lexer::new(&mut pp, CStandard::C23);
     let mut tokens = Vec::new();

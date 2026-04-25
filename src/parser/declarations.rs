@@ -413,7 +413,7 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
             let initializer = if parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
                 parse_designated_initializer(parser)?
             } else {
-                let inner = if parser.is_token(TokenKind::LeftBrace) {
+                let initializer = if parser.is_token(TokenKind::LeftBrace) {
                     parse_initializer(parser)?
                 } else {
                     parser.parse_expr_assignment()?
@@ -421,7 +421,7 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
 
                 ParsedDesignatedInitializer {
                     designation: Vec::new().into_boxed_slice(),
-                    initializer: inner,
+                    initializer,
                 }
             };
 
@@ -441,11 +441,7 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
 
 /// Parse designated initializer
 fn parse_designated_initializer(parser: &mut Parser) -> Result<ParsedDesignatedInitializer, ParseError> {
-    let designation = if parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
-        parse_designation(parser)?
-    } else {
-        Vec::new().into_boxed_slice()
-    };
+    let designation = parse_designation(parser)?;
 
     parser.expect(TokenKind::Assign)?;
     let initializer = parse_initializer(parser)?;
@@ -580,21 +576,17 @@ pub(crate) fn parse_c23_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, 
             if parser.accept(TokenKind::LeftParen).is_some() {
                 let mut depth = 1;
                 while depth > 0 && !parser.at_eof() {
-                    if parser.is_token(TokenKind::LeftParen) {
+                    let token = parser.advance().unwrap();
+                    if token.kind == TokenKind::LeftParen {
                         depth += 1;
-                    } else if parser.is_token(TokenKind::RightParen) {
+                    } else if token.kind == TokenKind::RightParen {
                         depth -= 1;
                     }
-                    parser.advance();
                 }
             }
             specs.push(DeclSpec::Attribute);
         } else {
-            // Empty attribute or unexpected token
-            if !parser.is_token(TokenKind::RightBracket) && !parser.is_token(TokenKind::Comma) {
-                // Skip unexpected token to avoid infinite loop
-                parser.advance();
-            }
+            parser.advance();
         }
     }
 
@@ -608,21 +600,15 @@ pub(crate) fn parse_c23_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, 
 pub(crate) fn parse_asm(parser: &mut Parser) -> Result<(), ParseError> {
     parser.expect(TokenKind::Asm)?;
     parser.expect(TokenKind::LeftParen)?;
-
     let mut depth = 1;
-    while let Some(token) = parser.try_current_token() {
-        match token.kind {
-            TokenKind::LeftParen => depth += 1,
-            TokenKind::RightParen => {
-                depth -= 1;
-                if depth == 0 {
-                    parser.advance();
-                    break;
-                }
-            }
-            _ => {}
+
+    while depth > 0 && !parser.at_eof() {
+        let token = parser.advance().unwrap();
+        if token.kind == TokenKind::LeftParen {
+            depth += 1;
+        } else if token.kind == TokenKind::RightParen {
+            depth -= 1;
         }
-        parser.advance();
     }
     Ok(())
 }

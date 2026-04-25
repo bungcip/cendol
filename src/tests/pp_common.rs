@@ -4,7 +4,7 @@ use crate::diagnostic::Diagnostic;
 use crate::pp::pp_lexer::PPLexer;
 use crate::pp::*;
 use crate::source_manager::{FileKind, SourceManager};
-use crate::tests::test_utils::setup_sm_and_diag;
+use crate::tests::test_utils::setup_sm_and_de;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -105,7 +105,7 @@ fn setup_multi_file_pp_with_diagnostics_raw(
     // Initialize logging for tests
     let _ = env_logger::try_init();
 
-    let (mut sm, mut diag) = setup_sm_and_diag();
+    let (mut sm, mut diag) = setup_sm_and_de();
     let config = config.unwrap_or_else(|| PPConfig {
         max_include_depth: 100,
         ..Default::default()

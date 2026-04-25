@@ -9,10 +9,11 @@ fn setup_driver(source: &str, phase: CompilePhase) -> CompilerDriver {
     CompilerDriver::from_config(config)
 }
 
-pub(crate) fn setup_sm_and_diag() -> (SourceManager, DiagnosticEngine) {
-    let source_manager = SourceManager::new();
-    let diagnostics = DiagnosticEngine::default();
-    (source_manager, diagnostics)
+/// provide default SourceManager & DiagnosticEngine
+pub(crate) fn setup_sm_and_de() -> (SourceManager, DiagnosticEngine) {
+    let sm = SourceManager::new();
+    let de = DiagnosticEngine::default();
+    (sm, de)
 }
 
 pub(crate) fn run_pipeline(source: &str, phase: CompilePhase) -> (CompilerDriver, Result<PipelineOutputs, String>) {

@@ -3,7 +3,7 @@ use crate::pp::{PPConfig, PPTokenFlags, PPTokenKind, Preprocessor, dumper::PPDum
 use crate::source_manager::FileKind;
 use crate::test_tokens;
 use crate::tests::pp_common::{create_test_pp_lexer, setup_pp_snapshot, setup_pp_with_sm_and_diagnostics};
-use crate::tests::test_utils::setup_sm_and_diag;
+use crate::tests::test_utils::setup_sm_and_de;
 
 // Lexer basic tests
 #[test]
@@ -449,7 +449,7 @@ fn test_u8_char_literal() {
 }
 
 fn dump_pp_output(src: &str, suppress_line_markers: bool) -> String {
-    let (mut sm, mut diag) = setup_sm_and_diag();
+    let (mut sm, mut diag) = setup_sm_and_de();
     let config = PPConfig::default();
     let source_id = sm.add_buffer(src.as_bytes().to_vec(), "<test>", None, FileKind::Real);
 

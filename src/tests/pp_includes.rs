@@ -1,7 +1,7 @@
 use crate::ast::StringId;
 use crate::pp::{PPConfig, Preprocessor};
 use crate::tests::pp_common::setup_multi_file_pp_snapshot;
-use crate::tests::test_utils::setup_sm_and_diag;
+use crate::tests::test_utils::setup_sm_and_de;
 use std::fs::File;
 use std::io::Write;
 use tempfile::TempDir;
@@ -69,7 +69,7 @@ fn test_include_next_quoted() {
     config.quoted_include_paths.push(dir2.path().to_path_buf());
     config.quoted_include_paths.push(dir1.path().to_path_buf());
 
-    let (mut sm, mut diag) = setup_sm_and_diag();
+    let (mut sm, mut diag) = setup_sm_and_de();
     let source_id = sm.add_file(&main_path, None).unwrap();
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let _ = pp.process(source_id, &config).unwrap();
@@ -106,7 +106,7 @@ fn test_include_next_angled() {
     config.angled_include_paths.push(dir2.path().to_path_buf());
     config.angled_include_paths.push(dir1.path().to_path_buf());
 
-    let (mut sm, mut diag) = setup_sm_and_diag();
+    let (mut sm, mut diag) = setup_sm_and_de();
     let source_id = sm.add_file(&main_path, None).unwrap();
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let _ = pp.process(source_id, &config).unwrap();
@@ -135,7 +135,7 @@ fn test_include_next_builtin() {
     let mut config = PPConfig::default();
     config.angled_include_paths.push(dir.path().to_path_buf());
 
-    let (mut sm, mut diag) = setup_sm_and_diag();
+    let (mut sm, mut diag) = setup_sm_and_de();
     let source_id = sm.add_file(&main_path, None).unwrap();
     let mut pp = Preprocessor::new(&mut sm, &mut diag, &config);
     let _ = pp.process(source_id, &config).unwrap();

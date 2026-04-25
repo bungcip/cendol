@@ -1,4 +1,4 @@
-use crate::tests::parser_utils::{setup_declaration, setup_translation_unit};
+use crate::tests::parser_utils::{setup_declaration, setup_translation_unit, setup_translation_unit_with_std};
 
 #[test]
 fn test_peek_past_attribute_exhaustive() {
@@ -213,4 +213,15 @@ fn test_pointer_qualifiers_coverage() {
         - name: p
           kind: pointer to pointer
     ");
+}
+
+#[test]
+fn test_mega_coverage_declarations() {
+    // Hits line 111-112 (attributes after declarator), 581 (depth), 591 (unexpected C23 tokens)
+    let source = "int x [[maybe_unused]] [[attr((1))]] [[123]], y __asm__(\"y\") [[maybe_unused]] = 1;";
+    let _ = setup_translation_unit_with_std(source, crate::lang_options::CStandard::C23);
+
+    // Hits parse_attribute: aligned(int), __aligned__(long), unknown, noreturn, packed, and _ => advance
+    let source2 = "int z __attribute__((aligned(int), __aligned__(long), unknown(((1))), noreturn, packed, 123, ++));";
+    let _ = setup_declaration(source2);
 }

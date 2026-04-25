@@ -324,7 +324,7 @@ pub enum BuiltinType {
 }
 
 impl BuiltinType {
-    fn from_u32(v: u32) -> Option<Self> {
+    pub(crate) fn from_u32(v: u32) -> Option<Self> {
         match v {
             1 => Some(Self::Void),
             2 => Some(Self::Bool),

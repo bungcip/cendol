@@ -491,21 +491,26 @@ impl TypeRegistry {
 
     pub(crate) fn is_char_type(&self, mut ty: TypeRef) -> bool {
         loop {
-            // Pointers and arrays are never char types (only 'char', 'signed char', 'unsigned char' are).
-            if ty.is_pointer() || ty.is_array() {
-                return false;
-            }
-
-            // Fast path for builtins (handles both registry and simple TypeRefs).
-            // Aliases have builtin() == None, so they will fall through to registry lookup.
-            if let Some(b) = ty.builtin() {
-                return b.is_char();
-            }
-
-            // Must be a registry type; resolve aliases to find the underlying type.
-            match &self.types[ty.index()].kind {
-                TypeKind::Alias(inner) => ty = *inner,
-                TypeKind::Builtin(b) => return b.is_char(),
+            // Bolt ⚡: Use TypeClass for fast dispatch to avoid redundant bitfield decoding.
+            // This optimization reduces analysis time by skipping registry lookups for non-char types.
+            match ty.class() {
+                TypeClass::Builtin => {
+                    if let Some(b) = BuiltinType::from_u32(ty.base()) {
+                        return b.is_char();
+                    }
+                    // Fallback for registry-backed builtins (e.g. Error or synthetic types).
+                    match &self.types[ty.index()].kind {
+                        TypeKind::Builtin(b) => return b.is_char(),
+                        _ => return false,
+                    }
+                }
+                TypeClass::Alias => {
+                    if let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
+                        ty = *inner;
+                    } else {
+                        return false;
+                    }
+                }
                 _ => return false,
             }
         }
@@ -1739,32 +1744,47 @@ impl TypeRegistry {
 
     pub(crate) fn is_complete(&self, mut ty: TypeRef) -> bool {
         loop {
-            // Pointers (inline or registry) are always complete.
-            if ty.is_pointer() {
-                return true;
-            }
-
-            if ty.is_inline_array() {
-                // Inline arrays have constant size and complete element types (as they are Simple).
-                return true;
-            }
-
-            // Fast path for non-alias builtins.
-            if let Some(b) = ty.builtin() {
-                return b != BuiltinType::Void;
-            }
-
-            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations in hot loops.
-            match &self.types[ty.index()].kind {
-                TypeKind::Alias(inner) => ty = *inner,
-                TypeKind::Record { is_complete, .. } | TypeKind::Enum { is_complete, .. } => return *is_complete,
-                TypeKind::Array { element_type, size } => {
-                    if matches!(size, ArraySizeType::Incomplete) {
-                        return false;
+            // Bolt ⚡: Use TypeClass for fast dispatch to avoid redundant bitfield decoding.
+            // This optimization reduces analysis time by providing early exits for common complete types.
+            match ty.class() {
+                TypeClass::Pointer => return true,
+                TypeClass::Array => {
+                    if ty.array_len().is_some() {
+                        return true;
                     }
-                    ty = *element_type;
+                    if let TypeKind::Array { element_type, size } = &self.types[ty.index()].kind {
+                        if matches!(size, ArraySizeType::Incomplete) {
+                            return false;
+                        }
+                        ty = *element_type;
+                    } else {
+                        return true;
+                    }
                 }
-                TypeKind::Builtin(BuiltinType::Void) => return false,
+                TypeClass::Builtin => {
+                    if let Some(b) = BuiltinType::from_u32(ty.base()) {
+                        return b != BuiltinType::Void;
+                    }
+                    // Handle NullptrT which is also TypeClass::Builtin but not in BuiltinType enum.
+                    return match &self.types[ty.index()].kind {
+                        TypeKind::NullptrT => true,
+                        TypeKind::Builtin(BuiltinType::Void) => false,
+                        _ => true,
+                    };
+                }
+                TypeClass::Record | TypeClass::Enum => {
+                    return match &self.types[ty.index()].kind {
+                        TypeKind::Record { is_complete, .. } | TypeKind::Enum { is_complete, .. } => *is_complete,
+                        _ => true,
+                    };
+                }
+                TypeClass::Alias => {
+                    if let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
+                        ty = *inner;
+                    } else {
+                        return true;
+                    }
+                }
                 _ => return true,
             }
         }
@@ -1810,43 +1830,59 @@ impl TypeRegistry {
 
     pub(crate) fn is_variably_modified(&self, mut ty: TypeRef) -> bool {
         loop {
-            if ty.is_inline_pointer() {
-                ty = self.reconstruct_pointee(ty);
-                continue;
-            }
-            if ty.is_inline_array() {
-                // Inline arrays always have constant size.
-                ty = self.reconstruct_element(ty);
-                continue;
-            }
-
-            // Non-alias builtins are never variably modified.
-            if ty.builtin().is_some() {
-                return false;
-            }
-
-            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
-            match &self.types[ty.index()].kind {
-                TypeKind::Alias(inner) => ty = *inner,
-                TypeKind::Array { element_type, size } => {
-                    if matches!(size, ArraySizeType::Variable(_)) {
-                        return true;
+            // Bolt ⚡: Use TypeClass for fast dispatch to avoid redundant bitfield decoding.
+            // This optimization reduces analysis time by early-exiting for types that are never variably modified.
+            match ty.class() {
+                TypeClass::Builtin | TypeClass::Enum | TypeClass::Record => return false,
+                TypeClass::Pointer => {
+                    if ty.is_inline_pointer() {
+                        ty = self.reconstruct_pointee(ty);
+                    } else if let TypeKind::Pointer { pointee } = &self.types[ty.index()].kind {
+                        ty = pointee.ty();
+                    } else {
+                        return false;
                     }
-                    ty = *element_type;
                 }
-                TypeKind::Pointer { pointee } => ty = pointee.ty(),
-                TypeKind::Complex { base_type } => ty = *base_type,
-                TypeKind::Function {
-                    return_type,
-                    parameters,
-                    ..
-                } => {
-                    if self.is_variably_modified(*return_type) {
-                        return true;
+                TypeClass::Array => {
+                    if ty.is_inline_array() {
+                        ty = self.reconstruct_element(ty);
+                    } else if let TypeKind::Array { element_type, size } = &self.types[ty.index()].kind {
+                        if matches!(size, ArraySizeType::Variable(_)) {
+                            return true;
+                        }
+                        ty = *element_type;
+                    } else {
+                        return false;
                     }
-                    return parameters.iter().any(|p| self.is_variably_modified(p.param_type.ty()));
                 }
-                _ => return false,
+                TypeClass::Complex => {
+                    if let TypeKind::Complex { base_type } = &self.types[ty.index()].kind {
+                        ty = *base_type;
+                    } else {
+                        return false;
+                    }
+                }
+                TypeClass::Function => {
+                    if let TypeKind::Function {
+                        return_type,
+                        parameters,
+                        ..
+                    } = &self.types[ty.index()].kind
+                    {
+                        if self.is_variably_modified(*return_type) {
+                            return true;
+                        }
+                        return parameters.iter().any(|p| self.is_variably_modified(p.param_type.ty()));
+                    }
+                    return false;
+                }
+                TypeClass::Alias => {
+                    if let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
+                        ty = *inner;
+                    } else {
+                        return false;
+                    }
+                }
             }
         }
     }

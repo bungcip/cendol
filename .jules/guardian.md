@@ -219,3 +219,8 @@ Action: Ensure that `_Generic` selection continues checking all associations eve
 
 Learning: C11 prohibits 'static' storage class for function declarations in block scope. Furthermore, 'extern' function declarations in block scope can be missed by a global 'pre-declare' pass that only scans top-level symbols. If these block-scope declarations are referenced, the MIR generator must handle them lazily by declaring the function on-the-fly using symbol table metadata, otherwise it may encounter unexpected 'None' values when resolving identifiers to function addresses.
 Action: Enforce storage class constraints for block-scope functions in semantic lowering and implement lazy, metadata-driven function declaration in the MIR generator to ensure robust handling of all valid C scope-linkage combinations.
+
+2026-04-15 - [Modifiable LValue Completeness Constraint]
+
+Learning: C11 6.3.2.1p1 requires the left operand of an assignment to be a modifiable lvalue, which specifically prohibits objects with incomplete types. While incomplete arrays decay to pointers (making them complete), other incomplete types like 'void' (via dereference) or forward-declared structures remain incomplete and must be rejected during semantic analysis of assignments.
+Action: Enforce completeness checks in 'check_lvalue_and_modifiable' for all lvalues to ensure standard compliance for assignments and other mutating operations.

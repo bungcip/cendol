@@ -224,3 +224,8 @@ Action: Enforce storage class constraints for block-scope functions in semantic 
 
 Learning: C11 6.3.2.1p1 requires the left operand of an assignment to be a modifiable lvalue, which specifically prohibits objects with incomplete types. While incomplete arrays decay to pointers (making them complete), other incomplete types like 'void' (via dereference) or forward-declared structures remain incomplete and must be rejected during semantic analysis of assignments.
 Action: Enforce completeness checks in 'check_lvalue_and_modifiable' for all lvalues to ensure standard compliance for assignments and other mutating operations.
+
+2026-04-20 - [Alignment Specifier Redeclaration Constraints]
+
+Learning: C11 §6.7.5p5 mandates that if any declaration of an identifier has an alignment specifier, the first declaration MUST specify an alignment, and it must be at least as strict as any subsequent one. Furthermore, if any declaration has it, every other declaration must either omit it or match the first one exactly. Cendol previously allowed adding alignment in subsequent declarations or mismatched alignments if they were specified later.
+Action: Enforce alignment consistency during global symbol merging in the symbol table, ensuring that first declarations are not "upgraded" with alignment and that subsequent alignment specifiers match the initial one.

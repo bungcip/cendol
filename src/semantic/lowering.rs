@@ -483,7 +483,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     Ok(sym) => {
                         constant_syms.push(sym);
                     }
-                    Err(SymbolTableError::InvalidRedefinition { existing, .. }) => {
+                    Err(e) => {
+                        let existing = match e {
+                            SymbolTableError::InvalidRedefinition { existing, .. } => existing,
+                            SymbolTableError::AlignmentMismatch { existing, .. } => existing,
+                            SymbolTableError::MissingInitialAlignment { existing, .. } => existing,
+                        };
                         let first_def = self.symbol_table.get_symbol(existing).def_span;
                         self.report_error(node.span, SemanticError::Redefinition { name: *name, first_def });
                         constant_syms.push(existing); // keep a reference so index stays aligned
@@ -1056,7 +1061,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             span,
         ) {
             Ok(sym) => sym,
-            Err(SymbolTableError::InvalidRedefinition { existing, .. }) => {
+            Err(e) => {
+                let existing = match e {
+                    SymbolTableError::InvalidRedefinition { existing, .. } => existing,
+                    SymbolTableError::AlignmentMismatch { existing, .. } => existing,
+                    SymbolTableError::MissingInitialAlignment { existing, .. } => existing,
+                };
                 let entry = self.symbol_table.get_symbol(existing);
                 if entry.def_state == DefinitionState::Defined {
                     let first_def = entry.def_span;
@@ -1376,9 +1386,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             self.check_function_specs(spec_info, init.span);
 
-            let symbol = if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) =
-                self.symbol_table.define_typedef(name, final_ty, span)
-            {
+            let symbol = if let Err(e) = self.symbol_table.define_typedef(name, final_ty, span) {
+                let existing = match e {
+                    SymbolTableError::InvalidRedefinition { existing, .. } => existing,
+                    SymbolTableError::AlignmentMismatch { existing, .. } => existing,
+                    SymbolTableError::MissingInitialAlignment { existing, .. } => existing,
+                };
                 let existing_symbol = self.symbol_table.get_symbol(existing);
                 if let SymbolKind::Typedef { aliased_type } = existing_symbol.kind {
                     if aliased_type != final_ty {
@@ -1485,7 +1498,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             span,
         ) {
             Ok(sym) => sym,
-            Err(SymbolTableError::InvalidRedefinition { existing, .. }) => {
+            Err(e) => {
+                let existing = match e {
+                    SymbolTableError::InvalidRedefinition { existing, .. } => existing,
+                    SymbolTableError::AlignmentMismatch { existing, .. } => existing,
+                    SymbolTableError::MissingInitialAlignment { existing, .. } => existing,
+                };
                 let first_def = self.symbol_table.get_symbol(existing).def_span;
                 self.report_error(span, SemanticError::Redefinition { name, first_def });
                 existing
@@ -1670,15 +1688,41 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             symbol: match sym_res {
                 Ok(sym) => sym,
                 Err(SymbolTableError::InvalidRedefinition { existing, .. }) => existing,
+                Err(SymbolTableError::AlignmentMismatch { existing, .. }) => existing,
+                Err(SymbolTableError::MissingInitialAlignment { existing, .. }) => existing,
             },
             init: init_expr,
         };
         self.ast.set_kind(node, NodeKind::VarDecl(var_decl));
 
         // Validation against redefinition or alignment issues
-        if let Err(SymbolTableError::InvalidRedefinition { existing, .. }) = sym_res {
-            let first_def = self.symbol_table.get_symbol(existing).def_span;
-            self.report_error(span, SemanticError::Redefinition { name, first_def });
+        match sym_res {
+            Err(SymbolTableError::InvalidRedefinition { existing, .. }) => {
+                let first_def = self.symbol_table.get_symbol(existing).def_span;
+                self.report_error(span, SemanticError::Redefinition { name, first_def });
+            }
+            Err(SymbolTableError::AlignmentMismatch {
+                existing,
+                existing_align,
+                new_align,
+                ..
+            }) => {
+                let first_def = self.symbol_table.get_symbol(existing).def_span;
+                self.report_error(
+                    span,
+                    SemanticError::MismatchedAlignment {
+                        name,
+                        existing_align,
+                        new_align,
+                        first_def,
+                    },
+                );
+            }
+            Err(SymbolTableError::MissingInitialAlignment { existing, .. }) => {
+                let first_def = self.symbol_table.get_symbol(existing).def_span;
+                self.report_error(span, SemanticError::MissingInitialAlignment { name, first_def });
+            }
+            _ => {}
         }
 
         if !spec_info.is_packed

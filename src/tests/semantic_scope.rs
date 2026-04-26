@@ -383,7 +383,7 @@ fn test_global_variable_alignment_mismatch() {
         _Alignas(8) int foo;
         _Alignas(16) int foo;
     "#;
-    run_fail_with_message(source, "redefinition");
+    run_fail_with_message(source, "alignment of 'foo' (16) does not match the first declaration (8)");
 }
 
 #[test]

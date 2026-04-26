@@ -53,7 +53,9 @@ impl SemanticDiag {
 
         if let Some((message, span)) = match &self.kind {
             SemanticError::Redefinition { first_def, .. }
-            | SemanticError::RedefinitionWithDifferentType { first_def, .. } => {
+            | SemanticError::RedefinitionWithDifferentType { first_def, .. }
+            | SemanticError::MismatchedAlignment { first_def, .. }
+            | SemanticError::MissingInitialAlignment { first_def, .. } => {
                 Some(("previous definition is here", *first_def))
             }
             SemanticError::GenericMultipleDefault { first_def, .. } => {
@@ -100,6 +102,16 @@ pub enum SemanticError {
         name: NameId,
     },
     Redefinition {
+        name: NameId,
+        first_def: SourceSpan,
+    },
+    MismatchedAlignment {
+        name: NameId,
+        existing_align: u16,
+        new_align: u16,
+        first_def: SourceSpan,
+    },
+    MissingInitialAlignment {
         name: NameId,
         first_def: SourceSpan,
     },
@@ -454,6 +466,18 @@ impl SemanticError {
             SemanticError::Redefinition { name, .. } => format!("redefinition of '{}'", name),
             SemanticError::RedefinitionWithDifferentType { name, .. } => {
                 format!("redefinition of '{}' with a different type", name)
+            }
+            SemanticError::MismatchedAlignment {
+                name,
+                new_align,
+                existing_align,
+                ..
+            } => format!(
+                "alignment of '{}' ({}) does not match the first declaration ({})",
+                name, new_align, existing_align
+            ),
+            SemanticError::MissingInitialAlignment { name, .. } => {
+                format!("first declaration of '{}' does not specify an alignment", name)
             }
             SemanticError::TypeMismatch { expected, found } => format!(
                 "type mismatch: expected {}, found {}",

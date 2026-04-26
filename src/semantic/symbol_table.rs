@@ -113,6 +113,17 @@ pub enum SymbolKind {
 pub enum SymbolTableError {
     #[error("Invalid redefinition: symbol '{name}' cannot be redefined")]
     InvalidRedefinition { name: NameId, existing: SymbolRef },
+
+    #[error("Alignment mismatch for '{name}': new alignment {new_align} does not match existing {existing_align}")]
+    AlignmentMismatch {
+        name: NameId,
+        existing: SymbolRef,
+        existing_align: u16,
+        new_align: u16,
+    },
+
+    #[error("Missing alignment for '{name}': first declaration did not specify an alignment")]
+    MissingInitialAlignment { name: NameId, existing: SymbolRef },
 }
 
 use serde::Serialize;
@@ -596,13 +607,17 @@ impl SymbolTable {
             {
                 match (existing_align, new_align) {
                     (Some(a), Some(b)) if a != b => {
-                        return Err(SymbolTableError::InvalidRedefinition { name, existing: sym });
+                        return Err(SymbolTableError::AlignmentMismatch {
+                            name,
+                            existing: sym,
+                            existing_align: *a,
+                            new_align: *b,
+                        });
                     }
-                    (None, Some(b)) => {
-                        // Inherit alignment from new declaration
-                        if let SymbolKind::Variable { alignment, .. } = &mut existing.kind {
-                            *alignment = Some(*b);
-                        }
+                    (None, Some(_)) => {
+                        // C11 6.7.5p5: If any declaration of an identifier has an alignment specifier,
+                        // then the first declaration shall specify an alignment...
+                        return Err(SymbolTableError::MissingInitialAlignment { name, existing: sym });
                     }
                     _ => {}
                 }

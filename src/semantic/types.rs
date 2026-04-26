@@ -604,6 +604,13 @@ impl TypeRef {
         self.class() == TypeClass::Array && self.array_len().is_some()
     }
 
+    /// Returns true if the TypeRef is a simple index into the registry without any modifiers
+    /// (pointers, arrays) or being an inline type.
+    #[inline]
+    pub(crate) fn is_simple_index(self) -> bool {
+        (self.0.get() >> 21) == 0
+    }
+
     #[inline]
     pub(crate) fn is_signed(self) -> bool {
         self.builtin().is_some_and(|b| b.is_signed())

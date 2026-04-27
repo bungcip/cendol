@@ -145,6 +145,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_link_empty_object_files() {
+        let object_files: Vec<std::path::PathBuf> = vec![];
+        let config = LinkConfig::default();
+        assert!(LinkGen::link(&object_files, &config).is_ok());
+    }
+
+    #[test]
     fn test_link_error_display() {
         let err = LinkError::IoError("test error".to_string());
         assert_eq!(format!("{}", err), "IO error: test error");

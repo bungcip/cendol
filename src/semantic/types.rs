@@ -513,6 +513,12 @@ impl TypeRef {
         self.raw()
     }
 
+    /// Returns true if this is a registry-backed type with no inline pointer or array levels.
+    #[inline]
+    pub(crate) fn is_simple_index(self) -> bool {
+        (self.0.get() >> Self::PTR_SHIFT) == 0
+    }
+
     #[inline]
     pub(crate) fn base(self) -> u32 {
         (self.0.get() >> Self::BASE_SHIFT) & Self::BASE_MASK

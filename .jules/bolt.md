@@ -125,3 +125,6 @@
 ## 2026-04-24 - Memoization of Hide-Set Operations
 **Learning:** During macro expansion, Dave Prosser's algorithm frequently performs union and intersection operations on hide-sets. Since hide-set IDs are stable within a translation unit, these O(N) merge operations and subsequent content-based interning are highly redundant when applied to the same pairs of IDs.
 **Action:** Implement memoization caches for `union`, `intersection`, and `insert` operations in the `HideSetTable`. This turns repeated set operations into O(1) hash map lookups on simple ID pairs, significantly reducing preprocessor overhead for complex macros.
+## 2026-11-28 - Fast-path for Terminal Types in Registry Lookups
+**Learning:** The `TypeRegistry::get` method is a central bottleneck as it is called for every type resolution. For common, terminal types (builtins, records, enums), the resolution loop and `TypeClass` dispatch are redundant overhead.
+**Action:** Implement a high-performance fast-path using `is_simple_index()` to identify and return registry-backed terminal types immediately, bypassing the more complex resolution logic for the majority of lookups.

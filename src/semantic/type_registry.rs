@@ -382,6 +382,16 @@ impl TypeRegistry {
     /// Returns Cow because inline types are constructed on the fly.
     #[inline]
     pub(crate) fn get(&self, mut r: TypeRef) -> Cow<'_, Type> {
+        // Bolt ⚡: High-performance fast-path for terminal registry types.
+        // Most types (builtins, records, enums) are neither aliases nor inline types.
+        // Bypassing the loop and TypeClass match for these saves significant overhead.
+        if r.is_simple_index() {
+            let class = r.class();
+            if class != TypeClass::Alias {
+                return Cow::Borrowed(&self.types[r.index()]);
+            }
+        }
+
         loop {
             // Bolt ⚡: Use TypeClass for fast dispatch.
             // This avoids redundant matches and property checks for terminal types.

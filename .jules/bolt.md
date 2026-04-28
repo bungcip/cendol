@@ -125,3 +125,7 @@
 ## 2026-04-24 - Memoization of Hide-Set Operations
 **Learning:** During macro expansion, Dave Prosser's algorithm frequently performs union and intersection operations on hide-sets. Since hide-set IDs are stable within a translation unit, these O(N) merge operations and subsequent content-based interning are highly redundant when applied to the same pairs of IDs.
 **Action:** Implement memoization caches for `union`, `intersection`, and `insert` operations in the `HideSetTable`. This turns repeated set operations into O(1) hash map lookups on simple ID pairs, significantly reducing preprocessor overhead for complex macros.
+
+## 2025-06-20 - UTF-8-Safe String Transformation via Slicing
+**Learning:** Transforming a `&str` by iterating over `as_bytes()` and casting to `char` (e.g., `bytes[i] as char`) is a major correctness bug that corrupts multi-byte UTF-8 sequences.
+**Action:** For performance-critical transformations like line-splice removal, use `memchr` to scan for ASCII triggers, then use string slicing and `push_str` to preserve the integrity of multi-byte UTF-8 sequences between triggers. This is both faster and correct.

@@ -1353,31 +1353,45 @@ impl Iterator for PPLexer {
     }
 }
 
-/// Remove line splices (backslash followed by optional whitespace and newline) from text.
+/// ⚡ Bolt: Optimized and UTF-8-safe line splice removal.
+/// This uses memchr to fast-scan for backslashes and appends slices of the original
+/// string, which is both faster and correctly preserves multi-byte UTF-8 sequences.
 pub(crate) fn de_splice(raw: &str) -> String {
-    let mut result = String::with_capacity(raw.len());
     let bytes = raw.as_bytes();
+
+    let mut result = String::with_capacity(raw.len());
+    let mut last_end = 0;
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\\' {
-            let mut j = i + 1;
-            // Skip whitespace after backslash
-            while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
-                j += 1;
-            }
-            if j < bytes.len() && (bytes[j] == b'\n' || bytes[j] == b'\r') {
-                // Line splice found!
-                if bytes[j] == b'\r' && j + 1 < bytes.len() && bytes[j + 1] == b'\n' {
-                    i = j + 2;
-                } else {
-                    i = j + 1;
-                }
-                continue;
-            }
+
+    while let Some(pos) = memchr::memchr(b'\\', &bytes[i..]) {
+        let backslash_pos = i + pos;
+
+        // Check if it's a splice: \ [ws] \n or \ [ws] \r [\n]
+        let mut j = backslash_pos + 1;
+        while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
+            j += 1;
         }
-        result.push(bytes[i] as char);
-        i += 1;
+
+        if j < bytes.len() && (bytes[j] == b'\n' || bytes[j] == b'\r') {
+            // Found a splice! Append the text before the backslash.
+            result.push_str(&raw[last_end..backslash_pos]);
+
+            // Skip the backslash and the newline (and optional whitespace)
+            if bytes[j] == b'\r' && j + 1 < bytes.len() && bytes[j + 1] == b'\n' {
+                i = j + 2;
+            } else {
+                i = j + 1;
+            }
+            last_end = i;
+        } else {
+            // Not a splice, just a regular backslash.
+            // Continue scanning after this backslash.
+            i = backslash_pos + 1;
+        }
     }
+
+    // Append the remaining part
+    result.push_str(&raw[last_end..]);
     result
 }
 
@@ -1433,6 +1447,27 @@ mod tests {
         let t1 = lexer.next_token().unwrap();
         assert!(matches!(t1.kind, PPTokenKind::Identifier(_)));
         assert_eq!(t1.get_text(), "abcdef");
+    }
+
+    #[test]
+    fn test_de_splice_utf8() {
+        // Simple case: no backslash
+        assert_eq!(de_splice("🦀"), "🦀");
+
+        // Simple splice
+        assert_eq!(de_splice("a\\\nb"), "ab");
+
+        // Splice with multi-byte UTF-8
+        assert_eq!(de_splice("🦀\\\n🐙"), "🦀🐙");
+
+        // Splice with whitespace and Windows line endings
+        assert_eq!(de_splice("abc\\  \r\ndef"), "abcdef");
+
+        // Regular backslash (not a splice)
+        assert_eq!(de_splice("a\\b"), "a\\b");
+
+        // Mixed
+        assert_eq!(de_splice("🦀\\\\\n🐙"), "🦀\\🐙");
     }
 
     #[test]

@@ -361,12 +361,14 @@ impl PPLexer {
 
         let saved_position = self.position;
         let saved_at_start_of_line = self.at_start_of_line;
+        let saved_has_splice = self.has_splice;
 
         let result = self.next_char();
 
         // Restore state
         self.position = saved_position;
         self.at_start_of_line = saved_at_start_of_line;
+        self.has_splice = saved_has_splice;
 
         result.map(|(ch, _)| ch)
     }
@@ -425,6 +427,45 @@ impl PPLexer {
                     token!(PPTokenKind::Hash, 1, token_flags)
                 }
             }
+            b'%' => {
+                let saved_pos = self.position;
+                let saved_at_start = self.at_start_of_line;
+                let saved_has_splice = self.has_splice;
+
+                if consume_if!(b':') {
+                    if self.peek_char() == Some(b'%') {
+                        let inner_saved_pos = self.position;
+                        let inner_saved_at_start = self.at_start_of_line;
+                        let inner_saved_has_splice = self.has_splice;
+                        self.next_char(); // consume '%'
+                        if consume_if!(b':') {
+                            return token!(PPTokenKind::HashHash, 4);
+                        }
+                        // Backtrack from %:% to %:
+                        self.position = inner_saved_pos;
+                        self.at_start_of_line = inner_saved_at_start;
+                        self.has_splice = inner_saved_has_splice;
+                    }
+
+                    // Found %:
+                    let mut token_flags = flags;
+                    if is_at_start_of_line {
+                        token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                        self.in_directive_line = true;
+                    }
+                    return token!(PPTokenKind::Hash, 2, token_flags);
+                } else if consume_if!(b'>') {
+                    return token!(PPTokenKind::RightBrace, 2);
+                } else if consume_if!(b'=') {
+                    return token!(PPTokenKind::ModAssign, 2);
+                }
+
+                // Restore if no digraph found
+                self.position = saved_pos;
+                self.at_start_of_line = saved_at_start;
+                self.has_splice = saved_has_splice;
+                token!(PPTokenKind::Percent, 1)
+            }
             b'+' => {
                 if consume_if!(b'+') {
                     token!(PPTokenKind::Increment, 2)
@@ -459,13 +500,6 @@ impl PPLexer {
                     token!(PPTokenKind::Slash, 1)
                 }
             }
-            b'%' => {
-                if consume_if!(b'=') {
-                    token!(PPTokenKind::ModAssign, 2)
-                } else {
-                    token!(PPTokenKind::Percent, 1)
-                }
-            }
             b'=' => {
                 if consume_if!(b'=') {
                     token!(PPTokenKind::Equal, 2)
@@ -489,6 +523,10 @@ impl PPLexer {
                     }
                 } else if consume_if!(b'=') {
                     token!(PPTokenKind::LessEqual, 2)
+                } else if consume_if!(b':') {
+                    token!(PPTokenKind::LeftBracket, 2)
+                } else if consume_if!(b'%') {
+                    token!(PPTokenKind::LeftBrace, 2)
                 } else {
                     token!(PPTokenKind::Less, 1)
                 }
@@ -535,6 +573,7 @@ impl PPLexer {
             b'.' => 'ellipsis: {
                 let pos_after_first = self.position;
                 let at_start_after_first = self.at_start_of_line;
+                let saved_has_splice = self.has_splice;
                 if self.peek_char() == Some(b'.') {
                     self.next_char(); // Consume second '.'
                     if self.peek_char() == Some(b'.') {
@@ -544,11 +583,18 @@ impl PPLexer {
                     // It was '..', which is not a valid C token. Backtrack to handle it as a single '.'
                     self.position = pos_after_first;
                     self.at_start_of_line = at_start_after_first;
+                    self.has_splice = saved_has_splice;
                 }
                 token!(PPTokenKind::Dot, 1)
             }
             b'?' => token!(PPTokenKind::Question, 1),
-            b':' => token!(PPTokenKind::Colon, 1),
+            b':' => {
+                if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBracket, 2)
+                } else {
+                    token!(PPTokenKind::Colon, 1)
+                }
+            }
             b',' => token!(PPTokenKind::Comma, 1),
             b';' => token!(PPTokenKind::Semicolon, 1),
             b'(' => token!(PPTokenKind::LeftParen, 1),
@@ -593,9 +639,60 @@ impl PPLexer {
             self.next_char();
             self.skip_whitespace_and_comments();
 
-            if let Some(b'#') = self.peek_char() {
-                // Found a directive! Stop skipping.
-                break;
+            match self.peek_char() {
+                Some(b'#') => {
+                    // Check if it's '##' (not a directive) or '#' (a directive)
+                    let saved_pos = self.position;
+                    let saved_asol = self.at_start_of_line;
+                    let saved_splice = self.has_splice;
+                    self.next_char(); // consume '#'
+                    if self.peek_char() != Some(b'#') {
+                        self.position = saved_pos;
+                        self.at_start_of_line = saved_asol;
+                        self.has_splice = saved_splice;
+                        break;
+                    }
+                    self.position = saved_pos;
+                    self.at_start_of_line = saved_asol;
+                    self.has_splice = saved_splice;
+                }
+                Some(b'%') => {
+                    // Check if it's '%:' (a directive) or '%:%:' (not a directive)
+                    let saved_pos = self.position;
+                    let saved_asol = self.at_start_of_line;
+                    let saved_splice = self.has_splice;
+                    self.next_char(); // consume '%'
+                    if self.peek_char() == Some(b':') {
+                        self.next_char(); // consume ':'
+                        let is_hashhash = if self.peek_char() == Some(b'%') {
+                            let pos2 = self.position;
+                            let asol2 = self.at_start_of_line;
+                            let splice2 = self.has_splice;
+                            self.next_char();
+                            if self.peek_char() == Some(b':') {
+                                true
+                            } else {
+                                self.position = pos2;
+                                self.at_start_of_line = asol2;
+                                self.has_splice = splice2;
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        if !is_hashhash {
+                            self.position = saved_pos;
+                            self.at_start_of_line = saved_asol;
+                            self.has_splice = saved_splice;
+                            break;
+                        }
+                    }
+                    self.position = saved_pos;
+                    self.at_start_of_line = saved_asol;
+                    self.has_splice = saved_splice;
+                }
+                _ => {}
             }
 
             // Not a directive, continue skipping from the current position.
@@ -658,6 +755,7 @@ impl PPLexer {
                     if ch == b'u' && next_ch == Some(b'8') {
                         let saved_pos = self.position;
                         let saved_at_start = self.at_start_of_line;
+                        let saved_has_splice = self.has_splice;
                         self.next_char(); // consume '8'
 
                         if self.peek_char() == Some(b'"') {
@@ -668,6 +766,7 @@ impl PPLexer {
                             // Backtrack if it's not u8" or u8'
                             self.position = saved_pos;
                             self.at_start_of_line = saved_at_start;
+                            self.has_splice = saved_has_splice;
                             Some(self.lex_identifier(start_pos, ch, flags))
                         }
                     } else {
@@ -684,17 +783,20 @@ impl PPLexer {
             b'\\' => {
                 let saved_pos = self.position;
                 let saved_at_start = self.at_start_of_line;
+                let saved_has_splice = self.has_splice;
 
                 if self.lex_ucn(false).is_some() {
                     // Valid UCN start. Backtrack to just after `\` so lex_identifier can re-parse it.
                     self.position = saved_pos;
                     self.at_start_of_line = saved_at_start;
+                    self.has_splice = saved_has_splice;
                     Some(self.lex_identifier(start_pos, ch, flags))
                 } else {
                     // Not a UCN or invalid.
                     // Backtrack to just after `\` (saved_pos).
                     self.position = saved_pos;
                     self.at_start_of_line = saved_at_start;
+                    self.has_splice = saved_has_splice;
                     Some(PPToken::new(
                         PPTokenKind::Unknown,
                         flags,
@@ -1101,6 +1203,8 @@ impl PPLexer {
 
             // Fallback for tricky cases (Splices, UCNs, UTF-8)
             let saved_pos = self.position;
+            let saved_at_start = self.at_start_of_line;
+            let saved_has_splice = self.has_splice;
             let (ch, _) = match self.next_char() {
                 Some(res) => res,
                 None => break,
@@ -1147,6 +1251,8 @@ impl PPLexer {
 
             // Not part of identifier, backtrack!
             self.position = saved_pos;
+            self.at_start_of_line = saved_at_start;
+            self.has_splice = saved_has_splice;
             break;
         }
 

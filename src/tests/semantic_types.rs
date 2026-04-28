@@ -715,3 +715,18 @@ fn test_is_value_fitting_coverage() {
     assert!(registry.is_value_fitting(i32::MIN as i64, ty_signed_int));
     assert!(!registry.is_value_fitting(u32::MAX as i64, ty_signed_int));
 }
+
+#[test]
+fn test_to_unsigned() {
+    use crate::semantic::types::BuiltinType;
+    assert_eq!(BuiltinType::Char.to_unsigned(), BuiltinType::UChar);
+    assert_eq!(BuiltinType::SChar.to_unsigned(), BuiltinType::UChar);
+    assert_eq!(BuiltinType::Short.to_unsigned(), BuiltinType::UShort);
+    assert_eq!(BuiltinType::Int.to_unsigned(), BuiltinType::UInt);
+    assert_eq!(BuiltinType::Signed.to_unsigned(), BuiltinType::UInt);
+    assert_eq!(BuiltinType::Long.to_unsigned(), BuiltinType::ULong);
+    assert_eq!(BuiltinType::LongLong.to_unsigned(), BuiltinType::ULongLong);
+    // Already unsigned or not signed integer type shouldn't change
+    assert_eq!(BuiltinType::UInt.to_unsigned(), BuiltinType::UInt);
+    assert_eq!(BuiltinType::Float.to_unsigned(), BuiltinType::Float);
+}

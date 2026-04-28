@@ -224,3 +224,8 @@ Action: Enforce storage class constraints for block-scope functions in semantic 
 
 Learning: C11 6.3.2.1p1 requires the left operand of an assignment to be a modifiable lvalue, which specifically prohibits objects with incomplete types. While incomplete arrays decay to pointers (making them complete), other incomplete types like 'void' (via dereference) or forward-declared structures remain incomplete and must be rejected during semantic analysis of assignments.
 Action: Enforce completeness checks in 'check_lvalue_and_modifiable' for all lvalues to ensure standard compliance for assignments and other mutating operations.
+
+2026-04-16 - [Variably Modified Type Linkage and Storage Constraints]
+
+Learning: C11 6.7.6.2p2 mandates that objects with variably modified (VM) types must have no linkage and must not have static or thread storage duration. This applies to all VM types, including pointers to VLAs, not just direct VLAs. File-scope declarations (regardless of 'static') and block-scope 'extern' or 'static'/'_Thread_local' declarations of VM types are constraint violations.
+Action: Always use `TypeRegistry::is_variably_modified` to enforce storage and linkage constraints on declarations, and distinguish between linkage and storage duration when reporting diagnostics for these violations.

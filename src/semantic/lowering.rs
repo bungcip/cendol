@@ -1567,13 +1567,25 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.report_error(span, SemanticError::ThreadLocalBlockScopeRequiresStaticOrExtern);
         }
 
-        // C11 6.7.6.2p2: VLA shall not have static storage duration.
-        // Variably modified types (like pointers to VLAs) ARE allowed.
-        if (is_global || spec_info.storage == Some(StorageClass::Static))
-            && qt.is_array()
-            && self.registry.is_variably_modified(qt.ty())
-        {
-            self.report_error(span, SemanticError::VlaAtFileScope);
+        // C11 6.7.6.2p2: "If an identifier is declared to be an object with static or thread storage duration,
+        // it shall not have a variably modified type. If an identifier is declared as having a variably
+        // modified type, it shall ... have no linkage"
+        if self.registry.is_variably_modified(qt.ty()) {
+            if spec_info.is_thread_local {
+                self.report_error(span, SemanticError::VmThreadStorage);
+            } else if is_global || spec_info.storage == Some(StorageClass::Static) {
+                self.report_error(span, SemanticError::VmStaticStorage);
+            }
+
+            let has_linkage = if is_global {
+                spec_info.storage != Some(StorageClass::Static)
+            } else {
+                spec_info.storage == Some(StorageClass::Extern)
+            };
+
+            if has_linkage {
+                self.report_error(span, SemanticError::VmHasLinkage);
+            }
         }
 
         if spec_info.storage == Some(StorageClass::Register) && spec_info.alignment.is_some() {

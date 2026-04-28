@@ -1599,8 +1599,9 @@ impl TypeRegistry {
                 }
                 for (p_a, p_b) in params_a.iter().zip(params_b.iter()) {
                     // Ignore top-level qualifiers on parameters (C11 6.7.6.3p15)
-                    let type_a = QualType::unqualified(p_a.param_type.ty());
-                    let type_b = QualType::unqualified(p_b.param_type.ty());
+                    // Note: strip_for_parameter() preserves _Atomic.
+                    let type_a = p_a.param_type.strip_for_parameter();
+                    let type_b = p_b.param_type.strip_for_parameter();
                     if !self.is_compatible(type_a, type_b) {
                         return false;
                     }
@@ -1735,8 +1736,9 @@ impl TypeRegistry {
 
         let mut composite_params = Vec::with_capacity(params_a.len());
         for (p_a, p_b) in params_a.iter().zip(params_b.iter()) {
-            let type_a = QualType::unqualified(p_a.param_type.ty());
-            let type_b = QualType::unqualified(p_b.param_type.ty());
+            // C11 6.7.6.3p15: strip qualifiers for compatibility check
+            let type_a = p_a.param_type.strip_for_parameter();
+            let type_b = p_b.param_type.strip_for_parameter();
             let cp = self.composite_type(type_a, type_b)?;
 
             composite_params.push(FunctionParameter {

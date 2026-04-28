@@ -734,6 +734,13 @@ impl QualType {
         Self::unqualified(self.ty())
     }
 
+    /// Strip qualifiers that are ignored for function parameter compatibility (const, volatile, restrict).
+    /// Atomic is NOT ignored. C11 6.7.6.3p15.
+    #[inline]
+    pub(crate) fn strip_for_parameter(self) -> Self {
+        Self::new(self.ty(), self.qualifiers() & TypeQualifiers::ATOMIC)
+    }
+
     #[inline]
     pub(crate) fn qualifiers(self) -> TypeQualifiers {
         TypeQualifiers::from_bits_truncate((self.0.get() >> Self::QUAL_SHIFT) as u8)

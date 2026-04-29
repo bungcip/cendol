@@ -137,9 +137,6 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
         if trx.parser.is_token(TokenKind::Attribute) {
             let attrs = super::declarations::parse_attribute(trx.parser)?;
             specifiers.extend(attrs);
-        } else if trx.parser.at_c23_attribute_start() {
-            let attrs = super::declarations::parse_c23_attribute(trx.parser)?;
-            specifiers.extend(attrs);
         } else if trx.parser.is_token(TokenKind::Asm) {
             let _ = super::declarations::parse_asm(trx.parser);
         } else {

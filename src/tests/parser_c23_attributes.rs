@@ -83,3 +83,24 @@ fn test_c23_attribute_fail_c11() {
         CStandard::C11,
     );
 }
+
+#[test]
+fn test_attribute_coverage() {
+    run_pass_with_std(
+        r#"
+        int x [[attr]];
+        int y __attribute__((aligned(4)));
+        int z __asm__("my_z");
+        
+        int w __attribute__((aligned));
+        
+        [[attr(1+(2*3))]] int a;
+        
+        [[123, maybe_unused]] int b;
+        
+        int c __asm__(("my_c"));
+        "#,
+        CompilePhase::Parse,
+        CStandard::C23,
+    );
+}

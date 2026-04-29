@@ -577,7 +577,7 @@ fn classify_punctuation(pp_token_kind: PPTokenKind) -> TokenKind {
 // pre-interns all keywords and stores them in a lazily-initialized `HashMap`.
 /// Subsequent lookups use the `StringId` directly, resulting in a much faster
 /// integer comparison instead of a string comparison.
-pub(crate) fn is_keyword(symbol: StringId, std: crate::lang_options::CStandard) -> Option<TokenKind> {
+fn is_keyword(symbol: StringId, std: crate::lang_options::CStandard) -> Option<TokenKind> {
     let kind = keyword_map().get(&symbol).copied()?;
 
     // C23 keywords: block certain spellings if standard is older than C23.

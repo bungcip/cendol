@@ -1571,9 +1571,19 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         // it shall not have a variably modified type. If an identifier is declared as having a variably
         // modified type, it shall ... have no linkage"
         if self.registry.is_variably_modified(qt.ty()) {
+            // Note: GCC and Clang allow variably modified types that are NOT arrays (e.g. pointers to VLAs)
+            // to have static storage duration in block scope, despite a literal reading of 6.7.6.2p2.
+            // However, 6.7.6.2p2 also says VM types shall have no linkage.
+            // 6.7p7: "If an identifier for an object is declared with no linkage, the type for the object
+            // shall be complete by the end of its declarator, or by the end of its init-declarator if it has
+            // an initializer; in the case of a function variation, the type shall be the same as that of
+            // some other declaration of the identifier with no linkage."
+            // Wait, 6.7.6.2p2 is very explicit. But let's follow major compilers for block-scope static pointers.
+
             if spec_info.is_thread_local {
                 self.report_error(span, SemanticError::VmThreadStorage);
-            } else if is_global || spec_info.storage == Some(StorageClass::Static) {
+            } else if (is_global || spec_info.storage == Some(StorageClass::Static)) && qt.is_array() {
+                // Static VLAs are definitely prohibited (storage size isn't constant).
                 self.report_error(span, SemanticError::VmStaticStorage);
             }
 

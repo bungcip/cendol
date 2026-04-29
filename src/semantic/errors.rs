@@ -376,7 +376,9 @@ pub enum SemanticError {
         name: NameId,
         specifier: &'static str,
     },
-    VlaAtFileScope,
+    VmStaticStorage,
+    VmThreadStorage,
+    VmHasLinkage,
     VlaStarOutsidePrototype,
     VlaInitializerNotAllowed,
     OffsetofBitfield,
@@ -799,7 +801,13 @@ impl SemanticError {
             SemanticError::InvalidStorageClassForFunction { name, specifier } => {
                 format!("invalid storage class '{}' for function '{}'", specifier, name)
             }
-            SemanticError::VlaAtFileScope => "variable length array declaration not allowed at file scope".to_string(),
+            SemanticError::VmStaticStorage => {
+                "object with static storage duration shall not have a variably modified type".to_string()
+            }
+            SemanticError::VmThreadStorage => {
+                "object with thread storage duration shall not have a variably modified type".to_string()
+            }
+            SemanticError::VmHasLinkage => "identifier with variably modified type shall have no linkage".to_string(),
             SemanticError::VlaStarOutsidePrototype => {
                 "[*] array size only allowed in function prototype scope".to_string()
             }

@@ -232,11 +232,11 @@ fn test_vla_static_pointer() {
         static char (*p)[sz];
         int result = sizeof(*p);
         if (result != 10) return 1;
-        
+
         sz = 20;
         // Even if sz changes, the type of p was 'fixed' at the first evaluation?
         // Actually C11 says for VM types, the size is evaluated when the declaration is reached.
-        // For static, it's still reached every time? 
+        // For static, it's still reached every time?
         // Let's just check that it compiles and returns 10 for the first one.
         return 0;
     }

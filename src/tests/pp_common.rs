@@ -14,7 +14,7 @@ pub struct DebugToken {
 }
 
 impl DebugToken {
-    pub fn from_token(token: &PPToken, sm: &SourceManager) -> Self {
+    pub(crate) fn from_token(token: &PPToken, sm: &SourceManager) -> Self {
         let name = token.kind.kind_name();
         let kind = if name.is_empty() {
             format!("{:?}", token.kind)
@@ -66,10 +66,7 @@ pub(crate) fn setup_multi_file_pp_snapshot(
 }
 
 /// Helper function to set up preprocessor testing and return sm
-pub(crate) fn setup_pp_with_sm(
-    src: &str,
-    config: Option<PPConfig>,
-) -> Result<(Vec<DebugToken>, SourceManager), PPError> {
+fn setup_pp_with_sm(src: &str, config: Option<PPConfig>) -> Result<(Vec<DebugToken>, SourceManager), PPError> {
     let (tokens, sm, _) = setup_multi_file_pp_with_sm_and_diagnostics(vec![("<test>", src)], "<test>", config)?;
     Ok((tokens, sm))
 }

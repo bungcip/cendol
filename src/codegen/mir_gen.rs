@@ -136,7 +136,7 @@ impl<'a> MirGen<'a> {
         self.func_state.as_mut().expect("Not in a function")
     }
 
-    pub(super) fn get_func_info(&self) -> (MirFunctionId, Option<MirBlockId>) {
+    fn get_func_info(&self) -> (MirFunctionId, Option<MirBlockId>) {
         let state = self.func_state.as_ref().expect("Not in a function");
         (state.func_id, state.current_block)
     }
@@ -487,7 +487,7 @@ impl<'a> MirGen<'a> {
         self.visit_variable(sym, mir_type_id);
     }
 
-    pub(super) fn visit_variable(&mut self, sym: SymbolRef, mir_type_id: TypeId) {
+    fn visit_variable(&mut self, sym: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(sym);
         let (is_global_sym, storage) = if let SymbolKind::Variable { is_global, storage, .. } = symbol.kind {
             (is_global, storage)
@@ -1905,7 +1905,7 @@ impl<'a> MirGen<'a> {
         Operand::Copy(Box::new(place))
     }
 
-    pub(super) fn try_fold_rvalue_to_const(&mut self, rvalue: &Rvalue, type_id: TypeId) -> Option<ConstValueId> {
+    fn try_fold_rvalue_to_const(&mut self, rvalue: &Rvalue, type_id: TypeId) -> Option<ConstValueId> {
         match rvalue {
             Rvalue::Use(op) => self.operand_to_const_id(op),
             Rvalue::StructLiteral(fields) => {
@@ -2108,7 +2108,7 @@ impl<'a> MirGen<'a> {
         self.visit_node(statement);
     }
 
-    pub(super) fn define_or_declare_function(
+    fn define_or_declare_function(
         &mut self,
         name: NameId,
         params: Vec<TypeId>,
@@ -2125,7 +2125,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    pub(super) fn calculate_linkage(&self, storage: Option<StorageClass>, def_state: DefinitionState) -> MirLinkage {
+    fn calculate_linkage(&self, storage: Option<StorageClass>, def_state: DefinitionState) -> MirLinkage {
         if def_state == DefinitionState::DeclaredOnly {
             return MirLinkage::Import;
         }

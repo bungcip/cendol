@@ -66,10 +66,7 @@ pub(crate) fn setup_multi_file_pp_snapshot(
 }
 
 /// Helper function to set up preprocessor testing and return sm
-fn setup_pp_with_sm(
-    src: &str,
-    config: Option<PPConfig>,
-) -> Result<(Vec<DebugToken>, SourceManager), PPError> {
+fn setup_pp_with_sm(src: &str, config: Option<PPConfig>) -> Result<(Vec<DebugToken>, SourceManager), PPError> {
     let (tokens, sm, _) = setup_multi_file_pp_with_sm_and_diagnostics(vec![("<test>", src)], "<test>", config)?;
     Ok((tokens, sm))
 }

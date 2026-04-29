@@ -216,7 +216,7 @@ pub enum LitKind {
 }
 
 impl LitKind {
-    pub(crate) fn from_u8(v: u8) -> Self {
+    fn from_u8(v: u8) -> Self {
         match v {
             1 => Self::Float,
             2 => Self::Char,
@@ -430,7 +430,7 @@ impl LiteralTable {
 
 static LITERAL_TABLE: OnceLock<RwLock<LiteralTable>> = OnceLock::new();
 
-pub(crate) fn global_literal_table() -> &'static RwLock<LiteralTable> {
+fn global_literal_table() -> &'static RwLock<LiteralTable> {
     LITERAL_TABLE.get_or_init(|| RwLock::new(LiteralTable::default()))
 }
 

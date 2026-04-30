@@ -139,3 +139,4 @@ pub mod regr_shadowing;
 pub mod regr_struct_bitfield;
 pub mod semantic_alignof_expr;
 pub mod semantic_usual_arithmetic_conversions;
+pub mod semantic_pedantic_gnu_extensions;

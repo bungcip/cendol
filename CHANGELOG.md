@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Features**:
+  - Full C11 digraph support in the preprocessor and lexer (`<:`, `:>`, `<%`, `%>`, `%:`, `%:%:`).
+
 ## [0.2.0] - 2026-02-28
 
 ### Added

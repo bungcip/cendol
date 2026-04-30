@@ -7,7 +7,7 @@ Cendol is a C23 compiler implemented in Rust. It is a project to understand the 
 ## Features
 
 - **Full C23 Preprocessor**: Complete preprocessor with macro expansion, conditional compilation, file inclusion, and built-in macros (`__FILE__`, `__LINE__`, etc.)
-- **Lexer**: Tokenization of C23 source code with proper handling of literals, keywords, and operators
+- **Lexer**: Tokenization of C23 source code with proper handling of literals, keywords, and operators, including full digraph support
 - **Parser**: Comprehensive C23 syntax parsing using Pratt parsing for expressions and recursive descent for statements
 - **Semantic Analysis**: Type checking, symbol resolution, and semantic validation
 - **Code Generation**: Compiles to native object code using Cranelift backend
@@ -17,7 +17,6 @@ Cendol is a C23 compiler implemented in Rust. It is a project to understand the 
 ## Limitations
 
 - **No Trigraph Support**: Trigraphs (three-character sequences like `??=`, `??<`, etc.) are not supported. Note: Trigraphs were officially removed in C23.
-- **No Digraph Support**: Digraphs (two-character sequences like `<:`, `:>`, `<%`, `%>`, `%:`, `%:%:`) are not supported.
 - **No K&R Function Declarations**: Functions declared with an empty parameter list (e.g., `int foo()`) are treated as `int foo(void)`, following C23.
 - **Missing C23 Language Features**:
   - **Bit-precise integers** (`_BitInt(N)`) are not yet implemented.

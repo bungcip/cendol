@@ -1,4 +1,4 @@
-use crate::diagnostic::DiagnosticLevel;
+use crate::tests::test_utils;
 
 #[test]
 fn test_gnu_statement_expression_warning() {
@@ -15,6 +15,5 @@ fn test_gnu_statement_expression_warning() {
     config.lang_options.pedantic = true;
     let mut driver = crate::driver::compiler::CompilerDriver::from_config(config);
     let _ = driver.run_pipeline(crate::driver::artifact::CompilePhase::SemanticLowering);
-    let diags = driver.get_diagnostics();
-    assert!(diags.iter().any(|d| d.message.contains("use of GNU statement expression extension") && d.level == DiagnosticLevel::Warning));
+    test_utils::check_diagnostic_message_only(&driver, "use of GNU statement expression extension");
 }

@@ -1,0 +1,8 @@
+---
+source: src/tests/pp_digraphs.rs
+expression: tokens
+---
+- kind: StringLiteral
+  text: "\"abc\""
+- kind: Identifier
+  text: ab

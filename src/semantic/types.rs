@@ -729,16 +729,27 @@ impl QualType {
     }
 
     /// Strip all qualifiers and return an unqualified type with the same TypeRef.
+    /// Bolt ⚡: Optimized with a fast-path to avoid reconstruction.
     #[inline]
     pub(crate) fn strip_all(self) -> Self {
+        if self.0.get() <= Self::TY_MASK {
+            return self;
+        }
         Self::unqualified(self.ty())
     }
 
     /// Strip qualifiers that are ignored for function parameter compatibility (const, volatile, restrict).
     /// Atomic is NOT ignored. C11 6.7.6.3p15.
+    /// Bolt ⚡: Optimized with a fast-path to avoid reconstruction.
     #[inline]
     pub(crate) fn strip_for_parameter(self) -> Self {
-        Self::new(self.ty(), self.qualifiers() & TypeQualifiers::ATOMIC)
+        let quals = self.qualifiers();
+        let ignored = TypeQualifiers::CONST | TypeQualifiers::VOLATILE | TypeQualifiers::RESTRICT;
+
+        if !quals.intersects(ignored) {
+            return self;
+        }
+        Self::new(self.ty(), quals & TypeQualifiers::ATOMIC)
     }
 
     #[inline]

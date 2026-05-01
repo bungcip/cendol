@@ -1561,11 +1561,12 @@ impl TypeRegistry {
         // GCC and many other compilers are permissive with enum compatibility, especially
         // regarding signedness of the underlying type. We allow an enum to be compatible
         // with any integer type of the same size.
+        // However, different enum types are NOT compatible with each other (non-transitivity).
         if ty_a.is_enum() {
-            return b.is_integer() && self.get_layout(ty_a).size == self.get_layout(ty_b).size;
+            return !ty_b.is_enum() && b.is_integer() && self.get_layout(ty_a).size == self.get_layout(ty_b).size;
         }
         if ty_b.is_enum() {
-            return a.is_integer() && self.get_layout(ty_a).size == self.get_layout(ty_b).size;
+            return !ty_a.is_enum() && a.is_integer() && self.get_layout(ty_a).size == self.get_layout(ty_b).size;
         }
 
         // Fallback for registry-only types (Functions, Records).

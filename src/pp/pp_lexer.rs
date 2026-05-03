@@ -459,13 +459,6 @@ impl PPLexer {
                     token!(PPTokenKind::Slash, 1)
                 }
             }
-            b'%' => {
-                if consume_if!(b'=') {
-                    token!(PPTokenKind::ModAssign, 2)
-                } else {
-                    token!(PPTokenKind::Percent, 1)
-                }
-            }
             b'=' => {
                 if consume_if!(b'=') {
                     token!(PPTokenKind::Equal, 2)
@@ -489,6 +482,10 @@ impl PPLexer {
                     }
                 } else if consume_if!(b'=') {
                     token!(PPTokenKind::LessEqual, 2)
+                } else if consume_if!(b':') {
+                    token!(PPTokenKind::LeftBracket, 2)
+                } else if consume_if!(b'%') {
+                    token!(PPTokenKind::LeftBrace, 2)
                 } else {
                     token!(PPTokenKind::Less, 1)
                 }
@@ -531,6 +528,32 @@ impl PPLexer {
                     token!(PPTokenKind::Xor, 1)
                 }
             }
+            b'%' => {
+                if consume_if!(b'=') {
+                    token!(PPTokenKind::ModAssign, 2)
+                } else if consume_if!(b':') {
+                    // Check for %:%: digraph for ##
+                    let saved_pos = self.position;
+                    let saved_at_start = self.at_start_of_line;
+                    if consume_if!(b'%') && consume_if!(b':') {
+                        token!(PPTokenKind::HashHash, 4)
+                    } else {
+                        self.position = saved_pos;
+                        self.at_start_of_line = saved_at_start;
+
+                        let mut token_flags = flags;
+                        if is_at_start_of_line {
+                            token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                            self.in_directive_line = true;
+                        }
+                        token!(PPTokenKind::Hash, 2, token_flags)
+                    }
+                } else if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBrace, 2)
+                } else {
+                    token!(PPTokenKind::Percent, 1)
+                }
+            }
             b'~' => token!(PPTokenKind::Tilde, 1),
             b'.' => 'ellipsis: {
                 let pos_after_first = self.position;
@@ -548,7 +571,13 @@ impl PPLexer {
                 token!(PPTokenKind::Dot, 1)
             }
             b'?' => token!(PPTokenKind::Question, 1),
-            b':' => token!(PPTokenKind::Colon, 1),
+            b':' => {
+                if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBracket, 2)
+                } else {
+                    token!(PPTokenKind::Colon, 1)
+                }
+            }
             b',' => token!(PPTokenKind::Comma, 1),
             b';' => token!(PPTokenKind::Semicolon, 1),
             b'(' => token!(PPTokenKind::LeftParen, 1),
@@ -593,9 +622,21 @@ impl PPLexer {
             self.next_char();
             self.skip_whitespace_and_comments();
 
-            if let Some(b'#') = self.peek_char() {
-                // Found a directive! Stop skipping.
-                break;
+            match self.peek_char() {
+                Some(b'#') => break,
+                Some(b'%') => {
+                    let saved_pos = self.position;
+                    let saved_at_start = self.at_start_of_line;
+                    self.next_char(); // consume %
+                    if self.peek_char() == Some(b':') {
+                        self.position = saved_pos;
+                        self.at_start_of_line = saved_at_start;
+                        break;
+                    }
+                    self.position = saved_pos;
+                    self.at_start_of_line = saved_at_start;
+                }
+                _ => {}
             }
 
             // Not a directive, continue skipping from the current position.
@@ -718,7 +759,7 @@ impl PPLexer {
             b'0'..=b'9' => Some(self.lex_number(start_pos, ch, flags)),
             b'"' => Some(self.lex_string_literal(start_pos, &[ch], flags)),
             b'\'' => Some(self.lex_char_literal(start_pos, &[ch], flags)),
-            b'#' | b'%' => Some(self.lex_operator(start_pos, ch, flags)),
+            b'#' | b'%' | b':' => Some(self.lex_operator(start_pos, ch, flags)),
             b'.' => {
                 if let Some(next_ch) = self.peek_char()
                     && next_ch.is_ascii_digit()
@@ -729,8 +770,8 @@ impl PPLexer {
                 }
             }
             // All operators and punctuation are handled by the optimized helper function.
-            b'+' | b'-' | b'*' | b'/' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'?' | b':' | b','
-            | b';' | b'(' | b')' | b'[' | b']' | b'{' | b'}' => Some(self.lex_operator(start_pos, ch, flags)),
+            b'+' | b'-' | b'*' | b'/' | b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'^' | b'~' | b'?' | b',' | b';'
+            | b'(' | b')' | b'[' | b']' | b'{' | b'}' => Some(self.lex_operator(start_pos, ch, flags)),
             _ => Some(PPToken::new(
                 PPTokenKind::Unknown,
                 flags,

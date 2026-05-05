@@ -19,6 +19,7 @@ pub enum DirectiveKind {
     Pragma,
     Error,
     Warning,
+    Embed,
 }
 
 /// Table of pre-interned preprocessor keywords for O(1) identification
@@ -40,6 +41,7 @@ pub struct PPKeywordTable {
     pub(crate) pragma: StringId,
     pub(crate) error: StringId,
     pub(crate) warning: StringId,
+    pub(crate) embed: StringId,
     pub(crate) defined: StringId, // For the defined operator in expressions
     pub(crate) has_include: StringId,
     pub(crate) has_include_next: StringId,
@@ -158,6 +160,7 @@ impl PPKeywordTable {
             pragma: StringId::new("pragma"),
             error: StringId::new("error"),
             warning: StringId::new("warning"),
+            embed: StringId::new("embed"),
             defined: StringId::new("defined"),
             has_include: StringId::new("__has_include"),
             has_include_next: StringId::new("__has_include_next"),
@@ -285,6 +288,8 @@ impl PPKeywordTable {
             Some(DirectiveKind::Error)
         } else if symbol == self.warning {
             Some(DirectiveKind::Warning)
+        } else if symbol == self.embed {
+            Some(DirectiveKind::Embed)
         } else {
             None
         }

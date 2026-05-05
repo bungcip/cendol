@@ -101,6 +101,7 @@ impl<'src> Preprocessor<'src> {
             DirectiveKind::Pragma => self.handle_pragma(),
             DirectiveKind::Error => self.handle_error(),
             DirectiveKind::Warning => self.handle_warning(),
+            DirectiveKind::Embed => self.handle_embed(),
             _ => unreachable!("ICE: Conditional directives handled separately"),
         }
     }
@@ -296,11 +297,11 @@ impl<'src> Preprocessor<'src> {
 
         let (path_str, is_angled) = match tokens[0].kind {
             PPTokenKind::StringLiteral | PPTokenKind::Less => {
-                self.parse_include_path_tokens(&tokens, first_token.location)?
+                self.parse_include_path_tokens(&tokens, first_token.location, false)?
             }
             _ => {
                 self.expand_tokens(&mut tokens, false)?;
-                self.parse_include_path_tokens(&tokens, first_token.location)?
+                self.parse_include_path_tokens(&tokens, first_token.location, false)?
             }
         };
 
@@ -327,7 +328,12 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn parse_include_path_tokens(&self, tokens: &[PPToken], diag_loc: SourceLoc) -> Result<(String, bool), PPError> {
+    fn parse_include_path_tokens(
+        &self,
+        tokens: &[PPToken],
+        diag_loc: SourceLoc,
+        allow_extra: bool,
+    ) -> Result<(String, bool), PPError> {
         if tokens.is_empty() {
             return self.emit_error(PPErrorKind::InvalidIncludePath, diag_loc);
         }
@@ -335,7 +341,7 @@ impl<'src> Preprocessor<'src> {
         let first = &tokens[0];
         match first.kind {
             PPTokenKind::StringLiteral => {
-                if tokens.len() > 1 {
+                if !allow_extra && tokens.len() > 1 {
                     return self.emit_error(PPErrorKind::ExpectedEod, tokens[1].location);
                 }
                 let text = self.get_token_text(first);
@@ -353,7 +359,7 @@ impl<'src> Preprocessor<'src> {
                     }
                 }
                 let idx = greater_idx.ok_or_else(|| self.error(PPErrorKind::InvalidIncludePath, diag_loc))?;
-                if idx + 1 < tokens.len() {
+                if !allow_extra && idx + 1 < tokens.len() {
                     return self.emit_error(PPErrorKind::ExpectedEod, tokens[idx + 1].location);
                 }
                 let path_parts = &tokens[1..idx];
@@ -369,6 +375,94 @@ impl<'src> Preprocessor<'src> {
 
     fn handle_include_next(&mut self) -> Result<(), PPError> {
         self.do_handle_include(true)
+    }
+
+    fn handle_embed(&mut self) -> Result<(), PPError> {
+        let first_token = self.expect_token()?;
+
+        let mut tokens = std::iter::once(first_token)
+            .chain(self.collect_tokens_until_eod())
+            .collect::<Vec<_>>();
+
+        if !matches!(tokens[0].kind, PPTokenKind::StringLiteral | PPTokenKind::Less) {
+            self.expand_tokens(&mut tokens, false)?;
+        }
+
+        let (path_str, is_angled) = self.parse_include_path_tokens(&tokens, first_token.location, true)?;
+
+        let mut limit = None;
+        let mut i = if is_angled {
+            tokens
+                .iter()
+                .position(|t| t.kind == PPTokenKind::Greater)
+                .ok_or_else(|| self.error(PPErrorKind::InvalidIncludePath, first_token.location))?
+                + 1
+        } else {
+            1
+        };
+
+        while i < tokens.len() {
+            let t = &tokens[i];
+            if let PPTokenKind::Identifier(sym) = t.kind
+                && sym.as_str() == "limit"
+            {
+                i += 1;
+                if i < tokens.len() && tokens[i].kind == PPTokenKind::LeftParen {
+                    i += 1;
+                    if i < tokens.len() && tokens[i].kind == PPTokenKind::Number {
+                        let text = self.get_token_text(&tokens[i]);
+                        limit = Some(
+                            text.parse::<usize>()
+                                .map_err(|_| self.error(PPErrorKind::InvalidDirective, tokens[i].location))?,
+                        );
+                        i += 1;
+                    } else {
+                        let loc = if i < tokens.len() {
+                            tokens[i].location
+                        } else {
+                            t.location
+                        };
+                        return self.emit_error(PPErrorKind::InvalidDirective, loc);
+                    }
+
+                    if i < tokens.len() && tokens[i].kind == PPTokenKind::RightParen {
+                        i += 1;
+                    } else {
+                        return self.emit_error(PPErrorKind::InvalidDirective, t.location);
+                    }
+                } else {
+                    return self.emit_error(PPErrorKind::InvalidDirective, t.location);
+                }
+                continue;
+            }
+            i += 1;
+        }
+
+        let include_source_id = self.resolve_include_path(&path_str, is_angled, first_token.location)?;
+        let buffer = self.sm.get_buffer_arc(include_source_id);
+
+        let bytes_to_embed = if let Some(l) = limit {
+            buffer.len().min(l)
+        } else {
+            buffer.len()
+        };
+
+        if bytes_to_embed == 0 {
+            return Ok(());
+        }
+
+        let mut embed_text = String::with_capacity(bytes_to_embed * 4);
+        for (idx, &byte) in buffer[..bytes_to_embed].iter().enumerate() {
+            if idx > 0 {
+                embed_text.push_str(", ");
+            }
+            embed_text.push_str(&byte.to_string());
+        }
+
+        let (embed_tokens, _) = self.tokenize_synthetic(&embed_text, "<embed>", FileKind::MacroExpansion);
+        self.pending_tokens.extend(embed_tokens.into_iter().rev());
+
+        Ok(())
     }
 
     fn resolve_include_path(&mut self, path: &str, is_angled: bool, loc: SourceLoc) -> Result<SourceId, PPError> {

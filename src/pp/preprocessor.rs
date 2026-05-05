@@ -441,8 +441,13 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Helper to tokenize a string into a list of tokens, ignoring Eod/Eof.
-    pub(crate) fn tokenize_synthetic(&mut self, content: &str, name: &str, kind: FileKind) -> (Vec<PPToken>, SourceId) {
-        let source_id = self.sm.add_buffer(content.as_bytes().to_vec(), name, None, kind);
+    pub(crate) fn tokenize_synthetic(
+        &mut self,
+        content: impl Into<Vec<u8>>,
+        name: &str,
+        kind: FileKind,
+    ) -> (Vec<PPToken>, SourceId) {
+        let source_id = self.sm.add_buffer(content.into(), name, None, kind);
         let buffer = self.sm.get_buffer_arc(source_id);
         let lexer = PPLexer::new(source_id, buffer);
 
@@ -461,7 +466,7 @@ impl<'src> Preprocessor<'src> {
         } else {
             FileKind::Builtin
         };
-        self.tokenize_synthetic(value, source_name, kind).0
+        self.tokenize_synthetic(value.as_bytes().to_vec(), source_name, kind).0
     }
 
     /// Helper to define a built-in macro by lexing its value

@@ -369,6 +369,31 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
+    fn test_path_or_buffer() {
+        // Source files
+        assert!(PathOrBuffer::Path(PathBuf::from("test.c")).is_source_file());
+        assert!(PathOrBuffer::Path(PathBuf::from("test.i")).is_source_file());
+        assert!(!PathOrBuffer::Path(PathBuf::from("test.o")).is_source_file());
+        assert!(!PathOrBuffer::Path(PathBuf::from("test_no_ext")).is_source_file());
+
+        // External objects
+        assert!(PathOrBuffer::Path(PathBuf::from("test.o")).is_external_object());
+        assert!(PathOrBuffer::Path(PathBuf::from("test.obj")).is_external_object());
+        assert!(PathOrBuffer::Path(PathBuf::from("test.a")).is_external_object());
+        assert!(PathOrBuffer::Path(PathBuf::from("test.so")).is_external_object());
+        assert!(PathOrBuffer::Path(PathBuf::from("test.dylib")).is_external_object());
+        assert!(PathOrBuffer::Path(PathBuf::from("test.dll")).is_external_object());
+        assert!(PathOrBuffer::Path(PathBuf::from("libtest.so.1")).is_external_object());
+        assert!(PathOrBuffer::Path(PathBuf::from("libtest.dylib.1")).is_external_object());
+        assert!(!PathOrBuffer::Path(PathBuf::from("test.c")).is_external_object());
+        assert!(!PathOrBuffer::Path(PathBuf::from("test_no_ext")).is_external_object());
+
+        // Buffers
+        assert!(PathOrBuffer::Buffer("test".to_string(), vec![]).is_source_file());
+        assert!(!PathOrBuffer::Buffer("test".to_string(), vec![]).is_external_object());
+    }
+
+    #[test]
     fn test_cli_into_config_and_validation() {
         // Test case: Valid configuration with defines and specific stop_after
         let cli = Cli {

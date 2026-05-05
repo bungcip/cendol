@@ -408,3 +408,24 @@ fn test_const_eval_member_access_in_array_size() {
     let (_, result) = run_pipeline(src, CompilePhase::Mir);
     assert!(result.is_ok());
 }
+
+#[test]
+fn test_const_eval_char_float_2() {
+    let source = "double test_var = 'a' + 0.5;";
+    let (ast, registry, symbol_table) = setup_analysis(source);
+
+    let init_expr = crate::tests::semantic_common::find_var_decl(&ast, &symbol_table, "test_var")
+        .init
+        .expect("Could not find test_var initializer");
+
+    let ctx = ConstEvalCtx {
+        ast: &ast,
+        symbol_table: &symbol_table,
+        registry: &registry,
+        semantic_info: &ast.semantic_info,
+    };
+
+    // Evaluate binary expression where one side is a char and the other is a float
+    let result = ctx.eval_float(init_expr);
+    assert_eq!(result, Some(97.5));
+}

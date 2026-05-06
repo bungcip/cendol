@@ -87,15 +87,15 @@ pub enum PPTokenKind {
 impl PPTokenKind {
     pub(crate) fn get_fixed_text(&self) -> Option<&'static str> {
         match self {
-            PPTokenKind::Hash => Some("#"),
-            PPTokenKind::HashHash => Some("##"),
+            PPTokenKind::Hash => None,
+            PPTokenKind::HashHash => None,
             PPTokenKind::Comma => Some(","),
             PPTokenKind::LeftParen => Some("("),
             PPTokenKind::RightParen => Some(")"),
-            PPTokenKind::LeftBracket => Some("["),
-            PPTokenKind::RightBracket => Some("]"),
-            PPTokenKind::LeftBrace => Some("{"),
-            PPTokenKind::RightBrace => Some("}"),
+            PPTokenKind::LeftBracket => None,
+            PPTokenKind::RightBracket => None,
+            PPTokenKind::LeftBrace => None,
+            PPTokenKind::RightBrace => None,
             PPTokenKind::Semicolon => Some(";"),
             PPTokenKind::Plus => Some("+"),
             PPTokenKind::Minus => Some("-"),
@@ -462,6 +462,36 @@ impl PPLexer {
             b'%' => {
                 if consume_if!(b'=') {
                     token!(PPTokenKind::ModAssign, 2)
+                } else if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBrace, 2)
+                } else if consume_if!(b':') {
+                    let pos_after_first = self.position;
+                    let at_start_after_first = self.at_start_of_line;
+                    let has_splice_after_first = self.has_splice;
+                    if self.peek_char() == Some(b'%') {
+                        self.next_char();
+                        if self.peek_char() == Some(b':') {
+                            self.next_char();
+                            token!(PPTokenKind::HashHash, 4)
+                        } else {
+                            self.position = pos_after_first;
+                            self.at_start_of_line = at_start_after_first;
+                            self.has_splice = has_splice_after_first;
+                            let mut token_flags = flags;
+                            if is_at_start_of_line {
+                                token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                                self.in_directive_line = true;
+                            }
+                            token!(PPTokenKind::Hash, 2, token_flags)
+                        }
+                    } else {
+                        let mut token_flags = flags;
+                        if is_at_start_of_line {
+                            token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                            self.in_directive_line = true;
+                        }
+                        token!(PPTokenKind::Hash, 2, token_flags)
+                    }
                 } else {
                     token!(PPTokenKind::Percent, 1)
                 }
@@ -489,6 +519,10 @@ impl PPLexer {
                     }
                 } else if consume_if!(b'=') {
                     token!(PPTokenKind::LessEqual, 2)
+                } else if consume_if!(b':') {
+                    token!(PPTokenKind::LeftBracket, 2)
+                } else if consume_if!(b'%') {
+                    token!(PPTokenKind::LeftBrace, 2)
                 } else {
                     token!(PPTokenKind::Less, 1)
                 }
@@ -535,6 +569,7 @@ impl PPLexer {
             b'.' => 'ellipsis: {
                 let pos_after_first = self.position;
                 let at_start_after_first = self.at_start_of_line;
+                let has_splice_after_first = self.has_splice;
                 if self.peek_char() == Some(b'.') {
                     self.next_char(); // Consume second '.'
                     if self.peek_char() == Some(b'.') {
@@ -544,11 +579,18 @@ impl PPLexer {
                     // It was '..', which is not a valid C token. Backtrack to handle it as a single '.'
                     self.position = pos_after_first;
                     self.at_start_of_line = at_start_after_first;
+                    self.has_splice = has_splice_after_first;
                 }
                 token!(PPTokenKind::Dot, 1)
             }
             b'?' => token!(PPTokenKind::Question, 1),
-            b':' => token!(PPTokenKind::Colon, 1),
+            b':' => {
+                if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBracket, 2)
+                } else {
+                    token!(PPTokenKind::Colon, 1)
+                }
+            }
             b',' => token!(PPTokenKind::Comma, 1),
             b';' => token!(PPTokenKind::Semicolon, 1),
             b'(' => token!(PPTokenKind::LeftParen, 1),
@@ -593,9 +635,26 @@ impl PPLexer {
             self.next_char();
             self.skip_whitespace_and_comments();
 
-            if let Some(b'#') = self.peek_char() {
-                // Found a directive! Stop skipping.
-                break;
+            if let Some(ch) = self.peek_char() {
+                if ch == b'#' {
+                    // Found a directive! Stop skipping.
+                    break;
+                } else if ch == b'%' {
+                    // Check for digraph %:
+                    let saved_pos = self.position;
+                    let saved_at_start = self.at_start_of_line;
+                    let saved_has_splice = self.has_splice;
+                    self.next_char();
+                    if self.peek_char() == Some(b':') {
+                        self.position = saved_pos;
+                        self.at_start_of_line = saved_at_start;
+                        self.has_splice = saved_has_splice;
+                        break;
+                    }
+                    self.position = saved_pos;
+                    self.at_start_of_line = saved_at_start;
+                    self.has_splice = saved_has_splice;
+                }
             }
 
             // Not a directive, continue skipping from the current position.

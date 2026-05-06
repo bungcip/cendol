@@ -1,0 +1,14 @@
+---
+source: src/tests/pp_digraphs.rs
+expression: tokens
+---
+- kind: Identifier
+  text: int
+- kind: Identifier
+  text: xy
+- kind: Assign
+  text: "="
+- kind: Number
+  text: "42"
+- kind: Semicolon
+  text: ;

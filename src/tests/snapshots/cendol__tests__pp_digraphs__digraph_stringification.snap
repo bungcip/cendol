@@ -1,0 +1,16 @@
+---
+source: src/tests/pp_digraphs.rs
+expression: tokens
+---
+- kind: Identifier
+  text: char
+- kind: Star
+  text: "*"
+- kind: Identifier
+  text: s
+- kind: Assign
+  text: "="
+- kind: StringLiteral
+  text: "\"<: :>\""
+- kind: Semicolon
+  text: ;

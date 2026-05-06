@@ -238,3 +238,8 @@ Action: Implemented 'QualType::strip_for_parameter' to specifically handle these
 
 Learning: C11 (and practical compiler implementation) requires that enum compatibility be handled carefully, especially regarding transitivity. While each enumerated type is compatible with an integer type, different enum types are NOT compatible with each other, even if they have the same size and underlying type. If a compiler incorrectly treats them as compatible (e.g., by only checking their size and integer-ness), it violates the non-transitivity of compatibility and causes incorrect behavior in `_Generic` selection, where multiple distinct enum associations might be wrongly rejected as duplicate compatible types.
 Action: Explicitly distinguish between different enum types during compatibility checks, ensuring that enum-to-integer compatibility does not lead to enum-to-enum compatibility.
+
+2026-05-15 - [_Generic Association VM Type Constraint]
+
+Learning: C11 6.5.1.1p2 prohibits variably modified (VM) types in generic associations. This constraint applies not only to direct VLAs (e.g. 'int[n]') but also to any VM type, including pointers to VLAs (e.g. 'int(*)[n]'). While Cendol's 'is_variably_modified' correctly handles this recursion, explicit tests are required to ensure these cases are consistently rejected with 'SemanticError::GenericVlaAssociation' to prevent them from reaching later compiler phases.
+Action: Always test VM type constraints using both direct VLAs and derived VM types (like pointers or multi-dimensional arrays) to ensure complete coverage of the language's VM type classification.

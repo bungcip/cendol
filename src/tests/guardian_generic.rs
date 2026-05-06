@@ -342,3 +342,29 @@ fn test_generic_matches_multiple_associations() {
         "matches multiple associations",
     );
 }
+
+#[test]
+fn test_generic_selection_rejects_vla_associations() {
+    // C11 6.5.1.1p2: "The type name in a generic association shall specify a
+    // complete object type other than a variably modified type."
+
+    // 1. Direct VLA
+    run_fail_with_message(
+        r#"
+        void f(int n) {
+            _Generic(0, int[n]: 1, default: 0);
+        }
+        "#,
+        "generic association specifies variably modified type",
+    );
+
+    // 2. Pointer to VLA
+    run_fail_with_message(
+        r#"
+        void f(int n) {
+            _Generic(0, int(*)[n]: 1, default: 0);
+        }
+        "#,
+        "generic association specifies variably modified type",
+    );
+}

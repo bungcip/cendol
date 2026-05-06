@@ -247,3 +247,49 @@ impl Default for PPConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::StringId;
+
+    #[test]
+    fn test_hidesettable_methods() {
+        let mut table = HideSetTable::default();
+        let id_a = StringId::new("a");
+        let id_b = StringId::new("b");
+        let id_c = StringId::new("c");
+
+        let id1 = table.intern(smallvec::smallvec![id_a]);
+
+        let inserted = table.insert(id1, id_b);
+        let inserted_hit = table.insert(id1, id_b); // cache hit
+        assert_eq!(inserted, inserted_hit);
+
+        let id2 = table.intern(smallvec::smallvec![id_c]);
+
+        let unioned = table.union(id1, id2);
+        let unioned_hit = table.union(id1, id2); // cache hit
+        assert_eq!(unioned, unioned_hit);
+
+        let intersected = table.intersection(inserted, id1);
+        let intersected_hit = table.intersection(inserted, id1); // cache hit
+        assert_eq!(intersected, intersected_hit);
+
+        let union_zero1 = table.union(0, id1);
+        let union_zero2 = table.union(id1, 0);
+        let union_same = table.union(id1, id1);
+
+        assert_eq!(union_zero1, id1);
+        assert_eq!(union_zero2, id1);
+        assert_eq!(union_same, id1);
+
+        let intersect_zero1 = table.intersection(0, id1);
+        let intersect_zero2 = table.intersection(id1, 0);
+        let intersect_same = table.intersection(id1, id1);
+
+        assert_eq!(intersect_zero1, 0);
+        assert_eq!(intersect_zero2, 0);
+        assert_eq!(intersect_same, id1);
+    }
+}

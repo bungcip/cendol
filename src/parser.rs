@@ -4,8 +4,6 @@
 //! It orchestrates the parsing process by delegating to specialized sub-modules for
 //! different language constructs.
 
-use std::collections::VecDeque;
-
 use crate::ast::literal::{LitKind, LitRef};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError, ParseErrorKind};
@@ -108,8 +106,12 @@ pub struct Parser<'arena, 'src, 'lexer> {
     pub(crate) ast: &'arena mut ParsedAst,
     pub(crate) lang_opts: &'src crate::lang_options::LangOptions,
 
-    // Token caching for lookahead and backtracking
-    pub(crate) token_cache: VecDeque<Token>,
+    // Bolt ⚡: Use a Vec instead of a VecDeque for the token cache.
+    // The parser only appends to this cache and accesses it via absolute indices
+    // for lookahead and backtracking; it never performs front-popping operations.
+    // Vec is more efficient as it avoids ring-buffer indexing overhead and
+    // provides better cache locality.
+    pub(crate) token_cache: Vec<Token>,
 
     // Type context for typedef tracking
     pub(crate) type_context: TypeDefContext,
@@ -154,7 +156,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
             current_idx: 0,
             ast,
             lang_opts,
-            token_cache: VecDeque::new(),
+            token_cache: Vec::new(),
             type_context: TypeDefContext::new(),
             keywords: ParserKeywords::new(),
             in_enum_underlying_type: false,
@@ -176,13 +178,13 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         while self.token_cache.len() <= index {
             match self.lexer.next_token() {
                 Ok(Some(token)) => {
-                    self.token_cache.push_back(token);
+                    self.token_cache.push(token);
                 }
                 Ok(None) => break,
                 Err(e) => {
                     self.lexer.preprocessor.diag.report(e);
-                    let span = self.token_cache.back().map(|t| t.span).unwrap_or_default();
-                    self.token_cache.push_back(Token {
+                    let span = self.token_cache.last().map(|t| t.span).unwrap_or_default();
+                    self.token_cache.push(Token {
                         kind: TokenKind::EndOfFile,
                         span,
                     });

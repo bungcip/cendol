@@ -129,3 +129,7 @@
 ## 2025-06-20 - UTF-8-Safe String Transformation via Slicing
 **Learning:** Transforming a `&str` by iterating over `as_bytes()` and casting to `char` (e.g., `bytes[i] as char`) is a major correctness bug that corrupts multi-byte UTF-8 sequences.
 **Action:** For performance-critical transformations like line-splice removal, use `memchr` to scan for ASCII triggers, then use string slicing and `push_str` to preserve the integrity of multi-byte UTF-8 sequences between triggers. This is both faster and correct.
+
+## 2025-06-25 - Eliminating VecDeque Overhead for Append-Only Caches
+**Learning:** Using `VecDeque` for a token cache in a parser that only appends and uses absolute indexing for lookahead/backtracking is an anti-pattern. `VecDeque` (a ring buffer) incurs overhead on every indexed access due to modular arithmetic or branching to handle wrap-around.
+**Action:** Use `Vec` for caches that only grow. It provides better cache locality and faster indexed access by avoiding ring-buffer logic.

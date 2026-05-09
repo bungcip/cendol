@@ -554,7 +554,7 @@ fn test_function_with_many_return_types() {
         "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = i32
     type %t1 = f64
     type %t2 = i8
@@ -1356,7 +1356,7 @@ fn test_gnu_statement_expression_labels_and_void() {
     "#;
 
     let mir_dump = setup_mir(source);
-    insta::assert_snapshot!(mir_dump, @r#"
+    insta::assert_snapshot!(mir_dump, @"
     type %t0 = void
     type %t1 = i32
     type %t2 = bool
@@ -1384,7 +1384,7 @@ fn test_gnu_statement_expression_labels_and_void() {
         %x = const 1
         br bb2
     }
-    "#);
+    ");
 }
 
 #[test]

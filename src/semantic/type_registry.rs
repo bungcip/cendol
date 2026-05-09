@@ -363,19 +363,32 @@ impl TypeRegistry {
     }
 
     /// Get the unsigned version of a builtin integer type.
-    pub(crate) fn get_unsigned_corresponding_type(&self, ty: TypeRef) -> TypeRef {
-        if let Some(b) = ty.builtin() {
-            return self.get_builtin_type(b.to_unsigned());
-        }
+    pub(crate) fn get_unsigned_corresponding_type(&self, mut ty: TypeRef) -> TypeRef {
+        loop {
+            // Bolt ⚡: Optimization: First check for bitfield-encoded builtins (common case).
+            if let Some(b) = ty.builtin() {
+                return self.get_builtin_type(b.to_unsigned());
+            }
 
-        let inner = self.get(ty);
-        // Bolt ⚡: Match on reference to avoid cloning the large TypeKind enum.
-        if let TypeKind::Builtin(b) = &inner.kind {
-            return self.get_builtin_type(b.to_unsigned());
+            // Bolt ⚡: Use TypeClass for fast dispatch.
+            // Builtins and aliases are the only candidates for integer conversion.
+            match ty.class() {
+                TypeClass::Builtin => {
+                    if let TypeKind::Builtin(b) = &self.types[ty.index()].kind {
+                        return self.get_builtin_type(b.to_unsigned());
+                    }
+                    return ty;
+                }
+                TypeClass::Alias => {
+                    if let TypeKind::Alias(inner) = &self.types[ty.index()].kind {
+                        ty = *inner;
+                    } else {
+                        return ty;
+                    }
+                }
+                _ => return ty,
+            }
         }
-
-        // Default to the original type if it's not a builtin integer.
-        ty
     }
 
     /// Resolve a TypeRef to a Type.
@@ -542,6 +555,23 @@ impl TypeRegistry {
                 TypeKind::Alias(inner) => ty = *inner,
                 TypeKind::Array { element_type, .. } => return Some(*element_type),
                 _ => return None,
+            }
+        }
+    }
+
+    pub(crate) fn is_function_type(&self, mut ty: TypeRef) -> bool {
+        loop {
+            // Bolt ⚡: Fast path to avoid registry lookup for non-function types.
+            let class = ty.class();
+            if class != TypeClass::Function && class != TypeClass::Alias {
+                return false;
+            }
+
+            // Bolt ⚡: Direct registry access avoids Cow<Type> allocations.
+            match &self.types[ty.index()].kind {
+                TypeKind::Alias(inner) => ty = *inner,
+                TypeKind::Function { .. } => return true,
+                _ => return false,
             }
         }
     }
@@ -1431,28 +1461,24 @@ impl TypeRegistry {
 
     pub(crate) fn decay(&mut self, qt: QualType, ptr_qualifiers: TypeQualifiers) -> QualType {
         let ty = qt.ty();
-        let (element_type, is_array, is_function) = {
-            let type_info = self.get(ty);
-            match &type_info.kind {
-                TypeKind::Array { element_type, .. } => (Some(*element_type), true, false),
-                TypeKind::Function { .. } => (None, false, true),
-                _ => (None, false, false),
-            }
-        };
 
-        if is_array {
+        // Bolt ⚡: Optimization: use fast-path helpers to check for array/function types.
+        // This avoids expensive Cow<Type> allocations via self.get(ty) for every decay.
+        if let Some(element_type) = self.get_array_element(ty) {
             // Correct logic: Array of T decays to Pointer to T.
             // Qualifiers on Array apply to the element in the resulting pointer type.
-            let elem_qt = QualType::new(element_type.unwrap(), qt.qualifiers());
+            let elem_qt = QualType::new(element_type, qt.qualifiers());
             let ptr = self.pointer_to(elem_qt);
             // Apply the extracted pointer qualifiers (e.g. from static/const inside [])
-            QualType::new(ptr, ptr_qualifiers)
-        } else if is_function {
-            let ptr = self.pointer_to(qt);
-            QualType::new(ptr, ptr_qualifiers)
-        } else {
-            qt
+            return QualType::new(ptr, ptr_qualifiers);
         }
+
+        if self.is_function_type(ty) {
+            let ptr = self.pointer_to(qt);
+            return QualType::new(ptr, ptr_qualifiers);
+        }
+
+        qt
     }
 
     pub(super) fn canonical_qual_type(&self, qt: QualType) -> QualType {

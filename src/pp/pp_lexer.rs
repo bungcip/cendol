@@ -87,15 +87,15 @@ pub enum PPTokenKind {
 impl PPTokenKind {
     pub(crate) fn get_fixed_text(&self) -> Option<&'static str> {
         match self {
-            PPTokenKind::Hash => Some("#"),
-            PPTokenKind::HashHash => Some("##"),
+            PPTokenKind::Hash => None,
+            PPTokenKind::HashHash => None,
             PPTokenKind::Comma => Some(","),
             PPTokenKind::LeftParen => Some("("),
             PPTokenKind::RightParen => Some(")"),
-            PPTokenKind::LeftBracket => Some("["),
-            PPTokenKind::RightBracket => Some("]"),
-            PPTokenKind::LeftBrace => Some("{"),
-            PPTokenKind::RightBrace => Some("}"),
+            PPTokenKind::LeftBracket => None,
+            PPTokenKind::RightBracket => None,
+            PPTokenKind::LeftBrace => None,
+            PPTokenKind::RightBrace => None,
             PPTokenKind::Semicolon => Some(";"),
             PPTokenKind::Plus => Some("+"),
             PPTokenKind::Minus => Some("-"),
@@ -462,6 +462,36 @@ impl PPLexer {
             b'%' => {
                 if consume_if!(b'=') {
                     token!(PPTokenKind::ModAssign, 2)
+                } else if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBrace, 2)
+                } else if consume_if!(b':') {
+                    // Possible %: or %:%:
+                    let pos_after_first_digraph = self.position;
+                    let at_start_after_first_digraph = self.at_start_of_line;
+                    if self.peek_char() == Some(b'%') {
+                        self.next_char(); // consume %
+                        if self.peek_char() == Some(b':') {
+                            self.next_char(); // consume :
+                            token!(PPTokenKind::HashHash, 4)
+                        } else {
+                            // Backtrack: we have %: followed by %
+                            self.position = pos_after_first_digraph;
+                            self.at_start_of_line = at_start_after_first_digraph;
+                            let mut token_flags = flags;
+                            if is_at_start_of_line {
+                                token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                                self.in_directive_line = true;
+                            }
+                            token!(PPTokenKind::Hash, 2, token_flags)
+                        }
+                    } else {
+                        let mut token_flags = flags;
+                        if is_at_start_of_line {
+                            token_flags |= PPTokenFlags::STARTS_PP_LINE;
+                            self.in_directive_line = true;
+                        }
+                        token!(PPTokenKind::Hash, 2, token_flags)
+                    }
                 } else {
                     token!(PPTokenKind::Percent, 1)
                 }
@@ -489,6 +519,10 @@ impl PPLexer {
                     }
                 } else if consume_if!(b'=') {
                     token!(PPTokenKind::LessEqual, 2)
+                } else if consume_if!(b':') {
+                    token!(PPTokenKind::LeftBracket, 2)
+                } else if consume_if!(b'%') {
+                    token!(PPTokenKind::LeftBrace, 2)
                 } else {
                     token!(PPTokenKind::Less, 1)
                 }
@@ -548,7 +582,13 @@ impl PPLexer {
                 token!(PPTokenKind::Dot, 1)
             }
             b'?' => token!(PPTokenKind::Question, 1),
-            b':' => token!(PPTokenKind::Colon, 1),
+            b':' => {
+                if consume_if!(b'>') {
+                    token!(PPTokenKind::RightBracket, 2)
+                } else {
+                    token!(PPTokenKind::Colon, 1)
+                }
+            }
             b',' => token!(PPTokenKind::Comma, 1),
             b';' => token!(PPTokenKind::Semicolon, 1),
             b'(' => token!(PPTokenKind::LeftParen, 1),

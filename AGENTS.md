@@ -127,7 +127,7 @@ pub struct Ast {
 | ---------------- | ---------------------------------------- | ---------------------------------------------- |
 | Produced by      | Parser                                   | Semantic Lowering                              |
 | Identifiers      | `Ident(NameId)`                          | `Ident(NameId, SymbolRef)`                     |
-| Declarations     | `Declaration(ParsedDeclarationData)`     | `VarDecl`, `FunctionDecl`, `TypedefDecl`, etc. |
+| Declarations     | `Declaration(ParsedDecl)`                | `VarDecl`, `FunctionDecl`, `TypedefDecl`, etc. |
 | Types            | `ParsedType` (syntactic)                 | `QualType` / `TypeRef` (resolved)              |
 | Children storage | `Vec<ParsedNodeRef>`                     | `NodeRef` + length (flattened)                 |
 | Node data        | Heap-allocated (`Vec`, `Box`, `ThinVec`) | `Copy` structs (cache-friendly)                |
@@ -137,7 +137,7 @@ pub struct Ast {
 
 The `LowerCtx` struct orchestrates the conversion from `ParsedAst` → `Ast`:
 
-- **Type Resolution**: Converts `ParsedTypeSpecifier` → `QualType` via `TypeRegistry`.
+- **Type Resolution**: Converts `TypeSpec` → `QualType` via `TypeRegistry`.
 - **Symbol Insertion**: Populates `SymbolTable` with resolved declarations.
 - **Scope Construction**: Creates and manages `ScopeId` for block/function/file scopes.
 - **Declarator Processing**: Recursively applies `ParsedDeclarator` chains (pointers, arrays, functions) to build final types.
@@ -178,18 +178,6 @@ _ => unreachable!("ICE: Node {:?} does not have a scope", self.get_kind(node_ref
 - Types use `TypeId` indices into a type table.
 - Functions contain basic blocks (`MirBlock`) with `MirStmt` and `Terminator`.
 - Builder pattern: `builder.add_type(...)`, `builder.define_function(...)`, `builder.create_block(...)`, etc.
-
-## Naming Conventions
-
-| What              | Convention                                                          | Example                                  |
-| ----------------- | ------------------------------------------------------------------- | ---------------------------------------- |
-| Types/Structs     | PascalCase                                                          | `SemanticAnalyzer`, `MirFunction`        |
-| Functions/methods | snake_case                                                          | `visit_node`, `report_error`             |
-| Enum variants     | PascalCase                                                          | `SemanticErrorKind::NotAnLvalue`         |
-| Constants         | SCREAMING_SNAKE_CASE or PascalCase (for const items in impl blocks) | `NodeRef::ROOT`                          |
-| Type aliases      | PascalCase                                                          | `NameId`, `StringId`                     |
-| Test functions    | `test_` prefix + descriptive name                                   | `test_assignment_to_const`               |
-| Test files        | `<phase>_<feature>.rs`                                              | `semantic_negative.rs`, `parser_expr.rs` |
 
 ## Semantic Analyzer Pattern
 

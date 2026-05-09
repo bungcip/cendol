@@ -2,25 +2,28 @@ name: Rust
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v6
-    - name: Run fmt
-      run: cargo fmt --check
-    - name: Run clippy
-      run: cargo clippy
-    - name: Build
-      run: cargo build
-    - name: Run tests
-      run: cargo test
+      - uses: actions/checkout@v6
+      - name: Run fmt
+        run: cargo fmt --check
+      - name: Run clippy
+        run: cargo clippy
+      - name: Build
+        run: cargo build
+      - name: Run tests
+        run: cargo test

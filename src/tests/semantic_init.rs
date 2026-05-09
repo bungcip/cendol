@@ -269,7 +269,7 @@ fn test_local_mixed_array_struct_designators() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = struct S { arr: %t2, val: %t0 }
     type %t2 = [3]%t0
@@ -296,7 +296,7 @@ fn test_local_nested_array_init() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = [2]%t0
     type %t2 = [2]%t1
@@ -323,7 +323,7 @@ fn test_local_nested_array_init_with_designators() {
         }
     "#;
     let mir = setup_mir(source);
-    insta::assert_snapshot!(mir, @r"
+    insta::assert_snapshot!(mir, @"
     type %t0 = i32
     type %t1 = [2]%t0
     type %t2 = [2]%t1

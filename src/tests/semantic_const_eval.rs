@@ -429,3 +429,13 @@ fn test_const_eval_char_float_2() {
     let result = ctx.eval_float(init_expr);
     assert_eq!(result, Some(97.5));
 }
+
+#[test]
+fn test_const_eval_char_type() {
+    let source = "int test_var = sizeof('a');";
+    let val_str = evaluate_program(source);
+    insta::assert_snapshot!(format!("Source: {}\nResult: {}", source, val_str), @"
+    Source: int test_var = sizeof('a');
+    Result: 4
+    ");
+}

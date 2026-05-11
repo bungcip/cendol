@@ -24,6 +24,7 @@ pub mod pp_includes;
 pub mod pp_internal;
 pub mod pp_lexical;
 pub mod pp_macros;
+pub mod pp_pragma_once_dedup;
 
 pub mod parser_typeof_unqual;
 pub mod semantic_arrays;

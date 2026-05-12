@@ -2,9 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-05-12
+
+### Added
+
+- **Features & C23 Support**:
+  - `constexpr` for constant expressions and `auto` type deduction.
+  - `#embed` preprocessor directive for binary data inclusion.
+  - `typeof` and `typeof_unqual` operators.
+  - `nullptr` and boolean literals (`true`, `false`).
+  - Unicode string and character literals (`u8`, `u`, `U`).
+  - Binary literals (`0b`) and digit separators (`'`).
+  - `#elifdef` and `#elifndef` preprocessor directives.
+  - Empty initializers for arrays of unknown size.
+- **GNU Extensions & Builtins**:
+  - `__auto_type` and `__builtin_choose_expr` support.
+  - Intrinsics: `__builtin_complex`, `__builtin_memcpy`, `__builtin_memcmp`, `__builtin_trap`, `__builtin_unreachable`, `__builtin_constant_p`, `__builtin_prefetch`.
+  - Math/Bitwise builtins: `__builtin_fabs` family, `__builtin_ffs` family.
+  - Preprocessor macros: `__has_c_attribute`, `__has_include_next`, `__VA_OPT__`.
+  - Support for GNU `aligned`, `packed` attributes, and zero-length arrays.
+- **C11 Compliance**:
+  - Enforced C11 static array declarator, compound literal, and variable-length array (VLA) constraints.
+  - Stricter validation for `_Generic` distinctness, bit-field sizes, and pointer arithmetic completeness.
+  - Hardened function parameter compatibility, alignment (`_Alignas`) rules, and type alias consistency.
+- **Optimizations**:
+  - Vastly accelerated macro expansion, token caching, and stringification using `Vec` stacks and `Cow`.
+  - SIMD-accelerated (`memchr`) line-start calculation and token skipping in the lexer.
+  - Reduced memory footprint by optimizing `QualType` size via `NonZero` and reducing redundant clones.
+  - Switched to `hashbrown` and optimized `TypeRegistry` hot paths, semantic analysis, and preprocessor hide-set management for significant compilation speedups.
+- **Infrastructure**:
+  - Upgraded `cranelift` backend to 0.131.
+  - Added support for compiling `sqlite`, `libpng`, and `zlib` in the real-world test suite.
+  - Added CLI options: `--version`, `--timing`, `-w` (suppress all warnings), and support for `-Wno-*` flags.
+
+### Fixed
+
+- Corrected macro expansion bugs including self-referential macros, deferred macro expansion, and infinite recursion during token pasting.
+- Addressed various miscompilations regarding floating-point casts, long double types, bitfields, alignment, and global variable initialization.
+- Fixed compiler hangs/crashes in switch statements with large numbers and out-of-bounds float-to-integer conversions.
+- Resolved C11 typedef shadowing and scope visibility issues inside declaration lists.
+- Fixed `sizeof` operator evaluation on variable-length arrays and compound literals.
+
 ## [0.2.0] - 2026-02-28
 
 ### Added
+
 - **Features**:
   - `_Static_assert` support in declarations, structures, and unions.
   - Bitwise builtins: `__builtin_popcount`, `__builtin_clz`, `__builtin_ctz`.
@@ -28,6 +70,7 @@ All notable changes to this project will be documented in this file.
   - Added CLI options: `-fuse-ld` for linker selection.
 
 ### Fixed
+
 - Stack corruption in `ClifGen` and variadic argument lowering.
 - Long double ABI and layout issues on x86_64.
 - Lexer and preprocessor bugs (token pasting with placemarkers, UCN support).
@@ -39,6 +82,7 @@ All notable changes to this project will be documented in this file.
 ## [0.1.0] - 2026-01-28
 
 ### Added
+
 - Initial release of Cendol as a functional C11 compiler.
 - **Frontend**:
   - Full C11 preprocessor with macro expansion and conditional compilation.

@@ -50,7 +50,7 @@ impl<'src> Preprocessor<'src> {
                         DirectiveKind::If => {
                             let tokens = self.parse_conditional_expression()?;
                             let cond = self.evaluate_conditional_expression(tokens)?;
-                            self.handle_if_directive(cond)
+                            self.handle_if(cond)
                         }
                         DirectiveKind::Ifdef => self.handle_ifdef(),
                         DirectiveKind::Ifndef => self.handle_ifndef(),
@@ -62,9 +62,9 @@ impl<'src> Preprocessor<'src> {
                 if self.should_evaluate_conditional() {
                     let tokens = self.parse_conditional_expression()?;
                     let cond = self.evaluate_conditional_expression(tokens)?;
-                    self.handle_elif_directive(cond, location)
+                    self.handle_elif(cond, location)
                 } else {
-                    self.handle_elif_directive(false, location)
+                    self.handle_elif(false, location)
                 }
             }
             DirectiveKind::Elifdef | DirectiveKind::Elifndef => {
@@ -74,15 +74,15 @@ impl<'src> Preprocessor<'src> {
                         Ok((_, sym)) => {
                             let cond = self.macros.contains_key(&sym) == is_ifdef;
                             self.expect_eod().unwrap_or(());
-                            self.handle_elif_directive(cond, location)
+                            self.handle_elif(cond, location)
                         }
-                        Err(_) => self.handle_elif_directive(false, location),
+                        Err(_) => self.handle_elif(false, location),
                     }
                 } else {
                     // We need to consume the identifier but ignore its result
                     let _ = self.expect_identifier();
                     let _ = self.expect_eod();
-                    self.handle_elif_directive(false, location)
+                    self.handle_elif(false, location)
                 }
             }
             DirectiveKind::Else => self.handle_else(location),
@@ -531,7 +531,7 @@ impl<'src> Preprocessor<'src> {
         self.emit_error(PPErrorKind::FileNotFound { path: path.to_string() }, loc)
     }
 
-    fn handle_if_directive(&mut self, condition: bool) -> Result<(), PPError> {
+    fn handle_if(&mut self, condition: bool) -> Result<(), PPError> {
         // Bolt ⚡: Ensure the skipping state is propagated downward.
         let was_skipping = self.is_currently_skipping() || !condition;
         self.conditional_stack.push(PPConditionalInfo {
@@ -542,14 +542,6 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
-    fn handle_conditional_def(&mut self, is_ifdef: bool) -> Result<(), PPError> {
-        let (_, sym) = self.expect_identifier()?;
-
-        let condition = self.macros.contains_key(&sym) == is_ifdef;
-        self.handle_if_directive(condition)?;
-        self.expect_eod()
-    }
-
     fn handle_ifdef(&mut self) -> Result<(), PPError> {
         self.handle_conditional_def(true)
     }
@@ -558,25 +550,52 @@ impl<'src> Preprocessor<'src> {
         self.handle_conditional_def(false)
     }
 
-    fn handle_elif_directive(&mut self, condition: bool, location: SourceLoc) -> Result<(), PPError> {
-        if self.conditional_stack.is_empty() {
-            return self.emit_error(PPErrorKind::ElifWithoutIf, location);
-        }
+    fn handle_conditional_def(&mut self, is_ifdef: bool) -> Result<(), PPError> {
+        let (_, sym) = self.expect_identifier()?;
 
-        // Bolt ⚡: Check parent's skipping state to propagate it downward.
-        let parent_skipping = if self.conditional_stack.len() > 1 {
+        let condition = self.macros.contains_key(&sym) == is_ifdef;
+        self.handle_if(condition)?;
+        self.expect_eod()
+    }
+
+    fn get_parent_skipping(&self) -> bool {
+        if self.conditional_stack.len() > 1 {
             self.conditional_stack[self.conditional_stack.len() - 2].was_skipping
         } else {
             false
+        }
+    }
+
+    fn handle_elif_or_else(&mut self, condition: Option<bool>, location: SourceLoc) -> Result<(), PPError> {
+        let is_elif = condition.is_some();
+        let empty_error = if is_elif {
+            PPErrorKind::ElifWithoutIf
+        } else {
+            PPErrorKind::ElseWithoutIf
         };
 
-        let current = self.conditional_stack.last_mut().unwrap();
-
-        if current.found_else {
-            return self.emit_error(PPErrorKind::ElifAfterElse, location);
+        if self.conditional_stack.is_empty() {
+            return self.emit_error(empty_error, location);
         }
 
-        let should_process = !current.found_non_skipping && condition;
+        let parent_skipping = self.get_parent_skipping();
+        let current = self.conditional_stack.last_mut().unwrap();
+
+        let dup_error = if is_elif {
+            PPErrorKind::ElifAfterElse
+        } else {
+            PPErrorKind::MultipleElse
+        };
+        if current.found_else {
+            return self.emit_error(dup_error, location);
+        }
+
+        if !is_elif {
+            current.found_else = true;
+        }
+
+        let cond = condition.unwrap_or(true);
+        let should_process = !current.found_non_skipping && cond;
         if should_process {
             current.found_non_skipping = true;
         }
@@ -585,28 +604,12 @@ impl<'src> Preprocessor<'src> {
         Ok(())
     }
 
+    fn handle_elif(&mut self, condition: bool, location: SourceLoc) -> Result<(), PPError> {
+        self.handle_elif_or_else(Some(condition), location)
+    }
+
     fn handle_else(&mut self, location: SourceLoc) -> Result<(), PPError> {
-        if self.conditional_stack.is_empty() {
-            return self.emit_error(PPErrorKind::ElseWithoutIf, location);
-        }
-
-        // Bolt ⚡: Check parent's skipping state to propagate it downward.
-        let parent_skipping = if self.conditional_stack.len() > 1 {
-            self.conditional_stack[self.conditional_stack.len() - 2].was_skipping
-        } else {
-            false
-        };
-
-        let current = self.conditional_stack.last_mut().unwrap();
-
-        if current.found_else {
-            return self.emit_error(PPErrorKind::MultipleElse, location);
-        }
-
-        current.found_else = true;
-        let should_process = !current.found_non_skipping;
-        current.was_skipping = parent_skipping || !should_process;
-
+        self.handle_elif_or_else(None, location)?;
         self.expect_eod()
     }
 
@@ -728,9 +731,7 @@ impl<'src> Preprocessor<'src> {
 
     fn handle_push_macro(&mut self) -> Result<(), PPError> {
         let name = self.parse_pragma_macro_name()?;
-
         let info = self.macros.get(&name).cloned();
-
         self.macro_stack.entry(name).or_default().push(info);
 
         Ok(())

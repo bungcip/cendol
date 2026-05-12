@@ -384,47 +384,29 @@ impl SourceManager {
     /// Since SourceId is always valid (we panic if not found), we can use indexing
     /// use get_source_text to get &str from SourceSpan instead if you need text
     pub(crate) fn get_buffer(&self, source_id: SourceId) -> &[u8] {
-        let id = source_id.to_u32();
-        if id < 2 {
-            panic!("invalid source_id {source_id}");
-        }
-        let info = match self.file_infos.get(id as usize - 2) {
-            Some(info) => info,
-            None => panic!("invalid source_id {source_id}"),
-        };
-        &info.buffer[..]
+        &self
+            .get_file_info(source_id)
+            .unwrap_or_else(|| panic!("invalid source_id {source_id}"))
+            .buffer[..]
     }
 
     /// Get the buffer for a given source ID, returning None if not found
     pub(crate) fn get_buffer_safe(&self, source_id: SourceId) -> Option<&[u8]> {
-        let id = source_id.to_u32();
-        if id < 2 {
-            return None;
-        }
-        self.file_infos.get(id as usize - 2).map(|info| &info.buffer[..])
+        self.get_file_info(source_id).map(|info| &info.buffer[..])
     }
 
     /// Get the buffer as an Arc for a given source ID.
     /// This allows shared ownership without cloning the entire buffer.
     pub(crate) fn get_buffer_arc(&self, source_id: SourceId) -> Arc<[u8]> {
-        let id = source_id.to_u32();
-        if id < 2 {
-            panic!("invalid source_id {source_id}");
-        }
-        let info = match self.file_infos.get(id as usize - 2) {
-            Some(info) => info,
-            None => panic!("invalid source_id {source_id}"),
-        };
-        info.buffer.clone()
+        self.get_file_info(source_id)
+            .unwrap_or_else(|| panic!("invalid source_id {source_id}"))
+            .buffer
+            .clone()
     }
 
     /// Get file info for a given source ID
     pub(crate) fn get_file_info(&self, source_id: SourceId) -> Option<&FileInfo> {
-        let id = source_id.to_u32();
-        if id < 2 {
-            return None;
-        }
-        self.file_infos.get(id as usize - 2)
+        self.file_infos.get(source_id.to_u32().checked_sub(2)? as usize)
     }
 
     /// Get source ID for a given file path
@@ -477,11 +459,9 @@ impl SourceManager {
 
     /// Get mutable access to the LineMap for a given source ID
     pub(crate) fn get_line_map_mut(&mut self, source_id: SourceId) -> Option<&mut LineMap> {
-        let id = source_id.to_u32();
-        if id < 2 {
-            return None;
-        }
-        self.file_infos.get_mut(id as usize - 2).map(|fi| &mut fi.line_map)
+        self.file_infos
+            .get_mut(source_id.to_u32().checked_sub(2)? as usize)
+            .map(|fi| &mut fi.line_map)
     }
 
     /// Get the source text for a given span

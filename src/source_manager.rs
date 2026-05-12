@@ -325,8 +325,6 @@ impl SourceManager {
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
         if let Some(&id) = self.path_to_id.get(&canonical) {
-            // Drop the borrow before inserting to satisfy the borrow checker.
-            let id = id;
             self.path_to_id.insert(path.to_path_buf(), id);
             return Ok(id);
         }

@@ -15,26 +15,7 @@ use super::Parser;
 
 /// Parse struct or union specifier with context
 pub(super) fn parse_record_spec(parser: &mut Parser, is_union: bool) -> Result<TypeSpec, ParseError> {
-    let mut attributes = Vec::new();
-
-    // Check for attributes after struct/union keyword
-    loop {
-        if parser.is_token(TokenKind::Attribute) {
-            if let Ok(attrs) = super::declarations::parse_attribute(parser) {
-                attributes.extend(attrs);
-            } else {
-                break;
-            }
-        } else if parser.at_c23_attribute_start() {
-            if let Ok(attrs) = super::declarations::parse_c23_attribute(parser) {
-                attributes.extend(attrs);
-            } else {
-                break;
-            }
-        } else {
-            break;
-        }
-    }
+    let mut attributes = parser.parse_attributes_lenient();
 
     let tag = parser.accept_name();
 
@@ -43,23 +24,7 @@ pub(super) fn parse_record_spec(parser: &mut Parser, is_union: bool) -> Result<T
         parser.expect(TokenKind::RightBrace)?;
 
         // Check for attributes after struct definition
-        loop {
-            if parser.is_token(TokenKind::Attribute) {
-                if let Ok(attrs) = super::declarations::parse_attribute(parser) {
-                    attributes.extend(attrs);
-                } else {
-                    break;
-                }
-            } else if parser.at_c23_attribute_start() {
-                if let Ok(attrs) = super::declarations::parse_c23_attribute(parser) {
-                    attributes.extend(attrs);
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
+        attributes.extend(parser.parse_attributes_lenient());
 
         Some(members)
     } else {
@@ -112,30 +77,13 @@ fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
             let members = parse_struct_decl_list(parser)?;
             parser.expect(TokenKind::RightBrace)?;
 
-            let mut attributes = Vec::new();
-            while parser.is_token(TokenKind::Attribute) || parser.at_c23_attribute_start() {
-                if parser.is_token(TokenKind::Attribute) {
-                    attributes.extend(super::declarations::parse_attribute(parser)?);
-                } else {
-                    attributes.extend(super::declarations::parse_c23_attribute(parser)?);
-                }
-            }
+            let mut attributes = parser.parse_attributes_lenient();
 
             let init_declarators = if parser.accept(TokenKind::Semicolon).is_some() {
                 ThinVec::new()
             } else {
                 let decls = parse_init_declarators(parser)?;
-                loop {
-                    if parser.is_token(TokenKind::Attribute) || parser.at_c23_attribute_start() {
-                        if parser.is_token(TokenKind::Attribute) {
-                            attributes.extend(super::declarations::parse_attribute(parser)?);
-                        } else {
-                            attributes.extend(super::declarations::parse_c23_attribute(parser)?);
-                        }
-                    } else {
-                        break;
-                    }
-                }
+                attributes.extend(parser.parse_attributes_lenient());
                 parser.expect(TokenKind::Semicolon)?;
                 decls
             };

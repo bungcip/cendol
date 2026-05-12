@@ -126,8 +126,14 @@ pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Res
         parser.advance();
 
         left = match token.kind {
-            TokenKind::Increment => parse_postfix_increment(parser, left, token)?,
-            TokenKind::Decrement => parse_postfix_decrement(parser, left, token)?,
+            TokenKind::Increment => {
+                let span = parser.ast.get_node(left).span.merge(token.span);
+                parser.push_node(ParsedNodeKind::PostIncrement(left), span)
+            }
+            TokenKind::Decrement => {
+                let span = parser.ast.get_node(left).span.merge(token.span);
+                parser.push_node(ParsedNodeKind::PostDecrement(left), span)
+            }
             TokenKind::LeftParen => parse_function_call(parser, left)?,
             TokenKind::LeftBracket => parse_index_access(parser, left)?,
             TokenKind::Dot => parse_member_access(parser, left, false)?,
@@ -135,7 +141,7 @@ pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Res
             TokenKind::Question => {
                 let true_expr = parser.parse_expr_min()?;
                 parser.expect(TokenKind::Colon)?;
-                let false_expr = parser.parse_expr_bp(BindingPower::CONDITIONAL)?;
+                let false_expr = parser.parse_expression(BindingPower::CONDITIONAL)?;
                 let span = parser
                     .ast
                     .get_node(left)
@@ -181,18 +187,18 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         }
         TokenKind::LeftParen => {
             parser.advance();
-            if parser.is_cast_expression_start() {
+            if parser.is_type_name_start() {
                 let parsed_type = parse_type_name(parser)?;
                 parser.expect(TokenKind::RightParen)?;
 
                 if parser.is_token(TokenKind::LeftBrace) {
-                    parser.parse_compound_literal_from_type_and_start(parsed_type, token.span.start())
+                    parse_compound_literal_from_type_and_start(parser, parsed_type, token.span.start())
                 } else {
                     let dummy_right_paren = Token {
                         kind: TokenKind::RightParen,
                         span: SourceSpan::new(token.span.end(), token.span.end()),
                     };
-                    parser.parse_cast_expression_from_type_and_paren(parsed_type, dummy_right_paren)
+                    parse_cast_expression_from_type_and_paren(parser, parsed_type, dummy_right_paren)
                 }
             } else if parser.is_token(TokenKind::LeftBrace) {
                 parse_gnu_statement_expression(parser, token.span.start())
@@ -313,7 +319,7 @@ fn parse_unary_operator(parser: &mut Parser, mut token: Token) -> Result<ParsedN
         }
     }
 
-    let mut current_node = parser.parse_expr_bp(BindingPower::UNARY)?;
+    let mut current_node = parser.parse_expression(BindingPower::UNARY)?;
 
     for (op, span) in ops.into_iter().rev() {
         let full_span = span.merge(parser.ast.get_node(current_node).span);
@@ -441,29 +447,11 @@ fn parse_member_access(
     Ok(parser.push_node(ParsedNodeKind::MemberAccess(object, symbol, is_arrow), span))
 }
 
-fn parse_postfix_increment(
-    parser: &mut Parser,
-    operand: ParsedNodeRef,
-    token: Token,
-) -> Result<ParsedNodeRef, ParseError> {
-    let span = parser.ast.get_node(operand).span.merge(token.span);
-    Ok(parser.push_node(ParsedNodeKind::PostIncrement(operand), span))
-}
-
-fn parse_postfix_decrement(
-    parser: &mut Parser,
-    operand: ParsedNodeRef,
-    token: Token,
-) -> Result<ParsedNodeRef, ParseError> {
-    let span = parser.ast.get_node(operand).span.merge(token.span);
-    Ok(parser.push_node(ParsedNodeKind::PostDecrement(operand), span))
-}
-
 fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let start = parser.expect(TokenKind::Generic)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
 
-    let controlling_expr = parser.parse_expr_bp(BindingPower::ASSIGNMENT)?;
+    let controlling_expr = parser.parse_expression(BindingPower::ASSIGNMENT)?;
     parser.expect(TokenKind::Comma)?;
 
     let dummy = parser.push_dummy();
@@ -554,7 +542,7 @@ fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
             (ParsedNodeKind::SizeOfType(ty), right_paren_end)
         }
     } else {
-        let expr = parser.parse_expr_bp(BindingPower::UNARY)?;
+        let expr = parser.parse_expression(BindingPower::UNARY)?;
         let end = parser.ast.get_node(expr).span.end();
         (ParsedNodeKind::SizeOfExpr(expr), end)
     };
@@ -585,11 +573,13 @@ fn parse_postfix_tail(parser: &mut Parser, mut left: ParsedNodeRef) -> Result<Pa
             }
             TokenKind::Increment => {
                 let token = parser.advance().unwrap();
-                left = parse_postfix_increment(parser, left, token)?;
+                let span = parser.ast.get_node(left).span.merge(token.span);
+                left = parser.push_node(ParsedNodeKind::PostIncrement(left), span);
             }
             TokenKind::Decrement => {
                 let token = parser.advance().unwrap();
-                left = parse_postfix_decrement(parser, left, token)?;
+                let span = parser.ast.get_node(left).span.merge(token.span);
+                left = parser.push_node(ParsedNodeKind::PostDecrement(left), span);
             }
             _ => break,
         }
@@ -608,7 +598,7 @@ fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         let end = parser.expect(TokenKind::RightParen)?.span.end();
         (ParsedNodeKind::AlignOfType(ty), end)
     } else {
-        let expr = parser.parse_expr_bp(BindingPower::UNARY)?;
+        let expr = parser.parse_expression(BindingPower::UNARY)?;
         let end = parser.ast.get_node(expr).span.end();
         (ParsedNodeKind::AlignOfExpr(expr), end)
     };
@@ -616,16 +606,12 @@ fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     Ok(parser.push_node(kind, SourceSpan::new(start, end)))
 }
 
-pub(crate) fn is_cast_expression_start(parser: &mut Parser) -> bool {
-    parser.is_type_name_start()
-}
-
 pub(crate) fn parse_cast_expression_from_type_and_paren(
     parser: &mut Parser,
     ty: ParsedType,
     right_paren: Token,
 ) -> Result<ParsedNodeRef, ParseError> {
-    let expr = parser.parse_expr_bp(BindingPower::CAST)?;
+    let expr = parser.parse_expression(BindingPower::CAST)?;
     let span = right_paren.span.merge(parser.ast.get_node(expr).span);
     Ok(parser.push_node(ParsedNodeKind::Cast(ty, expr), span))
 }

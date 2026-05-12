@@ -97,6 +97,7 @@ fn test_attribute_coverage() {
         [[attr(1+(2*3))]] int a;
         
         [[123, maybe_unused]] int b;
+        int ([[maybe_unused]] x);
         
         int c __asm__(("my_c"));
         "#,

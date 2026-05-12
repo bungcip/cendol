@@ -192,6 +192,16 @@ impl<'src> Preprocessor<'src> {
         // Other built-ins
         self.define_builtin_macro_one("__STDC__");
 
+        // Split into smaller functions
+        self.init_builtin_macros_limits();
+        self.init_builtin_macros_target();
+        self.init_builtin_macros_compiler_compat();
+        self.init_builtin_macros_stdlib_types();
+        self.init_builtin_macros_standards();
+        self.init_builtin_macros_functions();
+    }
+
+    fn init_builtin_macros_limits(&mut self) {
         // Type limits
         self.define_builtin_macro_with_val("__CHAR_BIT__", "8");
         self.define_builtin_macro_with_val("__SCHAR_MAX__", "127");
@@ -256,8 +266,9 @@ impl<'src> Preprocessor<'src> {
         self.define_builtin_macro_lexed("__FLT_TRUE_MIN__", "1.40129846e-45F");
         self.define_builtin_macro_lexed("__DBL_TRUE_MIN__", "4.9406564584124654e-324");
         self.define_builtin_macro_lexed("__LDBL_TRUE_MIN__", "3.64519953188247460253e-4951L");
+    }
 
-        // Target specific macros
+    fn init_builtin_macros_target(&mut self) {
         // Architecture
         match self.target.architecture {
             Architecture::X86_64 => {
@@ -316,7 +327,9 @@ impl<'src> Preprocessor<'src> {
             }
             _ => {}
         }
+    }
 
+    fn init_builtin_macros_compiler_compat(&mut self) {
         // GCC version macros for compatibility with glibc headers
         // We define these to match what Clang does for GCC compatibility
         self.define_builtin_macro("__extension__", vec![]);
@@ -333,6 +346,14 @@ impl<'src> Preprocessor<'src> {
         self.define_builtin_macro_with_val("__ATOMIC_ACQ_REL", "4");
         self.define_builtin_macro_with_val("__ATOMIC_SEQ_CST", "5");
 
+        // Sync compare and swap availability
+        self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_1");
+        self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2");
+        self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4");
+        self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8");
+    }
+
+    fn init_builtin_macros_stdlib_types(&mut self) {
         // Type definitions
         if self.target.pointer_width().ok().map(|w| w.bits()).unwrap_or(64) == 64 {
             self.define_builtin_macro_lexed("__SIZE_TYPE__", "unsigned long");
@@ -363,13 +384,9 @@ impl<'src> Preprocessor<'src> {
 
         self.define_builtin_macro_with_val("__INTMAX_MAX__", "9223372036854775807LL");
         self.define_builtin_macro_with_val("__UINTMAX_MAX__", "18446744073709551615ULL");
+    }
 
-        // Sync compare and swap availability
-        self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_1");
-        self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2");
-        self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4");
-        self.define_builtin_macro_one("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8");
-
+    fn init_builtin_macros_standards(&mut self) {
         if self.c_standard.is_c11() {
             self.define_builtin_macro_with_val("__STDC_VERSION__", "201112L");
             self.define_builtin_macro_one("__STDC_HOSTED__");
@@ -380,7 +397,9 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro_one("__STDC_UTF_16__");
             self.define_builtin_macro_one("__STDC_UTF_32__");
         }
+    }
 
+    fn init_builtin_macros_functions(&mut self) {
         // Integer constant macros
         self.define_builtin_function_macro("__INT8_C", &["c"], "c");
         self.define_builtin_function_macro("__INT16_C", &["c"], "c");

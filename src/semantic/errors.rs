@@ -1,4 +1,4 @@
-use crate::ast::{NameId, StringId};
+use crate::ast::NameId;
 use crate::diagnostic::{Diagnostic, DiagnosticLevel};
 use crate::semantic::{QualType, TypeRef, TypeRegistry};
 use crate::source_manager::SourceSpan;
@@ -32,7 +32,7 @@ impl SemanticDiag {
             | SemanticError::ImplicitConstantConversion { .. }
             | SemanticError::SwitchCaseOverflow { .. }
             | SemanticError::AddressOfArrayAlwaysTrue { .. }
-            | SemanticError::EnumeratorValueNotRepresentable { .. }
+            | SemanticError::EnumeratorValueNotRepresentable { target_ty: None, .. }
             | SemanticError::AlignOfExpression
             | SemanticError::GnuStatementExpression
             | SemanticError::GnuTypeof
@@ -351,11 +351,7 @@ pub enum SemanticError {
     EnumeratorValueNotRepresentable {
         name: NameId,
         value: i64,
-    },
-    EnumeratorValueFixedNotRepresentable {
-        name: NameId,
-        value: i64,
-        target_ty: StringId,
+        target_ty: Option<QualType>,
     },
     FileScopeSpecifiesStorageClass {
         name: NameId,
@@ -430,7 +426,6 @@ impl SemanticError {
             SemanticError::SwitchCaseOverflow { .. } => Some("switch"),
             SemanticError::AddressOfArrayAlwaysTrue { .. } => Some("tautological-pointer-compare"),
             SemanticError::EnumeratorValueNotRepresentable { .. } => Some("enum-conversion"),
-            SemanticError::EnumeratorValueFixedNotRepresentable { .. } => None,
             SemanticError::ExcessElements { .. } => Some("excess-initializers"),
             SemanticError::AlignOfExpression => Some("gnu-alignof-expression"),
             SemanticError::GnuStatementExpression => Some("gnu-statement-expression"),
@@ -776,13 +771,11 @@ impl SemanticError {
             SemanticError::AddressOfArrayAlwaysTrue { name } => {
                 format!("address of array '{}' will always evaluate to 'true'", name)
             }
-            SemanticError::EnumeratorValueNotRepresentable { name, value } => format!(
-                "enumerator value {} for '{}' is not representable as 'int'",
-                value, name
-            ),
-            SemanticError::EnumeratorValueFixedNotRepresentable { name, value, target_ty } => format!(
+            SemanticError::EnumeratorValueNotRepresentable { name, value, target_ty } => format!(
                 "enumerator value {} for '{}' is not representable as '{}'",
-                value, name, target_ty
+                value,
+                name,
+                registry.display_qual_type(target_ty.unwrap_or_else(|| QualType::unqualified(registry.type_int)))
             ),
             SemanticError::FileScopeSpecifiesStorageClass { name, specifier } => {
                 format!("file-scope declaration of '{}' specifies '{}'", name, specifier)

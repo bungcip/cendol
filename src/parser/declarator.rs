@@ -91,13 +91,7 @@ fn validate_declarator(
 }
 
 pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Result<DeclaratorRef, ParseError> {
-    while parser.is_token(TokenKind::Attribute) || parser.at_c23_attribute_start() {
-        if parser.is_token(TokenKind::Attribute) {
-            let _ = super::declarations::parse_attribute(parser);
-        } else {
-            let _ = super::declarations::parse_c23_attribute(parser);
-        }
-    }
+    let _ = parser.skip_attributes();
 
     let pointers = parse_leading_pointers(parser)?;
 
@@ -112,7 +106,7 @@ pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Res
                 parser.advance();
                 parser.alloc_decl(ParsedDeclarator::Identifier(Some(symbol)))
             }
-            Some(_) if parser.is_abstract_declarator_start() => parse_abstract_declarator(parser, allow_bitfield)?,
+            Some(_) if is_abstract_declarator_start(parser) => parse_abstract_declarator(parser, allow_bitfield)?,
             _ => parser.alloc_decl(ParsedDeclarator::Identifier(None)),
         }
     };
@@ -239,12 +233,11 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, b
         }
 
         let start_idx = parser.current_idx;
-        let spec_idx = parser.current_idx;
         let saved_diags = parser.diag().diagnostics.len();
         let specifiers = match parse_decl_specs(parser) {
             Ok(s) => s,
             Err(_) => {
-                parser.current_idx = spec_idx;
+                parser.current_idx = start_idx;
                 parser.diag().diagnostics.truncate(saved_diags);
                 thin_vec![DeclSpec::TypeSpec(TypeSpec::Int)]
             }

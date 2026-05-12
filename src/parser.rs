@@ -8,7 +8,7 @@ use crate::ast::literal::{LitKind, LitRef};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, ParseError, ParseErrorKind};
 use crate::lang_options::CStandard;
-use crate::source_manager::{SourceLoc, SourceSpan};
+use crate::source_manager::SourceSpan;
 
 pub mod declarations;
 pub mod declarator;
@@ -303,7 +303,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
 
     /// Check if we are at the end of the token stream
     fn at_eof(&mut self) -> bool {
-        self.current_token_kind() == Some(TokenKind::EndOfFile) || self.current_token_kind().is_none()
+        self.current_token_kind().is_none_or(|k| k == TokenKind::EndOfFile)
     }
 
     /// Skip tokens until we find a synchronization point.
@@ -374,19 +374,14 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         parse_expression(self, min_binding_power)
     }
 
-    /// Private helper to parse an expression with a given binding power, ensuring it's not a declaration.
-    fn parse_expr_bp(&mut self, min_binding_power: BindingPower) -> Result<ParsedNodeRef, ParseError> {
-        self.parse_expression(min_binding_power)
-    }
-
     /// Parse expression with minimum binding power
     pub(super) fn parse_expr_min(&mut self) -> Result<ParsedNodeRef, ParseError> {
-        self.parse_expr_bp(BindingPower::MIN)
+        self.parse_expression(BindingPower::MIN)
     }
 
     /// Parse expression up to assignment
     pub(super) fn parse_expr_assignment(&mut self) -> Result<ParsedNodeRef, ParseError> {
-        self.parse_expr_bp(BindingPower::ASSIGNMENT)
+        self.parse_expression(BindingPower::ASSIGNMENT)
     }
 
     /// Parse translation unit (top level)
@@ -394,26 +389,10 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         declarations::parse_translation_unit(self)
     }
 
-    /// Check if current token starts an abstract declarator
-    fn is_abstract_declarator_start(&mut self) -> bool {
-        declarator::is_abstract_declarator_start(self)
-    }
-
-    /// Extract the declared name from a declarator, if any
-    fn get_declarator_name(&self, declarator: DeclaratorRef) -> Option<NameId> {
-        declarator::get_declarator_name(&self.ast.parsed_types, declarator)
-    }
-
     /// Disambiguates between a type name and an identifier in ambiguous contexts.
     /// This is crucial for parsing C's "declaration-specifier-list" vs "expression" ambiguity.
     fn is_type_name(&self, symbol: NameId) -> bool {
         self.type_context.is_type_name(symbol)
-    }
-
-    /// Check if a cast expression starts at the current position
-    /// This is called after consuming an opening parenthesis
-    fn is_cast_expression_start(&mut self) -> bool {
-        expressions::is_cast_expression_start(self)
     }
 
     /// Check if the given token can start a type name.
@@ -433,24 +412,6 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         }
         self.try_current_token()
             .is_some_and(|token| self.is_type_name_start_token(token))
-    }
-
-    /// Parse cast expression given the already parsed type and right paren token
-    fn parse_cast_expression_from_type_and_paren(
-        &mut self,
-        parsed_type: ParsedType,
-        right_paren_token: Token,
-    ) -> Result<ParsedNodeRef, ParseError> {
-        expressions::parse_cast_expression_from_type_and_paren(self, parsed_type, right_paren_token)
-    }
-
-    /// Parse compound literal given the type and start location
-    fn parse_compound_literal_from_type_and_start(
-        &mut self,
-        parsed_type: ParsedType,
-        start_loc: SourceLoc,
-    ) -> Result<ParsedNodeRef, ParseError> {
-        expressions::parse_compound_literal_from_type_and_start(self, parsed_type, start_loc)
     }
 
     /// parse and accept an identifier name
@@ -537,6 +498,40 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         self.lang_opts.c_standard >= CStandard::C23
             && self.is_token(TokenKind::LeftBracket)
             && self.peek_token(0).is_some_and(|t| t.kind == TokenKind::LeftBracket)
+    }
+
+    /// Skip attributes (both GCC and C23)
+    pub(super) fn skip_attributes(&mut self) -> Result<(), ParseError> {
+        while self.is_token(TokenKind::Attribute) || self.at_c23_attribute_start() {
+            if self.is_token(TokenKind::Attribute) {
+                declarations::parse_attribute(self)?;
+            } else {
+                declarations::parse_c23_attribute(self)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Parse attributes and return them, breaking the loop on the first error instead of failing.
+    /// This is used for error recovery in struct parsing.
+    pub(super) fn parse_attributes_lenient(&mut self) -> Vec<crate::ast::parsed::DeclSpec> {
+        let mut specs = Vec::new();
+        while self.is_token(TokenKind::Attribute) || self.at_c23_attribute_start() {
+            if self.is_token(TokenKind::Attribute) {
+                if let Ok(attrs) = declarations::parse_attribute(self) {
+                    specs.extend(attrs);
+                } else {
+                    break;
+                }
+            } else {
+                if let Ok(attrs) = declarations::parse_c23_attribute(self) {
+                    specs.extend(attrs);
+                } else {
+                    break;
+                }
+            }
+        }
+        specs
     }
 }
 

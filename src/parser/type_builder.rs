@@ -10,7 +10,7 @@ use crate::ast::*;
 use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::parser::TokenKind;
 use crate::parser::declarations::parse_decl_specs;
-use crate::parser::declarator::{get_declarator_name, parse_abstract_declarator};
+use crate::parser::declarator::{get_declarator_name, is_abstract_declarator_start, parse_abstract_declarator};
 use crate::semantic::TypeQualifiers;
 use thin_vec::ThinVec;
 
@@ -240,7 +240,7 @@ pub(crate) fn parse_type_name(parser: &mut Parser) -> Result<ParsedType, ParseEr
     let specifiers = parse_decl_specs(parser)?;
 
     // Parse abstract declarator (optional)
-    let declarator = if parser.is_abstract_declarator_start() {
+    let declarator = if is_abstract_declarator_start(parser) {
         Some(parse_abstract_declarator(parser, false)?)
     } else {
         None

@@ -13,12 +13,6 @@ use thin_vec::thin_vec;
 
 use super::Parser;
 
-/// Helper enum for reconstructing complex declarators
-#[derive(Debug)]
-enum DeclaratorComponent {
-    Pointer(TypeQualifiers),
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeclaratorKind {
     Array,
@@ -162,10 +156,10 @@ fn parse_array_size(parser: &mut Parser) -> Result<ParsedArraySize, ParseError> 
     }
 }
 
-fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<DeclaratorComponent>, ParseError> {
+fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<TypeQualifiers>, ParseError> {
     let mut pointers = Vec::new();
     while parser.accept(TokenKind::Star).is_some() {
-        pointers.push(DeclaratorComponent::Pointer(parse_type_qualifiers(parser)?));
+        pointers.push(parse_type_qualifiers(parser)?);
     }
     Ok(pointers)
 }
@@ -209,18 +203,14 @@ fn parse_trailing_declarators(
 
 fn reconstruct_declarator_chain(
     parser: &mut Parser,
-    chain: Vec<DeclaratorComponent>,
+    chain: Vec<TypeQualifiers>,
     mut base: DeclaratorRef,
 ) -> DeclaratorRef {
-    for component in chain.into_iter().rev() {
-        match component {
-            DeclaratorComponent::Pointer(q) => {
-                base = parser.alloc_decl(ParsedDeclarator::Pointer {
-                    qualifiers: q,
-                    inner: base,
-                });
-            }
-        }
+    for qualifiers in chain.into_iter().rev() {
+        base = parser.alloc_decl(ParsedDeclarator::Pointer {
+            qualifiers,
+            inner: base,
+        });
     }
     base
 }

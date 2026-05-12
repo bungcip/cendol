@@ -7,7 +7,7 @@
 use crate::ast::literal::{FloatSuffix, LitVal};
 use crate::ast::{Ast, BinaryOp, NodeKind, NodeRef, StringId, UnaryOp};
 use crate::semantic::conversions::{integer_promotion, usual_arithmetic_conversions};
-use crate::semantic::literal_utils::lower_string_literal;
+use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
 use crate::semantic::types::ArraySizeType;
 use crate::semantic::{BuiltinType, QualType, SemanticInfo, SymbolKind, SymbolTable, TypeRegistry};
 
@@ -129,8 +129,10 @@ impl<'a> ConstEvalCtx<'a> {
             LitVal::Char(_, prefix) => prefix.get_type(self.registry),
             LitVal::Float { suffix, .. } => suffix.get_type(self.registry),
             LitVal::String { value, prefix } => {
-                let parsed_str = lower_string_literal(value, *prefix);
-                let builtin_base = match parsed_str.builtin_type {
+                // Bolt ⚡: Optimized to avoid unnecessary Vec<i64> allocation.
+                let builtin_type = get_string_builtin_type(*prefix);
+                let size = get_string_literal_size(value, *prefix);
+                let builtin_base = match builtin_type {
                     BuiltinType::Char => self.registry.type_char,
                     BuiltinType::Int => self.registry.type_int,
                     BuiltinType::UShort => self.registry.type_short_unsigned,
@@ -139,7 +141,7 @@ impl<'a> ConstEvalCtx<'a> {
                     _ => self.registry.type_char,
                 };
                 self.registry
-                    .find_array_type(builtin_base, ArraySizeType::Constant(parsed_str.size))
+                    .find_array_type(builtin_base, ArraySizeType::Constant(size))
                     .unwrap_or(self.registry.type_error)
             }
             LitVal::Nullptr => self.registry.type_nullptr_t,

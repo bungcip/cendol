@@ -20,7 +20,7 @@ use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticDiag, SemanticError};
-use crate::semantic::literal_utils::lower_string_literal;
+use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, BuiltinType, EnumConstant, Namespace, ScopeId, StructMember, SymbolKind, SymbolRef, SymbolTable,
@@ -2720,9 +2720,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 Some(QualType::unqualified(ty))
             }
             LitVal::String { value: s, prefix } => {
-                let parsed = lower_string_literal(&s, prefix);
-                let elem = self.registry.get_builtin_type(parsed.builtin_type);
-                let array = self.registry.array_of(elem, ArraySizeType::Constant(parsed.size));
+                // Bolt ⚡: Optimized to avoid unnecessary Vec<i64> allocation.
+                let builtin_type = get_string_builtin_type(prefix);
+                let size = get_string_literal_size(&s, prefix);
+                let elem = self.registry.get_builtin_type(builtin_type);
+                let array = self.registry.array_of(elem, ArraySizeType::Constant(size));
                 Some(QualType::unqualified(array))
             }
             LitVal::Nullptr => Some(QualType::unqualified(self.registry.type_nullptr_t)),
@@ -2734,8 +2736,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         match self.ast.get_kind(init_node) {
             NodeKind::Literal(literal_id) => {
                 if let LitVal::String { value, prefix } = literal_id.get_val() {
-                    let parsed = lower_string_literal(&value, prefix);
-                    Some(parsed.size)
+                    // Bolt ⚡: Optimized to avoid unnecessary Vec<i64> allocation.
+                    Some(get_string_literal_size(&value, prefix))
                 } else {
                     None
                 }
@@ -2747,14 +2749,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     && let NodeKind::Literal(literal_id) = self.ast.get_kind(item.initializer)
                     && let LitVal::String { value, prefix } = literal_id.get_val()
                 {
-                    let parsed = lower_string_literal(&value, prefix);
-                    let string_elem_type = self.registry.get_builtin_type(parsed.builtin_type);
+                    // Bolt ⚡: Optimized to avoid unnecessary Vec<i64> allocation.
+                    let size = get_string_literal_size(&value, prefix);
+                    let builtin_type = get_string_builtin_type(prefix);
+                    let string_elem_type = self.registry.get_builtin_type(builtin_type);
 
                     if self.registry.is_compatible(
                         QualType::unqualified(element_type),
                         QualType::unqualified(string_elem_type),
                     ) {
-                        return Some(parsed.size);
+                        return Some(size);
                     }
                 }
                 None

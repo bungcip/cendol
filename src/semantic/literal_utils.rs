@@ -7,16 +7,39 @@ pub struct StringLiteralValue {
     pub size: usize,
 }
 
-pub(crate) fn lower_string_literal(content: &str, prefix: StrPrefix) -> StringLiteralValue {
-    let builtin_type = match prefix {
+/// Bolt ⚡: Returns the underlying builtin type for a string literal prefix.
+pub(crate) fn get_string_builtin_type(prefix: StrPrefix) -> BuiltinType {
+    match prefix {
         StrPrefix::Wide => BuiltinType::Int,
         StrPrefix::Utf16 => BuiltinType::UShort,
         StrPrefix::Utf32 => BuiltinType::UInt,
         StrPrefix::Utf8 => BuiltinType::UChar,
         StrPrefix::None => BuiltinType::Char,
-    };
+    }
+}
 
-    let mut values = Vec::new();
+/// Bolt ⚡: Calculates the number of elements in a lowered string literal (including null terminator)
+/// without performing any heap allocations.
+pub(crate) fn get_string_literal_size(content: &str, prefix: StrPrefix) -> usize {
+    match prefix {
+        StrPrefix::None | StrPrefix::Utf8 => content.len() + 1,
+        StrPrefix::Wide | StrPrefix::Utf32 => content.chars().count() + 1,
+        StrPrefix::Utf16 => {
+            let mut size = 1; // for null terminator
+            for c in content.chars() {
+                size += c.len_utf16();
+            }
+            size
+        }
+    }
+}
+
+/// Bolt ⚡: Optimized to use pre-calculated size and single allocation.
+pub(crate) fn lower_string_literal(content: &str, prefix: StrPrefix) -> StringLiteralValue {
+    let builtin_type = get_string_builtin_type(prefix);
+    let size = get_string_literal_size(content, prefix);
+
+    let mut values = Vec::with_capacity(size);
     match prefix {
         StrPrefix::None | StrPrefix::Utf8 => {
             values.extend(content.bytes().map(|b| b as i64));
@@ -35,7 +58,7 @@ pub(crate) fn lower_string_literal(content: &str, prefix: StrPrefix) -> StringLi
 
     StringLiteralValue {
         builtin_type,
-        size: values.len(),
+        size,
         values,
     }
 }

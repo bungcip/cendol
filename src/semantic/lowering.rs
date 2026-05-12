@@ -18,6 +18,7 @@ use crate::ast::literal::{LitKind, LitRef, LitVal, StrPrefix};
 use crate::ast::parsed::{ParsedDecl, ParsedFunctionDef, ParsedNodeKind, ParsedNodeRef, TypeSpec};
 use crate::ast::*;
 use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
+use crate::lang_options::CStandard;
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticDiag, SemanticError};
 use crate::semantic::literal_utils::lower_string_literal;
@@ -406,24 +407,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         underlying_type: Option<ParsedType>,
         span: SourceSpan,
     ) -> Result<QualType, SemanticDiag> {
-        let underlying_qt = if let Some(ut) = underlying_type {
-            let qt = self.lower_type(ut, span, false)?;
-            if !qt.is_integer() || qt.is_enum() {
-                self.report_error(span, SemanticError::InvalidEnumUnderlyingType { ty: qt });
-            }
-            Some(qt)
-        } else {
-            None
-        };
+        let underlying_qt = underlying_type
+            .map(|ut| {
+                let qt = self.lower_type(ut, span, false)?;
+                if !qt.is_integer() || qt.is_enum() {
+                    self.report_error(span, SemanticError::InvalidEnumUnderlyingType { ty: qt });
+                }
+                Ok(qt)
+            })
+            .transpose()?;
 
         let is_definition = enumerators.is_some() || underlying_qt.is_some();
-        let ty = self.resolve_enum_tag(
-            tag,
-            is_definition,
-            underlying_qt.is_some(),
-            underlying_qt.map(|q| q.ty()),
-            span,
-        )?;
+        let ty = self.resolve_enum_tag(tag, is_definition, underlying_qt.is_some(), span)?;
 
         if let Some(enums) = enumerators {
             let mut next_value = 0i64;
@@ -459,22 +454,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 };
 
                 if !is_representable {
-                    if let Some(uqt) = underlying_qt {
-                        let target_ty = StringId::new(self.registry.display_qual_type(uqt));
-                        self.report_error(
-                            node.span,
-                            SemanticError::EnumeratorValueFixedNotRepresentable {
-                                name: *name,
-                                value,
-                                target_ty,
-                            },
-                        );
-                    } else {
-                        self.report_error(
-                            node.span,
-                            SemanticError::EnumeratorValueNotRepresentable { name: *name, value },
-                        );
-                    }
+                    let err = SemanticError::EnumeratorValueNotRepresentable {
+                        name: *name,
+                        value,
+                        target_ty: underlying_qt,
+                    };
+                    self.report_error(node.span, err);
                 }
 
                 next_value = value.wrapping_add(1);
@@ -510,14 +495,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // After completion, the underlying type is determined.
             // GCC extension: enum constants have the enum's underlying integer type for _Generic matching.
             // Update the type_info of each enum constant symbol to the underlying integer type.
-            let resolved_underlying_type = {
-                let enum_ty_info = self.registry.get(ty);
-                if let crate::semantic::types::TypeKind::Enum { base_type, .. } = &enum_ty_info.kind {
-                    QualType::unqualified(*base_type)
-                } else {
-                    QualType::unqualified(self.registry.type_int)
-                }
+            let resolved_underlying_type = match &self.registry.get(ty).kind {
+                TypeKind::Enum { base_type, .. } => *base_type,
+                _ => self.registry.type_int,
             };
+            let resolved_underlying_type = QualType::unqualified(resolved_underlying_type);
             for sym in constant_syms {
                 self.symbol_table.get_symbol_mut(sym).type_info = resolved_underlying_type;
             }
@@ -876,24 +858,28 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let symbol_type_info = symbol.type_info;
         let symbol_def_span = symbol.def_span;
         let symbol_has_linkage = symbol.has_linkage();
-        let symbol_storage = match &symbol.kind {
-            SymbolKind::Variable { storage, .. } => Some(*storage),
-            SymbolKind::Function { storage, .. } => Some(*storage),
-            _ => None,
-        };
 
         let is_global = current_scope == ScopeId::GLOBAL;
         let is_func = new_ty.is_function();
         let new_has_linkage = is_global || storage == Some(StorageClass::Extern) || is_func;
-        let is_conflict = (existing_scope == current_scope) || (new_has_linkage && symbol_has_linkage);
 
-        if !is_conflict {
+        // Skip if not in same scope and no linkage conflict
+        if existing_scope != current_scope && !(new_has_linkage && symbol_has_linkage) {
             return new_ty;
         }
 
         // Check for linkage conflict (C11 6.2.2)
-        if let Some(existing_s) = symbol_storage {
-            let existing_is_static = existing_s == Some(StorageClass::Static);
+        if matches!(&symbol.kind, SymbolKind::Variable { .. } | SymbolKind::Function { .. }) {
+            let existing_is_static = matches!(
+                &symbol.kind,
+                SymbolKind::Variable {
+                    storage: Some(StorageClass::Static),
+                    ..
+                } | SymbolKind::Function {
+                    storage: Some(StorageClass::Static),
+                    ..
+                }
+            );
             let new_is_static = storage == Some(StorageClass::Static);
 
             // static followed by extern/plain is OK and inherits internal linkage.
@@ -922,8 +908,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             return new_ty;
         }
 
-        let composite = self.registry.composite_type(symbol_type_info, new_ty);
-        if composite.is_none() {
+        let Some(composite) = self.registry.composite_type(symbol_type_info, new_ty) else {
             self.report_error(
                 span,
                 SemanticError::ConflictingTypes {
@@ -932,12 +917,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 },
             );
             return new_ty;
-        }
-        let composite = composite.unwrap();
+        };
 
         // Update the existing symbol's type with the composite type
-        let existing_mut = self.symbol_table.get_symbol_mut(sym);
-        existing_mut.type_info = composite;
+        self.symbol_table.get_symbol_mut(sym).type_info = composite;
 
         if new_ty.is_function() {
             self.check_function_redeclaration(name, new_ty, span, symbol_def_span, symbol_type_info);
@@ -971,6 +954,33 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
+    fn check_function_constraints(
+        &mut self,
+        name: NameId,
+        spec_info: &DeclSpecInfo,
+        span: SourceSpan,
+        is_global: bool,
+    ) {
+        let specifier = match spec_info.storage {
+            Some(StorageClass::Auto) => Some("auto"),
+            Some(StorageClass::Register) => Some("register"),
+            Some(StorageClass::Static) if !is_global => Some("static"),
+            _ => None,
+        };
+
+        if let Some(specifier) = specifier {
+            self.report_error(span, SemanticError::InvalidStorageClassForFunction { name, specifier });
+        }
+
+        if spec_info.is_thread_local {
+            self.report_error(span, SemanticError::ThreadLocalNotAllowed);
+        }
+
+        if spec_info.alignment.is_some() {
+            self.report_error(span, SemanticError::AlignmentNotAllowed { context: "function" });
+        }
+    }
+
     fn visit_function_definition(&mut self, func_def: &ParsedFunctionDef, node: NodeRef, span: SourceSpan) {
         let spec_info = self.visit_decl_specs(&func_def.specifiers, span);
         let mut base_qt = spec_info
@@ -991,39 +1001,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
 
-        if spec_info.storage == Some(StorageClass::Auto) {
-            self.report_error(
-                span,
-                SemanticError::InvalidStorageClassForFunction {
-                    name: func_name,
-                    specifier: "auto",
-                },
-            );
-        } else if spec_info.storage == Some(StorageClass::Register) {
-            self.report_error(
-                span,
-                SemanticError::InvalidStorageClassForFunction {
-                    name: func_name,
-                    specifier: "register",
-                },
-            );
-        } else if !is_global && spec_info.storage == Some(StorageClass::Static) {
-            self.report_error(
-                span,
-                SemanticError::InvalidStorageClassForFunction {
-                    name: func_name,
-                    specifier: "static",
-                },
-            );
-        }
-
-        if spec_info.is_thread_local {
-            self.report_error(span, SemanticError::ThreadLocalNotAllowed);
-        }
-
-        if spec_info.alignment.is_some() {
-            self.report_error(span, SemanticError::AlignmentNotAllowed { context: "function" });
-        }
+        self.check_function_constraints(func_name, &spec_info, span, is_global);
 
         final_qt = self.check_redeclaration_compatibility(func_name, final_qt, span, spec_info.storage);
 
@@ -1432,40 +1410,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     ) {
         let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
 
-        if spec_info.storage == Some(StorageClass::Auto) {
-            self.report_error(
-                span,
-                SemanticError::InvalidStorageClassForFunction {
-                    name,
-                    specifier: "auto",
-                },
-            );
-        } else if spec_info.storage == Some(StorageClass::Register) {
-            self.report_error(
-                span,
-                SemanticError::InvalidStorageClassForFunction {
-                    name,
-                    specifier: "register",
-                },
-            );
-        } else if !is_global && spec_info.storage == Some(StorageClass::Static) {
-            self.report_error(
-                span,
-                SemanticError::InvalidStorageClassForFunction {
-                    name,
-                    specifier: "static",
-                },
-            );
-        }
-
-        // C11 6.7.1p4: _Thread_local shall only appear in the declaration of an object
-        if spec_info.is_thread_local {
-            self.report_error(span, SemanticError::ThreadLocalNotAllowed);
-        }
-
-        if spec_info.alignment.is_some() {
-            self.report_error(span, SemanticError::AlignmentNotAllowed { context: "function" });
-        }
+        self.check_function_constraints(name, spec_info, span, is_global);
 
         let final_qt = self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
         let param_len = if let TypeKind::Function { parameters, .. } = &self.registry.get(final_qt.ty()).kind {
@@ -1668,7 +1613,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             && let Some(et) = element_type
             && let Some(len) = self.deduce_array_size_full(ie, et)
         {
-            if len == 0 && self.lang_opts.c_standard >= crate::lang_options::CStandard::C23 {
+            if len == 0 && self.lang_opts.c_standard >= CStandard::C23 {
                 self.report_error(span, SemanticError::ZeroOrNegativeSizeArray { name });
             }
             qt = QualType::new(
@@ -2584,29 +2529,25 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         let node_kind = *self.ast.get_kind(node);
         match node_kind {
-            NodeKind::Literal(l) => self.get_literal_type(l),
+            NodeKind::Literal(l) => Some(self.get_literal_type(l)),
             NodeKind::Ident(_, symbol) => {
                 let sym = self.symbol_table.get_symbol(symbol);
                 match &sym.kind {
-                    crate::semantic::SymbolKind::Variable { .. } => Some(sym.type_info),
-                    crate::semantic::SymbolKind::Function { .. } => Some(sym.type_info),
-                    crate::semantic::SymbolKind::EnumConstant { .. } => {
-                        Some(QualType::unqualified(self.registry.type_int))
-                    }
+                    SymbolKind::Variable { .. } | SymbolKind::Function { .. } => Some(sym.type_info),
+                    SymbolKind::EnumConstant { .. } => Some(QualType::unqualified(self.registry.type_int)),
                     _ => None,
                 }
             }
-            NodeKind::Cast(qt, _) => Some(qt),
-            NodeKind::CompoundLiteral(qt, _) => Some(qt),
+            NodeKind::Cast(qt, _) | NodeKind::CompoundLiteral(qt, _) => Some(qt),
             NodeKind::MemberAccess(obj, name, is_arrow) => {
                 let obj_qt = self.try_infer_type(obj)?;
-                let mut ty = obj_qt.ty();
-                if is_arrow {
-                    ty = self.registry.get_pointee(ty)?.ty();
-                }
+                let ty = if is_arrow {
+                    self.registry.get_pointee(obj_qt.ty())?.ty()
+                } else {
+                    obj_qt.ty()
+                };
                 let type_info = self.registry.get(ty).into_owned();
-                let member = type_info.find_member(self.registry, name)?;
-                Some(member.member_type)
+                type_info.find_member(self.registry, name).map(|m| m.member_type)
             }
             NodeKind::IndexAccess(base, _) => {
                 let base_qt = self.try_infer_type(base)?;
@@ -2625,11 +2566,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
                 UnaryOp::Plus | UnaryOp::Minus | UnaryOp::BitNot => {
                     let qt = self.try_infer_type(expr)?;
-                    if qt.is_integer() {
-                        Some(integer_promotion(self.registry, qt, None))
+                    Some(if qt.is_integer() {
+                        integer_promotion(self.registry, qt, None)
                     } else {
-                        Some(qt)
-                    }
+                        qt
+                    })
                 }
                 UnaryOp::LogicNot => Some(QualType::unqualified(self.registry.type_int)),
                 _ => None,
@@ -2669,16 +2610,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     let lt = self.try_infer_type(l)?;
                     let rt = self.try_infer_type(r)?;
 
-                    if op == BinaryOp::Add || op == BinaryOp::Sub {
-                        if lt.is_pointer() {
-                            return Some(lt);
-                        }
-                        if rt.is_pointer() && op == BinaryOp::Add {
-                            return Some(rt);
-                        }
-                    }
-
-                    if lt.is_arithmetic() && rt.is_arithmetic() {
+                    if (op == BinaryOp::Add || op == BinaryOp::Sub) && lt.is_pointer() {
+                        Some(lt)
+                    } else if op == BinaryOp::Add && rt.is_pointer() {
+                        Some(rt)
+                    } else if lt.is_arithmetic() && rt.is_arithmetic() {
                         usual_arithmetic_conversions(self.registry, lt, rt)
                     } else {
                         Some(lt)
@@ -2707,57 +2643,43 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn get_literal_type(&mut self, lit: LitRef) -> Option<QualType> {
-        let val = lit.get_val();
-        match val {
-            LitVal::Int { .. } => Some(QualType::unqualified(self.registry.type_int)),
-            LitVal::Float { suffix, .. } => {
-                let ty = suffix.get_type(self.registry);
-                Some(QualType::unqualified(ty))
-            }
-            LitVal::Char(_, prefix) => {
-                let ty = prefix.get_type(self.registry);
-                Some(QualType::unqualified(ty))
-            }
+    fn get_literal_type(&mut self, lit: LitRef) -> QualType {
+        let ty = match lit.get_val() {
+            LitVal::Int { .. } => self.registry.type_int,
+            LitVal::Float { suffix, .. } => suffix.get_type(self.registry),
+            LitVal::Char(_, prefix) => prefix.get_type(self.registry),
             LitVal::String { value: s, prefix } => {
                 let parsed = lower_string_literal(&s, prefix);
                 let elem = self.registry.get_builtin_type(parsed.builtin_type);
-                let array = self.registry.array_of(elem, ArraySizeType::Constant(parsed.size));
-                Some(QualType::unqualified(array))
+                self.registry.array_of(elem, ArraySizeType::Constant(parsed.size))
             }
-            LitVal::Nullptr => Some(QualType::unqualified(self.registry.type_nullptr_t)),
-            LitVal::True | LitVal::False => Some(QualType::unqualified(self.registry.type_bool)),
-        }
+            LitVal::Nullptr => self.registry.type_nullptr_t,
+            LitVal::True | LitVal::False => self.registry.type_bool,
+        };
+        QualType::unqualified(ty)
     }
 
     fn try_deduce_string_initializer_size(&mut self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
         match self.ast.get_kind(init_node) {
-            NodeKind::Literal(literal_id) => {
-                if let LitVal::String { value, prefix } = literal_id.get_val() {
-                    let parsed = lower_string_literal(&value, prefix);
+            NodeKind::Literal(literal_id) => match literal_id.get_val() {
+                LitVal::String { value, prefix } => Some(lower_string_literal(&value, prefix).size),
+                _ => None,
+            },
+            NodeKind::InitializerList(list) if list.init_len > 0 => {
+                if let NodeKind::InitializerItem(item) = self.ast.get_kind(list.init_start)
+                    && item.designator_len == 0
+                    && let NodeKind::Literal(literal_id) = self.ast.get_kind(item.initializer)
+                    && let LitVal::String { value, prefix } = literal_id.get_val()
+                    && let parsed = lower_string_literal(&value, prefix)
+                    && self.registry.is_compatible(
+                        QualType::unqualified(element_type),
+                        QualType::unqualified(self.registry.get_builtin_type(parsed.builtin_type)),
+                    )
+                {
                     Some(parsed.size)
                 } else {
                     None
                 }
-            }
-            NodeKind::InitializerList(list) if list.init_len > 0 => {
-                let first_item = list.init_start;
-                if let NodeKind::InitializerItem(item) = self.ast.get_kind(first_item)
-                    && item.designator_len == 0
-                    && let NodeKind::Literal(literal_id) = self.ast.get_kind(item.initializer)
-                    && let LitVal::String { value, prefix } = literal_id.get_val()
-                {
-                    let parsed = lower_string_literal(&value, prefix);
-                    let string_elem_type = self.registry.get_builtin_type(parsed.builtin_type);
-
-                    if self.registry.is_compatible(
-                        QualType::unqualified(element_type),
-                        QualType::unqualified(string_elem_type),
-                    ) {
-                        return Some(parsed.size);
-                    }
-                }
-                None
             }
             _ => None,
         }
@@ -3105,7 +3027,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         tag: Option<NameId>,
         is_definition: bool,
         has_fixed: bool,
-        _fixed_base: Option<TypeRef>,
+        // _fixed_base: Option<TypeRef>,
         span: SourceSpan,
     ) -> Result<TypeRef, SemanticDiag> {
         let (tag_name, existing) = if let Some(t) = tag {
@@ -3379,33 +3301,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             AutoType => Ok(QualType::unqualified(
                 self.registry.alloc(Type::new(TypeKind::AutoType)),
             )),
-            TypeSpec::Typeof(ty) => {
-                self.report_warning(span, SemanticError::GnuTypeof);
-                self.lower_type(*ty, span, false)
-            }
-            TypeSpec::TypeofExpr(expr) => {
-                self.report_warning(span, SemanticError::GnuTypeof);
-                let expr_node = self.visit_expression(*expr);
-                if let Some(qt) = self.try_infer_type(expr_node) {
-                    Ok(qt)
-                } else {
-                    let tr = self.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)));
-                    Ok(QualType::unqualified(tr))
-                }
-            }
-            TypeSpec::TypeofUnqual(ty) => {
-                let qt = self.lower_type(*ty, span, false)?;
-                Ok(QualType::unqualified(qt.ty()))
-            }
-            TypeSpec::TypeofUnqualExpr(expr) => {
-                let expr_node = self.visit_expression(*expr);
-                if let Some(qt) = self.try_infer_type(expr_node) {
-                    Ok(QualType::unqualified(qt.ty()))
-                } else {
-                    let tr = self.registry.alloc(Type::new(TypeKind::TypeofUnqualExpr(expr_node)));
-                    Ok(QualType::unqualified(tr))
-                }
-            }
+            TypeSpec::Typeof(ty) => self.lower_typeof(*ty, span),
+            TypeSpec::TypeofExpr(expr) => Ok(self.lower_typeof_expr(*expr, span)),
+            TypeSpec::TypeofUnqual(ty) => self.lower_typeof_unqual(*ty, span),
+            TypeSpec::TypeofUnqualExpr(expr) => Ok(self.lower_typeof_unqual_expr(*expr)),
         }
     }
 
@@ -3544,7 +3443,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                         info.is_constexpr = true;
                     } else if *sc == StorageClass::Auto {
                         info.has_auto = true;
-                        if self.lang_opts.c_standard < crate::lang_options::CStandard::C23 {
+                        if self.lang_opts.c_standard < CStandard::C23 {
                             if info.storage.is_some() {
                                 self.report_error(span, SemanticError::ConflictingStorageClasses);
                             }
@@ -3593,7 +3492,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     self.registry.complex_type(self.registry.type_double),
                 ));
             }
-        } else if info.has_auto && self.lang_opts.c_standard >= crate::lang_options::CStandard::C23 {
+        } else if info.has_auto && self.lang_opts.c_standard >= CStandard::C23 {
             info.base_type = Some(QualType::unqualified(
                 self.registry.alloc(Type::new(TypeKind::AutoType)),
             ));
@@ -3759,19 +3658,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     }
 
                     if decl.init_declarators.is_empty() {
-                        if let Some(base) = spec_info.base_type {
-                            let qt = self.merge_qualifiers_with_check(base, spec_info.qualifiers, span);
-                            if qt.is_record()
-                                && matches!(&self.registry.get(qt.ty()).kind, TypeKind::Record { tag: None, .. })
-                            {
-                                struct_members.push(StructMember {
-                                    member_type: qt,
-                                    alignment: spec_info.alignment,
-                                    is_packed: spec_info.is_packed,
-                                    span,
-                                    ..Default::default()
-                                });
-                            }
+                        if let Some(base) = spec_info.base_type
+                            && let qt = self.merge_qualifiers_with_check(base, spec_info.qualifiers, span)
+                            && qt.is_record()
+                            && matches!(&self.registry.get(qt.ty()).kind, TypeKind::Record { tag: None, .. })
+                        {
+                            struct_members.push(StructMember {
+                                member_type: qt,
+                                alignment: spec_info.alignment,
+                                is_packed: spec_info.is_packed,
+                                span,
+                                ..Default::default()
+                            });
                         }
                         continue;
                     }
@@ -3832,7 +3730,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         struct_members
     }
 
-    fn lower_record_parsed_base(
+    fn lower_record(
         &mut self,
         tag: Option<NameId>,
         members: Option<ParsedStructMemberRange>,
@@ -3863,7 +3761,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         Ok(QualType::unqualified(ty))
     }
 
-    fn lower_enum_parsed_base(
+    fn lower_enum(
         &mut self,
         tag: Option<NameId>,
         enumerators: Option<ParsedEnumRange>,
@@ -3881,13 +3779,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         };
 
         let is_definition = enumerators.is_some() || underlying_qt.is_some();
-        let ty = self.resolve_enum_tag(
-            tag,
-            is_definition,
-            underlying_qt.is_some(),
-            underlying_qt.map(|q| q.ty()),
-            span,
-        )?;
+        let ty = self.resolve_enum_tag(tag, is_definition, underlying_qt.is_some(), span)?;
 
         if let Some(enum_range) = enumerators {
             let parsed_enums = self.parsed_ast.parsed_types.get_enum_constants(enum_range);
@@ -3903,22 +3795,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 };
 
                 if !is_representable {
-                    if let Some(uqt) = underlying_qt {
-                        let target_ty = StringId::new(self.registry.display_qual_type(uqt));
-                        self.report_error(
-                            m.span,
-                            SemanticError::EnumeratorValueFixedNotRepresentable {
-                                name: m.name,
-                                value,
-                                target_ty,
-                            },
-                        );
-                    } else {
-                        self.report_error(
-                            m.span,
-                            SemanticError::EnumeratorValueNotRepresentable { name: m.name, value },
-                        );
-                    }
+                    let err = SemanticError::EnumeratorValueNotRepresentable {
+                        name: m.name,
+                        value,
+                        target_ty: underlying_qt,
+                    };
+                    self.report_error(m.span, err);
                 }
                 next_value = value.wrapping_add(1);
                 let _ = self.symbol_table.define_enum_constant(m.name, value, ty, m.span);
@@ -3945,7 +3827,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         Ok(QualType::unqualified(ty))
     }
 
-    fn lower_typedef_parsed_base(&mut self, name: NameId, span: SourceSpan) -> Result<QualType, SemanticDiag> {
+    fn lower_typedef(&mut self, name: NameId, span: SourceSpan) -> Result<QualType, SemanticDiag> {
         match self
             .symbol_table
             .lookup_symbol(name)
@@ -3965,43 +3847,30 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn lower_typeof_parsed_base(&mut self, ty: ParsedType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
+    fn lower_typeof(&mut self, ty: ParsedType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
         self.report_warning(span, SemanticError::GnuTypeof);
         self.lower_type(ty, span, false)
     }
 
-    fn lower_typeof_expr_parsed_base(
-        &mut self,
-        expr: ParsedNodeRef,
-        span: SourceSpan,
-    ) -> Result<QualType, SemanticDiag> {
+    fn lower_typeof_expr(&mut self, expr: ParsedNodeRef, span: SourceSpan) -> QualType {
         self.report_warning(span, SemanticError::GnuTypeof);
         let expr_node = self.visit_expression(expr);
-        if let Some(qt) = self.try_infer_type(expr_node) {
-            Ok(qt)
-        } else {
-            let tr = self.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)));
-            Ok(QualType::unqualified(tr))
-        }
+        self.try_infer_type(expr_node)
+            .unwrap_or_else(|| QualType::unqualified(self.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)))))
     }
 
-    fn lower_typeof_unqual_parsed_base(&mut self, ty: ParsedType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
+    fn lower_typeof_unqual(&mut self, ty: ParsedType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
         let qt = self.lower_type(ty, span, false)?;
         Ok(QualType::unqualified(qt.ty()))
     }
 
-    fn lower_typeof_unqual_expr_parsed_base(
-        &mut self,
-        expr: ParsedNodeRef,
-        _span: SourceSpan,
-    ) -> Result<QualType, SemanticDiag> {
+    fn lower_typeof_unqual_expr(&mut self, expr: ParsedNodeRef) -> QualType {
         let expr_node = self.visit_expression(expr);
-        if let Some(qt) = self.try_infer_type(expr_node) {
-            Ok(QualType::unqualified(qt.ty()))
-        } else {
-            let tr = self.registry.alloc(Type::new(TypeKind::TypeofUnqualExpr(expr_node)));
-            Ok(QualType::unqualified(tr))
-        }
+        let ty = self
+            .try_infer_type(expr_node)
+            .map(|qt| qt.ty())
+            .unwrap_or_else(|| self.registry.alloc(Type::new(TypeKind::TypeofUnqualExpr(expr_node))));
+        QualType::unqualified(ty)
     }
 
     /// Convert a ParsedBaseTypeNode to a QualType
@@ -4012,19 +3881,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     ) -> Result<QualType, SemanticDiag> {
         match parsed_base {
             ParsedBaseType::Builtin(ts) => self.resolve_type_spec(ts, span),
-            ParsedBaseType::Record { tag, members, is_union } => {
-                self.lower_record_parsed_base(*tag, *members, *is_union, span)
-            }
+            ParsedBaseType::Record { tag, members, is_union } => self.lower_record(*tag, *members, *is_union, span),
             ParsedBaseType::Enum {
                 tag,
                 enumerators,
                 underlying_type,
-            } => self.lower_enum_parsed_base(*tag, *enumerators, *underlying_type, span),
-            ParsedBaseType::Typedef(name) => self.lower_typedef_parsed_base(*name, span),
-            ParsedBaseType::Typeof(ty) => self.lower_typeof_parsed_base(*ty, span),
-            ParsedBaseType::TypeofExpr(expr) => self.lower_typeof_expr_parsed_base(*expr, span),
-            ParsedBaseType::TypeofUnqual(ty) => self.lower_typeof_unqual_parsed_base(*ty, span),
-            ParsedBaseType::TypeofUnqualExpr(expr) => self.lower_typeof_unqual_expr_parsed_base(*expr, span),
+            } => self.lower_enum(*tag, *enumerators, *underlying_type, span),
+            ParsedBaseType::Typedef(name) => self.lower_typedef(*name, span),
+            ParsedBaseType::Typeof(ty) => self.lower_typeof(*ty, span),
+            ParsedBaseType::TypeofExpr(expr) => Ok(self.lower_typeof_expr(*expr, span)),
+            ParsedBaseType::TypeofUnqual(ty) => self.lower_typeof_unqual(*ty, span),
+            ParsedBaseType::TypeofUnqualExpr(expr) => Ok(self.lower_typeof_unqual_expr(*expr)),
         }
     }
 }

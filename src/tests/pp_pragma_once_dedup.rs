@@ -1,6 +1,6 @@
+use crate::diagnostic::DiagnosticEngine;
 use crate::pp::*;
 use crate::source_manager::SourceManager;
-use crate::diagnostic::DiagnosticEngine;
 
 #[test]
 fn test_pragma_once_path_dedup() {
@@ -43,6 +43,10 @@ fn test_pragma_once_path_dedup() {
     let x_count = output.matches("int x").count();
     let y_count = output.matches("int y").count();
 
-    assert_eq!(x_count, 1, "int x should appear exactly once, found output: \n{}", output);
+    assert_eq!(
+        x_count, 1,
+        "int x should appear exactly once, found output: \n{}",
+        output
+    );
     assert_eq!(y_count, 1, "int y should appear exactly once");
 }

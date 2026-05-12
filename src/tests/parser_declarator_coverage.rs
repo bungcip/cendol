@@ -103,12 +103,13 @@ fn test_abstract_declarator_with_attributes() {
 #[test]
 fn test_get_declarator_name_bitfield() {
     // Hits ParsedDeclarator::BitField in get_declarator_name
-    let resolved = setup_declaration("struct S { int x : 5; };");
+    let resolved = setup_declaration("struct S { int x : 5; } s;");
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
         - "struct S { ... }"
-      init_declarators: []
+      init_declarators:
+        - name: s
     "#);
 }
 
@@ -192,12 +193,13 @@ fn test_nested_function_params_coverage() {
 #[test]
 fn test_bitfield_exhaustive() {
     // Unnamed bitfield hits line 352 get_declarator_name with Identifier(None)
-    let resolved = setup_declaration("struct S { int : 5; };");
+    let resolved = setup_declaration("struct S { int : 5; } s;");
     insta::assert_yaml_snapshot!(&resolved, @r#"
     Declaration:
       specifiers:
         - "struct S { ... }"
-      init_declarators: []
+      init_declarators:
+        - name: s
     "#);
 }
 
@@ -224,4 +226,13 @@ fn test_mega_coverage_declarations() {
     // Hits parse_attribute: aligned(int), __aligned__(long), unknown, noreturn, packed, and _ => advance
     let source2 = "int z __attribute__((aligned(int), __aligned__(long), unknown(((1))), noreturn, packed, 123, ++));";
     let _ = setup_declaration(source2);
+}
+
+#[test]
+fn test_get_declarator_params_coverage() {
+    // Hits line 348 in get_declarator_params (Function returning function pointer)
+    let _ = setup_translation_unit("void (*f())(int) { return 0; }");
+
+    // Hits line 354 in get_declarator_params (Array of function pointers / function returning pointer to array)
+    let _ = setup_translation_unit("int (*g())[5] { return 0; }");
 }

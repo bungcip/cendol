@@ -3261,51 +3261,45 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
     fn resolve_type_spec(&mut self, ts: &TypeSpec, span: SourceSpan) -> Result<QualType, SemanticDiag> {
         use TypeSpec::*;
-        match ts {
-            Void => Ok(QualType::unqualified(self.registry.type_void)),
-            Char => Ok(QualType::unqualified(self.registry.type_char)),
-            Short => Ok(QualType::unqualified(self.registry.type_short)),
-            Int => Ok(QualType::unqualified(self.registry.type_int)),
-            Long => Ok(QualType::unqualified(self.registry.type_long)),
-            LongLong => Ok(QualType::unqualified(self.registry.type_long_long)),
-            UnsignedLong => Ok(QualType::unqualified(self.registry.type_long_unsigned)),
-            UnsignedLongLong => Ok(QualType::unqualified(self.registry.type_long_long_unsigned)),
-            UnsignedShort => Ok(QualType::unqualified(self.registry.type_short_unsigned)),
-            UnsignedChar => Ok(QualType::unqualified(self.registry.type_char_unsigned)),
-            SignedChar => Ok(QualType::unqualified(self.registry.type_schar)),
-            SignedShort => Ok(QualType::unqualified(self.registry.type_short)),
-            SignedLong => Ok(QualType::unqualified(self.registry.type_long)),
-            SignedLongLong => Ok(QualType::unqualified(self.registry.type_long_long)),
+        let ty = match ts {
+            Atomic(p) => return self.resolve_atomic_specifier(*p, span),
+            Record(u, t, d, a) => return self.resolve_record_specifier(*u, *t, d, a, span),
+            Enum(t, e, u) => return self.resolve_enum_specifier(*t, e, *u, span),
+            TypedefName(n) => return self.resolve_typedef_name(*n, span),
+            TypeSpec::Typeof(ty) => return self.lower_typeof(*ty, span),
+            TypeSpec::TypeofUnqual(ty) => return self.lower_typeof_unqual(*ty, span),
+            TypeSpec::TypeofExpr(expr) => return Ok(self.lower_typeof_expr(*expr, span)),
+            TypeSpec::TypeofUnqualExpr(expr) => return Ok(self.lower_typeof_unqual_expr(*expr)),
 
-            Float => Ok(QualType::unqualified(self.registry.type_float)),
-            Double => Ok(QualType::unqualified(self.registry.type_double)),
-            LongDouble => Ok(QualType::unqualified(self.registry.type_long_double)),
-            ComplexFloat => Ok(QualType::unqualified(
-                self.registry.complex_type(self.registry.type_float),
-            )),
-            ComplexDouble => Ok(QualType::unqualified(
-                self.registry.complex_type(self.registry.type_double),
-            )),
-            ComplexLongDouble => Ok(QualType::unqualified(
-                self.registry.complex_type(self.registry.type_long_double),
-            )),
-            Signed => Ok(QualType::unqualified(self.registry.type_signed)),
-            Unsigned => Ok(QualType::unqualified(self.registry.type_int_unsigned)),
-            Bool => Ok(QualType::unqualified(self.registry.type_bool)),
-            Complex => Ok(QualType::unqualified(self.registry.type_complex_marker)),
-            Atomic(p) => self.resolve_atomic_specifier(*p, span),
-            Record(u, t, d, a) => self.resolve_record_specifier(*u, *t, d, a, span),
-            Enum(t, e, u) => self.resolve_enum_specifier(*t, e, *u, span),
-            TypedefName(n) => self.resolve_typedef_name(*n, span),
-            VaList => Ok(QualType::unqualified(self.registry.type_valist)),
-            AutoType => Ok(QualType::unqualified(
-                self.registry.alloc(Type::new(TypeKind::AutoType)),
-            )),
-            TypeSpec::Typeof(ty) => self.lower_typeof(*ty, span),
-            TypeSpec::TypeofExpr(expr) => Ok(self.lower_typeof_expr(*expr, span)),
-            TypeSpec::TypeofUnqual(ty) => self.lower_typeof_unqual(*ty, span),
-            TypeSpec::TypeofUnqualExpr(expr) => Ok(self.lower_typeof_unqual_expr(*expr)),
-        }
+            Void => self.registry.type_void,
+            Char => self.registry.type_char,
+            Short => self.registry.type_short,
+            Int => self.registry.type_int,
+            Long => self.registry.type_long,
+            LongLong => self.registry.type_long_long,
+            UnsignedLong => self.registry.type_long_unsigned,
+            UnsignedLongLong => self.registry.type_long_long_unsigned,
+            UnsignedShort => self.registry.type_short_unsigned,
+            UnsignedChar => self.registry.type_char_unsigned,
+            SignedChar => self.registry.type_schar,
+            SignedShort => self.registry.type_short,
+            SignedLong => self.registry.type_long,
+            SignedLongLong => self.registry.type_long_long,
+
+            Float => self.registry.type_float,
+            Double => self.registry.type_double,
+            LongDouble => self.registry.type_long_double,
+            ComplexFloat => self.registry.complex_type(self.registry.type_float),
+            ComplexDouble => self.registry.complex_type(self.registry.type_double),
+            ComplexLongDouble => self.registry.complex_type(self.registry.type_long_double),
+            Signed => self.registry.type_signed,
+            Unsigned => self.registry.type_int_unsigned,
+            Bool => self.registry.type_bool,
+            Complex => self.registry.type_complex_marker,
+            VaList => self.registry.type_valist,
+            AutoType => self.registry.alloc(Type::new(TypeKind::AutoType)),
+        };
+        Ok(QualType::unqualified(ty))
     }
 
     fn merge_base_type(

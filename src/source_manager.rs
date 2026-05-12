@@ -314,8 +314,30 @@ impl SourceManager {
         path: &std::path::Path,
         include_loc: Option<SourceLoc>,
     ) -> Result<SourceId, std::io::Error> {
-        let buffer = std::fs::read(path)?;
-        Ok(self.add_buffer(buffer, path.to_path_buf(), include_loc, FileKind::Real))
+        // Bolt ⚡: First check cache with the raw path to avoid expensive canonicalize() syscall.
+        if let Some(id) = self.path_to_id.get(path) {
+            return Ok(*id);
+        }
+
+        // Bolt ⚡: Canonicalize path to deduplicate files reached via different paths.
+        // This avoids redundant disk I/O, memory allocations, and SIMD calculations.
+        // It also correctly implements #pragma once for the same physical file.
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+
+        if let Some(&id) = self.path_to_id.get(&canonical) {
+            // Drop the borrow before inserting to satisfy the borrow checker.
+            let id = id;
+            self.path_to_id.insert(path.to_path_buf(), id);
+            return Ok(id);
+        }
+
+        let buffer = std::fs::read(&canonical)?;
+        let id = self.add_buffer(buffer, canonical, include_loc, FileKind::Real);
+
+        // Also map the original input path to this ID if it was different.
+        self.path_to_id.insert(path.to_path_buf(), id);
+
+        Ok(id)
     }
 
     /// Add a buffer to the source manager with raw bytes (UTF-8 assumed)

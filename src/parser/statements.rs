@@ -5,7 +5,7 @@
 
 use super::Parser;
 use crate::ast::*;
-use crate::parser::utils::expr_patterns::parse_parenthesized_expr;
+use crate::parser::utils::parse_parenthesized_expr;
 use crate::parser::{ParseError, TokenKind};
 use crate::source_manager::SourceLoc;
 

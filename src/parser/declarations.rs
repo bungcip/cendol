@@ -130,16 +130,7 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
         trx.parser.advance();
     }
 
-    loop {
-        if trx.parser.is_token(TokenKind::Attribute) {
-            let attrs = super::declarations::parse_attribute(trx.parser)?;
-            specifiers.extend(attrs);
-        } else if trx.parser.is_token(TokenKind::Asm) {
-            let _ = super::declarations::parse_asm(trx.parser);
-        } else {
-            break;
-        }
-    }
+    parse_trailing_attributes_and_asm(trx.parser, &mut specifiers)?;
 
     let semi = if let Some(token) = trx.parser.accept(TokenKind::Semicolon) {
         token
@@ -401,11 +392,9 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
     let span = parser.current_token_span()?;
 
     if parser.accept(TokenKind::LeftBrace).is_some() {
-        let mut initializers = Vec::new();
-
-        while !parser.at_eof() && !parser.is_token(TokenKind::RightBrace) {
-            let initializer = if parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
-                parse_designated_initializer(parser)?
+        let initializers = crate::parser::utils::parse_comma_separated_list(parser, TokenKind::RightBrace, |parser| {
+            if parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
+                parse_designated_initializer(parser)
             } else {
                 let initializer = if parser.is_token(TokenKind::LeftBrace) {
                     parse_initializer(parser)?
@@ -413,20 +402,15 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
                     parser.parse_expr_assignment()?
                 };
 
-                ParsedDesignatedInitializer {
+                Ok(ParsedDesignatedInitializer {
                     designation: Vec::new().into_boxed_slice(),
                     initializer,
-                }
-            };
-
-            initializers.push(initializer);
-            if parser.accept(TokenKind::Comma).is_none() {
-                break;
+                })
             }
-        }
+        })?;
 
         let end_token = parser.expect(TokenKind::RightBrace)?;
-        let span = SourceSpan::new(span.start(), end_token.span.end());
+        let span = span.merge(end_token.span);
         Ok(parser.push_node(ParsedNodeKind::InitializerList(initializers.into_boxed_slice()), span))
     } else {
         parser.parse_expr_assignment()
@@ -602,6 +586,24 @@ pub(crate) fn parse_asm(parser: &mut Parser) -> Result<(), ParseError> {
             depth += 1;
         } else if token.kind == TokenKind::RightParen {
             depth -= 1;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn parse_trailing_attributes_and_asm(
+    parser: &mut Parser,
+    specifiers: &mut ThinVec<DeclSpec>,
+) -> Result<(), ParseError> {
+    loop {
+        if parser.is_token(TokenKind::Attribute) {
+            specifiers.extend(parse_attribute(parser)?);
+        } else if parser.at_c23_attribute_start() {
+            specifiers.extend(parse_c23_attribute(parser)?);
+        } else if parser.is_token(TokenKind::Asm) {
+            parse_asm(parser)?;
+        } else {
+            break;
         }
     }
     Ok(())

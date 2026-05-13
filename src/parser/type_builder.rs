@@ -7,10 +7,9 @@
 
 use crate::ast::literal::LitVal;
 use crate::ast::*;
-use crate::parser::TokenKind;
 use crate::parser::declarations::parse_decl_specs;
 use crate::parser::declarator::{get_declarator_name, is_abstract_declarator_start, parse_abstract_declarator};
-use crate::parser::errors::{ParseError, ParseErrorKind};
+use crate::parser::{ParseError, ParseErrorKind, TokenKind};
 use crate::semantic::TypeQualifiers;
 use thin_vec::ThinVec;
 

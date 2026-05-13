@@ -65,65 +65,37 @@ fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
 
     // Check if we have an anonymous struct/union
     let is_struct = parser.accept(TokenKind::Struct).is_some();
-    let is_union = if !is_struct {
-        parser.accept(TokenKind::Union).is_some()
-    } else {
-        false
-    };
+    let is_union = !is_struct && parser.accept(TokenKind::Union).is_some();
+
     let decl = if is_struct || is_union {
         let tag = parser.accept_name();
-        if parser.accept(TokenKind::LeftBrace).is_some() {
-            let members = parse_struct_decl_list(parser)?;
+        let (members, mut attributes) = if parser.accept(TokenKind::LeftBrace).is_some() {
+            let m = parse_struct_decl_list(parser)?;
             parser.expect(TokenKind::RightBrace)?;
-
-            let mut attributes = parser.parse_attributes_lenient();
-
-            let init_declarators = if parser.accept(TokenKind::Semicolon).is_some() {
-                ThinVec::new()
-            } else {
-                let decls = parse_init_declarators(parser)?;
-                attributes.extend(parser.parse_attributes_lenient());
-                parser.expect(TokenKind::Semicolon)?;
-                decls
-            };
-
-            ParsedDecl {
-                specifiers: thin_vec![DeclSpec::TypeSpec(TypeSpec::Record(
-                    is_union,
-                    tag,
-                    Some(members),
-                    attributes
-                ))],
-                init_declarators,
-            }
+            (Some(m), parser.parse_attributes_lenient())
         } else {
-            let specifiers = thin_vec![DeclSpec::TypeSpec(TypeSpec::Record(is_union, tag, None, Vec::new()))];
-            let init_declarators = if parser.accept(TokenKind::Semicolon).is_some() {
-                ThinVec::new()
-            } else {
-                let decls = parse_init_declarators(parser)?;
-                parser.expect(TokenKind::Semicolon)?;
-                decls
-            };
-            ParsedDecl {
-                specifiers,
-                init_declarators,
+            (None, Vec::new())
+        };
+
+        let init_declarators = if parser.accept(TokenKind::Semicolon).is_some() {
+            ThinVec::new()
+        } else {
+            let decls = parse_init_declarators(parser)?;
+            if members.is_some() {
+                attributes.extend(parser.parse_attributes_lenient());
             }
+            parser.expect(TokenKind::Semicolon)?;
+            decls
+        };
+
+        ParsedDecl {
+            specifiers: thin_vec![DeclSpec::TypeSpec(TypeSpec::Record(is_union, tag, members, attributes))],
+            init_declarators,
         }
     } else {
         let mut specifiers = parse_decl_specs(parser)?;
         let init_declarators = parse_init_declarators(parser)?;
-        loop {
-            if parser.is_token(TokenKind::Attribute) {
-                specifiers.extend(super::declarations::parse_attribute(parser)?);
-            } else if parser.at_c23_attribute_start() {
-                specifiers.extend(super::declarations::parse_c23_attribute(parser)?);
-            } else if parser.is_token(TokenKind::Asm) {
-                let _ = super::declarations::parse_asm(parser);
-            } else {
-                break;
-            }
-        }
+        super::declarations::parse_trailing_attributes_and_asm(parser, &mut specifiers)?;
         parser.expect(TokenKind::Semicolon)?;
         ParsedDecl {
             specifiers,

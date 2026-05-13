@@ -1,8 +1,9 @@
 use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix, LitRef, LitVal, StrPrefix};
 use crate::ast::literal_parsing;
 use crate::ast::{FunctionSpec, PragmaPackKind, StorageClass, StringId, TypeQualifier};
+use crate::lang_options::CStandard;
 use crate::pp::error::PPError;
-use crate::pp::{PPToken, PPTokenKind};
+use crate::pp::{PPToken, PPTokenKind, Preprocessor};
 use crate::source_manager::SourceSpan;
 
 use serde::Serialize;
@@ -779,17 +780,14 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
 
 /// Lexer state machine
 pub struct Lexer<'src> {
-    pub(crate) preprocessor: &'src mut crate::pp::Preprocessor<'src>,
+    pub(crate) preprocessor: &'src mut Preprocessor<'src>,
     pub(crate) pp_lookahead: Option<PPToken>,
-    c_standard: crate::lang_options::CStandard,
+    c_standard: CStandard,
 }
 
 impl<'src> Lexer<'src> {
     /// Create a new lexer with the given preprocessor token stream
-    pub(crate) fn new(
-        preprocessor: &'src mut crate::pp::Preprocessor<'src>,
-        c_standard: crate::lang_options::CStandard,
-    ) -> Self {
+    pub(crate) fn new(preprocessor: &'src mut Preprocessor<'src>, c_standard: CStandard) -> Self {
         Lexer {
             pp_lookahead: None,
             preprocessor,

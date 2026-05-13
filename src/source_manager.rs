@@ -126,6 +126,10 @@ impl SourceSpan {
         Self::new(SourceLoc::builtin(), SourceLoc::builtin())
     }
 
+    pub(crate) fn from_loc(loc: SourceLoc) -> Self {
+        Self::new(loc, loc)
+    }
+
     pub(crate) fn start(&self) -> SourceLoc {
         let offset = (self.0 & Self::OFFSET_MASK) as u32;
         SourceLoc {
@@ -553,7 +557,7 @@ mod tests {
         let builtin = SourceLoc::builtin();
         let other = SourceLoc::new(SourceId::new(2), 0);
 
-        let merged = SourceSpan::new(builtin, builtin).merge(SourceSpan::new(other, other));
+        let merged = SourceSpan::from_loc(builtin).merge(SourceSpan::from_loc(other));
         assert_eq!(
             merged,
             SourceSpan::empty(),

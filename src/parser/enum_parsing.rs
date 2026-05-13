@@ -2,10 +2,9 @@
 //!
 //! This module handles parsing of enum declarations and enumerators.
 
+use super::Parser;
 use crate::ast::*;
 use crate::parser::{ParseError, TokenKind};
-
-use super::Parser;
 
 /// Parse enum specifier
 pub(super) fn parse_enum_spec(parser: &mut Parser) -> Result<TypeSpec, ParseError> {
@@ -37,24 +36,7 @@ pub(super) fn parse_enum_spec(parser: &mut Parser) -> Result<TypeSpec, ParseErro
 
 /// Parse enumerator list
 fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseError> {
-    let mut enumerators = Vec::new();
-
-    loop {
-        let enumerator = parse_enumerator(parser)?;
-        enumerators.push(enumerator);
-
-        if !parser.is_token(TokenKind::Comma) {
-            break;
-        }
-        parser.advance(); // consume comma
-
-        // Allow trailing comma
-        if parser.is_token(TokenKind::RightBrace) {
-            break;
-        }
-    }
-
-    Ok(enumerators)
+    crate::parser::utils::parse_comma_separated_list(parser, TokenKind::RightBrace, parse_enumerator)
 }
 
 /// Parse enumerator
@@ -62,7 +44,7 @@ fn parse_enumerator(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let (name, mut span) = parser.expect_name()?;
     let value = if parser.accept(TokenKind::Assign).is_some() {
         let expr = parser.parse_expr_assignment()?;
-        span = SourceSpan::new(span.start(), parser.ast.get_node(expr).span.end());
+        span = span.merge(parser.ast.get_node(expr).span);
         Some(expr)
     } else {
         None

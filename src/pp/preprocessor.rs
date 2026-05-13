@@ -818,7 +818,7 @@ impl<'src> Preprocessor<'src> {
 
     pub(super) fn get_current_span(&self) -> SourceSpan {
         let loc = self.get_current_location();
-        SourceSpan::new(loc, loc)
+        SourceSpan::from_loc(loc)
     }
 
     fn error_span(&self, kind: PPErrorKind, span: SourceSpan) -> PPError {
@@ -829,7 +829,7 @@ impl<'src> Preprocessor<'src> {
     pub(super) fn error(&self, kind: PPErrorKind, loc: SourceLoc) -> PPError {
         PPError {
             kind,
-            span: SourceSpan::new(loc, loc),
+            span: SourceSpan::from_loc(loc),
         }
     }
 
@@ -841,7 +841,7 @@ impl<'src> Preprocessor<'src> {
     pub(super) fn emit_error<T>(&self, kind: PPErrorKind, loc: SourceLoc) -> Result<T, PPError> {
         Err(PPError {
             kind,
-            span: SourceSpan::new(loc, loc),
+            span: SourceSpan::from_loc(loc),
         })
     }
 
@@ -1026,13 +1026,13 @@ impl<'src> Preprocessor<'src> {
 
     /// Helper to report error diagnostics
     pub(super) fn report_error(&mut self, loc: SourceLoc, message: impl Into<String>) {
-        let span = SourceSpan::new(loc, loc);
+        let span = SourceSpan::from_loc(loc);
         self.report_diagnostic(DiagnosticLevel::Error, message, span);
     }
 
     /// Helper to report warning diagnostics
     pub(super) fn report_warning(&mut self, loc: SourceLoc, message: impl Into<String>) {
-        let span = SourceSpan::new(loc, loc);
+        let span = SourceSpan::from_loc(loc);
         self.report_diagnostic(DiagnosticLevel::Warning, message, span);
     }
 }

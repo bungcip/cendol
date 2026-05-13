@@ -4,43 +4,66 @@
 //! found throughout the parser, including expression result handling,
 //! binding power utilities, and common parsing operations.
 
-use crate::ast::*;
-use crate::parser::errors::ParseError;
-
 use super::expressions::BindingPower;
-use super::{Parser, ParserState, TokenKind};
+use super::{ParseError, Parser, ParserState, TokenKind};
+use crate::ast::*;
 
-/// Common expression parsing patterns
-pub(crate) mod expr_patterns {
-    use super::*;
+/// Parse a parenthesized expression: (expression)
+pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    parser.expect(TokenKind::LeftParen)?;
+    let expr = parser.parse_expr_min()?;
+    parser.expect(TokenKind::RightParen)?;
+    Ok(expr)
+}
 
-    /// Parse a parenthesized expression: (expression)
-    pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-        parser.expect(TokenKind::LeftParen)?;
-        let expr = parser.parse_expr_min()?;
-        parser.expect(TokenKind::RightParen)?;
-        Ok(expr)
+/// Parse a comma-separated list of expressions with specified binding power
+pub(crate) fn parse_expr_list(
+    parser: &mut Parser,
+    binding_power: BindingPower,
+) -> Result<Vec<ParsedNodeRef>, ParseError> {
+    let mut args = Vec::new();
+    if parser.is_token(TokenKind::RightParen) {
+        return Ok(args);
     }
 
-    /// Parse a comma-separated list of expressions with specified binding power
-    pub(crate) fn parse_expr_list(
-        parser: &mut Parser,
-        binding_power: BindingPower,
-    ) -> Result<Vec<ParsedNodeRef>, ParseError> {
-        let mut args = Vec::new();
-        if parser.is_token(TokenKind::RightParen) {
-            return Ok(args);
+    loop {
+        args.push(parser.parse_expression(binding_power)?);
+        if parser.accept(TokenKind::Comma).is_none() {
+            break;
         }
-
-        loop {
-            args.push(parser.parse_expression(binding_power)?);
-            if parser.accept(TokenKind::Comma).is_none() {
-                break;
-            }
-        }
-
-        Ok(args)
     }
+
+    Ok(args)
+}
+
+pub(crate) fn parse_comma_separated_list<T, F>(
+    parser: &mut Parser,
+    stop_token: TokenKind,
+    mut parse_item: F,
+) -> Result<Vec<T>, ParseError>
+where
+    F: FnMut(&mut Parser) -> Result<T, ParseError>,
+{
+    let mut items = Vec::new();
+    if parser.is_token(stop_token) {
+        return Ok(items);
+    }
+
+    loop {
+        items.push(parse_item(parser)?);
+
+        if !parser.is_token(TokenKind::Comma) {
+            break;
+        }
+        parser.advance(); // consume comma
+
+        // Allow trailing comma
+        if parser.is_token(stop_token) {
+            break;
+        }
+    }
+
+    Ok(items)
 }
 
 pub(crate) struct ParserTransaction<'a, 'arena, 'src, 'lexer> {

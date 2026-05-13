@@ -346,7 +346,7 @@ impl<'a> Interpreter<'a> {
             .get(self.pos)
             .or_else(|| self.tokens.last())
             .map_or(SourceLoc::builtin(), |t| t.location);
-        SourceSpan::new(loc, loc)
+        SourceSpan::from_loc(loc)
     }
 
     fn error(&self) -> PPError {

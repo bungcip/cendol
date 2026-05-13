@@ -772,7 +772,7 @@ impl<'src> Preprocessor<'src> {
         let diag = Diagnostic {
             level,
             message: message.clone(),
-            span: SourceSpan::new(loc, loc),
+            span: SourceSpan::from_loc(loc),
             ..Default::default()
         };
         self.diag.report_diagnostic(diag);

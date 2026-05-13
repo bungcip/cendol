@@ -110,7 +110,7 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
 
         let span = start_span.merge(trx.parser.last_token_span().unwrap_or(start_span));
 
-        if let Some(name) = super::declarator::get_declarator_name(&trx.parser.ast.parsed_types, declarator) {
+        if let Some(name) = trx.parser.get_declarator_name(declarator) {
             if specifiers
                 .iter()
                 .any(|s| matches!(s, DeclSpec::StorageClass(StorageClass::Typedef)))

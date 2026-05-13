@@ -1,7 +1,6 @@
 use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix, LitRef, LitVal, StrPrefix};
 use crate::ast::literal_parsing;
 use crate::ast::{FunctionSpec, PragmaPackKind, StorageClass, StringId, TypeQualifier};
-use crate::pp::error::PPError;
 use crate::pp::{PPToken, PPTokenKind};
 use crate::source_manager::SourceSpan;
 
@@ -776,6 +775,8 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m
     })
 }
+
+use crate::pp::error::PPError;
 
 /// Lexer state machine
 pub struct Lexer<'src> {

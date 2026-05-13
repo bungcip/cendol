@@ -721,24 +721,6 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    fn expand_range_and_splice(
-        &mut self,
-        tokens: &mut Vec<PPToken>,
-        start: usize,
-        end: usize,
-        computed_include: bool,
-    ) -> Result<usize, PPError> {
-        let mut args = tokens[start..end].to_vec();
-        if computed_include {
-            self.expand_has_include_computed_args(&mut args);
-        } else {
-            self.expand_tokens(&mut args, false)?;
-        }
-        let len = args.len();
-        tokens.splice(start..end, args);
-        Ok(start + len)
-    }
-
     fn try_handle_conditional_operator(
         &mut self,
         tokens: &mut Vec<PPToken>,
@@ -769,8 +751,11 @@ impl<'src> Preprocessor<'src> {
                         }
                         _ => {
                             // Computed form: __has_include(MACRO)
-                            let next_i = self.expand_range_and_splice(tokens, arg_start, arg_end - 1, true)?;
-                            return Ok(Some(next_i + 1));
+                            let mut args = tokens[arg_start..arg_end - 1].to_vec();
+                            self.expand_has_include_computed_args(&mut args);
+                            let len = args.len();
+                            tokens.splice(arg_start..arg_end - 1, args);
+                            return Ok(Some(arg_start + len + 1));
                         }
                     }
                 }
@@ -792,8 +777,11 @@ impl<'src> Preprocessor<'src> {
             if let Some(arg_end) = arg_end {
                 // Argument to __has_builtin and friends should be expanded if it's a macro.
                 let arg_start = next + 1;
-                let next_i = self.expand_range_and_splice(tokens, arg_start, arg_end - 1, false)?;
-                return Ok(Some(next_i + 1));
+                let mut args = tokens[arg_start..arg_end - 1].to_vec();
+                self.expand_tokens(&mut args, false)?;
+                let len = args.len();
+                tokens.splice(arg_start..arg_end - 1, args);
+                return Ok(Some(arg_start + len + 1));
             }
             return Ok(Some(next.min(tokens.len())));
         }

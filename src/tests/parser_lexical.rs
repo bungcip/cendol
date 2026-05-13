@@ -183,7 +183,7 @@ fn test_lexer_display() {
         Literal(LitRef::from_int(1, IntSuffix::None, 10)),
         Literal(LitRef::from_f64(1.0, FloatSuffix::None)),
         Literal(LitRef::from_char(97, CharPrefix::None)),
-        Literal(LitRef::from_string("test", StrPrefix::None)),
+        Literal(LitRef::from_string(std::borrow::Cow::Borrowed("test"), StrPrefix::None)),
         Identifier(NameId::new("test")),
         Int,
         Return,

@@ -120,7 +120,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Destringize a string literal (remove quotes and handle escapes)
-    pub(crate) fn destringize(&self, full_str: &str) -> String {
+    pub(crate) fn destringize<'a>(&self, full_str: &'a str) -> std::borrow::Cow<'a, str> {
         crate::ast::literal_parsing::unescape(&full_str[1..full_str.len() - 1])
     }
 

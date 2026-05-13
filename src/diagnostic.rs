@@ -34,7 +34,7 @@ pub(crate) struct DiagnosticEngine {
     pub(crate) warning_count: usize,
     pub(crate) warning_limit: Option<usize>,
     /// Bolt ⚡: Flag to ensure the "too many errors" note is only emitted once.
-    pub(crate) limit_reached: bool,
+    pub(crate) error_limit_reached: bool,
     /// Bolt ⚡: Flag to ensure the "too many warnings" note is only emitted once.
     pub(crate) warning_limit_reached: bool,
     pub(crate) disabled_warnings: HashSet<String>,
@@ -56,7 +56,7 @@ impl Default for DiagnosticEngine {
             error_limit: None,
             warning_count: 0,
             warning_limit: None,
-            limit_reached: false,
+            error_limit_reached: false,
             warning_limit_reached: false,
             disabled_warnings: HashSet::new(),
             renderer,
@@ -86,7 +86,7 @@ impl DiagnosticEngine {
             error_limit: None,
             warning_count: 0,
             warning_limit: None,
-            limit_reached: false,
+            error_limit_reached: false,
             warning_limit_reached: false,
             disabled_warnings,
             renderer,
@@ -114,7 +114,7 @@ impl DiagnosticEngine {
             if let Some(limit) = self.error_limit
                 && self.error_count >= limit
             {
-                if !self.limit_reached {
+                if self.error_limit_reached == false {
                     // Report that we reached the limit
                     // Use the span of the current error to avoid <unknown> source if possible
                     self.diagnostics.push(Diagnostic {
@@ -123,7 +123,7 @@ impl DiagnosticEngine {
                         span: diagnostic.span,
                         ..Default::default()
                     });
-                    self.limit_reached = true;
+                    self.error_limit_reached = true;
                 }
                 return;
             }

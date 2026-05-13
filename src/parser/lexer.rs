@@ -894,55 +894,25 @@ impl<'src> Lexer<'src> {
                 }
             }
 
-            if string_tokens.len() == 1 {
-                let text = self.preprocessor.get_token_text(&string_tokens[0]);
-                let (prefix_str, content) = Self::extract_literal_parts(&text).unwrap_or(("", &text));
-                let prefix = match prefix_str {
-                    "u8" => StrPrefix::Utf8,
-                    "L" => StrPrefix::Wide,
-                    "u" => StrPrefix::Utf16,
-                    "U" => StrPrefix::Utf32,
-                    _ => StrPrefix::None,
-                };
-
-                let unescaped = literal_parsing::unescape(content);
-                return Ok(Some(Token {
-                    kind: TokenKind::Literal(LitRef::from_string(&unescaped, prefix)),
-                    span,
-                }));
-            }
-
-            // Slow path: Concatenate adjacent string literals
             let mut prefix = "";
             let mut content = String::new();
-            let mut last_span = span;
+            let mut merged_span = span;
 
             for (i, t) in string_tokens.iter().enumerate() {
                 let text = self.preprocessor.get_token_text(t);
-                let (next_prefix, next_content) = Self::extract_literal_parts(&text).unwrap_or(("", ""));
+                let (next_prefix, next_content) = Self::extract_literal_parts(&text).unwrap_or(("", &text));
                 if i == 0 || prefix.is_empty() {
                     prefix = next_prefix;
                 }
                 content.push_str(next_content);
-                if i > 0 {
-                    last_span =
-                        SourceSpan::new_with_length(t.location.source_id(), t.location.offset(), t.length as u32);
-                }
+                let t_span = SourceSpan::new_with_length(t.location.source_id(), t.location.offset(), t.length as u32);
+                merged_span = merged_span.merge(t_span);
             }
 
             let unescaped = literal_parsing::unescape(&content);
             return Ok(Some(Token {
-                kind: TokenKind::Literal(LitRef::from_string(
-                    &unescaped,
-                    match prefix {
-                        "u8" => StrPrefix::Utf8,
-                        "L" => StrPrefix::Wide,
-                        "u" => StrPrefix::Utf16,
-                        "U" => StrPrefix::Utf32,
-                        _ => StrPrefix::None,
-                    },
-                )),
-                span: span.merge(last_span),
+                kind: TokenKind::Literal(LitRef::from_string(unescaped, StrPrefix::from_str(prefix))),
+                span: merged_span,
             }));
         }
 

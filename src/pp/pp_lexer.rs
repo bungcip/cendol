@@ -18,6 +18,16 @@ bitflags::bitflags! {
     }
 }
 
+impl PPTokenFlags {
+    pub(crate) fn apply_splices<'a>(self, raw: &'a str) -> Cow<'a, str> {
+        if self.contains(PPTokenFlags::HAS_SPLICES) {
+            Cow::Owned(de_splice(raw))
+        } else {
+            Cow::Borrowed(raw)
+        }
+    }
+}
+
 pub use crate::ast::PragmaPackKind;
 
 /// Token kinds for preprocessor tokens
@@ -211,11 +221,7 @@ impl PPToken {
             ""
         };
 
-        if !self.flags.contains(PPTokenFlags::HAS_SPLICES) {
-            Cow::Borrowed(raw)
-        } else {
-            Cow::Owned(de_splice(raw))
-        }
+        self.flags.apply_splices(raw)
     }
 
     pub(crate) fn get_text_with_sm<'a>(&self, sm: &'a SourceManager) -> Cow<'a, str> {
@@ -1306,11 +1312,7 @@ impl PPLexer {
         // This is still needed for #if expressions.
         let raw_buffer = &self.buffer[start_pos as usize..self.position as usize];
         let raw_text = unsafe { std::str::from_utf8_unchecked(raw_buffer) };
-        let de_spliced = if final_flags.contains(PPTokenFlags::HAS_SPLICES) {
-            Cow::Owned(de_splice(raw_text))
-        } else {
-            Cow::Borrowed(raw_text)
-        };
+        let de_spliced = final_flags.apply_splices(raw_text);
 
         // Parse character literal content from de-spliced text
         let quote_start = if ends_with_delimiter {

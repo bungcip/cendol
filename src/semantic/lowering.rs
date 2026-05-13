@@ -1059,7 +1059,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
             // Create string literal for initializer
             let func_name_id = NameId::new(&func_name_str);
-            let init_literal = LitRef::from_string(func_name_id.as_str(), StrPrefix::None);
+            let init_literal = LitRef::from_string(std::borrow::Cow::Borrowed(func_name_id.as_str()), StrPrefix::None);
             let init_node = self.push_dummy(span);
             self.ast.set_kind(init_node, NodeKind::Literal(init_literal));
 

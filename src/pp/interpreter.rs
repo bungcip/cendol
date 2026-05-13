@@ -529,12 +529,9 @@ impl<'a> Interpreter<'a> {
             return self.parse_has_include(true);
         }
 
-        // Handle `__has_builtin` and friends
-        let checks = [
-            (
-                self.preprocessor.has_builtin_symbol(),
-                PPExpr::HasBuiltin as fn(StringId) -> PPExpr,
-            ),
+        type CheckConstructor = fn(StringId) -> PPExpr;
+        let checks: [(StringId, CheckConstructor); 5] = [
+            (self.preprocessor.has_builtin_symbol(), PPExpr::HasBuiltin),
             (self.preprocessor.has_attribute_symbol(), PPExpr::HasAttribute),
             (self.preprocessor.has_c_attribute_symbol(), PPExpr::HasCAttribute),
             (self.preprocessor.has_feature_symbol(), PPExpr::HasFeature),

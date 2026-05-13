@@ -813,7 +813,8 @@ impl<'src> Preprocessor<'src> {
             && let PPTokenKind::StringLiteral = tokens[i + 2].kind
             && tokens[i + 3].kind == PPTokenKind::RightParen
         {
-            let content = self.destringize(&self.get_token_text(&tokens[i + 2]));
+            let token_text = self.get_token_text(&tokens[i + 2]);
+            let content = self.destringize(&token_text).into_owned();
             self.perform_pragma(&content);
             tokens.drain(i..i + 4);
             return true;
@@ -1167,10 +1168,6 @@ impl<'a> SourceBufferCache<'a> {
         // Safety: Preprocessor tokens are guaranteed to be valid UTF-8 by the lexer.
         let raw = unsafe { std::str::from_utf8_unchecked(bytes) };
 
-        if !token.flags.contains(PPTokenFlags::HAS_SPLICES) {
-            Cow::Borrowed(raw)
-        } else {
-            Cow::Owned(crate::pp::pp_lexer::de_splice(raw))
-        }
+        token.flags.apply_splices(raw)
     }
 }

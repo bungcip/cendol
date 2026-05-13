@@ -170,6 +170,16 @@ impl StrPrefix {
             _ => Self::None,
         }
     }
+
+    pub(crate) fn from_str(s: &str) -> Self {
+        match s {
+            "u8" => Self::Utf8,
+            "L" => Self::Wide,
+            "u" => Self::Utf16,
+            "U" => Self::Utf32,
+            _ => Self::None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
@@ -290,7 +300,7 @@ impl LitRef {
         Self((TAG_CHAR << TAG_SHIFT) | ch as u64 | ((prefix as u64) << CHAR_PREFIX_SHIFT))
     }
 
-    pub(crate) fn from_string(s: &str, prefix: StrPrefix) -> Self {
+    pub(crate) fn from_string<'a>(s: std::borrow::Cow<'a, str>, prefix: StrPrefix) -> Self {
         let bytes = s.as_bytes();
         if bytes.len() <= STR_MAX_SMALL_LEN && bytes.is_ascii() {
             let mut packed = 0u64;
@@ -301,7 +311,7 @@ impl LitRef {
             Self((TAG_SMALL_STR << TAG_SHIFT) | payload)
         } else {
             Self::intern(LitVal::String {
-                value: s.to_string(),
+                value: s.into_owned(),
                 prefix,
             })
         }

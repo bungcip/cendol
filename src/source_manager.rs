@@ -293,7 +293,6 @@ pub struct FileInfo {
 pub struct SourceManager {
     file_infos: Vec<FileInfo>,
     path_to_id: HashMap<PathBuf, SourceId>,
-    next_file_id: u32,
 }
 
 impl Default for SourceManager {
@@ -301,7 +300,6 @@ impl Default for SourceManager {
         Self {
             file_infos: Vec::new(),
             path_to_id: HashMap::new(),
-            next_file_id: 2, // Start from 2, reserve 1 for built-ins
         }
     }
 }
@@ -361,8 +359,7 @@ impl SourceManager {
             compute_line_starts(&buffer)
         };
 
-        let file_id = SourceId::new(self.next_file_id);
-        self.next_file_id += 1;
+        let file_id = SourceId::new(self.file_infos.len() as u32 + 2);
         if kind == FileKind::Real || kind == FileKind::Builtin {
             // Only map path for real files and built-in headers.
             // This avoids unnecessary map insertions for short-lived virtual buffers.

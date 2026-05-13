@@ -216,13 +216,13 @@ fn parse_hex_float_literal(text: &str) -> Option<f64> {
 }
 
 /// Unescape C11 string literal content
-pub(crate) fn unescape(s: &str) -> String {
+pub(crate) fn unescape<'a>(s: &'a str) -> std::borrow::Cow<'a, str> {
     if !s.contains('\\') {
-        return s.to_string();
+        return std::borrow::Cow::Borrowed(s);
     }
     let mut result = String::with_capacity(s.len());
     unescape_into(s, &mut result);
-    result
+    std::borrow::Cow::Owned(result)
 }
 
 /// Unescape C11 string literal content into a buffer

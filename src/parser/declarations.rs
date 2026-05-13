@@ -5,14 +5,11 @@
 //! and translation units.
 
 use crate::ast::*;
-use crate::diagnostic::{ParseError, ParseErrorKind};
-use crate::parser::{Token, TokenKind};
+use crate::parser::{ParseError, ParseErrorKind, Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 use thin_vec::ThinVec;
 
 use super::Parser;
-// StorageClass, FunctionSpec, and TypeQualifier are already available via crate::ast::*
-// Import all parsed types to be sure
 use crate::ast::parsed::{
     DeclSpec, ParsedAlignmentSpec, ParsedDesignatedInitializer, ParsedDesignator, ParsedNodeKind, ParsedNodeRef,
     TypeSpec,
@@ -233,7 +230,7 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
         match parse_decl(parser, true) {
             Ok(declaration) => top_level_declarations.push(declaration),
             Err(e) => {
-                parser.diag().report(e);
+                parser.report_error(e);
                 parser.synchronize();
             }
         }

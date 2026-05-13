@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use crate::ast::dumper::AstDumper;
 use crate::ast::{Ast, ParsedAst, SourceId};
 use crate::codegen::{ClifGen, ClifOutput, EmitKind};
-use crate::diagnostic::DiagnosticEngine;
+use crate::diagnostic::{DiagnosticEngine, IntoDiagnostic};
 use crate::driver::cli::PathOrBuffer;
 use crate::mir::validation::MirValidator;
 use crate::parser::Lexer;
@@ -146,7 +146,7 @@ impl CompilerDriver {
                 preprocessor
                     .process(source_id, &self.config.preprocessor)
                     .map_err(|e| {
-                        self.diagnostics.report_diagnostic(e.into());
+                        self.diagnostics.report_streaming(e.into(), &self.source_manager);
                         PipelineError::Fatal
                     })?,
             );
@@ -162,7 +162,7 @@ impl CompilerDriver {
         let t1 = Instant::now();
         if stop_after == CompilePhase::Lex {
             out.lexed = Some(lexer.tokenize_all().map_err(|e| {
-                self.diagnostics.report_diagnostic(e.into());
+                self.diagnostics.report_streaming(e.into(), &self.source_manager);
                 PipelineError::Fatal
             })?);
             self.check_diagnostics_and_return_if_error()?;
@@ -178,7 +178,9 @@ impl CompilerDriver {
         Parser::new(&mut lexer, &mut parsed_ast, &self.config.lang_options)
             .parse_translation_unit()
             .map_err(|e| {
-                self.diagnostics.report(e);
+                for diag in e.into_diagnostic() {
+                    self.diagnostics.report_streaming(diag, &self.source_manager);
+                }
                 PipelineError::Fatal
             })?;
 
@@ -311,6 +313,7 @@ impl CompilerDriver {
             &symbol_table,
             &mut registry,
             &self.config.lang_options,
+            &self.source_manager,
         );
         if let Some(t0) = t0 {
             eprintln!("[TIMING]   Semantic Analyzer: {:?}", t0.elapsed());
@@ -359,10 +362,7 @@ impl CompilerDriver {
     pub fn run(&mut self) -> Result<(), DriverError> {
         let stop_after = self.config.stop_after;
         match self.run_pipeline(stop_after) {
-            Ok(outputs) => {
-                self.print_diagnostics();
-                self.process_outputs(outputs)
-            }
+            Ok(outputs) => self.process_outputs(outputs),
             Err(e) => self.handle_pipeline_error(e),
         }
     }
@@ -373,10 +373,7 @@ impl CompilerDriver {
                 let message = format!("I/O Error: {}", io_err);
                 Err(DriverError::IoError(message))
             }
-            PipelineError::Fatal => {
-                self.print_diagnostics();
-                Err(DriverError::CompilationFailed)
-            }
+            PipelineError::Fatal => Err(DriverError::CompilationFailed),
         }
     }
 

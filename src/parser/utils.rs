@@ -5,7 +5,7 @@
 //! binding power utilities, and common parsing operations.
 
 use crate::ast::*;
-use crate::diagnostic::ParseError;
+use crate::parser::errors::ParseError;
 
 use super::expressions::BindingPower;
 use super::{Parser, ParserState, TokenKind};

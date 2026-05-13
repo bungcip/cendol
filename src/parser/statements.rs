@@ -5,9 +5,8 @@
 
 use super::Parser;
 use crate::ast::*;
-use crate::diagnostic::ParseError;
-use crate::parser::TokenKind;
 use crate::parser::utils::expr_patterns::parse_parenthesized_expr;
+use crate::parser::{ParseError, TokenKind};
 use crate::source_manager::SourceLoc;
 
 pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
@@ -83,7 +82,7 @@ fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef,
         match parse_statement(parser) {
             Ok(stmt) => items.push(stmt),
             Err(stmt_err) => {
-                parser.diag().report(decl_error.unwrap_or(stmt_err));
+                parser.report_error(decl_error.unwrap_or(stmt_err));
                 parser.synchronize_until(&[TokenKind::RightBrace]);
             }
         }

@@ -1,13 +1,12 @@
 use crate::ast::literal::LitVal;
 use crate::ast::{BinaryOp, ParsedBaseType, ParsedBaseTypeRef, UnaryOp};
 use crate::ast::{DeclSpec, DeclaratorRef, ParsedAst, ParsedDeclarator, ParsedNodeKind, ParsedNodeRef, TypeSpec};
-use crate::diagnostic::ParseError;
 use crate::driver::CompilerDriver;
 use crate::driver::artifact::CompilePhase;
 use crate::driver::cli::CompileConfig;
 use crate::lang_options::CStandard;
 use crate::parser::statements::parse_compound_statement;
-use crate::parser::{BindingPower, Lexer, Parser, declarations, statements};
+use crate::parser::{BindingPower, Lexer, ParseError, Parser, declarations, statements};
 use crate::pp::Preprocessor;
 use crate::source_manager::FileKind;
 use crate::tests::test_utils::setup_sm_and_de;

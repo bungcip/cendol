@@ -1,13 +1,9 @@
-use crate::{
-    parser::TokenKind,
-    source_manager::{FileKind, SourceManager, SourceSpan},
-};
+use crate::source_manager::{FileKind, SourceManager, SourceSpan};
 use hashbrown::HashSet;
 use std::io::IsTerminal;
 
 use annotate_snippets::renderer::DecorStyle;
 use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
-use thiserror::Error;
 
 /// Diagnostic severity levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -26,30 +22,6 @@ pub(crate) struct Diagnostic {
     pub(crate) span: SourceSpan,
     pub(crate) hints: Vec<String>, // Suggestions for fixing
     pub(crate) warning_name: Option<&'static str>,
-}
-
-/// Parse errors
-#[derive(Debug, Error)]
-#[error("{kind}")]
-pub(crate) struct ParseError {
-    pub(crate) span: SourceSpan,
-    pub(crate) kind: ParseErrorKind,
-}
-
-/// Parse error kinds
-#[derive(Debug, Error)]
-pub(crate) enum ParseErrorKind {
-    #[error("Unexpected token: expected {expected}, found {found}")]
-    UnexpectedToken { expected: &'static str, found: TokenKind },
-
-    #[error("Unexpected End of File")]
-    UnexpectedEof,
-
-    #[error("Declaration not allowed in this context")]
-    DeclarationNotAllowed,
-
-    #[error("_Atomic(type-name) specifier cannot be used with {0} type ")]
-    InvalidAtomicSpec(&'static str),
 }
 
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
@@ -181,9 +153,24 @@ impl DiagnosticEngine {
         self.error_count > 0
     }
 
-    pub(crate) fn report<T: IntoDiagnostic>(&mut self, error: T) {
-        for diagnostic in error.into_diagnostic() {
-            self.report_diagnostic(diagnostic);
+    pub(crate) fn report_streaming(&mut self, diagnostic: Diagnostic, source_manager: &SourceManager) {
+        let prev_len = self.diagnostics.len();
+        self.report_diagnostic(diagnostic);
+        if self.diagnostics.len() > prev_len {
+            let added_diag = self.diagnostics.last().unwrap();
+            let formatted = self.format_diagnostic(added_diag, source_manager);
+            eprintln!("{}", formatted);
+        }
+    }
+
+    pub(crate) fn report_semantic_streaming(
+        &mut self,
+        err: crate::semantic::errors::SemanticDiag,
+        source_manager: &SourceManager,
+        registry: &crate::semantic::TypeRegistry,
+    ) {
+        for diag in err.into_diagnostic(registry) {
+            self.report_streaming(diag, source_manager);
         }
     }
 
@@ -300,15 +287,4 @@ impl DiagnosticEngine {
 
 pub(crate) trait IntoDiagnostic {
     fn into_diagnostic(self) -> Vec<Diagnostic>;
-}
-
-impl IntoDiagnostic for ParseError {
-    fn into_diagnostic(self) -> Vec<Diagnostic> {
-        vec![Diagnostic {
-            level: DiagnosticLevel::Error,
-            message: self.to_string(),
-            span: self.span,
-            ..Default::default()
-        }]
-    }
 }

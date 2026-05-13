@@ -1012,7 +1012,7 @@ impl<'src> Preprocessor<'src> {
             span,
             ..Default::default()
         };
-        self.diag.report_diagnostic(diag);
+        self.diag.report_streaming(diag, self.sm);
     }
 
     /// Helper to report error diagnostics from PPError
@@ -1020,7 +1020,7 @@ impl<'src> Preprocessor<'src> {
         use crate::diagnostic::IntoDiagnostic;
         let diags = err.into_diagnostic();
         for diag in diags {
-            self.diag.report_diagnostic(diag);
+            self.diag.report_streaming(diag, self.sm);
         }
     }
 

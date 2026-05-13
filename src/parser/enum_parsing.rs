@@ -3,8 +3,7 @@
 //! This module handles parsing of enum declarations and enumerators.
 
 use crate::ast::*;
-use crate::diagnostic::ParseError;
-use crate::parser::TokenKind;
+use crate::parser::{ParseError, TokenKind};
 
 use super::Parser;
 

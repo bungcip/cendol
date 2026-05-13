@@ -7,9 +7,8 @@ use thin_vec::{ThinVec, thin_vec};
 
 use crate::ast::parsed::*;
 use crate::ast::*;
-use crate::diagnostic::ParseError;
-use crate::parser::TokenKind;
 use crate::parser::declarations::parse_decl_specs;
+use crate::parser::{ParseError, TokenKind};
 
 use super::Parser;
 

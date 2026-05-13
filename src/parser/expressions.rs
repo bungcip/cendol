@@ -4,10 +4,9 @@
 //! implementation for operator precedence and associativity.
 
 use crate::ast::{parsed::*, *};
-use crate::diagnostic::{ParseError, ParseErrorKind};
 use crate::parser::type_builder::parse_type_name;
 use crate::parser::utils::expr_patterns::parse_expr_list;
-use crate::parser::{Token, TokenKind};
+use crate::parser::{ParseError, ParseErrorKind, Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 
 use super::Parser;

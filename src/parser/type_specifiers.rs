@@ -4,12 +4,11 @@
 //! typedef names, struct/union/enum specifiers, and atomic types.
 
 use crate::ast::*;
-use crate::diagnostic::ParseError;
 use crate::parser::enum_parsing::parse_enum_spec;
 use crate::parser::expressions::parse_expression;
 use crate::parser::struct_parsing::parse_record_spec;
 use crate::parser::type_builder::parse_type_name;
-use crate::parser::{BindingPower, TokenKind};
+use crate::parser::{BindingPower, ParseError, TokenKind};
 
 use super::Parser;
 

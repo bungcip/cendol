@@ -6,13 +6,15 @@
 
 use crate::ast::literal::{LitKind, LitRef};
 use crate::ast::*;
-use crate::diagnostic::{DiagnosticEngine, ParseError, ParseErrorKind};
+use crate::diagnostic::DiagnosticEngine;
 use crate::lang_options::CStandard;
+
 use crate::source_manager::SourceSpan;
 
 pub mod declarations;
 pub mod declarator;
 pub mod enum_parsing;
+pub mod errors;
 pub mod expressions;
 pub mod lexer;
 pub mod statements;
@@ -22,10 +24,10 @@ pub mod type_specifiers;
 pub mod utils;
 
 // Re-export commonly used types
+pub(crate) use crate::parser::errors::{ParseError, ParseErrorKind};
 pub(crate) use expressions::BindingPower;
-pub(crate) use lexer::{Lexer, Token, TokenKind};
-
 use expressions::parse_expression;
+pub(crate) use lexer::{Lexer, Token, TokenKind};
 
 /// Type context for tracking typedef names and other type-related state
 #[derive(Debug)]
@@ -164,6 +166,13 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
         self.lexer.preprocessor.diag
     }
 
+    pub(crate) fn report_error<T: crate::diagnostic::IntoDiagnostic>(&mut self, error: T) {
+        let sm = &*self.lexer.preprocessor.sm;
+        for diag in error.into_diagnostic() {
+            self.lexer.preprocessor.diag.report_streaming(diag, sm);
+        }
+    }
+
     /// Get the current token (returns None if at end of input)
     fn try_current_token(&mut self) -> Option<Token> {
         self.ensure_cached(self.current_idx);
@@ -178,7 +187,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
                 }
                 Ok(None) => break,
                 Err(e) => {
-                    self.lexer.preprocessor.diag.report(e);
+                    self.report_error(e);
                     let span = self.token_cache.last().map(|t| t.span).unwrap_or_default();
                     self.token_cache.push(Token {
                         kind: TokenKind::EndOfFile,

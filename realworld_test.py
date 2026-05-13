@@ -114,11 +114,17 @@ def prepare_project(project_name, realworld_dir):
     return project_dir
 
 def main():
-    if len(sys.argv) < 2:
+    use_release = False
+    args = sys.argv[1:]
+    if "--release" in args:
+        use_release = True
+        args.remove("--release")
+
+    if not args:
         print_usage()
         sys.exit(1)
 
-    project_name = sys.argv[1]
+    project_name = args[0]
     
     # Root directory of cendol (where this script is located)
     cendol_root = os.path.dirname(os.path.abspath(__file__))
@@ -146,10 +152,10 @@ def main():
         return
 
     if project_name == "prepare":
-        if len(sys.argv) < 3:
+        if len(args) < 2:
             print("Usage: ./realworld_test.py prepare <project-name>")
             sys.exit(1)
-        prepare_project(sys.argv[2], realworld_dir)
+        prepare_project(args[1], realworld_dir)
         return
 
     if project_name not in PROJECTS:
@@ -159,11 +165,16 @@ def main():
 
     project_dir = prepare_project(project_name, realworld_dir)
     config = PROJECTS[project_name]
-    cendol_bin = os.path.join(cendol_root, "target/debug/cendol")
+    if use_release:
+        cendol_bin = os.path.join(cendol_root, "target/release/cendol")
+        build_cmd = ["cargo", "build", "--release"]
+    else:
+        cendol_bin = os.path.join(cendol_root, "target/debug/cendol")
+        build_cmd = ["cargo", "build"]
 
     # Ensure compiler is built
     print("Building cendol...")
-    run_command(["cargo", "build"], cwd=cendol_root)
+    run_command(build_cmd, cwd=cendol_root)
 
     # 3. Build
     build_cmd = [arg.format(CC=cendol_bin) for arg in config["build_cmd"]]

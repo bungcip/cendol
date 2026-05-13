@@ -14,6 +14,7 @@ use crate::{
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticDiag, SemanticError},
         literal_utils::lower_string_literal,
+        types::TypeClass,
     },
 };
 
@@ -133,6 +134,7 @@ pub(crate) fn visit_ast(
     symbol_table: &SymbolTable,
     registry: &mut TypeRegistry,
     lang_opts: &LangOptions,
+    source_manager: &crate::source_manager::SourceManager,
 ) -> SemanticInfo {
     let mut semantic_info = SemanticInfo::with_capacity(ast.kinds.len());
     let mut resolver = SemanticAnalyzer {
@@ -150,6 +152,7 @@ pub(crate) fn visit_ast(
         goto_vla_state: Vec::new(),
         label_vla_state: HashMap::new(),
         lang_opts,
+        source_manager,
     };
     let root = ast.get_root();
     resolver.visit_node(root);
@@ -179,6 +182,7 @@ struct SemanticAnalyzer<'a> {
     goto_vla_state: Vec<(NodeRef, Vec<NodeRef>)>,
     label_vla_state: HashMap<SymbolRef, (SourceSpan, Vec<NodeRef>)>,
     lang_opts: &'a crate::lang_options::LangOptions,
+    source_manager: &'a crate::source_manager::SourceManager,
 }
 
 impl<'a> SemanticAnalyzer<'a> {
@@ -191,31 +195,19 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut error = SemanticDiag::new(span, kind);
         error.notes = notes;
         error.level = Some(DiagnosticLevel::Error);
-        for diag in error.into_diagnostic(self.registry) {
-            self.diag.report_diagnostic(diag);
-        }
+        self.diag
+            .report_semantic_streaming(error, self.source_manager, self.registry);
     }
 
     fn report_warning(&mut self, node: NodeRef, kind: SemanticError) {
         if self.lang_opts.pedantic_errors {
             self.report_error(node, kind);
         } else {
-            self.report_warning_with_notes(node, kind, vec![])
-        }
-    }
-
-    fn report_warning_with_notes(
-        &mut self,
-        node: NodeRef,
-        kind: SemanticError,
-        notes: Vec<(SourceSpan, SemanticError)>,
-    ) {
-        let span = self.ast.get_span(node);
-        let mut error = SemanticDiag::new(span, kind);
-        error.notes = notes;
-        error.level = Some(DiagnosticLevel::Warning);
-        for diag in error.into_diagnostic(self.registry) {
-            self.diag.report_diagnostic(diag);
+            let span = self.ast.get_span(node);
+            let mut error = SemanticDiag::new(span, kind);
+            error.level = Some(DiagnosticLevel::Warning);
+            self.diag
+                .report_semantic_streaming(error, self.source_manager, self.registry);
         }
     }
 
@@ -350,10 +342,7 @@ impl<'a> SemanticAnalyzer<'a> {
         // This includes builtins, records, enums, and complex types.
         // Skipping these avoids expensive HashSet insertions and lookups.
         match ty.class() {
-            crate::semantic::types::TypeClass::Builtin
-            | crate::semantic::types::TypeClass::Record
-            | crate::semantic::types::TypeClass::Enum
-            | crate::semantic::types::TypeClass::Complex => return,
+            TypeClass::Builtin | TypeClass::Record | TypeClass::Enum | TypeClass::Complex => return,
             _ => {}
         }
 

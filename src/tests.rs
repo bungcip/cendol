@@ -134,6 +134,7 @@ pub mod semantic_scope_invariants;
 pub mod semantic_static_assert;
 
 pub mod guardian_choose_expr;
+pub mod guardian_typedef_redefinition;
 pub mod regr_identifier_truncation;
 pub mod regr_init_range;
 pub mod regr_mixed_sign_comp;

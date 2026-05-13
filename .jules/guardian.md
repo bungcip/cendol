@@ -243,3 +243,8 @@ Action: Explicitly distinguish between different enum types during compatibility
 
 Learning: C11 6.5.1.1p2 prohibits variably modified (VM) types in generic associations. This constraint applies not only to direct VLAs (e.g. 'int[n]') but also to any VM type, including pointers to VLAs (e.g. 'int(*)[n]'). While Cendol's 'is_variably_modified' correctly handles this recursion, explicit tests are required to ensure these cases are consistently rejected with 'SemanticError::GenericVlaAssociation' to prevent them from reaching later compiler phases.
 Action: Always test VM type constraints using both direct VLAs and derived VM types (like pointers or multi-dimensional arrays) to ensure complete coverage of the language's VM type classification.
+
+2026-05-16 - [Typedef Redefinition Type Identity vs Compatibility]
+
+Learning: C11 6.7p3 requires that typedef redefinitions in the same scope denote the exact SAME type, not merely compatible types. This is a subtle distinction. While `int[]` and `int[10]` are compatible, they are not the same type. Similarly, `int` and `const int` are compatible in some contexts, but not the same. Enforcing strict type identity using `aliased_type != final_ty` during lowering prevents invalid redefinitions that would otherwise pass simple compatibility checks.
+Action: Add dedicated regression tests for `typedef` redefinition specifically targeting cases where types are compatible but not identical, to prevent regressions in this strict type identity constraint.

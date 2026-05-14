@@ -105,3 +105,14 @@ fn test_attribute_coverage() {
         CStandard::C23,
     );
 }
+
+#[test]
+fn test_trailing_attributes() {
+    run_pass_with_std(
+        r#"
+        int x __attribute__((aligned(8))) [[maybe_unused]] __asm__("my_x");
+        "#,
+        CompilePhase::Parse,
+        CStandard::C23,
+    );
+}

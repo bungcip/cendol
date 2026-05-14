@@ -7,16 +7,41 @@ pub struct StringLiteralValue {
     pub size: usize,
 }
 
-pub(crate) fn lower_string_literal(content: &str, prefix: StrPrefix) -> StringLiteralValue {
-    let builtin_type = match prefix {
+/// Metadata about a string literal without its full value buffer.
+/// Bolt ⚡: This allows phases like semantic analysis and lowering to resolve
+/// literal types and sizes without incurring the heap allocation cost of a Vec<i64>.
+pub(crate) fn get_string_builtin_type(prefix: StrPrefix) -> BuiltinType {
+    match prefix {
         StrPrefix::Wide => BuiltinType::Int,
         StrPrefix::Utf16 => BuiltinType::UShort,
         StrPrefix::Utf32 => BuiltinType::UInt,
         StrPrefix::Utf8 => BuiltinType::UChar,
         StrPrefix::None => BuiltinType::Char,
-    };
+    }
+}
 
-    let mut values = Vec::new();
+/// Calculate the number of elements in the string literal, including the null terminator.
+/// Bolt ⚡: Optimized metadata-only calculation to avoid full literal lowering.
+pub(crate) fn get_string_literal_size(content: &str, prefix: StrPrefix) -> usize {
+    match prefix {
+        StrPrefix::None | StrPrefix::Utf8 => content.len() + 1,
+        StrPrefix::Wide | StrPrefix::Utf32 => content.chars().count() + 1,
+        StrPrefix::Utf16 => {
+            let mut len = 0;
+            for c in content.chars() {
+                len += c.len_utf16();
+            }
+            len + 1
+        }
+    }
+}
+
+pub(crate) fn lower_string_literal(content: &str, prefix: StrPrefix) -> StringLiteralValue {
+    let builtin_type = get_string_builtin_type(prefix);
+    let size = get_string_literal_size(content, prefix);
+
+    // Bolt ⚡: Use with_capacity to ensure a single allocation.
+    let mut values = Vec::with_capacity(size);
     match prefix {
         StrPrefix::None | StrPrefix::Utf8 => {
             values.extend(content.bytes().map(|b| b as i64));
@@ -35,7 +60,7 @@ pub(crate) fn lower_string_literal(content: &str, prefix: StrPrefix) -> StringLi
 
     StringLiteralValue {
         builtin_type,
-        size: values.len(),
+        size,
         values,
     }
 }

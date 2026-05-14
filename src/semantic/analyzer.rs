@@ -13,7 +13,7 @@ use crate::{
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticDiag, SemanticError},
-        literal_utils::lower_string_literal,
+        literal_utils::{get_string_builtin_type, get_string_literal_size},
         types::TypeClass,
     },
 };
@@ -3386,12 +3386,14 @@ impl<'a> SemanticAnalyzer<'a> {
                 Some(QualType::unqualified(ty))
             }
             LitVal::String { value, prefix } => {
-                let parsed = lower_string_literal(&value, prefix);
-                let element_type = self.registry.get_builtin_type(parsed.builtin_type);
+                // Bolt ⚡: Use metadata-only accessors to avoid full literal lowering.
+                let builtin_type = get_string_builtin_type(prefix);
+                let size = get_string_literal_size(&value, prefix);
+                let element_type = self.registry.get_builtin_type(builtin_type);
 
                 let array_type = self
                     .registry
-                    .array_of(element_type, ArraySizeType::Constant(parsed.size));
+                    .array_of(element_type, ArraySizeType::Constant(size));
                 let _ = self.registry.ensure_layout(array_type);
                 Some(QualType::new(array_type, TypeQualifiers::empty()))
             }

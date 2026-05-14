@@ -21,7 +21,7 @@ use crate::diagnostic::{DiagnosticEngine, DiagnosticLevel};
 use crate::lang_options::CStandard;
 use crate::semantic::const_eval::ConstEvalCtx;
 use crate::semantic::errors::{SemanticDiag, SemanticError};
-use crate::semantic::literal_utils::lower_string_literal;
+use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal_size};
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, BuiltinFunctionKind, BuiltinType, EnumConstant, Namespace, ScopeId, StructMember, SymbolKind,
@@ -2485,9 +2485,11 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             LitVal::Float { suffix, .. } => suffix.get_type(self.registry),
             LitVal::Char(_, prefix) => prefix.get_type(self.registry),
             LitVal::String { value: s, prefix } => {
-                let parsed = lower_string_literal(&s, prefix);
-                let elem = self.registry.get_builtin_type(parsed.builtin_type);
-                self.registry.array_of(elem, ArraySizeType::Constant(parsed.size))
+                // Bolt ⚡: Use metadata-only accessors to avoid full literal lowering.
+                let builtin_type = get_string_builtin_type(prefix);
+                let size = get_string_literal_size(&s, prefix);
+                let elem = self.registry.get_builtin_type(builtin_type);
+                self.registry.array_of(elem, ArraySizeType::Constant(size))
             }
             LitVal::Nullptr => self.registry.type_nullptr_t,
             LitVal::True | LitVal::False => self.registry.type_bool,
@@ -2498,7 +2500,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     fn try_deduce_string_initializer_size(&mut self, init_node: NodeRef, element_type: TypeRef) -> Option<usize> {
         match self.ast.get_kind(init_node) {
             NodeKind::Literal(literal_id) => match literal_id.get_val() {
-                LitVal::String { value, prefix } => Some(lower_string_literal(&value, prefix).size),
+                // Bolt ⚡: Use metadata-only accessor to avoid full literal lowering.
+                LitVal::String { value, prefix } => Some(get_string_literal_size(&value, prefix)),
                 _ => None,
             },
             NodeKind::InitializerList(list) if list.init_len > 0 => {
@@ -2506,13 +2509,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     && item.designator_len == 0
                     && let NodeKind::Literal(literal_id) = self.ast.get_kind(item.initializer)
                     && let LitVal::String { value, prefix } = literal_id.get_val()
-                    && let parsed = lower_string_literal(&value, prefix)
+                    // Bolt ⚡: Use metadata-only accessors.
+                    && let builtin_type = get_string_builtin_type(prefix)
+                    && let size = get_string_literal_size(&value, prefix)
                     && self.registry.is_compatible(
                         QualType::unqualified(element_type),
-                        QualType::unqualified(self.registry.get_builtin_type(parsed.builtin_type)),
+                        QualType::unqualified(self.registry.get_builtin_type(builtin_type)),
                     )
                 {
-                    Some(parsed.size)
+                    Some(size)
                 } else {
                     None
                 }

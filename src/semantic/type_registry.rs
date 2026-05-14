@@ -17,6 +17,7 @@ use super::{
     ArraySizeType, BuiltinType, EnumConstant, FunctionParameter, StructMember, Type, TypeKind, TypeLayout,
     TypeQualifiers, TypeRef,
 };
+use crate::semantic::BuiltinFunctionKind;
 
 /// Errors that can occur during type layout computation in the TypeRegistry.
 /// These are internal type system errors without source location information.
@@ -679,11 +680,10 @@ impl TypeRegistry {
         self.array_cache.insert(key, arr);
         arr
     }
-
     pub(crate) fn find_array_type(&self, elem: TypeRef, size: ArraySizeType) -> Option<TypeRef> {
-        // Try inline
+        // Try inline (only for length 1..31, 0 is used for registry-backed arrays)
         if let ArraySizeType::Constant(len) = size
-            && len <= 31
+            && (1..=31).contains(&len)
             && elem.pointer_depth() == 0
             && elem.array_len().is_none()
         {
@@ -724,6 +724,161 @@ impl TypeRegistry {
 
         self.function_cache.insert(key, f);
         f
+    }
+
+    pub(crate) fn builtin_function_type(&mut self, name: BuiltinFunctionKind) -> TypeRef {
+        let q = |ty: TypeRef| QualType::unqualified(ty);
+        let p = |ty: TypeRef| FunctionParameter {
+            param_type: QualType::unqualified(ty),
+            name: None,
+            storage: None,
+        };
+        let pq = |qty: QualType| FunctionParameter {
+            param_type: qty,
+            name: None,
+            storage: None,
+        };
+
+        let (params, ret_ty, is_variadic, is_noreturn) = match name {
+            BuiltinFunctionKind::Nanf | BuiltinFunctionKind::Nan => {
+                let char_const = QualType::new(self.type_char, TypeQualifiers::CONST);
+                let char_ptr = q(self.pointer_to(char_const));
+                let ret = if name == BuiltinFunctionKind::Nanf {
+                    self.type_float
+                } else {
+                    self.type_double
+                };
+                (vec![pq(char_ptr)], ret, false, false)
+            }
+            BuiltinFunctionKind::Inff
+            | BuiltinFunctionKind::Inf
+            | BuiltinFunctionKind::HugeValf
+            | BuiltinFunctionKind::HugeVal => {
+                let ret = if matches!(name, BuiltinFunctionKind::Inff | BuiltinFunctionKind::HugeValf) {
+                    self.type_float
+                } else {
+                    self.type_double
+                };
+                (vec![], ret, false, false)
+            }
+            BuiltinFunctionKind::Signbit | BuiltinFunctionKind::SignbitF | BuiltinFunctionKind::SignbitL => {
+                let param_ty = match name {
+                    BuiltinFunctionKind::SignbitF => self.type_float,
+                    BuiltinFunctionKind::Signbit => self.type_double,
+                    _ => self.type_long_double,
+                };
+                (vec![p(param_ty)], self.type_int, false, false)
+            }
+            kind @ (BuiltinFunctionKind::Popcount
+            | BuiltinFunctionKind::PopcountL
+            | BuiltinFunctionKind::PopcountLL
+            | BuiltinFunctionKind::Clz
+            | BuiltinFunctionKind::ClzL
+            | BuiltinFunctionKind::ClzLL
+            | BuiltinFunctionKind::Ctz
+            | BuiltinFunctionKind::CtzL
+            | BuiltinFunctionKind::CtzLL
+            | BuiltinFunctionKind::Ffs
+            | BuiltinFunctionKind::FfsL
+            | BuiltinFunctionKind::FfsLL) => {
+                let param_ty = match kind {
+                    BuiltinFunctionKind::Clz | BuiltinFunctionKind::Ctz | BuiltinFunctionKind::Popcount => {
+                        self.type_int_unsigned
+                    }
+                    BuiltinFunctionKind::ClzL | BuiltinFunctionKind::CtzL | BuiltinFunctionKind::PopcountL => {
+                        self.type_long_unsigned
+                    }
+                    BuiltinFunctionKind::ClzLL | BuiltinFunctionKind::CtzLL | BuiltinFunctionKind::PopcountLL => {
+                        self.type_long_long_unsigned
+                    }
+                    BuiltinFunctionKind::Ffs => self.type_int,
+                    BuiltinFunctionKind::FfsL => self.type_long,
+                    BuiltinFunctionKind::FfsLL => self.type_long_long,
+                    _ => unreachable!("ICE: unexpected bitwise builtin {:?}", kind),
+                };
+                (vec![p(param_ty)], self.type_int, false, false)
+            }
+            BuiltinFunctionKind::Bswap16 | BuiltinFunctionKind::Bswap32 | BuiltinFunctionKind::Bswap64 => {
+                let ty = match name {
+                    BuiltinFunctionKind::Bswap16 => self.type_short_unsigned,
+                    BuiltinFunctionKind::Bswap32 => self.type_int_unsigned,
+                    _ => self.type_long_long_unsigned,
+                };
+                (vec![p(ty)], ty, false, false)
+            }
+            kind @ (BuiltinFunctionKind::FabsF | BuiltinFunctionKind::Fabs | BuiltinFunctionKind::FabsL) => {
+                let ty = match kind {
+                    BuiltinFunctionKind::FabsF => self.type_float,
+                    BuiltinFunctionKind::Fabs => self.type_double,
+                    _ => self.type_long_double,
+                };
+                (vec![p(ty)], ty, false, false)
+            }
+            BuiltinFunctionKind::Alloca => (vec![p(self.type_long_unsigned)], self.type_void_ptr, false, false),
+            BuiltinFunctionKind::Expect => {
+                let long = self.type_long;
+                (vec![p(long), p(long)], long, false, false)
+            }
+            BuiltinFunctionKind::ConstantP => (vec![], self.type_int, true, false),
+            BuiltinFunctionKind::Unreachable | BuiltinFunctionKind::Trap => (vec![], self.type_void, false, true),
+            BuiltinFunctionKind::Prefetch => (vec![p(self.type_void_ptr)], self.type_void, true, false),
+            BuiltinFunctionKind::FrameAddress => (vec![p(self.type_int_unsigned)], self.type_void_ptr, false, false),
+            BuiltinFunctionKind::Memcpy | BuiltinFunctionKind::Memmove => {
+                let void_ptr = self.type_void_ptr;
+                let const_void = QualType::new(self.type_void, TypeQualifiers::CONST);
+                let const_void_ptr = q(self.pointer_to(const_void));
+                let size_t = self.type_long_unsigned;
+
+                (
+                    vec![pq(q(void_ptr)), pq(const_void_ptr), p(size_t)],
+                    void_ptr,
+                    false,
+                    false,
+                )
+            }
+            BuiltinFunctionKind::Memset => {
+                let void_ptr = self.type_void_ptr;
+                let size_t = self.type_long_unsigned;
+                (
+                    vec![pq(q(void_ptr)), p(self.type_int), p(size_t)],
+                    void_ptr,
+                    false,
+                    false,
+                )
+            }
+            BuiltinFunctionKind::Memcmp => {
+                let const_void = QualType::new(self.type_void, TypeQualifiers::CONST);
+                let const_void_ptr = q(self.pointer_to(const_void));
+                let size_t = self.type_long_unsigned;
+                (
+                    vec![pq(const_void_ptr), pq(const_void_ptr), p(size_t)],
+                    self.type_int,
+                    false,
+                    false,
+                )
+            }
+            BuiltinFunctionKind::VaStart => (vec![p(self.type_void_ptr)], self.type_void, true, false),
+            BuiltinFunctionKind::VaEnd => (vec![p(self.type_void_ptr)], self.type_void, false, false),
+            BuiltinFunctionKind::VaCopy => {
+                let vp = self.type_void_ptr;
+                (vec![p(vp), p(vp)], self.type_void, false, false)
+            }
+            BuiltinFunctionKind::AtomicLoadN
+            | BuiltinFunctionKind::AtomicStoreN
+            | BuiltinFunctionKind::AtomicExchangeN
+            | BuiltinFunctionKind::AtomicCompareExchangeN
+            | BuiltinFunctionKind::AtomicFetchAdd
+            | BuiltinFunctionKind::AtomicFetchSub
+            | BuiltinFunctionKind::AtomicFetchAnd
+            | BuiltinFunctionKind::AtomicFetchOr
+            | BuiltinFunctionKind::AtomicFetchXor => (vec![], self.type_void_ptr, true, false),
+            BuiltinFunctionKind::Complex => {
+                let d = self.type_double;
+                (vec![p(d), p(d)], self.type_complex_double, false, false)
+            }
+        };
+
+        self.function_type(ret_ty, params, is_variadic, is_noreturn)
     }
 
     pub(crate) fn complex_type(&mut self, base_type: TypeRef) -> TypeRef {

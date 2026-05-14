@@ -42,9 +42,7 @@ impl<'a> MirGen<'a> {
         let mut offset = 0;
         for m in members.iter() {
             hierarchical_offsets.push(offset);
-            if !is_union {
-                offset += self.count_flattened_members(m);
-            }
+            offset += self.count_flattened_members(m);
         }
 
         let mut field_operands = Vec::new();

@@ -368,6 +368,7 @@ impl CompilerDriver {
     }
 
     fn handle_pipeline_error(&self, err: PipelineError) -> Result<(), DriverError> {
+        self.print_diagnostics();
         match err {
             PipelineError::IoError(io_err) => {
                 let message = format!("I/O Error: {}", io_err);

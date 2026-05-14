@@ -251,6 +251,12 @@ impl<'a> MirValidator<'a> {
                     && !self.is_flexible_assignment(rvalue, from, to)
                     && !self.are_types_compatible(from, to)
                 {
+                    eprintln!(
+                        "MIR VALIDATION ERROR: InvalidCast from {:?} to {:?} in rvalue {:?}",
+                        self.mir.get_type(from),
+                        self.mir.get_type(to),
+                        rvalue
+                    );
                     self.errors.push(ValidationError::InvalidCast(from, to));
                 }
             }
@@ -271,6 +277,9 @@ impl<'a> MirValidator<'a> {
             MirStmt::AtomicStore(ptr, val, _) => {
                 self.validate_operand(ptr);
                 self.validate_operand(val);
+            }
+            MirStmt::BuiltinPrefetch { addr, .. } => {
+                self.validate_operand(addr);
             }
         }
     }
@@ -524,6 +533,7 @@ impl<'a> MirValidator<'a> {
                 let ta = self.validate_operand(a);
                 match u {
                     UnaryFloatOp::Neg | UnaryFloatOp::Abs => ta,
+                    UnaryFloatOp::IsNegative => self.find_i32_type(),
                 }
             }
             Rvalue::PtrAdd(a, b) | Rvalue::PtrSub(a, b) => {
@@ -556,6 +566,7 @@ impl<'a> MirValidator<'a> {
                 }
                 Some(*type_id)
             }
+            Rvalue::BuiltinFrameAddress(_) => None,
             Rvalue::AtomicLoad(ptr, _) => {
                 self.validate_operand(ptr);
                 None

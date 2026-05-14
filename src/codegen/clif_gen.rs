@@ -1871,7 +1871,26 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
                     match op {
                         UnaryFloatOp::Neg => ctx.builder.ins().fneg(val),
                         UnaryFloatOp::Abs => ctx.builder.ins().fabs(val),
+                        UnaryFloatOp::IsNegative => {
+                            let width = operand_clif_type.bits();
+                            let ity = match width {
+                                32 => types::I32,
+                                64 => types::I64,
+                                _ => types::I64, // Fallback for F80/F128 which we treated as F64
+                            };
+                            let val_bits = ctx.builder.ins().bitcast(ity, MemFlags::new(), val);
+                            let sign_bit = ctx.builder.ins().ushr_imm(val_bits, (width - 1) as i64);
+                            emit_type_conversion(sign_bit, ity, expected_type, false, ctx.builder)
+                        }
                     }
+                }
+                Rvalue::BuiltinFrameAddress(_) => {
+                    // Create a dummy stack slot to get an address within the current frame.
+                    // This is sufficient for stack overflow checks that compare addresses.
+                    let slot =
+                        ctx.builder
+                            .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 8));
+                    ctx.builder.ins().stack_addr(types::I64, slot, 0)
                 }
                 Rvalue::PtrAdd(base, offset) => lower_ptr_arith(base, offset, true, ctx),
                 Rvalue::PtrSub(base, offset) => lower_ptr_arith(base, offset, false, ctx),
@@ -2330,6 +2349,10 @@ fn visit_statement(stmt: &MirStmt, ctx: &mut BodyEmitContext) {
             let src_addr = emit_place_addr(src, ctx);
             // va_list is 24 bytes on x86_64
             emit_memcpy(dest_addr, src_addr, 24, ctx.builder, ctx.module);
+        }
+        MirStmt::BuiltinPrefetch { addr, .. } => {
+            let _ = emit_operand(addr, ctx, types::I64);
+            // Cranelift doesn't have a stable prefetch intrinsic in InstBuilder yet.
         }
     }
 }
@@ -3047,6 +3070,9 @@ impl ClifGen {
                 self.collect_operand_reachability(v1, wf, rf, rg, wg);
                 self.collect_operand_reachability(v2, wf, rf, rg, wg);
             }
+            MirStmt::BuiltinPrefetch { addr, .. } => {
+                self.collect_operand_reachability(addr, wf, rf, rg, wg);
+            }
         }
     }
 
@@ -3149,6 +3175,7 @@ impl ClifGen {
                 }
             }
             Rvalue::BuiltinVaArg(place, _) => self.collect_place_reachability(place, wf, rf, rg, wg),
+            Rvalue::BuiltinFrameAddress(_) => {}
         }
     }
 

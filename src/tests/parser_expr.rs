@@ -473,13 +473,18 @@ fn test_sizeof_compound_literal_postfix() {
 fn test_builtin_alloca() {
     let resolved = setup_expr("__builtin_alloca(42)");
     insta::assert_yaml_snapshot!(&resolved, @"
-    BuiltinAlloca:
-      LiteralInt: 42
+    FunctionCall:
+      - Ident: __builtin_alloca
+      - - LiteralInt: 42
     ");
 }
 
 #[test]
 fn test_builtin_trap() {
     let resolved = setup_expr("__builtin_trap()");
-    insta::assert_yaml_snapshot!(&resolved, @"BuiltinTrap");
+    insta::assert_yaml_snapshot!(&resolved, @"
+    FunctionCall:
+      - Ident: __builtin_trap
+      - []
+    ");
 }

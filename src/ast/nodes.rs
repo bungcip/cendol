@@ -47,37 +47,10 @@ pub(crate) enum NodeKind {
     Cast(QualType, NodeRef),
     BuiltinVaArg(QualType, NodeRef),
     BuiltinOffsetof(QualType, NodeRef),
-    BuiltinVaStart(NodeRef, NodeRef),
-    BuiltinVaEnd(NodeRef),
-    BuiltinVaCopy(NodeRef, NodeRef),
-    BuiltinExpect(NodeRef, NodeRef),
     BuiltinComplex(NodeRef, NodeRef),
-    BuiltinMemcmp(NodeRef, NodeRef, NodeRef),
-    BuiltinMemcpy(NodeRef, NodeRef, NodeRef),
-    BuiltinMemset(NodeRef, NodeRef, NodeRef),
-    BuiltinMemmove(NodeRef, NodeRef, NodeRef),
+    BuiltinBitCast(QualType, NodeRef),
+    BuiltinConvertVector(NodeRef, QualType),
     BuiltinTypesCompatibleP(QualType, QualType),
-    BuiltinPopcount(NodeRef),
-    BuiltinPopcountL(NodeRef),
-    BuiltinPopcountLL(NodeRef),
-    BuiltinClz(NodeRef),
-    BuiltinClzL(NodeRef),
-    BuiltinClzLL(NodeRef),
-    BuiltinCtz(NodeRef),
-    BuiltinCtzL(NodeRef),
-    BuiltinCtzLL(NodeRef),
-    BuiltinFfs(NodeRef),
-    BuiltinFfsL(NodeRef),
-    BuiltinFfsLL(NodeRef),
-    BuiltinBswap16(NodeRef),
-    BuiltinBswap32(NodeRef),
-    BuiltinBswap64(NodeRef),
-    BuiltinFabs(NodeRef),
-    BuiltinFabsf(NodeRef),
-    BuiltinFabsl(NodeRef),
-    BuiltinPrefetch(NodeRef, Option<NodeRef>, Option<NodeRef>),
-    BuiltinAlloca(NodeRef),
-    AtomicOp(AtomicOp, NodeRef /* args start */, u16 /* arg count */),
     SizeOfExpr(NodeRef),
     SizeOfType(QualType),
     AlignOfExpr(NodeRef),
@@ -87,9 +60,6 @@ pub(crate) enum NodeKind {
     GenericSelection(GenericSelection),
     GenericAssociation(GenericAssociation),
     BuiltinChooseExpr(NodeRef, NodeRef, NodeRef),
-    BuiltinConstantP(NodeRef),
-    BuiltinUnreachable,
-    BuiltinTrap,
 
     // --- Statements (Complex statements are separate structs) ---
     CompoundStmt(CompoundStmt),
@@ -163,37 +133,10 @@ impl NodeKind {
             NodeKind::Cast(..) => "Cast",
             NodeKind::BuiltinVaArg(..) => "BuiltinVaArg",
             NodeKind::BuiltinOffsetof(..) => "BuiltinOffsetof",
-            NodeKind::BuiltinVaStart(..) => "BuiltinVaStart",
-            NodeKind::BuiltinVaEnd(..) => "BuiltinVaEnd",
-            NodeKind::BuiltinVaCopy(..) => "BuiltinVaCopy",
-            NodeKind::BuiltinExpect(..) => "BuiltinExpect",
             NodeKind::BuiltinComplex(..) => "BuiltinComplex",
-            NodeKind::BuiltinMemcmp(..) => "BuiltinMemcmp",
-            NodeKind::BuiltinMemcpy(..) => "BuiltinMemcpy",
-            NodeKind::BuiltinMemset(..) => "BuiltinMemset",
-            NodeKind::BuiltinMemmove(..) => "BuiltinMemmove",
+            NodeKind::BuiltinBitCast(..) => "BuiltinBitCast",
+            NodeKind::BuiltinConvertVector(..) => "BuiltinConvertVector",
             NodeKind::BuiltinTypesCompatibleP(..) => "BuiltinTypesCompatibleP",
-            NodeKind::BuiltinPopcount(..) => "BuiltinPopcount",
-            NodeKind::BuiltinPopcountL(..) => "BuiltinPopcountL",
-            NodeKind::BuiltinPopcountLL(..) => "BuiltinPopcountLL",
-            NodeKind::BuiltinClz(..) => "BuiltinClz",
-            NodeKind::BuiltinClzL(..) => "BuiltinClzL",
-            NodeKind::BuiltinClzLL(..) => "BuiltinClzLL",
-            NodeKind::BuiltinCtz(..) => "BuiltinCtz",
-            NodeKind::BuiltinCtzL(..) => "BuiltinCtzL",
-            NodeKind::BuiltinCtzLL(..) => "BuiltinCtzLL",
-            NodeKind::BuiltinFfs(..) => "BuiltinFfs",
-            NodeKind::BuiltinFfsL(..) => "BuiltinFfsL",
-            NodeKind::BuiltinFfsLL(..) => "BuiltinFfsLL",
-            NodeKind::BuiltinBswap16(..) => "BuiltinBswap16",
-            NodeKind::BuiltinBswap32(..) => "BuiltinBswap32",
-            NodeKind::BuiltinBswap64(..) => "BuiltinBswap64",
-            NodeKind::BuiltinFabs(..) => "BuiltinFabs",
-            NodeKind::BuiltinFabsf(..) => "BuiltinFabsf",
-            NodeKind::BuiltinFabsl(..) => "BuiltinFabsl",
-            NodeKind::BuiltinPrefetch(..) => "BuiltinPrefetch",
-            NodeKind::BuiltinAlloca(..) => "BuiltinAlloca",
-            NodeKind::AtomicOp(..) => "AtomicOp",
             NodeKind::SizeOfExpr(..) => "SizeOfExpr",
             NodeKind::SizeOfType(..) => "SizeOfType",
             NodeKind::AlignOfExpr(..) => "AlignOfExpr",
@@ -202,9 +145,6 @@ impl NodeKind {
             NodeKind::GenericSelection(..) => "GenericSelection",
             NodeKind::GenericAssociation(..) => "GenericAssociation",
             NodeKind::BuiltinChooseExpr(..) => "BuiltinChooseExpr",
-            NodeKind::BuiltinConstantP(..) => "BuiltinConstantP",
-            NodeKind::BuiltinUnreachable => "BuiltinUnreachable",
-            NodeKind::BuiltinTrap => "BuiltinTrap",
             NodeKind::CompoundStmt(..) => "CompoundStmt",
             NodeKind::If(..) => "If",
             NodeKind::While(..) => "While",
@@ -244,41 +184,12 @@ impl NodeKind {
             self,
             NodeKind::BuiltinVaArg(..)
                 | NodeKind::BuiltinOffsetof(..)
-                | NodeKind::BuiltinVaStart(..)
-                | NodeKind::BuiltinVaEnd(..)
-                | NodeKind::BuiltinVaCopy(..)
-                | NodeKind::BuiltinExpect(..)
                 | NodeKind::BuiltinComplex(..)
-                | NodeKind::BuiltinMemcmp(..)
-                | NodeKind::BuiltinMemcpy(..)
-                | NodeKind::BuiltinMemset(..)
-                | NodeKind::BuiltinMemmove(..)
-                | NodeKind::BuiltinTypesCompatibleP(..)
-                | NodeKind::BuiltinPopcount(..)
-                | NodeKind::BuiltinPopcountL(..)
-                | NodeKind::BuiltinPopcountLL(..)
-                | NodeKind::BuiltinClz(..)
-                | NodeKind::BuiltinClzL(..)
-                | NodeKind::BuiltinClzLL(..)
-                | NodeKind::BuiltinCtz(..)
-                | NodeKind::BuiltinCtzL(..)
-                | NodeKind::BuiltinCtzLL(..)
-                | NodeKind::BuiltinFfs(..)
-                | NodeKind::BuiltinFfsL(..)
-                | NodeKind::BuiltinFfsLL(..)
-                | NodeKind::BuiltinBswap16(..)
-                | NodeKind::BuiltinBswap32(..)
-                | NodeKind::BuiltinBswap64(..)
-                | NodeKind::BuiltinFabs(..)
-                | NodeKind::BuiltinFabsf(..)
-                | NodeKind::BuiltinFabsl(..)
-                | NodeKind::BuiltinPrefetch(..)
-                | NodeKind::BuiltinAlloca(..)
+                | NodeKind::BuiltinBitCast(..)
+                | NodeKind::BuiltinConvertVector(..)
                 | NodeKind::BuiltinChooseExpr(..)
-                | NodeKind::BuiltinConstantP(..)
+                | NodeKind::BuiltinTypesCompatibleP(..)
                 | NodeKind::GenericSelection(..)
-                | NodeKind::BuiltinUnreachable
-                | NodeKind::BuiltinTrap
         )
     }
 
@@ -296,8 +207,6 @@ impl NodeKind {
             | NodeKind::SizeOfType(_)
             | NodeKind::AlignOfType(_)
             | NodeKind::BuiltinTypesCompatibleP(..)
-            | NodeKind::BuiltinUnreachable
-            | NodeKind::BuiltinTrap
             | NodeKind::Break
             | NodeKind::Continue
             | NodeKind::Goto(..)
@@ -313,32 +222,15 @@ impl NodeKind {
             | NodeKind::MemberAccess(child, ..)
             | NodeKind::Cast(_, child)
             | NodeKind::BuiltinVaArg(_, child)
+            | NodeKind::BuiltinBitCast(_, child)
             | NodeKind::BuiltinOffsetof(_, child)
-            | NodeKind::BuiltinVaEnd(child)
-            | NodeKind::BuiltinPopcount(child)
-            | NodeKind::BuiltinPopcountL(child)
-            | NodeKind::BuiltinPopcountLL(child)
-            | NodeKind::BuiltinClz(child)
-            | NodeKind::BuiltinClzL(child)
-            | NodeKind::BuiltinClzLL(child)
-            | NodeKind::BuiltinCtz(child)
-            | NodeKind::BuiltinCtzL(child)
-            | NodeKind::BuiltinCtzLL(child)
-            | NodeKind::BuiltinFfs(child)
-            | NodeKind::BuiltinFfsL(child)
-            | NodeKind::BuiltinFfsLL(child)
-            | NodeKind::BuiltinBswap16(child)
-            | NodeKind::BuiltinBswap32(child)
-            | NodeKind::BuiltinBswap64(child)
-            | NodeKind::BuiltinFabs(child)
-            | NodeKind::BuiltinFabsf(child)
-            | NodeKind::BuiltinFabsl(child)
-            | NodeKind::BuiltinConstantP(child)
             | NodeKind::SizeOfExpr(child)
             | NodeKind::AlignOfExpr(child)
+            | NodeKind::BuiltinConvertVector(child, _)
             | NodeKind::CompoundLiteral(_, child)
             | NodeKind::Label(_, child, _)
             | NodeKind::Default(child) => f(*child),
+
             NodeKind::BuiltinComplex(l, r) => {
                 f(*l);
                 f(*r);
@@ -350,21 +242,7 @@ impl NodeKind {
                 }
             }
 
-            NodeKind::BuiltinPrefetch(addr, rw, locality) => {
-                f(*addr);
-                if let Some(rw) = rw {
-                    f(*rw);
-                }
-                if let Some(locality) = locality {
-                    f(*locality);
-                }
-            }
-            NodeKind::BuiltinAlloca(child) => f(*child),
-
-            NodeKind::BuiltinVaStart(lhs, rhs)
-            | NodeKind::BuiltinVaCopy(lhs, rhs)
-            | NodeKind::BuiltinExpect(lhs, rhs)
-            | NodeKind::BinaryOp(_, lhs, rhs)
+            NodeKind::BinaryOp(_, lhs, rhs)
             | NodeKind::StatementExpr(lhs, rhs)
             | NodeKind::Assignment(_, lhs, rhs)
             | NodeKind::IndexAccess(lhs, rhs)
@@ -388,20 +266,10 @@ impl NodeKind {
                 }
             }
 
-            NodeKind::BuiltinChooseExpr(c, t, e)
-            | NodeKind::BuiltinMemcmp(c, t, e)
-            | NodeKind::BuiltinMemcpy(c, t, e)
-            | NodeKind::BuiltinMemset(c, t, e)
-            | NodeKind::BuiltinMemmove(c, t, e) => {
+            NodeKind::BuiltinChooseExpr(c, t, e) => {
                 f(*c);
                 f(*t);
                 f(*e);
-            }
-
-            NodeKind::AtomicOp(_, args_start, args_len) => {
-                for child in args_start.range(*args_len) {
-                    f(child);
-                }
             }
 
             NodeKind::GenericSelection(gs) => {

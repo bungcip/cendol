@@ -68,24 +68,12 @@ pub(crate) struct MirGen<'a> {
 
 pub(crate) struct MirGenKeywords {
     pub(crate) main: NameId,
-    pub(crate) builtin_nanf: NameId,
-    pub(crate) builtin_nan: NameId,
-    pub(crate) builtin_inff: NameId,
-    pub(crate) builtin_inf: NameId,
-    pub(crate) builtin_huge_valf: NameId,
-    pub(crate) builtin_huge_val: NameId,
 }
 
 impl MirGenKeywords {
     fn new() -> Self {
         Self {
             main: NameId::new("main"),
-            builtin_nanf: NameId::new("__builtin_nanf"),
-            builtin_nan: NameId::new("__builtin_nan"),
-            builtin_inff: NameId::new("__builtin_inff"),
-            builtin_inf: NameId::new("__builtin_inf"),
-            builtin_huge_valf: NameId::new("__builtin_huge_valf"),
-            builtin_huge_val: NameId::new("__builtin_huge_val"),
         }
     }
 }
@@ -332,10 +320,8 @@ impl<'a> MirGen<'a> {
             | NodeKind::AlignOfExpr(..)
             | NodeKind::CompoundLiteral(..)
             | NodeKind::BuiltinVaArg(..)
-            | NodeKind::BuiltinExpect(..)
-            | NodeKind::BuiltinVaStart(..)
-            | NodeKind::BuiltinVaEnd(..)
-            | NodeKind::BuiltinVaCopy(..)
+            | NodeKind::BuiltinBitCast(..)
+            | NodeKind::BuiltinConvertVector(..)
             | NodeKind::GenericSelection(..)
             | NodeKind::StatementExpr(..) => {
                 self.visit_expression(node, false);

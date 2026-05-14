@@ -207,7 +207,11 @@ impl<'src> Preprocessor<'src> {
         self.define_builtin_macro_with_val("__SCHAR_MAX__", "127");
         self.define_builtin_macro_with_val("__SHRT_MAX__", "32767");
         self.define_builtin_macro_with_val("__INT_MAX__", "2147483647");
+        self.define_builtin_macro_with_val("__INT32_MAX__", "2147483647");
+        self.define_builtin_macro_with_val("__UINT32_MAX__", "4294967295U");
         self.define_builtin_macro_with_val("__LONG_LONG_MAX__", "9223372036854775807LL");
+        self.define_builtin_macro_with_val("__INT64_MAX__", "9223372036854775807LL");
+        self.define_builtin_macro_with_val("__UINT64_MAX__", "18446744073709551615ULL");
 
         // Type sizes
         self.define_builtin_macro_with_val("__SIZEOF_SHORT__", "2");
@@ -298,6 +302,10 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro_with_val("__LONG_MAX__", "9223372036854775807L");
             self.define_builtin_macro_with_val("__SIZEOF_LONG__", "8");
             self.define_builtin_macro_with_val("__SIZEOF_POINTER__", "8");
+            self.define_builtin_macro_with_val("__INTPTR_MAX__", "9223372036854775807L");
+            self.define_builtin_macro_with_val("__UINTPTR_MAX__", "18446744073709551615UL");
+            self.define_builtin_macro_with_val("__PTRDIFF_MAX__", "9223372036854775807L");
+            self.define_builtin_macro_with_val("__SIZE_MAX__", "18446744073709551615UL");
         } else {
             for macro_name in &["__ILP32__", "_ILP32"] {
                 self.define_builtin_macro_one(macro_name);
@@ -305,6 +313,10 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro_with_val("__LONG_MAX__", "2147483647L");
             self.define_builtin_macro_with_val("__SIZEOF_LONG__", "4");
             self.define_builtin_macro_with_val("__SIZEOF_POINTER__", "4");
+            self.define_builtin_macro_with_val("__INTPTR_MAX__", "2147483647L");
+            self.define_builtin_macro_with_val("__UINTPTR_MAX__", "4294967295UL");
+            self.define_builtin_macro_with_val("__PTRDIFF_MAX__", "2147483647L");
+            self.define_builtin_macro_with_val("__SIZE_MAX__", "4294967295UL");
         }
 
         // OS
@@ -397,6 +409,7 @@ impl<'src> Preprocessor<'src> {
             self.define_builtin_macro_one("__STDC_UTF_16__");
             self.define_builtin_macro_one("__STDC_UTF_32__");
         }
+        self.define_builtin_macro_with_val("__STDC__", "1");
     }
 
     fn init_builtin_macros_functions(&mut self) {

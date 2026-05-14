@@ -80,42 +80,13 @@ pub enum TokenKind {
     Imag,
     Attribute,
     BuiltinVaArg,
+    BuiltinBitCast,
+    BuiltinConvertVector,
     BuiltinVaList,
-    BuiltinVaStart,
-    BuiltinVaEnd,
-    BuiltinVaCopy,
-    BuiltinExpect,
+    BuiltinChooseExpr,
     BuiltinComplex,
-    BuiltinMemcmp,
-    BuiltinMemcpy,
-    BuiltinMemset,
-    BuiltinMemmove,
     BuiltinOffsetof,
     BuiltinTypesCompatibleP,
-    BuiltinPopcount,
-    BuiltinPopcountL,
-    BuiltinPopcountLL,
-    BuiltinClz,
-    BuiltinClzL,
-    BuiltinClzLL,
-    BuiltinCtz,
-    BuiltinCtzL,
-    BuiltinCtzLL,
-    BuiltinFfs,
-    BuiltinFfsL,
-    BuiltinFfsLL,
-    BuiltinChooseExpr,
-    BuiltinConstantP,
-    BuiltinUnreachable,
-    BuiltinTrap,
-    BuiltinBswap16,
-    BuiltinBswap32,
-    BuiltinBswap64,
-    BuiltinFabs,
-    BuiltinFabsf,
-    BuiltinFabsl,
-    BuiltinPrefetch,
-    BuiltinAlloca,
     Asm,
     AutoType,
 
@@ -123,17 +94,6 @@ pub enum TokenKind {
     Func,           // __func__
     Function,       // __FUNCTION__
     PrettyFunction, // __PRETTY_FUNCTION__
-
-    // Atomic builtins
-    BuiltinAtomicLoadN,
-    BuiltinAtomicStoreN,
-    BuiltinAtomicExchangeN,
-    BuiltinAtomicCompareExchangeN,
-    BuiltinAtomicFetchAdd,
-    BuiltinAtomicFetchSub,
-    BuiltinAtomicFetchAnd,
-    BuiltinAtomicFetchOr,
-    BuiltinAtomicFetchXor,
 
     // === OPERATORS ===
     // Arithmetic operators
@@ -358,54 +318,16 @@ impl TokenKind {
             Imag => "__imag__",
             Attribute => "__attribute__",
             BuiltinVaArg => "__builtin_va_arg",
+            BuiltinBitCast => "__builtin_bit_cast",
+            BuiltinConvertVector => "__builtin_convertvector",
             BuiltinVaList => "__builtin_va_list",
-            BuiltinVaStart => "__builtin_va_start",
-            BuiltinVaEnd => "__builtin_va_end",
-            BuiltinVaCopy => "__builtin_va_copy",
-            BuiltinExpect => "__builtin_expect",
+            BuiltinChooseExpr => "__builtin_choose_expr",
             BuiltinComplex => "__builtin_complex",
-            BuiltinMemcmp => "__builtin_memcmp",
-            BuiltinMemcpy => "__builtin_memcpy",
-            BuiltinMemset => "__builtin_memset",
-            BuiltinMemmove => "__builtin_memmove",
             BuiltinOffsetof => "__builtin_offsetof",
             BuiltinTypesCompatibleP => "__builtin_types_compatible_p",
-            BuiltinPopcount => "__builtin_popcount",
-            BuiltinPopcountL => "__builtin_popcountl",
-            BuiltinPopcountLL => "__builtin_popcountll",
-            BuiltinClz => "__builtin_clz",
-            BuiltinClzL => "__builtin_clzl",
-            BuiltinClzLL => "__builtin_clzll",
-            BuiltinCtz => "__builtin_ctz",
-            BuiltinCtzL => "__builtin_ctzl",
-            BuiltinCtzLL => "__builtin_ctzll",
-            BuiltinFfs => "__builtin_ffs",
-            BuiltinFfsL => "__builtin_ffsl",
-            BuiltinFfsLL => "__builtin_ffsll",
-            BuiltinChooseExpr => "__builtin_choose_expr",
-            BuiltinConstantP => "__builtin_constant_p",
-            BuiltinUnreachable => "__builtin_unreachable",
-            BuiltinTrap => "__builtin_trap",
-            BuiltinBswap16 => "__builtin_bswap16",
-            BuiltinBswap32 => "__builtin_bswap32",
-            BuiltinBswap64 => "__builtin_bswap64",
-            BuiltinFabs => "__builtin_fabs",
-            BuiltinFabsf => "__builtin_fabsf",
-            BuiltinFabsl => "__builtin_fabsl",
-            BuiltinPrefetch => "__builtin_prefetch",
-            BuiltinAlloca => "__builtin_alloca",
             Asm => "asm",
             AutoType => "__auto_type",
             PrettyFunction => "__PRETTY_FUNCTION__",
-            BuiltinAtomicLoadN => "__atomic_load_n",
-            BuiltinAtomicStoreN => "__atomic_store_n",
-            BuiltinAtomicExchangeN => "__atomic_exchange_n",
-            BuiltinAtomicCompareExchangeN => "__atomic_compare_exchange_n",
-            BuiltinAtomicFetchAdd => "__atomic_fetch_add",
-            BuiltinAtomicFetchSub => "__atomic_fetch_sub",
-            BuiltinAtomicFetchAnd => "__atomic_fetch_and",
-            BuiltinAtomicFetchOr => "__atomic_fetch_or",
-            BuiltinAtomicFetchXor => "__atomic_fetch_xor",
             Plus => "+",
             Minus => "-",
             Star => "*",
@@ -700,58 +622,20 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__attribute__"), TokenKind::Attribute);
         m.insert(StringId::new("__attribute"), TokenKind::Attribute);
         m.insert(StringId::new("__builtin_va_arg"), TokenKind::BuiltinVaArg);
+        m.insert(StringId::new("__builtin_bit_cast"), TokenKind::BuiltinBitCast);
+        m.insert(
+            StringId::new("__builtin_convertvector"),
+            TokenKind::BuiltinConvertVector,
+        );
         m.insert(StringId::new("__builtin_va_list"), TokenKind::BuiltinVaList);
         m.insert(StringId::new("__gnuc_va_list"), TokenKind::BuiltinVaList); // GCC alias for __builtin_va_list
-        m.insert(StringId::new("__builtin_va_start"), TokenKind::BuiltinVaStart);
-        m.insert(StringId::new("__builtin_va_end"), TokenKind::BuiltinVaEnd);
-        m.insert(StringId::new("__builtin_va_copy"), TokenKind::BuiltinVaCopy);
-        m.insert(StringId::new("__builtin_expect"), TokenKind::BuiltinExpect);
+        m.insert(StringId::new("__builtin_choose_expr"), TokenKind::BuiltinChooseExpr);
         m.insert(StringId::new("__builtin_complex"), TokenKind::BuiltinComplex);
-        m.insert(StringId::new("__builtin_memcmp"), TokenKind::BuiltinMemcmp);
-        m.insert(StringId::new("__builtin_memcpy"), TokenKind::BuiltinMemcpy);
-        m.insert(StringId::new("__builtin_memset"), TokenKind::BuiltinMemset);
-        m.insert(StringId::new("__builtin_memmove"), TokenKind::BuiltinMemmove);
         m.insert(StringId::new("__builtin_offsetof"), TokenKind::BuiltinOffsetof);
         m.insert(
             StringId::new("__builtin_types_compatible_p"),
             TokenKind::BuiltinTypesCompatibleP,
         );
-        m.insert(StringId::new("__builtin_popcount"), TokenKind::BuiltinPopcount);
-        m.insert(StringId::new("__builtin_popcountl"), TokenKind::BuiltinPopcountL);
-        m.insert(StringId::new("__builtin_popcountll"), TokenKind::BuiltinPopcountLL);
-        m.insert(StringId::new("__builtin_clz"), TokenKind::BuiltinClz);
-        m.insert(StringId::new("__builtin_clzl"), TokenKind::BuiltinClzL);
-        m.insert(StringId::new("__builtin_clzll"), TokenKind::BuiltinClzLL);
-        m.insert(StringId::new("__builtin_ctz"), TokenKind::BuiltinCtz);
-        m.insert(StringId::new("__builtin_ctzl"), TokenKind::BuiltinCtzL);
-        m.insert(StringId::new("__builtin_ctzll"), TokenKind::BuiltinCtzLL);
-        m.insert(StringId::new("__builtin_ffs"), TokenKind::BuiltinFfs);
-        m.insert(StringId::new("__builtin_ffsl"), TokenKind::BuiltinFfsL);
-        m.insert(StringId::new("__builtin_ffsll"), TokenKind::BuiltinFfsLL);
-        m.insert(StringId::new("__builtin_choose_expr"), TokenKind::BuiltinChooseExpr);
-        m.insert(StringId::new("__builtin_constant_p"), TokenKind::BuiltinConstantP);
-        m.insert(StringId::new("__builtin_unreachable"), TokenKind::BuiltinUnreachable);
-        m.insert(StringId::new("__builtin_trap"), TokenKind::BuiltinTrap);
-        m.insert(StringId::new("__builtin_bswap16"), TokenKind::BuiltinBswap16);
-        m.insert(StringId::new("__builtin_bswap32"), TokenKind::BuiltinBswap32);
-        m.insert(StringId::new("__builtin_bswap64"), TokenKind::BuiltinBswap64);
-        m.insert(StringId::new("__builtin_fabs"), TokenKind::BuiltinFabs);
-        m.insert(StringId::new("__builtin_fabsf"), TokenKind::BuiltinFabsf);
-        m.insert(StringId::new("__builtin_fabsl"), TokenKind::BuiltinFabsl);
-        m.insert(StringId::new("__builtin_prefetch"), TokenKind::BuiltinPrefetch);
-        m.insert(StringId::new("__builtin_alloca"), TokenKind::BuiltinAlloca);
-        m.insert(StringId::new("__atomic_load_n"), TokenKind::BuiltinAtomicLoadN);
-        m.insert(StringId::new("__atomic_store_n"), TokenKind::BuiltinAtomicStoreN);
-        m.insert(StringId::new("__atomic_exchange_n"), TokenKind::BuiltinAtomicExchangeN);
-        m.insert(
-            StringId::new("__atomic_compare_exchange_n"),
-            TokenKind::BuiltinAtomicCompareExchangeN,
-        );
-        m.insert(StringId::new("__atomic_fetch_add"), TokenKind::BuiltinAtomicFetchAdd);
-        m.insert(StringId::new("__atomic_fetch_sub"), TokenKind::BuiltinAtomicFetchSub);
-        m.insert(StringId::new("__atomic_fetch_and"), TokenKind::BuiltinAtomicFetchAnd);
-        m.insert(StringId::new("__atomic_fetch_or"), TokenKind::BuiltinAtomicFetchOr);
-        m.insert(StringId::new("__atomic_fetch_xor"), TokenKind::BuiltinAtomicFetchXor);
 
         // GCC/Clang extensions
         m.insert(StringId::new("__restrict"), TokenKind::Restrict);

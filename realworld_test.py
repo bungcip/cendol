@@ -52,6 +52,19 @@ PROJECTS = {
         "build_cmd": ["sh", "-c", "{CC} -O2 -DSQLITE_THREADSAFE=0 -o sqlite3 shell.c sqlite3.c -lm"],
         "test_cmd": ["./sqlite3", ":memory:", "SELECT 'hello from sqlite built with cendol';"],
         "clean_cmd": ["rm", "-f", "sqlite3"],
+    },
+    "mimalloc": {
+        "repo": "https://github.com/microsoft/mimalloc",
+        "build_cmd": ["sh", "-c", "{CC} -O2 -Iinclude -DMI_DEBUG=0 -c src/static.c && {CC} -O2 -Iinclude test/test-api.c static.o -o test-api -lpthread -lm"],
+        "test_cmd": ["./test-api"],
+        "clean_cmd": ["rm", "-f", "static.o", "test-api"],
+    },
+    "quickjs": {
+        "repo": "https://github.com/bellard/quickjs",
+        "patch_cmd": ["sh", "-c", "sed -i 's/#define DIRECT_DISPATCH  1/#define DIRECT_DISPATCH  0/' quickjs.c && sed -i 's/-MMD -MF $(OBJDIR)\\/$(@F).d//g' Makefile"],
+        "build_cmd": ["make", "CC={CC}", "HOST_CC=gcc", "PROGS=qjs"],
+        "test_cmd": ["./qjs", "-e", "print('hello from quickjs built with cendol'); print(1+2)"],
+        "clean_cmd": ["make", "clean"],
     }
 }
 

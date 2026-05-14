@@ -140,36 +140,7 @@ impl AstDumper {
             NodeKind::SizeOfType(qual_type) | NodeKind::AlignOfType(qual_type) => {
                 types.insert(qual_type.ty());
             }
-            NodeKind::BuiltinVaStart(..)
-            | NodeKind::BuiltinVaEnd(_)
-            | NodeKind::BuiltinVaCopy(..)
-            | NodeKind::BuiltinMemcmp(..)
-            | NodeKind::BuiltinMemcpy(..)
-            | NodeKind::BuiltinMemset(..)
-            | NodeKind::BuiltinMemmove(..)
-            | NodeKind::BuiltinPopcount(_)
-            | NodeKind::BuiltinPopcountL(_)
-            | NodeKind::BuiltinPopcountLL(_)
-            | NodeKind::BuiltinClz(_)
-            | NodeKind::BuiltinClzL(_)
-            | NodeKind::BuiltinClzLL(_)
-            | NodeKind::BuiltinCtz(_)
-            | NodeKind::BuiltinCtzL(_)
-            | NodeKind::BuiltinCtzLL(_)
-            | NodeKind::BuiltinFfs(_)
-            | NodeKind::BuiltinFfsL(_)
-            | NodeKind::BuiltinFfsLL(_)
-            | NodeKind::BuiltinBswap16(_)
-            | NodeKind::BuiltinBswap32(_)
-            | NodeKind::BuiltinBswap64(_)
-            | NodeKind::BuiltinFabs(_)
-            | NodeKind::BuiltinFabsf(_)
-            | NodeKind::BuiltinFabsl(_)
-            | NodeKind::BuiltinPrefetch(..)
-            | NodeKind::BuiltinAlloca(_)
-            | NodeKind::BuiltinExpect(..)
-            | NodeKind::BuiltinComplex(..)
-            | NodeKind::AtomicOp(..) => {}
+            NodeKind::BuiltinBitCast(..) | NodeKind::BuiltinConvertVector(..) | NodeKind::BuiltinComplex(..) => {}
             NodeKind::VarDecl(_) => {
                 // VarDecl type is now looked up from symbol table, not stored directly
             }
@@ -185,8 +156,6 @@ impl AstDumper {
                 }
             }
             NodeKind::BuiltinChooseExpr(..) => {}
-            NodeKind::BuiltinConstantP(_) => {}
-            NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => {}
 
             // Literal nodes - don't contain TypeRefs
             NodeKind::Literal(_) | NodeKind::Ident(_, _) => {
@@ -331,7 +300,7 @@ impl AstDumper {
                 Self::format_literal(f, &literal.get_val())?;
                 return writeln!(f);
             }
-            PNK::Break | PNK::Continue | PNK::EmptyStmt | PNK::Dummy | PNK::BuiltinUnreachable | PNK::BuiltinTrap => {
+            PNK::Break | PNK::Continue | PNK::EmptyStmt | PNK::Dummy | PNK::PragmaPack(_) => {
                 return writeln!(f, "{}", kind.tagname());
             }
             _ => {}
@@ -343,45 +312,17 @@ impl AstDumper {
             PNK::Ident(name) => write!(f, "{}", name)?,
 
             // One NodeRef: Tag(n1.get())
-            PNK::BuiltinVaEnd(n1)
-            | PNK::BuiltinPopcount(n1)
-            | PNK::BuiltinPopcountL(n1)
-            | PNK::BuiltinPopcountLL(n1)
-            | PNK::BuiltinClz(n1)
-            | PNK::BuiltinClzL(n1)
-            | PNK::BuiltinClzLL(n1)
-            | PNK::BuiltinCtz(n1)
-            | PNK::BuiltinCtzL(n1)
-            | PNK::BuiltinCtzLL(n1)
-            | PNK::BuiltinFfs(n1)
-            | PNK::BuiltinFfsL(n1)
-            | PNK::BuiltinFfsLL(n1)
-            | PNK::BuiltinBswap16(n1)
-            | PNK::BuiltinBswap32(n1)
-            | PNK::BuiltinBswap64(n1)
-            | PNK::BuiltinAlloca(n1)
-            | PNK::BuiltinConstantP(n1)
-            | PNK::SizeOfExpr(n1)
+            PNK::SizeOfExpr(n1)
             | PNK::AlignOfExpr(n1)
             | PNK::PostIncrement(n1)
             | PNK::PostDecrement(n1)
             | PNK::Default(n1) => write!(f, "{}", n1.get())?,
-
-            PNK::BuiltinPrefetch(addr, rw, locality) => {
-                write!(f, "addr={}, rw=", addr.get())?;
-                optional(f, *rw, "none")?;
-                write!(f, ", locality=")?;
-                optional(f, *locality, "none")?
-            }
 
             // Two NodeRefs: Tag(n1.get(), n2.get())
             PNK::GnuStatementExpr(n1, n2)
             | PNK::IndexAccess(n1, n2)
             | PNK::Switch(n1, n2)
             | PNK::Case(n1, n2)
-            | PNK::BuiltinVaStart(n1, n2)
-            | PNK::BuiltinVaCopy(n1, n2)
-            | PNK::BuiltinExpect(n1, n2)
             | PNK::BuiltinComplex(n1, n2) => write!(f, "{}, {}", n1.get(), n2.get())?,
 
             // Three NodeRefs: Tag(n1.get(), n2.get(), n3.get())
@@ -394,9 +335,13 @@ impl AstDumper {
             PNK::BinaryOp(op, l, r) | PNK::Assignment(op, l, r) => write!(f, "{:?}, {}, {}", op, l.get(), r.get())?,
 
             // TypeRef and NodeRef: Tag(ty, n.get())
-            PNK::Cast(ty, n) | PNK::CompoundLiteral(ty, n) | PNK::BuiltinVaArg(ty, n) | PNK::BuiltinOffsetof(ty, n) => {
-                write!(f, "{:?}, {}", ty, n.get())?
-            }
+            PNK::Cast(ty, n)
+            | PNK::CompoundLiteral(ty, n)
+            | PNK::BuiltinVaArg(ty, n)
+            | PNK::BuiltinBitCast(ty, n)
+            | PNK::BuiltinOffsetof(ty, n) => write!(f, "{:?}, {}", ty, n.get())?,
+
+            PNK::BuiltinConvertVector(n, ty) => write!(f, "{}, {:?}", n.get(), ty)?,
 
             // TypeRef only: Tag(ty)
             PNK::SizeOfType(ty) | PNK::AlignOfType(ty) => write!(f, "{:?}", ty)?,
@@ -415,11 +360,6 @@ impl AstDumper {
                 write!(f, "{}, {}, {}", obj.get(), field, if *arrow { "->" } else { "." })?
             }
 
-            PNK::AtomicOp(op, args) => {
-                write!(f, "{:?}, args=[", op)?;
-                Self::write_list(f, args)?;
-                write!(f, "]")?
-            }
             PNK::GenericSelection(ctrl, assocs) => write!(f, "{}, {:?}", ctrl.get(), assocs)?,
 
             PNK::CompoundStmt(stmts) => {
@@ -461,7 +401,6 @@ impl AstDumper {
                 write!(f, "]")?
             }
             PNK::InitializerList(inits) => write!(f, "{:?}", inits)?,
-            PNK::PragmaPack(kind_pack) => write!(f, "{:?}", kind_pack)?,
             _ => unreachable!(),
         }
 
@@ -482,11 +421,7 @@ impl AstDumper {
                 Self::format_literal(f, &literal.get_val())?;
                 return writeln!(f);
             }
-            NodeKind::Break
-            | NodeKind::Continue
-            | NodeKind::Dummy
-            | NodeKind::BuiltinUnreachable
-            | NodeKind::BuiltinTrap => {
+            NodeKind::Break | NodeKind::Continue | NodeKind::Dummy => {
                 return writeln!(f, "{}", kind.tagname());
             }
             _ => {}
@@ -502,36 +437,9 @@ impl AstDumper {
             NodeKind::PostIncrement(n)
             | NodeKind::PostDecrement(n)
             | NodeKind::Default(n)
-            | NodeKind::BuiltinVaEnd(n)
-            | NodeKind::BuiltinPopcount(n)
-            | NodeKind::BuiltinPopcountL(n)
-            | NodeKind::BuiltinPopcountLL(n)
-            | NodeKind::BuiltinClz(n)
-            | NodeKind::BuiltinClzL(n)
-            | NodeKind::BuiltinClzLL(n)
-            | NodeKind::BuiltinCtz(n)
-            | NodeKind::BuiltinCtzL(n)
-            | NodeKind::BuiltinCtzLL(n)
-            | NodeKind::BuiltinFfs(n)
-            | NodeKind::BuiltinFfsL(n)
-            | NodeKind::BuiltinFfsLL(n)
-            | NodeKind::BuiltinBswap16(n)
-            | NodeKind::BuiltinBswap32(n)
-            | NodeKind::BuiltinBswap64(n)
-            | NodeKind::BuiltinAlloca(n)
-            | NodeKind::BuiltinFabs(n)
-            | NodeKind::BuiltinFabsf(n)
-            | NodeKind::BuiltinFabsl(n)
-            | NodeKind::BuiltinConstantP(n)
             | NodeKind::SizeOfExpr(n)
-            | NodeKind::AlignOfExpr(n) => write!(f, "{}", n.raw())?,
-
-            NodeKind::BuiltinPrefetch(addr, rw, locality) => {
-                write!(f, "addr={}, rw=", addr.raw())?;
-                optional(f, *rw, "none")?;
-                write!(f, ", locality=")?;
-                optional(f, *locality, "none")?
-            }
+            | NodeKind::AlignOfExpr(n)
+            | NodeKind::BuiltinConvertVector(n, _) => write!(f, "{}", n.raw())?,
 
             // Two NodeRefs: Tag(n1.get(), n2.get())
             NodeKind::IndexAccess(n1, n2)
@@ -539,18 +447,11 @@ impl AstDumper {
             | NodeKind::StatementExpr(n1, n2)
             | NodeKind::DoWhile(n1, n2)
             | NodeKind::Switch(n1, n2)
-            | NodeKind::BuiltinVaStart(n1, n2)
-            | NodeKind::BuiltinVaCopy(n1, n2)
-            | NodeKind::BuiltinExpect(n1, n2)
             | NodeKind::BuiltinComplex(n1, n2) => write!(f, "{}, {}", n1.raw(), n2.raw())?,
 
             // Three NodeRefs: Tag(n1.get(), n2.get(), n3.get())
             NodeKind::TernaryOp(n1, n2, n3)
             | NodeKind::BuiltinChooseExpr(n1, n2, n3)
-            | NodeKind::BuiltinMemcmp(n1, n2, n3)
-            | NodeKind::BuiltinMemcpy(n1, n2, n3)
-            | NodeKind::BuiltinMemset(n1, n2, n3)
-            | NodeKind::BuiltinMemmove(n1, n2, n3)
             | NodeKind::CaseRange(n1, n2, n3) => write!(f, "{}, {}, {}", n1.raw(), n2.raw(), n3.raw())?,
 
             // Binary Op / Assignment: Tag(op, l.get(), r.get())
@@ -563,6 +464,7 @@ impl AstDumper {
             NodeKind::Cast(ty, n)
             | NodeKind::CompoundLiteral(ty, n)
             | NodeKind::BuiltinVaArg(ty, n)
+            | NodeKind::BuiltinBitCast(ty, n)
             | NodeKind::BuiltinOffsetof(ty, n) => write!(f, "{}, {}", ty, n.raw())?,
 
             // TypeRef only: Tag(ty)
@@ -577,11 +479,6 @@ impl AstDumper {
 
             NodeKind::MemberAccess(obj, field, is_arrow) => {
                 write!(f, "{}, {}, {}", obj.raw(), field, if *is_arrow { "->" } else { "." })?
-            }
-
-            NodeKind::AtomicOp(op, args_start, args_len) => {
-                write!(f, "{:?}, ", op)?;
-                Self::write_range(f, "args", *args_start, *args_len)?
             }
 
             NodeKind::GenericSelection(gs) => {

@@ -14,6 +14,227 @@ use crate::{
     semantic::{QualType, StructMember, TypeRef},
 };
 
+/// Defines the kind of builtin function for efficient identification in later phases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub enum BuiltinFunctionKind {
+    // Atomic operations
+    AtomicLoadN,
+    AtomicStoreN,
+    AtomicExchangeN,
+    AtomicCompareExchangeN,
+    AtomicFetchAdd,
+    AtomicFetchSub,
+    AtomicFetchAnd,
+    AtomicFetchOr,
+    AtomicFetchXor,
+
+    // Bitwise builtins
+    Popcount,
+    PopcountL,
+    PopcountLL,
+    Clz,
+    ClzL,
+    ClzLL,
+    Ctz,
+    CtzL,
+    CtzLL,
+    Ffs,
+    FfsL,
+    FfsLL,
+
+    // Math builtins
+    Fabs,
+    FabsF,
+    FabsL,
+
+    // Memory builtins
+    Memcpy,
+    Memmove,
+    Memset,
+    Memcmp,
+
+    // Varargs builtins
+    VaStart,
+    VaEnd,
+    VaCopy,
+
+    // Other builtins
+    Expect,
+    ConstantP,
+    Unreachable,
+    Trap,
+    Prefetch,
+    Alloca,
+    Complex,
+
+    // Float constant builtins
+    Inff,
+    HugeValf,
+    Inf,
+    HugeVal,
+    Nanf,
+    Nan,
+
+    // Bswap builtins
+    Bswap16,
+    Bswap32,
+    Bswap64,
+
+    Signbit,
+    SignbitF,
+    SignbitL,
+    FrameAddress,
+}
+
+impl BuiltinFunctionKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::AtomicLoadN => "__atomic_load_n",
+            Self::AtomicStoreN => "__atomic_store_n",
+            Self::AtomicExchangeN => "__atomic_exchange_n",
+            Self::AtomicCompareExchangeN => "__atomic_compare_exchange_n",
+            Self::AtomicFetchAdd => "__atomic_fetch_add",
+            Self::AtomicFetchSub => "__atomic_fetch_sub",
+            Self::AtomicFetchAnd => "__atomic_fetch_and",
+            Self::AtomicFetchOr => "__atomic_fetch_or",
+            Self::AtomicFetchXor => "__atomic_fetch_xor",
+            Self::Popcount => "__builtin_popcount",
+            Self::PopcountL => "__builtin_popcountl",
+            Self::PopcountLL => "__builtin_popcountll",
+            Self::Clz => "__builtin_clz",
+            Self::ClzL => "__builtin_clzl",
+            Self::ClzLL => "__builtin_clzll",
+            Self::Ctz => "__builtin_ctz",
+            Self::CtzL => "__builtin_ctzl",
+            Self::CtzLL => "__builtin_ctzll",
+            Self::Ffs => "__builtin_ffs",
+            Self::FfsL => "__builtin_ffsl",
+            Self::FfsLL => "__builtin_ffsll",
+            Self::Fabs => "__builtin_fabs",
+            Self::FabsF => "__builtin_fabsf",
+            Self::FabsL => "__builtin_fabsl",
+            Self::Memcpy => "__builtin_memcpy",
+            Self::Memmove => "__builtin_memmove",
+            Self::Memset => "__builtin_memset",
+            Self::Memcmp => "__builtin_memcmp",
+            Self::VaStart => "__builtin_va_start",
+            Self::VaEnd => "__builtin_va_end",
+            Self::VaCopy => "__builtin_va_copy",
+            Self::Expect => "__builtin_expect",
+            Self::ConstantP => "__builtin_constant_p",
+            Self::Unreachable => "__builtin_unreachable",
+            Self::Trap => "__builtin_trap",
+            Self::Prefetch => "__builtin_prefetch",
+            Self::Alloca => "__builtin_alloca",
+            Self::Complex => "__builtin_complex",
+            Self::Inff => "__builtin_inff",
+            Self::HugeValf => "__builtin_huge_valf",
+            Self::Inf => "__builtin_inf",
+            Self::HugeVal => "__builtin_huge_val",
+            Self::Nanf => "__builtin_nanf",
+            Self::Nan => "__builtin_nan",
+            Self::Bswap16 => "__builtin_bswap16",
+            Self::Bswap32 => "__builtin_bswap32",
+            Self::Bswap64 => "__builtin_bswap64",
+            Self::Signbit => "__builtin_signbit",
+            Self::SignbitF => "__builtin_signbitf",
+            Self::SignbitL => "__builtin_signbitl",
+            Self::FrameAddress => "__builtin_frame_address",
+        }
+    }
+
+    pub const ALL_VARIANTS: &[Self] = &[
+        Self::AtomicLoadN,
+        Self::AtomicStoreN,
+        Self::AtomicExchangeN,
+        Self::AtomicCompareExchangeN,
+        Self::AtomicFetchAdd,
+        Self::AtomicFetchSub,
+        Self::AtomicFetchAnd,
+        Self::AtomicFetchOr,
+        Self::AtomicFetchXor,
+        Self::Popcount,
+        Self::PopcountL,
+        Self::PopcountLL,
+        Self::Clz,
+        Self::ClzL,
+        Self::ClzLL,
+        Self::Ctz,
+        Self::CtzL,
+        Self::CtzLL,
+        Self::Ffs,
+        Self::FfsL,
+        Self::FfsLL,
+        Self::Fabs,
+        Self::FabsF,
+        Self::FabsL,
+        Self::Memcpy,
+        Self::Memmove,
+        Self::Memset,
+        Self::Memcmp,
+        Self::VaStart,
+        Self::VaEnd,
+        Self::VaCopy,
+        Self::Expect,
+        Self::ConstantP,
+        Self::Unreachable,
+        Self::Trap,
+        Self::Prefetch,
+        Self::Alloca,
+        Self::Complex,
+        Self::Inff,
+        Self::HugeValf,
+        Self::Inf,
+        Self::HugeVal,
+        Self::Nanf,
+        Self::Nan,
+        Self::Bswap16,
+        Self::Bswap32,
+        Self::Bswap64,
+        Self::Signbit,
+        Self::SignbitF,
+        Self::SignbitL,
+        Self::FrameAddress,
+    ];
+
+    pub fn is_bitwise(self) -> bool {
+        matches!(
+            self,
+            Self::Popcount
+                | Self::PopcountL
+                | Self::PopcountLL
+                | Self::Clz
+                | Self::ClzL
+                | Self::ClzLL
+                | Self::Ctz
+                | Self::CtzL
+                | Self::CtzLL
+                | Self::Ffs
+                | Self::FfsL
+                | Self::FfsLL
+        )
+    }
+
+    pub fn is_fabs(self) -> bool {
+        matches!(self, Self::Fabs | Self::FabsF | Self::FabsL)
+    }
+
+    pub fn to_atomic_op(self) -> Option<AtomicOp> {
+        match self {
+            Self::AtomicLoadN => Some(AtomicOp::LoadN),
+            Self::AtomicStoreN => Some(AtomicOp::StoreN),
+            Self::AtomicExchangeN => Some(AtomicOp::ExchangeN),
+            Self::AtomicCompareExchangeN => Some(AtomicOp::CompareExchangeN),
+            Self::AtomicFetchAdd => Some(AtomicOp::FetchAdd),
+            Self::AtomicFetchSub => Some(AtomicOp::FetchSub),
+            Self::AtomicFetchAnd => Some(AtomicOp::FetchAnd),
+            Self::AtomicFetchOr => Some(AtomicOp::FetchOr),
+            Self::AtomicFetchXor => Some(AtomicOp::FetchXor),
+            _ => None,
+        }
+    }
+}
+
 pub type SymbolRef = NonZeroU32;
 
 /// Represents the definition state of a symbol entry.
@@ -90,6 +311,7 @@ pub enum SymbolKind {
         storage: Option<StorageClass>,
         is_noreturn: bool,
         param_len: u16,
+        builtin_kind: Option<BuiltinFunctionKind>,
     },
     Typedef {
         aliased_type: QualType,
@@ -317,6 +539,33 @@ impl SymbolTable {
         &mut self.entries[(index.get() - 1) as usize]
     }
 
+    /// define builtin function in Global scope
+    pub(crate) fn define_builtin_function(
+        &mut self,
+        name: NameId,
+        kind: BuiltinFunctionKind,
+        func_ty: TypeRef,
+        param_len: u16,
+    ) -> Result<SymbolRef, SymbolTableError> {
+        let mut symbol = self.create_symbol(
+            name,
+            SymbolKind::Function {
+                storage: Some(StorageClass::Extern),
+                is_noreturn: false,
+                param_len,
+                builtin_kind: Some(kind),
+            },
+            QualType::unqualified(func_ty),
+            SourceSpan::empty(),
+        );
+
+        // Builtin declarations are always "DeclaredOnly"
+        symbol.def_state = DefinitionState::DeclaredOnly;
+
+        // Builtin declarations are always in global scope
+        self.merge_global_symbol(name, symbol)
+    }
+
     /// helper method to create symbol
     fn create_symbol(&mut self, name: NameId, kind: SymbolKind, ty: QualType, span: SourceSpan) -> Symbol {
         Symbol {
@@ -423,6 +672,7 @@ impl SymbolTable {
                 storage,
                 is_noreturn,
                 param_len,
+                builtin_kind: None,
             },
             QualType::unqualified(ty),
             span,

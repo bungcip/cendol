@@ -6,25 +6,34 @@ Cendol is a C23 compiler implemented in Rust. It is a project to understand the 
 
 ## Features
 
-- **Full C23 Preprocessor**: Complete preprocessor with macro expansion, conditional compilation, file inclusion, and built-in macros (`__FILE__`, `__LINE__`, etc.)
-- **Lexer**: Tokenization of C23 source code with proper handling of literals, keywords, and operators
-- **Parser**: Comprehensive C23 syntax parsing using Pratt parsing for expressions and recursive descent for statements
-- **Semantic Analysis**: Type checking, symbol resolution, and semantic validation
-- **Code Generation**: Compiles to native object code using Cranelift backend
-- **Linker Integration**: Automatic invocation of system linker (clang) to produce executables
-- **Rich Diagnostics**: Error reporting with source location tracking
+- **Full C23 Preprocessor**: Complete preprocessor with macro expansion, conditional compilation, file inclusion, `#embed` directive, and built-in macros.
+- **Lexer**: Tokenization of C23 source code with proper handling of literals, keywords, and operators.
+- **Parser**: Comprehensive C23 syntax parsing including attribute syntax `[[...]]`, Pratt parsing for expressions, and recursive descent for statements.
+- **Semantic Analysis**: Type checking, symbol resolution, and semantic validation with support for C23 features like `auto`, `constexpr`, and enum underlying types.
+- **Code Generation**: Compiles to native object code using Cranelift backend.
+- **Linker Integration**: Automatic invocation of system linker (clang) to produce executables.
+- **Rich Diagnostics**: Error reporting with source location tracking.
+
+## C23 Feature Support
+
+Cendol aims for comprehensive C23 support. Currently implemented features include:
+- **`auto` and `constexpr`**: Type inference and constant expressions.
+- **`bool`, `true`, `false`**: Built-in boolean types and literals.
+- **`alignas`, `alignof`, `thread_local`, `static_assert`, `typeof`, `typeof_unqual`**: C23 keywords.
+- **Attribute Syntax**: Support for `[[...]]` attributes.
+- **Enum Underlying Types**: Enums with specified underlying types (e.g., `enum e : int`).
+- **Empty Initializer**: Support for `{}` to zero-initialize objects.
+- **`#embed` Directive**: Resource inclusion in the preprocessor.
+- **Improved Function Declarations**: `int foo()` is equivalent to `int foo(void)`.
 
 ## Limitations
 
-- **No Trigraph Support**: Trigraphs (three-character sequences like `??=`, `??<`, etc.) are not supported. Note: Trigraphs were officially removed in C23.
-- **No Digraph Support**: Digraphs (two-character sequences like `<:`, `:>`, `<%`, `%>`, `%:`, `%:%:`) are not supported.
-- **No K&R Function Declarations**: Functions declared with an empty parameter list (e.g., `int foo()`) are treated as `int foo(void)`, following C23.
+- **No Trigraph Support**: Trigraphs were officially removed in C23.
+- **No Digraph Support**: Two-character sequences like `<:` are not supported.
 - **Missing C23 Language Features**:
   - **Bit-precise integers** (`_BitInt(N)`) are not yet implemented.
-  - **Decimal floating-point types** (`_Decimal32`, `_Decimal64`, `_Decimal128`) are not supported.
-  - **C23 Attribute Syntax** (`[[...]]`) is not yet parsed.
-  - **`#embed` Directive**: The C23 resource inclusion directive is not implemented.
-- **No Standard Library**: Cendol does not provide its own `libc` and relies on the system's C library for headers and linking.
+  - **Decimal floating-point types** (`_Decimal32`, etc.) are not supported.
+- **No Standard Library**: Cendol relies on the system's C library for headers and linking.
 
 ## Architecture
 

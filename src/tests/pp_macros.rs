@@ -1099,3 +1099,16 @@ STRINGIFY(1)
       text: "\"1\""
     "#);
 }
+
+#[test]
+fn test_define_with_trailing_comment() {
+    let src = r#"
+#define FOO 1 // comment
+FOO
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Number
+      text: "1"
+    "#);
+}

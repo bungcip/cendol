@@ -10,7 +10,8 @@ use crate::mir::{
 
 use crate::ast;
 use crate::semantic::{
-    ArraySizeType, Conversion, QualType, SymbolKind, SymbolRef, TypeKind, TypeQualifiers, TypeRef, ValueCategory,
+    ArraySizeType, BuiltinFunctionKind, Conversion, QualType, SymbolKind, SymbolRef, TypeKind, TypeQualifiers, TypeRef,
+    ValueCategory,
 };
 
 impl<'a> MirGen<'a> {
@@ -96,9 +97,7 @@ impl<'a> MirGen<'a> {
             NodeKind::StatementExpr(stmt, result_expr) => self.visit_gnu_stmt_expr(*stmt, *result_expr, need_value),
             NodeKind::Cast(_ty, operand) => self.visit_cast(*operand, mir_ty),
             NodeKind::CompoundLiteral(ty, init) => self.visit_compound_literal(*ty, *init),
-            _ if node_kind.is_builtin() || matches!(node_kind, NodeKind::AtomicOp(..)) => {
-                self.visit_builtin_expression(&node_kind, expr, mir_ty, need_value)
-            }
+            _ if node_kind.is_builtin() => self.visit_builtin_expression(&node_kind, expr, mir_ty, need_value),
             NodeKind::MemberAccess(obj, field_name, is_arrow) => self.visit_member_access(*obj, *field_name, *is_arrow),
             NodeKind::IndexAccess(arr, idx) => self.visit_index_access(*arr, *idx),
             NodeKind::TernaryOp(cond, then, else_expr) => self.visit_ternary_op(*cond, *then, *else_expr, mir_ty),
@@ -119,6 +118,11 @@ impl<'a> MirGen<'a> {
         mir_ty: TypeId,
         need_value: bool,
     ) -> Operand {
+        // Check for builtin functions that need special MIR lowering
+        if let Some(builtin_op) = self.try_visit_builtin_call(call_expr, mir_ty, need_value) {
+            return builtin_op;
+        }
+
         // Check for builtin float constant functions
         if let Some(builtin_op) = self.try_visit_builtin_float_const(call_expr, mir_ty) {
             return if need_value {
@@ -202,7 +206,7 @@ impl<'a> MirGen<'a> {
         need_value: bool,
     ) -> Operand {
         match node_kind {
-            NodeKind::BuiltinOffsetof(..) | NodeKind::BuiltinTypesCompatibleP(..) | NodeKind::BuiltinConstantP(..) => {
+            NodeKind::BuiltinOffsetof(..) | NodeKind::BuiltinTypesCompatibleP(..) => {
                 let val = self.const_ctx().eval_int(expr).expect("Builtin should be constant");
                 let kind = if self.mb.get_type(mir_ty).is_float() {
                     ConstValueKind::Float(val as f64)
@@ -214,10 +218,6 @@ impl<'a> MirGen<'a> {
             NodeKind::BuiltinChooseExpr(..) => self.visit_builtin_choose_expr(need_value, expr),
             NodeKind::GenericSelection(..) => self.visit_generic_selection(need_value, expr),
             NodeKind::BuiltinVaArg(ty, expr) => self.visit_builtin_va_arg(*ty, *expr),
-            NodeKind::BuiltinExpect(exp, c) => {
-                let _ = self.visit_expression(*c, true); // lower 'c' for side effects or just to process it
-                self.visit_expression(*exp, need_value)
-            }
             NodeKind::BuiltinComplex(real, imag) => {
                 let real_op = self.visit_expression(*real, true);
                 let imag_op = self.visit_expression(*imag, true);
@@ -231,93 +231,17 @@ impl<'a> MirGen<'a> {
                 // but the result structure itself doesn't have a record in semantic_info usually.
                 self.emit_complex_struct(real_op, imag_op, mir_ty)
             }
-            NodeKind::BuiltinMemcmp(s1, s2, n) => {
-                let const_void = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
-                let const_void_ptr = self.registry.pointer_to(const_void);
-
-                let cv_ptr_ty = self.lower_type(const_void_ptr);
-                let n_ty = self.get_size_t_type();
-                let ret_ty = self.get_int_type();
-
-                self.emit_builtin_memory_op(
-                    "memcmp",
-                    &[(*s1, cv_ptr_ty), (*s2, cv_ptr_ty), (*n, n_ty)],
-                    ret_ty,
-                    need_value,
-                )
+            NodeKind::BuiltinBitCast(ty, expr) => {
+                let operand = self.visit_expression(*expr, true);
+                let target_mir_ty = self.lower_qual_type(*ty);
+                Operand::Cast(target_mir_ty, Box::new(operand))
             }
-            NodeKind::BuiltinMemcpy(dest, src, n) | NodeKind::BuiltinMemmove(dest, src, n) => {
-                let void_ptr = self.registry.type_void_ptr;
-                let const_void = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
-                let const_void_ptr = self.registry.pointer_to(const_void);
-
-                let d_ty = self.lower_type(void_ptr);
-                let s_ty = self.lower_type(const_void_ptr);
-                let n_ty = self.get_size_t_type();
-
-                let name = match node_kind {
-                    NodeKind::BuiltinMemcpy(..) => "memcpy",
-                    NodeKind::BuiltinMemmove(..) => "memmove",
-                    _ => unreachable!(),
-                };
-
-                self.emit_builtin_memory_op(name, &[(*dest, d_ty), (*src, s_ty), (*n, n_ty)], d_ty, need_value)
-            }
-            NodeKind::BuiltinMemset(s, c, n) => {
-                let void_ptr = self.lower_type(self.registry.type_void_ptr);
-                let int_ty = self.get_int_type();
-                let size_t = self.get_size_t_type();
-
-                self.emit_builtin_memory_op(
-                    "memset",
-                    &[(*s, void_ptr), (*c, int_ty), (*n, size_t)],
-                    void_ptr,
-                    need_value,
-                )
-            }
-            NodeKind::BuiltinPopcount(exp)
-            | NodeKind::BuiltinPopcountL(exp)
-            | NodeKind::BuiltinPopcountLL(exp)
-            | NodeKind::BuiltinClz(exp)
-            | NodeKind::BuiltinClzL(exp)
-            | NodeKind::BuiltinClzLL(exp)
-            | NodeKind::BuiltinCtz(exp)
-            | NodeKind::BuiltinCtzL(exp)
-            | NodeKind::BuiltinCtzLL(exp)
-            | NodeKind::BuiltinFfs(exp)
-            | NodeKind::BuiltinFfsL(exp)
-            | NodeKind::BuiltinFfsLL(exp)
-            | NodeKind::BuiltinBswap16(exp)
-            | NodeKind::BuiltinBswap32(exp)
-            | NodeKind::BuiltinBswap64(exp)
-            | NodeKind::BuiltinFabs(exp)
-            | NodeKind::BuiltinFabsf(exp)
-            | NodeKind::BuiltinFabsl(exp) => self.visit_builtin_unary_op(node_kind, *exp, mir_ty),
-            NodeKind::BuiltinPrefetch(addr, rw, locality) => {
-                let _ = self.visit_expression(*addr, true);
-                if let Some(rw) = rw {
-                    let _ = self.visit_expression(*rw, true);
-                }
-                if let Some(locality) = locality {
-                    let _ = self.visit_expression(*locality, true);
-                }
-                self.create_dummy_operand()
-            }
-            NodeKind::BuiltinAlloca(size) => {
-                let size_op = self.visit_expression(*size, true);
-                let void_ptr_mir = self.lower_type(self.registry.type_void_ptr);
-                let (temp_local, temp_place) = self.create_temp_local(void_ptr_mir);
-
-                self.emit_malloc_call(temp_local, size_op);
-                Operand::Copy(Box::new(temp_place))
-            }
-            NodeKind::AtomicOp(op, args_start, args_len) => self.visit_atomic_op(*op, *args_start, *args_len, mir_ty),
-            NodeKind::BuiltinVaStart(..) | NodeKind::BuiltinVaEnd(..) | NodeKind::BuiltinVaCopy(..) => {
-                self.visit_builtin_void(node_kind)
-            }
-            NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => {
-                self.set_terminator(Terminator::Trap);
-                self.create_dummy_operand()
+            NodeKind::BuiltinConvertVector(expr, ty) => {
+                let operand = self.visit_expression(*expr, true);
+                let target_mir_ty = self.lower_qual_type(*ty);
+                // For now, treat convertvector as a cast.
+                // In the future, this might need a more specialized MIR op.
+                Operand::Cast(target_mir_ty, Box::new(operand))
             }
             _ => unreachable!("Unhandled node kind in visit_builtin_expression: {:?}", node_kind),
         }
@@ -1517,32 +1441,6 @@ impl<'a> MirGen<'a> {
         self.emit_rvalue_to_operand(rval, mir_ty)
     }
 
-    fn visit_builtin_void(&mut self, kind: &NodeKind) -> Operand {
-        let stmt = match kind {
-            NodeKind::BuiltinVaStart(ap, last) => {
-                let ap_op = self.visit_expression(*ap, true);
-                let ap = self.ensure_valist_place(ap_op);
-                let last = self.visit_expression(*last, true);
-                MirStmt::BuiltinVaStart(ap, last)
-            }
-            NodeKind::BuiltinVaEnd(ap) => {
-                let ap_op = self.visit_expression(*ap, true);
-                let ap = self.ensure_valist_place(ap_op);
-                MirStmt::BuiltinVaEnd(ap)
-            }
-            NodeKind::BuiltinVaCopy(dst, src) => {
-                let dst_op = self.visit_expression(*dst, true);
-                let dst = self.ensure_valist_place(dst_op);
-                let src_op = self.visit_expression(*src, true);
-                let src = self.ensure_valist_place(src_op);
-                MirStmt::BuiltinVaCopy(dst, src)
-            }
-            _ => unreachable!(),
-        };
-        self.add_stmt(stmt);
-        self.create_int_operand(0)
-    }
-
     fn visit_atomic_op(&mut self, op: AtomicOp, args_start: NodeRef, args_len: u16, mir_ty: TypeId) -> Operand {
         let args = self.get_atomic_args(args_start, args_len);
         let order = AtomicMemOrder::SeqCst; // Default to SeqCst for now
@@ -1753,30 +1651,250 @@ impl<'a> MirGen<'a> {
         }
     }
 
+    fn try_visit_builtin_call(&mut self, call_expr: &CallExpr, mir_ty: TypeId, need_value: bool) -> Option<Operand> {
+        let callee_kind = self.ast.get_kind(call_expr.callee);
+        let builtin_kind = match callee_kind {
+            NodeKind::Ident(_, sym_ref) => {
+                let sym = self.symbol_table.get_symbol(*sym_ref);
+                if let SymbolKind::Function { builtin_kind: k, .. } = &sym.kind {
+                    *k
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        let kind = builtin_kind?;
+
+        match kind {
+            BuiltinFunctionKind::Signbit | BuiltinFunctionKind::SignbitF | BuiltinFunctionKind::SignbitL => {
+                let arg = call_expr.arg_start;
+                let operand = self.visit_expression(arg, true);
+                let rval = Rvalue::UnaryFloatOp(UnaryFloatOp::IsNegative, operand);
+                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+            }
+            BuiltinFunctionKind::FrameAddress => {
+                let arg = call_expr.arg_start;
+                let level = self.const_ctx().eval_int(arg).unwrap_or(0) as u32;
+                let rval = Rvalue::BuiltinFrameAddress(level);
+                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+            }
+            BuiltinFunctionKind::Expect => {
+                let arg = call_expr.arg_start;
+                Some(self.visit_expression(arg, true))
+            }
+            BuiltinFunctionKind::Clz | BuiltinFunctionKind::ClzL | BuiltinFunctionKind::ClzLL => {
+                let arg = call_expr.arg_start;
+                let operand = self.visit_expression(arg, true);
+                let rval = Rvalue::UnaryIntOp(UnaryIntOp::Clz, operand);
+                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+            }
+            BuiltinFunctionKind::Ctz | BuiltinFunctionKind::CtzL | BuiltinFunctionKind::CtzLL => {
+                let arg = call_expr.arg_start;
+                let operand = self.visit_expression(arg, true);
+                let rval = Rvalue::UnaryIntOp(UnaryIntOp::Ctz, operand);
+                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+            }
+            BuiltinFunctionKind::Popcount | BuiltinFunctionKind::PopcountL | BuiltinFunctionKind::PopcountLL => {
+                let arg = call_expr.arg_start;
+                let operand = self.visit_expression(arg, true);
+                let rval = Rvalue::UnaryIntOp(UnaryIntOp::Popcount, operand);
+                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+            }
+            BuiltinFunctionKind::Ffs | BuiltinFunctionKind::FfsL | BuiltinFunctionKind::FfsLL => {
+                let arg = call_expr.arg_start;
+                let operand = self.visit_expression(arg, true);
+                let rval = Rvalue::UnaryIntOp(UnaryIntOp::Ffs, operand);
+                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+            }
+            BuiltinFunctionKind::Bswap16 => {
+                let arg = call_expr.arg_start;
+                let operand = self.visit_expression(arg, true);
+                let rval = Rvalue::UnaryIntOp(UnaryIntOp::Bswap16, operand);
+                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+            }
+            BuiltinFunctionKind::Bswap32 => {
+                let arg = call_expr.arg_start;
+                let operand = self.visit_expression(arg, true);
+                let rval = Rvalue::UnaryIntOp(UnaryIntOp::Bswap32, operand);
+                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+            }
+            BuiltinFunctionKind::Bswap64 => {
+                let arg = call_expr.arg_start;
+                let operand = self.visit_expression(arg, true);
+                let rval = Rvalue::UnaryIntOp(UnaryIntOp::Bswap64, operand);
+                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+            }
+            BuiltinFunctionKind::Unreachable | BuiltinFunctionKind::Trap => {
+                self.set_terminator(Terminator::Trap);
+                Some(self.create_dummy_operand())
+            }
+            BuiltinFunctionKind::ConstantP => {
+                let arg = call_expr.arg_start;
+                let is_const = self.const_ctx().eval_int(arg).is_some() || self.const_ctx().eval_float(arg).is_some();
+                let val = if is_const { 1 } else { 0 };
+                let const_op = self.create_constant(mir_ty, ConstValueKind::Int(val));
+                Some(Operand::Constant(const_op))
+            }
+            BuiltinFunctionKind::Prefetch => {
+                let arg_start = call_expr.arg_start;
+                let addr = self.visit_expression(arg_start, true);
+
+                let rw = if call_expr.arg_len > 1 {
+                    self.const_ctx().eval_int(arg_start.add_offset(1)).unwrap_or(0) as u32
+                } else {
+                    0
+                };
+
+                let locality = if call_expr.arg_len > 2 {
+                    self.const_ctx().eval_int(arg_start.add_offset(2)).unwrap_or(3) as u32
+                } else {
+                    3
+                };
+
+                self.add_stmt(MirStmt::BuiltinPrefetch { addr, rw, locality });
+                Some(self.create_dummy_operand())
+            }
+            BuiltinFunctionKind::VaStart => {
+                let arg_start = call_expr.arg_start;
+                let ap_op = self.visit_expression(arg_start, true);
+                let ap = self.ensure_valist_place(ap_op);
+                let last = self.visit_expression(arg_start.add_offset(1), true);
+                self.add_stmt(MirStmt::BuiltinVaStart(ap, last));
+                Some(self.create_int_operand(0))
+            }
+            BuiltinFunctionKind::VaEnd => {
+                let arg_start = call_expr.arg_start;
+                let ap_op = self.visit_expression(arg_start, true);
+                let ap = self.ensure_valist_place(ap_op);
+                self.add_stmt(MirStmt::BuiltinVaEnd(ap));
+                Some(self.create_int_operand(0))
+            }
+            BuiltinFunctionKind::VaCopy => {
+                let arg_start = call_expr.arg_start;
+                let dst_op = self.visit_expression(arg_start, true);
+                let dst = self.ensure_valist_place(dst_op);
+                let src_op = self.visit_expression(arg_start.add_offset(1), true);
+                let src = self.ensure_valist_place(src_op);
+                self.add_stmt(MirStmt::BuiltinVaCopy(dst, src));
+                Some(self.create_int_operand(0))
+            }
+            BuiltinFunctionKind::Fabs | BuiltinFunctionKind::FabsF | BuiltinFunctionKind::FabsL => {
+                let arg = call_expr.arg_start;
+                let operand = self.visit_expression(arg, true);
+                let rval = Rvalue::UnaryFloatOp(UnaryFloatOp::Abs, operand);
+                Some(self.emit_rvalue_to_operand(rval, mir_ty))
+            }
+            BuiltinFunctionKind::Alloca => {
+                let arg = call_expr.arg_start;
+                let size_op = self.visit_expression(arg, true);
+                let void_ptr_mir = self.lower_type(self.registry.type_void_ptr);
+                let (temp_local, temp_place) = self.create_temp_local(void_ptr_mir);
+
+                self.emit_malloc_call(temp_local, size_op);
+                Some(Operand::Copy(Box::new(temp_place)))
+            }
+            BuiltinFunctionKind::Memcpy | BuiltinFunctionKind::Memmove => {
+                let arg_start = call_expr.arg_start;
+                let dest = arg_start;
+                let src = arg_start.add_offset(1);
+                let n = arg_start.add_offset(2);
+
+                let void_ptr = self.registry.type_void_ptr;
+                let const_void = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
+                let const_void_ptr = self.registry.pointer_to(const_void);
+
+                let d_ty = self.lower_type(void_ptr);
+                let s_ty = self.lower_type(const_void_ptr);
+                let n_ty = self.get_size_t_type();
+
+                let name = if kind == BuiltinFunctionKind::Memcpy {
+                    "memcpy"
+                } else {
+                    "memmove"
+                };
+                Some(self.emit_builtin_memory_op(name, &[(dest, d_ty), (src, s_ty), (n, n_ty)], d_ty, need_value))
+            }
+            BuiltinFunctionKind::Memset => {
+                let arg_start = call_expr.arg_start;
+                let s = arg_start;
+                let c = arg_start.add_offset(1);
+                let n = arg_start.add_offset(2);
+
+                let void_ptr = self.lower_type(self.registry.type_void_ptr);
+                let int_ty = self.get_int_type();
+                let size_t = self.get_size_t_type();
+
+                Some(self.emit_builtin_memory_op(
+                    "memset",
+                    &[(s, void_ptr), (c, int_ty), (n, size_t)],
+                    void_ptr,
+                    need_value,
+                ))
+            }
+            BuiltinFunctionKind::Memcmp => {
+                let arg_start = call_expr.arg_start;
+                let s1 = arg_start;
+                let s2 = arg_start.add_offset(1);
+                let n = arg_start.add_offset(2);
+
+                let const_void = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
+                let const_void_ptr = self.registry.pointer_to(const_void);
+
+                let cv_ptr_ty = self.lower_type(const_void_ptr);
+                let n_ty = self.get_size_t_type();
+                let ret_ty = self.get_int_type();
+
+                Some(self.emit_builtin_memory_op(
+                    "memcmp",
+                    &[(s1, cv_ptr_ty), (s2, cv_ptr_ty), (n, n_ty)],
+                    ret_ty,
+                    need_value,
+                ))
+            }
+            k if k.to_atomic_op().is_some() => {
+                let op = k.to_atomic_op().unwrap();
+                Some(self.visit_atomic_op(op, call_expr.arg_start, call_expr.arg_len, mir_ty))
+            }
+            _ => None,
+        }
+    }
+
     /// Try to lower builtin float constant functions like `__builtin_inff`, `__builtin_nanf`, etc.
     /// Returns Some(Operand) if the call is a builtin float constant, None otherwise.
     fn try_visit_builtin_float_const(&mut self, call_expr: &CallExpr, mir_ty: TypeId) -> Option<Operand> {
-        // Check if callee is an identifier
         let callee_kind = self.ast.get_kind(call_expr.callee);
-        let name_id = match callee_kind {
-            NodeKind::Ident(name_id, _) => *name_id,
-            _ => return None,
+        let builtin_kind = match callee_kind {
+            NodeKind::Ident(_, sym_ref) => {
+                let sym = self.symbol_table.get_symbol(*sym_ref);
+                if let SymbolKind::Function { builtin_kind: k, .. } = &sym.kind {
+                    *k
+                } else {
+                    None
+                }
+            }
+            _ => None,
         };
+        let kind = builtin_kind?;
 
-        if name_id == self.keywords.builtin_inff || name_id == self.keywords.builtin_huge_valf {
-            let val = f32::INFINITY as f64;
-            Some(self.create_float_operand(val, mir_ty))
-        } else if name_id == self.keywords.builtin_inf || name_id == self.keywords.builtin_huge_val {
-            let val = f64::INFINITY;
-            Some(self.create_float_operand(val, mir_ty))
-        } else if name_id == self.keywords.builtin_nanf {
-            let val = f32::NAN as f64;
-            Some(self.create_float_operand(val, mir_ty))
-        } else if name_id == self.keywords.builtin_nan {
-            let val = f64::NAN;
-            Some(self.create_float_operand(val, mir_ty))
-        } else {
-            None
+        match kind {
+            BuiltinFunctionKind::Inff | BuiltinFunctionKind::HugeValf => {
+                let val = f32::INFINITY as f64;
+                Some(self.create_float_operand(val, mir_ty))
+            }
+            BuiltinFunctionKind::Inf | BuiltinFunctionKind::HugeVal => {
+                let val = f64::INFINITY;
+                Some(self.create_float_operand(val, mir_ty))
+            }
+            BuiltinFunctionKind::Nanf => {
+                let val = f32::NAN as f64;
+                Some(self.create_float_operand(val, mir_ty))
+            }
+            BuiltinFunctionKind::Nan => {
+                let val = f64::NAN;
+                Some(self.create_float_operand(val, mir_ty))
+            }
+            _ => None,
         }
     }
 
@@ -1816,35 +1934,5 @@ impl<'a> MirGen<'a> {
         } else {
             self.create_dummy_operand()
         }
-    }
-
-    fn visit_builtin_unary_op(&mut self, kind: &NodeKind, exp: NodeRef, mir_ty: TypeId) -> Operand {
-        let operand = self.visit_expression(exp, true);
-        let operand_ty = self.ast.qual_type_of(exp);
-        let operand_mir_ty = self.lower_qual_type(operand_ty);
-        let operand_converted = self.apply_conversions(operand, exp, operand_mir_ty);
-
-        let rval = match kind {
-            NodeKind::BuiltinPopcount(_) | NodeKind::BuiltinPopcountL(_) | NodeKind::BuiltinPopcountLL(_) => {
-                Rvalue::UnaryIntOp(UnaryIntOp::Popcount, operand_converted)
-            }
-            NodeKind::BuiltinClz(_) | NodeKind::BuiltinClzL(_) | NodeKind::BuiltinClzLL(_) => {
-                Rvalue::UnaryIntOp(UnaryIntOp::Clz, operand_converted)
-            }
-            NodeKind::BuiltinCtz(_) | NodeKind::BuiltinCtzL(_) | NodeKind::BuiltinCtzLL(_) => {
-                Rvalue::UnaryIntOp(UnaryIntOp::Ctz, operand_converted)
-            }
-            NodeKind::BuiltinFfs(_) | NodeKind::BuiltinFfsL(_) | NodeKind::BuiltinFfsLL(_) => {
-                Rvalue::UnaryIntOp(UnaryIntOp::Ffs, operand_converted)
-            }
-            NodeKind::BuiltinBswap16(_) => Rvalue::UnaryIntOp(UnaryIntOp::Bswap16, operand_converted),
-            NodeKind::BuiltinBswap32(_) => Rvalue::UnaryIntOp(UnaryIntOp::Bswap32, operand_converted),
-            NodeKind::BuiltinBswap64(_) => Rvalue::UnaryIntOp(UnaryIntOp::Bswap64, operand_converted),
-            NodeKind::BuiltinFabs(_) | NodeKind::BuiltinFabsf(_) | NodeKind::BuiltinFabsl(_) => {
-                Rvalue::UnaryFloatOp(UnaryFloatOp::Abs, operand_converted)
-            }
-            _ => unreachable!(),
-        };
-        self.emit_rvalue_to_operand(rval, mir_ty)
     }
 }

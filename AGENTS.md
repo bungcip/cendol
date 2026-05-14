@@ -16,17 +16,18 @@ C source → Preprocessor → Lexer → Parser → Semantic Analysis → MIR →
 src/
 ├── main.rs                   # CLI entry point (clap)
 ├── lib.rs                    # Crate root — declares all modules
-├── ast.rs + ast/             # Flattened AST with index-based NodeRef
+├── bin/                      # Additional binary utilities
+├── ast.rs + ast/             # Flattened AST, literals, dumper, parsed types
 ├── parser.rs + parser/       # Pratt parser (expressions) + recursive descent
 ├── pp.rs + pp/               # C11 preprocessor
-├── semantic.rs + semantic/   # Type checking, lowering, symbol table
-├── mir.rs + mir/             # Mid-level IR definitions + dumper
+├── semantic.rs + semantic/   # Analyzer, lowering, types, const eval, conversions
+├── mir.rs + mir/             # Mid-level IR definitions, builder, dumper
 ├── codegen.rs + codegen/     # MIR→Cranelift lowering, object gen, linker
 ├── diagnostic.rs             # DiagnosticEngine, ParseError, severity levels
 ├── source_manager.rs         # Source file tracking, SourceSpan, SourceLoc
 ├── lang_options.rs           # Language standard options
 ├── driver.rs + driver/       # Compiler driver, CLI, pipeline orchestration
-└── tests.rs + tests/         # All unit tests (105+ test files)
+└── tests.rs + tests/         # All unit tests (140+ test files)
 ```
 
 ### Key Dependencies
@@ -34,15 +35,18 @@ src/
 | Crate                                                 | Purpose                                      |
 | ----------------------------------------------------- | -------------------------------------------- |
 | `cranelift` / `cranelift-module` / `cranelift-object` | Native code generation                       |
+| `cranelift-frontend`                                  | Cranelift IR construction helpers            |
 | `clap`                                                | CLI argument parsing                         |
 | `insta`                                               | Snapshot testing                             |
 | `annotate-snippets`                                   | Rich diagnostic rendering                    |
 | `symbol_table`                                        | Interned strings (`NameId` / `GlobalSymbol`) |
-| `bumpalo`                                             | Arena allocation                             |
 | `hashbrown` / `indexmap`                              | Hash maps with serde                         |
 | `thiserror`                                           | Error derive macros                          |
 | `bitflags`                                            | Type qualifiers, flags                       |
 | `smallvec` / `thin-vec`                               | Small-buffer-optimized collections           |
+| `log` / `env_logger`                                  | Logging framework                            |
+| `target-lexicon`                                      | Target triple parsing                        |
+| `serde`                                               | Serialization/Deserialization                |
 
 ## Formatting & Linting
 
@@ -108,7 +112,7 @@ Defined in `src/ast.rs` + `src/ast/nodes.rs`. Produced by **Semantic Lowering** 
 pub struct Ast {
     pub kinds: Vec<NodeKind>,         // Semantic nodes (parallel vectors)
     pub spans: Vec<SourceSpan>,       // Source locations
-    pub semantic_info: Option<SemanticInfo>, // Populated after type resolution
+    pub semantic_info: SemanticInfo,  // Populated after type resolution
 }
 ```
 
@@ -119,7 +123,7 @@ pub struct Ast {
 - Declarations are lowered into semantic nodes: `VarDecl`, `FunctionDecl`, `TypedefDecl`, `RecordDecl`, `FieldDecl`, `EnumDecl`.
 - Uses `NodeRef` + length for variable-length children (e.g., `CompoundStatement(CompoundStmtData)` with `stmt_start: NodeRef, stmt_len: u16`).
 - All data structs derive `Copy` — keeps `NodeKind` small and cache-friendly.
-- Semantic info is a **side table** (parallel vectors) attached after analysis.
+- **Semantic Info**: A side table (parallel vectors and HashMaps) attached after analysis. Contains types, implicit conversions, and value categories.
 
 ### Key Differences
 
@@ -178,6 +182,7 @@ _ => unreachable!("ICE: Node {:?} does not have a scope", self.get_kind(node_ref
 - Types use `TypeId` indices into a type table.
 - Functions contain basic blocks (`MirBlock`) with `MirStmt` and `Terminator`.
 - Builder pattern: `builder.add_type(...)`, `builder.define_function(...)`, `builder.create_block(...)`, etc.
+- **MirProgram**: Top-level container for all MIR entities.
 
 ## Semantic Analyzer Pattern
 
@@ -190,14 +195,17 @@ struct SemanticAnalyzer<'a> {
     symbol_table: &'a SymbolTable,
     registry: &'a mut TypeRegistry,
     semantic_info: &'a mut SemanticInfo,
+    lang_opts: &'a LangOptions,
+    source_manager: &'a SourceManager,
     // ... state fields
 }
 ```
 
-- Entry point: `visit_ast()` free function creates the analyzer and calls `visit_node(root)`.
+- Entry point: `visit_ast(ast, diag, symbol_table, registry, lang_opts, source_manager)` returns a `SemanticInfo`.
 - Each node type has a corresponding `visit_*` method.
 - Results (types, conversions, value categories) are stored in the `SemanticInfo` side table.
-- Helper methods like `report_error()`, `report_warning()`, `push_conversion()` reduce boilerplate.
+- **Deferred Checks**: Items like `_Static_assert` are often deferred until the end of analysis.
+- **Switch Stack**: Uses `SmallVec` to track nested switch statements efficiently.
 
 ## Testing Conventions
 
@@ -214,6 +222,7 @@ Test files follow the pattern `<phase>_<topic>.rs`:
 | `codegen_`  | Code generation        | `codegen_basics.rs`, `codegen_structs.rs`   |
 | `driver_`   | Driver/integration     | `driver_ast_dumper.rs`                      |
 | `guardian_` | Constraint enforcement | `guardian_bitfield_constraints.rs`          |
+| `regr_`     | Regression tests       | `regr_shadowing.rs`, `regr_mixed_sign.rs`   |
 
 ### Test Registration
 
@@ -335,12 +344,12 @@ When writing tests, choose the minimum phase needed to validate your assertion.
 ## Key Design Principles
 
 1. **Flattened data structures** — AST and MIR use index-based references, not tree pointers.
-2. **Side tables** — Semantic info is stored in parallel vectors, not embedded in AST nodes.
+2. **Side tables** — Semantic info is stored in parallel vectors (types, conversions, etc.), not embedded in AST nodes.
 3. **Continue on error** — The compiler reports as many errors as possible rather than stopping at the first one.
-4. **C11 strict compliance** — Follow the C11 standard closely. Constraint violations are tracked in `.jules/guardian.md`.
+4. **C11/C23 strict compliance** — Follow standards closely. Constraint violations are tracked in `.jules/guardian.md`.
 5. **No K&R style** — Empty parameter lists `int foo()` are treated as `int foo(void)`.
 6. **No trigraphs/digraphs** — Not supported; modern C only.
-7. **Minimize allocations** — Use `SmallVec`, `Cow`, `Arc<[T]>`, and pre-allocated buffers in hot paths.
+7. **Minimize allocations** — Use `SmallVec`, `Cow`, `Arc<[T]>`, and arena-allocated buffers in hot paths.
 
 ## Adding New Features
 

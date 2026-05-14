@@ -139,9 +139,6 @@ pub enum SemanticError {
         expected: usize,
         found: usize,
     },
-    InvalidAtomicArgument {
-        ty: QualType,
-    },
     ExcessElements {
         kind: &'static str,
     },
@@ -485,12 +482,6 @@ impl SemanticError {
             SemanticError::EmptyDeclaration => "declaration does not declare anything".to_string(),
             SemanticError::InvalidNumberOfArguments { expected, found } => {
                 format!("invalid number of arguments: expected {}, found {}", expected, found)
-            }
-            SemanticError::InvalidAtomicArgument { ty } => {
-                format!(
-                    "invalid argument type for atomic builtin: {}",
-                    registry.display_qual_type(*ty)
-                )
             }
             SemanticError::ExcessElements { kind } => format!("excess elements in {} initializer", kind),
             SemanticError::UnsupportedFeature { feature } => format!("Unsupported feature: {}", feature),

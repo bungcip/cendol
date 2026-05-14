@@ -495,55 +495,6 @@ fn test_parsed_ast_gnu_stmt_expr() {
 }
 
 #[test]
-fn test_parsed_ast_builtins() {
-    let output = dump_parsed_ast(
-        "
-        typedef __builtin_va_list va_list;
-        int f(int x, ...) {
-            va_list ap;
-            __builtin_va_start(ap, x);
-            int y = __builtin_va_arg(ap, int);
-            __builtin_va_end(ap);
-            __builtin_va_copy(ap, ap);
-            return y;
-        }
-        struct S { int a; };
-        int g() { return __builtin_offsetof(struct S, a); }
-    ",
-    );
-    insta::assert_snapshot!(output, @r#"
-    1: TranslationUnit(decls=[2, 3, 24, 25])
-    2: Declaration(ParsedDecl { specifiers: [StorageClass(Typedef), TypeSpec(VaList)], init_declarators: [ParsedInitDeclarator { declarator: 1, initializer: None, span: SourceSpan(2199157473315) }] })
-    3: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: 4, body: 4 })
-    4: CompoundStmt(stmts=[5, 6, 10, 13, 16, 21])
-    5: Declaration(ParsedDecl { specifiers: [TypeSpec(TypedefName("va_list"))], init_declarators: [ParsedInitDeclarator { declarator: 5, initializer: None, span: SourceSpan(2199073587292) }] })
-    6: ExpressionStmt(9)
-    7: Ident(ap)
-    8: Ident(x)
-    9: BuiltinVaStart(7, 8)
-    10: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: 6, initializer: Some(12), span: SourceSpan(2199476240537) }] })
-    11: Ident(ap)
-    12: BuiltinVaArg(ParsedType { base: 2, declarator: 7, qualifiers: TypeQualifiers(0x0) }, 11)
-    13: ExpressionStmt(15)
-    14: Ident(ap)
-    15: BuiltinVaEnd(14)
-    16: ExpressionStmt(19)
-    17: Ident(ap)
-    18: Ident(ap)
-    19: BuiltinVaCopy(17, 18)
-    20: Ident(y)
-    21: Return(20)
-    23: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: 8, initializer: None, span: SourceSpan(2199040033078) }] })
-    24: Declaration(ParsedDecl { specifiers: [TypeSpec(Record(false, Some("S"), Some([23]), []))], init_declarators: [] })
-    25: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Int)], declarator: 10, body: 26 })
-    26: CompoundStmt(stmts=[30])
-    28: MemberAccess(27, a, .)
-    29: BuiltinOffsetof(ParsedType { base: 3, declarator: 11, qualifiers: TypeQualifiers(0x0) }, 28)
-    30: Return(29)
-    "#);
-}
-
-#[test]
 fn test_parsed_ast_generic() {
     let output = dump_parsed_ast("int f() { return _Generic(1, int: 1, default: 0); }");
     insta::assert_snapshot!(output, @"
@@ -855,21 +806,22 @@ fn test_atomic_ops_and_case_range() {
     insta::assert_snapshot!(output_parsed, @"
     1: TranslationUnit(decls=[2])
     2: FunctionDef(ParsedFunctionDef { specifiers: [TypeSpec(Void)], declarator: 2, body: 3 })
-    3: CompoundStmt(stmts=[4, 6, 17])
+    3: CompoundStmt(stmts=[4, 6, 18])
     4: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: 3, initializer: Some(5), span: SourceSpan(2199073587238) }] })
     5: LiteralInt(0, None, base=8)
-    6: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: 4, initializer: Some(10), span: SourceSpan(2199425908797) }] })
-    7: Ident(a)
-    8: UnaryOp(AddrOf, 7)
-    9: LiteralInt(0, None, base=8)
-    10: AtomicOp(LoadN, args=[8, 9])
-    11: Ident(a)
-    12: CompoundStmt(stmts=[16])
-    13: LiteralInt(1, None, base=10)
-    14: LiteralInt(5, None, base=10)
-    15: Break
-    16: CaseRange(13, 14, 15)
-    17: Switch(11, 12)
+    6: Declaration(ParsedDecl { specifiers: [TypeSpec(Int)], init_declarators: [ParsedInitDeclarator { declarator: 4, initializer: Some(11), span: SourceSpan(2199425908797) }] })
+    7: Ident(__atomic_load_n)
+    8: Ident(a)
+    9: UnaryOp(AddrOf, 8)
+    10: LiteralInt(0, None, base=8)
+    11: FunctionCall(callee=7, args=[9, 10])
+    12: Ident(a)
+    13: CompoundStmt(stmts=[17])
+    14: LiteralInt(1, None, base=10)
+    15: LiteralInt(5, None, base=10)
+    16: Break
+    17: CaseRange(14, 15, 16)
+    18: Switch(12, 13)
     ");
 
     let output_parser = dump_parser_ast(

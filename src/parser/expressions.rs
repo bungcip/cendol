@@ -5,7 +5,6 @@
 
 use crate::ast::{parsed::*, *};
 use crate::parser::type_builder::parse_type_name;
-use crate::parser::utils::parse_expr_list;
 use crate::parser::{ParseError, ParseErrorKind, Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 
@@ -220,49 +219,13 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::Sizeof => parse_sizeof(parser),
 
         TokenKind::BuiltinVaArg => parse_builtin_va_arg(parser),
-        TokenKind::BuiltinFabs | TokenKind::BuiltinFabsf | TokenKind::BuiltinFabsl => parse_builtin_fabs_family(parser),
-        TokenKind::BuiltinVaStart => parse_builtin_va_start(parser),
-        TokenKind::BuiltinVaEnd => parse_builtin_va_end(parser),
-        TokenKind::BuiltinVaCopy => parse_builtin_va_copy(parser),
-        TokenKind::BuiltinExpect => parse_builtin_expect(parser),
-        TokenKind::BuiltinComplex => parse_builtin_complex(parser),
-        TokenKind::BuiltinMemcmp => parse_builtin_mem(parser, TokenKind::BuiltinMemcmp),
-        TokenKind::BuiltinMemcpy => parse_builtin_mem(parser, TokenKind::BuiltinMemcpy),
-        TokenKind::BuiltinMemset => parse_builtin_mem(parser, TokenKind::BuiltinMemset),
-        TokenKind::BuiltinMemmove => parse_builtin_mem(parser, TokenKind::BuiltinMemmove),
         TokenKind::BuiltinOffsetof => parse_builtin_offsetof(parser),
         TokenKind::BuiltinChooseExpr => parse_builtin_choose_expr(parser),
+        TokenKind::BuiltinComplex => parse_builtin_complex(parser),
+        TokenKind::BuiltinBitCast => parse_builtin_bit_cast(parser),
+        TokenKind::BuiltinConvertVector => parse_builtin_convertvector(parser),
         TokenKind::BuiltinTypesCompatibleP => parse_builtin_types_compatible_p(parser),
-        TokenKind::BuiltinConstantP => parse_builtin_constant_p(parser),
-        TokenKind::BuiltinUnreachable => parse_builtin_unreachable(parser),
-        TokenKind::BuiltinTrap => parse_builtin_trap(parser),
-        TokenKind::BuiltinPrefetch => parse_builtin_prefetch(parser),
-        TokenKind::BuiltinAlloca => parse_builtin_alloca(parser),
-        TokenKind::BuiltinPopcount
-        | TokenKind::BuiltinPopcountL
-        | TokenKind::BuiltinPopcountLL
-        | TokenKind::BuiltinClz
-        | TokenKind::BuiltinClzL
-        | TokenKind::BuiltinClzLL
-        | TokenKind::BuiltinCtz
-        | TokenKind::BuiltinCtzL
-        | TokenKind::BuiltinCtzLL
-        | TokenKind::BuiltinFfs
-        | TokenKind::BuiltinFfsL
-        | TokenKind::BuiltinFfsLL
-        | TokenKind::BuiltinBswap16
-        | TokenKind::BuiltinBswap32
-        | TokenKind::BuiltinBswap64 => parse_builtin_bitwise(parser),
 
-        TokenKind::BuiltinAtomicLoadN => parse_atomic_op(parser, AtomicOp::LoadN),
-        TokenKind::BuiltinAtomicStoreN => parse_atomic_op(parser, AtomicOp::StoreN),
-        TokenKind::BuiltinAtomicExchangeN => parse_atomic_op(parser, AtomicOp::ExchangeN),
-        TokenKind::BuiltinAtomicCompareExchangeN => parse_atomic_op(parser, AtomicOp::CompareExchangeN),
-        TokenKind::BuiltinAtomicFetchAdd => parse_atomic_op(parser, AtomicOp::FetchAdd),
-        TokenKind::BuiltinAtomicFetchSub => parse_atomic_op(parser, AtomicOp::FetchSub),
-        TokenKind::BuiltinAtomicFetchAnd => parse_atomic_op(parser, AtomicOp::FetchAnd),
-        TokenKind::BuiltinAtomicFetchOr => parse_atomic_op(parser, AtomicOp::FetchOr),
-        TokenKind::BuiltinAtomicFetchXor => parse_atomic_op(parser, AtomicOp::FetchXor),
         _ => Err(ParseError {
             span: token.span,
             kind: ParseErrorKind::UnexpectedToken {
@@ -477,26 +440,6 @@ fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseEr
     ))
 }
 
-fn parse_builtin_alloca(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let (span, args) = parse_builtin_with_args(parser, TokenKind::BuiltinAlloca, 1)?;
-    Ok(parser.push_node(ParsedNodeKind::BuiltinAlloca(args[0]), span))
-}
-
-fn parse_builtin_fabs_family(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let kind = parser.current_token_kind().unwrap();
-    let (span, args) = parse_builtin_with_args(parser, kind, 1)?;
-    let expr = args[0];
-
-    let node_kind = match kind {
-        TokenKind::BuiltinFabs => ParsedNodeKind::BuiltinFabs(expr),
-        TokenKind::BuiltinFabsf => ParsedNodeKind::BuiltinFabsf(expr),
-        TokenKind::BuiltinFabsl => ParsedNodeKind::BuiltinFabsl(expr),
-        _ => unreachable!(),
-    };
-
-    Ok(parser.push_node(node_kind, span))
-}
-
 /// Parse compound literal given the type and start location
 pub(crate) fn parse_compound_literal(
     parser: &mut Parser,
@@ -611,88 +554,52 @@ fn parse_builtin_va_arg(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError
     Ok(parser.push_node(ParsedNodeKind::BuiltinVaArg(ty, expr), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_va_start(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let (span, args) = parse_builtin_with_args(parser, TokenKind::BuiltinVaStart, 2)?;
-    Ok(parser.push_node(ParsedNodeKind::BuiltinVaStart(args[0], args[1]), span))
-}
-
-fn parse_builtin_va_end(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let (span, args) = parse_builtin_with_args(parser, TokenKind::BuiltinVaEnd, 1)?;
-    Ok(parser.push_node(ParsedNodeKind::BuiltinVaEnd(args[0]), span))
-}
-
-fn parse_builtin_va_copy(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let (span, args) = parse_builtin_with_args(parser, TokenKind::BuiltinVaCopy, 2)?;
-    Ok(parser.push_node(ParsedNodeKind::BuiltinVaCopy(args[0], args[1]), span))
-}
-
-fn parse_builtin_bitwise(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let kind = parser.current_token_kind().unwrap();
-    let (span, args) = parse_builtin_with_args(parser, kind, 1)?;
-    let expr = args[0];
-
-    let node_kind = match kind {
-        TokenKind::BuiltinPopcount => ParsedNodeKind::BuiltinPopcount(expr),
-        TokenKind::BuiltinPopcountL => ParsedNodeKind::BuiltinPopcountL(expr),
-        TokenKind::BuiltinPopcountLL => ParsedNodeKind::BuiltinPopcountLL(expr),
-        TokenKind::BuiltinClz => ParsedNodeKind::BuiltinClz(expr),
-        TokenKind::BuiltinClzL => ParsedNodeKind::BuiltinClzL(expr),
-        TokenKind::BuiltinClzLL => ParsedNodeKind::BuiltinClzLL(expr),
-        TokenKind::BuiltinCtz => ParsedNodeKind::BuiltinCtz(expr),
-        TokenKind::BuiltinCtzL => ParsedNodeKind::BuiltinCtzL(expr),
-        TokenKind::BuiltinCtzLL => ParsedNodeKind::BuiltinCtzLL(expr),
-        TokenKind::BuiltinFfs => ParsedNodeKind::BuiltinFfs(expr),
-        TokenKind::BuiltinFfsL => ParsedNodeKind::BuiltinFfsL(expr),
-        TokenKind::BuiltinFfsLL => ParsedNodeKind::BuiltinFfsLL(expr),
-        TokenKind::BuiltinBswap16 => ParsedNodeKind::BuiltinBswap16(expr),
-        TokenKind::BuiltinBswap32 => ParsedNodeKind::BuiltinBswap32(expr),
-        TokenKind::BuiltinBswap64 => ParsedNodeKind::BuiltinBswap64(expr),
-        _ => unreachable!(),
-    };
-
-    Ok(parser.push_node(node_kind, span))
-}
-
-fn parse_builtin_with_args(
-    parser: &mut Parser,
-    kind: TokenKind,
-    n: usize,
-) -> Result<(SourceSpan, Vec<ParsedNodeRef>), ParseError> {
-    let start = parser.expect(kind)?.span.start();
+fn parse_builtin_choose_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let start = parser.expect(TokenKind::BuiltinChooseExpr)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
-    let mut args = Vec::with_capacity(n);
-    for i in 0..n {
-        if i > 0 {
-            parser.expect(TokenKind::Comma)?;
-        }
-        args.push(parser.parse_expr_assignment()?);
-    }
+    let cond = parser.parse_expr_assignment()?;
+    parser.expect(TokenKind::Comma)?;
+    let true_expr = parser.parse_expr_assignment()?;
+    parser.expect(TokenKind::Comma)?;
+    let false_expr = parser.parse_expr_assignment()?;
     let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok((SourceSpan::new(start, end), args))
-}
-
-fn parse_builtin_expect(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let (span, args) = parse_builtin_with_args(parser, TokenKind::BuiltinExpect, 2)?;
-    Ok(parser.push_node(ParsedNodeKind::BuiltinExpect(args[0], args[1]), span))
+    Ok(parser.push_node(
+        ParsedNodeKind::BuiltinChooseExpr(cond, true_expr, false_expr),
+        SourceSpan::new(start, end),
+    ))
 }
 
 fn parse_builtin_complex(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let (span, args) = parse_builtin_with_args(parser, TokenKind::BuiltinComplex, 2)?;
-    Ok(parser.push_node(ParsedNodeKind::BuiltinComplex(args[0], args[1]), span))
+    let start = parser.expect(TokenKind::BuiltinComplex)?.span.start();
+    parser.expect(TokenKind::LeftParen)?;
+    let real = parser.parse_expr_assignment()?;
+    parser.expect(TokenKind::Comma)?;
+    let imag = parser.parse_expr_assignment()?;
+    let end = parser.expect(TokenKind::RightParen)?.span.end();
+    Ok(parser.push_node(ParsedNodeKind::BuiltinComplex(real, imag), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_mem(parser: &mut Parser, kind: TokenKind) -> Result<ParsedNodeRef, ParseError> {
-    let (span, args) = parse_builtin_with_args(parser, kind, 3)?;
+fn parse_builtin_bit_cast(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let start = parser.expect(TokenKind::BuiltinBitCast)?.span.start();
+    parser.expect(TokenKind::LeftParen)?;
+    let ty = parse_type_name(parser)?;
+    parser.expect(TokenKind::Comma)?;
+    let expr = parser.parse_expr_assignment()?;
+    let end = parser.expect(TokenKind::RightParen)?.span.end();
+    Ok(parser.push_node(ParsedNodeKind::BuiltinBitCast(ty, expr), SourceSpan::new(start, end)))
+}
 
-    let node_kind = match kind {
-        TokenKind::BuiltinMemcmp => ParsedNodeKind::BuiltinMemcmp(args[0], args[1], args[2]),
-        TokenKind::BuiltinMemcpy => ParsedNodeKind::BuiltinMemcpy(args[0], args[1], args[2]),
-        TokenKind::BuiltinMemset => ParsedNodeKind::BuiltinMemset(args[0], args[1], args[2]),
-        TokenKind::BuiltinMemmove => ParsedNodeKind::BuiltinMemmove(args[0], args[1], args[2]),
-        _ => unreachable!(),
-    };
-
-    Ok(parser.push_node(node_kind, span))
+fn parse_builtin_convertvector(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+    let start = parser.expect(TokenKind::BuiltinConvertVector)?.span.start();
+    parser.expect(TokenKind::LeftParen)?;
+    let expr = parser.parse_expr_assignment()?;
+    parser.expect(TokenKind::Comma)?;
+    let ty = parse_type_name(parser)?;
+    let end = parser.expect(TokenKind::RightParen)?.span.end();
+    Ok(parser.push_node(
+        ParsedNodeKind::BuiltinConvertVector(expr, ty),
+        SourceSpan::new(start, end),
+    ))
 }
 
 fn parse_builtin_offsetof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
@@ -727,26 +634,6 @@ fn parse_builtin_offsetof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErr
     Ok(parser.push_node(ParsedNodeKind::BuiltinOffsetof(ty, node), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_choose_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let (span, args) = parse_builtin_with_args(parser, TokenKind::BuiltinChooseExpr, 3)?;
-    Ok(parser.push_node(ParsedNodeKind::BuiltinChooseExpr(args[0], args[1], args[2]), span))
-}
-
-fn parse_builtin_constant_p(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let (span, args) = parse_builtin_with_args(parser, TokenKind::BuiltinConstantP, 1)?;
-    Ok(parser.push_node(ParsedNodeKind::BuiltinConstantP(args[0]), span))
-}
-
-fn parse_builtin_unreachable(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let (span, _) = parse_builtin_with_args(parser, TokenKind::BuiltinUnreachable, 0)?;
-    Ok(parser.push_node(ParsedNodeKind::BuiltinUnreachable, span))
-}
-
-fn parse_builtin_trap(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let (span, _) = parse_builtin_with_args(parser, TokenKind::BuiltinTrap, 0)?;
-    Ok(parser.push_node(ParsedNodeKind::BuiltinTrap, span))
-}
-
 fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     let start = parser.expect(TokenKind::BuiltinTypesCompatibleP)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
@@ -756,41 +643,6 @@ fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<ParsedNodeRef
     let end = parser.expect(TokenKind::RightParen)?.span.end();
     Ok(parser.push_node(
         ParsedNodeKind::BuiltinTypesCompatibleP(Box::new((ty1, ty2))),
-        SourceSpan::new(start, end),
-    ))
-}
-
-fn parse_atomic_op(parser: &mut Parser, op: AtomicOp) -> Result<ParsedNodeRef, ParseError> {
-    let start = parser.advance().unwrap().span.start();
-    parser.expect(TokenKind::LeftParen)?;
-    let args = parse_expr_list(parser, BindingPower::ASSIGNMENT)?;
-    let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok(parser.push_node(
-        ParsedNodeKind::AtomicOp(op, args.into_boxed_slice()),
-        SourceSpan::new(start, end),
-    ))
-}
-
-fn parse_builtin_prefetch(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
-    let start = parser.expect(TokenKind::BuiltinPrefetch)?.span.start();
-    parser.expect(TokenKind::LeftParen)?;
-
-    let addr = parser.parse_expr_assignment()?;
-
-    let mut rw = None;
-    let mut locality = None;
-
-    if parser.accept(TokenKind::Comma).is_some() {
-        rw = Some(parser.parse_expr_assignment()?);
-
-        if parser.accept(TokenKind::Comma).is_some() {
-            locality = Some(parser.parse_expr_assignment()?);
-        }
-    }
-
-    let end = parser.expect(TokenKind::RightParen)?.span.end();
-    Ok(parser.push_node(
-        ParsedNodeKind::BuiltinPrefetch(addr, rw, locality),
         SourceSpan::new(start, end),
     ))
 }

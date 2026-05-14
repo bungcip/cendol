@@ -53,8 +53,6 @@ pub(crate) enum ResolvedNodeKind {
     Break,                                  // Break statement
     Continue,                               // Continue statement
     Switch(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>),
-    BuiltinAlloca(Box<ResolvedNodeKind>),
-    BuiltinTrap,
     Case(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // Case statement
     CaseRange(Box<ResolvedNodeKind>, Box<ResolvedNodeKind>, Box<ResolvedNodeKind>), // GNU Case range statement
     Default(Box<ResolvedNodeKind>),                     // Default statement
@@ -208,6 +206,31 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
         ParsedNodeKind::FunctionCall(func, args) => ResolvedNodeKind::FunctionCall(
             Box::new(resolve_node(ast, *func)),
             args.iter().map(|&arg| resolve_node(ast, arg)).collect(),
+        ),
+        ParsedNodeKind::BuiltinChooseExpr(c, t, f) => ResolvedNodeKind::FunctionCall(
+            Box::new(ResolvedNodeKind::Ident("__builtin_choose_expr".to_string())),
+            vec![resolve_node(ast, *c), resolve_node(ast, *t), resolve_node(ast, *f)],
+        ),
+        ParsedNodeKind::BuiltinComplex(r, i) => ResolvedNodeKind::FunctionCall(
+            Box::new(ResolvedNodeKind::Ident("__builtin_complex".to_string())),
+            vec![resolve_node(ast, *r), resolve_node(ast, *i)],
+        ),
+        ParsedNodeKind::BuiltinTypesCompatibleP(boxed) => {
+            let (t1, t2) = &**boxed;
+            ResolvedNodeKind::FunctionCall(
+                Box::new(ResolvedNodeKind::Ident("__builtin_types_compatible_p".to_string())),
+                vec![
+                    ResolvedNodeKind::Ident(format!("type_{}", t1.base.get())),
+                    ResolvedNodeKind::Ident(format!("type_{}", t2.base.get())),
+                ],
+            )
+        }
+        ParsedNodeKind::BuiltinVaArg(ty, expr) => ResolvedNodeKind::FunctionCall(
+            Box::new(ResolvedNodeKind::Ident("__builtin_va_arg".to_string())),
+            vec![
+                ResolvedNodeKind::Ident(format!("type_{}", ty.base.get())),
+                resolve_node(ast, *expr),
+            ],
         ),
         ParsedNodeKind::MemberAccess(object, field, is_arrow) => {
             ResolvedNodeKind::MemberAccess(Box::new(resolve_node(ast, *object)), field.to_string(), *is_arrow)
@@ -370,8 +393,6 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
         }
         ParsedNodeKind::EmptyStmt | ParsedNodeKind::Dummy => ResolvedNodeKind::Empty,
         // Add more cases as needed for other ParsedNodeKind variants used in tests
-        ParsedNodeKind::BuiltinAlloca(expr) => ResolvedNodeKind::BuiltinAlloca(Box::new(resolve_node(ast, *expr))),
-        ParsedNodeKind::BuiltinTrap => ResolvedNodeKind::BuiltinTrap,
         _ => panic!("Unsupported ParsedNodeKind for resolution: {:?}", node.kind),
     }
 }

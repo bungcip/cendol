@@ -8,8 +8,8 @@ use crate::{
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
     lang_options::{CStandard, LangOptions},
     semantic::{
-        ArraySizeType, BuiltinType, FunctionParameter, QualType, StructMember, SymbolKind, SymbolRef, SymbolTable,
-        TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
+        ArraySizeType, BuiltinFunctionKind, BuiltinType, FunctionParameter, QualType, StructMember, SymbolKind,
+        SymbolRef, SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticDiag, SemanticError},
@@ -19,7 +19,7 @@ use crate::{
 };
 
 use hashbrown::{HashMap, HashSet};
-use smallvec::{SmallVec, smallvec};
+use smallvec::SmallVec;
 use std::sync::Arc;
 
 struct CaseRangeInterval {
@@ -450,7 +450,6 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn is_noreturn_expr(&self, expr: NodeRef) -> bool {
         match self.ast.get_kind(expr) {
-            NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => true,
             NodeKind::FunctionCall(call) => {
                 if let Some(callee_type) = self.semantic_info.types[call.callee.index()] {
                     let mut ty = callee_type.ty();
@@ -2136,31 +2135,37 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_function_call(&mut self, call_expr: &CallExpr) -> Option<QualType> {
+        let (builtin_kind, atomic_op) = self.identify_builtin(call_expr.callee);
         let func_qt = self.visit_node(call_expr.callee)?;
+        let actual_func_ty = self.resolve_actual_function_type(func_qt);
 
-        let func_ty = func_qt.ty();
-        // Resolve function type (might be pointer to function)
-        let actual_func_ty = if func_qt.is_pointer() {
-            // Check if it's pointer to function
-            self.registry.get_pointee(func_ty).map(|qt| qt.ty()).unwrap_or(func_ty)
-        } else {
-            func_ty
-        };
-
-        // Get function kind
-        // Bolt ⚡: Avoid cloning TypeKind.
         let task = self.get_analysis_task(actual_func_ty);
-
         match task {
             TypeAnalysisTask::Function {
                 return_type,
                 parameters,
                 is_variadic,
             } => {
+                let mut atomic_pointee = None;
                 let arg_count = call_expr.arg_len as usize;
 
-                // Check argument count validity upfront (no-prototype semantics removed)
-                if !is_variadic && arg_count != parameters.len() {
+                if let Some(op) = atomic_op {
+                    let expected_args = match op {
+                        AtomicOp::LoadN => 2,
+                        AtomicOp::CompareExchangeN => 6,
+                        _ => 3,
+                    };
+
+                    if arg_count != expected_args {
+                        self.report_error(
+                            call_expr.callee,
+                            SemanticError::InvalidNumberOfArguments {
+                                expected: expected_args,
+                                found: arg_count,
+                            },
+                        );
+                    }
+                } else if !is_variadic && arg_count != parameters.len() {
                     self.report_error(
                         call_expr.callee,
                         SemanticError::InvalidNumberOfArguments {
@@ -2176,26 +2181,19 @@ impl<'a> SemanticAnalyzer<'a> {
                     };
                     self.apply_lvalue_conversion(arg_node);
 
+                    if let Some(kind) = builtin_kind {
+                        self.validate_builtin_arg(kind, i, arg_node, arg_qt, &mut atomic_pointee);
+                    }
+
                     if i < parameters.len() {
                         let actual_arg_qt = self.decay(arg_node, arg_qt);
                         self.validate_assignment(arg_node, parameters[i].param_type, actual_arg_qt, arg_node);
                     } else if is_variadic {
-                        let mut actual_arg_qt = arg_qt;
-                        if arg_qt.is_array() || arg_qt.is_function() {
-                            actual_arg_qt = self.registry.decay(arg_qt, TypeQualifiers::empty());
-                            self.push_conversion(arg_node, Conversion::PointerDecay { to: actual_arg_qt.ty() });
-                        }
-
-                        let promoted_qt =
-                            crate::semantic::conversions::default_argument_promotions(self.registry, actual_arg_qt);
-
-                        if promoted_qt.ty() != actual_arg_qt.ty() {
-                            let is_npc = self.is_null_pointer_constant(arg_node);
-                            self.record_implicit_conversions(promoted_qt, actual_arg_qt, arg_node, is_npc);
-                        }
+                        self.handle_variadic_argument(arg_node, arg_qt);
                     }
                 }
-                Some(QualType::unqualified(return_type))
+
+                Some(self.resolve_call_return_type(builtin_kind, atomic_pointee, return_type))
             }
             _ => {
                 // This is not a function or function pointer, report an error.
@@ -2212,6 +2210,242 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 None // Return None as the call is invalid
             }
+        }
+    }
+
+    fn identify_builtin(&self, callee: NodeRef) -> (Option<BuiltinFunctionKind>, Option<AtomicOp>) {
+        if let NodeKind::Ident(_, sym_ref) = self.ast.get_kind(callee) {
+            let sym = self.symbol_table.get_symbol(*sym_ref);
+            if let SymbolKind::Function {
+                builtin_kind: b_kind, ..
+            } = &sym.kind
+            {
+                return (*b_kind, b_kind.and_then(|k| k.to_atomic_op()));
+            }
+        }
+        (None, None)
+    }
+
+    fn resolve_actual_function_type(&self, func_qt: QualType) -> TypeRef {
+        let func_ty = func_qt.ty();
+        if func_qt.is_pointer() {
+            self.registry.get_pointee(func_ty).map(|qt| qt.ty()).unwrap_or(func_ty)
+        } else {
+            func_ty
+        }
+    }
+
+    fn handle_variadic_argument(&mut self, arg_node: NodeRef, arg_qt: QualType) {
+        let mut actual_arg_qt = arg_qt;
+        if arg_qt.is_array() || arg_qt.is_function() {
+            actual_arg_qt = self.registry.decay(arg_qt, TypeQualifiers::empty());
+            self.push_conversion(arg_node, Conversion::PointerDecay { to: actual_arg_qt.ty() });
+        }
+
+        let promoted_qt = crate::semantic::conversions::default_argument_promotions(self.registry, actual_arg_qt);
+
+        if promoted_qt.ty() != actual_arg_qt.ty() {
+            let is_npc = self.is_null_pointer_constant(arg_node);
+            self.record_implicit_conversions(promoted_qt, actual_arg_qt, arg_node, is_npc);
+        }
+    }
+
+    fn validate_builtin_arg(
+        &mut self,
+        kind: BuiltinFunctionKind,
+        i: usize,
+        arg_node: NodeRef,
+        arg_qt: QualType,
+        atomic_pointee: &mut Option<QualType>,
+    ) {
+        if kind.is_bitwise() && i == 0 {
+            let check_qt = if arg_qt.is_array() || arg_qt.is_function() {
+                self.registry.decay(arg_qt, TypeQualifiers::empty())
+            } else {
+                arg_qt
+            };
+            if !check_qt.is_integer() {
+                self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: check_qt });
+            }
+        } else if kind.is_fabs() && i == 0 {
+            let check_qt = if arg_qt.is_array() || arg_qt.is_function() {
+                self.registry.decay(arg_qt, TypeQualifiers::empty())
+            } else {
+                arg_qt
+            };
+            if !check_qt.is_floating() {
+                self.report_error(arg_node, SemanticError::ExpectedFloatingType { found: check_qt });
+            }
+        }
+
+        match kind {
+            BuiltinFunctionKind::Memcpy | BuiltinFunctionKind::Memmove | BuiltinFunctionKind::Memcmp => {
+                let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
+                let const_void = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
+                let const_void_ptr = QualType::unqualified(self.registry.pointer_to(const_void));
+                let size_t = QualType::unqualified(self.registry.type_long_unsigned);
+
+                if i == 0 {
+                    self.validate_assignment(
+                        arg_node,
+                        if kind == BuiltinFunctionKind::Memcmp {
+                            const_void_ptr
+                        } else {
+                            void_ptr
+                        },
+                        arg_qt,
+                        arg_node,
+                    );
+                } else if i == 1 {
+                    self.validate_assignment(arg_node, const_void_ptr, arg_qt, arg_node);
+                } else if i == 2 {
+                    self.validate_assignment(arg_node, size_t, arg_qt, arg_node);
+                }
+            }
+            BuiltinFunctionKind::Memset => {
+                let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
+                let int_ty = QualType::unqualified(self.registry.type_int);
+                let size_t = QualType::unqualified(self.registry.type_long_unsigned);
+
+                if i == 0 {
+                    self.validate_assignment(arg_node, void_ptr, arg_qt, arg_node);
+                } else if i == 1 {
+                    self.validate_assignment(arg_node, int_ty, arg_qt, arg_node);
+                } else if i == 2 {
+                    self.validate_assignment(arg_node, size_t, arg_qt, arg_node);
+                }
+            }
+            BuiltinFunctionKind::Prefetch => {
+                if i == 0 {
+                    let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
+                    self.validate_assignment(arg_node, void_ptr, arg_qt, arg_node);
+                } else if i == 1 {
+                    // rw
+                    if !arg_qt.is_integer() {
+                        self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: arg_qt });
+                    } else if let Some(v) = self.const_ctx().eval_int(arg_node) {
+                        if v != 0 && v != 1 {
+                            self.report_error(arg_node, SemanticError::BuiltinPrefetchOutOfRange { arg: "rw" });
+                        }
+                    } else {
+                        self.report_error(arg_node, SemanticError::BuiltinPrefetchNotConstant { arg: "rw" });
+                    }
+                } else if i == 2 {
+                    // locality
+                    if !arg_qt.is_integer() {
+                        self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: arg_qt });
+                    } else if let Some(v) = self.const_ctx().eval_int(arg_node) {
+                        if !(0..=3).contains(&v) {
+                            self.report_error(arg_node, SemanticError::BuiltinPrefetchOutOfRange { arg: "locality" });
+                        }
+                    } else {
+                        self.report_error(arg_node, SemanticError::BuiltinPrefetchNotConstant { arg: "locality" });
+                    }
+                }
+            }
+            _ => {
+                if let Some(op) = kind.to_atomic_op() {
+                    self.validate_atomic_arg(op, i, arg_node, arg_qt, atomic_pointee);
+                }
+            }
+        }
+    }
+
+    fn validate_atomic_arg(
+        &mut self,
+        op: AtomicOp,
+        i: usize,
+        arg_node: NodeRef,
+        arg_qt: QualType,
+        atomic_pointee: &mut Option<QualType>,
+    ) {
+        if i == 0 {
+            if let Some(p) = self.registry.get_pointee(arg_qt.ty()) {
+                *atomic_pointee = Some(p);
+            } else {
+                self.report_error(arg_node, SemanticError::IndirectionRequiresPointer { ty: arg_qt });
+            }
+        }
+
+        let is_memorder = match op {
+            AtomicOp::LoadN => i == 1,
+            AtomicOp::CompareExchangeN => i == 4 || i == 5,
+            _ => i == 2,
+        };
+
+        if is_memorder {
+            self.require_integer(arg_node, arg_qt);
+        }
+
+        if let Some(pointee) = *atomic_pointee {
+            match op {
+                AtomicOp::StoreN if i == 1 => {
+                    self.validate_assignment(arg_node, pointee, arg_qt, arg_node);
+                }
+                AtomicOp::ExchangeN if i == 1 => {
+                    self.validate_assignment(arg_node, pointee, arg_qt, arg_node);
+                }
+                AtomicOp::CompareExchangeN => {
+                    if i == 1 {
+                        if let Some(expected_pointee) = self.registry.get_pointee(arg_qt.ty()) {
+                            if !self.registry.is_compatible(pointee.strip_all(), expected_pointee) {
+                                let expected_ptr_ty = self.registry.pointer_to(pointee);
+                                self.report_error(
+                                    arg_node,
+                                    SemanticError::IncompatiblePointerTypes {
+                                        expected: QualType::unqualified(expected_ptr_ty),
+                                        found: arg_qt,
+                                    },
+                                );
+                            }
+                        } else {
+                            self.report_error(arg_node, SemanticError::IndirectionRequiresPointer { ty: arg_qt });
+                        }
+                    } else if i == 2 {
+                        self.validate_assignment(arg_node, pointee, arg_qt, arg_node);
+                    }
+                }
+                AtomicOp::FetchAdd
+                | AtomicOp::FetchSub
+                | AtomicOp::FetchAnd
+                | AtomicOp::FetchOr
+                | AtomicOp::FetchXor
+                    if i == 1 =>
+                {
+                    if matches!(op, AtomicOp::FetchAnd | AtomicOp::FetchOr | AtomicOp::FetchXor)
+                        && !pointee.is_integer()
+                    {
+                        self.report_error(arg_node, SemanticError::ExpectedIntegerType { found: pointee });
+                    }
+                    if pointee.is_integer() {
+                        self.validate_assignment(arg_node, pointee, arg_qt, arg_node);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn resolve_call_return_type(
+        &self,
+        builtin_kind: Option<BuiltinFunctionKind>,
+        atomic_pointee: Option<QualType>,
+        default_ret: TypeRef,
+    ) -> QualType {
+        if let (Some(op), Some(pointee)) = (builtin_kind.and_then(|k| k.to_atomic_op()), atomic_pointee) {
+            match op {
+                AtomicOp::LoadN
+                | AtomicOp::ExchangeN
+                | AtomicOp::FetchAdd
+                | AtomicOp::FetchSub
+                | AtomicOp::FetchAnd
+                | AtomicOp::FetchOr
+                | AtomicOp::FetchXor => pointee,
+                AtomicOp::StoreN => QualType::unqualified(self.registry.type_void),
+                AtomicOp::CompareExchangeN => QualType::unqualified(self.registry.type_bool),
+            }
+        } else {
+            QualType::unqualified(default_ret)
         }
     }
 
@@ -2926,22 +3160,13 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.visit_node(init.initializer);
                 None
             }
-            NodeKind::BuiltinVaStart(p1, p2) | NodeKind::BuiltinVaCopy(p1, p2) => {
-                self.visit_node(*p1);
-                self.visit_node(*p2);
-                Some(QualType::unqualified(self.registry.type_void))
+            NodeKind::BuiltinBitCast(ty, expr) => {
+                self.visit_node(*expr);
+                Some(*ty)
             }
-            NodeKind::BuiltinVaEnd(_) | NodeKind::BuiltinUnreachable | NodeKind::BuiltinTrap => {
-                if let NodeKind::BuiltinVaEnd(ap) = kind {
-                    self.visit_node(*ap);
-                }
-                Some(QualType::unqualified(self.registry.type_void))
-            }
-            NodeKind::BuiltinExpect(exp, c) => {
-                self.apply_lvalue_conversion(*exp);
-                let ty = self.visit_node(*exp);
-                self.visit_node(*c);
-                ty
+            NodeKind::BuiltinConvertVector(expr, ty) => {
+                self.visit_node(*expr);
+                Some(*ty)
             }
             NodeKind::BuiltinComplex(real, imag) => {
                 let real_ty = self.visit_node(*real)?;
@@ -2961,247 +3186,17 @@ impl<'a> SemanticAnalyzer<'a> {
                 let common_real = usual_arithmetic_conversions(self.registry, real_ty, imag_ty)?;
                 Some(QualType::unqualified(self.registry.complex_type(common_real.ty())))
             }
-            NodeKind::BuiltinMemcmp(..)
-            | NodeKind::BuiltinMemcpy(..)
-            | NodeKind::BuiltinMemmove(..)
-            | NodeKind::BuiltinMemset(..) => self.visit_builtin_memory_op(kind),
-            NodeKind::BuiltinPopcount(_)
-            | NodeKind::BuiltinPopcountL(_)
-            | NodeKind::BuiltinPopcountLL(_)
-            | NodeKind::BuiltinClz(_)
-            | NodeKind::BuiltinClzL(_)
-            | NodeKind::BuiltinClzLL(_)
-            | NodeKind::BuiltinCtz(_)
-            | NodeKind::BuiltinCtzL(_)
-            | NodeKind::BuiltinCtzLL(_)
-            | NodeKind::BuiltinFfs(_)
-            | NodeKind::BuiltinFfsL(_)
-            | NodeKind::BuiltinFfsLL(_)
-            | NodeKind::BuiltinBswap16(_)
-            | NodeKind::BuiltinBswap32(_)
-            | NodeKind::BuiltinBswap64(_)
-            | NodeKind::BuiltinFabs(_)
-            | NodeKind::BuiltinFabsf(_)
-            | NodeKind::BuiltinFabsl(_) => self.visit_builtin_unary_math_op(kind),
             NodeKind::BuiltinOffsetof(ty, expr) => self.visit_builtin_offsetof(*ty, *expr, node),
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
                 self.visit_type_exprs(*t1);
                 self.visit_type_exprs(*t2);
                 Some(QualType::unqualified(self.registry.type_int))
             }
-            NodeKind::AtomicOp(op, args_start, args_len) => self.visit_atomic_op(*op, *args_start, *args_len),
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
                 self.visit_builtin_choose_expr(*cond, *true_expr, *false_expr, node)
             }
-            NodeKind::BuiltinConstantP(expr) => self.visit_builtin_constant_p(*expr),
-            NodeKind::BuiltinPrefetch(addr, rw, locality) => self.visit_builtin_prefetch(*addr, *rw, *locality),
-            NodeKind::BuiltinAlloca(size) => self.visit_builtin_alloca(*size),
             _ => None,
         }
-    }
-
-    fn visit_builtin_alloca(&mut self, size: NodeRef) -> Option<QualType> {
-        if let Some(size_ty) = self.visit_node(size) {
-            self.apply_lvalue_conversion(size);
-            self.require_integer(size, size_ty);
-        }
-        Some(QualType::unqualified(self.registry.type_void_ptr))
-    }
-
-    fn visit_builtin_memory_op(&mut self, kind: &NodeKind) -> Option<QualType> {
-        let (dest, src, n, c, is_cmp) = match kind {
-            NodeKind::BuiltinMemcmp(s1, s2, n) => (Some(*s1), Some(*s2), Some(*n), None, true),
-            NodeKind::BuiltinMemcpy(d, s, n) | NodeKind::BuiltinMemmove(d, s, n) => {
-                (Some(*d), Some(*s), Some(*n), None, false)
-            }
-            NodeKind::BuiltinMemset(s, c, n) => (Some(*s), None, Some(*n), Some(*c), false),
-            _ => unreachable!(),
-        };
-
-        let void_ptr = QualType::unqualified(self.registry.type_void_ptr);
-        let const_void_ptr = QualType::new(self.registry.type_void, TypeQualifiers::CONST);
-        let const_void_ptr = QualType::unqualified(self.registry.pointer_to(const_void_ptr));
-        let size_t = QualType::unqualified(self.registry.type_long_unsigned);
-        let int_ty = QualType::unqualified(self.registry.type_int);
-
-        if let Some(dest_node) = dest
-            && let Some(ty) = self.visit_node(dest_node)
-        {
-            self.apply_lvalue_conversion(dest_node);
-            self.validate_assignment(dest_node, if is_cmp { const_void_ptr } else { void_ptr }, ty, dest_node);
-        }
-        if let Some(src_node) = src
-            && let Some(ty) = self.visit_node(src_node)
-        {
-            self.apply_lvalue_conversion(src_node);
-            self.validate_assignment(src_node, const_void_ptr, ty, src_node);
-        }
-        if let Some(c_node) = c
-            && let Some(ty) = self.visit_node(c_node)
-        {
-            self.apply_lvalue_conversion(c_node);
-            self.validate_assignment(c_node, int_ty, ty, c_node);
-        }
-        if let Some(n_node) = n
-            && let Some(ty) = self.visit_node(n_node)
-        {
-            self.apply_lvalue_conversion(n_node);
-            self.validate_assignment(n_node, size_t, ty, n_node);
-        }
-
-        if is_cmp { Some(int_ty) } else { Some(void_ptr) }
-    }
-
-    fn visit_builtin_unary_math_op(&mut self, kind: &NodeKind) -> Option<QualType> {
-        let exp = match kind {
-            NodeKind::BuiltinPopcount(e)
-            | NodeKind::BuiltinPopcountL(e)
-            | NodeKind::BuiltinPopcountLL(e)
-            | NodeKind::BuiltinClz(e)
-            | NodeKind::BuiltinClzL(e)
-            | NodeKind::BuiltinClzLL(e)
-            | NodeKind::BuiltinCtz(e)
-            | NodeKind::BuiltinCtzL(e)
-            | NodeKind::BuiltinCtzLL(e)
-            | NodeKind::BuiltinFfs(e)
-            | NodeKind::BuiltinFfsL(e)
-            | NodeKind::BuiltinFfsLL(e)
-            | NodeKind::BuiltinBswap16(e)
-            | NodeKind::BuiltinBswap32(e)
-            | NodeKind::BuiltinBswap64(e)
-            | NodeKind::BuiltinFabs(e)
-            | NodeKind::BuiltinFabsf(e)
-            | NodeKind::BuiltinFabsl(e) => *e,
-            _ => unreachable!(),
-        };
-
-        let (target_ty, ret_ty) = match kind {
-            NodeKind::BuiltinPopcount(..) | NodeKind::BuiltinClz(..) | NodeKind::BuiltinCtz(..) => {
-                (Some(self.registry.type_int_unsigned), self.registry.type_int)
-            }
-            NodeKind::BuiltinPopcountL(..) | NodeKind::BuiltinClzL(..) | NodeKind::BuiltinCtzL(..) => {
-                (Some(self.registry.type_long_unsigned), self.registry.type_int)
-            }
-            NodeKind::BuiltinPopcountLL(..) | NodeKind::BuiltinClzLL(..) | NodeKind::BuiltinCtzLL(..) => {
-                (Some(self.registry.type_long_long_unsigned), self.registry.type_int)
-            }
-            NodeKind::BuiltinFfs(..) => (Some(self.registry.type_int), self.registry.type_int),
-            NodeKind::BuiltinFfsL(..) => (Some(self.registry.type_long), self.registry.type_int),
-            NodeKind::BuiltinFfsLL(..) => (Some(self.registry.type_long_long), self.registry.type_int),
-            NodeKind::BuiltinBswap16(_) => {
-                let ty = self.registry.type_short_unsigned;
-                (Some(ty), ty)
-            }
-            NodeKind::BuiltinBswap32(_) => {
-                let ty = self.registry.type_int_unsigned;
-                (Some(ty), ty)
-            }
-            NodeKind::BuiltinBswap64(_) => {
-                let ty = self.registry.type_long_long_unsigned;
-                (Some(ty), ty)
-            }
-            NodeKind::BuiltinFabs(_) => (Some(self.registry.type_double), self.registry.type_double),
-            NodeKind::BuiltinFabsf(_) => (Some(self.registry.type_float), self.registry.type_float),
-            NodeKind::BuiltinFabsl(_) => (Some(self.registry.type_long_double), self.registry.type_long_double),
-            _ => (None, self.registry.type_int),
-        };
-
-        if let Some(mut arg_qt) = self.visit_node(exp) {
-            self.apply_lvalue_conversion(exp);
-            if arg_qt.is_array() || arg_qt.is_function() {
-                arg_qt = self.decay(exp, arg_qt);
-            }
-
-            let is_fabs = matches!(
-                kind,
-                NodeKind::BuiltinFabs(_) | NodeKind::BuiltinFabsf(_) | NodeKind::BuiltinFabsl(_)
-            );
-
-            if is_fabs {
-                if !arg_qt.is_floating() {
-                    self.report_error(exp, SemanticError::ExpectedFloatingType { found: arg_qt });
-                }
-            } else if !arg_qt.is_integer() {
-                self.report_error(exp, SemanticError::ExpectedIntegerType { found: arg_qt });
-            }
-
-            if let Some(target) = target_ty
-                && arg_qt.ty() != target
-            {
-                self.push_conversion(
-                    exp,
-                    Conversion::IntegerCast {
-                        from: arg_qt.ty(),
-                        to: target,
-                    },
-                );
-            }
-        }
-        Some(QualType::unqualified(ret_ty))
-    }
-
-    fn visit_builtin_prefetch(
-        &mut self,
-        addr: NodeRef,
-        rw: Option<NodeRef>,
-        locality: Option<NodeRef>,
-    ) -> Option<QualType> {
-        if let Some(ty) = self.visit_node(addr) {
-            self.apply_lvalue_conversion(addr);
-            if !ty.is_pointer() {
-                self.report_error(
-                    addr,
-                    SemanticError::TypeMismatch {
-                        expected: QualType::unqualified(self.registry.type_void_ptr),
-                        found: ty,
-                    },
-                );
-            }
-        }
-
-        if let Some(rw) = rw
-            && let Some(rw_ty) = self.visit_node(rw)
-        {
-            self.apply_lvalue_conversion(rw);
-            if self.require_integer(rw, rw_ty) {
-                match self.const_ctx().eval_int(rw) {
-                    Some(val) => {
-                        if !(0..=1).contains(&val) {
-                            self.report_error(rw, SemanticError::BuiltinPrefetchOutOfRange { arg: "rw" });
-                        }
-                    }
-                    None => {
-                        self.report_error(rw, SemanticError::BuiltinPrefetchNotConstant { arg: "rw" });
-                    }
-                }
-            }
-        }
-
-        if let Some(locality) = locality
-            && let Some(loc_ty) = self.visit_node(locality)
-        {
-            self.apply_lvalue_conversion(locality);
-            if self.require_integer(locality, loc_ty) {
-                match self.const_ctx().eval_int(locality) {
-                    Some(val) => {
-                        if !(0..=3).contains(&val) {
-                            self.report_error(locality, SemanticError::BuiltinPrefetchOutOfRange { arg: "locality" });
-                        }
-                    }
-                    None => {
-                        self.report_error(locality, SemanticError::BuiltinPrefetchNotConstant { arg: "locality" });
-                    }
-                }
-            }
-        }
-
-        Some(QualType::unqualified(self.registry.type_void))
-    }
-
-    fn visit_builtin_constant_p(&mut self, expr: NodeRef) -> Option<QualType> {
-        self.visit_node(expr);
-        // __builtin_constant_p always evaluates to an int
-        Some(QualType::unqualified(self.registry.type_int))
     }
 
     fn visit_builtin_choose_expr(
@@ -3364,97 +3359,6 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         Some(QualType::unqualified(self.registry.type_long_unsigned))
-    }
-
-    fn visit_atomic_op(&mut self, op: AtomicOp, args_start: NodeRef, args_len: u16) -> Option<QualType> {
-        let mut args = SmallVec::<[NodeRef; 6]>::new();
-        let mut arg_tys = SmallVec::<[QualType; 6]>::new();
-        let mut has_error = false;
-
-        for arg in args_start.range(args_len) {
-            args.push(arg);
-            if let Some(ty) = self.visit_node(arg) {
-                arg_tys.push(ty);
-            } else {
-                has_error = true;
-            }
-        }
-
-        if has_error {
-            return None;
-        }
-
-        let expected_args = match op {
-            AtomicOp::LoadN => 2,
-            AtomicOp::CompareExchangeN => 6,
-            _ => 3,
-        };
-
-        if args.len() != expected_args {
-            self.report_error(
-                args[0],
-                SemanticError::InvalidNumberOfArguments {
-                    expected: expected_args,
-                    found: args.len(),
-                },
-            );
-            return None;
-        }
-
-        // Validate memory order arguments
-        let memorder_indices: SmallVec<[usize; 2]> = match op {
-            AtomicOp::LoadN => smallvec![1],
-            AtomicOp::CompareExchangeN => smallvec![4, 5],
-            _ => smallvec![2],
-        };
-
-        for &idx in &memorder_indices {
-            self.require_integer(args[idx], arg_tys[idx]);
-        }
-
-        // Validate pointer argument (always index 0)
-        let pointee = if let Some(pointee) = self.registry.get_pointee(arg_tys[0].ty()) {
-            pointee
-        } else {
-            self.report_error(args[0], SemanticError::InvalidAtomicArgument { ty: arg_tys[0] });
-            return None;
-        };
-
-        match op {
-            AtomicOp::LoadN => Some(pointee),
-            AtomicOp::StoreN => {
-                self.validate_assignment(args[1], pointee, arg_tys[1], args[1]);
-                Some(QualType::unqualified(self.registry.type_void))
-            }
-            AtomicOp::ExchangeN => {
-                self.validate_assignment(args[1], pointee, arg_tys[1], args[1]);
-                Some(pointee)
-            }
-            AtomicOp::CompareExchangeN => {
-                let expected_ptr_qt = arg_tys[1];
-                let desired_ty = arg_tys[2];
-
-                if let Some(expected_pointee) = self.registry.get_pointee(expected_ptr_qt.ty()) {
-                    if !self.registry.is_compatible(pointee.strip_all(), expected_pointee) {
-                        self.report_error(args[1], SemanticError::InvalidAtomicArgument { ty: expected_pointee });
-                    }
-                } else {
-                    self.report_error(args[1], SemanticError::InvalidAtomicArgument { ty: expected_ptr_qt });
-                }
-                self.validate_assignment(args[2], pointee, desired_ty, args[2]);
-                Some(QualType::unqualified(self.registry.type_bool))
-            }
-            AtomicOp::FetchAdd | AtomicOp::FetchSub | AtomicOp::FetchAnd | AtomicOp::FetchOr | AtomicOp::FetchXor => {
-                if matches!(op, AtomicOp::FetchAnd | AtomicOp::FetchOr | AtomicOp::FetchXor) && !pointee.is_integer() {
-                    self.report_error(args[0], SemanticError::InvalidAtomicArgument { ty: pointee });
-                }
-
-                if pointee.is_integer() {
-                    self.validate_assignment(args[1], pointee, arg_tys[1], args[1]);
-                }
-                Some(pointee)
-            }
-        }
     }
 
     fn visit_literal(&mut self, lid: LitRef) -> Option<QualType> {

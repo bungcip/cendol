@@ -212,10 +212,6 @@ impl<'a> ConstEvalCtx<'a> {
                 let selected = self.semantic_info.generic_selections.get(&expr_node.index())?;
                 self.eval_int(*selected)
             }
-            NodeKind::BuiltinConstantP(expr) => {
-                Some((self.eval_int(*expr).is_some() || self.eval_float(*expr).is_some()) as i64)
-            }
-            NodeKind::BuiltinExpect(exp, _) => self.eval_int(*exp),
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
                 if let Some(&selected) = self.semantic_info.choose_expressions.get(&expr_node.index()) {
                     return self.eval_int(selected);
@@ -243,44 +239,74 @@ impl<'a> ConstEvalCtx<'a> {
             NodeKind::BuiltinTypesCompatibleP(t1, t2) => {
                 Some(self.registry.is_compatible(t1.strip_all(), t2.strip_all()) as i64)
             }
-            NodeKind::BuiltinPopcount(exp) | NodeKind::BuiltinPopcountL(exp) | NodeKind::BuiltinPopcountLL(exp) => {
-                self.eval_int(*exp).map(|v| v.count_ones() as i64)
-            }
-            NodeKind::BuiltinClz(exp) | NodeKind::BuiltinClzL(exp) | NodeKind::BuiltinClzLL(exp) => {
-                let val = self.eval_int(*exp)?;
-                if val == 0 {
-                    return None;
-                }
-                let target_ty = match node_kind {
-                    NodeKind::BuiltinClz(_) => self.registry.type_int,
-                    NodeKind::BuiltinClzL(_) => self.registry.type_long,
-                    NodeKind::BuiltinClzLL(_) => self.registry.type_long_long,
-                    _ => unreachable!(),
-                };
-                let width = self.registry.get(target_ty).width() as i64;
-                let val_truncated = (val as u64) & if width == 64 { !0u64 } else { (1u64 << width) - 1 };
-                Some(val_truncated.leading_zeros() as i64 - (64 - width))
-            }
-            NodeKind::BuiltinCtz(exp) | NodeKind::BuiltinCtzL(exp) | NodeKind::BuiltinCtzLL(exp) => {
-                let val = self.eval_int(*exp)?;
-                (val != 0).then(|| val.trailing_zeros() as i64)
-            }
-            NodeKind::BuiltinFfs(exp) | NodeKind::BuiltinFfsL(exp) | NodeKind::BuiltinFfsLL(exp) => self
-                .eval_int(*exp)
-                .map(|v| if v == 0 { 0 } else { (v.trailing_zeros() + 1) as i64 }),
-            NodeKind::BuiltinBswap16(exp) | NodeKind::BuiltinBswap32(exp) | NodeKind::BuiltinBswap64(exp) => {
-                let val = self.eval_int(*exp)?;
-                Some(match node_kind {
-                    NodeKind::BuiltinBswap16(_) => (val as u16).swap_bytes() as i64,
-                    NodeKind::BuiltinBswap32(_) => (val as u32).swap_bytes() as i64,
-                    NodeKind::BuiltinBswap64(_) => (val as u64).swap_bytes() as i64,
-                    _ => unreachable!(),
-                })
-            }
-            NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
-                self.eval_float(*exp).map(|v| v.abs() as i64)
-            }
             NodeKind::BuiltinComplex(real, _) => self.eval_int(*real),
+            NodeKind::FunctionCall(call) => {
+                let callee_kind = self.ast.get_kind(call.callee);
+                let name_id = match callee_kind {
+                    NodeKind::Ident(name_id, _) => name_id,
+                    _ => return None,
+                };
+
+                let bn = builtin_names();
+                if *name_id == bn.popcount || *name_id == bn.popcountl || *name_id == bn.popcountll {
+                    let arg = call.arg_start;
+                    return self.eval_int(arg).map(|v| v.count_ones() as i64);
+                }
+                if *name_id == bn.clz || *name_id == bn.clzl || *name_id == bn.clzll {
+                    let arg = call.arg_start;
+                    let val = self.eval_int(arg)?;
+                    if val == 0 {
+                        return None;
+                    }
+                    let target_ty = if *name_id == bn.clz {
+                        self.registry.type_int
+                    } else if *name_id == bn.clzl {
+                        self.registry.type_long
+                    } else {
+                        self.registry.type_long_long
+                    };
+                    let width = self.registry.get(target_ty).width() as i64;
+                    let val_truncated = (val as u64) & if width == 64 { !0u64 } else { (1u64 << width) - 1 };
+                    return Some(val_truncated.leading_zeros() as i64 - (64 - width));
+                }
+                if *name_id == bn.ctz || *name_id == bn.ctzl || *name_id == bn.ctzll {
+                    let arg = call.arg_start;
+                    let val = self.eval_int(arg)?;
+                    if val == 0 {
+                        return None;
+                    }
+                    return Some(val.trailing_zeros() as i64);
+                }
+                if *name_id == bn.ffs || *name_id == bn.ffsl || *name_id == bn.ffsll {
+                    let arg = call.arg_start;
+                    return self
+                        .eval_int(arg)
+                        .map(|v| if v == 0 { 0 } else { (v.trailing_zeros() + 1) as i64 });
+                }
+                if *name_id == bn.bswap16 || *name_id == bn.bswap32 || *name_id == bn.bswap64 {
+                    let arg = call.arg_start;
+                    let val = self.eval_int(arg)?;
+                    return Some(if *name_id == bn.bswap16 {
+                        (val as u16).swap_bytes() as i64
+                    } else if *name_id == bn.bswap32 {
+                        (val as u32).swap_bytes() as i64
+                    } else {
+                        (val as u64).swap_bytes() as i64
+                    });
+                }
+                if *name_id == bn.constant_p {
+                    let arg = call.arg_start;
+                    return Some((self.eval_int(arg).is_some() || self.eval_float(arg).is_some()) as i64);
+                }
+                if *name_id == bn.expect {
+                    let arg = call.arg_start;
+                    return self.eval_int(arg);
+                }
+                if *name_id == bn.fabs || *name_id == bn.fabsf || *name_id == bn.fabsl {
+                    return self.eval_float(expr_node).map(|v| v as i64);
+                }
+                None
+            }
             _ => None,
         }
     }
@@ -338,7 +364,6 @@ impl<'a> ConstEvalCtx<'a> {
                     Some(val)
                 }
             }
-            NodeKind::BuiltinExpect(exp, _) => self.eval_float(*exp),
             NodeKind::BuiltinChooseExpr(cond, true_expr, false_expr) => {
                 if let Some(&selected) = self.semantic_info.choose_expressions.get(&expr.index()) {
                     return self.eval_float(selected);
@@ -348,9 +373,6 @@ impl<'a> ConstEvalCtx<'a> {
                 } else {
                     self.eval_float(*false_expr)
                 }
-            }
-            NodeKind::BuiltinFabs(exp) | NodeKind::BuiltinFabsf(exp) | NodeKind::BuiltinFabsl(exp) => {
-                self.eval_float(*exp).map(|v| v.abs())
             }
             NodeKind::BuiltinComplex(real, _) => self.eval_float(*real),
             NodeKind::FunctionCall(call) => {
@@ -362,17 +384,48 @@ impl<'a> ConstEvalCtx<'a> {
 
                 let bn = builtin_names();
                 if *name_id == bn.inff || *name_id == bn.huge_valf {
-                    Some(f32::INFINITY as f64)
-                } else if *name_id == bn.inf || *name_id == bn.huge_val {
-                    Some(f64::INFINITY)
-                } else if *name_id == bn.nanf {
-                    Some(f32::NAN as f64)
-                } else if *name_id == bn.nan {
-                    Some(f64::NAN)
-                } else {
-                    None
+                    return Some(f32::INFINITY as f64);
                 }
+                if *name_id == bn.inf || *name_id == bn.huge_val {
+                    return Some(f64::INFINITY);
+                }
+                if *name_id == bn.nanf {
+                    return Some(f32::NAN as f64);
+                }
+                if *name_id == bn.nan {
+                    return Some(f64::NAN);
+                }
+                if *name_id == bn.fabs || *name_id == bn.fabsf || *name_id == bn.fabsl {
+                    let arg = call.arg_start;
+                    let val = self.eval_float(arg);
+                    return val.map(|v| v.abs());
+                }
+                if *name_id == bn.expect {
+                    let arg = call.arg_start;
+                    return self.eval_float(arg);
+                }
+                let is_int_builtin = *name_id == bn.popcount
+                    || *name_id == bn.popcountl
+                    || *name_id == bn.popcountll
+                    || *name_id == bn.clz
+                    || *name_id == bn.clzl
+                    || *name_id == bn.clzll
+                    || *name_id == bn.ctz
+                    || *name_id == bn.ctzl
+                    || *name_id == bn.ctzll
+                    || *name_id == bn.ffs
+                    || *name_id == bn.ffsl
+                    || *name_id == bn.ffsll
+                    || *name_id == bn.bswap16
+                    || *name_id == bn.bswap32
+                    || *name_id == bn.bswap64
+                    || *name_id == bn.constant_p;
+                if is_int_builtin {
+                    return self.eval_int(expr).map(|v| v as f64);
+                }
+                None
             }
+
             _ => self.eval_int(expr).map(|v| v as f64),
         }
     }
@@ -581,7 +634,10 @@ impl<'a> ConstEvalCtx<'a> {
                 return None;
             }
             let op_kind = self.ast.get_kind(expr);
-            if !matches!(op_kind, NodeKind::Literal(_) | NodeKind::Cast(..)) {
+            if !matches!(
+                op_kind,
+                NodeKind::Literal(_) | NodeKind::Cast(..) | NodeKind::FunctionCall(..)
+            ) {
                 return None;
             }
             if !f_val.is_finite() {
@@ -729,6 +785,26 @@ struct BuiltinNames {
     huge_val: StringId,
     nanf: StringId,
     nan: StringId,
+    popcount: StringId,
+    popcountl: StringId,
+    popcountll: StringId,
+    clz: StringId,
+    clzl: StringId,
+    clzll: StringId,
+    ctz: StringId,
+    ctzl: StringId,
+    ctzll: StringId,
+    ffs: StringId,
+    ffsl: StringId,
+    ffsll: StringId,
+    bswap16: StringId,
+    bswap32: StringId,
+    bswap64: StringId,
+    fabs: StringId,
+    fabsf: StringId,
+    fabsl: StringId,
+    constant_p: StringId,
+    expect: StringId,
 }
 
 fn builtin_names() -> &'static BuiltinNames {
@@ -740,5 +816,25 @@ fn builtin_names() -> &'static BuiltinNames {
         huge_val: StringId::new("__builtin_huge_val"),
         nanf: StringId::new("__builtin_nanf"),
         nan: StringId::new("__builtin_nan"),
+        popcount: StringId::new("__builtin_popcount"),
+        popcountl: StringId::new("__builtin_popcountl"),
+        popcountll: StringId::new("__builtin_popcountll"),
+        clz: StringId::new("__builtin_clz"),
+        clzl: StringId::new("__builtin_clzl"),
+        clzll: StringId::new("__builtin_clzll"),
+        ctz: StringId::new("__builtin_ctz"),
+        ctzl: StringId::new("__builtin_ctzl"),
+        ctzll: StringId::new("__builtin_ctzll"),
+        ffs: StringId::new("__builtin_ffs"),
+        ffsl: StringId::new("__builtin_ffsl"),
+        ffsll: StringId::new("__builtin_ffsll"),
+        bswap16: StringId::new("__builtin_bswap16"),
+        bswap32: StringId::new("__builtin_bswap32"),
+        bswap64: StringId::new("__builtin_bswap64"),
+        fabs: StringId::new("__builtin_fabs"),
+        fabsf: StringId::new("__builtin_fabsf"),
+        fabsl: StringId::new("__builtin_fabsl"),
+        constant_p: StringId::new("__builtin_constant_p"),
+        expect: StringId::new("__builtin_expect"),
     })
 }

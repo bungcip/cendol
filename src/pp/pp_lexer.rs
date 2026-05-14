@@ -819,6 +819,10 @@ impl PPLexer {
             if let Some(pos) = memchr::memchr2(b'\n', b'\\', &self.buffer[start..]) {
                 self.position += pos as u32;
                 if self.buffer[self.position as usize] == b'\n' {
+                    if self.in_directive_line {
+                        // Don't consume \n, it's needed to trigger Eod in next_token
+                        return;
+                    }
                     self.next_char(); // consume \n properly (updates at_start_of_line)
                     return;
                 }

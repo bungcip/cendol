@@ -101,6 +101,14 @@ pub struct Cli {
     #[clap(short = 'g')]
     pub debug_info: bool,
 
+    /// Strip symbols (ignored)
+    #[clap(short = 's')]
+    pub strip: bool,
+
+    /// Pass -rdynamic to linker (ignored)
+    #[clap(long = "rdynamic")]
+    pub rdynamic: bool,
+
     /// Use a specific linker
     #[clap(long = "fuse-ld", value_name = "LINKER")]
     pub fuse_ld: Option<String>,

@@ -157,6 +157,11 @@ pub(crate) enum MirStmt {
     BuiltinVaEnd(Place),
     BuiltinVaCopy(Place, Place),
     AtomicStore(Operand, Operand, AtomicMemOrder),
+    BuiltinPrefetch {
+        addr: Operand,
+        rw: u32,
+        locality: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -241,6 +246,7 @@ pub(crate) enum Rvalue {
     StructLiteral(Vec<(usize, Operand)>),
     ArrayLiteral(Vec<Operand>),
     BuiltinVaArg(Place, TypeId),
+    BuiltinFrameAddress(u32),
     AtomicLoad(Operand, AtomicMemOrder),
     AtomicExchange(Operand, Operand, AtomicMemOrder),
     AtomicCompareExchange(Operand, Operand, Operand, bool, AtomicMemOrder, AtomicMemOrder),
@@ -326,6 +332,9 @@ pub(crate) enum UnaryIntOp {
 pub(crate) enum UnaryFloatOp {
     Neg,
     Abs,
+    /// Test the sign bit (used for signbit()).
+    /// Needed because x < 0.0 is false for -0.0, but signbit(-0.0) is true.
+    IsNegative,
 }
 
 /// Type - MIR type system

@@ -24,8 +24,8 @@ use crate::semantic::errors::{SemanticDiag, SemanticError};
 use crate::semantic::literal_utils::lower_string_literal;
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
-    ArraySizeType, BuiltinType, EnumConstant, Namespace, ScopeId, StructMember, SymbolKind, SymbolRef, SymbolTable,
-    Type, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
+    ArraySizeType, BuiltinFunctionKind, BuiltinType, EnumConstant, Namespace, ScopeId, StructMember, SymbolKind,
+    SymbolRef, SymbolTable, Type, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
 };
 use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
@@ -51,24 +51,20 @@ pub(crate) struct LowerCtx<'a, 'src> {
 }
 
 pub(crate) struct LoweringKeywords {
-    pub(crate) builtin_nanf: NameId,
-    pub(crate) builtin_nan: NameId,
-    pub(crate) builtin_inff: NameId,
-    pub(crate) builtin_inf: NameId,
-    pub(crate) builtin_huge_val: NameId,
-    pub(crate) builtin_huge_valf: NameId,
+    builtins: HashMap<NameId, BuiltinFunctionKind>,
 }
 
 impl LoweringKeywords {
     fn new() -> Self {
-        LoweringKeywords {
-            builtin_nanf: NameId::new("__builtin_nanf"),
-            builtin_nan: NameId::new("__builtin_nan"),
-            builtin_inff: NameId::new("__builtin_inff"),
-            builtin_inf: NameId::new("__builtin_inf"),
-            builtin_huge_val: NameId::new("__builtin_huge_val"),
-            builtin_huge_valf: NameId::new("__builtin_huge_valf"),
+        let mut builtins = HashMap::with_capacity(BuiltinFunctionKind::ALL_VARIANTS.len());
+        for &kind in BuiltinFunctionKind::ALL_VARIANTS {
+            builtins.insert(NameId::new(kind.name()), kind);
         }
+        LoweringKeywords { builtins }
+    }
+
+    pub(crate) fn identify(&self, name: NameId) -> Option<BuiltinFunctionKind> {
+        self.builtins.get(&name).copied()
     }
 }
 
@@ -1687,8 +1683,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedNodeKind::Break => lower_simple!(NodeKind::Break),
             ParsedNodeKind::Continue => lower_simple!(NodeKind::Continue),
-            ParsedNodeKind::BuiltinUnreachable => lower_simple!(NodeKind::BuiltinUnreachable),
-            ParsedNodeKind::BuiltinTrap => lower_simple!(NodeKind::BuiltinTrap),
             ParsedNodeKind::EmptyStmt => smallvec![],
 
             // Unary expressions
@@ -1728,76 +1722,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::SizeOfExpr(e) => {
                 lower_simple!(NodeKind::SizeOfExpr(self.visit_expression(*e)))
             }
-            ParsedNodeKind::BuiltinVaEnd(e) => {
-                lower_simple!(NodeKind::BuiltinVaEnd(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinPopcount(e) => {
-                lower_simple!(NodeKind::BuiltinPopcount(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinPopcountL(e) => {
-                lower_simple!(NodeKind::BuiltinPopcountL(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinPopcountLL(e) => {
-                lower_simple!(NodeKind::BuiltinPopcountLL(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinClz(e) => {
-                lower_simple!(NodeKind::BuiltinClz(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinClzL(e) => {
-                lower_simple!(NodeKind::BuiltinClzL(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinClzLL(e) => {
-                lower_simple!(NodeKind::BuiltinClzLL(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinCtz(e) => {
-                lower_simple!(NodeKind::BuiltinCtz(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinCtzL(e) => {
-                lower_simple!(NodeKind::BuiltinCtzL(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinCtzLL(e) => {
-                lower_simple!(NodeKind::BuiltinCtzLL(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinFfs(e) => {
-                lower_simple!(NodeKind::BuiltinFfs(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinFfsL(e) => {
-                lower_simple!(NodeKind::BuiltinFfsL(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinFfsLL(e) => {
-                lower_simple!(NodeKind::BuiltinFfsLL(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinBswap16(e) => {
-                lower_simple!(NodeKind::BuiltinBswap16(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinBswap32(e) => {
-                lower_simple!(NodeKind::BuiltinBswap32(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinBswap64(e) => {
-                lower_simple!(NodeKind::BuiltinBswap64(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinFabs(e) => {
-                lower_simple!(NodeKind::BuiltinFabs(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinFabsf(e) => {
-                lower_simple!(NodeKind::BuiltinFabsf(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinFabsl(e) => {
-                lower_simple!(NodeKind::BuiltinFabsl(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinPrefetch(addr, rw, locality) => {
-                lower_simple!(NodeKind::BuiltinPrefetch(
-                    self.visit_expression(*addr),
-                    rw.map(|e| self.visit_expression(e)),
-                    locality.map(|e| self.visit_expression(e))
-                ))
-            }
-            ParsedNodeKind::BuiltinAlloca(e) => {
-                lower_simple!(NodeKind::BuiltinAlloca(self.visit_expression(*e)))
-            }
-            ParsedNodeKind::BuiltinConstantP(e) => {
-                lower_simple!(NodeKind::BuiltinConstantP(self.visit_expression(*e)))
-            }
             ParsedNodeKind::Default(s) => {
                 lower_simple!(NodeKind::Default(self.visit_single_statement(*s)))
             }
@@ -1820,41 +1744,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::MemberAccess(b, m, a) => {
                 lower_simple!(NodeKind::MemberAccess(self.visit_expression(*b), *m, *a))
             }
-            ParsedNodeKind::BuiltinVaStart(ap, l) => lower_simple!(NodeKind::BuiltinVaStart(
-                self.visit_expression(*ap),
-                self.visit_expression(*l)
-            )),
-            ParsedNodeKind::BuiltinVaCopy(d, s) => lower_simple!(NodeKind::BuiltinVaCopy(
-                self.visit_expression(*d),
-                self.visit_expression(*s)
-            )),
-            ParsedNodeKind::BuiltinExpect(e, c) => lower_simple!(NodeKind::BuiltinExpect(
-                self.visit_expression(*e),
-                self.visit_expression(*c)
-            )),
             ParsedNodeKind::BuiltinComplex(real, imag) => lower_simple!(NodeKind::BuiltinComplex(
                 self.visit_expression(*real),
                 self.visit_expression(*imag)
-            )),
-            ParsedNodeKind::BuiltinMemcmp(s1, s2, n) => lower_simple!(NodeKind::BuiltinMemcmp(
-                self.visit_expression(*s1),
-                self.visit_expression(*s2),
-                self.visit_expression(*n)
-            )),
-            ParsedNodeKind::BuiltinMemcpy(d, s, n) => lower_simple!(NodeKind::BuiltinMemcpy(
-                self.visit_expression(*d),
-                self.visit_expression(*s),
-                self.visit_expression(*n)
-            )),
-            ParsedNodeKind::BuiltinMemset(s, c, n) => lower_simple!(NodeKind::BuiltinMemset(
-                self.visit_expression(*s),
-                self.visit_expression(*c),
-                self.visit_expression(*n)
-            )),
-            ParsedNodeKind::BuiltinMemmove(d, s, n) => lower_simple!(NodeKind::BuiltinMemmove(
-                self.visit_expression(*d),
-                self.visit_expression(*s),
-                self.visit_expression(*n)
             )),
             ParsedNodeKind::DoWhile(b, c) => lower_simple!(NodeKind::DoWhile(
                 self.visit_single_statement(*b),
@@ -1970,6 +1862,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 self.visit_type(*t, span),
                 self.visit_expression(*e)
             )),
+            ParsedNodeKind::BuiltinBitCast(t, e) => lower_simple!(NodeKind::BuiltinBitCast(
+                self.visit_type(*t, span),
+                self.visit_expression(*e)
+            )),
+            ParsedNodeKind::BuiltinConvertVector(e, t) => lower_simple!(NodeKind::BuiltinConvertVector(
+                self.visit_expression(*e),
+                self.visit_type(*t, span)
+            )),
             ParsedNodeKind::SizeOfType(t) => lower_simple!(NodeKind::SizeOfType(self.visit_type(*t, span))),
             ParsedNodeKind::AlignOfType(t) => lower_simple!(NodeKind::AlignOfType(self.visit_type(*t, span))),
             ParsedNodeKind::AlignOfExpr(e) => lower_simple!(NodeKind::AlignOfExpr(self.visit_expression(*e))),
@@ -2012,12 +1912,6 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedNodeKind::FunctionCall(func, args) => {
                 let node = self.get_or_push_slot(target_slots, span);
                 let kind = self.visit_function_call(*func, args.as_ref(), span);
-                self.ast.set_kind(node, kind);
-                smallvec![node]
-            }
-            ParsedNodeKind::AtomicOp(op, args) => {
-                let node = self.get_or_push_slot(target_slots, span);
-                let kind = self.visit_atomic_op(*op, args.as_ref(), span);
                 self.ast.set_kind(node, kind);
                 smallvec![node]
             }
@@ -2154,23 +2048,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             self.visit_expression_into(arg, arg_dummies[i]);
         }
         let arg_start = arg_dummies.first().copied().unwrap_or(NodeRef::ROOT);
+
         NodeKind::FunctionCall(CallExpr {
             callee: f,
             arg_start,
             arg_len: args.len() as u16,
         })
-    }
-
-    fn visit_atomic_op(&mut self, op: AtomicOp, args: &[ParsedNodeRef], span: SourceSpan) -> NodeKind {
-        let mut arg_dummies = Vec::with_capacity(args.len());
-        for _ in 0..args.len() {
-            arg_dummies.push(self.push_dummy(span));
-        }
-        for (i, &arg) in args.iter().enumerate() {
-            self.visit_expression_into(arg, arg_dummies[i]);
-        }
-        let arg_start = arg_dummies.first().copied().unwrap_or(NodeRef::ROOT);
-        NodeKind::AtomicOp(op, arg_start, args.len() as u16)
     }
 
     fn visit_compound_literal(&mut self, ty_name: ParsedType, init: ParsedNodeRef, span: SourceSpan) -> NodeKind {
@@ -2323,52 +2206,18 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn handle_builtin_implicit_decl(&mut self, name: NameId, span: SourceSpan) -> Option<SymbolRef> {
-        let (params, ret_ty) = if name == self.keywords.builtin_nanf || name == self.keywords.builtin_nan {
-            let char_const = QualType::new(self.registry.type_char, TypeQualifiers::CONST);
-            let char_ptr = QualType::unqualified(self.registry.pointer_to(char_const));
-            let params = vec![FunctionParameter {
-                param_type: char_ptr,
-                name: None,
-                storage: None,
-            }];
-            let ret = if name == self.keywords.builtin_nanf {
-                self.registry.type_float
-            } else {
-                self.registry.type_double
-            };
-            (params, ret)
-        } else if name == self.keywords.builtin_inff
-            || name == self.keywords.builtin_inf
-            || name == self.keywords.builtin_huge_val
-            || name == self.keywords.builtin_huge_valf
-        {
-            let ret = if name == self.keywords.builtin_inff || name == self.keywords.builtin_huge_valf {
-                self.registry.type_float
-            } else {
-                self.registry.type_double
-            };
-            (vec![], ret)
-        } else {
-            return None;
-        };
+    fn handle_builtin_implicit_decl(&mut self, name: NameId, _span: SourceSpan) -> Option<SymbolRef> {
+        let kind = self.keywords.identify(name)?;
 
-        let func_ty = self.registry.function_type(ret_ty, params, false, false);
-
-        // Save current scope and switch to global for implicit decl
-        let old_scope = self.symbol_table.current_scope();
-        self.symbol_table.set_current_scope(ScopeId::GLOBAL);
+        let func_ty = self.registry.builtin_function_type(kind);
         let param_len = if let TypeKind::Function { parameters, .. } = &self.registry.get(func_ty).kind {
             parameters.len() as u16
         } else {
             0
         };
-        let result = self
-            .symbol_table
-            .define_function(name, func_ty, None, false, param_len, false, span)
-            .ok();
-        self.symbol_table.set_current_scope(old_scope);
-        result
+        self.symbol_table
+            .define_builtin_function(name, kind, func_ty, param_len)
+            .ok()
     }
 
     fn define_label(&mut self, name: NameId, span: SourceSpan) -> SymbolRef {
@@ -2470,29 +2319,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             | NodeKind::SizeOfType(_)
             | NodeKind::AlignOfExpr(_)
             | NodeKind::AlignOfType(_)
-            | NodeKind::BuiltinConstantP(_)
-            | NodeKind::BuiltinTypesCompatibleP(..)
-            | NodeKind::BuiltinPopcount(_)
-            | NodeKind::BuiltinPopcountL(_)
-            | NodeKind::BuiltinPopcountLL(_)
-            | NodeKind::BuiltinClz(_)
-            | NodeKind::BuiltinClzL(_)
-            | NodeKind::BuiltinClzLL(_)
-            | NodeKind::BuiltinCtz(_)
-            | NodeKind::BuiltinCtzL(_)
-            | NodeKind::BuiltinCtzLL(_)
-            | NodeKind::BuiltinFfs(_)
-            | NodeKind::BuiltinFfsL(_)
-            | NodeKind::BuiltinFfsLL(_)
-            | NodeKind::BuiltinBswap16(_)
-            | NodeKind::BuiltinBswap32(_)
-            | NodeKind::BuiltinBswap64(_)
-            | NodeKind::BuiltinFabs(_)
-            | NodeKind::BuiltinFabsf(_)
-            | NodeKind::BuiltinFabsl(_)
-            | NodeKind::BuiltinExpect(..)
             | NodeKind::BuiltinChooseExpr(..)
             | NodeKind::BuiltinOffsetof(..) => true,
+
+            NodeKind::FunctionCall(call) => {
+                if let NodeKind::Ident(name, _) = self.ast.get_kind(call.callee)
+                    && name.as_str().starts_with("__builtin_")
+                {
+                    return true;
+                }
+                self.const_ctx().eval_int(node).is_some() || self.const_ctx().eval_float(node).is_some()
+            }
 
             NodeKind::GenericSelection(gs) => {
                 for assoc_node in gs.assoc_start.range(gs.assoc_len) {
@@ -2637,8 +2474,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             | NodeKind::AlignOfExpr(_)
             | NodeKind::AlignOfType(_)
             | NodeKind::BuiltinOffsetof(..)
-            | NodeKind::BuiltinTypesCompatibleP(..)
-            | NodeKind::BuiltinConstantP(..) => Some(QualType::unqualified(self.registry.type_long_unsigned)),
+            | NodeKind::BuiltinTypesCompatibleP(..) => Some(QualType::unqualified(self.registry.type_long_unsigned)),
             _ => None,
         }
     }

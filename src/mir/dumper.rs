@@ -360,6 +360,11 @@ impl<'a> MirDumper<'a> {
                 self.write_operand(output, val)?;
                 write!(output, ", {:?})", order)
             }
+            MirStmt::BuiltinPrefetch { addr, rw, locality } => {
+                write!(output, "prefetch(")?;
+                self.write_operand(output, addr)?;
+                write!(output, ", {}, {})", rw, locality)
+            }
         }
     }
 
@@ -662,6 +667,7 @@ impl<'a> MirDumper<'a> {
                 self.write_type(output, *ty)?;
                 write!(output, ")")
             }
+            Rvalue::BuiltinFrameAddress(level) => write!(output, "frame_address({})", level),
             Rvalue::AtomicLoad(ptr, order) => {
                 write!(output, "atomic_load(")?;
                 self.write_operand(output, ptr)?;
@@ -752,6 +758,7 @@ impl<'a> MirDumper<'a> {
         match op {
             UnaryFloatOp::Neg => "fneg",
             UnaryFloatOp::Abs => "fabs",
+            UnaryFloatOp::IsNegative => "is_negative",
         }
     }
 }

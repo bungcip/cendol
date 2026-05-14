@@ -1,7 +1,6 @@
 use crate::{
     ast::{
-        AtomicOp, BinaryOp, FunctionSpec, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp,
-        literal::LitRef,
+        BinaryOp, FunctionSpec, NameId, ParsedType, SourceSpan, StorageClass, TypeQualifier, UnaryOp, literal::LitRef,
     },
     semantic::TypeQualifiers,
 };
@@ -91,37 +90,7 @@ pub enum ParsedNodeKind {
     Cast(ParsedType, ParsedNodeRef),
     BuiltinVaArg(ParsedType, ParsedNodeRef),
     BuiltinOffsetof(ParsedType, ParsedNodeRef),
-    BuiltinVaStart(ParsedNodeRef, ParsedNodeRef),
-    BuiltinVaEnd(ParsedNodeRef),
-    BuiltinVaCopy(ParsedNodeRef, ParsedNodeRef),
-    BuiltinExpect(ParsedNodeRef, ParsedNodeRef),
-    BuiltinComplex(ParsedNodeRef, ParsedNodeRef),
-    BuiltinMemcmp(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
-    BuiltinMemcpy(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
-    BuiltinMemset(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
-    BuiltinMemmove(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
     BuiltinTypesCompatibleP(Box<(ParsedType, ParsedType)>),
-    BuiltinPopcount(ParsedNodeRef),
-    BuiltinPopcountL(ParsedNodeRef),
-    BuiltinPopcountLL(ParsedNodeRef),
-    BuiltinClz(ParsedNodeRef),
-    BuiltinClzL(ParsedNodeRef),
-    BuiltinClzLL(ParsedNodeRef),
-    BuiltinCtz(ParsedNodeRef),
-    BuiltinCtzL(ParsedNodeRef),
-    BuiltinCtzLL(ParsedNodeRef),
-    BuiltinFfs(ParsedNodeRef),
-    BuiltinFfsL(ParsedNodeRef),
-    BuiltinFfsLL(ParsedNodeRef),
-    BuiltinBswap16(ParsedNodeRef),
-    BuiltinBswap32(ParsedNodeRef),
-    BuiltinBswap64(ParsedNodeRef),
-    BuiltinFabs(ParsedNodeRef),
-    BuiltinFabsf(ParsedNodeRef),
-    BuiltinFabsl(ParsedNodeRef),
-    BuiltinPrefetch(ParsedNodeRef, Option<ParsedNodeRef>, Option<ParsedNodeRef>),
-    BuiltinAlloca(ParsedNodeRef),
-    AtomicOp(AtomicOp, Box<[ParsedNodeRef]>),
     SizeOfExpr(ParsedNodeRef),
     SizeOfType(ParsedType),
     AlignOfExpr(ParsedNodeRef),
@@ -130,9 +99,9 @@ pub enum ParsedNodeKind {
     CompoundLiteral(ParsedType, ParsedNodeRef),
     GenericSelection(ParsedNodeRef, Box<[ParsedGenericAssociation]>),
     BuiltinChooseExpr(ParsedNodeRef, ParsedNodeRef, ParsedNodeRef),
-    BuiltinConstantP(ParsedNodeRef),
-    BuiltinUnreachable,
-    BuiltinTrap,
+    BuiltinComplex(ParsedNodeRef, ParsedNodeRef),
+    BuiltinBitCast(ParsedType, ParsedNodeRef),
+    BuiltinConvertVector(ParsedNodeRef, ParsedType),
 
     // --- Statements ---
     CompoundStmt(Box<[ParsedNodeRef]>),
@@ -457,36 +426,6 @@ impl ParsedNodeKind {
             ParsedNodeKind::Cast(..) => "Cast",
             ParsedNodeKind::BuiltinVaArg(..) => "BuiltinVaArg",
             ParsedNodeKind::BuiltinOffsetof(..) => "BuiltinOffsetof",
-            ParsedNodeKind::BuiltinVaStart(..) => "BuiltinVaStart",
-            ParsedNodeKind::BuiltinVaEnd(..) => "BuiltinVaEnd",
-            ParsedNodeKind::BuiltinVaCopy(..) => "BuiltinVaCopy",
-            ParsedNodeKind::BuiltinExpect(..) => "BuiltinExpect",
-            ParsedNodeKind::BuiltinMemcmp(..) => "BuiltinMemcmp",
-            ParsedNodeKind::BuiltinMemcpy(..) => "BuiltinMemcpy",
-            ParsedNodeKind::BuiltinMemset(..) => "BuiltinMemset",
-            ParsedNodeKind::BuiltinMemmove(..) => "BuiltinMemmove",
-            ParsedNodeKind::BuiltinTypesCompatibleP(..) => "BuiltinTypesCompatibleP",
-            ParsedNodeKind::BuiltinPopcount(..) => "BuiltinPopcount",
-            ParsedNodeKind::BuiltinPopcountL(..) => "BuiltinPopcountL",
-            ParsedNodeKind::BuiltinPopcountLL(..) => "BuiltinPopcountLL",
-            ParsedNodeKind::BuiltinClz(..) => "BuiltinClz",
-            ParsedNodeKind::BuiltinClzL(..) => "BuiltinClzL",
-            ParsedNodeKind::BuiltinClzLL(..) => "BuiltinClzLL",
-            ParsedNodeKind::BuiltinCtz(..) => "BuiltinCtz",
-            ParsedNodeKind::BuiltinCtzL(..) => "BuiltinCtzL",
-            ParsedNodeKind::BuiltinCtzLL(..) => "BuiltinCtzLL",
-            ParsedNodeKind::BuiltinFfs(..) => "BuiltinFfs",
-            ParsedNodeKind::BuiltinFfsL(..) => "BuiltinFfsL",
-            ParsedNodeKind::BuiltinFfsLL(..) => "BuiltinFfsLL",
-            ParsedNodeKind::BuiltinBswap16(..) => "BuiltinBswap16",
-            ParsedNodeKind::BuiltinBswap32(..) => "BuiltinBswap32",
-            ParsedNodeKind::BuiltinBswap64(..) => "BuiltinBswap64",
-            ParsedNodeKind::BuiltinFabs(..) => "BuiltinFabs",
-            ParsedNodeKind::BuiltinFabsf(..) => "BuiltinFabsf",
-            ParsedNodeKind::BuiltinFabsl(..) => "BuiltinFabsl",
-            ParsedNodeKind::BuiltinPrefetch(..) => "BuiltinPrefetch",
-            ParsedNodeKind::BuiltinAlloca(..) => "BuiltinAlloca",
-            ParsedNodeKind::AtomicOp(..) => "AtomicOp",
             ParsedNodeKind::SizeOfExpr(..) => "SizeOfExpr",
             ParsedNodeKind::SizeOfType(..) => "SizeOfType",
             ParsedNodeKind::AlignOfExpr(..) => "AlignOfExpr",
@@ -494,9 +433,6 @@ impl ParsedNodeKind {
             ParsedNodeKind::CompoundLiteral(..) => "CompoundLiteral",
             ParsedNodeKind::GenericSelection(..) => "GenericSelection",
             ParsedNodeKind::BuiltinChooseExpr(..) => "BuiltinChooseExpr",
-            ParsedNodeKind::BuiltinConstantP(..) => "BuiltinConstantP",
-            ParsedNodeKind::BuiltinUnreachable => "BuiltinUnreachable",
-            ParsedNodeKind::BuiltinTrap => "BuiltinTrap",
             ParsedNodeKind::CompoundStmt(..) => "CompoundStmt",
             ParsedNodeKind::If(..) => "If",
             ParsedNodeKind::While(..) => "While",
@@ -522,6 +458,9 @@ impl ParsedNodeKind {
             ParsedNodeKind::InitializerList(..) => "InitializerList",
             ParsedNodeKind::PragmaPack(..) => "PragmaPack",
             ParsedNodeKind::BuiltinComplex(..) => "BuiltinComplex",
+            ParsedNodeKind::BuiltinBitCast(..) => "BuiltinBitCast",
+            ParsedNodeKind::BuiltinConvertVector(..) => "BuiltinConvertVector",
+            ParsedNodeKind::BuiltinTypesCompatibleP(..) => "BuiltinTypesCompatibleP",
             ParsedNodeKind::Dummy => "Dummy",
         }
     }
@@ -533,8 +472,6 @@ impl ParsedNodeKind {
             | ParsedNodeKind::BuiltinTypesCompatibleP(_)
             | ParsedNodeKind::SizeOfType(_)
             | ParsedNodeKind::AlignOfType(_)
-            | ParsedNodeKind::BuiltinUnreachable
-            | ParsedNodeKind::BuiltinTrap
             | ParsedNodeKind::Break
             | ParsedNodeKind::Continue
             | ParsedNodeKind::Goto(_)
@@ -547,49 +484,18 @@ impl ParsedNodeKind {
             | ParsedNodeKind::MemberAccess(e, _, _)
             | ParsedNodeKind::Cast(_, e)
             | ParsedNodeKind::BuiltinVaArg(_, e)
+            | ParsedNodeKind::BuiltinBitCast(_, e)
             | ParsedNodeKind::BuiltinOffsetof(_, e)
-            | ParsedNodeKind::BuiltinVaEnd(e)
-            | ParsedNodeKind::BuiltinPopcount(e)
-            | ParsedNodeKind::BuiltinPopcountL(e)
-            | ParsedNodeKind::BuiltinPopcountLL(e)
-            | ParsedNodeKind::BuiltinClz(e)
-            | ParsedNodeKind::BuiltinClzL(e)
-            | ParsedNodeKind::BuiltinClzLL(e)
-            | ParsedNodeKind::BuiltinConstantP(e)
-            | ParsedNodeKind::BuiltinCtz(e)
-            | ParsedNodeKind::BuiltinCtzL(e)
-            | ParsedNodeKind::BuiltinCtzLL(e)
-            | ParsedNodeKind::BuiltinFfs(e)
-            | ParsedNodeKind::BuiltinFfsL(e)
-            | ParsedNodeKind::BuiltinFfsLL(e)
-            | ParsedNodeKind::BuiltinBswap16(e)
-            | ParsedNodeKind::BuiltinBswap32(e)
-            | ParsedNodeKind::BuiltinBswap64(e)
-            | ParsedNodeKind::BuiltinFabs(e)
-            | ParsedNodeKind::BuiltinFabsf(e)
-            | ParsedNodeKind::BuiltinFabsl(e)
             | ParsedNodeKind::SizeOfExpr(e)
             | ParsedNodeKind::AlignOfExpr(e)
             | ParsedNodeKind::CompoundLiteral(_, e)
             | ParsedNodeKind::Label(_, e)
             | ParsedNodeKind::Default(e)
+            | ParsedNodeKind::BuiltinConvertVector(e, _)
             | ParsedNodeKind::GnuStatementExpr(e, _) => f(*e),
-            ParsedNodeKind::BuiltinPrefetch(addr, rw, locality) => {
-                f(*addr);
-                if let Some(rw) = rw {
-                    f(*rw);
-                }
-                if let Some(locality) = locality {
-                    f(*locality);
-                }
-            }
-            ParsedNodeKind::BuiltinAlloca(e) => f(*e),
             ParsedNodeKind::BinaryOp(_, l, r)
             | ParsedNodeKind::Assignment(_, l, r)
             | ParsedNodeKind::IndexAccess(l, r)
-            | ParsedNodeKind::BuiltinVaStart(l, r)
-            | ParsedNodeKind::BuiltinVaCopy(l, r)
-            | ParsedNodeKind::BuiltinExpect(l, r)
             | ParsedNodeKind::BuiltinComplex(l, r)
             | ParsedNodeKind::DoWhile(l, r)
             | ParsedNodeKind::Switch(l, r)
@@ -603,23 +509,14 @@ impl ParsedNodeKind {
                     f(*msg);
                 }
             }
-            ParsedNodeKind::TernaryOp(c, t, e)
-            | ParsedNodeKind::CaseRange(c, t, e)
-            | ParsedNodeKind::BuiltinMemcmp(c, t, e)
-            | ParsedNodeKind::BuiltinMemcpy(c, t, e)
-            | ParsedNodeKind::BuiltinMemset(c, t, e)
-            | ParsedNodeKind::BuiltinMemmove(c, t, e) => {
+            ParsedNodeKind::TernaryOp(c, t, e) | ParsedNodeKind::CaseRange(c, t, e) => {
                 f(*c);
                 f(*t);
                 f(*e);
             }
+
             ParsedNodeKind::FunctionCall(c, args) => {
                 f(*c);
-                for a in args.as_ref() {
-                    f(*a);
-                }
-            }
-            ParsedNodeKind::AtomicOp(_op, args) => {
                 for a in args.as_ref() {
                     f(*a);
                 }

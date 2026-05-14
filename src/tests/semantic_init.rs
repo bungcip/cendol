@@ -649,3 +649,90 @@ fn test_fam_brace_elision_initialization() {
     "#;
     assert_eq!(run_c_code_exit_status(source), 0);
 }
+
+#[test]
+fn test_union_init_with_different_types() {
+    // Regression test for union initialization bug where members with different types than
+    // the first member were incorrectly truncated.
+    let source = r#"
+        union U {
+            int a;
+            double b;
+            void *c;
+        };
+        int main() {
+            void *p = (void *)0x1234567890ABCDEF;
+            union U u = { .c = p };
+            if (u.c != p) return 1;
+            return 0;
+        }
+    "#;
+    assert_eq!(run_c_code_exit_status(source), 0);
+}
+
+#[test]
+fn test_union_init_mir() {
+    let source = r#"
+        union U {
+            int a;
+            double b;
+            void *c;
+        };
+        void f(void *p) {
+            union U u = { .c = p };
+        }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir, @"
+    type %t0 = void
+    type %t1 = ptr<%t0>
+    type %t2 = union U { a: %t3, b: %t4, c: %t1 }
+    type %t3 = i32
+    type %t4 = f64
+
+    fn f(%param0: ptr<void>) -> void
+    {
+      locals {
+        %u: %t2
+      }
+
+      bb1:
+        %u = struct{2: %param0}
+        return
+    }
+    ");
+}
+
+#[test]
+fn test_nested_union_init_mir() {
+    let source = r#"
+        struct S {
+            int x;
+            union {
+                int a;
+                double b;
+            };
+        };
+        void f(double d) {
+            struct S s = { 1, .b = d };
+        }
+    "#;
+    let mir = setup_mir(source);
+    insta::assert_snapshot!(mir, @"
+    type %t0 = void
+    type %t1 = f64
+    type %t2 = struct S { x: %t3, a: %t3, b: %t1 }
+    type %t3 = i32
+
+    fn f(%param0: f64) -> void
+    {
+      locals {
+        %s: %t2
+      }
+
+      bb1:
+        %s = struct{0: const 1, 2: cast<f64>(cast<i32>(cast<f64>(cast<i32>(%param0))))}
+        return
+    }
+    ");
+}

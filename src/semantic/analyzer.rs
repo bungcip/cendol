@@ -3391,9 +3391,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let size = get_string_literal_size(&value, prefix);
                 let element_type = self.registry.get_builtin_type(builtin_type);
 
-                let array_type = self
-                    .registry
-                    .array_of(element_type, ArraySizeType::Constant(size));
+                let array_type = self.registry.array_of(element_type, ArraySizeType::Constant(size));
                 let _ = self.registry.ensure_layout(array_type);
                 Some(QualType::new(array_type, TypeQualifiers::empty()))
             }

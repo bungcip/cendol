@@ -2565,7 +2565,8 @@ impl ClifGen {
     pub(crate) fn new(mir: MirProgram) -> Self {
         let triple = Triple::host();
         let mut flag_builder = cranelift::prelude::settings::builder();
-        flag_builder.set("is_pic", "true").unwrap();
+        let is_pic = if mir.is_pic { "true" } else { "false" };
+        flag_builder.set("is_pic", is_pic).unwrap();
 
         let tls_model = match triple.binary_format {
             target_lexicon::BinaryFormat::Elf => "elf_gd",

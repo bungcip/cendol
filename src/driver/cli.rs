@@ -109,6 +109,14 @@ pub struct Cli {
     #[clap(long = "rdynamic")]
     pub rdynamic: bool,
 
+    /// Create a shared library
+    #[clap(long = "shared")]
+    pub shared: bool,
+
+    /// Pass arguments to linker
+    #[clap(short = 'X', long = "linker-arg", value_name = "ARG", action = clap::ArgAction::Append)]
+    pub linker_args: Vec<String>,
+
     /// Use a specific linker
     #[clap(long = "fuse-ld", value_name = "LINKER")]
     pub fuse_ld: Option<String>,
@@ -125,7 +133,15 @@ pub struct Cli {
     #[clap(long = "fno-wrapv", overrides_with = "fwrapv")]
     pub fno_wrapv: bool,
 
-    /// GCC/Clang compatible flags to ignore (e.g., -fPIC, -fno-stack-protector)
+    /// Generate position-independent code
+    #[clap(long = "fPIC", overrides_with = "f_no_pic")]
+    pub f_pic: bool,
+
+    /// Do not generate position-independent code
+    #[clap(long = "fno-PIC", overrides_with = "f_pic")]
+    pub f_no_pic: bool,
+
+    /// GCC/Clang compatible flags to ignore (e.g., -fno-stack-protector)
     #[clap(short = 'f', action = clap::ArgAction::Append)]
     pub ignored_f_flags: Vec<String>,
 
@@ -210,6 +226,8 @@ pub struct CompileConfig {
     pub library_paths: Vec<PathBuf>,
     pub compile_only: bool,
     pub debug_info: bool,
+    pub shared: bool,
+    pub linker_args: Vec<String>,
     pub fuse_ld: Option<String>,
     pub fmax_errors: Option<usize>,
     pub ignored_f_flags: Vec<String>,
@@ -301,12 +319,21 @@ impl Cli {
             fwrapv = true;
         }
 
+        let mut fpic = true;
+        if self.f_no_pic {
+            fpic = false;
+        }
+        if self.f_pic {
+            fpic = true;
+        }
+
         let c_standard = self.c_standard.unwrap_or_default();
         let lang_options = crate::lang_options::LangOptions {
             c_standard,
             pedantic: self.pedantic,
             pedantic_errors: self.pedantic_errors,
             fwrapv,
+            fpic,
         };
 
         // Build preprocessor configuration with include paths
@@ -378,6 +405,8 @@ impl Cli {
             library_paths: self.library_paths,
             compile_only: self.compile_only,
             debug_info: self.debug_info,
+            shared: self.shared,
+            linker_args: self.linker_args,
             fuse_ld: self.fuse_ld,
             fmax_errors: self.fmax_errors,
             ignored_f_flags: self.ignored_f_flags,

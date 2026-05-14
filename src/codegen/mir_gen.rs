@@ -64,6 +64,7 @@ pub(crate) struct MirGen<'a> {
     pub(crate) current_scope_id: ScopeId,
     pub(crate) func_state: Option<FunctionState>,
     pub(crate) keywords: MirGenKeywords,
+    pub(crate) is_pic: bool,
 }
 
 pub(crate) struct MirGenKeywords {
@@ -195,7 +196,12 @@ impl<'a> MirGen<'a> {
             self.define_or_declare_function(entry.name, vec![], return_mir_type, false, has_definition, linkage)
         }
     }
-    pub(crate) fn new(ast: &'a Ast, symbol_table: &'a SymbolTable, registry: &'a mut TypeRegistry) -> Self {
+    pub(crate) fn new(
+        ast: &'a Ast,
+        symbol_table: &'a SymbolTable,
+        registry: &'a mut TypeRegistry,
+        is_pic: bool,
+    ) -> Self {
         Self {
             ast,
             symbol_table,
@@ -208,6 +214,7 @@ impl<'a> MirGen<'a> {
             keywords: MirGenKeywords::new(),
             current_scope_id: ScopeId::GLOBAL,
             func_state: None,
+            is_pic,
         }
     }
 
@@ -248,6 +255,7 @@ impl<'a> MirGen<'a> {
             constants: output.constants,
             statements: output.statements,
             pointer_width: 8,
+            is_pic: self.is_pic,
         }
     }
 

@@ -13,6 +13,7 @@ pub struct LangOptions {
     pub pedantic: bool,
     pub pedantic_errors: bool,
     pub fwrapv: bool,
+    pub fpic: bool,
 }
 
 impl Default for LangOptions {
@@ -22,6 +23,7 @@ impl Default for LangOptions {
             pedantic: false,
             pedantic_errors: false,
             fwrapv: true, // cendol defaults to wrapping
+            fpic: true,   // cendol defaults to PIC
         }
     }
 }

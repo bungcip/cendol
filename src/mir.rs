@@ -73,6 +73,7 @@ pub(crate) struct MirModule {
     pub(crate) types: Vec<MirType>,
     pub(crate) constants: Vec<ConstValue>,
     pub(crate) pointer_width: u8, // Width of a pointer in bytes (e.g., 4 or 8)
+    pub(crate) is_pic: bool,
 }
 
 impl MirModule {
@@ -83,6 +84,7 @@ impl MirModule {
             types: Vec::new(),
             constants: Vec::new(),
             pointer_width: 8, // Default to 64-bit pointers
+            is_pic: true,
         }
     }
 }
@@ -675,6 +677,7 @@ pub(crate) struct MirProgram {
     pub(crate) constants: Vec<ConstValue>,
     pub(crate) statements: Vec<MirStmt>,
     pub(crate) pointer_width: u8,
+    pub(crate) is_pic: bool,
 }
 
 impl MirProgram {
@@ -993,6 +996,7 @@ impl MirBuilder {
     /// This is the preferred way to get the final MIR, as it avoids cloning.
     pub(crate) fn consume(self) -> MirProgram {
         let pointer_width = self.module.pointer_width;
+        let is_pic = self.module.is_pic;
         MirProgram {
             module: self.module,
             functions: self.functions,
@@ -1003,6 +1007,7 @@ impl MirBuilder {
             constants: self.constants,
             statements: self.statements,
             pointer_width,
+            is_pic,
         }
     }
 

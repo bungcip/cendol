@@ -19,10 +19,14 @@ pub(crate) struct LinkConfig {
     pub optimization: Option<String>,
     /// Include debug info (-g)
     pub debug_info: bool,
+    /// Create a shared library
+    pub shared: bool,
     /// Verbose output
     pub verbose: bool,
     /// Use a specific linker
     pub fuse_ld: Option<String>,
+    /// Pass arguments to linker
+    pub linker_args: Vec<String>,
 }
 
 /// Error type for linking operations.
@@ -92,6 +96,12 @@ impl LinkGen {
 
         if let Some(linker) = &config.fuse_ld {
             clang_cmd.arg(format!("-fuse-ld={}", linker));
+        }
+        if config.shared {
+            clang_cmd.arg("-shared");
+        }
+        for arg in &config.linker_args {
+            clang_cmd.arg(arg);
         }
 
         // Default to linking math library

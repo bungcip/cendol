@@ -19,6 +19,18 @@ fn main() {
             "--fwrapv".to_string()
         } else if arg == "-fno-wrapv" {
             "--fno-wrapv".to_string()
+        } else if arg == "-fPIC" {
+            "--fPIC".to_string()
+        } else if arg == "-fno-PIC" {
+            "--fno-PIC".to_string()
+        } else if arg == "-O" {
+            "-O1".to_string()
+        } else if arg == "-shared" {
+            "--shared".to_string()
+        } else if arg.starts_with("-Wl,") {
+            format!("--linker-arg={}", arg)
+        } else if arg == "-Xlinker" {
+            "--linker-arg".to_string()
         } else {
             arg
         }

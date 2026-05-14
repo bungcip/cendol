@@ -325,7 +325,7 @@ impl CompilerDriver {
 
         // MIR generation
         let t1 = if timing_enabled { Some(Instant::now()) } else { None };
-        let mut sema = MirGen::new(&ast, &symbol_table, &mut registry);
+        let mut sema = MirGen::new(&ast, &symbol_table, &mut registry, self.config.lang_options.fpic);
         let mir_program = sema.visit_module();
         if let Some(t1) = t1 {
             eprintln!("[TIMING]   MIR Generation: {:?}", t1.elapsed());
@@ -499,8 +499,10 @@ impl CompilerDriver {
             libraries: self.config.libraries.clone(),
             optimization: self.config.optimization.clone(),
             debug_info: self.config.debug_info,
+            shared: self.config.shared,
             verbose: self.config.verbose,
             fuse_ld: self.config.fuse_ld.clone(),
+            linker_args: self.config.linker_args.clone(),
         };
 
         crate::codegen::LinkGen::link(&object_files, &link_config).map_err(|e| match e {

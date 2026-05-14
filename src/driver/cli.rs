@@ -117,6 +117,14 @@ pub struct Cli {
     #[clap(long = "fmax-errors", value_name = "N")]
     pub fmax_errors: Option<usize>,
 
+    /// Treat signed integer overflow as well-defined (wrapping)
+    #[clap(long = "fwrapv", overrides_with = "fno_wrapv")]
+    pub fwrapv: bool,
+
+    /// Treat signed integer overflow as undefined behavior
+    #[clap(long = "fno-wrapv", overrides_with = "fwrapv")]
+    pub fno_wrapv: bool,
+
     /// GCC/Clang compatible flags to ignore (e.g., -fPIC, -fno-stack-protector)
     #[clap(short = 'f', action = clap::ArgAction::Append)]
     pub ignored_f_flags: Vec<String>,
@@ -285,11 +293,20 @@ impl Cli {
 
         // Build language options
 
+        let mut fwrapv = true;
+        if self.fno_wrapv {
+            fwrapv = false;
+        }
+        if self.fwrapv {
+            fwrapv = true;
+        }
+
         let c_standard = self.c_standard.unwrap_or_default();
         let lang_options = crate::lang_options::LangOptions {
             c_standard,
             pedantic: self.pedantic,
             pedantic_errors: self.pedantic_errors,
+            fwrapv,
         };
 
         // Build preprocessor configuration with include paths
@@ -491,5 +508,30 @@ mod tests {
 
         let cli5 = Cli::parse_from(["cendol", "dummy.c"]);
         assert_eq!(cli5.into_config().unwrap().stop_after, CompilePhase::EmitObject);
+    }
+
+    #[test]
+    fn test_cli_fwrapv() {
+        use clap::Parser;
+
+        // Default should be true
+        let cli1 = Cli::parse_from(["cendol", "dummy.c"]);
+        assert!(cli1.into_config().unwrap().lang_options.fwrapv);
+
+        // Explicit -fwrapv
+        let cli2 = Cli::parse_from(["cendol", "dummy.c", "--fwrapv"]);
+        assert!(cli2.into_config().unwrap().lang_options.fwrapv);
+
+        // Explicit -fno-wrapv
+        let cli3 = Cli::parse_from(["cendol", "dummy.c", "--fno-wrapv"]);
+        assert!(!cli3.into_config().unwrap().lang_options.fwrapv);
+
+        // Last one wins: -fwrapv -fno-wrapv -> false
+        let cli4 = Cli::parse_from(["cendol", "dummy.c", "--fwrapv", "--fno-wrapv"]);
+        assert!(!cli4.into_config().unwrap().lang_options.fwrapv);
+
+        // Last one wins: -fno-wrapv -fwrapv -> true
+        let cli5 = Cli::parse_from(["cendol", "dummy.c", "--fno-wrapv", "--fwrapv"]);
+        assert!(cli5.into_config().unwrap().lang_options.fwrapv);
     }
 }

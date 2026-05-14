@@ -15,6 +15,10 @@ fn main() {
             "--pedantic".to_string()
         } else if arg == "-pedantic-errors" {
             "--pedantic-errors".to_string()
+        } else if arg == "-fwrapv" {
+            "--fwrapv".to_string()
+        } else if arg == "-fno-wrapv" {
+            "--fno-wrapv".to_string()
         } else {
             arg
         }

@@ -7,11 +7,23 @@ pub enum CStandard {
     C23,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct LangOptions {
     pub c_standard: CStandard,
     pub pedantic: bool,
     pub pedantic_errors: bool,
+    pub fwrapv: bool,
+}
+
+impl Default for LangOptions {
+    fn default() -> Self {
+        Self {
+            c_standard: CStandard::default(),
+            pedantic: false,
+            pedantic_errors: false,
+            fwrapv: true, // cendol defaults to wrapping
+        }
+    }
 }
 
 impl LangOptions {

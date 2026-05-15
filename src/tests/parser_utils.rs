@@ -78,7 +78,7 @@ pub(crate) enum ResolvedNodeKind {
     },
     TranslationUnit(Vec<ResolvedNodeKind>),
     Empty, // Empty statement
-           // Add more as needed for tests
+    // Add more as needed for tests
     PragmaPackStmt(String),
 }
 

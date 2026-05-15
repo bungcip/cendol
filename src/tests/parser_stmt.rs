@@ -340,5 +340,5 @@ fn test_attribute_statement() {
 #[test]
 fn test_parse_pragma_pack_statement() {
     let ast = setup_statement("#pragma pack(push, 1)");
-    insta::assert_yaml_snapshot!("pragma_pack_stmt", ast);
+    insta::assert_yaml_snapshot!(ast, @"PragmaPackStmt: PushSet(1)");
 }

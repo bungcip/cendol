@@ -336,3 +336,9 @@ fn test_attribute_statement() {
     let resolved = setup_statement("__attribute__((fallthrough));");
     insta::assert_yaml_snapshot!(&resolved, @"Empty");
 }
+
+#[test]
+fn test_parse_pragma_pack_statement() {
+    let ast = setup_statement("#pragma pack(push, 1)");
+    insta::assert_yaml_snapshot!("pragma_pack_stmt", ast);
+}

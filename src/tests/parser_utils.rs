@@ -79,6 +79,7 @@ pub(crate) enum ResolvedNodeKind {
     TranslationUnit(Vec<ResolvedNodeKind>),
     Empty, // Empty statement
            // Add more as needed for tests
+    PragmaPackStmt(String),
 }
 
 /// Simplified resolved generic association for testing
@@ -392,6 +393,7 @@ pub(crate) fn resolve_node(ast: &ParsedAst, node: ParsedNodeRef) -> ResolvedNode
             }
         }
         ParsedNodeKind::EmptyStmt | ParsedNodeKind::Dummy => ResolvedNodeKind::Empty,
+        ParsedNodeKind::PragmaPack(kind) => ResolvedNodeKind::PragmaPackStmt(format!("{:?}", kind)),
         // Add more cases as needed for other ParsedNodeKind variants used in tests
         _ => panic!("Unsupported ParsedNodeKind for resolution: {:?}", node.kind),
     }

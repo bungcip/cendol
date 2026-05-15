@@ -231,6 +231,8 @@ pub struct PPConfig {
     pub(crate) c_standard: CStandard,
     pub(crate) target: Triple,
     pub(crate) current_time: Option<DateTime<Utc>>,
+    pub(crate) pedantic: bool,
+    pub(crate) pedantic_errors: bool,
 }
 
 impl Default for PPConfig {
@@ -244,6 +246,8 @@ impl Default for PPConfig {
             c_standard: CStandard::default(),
             target: Triple::host(),
             current_time: None,
+            pedantic: false,
+            pedantic_errors: false,
         }
     }
 }

@@ -116,7 +116,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     pub(crate) fn report_warning(&mut self, span: SourceSpan, kind: SemanticError) {
-        if self.lang_opts.pedantic_errors {
+        if kind.is_pedantic() && self.lang_opts.pedantic_errors {
             self.report_error(span, kind);
         } else {
             let mut error = SemanticDiag::new(span, kind);
@@ -386,6 +386,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             alignment = Some(std::cmp::max(alignment.unwrap_or(0), val));
                         }
                     }
+                    DeclSpec::AttributeCleanup(_) => {
+                        self.report_warning(span, SemanticError::AttributeCleanupOnType);
+                    }
                     _ => {}
                 }
             }
@@ -580,6 +583,7 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) alignment: Option<u16>,
     pub(crate) has_auto: bool,
     pub(crate) is_packed: bool,
+    pub(crate) has_cleanup: bool,
 }
 
 /// Finalize tentative definitions by converting them to defined state
@@ -1406,6 +1410,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     ) {
         let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
 
+        if spec_info.has_cleanup {
+            self.report_warning(span, SemanticError::AttributeCleanupOnNonLocal);
+        }
+
         self.check_function_constraints(name, spec_info, span, is_global);
 
         let final_qt = self.check_redeclaration_compatibility(name, final_ty, span, spec_info.storage);
@@ -1450,6 +1458,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         init: Option<ParsedNodeRef>,
         span: SourceSpan,
     ) {
+        let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
+
+        if spec_info.has_cleanup && (is_global || spec_info.storage == Some(StorageClass::Extern)) {
+            self.report_warning(span, SemanticError::AttributeCleanupOnNonLocal);
+        }
+
         if spec_info.is_constexpr {
             if init.is_none() {
                 self.report_error(span, SemanticError::ConstexprRequiresInitializer);
@@ -3314,6 +3328,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 DeclSpec::Attribute => {}
                 DeclSpec::AttributePacked => {
                     info.is_packed = true;
+                }
+                DeclSpec::AttributeCleanup(_) => {
+                    info.has_cleanup = true;
                 }
             }
         }

@@ -406,9 +406,24 @@ pub enum SemanticError {
     InvalidEnumUnderlyingType {
         ty: QualType,
     },
+    AttributeCleanupOnType,
+    AttributeCleanupOnNonLocal,
 }
 
 impl SemanticError {
+    pub(crate) fn is_pedantic(&self) -> bool {
+        matches!(
+            self,
+            SemanticError::EnumForwardDeclaration
+                | SemanticError::AlignOfExpression
+                | SemanticError::GnuStatementExpression
+                | SemanticError::GnuTypeof
+                | SemanticError::GnuDesignatedInitializerRange
+                | SemanticError::GnuCaseRange
+                | SemanticError::GnuZeroLengthArray
+        )
+    }
+
     pub(crate) fn warning_name(&self) -> Option<&'static str> {
         match self {
             SemanticError::EmptyDeclaration => Some("empty-translation-unit"),
@@ -431,6 +446,8 @@ impl SemanticError {
             SemanticError::GnuCaseRange => Some("gnu-case-range"),
             SemanticError::GnuZeroLengthArray => Some("gnu-zero-length-array"),
             SemanticError::InlineAsmIgnored => Some("inline-asm"),
+            SemanticError::AttributeCleanupOnType => Some("attributes"),
+            SemanticError::AttributeCleanupOnNonLocal => Some("ignored-attributes"),
             _ => None,
         }
     }
@@ -836,6 +853,10 @@ impl SemanticError {
             SemanticError::GnuCaseRange => "use of GNU case range extension".to_string(),
             SemanticError::GnuZeroLengthArray => "use of GNU zero-length array extension".to_string(),
             SemanticError::InlineAsmIgnored => "inline assembly is currently ignored by cendol".to_string(),
+            SemanticError::AttributeCleanupOnType => "attribute 'cleanup' ignored on type".to_string(),
+            SemanticError::AttributeCleanupOnNonLocal => {
+                "'__cleanup__' attribute only applies to local variables".to_string()
+            }
         }
     }
 }

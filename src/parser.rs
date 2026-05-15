@@ -127,6 +127,8 @@ pub(crate) struct ParserKeywords {
     pub(crate) attr_aligned_underscore: NameId,
     pub(crate) attr_packed: NameId,
     pub(crate) attr_packed_underscore: NameId,
+    pub(crate) attr_cleanup: NameId,
+    pub(crate) attr_cleanup_underscore: NameId,
 }
 
 impl ParserKeywords {
@@ -138,6 +140,8 @@ impl ParserKeywords {
             attr_aligned_underscore: NameId::new("__aligned__"),
             attr_packed: NameId::new("packed"),
             attr_packed_underscore: NameId::new("__packed__"),
+            attr_cleanup: NameId::new("cleanup"),
+            attr_cleanup_underscore: NameId::new("__cleanup__"),
         }
     }
 }

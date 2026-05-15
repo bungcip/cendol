@@ -195,6 +195,7 @@ pub enum DeclSpec {
     TypeSpec(TypeSpec),
     Attribute,
     AttributePacked,
+    AttributeCleanup(ParsedNodeRef),
 }
 
 // Type specifiers
@@ -336,6 +337,7 @@ impl DeclSpec {
         match self {
             DeclSpec::AlignmentSpec(aspec) => aspec.for_each_child(f),
             DeclSpec::TypeSpec(ts) => ts.for_each_child(f),
+            DeclSpec::AttributeCleanup(e) => f(*e),
             _ => {}
         }
     }

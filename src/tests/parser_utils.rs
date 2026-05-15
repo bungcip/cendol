@@ -163,6 +163,7 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
             DeclSpec::AlignmentSpec(aspec) => format!("{:?}", aspec),
             DeclSpec::Attribute => "__attribute__".to_string(),
             DeclSpec::AttributePacked => "packed".to_string(),
+            DeclSpec::AttributeCleanup(_) => "cleanup(...)".to_string(),
         })
         .collect()
 }

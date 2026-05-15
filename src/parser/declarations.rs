@@ -491,6 +491,12 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
                 } else if name == parser.keywords.attr_packed || name == parser.keywords.attr_packed_underscore {
                     specs.push(DeclSpec::AttributePacked);
                     parser.advance();
+                } else if name == parser.keywords.attr_cleanup || name == parser.keywords.attr_cleanup_underscore {
+                    parser.advance();
+                    parser.expect(TokenKind::LeftParen)?;
+                    let arg = parser.parse_expr_assignment()?;
+                    parser.expect(TokenKind::RightParen)?;
+                    specs.push(DeclSpec::AttributeCleanup(arg));
                 } else {
                     // Skip unknown attribute name and potential arguments
                     parser.advance();

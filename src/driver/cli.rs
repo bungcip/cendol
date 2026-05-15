@@ -392,6 +392,8 @@ impl Cli {
                 system_include_paths,
                 target: target_triple.clone(),
                 c_standard,
+                pedantic: self.pedantic,
+                pedantic_errors: self.pedantic_errors,
                 ..Default::default()
             },
             suppress_line_markers: self.suppress_line_markers,

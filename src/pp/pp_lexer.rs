@@ -656,7 +656,7 @@ impl PPLexer {
         // If next_char encountered a splice, has_splice is now true.
 
         let token = match ch {
-            b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'$' => {
                 if ch == b'L' || ch == b'u' || ch == b'U' {
                     let next_ch = self.peek_char();
 
@@ -1023,8 +1023,8 @@ impl PPLexer {
                 start_pos,
                 first_ch,
                 flags,
-                (),
-                |_, ch| ch.is_ascii_alphanumeric() || ch == b'_',
+                true,
+                |_, ch| ch.is_ascii_alphanumeric() || ch == b'_' || ch == b'$',
                 PPTokenKind::Identifier(StringId::new("")),
             );
 
@@ -1098,7 +1098,7 @@ impl PPLexer {
             if pos < self.buffer.len() {
                 let ch = self.buffer[pos];
                 if ch != b'\\' {
-                    if ch.is_ascii_alphanumeric() || ch == b'_' {
+                    if ch.is_ascii_alphanumeric() || ch == b'_' || ch == b'$' {
                         self.position += 1;
                         text.push(ch as char);
                         continue;
@@ -1150,7 +1150,7 @@ impl PPLexer {
             }
 
             // Regular identifier char reached via slow path (e.g. after a splice)
-            if ch.is_ascii_alphanumeric() || ch == b'_' {
+            if ch.is_ascii_alphanumeric() || ch == b'_' || ch == b'$' {
                 text.push(ch as char);
                 continue;
             }
@@ -1182,7 +1182,13 @@ impl PPLexer {
             flags,
             false,
             |seen_e, ch| {
-                if ch.is_ascii_digit() || ch == b'.' || ch.is_ascii_alphabetic() || ch == b'_' || ch == b'\'' {
+                if ch.is_ascii_digit()
+                    || ch == b'.'
+                    || ch.is_ascii_alphabetic()
+                    || ch == b'_'
+                    || ch == b'\''
+                    || ch == b'$'
+                {
                     *seen_e = ch == b'e' || ch == b'E' || ch == b'p' || ch == b'P';
                     true
                 } else if (ch == b'+' || ch == b'-') && *seen_e {

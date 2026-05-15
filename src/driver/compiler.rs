@@ -361,10 +361,14 @@ impl CompilerDriver {
     /// and emit diagnostics if any error occurs
     pub fn run(&mut self) -> Result<(), DriverError> {
         let stop_after = self.config.stop_after;
-        match self.run_pipeline(stop_after) {
+        let res = match self.run_pipeline(stop_after) {
             Ok(outputs) => self.process_outputs(outputs),
             Err(e) => self.handle_pipeline_error(e),
+        };
+        if res.is_ok() {
+            self.print_diagnostics();
         }
+        res
     }
 
     fn handle_pipeline_error(&self, err: PipelineError) -> Result<(), DriverError> {

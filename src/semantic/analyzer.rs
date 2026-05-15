@@ -200,7 +200,7 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn report_warning(&mut self, node: NodeRef, kind: SemanticError) {
-        if self.lang_opts.pedantic_errors {
+        if kind.is_pedantic() && self.lang_opts.pedantic_errors {
             self.report_error(node, kind);
         } else {
             let span = self.ast.get_span(node);

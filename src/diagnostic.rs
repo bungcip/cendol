@@ -22,6 +22,7 @@ pub(crate) struct Diagnostic {
     pub(crate) span: SourceSpan,
     pub(crate) hints: Vec<String>, // Suggestions for fixing
     pub(crate) warning_name: Option<&'static str>,
+    pub(crate) is_streamed: bool,
 }
 
 /// Diagnostic engine for collecting and reporting semantic errors and warnings
@@ -153,8 +154,9 @@ impl DiagnosticEngine {
         self.error_count > 0
     }
 
-    pub(crate) fn report_streaming(&mut self, diagnostic: Diagnostic, source_manager: &SourceManager) {
+    pub(crate) fn report_streaming(&mut self, mut diagnostic: Diagnostic, source_manager: &SourceManager) {
         let prev_len = self.diagnostics.len();
+        diagnostic.is_streamed = true;
         self.report_diagnostic(diagnostic);
         if self.diagnostics.len() > prev_len {
             let added_diag = self.diagnostics.last().unwrap();
@@ -276,6 +278,9 @@ impl DiagnosticEngine {
     /// Print diagnostics, skipping warnings if suppress_warnings is true
     pub(crate) fn print_diagnostics_filtered(&self, source_manager: &SourceManager, suppress_warnings: bool) {
         for diag in &self.diagnostics {
+            if diag.is_streamed {
+                continue;
+            }
             if suppress_warnings && diag.level == DiagnosticLevel::Warning {
                 continue;
             }

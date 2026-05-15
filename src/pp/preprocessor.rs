@@ -21,6 +21,8 @@ pub struct Preprocessor<'src> {
     pub(crate) diag: &'src mut DiagnosticEngine,
     pub(crate) c_standard: CStandard,
     pub(crate) target: Triple,
+    pub(crate) pedantic: bool,
+    pub(crate) pedantic_errors: bool,
 
     // Pre-interned directive keywords for fast comparison
     pub(crate) keywords: PPKeywordTable,
@@ -115,6 +117,8 @@ impl<'src> Preprocessor<'src> {
             include_depth: 0,
             max_include_depth: config.max_include_depth,
             target: config.target.clone(),
+            pedantic: config.pedantic,
+            pedantic_errors: config.pedantic_errors,
             counter: 0,
             eof_emitted: false,
         };
@@ -961,6 +965,20 @@ impl<'src> Preprocessor<'src> {
                         let err = self.error(PPErrorKind::InvalidUniversalCharacterName, token.location);
                         self.report_pp_error(err);
                     }
+
+                    if (self.pedantic || self.pedantic_errors)
+                        && matches!(token.kind, PPTokenKind::Identifier(_) | PPTokenKind::Number)
+                    {
+                        let text = self.get_token_text(&token);
+                        if text.contains('$') {
+                            let err = self.error(PPErrorKind::DollarInIdentifier, token.location);
+                            if self.pedantic_errors {
+                                self.report_pp_error(err);
+                            } else {
+                                self.report_pp_warning(err);
+                            }
+                        }
+                    }
                     return Some(token);
                 } else {
                     // Current lexer finished
@@ -1032,6 +1050,34 @@ impl<'src> Preprocessor<'src> {
     pub(super) fn report_pp_error(&mut self, err: PPError) {
         use crate::diagnostic::IntoDiagnostic;
         let diags = err.into_diagnostic();
+        for diag in diags {
+            self.diag.report_streaming(diag, self.sm);
+        }
+    }
+
+    pub(super) fn report_pp_warning(&mut self, err: PPError) {
+        use crate::diagnostic::IntoDiagnostic;
+        let is_pedantic = err.kind.is_pedantic();
+        let mut diags = err.into_diagnostic();
+
+        if is_pedantic {
+            if self.pedantic_errors {
+                for diag in &mut diags {
+                    diag.level = DiagnosticLevel::Error;
+                }
+            } else if self.pedantic {
+                for diag in &mut diags {
+                    diag.level = DiagnosticLevel::Warning;
+                }
+            } else {
+                return;
+            }
+        } else {
+            for diag in &mut diags {
+                diag.level = DiagnosticLevel::Warning;
+            }
+        }
+
         for diag in diags {
             self.diag.report_streaming(diag, self.sm);
         }

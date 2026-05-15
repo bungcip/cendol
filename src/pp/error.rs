@@ -55,6 +55,14 @@ pub enum PPErrorKind {
     InvalidUniversalCharacterName,
     #[error("Macro '{0}' redefined with different value")]
     MacroRedefined(StringId),
+    #[error("'$' in identifier or number")]
+    DollarInIdentifier,
+}
+
+impl PPErrorKind {
+    pub(crate) fn is_pedantic(&self) -> bool {
+        matches!(self, PPErrorKind::DollarInIdentifier)
+    }
 }
 
 #[derive(Debug)]

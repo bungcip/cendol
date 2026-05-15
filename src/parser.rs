@@ -30,49 +30,53 @@ use expressions::parse_expression;
 pub(crate) use lexer::{Lexer, Token, TokenKind};
 
 /// Type context for tracking typedef names and other type-related state
+/// Bolt ⚡: Optimized with a HashMap and shadow stacks for O(1) lookup.
+/// Shadowing is handled by storing a stack of (bool) for each identifier.
 #[derive(Debug)]
 pub(crate) struct TypeDefContext {
-    /// Stack of scopes, each containing a list of (NameId, is_typedef) for disambiguation
-    scopes: Vec<Vec<(NameId, bool)>>,
+    /// Stack of scopes, each containing a list of names modified in that scope.
+    /// This is used to unwind the `map` when popping or truncating scopes.
+    scopes: Vec<Vec<NameId>>,
+    /// Fast lookup table: NameId -> Stack of (is_typedef) values.
+    /// SmallVec[1] ensures that common, non-shadowed names don't allocate on the heap.
+    map: hashbrown::HashMap<NameId, smallvec::SmallVec<[bool; 1]>>,
 }
 
 impl TypeDefContext {
     /// Create a new type context with builtin typedefs
     fn new() -> Self {
-        let globals = vec![
-            (NameId::new("int8_t"), true),
-            (NameId::new("int16_t"), true),
-            (NameId::new("int32_t"), true),
-            (NameId::new("int64_t"), true),
-            (NameId::new("uint8_t"), true),
-            (NameId::new("uint16_t"), true),
-            (NameId::new("uint32_t"), true),
-            (NameId::new("uint64_t"), true),
+        let mut ctx = TypeDefContext {
+            scopes: vec![Vec::new()],
+            map: hashbrown::HashMap::new(),
+        };
+
+        let globals = [
+            "int8_t", "int16_t", "int32_t", "int64_t", "uint8_t", "uint16_t", "uint32_t", "uint64_t",
         ];
 
-        TypeDefContext { scopes: vec![globals] }
+        for name in globals {
+            ctx.add_typedef(NameId::new(name));
+        }
+
+        ctx
     }
 
     /// Check if a symbol is a typedef name
+    #[inline]
     fn is_type_name(&self, symbol: NameId) -> bool {
-        for scope in self.scopes.iter().rev() {
-            for &(name, is_typedef) in scope.iter().rev() {
-                if name == symbol {
-                    return is_typedef;
-                }
-            }
-        }
-        false
+        self.map.get(&symbol).is_some_and(|stack| *stack.last().unwrap())
     }
 
     /// Add a typedef name
     fn add_typedef(&mut self, symbol: NameId) {
-        self.scopes.last_mut().unwrap().push((symbol, true));
+        self.scopes.last_mut().unwrap().push(symbol);
+        self.map.entry(symbol).or_default().push(true);
     }
 
     /// Add a non-typedef name (e.g. variable or function) that shadows outer typedefs
     fn add_non_typedef(&mut self, symbol: NameId) {
-        self.scopes.last_mut().unwrap().push((symbol, false));
+        self.scopes.last_mut().unwrap().push(symbol);
+        self.map.entry(symbol).or_default().push(false);
     }
 
     fn push_scope(&mut self) {
@@ -80,7 +84,14 @@ impl TypeDefContext {
     }
 
     fn pop_scope(&mut self) {
-        self.scopes.pop();
+        let names = self.scopes.pop().expect("pop_scope on empty TypeDefContext");
+        for name in names {
+            let stack = self.map.get_mut(&name).unwrap();
+            stack.pop();
+            if stack.is_empty() {
+                self.map.remove(&name);
+            }
+        }
     }
 
     fn get_last_scope_len(&self) -> usize {
@@ -89,7 +100,14 @@ impl TypeDefContext {
 
     fn truncate_last_scope(&mut self, len: usize) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.truncate(len);
+            while scope.len() > len {
+                let name = scope.pop().unwrap();
+                let stack = self.map.get_mut(&name).unwrap();
+                stack.pop();
+                if stack.is_empty() {
+                    self.map.remove(&name);
+                }
+            }
         }
     }
 }

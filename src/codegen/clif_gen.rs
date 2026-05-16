@@ -313,15 +313,26 @@ fn emit_const_struct(
                 base_offset + field_offset as u32,
             );
 
+            let bit_info = if let Some(width) = field_layout.bit_width {
+                let offset = field_layout.bit_offset.unwrap_or(0);
+                Some((width, offset))
+            } else {
+                None
+            };
+
             // Copy the field bytes into the struct buffer, resizing if necessary
-            let required_size = field_offset + field_bytes.len();
+            let bytes_needed = if let Some((width, offset)) = bit_info {
+                (offset + width).div_ceil(8) as usize
+            } else {
+                field_bytes.len()
+            };
+            
+            let required_size = field_offset + bytes_needed;
             if required_size > struct_bytes.len() {
                 struct_bytes.resize(required_size, 0);
             }
 
-            if let Some(bit_width) = field_layout.bit_width {
-                let bit_offset = field_layout.bit_offset.unwrap_or(0);
-
+            if let Some((bit_width, bit_offset)) = bit_info {
                 // Pack bitfield into the storage unit.
                 let mut val = 0u64;
                 for (i, &b) in field_bytes.iter().enumerate().take(8) {
@@ -335,7 +346,7 @@ fn emit_const_struct(
                 for (i, byte) in struct_bytes[field_offset..]
                     .iter_mut()
                     .enumerate()
-                    .take(field_bytes.len())
+                    .take(bytes_needed)
                 {
                     let byte_mask = (full_mask >> (i * 8)) as u8;
                     let byte_val = (packed_val >> (i * 8)) as u8;
@@ -1420,25 +1431,59 @@ fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> 
         }
         Place::StructField(base_place, field_index, bit_info) => {
             let addr = emit_place_addr(&Place::StructField(base_place.clone(), *field_index, *bit_info), ctx);
-            let raw_val = ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0);
+            
+            let (load_type, actual_bit_info) = if let Some(info) = bit_info {
+                let st = match info.storage_size {
+                    1 => types::I8,
+                    2 => types::I16,
+                    4 => types::I32,
+                    8 => types::I64,
+                    _ => expected_type,
+                };
+                // Use the larger of the two to be safe, but usually st is what we want
+                let final_ty = if st.bits() > expected_type.bits() { st } else { expected_type };
+                (final_ty, Some(info))
+            } else {
+                (expected_type, None)
+            };
 
-            if let Some(info) = bit_info {
-                let bits = expected_type.bits() as i64;
-                let left_shift = bits - (info.offset + info.width) as i64;
-                let right_shift = bits - info.width as i64;
-
-                let mut val = raw_val;
-                if left_shift > 0 {
-                    val = ctx.builder.ins().ishl_imm(val, left_shift);
+                        let raw_val = {
+                let v = ctx.builder.ins().load(load_type, MemFlags::new(), addr, 0);
+                if load_type.bits() > 32 {
+                   // println!("DEBUG: Loaded 64-bit value for bit-field");
                 }
-                if right_shift > 0 {
-                    if info.is_signed {
-                        val = ctx.builder.ins().sshr_imm(val, right_shift);
-                    } else {
-                        val = ctx.builder.ins().ushr_imm(val, right_shift);
+                v
+            };
+            
+            if let Some(info) = actual_bit_info {
+                let mut val = raw_val;
+                
+                // 1. Shift right to move the field to the LSB
+                if info.offset > 0 {
+                    val = ctx.builder.ins().ushr_imm(val, info.offset as i64);
+                }
+                
+                // 2. Mask out higher bits
+                if info.width < load_type.bits() as u16 {
+                    let mask = (1u64 << info.width) - 1;
+                    val = ctx.builder.ins().band_imm(val, mask as i64);
+                }
+                
+                // 3. Sign-extend if necessary
+                if info.is_signed {
+                    let shift = load_type.bits() as i64 - info.width as i64;
+                    if shift > 0 {
+                        val = ctx.builder.ins().ishl_imm(val, shift);
+                        val = ctx.builder.ins().sshr_imm(val, shift);
                     }
                 }
-                val
+                
+                // 4. Convert back to expected_type if they differ
+                if load_type != expected_type {
+                    emit_type_conversion(val, load_type, expected_type, info.is_signed, ctx.builder)
+                } else {
+                    val
+                }
             } else {
                 raw_val
             }
@@ -1769,17 +1814,38 @@ fn emit_place_store(place: &Place, value: Value, expected_type: Type, ctx: &mut 
         }
         Place::StructField(.., Some(bit_info)) => {
             let addr = emit_place_addr(place, ctx);
-            let original = ctx.builder.ins().load(expected_type, MemFlags::new(), addr, 0);
+            
+            let load_type = match bit_info.storage_size {
+                1 => types::I8,
+                2 => types::I16,
+                4 => types::I32,
+                8 => types::I64,
+                _ => expected_type,
+            };
+            let load_type = if load_type.bits() > expected_type.bits() { load_type } else { expected_type };
 
-            let mask = if bit_info.width == 64 {
+            let original = ctx.builder.ins().load(load_type, MemFlags::new(), addr, 0);
+
+            let mask = if bit_info.width >= 64 {
                 !0u64
             } else {
                 (1u64 << bit_info.width) - 1
             };
-            let bit_mask = mask << bit_info.offset;
+            let bit_mask = if bit_info.offset >= 64 {
+                0 // Should not happen with sliding units, but be safe
+            } else {
+                mask << bit_info.offset
+            };
+
+            // Prepare the new value by casting it to the load type
+            let converted_value = if load_type != expected_type {
+                emit_type_conversion(value, expected_type, load_type, false, ctx.builder)
+            } else {
+                value
+            };
 
             let masked_original = ctx.builder.ins().band_imm(original, !(bit_mask as i64));
-            let masked_new = ctx.builder.ins().band_imm(value, mask as i64);
+            let masked_new = ctx.builder.ins().band_imm(converted_value, mask as i64);
             let shifted_new = ctx.builder.ins().ishl_imm(masked_new, bit_info.offset as i64);
             let final_val = ctx.builder.ins().bor(masked_original, shifted_new);
 

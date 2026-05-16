@@ -1026,6 +1026,13 @@ impl<'src> Preprocessor<'src> {
                     last_sid = (Some(sid), is_virtual);
                 }
 
+                // Bolt ⚡: Preserve leading spaces between tokens in the virtual buffer.
+                // This significantly improves diagnostic readability by preventing tokens
+                // from being merged in error snippets (e.g. 'struct{inta;}' vs 'struct { int a; }').
+                if !buffer.is_empty() && t.flags.contains(PPTokenFlags::LEADING_SPACE) {
+                    buffer.push(b' ');
+                }
+
                 let offset = buffer.len() as u32;
                 buffer.extend_from_slice(cache.get_token_bytes(t));
                 let new_len = (buffer.len() as u32 - offset) as u16;

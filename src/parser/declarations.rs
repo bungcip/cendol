@@ -366,7 +366,7 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
                     ParsedAlignmentSpec::Expr(parser.parse_expr_min()?)
                 };
                 parser.expect(TokenKind::RightParen)?;
-                specifiers.push(DeclSpec::AlignmentSpec(alignment));
+                specifiers.push(DeclSpec::AlignmentSpec(alignment, false));
             }
 
             _ => break,
@@ -486,7 +486,7 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
                             ParsedAlignmentSpec::Expr(parser.parse_expr_min()?)
                         };
                         parser.expect(TokenKind::RightParen)?;
-                        specs.push(DeclSpec::AlignmentSpec(alignment));
+                        specs.push(DeclSpec::AlignmentSpec(alignment, true));
                     }
                 } else if name == parser.keywords.attr_packed || name == parser.keywords.attr_packed_underscore {
                     specs.push(DeclSpec::AttributePacked);

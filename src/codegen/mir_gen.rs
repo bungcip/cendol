@@ -1426,10 +1426,10 @@ impl<'a> MirGen<'a> {
             size: 24,
             align: 8,
             fields: vec![
-                MirFieldLayout::new(0),
-                MirFieldLayout::new(4),
-                MirFieldLayout::new(8),
-                MirFieldLayout::new(16),
+                MirFieldLayout::new(0, 4),
+                MirFieldLayout::new(4, 4),
+                MirFieldLayout::new(8, 8),
+                MirFieldLayout::new(16, 8),
             ],
         };
 
@@ -1590,8 +1590,8 @@ impl<'a> MirGen<'a> {
                 size: element_size * 2,
                 align: element_align,
                 fields: vec![
-                    MirFieldLayout::new(0).signed(true),
-                    MirFieldLayout::new(element_size).signed(true),
+                    MirFieldLayout::new(0, 0).signed(true),
+                    MirFieldLayout::new(element_size, 0).signed(true),
                 ],
             },
         }

@@ -435,7 +435,7 @@ fn test_place_field_out_of_bounds() {
         layout: MirRecordLayout {
             size: 4,
             align: 4,
-            fields: vec![MirFieldLayout::new(0).signed(true)],
+            fields: vec![MirFieldLayout::new(0, 4).signed(true)],
         },
     };
     let struct_ty_id = add_type(&mut mir, struct_ty);
@@ -479,7 +479,7 @@ fn test_rvalue_cast_aggregate_invalid() {
         layout: MirRecordLayout {
             size: 4,
             align: 4,
-            fields: vec![MirFieldLayout::new(0).signed(true)],
+            fields: vec![MirFieldLayout::new(0, 4).signed(true)],
         },
     };
     let struct_ty_id = add_type(&mut mir, struct_ty);

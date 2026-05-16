@@ -191,6 +191,7 @@ pub(crate) enum Terminator {
 pub(crate) struct BitFieldInfo {
     pub(crate) width: u16,
     pub(crate) offset: u16,
+    pub(crate) storage_size: u16,
     pub(crate) is_signed: bool,
 }
 
@@ -483,15 +484,17 @@ pub(crate) struct MirFieldLayout {
     pub(crate) offset: u64,
     pub(crate) bit_width: Option<u16>,
     pub(crate) bit_offset: Option<u16>,
+    pub(crate) storage_size: u64,
     pub(crate) is_signed: bool,
 }
 
 impl MirFieldLayout {
-    pub(crate) fn new(offset: u64) -> Self {
+    pub(crate) fn new(offset: u64, storage_size: u64) -> Self {
         Self {
             offset,
             bit_width: None,
             bit_offset: None,
+            storage_size,
             is_signed: false,
         }
     }
@@ -501,6 +504,7 @@ impl MirFieldLayout {
             offset: self.offset,
             bit_offset: self.bit_offset,
             bit_width: self.bit_width,
+            storage_size: self.storage_size,
             is_signed: value,
         }
     }
@@ -510,6 +514,7 @@ impl MirFieldLayout {
             offset: fl.offset,
             bit_width: fl.bit_width,
             bit_offset: fl.bit_offset,
+            storage_size: fl.storage_size,
             is_signed: false,
         }
     }

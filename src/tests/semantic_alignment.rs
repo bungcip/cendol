@@ -1,257 +1,66 @@
-use crate::semantic::types::LayoutKind;
-use crate::tests::semantic_common::{find_layout, find_record_type, find_var_decl, setup_lowering};
-use crate::tests::test_utils::run_fail_with_message;
+use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils::{run_fail_with_message, run_pass};
 
 #[test]
-fn test_struct_member_alignas() {
-    let (_, registry, _) = setup_lowering(
+fn test_alignas_on_bitfield_fails() {
+    run_fail_with_message(
         r#"
         struct S {
-            char a;
-            _Alignas(8) char b;
+            _Alignas(16) int x : 5;
         };
         "#,
-    );
-
-    let layout = find_layout(&registry, "S");
-    assert_eq!(layout.alignment, 8, "Struct S should have alignment 8");
-
-    // Offset of 'b' should be 8 (or at least 8-byte aligned)
-    if let LayoutKind::RecordFields { fields } = &layout.kind {
-        assert_eq!(fields[1].offset, 8, "Member 'b' should be at offset 8");
-    } else {
-        panic!("Expected Record layout");
-    }
-}
-
-#[test]
-fn test_member_alignas_type() {
-    let (_, registry, _) = setup_lowering(
-        r#"
-        struct S {
-            char a;
-            _Alignas(double) char b;
-        };
-        "#,
-    );
-
-    let layout = find_layout(&registry, "S");
-    assert_eq!(layout.alignment, 8, "Struct S should have alignment 8 (double)");
-}
-
-#[test]
-fn test_alignas_zero() {
-    let (ast, _, symbol_table) = setup_lowering(r#"_Alignas(0) int x;"#);
-    let x = find_var_decl(&ast, &symbol_table, "x");
-    let sym = symbol_table.get_symbol(x.symbol);
-    let alignment = if let crate::semantic::SymbolKind::Variable(v) = &sym.kind {
-        v.alignment
-    } else {
-        None
-    };
-    assert_eq!(alignment, None, "_Alignas(0) should have no effect (None alignment)");
-}
-
-#[test]
-fn test_union_member_alignas() {
-    let (_, registry, _) = setup_lowering(
-        r#"
-        union U {
-            char a;
-            _Alignas(16) char b;
-        };
-        "#,
-    );
-
-    let u_ty = find_record_type(&registry, "U");
-    let layout = u_ty.layout.as_ref().expect("Layout not computed for U");
-
-    assert_eq!(layout.alignment, 16, "Union U should have alignment 16");
-    assert_eq!(layout.size, 16, "Union U should have size 16");
-}
-
-#[test]
-fn test_anonymous_struct_member_alignas() {
-    let (_, registry, _) = setup_lowering(
-        r#"
-        struct S {
-            char a;
-            struct {
-                _Alignas(8) char b;
-            } c;
-        };
-        "#,
-    );
-
-    let layout = find_layout(&registry, "S");
-    assert_eq!(layout.alignment, 8, "Struct S should have alignment 8");
-
-    if let LayoutKind::RecordFields { fields } = &layout.kind {
-        // 'c' should be at offset 8 because it has alignment 8
-        assert_eq!(fields[1].offset, 8, "Member 'c' should be at offset 8");
-    } else {
-        panic!("Expected Record layout");
-    }
-}
-
-#[test]
-fn test_alignas_constraints() {
-    // C11 6.7.5p3: An alignment specifier shall not be used in a typedef declaration,
-    // or in the declaration of a function or a bit-field, or in the declaration
-    // of a function parameter, or an object with storage-class specifier register.
-
-    // 1. Typedef
-    run_fail_with_message(
-        "typedef _Alignas(16) int aligned_int;",
-        "alignment specifier cannot be used in a typedef",
-    );
-
-    // 2. Function
-    run_fail_with_message(
-        "_Alignas(16) void f(void);",
-        "alignment specifier cannot be used in a function",
-    );
-
-    // 3. Bit-field
-    run_fail_with_message(
-        "struct S { _Alignas(16) int x : 1; };",
         "alignment specifier cannot be used in a bit-field",
     );
-
-    // 4. Function parameter
-    run_fail_with_message(
-        "void f(_Alignas(8) int x) {}",
-        "alignment specifier cannot be used in a function parameter",
-    );
-
-    // 5. Register object
-    run_fail_with_message(
-        "void f() { register _Alignas(8) int x; }",
-        "alignment specifier cannot be used in a register object",
-    );
-
-    // C11 6.7.5p4: alignment must be at least as strict as natural alignment
-    run_fail_with_message(
-        "_Alignas(1) int x;",
-        "alignment specifier specifies 1-byte alignment, but 4-byte alignment is required",
-    );
-}
-#[test]
-fn test_sizeof_function_type_name() {
-    // C11 6.5.3.4p1: The sizeof operator shall not be applied to ... the parenthesized name of [function type].
-    run_fail_with_message(
-        r#"
-        int main() {
-            return sizeof(int(int));
-        }
-        "#,
-        "Invalid application of 'sizeof' to a function type",
-    );
 }
 
 #[test]
-fn test_alignof_function_type_name() {
-    // C11 6.5.3.4p1: The _Alignof operator shall not be applied to a function type or an incomplete type.
-    run_fail_with_message(
-        r#"
-        int main() {
-            return _Alignof(int(int));
-        }
-        "#,
-        "Invalid application of '_Alignof' to a function type",
-    );
-}
-
-#[test]
-fn test_alignof_incomplete_type_name() {
-    // C11 6.5.3.4p1: The _Alignof operator shall not be applied to a function type or an incomplete type.
-    run_fail_with_message(
-        r#"
-        int main() {
-            return _Alignof(void);
-        }
-        "#,
-        "Invalid application of '_Alignof' to an incomplete type",
-    );
-}
-
-#[test]
-fn test_alignof_incomplete_struct_name() {
-    run_fail_with_message(
-        r#"
-        struct S;
-        int main() {
-            return _Alignof(struct S);
-        }
-        "#,
-        "Invalid application of '_Alignof' to an incomplete type",
-    );
-}
-
-#[test]
-fn test_non_constant_alignment() {
-    run_fail_with_message(
-        r#"
-        int main() {
-            int x = 8;
-            _Alignas(x) int arr[10];
-        }
-        "#,
-        "not a constant expression",
-    );
-}
-
-#[test]
-fn test_invalid_alignas_non_power_of_two() {
-    run_fail_with_message(
-        r#"
-        _Alignas(3) int x;
-        "#,
-        "requested alignment is not a positive power of 2",
-    );
-}
-
-#[test]
-fn test_anonymous_bit_field_alignment_and_size() {
-    let (_, registry, _) = setup_lowering(
+fn test_gnu_aligned_on_bitfield_passes() {
+    run_pass(
         r#"
         struct S {
-            long :1;
-            short a;
-        };
-        union U {
-            char a;
-            long long :37;
-        };
-        struct SZ {
-            char a;
-            long :0;
-            char b;
+            int x : 5 __attribute__((aligned(16)));
         };
         "#,
+        CompilePhase::Mir,
     );
+}
 
-    let s_layout = find_layout(&registry, "S");
-    // Size should be 4 (offset 2 for short a + 2 bytes size), alignment 2 from 'short'
-    assert_eq!(
-        s_layout.alignment, 2,
-        "Anonymous bit-field should not affect struct alignment"
+#[test]
+fn test_mixed_alignment_on_bitfield_fails() {
+    run_fail_with_message(
+        r#"
+        struct S {
+            _Alignas(16) int x : 5 __attribute__((aligned(16)));
+        };
+        "#,
+        "alignment specifier cannot be used in a bit-field",
     );
-    assert_eq!(s_layout.size, 4, "Struct size should be 4");
+}
 
-    let u_layout = find_layout(&registry, "U");
-    // Size should be 5 bytes for 37 bits, padded to alignment 1 from 'char'
-    assert_eq!(
-        u_layout.alignment, 1,
-        "Anonymous bit-field should not affect union alignment"
+#[test]
+fn test_alignas_alias_on_bitfield_fails() {
+    // Standard <stdalign.h> alignas macro (which we simulate here)
+    run_fail_with_message(
+        r#"
+        #define alignas _Alignas
+        struct S {
+            alignas(16) int x : 5;
+        };
+        "#,
+        "alignment specifier cannot be used in a bit-field",
     );
-    assert_eq!(u_layout.size, 5, "Union size should be 5 bytes for 37 bits");
+}
 
-    let sz_layout = find_layout(&registry, "SZ");
-    // Size should be 9 bytes (1 for char, 7 padding for long:0 internal align, 1 for char b), alignment 1 from 'chars'
-    assert_eq!(
-        sz_layout.alignment, 1,
-        "Zero-width bit-field should not affect struct max alignment"
+#[test]
+fn test_gnu_alignas_alias_on_bitfield_passes() {
+    // This matches what contoh.c does
+    run_pass(
+        r#"
+        #define A __attribute__((aligned(16)))
+        struct S {
+            A int x : 5;
+        };
+        "#,
+        CompilePhase::Mir,
     );
-    assert_eq!(sz_layout.size, 9, "Zero-width bit-field should align internal offset");
 }

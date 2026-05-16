@@ -319,7 +319,7 @@ fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, b
                     FunctionSpec::Inline => is_inline = true,
                     FunctionSpec::Noreturn => is_noreturn = true,
                 },
-                DeclSpec::AlignmentSpec(align) => alignment = Some(align.clone()),
+                DeclSpec::AlignmentSpec(align, _) => alignment = Some(align.clone()),
                 _ => {}
             }
         }

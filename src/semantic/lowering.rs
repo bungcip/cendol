@@ -381,7 +381,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             for attr in attributes {
                 match attr {
                     DeclSpec::AttributePacked => packing = Some(1),
-                    DeclSpec::AlignmentSpec(aspec) => {
+                    DeclSpec::AlignmentSpec(aspec, _) => {
                         if let Some(val) = self.resolve_alignment(aspec, span) {
                             alignment = Some(std::cmp::max(alignment.unwrap_or(0), val));
                         }
@@ -581,6 +581,8 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) is_inline: bool,
     pub(crate) is_noreturn: bool,
     pub(crate) alignment: Option<u16>,
+    pub(crate) is_gnu_aligned: bool,
+    pub(crate) has_c11_alignment: bool,
     pub(crate) has_auto: bool,
     pub(crate) is_packed: bool,
     pub(crate) cleanup_func: Option<ParsedNodeRef>,
@@ -2924,7 +2926,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     match spec {
                         DeclSpec::AttributeCleanup(expr) => info.cleanup_func = Some(*expr),
                         DeclSpec::AttributePacked => info.is_packed = true,
-                        DeclSpec::AlignmentSpec(align) => info.alignment = self.resolve_alignment(align, span),
+                        DeclSpec::AlignmentSpec(align, is_gnu) => {
+                            info.alignment = self.resolve_alignment(align, span);
+                            if *is_gnu {
+                                info.is_gnu_aligned = true;
+                            } else {
+                                info.has_c11_alignment = true;
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -3420,9 +3429,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     });
                     info.base_type = self.merge_base_type(info.base_type, ty, span);
                 }
-                DeclSpec::AlignmentSpec(align) => {
+                DeclSpec::AlignmentSpec(align, is_gnu) => {
                     if let Some(val) = self.resolve_alignment(align, span) {
                         info.alignment = Some(std::cmp::max(info.alignment.unwrap_or(0), val));
+                    }
+                    if *is_gnu {
+                        info.is_gnu_aligned = true;
+                    } else {
+                        info.has_c11_alignment = true;
                     }
                 }
                 DeclSpec::FunctionSpec(fs) => match fs {
@@ -3643,7 +3657,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     for id in &decl.init_declarators {
                         let bit_field_size = self.extract_bit_field_width(id.declarator);
 
-                        if bit_field_size.is_some() && spec_info.alignment.is_some() {
+                        if bit_field_size.is_some() && spec_info.has_c11_alignment {
                             self.report_error(id.span, SemanticError::AlignmentNotAllowed { context: "bit-field" });
                         }
 

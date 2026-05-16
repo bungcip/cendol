@@ -609,7 +609,11 @@ fn keyword_map() -> &'static hashbrown::HashMap<StringId, TokenKind> {
         m.insert(StringId::new("__imag__"), TokenKind::Imag);
         m.insert(StringId::new("__builtin_imag"), TokenKind::Imag);
         m.insert(StringId::new("_Alignas"), TokenKind::Alignas);
+        m.insert(StringId::new("__alignas"), TokenKind::Alignas);
+        m.insert(StringId::new("__alignas__"), TokenKind::Alignas);
         m.insert(StringId::new("_Alignof"), TokenKind::Alignof);
+        m.insert(StringId::new("__alignof"), TokenKind::Alignof);
+        m.insert(StringId::new("__alignof__"), TokenKind::Alignof);
         m.insert(StringId::new("_Atomic"), TokenKind::Atomic);
         m.insert(StringId::new("_Bool"), TokenKind::Bool);
         m.insert(StringId::new("_Complex"), TokenKind::Complex);

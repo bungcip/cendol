@@ -72,12 +72,18 @@ pub(super) fn integer_promotion(ctx: &TypeRegistry, qt: QualType, bitfield_width
     }
 
     if let Some(width) = bitfield_width {
-        let fits = if ctx.get(qt.ty()).is_signed() {
-            width <= 32
-        } else {
-            width < 32
-        };
-        return QualType::unqualified(if fits { ctx.type_int } else { ctx.type_int_unsigned });
+        let int_width = ctx.get(ctx.type_int).width() as u16;
+        if width <= int_width {
+            let fits_in_signed = if ctx.get(qt.ty()).is_signed() {
+                width <= int_width
+            } else {
+                width < int_width
+            };
+            return QualType::unqualified(if fits_in_signed { ctx.type_int } else { ctx.type_int_unsigned });
+        }
+        // Bit-fields wider than int are not promoted to int/unsigned int.
+        // They are promoted according to their underlying type, which for long long is long long.
+        return qt;
     }
 
     if qt.is_enum()

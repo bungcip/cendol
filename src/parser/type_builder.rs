@@ -280,7 +280,7 @@ fn parse_record_members(
 
 fn extract_alignment(specifiers: &[DeclSpec], parser: &Parser) -> Option<u16> {
     for spec in specifiers {
-        if let DeclSpec::AlignmentSpec(align_spec) = spec {
+        if let DeclSpec::AlignmentSpec(align_spec, _) = spec {
             match align_spec {
                 ParsedAlignmentSpec::Expr(expr) => {
                     if let ParsedNodeKind::Literal(lit) = parser.ast.get_node(*expr).kind

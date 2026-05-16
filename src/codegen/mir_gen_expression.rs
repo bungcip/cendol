@@ -1249,6 +1249,7 @@ impl<'a> MirGen<'a> {
                     field.bit_offset.map(|o| BitFieldInfo {
                         width: w,
                         offset: o,
+                        storage_size: field.storage_size as u16,
                         is_signed: field.is_signed,
                     })
                 })

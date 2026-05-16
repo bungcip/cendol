@@ -44,10 +44,10 @@ pub struct FieldLayout {
     pub offset: u64,
     pub bit_width: Option<u16>,
     pub bit_offset: Option<u16>,
+    pub storage_size: u64,
 }
 
 impl Type {
-    /// Create a new type with default qualifiers
     /// can only be called by TypeRegistry
     pub(crate) fn new(kind: TypeKind) -> Self {
         Type { kind, layout: None }

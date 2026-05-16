@@ -46,6 +46,7 @@ pub mod semantic_common;
 pub mod semantic_const_eval;
 pub mod semantic_lowering;
 pub mod semantic_mir;
+pub mod semantic_alignment;
 pub mod semantic_negative;
 pub mod semantic_nullptr;
 pub mod semantic_regr_unary_promotion;
@@ -54,6 +55,7 @@ pub mod semantic_validation;
 
 pub mod parser_c23_attributes;
 pub mod parser_decl;
+pub mod parser_alignof_gnu;
 pub mod parser_declarator_coverage;
 pub mod parser_errors;
 pub mod parser_expr;
@@ -67,7 +69,6 @@ pub mod guardian_modifiable_lvalue;
 pub mod guardian_pointer_arithmetic_completeness;
 pub mod guardian_struct_member;
 pub mod parser_gcc_extensions;
-pub mod semantic_alignment;
 pub mod semantic_composite;
 pub mod test_utils;
 

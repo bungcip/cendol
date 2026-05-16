@@ -1288,21 +1288,25 @@ impl TypeRegistry {
                                 offset: 0,
                                 bit_width: None,
                                 bit_offset: None,
+                                storage_size: 4,
                             },
                             FieldLayout {
                                 offset: 4,
                                 bit_width: None,
                                 bit_offset: None,
+                                storage_size: 4,
                             },
                             FieldLayout {
                                 offset: 8,
                                 bit_width: None,
                                 bit_offset: None,
+                                storage_size: 8,
                             },
                             FieldLayout {
                                 offset: 16,
                                 bit_width: None,
                                 bit_offset: None,
+                                storage_size: 8,
                             },
                         ]),
                     },
@@ -1465,6 +1469,7 @@ impl TypeRegistry {
                     offset,
                     bit_width: None,
                     bit_offset: None,
+                    storage_size: 0, // FAM has no storage size in this context
                 });
 
                 // We do NOT update current_size with FAM size (which is effectively 0 or variable).
@@ -1526,12 +1531,13 @@ impl TypeRegistry {
                     offset: 0,
                     bit_width: member.bit_field_size,
                     bit_offset: if member.bit_field_size.is_some() { Some(0) } else { None },
+                    storage_size: layout.size,
                 });
             } else if let Some(bits) = member.bit_field_size {
                 if bits == 0 {
-                    // Force alignment to next storage unit
-                    let align_u64 = member_align as u64;
-                    current_size = (current_size + align_u64 - 1) & !(align_u64 - 1);
+                    // Force alignment to next storage unit based on type's natural alignment
+                    let natural_align = layout.alignment as u64;
+                    current_size = (current_size + natural_align - 1) & !(natural_align - 1);
                     current_unit_offset = None;
                     current_unit_bit_offset = 0;
                     current_unit_size = 0;
@@ -1539,46 +1545,108 @@ impl TypeRegistry {
                         offset: current_size,
                         bit_width: Some(0),
                         bit_offset: Some(0),
+                        storage_size: layout.size,
                     });
                 } else {
                     // For unnamed bit-fields, they don't affect alignment of subsequent members
                     // but they do take up some space in the struct
-                    let is_unnamed = member.name.is_none();
 
+                    let can_cross_boundary = packing == Some(1);
                     let mut fits = false;
-                    if current_unit_offset.is_some()
-                        && current_unit_size == layout.size
-                        && current_unit_bit_offset + (bits as u64) <= layout.size * 8
-                    {
-                        fits = true;
+                    if let Some(unit_offset) = current_unit_offset {
+                        let new_unit_size = current_unit_size.max(layout.size);
+                        let align_mask = (member_align as u64) - 1;
+                        
+                        // Rule: a bit-field must entirely reside in a storage unit of its type.
+                        // This means it cannot cross a boundary of its alignment.
+                        let mut bit_offset = current_unit_bit_offset;
+                        // DEBUG
+                        if bits > 0 {
+                            // println!("DEBUG: bitfield size {} align {} offset {} unit_offset {}", bits, member_align, bit_offset, unit_offset);
+                        }
+                        
+                        let align_bits = (member_align as u64) * 8;
+                        if !can_cross_boundary && bit_offset % align_bits != 0 {
+                            let next_align = bit_offset.div_ceil(align_bits) * align_bits;
+                            if bit_offset + (bits as u64) > next_align {
+                                // Crosses boundary, must align
+                                bit_offset = next_align;
+                            }
+                        }
+
+                        
+                        if (unit_offset & align_mask) == 0
+                            && (can_cross_boundary || bit_offset + (bits as u64) <= new_unit_size * 8)
+                        {
+                            fits = true;
+                            let mut actual_bit_offset = bit_offset;
+                            let mut actual_unit_offset = unit_offset;
+                            
+                            if can_cross_boundary && actual_bit_offset >= 8 {
+                                let bytes = actual_bit_offset / 8;
+                                actual_unit_offset += bytes;
+                                actual_bit_offset %= 8;
+                            }
+                            
+                            current_unit_offset = Some(actual_unit_offset);
+                            current_unit_bit_offset = actual_bit_offset;
+                            current_unit_size = new_unit_size;
+
+                            let field_storage_size = if can_cross_boundary {
+                                let bits_needed = actual_bit_offset + (bits as u64);
+                                let mut s = 1;
+                                while s < new_unit_size && (s * 8) < bits_needed {
+                                    s *= 2;
+                                }
+                                s
+                            } else {
+                                new_unit_size
+                            };
+
+                            field_layouts.push(FieldLayout {
+                                offset: actual_unit_offset,
+                                bit_width: Some(bits),
+                                bit_offset: Some(actual_bit_offset as u16),
+                                storage_size: field_storage_size,
+                            });
+                            
+                            current_unit_bit_offset += bits as u64;
+                            
+                            if can_cross_boundary {
+                                current_size = current_size.max(actual_unit_offset + (actual_bit_offset + bits as u64).div_ceil(8));
+                            } else {
+                                current_size = current_size.max(actual_unit_offset + current_unit_size);
+                            }
+                        }
                     }
 
-                    if fits {
-                        field_layouts.push(FieldLayout {
-                            offset: current_unit_offset.unwrap(),
-                            bit_width: Some(bits),
-                            bit_offset: Some(current_unit_bit_offset as u16),
-                        });
-                        current_unit_bit_offset += bits as u64;
-                    } else {
+                    if !fits {
                         let align_u64 = member_align as u64;
                         let offset = (current_size + align_u64 - 1) & !(align_u64 - 1);
+                        
+                        let field_storage_size = if can_cross_boundary {
+                            let mut s = 1;
+                            while s < layout.size && (s * 8) < (bits as u64) {
+                                s *= 2;
+                            }
+                            s
+                        } else {
+                            layout.size
+                        };
+
                         field_layouts.push(FieldLayout {
                             offset,
                             bit_width: Some(bits),
                             bit_offset: Some(0),
+                            storage_size: field_storage_size,
                         });
 
-                        // For unnamed bit-fields, we only consume the bytes needed for the bits,
-                        // not the full type size. This ensures subsequent members are not affected
-                        // by the unnamed bit-field's type alignment.
-                        let bytes_needed = ((bits as u64) + 7) >> 3;
-                        if is_unnamed {
-                            // Reserve only the bytes needed for the bits
-                            current_size = offset + bytes_needed;
+                        if can_cross_boundary {
+                            current_size = offset + (bits as u64).div_ceil(8);
                         } else {
                             current_size = offset + layout.size;
                         }
+                        
                         current_unit_offset = Some(offset);
                         current_unit_bit_offset = bits as u64;
                         current_unit_size = layout.size;
@@ -1596,6 +1664,7 @@ impl TypeRegistry {
                     offset,
                     bit_width: None,
                     bit_offset: None,
+                    storage_size: layout.size,
                 });
                 current_size = offset + layout.size;
             }

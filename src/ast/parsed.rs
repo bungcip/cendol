@@ -191,7 +191,7 @@ pub enum DeclSpec {
     StorageClass(StorageClass),
     TypeQualifier(TypeQualifier),
     FunctionSpec(FunctionSpec),
-    AlignmentSpec(ParsedAlignmentSpec),
+    AlignmentSpec(ParsedAlignmentSpec, bool /* is_gnu */),
     TypeSpec(TypeSpec),
     Attribute,
     AttributePacked,
@@ -335,7 +335,7 @@ pub enum ParsedDesignator {
 impl DeclSpec {
     pub(crate) fn for_each_child(&self, f: &mut impl FnMut(ParsedNodeRef)) {
         match self {
-            DeclSpec::AlignmentSpec(aspec) => aspec.for_each_child(f),
+            DeclSpec::AlignmentSpec(aspec, _) => aspec.for_each_child(f),
             DeclSpec::TypeSpec(ts) => ts.for_each_child(f),
             DeclSpec::AttributeCleanup(e) => f(*e),
             _ => {}

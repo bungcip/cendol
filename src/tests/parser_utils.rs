@@ -161,7 +161,7 @@ fn resolve_specs(ast: &ParsedAst, specifiers: &[DeclSpec]) -> Vec<String> {
             DeclSpec::StorageClass(sc) => format!("{:?}", sc),
             DeclSpec::TypeQualifier(tq) => format!("TypeQualifier({:?})", tq),
             DeclSpec::FunctionSpec(fs) => format!("{:?}", fs),
-            DeclSpec::AlignmentSpec(aspec) => format!("{:?}", aspec),
+            DeclSpec::AlignmentSpec(aspec, _) => format!("{:?}", aspec),
             DeclSpec::Attribute => "__attribute__".to_string(),
             DeclSpec::AttributePacked => "packed".to_string(),
             DeclSpec::AttributeCleanup(_) => "cleanup(...)".to_string(),

@@ -103,7 +103,7 @@ impl Ast {
     pub(crate) fn scope_of(&self, node: NodeRef) -> ScopeId {
         match &self.kinds[node.index()] {
             NodeKind::TranslationUnit(data) => data.scope_id,
-            NodeKind::Function(data) => {
+            NodeKind::FunctionDef(data) => {
                 let body_node = data.child_start.add_offset(data.param_len);
                 self.scope_of(body_node) // delegate to CompoundStmt body (last child)
             }

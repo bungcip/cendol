@@ -882,7 +882,7 @@ pub enum TypeKind {
     },
     Function {
         return_type: TypeRef,
-        parameters: Arc<[FunctionParameter]>,
+        parameters: Arc<[FunctionParam]>,
         is_variadic: bool,
         is_noreturn: bool,
     },
@@ -1040,7 +1040,7 @@ impl Display for TypeQualifiers {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FunctionParameter {
+pub struct FunctionParam {
     pub param_type: QualType,
     pub name: Option<NameId>,
     pub storage: Option<StorageClass>,

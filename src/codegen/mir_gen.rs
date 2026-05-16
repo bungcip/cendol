@@ -9,7 +9,7 @@ use crate::mir::{
 };
 use crate::semantic::ArraySizeType;
 use crate::semantic::BuiltinType;
-use crate::semantic::FunctionParameter;
+use crate::semantic::FunctionParam;
 use crate::semantic::QualType;
 use crate::semantic::SymbolKind;
 use crate::semantic::SymbolRef;
@@ -292,7 +292,7 @@ impl<'a> MirGen<'a> {
                 self.current_scope_id = self.ast.scope_of(node);
                 self.visit_translation_unit(&tu)
             }
-            NodeKind::Function(function) => {
+            NodeKind::FunctionDef(function) => {
                 self.current_scope_id = self.ast.scope_of(node);
                 self.visit_function(&function)
             }
@@ -487,7 +487,7 @@ impl<'a> MirGen<'a> {
         }
     }
 
-    fn visit_function(&mut self, function: &Function) {
+    fn visit_function(&mut self, function: &FunctionDef) {
         let symbol_entry = self.symbol_table.get_symbol(function.symbol);
         let func_name = symbol_entry.name;
 
@@ -522,7 +522,7 @@ impl<'a> MirGen<'a> {
         self.func_state = None;
     }
 
-    fn map_parameters(&mut self, func_id: MirFunctionId, function: &Function, param_len: u16) {
+    fn map_parameters(&mut self, func_id: MirFunctionId, function: &FunctionDef, param_len: u16) {
         let mir_params = self.mb.get_functions().get(func_id.index()).unwrap().params.clone();
         for (i, param) in function.child_start.range(param_len).enumerate() {
             if let NodeKind::Param(param) = self.ast.get_kind(param) {
@@ -1315,7 +1315,7 @@ impl<'a> MirGen<'a> {
             Builtin(BuiltinType),
             Pointer(QualType),
             Array(TypeRef, ArraySizeType),
-            Function(TypeRef, Vec<FunctionParameter>, bool),
+            Function(TypeRef, Vec<FunctionParam>, bool),
             Complex(TypeRef),
             Default,
         }
@@ -1545,7 +1545,7 @@ impl<'a> MirGen<'a> {
     fn lower_function_type(
         &mut self,
         return_type: TypeRef,
-        parameters: &[FunctionParameter],
+        parameters: &[FunctionParam],
         is_variadic: bool,
     ) -> MirType {
         let return_type = self.lower_type(return_type);

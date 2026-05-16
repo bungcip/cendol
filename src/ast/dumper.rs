@@ -103,7 +103,7 @@ impl AstDumper {
     fn collect_types(kind: &NodeKind, types: &mut HashSet<TypeRef>) {
         match kind {
             NodeKind::Designator(_) => {}
-            NodeKind::Function(_) => {
+            NodeKind::FunctionDef(_) => {
                 // Function type is now looked up from symbol table, not stored directly
             }
             NodeKind::Param(data) => {
@@ -513,7 +513,7 @@ impl AstDumper {
             NodeKind::ExpressionStmt(expr) => optional(f, *expr, "none")?,
             NodeKind::AsmStmt(expr) => write!(f, "{}", expr.raw())?,
 
-            NodeKind::Function(data) => {
+            NodeKind::FunctionDef(data) => {
                 write!(f, "name=")?;
                 Self::write_function_name(f, data.symbol, symbol_table)?;
                 write!(f, ", symbol={:?}, ", data.symbol)?;

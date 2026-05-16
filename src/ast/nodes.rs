@@ -100,7 +100,7 @@ pub(crate) enum NodeKind {
     FieldDecl(FieldDecl),
     EnumDecl(EnumDecl),
     EnumMember(EnumMember),
-    Function(Function),
+    FunctionDef(FunctionDef),
     Param(Param),
 
     // --- Top Level ---
@@ -169,7 +169,7 @@ impl NodeKind {
             NodeKind::FieldDecl(..) => "FieldDecl",
             NodeKind::EnumDecl(..) => "EnumDecl",
             NodeKind::EnumMember(..) => "EnumMember",
-            NodeKind::Function(..) => "Function",
+            NodeKind::FunctionDef(..) => "FunctionDef",
             NodeKind::Param(..) => "Param",
             NodeKind::TranslationUnit(..) => "TranslationUnit",
             NodeKind::InitializerList(..) => "InitializerList",
@@ -338,7 +338,7 @@ impl NodeKind {
                 }
             }
 
-            NodeKind::Function(data) => {
+            NodeKind::FunctionDef(data) => {
                 for child in data.child_start.range(data.param_len as u32 + 1) {
                     f(child);
                 }
@@ -421,7 +421,7 @@ pub(crate) struct InitializerList {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub(crate) struct Function {
+pub(crate) struct FunctionDef {
     pub(crate) symbol: SymbolRef,
     pub(crate) child_start: NodeRef, // points to [param1, param2, ..., body]
     pub(crate) param_len: u16,

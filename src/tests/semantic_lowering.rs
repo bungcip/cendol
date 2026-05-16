@@ -119,7 +119,7 @@ fn resolve_node(ast: &Ast, registry: &TypeRegistry, symbol_table: &SymbolTable, 
                 value,
             }
         }
-        NodeKind::Function(data) => {
+        NodeKind::FunctionDef(data) => {
             let symbol = symbol_table.get_symbol(data.symbol);
             let body_node = data.child_start.add_offset(data.param_len);
             ResolvedAstNode::Function {

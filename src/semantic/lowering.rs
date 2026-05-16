@@ -27,7 +27,7 @@ use crate::semantic::{
     ArraySizeType, BuiltinFunctionKind, BuiltinType, EnumConstant, Namespace, ScopeId, StructMember, SymbolKind,
     SymbolRef, SymbolTable, Type, TypeKind, TypeQualifiers, TypeRef, TypeRegistry, Variable,
 };
-use crate::semantic::{FunctionParameter, QualType};
+use crate::semantic::{FunctionParam, QualType};
 use crate::source_manager::SourceSpan;
 use std::sync::Arc;
 
@@ -1179,7 +1179,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
         self.ast.set_kind(
             node,
-            NodeKind::Function(Function {
+            NodeKind::FunctionDef(FunctionDef {
                 symbol: func_sym,
                 child_start,
                 param_len,
@@ -3360,7 +3360,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
     }
 
-    fn get_definition_params(&mut self, declarator: DeclaratorRef) -> Option<Vec<FunctionParameter>> {
+    fn get_definition_params(&mut self, declarator: DeclaratorRef) -> Option<Vec<FunctionParam>> {
         let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
         match declarator {
             ParsedDeclarator::Function { inner, params, .. } => {
@@ -3458,7 +3458,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         info
     }
 
-    fn visit_function_parameters(&mut self, params: &[ParsedParam], is_definition: bool) -> Vec<FunctionParameter> {
+    fn visit_function_parameters(&mut self, params: &[ParsedParam], is_definition: bool) -> Vec<FunctionParam> {
         let mut seen_names: HashMap<NameId, SourceSpan> = HashMap::new();
         let mut processed_params = Vec::with_capacity(params.len());
 
@@ -3573,7 +3573,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 );
             }
 
-            processed_params.push(FunctionParameter {
+            processed_params.push(FunctionParam {
                 name: pname,
                 param_type: decayed_qt,
                 storage: param.storage,

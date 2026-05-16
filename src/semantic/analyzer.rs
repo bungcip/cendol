@@ -8,8 +8,8 @@ use crate::{
     diagnostic::{DiagnosticEngine, DiagnosticLevel},
     lang_options::{CStandard, LangOptions},
     semantic::{
-        ArraySizeType, BuiltinFunctionKind, BuiltinType, FunctionParameter, QualType, StructMember, SymbolKind,
-        SymbolRef, SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
+        ArraySizeType, BuiltinFunctionKind, BuiltinType, FunctionParam, QualType, StructMember, SymbolKind, SymbolRef,
+        SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
         const_eval::ConstEvalCtx,
         conversions::{integer_promotion, usual_arithmetic_conversions},
         errors::{SemanticDiag, SemanticError},
@@ -47,7 +47,7 @@ enum TypeAnalysisTask {
     Array(TypeRef, ArraySizeType),
     Function {
         return_type: TypeRef,
-        parameters: Arc<[FunctionParameter]>,
+        parameters: Arc<[FunctionParam]>,
         is_variadic: bool,
     },
     None,
@@ -356,7 +356,7 @@ impl<'a> SemanticAnalyzer<'a> {
         enum Task {
             Array(TypeRef, Option<NodeRef>),
             Pointer(QualType),
-            Function(TypeRef, Arc<[FunctionParameter]>),
+            Function(TypeRef, Arc<[FunctionParam]>),
             Complex(TypeRef),
             Typeof(NodeRef, bool), // bool is true for unqual
             Alias(TypeRef),
@@ -2583,7 +2583,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 None
             }
-            NodeKind::Function(data) => self.visit_function_definition(data, node),
+            NodeKind::FunctionDef(data) => self.visit_function_definition(data, node),
             NodeKind::Param(data) => {
                 self.visit_type_exprs(data.qt);
                 Some(data.qt)
@@ -2654,7 +2654,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn visit_function_definition(&mut self, data: &Function, node: NodeRef) -> Option<QualType> {
+    fn visit_function_definition(&mut self, data: &FunctionDef, node: NodeRef) -> Option<QualType> {
         // Bolt ⚡: Avoid cloning TypeKind.
         let func_qt = self.symbol_table.get_symbol(data.symbol).type_info;
         let ret_type = if let TypeAnalysisTask::Function { return_type, .. } = self.get_analysis_task(func_qt) {
@@ -3401,7 +3401,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let result_type = match node_kind {
             // Declarations
             NodeKind::TranslationUnit(_)
-            | NodeKind::Function(_)
+            | NodeKind::FunctionDef(_)
             | NodeKind::VarDecl(_)
             | NodeKind::RecordDecl(_)
             | NodeKind::FieldDecl(_)

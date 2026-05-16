@@ -14,8 +14,8 @@ use target_lexicon::{PointerWidth, Triple};
 use super::types::TypeClass;
 use super::types::{FieldLayout, LayoutKind};
 use super::{
-    ArraySizeType, BuiltinType, EnumConstant, FunctionParameter, StructMember, Type, TypeKind, TypeLayout,
-    TypeQualifiers, TypeRef,
+    ArraySizeType, BuiltinType, EnumConstant, FunctionParam, StructMember, Type, TypeKind, TypeLayout, TypeQualifiers,
+    TypeRef,
 };
 use crate::semantic::BuiltinFunctionKind;
 
@@ -698,7 +698,7 @@ impl TypeRegistry {
     pub(crate) fn function_type(
         &mut self,
         return_type: TypeRef,
-        params: Vec<FunctionParameter>,
+        params: Vec<FunctionParam>,
         is_variadic: bool,
         is_noreturn: bool,
     ) -> TypeRef {
@@ -728,12 +728,12 @@ impl TypeRegistry {
 
     pub(crate) fn builtin_function_type(&mut self, name: BuiltinFunctionKind) -> TypeRef {
         let q = |ty: TypeRef| QualType::unqualified(ty);
-        let p = |ty: TypeRef| FunctionParameter {
+        let p = |ty: TypeRef| FunctionParam {
             param_type: QualType::unqualified(ty),
             name: None,
             storage: None,
         };
-        let pq = |qty: QualType| FunctionParameter {
+        let pq = |qty: QualType| FunctionParam {
             param_type: qty,
             name: None,
             storage: None,
@@ -1923,7 +1923,7 @@ impl TypeRegistry {
             let type_b = p_b.param_type.strip_for_parameter();
             let cp = self.composite_type(type_a, type_b)?;
 
-            composite_params.push(FunctionParameter {
+            composite_params.push(FunctionParam {
                 param_type: cp,
                 name: p_b.name.or(p_a.name),
                 storage: p_b.storage.or(p_a.storage),

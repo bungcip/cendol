@@ -131,6 +131,9 @@ pub enum SemanticError {
     VoidReturnWithValue {
         name: NameId,
     },
+    VoidReturnWithVoidExpr {
+        name: NameId,
+    },
     NonVoidReturnWithoutValue {
         name: NameId,
     },
@@ -422,6 +425,8 @@ impl SemanticError {
                 | SemanticError::GnuDesignatedInitializerRange
                 | SemanticError::GnuCaseRange
                 | SemanticError::GnuZeroLengthArray
+                | SemanticError::ExcessElements { .. }
+                | SemanticError::VoidReturnWithVoidExpr { .. }
         )
     }
 
@@ -449,6 +454,7 @@ impl SemanticError {
             SemanticError::InlineAsmIgnored => Some("inline-asm"),
             SemanticError::AttributeCleanupOnType => Some("attributes"),
             SemanticError::AttributeCleanupOnNonLocal => Some("ignored-attributes"),
+            SemanticError::VoidReturnWithVoidExpr { .. } => Some("pedantic"),
             _ => None,
         }
     }
@@ -492,6 +498,9 @@ impl SemanticError {
             SemanticError::InvalidInitializer => "invalid initializer".to_string(),
             SemanticError::ConflictingTypes { name, .. } => format!("conflicting types for '{}'", name),
             SemanticError::VoidReturnWithValue { name } => {
+                format!("void function '{}' should not return a value", name)
+            }
+            SemanticError::VoidReturnWithVoidExpr { name } => {
                 format!("void function '{}' should not return a value", name)
             }
             SemanticError::NonVoidReturnWithoutValue { name } => {

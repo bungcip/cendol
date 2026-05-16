@@ -451,6 +451,15 @@ impl<'a> SemanticAnalyzer<'a> {
     fn is_noreturn_expr(&self, expr: NodeRef) -> bool {
         match self.ast.get_kind(expr) {
             NodeKind::FunctionCall(call) => {
+                if let NodeKind::Ident(_, sym) = self.ast.get_kind(call.callee) {
+                    let symbol = self.symbol_table.get_symbol(*sym);
+                    if let SymbolKind::Function(f) = &symbol.kind
+                        && f.is_noreturn
+                    {
+                        return true;
+                    }
+                }
+
                 if let Some(callee_type) = self.semantic_info.types[call.callee.index()] {
                     let mut ty = callee_type.ty();
                     // Bolt ⚡: Optimization: use registry.get_pointee() and is_noreturn_function helper.
@@ -1007,16 +1016,13 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         if is_void_func {
-            // highlight the expression itself when returning a value from void
-            // Bolt ⚡: TCC and GCC allow returning void expression from void function
-            if let Some(ty) = expr_ty
-                && !ty.is_void()
-                && ty.ty() != self.registry.type_error
-            {
-                self.report_error(
-                    value_expr.unwrap(),
-                    SemanticError::VoidReturnWithValue { name: func_name },
-                );
+            // C11 §6.8.6.4p3: "A return statement with an expression shall not appear in a function whose return type is void."
+            if let Some(expr) = value_expr {
+                if expr_ty.map(|t| t.is_void()).unwrap_or(false) {
+                    self.report_warning(*expr, SemanticError::VoidReturnWithVoidExpr { name: func_name });
+                } else {
+                    self.report_error(*expr, SemanticError::VoidReturnWithValue { name: func_name });
+                }
             }
         }
 

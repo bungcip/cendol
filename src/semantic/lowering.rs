@@ -2934,6 +2934,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                                 info.has_c11_alignment = true;
                             }
                         }
+                        DeclSpec::FunctionSpec(FunctionSpec::Noreturn) => info.is_noreturn = true,
+                        DeclSpec::FunctionSpec(FunctionSpec::Inline) => info.is_inline = true,
                         _ => {}
                     }
                 }

@@ -1,5 +1,5 @@
-use crate::tests::test_utils::run_pass;
 use crate::driver::artifact::CompilePhase;
+use crate::tests::test_utils::run_pass;
 
 #[test]
 fn test_alignof_gnu_struct() {

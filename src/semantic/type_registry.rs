@@ -1556,7 +1556,7 @@ impl TypeRegistry {
                     if let Some(unit_offset) = current_unit_offset {
                         let new_unit_size = current_unit_size.max(layout.size);
                         let align_mask = (member_align as u64) - 1;
-                        
+
                         // Rule: a bit-field must entirely reside in a storage unit of its type.
                         // This means it cannot cross a boundary of its alignment.
                         let mut bit_offset = current_unit_bit_offset;
@@ -1564,7 +1564,7 @@ impl TypeRegistry {
                         if bits > 0 {
                             // println!("DEBUG: bitfield size {} align {} offset {} unit_offset {}", bits, member_align, bit_offset, unit_offset);
                         }
-                        
+
                         let align_bits = (member_align as u64) * 8;
                         if !can_cross_boundary && bit_offset % align_bits != 0 {
                             let next_align = bit_offset.div_ceil(align_bits) * align_bits;
@@ -1574,20 +1574,19 @@ impl TypeRegistry {
                             }
                         }
 
-                        
                         if (unit_offset & align_mask) == 0
                             && (can_cross_boundary || bit_offset + (bits as u64) <= new_unit_size * 8)
                         {
                             fits = true;
                             let mut actual_bit_offset = bit_offset;
                             let mut actual_unit_offset = unit_offset;
-                            
+
                             if can_cross_boundary && actual_bit_offset >= 8 {
                                 let bytes = actual_bit_offset / 8;
                                 actual_unit_offset += bytes;
                                 actual_bit_offset %= 8;
                             }
-                            
+
                             current_unit_offset = Some(actual_unit_offset);
                             current_unit_bit_offset = actual_bit_offset;
                             current_unit_size = new_unit_size;
@@ -1609,11 +1608,12 @@ impl TypeRegistry {
                                 bit_offset: Some(actual_bit_offset as u16),
                                 storage_size: field_storage_size,
                             });
-                            
+
                             current_unit_bit_offset += bits as u64;
-                            
+
                             if can_cross_boundary {
-                                current_size = current_size.max(actual_unit_offset + (actual_bit_offset + bits as u64).div_ceil(8));
+                                current_size = current_size
+                                    .max(actual_unit_offset + (actual_bit_offset + bits as u64).div_ceil(8));
                             } else {
                                 current_size = current_size.max(actual_unit_offset + current_unit_size);
                             }
@@ -1623,7 +1623,7 @@ impl TypeRegistry {
                     if !fits {
                         let align_u64 = member_align as u64;
                         let offset = (current_size + align_u64 - 1) & !(align_u64 - 1);
-                        
+
                         let field_storage_size = if can_cross_boundary {
                             let mut s = 1;
                             while s < layout.size && (s * 8) < (bits as u64) {
@@ -1646,7 +1646,7 @@ impl TypeRegistry {
                         } else {
                             current_size = offset + layout.size;
                         }
-                        
+
                         current_unit_offset = Some(offset);
                         current_unit_bit_offset = bits as u64;
                         current_unit_size = layout.size;

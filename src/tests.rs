@@ -42,20 +42,20 @@ pub mod semantic_typeof;
 pub mod semantic_typeof_unqual;
 pub mod semantic_types;
 
+pub mod semantic_alignment;
 pub mod semantic_common;
 pub mod semantic_const_eval;
 pub mod semantic_lowering;
 pub mod semantic_mir;
-pub mod semantic_alignment;
 pub mod semantic_negative;
 pub mod semantic_nullptr;
 pub mod semantic_regr_unary_promotion;
 pub mod semantic_unary_coverage;
 pub mod semantic_validation;
 
+pub mod parser_alignof_gnu;
 pub mod parser_c23_attributes;
 pub mod parser_decl;
-pub mod parser_alignof_gnu;
 pub mod parser_declarator_coverage;
 pub mod parser_errors;
 pub mod parser_expr;

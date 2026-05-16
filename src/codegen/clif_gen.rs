@@ -326,7 +326,7 @@ fn emit_const_struct(
             } else {
                 field_bytes.len()
             };
-            
+
             let required_size = field_offset + bytes_needed;
             if required_size > struct_bytes.len() {
                 struct_bytes.resize(required_size, 0);
@@ -343,11 +343,7 @@ fn emit_const_struct(
                 let packed_val = (val & mask) << bit_offset;
                 let full_mask = mask << bit_offset;
 
-                for (i, byte) in struct_bytes[field_offset..]
-                    .iter_mut()
-                    .enumerate()
-                    .take(bytes_needed)
-                {
+                for (i, byte) in struct_bytes[field_offset..].iter_mut().enumerate().take(bytes_needed) {
                     let byte_mask = (full_mask >> (i * 8)) as u8;
                     let byte_val = (packed_val >> (i * 8)) as u8;
                     *byte = (*byte & !byte_mask) | byte_val;
@@ -1431,7 +1427,7 @@ fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> 
         }
         Place::StructField(base_place, field_index, bit_info) => {
             let addr = emit_place_addr(&Place::StructField(base_place.clone(), *field_index, *bit_info), ctx);
-            
+
             let (load_type, actual_bit_info) = if let Some(info) = bit_info {
                 let st = match info.storage_size {
                     1 => types::I8,
@@ -1441,34 +1437,38 @@ fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> 
                     _ => expected_type,
                 };
                 // Use the larger of the two to be safe, but usually st is what we want
-                let final_ty = if st.bits() > expected_type.bits() { st } else { expected_type };
+                let final_ty = if st.bits() > expected_type.bits() {
+                    st
+                } else {
+                    expected_type
+                };
                 (final_ty, Some(info))
             } else {
                 (expected_type, None)
             };
 
-                        let raw_val = {
+            let raw_val = {
                 let v = ctx.builder.ins().load(load_type, MemFlags::new(), addr, 0);
                 if load_type.bits() > 32 {
-                   // println!("DEBUG: Loaded 64-bit value for bit-field");
+                    // println!("DEBUG: Loaded 64-bit value for bit-field");
                 }
                 v
             };
-            
+
             if let Some(info) = actual_bit_info {
                 let mut val = raw_val;
-                
+
                 // 1. Shift right to move the field to the LSB
                 if info.offset > 0 {
                     val = ctx.builder.ins().ushr_imm(val, info.offset as i64);
                 }
-                
+
                 // 2. Mask out higher bits
                 if info.width < load_type.bits() as u16 {
                     let mask = (1u64 << info.width) - 1;
                     val = ctx.builder.ins().band_imm(val, mask as i64);
                 }
-                
+
                 // 3. Sign-extend if necessary
                 if info.is_signed {
                     let shift = load_type.bits() as i64 - info.width as i64;
@@ -1477,7 +1477,7 @@ fn emit_place(place: &Place, ctx: &mut BodyEmitContext, expected_type: Type) -> 
                         val = ctx.builder.ins().sshr_imm(val, shift);
                     }
                 }
-                
+
                 // 4. Convert back to expected_type if they differ
                 if load_type != expected_type {
                     emit_type_conversion(val, load_type, expected_type, info.is_signed, ctx.builder)
@@ -1814,7 +1814,7 @@ fn emit_place_store(place: &Place, value: Value, expected_type: Type, ctx: &mut 
         }
         Place::StructField(.., Some(bit_info)) => {
             let addr = emit_place_addr(place, ctx);
-            
+
             let load_type = match bit_info.storage_size {
                 1 => types::I8,
                 2 => types::I16,
@@ -1822,7 +1822,11 @@ fn emit_place_store(place: &Place, value: Value, expected_type: Type, ctx: &mut 
                 8 => types::I64,
                 _ => expected_type,
             };
-            let load_type = if load_type.bits() > expected_type.bits() { load_type } else { expected_type };
+            let load_type = if load_type.bits() > expected_type.bits() {
+                load_type
+            } else {
+                expected_type
+            };
 
             let original = ctx.builder.ins().load(load_type, MemFlags::new(), addr, 0);
 

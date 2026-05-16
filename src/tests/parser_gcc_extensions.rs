@@ -157,3 +157,9 @@ fn test_struct_member_attributes() {
     "#,
     );
 }
+
+#[test]
+fn test_attribute_cleanup() {
+    let resolved = setup_translation_unit("void my_cleanup(int *x) {} void foo() { int x __attribute__((cleanup(my_cleanup))) = 1; }");
+    insta::assert_yaml_snapshot!(&resolved);
+}

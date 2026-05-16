@@ -1,0 +1,21 @@
+---
+source: src/tests/parser_gcc_extensions.rs
+expression: "&resolved"
+---
+TranslationUnit:
+  - FunctionDef:
+      specifiers:
+        - void
+      declarator:
+        name: my_cleanup
+        kind: function(int pointer) -> int
+      body:
+        CompoundStatement: []
+  - FunctionDef:
+      specifiers:
+        - void
+      declarator:
+        name: foo
+        kind: function(void) -> int
+      body:
+        CompoundStatement: []

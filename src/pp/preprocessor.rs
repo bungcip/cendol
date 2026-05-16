@@ -798,10 +798,13 @@ impl<'src> Preprocessor<'src> {
                     } else if symbol == self.keywords.pragma_operator {
                         self.handle_pragma_operator()?;
                     } else if let Some(expanded) = self.expand_macro(&token)? {
-                        // Bolt ⚡: Efficiently push expanded tokens onto the stack.
-                        // Using `.extend()` with a reversed iterator is significantly faster than
-                        // a manual loop of individual `push_front` calls on a VecDeque.
-                        self.pending_tokens.extend(expanded.into_iter().rev());
+                        if !expanded.is_empty() {
+                            let mut expanded = expanded;
+                            if token.flags.contains(PPTokenFlags::LEADING_SPACE) {
+                                expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
+                            }
+                            self.pending_tokens.extend(expanded.into_iter().rev());
+                        }
                     } else {
                         return Ok(Some(token));
                     }
@@ -1169,14 +1172,6 @@ mod tests {
         let id1_from_1 = table.insert(id1, s1);
         assert_eq!(id1_from_1, id1);
 
-        // Test union
-        let u12 = table.union(id1, id2);
-        assert_eq!(u12, id12);
-        let u11 = table.union(id1, id1);
-        assert_eq!(u11, id1);
-        let u01 = table.union(id0, id1);
-        assert_eq!(u01, id1);
-
         // Test intersection
         let i12 = table.intersection(id1, id12);
         assert_eq!(i12, id1);
@@ -1188,9 +1183,8 @@ mod tests {
         assert_eq!(i01, id0);
 
         // Complex case
-        let id123 = table.intern(smallvec![s1, s2, s3]);
+        let id12 = table.intern(smallvec![s1, s2]);
         let id13 = table.intern(smallvec![s1, s3]);
-        assert_eq!(table.union(id13, id12), id123);
         assert_eq!(table.intersection(id13, id12), id1);
     }
 }

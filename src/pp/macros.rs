@@ -118,21 +118,21 @@ impl<'src> Preprocessor<'src> {
     ) -> Result<Vec<PPToken>, PPError> {
         let new_hs = self.hide_sets.insert(token.hide_set, symbol);
 
-        // No DISABLED flag needed — hide_sets.contains detects self-reference
-        // via the virtual buffer's source location (<macro_NAME>).
-        let mut tokens = self.expand_virtual_buffer(&macro_info.tokens, symbol, token.location)?;
-        let mut last_hs = (u32::MAX, 0u32);
-        for t in &mut tokens {
-            if t.hide_set == 0 {
-                t.hide_set = new_hs;
-            } else {
-                if t.hide_set != last_hs.0 {
-                    last_hs = (t.hide_set, self.hide_sets.union(t.hide_set, new_hs));
-                }
-                t.hide_set = last_hs.1;
-            }
-        }
-        Ok(tokens)
+        let substituted = self.substitute_tokens_slice(
+            &macro_info.tokens,
+            &SubstitutionCtx {
+                macro_info,
+                symbol,
+                args: &[],
+                expanded_args: &[],
+                intersect_hs: token.hide_set,
+                new_hs,
+                is_variadic_empty: false,
+                is_va_missing: false,
+            },
+        )?;
+
+        self.expand_virtual_buffer(&substituted, symbol, token.location)
     }
 
     /// Expand a function-like macro
@@ -850,14 +850,21 @@ impl<'src> Preprocessor<'src> {
             if let Some(task) = self.try_get_expansion_task(tokens, i) {
                 match task {
                     ExpansionTask::Function { end_idx, .. } => {
-                        let expanded = self.do_function_expansion(task, tokens, i, in_conditional)?;
+                        let mut expanded = self.do_function_expansion(task, tokens, i, in_conditional)?;
+                        if !expanded.is_empty() && tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
+                            expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
+                        }
+
                         if expanded.len() <= 10000 {
                             tokens.splice(i..end_idx, expanded);
                             continue;
                         }
                     }
                     ExpansionTask::Object { .. } => {
-                        let expanded = self.do_object_expansion(task, tokens, i)?;
+                        let mut expanded = self.do_object_expansion(task, tokens, i)?;
+                        if !expanded.is_empty() && tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
+                            expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
+                        }
                         tokens.splice(i..i + 1, expanded);
                         continue;
                     }
@@ -992,11 +999,21 @@ impl<'src> Preprocessor<'src> {
         };
 
         let new_hs = self.hide_sets.insert(tokens[i].hide_set, symbol);
-        let mut expanded = self.expand_virtual_buffer(&info.tokens, symbol, tokens[i].location)?;
-        for t in &mut expanded {
-            t.hide_set = new_hs;
-        }
-        Ok(expanded)
+        let substituted = self.substitute_tokens_slice(
+            &info.tokens,
+            &SubstitutionCtx {
+                macro_info: &info,
+                symbol,
+                args: &[],
+                expanded_args: &[],
+                intersect_hs: tokens[i].hide_set,
+                new_hs,
+                is_variadic_empty: false,
+                is_va_missing: false,
+            },
+        )?;
+
+        Ok(self.create_virtual_buffer_tokens(&substituted, symbol, tokens[i].location))
     }
 
     fn create_virtual_buffer_tokens(

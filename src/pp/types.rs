@@ -28,7 +28,6 @@ bitflags::bitflags! {
 pub(crate) struct HideSetTable {
     pub(crate) sets: Vec<Arc<[StringId]>>,
     pub(crate) map: HashMap<Arc<[StringId]>, u32>,
-    pub(crate) union_cache: HashMap<(u32, u32), u32>,
     pub(crate) intersection_cache: HashMap<(u32, u32), u32>,
     pub(crate) insert_cache: HashMap<(u32, StringId), u32>,
 }
@@ -48,7 +47,6 @@ impl HideSetTable {
         Self {
             sets: vec![empty],
             map,
-            union_cache: HashMap::new(),
             intersection_cache: HashMap::new(),
             insert_cache: HashMap::new(),
         }
@@ -115,54 +113,6 @@ impl HideSetTable {
 
         let res = self.intern_canonical(result);
         self.intersection_cache.insert(key, res);
-        res
-    }
-
-    pub(super) fn union(&mut self, id1: u32, id2: u32) -> u32 {
-        if id1 == 0 {
-            return id2;
-        }
-        if id2 == 0 {
-            return id1;
-        }
-        if id1 == id2 {
-            return id1;
-        }
-
-        // Bolt ⚡: Check cache first to avoid merge and interning overhead.
-        let key = if id1 < id2 { (id1, id2) } else { (id2, id1) };
-        if let Some(&res) = self.union_cache.get(&key) {
-            return res;
-        }
-
-        let set1 = &self.sets[id1 as usize];
-        let set2 = &self.sets[id2 as usize];
-
-        // Optimized merge-based union for sorted sets: O(M+K)
-        let mut result = SmallVec::<[StringId; 4]>::new();
-        let (mut i, mut j) = (0, 0);
-        while i < set1.len() && j < set2.len() {
-            match set1[i].cmp(&set2[j]) {
-                std::cmp::Ordering::Equal => {
-                    result.push(set1[i]);
-                    i += 1;
-                    j += 1;
-                }
-                std::cmp::Ordering::Less => {
-                    result.push(set1[i]);
-                    i += 1;
-                }
-                std::cmp::Ordering::Greater => {
-                    result.push(set2[j]);
-                    j += 1;
-                }
-            }
-        }
-        result.extend_from_slice(&set1[i..]);
-        result.extend_from_slice(&set2[j..]);
-
-        let res = self.intern_canonical(result);
-        self.union_cache.insert(key, res);
         res
     }
 
@@ -272,21 +222,9 @@ mod tests {
 
         let id2 = table.intern(smallvec::smallvec![id_c]);
 
-        let unioned = table.union(id1, id2);
-        let unioned_hit = table.union(id1, id2); // cache hit
-        assert_eq!(unioned, unioned_hit);
-
         let intersected = table.intersection(inserted, id1);
         let intersected_hit = table.intersection(inserted, id1); // cache hit
         assert_eq!(intersected, intersected_hit);
-
-        let union_zero1 = table.union(0, id1);
-        let union_zero2 = table.union(id1, 0);
-        let union_same = table.union(id1, id1);
-
-        assert_eq!(union_zero1, id1);
-        assert_eq!(union_zero2, id1);
-        assert_eq!(union_same, id1);
 
         let intersect_zero1 = table.intersection(0, id1);
         let intersect_zero2 = table.intersection(id1, 0);
@@ -295,5 +233,10 @@ mod tests {
         assert_eq!(intersect_zero1, 0);
         assert_eq!(intersect_zero2, 0);
         assert_eq!(intersect_same, id1);
+
+        // Complex case
+        let id12 = table.intern(smallvec::smallvec![id_a, id_b]);
+        let id13 = table.intern(smallvec::smallvec![id_a, id_c]);
+        assert_eq!(table.intersection(id13, id12), id1);
     }
 }

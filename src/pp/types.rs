@@ -220,8 +220,6 @@ mod tests {
         let inserted_hit = table.insert(id1, id_b); // cache hit
         assert_eq!(inserted, inserted_hit);
 
-        let id2 = table.intern(smallvec::smallvec![id_c]);
-
         let intersected = table.intersection(inserted, id1);
         let intersected_hit = table.intersection(inserted, id1); // cache hit
         assert_eq!(intersected, intersected_hit);

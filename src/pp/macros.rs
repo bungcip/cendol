@@ -416,6 +416,9 @@ impl<'src> Preprocessor<'src> {
                         && let Some(arg) = self.get_macro_param_tokens(ctx.macro_info, sym, ctx.args)
                     {
                         let mut stringified = self.stringify_tokens(arg, token.location)?;
+                        if token.flags.contains(PPTokenFlags::LEADING_SPACE) {
+                            stringified.flags |= PPTokenFlags::LEADING_SPACE;
+                        }
                         // Bolt ⚡: Stringified tokens always start with an empty hide-set (0).
                         stringified.hide_set = ctx.new_hs;
                         result.push(stringified);
@@ -535,6 +538,9 @@ impl<'src> Preprocessor<'src> {
         } else if let Some(l) = left {
             // Right is not empty, Left is not empty: paste left with right[0].
             let mut pasted = self.paste_tokens(&l, &right_tokens[0])?;
+            if !pasted.is_empty() && l.flags.contains(PPTokenFlags::LEADING_SPACE) {
+                pasted[0].flags |= PPTokenFlags::LEADING_SPACE;
+            }
             let pasted_hs = self.hide_sets.intersection(l.hide_set, right_tokens[0].hide_set);
             for t in &mut pasted {
                 t.hide_set = pasted_hs;

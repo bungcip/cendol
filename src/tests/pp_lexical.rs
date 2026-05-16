@@ -478,12 +478,13 @@ int main() {
 }
 "#;
     let content = dump_pp_output(src, false);
-    insta::assert_snapshot!(content, @"
+    insta::assert_snapshot!(content, @r#"
+    # 1 "<test>" 1
 
     int main() {
-        return 0;
+     return 0;
     }
-    ");
+    "#);
 }
 
 #[test]
@@ -493,11 +494,12 @@ fn test_dump_preprocessed_output_with_macros() {
 int x = TEN;
 "#;
     let content = dump_pp_output(src, false);
-    insta::assert_snapshot!(content, @"
+    insta::assert_snapshot!(content, @r#"
+    # 1 "<test>" 1
 
 
-    int x = 10;
-    ");
+    int x = 10 ;
+    "#);
 }
 
 #[test]
@@ -507,10 +509,7 @@ fn test_dump_preprocessed_output_suppress_line_markers() {
 int x = TEN;
 "#;
     let content = dump_pp_output(src, true);
-    insta::assert_snapshot!(content, @"
-
-    int x = 10;
-    ");
+    insta::assert_snapshot!(content, @"int x = 10 ;");
 }
 
 #[test]

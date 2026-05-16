@@ -4,7 +4,7 @@
 //! with support for line markers and whitespace reconstruction.
 
 use crate::pp::{PPToken, PPTokenFlags, PPTokenKind};
-use crate::source_manager::{SourceLoc, SourceManager};
+use crate::source_manager::{SourceId, SourceLoc, SourceManager};
 use std::io::Write;
 
 /// Dumper for preprocessed output
@@ -15,7 +15,9 @@ pub struct PPDumper<'a> {
 }
 
 struct DumperState<'a> {
-    file_id: crate::source_manager::SourceId,
+    file_id: SourceId,
+    file_name: Option<String>,
+    current_line: u32,
     buffer: &'a [u8],
     last_pos: u32,
     at_line_start: bool,
@@ -40,6 +42,15 @@ impl<'a> PPDumper<'a> {
 
         let mut state = self.init_state();
 
+        if !self.suppress_line_markers {
+            let loc = self.resolve_top_level_loc(self.tokens[0].location);
+            if let Some((_, _, Some(file_name))) = self.source_manager.get_presumed_location(loc) {
+                self.print_line_marker(writer, &mut state, 1, file_name)?;
+                state.file_id = loc.source_id();
+                state.buffer = self.source_manager.get_buffer_safe(state.file_id).unwrap_or(&[]);
+            }
+        }
+
         for token in self.tokens.iter() {
             if token.kind == PPTokenKind::Eof {
                 break;
@@ -47,10 +58,11 @@ impl<'a> PPDumper<'a> {
 
             let loc = self.resolve_top_level_loc(token.location);
             let is_macro = token.flags.contains(PPTokenFlags::MACRO_EXPANDED);
-            let (line, _) = self.source_manager.get_line_column(loc).unwrap_or((1, 1));
+            let (line, _, file_name) = self.source_manager.get_presumed_location(loc).unwrap_or((1, 1, None));
+            let file_name_str = file_name.unwrap_or("<unknown>");
 
-            if loc.source_id() != state.file_id {
-                self.handle_file_transition(writer, &mut state, loc, line)?;
+            if loc.source_id() != state.file_id || state.file_name.as_deref() != Some(file_name_str) {
+                self.handle_file_transition(writer, &mut state, loc, line, file_name_str)?;
             }
 
             let mut token_start = loc.offset();
@@ -58,8 +70,14 @@ impl<'a> PPDumper<'a> {
                 token_start = state.last_pos;
             }
 
-            let gap_printed_space = self.handle_gap(writer, &mut state, token, token_start)?;
-            self.handle_leading_space(writer, &state, token, token_start, is_macro, gap_printed_space)?;
+            let (gap_newlines, gap_printed_space) = self.handle_gap(writer, &mut state, token, token_start)?;
+            state.current_line += gap_newlines;
+
+            if line != state.current_line {
+                self.print_line_marker(writer, &mut state, line, file_name_str)?;
+            }
+
+            self.handle_leading_space(writer, &state, token, gap_printed_space)?;
 
             let text = self.get_token_text(token, state.buffer, is_macro);
             write!(writer, "{}", text)?;
@@ -78,11 +96,11 @@ impl<'a> PPDumper<'a> {
     }
 
     fn init_state(&self) -> DumperState<'_> {
-        let first_loc = self.resolve_top_level_loc(self.tokens[0].location);
-        let file_id = first_loc.source_id();
         DumperState {
-            file_id,
-            buffer: self.source_manager.get_buffer_safe(file_id).unwrap_or(&[]),
+            file_id: SourceId(std::num::NonZeroU32::MAX),
+            file_name: None,
+            current_line: 0,
+            buffer: &[],
             last_pos: 0,
             at_line_start: true,
             last_was_open_paren: false,
@@ -95,22 +113,43 @@ impl<'a> PPDumper<'a> {
         state: &mut DumperState<'a>,
         loc: SourceLoc,
         line: u32,
+        name: &str,
     ) -> std::io::Result<()> {
-        if !self.suppress_line_markers
-            && let Some(info) = self.source_manager.get_file_info(loc.source_id())
-        {
-            let name = info.path.file_name().and_then(|n| n.to_str()).unwrap_or("<unknown>");
-            if !state.at_line_start {
-                writeln!(writer)?;
-            }
-            writeln!(writer, "# {} \"{}\" 1", line, name)?;
-            state.at_line_start = true;
-        }
-
+        self.print_line_marker(writer, state, line, name)?;
         state.file_id = loc.source_id();
         state.buffer = self.source_manager.get_buffer_safe(state.file_id).unwrap_or(&[]);
         state.last_pos = 0;
         Ok(())
+    }
+
+    fn print_line_marker(
+        &self,
+        writer: &mut impl Write,
+        state: &mut DumperState<'a>,
+        line: u32,
+        name: &str,
+    ) -> std::io::Result<()> {
+        state.current_line = line;
+        state.file_name = Some(name.to_string());
+
+        if !self.suppress_line_markers {
+            if !state.at_line_start {
+                writeln!(writer)?;
+            }
+            let display_name = self.get_display_name(name);
+            writeln!(writer, "# {} \"{}\" 1", line, display_name)?;
+            state.at_line_start = true;
+        }
+        Ok(())
+    }
+
+    fn get_display_name(&self, path: &str) -> String {
+        if let Ok(cwd) = std::env::current_dir()
+            && let Ok(rel) = std::path::Path::new(path).strip_prefix(cwd)
+        {
+            return rel.to_string_lossy().into_owned();
+        }
+        path.to_string()
     }
 
     fn handle_gap(
@@ -119,39 +158,17 @@ impl<'a> PPDumper<'a> {
         state: &mut DumperState<'a>,
         token: &PPToken,
         token_start: u32,
-    ) -> std::io::Result<bool> {
+    ) -> std::io::Result<(u32, bool)> {
         if token_start <= state.last_pos {
-            return Ok(false);
+            return Ok((0, false));
         }
 
         let slice = &state.buffer[state.last_pos as usize..token_start as usize];
-        let Ok(text) = std::str::from_utf8(slice) else {
-            return Ok(false);
-        };
-
-        let is_all_ws = text.chars().all(|c| c.is_whitespace());
+        let text = std::str::from_utf8(slice).unwrap_or("");
         let has_nl = text.contains('\n');
 
-        if is_all_ws {
-            if !self.suppress_line_markers {
-                write!(writer, "{}", text)?;
-                if has_nl {
-                    state.at_line_start = text.ends_with('\n');
-                }
-                Ok(!text.is_empty() && !text.ends_with('\n'))
-            } else if has_nl {
-                if !state.at_line_start {
-                    writeln!(writer)?;
-                    state.at_line_start = true;
-                }
-                Ok(false)
-            } else if !text.is_empty() {
-                write!(writer, "{}", text)?;
-                state.at_line_start = false;
-                Ok(true)
-            } else {
-                Ok(false)
-            }
+        if text.chars().all(|c| c.is_whitespace()) {
+            self.handle_whitespace_and_newlines(writer, state, text, has_nl)
         } else {
             self.handle_complex_gap(writer, state, token, text, has_nl)
         }
@@ -164,7 +181,7 @@ impl<'a> PPDumper<'a> {
         token: &PPToken,
         text: &str,
         has_nl: bool,
-    ) -> std::io::Result<bool> {
+    ) -> std::io::Result<(u32, bool)> {
         let mut printed_space = false;
 
         let starts_with_ws = text.chars().next().is_some_and(|c| c.is_whitespace() && c != '\n');
@@ -172,7 +189,10 @@ impl<'a> PPDumper<'a> {
 
         if (starts_with_ws || ends_with_ws) && !state.at_line_start && !has_nl {
             let next_text = token.get_text_with_sm(self.source_manager);
-            let is_sep = matches!(next_text.chars().next(), Some('(' | ')' | ';' | ',' | ']'));
+            let is_sep = matches!(
+                next_text.chars().next(),
+                Some('(' | ')' | '{' | '}' | '[' | ']' | ';' | ',' | '.')
+            );
             if (!is_sep && !text.trim_end().ends_with('(')) || ends_with_ws {
                 write!(writer, " ")?;
                 state.at_line_start = false;
@@ -180,42 +200,47 @@ impl<'a> PPDumper<'a> {
             }
         }
 
+        let (newlines, space) = self.handle_whitespace_and_newlines(writer, state, text, has_nl)?;
+        Ok((newlines, printed_space || space))
+    }
+
+    fn handle_whitespace_and_newlines(
+        &self,
+        writer: &mut impl Write,
+        state: &mut DumperState<'a>,
+        text: &str,
+        has_nl: bool,
+    ) -> std::io::Result<(u32, bool)> {
+        let mut newlines = 0;
+        let mut printed_space = false;
+
         if has_nl {
             if !self.suppress_line_markers {
                 for _ in 0..text.chars().filter(|&c| c == '\n').count() {
                     writeln!(writer)?;
+                    newlines += 1;
                 }
-                state.at_line_start = true;
-            } else if !state.at_line_start && !printed_space {
-                if self.is_macro_internal_newline(text) {
-                    let next_text = token.get_text_with_sm(self.source_manager);
-                    if !matches!(next_text.chars().next(), Some(')' | ';' | ',' | ']')) {
-                        write!(writer, " ")?;
-                    }
-                    state.at_line_start = false;
-                    printed_space = true;
-                } else {
-                    writeln!(writer)?;
-                    state.at_line_start = true;
-                }
+            } else if !state.at_line_start {
+                writeln!(writer)?;
+                newlines = 1;
             }
+            state.at_line_start = true;
         }
 
-        Ok(printed_space)
-    }
-
-    fn is_macro_internal_newline(&self, text: &str) -> bool {
-        let mut depth = 0;
-        for c in text.chars() {
-            if c == '(' {
-                depth += 1;
-            } else if c == ')' {
-                depth -= 1;
-            } else if c == '\n' && depth > 0 {
-                return true;
+        if let Some(last_nl) = text.rfind('\n') {
+            let indent = &text[last_nl + 1..];
+            if !indent.is_empty() {
+                write!(writer, " ")?;
+                state.at_line_start = false;
+                printed_space = true;
             }
+        } else if !text.is_empty() {
+            write!(writer, " ")?;
+            state.at_line_start = false;
+            printed_space = true;
         }
-        false
+
+        Ok((newlines, printed_space))
     }
 
     fn handle_leading_space(
@@ -223,21 +248,10 @@ impl<'a> PPDumper<'a> {
         writer: &mut impl Write,
         state: &DumperState<'a>,
         token: &PPToken,
-        token_start: u32,
-        is_macro: bool,
         gap_printed_space: bool,
     ) -> std::io::Result<()> {
-        if is_macro && token.flags.contains(PPTokenFlags::LEADING_SPACE) && !state.at_line_start && !gap_printed_space {
-            let ended_with_paren = if token_start > state.last_pos {
-                let slice = &state.buffer[state.last_pos as usize..token_start as usize];
-                std::str::from_utf8(slice).is_ok_and(|s| s.trim_end().ends_with('('))
-            } else {
-                state.last_was_open_paren
-            };
-
-            if !ended_with_paren {
-                write!(writer, " ")?;
-            }
+        if token.flags.contains(PPTokenFlags::LEADING_SPACE) && !gap_printed_space && !state.at_line_start {
+            write!(writer, " ")?;
         }
         Ok(())
     }

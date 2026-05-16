@@ -454,15 +454,22 @@ impl<'src> Preprocessor<'src> {
                         if param_tokens.is_empty() {
                             last_token_produced_output = false;
                         } else {
+                            let start_idx = result.len();
+                            result.extend_from_slice(param_tokens);
+
+                            // Bolt ⚡: Transfer LEADING_SPACE flag from the parameter identifier in the macro body
+                            // to the first token of the argument expansion.
+                            if token.flags.contains(PPTokenFlags::LEADING_SPACE) {
+                                result[start_idx].flags |= PPTokenFlags::LEADING_SPACE;
+                            }
+
                             if ctx.intersect_hs == 0 {
                                 // Bolt ⚡: Fast-path for top-level macro calls. All tokens receive new_hs.
-                                let start_idx = result.len();
-                                result.extend_from_slice(param_tokens);
                                 for t in &mut result[start_idx..] {
                                     t.hide_set = ctx.new_hs;
                                 }
                             } else {
-                                for mut t in param_tokens.iter().copied() {
+                                for t in &mut result[start_idx..] {
                                     // Bolt ⚡: Hide-set intersection logic for arguments (Dave Prosser algorithm).
                                     if t.hide_set == 0 {
                                         t.hide_set = arg_empty_hs;
@@ -474,7 +481,6 @@ impl<'src> Preprocessor<'src> {
                                         }
                                         t.hide_set = last_hs.1;
                                     }
-                                    result.push(t);
                                 }
                             }
                             last_token_produced_output = true;

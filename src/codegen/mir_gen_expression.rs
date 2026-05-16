@@ -175,10 +175,10 @@ impl<'a> MirGen<'a> {
                 // If the expression is a direct reference to a variable, it might have a custom alignment.
                 if let NodeKind::Ident(_, sym) = self.ast.get_kind(*inner_expr) {
                     let symbol = self.symbol_table.get_symbol(*sym);
-                    if let SymbolKind::Variable { alignment, .. } = &symbol.kind
-                        && let Some(align) = alignment
+                    if let SymbolKind::Variable(v) = &symbol.kind
+                        && let Some(align) = v.alignment
                     {
-                        let op = self.create_size_t_operand(*align as u64);
+                        let op = self.create_size_t_operand(align as u64);
                         return if need_value {
                             self.apply_conversions(op, expr, mir_ty)
                         } else {
@@ -611,9 +611,9 @@ impl<'a> MirGen<'a> {
         let entry = self.symbol_table.get_symbol(sym);
 
         match &entry.kind {
-            SymbolKind::Variable { is_global, storage, .. } => {
-                let is_static_local = *storage == Some(StorageClass::Static);
-                if *is_global || is_static_local {
+            SymbolKind::Variable(v) => {
+                let is_static_local = v.storage == Some(StorageClass::Static);
+                if v.is_global || is_static_local {
                     let global_id = self.get_or_lower_global(sym);
                     Operand::Copy(Box::new(Place::Global(global_id)))
                 } else if let Some(&(ptr_local_id, _)) = self.func_state_mut().vla_map.get(&sym) {
@@ -632,7 +632,7 @@ impl<'a> MirGen<'a> {
                     Operand::Copy(Box::new(Place::Local(local_id)))
                 }
             }
-            SymbolKind::Function { .. } => {
+            SymbolKind::Function(_) => {
                 let func_id = self.get_or_declare_function(sym);
                 let func_type = self.get_function_type(func_id);
                 Operand::Constant(self.create_constant(func_type, ConstValueKind::FunctionAddress(func_id)))
@@ -1666,19 +1666,7 @@ impl<'a> MirGen<'a> {
     }
 
     fn try_visit_builtin_call(&mut self, call_expr: &CallExpr, mir_ty: TypeId, need_value: bool) -> Option<Operand> {
-        let callee_kind = self.ast.get_kind(call_expr.callee);
-        let builtin_kind = match callee_kind {
-            NodeKind::Ident(_, sym_ref) => {
-                let sym = self.symbol_table.get_symbol(*sym_ref);
-                if let SymbolKind::Function { builtin_kind: k, .. } = &sym.kind {
-                    *k
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        };
-        let kind = builtin_kind?;
+        let kind = self.get_builtin_function_kind(call_expr.callee)?;
 
         match kind {
             BuiltinFunctionKind::Signbit | BuiltinFunctionKind::SignbitF | BuiltinFunctionKind::SignbitL => {
@@ -1877,19 +1865,7 @@ impl<'a> MirGen<'a> {
     /// Try to lower builtin float constant functions like `__builtin_inff`, `__builtin_nanf`, etc.
     /// Returns Some(Operand) if the call is a builtin float constant, None otherwise.
     fn try_visit_builtin_float_const(&mut self, call_expr: &CallExpr, mir_ty: TypeId) -> Option<Operand> {
-        let callee_kind = self.ast.get_kind(call_expr.callee);
-        let builtin_kind = match callee_kind {
-            NodeKind::Ident(_, sym_ref) => {
-                let sym = self.symbol_table.get_symbol(*sym_ref);
-                if let SymbolKind::Function { builtin_kind: k, .. } = &sym.kind {
-                    *k
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        };
-        let kind = builtin_kind?;
+        let kind = self.get_builtin_function_kind(call_expr.callee)?;
 
         match kind {
             BuiltinFunctionKind::Inff | BuiltinFunctionKind::HugeValf => {
@@ -1947,6 +1923,20 @@ impl<'a> MirGen<'a> {
             Operand::Copy(Box::new(p))
         } else {
             self.create_dummy_operand()
+        }
+    }
+
+    fn get_builtin_function_kind(&self, node: NodeRef) -> Option<BuiltinFunctionKind> {
+        match self.ast.get_kind(node) {
+            NodeKind::Ident(_, sym_ref) => {
+                let sym = self.symbol_table.get_symbol(*sym_ref);
+                if let SymbolKind::Function(f) = &sym.kind {
+                    f.builtin_kind
+                } else {
+                    None
+                }
+            }
+            _ => None,
         }
     }
 }

@@ -25,7 +25,7 @@ use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, BuiltinFunctionKind, BuiltinType, EnumConstant, Namespace, ScopeId, StructMember, SymbolKind,
-    SymbolRef, SymbolTable, Type, TypeKind, TypeQualifiers, TypeRef, TypeRegistry,
+    SymbolRef, SymbolTable, Type, TypeKind, TypeQualifiers, TypeRef, TypeRegistry, Variable,
 };
 use crate::semantic::{FunctionParameter, QualType};
 use crate::source_manager::SourceSpan;
@@ -869,17 +869,12 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         }
 
         // Check for linkage conflict (C11 6.2.2)
-        if matches!(&symbol.kind, SymbolKind::Variable { .. } | SymbolKind::Function { .. }) {
-            let existing_is_static = matches!(
-                &symbol.kind,
-                SymbolKind::Variable {
-                    storage: Some(StorageClass::Static),
-                    ..
-                } | SymbolKind::Function {
-                    storage: Some(StorageClass::Static),
-                    ..
-                }
-            );
+        if matches!(&symbol.kind, SymbolKind::Variable(_) | SymbolKind::Function { .. }) {
+            let existing_is_static = match &symbol.kind {
+                SymbolKind::Variable(v) => v.storage == Some(StorageClass::Static),
+                SymbolKind::Function(f) => f.storage == Some(StorageClass::Static),
+                _ => false,
+            };
             let new_is_static = storage == Some(StorageClass::Static);
 
             // static followed by extern/plain is OK and inherits internal linkage.
@@ -1027,11 +1022,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let func_sym = match self.symbol_table.define_function(
             func_name,
             final_qt.ty(),
-            spec_info.storage,
-            final_is_noreturn,
-            param_len,
-            true,
             span,
+            crate::semantic::symbol_table::Function {
+                storage: spec_info.storage,
+                is_noreturn: final_is_noreturn,
+                param_len,
+                builtin_kind: None,
+            },
+            true,
         ) {
             Ok(sym) => sym,
             Err(SymbolTableError::InvalidRedefinition { existing, .. }) => {
@@ -1078,27 +1076,50 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // We define it in the current scope (function body).
             // Note: If the user declares __func__ explicitly, it will be caught as a redefinition
             // by the standard variable declaration logic because this one is inserted first.
-            let _ = self
-                .symbol_table
-                .define_variable(func_id, qt, storage, false, Some(init_node), None, None, span);
+            let _ = self.symbol_table.define_variable(
+                func_id,
+                qt,
+                span,
+                Variable {
+                    is_global: self.symbol_table.current_scope() == ScopeId::GLOBAL,
+                    storage,
+                    is_thread_local: false,
+                    initializer: Some(init_node),
+                    alignment: None,
+                    cleanup_func: None,
+                },
+            );
 
             // Also define __FUNCTION__ (GCC extension)
             let function_id = NameId::new("__FUNCTION__");
-            let _ =
-                self.symbol_table
-                    .define_variable(function_id, qt, storage, false, Some(init_node), None, None, span);
+            let _ = self.symbol_table.define_variable(
+                function_id,
+                qt,
+                span,
+                Variable {
+                    is_global: self.symbol_table.current_scope() == ScopeId::GLOBAL,
+                    storage,
+                    is_thread_local: false,
+                    initializer: Some(init_node),
+                    alignment: None,
+                    cleanup_func: None,
+                },
+            );
 
             // Also define __PRETTY_FUNCTION__ (GCC extension)
             let pretty_func_id = NameId::new("__PRETTY_FUNCTION__");
             let _ = self.symbol_table.define_variable(
                 pretty_func_id,
                 qt,
-                storage,
-                false,
-                Some(init_node),
-                None,
-                None,
                 span,
+                Variable {
+                    is_global: self.symbol_table.current_scope() == ScopeId::GLOBAL,
+                    storage,
+                    is_thread_local: false,
+                    initializer: Some(init_node),
+                    alignment: None,
+                    cleanup_func: None,
+                },
             );
         }
 
@@ -1121,7 +1142,19 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 Some(s) => s,
                 None => self
                     .symbol_table
-                    .define_variable(pname, param.param_type, param.storage, false, None, None, None, span)
+                    .define_variable(
+                        pname,
+                        param.param_type,
+                        span,
+                        Variable {
+                            is_global: self.symbol_table.current_scope() == ScopeId::GLOBAL,
+                            storage: param.storage,
+                            is_thread_local: false,
+                            initializer: None,
+                            alignment: None,
+                            cleanup_func: None,
+                        },
+                    )
                     .expect("Failed to define parameter"),
             };
 
@@ -1437,11 +1470,14 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let func_sym = match self.symbol_table.define_function(
             name,
             final_qt.ty(),
-            spec_info.storage,
-            spec_info.is_noreturn,
-            param_len,
-            false,
             span,
+            crate::semantic::symbol_table::Function {
+                storage: spec_info.storage,
+                is_noreturn: spec_info.is_noreturn,
+                param_len,
+                builtin_kind: None,
+            },
+            false,
         ) {
             Ok(sym) => sym,
             Err(SymbolTableError::InvalidRedefinition { existing, .. }) => {
@@ -1618,12 +1654,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let sym_res = self.symbol_table.define_variable(
             name,
             qt,
-            spec_info.storage,
-            spec_info.is_thread_local,
-            None,
-            alignment,
-            cleanup_sym,
             span,
+            Variable {
+                is_global: self.symbol_table.current_scope() == ScopeId::GLOBAL,
+                storage: spec_info.storage,
+                is_thread_local: spec_info.is_thread_local,
+                initializer: None,
+                alignment,
+                cleanup_func: cleanup_sym,
+            },
         );
 
         let init_expr = init.map(|n| {
@@ -1642,8 +1681,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 }
 
                 let symbol = self.symbol_table.get_symbol_mut(sym);
-                if let SymbolKind::Variable { initializer, .. } = &mut symbol.kind {
-                    *initializer = Some(ie);
+                if let SymbolKind::Variable(v) = &mut symbol.kind {
+                    v.initializer = Some(ie);
                 }
                 symbol.def_state = DefinitionState::Defined;
             }
@@ -2274,7 +2313,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             0
         };
         self.symbol_table
-            .define_builtin_function(name, kind, func_ty, param_len)
+            .define_builtin_function(
+                name,
+                func_ty,
+                crate::semantic::symbol_table::Function {
+                    storage: Some(StorageClass::Extern),
+                    is_noreturn: false,
+                    param_len,
+                    builtin_kind: Some(kind),
+                },
+            )
             .ok()
     }
 
@@ -3488,12 +3536,15 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     let _ = self.symbol_table.define_variable(
                         name,
                         decayed_qt,
-                        param.storage,
-                        false,
-                        None,
-                        None,
-                        None,
                         span,
+                        Variable {
+                            is_global: self.symbol_table.current_scope() == ScopeId::GLOBAL,
+                            storage: param.storage,
+                            is_thread_local: false,
+                            initializer: None,
+                            alignment: None,
+                            cleanup_func: None,
+                        },
                     );
                 }
             }

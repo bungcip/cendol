@@ -548,10 +548,7 @@ impl AstDumper {
                 write!(f, "symbol={:?}", decl.symbol)?;
                 if let Some(st) = symbol_table {
                     let sym = st.get_symbol(decl.symbol);
-                    let storage = match sym.kind {
-                        crate::semantic::symbol_table::SymbolKind::Function { storage, .. } => storage,
-                        _ => None,
-                    };
+                    let storage = sym.get_function_storage();
                     write!(f, ", name={}, ty={}, storage={:?}", sym.name, sym.type_info, storage)?;
                 }
             }

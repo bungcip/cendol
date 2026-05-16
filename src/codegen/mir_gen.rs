@@ -180,11 +180,7 @@ impl<'a> MirGen<'a> {
             return id;
         }
 
-        let storage = if let SymbolKind::Function { storage, .. } = &entry.kind {
-            *storage
-        } else {
-            None
-        };
+        let storage = entry.get_function_storage();
 
         let linkage = self.calculate_linkage(storage, entry.def_state);
         let has_definition = entry.def_state == DefinitionState::Defined;
@@ -406,7 +402,7 @@ impl<'a> MirGen<'a> {
         global_symbols.sort_by_key(|s| self.symbol_table.get_symbol(*s).name);
 
         for sym in global_symbols {
-            if let SymbolKind::Function { .. } = self.symbol_table.get_symbol(sym).kind {
+            if let SymbolKind::Function(_) = self.symbol_table.get_symbol(sym).kind {
                 self.get_or_declare_function(sym);
             }
         }
@@ -509,8 +505,8 @@ impl<'a> MirGen<'a> {
 
         self.func_state = Some(FunctionState::new(func_id, entry_block_id));
 
-        let param_len = if let SymbolKind::Function { param_len, .. } = &symbol_entry.kind {
-            *param_len
+        let param_len = if let SymbolKind::Function(f) = &symbol_entry.kind {
+            f.param_len
         } else {
             0
         };
@@ -566,8 +562,8 @@ impl<'a> MirGen<'a> {
 
     fn visit_variable(&mut self, sym: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(sym);
-        let (is_global_sym, storage) = if let SymbolKind::Variable { is_global, storage, .. } = symbol.kind {
-            (is_global, storage)
+        let (is_global_sym, storage) = if let SymbolKind::Variable(v) = symbol.kind {
+            (v.is_global, v.storage)
         } else {
             panic!("visit_variable called on non-variable");
         };
@@ -588,14 +584,7 @@ impl<'a> MirGen<'a> {
         }
 
         let symbol = self.symbol_table.get_symbol(sym);
-        let SymbolKind::Variable {
-            initializer: init,
-            alignment,
-            storage,
-            is_thread_local: is_tls,
-            ..
-        } = symbol.kind
-        else {
+        let SymbolKind::Variable(v) = symbol.kind else {
             unreachable!()
         };
 
@@ -606,18 +595,18 @@ impl<'a> MirGen<'a> {
             crate::ast::NameId::new(format!("{}.{}", symbol.name, sym.get()))
         };
 
-        let linkage = self.calculate_linkage(storage, symbol.def_state);
+        let linkage = self.calculate_linkage(v.storage, symbol.def_state);
 
         let global_id = self.mb.create_global(GlobalDecl {
             name: global_name,
             type_id: mir_type_id,
             is_constant: symbol.is_const(),
-            is_tls,
+            is_tls: v.is_thread_local,
             linkage,
             initial_value: None,
         });
 
-        if let Some(align) = alignment {
+        if let Some(align) = v.alignment {
             self.mb.set_global_alignment(global_id, align);
         }
 
@@ -626,7 +615,9 @@ impl<'a> MirGen<'a> {
         // Static locals must be evaluated as constants, even if we are inside a function.
         // We temporarily unset current_function to force constant evaluation mode.
         let saved_state = self.func_state.take();
-        let initial_value_id = init.and_then(|init| self.eval_init_to_const(init, symbol.type_info));
+        let initial_value_id = v
+            .initializer
+            .and_then(|init| self.eval_init_to_const(init, symbol.type_info));
         self.func_state = saved_state;
 
         let final_init = initial_value_id.or_else(|| {
@@ -644,13 +635,7 @@ impl<'a> MirGen<'a> {
 
     fn visit_local_symbol(&mut self, sym: SymbolRef, mir_type_id: TypeId) {
         let symbol = self.symbol_table.get_symbol(sym);
-        let SymbolKind::Variable {
-            initializer: init,
-            alignment,
-            cleanup_func,
-            ..
-        } = symbol.kind
-        else {
+        let SymbolKind::Variable(v) = symbol.kind else {
             unreachable!()
         };
         let name = symbol.name;
@@ -658,34 +643,34 @@ impl<'a> MirGen<'a> {
 
         // 1. Handle VLA type
         if let Some((size_expr, element_type)) = self.get_vla_info(qt.ty()) {
-            self.visit_vla_local(sym, name, size_expr, element_type, alignment);
+            self.visit_vla_local(sym, name, size_expr, element_type, v.alignment);
             return;
         }
 
         // 2. Handle highly aligned locals (fallback to heap to ensure alignment)
-        if let Some(align) = alignment
+        if let Some(align) = v.alignment
             && align > 16
         {
-            self.visit_aligned_local(sym, name, mir_type_id, qt, init, align);
+            self.visit_aligned_local(sym, name, mir_type_id, qt, v.initializer, align);
             return;
         }
 
         // 3. Standard local variable
         let local_id = self.create_local(Some(name), mir_type_id, false);
-        if let Some(align) = alignment {
+        if let Some(align) = v.alignment {
             self.set_local_alignment(local_id, align);
         }
 
         self.func_state_mut().local_map.insert(sym, local_id);
 
-        if let Some(cleanup_sym) = cleanup_func {
+        if let Some(cleanup_sym) = v.cleanup_func {
             let func_id = self.get_or_declare_cleanup_function(cleanup_sym);
             if let Some(current_scope_cleanup) = self.func_state_mut().scope_cleanup.last_mut() {
                 current_scope_cleanup.push(CleanupAction::CleanupFunc(func_id, local_id));
             }
         }
 
-        if let Some(initializer) = init {
+        if let Some(initializer) = v.initializer {
             let init_operand = self.visit_init(initializer, qt, Some(Place::Local(local_id)));
             self.emit_assignment(Place::Local(local_id), init_operand);
         }

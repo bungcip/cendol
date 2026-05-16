@@ -268,52 +268,41 @@ impl Symbol {
         self.type_info.is_const()
     }
 
-    pub(super) fn has_linkage(&self) -> bool {
+    pub(crate) fn has_linkage(&self) -> bool {
         match &self.kind {
-            SymbolKind::Function { .. } => true,
-            SymbolKind::Variable {
-                is_global,
-                storage,
-                is_thread_local,
-                ..
-            } => *is_global || *storage == Some(StorageClass::Extern) || *is_thread_local,
+            SymbolKind::Function(_) => true,
+            SymbolKind::Variable(v) => v.is_global || v.storage == Some(StorageClass::Extern) || v.is_thread_local,
             _ => false,
         }
     }
 
     pub(crate) fn has_static_duration(&self) -> bool {
         match &self.kind {
-            SymbolKind::Variable { is_global, storage, .. } => {
-                *is_global || *storage == Some(StorageClass::Static) || *storage == Some(StorageClass::Extern)
+            SymbolKind::Variable(v) => {
+                v.is_global || v.storage == Some(StorageClass::Static) || v.storage == Some(StorageClass::Extern)
             }
-            SymbolKind::Function { .. } => true,
+            SymbolKind::Function(_) => true,
             _ => false,
         }
     }
 
+    pub(crate) fn get_function_storage(&self) -> Option<StorageClass> {
+        match &self.kind {
+            SymbolKind::Function(f) => f.storage,
+            _ => None,
+        }
+    }
+
     pub(crate) fn is_function(&self) -> bool {
-        matches!(self.kind, SymbolKind::Function { .. })
+        matches!(self.kind, SymbolKind::Function(_))
     }
 }
 
 /// Defines the kind of symbol.
 #[derive(Debug, Clone)]
 pub enum SymbolKind {
-    Variable {
-        is_global: bool,
-        is_thread_local: bool,
-        storage: Option<StorageClass>,
-        // Initializer might be an AST node or a constant value
-        initializer: Option<NodeRef>,
-        alignment: Option<u16>,          // Max alignment in bytes
-        cleanup_func: Option<SymbolRef>, // Attribute __cleanup__(func)
-    },
-    Function {
-        storage: Option<StorageClass>,
-        is_noreturn: bool,
-        param_len: u16,
-        builtin_kind: Option<BuiltinFunctionKind>,
-    },
+    Variable(Variable),
+    Function(Function),
     Typedef {
         aliased_type: QualType,
     },
@@ -372,6 +361,26 @@ pub struct Scope {
     pub tags: HashMap<NameId, SymbolRef>,    // Struct/union/enum tags
     pub labels: HashMap<NameId, SymbolRef>,  // Goto labels
     pub level: u32,
+}
+
+/// Represents a variable in the symbol table.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Variable {
+    pub is_global: bool,
+    pub is_thread_local: bool,
+    pub storage: Option<StorageClass>,
+    pub initializer: Option<NodeRef>,
+    pub alignment: Option<u16>,
+    pub cleanup_func: Option<SymbolRef>,
+}
+
+/// Represents a function in the symbol table.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Function {
+    pub storage: Option<StorageClass>,
+    pub is_noreturn: bool,
+    pub param_len: u16,
+    pub builtin_kind: Option<BuiltinFunctionKind>,
 }
 
 /// Symbol table using flattened storage
@@ -439,7 +448,7 @@ impl SymbolTable {
         }
     }
 
-    pub(super) fn current_scope(&self) -> ScopeId {
+    pub(crate) fn current_scope(&self) -> ScopeId {
         self.current_scope_id
     }
 
@@ -544,18 +553,12 @@ impl SymbolTable {
     pub(crate) fn define_builtin_function(
         &mut self,
         name: NameId,
-        kind: BuiltinFunctionKind,
         func_ty: TypeRef,
-        param_len: u16,
+        func: Function,
     ) -> Result<SymbolRef, SymbolTableError> {
         let mut symbol = self.create_symbol(
             name,
-            SymbolKind::Function {
-                storage: Some(StorageClass::Extern),
-                is_noreturn: false,
-                param_len,
-                builtin_kind: Some(kind),
-            },
+            SymbolKind::Function(func),
             QualType::unqualified(func_ty),
             SourceSpan::empty(),
         );
@@ -586,75 +589,48 @@ impl SymbolTable {
         &mut self,
         name: NameId,
         ty: QualType,
-        storage: Option<StorageClass>,
-        is_thread_local: bool,
-        initializer: Option<NodeRef>,
-        alignment: Option<u16>,
-        cleanup_func: Option<SymbolRef>,
         span: SourceSpan,
+        var: Variable,
     ) -> Result<SymbolRef, SymbolTableError> {
-        let is_global = self.current_scope_id == ScopeId::GLOBAL;
-        let mut symbol = self.create_symbol(
-            name,
-            SymbolKind::Variable {
-                is_global,
-                is_thread_local,
-                storage,
-                initializer,
-                alignment,
-                cleanup_func,
-            },
-            ty,
-            span,
-        );
+        let mut symbol = self.create_symbol(name, SymbolKind::Variable(var), ty, span);
 
-        symbol.def_state = if initializer.is_some() {
-            DefinitionState::Defined
-        } else if storage == Some(StorageClass::Extern) {
-            DefinitionState::DeclaredOnly
-        } else {
-            DefinitionState::Tentative
+        symbol.def_state = match var {
+            v if v.initializer.is_some() => DefinitionState::Defined,
+            v if v.storage == Some(StorageClass::Extern) => DefinitionState::DeclaredOnly,
+            _ => DefinitionState::Tentative,
         };
 
-        if symbol.has_linkage() {
-            // C11 6.2.2 linkage merging
-            if self.current_scope_id == ScopeId::GLOBAL {
-                self.merge_global_symbol(name, symbol)
-            } else {
-                // Determine linkage of this local declaration
-                if let Some(existing) = self.lookup_symbol(name) {
-                    let existing_sym = self.get_symbol(existing);
-                    if existing_sym.has_linkage() {
-                        // Inherit linkage and refer to the same object
-                        self.get_scope_mut(self.current_scope_id).symbols.insert(name, existing);
-                        return Ok(existing);
-                    }
-                }
-
-                // If no prior declaration with linkage is visible, it has external linkage.
-                // It refers to the global symbol with external linkage if it exists.
-                if let Some(global) = self.fetch(name, ScopeId::GLOBAL, Namespace::Ordinary) {
-                    let global_sym = self.get_symbol(global);
-                    if global_sym.has_linkage() {
-                        // Link to the global symbol
-                        self.get_scope_mut(self.current_scope_id).symbols.insert(name, global);
-                        return Ok(global);
-                    }
-                }
-
-                // No existing linkage symbol found, create a new one in global scope
-                // but only after making sure it doesn't already exist as something else.
-                // Actually, merge_global_symbol handles the kind mismatch check.
-                symbol.scope_id = ScopeId::GLOBAL;
-                let global = self.merge_global_symbol(name, symbol)?;
-
-                // Link the local name to the global symbol
-                self.get_scope_mut(self.current_scope_id).symbols.insert(name, global);
-                Ok(global)
-            }
-        } else {
-            Ok(self.add_symbol(name, symbol))
+        if !symbol.has_linkage() {
+            return Ok(self.add_symbol(name, symbol));
         }
+
+        if self.current_scope_id == ScopeId::GLOBAL {
+            return self.merge_global_symbol(name, symbol);
+        }
+
+        // Local declaration with linkage (e.g. extern int x;)
+        // C11 6.2.2 linkage merging: search for a visible prior declaration with linkage.
+        let target = self
+            .lookup_symbol(name)
+            .filter(|&s| self.get_symbol(s).has_linkage())
+            .or_else(|| {
+                // If not visible, it has external linkage and refers to the global symbol if it exists.
+                self.fetch(name, ScopeId::GLOBAL, Namespace::Ordinary)
+                    .filter(|&s| self.get_symbol(s).has_linkage())
+            });
+
+        let target = match target {
+            Some(existing) => existing,
+            None => {
+                // No existing linkage symbol found, create/merge a new one in global scope.
+                symbol.scope_id = ScopeId::GLOBAL;
+                self.merge_global_symbol(name, symbol)?
+            }
+        };
+
+        // Link the local name to the target symbol
+        self.get_scope_mut(self.current_scope_id).symbols.insert(name, target);
+        Ok(target)
     }
 
     /// Define a new function in the current scope.
@@ -663,23 +639,11 @@ impl SymbolTable {
         &mut self,
         name: NameId,
         ty: TypeRef,
-        storage: Option<StorageClass>,
-        is_noreturn: bool,
-        param_len: u16,
-        is_definition: bool,
         span: SourceSpan,
+        func: Function,
+        is_definition: bool,
     ) -> Result<SymbolRef, SymbolTableError> {
-        let mut symbol = self.create_symbol(
-            name,
-            SymbolKind::Function {
-                storage,
-                is_noreturn,
-                param_len,
-                builtin_kind: None,
-            },
-            QualType::unqualified(ty),
-            span,
-        );
+        let mut symbol = self.create_symbol(name, SymbolKind::Function(func), QualType::unqualified(ty), span);
 
         // Function declarations are "DeclaredOnly" by default, or "Defined" if it's a function definition
         symbol.def_state = if is_definition {
@@ -808,99 +772,51 @@ impl SymbolTable {
 
     /// Merge a new symbol entry with an existing one in the global scope.
     /// This implements C11 6.9.2 for handling tentative definitions, extern declarations, and actual definitions.
-    fn merge_global_symbol(&mut self, name: NameId, mut new_entry: Symbol) -> Result<SymbolRef, SymbolTableError> {
-        let global_scope = ScopeId::GLOBAL;
+    fn merge_global_symbol(&mut self, name: NameId, new_entry: Symbol) -> Result<SymbolRef, SymbolTableError> {
+        let Some(sym) = self.fetch(name, ScopeId::GLOBAL, Namespace::Ordinary) else {
+            return Ok(self.add_symbol_in_scope(name, new_entry, ScopeId::GLOBAL));
+        };
 
-        // Check if symbol already exists in global scope
-        if let Some(sym) = self.fetch(name, global_scope, Namespace::Ordinary) {
-            let existing = self.get_symbol_mut(sym);
+        let existing = self.get_symbol_mut(sym);
 
-            // Verify kinds match
-            match (&existing.kind, &new_entry.kind) {
-                (
-                    SymbolKind::Variable {
-                        is_thread_local: e_tls, ..
-                    },
-                    SymbolKind::Variable {
-                        is_thread_local: n_tls, ..
-                    },
-                ) => {
-                    // C11 6.7.1p3: If an identifier is declared with _Thread_local,
-                    // all declarations shall include _Thread_local.
-                    if e_tls != n_tls {
-                        return Err(SymbolTableError::InvalidRedefinition { name, existing: sym });
-                    }
-                }
-                (SymbolKind::Function { .. }, SymbolKind::Function { .. }) => {}
-                _ => {
-                    // Mismatched kinds
+        // 1. Verify kinds match and check variable-specific constraints
+        match (&mut existing.kind, &new_entry.kind) {
+            (SymbolKind::Variable(existing_var), SymbolKind::Variable(new_var)) => {
+                if existing_var.is_thread_local != new_var.is_thread_local {
                     return Err(SymbolTableError::InvalidRedefinition { name, existing: sym });
                 }
-            }
-
-            // Check alignment compatibility (Variables only)
-            if let SymbolKind::Variable {
-                alignment: new_align, ..
-            } = &new_entry.kind
-                && let SymbolKind::Variable {
-                    alignment: existing_align,
-                    ..
-                } = &existing.kind
-            {
-                match (existing_align, new_align) {
+                // Alignment compatibility
+                match (existing_var.alignment, new_var.alignment) {
                     (Some(a), Some(b)) if a != b => {
                         return Err(SymbolTableError::InvalidRedefinition { name, existing: sym });
                     }
-                    (None, Some(b)) => {
-                        // Inherit alignment from new declaration
-                        if let SymbolKind::Variable { alignment, .. } = &mut existing.kind {
-                            *alignment = Some(*b);
-                        }
-                    }
+                    (None, Some(b)) => existing_var.alignment = Some(b),
                     _ => {}
                 }
             }
+            (SymbolKind::Function(_), SymbolKind::Function(_)) => {}
+            _ => return Err(SymbolTableError::InvalidRedefinition { name, existing: sym }),
+        }
 
-            // Apply C11 merging rules
-            match (existing.def_state, new_entry.def_state) {
-                (DefinitionState::Defined, DefinitionState::Defined) => {
-                    // Multiple actual definitions - error
-                    return Err(SymbolTableError::InvalidRedefinition { name, existing: sym });
-                }
-
-                (DefinitionState::Defined, _) => {
-                    // Already defined, ignore new declaration/tentative definition
-                }
-
-                (_, DefinitionState::Defined) => {
-                    // Upgrade to defined
-                    existing.def_state = DefinitionState::Defined;
-                    if let SymbolKind::Variable { initializer, .. } = &mut new_entry.kind
-                        && let SymbolKind::Variable {
-                            initializer: existing_init,
-                            ..
-                        } = &mut existing.kind
-                    {
-                        *existing_init = *initializer;
-                    }
-                }
-
-                (DefinitionState::Tentative, DefinitionState::Tentative)
-                | (DefinitionState::Tentative, DefinitionState::DeclaredOnly)
-                | (DefinitionState::DeclaredOnly, DefinitionState::DeclaredOnly) => {
-                    // No change to def_state
-                }
-
-                (DefinitionState::DeclaredOnly, DefinitionState::Tentative) => {
-                    // Upgrade to tentative
-                    existing.def_state = DefinitionState::Tentative;
+        // 2. Apply C11 merging rules for definition states
+        match (existing.def_state, new_entry.def_state) {
+            (DefinitionState::Defined, DefinitionState::Defined) => {
+                return Err(SymbolTableError::InvalidRedefinition { name, existing: sym });
+            }
+            (_, DefinitionState::Defined) => {
+                existing.def_state = DefinitionState::Defined;
+                if let (SymbolKind::Variable(existing_var), SymbolKind::Variable(new_var)) =
+                    (&mut existing.kind, &new_entry.kind)
+                {
+                    existing_var.initializer = new_var.initializer;
                 }
             }
-
-            Ok(sym)
-        } else {
-            // Symbol doesn't exist, add it
-            Ok(self.add_symbol_in_scope(name, new_entry, ScopeId::GLOBAL))
+            (DefinitionState::DeclaredOnly, DefinitionState::Tentative) => {
+                existing.def_state = DefinitionState::Tentative;
+            }
+            _ => {}
         }
+
+        Ok(sym)
     }
 }

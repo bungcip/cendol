@@ -44,8 +44,8 @@ fn test_alignas_zero() {
     let (ast, _, symbol_table) = setup_lowering(r#"_Alignas(0) int x;"#);
     let x = find_var_decl(&ast, &symbol_table, "x");
     let sym = symbol_table.get_symbol(x.symbol);
-    let alignment = if let crate::semantic::SymbolKind::Variable { alignment, .. } = &sym.kind {
-        *alignment
+    let alignment = if let crate::semantic::SymbolKind::Variable(v) = &sym.kind {
+        v.alignment
     } else {
         None
     };

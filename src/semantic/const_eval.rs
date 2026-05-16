@@ -685,10 +685,10 @@ impl<'a> ConstEvalCtx<'a> {
             && let NodeKind::Ident(_, sym) = self.ast.get_kind(e)
         {
             let symbol = self.symbol_table.get_symbol(*sym);
-            if let SymbolKind::Variable { alignment, .. } = &symbol.kind
-                && let Some(align) = alignment
+            if let SymbolKind::Variable(v) = &symbol.kind
+                && let Some(align) = v.alignment
             {
-                return Some(*align as i64);
+                return Some(align as i64);
             }
         }
         let ty = if let Some(e) = expr {

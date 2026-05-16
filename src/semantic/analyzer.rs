@@ -254,8 +254,8 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn get_analysis_task(&self, ty: TypeRef) -> TypeAnalysisTask {
-        let type_info = self.registry.get(ty);
+    fn get_analysis_task(&self, qt: QualType) -> TypeAnalysisTask {
+        let type_info = self.registry.get(qt.ty());
         match &type_info.kind {
             TypeKind::Record { members, is_union, .. } => TypeAnalysisTask::Record(Arc::clone(members), *is_union),
             TypeKind::Array { element_type, size, .. } => TypeAnalysisTask::Array(*element_type, *size),
@@ -551,7 +551,7 @@ impl<'a> SemanticAnalyzer<'a> {
         match kind {
             NodeKind::Ident(_, sym) => {
                 let symbol = self.symbol_table.get_symbol(*sym);
-                matches!(symbol.kind, SymbolKind::Variable { .. } | SymbolKind::Function { .. })
+                matches!(symbol.kind, SymbolKind::Variable(_) | SymbolKind::Function(_))
             }
             NodeKind::UnaryOp(op, operand) => match *op {
                 UnaryOp::Deref => true,
@@ -659,8 +659,8 @@ impl<'a> SemanticAnalyzer<'a> {
         match node_kind {
             NodeKind::Ident(_, sym) => {
                 let symbol = self.symbol_table.get_symbol(*sym);
-                if let SymbolKind::Variable { storage, .. } = &symbol.kind {
-                    return *storage == Some(StorageClass::Register);
+                if let SymbolKind::Variable(v) = &symbol.kind {
+                    return v.storage == Some(StorageClass::Register);
                 }
                 false
             }
@@ -1032,12 +1032,12 @@ impl<'a> SemanticAnalyzer<'a> {
             && let NodeKind::Ident(name, sym) = self.ast.get_kind(*operand)
         {
             let symbol = self.symbol_table.get_symbol(*sym);
-            if let SymbolKind::Variable { storage, .. } = &symbol.kind {
+            if let SymbolKind::Variable(v) = &symbol.kind {
                 // Check if it's a local variable (not static/extern)
                 let is_local = symbol.scope_id != crate::semantic::ScopeId::GLOBAL
-                    && *storage != Some(StorageClass::Static)
-                    && *storage != Some(StorageClass::Extern)
-                    && *storage != Some(StorageClass::ThreadLocal);
+                    && v.storage != Some(StorageClass::Static)
+                    && v.storage != Some(StorageClass::Extern)
+                    && v.storage != Some(StorageClass::ThreadLocal);
 
                 if is_local {
                     self.report_warning(node, SemanticError::ReturnLocalAddress { name: *name });
@@ -1784,7 +1784,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         // Bolt ⚡: Avoid cloning the entire TypeKind by extracting only the necessary parts.
         // We use a scoped block to ensure the Cow<Type> is dropped before calling other methods.
-        let task = self.get_analysis_task(target_qt.ty());
+        let task = self.get_analysis_task(target_qt);
 
         match task {
             TypeAnalysisTask::Record(members, is_union) => self.visit_record_init(list, target_qt, &members, is_union),
@@ -1975,7 +1975,7 @@ impl<'a> SemanticAnalyzer<'a> {
         I: Iterator<Item = NodeRef>,
     {
         // Bolt ⚡: Extract needed info without cloning the entire TypeKind.
-        let task = self.get_analysis_task(target_qt.ty());
+        let task = self.get_analysis_task(target_qt);
 
         match designator {
             Designator::FieldName(name) => {
@@ -2050,7 +2050,7 @@ impl<'a> SemanticAnalyzer<'a> {
         I: Iterator<Item = NodeRef>,
     {
         // Bolt ⚡: Optimized to avoid cloning TypeKind.
-        let task = self.get_analysis_task(target_qt.ty());
+        let task = self.get_analysis_task(target_qt);
 
         match task {
             TypeAnalysisTask::Record(members, is_union) => {
@@ -2143,9 +2143,9 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_function_call(&mut self, call_expr: &CallExpr) -> Option<QualType> {
         let (builtin_kind, atomic_op) = self.identify_builtin(call_expr.callee);
         let func_qt = self.visit_node(call_expr.callee)?;
-        let actual_func_ty = self.resolve_actual_function_type(func_qt);
+        let actual_func_qt = self.resolve_actual_function_type(func_qt);
 
-        let task = self.get_analysis_task(actual_func_ty);
+        let task = self.get_analysis_task(actual_func_qt);
         match task {
             TypeAnalysisTask::Function {
                 return_type,
@@ -2205,9 +2205,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 // This is not a function or function pointer, report an error.
                 self.report_error(
                     call_expr.callee,
-                    SemanticError::CalledNonFunctionType {
-                        ty: QualType::unqualified(actual_func_ty),
-                    },
+                    SemanticError::CalledNonFunctionType { ty: actual_func_qt },
                 );
 
                 // Still visit arguments to catch other potential errors within them.
@@ -2222,22 +2220,18 @@ impl<'a> SemanticAnalyzer<'a> {
     fn identify_builtin(&self, callee: NodeRef) -> (Option<BuiltinFunctionKind>, Option<AtomicOp>) {
         if let NodeKind::Ident(_, sym_ref) = self.ast.get_kind(callee) {
             let sym = self.symbol_table.get_symbol(*sym_ref);
-            if let SymbolKind::Function {
-                builtin_kind: b_kind, ..
-            } = &sym.kind
-            {
-                return (*b_kind, b_kind.and_then(|k| k.to_atomic_op()));
+            if let SymbolKind::Function(f) = &sym.kind {
+                return (f.builtin_kind, f.builtin_kind.and_then(|k| k.to_atomic_op()));
             }
         }
         (None, None)
     }
 
-    fn resolve_actual_function_type(&self, func_qt: QualType) -> TypeRef {
-        let func_ty = func_qt.ty();
+    fn resolve_actual_function_type(&self, func_qt: QualType) -> QualType {
         if func_qt.is_pointer() {
-            self.registry.get_pointee(func_ty).map(|qt| qt.ty()).unwrap_or(func_ty)
+            self.registry.get_pointee(func_qt.ty()).unwrap_or(func_qt)
         } else {
-            func_ty
+            func_qt
         }
     }
 
@@ -2625,7 +2619,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 let mut params_to_check = Vec::new();
                 let mut return_type_to_check = None;
 
-                let task = self.get_analysis_task(sym.type_info.ty());
+                let task = self.get_analysis_task(sym.type_info);
                 if let TypeAnalysisTask::Function {
                     return_type,
                     parameters,
@@ -2662,8 +2656,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn visit_function_definition(&mut self, data: &Function, node: NodeRef) -> Option<QualType> {
         // Bolt ⚡: Avoid cloning TypeKind.
-        let func_ty = self.symbol_table.get_symbol(data.symbol).type_info.ty();
-        let ret_type = if let TypeAnalysisTask::Function { return_type, .. } = self.get_analysis_task(func_ty) {
+        let func_qt = self.symbol_table.get_symbol(data.symbol).type_info;
+        let ret_type = if let TypeAnalysisTask::Function { return_type, .. } = self.get_analysis_task(func_qt) {
             return_type
         } else {
             self.registry.type_error
@@ -2674,11 +2668,8 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         let symbol = self.symbol_table.get_symbol(data.symbol);
-        let (param_len, is_noreturn) = if let SymbolKind::Function {
-            param_len, is_noreturn, ..
-        } = &symbol.kind
-        {
-            (*param_len, *is_noreturn)
+        let (param_len, is_noreturn) = if let SymbolKind::Function(f) = &symbol.kind {
+            (f.param_len, f.is_noreturn)
         } else {
             unreachable!("ICE: Function node refers to non-function symbol")
         };
@@ -2742,8 +2733,8 @@ impl<'a> SemanticAnalyzer<'a> {
     fn visit_var_declaration(&mut self, data: &VarDecl, node: NodeRef) -> Option<QualType> {
         let sym = self.symbol_table.get_symbol(data.symbol);
         let qt = sym.type_info;
-        let storage = if let SymbolKind::Variable { storage, .. } = &sym.kind {
-            *storage
+        let storage = if let SymbolKind::Variable(v) = &sym.kind {
+            v.storage
         } else {
             None
         };

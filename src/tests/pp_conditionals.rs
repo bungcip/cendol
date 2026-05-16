@@ -804,7 +804,7 @@ MISSING
     let (tokens, _) = setup_multi_file_pp_snapshot(files, "main.c", None);
     insta::assert_yaml_snapshot!(tokens, @"
     - kind: Identifier
-      text: MISSING
+      text: OK
     ");
 }
 

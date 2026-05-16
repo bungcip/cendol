@@ -583,7 +583,7 @@ pub(crate) struct DeclSpecInfo {
     pub(crate) alignment: Option<u16>,
     pub(crate) has_auto: bool,
     pub(crate) is_packed: bool,
-    pub(crate) has_cleanup: bool,
+    pub(crate) cleanup_func: Option<ParsedNodeRef>,
 }
 
 /// Finalize tentative definitions by converting them to defined state
@@ -982,7 +982,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn visit_function_definition(&mut self, func_def: &ParsedFunctionDef, node: NodeRef, span: SourceSpan) {
-        let spec_info = self.visit_decl_specs(&func_def.specifiers, span);
+        let mut spec_info = self.visit_decl_specs(&func_def.specifiers, span);
         let mut base_qt = spec_info
             .base_type
             .unwrap_or_else(|| QualType::unqualified(self.registry.type_int));
@@ -992,7 +992,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             base_qt,
             func_def.declarator,
             span,
-            Some(&spec_info),
+            Some(&mut spec_info),
             DeclaratorContext { in_parameter: false },
         );
         let func_name = self
@@ -1080,19 +1080,26 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             // by the standard variable declaration logic because this one is inserted first.
             let _ = self
                 .symbol_table
-                .define_variable(func_id, qt, storage, false, Some(init_node), None, span);
+                .define_variable(func_id, qt, storage, false, Some(init_node), None, None, span);
 
             // Also define __FUNCTION__ (GCC extension)
             let function_id = NameId::new("__FUNCTION__");
-            let _ = self
-                .symbol_table
-                .define_variable(function_id, qt, storage, false, Some(init_node), None, span);
+            let _ =
+                self.symbol_table
+                    .define_variable(function_id, qt, storage, false, Some(init_node), None, None, span);
 
             // Also define __PRETTY_FUNCTION__ (GCC extension)
             let pretty_func_id = NameId::new("__PRETTY_FUNCTION__");
-            let _ = self
-                .symbol_table
-                .define_variable(pretty_func_id, qt, storage, false, Some(init_node), None, span);
+            let _ = self.symbol_table.define_variable(
+                pretty_func_id,
+                qt,
+                storage,
+                false,
+                Some(init_node),
+                None,
+                None,
+                span,
+            );
         }
 
         // Pre-scan labels for forward goto support
@@ -1114,7 +1121,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 Some(s) => s,
                 None => self
                     .symbol_table
-                    .define_variable(pname, param.param_type, param.storage, false, None, None, span)
+                    .define_variable(pname, param.param_type, param.storage, false, None, None, None, span)
                     .expect("Failed to define parameter"),
             };
 
@@ -1154,7 +1161,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
         target_slots: Option<&[NodeRef]>,
     ) -> SmallVec<[NodeRef; 1]> {
-        let spec_info = self.visit_decl_specs(&decl.specifiers, span);
+        let mut spec_info = self.visit_decl_specs(&decl.specifiers, span);
         let mut base_qt = spec_info
             .base_type
             .unwrap_or(QualType::unqualified(self.registry.type_int));
@@ -1170,7 +1177,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let mut nodes = SmallVec::new();
         for (i, init) in decl.init_declarators.iter().enumerate() {
             let target_slot = target_slots.and_then(|slots| slots.get(i)).copied();
-            if let Some(node) = self.visit_single_declarator(init, base_qt, &spec_info, span, target_slot) {
+            if let Some(node) = self.visit_single_declarator(init, base_qt, &mut spec_info, span, target_slot) {
                 nodes.push(node);
 
                 if is_auto_type && let NodeKind::VarDecl(var_decl) = self.ast.get_kind(node) {
@@ -1303,7 +1310,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         &mut self,
         init: &ParsedInitDeclarator,
         base_qt: QualType,
-        spec_info: &DeclSpecInfo,
+        spec_info: &mut DeclSpecInfo,
         span: SourceSpan,
         target_slot: Option<NodeRef>,
     ) -> Option<NodeRef> {
@@ -1342,6 +1349,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         };
 
         if spec_info.is_typedef {
+            if spec_info.cleanup_func.is_some() {
+                self.report_warning(span, SemanticError::AttributeCleanupOnType);
+            }
             if spec_info.alignment.is_some() {
                 self.report_error(init.span, SemanticError::AlignmentNotAllowed { context: "typedef" });
             }
@@ -1410,7 +1420,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     ) {
         let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
 
-        if spec_info.has_cleanup {
+        if spec_info.cleanup_func.is_some() {
             self.report_warning(span, SemanticError::AttributeCleanupOnNonLocal);
         }
 
@@ -1460,7 +1470,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     ) {
         let is_global = self.symbol_table.current_scope() == ScopeId::GLOBAL;
 
-        if spec_info.has_cleanup && (is_global || spec_info.storage == Some(StorageClass::Extern)) {
+        if spec_info.cleanup_func.is_some() && (is_global || spec_info.storage == Some(StorageClass::Extern)) {
             self.report_warning(span, SemanticError::AttributeCleanupOnNonLocal);
         }
 
@@ -1573,6 +1583,37 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             alignment = Some(1);
         }
 
+        let mut cleanup_sym = None;
+        if let Some(cleanup_node) = spec_info.cleanup_func {
+            let cleanup_name = if let ParsedNodeKind::Ident(name) = self.parsed_ast.get_node(cleanup_node).kind {
+                name
+            } else {
+                unreachable!()
+            };
+            match self
+                .symbol_table
+                .lookup(cleanup_name, self.symbol_table.current_scope(), Namespace::Ordinary)
+            {
+                Some((sym, _)) => {
+                    let sym_entry = self.symbol_table.get_symbol(sym);
+                    if let SymbolKind::Function { .. } = sym_entry.kind {
+                        cleanup_sym = Some(sym);
+                    } else {
+                        self.report_error(
+                            self.parsed_ast.get_node(cleanup_node).span,
+                            SemanticError::CleanupNotAFunction,
+                        );
+                    }
+                }
+                None => {
+                    self.report_error(
+                        self.parsed_ast.get_node(cleanup_node).span,
+                        SemanticError::UndeclaredIdentifier { name: cleanup_name },
+                    );
+                }
+            }
+        }
+
         // Define variable in symbol table early so it's visible in its own initializer
         let sym_res = self.symbol_table.define_variable(
             name,
@@ -1581,6 +1622,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             spec_info.is_thread_local,
             None,
             alignment,
+            cleanup_sym,
             span,
         );
 
@@ -2017,6 +2059,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 size.qualifiers()
             }
             ParsedDeclarator::BitField { inner, .. } => self.extract_array_param_qualifiers(*inner),
+            ParsedDeclarator::Attribute { inner, .. } => self.extract_array_param_qualifiers(*inner),
         }
     }
 
@@ -2028,6 +2071,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedDeclarator::Array { inner, .. } => self.extract_name(*inner),
             ParsedDeclarator::Function { inner, .. } => self.extract_name(*inner),
             ParsedDeclarator::BitField { inner, .. } => self.extract_name(*inner),
+            ParsedDeclarator::Attribute { inner, .. } => self.extract_name(*inner),
         }
     }
 
@@ -2768,6 +2812,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             ParsedDeclarator::Pointer { inner, .. } => self.extract_bit_field_width(*inner),
             ParsedDeclarator::Array { inner, .. } => self.extract_bit_field_width(*inner),
             ParsedDeclarator::Function { inner, .. } => self.extract_bit_field_width(*inner),
+            ParsedDeclarator::Attribute { inner, .. } => self.extract_bit_field_width(*inner),
             _ => None,
         }
     }
@@ -2778,7 +2823,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         current_type: QualType,
         declarator: DeclaratorRef,
         span: SourceSpan,
-        spec_info: Option<&DeclSpecInfo>,
+        mut spec_info: Option<&mut DeclSpecInfo>,
         ctx: DeclaratorContext,
     ) -> QualType {
         let declarator = self.parsed_ast.parsed_types.get_decl(declarator);
@@ -2816,7 +2861,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
 
                 let params_list = self.parsed_ast.parsed_types.get_params(*params);
                 let processed_params = self.visit_function_parameters(params_list, false);
-                let is_noreturn = spec_info.map(|s| s.is_noreturn).unwrap_or(false);
+                let is_noreturn = spec_info.as_ref().map(|s| s.is_noreturn).unwrap_or(false);
                 let function_type =
                     self.registry
                         .function_type(current_type.ty(), processed_params, flags.is_variadic, is_noreturn);
@@ -2824,6 +2869,17 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             }
             ParsedDeclarator::BitField { inner, .. } => {
                 // Bit-fields don't affect the base type in the same way, we just recurse
+                self.apply_declarator(current_type, *inner, span, spec_info, ctx)
+            }
+            ParsedDeclarator::Attribute { inner, spec } => {
+                if let Some(info) = spec_info.as_mut() {
+                    match spec {
+                        DeclSpec::AttributeCleanup(expr) => info.cleanup_func = Some(*expr),
+                        DeclSpec::AttributePacked => info.is_packed = true,
+                        DeclSpec::AlignmentSpec(align) => info.alignment = self.resolve_alignment(align, span),
+                        _ => {}
+                    }
+                }
                 self.apply_declarator(current_type, *inner, span, spec_info, ctx)
             }
         }
@@ -3329,8 +3385,8 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 DeclSpec::AttributePacked => {
                     info.is_packed = true;
                 }
-                DeclSpec::AttributeCleanup(_) => {
-                    info.has_cleanup = true;
+                DeclSpec::AttributeCleanup(node_ref) => {
+                    info.cleanup_func = Some(*node_ref);
                 }
             }
         }
@@ -3429,9 +3485,16 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     // If is_definition is true, visit_function_definition will call define_variable again,
                     // but we need them in scope NOW for type lowering.
                     // We use define_variable but since it's a parameter we don't need a full initializer.
-                    let _ = self
-                        .symbol_table
-                        .define_variable(name, decayed_qt, param.storage, false, None, None, span);
+                    let _ = self.symbol_table.define_variable(
+                        name,
+                        decayed_qt,
+                        param.storage,
+                        false,
+                        None,
+                        None,
+                        None,
+                        span,
+                    );
                 }
             }
 
@@ -3492,7 +3555,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                     self.check_static_assert(*cond, *msg, node.span);
                 }
                 ParsedNodeKind::Declaration(decl) => {
-                    let spec_info = self.visit_decl_specs(&decl.specifiers, span);
+                    let mut spec_info = self.visit_decl_specs(&decl.specifiers, span);
 
                     if let Some(base) = spec_info.base_type
                         && self.registry.get(base.ty()).kind == TypeKind::AutoType
@@ -3549,7 +3612,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                             qualified_base,
                             id.declarator,
                             id.span,
-                            Some(&spec_info),
+                            Some(&mut spec_info),
                             DeclaratorContext { in_parameter: false },
                         );
 

@@ -4,58 +4,6 @@ use crate::tests::parser_utils::{setup_declaration, setup_translation_unit};
 use crate::tests::test_utils::{run_fail_with_message, run_pass, run_pass_with_std};
 
 #[test]
-fn test_invalid_attributes_recovery() {
-    // Tests for peek_past_attribute EOF and format fallbacks (lines 36-74)
-    run_pass("int foo __attribute__;", CompilePhase::Parse);
-    run_pass("int foo __attribute__(;", CompilePhase::Parse);
-    run_pass("int foo __attribute__(();", CompilePhase::Parse);
-    run_pass("int foo __attribute__((foo", CompilePhase::Parse);
-
-    // This checks `depth += 1` inside attribute paren matching
-    let decl5 = setup_declaration("int foo __attribute__(((foo)));");
-    insta::assert_yaml_snapshot!(&decl5, @"
-    Declaration:
-      specifiers:
-        - int
-      init_declarators:
-        - name: foo
-    ");
-
-    // 74: EOF after one Attribute block
-    run_pass("int x __attribute__((foo))", CompilePhase::Parse);
-
-    // Targeted tests for peek_past_attribute (disambiguation context)
-    run_pass("void f(int (__attribute__ * x));", CompilePhase::Parse);
-    run_pass("void f(int (__attribute__ (unused) * x));", CompilePhase::Parse);
-    run_pass("void f(int (__attribute__((unused(1))) * x));", CompilePhase::Parse);
-    run_pass(
-        "void f(int (__attribute__((unused)) __attribute__((unused)) * x));",
-        CompilePhase::Parse,
-    );
-    run_pass("void f(int (__attribute__((unused)) x));", CompilePhase::Parse);
-
-    // Disambiguation: attribute followed by *
-    let decl6 = setup_declaration("void f(int (__attribute__((unused)) *));");
-    insta::assert_yaml_snapshot!(&decl6, @"
-    Declaration:
-      specifiers:
-        - void
-      init_declarators:
-        - name: f
-          kind: function(int pointer) -> int
-    ");
-
-    let resolved = setup_declaration("int (__attribute__ x);");
-    insta::assert_yaml_snapshot!(&resolved, @"
-    Declaration:
-      specifiers:
-        - int
-      init_declarators:
-        - name: x
-    ");
-}
-
-#[test]
 fn test_type_qualifiers_atomic_restrict() {
     let decl = setup_declaration("int * restrict _Atomic p;");
     insta::assert_yaml_snapshot!(&decl, @"

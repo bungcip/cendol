@@ -459,12 +459,12 @@ fn parse_designation(parser: &mut Parser) -> Result<Box<[ParsedDesignator]>, Par
 /// Parse GCC __attribute__ syntax: __attribute__ (( attribute-list ))
 pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, ParseError> {
     parser.expect(TokenKind::Attribute)?;
-    parser.expect(TokenKind::LeftParen)?;
-    parser.expect(TokenKind::LeftParen)?;
 
-    let mut specs = Vec::new();
+    parser.expect(TokenKind::LeftParen)?;
+    parser.expect(TokenKind::LeftParen)?;
     let mut depth = 2;
 
+    let mut specs = Vec::new();
     while depth > 1 && !parser.at_eof() {
         if parser.accept(TokenKind::Comma).is_some() {
             continue;
@@ -513,6 +513,10 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
                         }
                     }
                 }
+            }
+            TokenKind::Noreturn => {
+                specs.push(DeclSpec::FunctionSpec(crate::ast::FunctionSpec::Noreturn));
+                parser.advance();
             }
             TokenKind::LeftParen => {
                 depth += 1;

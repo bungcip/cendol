@@ -9,7 +9,7 @@ use std::num::NonZeroU32;
 
 use serde::Serialize;
 
-use crate::ast::parsed::{ParsedArraySize, TypeSpec};
+use crate::ast::parsed::{DeclSpec, ParsedArraySize, TypeSpec};
 use crate::ast::{NameId, ParsedNodeRef, ParsedParam, SourceSpan};
 use crate::semantic::TypeQualifiers;
 
@@ -121,6 +121,10 @@ pub enum ParsedDeclarator {
     BitField {
         inner: DeclaratorRef,
         width: ParsedNodeRef,
+    },
+    Attribute {
+        inner: DeclaratorRef,
+        spec: DeclSpec,
     },
 }
 

@@ -145,6 +145,7 @@ pub enum SemanticError {
     UnsupportedFeature {
         feature: &'static str,
     },
+    CleanupNotAFunction,
     InvalidArraySize,
     ZeroOrNegativeSizeArray {
         name: NameId,
@@ -502,6 +503,7 @@ impl SemanticError {
             }
             SemanticError::ExcessElements { kind } => format!("excess elements in {} initializer", kind),
             SemanticError::UnsupportedFeature { feature } => format!("Unsupported feature: {}", feature),
+            SemanticError::CleanupNotAFunction => "cleanup argument not a function".to_string(),
             SemanticError::InvalidArraySize => "size of array is negative".to_string(),
             SemanticError::ZeroOrNegativeSizeArray { name } => {
                 format!("zero or negative size array '{}'", name)
@@ -853,7 +855,7 @@ impl SemanticError {
             SemanticError::GnuCaseRange => "use of GNU case range extension".to_string(),
             SemanticError::GnuZeroLengthArray => "use of GNU zero-length array extension".to_string(),
             SemanticError::InlineAsmIgnored => "inline assembly is currently ignored by cendol".to_string(),
-            SemanticError::AttributeCleanupOnType => "attribute 'cleanup' ignored on type".to_string(),
+            SemanticError::AttributeCleanupOnType => "attribute '__cleanup__' ignored on type".to_string(),
             SemanticError::AttributeCleanupOnNonLocal => {
                 "'__cleanup__' attribute only applies to local variables".to_string()
             }

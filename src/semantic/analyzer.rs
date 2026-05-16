@@ -1008,10 +1008,16 @@ impl<'a> SemanticAnalyzer<'a> {
 
         if is_void_func {
             // highlight the expression itself when returning a value from void
-            self.report_error(
-                value_expr.unwrap(),
-                SemanticError::VoidReturnWithValue { name: func_name },
-            );
+            // Bolt ⚡: TCC and GCC allow returning void expression from void function
+            if let Some(ty) = expr_ty
+                && !ty.is_void()
+                && ty.ty() != self.registry.type_error
+            {
+                self.report_error(
+                    value_expr.unwrap(),
+                    SemanticError::VoidReturnWithValue { name: func_name },
+                );
+            }
         }
 
         if let Some(expr_ty) = expr_ty

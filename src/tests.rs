@@ -144,5 +144,7 @@ pub mod regr_sds_l1;
 pub mod regr_shadowing;
 pub mod regr_struct_bitfield;
 pub mod semantic_alignof_expr;
+pub mod semantic_cleanup_diag;
 pub mod semantic_pedantic_gnu_extensions;
+pub mod semantic_return;
 pub mod semantic_usual_arithmetic_conversions;

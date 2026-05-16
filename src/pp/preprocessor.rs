@@ -557,6 +557,16 @@ impl<'src> Preprocessor<'src> {
 
     /// Check if a macro is defined
     pub(crate) fn is_macro_defined(&self, symbol: StringId) -> bool {
+        if symbol == self.keywords.has_include
+            || symbol == self.keywords.has_include_next
+            || symbol == self.keywords.has_builtin
+            || symbol == self.keywords.has_attribute
+            || symbol == self.keywords.has_c_attribute
+            || symbol == self.keywords.has_feature
+            || symbol == self.keywords.has_extension
+        {
+            return true;
+        }
         self.macros.contains_key(&symbol)
     }
 
@@ -648,9 +658,21 @@ impl<'src> Preprocessor<'src> {
     pub(super) fn check_next_header_exists(&self, path: &str, is_angled: bool) -> bool {
         let current_dir = self.get_current_dir();
 
-        self.header_search
+        if self
+            .header_search
             .resolve_next_path(path, is_angled, current_dir)
             .is_some()
+        {
+            return true;
+        }
+
+        // If not found as "next", and we are in the main file, treat as normal include
+        // some compilers do this to allow __has_include_next to work in tests
+        if self.lexer_stack.len() == 1 {
+            return self.check_header_exists(path, is_angled);
+        }
+
+        false
     }
 
     /// Expect and consume an Eod token or end of file

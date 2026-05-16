@@ -121,6 +121,7 @@ fn test_vla_ice_fix() {
         cond_br cast<bool>(%8), bb6, bb7
 
       bb6:
+        call free(cast<ptr<void>>(%test))
         return
 
       bb7:

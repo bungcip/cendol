@@ -756,7 +756,9 @@ impl<'src> Preprocessor<'src> {
             };
             return Ok(Some(end.min(tokens.len())));
         }
-        if sym == self.keywords.has_include || sym == self.keywords.has_include_next {
+        if (sym == self.keywords.has_include || sym == self.keywords.has_include_next)
+            && !self.macros.contains_key(&sym)
+        {
             let next = i + 1;
             if let Some(PPTokenKind::LeftParen) = tokens.get(next).map(|t| &t.kind) {
                 let arg_start = next + 1;

@@ -305,6 +305,8 @@ impl<'a> MirGen<'a> {
             let old_scope = self.current_scope_id;
             self.current_scope_id = cs.scope_id;
 
+            self.func_state_mut().scope_cleanup.push(Vec::new());
+
             for stmt in cs.stmt_start.range(cs.stmt_len) {
                 let is_last_stmt_expr = if let NodeKind::ExpressionStmt(Some(e)) = self.ast.get_kind(stmt) {
                     *e == result_expr
@@ -327,11 +329,23 @@ impl<'a> MirGen<'a> {
                 self.visit_node(stmt);
             }
 
-            let op = if let NodeKind::Dummy = self.ast.get_kind(result_expr) {
+            let mut op = if let NodeKind::Dummy = self.ast.get_kind(result_expr) {
                 self.create_dummy_operand()
             } else {
                 self.visit_expression(result_expr, need_value)
             };
+
+            if need_value && self.has_any_cleanups() && !matches!(op, Operand::Constant(_)) {
+                let mir_ty = self.get_operand_type(&op);
+                op = self.emit_rvalue_to_operand(Rvalue::Use(op), mir_ty);
+            }
+
+            let cleanup = self.func_state_mut().scope_cleanup.pop().unwrap();
+            if !self.current_block_has_terminator() {
+                for action in cleanup.into_iter().rev() {
+                    self.emit_cleanup(action);
+                }
+            }
 
             self.current_scope_id = old_scope;
             op

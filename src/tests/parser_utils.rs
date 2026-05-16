@@ -406,6 +406,7 @@ fn extract_declarator_name(ast: &ParsedAst, declarator: DeclaratorRef) -> String
         ParsedDeclarator::Array { inner, .. } => extract_declarator_name(ast, *inner),
         ParsedDeclarator::Function { inner, .. } => extract_declarator_name(ast, *inner),
         ParsedDeclarator::BitField { inner, .. } => extract_declarator_name(ast, *inner),
+        ParsedDeclarator::Attribute { inner, .. } => extract_declarator_name(ast, *inner),
     }
 }
 
@@ -469,6 +470,7 @@ fn extract_declarator_kind(ast: &ParsedAst, declarator: DeclaratorRef) -> String
             let inner_kind = extract_declarator_kind(ast, *inner);
             format!("bitfield {}", inner_kind)
         }
+        ParsedDeclarator::Attribute { inner, .. } => extract_declarator_kind(ast, *inner),
     }
 }
 

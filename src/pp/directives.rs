@@ -72,7 +72,7 @@ impl<'src> Preprocessor<'src> {
                 if self.should_evaluate_conditional() {
                     match self.expect_identifier() {
                         Ok((_, sym)) => {
-                            let cond = self.macros.contains_key(&sym) == is_ifdef;
+                            let cond = self.is_macro_defined(sym) == is_ifdef;
                             self.expect_eod().unwrap_or(());
                             self.handle_elif(cond, location)
                         }
@@ -553,7 +553,7 @@ impl<'src> Preprocessor<'src> {
     fn handle_conditional_def(&mut self, is_ifdef: bool) -> Result<(), PPError> {
         let (_, sym) = self.expect_identifier()?;
 
-        let condition = self.macros.contains_key(&sym) == is_ifdef;
+        let condition = self.is_macro_defined(sym) == is_ifdef;
         self.handle_if(condition)?;
         self.expect_eod()
     }

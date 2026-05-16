@@ -24,16 +24,30 @@ use target_lexicon::Architecture;
 
 use crate::mir::GlobalId;
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum CleanupAction {
+    Free(LocalId),
+    CleanupFunc(MirFunctionId, LocalId),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LabelInfo {
+    pub(crate) block_id: MirBlockId,
+    pub(crate) scope_depth: usize,
+}
+
 pub(crate) struct FunctionState {
     pub(crate) func_id: MirFunctionId,
     pub(crate) current_block: Option<MirBlockId>,
     pub(crate) local_map: HashMap<SymbolRef, LocalId>,
     pub(crate) vla_map: HashMap<SymbolRef, (LocalId, LocalId)>,
-    pub(crate) label_map: HashMap<NameId, MirBlockId>,
+    pub(crate) label_map: HashMap<NameId, LabelInfo>,
     pub(crate) break_target: Option<MirBlockId>,
+    pub(crate) break_depth: Option<usize>,
     pub(crate) continue_target: Option<MirBlockId>,
+    pub(crate) continue_depth: Option<usize>,
     pub(crate) switch_case_map: HashMap<NodeRef, MirBlockId>,
-    pub(crate) scope_cleanup: Vec<Vec<LocalId>>,
+    pub(crate) scope_cleanup: Vec<Vec<CleanupAction>>,
 }
 
 impl FunctionState {
@@ -45,7 +59,9 @@ impl FunctionState {
             vla_map: HashMap::new(),
             label_map: HashMap::new(),
             break_target: None,
+            break_depth: None,
             continue_target: None,
+            continue_depth: None,
             switch_case_map: HashMap::new(),
             scope_cleanup: Vec::new(),
         }
@@ -109,6 +125,14 @@ impl<'a> MirGen<'a> {
         fb.current_block_has_terminator()
     }
 
+    pub(crate) fn has_any_cleanups(&self) -> bool {
+        if let Some(state) = &self.func_state {
+            state.scope_cleanup.iter().any(|s| !s.is_empty())
+        } else {
+            false
+        }
+    }
+
     pub(crate) fn create_local(&mut self, name: Option<NameId>, type_id: TypeId, is_param: bool) -> LocalId {
         let (func_id, current_block) = self.get_func_info();
         let mut fb = self.mb.build_function(func_id, current_block);
@@ -123,6 +147,10 @@ impl<'a> MirGen<'a> {
 
     pub(super) fn func_state_mut(&mut self) -> &mut FunctionState {
         self.func_state.as_mut().expect("Not in a function")
+    }
+
+    pub(super) fn func_state(&self) -> &FunctionState {
+        self.func_state.as_ref().expect("Not in a function")
     }
 
     fn get_func_info(&self) -> (MirFunctionId, Option<MirBlockId>) {
@@ -295,10 +323,32 @@ impl<'a> MirGen<'a> {
             }
             NodeKind::Break => {
                 let target = self.func_state_mut().break_target.unwrap();
+                let target_depth = self.func_state().break_depth.unwrap();
+                let current_depth = self.func_state().scope_cleanup.len();
+
+                if current_depth > target_depth {
+                    for i in (target_depth..current_depth).rev() {
+                        let cleanup = self.func_state().scope_cleanup[i].clone();
+                        for action in cleanup.into_iter().rev() {
+                            self.emit_cleanup(action);
+                        }
+                    }
+                }
                 self.set_terminator(Terminator::Goto(target));
             }
             NodeKind::Continue => {
                 let target = self.func_state_mut().continue_target.unwrap();
+                let target_depth = self.func_state().continue_depth.unwrap();
+                let current_depth = self.func_state().scope_cleanup.len();
+
+                if current_depth > target_depth {
+                    for i in (target_depth..current_depth).rev() {
+                        let cleanup = self.func_state().scope_cleanup[i].clone();
+                        for action in cleanup.into_iter().rev() {
+                            self.emit_cleanup(action);
+                        }
+                    }
+                }
                 self.set_terminator(Terminator::Goto(target));
             }
             NodeKind::Goto(label_name, _) => self.visit_goto_stmt(label_name),
@@ -402,9 +452,42 @@ impl<'a> MirGen<'a> {
             self.visit_node(stmt)
         }
         let cleanup = self.func_state_mut().scope_cleanup.pop().unwrap();
-        for ptr_local_id in cleanup {
-            let ptr_op = Operand::Copy(Box::new(Place::Local(ptr_local_id)));
-            self.emit_free_call(ptr_op);
+        if !self.current_block_has_terminator() {
+            for action in cleanup.into_iter().rev() {
+                self.emit_cleanup(action);
+            }
+        }
+    }
+
+    pub(crate) fn emit_cleanup(&mut self, action: CleanupAction) {
+        match action {
+            CleanupAction::Free(ptr_local_id) => {
+                let ptr_op = Operand::Copy(Box::new(Place::Local(ptr_local_id)));
+                self.emit_free_call(ptr_op);
+            }
+            CleanupAction::CleanupFunc(func_id, var_local_id) => {
+                let var_place = Place::Local(var_local_id);
+                let addr_op = Operand::AddressOf(Box::new(var_place));
+
+                // Ensure address type matches parameter type
+                let param_ty_id = {
+                    let func_def = self.mb.get_function(func_id);
+                    let param_local_id = func_def.params[0];
+                    self.mb.get_local(param_local_id).type_id
+                };
+
+                let addr_casted = if self.get_operand_type(&addr_op) != param_ty_id {
+                    Operand::Cast(param_ty_id, Box::new(addr_op))
+                } else {
+                    addr_op
+                };
+
+                self.add_stmt(MirStmt::Call {
+                    target: CallTarget::Direct(func_id),
+                    args: vec![addr_casted],
+                    dest: None,
+                });
+            }
         }
     }
 
@@ -435,7 +518,7 @@ impl<'a> MirGen<'a> {
         self.map_parameters(func_id, function, param_len);
 
         let body_node = function.child_start.add_offset(param_len);
-        self.scan_for_labels(body_node);
+        self.scan_for_labels_recursive(body_node, 0);
         self.visit_node(body_node);
 
         self.emit_implicit_return(func_id, func_name);
@@ -564,6 +647,7 @@ impl<'a> MirGen<'a> {
         let SymbolKind::Variable {
             initializer: init,
             alignment,
+            cleanup_func,
             ..
         } = symbol.kind
         else {
@@ -594,9 +678,38 @@ impl<'a> MirGen<'a> {
 
         self.func_state_mut().local_map.insert(sym, local_id);
 
+        if let Some(cleanup_sym) = cleanup_func {
+            let func_id = self.get_or_declare_cleanup_function(cleanup_sym);
+            if let Some(current_scope_cleanup) = self.func_state_mut().scope_cleanup.last_mut() {
+                current_scope_cleanup.push(CleanupAction::CleanupFunc(func_id, local_id));
+            }
+        }
+
         if let Some(initializer) = init {
             let init_operand = self.visit_init(initializer, qt, Some(Place::Local(local_id)));
             self.emit_assignment(Place::Local(local_id), init_operand);
+        }
+    }
+
+    fn get_or_declare_cleanup_function(&mut self, sym: SymbolRef) -> MirFunctionId {
+        let symbol_entry = self.symbol_table.get_symbol(sym);
+        let name = symbol_entry.name;
+        if let Some(func_id) = self.mb.find_function_by_name(name) {
+            return func_id;
+        }
+
+        let func_ty_id = self.lower_qual_type(symbol_entry.type_info);
+        let func_ty = self.mb.get_type(func_ty_id).clone();
+        if let MirType::Function {
+            return_type,
+            params,
+            is_variadic,
+        } = func_ty
+        {
+            self.mb
+                .declare_function_with_linkage(name, params, return_type, is_variadic, MirLinkage::Import)
+        } else {
+            unreachable!("Cleanup must be a function")
         }
     }
 
@@ -712,7 +825,7 @@ impl<'a> MirGen<'a> {
 
         // Register for cleanup at end of current scope
         if let Some(current_scope_cleanup) = self.func_state_mut().scope_cleanup.last_mut() {
-            current_scope_cleanup.push(ptr_local_id);
+            current_scope_cleanup.push(CleanupAction::Free(ptr_local_id));
         }
 
         ptr_local_id
@@ -804,7 +917,30 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_return_stmt(&mut self, expr: &Option<NodeRef>) {
-        let operand = expr.map(|expr| self.visit_expression(expr, true));
+        let operand = expr.and_then(|expr| {
+            let mut op = self.visit_expression(expr, true);
+            let qt = self.ast.qual_type_of(expr);
+            if qt.is_void() {
+                None
+            } else {
+                // We MUST copy the return value to a temporary BEFORE cleanups,
+                // because cleanups might modify the variables used in the return expression.
+                if self.has_any_cleanups() && !matches!(op, Operand::Constant(_)) {
+                    let mir_ty = self.get_operand_type(&op);
+                    op = self.emit_rvalue_to_operand(Rvalue::Use(op), mir_ty);
+                }
+                Some(op)
+            }
+        });
+
+        // Emit cleanups for all scopes being exited
+        let cleanups: Vec<Vec<CleanupAction>> = self.func_state().scope_cleanup.clone();
+        for scope_cleanup in cleanups.into_iter().rev() {
+            for action in scope_cleanup.into_iter().rev() {
+                self.emit_cleanup(action);
+            }
+        }
+
         self.set_terminator(Terminator::Return(operand));
     }
 
@@ -942,6 +1078,8 @@ impl<'a> MirGen<'a> {
     }
 
     fn visit_for_stmt(&mut self, for_stmt: &ForStmt) {
+        self.func_state_mut().scope_cleanup.push(Vec::new());
+
         let init_node = for_stmt.child_start;
         let cond_node = for_stmt.child_start.add_offset(1);
         let inc_node = for_stmt.child_start.add_offset(2);
@@ -978,6 +1116,13 @@ impl<'a> MirGen<'a> {
         };
 
         self.emit_loop_generic(init_fn, cond_fn, |this| this.visit_node(for_stmt.body), inc_fn, false);
+
+        let cleanup = self.func_state_mut().scope_cleanup.pop().unwrap();
+        if !self.current_block_has_terminator() {
+            for action in cleanup.into_iter().rev() {
+                self.emit_cleanup(action);
+            }
+        }
     }
 
     fn visit_switch_stmt(&mut self, cond: NodeRef, body: NodeRef) {
@@ -987,7 +1132,9 @@ impl<'a> MirGen<'a> {
         let merge_block = self.create_block();
 
         let saved_break = self.func_state_mut().break_target;
+        let saved_break_depth = self.func_state_mut().break_depth;
         self.func_state_mut().break_target = Some(merge_block);
+        self.func_state_mut().break_depth = Some(self.func_state().scope_cleanup.len());
 
         // Collect cases
         let cases = self.collect_switch_cases(body);
@@ -1078,6 +1225,7 @@ impl<'a> MirGen<'a> {
         }
 
         self.func_state_mut().break_target = saved_break;
+        self.func_state_mut().break_depth = saved_break_depth;
         self.set_current_block(merge_block);
     }
 
@@ -2056,42 +2204,79 @@ impl<'a> MirGen<'a> {
     where
         F: FnOnce(&mut Self),
     {
+        let depth = self.func_state().scope_cleanup.len();
         let old_break = self.func_state_mut().break_target.replace(break_target);
+        let old_break_depth = self.func_state_mut().break_depth.replace(depth);
         let old_continue = self.func_state_mut().continue_target.replace(continue_target);
+        let old_continue_depth = self.func_state_mut().continue_depth.replace(depth);
 
         f(self);
 
         let state = self.func_state_mut();
         state.break_target = old_break;
+        state.break_depth = old_break_depth;
         state.continue_target = old_continue;
+        state.continue_depth = old_continue_depth;
     }
 
-    fn scan_for_labels(&mut self, node: NodeRef) {
+    fn scan_for_labels_recursive(&mut self, node: NodeRef, current_depth: usize) {
         let node_kind = *self.ast.get_kind(node);
-        if let NodeKind::Label(name, _, _) = node_kind
-            && !self.func_state_mut().label_map.contains_key(&name)
-        {
-            let block_id = self.create_block();
-            self.func_state_mut().label_map.insert(name, block_id);
+        match node_kind {
+            NodeKind::Label(name, _, _) if !self.func_state_mut().label_map.contains_key(&name) => {
+                let block_id = self.create_block();
+                self.func_state_mut().label_map.insert(
+                    name,
+                    LabelInfo {
+                        block_id,
+                        scope_depth: current_depth,
+                    },
+                );
+            }
+            NodeKind::CompoundStmt(_) => {
+                node_kind.visit_children(|child| self.scan_for_labels_recursive(child, current_depth + 1));
+                return;
+            }
+            NodeKind::For(_) => {
+                node_kind.visit_children(|child| self.scan_for_labels_recursive(child, current_depth + 1));
+                return;
+            }
+            _ => {}
         }
-        node_kind.visit_children(|child| self.scan_for_labels(child));
+        node_kind.visit_children(|child| self.scan_for_labels_recursive(child, current_depth));
     }
 
     fn visit_goto_stmt(&mut self, label_name: NameId) {
-        if let Some(target_block) = self.func_state_mut().label_map.get(&label_name).copied() {
-            self.set_terminator(Terminator::Goto(target_block));
-        } else {
-            // This should be caught by semantic analysis, but we panic as a safeguard
-            panic!("Goto to undefined label '{}'", label_name.as_str());
+        let label_info = self
+            .func_state()
+            .label_map
+            .get(&label_name)
+            .cloned()
+            .expect("Label not found");
+
+        // Emit cleanups for all scopes being exited
+        let current_depth = self.func_state().scope_cleanup.len();
+        let target_depth = label_info.scope_depth;
+
+        if current_depth > target_depth {
+            for i in (target_depth..current_depth).rev() {
+                let cleanup = self.func_state().scope_cleanup[i].clone();
+                for action in cleanup.into_iter().rev() {
+                    self.emit_cleanup(action);
+                }
+            }
         }
+
+        self.set_terminator(Terminator::Goto(label_info.block_id));
     }
 
     fn visit_label_stmt(&mut self, label_name: NameId, statement: NodeRef) {
-        let label_block = *self
-            .func_state_mut()
+        let label_info = self
+            .func_state()
             .label_map
             .get(&label_name)
+            .cloned()
             .expect("Label was not pre-scanned");
+        let label_block = label_info.block_id;
 
         // Make sure the current block is terminated before switching (fallthrough)
         if !self.current_block_has_terminator() {

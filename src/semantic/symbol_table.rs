@@ -305,7 +305,8 @@ pub enum SymbolKind {
         storage: Option<StorageClass>,
         // Initializer might be an AST node or a constant value
         initializer: Option<NodeRef>,
-        alignment: Option<u16>, // Max alignment in bytes
+        alignment: Option<u16>,          // Max alignment in bytes
+        cleanup_func: Option<SymbolRef>, // Attribute __cleanup__(func)
     },
     Function {
         storage: Option<StorageClass>,
@@ -589,6 +590,7 @@ impl SymbolTable {
         is_thread_local: bool,
         initializer: Option<NodeRef>,
         alignment: Option<u16>,
+        cleanup_func: Option<SymbolRef>,
         span: SourceSpan,
     ) -> Result<SymbolRef, SymbolTableError> {
         let is_global = self.current_scope_id == ScopeId::GLOBAL;
@@ -600,6 +602,7 @@ impl SymbolTable {
                 storage,
                 initializer,
                 alignment,
+                cleanup_func,
             },
             ty,
             span,

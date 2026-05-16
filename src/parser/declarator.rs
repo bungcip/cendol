@@ -33,7 +33,7 @@ fn peek_past_attribute(parser: &mut Parser, mut start_offset: u32) -> Option<Tok
         // If not ((, then it's not a GCC attribute (or it's ill-formed), stop
         let t1 = parser.peek_token(start_offset)?;
         if t1.kind != TokenKind::LeftParen {
-            return Some(t1);
+            return None;
         }
         start_offset += 1;
 
@@ -90,11 +90,14 @@ fn validate_declarator(
 }
 
 pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Result<DeclaratorRef, ParseError> {
-    let _ = parser.skip_attributes();
+    let mut attrs_before = Vec::new();
+    while parser.is_token(TokenKind::Attribute) {
+        attrs_before.extend(super::declarations::parse_attribute(parser)?);
+    }
 
     let pointers = parse_leading_pointers(parser)?;
 
-    let base = if parser.accept(TokenKind::LeftParen).is_some() {
+    let mut base = if parser.accept(TokenKind::LeftParen).is_some() {
         let inner = parse_declarator(parser, allow_bitfield)?;
         parser.expect(TokenKind::RightParen)?;
         inner
@@ -110,7 +113,27 @@ pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Res
         }
     };
 
-    let trailing = parse_trailing_declarators(parser, base, allow_bitfield)?;
+    // Parse attributes after identifier or abstract declarator base
+    while parser.is_token(TokenKind::Attribute) {
+        let attrs = super::declarations::parse_attribute(parser)?;
+        for attr in attrs {
+            base = parser.alloc_decl(ParsedDeclarator::Attribute {
+                inner: base,
+                spec: attr,
+            });
+        }
+    }
+
+    let mut trailing = parse_trailing_declarators(parser, base, allow_bitfield)?;
+
+    // Wrap with leading attributes
+    for attr in attrs_before {
+        trailing = parser.alloc_decl(ParsedDeclarator::Attribute {
+            inner: trailing,
+            spec: attr,
+        });
+    }
+
     Ok(reconstruct_declarator_chain(parser, pointers, trailing))
 }
 
@@ -149,10 +172,15 @@ fn parse_array_size(parser: &mut Parser) -> Result<ParsedArraySize, ParseError> 
     }
 }
 
-fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<TypeQualifiers>, ParseError> {
+fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<(TypeQualifiers, Vec<DeclSpec>)>, ParseError> {
     let mut pointers = Vec::new();
     while parser.accept(TokenKind::Star).is_some() {
-        pointers.push(parse_type_qualifiers(parser)?);
+        let qualifiers = parse_type_qualifiers(parser)?;
+        let mut attrs = Vec::new();
+        while parser.is_token(TokenKind::Attribute) {
+            attrs.extend(super::declarations::parse_attribute(parser)?);
+        }
+        pointers.push((qualifiers, attrs));
     }
     Ok(pointers)
 }
@@ -188,6 +216,15 @@ fn parse_trailing_declarators(
                 let width = parser.parse_expr_assignment()?;
                 base = parser.alloc_decl(ParsedDeclarator::BitField { inner: base, width });
             }
+            TokenKind::Attribute => {
+                let attrs = super::declarations::parse_attribute(parser)?;
+                for attr in attrs {
+                    base = parser.alloc_decl(ParsedDeclarator::Attribute {
+                        inner: base,
+                        spec: attr,
+                    });
+                }
+            }
             _ => break,
         }
     }
@@ -196,14 +233,20 @@ fn parse_trailing_declarators(
 
 fn reconstruct_declarator_chain(
     parser: &mut Parser,
-    chain: Vec<TypeQualifiers>,
+    chain: Vec<(TypeQualifiers, Vec<DeclSpec>)>,
     mut base: DeclaratorRef,
 ) -> DeclaratorRef {
-    for qualifiers in chain.into_iter().rev() {
+    for (qualifiers, attrs) in chain.into_iter().rev() {
         base = parser.alloc_decl(ParsedDeclarator::Pointer {
             qualifiers,
             inner: base,
         });
+        for attr in attrs {
+            base = parser.alloc_decl(ParsedDeclarator::Attribute {
+                inner: base,
+                spec: attr,
+            });
+        }
     }
     base
 }
@@ -317,6 +360,7 @@ pub(crate) fn get_declarator_name(arena: &ParsedTypeArena, declarator: Declarato
         ParsedDeclarator::Pointer { inner, .. } => get_declarator_name(arena, *inner),
         ParsedDeclarator::Array { inner, .. } => get_declarator_name(arena, *inner),
         ParsedDeclarator::Function { inner, .. } => get_declarator_name(arena, *inner),
+        ParsedDeclarator::Attribute { inner, .. } => get_declarator_name(arena, *inner),
         _ => unreachable!(),
     }
 }
@@ -334,6 +378,7 @@ pub(super) fn get_declarator_params(arena: &ParsedTypeArena, declarator: Declara
         }
         ParsedDeclarator::Pointer { inner, .. } => get_declarator_params(arena, *inner),
         ParsedDeclarator::Array { inner, .. } => get_declarator_params(arena, *inner),
+        ParsedDeclarator::Attribute { inner, .. } => get_declarator_params(arena, *inner),
         _ => None,
     }
 }

@@ -202,6 +202,16 @@ impl<'src> Preprocessor<'src> {
             return self.emit_error(PPError::InvalidMacroParameter, token.location);
         }
 
+        self.in_macro_argument_parsing += 1;
+        let res = self.parse_macro_args_from_lexer_loop(macro_info);
+        self.in_macro_argument_parsing -= 1;
+        res
+    }
+
+    fn parse_macro_args_from_lexer_loop(
+        &mut self,
+        macro_info: &MacroInfo,
+    ) -> Result<(Vec<Vec<PPToken>>, PPToken), PPDiag> {
         let mut args = Vec::with_capacity(macro_info.parameter_list.len());
         let mut current_arg = Vec::new();
         let mut depth = 0;

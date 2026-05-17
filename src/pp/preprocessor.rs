@@ -57,6 +57,7 @@ pub struct Preprocessor<'src> {
     pub(crate) include_depth: usize,
     pub(crate) max_include_depth: usize,
     pub(crate) counter: u32,
+    pub(crate) in_macro_argument_parsing: usize,
     eof_emitted: bool,
 }
 
@@ -120,6 +121,7 @@ impl<'src> Preprocessor<'src> {
             pedantic: config.pedantic,
             pedantic_errors: config.pedantic_errors,
             counter: 0,
+            in_macro_argument_parsing: 0,
             eof_emitted: false,
         };
 
@@ -780,6 +782,10 @@ impl<'src> Preprocessor<'src> {
                     if !token.flags.contains(PPTokenFlags::MACRO_EXPANDED)
                         && token.flags.contains(PPTokenFlags::STARTS_PP_LINE) =>
                 {
+                    if self.in_macro_argument_parsing > 0 {
+                        let err = self.error(PPError::DirectiveInMacroArgs, token.location);
+                        self.report_pp_warning(err);
+                    }
                     self.handle_directive()?;
                 }
                 // Skip tokens when in conditional compilation skip mode

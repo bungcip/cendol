@@ -153,6 +153,7 @@ impl CompilerDriver {
             if timing_enabled {
                 eprintln!("[TIMING] Preprocessor: {:?}", t0.elapsed());
             }
+            self.check_diagnostics_and_return_if_error()?;
             return Ok(out);
         }
 

@@ -32,11 +32,12 @@ pub enum PPError {
     InvalidUniversalCharacterName,
     MacroRedefined(StringId),
     DollarInIdentifier,
+    DirectiveInMacroArgs,
 }
 
 impl PPError {
     pub(crate) fn is_pedantic(&self) -> bool {
-        matches!(self, PPError::DollarInIdentifier)
+        matches!(self, PPError::DollarInIdentifier | PPError::DirectiveInMacroArgs)
     }
 }
 
@@ -71,6 +72,9 @@ impl DiagDisplay for PPError {
                 write!(f, "Macro '{}' redefined with different value", macro_name)
             }
             PPError::DollarInIdentifier => write!(f, "'$' in identifier or number"),
+            PPError::DirectiveInMacroArgs => {
+                write!(f, "embedding a directive within macro arguments is not portable")
+            }
         }
     }
 }
@@ -129,6 +133,7 @@ impl crate::diagnostic::IntoDiagnostic for PPDiag {
         let warning_name = match &kind {
             PPError::DollarInIdentifier => Some("dollar-in-identifier-extension"),
             PPError::MacroRedefined(_) => Some("macro-redefined"),
+            PPError::DirectiveInMacroArgs => Some("embedded-directive"),
             _ => None,
         };
         let mut diag = Diagnostic {

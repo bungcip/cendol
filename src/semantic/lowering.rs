@@ -25,7 +25,7 @@ use crate::semantic::literal_utils::{get_string_builtin_type, get_string_literal
 use crate::semantic::symbol_table::{DefinitionState, SymbolTableError};
 use crate::semantic::{
     ArraySizeType, BuiltinFunctionKind, BuiltinType, EnumConstant, Namespace, RecordMember, ScopeId, SymbolKind,
-    SymbolRef, SymbolTable, Type, TypeKind, TypeQualifiers, TypeRef, TypeRegistry, Variable,
+    SymbolRef, SymbolTable, TypeKind, TypeQualifiers, TypeRef, TypeRegistry, Variable,
 };
 use crate::semantic::{FunctionParam, QualType};
 use crate::source_manager::SourceSpan;
@@ -3268,7 +3268,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             Bool => self.registry.type_bool,
             Complex => self.registry.type_complex_marker,
             VaList => self.registry.type_valist,
-            AutoType => self.registry.alloc(Type::new(TypeKind::AutoType)),
+            AutoType => self.registry.auto_type(),
         };
         Ok(QualType::unqualified(ty))
     }
@@ -3466,9 +3466,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
                 ));
             }
         } else if info.has_auto && self.lang_opts.c_standard >= CStandard::C23 {
-            info.base_type = Some(QualType::unqualified(
-                self.registry.alloc(Type::new(TypeKind::AutoType)),
-            ));
+            info.base_type = Some(QualType::unqualified(self.registry.auto_type()));
         }
 
         self.validate_specifier_combinations(&info, span);
@@ -3864,7 +3862,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         self.report_warning(span, SemanticError::GnuTypeof);
         let expr_node = self.visit_expression(expr);
         self.try_infer_type(expr_node)
-            .unwrap_or_else(|| QualType::unqualified(self.registry.alloc(Type::new(TypeKind::TypeofExpr(expr_node)))))
+            .unwrap_or_else(|| QualType::unqualified(self.registry.typeof_expr(expr_node)))
     }
 
     fn lower_typeof_unqual(&mut self, ty: ParsedType, span: SourceSpan) -> Result<QualType, SemanticDiag> {
@@ -3877,7 +3875,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         let ty = self
             .try_infer_type(expr_node)
             .map(|qt| qt.ty())
-            .unwrap_or_else(|| self.registry.alloc(Type::new(TypeKind::TypeofUnqualExpr(expr_node))));
+            .unwrap_or_else(|| self.registry.typeof_unqual_expr(expr_node));
         QualType::unqualified(ty)
     }
 

@@ -6,7 +6,10 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::{ast::NameId, semantic::QualType};
+use crate::{
+    ast::{NameId, NodeRef},
+    semantic::QualType,
+};
 use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
 use target_lexicon::{PointerWidth, Triple};
@@ -354,13 +357,25 @@ impl TypeRegistry {
     }
 
     /// Allocate a new canonical type and return its TypeRef.
-    pub(crate) fn alloc(&mut self, ty: Type) -> TypeRef {
+    fn alloc(&mut self, ty: Type) -> TypeRef {
         let idx = self.types.len() as u32;
         self.types.push(ty);
         let kind = &self.types[idx as usize].kind;
         let class = kind.to_class();
 
         TypeRef::new(idx, class, 0, 0).expect("TypeRef alloc failed")
+    }
+
+    pub(crate) fn auto_type(&mut self) -> TypeRef {
+        self.alloc(Type::new(TypeKind::AutoType))
+    }
+
+    pub(crate) fn typeof_expr(&mut self, expr_node: NodeRef) -> TypeRef {
+        self.alloc(Type::new(TypeKind::TypeofExpr(expr_node)))
+    }
+
+    pub(crate) fn typeof_unqual_expr(&mut self, expr_node: NodeRef) -> TypeRef {
+        self.alloc(Type::new(TypeKind::TypeofUnqualExpr(expr_node)))
     }
 
     /// Get the unsigned version of a builtin integer type.

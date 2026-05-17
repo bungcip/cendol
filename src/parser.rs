@@ -24,7 +24,7 @@ pub mod type_specifiers;
 pub mod utils;
 
 // Re-export commonly used types
-pub(crate) use crate::parser::errors::{ParseError, ParseErrorKind};
+pub(crate) use crate::parser::errors::{ParseDiag, ParseError};
 pub(crate) use expressions::BindingPower;
 use expressions::parse_expression;
 pub(crate) use lexer::{Lexer, Token, TokenKind};
@@ -222,7 +222,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     }
 
     /// Get the current token (returns error if at end of input)
-    fn current_token(&mut self) -> Result<Token, ParseError> {
+    fn current_token(&mut self) -> Result<Token, ParseDiag> {
         let idx = self.current_idx;
         self.try_current_token().ok_or_else(|| {
             let span = self
@@ -230,9 +230,9 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
                 .get(idx.saturating_sub(1))
                 .map(|token| token.span)
                 .unwrap_or_default();
-            ParseError {
+            ParseDiag {
                 span,
-                kind: ParseErrorKind::UnexpectedEof,
+                kind: ParseError::UnexpectedEof,
             }
         })
     }
@@ -243,7 +243,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     }
 
     /// Get the current token location
-    pub(super) fn current_token_span(&mut self) -> Result<SourceSpan, ParseError> {
+    pub(super) fn current_token_span(&mut self) -> Result<SourceSpan, ParseDiag> {
         Ok(self.current_token()?.span)
     }
 
@@ -296,25 +296,25 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     }
 
     /// Expect a specific token kind, consume it if found
-    fn expect(&mut self, expected: TokenKind) -> Result<Token, ParseError> {
+    fn expect(&mut self, expected: TokenKind) -> Result<Token, ParseDiag> {
         match self.current_token() {
             Ok(token) => {
                 if token.kind == expected {
                     self.advance();
                     Ok(token)
                 } else {
-                    Err(ParseError {
+                    Err(ParseDiag {
                         span: token.span,
-                        kind: ParseErrorKind::UnexpectedToken {
+                        kind: ParseError::UnexpectedToken {
                             expected: expected.display(),
                             found: token.kind,
                         },
                     })
                 }
             }
-            Err(e) => Err(ParseError {
+            Err(e) => Err(ParseDiag {
                 span: e.span,
-                kind: ParseErrorKind::UnexpectedToken {
+                kind: ParseError::UnexpectedToken {
                     expected: expected.display(),
                     found: TokenKind::EndOfFile,
                 },
@@ -401,22 +401,22 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     pub(super) fn parse_expression(
         &mut self,
         min_binding_power: expressions::BindingPower,
-    ) -> Result<ParsedNodeRef, ParseError> {
+    ) -> Result<ParsedNodeRef, ParseDiag> {
         parse_expression(self, min_binding_power)
     }
 
     /// Parse expression with minimum binding power
-    pub(super) fn parse_expr_min(&mut self) -> Result<ParsedNodeRef, ParseError> {
+    pub(super) fn parse_expr_min(&mut self) -> Result<ParsedNodeRef, ParseDiag> {
         self.parse_expression(BindingPower::MIN)
     }
 
     /// Parse expression up to assignment
-    pub(super) fn parse_expr_assignment(&mut self) -> Result<ParsedNodeRef, ParseError> {
+    pub(super) fn parse_expr_assignment(&mut self) -> Result<ParsedNodeRef, ParseDiag> {
         self.parse_expression(BindingPower::ASSIGNMENT)
     }
 
     /// Parse translation unit (top level)
-    pub(crate) fn parse_translation_unit(&mut self) -> Result<ParsedNodeRef, ParseError> {
+    pub(crate) fn parse_translation_unit(&mut self) -> Result<ParsedNodeRef, ParseDiag> {
         declarations::parse_translation_unit(self)
     }
 
@@ -455,15 +455,15 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     }
 
     /// expect and accept an identifier name, returning the symbol or error
-    fn expect_name(&mut self) -> Result<(NameId, SourceSpan), ParseError> {
+    fn expect_name(&mut self) -> Result<(NameId, SourceSpan), ParseDiag> {
         let token = self.current_token()?;
         if let TokenKind::Identifier(symbol) = token.kind {
             self.advance();
             Ok((symbol, token.span))
         } else {
-            Err(ParseError {
+            Err(ParseDiag {
                 span: token.span,
-                kind: ParseErrorKind::UnexpectedToken {
+                kind: ParseError::UnexpectedToken {
                     expected: "identifier",
                     found: token.kind,
                 },
@@ -472,7 +472,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     }
 
     /// expect and accept a string literal, returning the literal or error
-    fn expect_string_literal(&mut self) -> Result<(LitRef, SourceSpan), ParseError> {
+    fn expect_string_literal(&mut self) -> Result<(LitRef, SourceSpan), ParseDiag> {
         let token = self.current_token()?;
         if let TokenKind::Literal(lit) = token.kind
             && lit.kind() == LitKind::String
@@ -480,9 +480,9 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
             self.advance();
             Ok((lit, token.span))
         } else {
-            Err(ParseError {
+            Err(ParseDiag {
                 span: token.span,
-                kind: ParseErrorKind::UnexpectedToken {
+                kind: ParseError::UnexpectedToken {
                     expected: "string literal",
                     found: token.kind,
                 },
@@ -532,7 +532,7 @@ impl<'arena, 'src, 'lexer> Parser<'arena, 'src, 'lexer> {
     }
 
     /// Skip attributes (both GCC and C23)
-    pub(super) fn skip_attributes(&mut self) -> Result<(), ParseError> {
+    pub(super) fn skip_attributes(&mut self) -> Result<(), ParseDiag> {
         while self.is_token(TokenKind::Attribute) || self.at_c23_attribute_start() {
             if self.is_token(TokenKind::Attribute) {
                 declarations::parse_attribute(self)?;

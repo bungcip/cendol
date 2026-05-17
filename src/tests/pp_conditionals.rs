@@ -229,7 +229,7 @@ fn test_elif_after_else() {
 #endif
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ElifAfterElse, span: SourceSpan(2199023255566) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ElifAfterElse, span: SourceSpan(2199023255566) }""#);
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn test_elif_without_if() {
 #elif 1
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ElifWithoutIf, span: SourceSpan(2199023255554) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ElifWithoutIf, span: SourceSpan(2199023255554) }""#);
 }
 
 #[test]
@@ -885,7 +885,7 @@ fn test_elifdef_without_if() {
 FAIL
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ElifWithoutIf, span: SourceSpan(2199023255554) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ElifWithoutIf, span: SourceSpan(2199023255554) }""#);
 }
 
 #[test]
@@ -895,5 +895,5 @@ fn test_elifndef_without_if() {
 FAIL
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ElifWithoutIf, span: SourceSpan(2199023255554) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ElifWithoutIf, span: SourceSpan(2199023255554) }""#);
 }

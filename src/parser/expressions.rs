@@ -5,7 +5,7 @@
 
 use crate::ast::{parsed::*, *};
 use crate::parser::type_builder::parse_type_name;
-use crate::parser::{ParseError, ParseErrorKind, Token, TokenKind};
+use crate::parser::{ParseDiag, ParseError, Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 
 use super::Parser;
@@ -106,7 +106,7 @@ impl PrattParser {
 }
 
 /// Main expression parsing using Pratt algorithm
-pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Result<ParsedNodeRef, ParseError> {
+pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Result<ParsedNodeRef, ParseDiag> {
     let mut left = parse_prefix(parser)?;
 
     while let Some(token) = parser.try_current_token() {
@@ -161,7 +161,7 @@ pub(crate) fn parse_expression(parser: &mut Parser, min_bp: BindingPower) -> Res
     Ok(left)
 }
 
-fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let token = parser.current_token()?;
 
     match token.kind {
@@ -226,9 +226,9 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
         TokenKind::BuiltinConvertVector => parse_builtin_convertvector(parser),
         TokenKind::BuiltinTypesCompatibleP => parse_builtin_types_compatible_p(parser),
 
-        _ => Err(ParseError {
+        _ => Err(ParseDiag {
             span: token.span,
-            kind: ParseErrorKind::UnexpectedToken {
+            kind: ParseError::UnexpectedToken {
                 expected: "identifier, literal, or '('",
                 found: token.kind,
             },
@@ -236,7 +236,7 @@ fn parse_prefix(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     }
 }
 
-fn parse_unary_operator(parser: &mut Parser, mut token: Token) -> Result<ParsedNodeRef, ParseError> {
+fn parse_unary_operator(parser: &mut Parser, mut token: Token) -> Result<ParsedNodeRef, ParseDiag> {
     let mut ops = Vec::new();
 
     loop {
@@ -293,7 +293,7 @@ fn parse_infix(
     left: ParsedNodeRef,
     token: Token,
     min_bp: BindingPower,
-) -> Result<ParsedNodeRef, ParseError> {
+) -> Result<ParsedNodeRef, ParseDiag> {
     let right = parser.parse_expression(min_bp)?;
 
     let op = match token.kind {
@@ -340,7 +340,7 @@ fn parse_infix(
 }
 
 /// Parse GNU statement expression: ({ compound-statement })
-fn parse_gnu_statement_expression(parser: &mut Parser, start_loc: SourceLoc) -> Result<ParsedNodeRef, ParseError> {
+fn parse_gnu_statement_expression(parser: &mut Parser, start_loc: SourceLoc) -> Result<ParsedNodeRef, ParseDiag> {
     // Parse the compound statement (parse_compound_statement expects LeftBrace)
     let (compound_stmt, _) = super::statements::parse_compound_statement(parser)?;
 
@@ -382,31 +382,27 @@ fn extract_last_expr_from_compound_stmt(parser: &mut Parser, compound_stmt: Pars
     parser.push_node(ParsedNodeKind::Dummy, compound_stmt_node.span)
 }
 
-fn parse_function_call(parser: &mut Parser, function: ParsedNodeRef) -> Result<ParsedNodeRef, ParseError> {
+fn parse_function_call(parser: &mut Parser, function: ParsedNodeRef) -> Result<ParsedNodeRef, ParseDiag> {
     let args = super::utils::parse_expr_list(parser, BindingPower::ASSIGNMENT)?;
     let right_paren = parser.expect(TokenKind::RightParen)?;
     let span = parser.ast.get_node(function).span.merge(right_paren.span);
     Ok(parser.push_node(ParsedNodeKind::FunctionCall(function, args.into_boxed_slice()), span))
 }
 
-fn parse_index_access(parser: &mut Parser, array: ParsedNodeRef) -> Result<ParsedNodeRef, ParseError> {
+fn parse_index_access(parser: &mut Parser, array: ParsedNodeRef) -> Result<ParsedNodeRef, ParseDiag> {
     let index = parser.parse_expr_min()?;
     let right_bracket = parser.expect(TokenKind::RightBracket)?;
     let span = parser.ast.get_node(array).span.merge(right_bracket.span);
     Ok(parser.push_node(ParsedNodeKind::IndexAccess(array, index), span))
 }
 
-fn parse_member_access(
-    parser: &mut Parser,
-    object: ParsedNodeRef,
-    is_arrow: bool,
-) -> Result<ParsedNodeRef, ParseError> {
+fn parse_member_access(parser: &mut Parser, object: ParsedNodeRef, is_arrow: bool) -> Result<ParsedNodeRef, ParseDiag> {
     let (symbol, span) = parser.expect_name()?;
     let span = parser.ast.get_node(object).span.merge(span);
     Ok(parser.push_node(ParsedNodeKind::MemberAccess(object, symbol, is_arrow), span))
 }
 
-fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_generic_selection(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Generic)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
 
@@ -445,7 +441,7 @@ pub(crate) fn parse_compound_literal(
     parser: &mut Parser,
     parsed_type: ParsedType,
     start_loc: SourceLoc,
-) -> Result<ParsedNodeRef, ParseError> {
+) -> Result<ParsedNodeRef, ParseDiag> {
     let init = super::declarations::parse_initializer(parser)?;
 
     let end_loc = parser.current_token_span()?.end();
@@ -454,7 +450,7 @@ pub(crate) fn parse_compound_literal(
     Ok(node)
 }
 
-fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Sizeof)?.span.start();
 
     let (kind, end) = if parser.is_token(TokenKind::LeftParen)
@@ -484,7 +480,7 @@ fn parse_sizeof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
 
 /// Parse trailing postfix operators ([], ., ->, (), ++, --) after a primary expression.
 /// This is used by sizeof and alignof to correctly handle cases like sizeof(a)[0].
-fn parse_postfix_tail(parser: &mut Parser, mut left: ParsedNodeRef) -> Result<ParsedNodeRef, ParseError> {
+fn parse_postfix_tail(parser: &mut Parser, mut left: ParsedNodeRef) -> Result<ParsedNodeRef, ParseDiag> {
     while let Some(token) = parser.try_current_token() {
         match token.kind {
             TokenKind::LeftBracket => {
@@ -519,7 +515,7 @@ fn parse_postfix_tail(parser: &mut Parser, mut left: ParsedNodeRef) -> Result<Pa
     Ok(left)
 }
 
-fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Alignof)?.span.start();
 
     let (kind, end) = if parser.is_token(TokenKind::LeftParen)
@@ -538,13 +534,13 @@ fn parse_alignof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     Ok(parser.push_node(kind, SourceSpan::new(start, end)))
 }
 
-pub(crate) fn parse_cast(parser: &mut Parser, ty: ParsedType, span: SourceSpan) -> Result<ParsedNodeRef, ParseError> {
+pub(crate) fn parse_cast(parser: &mut Parser, ty: ParsedType, span: SourceSpan) -> Result<ParsedNodeRef, ParseDiag> {
     let expr = parser.parse_expression(BindingPower::CAST)?;
     let span = span.merge(parser.ast.get_node(expr).span);
     Ok(parser.push_node(ParsedNodeKind::Cast(ty, expr), span))
 }
 
-fn parse_builtin_va_arg(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_builtin_va_arg(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinVaArg)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let expr = parser.parse_expr_assignment()?;
@@ -554,7 +550,7 @@ fn parse_builtin_va_arg(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError
     Ok(parser.push_node(ParsedNodeKind::BuiltinVaArg(ty, expr), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_choose_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_builtin_choose_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinChooseExpr)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let cond = parser.parse_expr_assignment()?;
@@ -569,7 +565,7 @@ fn parse_builtin_choose_expr(parser: &mut Parser) -> Result<ParsedNodeRef, Parse
     ))
 }
 
-fn parse_builtin_complex(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_builtin_complex(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinComplex)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let real = parser.parse_expr_assignment()?;
@@ -579,7 +575,7 @@ fn parse_builtin_complex(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErro
     Ok(parser.push_node(ParsedNodeKind::BuiltinComplex(real, imag), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_bit_cast(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_builtin_bit_cast(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinBitCast)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let ty = parse_type_name(parser)?;
@@ -589,7 +585,7 @@ fn parse_builtin_bit_cast(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErr
     Ok(parser.push_node(ParsedNodeKind::BuiltinBitCast(ty, expr), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_convertvector(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_builtin_convertvector(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinConvertVector)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let expr = parser.parse_expr_assignment()?;
@@ -602,7 +598,7 @@ fn parse_builtin_convertvector(parser: &mut Parser) -> Result<ParsedNodeRef, Par
     ))
 }
 
-fn parse_builtin_offsetof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_builtin_offsetof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinOffsetof)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let ty = parse_type_name(parser)?;
@@ -634,7 +630,7 @@ fn parse_builtin_offsetof(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErr
     Ok(parser.push_node(ParsedNodeKind::BuiltinOffsetof(ty, node), SourceSpan::new(start, end)))
 }
 
-fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_builtin_types_compatible_p(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::BuiltinTypesCompatibleP)?.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let ty1 = parse_type_name(parser)?;

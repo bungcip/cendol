@@ -2,7 +2,7 @@ use crate::ast::literal::{CharPrefix, FloatSuffix, IntSuffix, LitRef, LitVal, St
 use crate::ast::literal_parsing;
 use crate::ast::{FunctionSpec, PragmaPackKind, StorageClass, StringId, TypeQualifier};
 use crate::lang_options::CStandard;
-use crate::pp::error::PPError;
+use crate::pp::error::PPDiag;
 use crate::pp::{PPToken, PPTokenKind, Preprocessor};
 use crate::source_manager::SourceSpan;
 
@@ -731,7 +731,7 @@ impl<'src> Lexer<'src> {
     }
 
     /// Retrieve the next preprocessor token, respecting lookahead
-    fn next_pp_token(&mut self) -> Result<Option<PPToken>, PPError> {
+    fn next_pp_token(&mut self) -> Result<Option<PPToken>, PPDiag> {
         if let Some(token) = self.pp_lookahead.take() {
             return Ok(Some(token));
         }
@@ -739,7 +739,7 @@ impl<'src> Lexer<'src> {
     }
 
     /// Peek at the next preprocessor token
-    fn peek_pp_token(&mut self) -> Result<Option<PPToken>, PPError> {
+    fn peek_pp_token(&mut self) -> Result<Option<PPToken>, PPDiag> {
         if self.pp_lookahead.is_none() {
             self.pp_lookahead = self.preprocessor.next_token()?;
         }
@@ -747,7 +747,7 @@ impl<'src> Lexer<'src> {
     }
 
     /// Retrieve the next lexed token from the stream
-    pub(crate) fn tokenize_all(&mut self) -> Result<Vec<Token>, PPError> {
+    pub(crate) fn tokenize_all(&mut self) -> Result<Vec<Token>, PPDiag> {
         let mut tokens = Vec::new();
         while let Some(token) = self.next_token()? {
             let is_eof = matches!(token.kind, TokenKind::EndOfFile);
@@ -759,7 +759,7 @@ impl<'src> Lexer<'src> {
         Ok(tokens)
     }
 
-    pub(crate) fn next_token(&mut self) -> Result<Option<Token>, PPError> {
+    pub(crate) fn next_token(&mut self) -> Result<Option<Token>, PPDiag> {
         let pptoken = match self.next_pp_token()? {
             Some(t) => t,
             None => return Ok(None),

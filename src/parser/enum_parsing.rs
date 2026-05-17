@@ -4,10 +4,10 @@
 
 use super::Parser;
 use crate::ast::*;
-use crate::parser::{ParseError, TokenKind};
+use crate::parser::{ParseDiag, TokenKind};
 
 /// Parse enum specifier
-pub(super) fn parse_enum_spec(parser: &mut Parser) -> Result<TypeSpec, ParseError> {
+pub(super) fn parse_enum_spec(parser: &mut Parser) -> Result<TypeSpec, ParseDiag> {
     let tag = parser.accept_name();
 
     let original_in_underlying = parser.in_enum_underlying_type;
@@ -35,12 +35,12 @@ pub(super) fn parse_enum_spec(parser: &mut Parser) -> Result<TypeSpec, ParseErro
 }
 
 /// Parse enumerator list
-fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseError> {
+fn parse_enumerator_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseDiag> {
     crate::parser::utils::parse_comma_separated_list(parser, TokenKind::RightBrace, parse_enumerator)
 }
 
 /// Parse enumerator
-fn parse_enumerator(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_enumerator(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let (name, mut span) = parser.expect_name()?;
     let value = if parser.accept(TokenKind::Assign).is_some() {
         let expr = parser.parse_expr_assignment()?;

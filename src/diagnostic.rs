@@ -1,3 +1,4 @@
+use crate::semantic::{QualType, TypeRef, TypeRegistry};
 use crate::source_manager::{FileKind, SourceManager, SourceSpan};
 use hashbrown::HashSet;
 use std::io::IsTerminal;
@@ -307,4 +308,63 @@ impl DiagnosticEngine {
 
 pub(crate) trait IntoDiagnostic {
     fn into_diagnostic(self) -> Vec<Diagnostic>;
+}
+
+pub(crate) struct DiagFormatter<'a> {
+    pub(crate) registry: Option<&'a TypeRegistry>,
+    buffer: String,
+}
+
+impl<'a> DiagFormatter<'a> {
+    pub(crate) fn new(registry: &'a TypeRegistry) -> Self {
+        Self {
+            registry: Some(registry),
+            buffer: String::new(),
+        }
+    }
+
+    pub(crate) fn new_without_registry() -> Self {
+        Self {
+            registry: None,
+            buffer: String::new(),
+        }
+    }
+
+    pub(crate) fn display_qual_type(&self, ty: QualType) -> String {
+        self.registry
+            .expect("TypeRegistry required to display type")
+            .display_qual_type(ty)
+    }
+
+    pub(crate) fn display_type(&self, ty: TypeRef) -> String {
+        self.registry
+            .expect("TypeRegistry required to display type")
+            .display_type(ty)
+    }
+
+    pub(crate) fn into_string(self) -> String {
+        self.buffer
+    }
+}
+
+impl<'a> std::fmt::Write for DiagFormatter<'a> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.buffer.write_str(s)
+    }
+}
+
+pub(crate) trait DiagDisplay {
+    fn fmt(&self, f: &mut DiagFormatter<'_>) -> std::fmt::Result;
+}
+
+pub(crate) fn format_diag(registry: &TypeRegistry, diag: &impl DiagDisplay) -> String {
+    let mut f = DiagFormatter::new(registry);
+    let _ = diag.fmt(&mut f);
+    f.into_string()
+}
+
+pub(crate) fn format_diag_without_registry(diag: &impl DiagDisplay) -> String {
+    let mut f = DiagFormatter::new_without_registry();
+    let _ = diag.fmt(&mut f);
+    f.into_string()
 }

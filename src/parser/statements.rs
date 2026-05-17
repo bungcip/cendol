@@ -6,10 +6,10 @@
 use super::Parser;
 use crate::ast::*;
 use crate::parser::utils::parse_parenthesized_expr;
-use crate::parser::{ParseError, TokenKind};
+use crate::parser::{ParseDiag, TokenKind};
 use crate::source_manager::SourceLoc;
 
-pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     parser.skip_attributes()?;
 
     let token = parser.current_token()?;
@@ -44,14 +44,14 @@ pub(crate) fn parse_statement(parser: &mut Parser) -> Result<ParsedNodeRef, Pars
     }
 }
 
-pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(ParsedNodeRef, SourceLoc), ParseError> {
+pub(crate) fn parse_compound_statement(parser: &mut Parser) -> Result<(ParsedNodeRef, SourceLoc), ParseDiag> {
     parser.type_context.push_scope();
     let res = parse_compound_statement_inner(parser);
     parser.type_context.pop_scope();
     res
 }
 
-fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef, SourceLoc), ParseError> {
+fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef, SourceLoc), ParseDiag> {
     let start = parser.expect(TokenKind::LeftBrace)?.span;
     let dummy = parser.push_dummy();
     let mut items = Vec::new();
@@ -94,7 +94,7 @@ fn parse_compound_statement_inner(parser: &mut Parser) -> Result<(ParsedNodeRef,
     Ok((node, end.end()))
 }
 
-fn parse_if_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_if_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::If)?.span;
     let condition = parse_parenthesized_expr(parser)?;
     let then_branch = parse_statement(parser)?;
@@ -119,7 +119,7 @@ fn parse_if_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> 
     ))
 }
 
-fn parse_switch_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_switch_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Switch)?.span;
     let condition = parse_parenthesized_expr(parser)?;
     let body = parse_statement(parser)?;
@@ -127,7 +127,7 @@ fn parse_switch_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErr
     Ok(parser.push_node(ParsedNodeKind::Switch(condition, body), span))
 }
 
-fn parse_while_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_while_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::While)?.span;
     let condition = parse_parenthesized_expr(parser)?;
     let body = parse_statement(parser)?;
@@ -135,7 +135,7 @@ fn parse_while_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErro
     Ok(parser.push_node(ParsedNodeKind::While(ParsedWhileStmt { condition, body }), span))
 }
 
-fn parse_do_while_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_do_while_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Do)?.span;
     let body = parse_statement(parser)?;
     parser.expect(TokenKind::While)?;
@@ -144,7 +144,7 @@ fn parse_do_while_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseE
     Ok(parser.push_node(ParsedNodeKind::DoWhile(body, condition), start.merge(end)))
 }
 
-fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::For)?.span;
     let dummy = parser.push_dummy();
 
@@ -190,26 +190,26 @@ fn parse_for_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError>
     ))
 }
 
-fn parse_goto_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_goto_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Goto)?.span;
     let (label, _) = parser.expect_name()?;
     let end = parser.expect(TokenKind::Semicolon)?.span;
     Ok(parser.push_node(ParsedNodeKind::Goto(label), start.merge(end)))
 }
 
-fn parse_continue_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_continue_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Continue)?.span;
     let end = parser.expect(TokenKind::Semicolon)?.span;
     Ok(parser.push_node(ParsedNodeKind::Continue, start.merge(end)))
 }
 
-fn parse_break_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_break_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Break)?.span;
     let end = parser.expect(TokenKind::Semicolon)?.span;
     Ok(parser.push_node(ParsedNodeKind::Break, start.merge(end)))
 }
 
-fn parse_return_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_return_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Return)?.span;
     let value = (!parser.is_token(TokenKind::Semicolon))
         .then(|| parser.parse_expr_min())
@@ -218,12 +218,12 @@ fn parse_return_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseErr
     Ok(parser.push_node(ParsedNodeKind::Return(value), start.merge(end)))
 }
 
-fn parse_empty_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_empty_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let span = parser.expect(TokenKind::Semicolon)?.span;
     Ok(parser.push_node(ParsedNodeKind::EmptyStmt, span))
 }
 
-fn parse_case_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_case_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Case)?.span;
     let start_expr = parser.parse_expr_min()?;
     let end_expr = parser
@@ -240,7 +240,7 @@ fn parse_case_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError
     Ok(parser.push_node(kind, span))
 }
 
-fn parse_default_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_default_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Default)?.span;
     parser.expect(TokenKind::Colon)?;
     let stmt = parse_statement(parser)?;
@@ -248,7 +248,7 @@ fn parse_default_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseEr
     Ok(parser.push_node(ParsedNodeKind::Default(stmt), span))
 }
 
-fn parse_label_statement(parser: &mut Parser, name: NameId) -> Result<ParsedNodeRef, ParseError> {
+fn parse_label_statement(parser: &mut Parser, name: NameId) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.advance().unwrap().span;
     parser.expect(TokenKind::Colon)?;
     let stmt = parse_statement(parser)?;
@@ -256,7 +256,7 @@ fn parse_label_statement(parser: &mut Parser, name: NameId) -> Result<ParsedNode
     Ok(parser.push_node(ParsedNodeKind::Label(name, stmt), span))
 }
 
-fn parse_expression_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_expression_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let dummy = parser.push_dummy();
     let start = parser.current_token_span()?;
     let expr = parser.parse_expr_min()?;
@@ -265,7 +265,7 @@ fn parse_expression_statement(parser: &mut Parser) -> Result<ParsedNodeRef, Pars
     Ok(parser.replace_node(dummy, ParsedNodeKind::ExpressionStmt(Some(expr)), span))
 }
 
-fn parse_asm_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_asm_statement(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start = parser.expect(TokenKind::Asm)?.span;
 
     // consume qualifiers like volatile, inline, goto

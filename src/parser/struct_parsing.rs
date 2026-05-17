@@ -8,12 +8,12 @@ use thin_vec::{ThinVec, thin_vec};
 use crate::ast::parsed::*;
 use crate::ast::*;
 use crate::parser::declarations::parse_decl_specs;
-use crate::parser::{ParseError, TokenKind};
+use crate::parser::{ParseDiag, TokenKind};
 
 use super::Parser;
 
 /// Parse struct or union specifier with context
-pub(super) fn parse_record_spec(parser: &mut Parser, is_union: bool) -> Result<TypeSpec, ParseError> {
+pub(super) fn parse_record_spec(parser: &mut Parser, is_union: bool) -> Result<TypeSpec, ParseDiag> {
     let mut attributes = parser.parse_attributes_lenient();
 
     let tag = parser.accept_name();
@@ -34,7 +34,7 @@ pub(super) fn parse_record_spec(parser: &mut Parser, is_union: bool) -> Result<T
 }
 
 /// Parse struct declaration list
-fn parse_struct_decl_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseError> {
+fn parse_struct_decl_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, ParseDiag> {
     let mut declarations = Vec::new();
 
     while !parser.at_eof() && !parser.is_token(TokenKind::RightBrace) {
@@ -55,7 +55,7 @@ fn parse_struct_decl_list(parser: &mut Parser) -> Result<Vec<ParsedNodeRef>, Par
 }
 
 /// Parse struct declaration
-fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     // Check for _Static_assert (C11)
     if let Some(token) = parser.accept(TokenKind::StaticAssert) {
         return super::declarations::parse_static_assert(parser, token);
@@ -107,7 +107,7 @@ fn parse_struct_decl(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
     Ok(parser.push_node(ParsedNodeKind::Declaration(decl), span))
 }
 
-fn parse_init_declarators(parser: &mut Parser) -> Result<ThinVec<ParsedInitDeclarator>, ParseError> {
+fn parse_init_declarators(parser: &mut Parser) -> Result<ThinVec<ParsedInitDeclarator>, ParseDiag> {
     let mut decls = ThinVec::new();
     loop {
         let start = parser.current_token_span_or_empty();

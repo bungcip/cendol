@@ -37,7 +37,7 @@ fn test_circular_include_in_memory() {
         ..Default::default()
     };
     let (_, diags) = setup_multi_file_pp_snapshot(files, "mem_main.c", Some(config));
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: IncludeDepthExceeded, span: SourceSpan(3298534883337) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: IncludeDepthExceeded, span: SourceSpan(3298534883337) }""#);
 }
 
 // include_next Tests

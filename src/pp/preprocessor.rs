@@ -7,7 +7,7 @@ use hashbrown::{HashMap, HashSet};
 use std::sync::Arc;
 
 use super::pp_lexer::PPLexer;
-use crate::pp::error::{PPError, PPErrorKind};
+use crate::pp::error::{PPDiag, PPError};
 use crate::pp::interpreter::Interpreter;
 use crate::pp::keyword_table::PPKeywordTable;
 use crate::pp::types::{HideSetTable, IncludeStackInfo, MacroFlags, MacroInfo, PPConditionalInfo, PPConfig};
@@ -630,12 +630,12 @@ impl<'src> Preprocessor<'src> {
         path: &str,
         resolved: Option<PathBuf>,
         loc: SourceLoc,
-    ) -> Result<Option<SourceId>, PPError> {
+    ) -> Result<Option<SourceId>, PPDiag> {
         if let Some(path_buf) = resolved {
             let id = self
                 .sm
                 .add_file(&path_buf, Some(loc))
-                .map_err(|_| self.error(PPErrorKind::FileNotFound { path: path.to_string() }, loc))?;
+                .map_err(|_| self.error(PPError::FileNotFound { path: path.to_string() }, loc))?;
             Ok(Some(id))
         } else {
             Ok(None)
@@ -676,47 +676,47 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expect and consume an Eod token or end of file
-    pub(super) fn expect_eod(&mut self) -> Result<(), PPError> {
+    pub(super) fn expect_eod(&mut self) -> Result<(), PPDiag> {
         match self.lex_token() {
             Some(token) if token.kind == PPTokenKind::Eod => Ok(()),
             None => Ok(()), // End of file is acceptable
-            Some(token) => self.emit_error(PPErrorKind::ExpectedEod, token.location),
+            Some(token) => self.emit_error(PPError::ExpectedEod, token.location),
         }
     }
 
     /// Expect a token, and fail with UnexpectedEndOfFile if None is returned
-    pub(super) fn expect_token(&mut self) -> Result<PPToken, PPError> {
+    pub(super) fn expect_token(&mut self) -> Result<PPToken, PPDiag> {
         self.lex_token()
-            .ok_or_else(|| self.error_span(PPErrorKind::UnexpectedEndOfFile, self.get_current_span()))
+            .ok_or_else(|| self.error_span(PPError::UnexpectedEndOfFile, self.get_current_span()))
     }
 
     /// Expect a token of a specific kind
-    pub(super) fn expect_kind(&mut self, kind: PPTokenKind) -> Result<PPToken, PPError> {
+    pub(super) fn expect_kind(&mut self, kind: PPTokenKind) -> Result<PPToken, PPDiag> {
         let token = self.expect_token()?;
         if token.kind == kind {
             Ok(token)
         } else {
-            self.emit_error(PPErrorKind::InvalidDirective, token.location)
+            self.emit_error(PPError::InvalidDirective, token.location)
         }
     }
 
     /// Expect a string literal token
-    pub(super) fn expect_string_literal(&mut self) -> Result<(String, SourceLoc), PPError> {
+    pub(super) fn expect_string_literal(&mut self) -> Result<(String, SourceLoc), PPDiag> {
         let token = self.expect_token()?;
         if let PPTokenKind::StringLiteral = token.kind {
             Ok((self.get_token_text(&token).to_string(), token.location))
         } else {
-            self.emit_error(PPErrorKind::InvalidDirective, token.location)
+            self.emit_error(PPError::InvalidDirective, token.location)
         }
     }
 
     /// Expect an identifier token
-    pub(super) fn expect_identifier(&mut self) -> Result<(PPToken, StringId), PPError> {
+    pub(super) fn expect_identifier(&mut self) -> Result<(PPToken, StringId), PPDiag> {
         let token = self.expect_token()?;
         if let PPTokenKind::Identifier(sym) = token.kind {
             Ok((token, sym))
         } else {
-            self.emit_error(PPErrorKind::ExpectedIdentifier, token.location)
+            self.emit_error(PPError::ExpectedIdentifier, token.location)
         }
     }
 
@@ -726,14 +726,14 @@ impl<'src> Preprocessor<'src> {
         &mut self,
         open: PPTokenKind,
         close: PPTokenKind,
-    ) -> Result<Vec<PPToken>, PPError> {
+    ) -> Result<Vec<PPToken>, PPDiag> {
         self.expect_kind(open)?;
         // ⚡ Bolt: Use a small initial capacity to avoid reallocations for common short expressions.
         let mut tokens = Vec::with_capacity(8);
         let mut depth = 1;
         while let Some(t) = self.lex_token() {
             if t.kind == PPTokenKind::Eod {
-                return self.emit_error(PPErrorKind::UnexpectedEndOfFile, t.location);
+                return self.emit_error(PPError::UnexpectedEndOfFile, t.location);
             }
             if t.kind == open {
                 depth += 1;
@@ -745,7 +745,7 @@ impl<'src> Preprocessor<'src> {
             }
             tokens.push(t);
         }
-        self.emit_error(PPErrorKind::UnexpectedEndOfFile, self.get_current_location())
+        self.emit_error(PPError::UnexpectedEndOfFile, self.get_current_location())
     }
 
     /// Helper to extract content of a string literal, stripping quotes.
@@ -753,8 +753,8 @@ impl<'src> Preprocessor<'src> {
         &self,
         text: &'a str,
         location: SourceLoc,
-        error_kind: PPErrorKind,
-    ) -> Result<&'a str, PPError> {
+        error_kind: PPError,
+    ) -> Result<&'a str, PPDiag> {
         text.strip_prefix('"')
             .and_then(|s| s.strip_suffix('"'))
             .ok_or_else(|| self.error(error_kind, location))
@@ -768,7 +768,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Retrieve the next fully processed and expanded token from the preprocessor stream
-    pub(crate) fn next_token_with_directives(&mut self) -> Result<Option<PPToken>, PPError> {
+    pub(crate) fn next_token_with_directives(&mut self) -> Result<Option<PPToken>, PPDiag> {
         while let Some(token) = self.lex_token() {
             match token.kind {
                 // Handle directive
@@ -798,7 +798,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Retrieve the next fully processed and expanded token from the preprocessor stream
-    pub(crate) fn next_token(&mut self) -> Result<Option<PPToken>, PPError> {
+    pub(crate) fn next_token(&mut self) -> Result<Option<PPToken>, PPDiag> {
         while let Some(token) = self.next_token_with_directives()? {
             match token.kind {
                 // Handle identifiers (macros, magic macros, _Pragma)
@@ -831,7 +831,7 @@ impl<'src> Preprocessor<'src> {
             let loc = self.get_current_location();
             // Clear the stack so we don't infinitely report this error on subsequent calls
             self.conditional_stack.clear();
-            return self.emit_error(PPErrorKind::UnclosedConditional, loc);
+            return self.emit_error(PPError::UnclosedConditional, loc);
         }
 
         if !self.eof_emitted {
@@ -848,7 +848,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Process source file and return preprocessed tokens (for non-streaming compatibility)
-    pub(crate) fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPError> {
+    pub(crate) fn process(&mut self, source_id: SourceId, _config: &PPConfig) -> Result<Vec<PPToken>, PPDiag> {
         let buffer_len = self.sm.get_buffer(source_id).len() as u32;
         self.start_processing(source_id);
 
@@ -875,25 +875,25 @@ impl<'src> Preprocessor<'src> {
         SourceSpan::from_loc(loc)
     }
 
-    fn error_span(&self, kind: PPErrorKind, span: SourceSpan) -> PPError {
-        PPError { kind, span }
+    fn error_span(&self, kind: PPError, span: SourceSpan) -> PPDiag {
+        PPDiag { kind, span }
     }
 
     /// create PPError with SourceSpan from SourceLoc
-    pub(super) fn error(&self, kind: PPErrorKind, loc: SourceLoc) -> PPError {
-        PPError {
+    pub(super) fn error(&self, kind: PPError, loc: SourceLoc) -> PPDiag {
+        PPDiag {
             kind,
             span: SourceSpan::from_loc(loc),
         }
     }
 
-    pub(super) fn emit_error_span<T>(&self, kind: PPErrorKind, span: SourceSpan) -> Result<T, PPError> {
-        Err(PPError { kind, span })
+    pub(super) fn emit_error_span<T>(&self, kind: PPError, span: SourceSpan) -> Result<T, PPDiag> {
+        Err(PPDiag { kind, span })
     }
 
     /// emit Result<PPError> with SourceSpan from SourceLoc
-    pub(super) fn emit_error<T>(&self, kind: PPErrorKind, loc: SourceLoc) -> Result<T, PPError> {
-        Err(PPError {
+    pub(super) fn emit_error<T>(&self, kind: PPError, loc: SourceLoc) -> Result<T, PPDiag> {
+        Err(PPDiag {
             kind,
             span: SourceSpan::from_loc(loc),
         })
@@ -920,18 +920,18 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Parse a conditional expression for #if and #elif
-    pub(super) fn parse_conditional_expression(&mut self) -> Result<Vec<PPToken>, PPError> {
+    pub(super) fn parse_conditional_expression(&mut self) -> Result<Vec<PPToken>, PPDiag> {
         let tokens = self.collect_tokens_until_eod();
 
         if tokens.is_empty() {
-            return self.emit_error(PPErrorKind::InvalidConditionalExpression, self.get_current_location());
+            return self.emit_error(PPError::InvalidConditionalExpression, self.get_current_location());
         }
 
         Ok(tokens)
     }
 
     /// Evaluate a conditional expression (simplified - handle defined and basic arithmetic)
-    pub(super) fn evaluate_conditional_expression(&mut self, tokens: Vec<PPToken>) -> Result<bool, PPError> {
+    pub(super) fn evaluate_conditional_expression(&mut self, tokens: Vec<PPToken>) -> Result<bool, PPDiag> {
         // Bolt ⚡: Removed redundant filtering of Eod tokens and a buggy optimization.
         // parse_conditional_expression already ensures no Eod tokens are present.
         // This avoids two allocations and two full clones of the token list.
@@ -961,10 +961,10 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Evaluate a simple arithmetic expression for #if/#elif
-    fn evaluate_arithmetic_expression(&mut self, tokens: &[PPToken]) -> Result<bool, PPError> {
+    fn evaluate_arithmetic_expression(&mut self, tokens: &[PPToken]) -> Result<bool, PPDiag> {
         if tokens.is_empty() {
             let loc = self.get_current_location();
-            return self.emit_error(PPErrorKind::InvalidConditionalExpression, loc);
+            return self.emit_error(PPError::InvalidConditionalExpression, loc);
         }
 
         let mut interpreter = Interpreter::new(tokens, self);
@@ -999,7 +999,7 @@ impl<'src> Preprocessor<'src> {
             if let Some(lexer) = self.lexer_stack.last_mut() {
                 if let Some(token) = lexer.next_token() {
                     if token.flags.contains(PPTokenFlags::HAS_INVALID_UCN) {
-                        let err = self.error(PPErrorKind::InvalidUniversalCharacterName, token.location);
+                        let err = self.error(PPError::InvalidUniversalCharacterName, token.location);
                         self.report_pp_error(err);
                     }
 
@@ -1008,7 +1008,7 @@ impl<'src> Preprocessor<'src> {
                     {
                         let text = self.get_token_text(&token);
                         if text.contains('$') {
-                            let err = self.error(PPErrorKind::DollarInIdentifier, token.location);
+                            let err = self.error(PPError::DollarInIdentifier, token.location);
                             if self.pedantic_errors {
                                 self.report_pp_error(err);
                             } else {
@@ -1031,7 +1031,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Skip current directive tokens until EOD
-    pub(super) fn skip_directive(&mut self) -> Result<(), PPError> {
+    pub(super) fn skip_directive(&mut self) -> Result<(), PPDiag> {
         while let Some(token) = self.lex_token() {
             if token.kind == PPTokenKind::Eod {
                 break;
@@ -1084,7 +1084,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Helper to report error diagnostics from PPError
-    pub(super) fn report_pp_error(&mut self, err: PPError) {
+    pub(super) fn report_pp_error(&mut self, err: PPDiag) {
         use crate::diagnostic::IntoDiagnostic;
         let diags = err.into_diagnostic();
         for diag in diags {
@@ -1092,7 +1092,7 @@ impl<'src> Preprocessor<'src> {
         }
     }
 
-    pub(super) fn report_pp_warning(&mut self, err: PPError) {
+    pub(super) fn report_pp_warning(&mut self, err: PPDiag) {
         use crate::diagnostic::IntoDiagnostic;
         let is_pedantic = err.kind.is_pedantic();
         let mut diags = err.into_diagnostic();

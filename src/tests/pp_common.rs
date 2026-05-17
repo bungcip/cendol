@@ -66,7 +66,7 @@ pub(crate) fn setup_multi_file_pp_snapshot(
 }
 
 /// Helper function to set up preprocessor testing and return sm
-fn setup_pp_with_sm(src: &str, config: Option<PPConfig>) -> Result<(Vec<DebugToken>, SourceManager), PPError> {
+fn setup_pp_with_sm(src: &str, config: Option<PPConfig>) -> Result<(Vec<DebugToken>, SourceManager), PPDiag> {
     let (tokens, sm, _) = setup_multi_file_pp_with_sm_and_diagnostics(vec![("<test>", src)], "<test>", config)?;
     Ok((tokens, sm))
 }
@@ -74,7 +74,7 @@ fn setup_pp_with_sm(src: &str, config: Option<PPConfig>) -> Result<(Vec<DebugTok
 pub(crate) fn setup_pp_with_sm_and_diagnostics(
     src: &str,
     config: Option<PPConfig>,
-) -> Result<(Vec<DebugToken>, SourceManager, Vec<Diagnostic>), PPError> {
+) -> Result<(Vec<DebugToken>, SourceManager, Vec<Diagnostic>), PPDiag> {
     setup_multi_file_pp_with_sm_and_diagnostics(vec![("<test>", src)], "<test>", config)
 }
 
@@ -82,7 +82,7 @@ fn setup_multi_file_pp_with_sm_and_diagnostics(
     files: Vec<(&str, &str)>,
     main_file_name: &str,
     config: Option<PPConfig>,
-) -> Result<(Vec<DebugToken>, SourceManager, Vec<Diagnostic>), PPError> {
+) -> Result<(Vec<DebugToken>, SourceManager, Vec<Diagnostic>), PPDiag> {
     let (tokens, sm, diagnostics) = setup_multi_file_pp_with_diagnostics_raw(files, main_file_name, config)?;
 
     let debug_tokens: Vec<DebugToken> = tokens
@@ -98,7 +98,7 @@ fn setup_multi_file_pp_with_diagnostics_raw(
     files: Vec<(&str, &str)>,
     main_file_name: &str,
     config: Option<PPConfig>,
-) -> Result<(Vec<PPToken>, SourceManager, Vec<Diagnostic>), PPError> {
+) -> Result<(Vec<PPToken>, SourceManager, Vec<Diagnostic>), PPDiag> {
     // Initialize logging for tests
     let _ = env_logger::try_init();
 

@@ -6,7 +6,7 @@ use crate::driver::artifact::CompilePhase;
 use crate::driver::cli::CompileConfig;
 use crate::lang_options::CStandard;
 use crate::parser::statements::parse_compound_statement;
-use crate::parser::{BindingPower, Lexer, ParseError, Parser, declarations, statements};
+use crate::parser::{BindingPower, Lexer, ParseDiag, Parser, declarations, statements};
 use crate::pp::Preprocessor;
 use crate::source_manager::FileKind;
 use crate::tests::test_utils::setup_sm_and_de;
@@ -601,7 +601,7 @@ pub(crate) fn setup_declaration_with_std(source: &str, std: CStandard) -> Resolv
     }
 }
 
-pub(crate) fn setup_declaration_with_errors(source: &str) -> ParseError {
+pub(crate) fn setup_declaration_with_errors(source: &str) -> ParseDiag {
     let (_, decl_result) = setup_source(source, |p| declarations::parse_decl(p, false));
     match decl_result {
         Ok(_) => panic!("Expected parse error"),

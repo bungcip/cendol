@@ -5,7 +5,7 @@
 //! and translation units.
 
 use crate::ast::*;
-use crate::parser::{ParseError, ParseErrorKind, Token, TokenKind};
+use crate::parser::{ParseDiag, ParseError, Token, TokenKind};
 use crate::source_manager::{SourceLoc, SourceSpan};
 use thin_vec::ThinVec;
 
@@ -18,7 +18,7 @@ use crate::parser::type_builder::parse_type_name;
 use crate::parser::type_specifiers::parse_type_spec;
 
 /// parse declaration or function definition
-pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Result<ParsedNodeRef, ParseError> {
+pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Result<ParsedNodeRef, ParseDiag> {
     let trx = parser.start_transaction();
     let start_loc = trx.parser.current_token_span()?.start();
     let dummy = trx.parser.push_dummy();
@@ -69,9 +69,9 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
         };
 
         let current_token = trx.parser.current_token()?;
-        return Err(ParseError {
+        return Err(ParseDiag {
             span: current_token.span,
-            kind: ParseErrorKind::UnexpectedToken {
+            kind: ParseError::UnexpectedToken {
                 expected: message,
                 found: current_token.kind,
             },
@@ -136,9 +136,9 @@ pub(crate) fn parse_decl(parser: &mut Parser, allow_function_def: bool) -> Resul
         token
     } else {
         let current_token = trx.parser.current_token()?;
-        return Err(ParseError {
+        return Err(ParseDiag {
             span: current_token.span,
-            kind: ParseErrorKind::UnexpectedToken {
+            kind: ParseError::UnexpectedToken {
                 expected: "';' after declaration",
                 found: current_token.kind,
             },
@@ -164,7 +164,7 @@ fn parse_function_definition_tail(
     declarator: DeclaratorRef,
     start_loc: SourceLoc,
     dummy: ParsedNodeRef,
-) -> Result<ParsedNodeRef, ParseError> {
+) -> Result<ParsedNodeRef, ParseDiag> {
     parser.type_context.push_scope();
 
     if let Some(range) = super::declarator::get_declarator_params(&parser.ast.parsed_types, declarator) {
@@ -194,7 +194,7 @@ fn parse_function_definition_tail(
     ))
 }
 
-pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let start_loc = parser.current_token()?.span.start();
     let mut end_loc = SourceLoc::builtin();
     let mut top_level_declarations = Vec::new();
@@ -234,7 +234,7 @@ pub(crate) fn parse_translation_unit(parser: &mut Parser) -> Result<ParsedNodeRe
     ))
 }
 
-pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<ParsedNodeRef, ParseError> {
+pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Result<ParsedNodeRef, ParseDiag> {
     let start_loc = start_token.span.start();
     parser.expect(TokenKind::LeftParen)?;
     let condition = parser.parse_expr_assignment()?;
@@ -245,9 +245,9 @@ pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
     } else {
         if parser.lang_opts.c_standard < crate::lang_options::CStandard::C23 {
             let token = parser.current_token()?;
-            return Err(ParseError {
+            return Err(ParseDiag {
                 span: token.span,
-                kind: ParseErrorKind::UnexpectedToken {
+                kind: ParseError::UnexpectedToken {
                     expected: "',' followed by a string literal",
                     found: token.kind,
                 },
@@ -265,7 +265,7 @@ pub(super) fn parse_static_assert(parser: &mut Parser, start_token: Token) -> Re
 }
 
 /// Parse declaration specifiers
-pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>, ParseError> {
+pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>, ParseDiag> {
     let mut specifiers = ThinVec::new();
     let mut has_type_specifier = false;
 
@@ -375,9 +375,9 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
 
     if specifiers.is_empty() {
         let current_token = parser.current_token()?;
-        return Err(ParseError {
+        return Err(ParseDiag {
             span: current_token.span,
-            kind: ParseErrorKind::UnexpectedToken {
+            kind: ParseError::UnexpectedToken {
                 expected: "declaration specifiers",
                 found: current_token.kind,
             },
@@ -388,7 +388,7 @@ pub(crate) fn parse_decl_specs(parser: &mut Parser) -> Result<ThinVec<DeclSpec>,
 }
 
 /// Parse initializer
-pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     let span = parser.current_token_span()?;
 
     if parser.accept(TokenKind::LeftBrace).is_some() {
@@ -418,7 +418,7 @@ pub(super) fn parse_initializer(parser: &mut Parser) -> Result<ParsedNodeRef, Pa
 }
 
 /// Parse designated initializer
-fn parse_designated_initializer(parser: &mut Parser) -> Result<ParsedDesignatedInitializer, ParseError> {
+fn parse_designated_initializer(parser: &mut Parser) -> Result<ParsedDesignatedInitializer, ParseDiag> {
     let designation = parse_designation(parser)?;
 
     parser.expect(TokenKind::Assign)?;
@@ -431,7 +431,7 @@ fn parse_designated_initializer(parser: &mut Parser) -> Result<ParsedDesignatedI
 }
 
 /// Parse designation
-fn parse_designation(parser: &mut Parser) -> Result<Box<[ParsedDesignator]>, ParseError> {
+fn parse_designation(parser: &mut Parser) -> Result<Box<[ParsedDesignator]>, ParseDiag> {
     let mut designators = Vec::new();
 
     while parser.matches(&[TokenKind::Dot, TokenKind::LeftBracket]) {
@@ -457,7 +457,7 @@ fn parse_designation(parser: &mut Parser) -> Result<Box<[ParsedDesignator]>, Par
 }
 
 /// Parse GCC __attribute__ syntax: __attribute__ (( attribute-list ))
-pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, ParseError> {
+pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, ParseDiag> {
     parser.expect(TokenKind::Attribute)?;
 
     parser.expect(TokenKind::LeftParen)?;
@@ -540,7 +540,7 @@ pub(crate) fn parse_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, Pars
 }
 
 /// Parse C23 attribute syntax: [[ attribute-list ]]
-pub(crate) fn parse_c23_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, ParseError> {
+pub(crate) fn parse_c23_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, ParseDiag> {
     parser.expect(TokenKind::LeftBracket)?;
     parser.expect(TokenKind::LeftBracket)?;
 
@@ -585,7 +585,7 @@ pub(crate) fn parse_c23_attribute(parser: &mut Parser) -> Result<Vec<DeclSpec>, 
 }
 
 /// Parse GCC __asm__ syntax: __asm__ ( string-literal )
-pub(crate) fn parse_asm(parser: &mut Parser) -> Result<(), ParseError> {
+pub(crate) fn parse_asm(parser: &mut Parser) -> Result<(), ParseDiag> {
     parser.expect(TokenKind::Asm)?;
     parser.expect(TokenKind::LeftParen)?;
     let mut depth = 1;
@@ -604,7 +604,7 @@ pub(crate) fn parse_asm(parser: &mut Parser) -> Result<(), ParseError> {
 pub(crate) fn parse_trailing_attributes_and_asm(
     parser: &mut Parser,
     specifiers: &mut ThinVec<DeclSpec>,
-) -> Result<(), ParseError> {
+) -> Result<(), ParseDiag> {
     loop {
         if parser.is_token(TokenKind::Attribute) {
             specifiers.extend(parse_attribute(parser)?);

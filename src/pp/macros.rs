@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::ast::StringId;
-use crate::pp::error::{PPError, PPErrorKind};
+use crate::pp::error::{PPDiag, PPError};
 use crate::pp::pp_lexer::PPLexer;
 use crate::pp::preprocessor::Preprocessor;
 use crate::pp::types::{MacroFlags, MacroInfo};
@@ -35,7 +35,7 @@ enum ExpansionTask {
 
 impl<'src> Preprocessor<'src> {
     /// Expand a macro if it exists
-    pub(super) fn expand_macro(&mut self, token: &PPToken) -> Result<Option<Vec<PPToken>>, PPError> {
+    pub(super) fn expand_macro(&mut self, token: &PPToken) -> Result<Option<Vec<PPToken>>, PPDiag> {
         let PPTokenKind::Identifier(symbol) = token.kind else {
             return Ok(None);
         };
@@ -105,7 +105,7 @@ impl<'src> Preprocessor<'src> {
         tokens: &[PPToken],
         name: StringId,
         location: SourceLoc,
-    ) -> Result<Vec<PPToken>, PPError> {
+    ) -> Result<Vec<PPToken>, PPDiag> {
         Ok(self.create_virtual_buffer_tokens(tokens, name, location))
     }
 
@@ -115,7 +115,7 @@ impl<'src> Preprocessor<'src> {
         macro_info: &MacroInfo,
         symbol: StringId,
         token: &PPToken,
-    ) -> Result<Vec<PPToken>, PPError> {
+    ) -> Result<Vec<PPToken>, PPDiag> {
         let new_hs = self.hide_sets.insert(token.hide_set, symbol);
 
         let substituted = self.substitute_tokens_slice(
@@ -141,14 +141,14 @@ impl<'src> Preprocessor<'src> {
         macro_info: &MacroInfo,
         symbol: StringId,
         token: &PPToken,
-    ) -> Result<Vec<PPToken>, PPError> {
+    ) -> Result<Vec<PPToken>, PPDiag> {
         let (mut args, rparen_token) = match self.parse_macro_args_from_lexer(macro_info) {
             Ok(args) => args,
-            Err(PPError {
-                kind: PPErrorKind::InvalidMacroParameter,
+            Err(PPDiag {
+                kind: PPError::InvalidMacroParameter,
                 ..
             }) => {
-                return self.emit_error(PPErrorKind::InvalidMacroParameter, token.location);
+                return self.emit_error(PPError::InvalidMacroParameter, token.location);
             }
             Err(e) => return Err(e),
         };
@@ -185,11 +185,11 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Parse macro arguments from the current lexer
-    fn parse_macro_args_from_lexer(&mut self, macro_info: &MacroInfo) -> Result<(Vec<Vec<PPToken>>, PPToken), PPError> {
+    fn parse_macro_args_from_lexer(&mut self, macro_info: &MacroInfo) -> Result<(Vec<Vec<PPToken>>, PPToken), PPDiag> {
         let token = self.expect_token()?;
         if token.kind != PPTokenKind::LeftParen {
             self.pending_tokens.push(token);
-            return self.emit_error(PPErrorKind::InvalidMacroParameter, token.location);
+            return self.emit_error(PPError::InvalidMacroParameter, token.location);
         }
 
         let mut args = Vec::with_capacity(macro_info.parameter_list.len());
@@ -228,7 +228,7 @@ impl<'src> Preprocessor<'src> {
                         return Ok((args, t));
                     }
 
-                    return self.emit_error(PPErrorKind::InvalidMacroParameter, macro_info.location);
+                    return self.emit_error(PPError::InvalidMacroParameter, macro_info.location);
                 }
                 PPTokenKind::Comma if depth == 0 => {
                     args.push(std::mem::take(&mut current_arg));
@@ -237,7 +237,7 @@ impl<'src> Preprocessor<'src> {
             }
         }
 
-        self.emit_error_span(PPErrorKind::UnexpectedEndOfFile, self.get_current_span())
+        self.emit_error_span(PPError::UnexpectedEndOfFile, self.get_current_span())
     }
 
     /// Helper to collect variadic arguments with commas inserted
@@ -318,7 +318,7 @@ impl<'src> Preprocessor<'src> {
         args[start..].iter().all(|arg| arg.is_empty())
     }
 
-    fn resolve_va_opt(&mut self, ctx: &SubstitutionCtx) -> Result<Option<Vec<PPToken>>, PPError> {
+    fn resolve_va_opt(&mut self, ctx: &SubstitutionCtx) -> Result<Option<Vec<PPToken>>, PPDiag> {
         let macro_info = ctx.macro_info;
         if !macro_info.flags.contains(MacroFlags::HAS_VA_OPT) {
             return Ok(None);
@@ -381,7 +381,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Substitute parameters in macro body
-    fn substitute_macro(&mut self, ctx: SubstitutionCtx) -> Result<Vec<PPToken>, PPError> {
+    fn substitute_macro(&mut self, ctx: SubstitutionCtx) -> Result<Vec<PPToken>, PPDiag> {
         let tokens = self.resolve_va_opt(&ctx)?;
         let tokens_ref = tokens.as_deref().unwrap_or(&ctx.macro_info.tokens);
         self.substitute_tokens_slice(tokens_ref, &ctx)
@@ -391,7 +391,7 @@ impl<'src> Preprocessor<'src> {
         &mut self,
         tokens_slice: &[PPToken],
         ctx: &SubstitutionCtx,
-    ) -> Result<Vec<PPToken>, PPError> {
+    ) -> Result<Vec<PPToken>, PPDiag> {
         let mut result = Vec::with_capacity(tokens_slice.len());
         let mut i = 0;
         let mut last_token_produced_output = false;
@@ -515,7 +515,7 @@ impl<'src> Preprocessor<'src> {
         right_token: &PPToken,
         args: &[Vec<PPToken>],
         is_va_missing: bool,
-    ) -> Result<(Vec<PPToken>, bool), PPError> {
+    ) -> Result<(Vec<PPToken>, bool), PPDiag> {
         let right_tokens = if let PPTokenKind::Identifier(sym) = right_token.kind {
             self.get_macro_param_tokens(macro_info, sym, args)
                 .unwrap_or(std::slice::from_ref(right_token))
@@ -561,7 +561,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Stringify tokens for # operator
-    fn stringify_tokens(&mut self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPError> {
+    fn stringify_tokens(&mut self, tokens: &[PPToken], location: SourceLoc) -> Result<PPToken, PPDiag> {
         // Bolt ⚡: Pre-calculate capacity and use Vec<u8> to avoid multiple reallocations and redundant UTF-8 validation.
         // We add a small margin (extra 8 bytes) to account for some escaped characters.
         let capacity = 10 + tokens.len() + tokens.iter().map(|t| t.length as usize).sum::<usize>();
@@ -606,7 +606,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Paste tokens for ## operator
-    fn paste_tokens(&mut self, left: &PPToken, right: &PPToken) -> Result<Vec<PPToken>, PPError> {
+    fn paste_tokens(&mut self, left: &PPToken, right: &PPToken) -> Result<Vec<PPToken>, PPDiag> {
         // Get text of both tokens
         let left_buffer = self.sm.get_buffer(left.location.source_id());
         let left_start = left.location.offset() as usize;
@@ -614,7 +614,7 @@ impl<'src> Preprocessor<'src> {
         let left_text = if left_end <= left_buffer.len() {
             unsafe { std::str::from_utf8_unchecked(&left_buffer[left_start..left_end]) }
         } else {
-            return self.emit_error(PPErrorKind::InvalidTokenPasting, left.location);
+            return self.emit_error(PPError::InvalidTokenPasting, left.location);
         };
 
         let right_buffer = self.sm.get_buffer(right.location.source_id());
@@ -623,7 +623,7 @@ impl<'src> Preprocessor<'src> {
         let right_text = if right_end <= right_buffer.len() {
             unsafe { std::str::from_utf8_unchecked(&right_buffer[right_start..right_end]) }
         } else {
-            return self.emit_error(PPErrorKind::InvalidTokenPasting, right.location);
+            return self.emit_error(PPError::InvalidTokenPasting, right.location);
         };
 
         // ⚡ Bolt: Avoid redundant format! and clone by building the byte buffer directly.
@@ -739,7 +739,7 @@ impl<'src> Preprocessor<'src> {
         start: usize,
         end: usize,
         computed_include: bool,
-    ) -> Result<usize, PPError> {
+    ) -> Result<usize, PPDiag> {
         let mut args = tokens[start..end].to_vec();
         if computed_include {
             self.expand_has_include_computed_args(&mut args);
@@ -755,7 +755,7 @@ impl<'src> Preprocessor<'src> {
         &mut self,
         tokens: &mut Vec<PPToken>,
         i: usize,
-    ) -> Result<Option<usize>, PPError> {
+    ) -> Result<Option<usize>, PPDiag> {
         let PPTokenKind::Identifier(sym) = tokens[i].kind else {
             return Ok(None);
         };
@@ -837,7 +837,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Expand tokens by rescanning for further macro expansion
-    pub(super) fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>, in_conditional: bool) -> Result<(), PPError> {
+    pub(super) fn expand_tokens(&mut self, tokens: &mut Vec<PPToken>, in_conditional: bool) -> Result<(), PPDiag> {
         let mut i = 0;
         while i < tokens.len() {
             let token = tokens[i];
@@ -973,7 +973,7 @@ impl<'src> Preprocessor<'src> {
         tokens: &[PPToken],
         i: usize,
         in_conditional: bool,
-    ) -> Result<Vec<PPToken>, PPError> {
+    ) -> Result<Vec<PPToken>, PPDiag> {
         let ExpansionTask::Function {
             info,
             symbol,
@@ -1019,7 +1019,7 @@ impl<'src> Preprocessor<'src> {
         task: ExpansionTask,
         tokens: &[PPToken],
         i: usize,
-    ) -> Result<Vec<PPToken>, PPError> {
+    ) -> Result<Vec<PPToken>, PPDiag> {
         let ExpansionTask::Object { info, symbol } = task else {
             unreachable!("ICE: Expected object task");
         };
@@ -1109,7 +1109,7 @@ impl<'src> Preprocessor<'src> {
     pub(super) fn parse_macro_definition_params(
         &mut self,
         macro_name: StringId,
-    ) -> Result<(MacroFlags, Vec<StringId>, Option<StringId>), PPError> {
+    ) -> Result<(MacroFlags, Vec<StringId>, Option<StringId>), PPDiag> {
         let mut flags = MacroFlags::FUNCTION_LIKE;
         let mut params = Vec::new();
         let mut variadic = None;
@@ -1126,7 +1126,7 @@ impl<'src> Preprocessor<'src> {
                 }
                 PPTokenKind::Identifier(sym) => {
                     if params.contains(&sym) {
-                        return self.emit_error(PPErrorKind::InvalidMacroParameter, token.location);
+                        return self.emit_error(PPError::InvalidMacroParameter, token.location);
                     }
                     params.push(sym);
 

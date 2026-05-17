@@ -6,7 +6,7 @@
 
 use crate::parser::declarations::parse_decl_specs;
 use crate::parser::type_builder::build_type;
-use crate::parser::{ParseError, ParseErrorKind, Token, TokenKind};
+use crate::parser::{ParseDiag, ParseError, Token, TokenKind};
 use crate::{ast::*, semantic::TypeQualifiers};
 use thin_vec::thin_vec;
 
@@ -72,7 +72,7 @@ fn validate_declarator(
     base: DeclaratorRef,
     new_kind: DeclaratorKind,
     span: SourceSpan,
-) -> Result<(), ParseError> {
+) -> Result<(), ParseDiag> {
     let base = arena.get_decl(base);
     if matches!(
         (&base, new_kind),
@@ -81,15 +81,15 @@ fn validate_declarator(
             DeclaratorKind::Array | DeclaratorKind::Function
         ) | (ParsedDeclarator::Array { .. }, DeclaratorKind::Function)
     ) {
-        return Err(ParseError {
+        return Err(ParseDiag {
             span,
-            kind: ParseErrorKind::DeclarationNotAllowed,
+            kind: ParseError::DeclarationNotAllowed,
         });
     }
     Ok(())
 }
 
-pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Result<DeclaratorRef, ParseError> {
+pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Result<DeclaratorRef, ParseDiag> {
     let mut attrs_before = Vec::new();
     while parser.is_token(TokenKind::Attribute) {
         attrs_before.extend(super::declarations::parse_attribute(parser)?);
@@ -137,7 +137,7 @@ pub(crate) fn parse_declarator(parser: &mut Parser, allow_bitfield: bool) -> Res
     Ok(reconstruct_declarator_chain(parser, pointers, trailing))
 }
 
-fn parse_type_qualifiers(parser: &mut Parser) -> Result<TypeQualifiers, ParseError> {
+fn parse_type_qualifiers(parser: &mut Parser) -> Result<TypeQualifiers, ParseDiag> {
     let mut qualifiers = TypeQualifiers::empty();
     while let Some(token) = parser.try_current_token() {
         if let Some(q) = token.kind.as_type_qualifier() {
@@ -150,7 +150,7 @@ fn parse_type_qualifiers(parser: &mut Parser) -> Result<TypeQualifiers, ParseErr
     Ok(qualifiers)
 }
 
-fn parse_array_size(parser: &mut Parser) -> Result<ParsedArraySize, ParseError> {
+fn parse_array_size(parser: &mut Parser) -> Result<ParsedArraySize, ParseDiag> {
     let is_static = parser.accept(TokenKind::Static).is_some();
     let qualifiers = parse_type_qualifiers(parser)?;
 
@@ -172,7 +172,7 @@ fn parse_array_size(parser: &mut Parser) -> Result<ParsedArraySize, ParseError> 
     }
 }
 
-fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<(TypeQualifiers, Vec<DeclSpec>)>, ParseError> {
+fn parse_leading_pointers(parser: &mut Parser) -> Result<Vec<(TypeQualifiers, Vec<DeclSpec>)>, ParseDiag> {
     let mut pointers = Vec::new();
     while parser.accept(TokenKind::Star).is_some() {
         let qualifiers = parse_type_qualifiers(parser)?;
@@ -190,7 +190,7 @@ fn parse_trailing_declarators(
     parser: &mut Parser,
     mut base: DeclaratorRef,
     allow_bitfield: bool,
-) -> Result<DeclaratorRef, ParseError> {
+) -> Result<DeclaratorRef, ParseDiag> {
     while let Some(token) = parser.try_current_token() {
         match token.kind {
             TokenKind::LeftBracket => {
@@ -251,7 +251,7 @@ fn reconstruct_declarator_chain(
     base
 }
 
-fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, bool), ParseError> {
+fn parse_function_parameters(parser: &mut Parser) -> Result<(ParsedParamRange, bool), ParseDiag> {
     let mut params = Vec::new();
     let mut is_variadic = false;
 
@@ -383,10 +383,7 @@ pub(super) fn get_declarator_params(arena: &ParsedTypeArena, declarator: Declara
     }
 }
 
-pub(crate) fn parse_abstract_declarator(
-    parser: &mut Parser,
-    allow_bitfield: bool,
-) -> Result<DeclaratorRef, ParseError> {
+pub(crate) fn parse_abstract_declarator(parser: &mut Parser, allow_bitfield: bool) -> Result<DeclaratorRef, ParseDiag> {
     while parser.is_token(TokenKind::Attribute) {
         let _ = super::declarations::parse_attribute(parser);
     }

@@ -2,7 +2,7 @@ use crate::ast::StringId;
 use crate::ast::literal::IntSuffix;
 use crate::ast::literal_parsing;
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::pp::{PPError, PPErrorKind, PPKeywordTable, PPToken, PPTokenKind, Preprocessor};
+use crate::pp::{PPDiag, PPError, PPKeywordTable, PPToken, PPTokenKind, Preprocessor};
 use crate::source_manager::{SourceLoc, SourceSpan};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +47,7 @@ pub(crate) enum PPExpr {
 }
 
 impl PPExpr {
-    fn evaluate(&self, pp: &Preprocessor, span: SourceSpan) -> Result<ExprValue, PPError> {
+    fn evaluate(&self, pp: &Preprocessor, span: SourceSpan) -> Result<ExprValue, PPDiag> {
         match self {
             PPExpr::Number(n) => Ok(*n),
             PPExpr::Identifier(sym) => {
@@ -198,11 +198,11 @@ impl PPExpr {
             || name == kw.c_thread_local
     }
 
-    fn error(kind: PPErrorKind, span: SourceSpan) -> PPError {
-        PPError { kind, span }
+    fn error(kind: PPError, span: SourceSpan) -> PPDiag {
+        PPDiag { kind, span }
     }
 
-    fn eval_unary(op: UnaryOp, operand: &PPExpr, pp: &Preprocessor, span: SourceSpan) -> Result<ExprValue, PPError> {
+    fn eval_unary(op: UnaryOp, operand: &PPExpr, pp: &Preprocessor, span: SourceSpan) -> Result<ExprValue, PPDiag> {
         let o = operand.evaluate(pp, span)?;
         Ok(match op {
             UnaryOp::Plus => o,
@@ -219,7 +219,7 @@ impl PPExpr {
         false_e: &PPExpr,
         pp: &Preprocessor,
         span: SourceSpan,
-    ) -> Result<ExprValue, PPError> {
+    ) -> Result<ExprValue, PPDiag> {
         let c = cond.evaluate(pp, span)?;
         let chosen = if c.is_truthy() {
             true_e.evaluate(pp, span)?
@@ -240,7 +240,7 @@ impl PPExpr {
         right: &PPExpr,
         pp: &Preprocessor,
         span: SourceSpan,
-    ) -> Result<ExprValue, PPError> {
+    ) -> Result<ExprValue, PPDiag> {
         let l = left.evaluate(pp, span)?;
 
         // Short-circuit evaluation for logical operators
@@ -301,9 +301,9 @@ impl PPExpr {
         })
     }
 
-    fn eval_div(lv: i64, rv: i64, is_unsigned: bool, span: SourceSpan) -> Result<ExprValue, PPError> {
+    fn eval_div(lv: i64, rv: i64, is_unsigned: bool, span: SourceSpan) -> Result<ExprValue, PPDiag> {
         if rv == 0 {
-            return Err(Self::error(PPErrorKind::DivisionByZero, span));
+            return Err(Self::error(PPError::DivisionByZero, span));
         }
         Ok(if is_unsigned {
             ExprValue::new(((lv as u64) / (rv as u64)) as i64, true)
@@ -312,9 +312,9 @@ impl PPExpr {
         })
     }
 
-    fn eval_mod(lv: i64, rv: i64, is_unsigned: bool, span: SourceSpan) -> Result<ExprValue, PPError> {
+    fn eval_mod(lv: i64, rv: i64, is_unsigned: bool, span: SourceSpan) -> Result<ExprValue, PPDiag> {
         if rv == 0 {
-            return Err(Self::error(PPErrorKind::RemainderByZero, span));
+            return Err(Self::error(PPError::RemainderByZero, span));
         }
         Ok(if is_unsigned {
             ExprValue::new(((lv as u64) % (rv as u64)) as i64, true)
@@ -349,9 +349,9 @@ impl<'a> Interpreter<'a> {
         SourceSpan::from_loc(loc)
     }
 
-    fn error(&self) -> PPError {
-        PPError {
-            kind: PPErrorKind::InvalidConditionalExpression,
+    fn error(&self) -> PPDiag {
+        PPDiag {
+            kind: PPError::InvalidConditionalExpression,
             span: self.current_span(),
         }
     }
@@ -368,7 +368,7 @@ impl<'a> Interpreter<'a> {
         self.pos += 1;
     }
 
-    fn expect(&mut self, kind: PPTokenKind) -> Result<(), PPError> {
+    fn expect(&mut self, kind: PPTokenKind) -> Result<(), PPDiag> {
         if self.peek() == Some(&kind) {
             self.advance();
             Ok(())
@@ -378,7 +378,7 @@ impl<'a> Interpreter<'a> {
     }
 
     /// Returns the current token or an error if at the end of the stream.
-    fn current(&self) -> Result<&'a PPToken, PPError> {
+    fn current(&self) -> Result<&'a PPToken, PPDiag> {
         if self.at_end() {
             Err(self.error())
         } else {
@@ -387,18 +387,18 @@ impl<'a> Interpreter<'a> {
     }
 
     /// Returns the current token and advances the position, or returns an error if at the end.
-    fn next(&mut self) -> Result<&'a PPToken, PPError> {
+    fn next(&mut self) -> Result<&'a PPToken, PPDiag> {
         let token = self.current()?;
         self.advance();
         Ok(token)
     }
 
-    pub(crate) fn evaluate(&mut self) -> Result<ExprValue, PPError> {
+    pub(crate) fn evaluate(&mut self) -> Result<ExprValue, PPDiag> {
         let expr = self.parse_conditional()?;
         expr.evaluate(self.preprocessor, self.current_span())
     }
 
-    fn parse_conditional(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_conditional(&mut self) -> Result<PPExpr, PPDiag> {
         let cond = self.parse_or()?;
         if self.peek() == Some(&PPTokenKind::Question) {
             self.advance();
@@ -411,27 +411,27 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn parse_or(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_or(&mut self) -> Result<PPExpr, PPDiag> {
         self.parse_left_assoc(Self::parse_and, &[(PPTokenKind::LogicOr, BinaryOp::LogicOr)])
     }
 
-    fn parse_and(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_and(&mut self) -> Result<PPExpr, PPDiag> {
         self.parse_left_assoc(Self::parse_bitwise_or, &[(PPTokenKind::LogicAnd, BinaryOp::LogicAnd)])
     }
 
-    fn parse_bitwise_or(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_bitwise_or(&mut self) -> Result<PPExpr, PPDiag> {
         self.parse_left_assoc(Self::parse_bitwise_xor, &[(PPTokenKind::Or, BinaryOp::BitOr)])
     }
 
-    fn parse_bitwise_xor(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_bitwise_xor(&mut self) -> Result<PPExpr, PPDiag> {
         self.parse_left_assoc(Self::parse_bitwise_and, &[(PPTokenKind::Xor, BinaryOp::BitXor)])
     }
 
-    fn parse_bitwise_and(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_bitwise_and(&mut self) -> Result<PPExpr, PPDiag> {
         self.parse_left_assoc(Self::parse_equality, &[(PPTokenKind::And, BinaryOp::BitAnd)])
     }
 
-    fn parse_equality(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_equality(&mut self) -> Result<PPExpr, PPDiag> {
         self.parse_left_assoc(
             Self::parse_relational,
             &[
@@ -441,7 +441,7 @@ impl<'a> Interpreter<'a> {
         )
     }
 
-    fn parse_relational(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_relational(&mut self) -> Result<PPExpr, PPDiag> {
         self.parse_left_assoc(
             Self::parse_shift,
             &[
@@ -453,7 +453,7 @@ impl<'a> Interpreter<'a> {
         )
     }
 
-    fn parse_shift(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_shift(&mut self) -> Result<PPExpr, PPDiag> {
         self.parse_left_assoc(
             Self::parse_additive,
             &[
@@ -463,14 +463,14 @@ impl<'a> Interpreter<'a> {
         )
     }
 
-    fn parse_additive(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_additive(&mut self) -> Result<PPExpr, PPDiag> {
         self.parse_left_assoc(
             Self::parse_multiplicative,
             &[(PPTokenKind::Plus, BinaryOp::Add), (PPTokenKind::Minus, BinaryOp::Sub)],
         )
     }
 
-    fn parse_multiplicative(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_multiplicative(&mut self) -> Result<PPExpr, PPDiag> {
         self.parse_left_assoc(
             Self::parse_unary,
             &[
@@ -484,9 +484,9 @@ impl<'a> Interpreter<'a> {
     /// Generic left-associative binary operator parser.
     fn parse_left_assoc(
         &mut self,
-        next: fn(&mut Self) -> Result<PPExpr, PPError>,
+        next: fn(&mut Self) -> Result<PPExpr, PPDiag>,
         ops: &[(PPTokenKind, BinaryOp)],
-    ) -> Result<PPExpr, PPError> {
+    ) -> Result<PPExpr, PPDiag> {
         let mut left = next(self)?;
         while let Some(kind) = self.peek() {
             if let Some((_, bin_op)) = ops.iter().find(|(tk, _)| tk == kind) {
@@ -500,7 +500,7 @@ impl<'a> Interpreter<'a> {
         Ok(left)
     }
 
-    fn parse_unary(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_unary(&mut self) -> Result<PPExpr, PPDiag> {
         let token = self.current()?;
 
         // Handle `defined`
@@ -563,7 +563,7 @@ impl<'a> Interpreter<'a> {
         self.parse_primary()
     }
 
-    fn parse_has_include(&mut self, is_next: bool) -> Result<PPExpr, PPError> {
+    fn parse_has_include(&mut self, is_next: bool) -> Result<PPExpr, PPDiag> {
         self.expect(PPTokenKind::LeftParen)?;
         let token = self.current()?;
 
@@ -605,14 +605,14 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn parse_has_builtin_style(&mut self, f: impl FnOnce(StringId) -> PPExpr) -> Result<PPExpr, PPError> {
+    fn parse_has_builtin_style(&mut self, f: impl FnOnce(StringId) -> PPExpr) -> Result<PPExpr, PPDiag> {
         self.expect(PPTokenKind::LeftParen)?;
         let sym = self.expect_identifier()?;
         self.expect(PPTokenKind::RightParen)?;
         Ok(f(sym))
     }
 
-    fn expect_identifier(&mut self) -> Result<StringId, PPError> {
+    fn expect_identifier(&mut self) -> Result<StringId, PPDiag> {
         let token = self.next()?;
         match &token.kind {
             PPTokenKind::Identifier(sym) => Ok(*sym),
@@ -620,7 +620,7 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn parse_primary(&mut self) -> Result<PPExpr, PPError> {
+    fn parse_primary(&mut self) -> Result<PPExpr, PPDiag> {
         let token = self.next()?;
 
         match &token.kind {

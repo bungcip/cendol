@@ -8,12 +8,12 @@ use crate::parser::enum_parsing::parse_enum_spec;
 use crate::parser::expressions::parse_expression;
 use crate::parser::struct_parsing::parse_record_spec;
 use crate::parser::type_builder::parse_type_name;
-use crate::parser::{BindingPower, ParseError, TokenKind};
+use crate::parser::{BindingPower, ParseDiag, TokenKind};
 
 use super::Parser;
 
 /// Parse type specifier
-pub(super) fn parse_type_spec(parser: &mut Parser) -> Result<TypeSpec, ParseError> {
+pub(super) fn parse_type_spec(parser: &mut Parser) -> Result<TypeSpec, ParseDiag> {
     use TokenKind as TK;
     use TypeSpec as TS;
 

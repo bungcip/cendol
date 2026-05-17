@@ -1,4 +1,4 @@
-pub use crate::pp::error::{PPError, PPErrorKind};
+pub use crate::pp::error::{PPDiag, PPError};
 pub(crate) use crate::pp::header_search::HeaderSearch;
 pub use crate::pp::keyword_table::{DirectiveKind, PPKeywordTable};
 pub use crate::pp::pp_lexer::{PPToken, PPTokenFlags, PPTokenKind, PragmaPackKind};

@@ -5,11 +5,11 @@
 //! binding power utilities, and common parsing operations.
 
 use super::expressions::BindingPower;
-use super::{ParseError, Parser, ParserState, TokenKind};
+use super::{ParseDiag, Parser, ParserState, TokenKind};
 use crate::ast::*;
 
 /// Parse a parenthesized expression: (expression)
-pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseError> {
+pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<ParsedNodeRef, ParseDiag> {
     parser.expect(TokenKind::LeftParen)?;
     let expr = parser.parse_expr_min()?;
     parser.expect(TokenKind::RightParen)?;
@@ -20,7 +20,7 @@ pub(crate) fn parse_parenthesized_expr(parser: &mut Parser) -> Result<ParsedNode
 pub(crate) fn parse_expr_list(
     parser: &mut Parser,
     binding_power: BindingPower,
-) -> Result<Vec<ParsedNodeRef>, ParseError> {
+) -> Result<Vec<ParsedNodeRef>, ParseDiag> {
     let mut args = Vec::new();
     if parser.is_token(TokenKind::RightParen) {
         return Ok(args);
@@ -40,9 +40,9 @@ pub(crate) fn parse_comma_separated_list<T, F>(
     parser: &mut Parser,
     stop_token: TokenKind,
     mut parse_item: F,
-) -> Result<Vec<T>, ParseError>
+) -> Result<Vec<T>, ParseDiag>
 where
-    F: FnMut(&mut Parser) -> Result<T, ParseError>,
+    F: FnMut(&mut Parser) -> Result<T, ParseDiag>,
 {
     let mut items = Vec::new();
     if parser.is_token(stop_token) {

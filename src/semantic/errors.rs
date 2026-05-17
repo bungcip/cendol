@@ -1,7 +1,8 @@
 use crate::ast::NameId;
-use crate::diagnostic::{Diagnostic, DiagnosticLevel};
+use crate::diagnostic::{DiagDisplay, DiagFormatter, Diagnostic, DiagnosticLevel, format_diag};
 use crate::semantic::{QualType, TypeRef, TypeRegistry};
 use crate::source_manager::SourceSpan;
+use std::fmt::Write;
 
 #[derive(Debug, Clone)]
 pub struct SemanticDiag {
@@ -45,7 +46,7 @@ impl SemanticDiag {
 
         let mut diagnostics = vec![Diagnostic {
             level,
-            message: self.kind.display(registry),
+            message: format_diag(registry, &self.kind),
             span: self.span,
             warning_name: self.kind.warning_name(),
             ..Default::default()
@@ -79,7 +80,7 @@ impl SemanticDiag {
         for (note_span, note_kind) in self.notes {
             diagnostics.push(Diagnostic {
                 level: DiagnosticLevel::Note,
-                message: note_kind.display(registry),
+                message: format_diag(registry, &note_kind),
                 span: note_span,
                 ..Default::default()
             });
@@ -458,315 +459,366 @@ impl SemanticError {
             _ => None,
         }
     }
+}
 
-    pub(crate) fn display(&self, registry: &TypeRegistry) -> String {
+impl DiagDisplay for SemanticError {
+    fn fmt(&self, f: &mut DiagFormatter<'_>) -> std::fmt::Result {
         match self {
-            SemanticError::VariableOfVoidType => "variable has incomplete type 'void'".to_string(),
-            SemanticError::CalledNonFunctionType { ty } => format!(
+            SemanticError::VariableOfVoidType => write!(f, "variable has incomplete type 'void'"),
+            SemanticError::CalledNonFunctionType { ty } => write!(
+                f,
                 "called object type '{}' is not a function or function pointer",
-                registry.display_qual_type(*ty)
+                f.display_qual_type(*ty)
             ),
             SemanticError::UndeclaredIdentifier { name } => {
-                format!("Undeclared identifier '{}'", name)
+                write!(f, "Undeclared identifier '{}'", name)
             }
-            SemanticError::Redefinition { name, .. } => format!("redefinition of '{}'", name),
+            SemanticError::Redefinition { name, .. } => write!(f, "redefinition of '{}'", name),
             SemanticError::RedefinitionWithDifferentType { name, .. } => {
-                format!("redefinition of '{}' with a different type", name)
+                write!(f, "redefinition of '{}' with a different type", name)
             }
-            SemanticError::TypeMismatch { expected, found } => format!(
+            SemanticError::TypeMismatch { expected, found } => write!(
+                f,
                 "type mismatch: expected {}, found {}",
-                registry.display_qual_type(*expected),
-                registry.display_qual_type(*found)
+                f.display_qual_type(*expected),
+                f.display_qual_type(*found)
             ),
-            SemanticError::NotAnLvalue => "Expression is not assignable (not an lvalue)".to_string(),
-            SemanticError::InvalidBinaryOperands { left_ty, right_ty } => format!(
+            SemanticError::NotAnLvalue => write!(f, "Expression is not assignable (not an lvalue)"),
+            SemanticError::InvalidBinaryOperands { left_ty, right_ty } => write!(
+                f,
                 "Invalid operands for binary operation: have '{}' and '{}'",
-                registry.display_qual_type(*left_ty),
-                registry.display_qual_type(*right_ty)
+                f.display_qual_type(*left_ty),
+                f.display_qual_type(*right_ty)
             ),
             SemanticError::InvalidUnaryOperand { ty } => {
-                format!(
+                write!(
+                    f,
                     "Invalid operand for unary operation: have '{}'",
-                    registry.display_qual_type(*ty)
+                    f.display_qual_type(*ty)
                 )
             }
-            SemanticError::IndirectionRequiresPointer { ty } => format!(
+            SemanticError::IndirectionRequiresPointer { ty } => write!(
+                f,
                 "indirection requires pointer operand ('{}' invalid)",
-                registry.display_qual_type(*ty)
+                f.display_qual_type(*ty)
             ),
-            SemanticError::NonConstantInitializer => "Initializer element is not a compile-time constant".to_string(),
-            SemanticError::InvalidInitializer => "invalid initializer".to_string(),
-            SemanticError::ConflictingTypes { name, .. } => format!("conflicting types for '{}'", name),
+            SemanticError::NonConstantInitializer => write!(f, "Initializer element is not a compile-time constant"),
+            SemanticError::InvalidInitializer => write!(f, "invalid initializer"),
+            SemanticError::ConflictingTypes { name, .. } => write!(f, "conflicting types for '{}'", name),
             SemanticError::VoidReturnWithValue { name } => {
-                format!("void function '{}' should not return a value", name)
+                write!(f, "void function '{}' should not return a value", name)
             }
             SemanticError::VoidReturnWithVoidExpr { name } => {
-                format!("void function '{}' should not return a value", name)
+                write!(f, "void function '{}' should not return a value", name)
             }
             SemanticError::NonVoidReturnWithoutValue { name } => {
-                format!("non-void function '{}' should return a value", name)
+                write!(f, "non-void function '{}' should return a value", name)
             }
-            SemanticError::EmptyDeclaration => "declaration does not declare anything".to_string(),
+            SemanticError::EmptyDeclaration => write!(f, "declaration does not declare anything"),
             SemanticError::InvalidNumberOfArguments { expected, found } => {
-                format!("invalid number of arguments: expected {}, found {}", expected, found)
+                write!(f, "invalid number of arguments: expected {}, found {}", expected, found)
             }
-            SemanticError::ExcessElements { kind } => format!("excess elements in {} initializer", kind),
-            SemanticError::UnsupportedFeature { feature } => format!("Unsupported feature: {}", feature),
-            SemanticError::CleanupNotAFunction => "cleanup argument not a function".to_string(),
-            SemanticError::InvalidArraySize => "size of array is negative".to_string(),
+            SemanticError::ExcessElements { kind } => write!(f, "excess elements in {} initializer", kind),
+            SemanticError::UnsupportedFeature { feature } => write!(f, "Unsupported feature: {}", feature),
+            SemanticError::CleanupNotAFunction => write!(f, "cleanup argument not a function"),
+            SemanticError::InvalidArraySize => write!(f, "size of array is negative"),
             SemanticError::ZeroOrNegativeSizeArray { name } => {
-                format!("zero or negative size array '{}'", name)
+                write!(f, "zero or negative size array '{}'", name)
             }
-            SemanticError::ArraySizeNotInteger => "size of array has non-integer type".to_string(),
-            SemanticError::InvalidBitfieldWidth => "invalid bit-field width".to_string(),
-            SemanticError::NonConstantBitfieldWidth => "bit-field width is not a constant expression".to_string(),
-            SemanticError::BitfieldWidthExceedsType { width, type_width } => format!(
+            SemanticError::ArraySizeNotInteger => write!(f, "size of array has non-integer type"),
+            SemanticError::InvalidBitfieldWidth => write!(f, "invalid bit-field width"),
+            SemanticError::NonConstantBitfieldWidth => write!(f, "bit-field width is not a constant expression"),
+            SemanticError::BitfieldWidthExceedsType { width, type_width } => write!(
+                f,
                 "width of bit-field ({} bits) exceeds width of its type ({} bits)",
                 width, type_width
             ),
-            SemanticError::NamedZeroWidthBitfield => "zero-width bit-field shall not specify a declarator".to_string(),
+            SemanticError::NamedZeroWidthBitfield => write!(f, "zero-width bit-field shall not specify a declarator"),
             SemanticError::InvalidBitfieldType { ty } => {
-                format!("bit-field type '{}' is invalid", registry.display_qual_type(*ty))
+                write!(f, "bit-field type '{}' is invalid", f.display_qual_type(*ty))
             }
-            SemanticError::BitfieldHasAtomicType => "bit-field shall not have an atomic type".to_string(),
-            SemanticError::ConflictingStorageClasses => "conflicting storage class specifiers".to_string(),
+            SemanticError::BitfieldHasAtomicType => write!(f, "bit-field shall not have an atomic type"),
+            SemanticError::ConflictingStorageClasses => write!(f, "conflicting storage class specifiers"),
             SemanticError::ConflictingLinkage { name, .. } => {
-                format!("conflicting linkage for '{}'", name)
+                write!(f, "conflicting linkage for '{}'", name)
             }
             SemanticError::ConflictingTypeSpec { prev } => {
-                format!(
+                write!(
+                    f,
                     "cannot combine with previous '{}' declaration specifier",
-                    registry.display_qual_type(*prev)
+                    f.display_qual_type(*prev)
                 )
             }
             SemanticError::InvalidFunctionSpec { spec } => {
-                format!("'{}' function specifier appears on non-function declaration", spec)
+                write!(f, "'{}' function specifier appears on non-function declaration", spec)
             }
-            SemanticError::DuplicateMember { name, .. } => format!("duplicate member '{}'", name),
-            SemanticError::MemberAccessOnNonRecord { ty } => format!(
+            SemanticError::DuplicateMember { name, .. } => write!(f, "duplicate member '{}'", name),
+            SemanticError::MemberAccessOnNonRecord { ty } => write!(
+                f,
                 "member reference base type '{}' is not a structure or union",
-                registry.display_qual_type(*ty)
+                f.display_qual_type(*ty)
             ),
             SemanticError::MemberHasFunctionType { name } => {
-                format!("member '{}' has function type", name)
+                write!(f, "member '{}' has function type", name)
             }
-            SemanticError::FunctionReturningArray => "function cannot return an array type".to_string(),
-            SemanticError::FunctionReturningFunction => "function cannot return a function type".to_string(),
+            SemanticError::FunctionReturningArray => write!(f, "function cannot return an array type"),
+            SemanticError::FunctionReturningFunction => write!(f, "function cannot return a function type"),
             SemanticError::MemberNotFound { name, ty } => {
-                format!("no member named '{}' in '{}'", name, registry.display_qual_type(*ty))
+                write!(f, "no member named '{}' in '{}'", name, f.display_qual_type(*ty))
             }
             SemanticError::ExpectedTypedefName { found } => {
-                format!("expected a typedef name, found {}", found)
+                write!(f, "expected a typedef name, found {}", found)
             }
-            SemanticError::MissingTypeSpec => "missing type specifier in declaration".to_string(),
+            SemanticError::MissingTypeSpec => write!(f, "missing type specifier in declaration"),
             SemanticError::StaticAssertFailed { message } => {
-                format!("static assertion failed: {}", message)
+                write!(f, "static assertion failed: {}", message)
             }
-            SemanticError::StaticAssertNotConstant => "expression in static assertion is not constant".to_string(),
+            SemanticError::StaticAssertNotConstant => write!(f, "expression in static assertion is not constant"),
             SemanticError::RecursiveType { ty } => {
-                format!("recursive type definition: {}", registry.display_type(*ty))
+                write!(f, "recursive type definition: {}", f.display_type(*ty))
             }
             SemanticError::SizeOfIncompleteType { ty } => {
-                format!(
+                write!(
+                    f,
                     "Invalid application of 'sizeof' to an incomplete type '{}'",
-                    registry.display_type(*ty)
+                    f.display_type(*ty)
                 )
             }
-            SemanticError::SizeOfFunctionType => "Invalid application of 'sizeof' to a function type".to_string(),
+            SemanticError::SizeOfFunctionType => write!(f, "Invalid application of 'sizeof' to a function type"),
             SemanticError::AlignOfIncompleteType { ty } => {
-                format!(
+                write!(
+                    f,
                     "Invalid application of '_Alignof' to an incomplete type '{}'",
-                    registry.display_type(*ty)
+                    f.display_type(*ty)
                 )
             }
-            SemanticError::AlignOfFunctionType => "Invalid application of '_Alignof' to a function type".to_string(),
-            SemanticError::GenericNoMatch { ty } => format!(
+            SemanticError::AlignOfFunctionType => write!(f, "Invalid application of '_Alignof' to a function type"),
+            SemanticError::GenericNoMatch { ty } => write!(
+                f,
                 "controlling expression type '{}' not compatible with any generic association",
-                registry.display_qual_type(*ty)
+                f.display_qual_type(*ty)
             ),
             SemanticError::GenericFunctionAssociation { ty } => {
-                format!(
+                write!(
+                    f,
                     "generic association specifies function type '{}'",
-                    registry.display_qual_type(*ty)
+                    f.display_qual_type(*ty)
                 )
             }
             SemanticError::GenericVlaAssociation { ty } => {
-                format!(
+                write!(
+                    f,
                     "generic association specifies variably modified type '{}'",
-                    registry.display_qual_type(*ty)
+                    f.display_qual_type(*ty)
                 )
             }
-            SemanticError::AddressOfBitfield => "cannot take address of bit-field".to_string(),
-            SemanticError::AddressOfRegister => "cannot take address of 'register' variable".to_string(),
-            SemanticError::SizeOfBitfield => "cannot apply 'sizeof' to a bit-field".to_string(),
-            SemanticError::AlignOfBitfield => "cannot apply '_Alignof' to a bit-field".to_string(),
+            SemanticError::AddressOfBitfield => write!(f, "cannot take address of bit-field"),
+            SemanticError::AddressOfRegister => write!(f, "cannot take address of 'register' variable"),
+            SemanticError::SizeOfBitfield => write!(f, "cannot apply 'sizeof' to a bit-field"),
+            SemanticError::AlignOfBitfield => write!(f, "cannot apply '_Alignof' to a bit-field"),
             SemanticError::GenericIncompleteControl { ty } => {
-                format!(
+                write!(
+                    f,
                     "controlling expression type '{}' is an incomplete type",
-                    registry.display_qual_type(*ty)
+                    f.display_qual_type(*ty)
                 )
             }
             SemanticError::GenericIncompleteAssociation { ty } => {
-                format!(
+                write!(
+                    f,
                     "generic association specifies incomplete type '{}'",
-                    registry.display_qual_type(*ty)
+                    f.display_qual_type(*ty)
                 )
             }
             SemanticError::GenericMultipleDefault { .. } => {
-                "duplicate default association in generic selection".to_string()
+                write!(f, "duplicate default association in generic selection")
             }
             SemanticError::GenericMultipleMatches { .. } => {
-                "controlling expression in '_Generic' selector matches multiple associations".to_string()
+                write!(
+                    f,
+                    "controlling expression in '_Generic' selector matches multiple associations"
+                )
             }
-            SemanticError::GenericDuplicateMatch { ty, prev_ty, .. } => format!(
+            SemanticError::GenericDuplicateMatch { ty, prev_ty, .. } => write!(
+                f,
                 "type '{}' in generic association compatible with previously specified type '{}'",
-                registry.display_qual_type(*ty),
-                registry.display_qual_type(*prev_ty)
+                f.display_qual_type(*ty),
+                f.display_qual_type(*prev_ty)
             ),
             SemanticError::InvalidAlignment { value } => {
-                format!("requested alignment is not a positive power of 2: {}", value)
+                write!(f, "requested alignment is not a positive power of 2: {}", value)
             }
-            SemanticError::NonConstantAlignment => "requested alignment is not a constant expression".to_string(),
-            SemanticError::AssignmentToReadOnly => "cannot assign to read-only location".to_string(),
+            SemanticError::NonConstantAlignment => write!(f, "requested alignment is not a constant expression"),
+            SemanticError::AssignmentToReadOnly => write!(f, "cannot assign to read-only location"),
             SemanticError::IncompleteType { ty } => {
-                format!("incomplete type '{}'", registry.display_qual_type(*ty))
+                write!(f, "incomplete type '{}'", f.display_qual_type(*ty))
             }
-            SemanticError::IncompleteReturnType => "function has incomplete return type".to_string(),
-            SemanticError::EnumForwardDeclaration => "ISO C forbids forward references to 'enum' types".to_string(),
-            SemanticError::IncompatiblePointerComparison { lhs, rhs } => format!(
+            SemanticError::IncompleteReturnType => write!(f, "function has incomplete return type"),
+            SemanticError::EnumForwardDeclaration => write!(f, "ISO C forbids forward references to 'enum' types"),
+            SemanticError::IncompatiblePointerComparison { lhs, rhs } => write!(
+                f,
                 "comparison of incompatible pointer types '{}' and '{}'",
-                registry.display_qual_type(*lhs),
-                registry.display_qual_type(*rhs)
+                f.display_qual_type(*lhs),
+                f.display_qual_type(*rhs)
             ),
-            SemanticError::IncompatiblePointerTypes { expected, found } => format!(
+            SemanticError::IncompatiblePointerTypes { expected, found } => write!(
+                f,
                 "incompatible pointer types passing '{}' to parameter of type '{}'",
-                registry.display_qual_type(*found),
-                registry.display_qual_type(*expected)
+                f.display_qual_type(*found),
+                f.display_qual_type(*expected)
             ),
-            SemanticError::PointerSignednessMismatch { expected, found } => format!(
+            SemanticError::PointerSignednessMismatch { expected, found } => write!(
+                f,
                 "pointer targets in assignment differ in signedness (passing '{}' to '{}')",
-                registry.display_qual_type(*found),
-                registry.display_qual_type(*expected)
+                f.display_qual_type(*found),
+                f.display_qual_type(*expected)
             ),
-            SemanticError::PointerAssignmentDiscardsQualifiers { expected, found } => format!(
+            SemanticError::PointerAssignmentDiscardsQualifiers { expected, found } => write!(
+                f,
                 "assignment discards qualifiers from pointer target type (passing '{}' to '{}')",
-                registry.display_qual_type(*found),
-                registry.display_qual_type(*expected)
+                f.display_qual_type(*found),
+                f.display_qual_type(*expected)
             ),
-            SemanticError::CaseNotInSwitch => "'case' or 'default' label not in switch statement".to_string(),
-            SemanticError::DuplicateCase { value } => format!("duplicate case value '{}'", value),
+            SemanticError::CaseNotInSwitch => write!(f, "'case' or 'default' label not in switch statement"),
+            SemanticError::DuplicateCase { value } => write!(f, "duplicate case value '{}'", value),
             SemanticError::NonConstantCaseValue => {
-                "expression in 'case' label is not an integer constant expression".to_string()
+                write!(f, "expression in 'case' label is not an integer constant expression")
             }
             SemanticError::InvalidSwitchCondition { ty } => {
-                format!(
+                write!(
+                    f,
                     "switch condition has non-integer type '{}'",
-                    registry.display_qual_type(*ty)
+                    f.display_qual_type(*ty)
                 )
             }
             SemanticError::ExpectedScalarType { found } => {
-                format!(
+                write!(
+                    f,
                     "type mismatch: expected scalar type, found {}",
-                    registry.display_qual_type(*found)
+                    f.display_qual_type(*found)
                 )
             }
             SemanticError::ExpectedFloatingType { found } => {
-                format!(
+                write!(
+                    f,
                     "type mismatch: expected floating-point type, found {}",
-                    registry.display_qual_type(*found)
+                    f.display_qual_type(*found)
                 )
             }
             SemanticError::ExpectedIntegerType { found } => {
-                format!(
+                write!(
+                    f,
                     "type mismatch: expected integer type, found {}",
-                    registry.display_qual_type(*found)
+                    f.display_qual_type(*found)
                 )
             }
             SemanticError::BuiltinChooseExprNotConstant => {
-                "condition in '__builtin_choose_expr' is not a constant expression".to_string()
+                write!(f, "condition in '__builtin_choose_expr' is not a constant expression")
             }
-            SemanticError::ThreadLocalNotAllowed => "_Thread_local is not allowed here".to_string(),
+            SemanticError::ThreadLocalNotAllowed => write!(f, "_Thread_local is not allowed here"),
             SemanticError::ThreadLocalBlockScopeRequiresStaticOrExtern => {
-                "_Thread_local in block scope must be combined with 'static' or 'extern'".to_string()
+                write!(
+                    f,
+                    "_Thread_local in block scope must be combined with 'static' or 'extern'"
+                )
             }
-            SemanticError::MultipleDefaultLabels => "multiple default labels in one switch".to_string(),
+            SemanticError::MultipleDefaultLabels => write!(f, "multiple default labels in one switch"),
             SemanticError::FlexibleArrayNotLast => {
-                "flexible array member must be the last member of a structure".to_string()
+                write!(f, "flexible array member must be the last member of a structure")
             }
             SemanticError::FlexibleArrayInEmptyStruct => {
-                "flexible array member in otherwise empty structure".to_string()
+                write!(f, "flexible array member in otherwise empty structure")
             }
             SemanticError::FlexibleArrayMemberInStruct => {
-                "invalid use of structure with flexible array member as a member".to_string()
+                write!(f, "invalid use of structure with flexible array member as a member")
             }
             SemanticError::FlexibleArrayElementInArray => {
-                "invalid use of structure with flexible array member as an array element".to_string()
+                write!(
+                    f,
+                    "invalid use of structure with flexible array member as an array element"
+                )
             }
-            SemanticError::InvalidRestrict => "restrict requires a pointer type".to_string(),
+            SemanticError::InvalidRestrict => write!(f, "restrict requires a pointer type"),
             SemanticError::InvalidStorageClassForParameter => {
-                "invalid storage class for function parameter".to_string()
+                write!(f, "invalid storage class for function parameter")
             }
             SemanticError::NoreturnFunctionHasReturn { name } => {
-                format!("function '{}' declared '_Noreturn' contains a return statement", name)
+                write!(
+                    f,
+                    "function '{}' declared '_Noreturn' contains a return statement",
+                    name
+                )
             }
             SemanticError::NoreturnFunctionFallsOff { name } => {
-                format!("function '{}' declared '_Noreturn' can fall off the end", name)
+                write!(f, "function '{}' declared '_Noreturn' can fall off the end", name)
             }
             SemanticError::AlignmentNotAllowed { context } => {
-                format!("alignment specifier cannot be used in a {}", context)
+                write!(f, "alignment specifier cannot be used in a {}", context)
             }
-            SemanticError::AlignmentTooLoose { requested, natural } => format!(
+            SemanticError::AlignmentTooLoose { requested, natural } => write!(
+                f,
                 "alignment specifier specifies {}-byte alignment, but {}-byte alignment is required",
                 requested, natural
             ),
             SemanticError::CompoundLiteralIncomplete { ty } => {
-                format!(
+                write!(
+                    f,
                     "compound literal specifies incomplete type '{}'",
-                    registry.display_qual_type(*ty)
+                    f.display_qual_type(*ty)
                 )
             }
             SemanticError::CompoundLiteralVla { ty } => {
-                format!(
+                write!(
+                    f,
                     "compound literal specifies variably modified type '{}'",
-                    registry.display_qual_type(*ty)
+                    f.display_qual_type(*ty)
                 )
             }
             SemanticError::CompoundLiteralFunction { ty } => {
-                format!(
+                write!(
+                    f,
                     "compound literal specifies function type '{}'",
-                    registry.display_qual_type(*ty)
+                    f.display_qual_type(*ty)
                 )
             }
-            SemanticError::AlignasOnVla => "alignment specifier cannot be used in a variably modified type".to_string(),
+            SemanticError::AlignasOnVla => write!(f, "alignment specifier cannot be used in a variably modified type"),
             SemanticError::InvalidAtomicQualifier { type_kind } => {
-                format!("_Atomic qualifier cannot be used with {} type", type_kind)
+                write!(f, "_Atomic qualifier cannot be used with {} type", type_kind)
             }
             SemanticError::InvalidAtomicSpec { reason } => {
-                format!("_Atomic(type-name) specifier cannot be used with {}", reason)
+                write!(f, "_Atomic(type-name) specifier cannot be used with {}", reason)
             }
             SemanticError::ArrayStaticOutsideParameter => {
-                "static in array declarator only allowed in function parameters".to_string()
+                write!(f, "static in array declarator only allowed in function parameters")
             }
             SemanticError::ArrayQualifierOutsideParameter => {
-                "type qualifiers in array declarator only allowed in function parameters".to_string()
-            }
-            SemanticError::ArrayStaticNotOutermost => {
-                "static in array declarator only allowed in outermost array type".to_string()
-            }
-            SemanticError::ArrayQualifierNotOutermost => {
-                "type qualifiers in array declarator only allowed in outermost array type".to_string()
-            }
-            SemanticError::BreakNotInLoop => "break statement not in loop or switch".to_string(),
-            SemanticError::ContinueNotInLoop => "continue statement not in loop statement".to_string(),
-            SemanticError::ExpectedArrayType { found } => {
-                format!(
-                    "subscripted value is not an array (have '{}')",
-                    registry.display_qual_type(*found)
+                write!(
+                    f,
+                    "type qualifiers in array declarator only allowed in function parameters"
                 )
             }
-            SemanticError::InvalidOffsetofDesignator => "invalid designator in 'offsetof'".to_string(),
+            SemanticError::ArrayStaticNotOutermost => {
+                write!(f, "static in array declarator only allowed in outermost array type")
+            }
+            SemanticError::ArrayQualifierNotOutermost => {
+                write!(
+                    f,
+                    "type qualifiers in array declarator only allowed in outermost array type"
+                )
+            }
+            SemanticError::BreakNotInLoop => write!(f, "break statement not in loop or switch"),
+            SemanticError::ContinueNotInLoop => write!(f, "continue statement not in loop statement"),
+            SemanticError::ExpectedArrayType { found } => {
+                write!(
+                    f,
+                    "subscripted value is not an array (have '{}')",
+                    f.display_qual_type(*found)
+                )
+            }
+            SemanticError::InvalidOffsetofDesignator => write!(f, "invalid designator in 'offsetof'"),
             SemanticError::ReturnLocalAddress { name } => {
-                format!(
+                write!(
+                    f,
                     "address of stack memory associated with local variable '{}' returned",
                     name
                 )
@@ -776,97 +828,111 @@ impl SemanticError {
                 to,
                 from_val,
                 to_val,
-            } => format!(
+            } => write!(
+                f,
                 "implicit conversion from '{}' to '{}' changes value from {} to {}",
-                registry.display_qual_type(*from),
-                registry.display_qual_type(*to),
+                f.display_qual_type(*from),
+                f.display_qual_type(*to),
                 from_val,
                 to_val
             ),
-            SemanticError::SwitchCaseOverflow { from_val, to_val } => format!(
+            SemanticError::SwitchCaseOverflow { from_val, to_val } => write!(
+                f,
                 "overflow converting case value to switch condition type ({} to {})",
                 from_val, to_val
             ),
             SemanticError::AddressOfArrayAlwaysTrue { name } => {
-                format!("address of array '{}' will always evaluate to 'true'", name)
+                write!(f, "address of array '{}' will always evaluate to 'true'", name)
             }
-            SemanticError::EnumeratorValueNotRepresentable { name, value, target_ty } => format!(
+            SemanticError::EnumeratorValueNotRepresentable { name, value, target_ty } => write!(
+                f,
                 "enumerator value {} for '{}' is not representable as '{}'",
                 value,
                 name,
-                registry.display_qual_type(target_ty.unwrap_or_else(|| QualType::unqualified(registry.type_int)))
+                f.display_qual_type(
+                    target_ty
+                        .unwrap_or_else(|| QualType::unqualified(f.registry.expect("TypeRegistry required").type_int))
+                )
             ),
             SemanticError::FileScopeSpecifiesStorageClass { name, specifier } => {
-                format!("file-scope declaration of '{}' specifies '{}'", name, specifier)
+                write!(f, "file-scope declaration of '{}' specifies '{}'", name, specifier)
             }
 
             SemanticError::JumpIntoScopeVLA { is_switch } => {
                 if *is_switch {
-                    "switch jumps into scope of identifier with variably modified type".to_string()
+                    write!(f, "switch jumps into scope of identifier with variably modified type")
                 } else {
-                    "jump into scope of identifier with variably modified type".to_string()
+                    write!(f, "jump into scope of identifier with variably modified type")
                 }
             }
-            SemanticError::NoteLabelDefinedHere { name } => format!("label '{}' defined here", name),
-            SemanticError::NoteSwitchStartsHere => "switch starts here".to_string(),
-            SemanticError::NoteVLADeclaredHere { name } => format!("'{}' declared here", name),
+            SemanticError::NoteLabelDefinedHere { name } => write!(f, "label '{}' defined here", name),
+            SemanticError::NoteSwitchStartsHere => write!(f, "switch starts here"),
+            SemanticError::NoteVLADeclaredHere { name } => write!(f, "'{}' declared here", name),
             SemanticError::InvalidStorageClassForFunction { name, specifier } => {
-                format!("invalid storage class '{}' for function '{}'", specifier, name)
+                write!(f, "invalid storage class '{}' for function '{}'", specifier, name)
             }
             SemanticError::VmStaticStorage => {
-                "object with static storage duration shall not have a variably modified type".to_string()
-            }
-            SemanticError::VmThreadStorage => {
-                "object with thread storage duration shall not have a variably modified type".to_string()
-            }
-            SemanticError::VmHasLinkage => "identifier with variably modified type shall have no linkage".to_string(),
-            SemanticError::VlaStarOutsidePrototype => {
-                "[*] array size only allowed in function prototype scope".to_string()
-            }
-            SemanticError::VlaInitializerNotAllowed => "variable-length array may not be initialized".to_string(),
-            SemanticError::InvalidEnumUnderlyingType { ty } => {
-                format!("invalid underlying type '{}' for enum", registry.display_qual_type(*ty))
-            }
-            SemanticError::OffsetofBitfield => "cannot apply 'offsetof' to a bit-field".to_string(),
-            SemanticError::OffsetofIncompleteType { ty } => {
-                format!("offsetof of incomplete type '{}'", registry.display_qual_type(*ty))
-            }
-            SemanticError::SubscriptIncompleteType { ty } => {
-                format!(
-                    "subscript of pointer to incomplete type '{}'",
-                    registry.display_qual_type(*ty)
+                write!(
+                    f,
+                    "object with static storage duration shall not have a variably modified type"
                 )
             }
-            SemanticError::AutoTypeRequiresInitializer => "__auto_type requires an initializer".to_string(),
-            SemanticError::ConstexprRequiresInitializer => {
-                "constexpr requires an initialized data declaration".to_string()
+            SemanticError::VmThreadStorage => {
+                write!(
+                    f,
+                    "object with thread storage duration shall not have a variably modified type"
+                )
             }
-            SemanticError::AutoTypeIncompatibleDeduction { first, new } => format!(
+            SemanticError::VmHasLinkage => write!(f, "identifier with variably modified type shall have no linkage"),
+            SemanticError::VlaStarOutsidePrototype => {
+                write!(f, "[*] array size only allowed in function prototype scope")
+            }
+            SemanticError::VlaInitializerNotAllowed => write!(f, "variable-length array may not be initialized"),
+            SemanticError::InvalidEnumUnderlyingType { ty } => {
+                write!(f, "invalid underlying type '{}' for enum", f.display_qual_type(*ty))
+            }
+            SemanticError::OffsetofBitfield => write!(f, "cannot apply 'offsetof' to a bit-field"),
+            SemanticError::OffsetofIncompleteType { ty } => {
+                write!(f, "offsetof of incomplete type '{}'", f.display_qual_type(*ty))
+            }
+            SemanticError::SubscriptIncompleteType { ty } => {
+                write!(
+                    f,
+                    "subscript of pointer to incomplete type '{}'",
+                    f.display_qual_type(*ty)
+                )
+            }
+            SemanticError::AutoTypeRequiresInitializer => write!(f, "__auto_type requires an initializer"),
+            SemanticError::ConstexprRequiresInitializer => {
+                write!(f, "constexpr requires an initialized data declaration")
+            }
+            SemanticError::AutoTypeIncompatibleDeduction { first, new } => write!(
+                f,
                 "__auto_type deduced as '{}' for one declarator, but '{}' for another",
-                registry.display_qual_type(*first),
-                registry.display_qual_type(*new)
+                f.display_qual_type(*first),
+                f.display_qual_type(*new)
             ),
             SemanticError::AutoTypeNotAllowed { context } => {
-                format!("__auto_type is not allowed in {}", context)
+                write!(f, "__auto_type is not allowed in {}", context)
             }
             SemanticError::BuiltinPrefetchNotConstant { arg } => {
-                format!("argument '{}' to '__builtin_prefetch' must be a constant", arg)
+                write!(f, "argument '{}' to '__builtin_prefetch' must be a constant", arg)
             }
             SemanticError::BuiltinPrefetchOutOfRange { arg } => {
-                format!("argument '{}' to '__builtin_prefetch' is out of range", arg)
+                write!(f, "argument '{}' to '__builtin_prefetch' is out of range", arg)
             }
-            SemanticError::AlignOfExpression => "'_Alignof' applied to an expression is a GNU extension".to_string(),
-            SemanticError::GnuStatementExpression => "use of GNU statement expression extension".to_string(),
-            SemanticError::GnuTypeof => "use of GNU typeof extension".to_string(),
+            SemanticError::AlignOfExpression => write!(f, "'_Alignof' applied to an expression is a GNU extension"),
+            SemanticError::GnuStatementExpression => write!(f, "use of GNU statement expression extension"),
+            SemanticError::GnuTypeof => write!(f, "use of GNU typeof extension"),
             SemanticError::GnuDesignatedInitializerRange => {
-                "use of GNU designated initializer range extension".to_string()
+                write!(f, "use of GNU designated initializer range extension")
             }
-            SemanticError::GnuCaseRange => "use of GNU case range extension".to_string(),
-            SemanticError::GnuZeroLengthArray => "use of GNU zero-length array extension".to_string(),
-            SemanticError::InlineAsmIgnored => "inline assembly is currently ignored by cendol".to_string(),
-            SemanticError::AttributeCleanupOnType => "attribute '__cleanup__' ignored on type".to_string(),
+            SemanticError::GnuCaseRange => write!(f, "use of GNU case range extension"),
+            SemanticError::GnuZeroLengthArray => write!(f, "use of GNU zero-length array extension"),
+            SemanticError::InlineAsmIgnored => write!(f, "inline assembly is currently ignored by cendol"),
+            SemanticError::AttributeCleanupOnType => write!(f, "attribute '__cleanup__' ignored on type"),
             SemanticError::AttributeCleanupOnNonLocal => {
-                "'__cleanup__' attribute only applies to local variables".to_string()
+                write!(f, "'__cleanup__' attribute only applies to local variables")
             }
         }
     }

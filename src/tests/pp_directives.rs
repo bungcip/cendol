@@ -9,7 +9,7 @@ fn test_error_directive_produces_failure() {
 #endif
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ErrorDirective(\"\\\"this should be reported\\\"\"), span: SourceSpan(2199023255571) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ErrorDirective(\"\\\"this should be reported\\\"\"), span: SourceSpan(2199023255571) }""#);
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn test_invalid_line_directive() {
 OK
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: InvalidLineDirective, span: SourceSpan(2199023255559) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: InvalidLineDirective, span: SourceSpan(2199023255559) }""#);
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn test_line_directive_zero_line_number() {
 OK
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: InvalidLineDirective, span: SourceSpan(2199023255559) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: InvalidLineDirective, span: SourceSpan(2199023255559) }""#);
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn test_line_directive_malformed_filename() {
 OK
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: InvalidLineDirective, span: SourceSpan(2199023255563) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: InvalidLineDirective, span: SourceSpan(2199023255563) }""#);
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn test_unknown_pragma_throws_error() {
 #pragma unknown_pragma
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: UnknownPragma(\"unknown_pragma\"), span: SourceSpan(2199023255561) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: UnknownPragma(\"unknown_pragma\"), span: SourceSpan(2199023255561) }""#);
 }
 
 #[test]
@@ -235,7 +235,7 @@ M
 fn test_undef_extra_tokens() {
     let src = "#undef FOO extra";
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ExpectedEod, span: SourceSpan(2199023255563) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ExpectedEod, span: SourceSpan(2199023255563) }""#);
 }
 
 #[test]
@@ -253,7 +253,7 @@ fn test_else_extra_tokens() {
 #endif
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ExpectedEod, span: SourceSpan(2199023255565) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ExpectedEod, span: SourceSpan(2199023255565) }""#);
 }
 
 #[test]
@@ -263,12 +263,12 @@ fn test_endif_extra_tokens() {
 #endif extra
 "#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ExpectedEod, span: SourceSpan(2199023255566) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ExpectedEod, span: SourceSpan(2199023255566) }""#);
 }
 
 #[test]
 fn test_include_extra_tokens_quoted() {
     let src = r#"#include <stddef.h> extra"#;
     let (_, diags) = setup_pp_snapshot_with_diags(src);
-    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPError { kind: ExpectedEod, span: SourceSpan(2199023255572) }""#);
+    insta::assert_yaml_snapshot!(diags, @r#"- "Fatal Error: PPDiag { kind: ExpectedEod, span: SourceSpan(2199023255572) }""#);
 }

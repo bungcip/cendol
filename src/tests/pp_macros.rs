@@ -1159,3 +1159,25 @@ int my_array[] = BUILD_ARRAY(
       text: ;
     "#);
 }
+
+#[test]
+fn test_counter_macro_pasting_no_prescan() {
+    let src = r#"
+#define STRINGIFY(x) #x
+#define PASTE(x, y) x ## y
+#define EVAL(x) x
+
+STRINGIFY(__COUNTER__)
+PASTE(x, __COUNTER__)
+EVAL(__COUNTER__)
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: StringLiteral
+      text: "\"__COUNTER__\""
+    - kind: Identifier
+      text: x__COUNTER__
+    - kind: Number
+      text: "0"
+    "#);
+}

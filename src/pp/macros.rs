@@ -157,9 +157,19 @@ impl<'src> Preprocessor<'src> {
 
         // Pre-expand arguments (prescan)
         let mut expanded_args = Vec::with_capacity(args.len());
-        for arg in &args {
+        for (idx, arg) in args.iter().enumerate() {
             let mut arg_clone = arg.clone();
-            self.expand_tokens(&mut arg_clone, false)?;
+            let needs_expansion = if idx < macro_info.parameter_list.len() {
+                self.parameter_needs_expansion(macro_info, macro_info.parameter_list[idx])
+            } else if let Some(var_arg) = macro_info.variadic_arg {
+                self.parameter_needs_expansion(macro_info, var_arg)
+            } else {
+                false
+            };
+
+            if needs_expansion {
+                self.expand_tokens(&mut arg_clone, false)?;
+            }
             expanded_args.push(arg_clone);
         }
 
@@ -988,10 +998,20 @@ impl<'src> Preprocessor<'src> {
 
         // Pre-expand arguments (prescan)
         let mut expanded_args = Vec::with_capacity(args.len());
-        for arg in &args {
+        for (idx, arg) in args.iter().enumerate() {
             let mut arg_clone = arg.clone();
-            // Bolt ⚡: Ignore errors during argument prescan to match original behavior.
-            let _ = self.expand_tokens(&mut arg_clone, in_conditional);
+            let needs_expansion = if idx < info.parameter_list.len() {
+                self.parameter_needs_expansion(&info, info.parameter_list[idx])
+            } else if let Some(var_arg) = info.variadic_arg {
+                self.parameter_needs_expansion(&info, var_arg)
+            } else {
+                false
+            };
+
+            if needs_expansion {
+                // Bolt ⚡: Ignore errors during argument prescan to match original behavior.
+                let _ = self.expand_tokens(&mut arg_clone, in_conditional);
+            }
             expanded_args.push(arg_clone);
         }
 
@@ -1167,6 +1187,24 @@ impl<'src> Preprocessor<'src> {
         }
 
         Ok((flags, params, variadic))
+    }
+
+    /// Check if a parameter is used in the replacement list in a way that requires its expanded argument
+    fn parameter_needs_expansion(&self, macro_info: &MacroInfo, param_sym: StringId) -> bool {
+        for i in 0..macro_info.tokens.len() {
+            if let PPTokenKind::Identifier(sym) = macro_info.tokens[i].kind {
+                if sym == param_sym {
+                    let preceded_by_hash = i > 0 && macro_info.tokens[i - 1].kind == PPTokenKind::Hash;
+                    let preceded_by_hashhash = i > 0 && macro_info.tokens[i - 1].kind == PPTokenKind::HashHash;
+                    let followed_by_hashhash = i + 1 < macro_info.tokens.len() && macro_info.tokens[i + 1].kind == PPTokenKind::HashHash;
+
+                    if !preceded_by_hash && !preceded_by_hashhash && !followed_by_hashhash {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 }
 

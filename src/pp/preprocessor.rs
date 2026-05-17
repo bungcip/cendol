@@ -171,7 +171,11 @@ impl<'src> Preprocessor<'src> {
         );
         let loc = SourceLoc::new(source_id, 0);
 
-        Some(PPToken::text(kind, PPTokenFlags::MACRO_EXPANDED, loc, &text))
+        let mut flags = PPTokenFlags::MACRO_EXPANDED;
+        if token.flags.contains(PPTokenFlags::LEADING_SPACE) {
+            flags |= PPTokenFlags::LEADING_SPACE;
+        }
+        Some(PPToken::text(kind, flags, loc, &text))
     }
 
     /// Get the next value for __COUNTER__

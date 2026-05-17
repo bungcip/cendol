@@ -85,7 +85,8 @@ impl<'a> PPDumper<'a> {
             state.at_line_start = false;
             state.last_was_open_paren = text.ends_with('(');
             state.last_pos = if is_macro {
-                token_start
+                let macro_len = get_identifier_length(state.buffer, loc.offset() as usize);
+                loc.offset() + macro_len
             } else {
                 token_start + token.length as u32
             };
@@ -129,7 +130,9 @@ impl<'a> PPDumper<'a> {
         line: u32,
         name: &str,
     ) -> std::io::Result<()> {
+        let old_line = state.current_line;
         state.current_line = line;
+        let is_same_file = state.file_name.as_deref() == Some(name);
         state.file_name = Some(name.to_string());
 
         if !self.suppress_line_markers {
@@ -139,6 +142,11 @@ impl<'a> PPDumper<'a> {
             let display_name = self.get_display_name(name);
             writeln!(writer, "# {} \"{}\" 1", line, display_name)?;
             state.at_line_start = true;
+        } else if old_line > 0 && line > old_line && is_same_file {
+            if !state.at_line_start {
+                writeln!(writer)?;
+                state.at_line_start = true;
+            }
         }
         Ok(())
     }
@@ -177,6 +185,11 @@ impl<'a> PPDumper<'a> {
                 }
                 let (newlines, space) = self.handle_whitespace_and_newlines(writer, state, text, true, true)?;
                 return Ok((newlines, space));
+            }
+            if text.chars().all(|c| c.is_whitespace()) && !text.is_empty() {
+                write!(writer, " ")?;
+                state.at_line_start = false;
+                return Ok((0, true));
             }
             return Ok((0, false));
         }
@@ -304,4 +317,17 @@ impl<'a> PPDumper<'a> {
             return current_loc;
         }
     }
+}
+
+fn get_identifier_length(buffer: &[u8], offset: usize) -> u32 {
+    let mut len = 0;
+    while offset + len < buffer.len() {
+        let c = buffer[offset + len];
+        if c.is_ascii_alphanumeric() || c == b'_' {
+            len += 1;
+        } else {
+            break;
+        }
+    }
+    len as u32
 }

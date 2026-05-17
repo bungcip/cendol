@@ -196,7 +196,7 @@ impl<'src> Preprocessor<'src> {
         let mut current_arg = Vec::new();
         let mut depth = 0;
 
-        while let Some(t) = self.lex_token() {
+        while let Some(t) = self.next_token_with_directives()? {
             match t.kind {
                 PPTokenKind::Eof => break,
                 PPTokenKind::LeftParen => {
@@ -863,8 +863,15 @@ impl<'src> Preprocessor<'src> {
                 match task {
                     ExpansionTask::Function { end_idx, .. } => {
                         let mut expanded = self.do_function_expansion(task, tokens, i, in_conditional)?;
-                        if !expanded.is_empty() && tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
-                            expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
+                        if !expanded.is_empty() {
+                            if tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
+                                expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
+                            } else {
+                                expanded[0].flags &= !PPTokenFlags::LEADING_SPACE;
+                            }
+                        } else if i + 1 < tokens.len() && tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
+                            // Bolt ⚡: Propagation for empty expansion.
+                            tokens[i + 1].flags |= PPTokenFlags::LEADING_SPACE;
                         }
 
                         if expanded.len() <= 10000 {
@@ -874,8 +881,15 @@ impl<'src> Preprocessor<'src> {
                     }
                     ExpansionTask::Object { .. } => {
                         let mut expanded = self.do_object_expansion(task, tokens, i)?;
-                        if !expanded.is_empty() && tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
-                            expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
+                        if !expanded.is_empty() {
+                            if tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
+                                expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
+                            } else {
+                                expanded[0].flags &= !PPTokenFlags::LEADING_SPACE;
+                            }
+                        } else if i + 1 < tokens.len() && tokens[i].flags.contains(PPTokenFlags::LEADING_SPACE) {
+                            // Bolt ⚡: Propagation for empty expansion.
+                            tokens[i + 1].flags |= PPTokenFlags::LEADING_SPACE;
                         }
                         tokens.splice(i..i + 1, expanded);
                         continue;

@@ -166,9 +166,23 @@ impl<'a> PPDumper<'a> {
         let slice = &state.buffer[state.last_pos as usize..token_start as usize];
         let text = std::str::from_utf8(slice).unwrap_or("");
         let has_nl = text.contains('\n');
+        let is_macro = token.flags.contains(PPTokenFlags::MACRO_EXPANDED);
+
+        if is_macro {
+            // ⚡ Bolt: Macro tokens should only trigger newlines from the gap if the gap is pure whitespace.
+            // If the gap contains text (like a macro call), it should be collapsed in -P mode.
+            if has_nl {
+                if self.suppress_line_markers && !text.chars().all(|c| c.is_whitespace()) {
+                    return Ok((0, true)); // Suppress newline and prevent follow-up space
+                }
+                let (newlines, space) = self.handle_whitespace_and_newlines(writer, state, text, true, true)?;
+                return Ok((newlines, space));
+            }
+            return Ok((0, false));
+        }
 
         if text.chars().all(|c| c.is_whitespace()) {
-            self.handle_whitespace_and_newlines(writer, state, text, has_nl)
+            self.handle_whitespace_and_newlines(writer, state, text, has_nl, false)
         } else {
             self.handle_complex_gap(writer, state, token, text, has_nl)
         }
@@ -200,7 +214,19 @@ impl<'a> PPDumper<'a> {
             }
         }
 
-        let (newlines, space) = self.handle_whitespace_and_newlines(writer, state, text, has_nl)?;
+        let mut final_has_nl = has_nl;
+        if self.suppress_line_markers && has_nl {
+            final_has_nl = false;
+            printed_space = true;
+        }
+
+        let (newlines, space) = self.handle_whitespace_and_newlines(
+            writer,
+            state,
+            text,
+            final_has_nl,
+            false,
+        )?;
         Ok((newlines, printed_space || space))
     }
 
@@ -210,6 +236,7 @@ impl<'a> PPDumper<'a> {
         state: &mut DumperState<'a>,
         text: &str,
         has_nl: bool,
+        is_macro: bool,
     ) -> std::io::Result<(u32, bool)> {
         let mut newlines = 0;
         let mut printed_space = false;
@@ -227,14 +254,14 @@ impl<'a> PPDumper<'a> {
             state.at_line_start = true;
         }
 
-        if let Some(last_nl) = text.rfind('\n') {
+        if let Some(last_nl) = text.rfind('\n') && has_nl {
             let indent = &text[last_nl + 1..];
             if !indent.is_empty() {
                 write!(writer, " ")?;
                 state.at_line_start = false;
                 printed_space = true;
             }
-        } else if !text.is_empty() {
+        } else if !text.is_empty() && text.chars().all(|c| c.is_whitespace()) && !is_macro {
             write!(writer, " ")?;
             state.at_line_start = false;
             printed_space = true;

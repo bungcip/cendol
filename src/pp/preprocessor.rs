@@ -768,7 +768,7 @@ impl<'src> Preprocessor<'src> {
     }
 
     /// Retrieve the next fully processed and expanded token from the preprocessor stream
-    pub(crate) fn next_token(&mut self) -> Result<Option<PPToken>, PPError> {
+    pub(crate) fn next_token_with_directives(&mut self) -> Result<Option<PPToken>, PPError> {
         while let Some(token) = self.lex_token() {
             match token.kind {
                 // Handle directive
@@ -782,15 +782,23 @@ impl<'src> Preprocessor<'src> {
                 _ if self.is_currently_skipping() => {
                     // Bolt ⚡: When skipping a disabled block, use the fast-path in the lexer
                     // to jump directly to the next potential directive.
-                    if self.pending_tokens.is_empty()
-                        && let Some(lexer) = self.lexer_stack.last_mut()
-                    {
+                    if self.pending_tokens.is_empty() && let Some(lexer) = self.lexer_stack.last_mut() {
                         lexer.fast_skip_to_directive();
                     }
                     continue;
                 }
                 // Skip Eod tokens
                 PPTokenKind::Eod => continue,
+                _ => return Ok(Some(token)),
+            }
+        }
+        Ok(None)
+    }
+
+    /// Retrieve the next fully processed and expanded token from the preprocessor stream
+    pub(crate) fn next_token(&mut self) -> Result<Option<PPToken>, PPError> {
+        while let Some(token) = self.next_token_with_directives()? {
+            match token.kind {
                 // Handle identifiers (macros, magic macros, _Pragma)
                 PPTokenKind::Identifier(symbol) => {
                     if let Some(magic) = self.try_expand_magic_macro(&token) {
@@ -802,6 +810,8 @@ impl<'src> Preprocessor<'src> {
                             let mut expanded = expanded;
                             if token.flags.contains(PPTokenFlags::LEADING_SPACE) {
                                 expanded[0].flags |= PPTokenFlags::LEADING_SPACE;
+                            } else {
+                                expanded[0].flags &= !PPTokenFlags::LEADING_SPACE;
                             }
                             self.pending_tokens.extend(expanded.into_iter().rev());
                         }

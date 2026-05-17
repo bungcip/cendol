@@ -1112,3 +1112,50 @@ FOO
       text: "1"
     "#);
 }
+
+#[test]
+fn test_directive_in_macro_args() {
+    let src = r#"
+#define BUILD_ARRAY(x, y, z) { x, y, z }
+#define USE_FEATURE_B 1
+
+int my_array[] = BUILD_ARRAY(
+    10,
+#if USE_FEATURE_B
+    20,
+#else
+    99,
+#endif
+    30
+);
+"#;
+    let tokens = setup_pp_snapshot(src);
+    insta::assert_yaml_snapshot!(tokens, @r#"
+    - kind: Identifier
+      text: int
+    - kind: Identifier
+      text: my_array
+    - kind: LeftBracket
+      text: "["
+    - kind: RightBracket
+      text: "]"
+    - kind: Assign
+      text: "="
+    - kind: LeftBrace
+      text: "{"
+    - kind: Number
+      text: "10"
+    - kind: Comma
+      text: ","
+    - kind: Number
+      text: "20"
+    - kind: Comma
+      text: ","
+    - kind: Number
+      text: "30"
+    - kind: RightBrace
+      text: "}"
+    - kind: Semicolon
+      text: ;
+    "#);
+}

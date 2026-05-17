@@ -498,7 +498,7 @@ int x = TEN;
     # 1 "<test>" 1
 
 
-    int x = 10 ;
+    int x = 10;
     "#);
 }
 
@@ -509,7 +509,7 @@ fn test_dump_preprocessed_output_suppress_line_markers() {
 int x = TEN;
 "#;
     let content = dump_pp_output(src, true);
-    insta::assert_snapshot!(content, @"int x = 10 ;");
+    insta::assert_snapshot!(content, @"int x = 10;");
 }
 
 #[test]

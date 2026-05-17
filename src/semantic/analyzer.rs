@@ -2537,7 +2537,7 @@ impl<'a> SemanticAnalyzer<'a> {
         // Handle both arr[idx] and idx[arr] (subscripting is commutative in C)
         // C11 6.5.2.1p1: "one of the expressions shall have type 'pointer to complete object type',
         // and the other shall have integer type."
-        let (sequence_qt, index_ty, sequence_node, index_node) = if arr_ty.is_pointer() {
+        let (sequence_qt, index_ty, sequence, index) = if arr_ty.is_pointer() {
             (arr_ty, idx_ty, arr, idx)
         } else if idx_ty.is_pointer() {
             (idx_ty, arr_ty, idx, arr)
@@ -2547,7 +2547,7 @@ impl<'a> SemanticAnalyzer<'a> {
         };
 
         if !index_ty.is_integer() {
-            self.report_error(index_node, SemanticError::ExpectedIntegerType { found: index_ty });
+            self.report_error(index, SemanticError::ExpectedIntegerType { found: index_ty });
         }
 
         if sequence_qt.is_array() {
@@ -2560,7 +2560,7 @@ impl<'a> SemanticAnalyzer<'a> {
             // But an array of incomplete type (like extern struct S a[]) is always illegal anyway.
             if !self.registry.is_complete(element_type) || element_type.is_function() {
                 self.report_error(
-                    sequence_node,
+                    sequence,
                     SemanticError::SubscriptIncompleteType {
                         ty: QualType::new(element_type, sequence_qt.qualifiers()),
                     },
@@ -2574,7 +2574,7 @@ impl<'a> SemanticAnalyzer<'a> {
             // C11 6.5.2.1p1: pointee must be a complete object type.
             // A function type is not an object type.
             if !self.registry.is_complete(pointee.ty()) || pointee.is_function() {
-                self.report_error(sequence_node, SemanticError::SubscriptIncompleteType { ty: pointee });
+                self.report_error(sequence, SemanticError::SubscriptIncompleteType { ty: pointee });
             }
 
             Some(pointee)
@@ -2621,37 +2621,24 @@ impl<'a> SemanticAnalyzer<'a> {
                 let sym = self.symbol_table.get_symbol(data.symbol);
                 self.visit_type_exprs(sym.type_info);
 
-                // Bolt ⚡: Optimized to avoid cloning TypeKind.
-                let mut params_to_check = Vec::new();
-                let mut return_type_to_check = None;
-
-                let task = self.get_analysis_task(sym.type_info);
                 if let TypeAnalysisTask::Function {
                     return_type,
                     parameters,
                     ..
-                } = task
+                } = self.get_analysis_task(sym.type_info)
                 {
-                    return_type_to_check = Some(return_type);
-                    // Bolt ⚡: Extract parameter types without holding a borrow of self while calling ensure_layout.
-                    params_to_check.reserve(parameters.len());
-                    for p in parameters.iter() {
-                        params_to_check.push(p.param_type.ty());
-                    }
-                }
-
-                if let Some(return_type) = return_type_to_check {
-                    // Bolt ⚡: Extension: allow incomplete enums in declarations (per GCC/Clang).
                     if !self.registry.is_complete(return_type)
                         && return_type != self.registry.type_void
                         && !return_type.is_enum()
                     {
                         self.report_error(node, SemanticError::IncompleteReturnType);
                     }
-                }
 
-                for param_ty in params_to_check {
-                    let _ = self.registry.ensure_layout(param_ty);
+                    // Bolt ⚡: Extract parameter types without holding a borrow of self while calling ensure_layout.
+                    let params_to_check: Vec<_> = parameters.iter().map(|p| p.param_type.ty()).collect();
+                    for param_ty in params_to_check {
+                        let _ = self.registry.ensure_layout(param_ty);
+                    }
                 }
 
                 None
@@ -2661,9 +2648,9 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn visit_function_definition(&mut self, data: &FunctionDef, node: NodeRef) -> Option<QualType> {
-        // Bolt ⚡: Avoid cloning TypeKind.
-        let func_qt = self.symbol_table.get_symbol(data.symbol).type_info;
-        let ret_type = if let TypeAnalysisTask::Function { return_type, .. } = self.get_analysis_task(func_qt) {
+        let symbol = self.symbol_table.get_symbol(data.symbol);
+        let ret_type = if let TypeAnalysisTask::Function { return_type, .. } = self.get_analysis_task(symbol.type_info)
+        {
             return_type
         } else {
             self.registry.type_error
@@ -2673,12 +2660,11 @@ impl<'a> SemanticAnalyzer<'a> {
             self.report_error(node, SemanticError::IncompleteReturnType);
         }
 
-        let symbol = self.symbol_table.get_symbol(data.symbol);
-        let (param_len, is_noreturn) = if let SymbolKind::Function(f) = &symbol.kind {
-            (f.param_len, f.is_noreturn)
-        } else {
+        let SymbolKind::Function(f) = &symbol.kind else {
             unreachable!("ICE: Function node refers to non-function symbol")
         };
+        let param_len = f.param_len;
+        let is_noreturn = f.is_noreturn;
 
         let prev_ctx = self.current_function.take();
         self.current_function = Some(FunctionCtx {
@@ -2706,28 +2692,28 @@ impl<'a> SemanticAnalyzer<'a> {
             let NodeKind::Goto(_, sym) = self.ast.get_kind(goto_node) else {
                 continue;
             };
-            let (label_span, target_vlas) = if let Some(v) = self.label_vla_state.get(sym) {
-                (v.0, &v.1)
-            } else {
+            let Some(&(label_span, ref target_vlas)) = self.label_vla_state.get(sym) else {
                 continue;
             };
 
             // If there's a VLA in target_vlas that is NOT in source_vlas, it's a jump into scope.
-            if let Some(&vla) = target_vlas.iter().find(|v| !source_vlas.contains(v)) {
-                let mut notes = vec![];
+            let Some(&vla) = target_vlas.iter().find(|v| !source_vlas.contains(v)) else {
+                continue;
+            };
 
-                // Note where label is defined
-                let label_name = self.symbol_table.get_symbol(*sym).name;
-                notes.push((label_span, SemanticError::NoteLabelDefinedHere { name: label_name }));
+            let mut notes = vec![];
 
-                // Note where VLA is declared
-                if let NodeKind::VarDecl(var_data) = self.ast.get_kind(vla) {
-                    let name = self.symbol_table.get_symbol(var_data.symbol).name;
-                    notes.push((self.ast.get_span(vla), SemanticError::NoteVLADeclaredHere { name }));
-                }
+            // Note where label is defined
+            let label_name = self.symbol_table.get_symbol(*sym).name;
+            notes.push((label_span, SemanticError::NoteLabelDefinedHere { name: label_name }));
 
-                self.report_error_with_notes(goto_node, SemanticError::JumpIntoScopeVLA { is_switch: false }, notes);
+            // Note where VLA is declared
+            if let NodeKind::VarDecl(var_data) = self.ast.get_kind(vla) {
+                let name = self.symbol_table.get_symbol(var_data.symbol).name;
+                notes.push((self.ast.get_span(vla), SemanticError::NoteVLADeclaredHere { name }));
             }
+
+            self.report_error_with_notes(goto_node, SemanticError::JumpIntoScopeVLA { is_switch: false }, notes);
         }
         self.goto_vla_state.clear();
         self.label_vla_state.clear();
@@ -2901,10 +2887,9 @@ impl<'a> SemanticAnalyzer<'a> {
         let Some(ctx) = self.switch_stack.last() else {
             return val;
         };
-        let truncated = self.registry.get(ctx.cond_type.ty()).as_ref().truncate_int(val);
+        let truncated = self.registry.get(ctx.cond_type.ty()).truncate_int(val);
 
-        let orig_qt = ctx.orig_cond_type;
-        let orig_truncated = self.registry.get(orig_qt.ty()).as_ref().truncate_int(val);
+        let orig_truncated = self.registry.get(ctx.orig_cond_type.ty()).truncate_int(val);
         if orig_truncated != val {
             self.report_warning(
                 node,
@@ -3505,41 +3490,29 @@ impl<'a> SemanticAnalyzer<'a> {
         // First, visit the controlling expression to determine its type.
         let ctrl = self.visit_node(gs.control)?;
 
-        // C11 6.5.1.1p2: The controlling expression... shall be an expression of a complete object type,
-        // or the void type.
-        // C11 6.5.1.1p3: The controlling expression of a generic selection is not evaluated.
-        // C11 6.5.1.1p2: The type of the controlling expression is compared with the type name of each generic
-        // association. Before comparison, array and function types decay to pointers.
+        // Before comparison, array and function types decay to pointers.
         let decayed_ctrl = if ctrl.is_array() || ctrl.is_function() {
-            // Qualifiers on the array/function type itself are discarded during decay.
             self.decay(gs.control, ctrl)
         } else {
             ctrl
         };
 
-        // After decay, top-level qualifiers are removed for the compatibility check (lvalue conversion).
+        // After decay, top-level qualifiers are removed for the compatibility check.
         let unqualified_ctrl = decayed_ctrl.strip_all();
 
         // The completeness check applies to the DECAYED type.
-        // Pointer types (from array/function decay) are always complete object types.
         if !decayed_ctrl.is_void() && !self.registry.is_complete(decayed_ctrl.ty()) {
             self.report_error(gs.control, SemanticError::GenericIncompleteControl { ty: ctrl });
         }
 
-        // It's crucial to visit *all* result expressions to ensure they are
-        // fully type-checked, even if they are not the selected branch.
-        // This resolves all identifier types within them.
         let mut selected_expr = None;
         let mut selected_span = None;
         let mut default_expr = None;
         let mut default_first_span = None;
-        // Bolt ⚡: Use SmallVec to avoid heap allocation for small generic selection lists.
         let mut seen_types: SmallVec<[(QualType, SourceSpan); 8]> = SmallVec::new();
 
         for assoc_node in gs.assoc_start.range(gs.assoc_len) {
             let span = self.ast.get_span(assoc_node);
-            // It's crucial to visit the association node first to resolve any types (like typeof)
-            // before we access ga.ty for compatibility checks.
             self.visit_node(assoc_node);
 
             let NodeKind::GenericAssociation(ga) = *self.ast.get_kind(assoc_node) else {
@@ -3547,7 +3520,6 @@ impl<'a> SemanticAnalyzer<'a> {
             };
 
             let Some(assoc_qt) = ga.ty else {
-                // This is the 'default' association.
                 // Constraint 2: If a generic selection has a default association, there shall be only one such association.
                 if let Some(first_span) = default_first_span {
                     self.report_error(
@@ -3561,9 +3533,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 continue;
             };
 
-            // C11 6.5.1.1p2: The type name in a generic association shall specify a complete object type
-            // other than a variably modified type.
-            // Bolt ⚡: Optimization: use assoc_qt.is_function() instead of registry lookup.
+            // C11 6.5.1.1p2: The type name in a generic association shall specify a complete object type other than a VLA.
             if assoc_qt.is_function() {
                 self.report_error(assoc_node, SemanticError::GenericFunctionAssociation { ty: assoc_qt });
             } else if !self.registry.is_complete(assoc_qt.ty()) {
@@ -3572,44 +3542,25 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.report_error(assoc_node, SemanticError::GenericVlaAssociation { ty: assoc_qt });
             }
 
-            // C11 6.5.1.1p2: The controlling expression... shall have type compatible with at most one...
-            // "No two generic associations in the same generic selection shall specify compatible types."
-
-            let decayed_assoc = if assoc_qt.is_array() || assoc_qt.is_function() {
-                self.registry.decay(assoc_qt, TypeQualifiers::empty())
-            } else {
-                assoc_qt
-            };
-
             // Constraint 2: No two generic associations in the same generic selection shall specify compatible types.
-            let mut duplicate = false;
-            for (prev_ty, prev_span) in &seen_types {
-                if self.registry.is_compatible(decayed_assoc, *prev_ty) {
-                    // C11 6.7.2.2p4: "Each enumerated type shall be compatible with char, a signed integer type, or an unsigned integer type."
-                    // However, 6.5.1.1p2 says generic association type-name shall specify a complete object type.
-                    // For _Generic specifically, if we have 'int' and an enum that is compatible with 'int',
-                    // they are compatible types and thus a constraint violation.
-                    self.report_error(
-                        assoc_node,
-                        SemanticError::GenericDuplicateMatch {
-                            ty: assoc_qt,
-                            prev_ty: *prev_ty,
-                            first_def: *prev_span,
-                        },
-                    );
-                    duplicate = true;
-                    break;
-                }
+            if let Some(&(prev_ty, prev_span)) = seen_types
+                .iter()
+                .find(|(prev_ty, _)| self.registry.is_compatible(assoc_qt, *prev_ty))
+            {
+                self.report_error(
+                    assoc_node,
+                    SemanticError::GenericDuplicateMatch {
+                        ty: assoc_qt,
+                        prev_ty,
+                        first_def: prev_span,
+                    },
+                );
+            } else {
+                seen_types.push((assoc_qt, span));
             }
 
-            if !duplicate {
-                seen_types.push((decayed_assoc, span));
-            }
-
-            // Constraint 1: The controlling expression... shall have type compatible with at most one...
-            // unqualified_ctrl_ty is the controlling expression type after lvalue conversion (which strips qualifiers).
-            // It is compared against the association type (which keeps qualifiers).
-            if self.registry.is_compatible(unqualified_ctrl, decayed_assoc) {
+            // Constraint 1: The controlling expression shall have type compatible with at most one association type.
+            if self.registry.is_compatible(unqualified_ctrl, assoc_qt) {
                 if let Some(first_match) = selected_span {
                     self.report_error(assoc_node, SemanticError::GenericMultipleMatches { first_match });
                 } else {
@@ -3623,20 +3574,13 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // If no specific type matches, use the default association if it exists.
-        if selected_expr.is_none() {
-            selected_expr = default_expr;
-            if let Some(expr) = default_expr {
+        let selected = selected_expr.or(default_expr);
+        if let Some(expr) = selected {
+            if selected_expr.is_none() {
                 self.semantic_info.generic_selections.insert(node.index(), expr);
             }
-        }
-
-        // The type of the _Generic expression is the type of the selected result expression.
-        if let Some(expr) = selected_expr {
-            // The type should already be resolved from the earlier pass.
-            let idx = expr.index();
-            self.semantic_info.types.get(idx).and_then(|t| *t)
+            self.semantic_info.types.get(expr.index()).and_then(|t| *t)
         } else {
-            // If no match is found and there's no default, it's a semantic error.
             self.report_error(node, SemanticError::GenericNoMatch { ty: ctrl });
             None
         }
@@ -3654,7 +3598,7 @@ impl<'a> SemanticAnalyzer<'a> {
             return Some(res_ty);
         }
 
-        if !self.compute_offsetof_recursive(expr, &mut current_ty, &mut offset) {
+        if !self.compute_offsetof(expr, &mut current_ty, &mut offset) {
             return Some(res_ty);
         }
 
@@ -3662,16 +3606,15 @@ impl<'a> SemanticAnalyzer<'a> {
         Some(res_ty)
     }
 
-    fn compute_offsetof_recursive(&mut self, node: NodeRef, current_ty: &mut QualType, offset: &mut i64) -> bool {
-        let kind = *self.ast.get_kind(node);
-        match kind {
+    fn compute_offsetof(&mut self, node: NodeRef, current_ty: &mut QualType, offset: &mut i64) -> bool {
+        match *self.ast.get_kind(node) {
             NodeKind::Dummy => true,
             NodeKind::MemberAccess(base, member_name, _) => {
-                self.compute_offsetof_recursive(base, current_ty, offset)
+                self.compute_offsetof(base, current_ty, offset)
                     && self.apply_offsetof_member(node, member_name, current_ty, offset)
             }
             NodeKind::IndexAccess(base, index) => {
-                self.compute_offsetof_recursive(base, current_ty, offset)
+                self.compute_offsetof(base, current_ty, offset)
                     && self.apply_offsetof_index(node, index, current_ty, offset)
             }
             _ => {
@@ -3701,18 +3644,11 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         let mut base_index = 0;
-        let ty_obj = self.registry.get(record_ty);
-        if let Some((member, field, _)) = ty_obj.find_member_with_offset(self.registry, member_name, 0, &mut base_index)
-        {
-            if member.bit_field_size.is_some() {
-                self.report_error(node, SemanticError::OffsetofBitfield);
-                return false;
-            }
-
-            *offset += field.offset as i64;
-            *current_qt = member.member_type;
-            true
-        } else {
+        let Some((member, field, _)) =
+            self.registry
+                .get(record_ty)
+                .find_member_with_offset(self.registry, member_name, 0, &mut base_index)
+        else {
             self.report_error(
                 node,
                 SemanticError::MemberNotFound {
@@ -3720,8 +3656,17 @@ impl<'a> SemanticAnalyzer<'a> {
                     ty: QualType::unqualified(record_ty),
                 },
             );
-            false
+            return false;
+        };
+
+        if member.bit_field_size.is_some() {
+            self.report_error(node, SemanticError::OffsetofBitfield);
+            return false;
         }
+
+        *offset += field.offset as i64;
+        *current_qt = member.member_type;
+        true
     }
 
     fn apply_offsetof_index(
@@ -3731,8 +3676,7 @@ impl<'a> SemanticAnalyzer<'a> {
         current_qt: &mut QualType,
         offset: &mut i64,
     ) -> bool {
-        let elem_ty = self.registry.get_array_element(current_qt.ty());
-        let Some(elem_ty) = elem_ty else {
+        let Some(elem_ty) = self.registry.get_array_element(current_qt.ty()) else {
             self.report_error(node, SemanticError::ExpectedArrayType { found: *current_qt });
             return false;
         };

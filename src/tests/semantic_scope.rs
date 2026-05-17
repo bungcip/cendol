@@ -58,6 +58,34 @@ int main() {
 }
 
 #[test]
+fn test_block_scope_tag_declaration_shadowing() {
+    run_pass(
+        r#"
+        struct A { int a; int b; };
+        int main() {
+            struct A; // should declare a new incomplete tag A shadowing the outer definition
+            return 174;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
+fn test_block_scope_enum_tag_declaration_shadowing() {
+    run_pass(
+        r#"
+        enum E { X, Y };
+        int main() {
+            enum E; // should declare a new incomplete tag E shadowing the outer definition
+            return 174;
+        }
+        "#,
+        CompilePhase::Mir,
+    );
+}
+
+#[test]
 fn test_function_redefinition_with_prototype() {
     let source = r#"
             int x;

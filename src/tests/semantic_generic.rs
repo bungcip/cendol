@@ -413,14 +413,23 @@ fn test_generic_incomplete_array_as_control() {
 
 #[test]
 fn test_generic_decay_and_qualifier_stripping() {
-    run_pass(
+    // Controlling expression parameter 't' decays to 'int*', but association type 'T' (int[4]) does not decay.
+    // This is a constraint violation and must produce a compile-time error.
+    run_fail_with_message(
         r#"
         typedef int T[4];
         int f(T t) {
-            // Both controlling expression parameter 't' and association type 'T' decay to 'int*'
             return _Generic(t, T: 1);
         }
+        "#,
+        "controlling expression type 'int*' not compatible with any generic association",
+    );
+}
 
+#[test]
+fn test_generic_qualifiers_and_composite_types() {
+    run_pass(
+        r#"
         int main() {
             // 1. Casts lose qualifiers, so typeof((int const)0) is 'int'
             int c1 = _Generic((__typeof((int const)0)*)0, int*: 1);

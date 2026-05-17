@@ -48,6 +48,7 @@ pub(crate) struct LowerCtx<'a, 'src> {
     pub(crate) anon_counter: u32,
     pub(crate) type_to_tag_sym: HashMap<TypeRef, SymbolRef>,
     pub(crate) keywords: LoweringKeywords,
+    pub(crate) in_tag_decl: bool,
 }
 
 pub(crate) struct LoweringKeywords {
@@ -97,6 +98,7 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             anon_counter: 0,
             type_to_tag_sym: HashMap::new(),
             keywords: LoweringKeywords::new(),
+            in_tag_decl: false,
         }
     }
 
@@ -1196,6 +1198,20 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         span: SourceSpan,
         target_slots: Option<&[NodeRef]>,
     ) -> SmallVec<[NodeRef; 1]> {
+        let is_tag_decl = decl.init_declarators.is_empty();
+        let was_tag_decl = self.in_tag_decl;
+        self.in_tag_decl = is_tag_decl;
+        let res = self.visit_declaration_inner(decl, span, target_slots);
+        self.in_tag_decl = was_tag_decl;
+        res
+    }
+
+    fn visit_declaration_inner(
+        &mut self,
+        decl: &ParsedDecl,
+        span: SourceSpan,
+        target_slots: Option<&[NodeRef]>,
+    ) -> SmallVec<[NodeRef; 1]> {
         let mut spec_info = self.visit_decl_specs(&decl.specifiers, span);
         let mut base_qt = spec_info
             .base_type
@@ -2060,6 +2076,19 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
     }
 
     fn lower_type(
+        &mut self,
+        parsed_type: ParsedType,
+        span: SourceSpan,
+        in_parameter: bool,
+    ) -> Result<QualType, SemanticDiag> {
+        let was_tag_decl = self.in_tag_decl;
+        self.in_tag_decl = false;
+        let res = self.lower_type_inner(parsed_type, span, in_parameter);
+        self.in_tag_decl = was_tag_decl;
+        res
+    }
+
+    fn lower_type_inner(
         &mut self,
         parsed_type: ParsedType,
         span: SourceSpan,
@@ -2958,8 +2987,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             (self.gen_anon_name(), None)
         };
 
+        let is_decl_or_def = is_definition || self.in_tag_decl;
+
         if let Some((sym_ref, scope_id)) = existing
-            && (!is_definition || scope_id == self.symbol_table.current_scope())
+            && (!is_decl_or_def || scope_id == self.symbol_table.current_scope())
         {
             let (ty, is_completed, def_span) = {
                 let symbol = self.symbol_table.get_symbol(sym_ref);
@@ -3006,8 +3037,9 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         } else {
             (self.gen_anon_name(), None)
         };
+        let is_decl_or_def = is_definition || self.in_tag_decl;
         if let Some((sym_ref, scope_id)) = existing
-            && (!is_definition || scope_id == self.symbol_table.current_scope())
+            && (!is_decl_or_def || scope_id == self.symbol_table.current_scope())
         {
             let (ty, is_completed, def_span, has_enumerators) = {
                 let symbol = self.symbol_table.get_symbol(sym_ref);
@@ -3237,10 +3269,10 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
             Record(u, t, d, a) => return self.resolve_record_specifier(*u, *t, d, a, span),
             Enum(t, e, u) => return self.resolve_enum_specifier(*t, e, *u, span),
             TypedefName(n) => return self.resolve_typedef_name(*n, span),
-            TypeSpec::Typeof(ty) => return self.lower_typeof(*ty, span),
-            TypeSpec::TypeofUnqual(ty) => return self.lower_typeof_unqual(*ty, span),
-            TypeSpec::TypeofExpr(expr) => return Ok(self.lower_typeof_expr(*expr, span)),
-            TypeSpec::TypeofUnqualExpr(expr) => return Ok(self.lower_typeof_unqual_expr(*expr)),
+            Typeof(ty) => return self.lower_typeof(*ty, span),
+            TypeofUnqual(ty) => return self.lower_typeof_unqual(*ty, span),
+            TypeofExpr(expr) => return Ok(self.lower_typeof_expr(*expr, span)),
+            TypeofUnqualExpr(expr) => return Ok(self.lower_typeof_unqual_expr(*expr)),
 
             Void => self.registry.type_void,
             Char => self.registry.type_char,
@@ -3604,9 +3636,20 @@ impl<'a, 'src> LowerCtx<'a, 'src> {
         processed_params
     }
 
-    /// Common logic for lowering struct members, used by both TypeSpec::Record lowering
-    /// and Declarator::AnonymousRecord handling.
     fn visit_record_members(
+        &mut self,
+        member_nodes: &[ParsedNodeRef],
+        span: SourceSpan,
+        is_union: bool,
+    ) -> Vec<RecordMember> {
+        let was_tag_decl = self.in_tag_decl;
+        self.in_tag_decl = false;
+        let res = self.visit_record_members_inner(member_nodes, span, is_union);
+        self.in_tag_decl = was_tag_decl;
+        res
+    }
+
+    fn visit_record_members_inner(
         &mut self,
         member_nodes: &[ParsedNodeRef],
         span: SourceSpan,

@@ -782,7 +782,9 @@ impl<'src> Preprocessor<'src> {
                 _ if self.is_currently_skipping() => {
                     // Bolt ⚡: When skipping a disabled block, use the fast-path in the lexer
                     // to jump directly to the next potential directive.
-                    if self.pending_tokens.is_empty() && let Some(lexer) = self.lexer_stack.last_mut() {
+                    if self.pending_tokens.is_empty()
+                        && let Some(lexer) = self.lexer_stack.last_mut()
+                    {
                         lexer.fast_skip_to_directive();
                     }
                     continue;
@@ -1128,6 +1130,19 @@ impl<'src> Preprocessor<'src> {
     pub(super) fn report_warning(&mut self, loc: SourceLoc, message: impl Into<String>) {
         let span = SourceSpan::from_loc(loc);
         self.report_diagnostic(DiagnosticLevel::Warning, message, span);
+    }
+
+    /// Helper to report warning diagnostics with a warning name
+    pub(super) fn report_warning_with_name(&mut self, loc: SourceLoc, message: impl Into<String>, name: &'static str) {
+        let span = SourceSpan::from_loc(loc);
+        let diag = Diagnostic {
+            level: DiagnosticLevel::Warning,
+            message: message.into(),
+            span,
+            warning_name: Some(name),
+            ..Default::default()
+        };
+        self.diag.report_streaming(diag, self.sm);
     }
 }
 

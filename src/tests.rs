@@ -134,6 +134,7 @@ pub mod semantic_return_check;
 pub mod semantic_scope_invariants;
 pub mod semantic_static_assert;
 
+pub mod driver_warning_formatting;
 pub mod guardian_choose_expr;
 pub mod guardian_typedef_redefinition;
 pub mod pp_pedantic_dollar;

@@ -228,15 +228,25 @@ impl DiagnosticEngine {
 
     /// Format a single diagnostic with rich source code context
     fn format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
+        let message = if diag.level == DiagnosticLevel::Warning {
+            if let Some(name) = diag.warning_name {
+                format!("{} [-W{}]", diag.message, name)
+            } else {
+                diag.message.clone()
+            }
+        } else {
+            diag.message.clone()
+        };
+
         // If it's a built-in source ID (e.g. command line define), simple print
         if diag.span.is_source_id_builtin() {
-            return format!("{}: {}", self.format_location(diag, source_manager), diag.message);
+            return format!("{}: {}", self.format_location(diag, source_manager), message);
         }
 
         // Primary error snippet
         let snippet = self.create_snippet(diag.span, "", source_manager);
         // Use primary_title instead of title
-        let mut group = self.level(diag).primary_title(&diag.message).element(snippet);
+        let mut group = self.level(diag).primary_title(&message).element(snippet);
 
         for hint in &diag.hints {
             group = group.element(Level::HELP.message(hint));
@@ -287,6 +297,11 @@ impl DiagnosticEngine {
             let formatted = self.format_diagnostic(diag, source_manager);
             eprintln!("{}", formatted);
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_format_diagnostic(&self, diag: &Diagnostic, source_manager: &SourceManager) -> String {
+        self.format_diagnostic(diag, source_manager)
     }
 }
 

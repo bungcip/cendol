@@ -216,9 +216,10 @@ impl<'src> Preprocessor<'src> {
 
             if existing.flags.contains(MacroFlags::BUILTIN) {
                 if is_different {
-                    self.report_warning(
+                    self.report_warning_with_name(
                         name_token.location,
                         format!("Redefinition of built-in macro '{}'", name),
+                        "builtin-macro-redefined",
                     );
                 }
                 // Return false to block overwriting the built-in macro,
@@ -276,7 +277,11 @@ impl<'src> Preprocessor<'src> {
         if let Some(existing) = self.macros.get(&name)
             && existing.flags.contains(MacroFlags::BUILTIN)
         {
-            self.report_warning(token.location, format!("Undefining built-in macro '{}'", name.as_str()));
+            self.report_warning_with_name(
+                token.location,
+                format!("Undefining built-in macro '{}'", name.as_str()),
+                "builtin-macro-redefined",
+            );
             self.expect_eod()?;
             return Ok(());
         }
@@ -809,7 +814,7 @@ impl<'src> Preprocessor<'src> {
         if is_error {
             self.report_error(directive_location, formatted_message);
         } else {
-            self.report_warning(directive_location, formatted_message);
+            self.report_warning_with_name(directive_location, formatted_message, "#warnings");
         }
 
         if is_error {

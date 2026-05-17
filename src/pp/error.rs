@@ -100,10 +100,16 @@ impl crate::diagnostic::IntoDiagnostic for PPError {
     fn into_diagnostic(self) -> Vec<Diagnostic> {
         let span = self.span;
         let kind = self.kind;
+        let warning_name = match &kind {
+            PPErrorKind::DollarInIdentifier => Some("dollar-in-identifier-extension"),
+            PPErrorKind::MacroRedefined(_) => Some("macro-redefined"),
+            _ => None,
+        };
         let mut diag = Diagnostic {
             level: DiagnosticLevel::Error,
             message: kind.to_string(),
             span,
+            warning_name,
             ..Default::default()
         };
 

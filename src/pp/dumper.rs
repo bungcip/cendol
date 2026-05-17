@@ -220,13 +220,7 @@ impl<'a> PPDumper<'a> {
             printed_space = true;
         }
 
-        let (newlines, space) = self.handle_whitespace_and_newlines(
-            writer,
-            state,
-            text,
-            final_has_nl,
-            false,
-        )?;
+        let (newlines, space) = self.handle_whitespace_and_newlines(writer, state, text, final_has_nl, false)?;
         Ok((newlines, printed_space || space))
     }
 
@@ -254,7 +248,9 @@ impl<'a> PPDumper<'a> {
             state.at_line_start = true;
         }
 
-        if let Some(last_nl) = text.rfind('\n') && has_nl {
+        if let Some(last_nl) = text.rfind('\n')
+            && has_nl
+        {
             let indent = &text[last_nl + 1..];
             if !indent.is_empty() {
                 write!(writer, " ")?;

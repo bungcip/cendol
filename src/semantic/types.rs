@@ -62,29 +62,33 @@ impl Type {
         base_offset: u64,
         base_index: &mut usize,
     ) -> Option<(RecordMember, FieldLayout, usize)> {
-        if let TypeKind::Record { members, .. } = &self.kind
-            && let Some(TypeLayout {
-                kind: LayoutKind::RecordFields { fields },
-                ..
-            }) = &self.layout
-        {
-            for (i, member) in members.iter().enumerate() {
-                let current_offset = fields[i].offset + base_offset;
+        let TypeKind::Record { members, .. } = &self.kind else {
+            return None;
+        };
+        let Some(TypeLayout {
+            kind: LayoutKind::RecordFields { fields },
+            ..
+        }) = &self.layout
+        else {
+            return None;
+        };
 
-                if member.name == Some(name) {
-                    let mut field_layout = fields[i];
-                    field_layout.offset = current_offset;
-                    return Some((*member, field_layout, *base_index));
-                }
+        for (i, member) in members.iter().enumerate() {
+            let current_offset = fields[i].offset + base_offset;
 
-                if member.name.is_none() {
-                    let inner_type = registry.get(member.member_type.ty());
-                    if let Some(res) = inner_type.find_member_with_offset(registry, name, current_offset, base_index) {
-                        return Some(res);
-                    }
-                } else {
-                    *base_index += 1;
+            if member.name == Some(name) {
+                let mut field_layout = fields[i];
+                field_layout.offset = current_offset;
+                return Some((*member, field_layout, *base_index));
+            }
+
+            if member.name.is_none() {
+                let inner_type = registry.get(member.member_type.ty());
+                if let Some(res) = inner_type.find_member_with_offset(registry, name, current_offset, base_index) {
+                    return Some(res);
                 }
+            } else {
+                *base_index += 1;
             }
         }
         None
@@ -97,40 +101,40 @@ impl Type {
         name: NameId,
         base_index: &mut usize,
     ) -> Option<(RecordMember, usize)> {
-        if let TypeKind::Record { members, .. } = &self.kind {
-            for member in members.iter() {
-                if member.name == Some(name) {
-                    return Some((*member, *base_index));
-                }
+        let TypeKind::Record { members, .. } = &self.kind else {
+            return None;
+        };
 
-                if member.name.is_none() {
-                    let inner_type = registry.get(member.member_type.ty());
-                    if let Some(res) = inner_type.find_member_recursive(registry, name, base_index) {
-                        return Some(res);
-                    }
-                } else {
-                    *base_index += 1;
+        for member in members.iter() {
+            if member.name == Some(name) {
+                return Some((*member, *base_index));
+            }
+
+            if member.name.is_none() {
+                let inner_type = registry.get(member.member_type.ty());
+                if let Some(res) = inner_type.find_member_recursive(registry, name, base_index) {
+                    return Some(res);
                 }
+            } else {
+                *base_index += 1;
             }
         }
         None
     }
 
     pub(crate) fn find_member(&self, registry: &super::TypeRegistry, name: NameId) -> Option<RecordMember> {
-        if let TypeKind::Record { members, .. } = &self.kind {
-            if let Some(member) = members.iter().find(|m| m.name == Some(name)) {
-                return Some(*member);
-            }
-            for member in members.iter() {
-                if member.name.is_none() {
-                    let inner_type = registry.get(member.member_type.ty());
-                    if let Some(found) = inner_type.find_member(registry, name) {
-                        return Some(found);
-                    }
-                }
-            }
+        let TypeKind::Record { members, .. } = &self.kind else {
+            return None;
+        };
+
+        if let Some(member) = members.iter().find(|m| m.name == Some(name)) {
+            return Some(*member);
         }
-        None
+
+        members
+            .iter()
+            .filter(|m| m.name.is_none())
+            .find_map(|m| registry.get(m.member_type.ty()).find_member(registry, name))
     }
 
     pub(crate) fn flatten_members_with_layouts(
@@ -140,26 +144,35 @@ impl Type {
         flat_fields: &mut Vec<FieldLayout>,
         base_offset: u64,
     ) {
-        if let TypeKind::Record { members, .. } = &self.kind
-            && let Some(TypeLayout {
-                kind: LayoutKind::RecordFields { fields },
-                ..
-            }) = &self.layout
-        {
-            for (i, member) in members.iter().enumerate() {
-                let mut field_layout = fields[i];
-                field_layout.offset += base_offset;
-                if member.name.is_none() {
-                    let inner_type = registry.get(member.member_type.ty());
-                    inner_type.flatten_members_with_layouts(registry, flat_members, flat_fields, field_layout.offset);
-                } else {
-                    flat_members.push(*member);
-                    flat_fields.push(field_layout);
-                }
+        let TypeKind::Record { members, .. } = &self.kind else {
+            return;
+        };
+        let Some(TypeLayout {
+            kind: LayoutKind::RecordFields { fields },
+            ..
+        }) = &self.layout
+        else {
+            return;
+        };
+
+        for (i, member) in members.iter().enumerate() {
+            let mut field_layout = fields[i];
+            field_layout.offset += base_offset;
+            if member.name.is_none() {
+                registry.get(member.member_type.ty()).flatten_members_with_layouts(
+                    registry,
+                    flat_members,
+                    flat_fields,
+                    field_layout.offset,
+                );
+            } else {
+                flat_members.push(*member);
+                flat_fields.push(field_layout);
             }
         }
     }
 
+    #[inline]
     pub(crate) fn get_array_element(&self) -> Option<TypeRef> {
         match &self.kind {
             TypeKind::Array { element_type, .. } => Some(*element_type),
